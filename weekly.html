@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Weekly Disposal Status: NSC (Averages)</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+  <style>
+    .card-header { 
+      cursor: pointer; 
+    }
+    .card-body { 
+      cursor: pointer; 
+    }
+    .region-row, .division-row, .ccc-row {
+      cursor: pointer;
+    }
+    .nested-row {
+      display: none;
+    }
+    .show-row {
+      display: table-row;
+    }
+    .toggle-icon {
+      margin-right: 5px;
+      display: inline-block;
+      transition: transform 0.2s;
+    }
+    .expanded .toggle-icon {
+      transform: rotate(90deg);
+    }
+    
+    /* Date row styling */
+    .date-row {
+      background-color: #f8f9fa !important;
+    }
+    
+    /* Filter styles */
+    .filter-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      align-items: center;
+    }
+    
+    .filter-item {
+      flex: 1;
+      min-width: 120px;
+    }
+    
+    .filter-select {
+      padding: 0.25rem 0.5rem;
+      font-size: 0.85rem;
+    }
+    
+    /* Card metrics styling */
+    .metric-label {
+      font-style: italic;
+      font-size: 0.85rem;
+      color: #6c757d;
+      margin-right: 5px;
+    }
+    
+    .metric-value {
+      font-weight: 500;
+    }
+    
+    /* Mobile responsive text sizing */
+    @media (max-width: 768px) {
+      body {
+        font-size: 0.8rem;
+      }
+      .table {
+        font-size: 0.75rem;
+      }
+      h2 {
+        font-size: 1.5rem;
+      }
+      h5 {
+        font-size: 0.9rem;
+      }
+      .form-select {
+        font-size: 0.8rem;
+        padding: 0.25rem;
+      }
+      .card-header {
+        font-size: 0.9rem;
+        padding: 0.5rem 0.75rem;
+      }
+      .container {
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+      }
+      .filter-container {
+        gap: 0.25rem;
+      }
+      .filter-item {
+        min-width: 90px;
+      }
+      .metric-label {
+        font-size: 0.75rem;
+      }
+    }
+    @media (max-width: 600px) {
+  .tooltip .tooltiptext {
+    font-size: 10px !important;
+    padding: 4px 6px !important;
+    max-width: 150px !important;
+  }
+}
+
+
+  </style>
+</head>
+<body class="bg-light">
+
+<div class="container mt-4">
+  <h2 class="text-center mb-1">Weekly Disposal Status: NSC</h2>
+  <p class="text-center mb-4" id="report-date">Report upto: Loading...</p>
+
+  <!-- Tabs -->
+  <ul class="nav nav-tabs mb-3" id="category-tabs">
+    <li class="nav-item"><a class="nav-link active" data-type="ALL" href="#">All</a></li>
+    <li class="nav-item"><a class="nav-link" data-type="DOM" href="#">DOM</a></li>
+    <li class="nav-item"><a class="nav-link" data-type="COM" href="#">COM</a></li>
+    <li class="nav-item"><a class="nav-link" data-type="IND" href="#">IND</a></li>
+  </ul>
+
+  <!-- Compact Filters -->
+  <div class="filter-container">
+    <div class="filter-item">
+      <select id="date-filter" class="form-select form-select-sm filter-select" aria-label="Report Date">
+        <option value="">All Dates</option>
+      </select>
+    </div>
+    <div class="filter-item">
+      <select id="region-filter" class="form-select form-select-sm filter-select" aria-label="Region">
+        <option value="">All Regions</option>
+      </select>
+    </div>
+    <div class="filter-item">
+      <select id="division-filter" class="form-select form-select-sm filter-select" aria-label="Division">
+        <option value="">All Divisions</option>
+      </select>
+    </div>
+    <div class="filter-item">
+      <select id="ccc-filter" class="form-select form-select-sm filter-select" aria-label="CCC">
+        <option value="">All CCCs</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Cards -->
+  <div class="row g-4">
+    <div class="col-md-6">
+      <div class="card shadow">
+        <div class="card-header bg-primary text-white" data-bs-toggle="collapse" data-bs-target="#pending-table-wrapper">
+          Pending: Monday vs Monday (Averages)
+        </div>
+        <div class="card-body">
+<h5 id="pending-avg" class="card-title"><span class="loading-text">Loading</span><span id="pending-dots">...</span></h5>
+          <div class="collapse show" id="pending-table-wrapper">
+            <div id="pending-table" class="mt-3"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card shadow">
+        <div class="card-header bg-success text-white" data-bs-toggle="collapse" data-bs-target="#deposit-table-wrapper">
+          Weekly Deposit vs Disposal (Averages)
+        </div>
+        <div class="card-body">
+<h5 id="deposit-avg" class="card-title"><span class="loading-text">Loading</span><span id="deposit-dots">...</span></h5>
+          <div class="collapse show" id="deposit-table-wrapper">
+            <div id="deposit-table" class="mt-3"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<br>
+<br>
+<script>
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSMuO-ddereEG6J2s2Bmqp-HXo85ky4S4R5Yt-0HdoNHHa5r8xOEK4MJ1Syhyqzjpm2lTI4sT85nR4N/pub?gid=0&single=true&output=csv";
+let allData = [], filteredData = [], category = "ALL";
+
+const filters = {
+  date: '',
+  region: '',
+  division: '',
+  ccc: ''
+};
+
+// Parse date in dd/mm/yyyy format for Indian locale
+function formatDate(dateStr) {
+  // Check if input is a string in dd/mm/yyyy
+  if (typeof dateStr !== 'string' || !/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateStr)) {
+    return dateStr;
+  }
+
+  const [day, month, year] = dateStr.split('/').map(Number);
+
+  if (!day || !month || !year) return dateStr;
+
+  // Return strictly formatted dd/mm/yyyy
+  return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
+}
+
+
+function populateFilters() {
+  // Populate date filter
+  // Modify this section to properly parse dd/mm/yyyy format
+const dates = [...new Set(allData
+  .map(d => d["Date of report in Current Week"])
+  .filter(Boolean))]
+  .sort((a, b) => {
+    const [dayA, monthA, yearA] = a.split('/').map(Number);
+    const [dayB, monthB, yearB] = b.split('/').map(Number);
+
+    const dateA = new Date(yearA, monthA - 1, dayA);
+    const dateB = new Date(yearB, monthB - 1, dayB);
+
+    return dateB - dateA; // Latest first
+  });
+
+    
+  updateSelect('date-filter', dates, formatDate);
+  
+  // Add event listeners for filters
+  document.getElementById('date-filter').addEventListener('change', e => {
+    filters.date = e.target.value;
+    updateFilteredData();
+    populateDependentFilters();
+    render();
+  });
+
+  document.getElementById('region-filter').addEventListener('change', e => {
+    filters.region = e.target.value;
+    filters.division = '';
+    filters.ccc = '';
+    updateFilteredData();
+    populateDependentFilters();
+    render();
+  });
+
+  document.getElementById('division-filter').addEventListener('change', e => {
+    filters.division = e.target.value;
+    filters.ccc = '';
+    updateFilteredData();
+    populateDependentFilters();
+    render();
+  });
+
+  document.getElementById('ccc-filter').addEventListener('change', e => {
+    filters.ccc = e.target.value;
+    updateFilteredData();
+    render();
+  });
+  
+  // Initial population of all filters
+  updateFilteredData();
+  populateDependentFilters();
+}
+
+function updateFilteredData() {
+  // Filter the data based on the selected date
+  filteredData = allData.filter(row => {
+    return (!filters.date || row["Date of report in Current Week"] === filters.date);
+  });
+}
+
+function populateDependentFilters() {
+  // Populate region filter based on current date filter
+  const regions = [...new Set(filteredData
+    .map(d => d.Region)
+    .filter(Boolean))]
+    .sort();
+  updateSelect('region-filter', regions);
+  
+  // Populate division filter based on current date and region filters
+  const divisions = [...new Set(filteredData
+    .filter(d => !filters.region || d.Region === filters.region)
+    .map(d => d.Division)
+    .filter(Boolean))]
+    .sort();
+  updateSelect('division-filter', divisions);
+  
+  // Populate CCC filter based on current date, region, and division filters
+  const cccs = [...new Set(filteredData
+    .filter(d => (!filters.region || d.Region === filters.region) && 
+               (!filters.division || d.Division === filters.division))
+    .map(d => d.CCC)
+    .filter(Boolean))]
+    .sort();
+  updateSelect('ccc-filter', cccs);
+}
+
+function updateSelect(id, options, formatFn) {
+  const select = document.getElementById(id);
+  const currentValue = select.value;
+  
+  // Update placeholder text
+  let defaultText = 'All';
+  switch(id) {
+    case 'date-filter':
+      defaultText = 'Select Date';
+      break;
+    case 'region-filter':
+      defaultText = 'Select Region';
+      break;
+    case 'division-filter':
+      defaultText = 'Select Division';
+      break;
+    case 'ccc-filter':
+      defaultText = 'Select CCC';
+      break;
+  }
+  
+  const defaultOption = document.createElement('option');
+  defaultOption.value = '';
+  defaultOption.textContent = defaultText;
+  
+  select.innerHTML = '';
+  select.appendChild(defaultOption);
+  
+  options.forEach(opt => {
+    const option = document.createElement('option');
+    option.value = opt;
+    option.textContent = formatFn ? formatFn(opt) : opt;
+    select.appendChild(option);
+  });
+  
+  // Try to restore previous value if it still exists in the options
+  if (currentValue && options.includes(currentValue)) {
+    select.value = currentValue;
+  }
+}
+
+function applyRowFilters(row) {
+  return (!filters.region || row.Region === filters.region) &&
+         (!filters.division || row.Division === filters.division) &&
+         (!filters.ccc || row.CCC === filters.ccc);
+}
+
+
+// Replace the current buildNestedTable function with this improved version
+function buildNestedTable(containerId, rows, types, col1Base, col2Base) {
+  // Get short column names for table headers
+  const col1Short = col1Base.includes("Pending") ? "Last Monday" : "Deposited";
+  const col2Short = col1Base.includes("Pending") ? "This Monday" : "Disposed";
+  const displayType = col1Base.includes("Pending") ? "Pending" : "Deposit";
+  
+  // Group data by Region > Division > CCC > Date
+  const grouped = {};
+  
+  // First pass: structure the data hierarchy and calculate CCC level averages
+  rows.forEach(row => {
+    const region = row.Region || 'Unknown';
+    const division = row.Division || 'Unknown';
+    const ccc = row.CCC || 'Unknown';
+    const date = row["Date of report in Current Week"] || 'Unknown';
+    
+    if (!grouped[region]) grouped[region] = { 
+      divisions: {},
+      cccAverages: [], // Will store all CCC averages within this region
+      avgValues: { avg1: 0, avg2: 0 } // Will be calculated later
+    };
+    
+    if (!grouped[region].divisions[division]) grouped[region].divisions[division] = {
+      cccs: {},
+      cccAverages: [], // Will store all CCC averages within this division
+      avgValues: { avg1: 0, avg2: 0 } // Will be calculated later
+    };
+    
+    if (!grouped[region].divisions[division].cccs[ccc]) {
+      grouped[region].divisions[division].cccs[ccc] = {
+        dates: {},
+        dateValues: {},
+        avgValues: { avg1: 0, avg2: 0 } // Will be calculated later
+      };
+    }
+    
+    const cccData = grouped[region].divisions[division].cccs[ccc];
+    
+    if (!cccData.dates[date]) {
+      cccData.dates[date] = {
+        total1: 0,
+        total2: 0,
+        data: row,
+        hasData: false
+      };
+    }
+    
+    // Initialize date values if not already present
+    if (!cccData.dateValues[date]) {
+      cccData.dateValues[date] = { total1: 0, total2: 0 };
+    }
+  });
+  
+  // Second pass: calculate values for each date at CCC level
+  Object.keys(grouped).forEach(region => {
+    Object.keys(grouped[region].divisions).forEach(division => {
+      Object.keys(grouped[region].divisions[division].cccs).forEach(ccc => {
+        const cccData = grouped[region].divisions[division].cccs[ccc];
+        
+        Object.keys(cccData.dates).forEach(date => {
+          const dateData = cccData.dates[date];
+          const row = dateData.data;
+          let hasDateData = false;
+          let dateTotal1 = 0;
+          let dateTotal2 = 0;
+          
+          types.forEach(type => {
+            let col1Value, col2Value;
+            
+            // Handle direct "All" columns if available and selected
+            if (type === "All" && `${col1Base} (All)` in row) {
+              col1Value = parseInt(row[`${col1Base} (All)`] || 0);
+              col2Value = parseInt(row[`${col2Base} (All)`] || 0);
+            } else {
+              col1Value = parseInt(row[`${col1Base} (${type})`] || 0);
+              col2Value = parseInt(row[`${col2Base} (${type})`] || 0);
+            }
+            
+            dateTotal1 += col1Value;
+            dateTotal2 += col2Value;
+            
+            if (col1Value || col2Value) {
+              hasDateData = true;
+            }
+          });
+          
+          // Store date totals
+          dateData.total1 = dateTotal1;
+          dateData.total2 = dateTotal2;
+          dateData.hasData = hasDateData;
+          
+          // Only add to date aggregates if there's data
+          if (hasDateData) {
+            // Update CCC date values
+            cccData.dateValues[date] = {
+              total1: dateTotal1,
+              total2: dateTotal2
+            };
+          }
+        });
+        
+        // Calculate CCC level averages across dates
+        const dateValues = Object.values(cccData.dateValues).filter(v => v.total1 || v.total2);
+        if (dateValues.length > 0) {
+          const sum1 = dateValues.reduce((acc, val) => acc + val.total1, 0);
+          const sum2 = dateValues.reduce((acc, val) => acc + val.total2, 0);
+          cccData.avgValues = {
+            avg1: (sum1 / dateValues.length).toFixed(2),
+            avg2: (sum2 / dateValues.length).toFixed(2),
+            count: dateValues.length
+          };
+          
+          // Store this CCC average in division's cccAverages array
+          if (cccData.avgValues.count > 0) {
+            grouped[region].divisions[division].cccAverages.push({
+              ccc: ccc,
+              ...cccData.avgValues
+            });
+          }
+        } else {
+          cccData.avgValues = { avg1: (0).toFixed(2), avg2: (0).toFixed(2), count: 0 };
+        }
+      });
+      
+      // Calculate Division level sums (sum of CCC averages)
+      const divisionData = grouped[region].divisions[division];
+      const validCCCs = divisionData.cccAverages.filter(avg => avg.count > 0);
+      
+      if (validCCCs.length > 0) {
+        const sum1 = validCCCs.reduce((acc, val) => acc + parseFloat(val.avg1), 0);
+        const sum2 = validCCCs.reduce((acc, val) => acc + parseFloat(val.avg2), 0);
+        
+        divisionData.avgValues = {
+          avg1: sum1.toFixed(2),
+          avg2: sum2.toFixed(2),
+          count: validCCCs.length
+        };
+        
+        // Store this Division sum in region's cccAverages array
+        if (divisionData.avgValues.count > 0) {
+          grouped[region].cccAverages.push({
+            division: division,
+            ...divisionData.avgValues
+          });
+        }
+      } else {
+        divisionData.avgValues = { avg1: (0).toFixed(2), avg2: (0).toFixed(2), count: 0 };
+      }
+    });
+    
+    // Calculate Region level sums (sum of Division sums)
+    const regionData = grouped[region];
+    const validDivisions = regionData.cccAverages.filter(avg => avg.count > 0);
+    
+    if (validDivisions.length > 0) {
+      const sum1 = validDivisions.reduce((acc, val) => acc + parseFloat(val.avg1), 0);
+      const sum2 = validDivisions.reduce((acc, val) => acc + parseFloat(val.avg2), 0);
+      
+      regionData.avgValues = {
+        avg1: sum1.toFixed(2),
+        avg2: sum2.toFixed(2),
+        count: validDivisions.length
+      };
+    } else {
+      regionData.avgValues = { avg1: (0).toFixed(2), avg2: (0).toFixed(2), count: 0 };
+    }
+  });
+
+  // Build HTML table with updated headers
+  let html = `
+    <div class="table-responsive">
+      <table class="table table-bordered table-sm">
+        <thead>
+          <tr>
+            <th colspan="4">Entity</th>
+            <th class="text-end"><span class="metric-label">${col1Short}</span></th>
+            <th class="text-end"><span class="metric-label">${col2Short}</span></th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+  // Loop through grouped data to build nested table
+  Object.keys(grouped).sort().forEach((region, rIdx) => {
+    const regionId = `region-${containerId}-${rIdx}`;
+    const regionData = grouped[region];
+    
+    // Skip regions with no data
+    if (regionData.avgValues.count === 0) return;
+    
+    // Count non-empty divisions under this region
+    const regionEntityCount = Object.keys(regionData.divisions).filter(divName => {
+      return regionData.divisions[divName].avgValues.count > 0;
+    }).length;
+    
+    html += `
+      <tr class="table-primary region-row" data-target="${regionId}">
+        <td colspan="4">
+          <span class="toggle-icon">▶</span>${region} (${regionEntityCount})
+        </td>
+        <td class="text-end">${regionData.avgValues.avg1}</td>
+        <td class="text-end">${regionData.avgValues.avg2}</td>
+      </tr>
+    `;
+
+    Object.keys(regionData.divisions).sort().forEach((division, dIdx) => {
+      const divisionId = `${regionId}-div-${dIdx}`;
+      const divisionData = regionData.divisions[division];
+      
+      // Skip divisions with no data
+      if (divisionData.avgValues.count === 0) return;
+      
+      // Count non-empty CCCs under this division
+      const divEntityCount = Object.keys(divisionData.cccs).filter(cccName => {
+        return divisionData.cccs[cccName].avgValues.count > 0;
+      }).length;
+      
+      html += `
+        <tr class="table-secondary division-row nested-row" data-parent="${regionId}" data-target="${divisionId}">
+          <td></td>
+          <td colspan="3">
+            <span class="toggle-icon">▶</span>${division} (${divEntityCount})
+          </td>
+          <td class="text-end">${divisionData.avgValues.avg1}</td>
+          <td class="text-end">${divisionData.avgValues.avg2}</td>
+        </tr>
+      `;
+
+      Object.keys(divisionData.cccs).sort().forEach((ccc, cIdx) => {
+        const cccData = divisionData.cccs[ccc];
+        const cccId = `${divisionId}-ccc-${cIdx}`;
+        
+        // Skip CCCs with no data
+        if (cccData.avgValues.count === 0) return;
+        
+        // Count non-empty dates under this CCC
+        const cccEntityCount = Object.keys(cccData.dates).filter(dateName => {
+          return cccData.dates[dateName].hasData;
+        }).length;
+        
+        html += `
+          <tr class="ccc-row nested-row" data-parent="${divisionId}" data-target="${cccId}">
+            <td></td>
+            <td></td>
+            <td colspan="2">
+              <span class="toggle-icon">▶</span>${ccc} (${cccEntityCount} dates)
+            </td>
+            <td class="text-end">${cccData.avgValues.avg1}</td>
+            <td class="text-end">${cccData.avgValues.avg2}</td>
+          </tr>
+        `;
+        
+        // Add date rows under this CCC
+        Object.keys(cccData.dates).sort((a, b) => {
+          // Parse dd/mm/yyyy format
+          const partsA = a.split('/');
+          const partsB = b.split('/');
+          // Create date objects (day/month/year)
+          const dateA = new Date(partsA[2], partsA[1]-1, partsA[0]);
+          const dateB = new Date(partsB[2], partsB[1]-1, partsB[0]);
+          return dateB - dateA; // Sort descending (newest first)
+        }).forEach(date => {
+          const dateData = cccData.dates[date];
+          
+          // Skip dates with no data
+          if (!dateData.hasData) return;
+          
+          const formattedDate = formatDate(date);
+          
+          html += `
+            <tr class="date-row nested-row" data-parent="${cccId}">
+              <td></td>
+              <td></td>
+              <td></td>
+              <td>${formattedDate}</td>
+              <td class="text-end">${dateData.total1}</td>
+              <td class="text-end">${dateData.total2}</td>
+            </tr>
+          `;
+        });
+      });
+    });
+  });
+
+  html += `
+      </tbody>
+    </table>
+    </div>
+  `;
+  
+  document.getElementById(containerId).innerHTML = html;
+  
+  // Add click handlers for expanding/collapsing tables
+  document.querySelectorAll(`#${containerId} .region-row`).forEach(row => {
+    row.addEventListener('click', function() {
+      this.classList.toggle('expanded');
+      const targetId = this.getAttribute('data-target');
+      document.querySelectorAll(`[data-parent="${targetId}"]`).forEach(el => {
+        el.classList.toggle('show-row');
+      });
+    });
+  });
+  
+  document.querySelectorAll(`#${containerId} .division-row`).forEach(row => {
+    row.addEventListener('click', function(e) {
+      e.stopPropagation();
+      this.classList.toggle('expanded');
+      const targetId = this.getAttribute('data-target');
+      document.querySelectorAll(`[data-parent="${targetId}"]`).forEach(el => {
+        el.classList.toggle('show-row');
+      });
+    });
+  });
+  
+  document.querySelectorAll(`#${containerId} .ccc-row`).forEach(row => {
+    row.addEventListener('click', function(e) {
+      e.stopPropagation();
+      this.classList.toggle('expanded');
+      const targetId = this.getAttribute('data-target');
+      document.querySelectorAll(`[data-parent="${targetId}"]`).forEach(el => {
+        el.classList.toggle('show-row');
+      });
+    });
+  });
+  
+  // Return the region-level averages for card summary calculations
+  return Object.keys(grouped)
+    .map(region => grouped[region])
+    .filter(r => r.avgValues.count > 0)
+    .map(r => ({
+      avg1: parseFloat(r.avgValues.avg1),
+      avg2: parseFloat(r.avgValues.avg2)
+    }));
+}
+
+// Update the render function to use the new calculation for card headers
+function render() {
+  const displayData = filteredData.filter(row => applyRowFilters(row));
+  
+  // Determine which types to use based on the selected category
+  let types;
+  if (category === "ALL") {
+    // If the "All" tab is selected, we can use either the individual categories or direct "All" column
+    const hasAllColumns = displayData.length > 0 && 
+                         ("Pending as on Monday of Last Week (All)" in displayData[0] || 
+                          "Pending as on Monday of Current Week (All)" in displayData[0] ||
+                          "Deposited in last week (All)" in displayData[0] ||
+                          "Total disposed (All)" in displayData[0]);
+    
+    types = hasAllColumns ? ["All"] : ["DOM", "COM", "IND"];
+  } else {
+    types = [category];
+  }
+
+  // Build nested tables and get region averages
+  const pendingRegionAverages = buildNestedTable("pending-table", displayData, types, 
+    "Pending as on Monday of Last Week", 
+    "Pending as on Monday of Current Week");
+  
+  const depositRegionAverages = buildNestedTable("deposit-table", displayData, types, 
+    "Deposited in last week", 
+    "Total disposed");
+  
+  // Calculate sum of region averages for cards with improved formatting
+  if (pendingRegionAverages.length > 0) {
+    const pendingLastSum = pendingRegionAverages.reduce((acc, val) => acc + parseFloat(val.avg1), 0).toFixed(2);
+    const pendingCurrSum = pendingRegionAverages.reduce((acc, val) => acc + parseFloat(val.avg2), 0).toFixed(2);
+    
+    document.getElementById("pending-avg").innerHTML = `
+      <span class="metric-label">Last Monday:</span> <span class="metric-value">${pendingLastSum}</span>, 
+      <span class="metric-label">This Monday:</span> <span class="metric-value">${pendingCurrSum}</span>
+    `;
+  } else {
+    document.getElementById("pending-avg").innerHTML = `
+      <span class="metric-label">Last Monday:</span> <span class="metric-value">0.00</span>, 
+      <span class="metric-label">This Monday:</span> <span class="metric-value">0.00</span>
+    `;
+  }
+  
+  
+  if (depositRegionAverages.length > 0) {
+  const depositSum = depositRegionAverages.reduce((acc, val) => acc + parseFloat(val.avg1), 0);
+  const disposeSum = depositRegionAverages.reduce((acc, val) => acc + parseFloat(val.avg2), 0);
+  const backlog = depositSum - disposeSum;
+  const backlogFormatted = backlog.toFixed(2);
+
+  let backlogColor = 'black';
+  if (backlog > 0) backlogColor = 'red';
+  else if (backlog < 0) backlogColor = 'green';
+
+  document.getElementById("deposit-avg").innerHTML = `
+    <span class="metric-label">Deposited:</span> <span class="metric-value">${depositSum.toFixed(2)}</span>, 
+    <span class="metric-label">Disposed:</span> <span class="metric-value">${disposeSum.toFixed(2)}</span>, 
+    <span class="metric-label">Backlog:</span> <span class="metric-value" style="color:${backlogColor};">${backlogFormatted}</span>
+  `;
+} else {
+  document.getElementById("deposit-avg").innerHTML = `
+    <span class="metric-label">Deposited:</span> <span class="metric-value">0.00</span>, 
+    <span class="metric-label">Disposed:</span> <span class="metric-value">0.00</span>, 
+    <span class="metric-label">Backlog:</span> <span class="metric-value" style="color:black;">0.00</span>
+  `;
+}
+
+}
+
+// Initialize
+Papa.parse(CSV_URL, {
+  download: true,
+  header: true,
+  skipEmptyLines: true,
+  dynamicTyping: true,
+  complete: function(results) {
+    // Filter out rows without report date
+    allData = results.data.filter(d => d["Date of report in Current Week"]);
+    
+    // Find max date
+    const dates = allData
+      .map(d => new Date(d["Date of report in Current Week"]))
+      .filter(d => !isNaN(d.getTime()));
+      
+    // Extract unique dates to get date range and week count
+    const uniqueDates = [...new Set(allData.map(d => d["Date of report in Current Week"]))].filter(Boolean);
+    
+    if (uniqueDates.length > 0) {
+      // Parse dates properly (dd/mm/yyyy format)
+      const parsedDates = uniqueDates.map(dateStr => {
+        const parts = dateStr.split('/');
+        return new Date(parts[2], parts[1]-1, parts[0]); // year, month (0-based), day
+      }).filter(d => !isNaN(d.getTime()));
+      
+      const minDate = new Date(Math.min(...parsedDates));
+      const maxDate = new Date(Math.max(...parsedDates));
+      
+      document.getElementById("report-date").innerText = `Report from ${formatDate(minDate)} to ${formatDate(maxDate)} -- ${uniqueDates.length} weeks`;
+    }
+    
+    populateFilters();
+    render();
+    populateFilters();
+    render();
+    
+    // Set up event listeners for tabs
+    document.querySelectorAll('#category-tabs .nav-link').forEach(tab => {
+      tab.addEventListener('click', e => {
+        e.preventDefault();
+        
+        // Update active tab
+        document.querySelectorAll('#category-tabs .nav-link').forEach(t => {
+          t.classList.remove('active');
+        });
+        tab.classList.add('active');
+        
+        // Update category and re-render
+        category = tab.getAttribute('data-type');
+        render();
+        renderBacklogChart(); // Re-render chart when tab changes
+      });
+    });
+    
+    // Add event listeners for card headers to toggle collapse
+    document.querySelectorAll('.card-header').forEach(header => {
+      header.addEventListener('click', function() {
+        const target = this.getAttribute('data-bs-target');
+        const collapse = new bootstrap.Collapse(document.querySelector(target));
+        collapse.toggle();
+      });
+    });
+    
+    // Load Chart.js from CDN
+    const chartScript = document.createElement('script');
+    chartScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js';
+    chartScript.integrity = 'sha512-ElRFoEQdI5Ht6kZvyzXhYG9NqjtkmlkfYk0wr6wHxU9JEHakS7UJZNeml5ALk+8IKlU6jDgMabC3vkumRokgJA==';
+    chartScript.crossOrigin = 'anonymous';
+    chartScript.referrerPolicy = 'no-referrer';
+    document.head.appendChild(chartScript);
+    
+    // Create chart container
+    const chartContainer = document.createElement('div');
+    chartContainer.innerHTML = `
+      <div class="row mt-4">
+        <div class="col-12">
+          <div class="card shadow">
+            <div class="card-header bg-info text-white">
+              Weekly Backlog Analysis (Deposited - Disposed)
+            </div>
+            <div class="card-body">
+              <canvas id="backlogChart" style="width:100%; height:300px;"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.querySelector('.container').appendChild(chartContainer);
+    
+    // Function to render the backlog chart
+    function renderBacklogChart() {
+      // Wait for Chart.js to load
+      if (typeof Chart === 'undefined') {
+        setTimeout(renderBacklogChart, 100);
+        return;
+      }
+      
+      // Get data for chart based on current filters
+      const chartData = getBacklogChartData();
+      
+      // Destroy previous chart if exists
+      if (window.backlogChartInstance) {
+        window.backlogChartInstance.destroy();
+      }
+      
+      // Create new chart
+      const ctx = document.getElementById('backlogChart').getContext('2d');
+      window.backlogChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: chartData.labels,
+          datasets: [{
+  label: 'Weekly Backlog',
+  data: chartData.data,
+  backgroundColor: chartData.data.map(value =>
+    value > 0 ? 'rgba(255, 99, 132, 0.6)' : 'rgba(54, 162, 235, 0.6)'
+  ),
+  borderColor: chartData.data.map(value =>
+    value > 0 ? 'rgba(255, 99, 132, 1)' : 'rgba(54, 162, 235, 1)'
+  ),
+  borderWidth: 1
+}]
+
+        },
+        options: {
+  responsive: true,
+  maintainAspectRatio: false,
+  scales: {
+    x: {
+      ticks: {
+        maxRotation: 90,
+        minRotation: 90
+      }
+    },
+    y: {
+      beginAtZero: true,
+      title: {
+        display: true,
+        text: 'Backlog (Deposited - Disposed)'
+      }
+    }
+  },
+  plugins: {
+    tooltip: {
+      enabled: false, // disable the default tooltip
+      external: function(context) {
+        // Tooltip element
+        let tooltipEl = document.getElementById('chartjs-tooltip');
+
+        // Create element on first render
+        if (!tooltipEl) {
+          tooltipEl = document.createElement('div');
+          tooltipEl.id = 'chartjs-tooltip';
+          tooltipEl.innerHTML = '<table></table>';
+          document.body.appendChild(tooltipEl);
+        }
+
+        // Hide if no tooltip
+        const tooltipModel = context.tooltip;
+        if (tooltipModel.opacity === 0) {
+          tooltipEl.style.opacity = 0;
+          return;
+        }
+
+        const dataIndex = tooltipModel.dataPoints[0].dataIndex;
+        const label = tooltipModel.title[0];
+        const backlogDetails = chartData.tooltips[dataIndex];
+
+        // Custom HTML content
+        const html = `
+          <thead><tr><th>${label}</th></tr></thead>
+          <tbody>
+            <tr><td>Total Backlog: ${tooltipModel.dataPoints[0].raw}</td></tr>
+            <tr><td>Deposited: ${backlogDetails.deposited}</td></tr>
+            <tr><td>Disposed: ${backlogDetails.disposed}</td></tr>
+            <tr><td style="color:red;"><b>Withheld: ${backlogDetails.withheld}</b></td></tr>
+          </tbody>
+        `;
+
+        const tableRoot = tooltipEl.querySelector('table');
+        tableRoot.innerHTML = html;
+
+        const isMobile = window.innerWidth <= 600;
+const position = context.chart.canvas.getBoundingClientRect();
+
+tooltipEl.style.opacity = 1;
+tooltipEl.style.position = 'absolute';
+tooltipEl.style.left = position.left + window.pageXOffset + tooltipModel.caretX + 'px';
+tooltipEl.style.top = position.top + window.pageYOffset + tooltipModel.caretY + 'px';
+tooltipEl.style.pointerEvents = 'none';
+tooltipEl.style.background = 'white';
+tooltipEl.style.border = '1px solid #ccc';
+tooltipEl.style.padding = isMobile ? '4px 6px' : '8px';
+tooltipEl.style.borderRadius = '4px';
+tooltipEl.style.fontSize = isMobile ? '0.7rem' : '0.9rem';
+tooltipEl.style.zIndex = 1000;
+
+      }
+    }
+  }
+}
+
+      });
+    }
+    
+    // Function to process data for the backlog chart
+    function getBacklogChartData() {
+      // Apply current filters
+      const displayData = filteredData.filter(row => applyRowFilters(row));
+      
+      // Determine which types to use based on the selected category
+      let types;
+      if (category === "ALL") {
+        const hasAllColumns = displayData.length > 0 && 
+                              ("Deposited in last week (All)" in displayData[0] && 
+                              "Total disposed (All)" in displayData[0]);
+        
+        types = hasAllColumns ? ["All"] : ["DOM", "COM", "IND"];
+      } else {
+        types = [category];
+      }
+      
+      // Group data by date
+      const dateGroups = {};
+      
+      displayData.forEach(row => {
+        const date = row["Date of report in Current Week"];
+        if (!date) return;
+        
+        if (!dateGroups[date]) {
+          dateGroups[date] = {
+  deposited: 0,
+  disposed: 0,
+  withheld: 0,
+  backlog: 0
+};
+
+        }
+        
+        let depositTotal = 0;
+        let disposalTotal = 0;
+        
+        // Process based on types (category)
+        types.forEach(type => {
+  let depositCol, disposalCol, withheldCol;
+
+  // Handle "All" columns if available
+  if (type === "All") {
+    depositCol = `Deposited in last week (All)`;
+    disposalCol = `Total disposed (All)`;
+    withheldCol = `Withheld (All)`;
+  } else {
+    depositCol = `Deposited in last week (${type})`;
+    disposalCol = `Total disposed (${type})`;
+    withheldCol = `Withheld (${type})`;
+  }
+
+  const depositValue = parseInt(row[depositCol] || 0);
+  const disposalValue = parseInt(row[disposalCol] || 0);
+  const withheldValue = parseInt(row[withheldCol] || 0);
+
+  depositTotal += depositValue;
+  disposalTotal += disposalValue;
+  dateGroups[date].withheld += withheldValue;
+
+  // Optional: Store type-specific values if needed
+  if (type !== "All") {
+    dateGroups[date][type] = (dateGroups[date][type] || 0) + (depositValue - disposalValue);
+  }
+});
+
+        
+        dateGroups[date].deposited += depositTotal;
+        dateGroups[date].disposed += disposalTotal;
+        dateGroups[date].backlog += (depositTotal - disposalTotal);
+      });
+      
+      // Sort dates chronologically
+      const sortedDates = Object.keys(dateGroups).sort((a, b) => {
+        // Parse dd/mm/yyyy format
+        const partsA = a.split('/');
+        const partsB = b.split('/');
+        // Create date objects (day/month/year)
+        const dateA = new Date(partsA[2], partsA[1]-1, partsA[0]);
+        const dateB = new Date(partsB[2], partsB[1]-1, partsB[0]);
+        return dateA - dateB; // Sort ascending (oldest first)
+      });
+      
+      // Prepare chart data
+      const labels = sortedDates.map(date => formatDate(date));
+      const backlogData = sortedDates.map(date => dateGroups[date].backlog);
+      const tooltips = sortedDates.map(date => ({
+  deposited: dateGroups[date].deposited,
+  disposed: dateGroups[date].disposed,
+  withheld: dateGroups[date].withheld
+}));
+
+      
+      return {
+        labels: labels,
+        data: backlogData,
+        tooltips: tooltips
+      };
+    }
+    
+    // Initial render of backlog chart (delay to ensure Chart.js is loaded)
+    setTimeout(renderBacklogChart, 500);
+  }
+});
+
+// Error handling for CSV load
+window.addEventListener('error', function(e) {
+  console.error('Error loading data:', e);
+  document.getElementById('pending-avg').innerHTML = 'Error loading data. Please try refreshing the page.';
+  document.getElementById('deposit-avg').innerHTML = 'Error loading data. Please try refreshing the page.';
+});
+
+// Animate loading dots
+function animateDots(elementId) {
+  const el = document.getElementById(elementId);
+  let count = 0;
+  return setInterval(() => {
+    count = (count + 1) % 4;
+    el.textContent = '.'.repeat(count);
+  }, 500);
+}
+
+// Start animation for pending and deposit
+const pendingInterval = animateDots('pending-dots');
+const depositInterval = animateDots('deposit-dots');
+
+</script>
+</body>
+</html>
