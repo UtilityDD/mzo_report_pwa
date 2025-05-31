@@ -6,6 +6,8 @@
   <title>Net Balance Analytics</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+
   <style>
     * {
       margin: 0;
@@ -30,12 +32,27 @@
       overflow: hidden;
     }
 
-    .header {
-      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-      color: white;
-      padding: 1rem;
-      text-align: center;
-    }
+.header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: white;
+  padding: 1rem;
+  text-align: center;
+  z-index: 1000;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Add space so content is not hidden under the header */
+.app-container {
+  padding-top: 50px;
+}
+
+
+
+
 
     .header h1 {
       font-size: 1.25rem;
@@ -81,41 +98,44 @@
       box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
     }
 
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 1px;
-      background: #e2e8f0;
-      margin: 1rem;
-      border-radius: 8px;
-      overflow: hidden;
-    }
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.5rem;
+  padding: 0.5rem;
+  margin: 0.5rem 0;
+}
 
-    .stat-card {
-      background: white;
-      padding: 1rem;
-      text-align: center;
-      transition: background-color 0.2s;
-    }
+.stat-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 0.75rem;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
 
-    .stat-card:hover {
-      background: #f8fafc;
-    }
+.stat-card:hover {
+  background: #f1f5f9;
+  transform: translateY(-2px);
+}
 
-    .stat-value {
-      font-size: 1.125rem;
-      font-weight: 700;
-      color: #1e293b;
-      margin-bottom: 0.25rem;
-    }
+.stat-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 0.2rem;
+}
 
-    .stat-label {
-      font-size: 0.75rem;
-      color: #64748b;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
+.stat-label {
+  font-size: 0.7rem;
+  color: #6b7280;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 
     .chart-container {
       padding: 1rem;
@@ -123,7 +143,7 @@
     }
 
     .chart-wrapper {
-      height: 300px;
+      height: 500px;
       position: relative;
     }
 
@@ -214,7 +234,7 @@
   }
 
   .chart-wrapper {
-    height: 200px;
+    height: 300px;
   }
 }
 
@@ -225,7 +245,7 @@
       }
       
       .chart-wrapper {
-        height: 200px;
+        height: 350px;
       }
     }
     .tab-btn {
@@ -329,21 +349,26 @@
 .modal-item.hidden {
   display: none;
 }
-  .home-float-btn {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 999;
+@media (min-width: 768px) {
+  .modal-box {
+    max-width: 900px;
   }
-  
+}
+.tab-btn.active-tab {
+  background: #3b82f6;
+  color: white;
+}
+#topVendorValue {
+  color: #dc2626; /* Tailwind Red-600 */
+}
+
   </style>
 </head>
 <body>
-  <div class="app-container">
-    <div class="header">
+      <div class="header">
       <h1>📊 Advance to Vendors</h1>
     </div>
-    
+  <div class="app-container">
     <div class="controls">
       <div class="control-group">
         <select id="locationFilter">
@@ -352,6 +377,11 @@
           <option value="Malda">Malda</option>
           <option value="Raiganj">Raiganj</option>
           <option value="Buniadpur">Buniadpur</option>
+            <option value="Gazole">Gazole</option>
+              <option value="Islampur">Islampur</option>
+  <option value="Chanchal">Chanchal</option>
+
+
         </select>
       </div>
       
@@ -396,6 +426,7 @@
     </div>
 
     <div class="chart-container">
+      <h2 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem;">📈 Advance Timeline</h2>
       <div class="loading-overlay hidden" id="loadingOverlay">
         <div class="loading-spinner"></div>
         <div class="loading-text">Loading data...</div>
@@ -404,15 +435,45 @@
         <canvas id="balanceChart"></canvas>
       </div>
     </div>
+    <div class="chart-container">
+  <h2 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem;">📍 Division-wise Advance</h2>
+  <div class="chart-wrapper">
+    <canvas id="divisionChart"></canvas>
+  </div>
+</div>
+
   </div>
 
   <script>
-    const sources = {
-      "Balurghat": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRooKVx76f92WX_Q3j2u4UmA1yXN2cNcwSPVqiFjyY58oTplAg_Ieze4xket4Lq3qHEuLt9js0-kU8a/pub?gid=98784562&single=true&output=csv',
-      "Malda": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQHtBkI-9-cafLDNyCNtbnHX0B65dCawQHoO8oiFYQzeWBxu0u4VBXCqR5zgj5ylceF3piSl8rnholp/pub?gid=98784562&single=true&output=csv',
-      "Raiganj": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR-jd3bm9BCgUKNQCgr0Lj9paLYQ9oacLPlleCHXrtV1__58NyK_w19hbC4thzgPkdHtIAAP2nrnmyC/pub?gid=98784562&single=true&output=csv',
-      "Buniadpur": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTZPn6CB_cHTFVb8S5vpvaBnczj63fYMTI0RVEdMzVcQ8O6XQi5iwTbMp2xa5vsL6zHGWxezWUSehrN/pub?gid=98784562&single=true&output=csv'
-    };
+const sources = {
+  "Balurghat": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRooKVx76f92WX_Q3j2u4UmA1yXN2cNcwSPVqiFjyY58oTplAg_Ieze4xket4Lq3qHEuLt9js0-kU8a/pub?gid=98784562&single=true&output=csv',
+  "Malda": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQHtBkI-9-cafLDNyCNtbnHX0B65dCawQHoO8oiFYQzeWBxu0u4VBXCqR5zgj5ylceF3piSl8rnholp/pub?gid=98784562&single=true&output=csv',
+  "Raiganj": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR-jd3bm9BCgUKNQCgr0Lj9paLYQ9oacLPlleCHXrtV1__58NyK_w19hbC4thzgPkdHtIAAP2nrnmyC/pub?gid=98784562&single=true&output=csv',
+  "Buniadpur": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTZPn6CB_cHTFVb8S5vpvaBnczj63fYMTI0RVEdMzVcQ8O6XQi5iwTbMp2xa5vsL6zHGWxezWUSehrN/pub?gid=98784562&single=true&output=csv',
+  "Gazole": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQeQ8Rj3WDvBw5FEYP2rYbRV7p0HvnxuXfBlfpTtJY_K-rnYCNoMsFM426rrGsK5tYMLmhK2LnJ1HP-/pub?gid=98784562&single=true&output=csv',
+  "Islampur": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTsXWZdt0B4LpbxbstdJv564CnjEBMCC_HwlssthZCXLTKpUFkF_dhQtEpN0KYD-eKiClTwA2WOhSB-/pub?gid=98784562&single=true&output=csv',
+  "Chanchal": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ6XAKcdyjGWhdxB7FPTwzlEUN5fgLXFuLE_8VSSsiGvbfcY4uLPY8zzlnMmqAqEeF7J6FQqW26R-jr/pub?gid=98784562&single=true&output=csv'
+};
+
+function formatName(text) {
+  if (!text || typeof text !== 'string') return '';
+  if (text.trim().toLowerCase() === 'ccc') return 'CCC'; // keep CCC as is
+  return text
+    .toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+function populateLocationDropdown() {
+  const locationSelect = document.getElementById('locationFilter');
+  locationSelect.innerHTML = `<option value="all">All Divisions</option>`;
+  Object.keys(sources).sort().forEach(location => {
+    const option = document.createElement('option');
+    option.value = location;
+    option.textContent = formatName(location);
+    locationSelect.appendChild(option);
+  });
+}
 
     let allData = []; // Store all parsed data
     let selectedLocation = 'all';
@@ -507,12 +568,13 @@
       const unitSelect = document.getElementById('unitFilter');
       const currentUnit = unitSelect.value;
       unitSelect.innerHTML = '<option value="all">All Units</option>';
-      Array.from(units).sort().forEach(unit => {
-        const option = document.createElement('option');
-        option.value = unit;
-        option.textContent = unit;
-        unitSelect.appendChild(option);
-      });
+Array.from(units).sort().forEach(unit => {
+  const option = document.createElement('option');
+  option.value = unit;
+  option.textContent = formatName(unit);
+  unitSelect.appendChild(option);
+});
+
 
       // Reset unit selection if it's no longer available or if we need to reset dependent filters
       const unitExists = [...unitSelect.options].some(opt => opt.value === currentUnit);
@@ -527,12 +589,12 @@
       const vendorSelect = document.getElementById('vendorFilter');
       const currentVendor = vendorSelect.value;
       vendorSelect.innerHTML = '<option value="all">All Vendors</option>';
-      Array.from(vendors).sort().forEach(vendor => {
-        const option = document.createElement('option');
-        option.value = vendor;
-        option.textContent = vendor;
-        vendorSelect.appendChild(option);
-      });
+Array.from(vendors).sort().forEach(vendor => {
+  const option = document.createElement('option');
+  option.value = vendor;
+  option.textContent = formatName(vendor);
+  vendorSelect.appendChild(option);
+});
 
       // Reset vendor selection if it's no longer available or if we need to reset dependent filters
       const vendorExists = [...vendorSelect.options].some(opt => opt.value === currentVendor);
@@ -600,125 +662,209 @@
       document.getElementById('topVendorLabel').textContent = `Top: ${topVendor.name || 'N/A'}`;
     }
 
-    function renderChart(monthlyBuckets) {
-      const labels = Object.keys(monthlyBuckets).sort((a, b) => {
-        const [ma, ya] = a.split('/').map(n => parseInt(n));
-        const [mb, yb] = b.split('/').map(n => parseInt(n));
-        const da = new Date(2000 + ya, ma - 1);
-        const db = new Date(2000 + yb, mb - 1);
-        return db - da;
-      });
+function renderChart(monthlyBuckets) {
+  const labels = Object.keys(monthlyBuckets).sort((a, b) => {
+    const [ma, ya] = a.split('/').map(n => parseInt(n));
+    const [mb, yb] = b.split('/').map(n => parseInt(n));
+    const da = new Date(2000 + ya, ma - 1);
+    const db = new Date(2000 + yb, mb - 1);
+    return da - db;
+  });
 
-      if (labels.length === 0) {
-        if (chart) {
-          chart.destroy();
-          chart = null;
-        }
-        return;
-      }
+  if (labels.length === 0) {
+    if (chart) {
+      chart.destroy();
+      chart = null;
+    }
+    return;
+  }
 
-      const now = new Date();
-      const data = labels.map(label => monthlyBuckets[label]);
+  const now = new Date();
+  const data = labels.map(label => monthlyBuckets[label]);
 
-      const colors = labels.map(label => {
-        const [monthStr, yearStr] = label.split('/');
-        const month = parseInt(monthStr) - 1;
-        const year = parseInt('20' + yearStr);
-        const date = new Date(year, month);
-        const diffMonths = (now.getFullYear() - date.getFullYear()) * 12 + (now.getMonth() - date.getMonth());
-        return diffMonths > 12;
-      });
+  const colors = labels.map(label => {
+    const [monthStr, yearStr] = label.split('/');
+    const month = parseInt(monthStr) - 1;
+    const year = parseInt('20' + yearStr);
+    const date = new Date(year, month);
+    const diffMonths = (now.getFullYear() - date.getFullYear()) * 12 + (now.getMonth() - date.getMonth());
+    return diffMonths > 12;
+  });
 
-      const backgroundColors = colors.map(isOverdue => isOverdue ? '#ef4444' : '#3b82f6');
+  const backgroundColors = colors.map(isOverdue => isOverdue ? '#ef4444' : '#3b82f6');
 
-      if (chart) {
-        chart.data.labels = labels;
-        chart.data.datasets[0].data = data;
-        chart.data.datasets[0].backgroundColor = backgroundColors;
-        chart.update('none');
-        return;
-      }
-      
-      const ctx = document.getElementById('balanceChart').getContext('2d');
-      chart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: 'Net Balance Value',
-            data: data,
-            backgroundColor: backgroundColors,
-            borderWidth: 0,
-            borderRadius: 3,
-          }]
+  const config = {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Net Balance Value',
+        data: data,
+        backgroundColor: backgroundColors,
+        borderWidth: 0,
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 300 },
+      layout: { padding: 10 },
+      plugins: {
+        legend: { display: false },
+        datalabels: {
+          display: context => window.innerWidth > 640,
+          anchor: 'end',
+          align: 'end',
+          rotation: -90,
+          color: '#1e293b',
+          font: { size: 9, weight: 'bold' },
+          formatter: value => `₹${formatCurrency(value)}`,
+          clamp: true
         },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          animation: {
-            duration: 300
-          },
-          layout: {
-            padding: 10
-          },
-          plugins: {
-            legend: { 
-              display: false 
+        tooltip: {
+          callbacks: {
+            title: context => context[0].label,
+            label: context => {
+              const value = context.raw;
+              const labelIndex = context.dataIndex;
+              const status = colors[labelIndex] ? ' (Overdue)' : ' (Current)';
+              return `₹${formatCurrency(value)}${status}`;
             },
-            tooltip: {
-              backgroundColor: 'rgba(0, 0, 0, 0.8)',
-              titleColor: '#fff',
-              bodyColor: '#fff',
-              borderWidth: 0,
-              cornerRadius: 6,
-              displayColors: false,
-              callbacks: {
-                title: function(context) {
-                  return context[0].label;
-                },
-                label: function(context) {
-                  const value = context.raw;
-                  const labelIndex = context.dataIndex;
-                  const status = colors[labelIndex] ? ' (Overdue)' : ' (Current)';
-                  return `₹${formatCurrency(value)}${status}`;
+            afterLabel: context => {
+              const month = context.label;
+              const [monthStr, yearStr] = month.split('/');
+              const monthNum = parseInt(monthStr);
+              const yearNum = 2000 + parseInt(yearStr);
+
+              const divisions = {};
+              getFilteredData().forEach(row => {
+                const rowMonth = row.date.getMonth() + 1;
+                const rowYear = row.date.getFullYear();
+                if (rowMonth === monthNum && rowYear === yearNum) {
+                  const loc = row.location;
+                  if (!divisions[loc]) divisions[loc] = 0;
+                  divisions[loc] += row.value;
                 }
-              }
-            }
-          },
-          scales: {
-            x: {
-              grid: {
-                display: false
-              },
-              ticks: {
-                color: '#64748b',
-                font: {
-                  size: 11
-                },
-                maxRotation: 45,
-                minRotation: 45
-              }
-            },
-            y: {
-              beginAtZero: true,
-              grid: {
-                color: '#f1f5f9',
-                drawBorder: false
-              },
-              ticks: {
-                color: '#64748b',
-                font: {
-                  size: 11
-                },
-                callback: function(value) {
-                  return `₹${formatCurrency(value)}`;
-                }
-              }
+              });
+
+              return Object.entries(divisions)
+                .sort((a, b) => b[1] - a[1])
+                .map(([loc, val]) => `   ${formatName(loc)}: ₹${formatCurrency(val)}`);
             }
           }
         }
-      });
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: {
+            color: '#64748b',
+            font: { size: 9 },
+            maxRotation: 90,
+            minRotation: 90
+          }
+        },
+        y: {
+          beginAtZero: true,
+          grid: {
+            color: '#f1f5f9',
+            drawBorder: false
+          },
+          ticks: {
+            color: '#64748b',
+            font: { size: 11 },
+            callback: value => `₹${formatCurrency(value)}`
+          }
+        }
+      }
+    },
+    plugins: [ChartDataLabels]
+  };
+
+  if (chart) {
+    chart.destroy();
+  }
+
+  const ctx = document.getElementById('balanceChart').getContext('2d');
+  chart = new Chart(ctx, config);
+
+  // Force show tooltip on the highest bar initially
+  const maxIndex = data.indexOf(Math.max(...data));
+  chart.tooltip.setActiveElements([{ datasetIndex: 0, index: maxIndex }], { x: 0, y: 0 });
+  chart.update();
+}
+
+
+
+
+function renderDivisionChart() {
+  const locationSums = {};
+
+  allData.forEach(row => {
+    if (!locationSums[row.location]) {
+      locationSums[row.location] = 0;
     }
+    locationSums[row.location] += row.value;
+  });
+
+  const labels = Object.keys(locationSums).sort();
+  const data = labels.map(loc => locationSums[loc]);
+
+  const ctx = document.getElementById('divisionChart').getContext('2d');
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels.map(formatName),
+      datasets: [{
+        label: 'Division Total',
+        data: data,
+        backgroundColor: '#3b82f6',
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: context => `₹${formatCurrency(context.raw)}`
+          }
+        },
+        datalabels: {
+          anchor: 'end',
+          align: 'start',
+          rotation: -90,
+          color: '#1e293b',
+          font: {
+            weight: 'bold',
+            size: 9
+          },
+          formatter: value => `₹${formatCurrency(value)}`,
+          clamp: true
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#64748b', font: { size: 10 } },
+          grid: { display: false }
+        },
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: '#64748b',
+            callback: value => `₹${formatCurrency(value)}`
+          },
+          grid: { color: '#f1f5f9' }
+        }
+      }
+    },
+    plugins: [ChartDataLabels]
+  });
+}
+
 
     async function loadData() {
       toggleLoading(true);
@@ -763,6 +909,11 @@
             const value = parseFloat(cleanValue);
             if (isNaN(value)) return;
 
+const qtyCol = findColumn(sampleRow, ['Net Balance Qty', 'Qty', 'Quantity']);
+const quantityRaw = qtyCol ? row[qtyCol]?.trim() : '';
+let quantity = parseFloat(String(quantityRaw).replace(/[^\d.-]/g, ''));
+if (isNaN(quantity)) quantity = 0;
+
 allData.push({
   location: location,
   unit: unitCol ? row[unitCol]?.trim() : 'Unknown',
@@ -770,17 +921,21 @@ allData.push({
   material: row['Material description']?.trim() || 'Unknown',
   projectid: projectCol ? row[projectCol]?.trim() : '',
   date: date,
-  value: value
+  value: value,
+  qty: quantity
 });
+
 
 
 
           });
         });
 
-        await Promise.all(promises);
-        populateDropdowns(true); // Reset all dependent filters on initial load
-        filterAndProcessData();
+await Promise.all(promises);
+populateDropdowns(true); // Reset all dependent filters on initial load
+filterAndProcessData();
+renderDivisionChart();
+
 
       } catch (error) {
         console.error("Loading error:", error);
@@ -806,6 +961,7 @@ allData.push({
       selectedVendor = e.target.value;
       filterAndProcessData();
     });
+populateLocationDropdown();
 
     // Initial load
     loadData();
@@ -858,11 +1014,13 @@ function renderDetails(type, filterFn = null) {
     filtered.forEach(row => {
       const mat = row.material || 'Unknown';
       if (!materialMap[mat]) {
-        materialMap[mat] = { total: 0, projectIds: new Set() };
+materialMap[mat] = { total: 0, qty: 0, projectIds: new Set() };
         materialMap[mat].projectIds.add(row['projectid']);
 
       }
       materialMap[mat].total += row.value;
+        materialMap[mat].qty += row.qty || 0;
+
       if (row['projectid']) {
         materialMap[mat].projectIds.add(row['projectid']);
       }
@@ -878,10 +1036,25 @@ function renderDetails(type, filterFn = null) {
       const projectLine = projectList
         ? `<div style="font-size: 0.75rem; font-style: italic; color: #555;">(${projectList})</div>`
         : '';
-      return `<div class="modal-item"><strong>${index + 1}.</strong> ${key}: ₹${formatCurrency(data.total)} ${projectLine}</div>`;
+return `<div class="modal-item"><strong>${index + 1}.</strong> ${key}: ₹${formatCurrency(data.total)} <span style="color:#555;">(Qty: ${data.qty})</span> ${projectLine}</div>`;
     }).join('');
 
     document.getElementById('modalTitle').textContent = `Material Wise Summary`;
+    document.getElementById('modalContent').innerHTML = listHTML;
+
+  } else if (type === 'division') {
+    filtered.forEach(row => {
+      const key = row.location;
+      if (!modalDataMap[key]) modalDataMap[key] = 0;
+      modalDataMap[key] += row.value;
+    });
+
+    const sorted = Object.entries(modalDataMap).sort((a, b) => b[1] - a[1]);
+    const listHTML = sorted.map(([key, val], index) =>
+      `<div class="modal-item"><strong>${index + 1}.</strong> ${formatName(key)}: ₹${formatCurrency(val)}</div>`
+    ).join('');
+
+    document.getElementById('modalTitle').textContent = `Division Wise Summary`;
     document.getElementById('modalContent').innerHTML = listHTML;
 
   } else {
@@ -894,15 +1067,27 @@ function renderDetails(type, filterFn = null) {
 
     const sorted = Object.entries(modalDataMap).sort((a, b) => b[1] - a[1]);
     const listHTML = sorted.map(([key, val], index) =>
-      `<div class="modal-item"><strong>${index + 1}.</strong> ${key}: ₹${formatCurrency(val)}</div>`
+      `<div class="modal-item"><strong>${index + 1}.</strong> ${formatName(key)}: ₹${formatCurrency(val)}</div>`
     ).join('');
 
     document.getElementById('modalTitle').textContent = `${type.charAt(0).toUpperCase() + type.slice(1)} Wise Summary`;
     document.getElementById('modalContent').innerHTML = listHTML;
   }
 
+
   // Reset search input
   document.getElementById('modalSearch').value = '';
+
+  // Highlight selected tab
+document.querySelectorAll('.modal-tabs .tab-btn').forEach(btn => {
+  btn.classList.remove('active-tab');
+});
+const tabOrder = ['division', 'unit', 'vendor', 'material'];
+document.querySelectorAll('.modal-tabs .tab-btn').forEach(btn => {
+  btn.classList.remove('active-tab');
+});
+document.querySelector(`.modal-tabs .tab-btn:nth-child(${tabOrder.indexOf(type) + 1})`)?.classList.add('active-tab');
+
 }
 
 
@@ -910,29 +1095,41 @@ function renderDetails(type, filterFn = null) {
   document.addEventListener("DOMContentLoaded", () => {
     const statCards = document.querySelectorAll('.stat-card');
 
-    statCards.forEach((card, i) => {
-      card.addEventListener('click', () => {
-        if (i === 0) openModal('unit'); // Total Balance
-        else if (i === 1) openModal('unit'); // Active Months
-        else if (i === 2) openModal('unit', row => {
-          const now = new Date();
-          const diff = (now - row.date) / (1000 * 60 * 60 * 24 * 30);
-          return diff > 6;
-        }); // Overdue >6mo
-        else if (i === 3) openModal('unit', row => {
-          const now = new Date();
-          const diff = (now - row.date) / (1000 * 60 * 60 * 24 * 30);
-          return diff > 12;
-        }); // Overdue >12mo
-        else if (i === 4) openModal('unit', row => {
-          const now = new Date();
-          const diff = (now - row.date) / (1000 * 60 * 60 * 24 * 30);
-          return diff > 24;
-        }); // Overdue >24mo
-        else if (i === 5) openModal('vendor'); // Top Vendor
-      });
-    });
+statCards.forEach((card, i) => {
+  card.addEventListener('click', () => {
+    if (i === 0) openModal('division'); // Total Balance
+    else if (i === 1) openModal('division'); // Active Months
+    else if (i === 2) openModal('division', row => {
+      const now = new Date();
+      const diff = (now - row.date) / (1000 * 60 * 60 * 24 * 30);
+      return diff > 6;
+    }); // Overdue >6mo
+    else if (i === 3) openModal('division', row => {
+      const now = new Date();
+      const diff = (now - row.date) / (1000 * 60 * 60 * 24 * 30);
+      return diff > 12;
+    }); // Overdue >12mo
+    else if (i === 4) openModal('division', row => {
+      const now = new Date();
+      const diff = (now - row.date) / (1000 * 60 * 60 * 24 * 30);
+      return diff > 24;
+    }); // Overdue >24mo
+    else if (i === 5) openModal('vendor'); // Top Vendor
   });
+});
+
+  });
+
+  function formatName(text) {
+  if (!text || typeof text !== 'string') return '';
+  if (text.trim().toLowerCase() === 'ccc') return 'CCC'; // leave CCC as is
+  return text
+    .toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
   </script>
 
 <div id="detailsModal" class="hidden">
@@ -942,11 +1139,13 @@ function renderDetails(type, filterFn = null) {
         <h3 id="modalTitle">Details</h3>
         <button onclick="closeModal()">×</button>
       </div>
-      <div class="modal-tabs">
-        <button onclick="renderDetails('unit')" class="tab-btn">Unit</button>
-        <button onclick="renderDetails('vendor')" class="tab-btn">Vendor</button>
-        <button onclick="renderDetails('material')" class="tab-btn">Material</button>
-      </div>
+<div class="modal-tabs">
+  <button onclick="renderDetails('division')" class="tab-btn">Division</button>
+  <button onclick="renderDetails('unit')" class="tab-btn">Unit</button>
+  <button onclick="renderDetails('vendor')" class="tab-btn">Vendor</button>
+  <button onclick="renderDetails('material')" class="tab-btn">Material</button>
+</div>
+
       <div style="padding: 0.5rem 1rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
         <input id="modalSearch" placeholder="Search..." style="flex: 1; padding: 0.4rem; font-size: 0.85rem; border: 1px solid #ccc; border-radius: 4px;" oninput="filterModalItems()" />
         <button onclick="exportModalToCSV()" style="padding: 0.4rem 0.8rem; font-size: 0.85rem; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;">Export CSV</button>
@@ -956,15 +1155,6 @@ function renderDetails(type, filterFn = null) {
   </div>
 </div>
 
-<!-- Font Awesome & Materialize CSS (if not already included) -->
-<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
-
-<!-- Materialize JS (for tooltip) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
-
-<!-- Home button script -->
-<script src="home-button.js"></script>
 
 
 </body>
