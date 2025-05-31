@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Non-STW OSD Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+
+  <style>
+    :root {
+      --primary-color: #3949ab;
+      --secondary-color: #5c6bc0;
+      --accent-color: #1a237e;
+      --light-bg: #f5f7ff;
+      --card-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    body { 
+      font-family: 'Poppins', sans-serif; 
+      background-color: var(--light-bg);
+      padding: 0;
+      color: #333;
+    }
+    
+    .dashboard-header {
+      background-color: var(--primary-color);
+      color: white;
+      padding: 1rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+    }
+    
+    .dashboard-title {
+      margin: 0;
+      font-weight: 600;
+      font-size: 1.2rem;
+    }
+    
+    .dashboard-subtitle {
+      font-size: 0.8rem;
+      margin: 0;
+      opacity: 0.9;
+    }
+    
+    .content-wrapper {
+      padding: 1rem;
+    }
+    
+    .filter-container {
+      background: white;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      box-shadow: var(--card-shadow);
+    }
+    
+    .filter-title {
+      font-size: 0.9rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+      color: var(--primary-color);
+    }
+    
+    .filters select {
+      margin-right: 0.5rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+      padding: 0.4rem;
+    }
+    
+    .filters select:focus {
+      border-color: var(--secondary-color);
+      box-shadow: 0 0 0 0.2rem rgba(92, 107, 192, 0.25);
+    }
+    
+    .card {
+      border: none;
+      border-radius: 8px;
+      box-shadow: var(--card-shadow);
+      margin-bottom: 1.5rem;
+    }
+    
+    .card-header {
+      border-radius: 8px 8px 0 0 !important;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.8rem 1rem;
+    }
+    
+    .card-header i {
+      transition: transform 0.3s;
+    }
+    
+    .collapsed i.fa-chevron-down {
+      transform: rotate(-90deg);
+    }
+    
+    .tab-container {
+      background: white;
+      border-radius: 8px;
+      padding: 0.5rem;
+      margin-bottom: 1rem;
+      box-shadow: var(--card-shadow);
+    }
+    
+    .nav-tabs {
+      border-bottom: none;
+    }
+    
+    .nav-tabs .nav-link {
+      border: none;
+      color: #666;
+      font-size: 0.9rem;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      margin-right: 0.25rem;
+    }
+    
+    .nav-tabs .nav-link.active {
+      background-color: var(--primary-color);
+      color: white;
+      font-weight: 500;
+    }
+    
+    .chart-container {
+      background: white;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      box-shadow: var(--card-shadow);
+    }
+    
+    .chart-title {
+      font-size: 1rem;
+      font-weight: 500;
+      margin-bottom: 1rem;
+      color: var(--primary-color);
+    }
+    
+    .accordion-button {
+      padding: 0.75rem 1rem;
+      font-size: 0.9rem;
+      background-color: white;
+      color: #333;
+    }
+    
+    .accordion-button:not(.collapsed) {
+      background-color: rgba(57, 73, 171, 0.1);
+      color: var(--primary-color);
+    }
+    
+    .accordion-button:focus {
+      box-shadow: none;
+      border-color: rgba(57, 73, 171, 0.25);
+    }
+    
+    .table {
+      margin-bottom: 0;
+    }
+    
+    .table th {
+      font-weight: 500;
+      color: var(--primary-color);
+    }
+    
+    .table-sm td, .table-sm th {
+      font-size: 0.8rem;
+      padding: 0.3rem 0.5rem;
+    }
+    
+    .region-stats {
+      display: flex;
+      justify-content: space-between;
+      flex-grow: 1;
+      margin-left: 1rem;
+    }
+    
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    
+    .stat-label {
+      font-size: 0.7rem;
+      color: #666;
+    }
+    
+    .stat-value {
+      font-weight: 500;
+    }
+    
+    .badge-count {
+      background-color: #5c6bc0;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      color: white;
+      font-size: 0.7rem;
+      margin-left: 0.3rem;
+    }
+    
+    .badge-amount {
+      background-color: #ff4081;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      color: white;
+      font-size: 0.7rem;
+      margin-left: 0.3rem;
+    }
+    
+    /* Mobile optimizations */
+    @media (max-width: 768px) {
+      .filters {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      
+      .filters select {
+        width: 100%;
+        margin-right: 0;
+      }
+      
+      .nav-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+      }
+      
+      .nav-tabs .nav-link {
+        font-size: 0.8rem;
+        padding: 0.4rem 0.7rem;
+      }
+      
+      .region-stats {
+        flex-direction: column;
+        margin-left: 0;
+        margin-top: 0.25rem;
+      }
+      
+      .stat-item {
+        margin-bottom: 0.25rem;
+        flex-direction: row;
+        align-items: center;
+      }
+      
+      .stat-label {
+        margin-right: 0.5rem;
+      }
+      
+      .accordion-button {
+        padding: 0.5rem;
+        font-size: 0.8rem;
+      }
+    }
+    #summaryCards .card {
+  margin-bottom: 0 !important;
+}
+
+#summaryCards .card-body {
+  padding: 0.75rem 0.5rem !important;
+}
+
+
+@media (min-width: 992px) {
+  .custom-container {
+    max-width: 960px;  /* Try smaller like 800px if needed */
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+/* Style for Region and Division accordion buttons */
+#regionAccordion .accordion-button.region-header {
+  background-color: #dfe8ff;
+  font-weight: 500;
+}
+
+#regionAccordion .accordion-button.division-header {
+  background-color: #f3f6ff;
+  font-weight: 500;
+}
+
+/* Mobile-specific font size adjustments */
+@media (max-width: 768px) {
+  #regionAccordion .accordion-button,
+  #regionAccordion .accordion-body,
+  #regionAccordion table th,
+  #regionAccordion table td {
+    font-size: 0.65rem !important;
+  }
+
+  #regionAccordion .accordion-body {
+    background-color: #ffffff;
+  }
+}
+
+/* Smaller font for Region / Division header */
+#regionAccordion .region-division-header {
+  font-size: 0.65rem !important;
+}
+@media (max-width: 768px) {
+  .region-division-header {
+    font-size: 0.7rem !important;
+  }
+}
+@media (max-width: 768px) {
+  .region-division-header > div {
+    white-space: normal !important;
+    word-break: break-word;
+  }
+}
+
+  </style>
+</head>
+<body>
+  <div class="dashboard-header">
+    <h5 class="dashboard-title">Non-STW, Non-Govt. and >5000/- OSD</h5>
+    <p class="dashboard-subtitle">Ref.: REM email dt. <span id="latestDate">Loading...</span></p>
+  </div>
+
+<div class="content-wrapper custom-container">
+
+    <div class="filter-container">
+      <div class="filter-title"><i class="fas fa-filter"></i> Filters</div>
+      <div class="filters d-flex flex-wrap">
+        <select id="regionFilter" class="form-select form-select-sm" aria-label="Region filter">
+          <option value="">All Regions</option>
+        </select>
+        <select id="divisionFilter" class="form-select form-select-sm" aria-label="Division filter">
+          <option value="">All Divisions</option>
+        </select>
+        <select id="cccFilter" class="form-select form-select-sm" aria-label="CCC filter">
+          <option value="">All CCCs</option>
+        </select>
+        <select id="dateFilter" class="form-select form-select-sm" aria-label="Date filter">
+          <option value="">All Dates</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="tab-container">
+      <ul class="nav nav-tabs" id="classTabs">
+        <li class="nav-item"><button class="nav-link active" data-class="DOM">DOM</button></li>
+        <li class="nav-item"><button class="nav-link" data-class="COM">COM</button></li>
+        <li class="nav-item"><button class="nav-link" data-class="IND">IND</button></li>
+        <li class="nav-item"><button class="nav-link" data-class="Others">Others</button></li>
+        <li class="nav-item"><button class="nav-link" data-class="Total">Total</button></li>
+      </ul>
+    </div>
+<div class="row g-3 mb-3" id="summaryCards">
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body py-3">
+        <div class="text-muted small">Defaulters</div>
+        <h5 id="cardCount" class="mb-0 text-primary">0</h5>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body py-3">
+        <div class="text-muted small">Total OSD (Lakh)</div>
+        <h5 id="cardOSD" class="mb-0 text-danger">0.00</h5>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body py-3">
+        <div class="text-muted small">Avg. OSD per Consumer (₹)</div>
+        <h5 id="cardAvgOSD" class="mb-0 text-success">0.00</h5>
+      </div>
+    </div>
+  </div>
+</div>
+
+    <div class="card mb-3">
+      <div class="card-header bg-white text-dark d-flex align-items-center" data-bs-toggle="collapse" data-bs-target="#collapseSummary">
+        <span><i class="fas fa-table me-2 text-primary"></i> OSD Summary</span>
+        <i class="fas fa-chevron-down ms-auto"></i>
+      </div>
+      <div id="collapseSummary" class="collapse">
+        <div class="card-body p-0">
+          <div id="regionTable"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="chart-container">
+      <div class="chart-title"><i class="fas fa-chart-line me-2"></i> OSD Trend Analysis</div>
+      <div id="chartFiltersLabel" class="mb-2 text-muted small ps-2"></div>
+      <div style="height: 300px">
+        <canvas id="trendChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <script>
+    const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT_CmsyvD833bjicZVVhRGXWNPrwb_WqpgYkfeVlcmD0hsm0gwSQHsofNo2JPjedUBdpMPGxK7B4Rqy/pub?output=csv";
+    let rawData = [], currentClass = "DOM";
+
+    const filters = {
+      region: document.getElementById("regionFilter"),
+      division: document.getElementById("divisionFilter"),
+      ccc: document.getElementById("cccFilter"),
+      date: document.getElementById("dateFilter")
+    };
+
+    // Toggle accordion icon rotation
+    document.querySelectorAll('.card-header').forEach(header => {
+      header.addEventListener('click', () => {
+        const icon = header.querySelector('i.fa-chevron-down');
+        if (header.classList.contains('collapsed')) {
+          icon.style.transform = 'rotate(0deg)';
+        } else {
+          icon.style.transform = 'rotate(-90deg)';
+        }
+      });
+    });
+
+function populateFilters(data) {
+  const selected = {
+    region: filters.region.value,
+    division: filters.division.value,
+    ccc: filters.ccc.value,
+    date: filters.date.value
+  };
+
+  // Filter data based on current selections
+const regionFiltered = selected.region
+  ? rawData.filter(r => r["Region Name"] === selected.region)
+  : rawData;
+
+const divisionFiltered = selected.division
+  ? regionFiltered.filter(r => r["Division"] === selected.division)
+  : regionFiltered;
+
+const cccFiltered = selected.ccc
+  ? divisionFiltered.filter(r => r["CCC name"] === selected.ccc)
+  : divisionFiltered;
+
+const dateFiltered = selected.date
+  ? cccFiltered.filter(r => r["Notice Due Date"] === selected.date)
+  : cccFiltered;
+
+
+const regions = [...new Set(rawData.map(r => r["Region Name"]))].sort();
+const divisions = [...new Set(regionFiltered.map(r => r["Division"]))].sort();
+const cccs = [...new Set(divisionFiltered.map(r => r["CCC name"]))].sort();
+const dates = [...new Set(rawData.map(r => r["Notice Due Date"]?.trim()))]
+  .filter(Boolean)
+  .sort((a, b) => {
+    const [da, ma, ya] = a.split('/').map(Number);
+    const [db, mb, yb] = b.split('/').map(Number);
+    return new Date(yb, mb - 1, db) - new Date(ya, ma - 1, da);
+  });
+
+
+
+  populateSelect(filters.region, regions, "All Regions", selected.region);
+  populateSelect(filters.division, divisions, "All Divisions", selected.division);
+  populateSelect(filters.ccc, cccs, "All CCCs", selected.ccc);
+  populateSelect(filters.date, dates, selected.date);
+
+  // Set latest date in header
+  const latestDate = dates[0];
+  if (!selected.date) filters.date.value = latestDate;
+  document.getElementById("latestDate").innerText = filters.date.value || latestDate;
+}
+
+
+function populateSelect(select, items, allLabel, selectedValue) {
+  select.innerHTML = `<option value="">${allLabel}</option>`;
+  items.forEach(item => {
+    const opt = document.createElement("option");
+    opt.value = item;
+    opt.textContent = item;
+    if (item === selectedValue) opt.selected = true;
+    select.appendChild(opt);
+  });
+}
+
+
+    function getFilteredData() {
+      return rawData.filter(row => {
+        // Apply all filters except date for chart data
+        if (arguments[0] === 'forChart') {
+          return (!filters.region.value || row["Region Name"] === filters.region.value)
+              && (!filters.division.value || row["Division"] === filters.division.value)
+              && (!filters.ccc.value || row["CCC name"] === filters.ccc.value);
+        }
+        
+        // Apply all filters including date for table data
+        return (!filters.region.value || row["Region Name"] === filters.region.value)
+            && (!filters.division.value || row["Division"] === filters.division.value)
+            && (!filters.ccc.value || row["CCC name"] === filters.ccc.value)
+&& (!filters.date.value || row["Notice Due Date"] === filters.date.value);
+
+      });
+    }
+
+    function updateSummaryCard() {
+      const data = getFilteredData();
+      const classCount = `${currentClass}-Count`;
+      const classAmt = `${currentClass}-Amount in Lakhs`;
+
+      // Compute overall totals for percentages
+      const totalCount = data.reduce((s,r) => s + (+r[classCount]||0), 0);
+      const totalAmt = data.reduce((s,r) => s + (+r[classAmt]||0), 0);
+
+      // Group by Region → Division → CCC
+      const hierarchy = {};
+      data.forEach(r => {
+        const reg = r["Region Name"],
+              div = r["Division"],
+              ccc = r["CCC name"],
+              cnt = +r[classCount]||0,
+              amt = +r[classAmt]||0;
+        if (!hierarchy[reg]) hierarchy[reg] = { count:0, amt:0, divs:{} };
+        hierarchy[reg].count += cnt;
+        hierarchy[reg].amt += amt;
+        if (!hierarchy[reg].divs[div]) hierarchy[reg].divs[div] = { count:0, amt:0, cccs:{} };
+        hierarchy[reg].divs[div].count += cnt;
+        hierarchy[reg].divs[div].amt += amt;
+        if (!hierarchy[reg].divs[div].cccs[ccc]) hierarchy[reg].divs[div].cccs[ccc] = { count:0, amt:0 };
+        hierarchy[reg].divs[div].cccs[ccc].count += cnt;
+        hierarchy[reg].divs[div].cccs[ccc].amt += amt;
+      });
+
+      // Build accordion HTML
+let html = `
+<div class="row px-3 fw-bold text-muted border-bottom pb-1 mb-2 text-center region-division-header">
+  <div class="col-6 text-start">Region / Division</div>
+  <div class="col-3">Count</div>
+  <div class="col-3">OSD</div>
+</div>
+
+  <div class="accordion" id="regionAccordion">`;
+
+
+      Object.entries(hierarchy).sort((a,b)=> b[1].amt - a[1].amt).forEach(([reg, rObj], i) => {
+        const regId = `reg${i}`;
+        const pRegCnt = totalCount ? ((rObj.count/totalCount)*100).toFixed(1) : "0";
+        const pRegAmt = totalAmt ? ((rObj.amt/totalAmt)*100).toFixed(1) : "0";
+
+        html += `
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="heading-${regId}">
+<button class="accordion-button collapsed region-header" type="button"
+        data-bs-toggle="collapse" data-bs-target="#collapse-${regId}"
+        aria-expanded="false" aria-controls="collapse-${regId}">
+  <div class="container-fluid">
+    <div class="row w-100">
+      <div class="col-6 fw-medium">${reg}</div>
+<div class="col-3 text-end">${rObj.count} <small class="text-muted">(${pRegCnt}%)</small></div>
+<div class="col-3 text-end">${rObj.amt.toFixed(2)} <small class="text-muted">(${pRegAmt}%)</small></div>
+
+    </div>
+  </div>
+</button>
+
+            </h2>
+            <div id="collapse-${regId}" class="accordion-collapse collapse"
+                 aria-labelledby="heading-${regId}" data-bs-parent="#regionAccordion">
+              <div class="accordion-body p-0">
+                <div class="accordion" id="divAccordion-${regId}">`;
+
+        // Division level
+        Object.entries(rObj.divs).sort((a,b)=> b[1].amt - a[1].amt).forEach(([div, dObj], j) => {
+          const divId = `${regId}-div${j}`;
+          const pDivCnt = rObj.count ? ((dObj.count/rObj.count)*100).toFixed(1) : "0";
+          const pDivAmt = rObj.amt ? ((dObj.amt/rObj.amt)*100).toFixed(1) : "0";
+
+          html += `
+            <div class="accordion-item">
+              <h2 class="accordion-header" id="heading-${divId}">
+<button class="accordion-button collapsed ps-4 division-header" type="button"
+        data-bs-toggle="collapse" data-bs-target="#collapse-${divId}"
+        aria-expanded="false" aria-controls="collapse-${divId}">
+  <div class="container-fluid">
+    <div class="row w-100">
+      <div class="col-6 fw-medium">${div}</div>
+<div class="col-3 text-end">${dObj.count} <small class="text-muted">(${pDivCnt}%)</small></div>
+<div class="col-3 text-end">${dObj.amt.toFixed(2)} <small class="text-muted">(${pDivAmt}%)</small></div>
+
+    </div>
+  </div>
+</button>
+
+              </h2>
+              <div id="collapse-${divId}" class="accordion-collapse collapse"
+                   aria-labelledby="heading-${divId}" data-bs-parent="#divAccordion-${regId}">
+                <div class="accordion-body p-2">
+                  <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                      <thead>
+                        <tr>
+                          <th>CCC</th>
+                          <th class="text-end">Count</th>
+                          <th class="text-end">OSD</th>
+                        </tr>
+                      </thead>
+                      <tbody>`;
+
+          // CCC level rows
+          Object.entries(dObj.cccs).sort((a,b)=> b[1].amt - a[1].amt).forEach(([cccName, cObj]) => {
+            const pCccCnt = dObj.count ? ((cObj.count/dObj.count)*100).toFixed(1) : "0";
+            const pCccAmt = dObj.amt ? ((cObj.amt/dObj.amt)*100).toFixed(1) : "0";
+            html += `
+                      <tr>
+                        <td>${cccName}</td>
+                        <td class="text-end">${cObj.count} <small class="text-muted">(${pCccCnt}%)</small></td>
+                        <td class="text-end">${cObj.amt.toFixed(2)} <small class="text-muted">(${pCccAmt}%)</small></td>
+                      </tr>`;
+          });
+
+          html += `
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>`;
+        });
+
+        html += `
+                </div>
+              </div>
+            </div>
+          </div>`;
+      });
+
+      html += `</div>`;
+      document.getElementById("regionTable").innerHTML = html;
+    }
+
+    function updateSummaryCards() {
+  const data = getFilteredData();
+  const classCount = `${currentClass}-Count`;
+  const classAmt = `${currentClass}-Amount in Lakhs`;
+
+  let totalCount = 0;
+  let totalAmt = 0;
+
+  data.forEach(row => {
+    totalCount += (+row[classCount] || 0);
+    totalAmt += (+row[classAmt] || 0);
+  });
+
+  const avgOSD = totalCount > 0 ? (totalAmt * 100000 / totalCount) : 0;
+
+  document.getElementById("cardCount").innerText = totalCount;
+  document.getElementById("cardOSD").innerText = totalAmt.toFixed(2);
+  document.getElementById("cardAvgOSD").innerText = avgOSD.toFixed(2);
+}
+
+function updateChartLabel() {
+  const region = filters.region.value || "All Regions";
+  const division = filters.division.value || "All Divisions";
+  const ccc = filters.ccc.value || "All CCCs";
+
+  document.getElementById("chartFiltersLabel").innerHTML =
+    `<strong>Selected:</strong> Region: <span class="text-primary">${region}</span>, 
+     Division: <span class="text-success">${division}</span>, 
+     CCC: <span class="text-danger">${ccc}</span>`;
+}
+
+ function updateChart() {
+  const classCount = `${currentClass}-Count`;
+  const classAmt = `${currentClass}-Amount in Lakhs`;
+
+  const data = getFilteredData('forChart');
+   const isMobile = window.innerWidth < 768; // ✅ Place this here
+
+  // Group data by Notice Due Date
+  const dateMap = {};
+  data.forEach(row => {
+    let dateStr = row["Notice Due Date"]?.trim();
+    if (!dateStr) return;
+
+    // Normalize date to dd/mm/yyyy and ensure it’s parseable
+    const [day, month, year] = dateStr.split('/');
+    if (!day || !month || !year) return;
+    const key = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`; // ISO format key
+    if (!dateMap[key]) dateMap[key] = { count: 0, amt: 0, original: dateStr };
+    dateMap[key].count += (+row[classCount] || 0);
+    dateMap[key].amt += (+row[classAmt] || 0);
+  });
+
+  // Sort dates chronologically
+  const sortedKeys = Object.keys(dateMap).sort();
+
+  const formattedDates = sortedKeys.map(k => dateMap[k].original); // Display dd/mm/yyyy
+  const countData = sortedKeys.map(k => dateMap[k].count);
+  const amtData = sortedKeys.map(k => dateMap[k].amt);
+
+  const chartData = {
+    labels: formattedDates,
+datasets: [
+  {
+    type: 'bar',
+    label: "OSD (Lakhs)",
+    data: amtData,
+    backgroundColor: "rgba(255, 64, 129, 0.7)",
+    borderColor: "rgba(255, 64, 129, 1)",
+    borderWidth: 1,
+    yAxisID: 'y2',
+    order: 2,
+datalabels: {
+  color: '#222',
+  font: { size: 8 },
+  rotation: -90, // Vertical text
+  anchor: function(context) {
+    const height = context.chart.scales.y2.getPixelForValue(0) - context.chart.scales.y2.getPixelForValue(context.raw);
+    return height > 20 ? 'center' : 'end'; // inside if tall enough, else above
+  },
+  align: function(context) {
+    const height = context.chart.scales.y2.getPixelForValue(0) - context.chart.scales.y2.getPixelForValue(context.raw);
+    return height > 20 ? 'center' : 'end'; // centered if inside, else above
+  },
+  offset: function(context) {
+    const height = context.chart.scales.y2.getPixelForValue(0) - context.chart.scales.y2.getPixelForValue(context.raw);
+    return height > 20 ? 0 : -4; // slight lift when outside
+  },
+  formatter: function(value) {
+    return value.toFixed(1);
+  }
+}
+  },
+  {
+    type: 'line',
+    label: "Count",
+    data: countData,
+    borderColor: "#3949ab",
+    backgroundColor: "rgba(57, 73, 171, 0.1)",
+    borderWidth: 2,
+    pointBackgroundColor: "#3949ab",
+    pointRadius: 3,
+    tension: 0.3,
+    fill: false,
+    yAxisID: 'y1',
+    order: 1,
+    datalabels: {
+  display: false
+}
+
+  }
+]
+
+  };
+
+  if (window.osdChart) window.osdChart.destroy();
+  const ctx = document.getElementById('trendChart').getContext('2d');
+Chart.register(ChartDataLabels);
+
+window.osdChart = new Chart(ctx, {
+
+    type: 'bar',
+    data: chartData,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            usePointStyle: true,
+            padding: 20,
+            font: { size: 12 }
+          }
+        },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+          callbacks: {
+            title: function (tooltipItems) {
+              return tooltipItems[0].label;
+            }
+          }
+        }
+      },
+scales: {
+  x: {
+    ticks: {
+      autoSkip: false,
+      maxRotation: 90,
+      minRotation: 90,
+      font: { size: 10 }
+    },
+    grid: { display: false }
+  },
+  y1: {
+    type: 'linear',
+    position: 'left',
+    beginAtZero: true,
+    title: {
+      display: !isMobile,
+      text: 'Count',
+      font: { size: 12 },
+      color: '#3949ab'
+    },
+    grid: { color: 'rgba(0, 0, 0, 0.05)' },
+    ticks: { 
+      display: !isMobile,
+      font: { size: 10 },
+      color: '#3949ab'
+    }
+  },
+  y2: {
+    type: 'linear',
+    position: 'right',
+    beginAtZero: true,
+    title: {
+      display: !isMobile,
+      text: 'OSD (Lakhs)',
+      font: { size: 12 },
+      color: '#ff4081'
+    },
+    grid: { drawOnChartArea: false },
+    ticks: { 
+      display: !isMobile,
+      font: { size: 10 },
+      color: '#ff4081'
+    }
+  }
+}
+
+    }
+  });
+}
+
+
+function render() {
+  updateChartLabel();
+  updateSummaryCards();  // <-- add this
+  updateSummaryCard();
+  updateChart();
+}
+
+
+    document.querySelectorAll("#classTabs .nav-link").forEach(tab => {
+      tab.addEventListener("click", e => {
+        document.querySelectorAll("#classTabs .nav-link").forEach(t => t.classList.remove("active"));
+        e.target.classList.add("active");
+        currentClass = e.target.dataset.class;
+        render();
+      });
+    });
+
+Object.values(filters).forEach(select => {
+  select.addEventListener("change", () => {
+    populateFilters(rawData);
+    render();
+  });
+});
+
+
+
+    // Show loading indicator
+    document.getElementById('trendChart').insertAdjacentHTML('beforebegin', 
+      '<div id="loadingIndicator" class="text-center py-4"><i class="fas fa-spinner fa-spin text-primary fa-2x"></i><p class="mt-2">Loading data...</p></div>');
+
+    Papa.parse(csvUrl, {
+      download: true,
+      header: true,
+      complete: results => {
+        // Remove loading indicator
+        const loadingElement = document.getElementById('loadingIndicator');
+        if (loadingElement) loadingElement.remove();
+        
+        rawData = results.data;
+        populateFilters(rawData);
+        render();
+      },
+      error: (error) => {
+        console.error("Error parsing CSV:", error);
+        document.getElementById('loadingIndicator').innerHTML = 
+          '<div class="alert alert-danger">Error loading data. Please try again later.</div>';
+      }
+    });
+
+    // Auto-collapse summary card on mobile
+    function handleResize() {
+      if (window.innerWidth < 768) {
+        const collapseSummary = document.getElementById('collapseSummary');
+        const bsCollapse = bootstrap.Collapse.getInstance(collapseSummary);
+        if (bsCollapse) bsCollapse.hide();
+      }
+    }
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('load', handleResize);
+  </script>
+</body>
+</html>
