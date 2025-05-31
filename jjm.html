@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>JJM Connection Status Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+  <style>
+    :root {
+      --primary-color: #2c3e50;
+      --secondary-color: #34495e;
+      --background-light: #ecf0f1;
+      --text-color: #333;
+      --card-background: white;
+      --accent-color: #3498db;
+    }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Arial', sans-serif;
+      background-color: var(--background-light);
+      color: var(--text-color);
+      line-height: 1.4;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 10px;
+    }
+    .dashboard {
+      background-color: var(--card-background);
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+    .dashboard-header {
+      background-color: var(--primary-color);
+      color: white;
+      padding: 12px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: bold;
+    }
+    .dashboard-content {
+      padding: 12px;
+    }
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 15px;
+    }
+    .filters select {
+      flex: 1;
+      min-width: 120px;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background-color: white;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+    .filters select:hover,
+    .filters select:focus {
+      border-color: var(--accent-color);
+      outline: none;
+    }
+    .data-rows {
+      display: grid;
+      gap: 10px;
+    }
+    .data-row {
+      background-color: var(--background-light);
+      border-radius: 6px;
+      padding: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.2s ease;
+    }
+    .data-row:hover {
+      background-color: #e0e6ea;
+      transform: translateY(-2px);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .data-row-label {
+      font-weight: 600;
+      color: var(--secondary-color);
+      flex: 1;
+      font-size: 14px;
+      margin-right: 8px;
+    }
+    .data-row-value {
+      font-size: 16px;
+      color: var(--primary-color);
+      font-weight: bold;
+      text-align: right;
+      min-width: 80px;
+    }
+    .ccc-list {
+      width: 100%;
+      margin-top: 4px;
+      font-size: 12px;
+      font-style: italic;
+      color: #555;
+      display: none;
+    }
+    .data-row.expanded .ccc-list {
+      display: block;
+    }
+    .toggle-ccc {
+      font-size: 10px;
+      color: var(--accent-color);
+      cursor: pointer;
+      display: inline-block;
+      margin-left: 5px;
+    }
+    .loading {
+      text-align: center;
+      padding: 20px;
+      font-style: italic;
+      color: #666;
+    }
+    
+    @media (max-width: 600px) {
+      .container {
+        padding: 5px;
+      }
+      .dashboard-header {
+        padding: 10px;
+        font-size: 16px;
+      }
+      .dashboard-content {
+        padding: 8px;
+      }
+      .filters {
+        flex-direction: column;
+      }
+      .filters select {
+        width: 100%;
+      }
+      .data-row {
+        padding: 8px;
+      }
+      .data-row-label {
+        width: 65%;
+        font-size: 13px;
+        margin-right: 0;
+      }
+      .data-row-value {
+        width: 35%;
+        font-size: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="dashboard">
+      <div class="dashboard-header">
+        JJM Connection Status
+      </div>
+      <div class="dashboard-content">
+        <div class="filters">
+          <select id="regionFilter">
+            <option value="">Select Region</option>
+          </select>
+          <select id="divisionFilter" disabled>
+            <option value="">Select Division</option>
+          </select>
+          <select id="cccFilter" disabled>
+            <option value="">Select CCC Name</option>
+          </select>
+        </div>
+        <div class="data-rows" id="dataRows">
+          <div class="loading">Loading data...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const regionFilter = document.getElementById('regionFilter');
+    const divisionFilter = document.getElementById('divisionFilter');
+    const cccFilter = document.getElementById('cccFilter');
+    const dataRows = document.getElementById('dataRows');
+
+    let fullData = [];
+
+    const PHE_ISSUE = 'WORK COULD NOT BE DONE DUE TO ISSUED OF PHE (PUMP HOUSE/ CHANGE OF SITE/ CANCELLATION OF SITE/ NON PAYMENT OF ADDL. QUOTATION/ INCOMPLETENESS OF PHE PREMISES ETC.) (E)';
+
+    const columnLabels = {
+      'TOTAL NO CONNECTION FOR WHICH PHE DEPOSITED CHARGES (A =B+C+D+E+F)': 'Total PHE Connections',
+      'CONNECTION ALREADY DONE (B)': 'Completed',
+      'WBSEDCL WORK COMPLETE BUT PHE NOT READY (C)': 'PHE Not Ready',
+      'Work in Progress': 'In Progress',
+      [PHE_ISSUE]: 'PHE Issues',
+      'CONNECTION COULD NOT BE GIVEN DUE TO OBJECTION FOR POLE ERECTION (F)': 'ROW Issues'
+    };
+
+    const columnsToShow = [
+      'TOTAL NO CONNECTION FOR WHICH PHE DEPOSITED CHARGES (A =B+C+D+E+F)',
+      'CONNECTION ALREADY DONE (B)',
+      'WBSEDCL WORK COMPLETE BUT PHE NOT READY (C)',
+      'Work in Progress ',
+      PHE_ISSUE,
+      'CONNECTION COULD NOT BE GIVEN DUE TO OBJECTION FOR POLE ERECTION (F)'
+    ];
+
+    function fetchData() {
+      Papa.parse('https://docs.google.com/spreadsheets/d/e/2PACX-1vTZfBrOb6Y4kPoF_Lix-MhUxVFy5l7urYoAoI-h-w6EbcTFuZPqIhjWTQ26RYcvYenl51HdpCawEVc7/pub?gid=2138035305&single=true&output=csv', {
+        download: true,
+        header: true,
+        complete: function(results) {
+          fullData = results.data.filter(row => 
+            Object.values(row).some(val => val && val.trim && val.trim() !== '')
+          );
+          populateRegionFilter();
+          calculateTotalValues();
+        },
+        error: function(error) {
+          dataRows.innerHTML = `<div class="error">Error loading data: ${error}</div>`;
+        }
+      });
+    }
+
+    function populateRegionFilter() {
+      const regions = _.uniq(fullData.map(row => row['REGION NAME']).filter(Boolean));
+      regionFilter.innerHTML = '<option value="">Select Region</option>' + 
+        regions.map(region => `<option value="${region}">${region}</option>`).join('');
+    }
+
+    regionFilter.addEventListener('change', () => {
+      const selectedRegion = regionFilter.value;
+      divisionFilter.innerHTML = '<option value="">Select Division</option>';
+      divisionFilter.disabled = true;
+      cccFilter.innerHTML = '<option value="">Select CCC Name</option>';
+      cccFilter.disabled = true;
+
+      if (selectedRegion) {
+        const divisions = _.uniq(
+          fullData.filter(row => row['REGION NAME'] === selectedRegion)
+                  .map(row => row['DIVISION']).filter(Boolean)
+        );
+        divisionFilter.innerHTML += divisions.map(d => `<option value="${d}">${d}</option>`).join('');
+        divisionFilter.disabled = false;
+        calculateFilteredValues();
+      } else {
+        calculateTotalValues();
+      }
+    });
+
+    divisionFilter.addEventListener('change', () => {
+      const selectedRegion = regionFilter.value;
+      const selectedDivision = divisionFilter.value;
+      cccFilter.innerHTML = '<option value="">Select CCC Name</option>';
+      cccFilter.disabled = true;
+
+      if (selectedDivision) {
+        const cccs = _.uniq(
+          fullData.filter(row => row['REGION NAME'] === selectedRegion && row['DIVISION'] === selectedDivision)
+                  .map(row => row['CCC NAME']).filter(Boolean)
+        );
+        cccFilter.innerHTML += cccs.map(c => `<option value="${c}">${c}</option>`).join('');
+        cccFilter.disabled = false;
+        calculateFilteredValues();
+      } else {
+        calculateFilteredValues();
+      }
+    });
+
+    cccFilter.addEventListener('change', calculateFilteredValues);
+
+    function calculateFilteredValues() {
+      let filtered = fullData;
+      const region = regionFilter.value;
+      const division = divisionFilter.value;
+      const ccc = cccFilter.value;
+
+      if (region) filtered = filtered.filter(r => r['REGION NAME'] === region);
+      if (division) filtered = filtered.filter(r => r['DIVISION'] === division);
+      if (ccc) filtered = filtered.filter(r => r['CCC NAME'] === ccc);
+
+      const totals = columnsToShow.reduce((acc, col) => {
+        acc[col] = filtered.reduce((sum, row) => sum + (parseFloat(row[col]) || 0), 0);
+        return acc;
+      }, {});
+      renderDataRows(totals);
+    }
+
+    function calculateTotalValues() {
+      const totals = columnsToShow.reduce((acc, col) => {
+        acc[col] = fullData.reduce((sum, row) => sum + (parseFloat(row[col]) || 0), 0);
+        return acc;
+      }, {});
+      renderDataRows(totals);
+    }
+
+    function toProperCase(str) {
+      return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    function renderDataRows(totals) {
+      const selectedRegion = regionFilter.value;
+      const selectedDivision = divisionFilter.value;
+
+      const cccByColumn = {};
+
+      if (selectedRegion || selectedDivision || cccFilter.value) {
+        let filtered = fullData;
+
+        if (selectedRegion) {
+          filtered = filtered.filter(row => row['REGION NAME'] === selectedRegion);
+        }
+        if (selectedDivision) {
+          filtered = filtered.filter(row => row['DIVISION'] === selectedDivision);
+        }
+        if (cccFilter.value) {
+          filtered = filtered.filter(row => row['CCC NAME'] === cccFilter.value);
+        }
+
+        for (const column of columnsToShow) {
+          const cccs = filtered
+            .filter(row => parseFloat(row[column]) > 0)
+            .map(row => row['CCC NAME'])
+            .filter(Boolean)
+            .map(toProperCase);
+
+          cccByColumn[column] = _.uniq(cccs);
+        }
+      }
+
+      dataRows.innerHTML = Object.entries(totals)
+        .map(([column, value]) => {
+          const cccList = cccByColumn[column] || [];
+          const showToggle = cccList.length > 0;
+          const toggleHTML = showToggle 
+            ? `<span class="toggle-ccc" data-column="${column}">[+]</span>` 
+            : '';
+          const cccHTML = cccList.length 
+            ? `<div class="ccc-list">${cccList.join(', ')}</div>` 
+            : '';
+          
+          return `
+            <div class="data-row" data-column="${column}">
+              <div class="data-row-label">${columnLabels[column] || column}${toggleHTML}</div>
+              <div class="data-row-value">${value.toLocaleString()}</div>
+              ${cccHTML}
+            </div>
+          `;
+        }).join('');
+        
+      // Add event listeners to toggle CCC lists
+      document.querySelectorAll('.toggle-ccc').forEach(toggle => {
+        toggle.addEventListener('click', function(e) {
+          e.stopPropagation();
+          const column = this.getAttribute('data-column');
+          const row = document.querySelector(`.data-row[data-column="${column}"]`);
+          row.classList.toggle('expanded');
+          this.textContent = row.classList.contains('expanded') ? '[-]' : '[+]';
+        });
+      });
+    }
+
+    fetchData();
+  </script>
+</body>
+</html>
