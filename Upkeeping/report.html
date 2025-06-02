@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Substation Score Sheet Report</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 16px;
+      background: #fff;
+      color: #000;
+      font-size: 12px;
+    }
+    h1, h2, h3 {
+      text-align: center;
+      margin-bottom: 6px;
+    }
+    .section {
+      margin-bottom: 16px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 6px;
+    }
+    table, th, td {
+      border: 1px solid #000;
+    }
+    th, td {
+      padding: 4px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .score {
+      text-align: right;
+      font-weight: bold;
+    }
+    .footer {
+      margin-top: 20px;
+      font-size: 12px;
+      text-align: left;
+    }
+    @media print {
+      .section { page-break-after: always; }
+      table, th, td { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Substation Upkeeping Score Sheet</h1>
+  <h2 id="substationTitle">Substation - Date</h2>
+  <h3 id="officerName"></h3>
+
+  <div class="section" id="reportContent"></div>
+  <div class="section" id="finalTotal"></div>
+  <div class="footer" id="footerInfo"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script>
+    const data = JSON.parse(localStorage.getItem('scoreReport'));
+
+    function formatDate(input) {
+      if (!input) return '-';
+      const d = new Date(input);
+      return d.toLocaleDateString('en-GB');
+    }
+
+    function renderSection(title, items) {
+      let html = `<div class='section'><h3>${title}</h3><table><tr><th>Item (Options)</th><th>Score</th><th>Max</th></tr>`;
+      let totalScore = 0;
+      let totalMax = 0;
+      items.forEach(i => {
+        const score = i.score != null ? i.score : '-';
+        let max = 2;
+        if (i.maxPoints != null) {
+          max = i.maxPoints;
+        } else if (i.scoreOptions && Array.isArray(i.scoreOptions)) {
+          max = Math.max(...i.scoreOptions.map(o => o.score));
+        }
+
+        let optionNotes = '';
+        if (i.scoreOptions && Array.isArray(i.scoreOptions)) {
+          optionNotes = i.scoreOptions.map(opt => {
+            const isSelected = i.score === opt.score;
+            const label = opt.label;
+            return isSelected
+              ? `<span style='font-size: 0.75em; font-style: italic;'>[${label}]</span>`
+              : `<span style='font-size: 0.75em; font-style: italic; text-decoration: line-through; color: #999;'>[${label}]</span>`;
+          }).join(' ');
+        }
+
+html += `<tr><td>${i.name}<span style="margin-left: 8px;">${optionNotes || ''}</span></td><td class='score'>${score}</td><td class='score'>${max}</td></tr>`;
+        totalScore += (i.score || 0);
+        totalMax += max;
+      });
+      html += `<tr><td><strong>Total</strong></td><td class='score'><strong>${totalScore}</strong></td><td class='score'><strong>${totalMax}</strong></td></tr>`;
+      html += `</table></div>`;
+      return { html, totalScore, totalMax };
+    }
+
+    if (data) {
+      const dateFormatted = formatDate(data.date);
+      document.getElementById('substationTitle').textContent = `${data.ssName} - ${dateFormatted}`;
+document.getElementById('officerName').innerHTML = `
+    <div><strong>Supervising AE/DE:</strong> ${data.supervisor || '-'}</div>
+    <div><strong>Inspecting Officer:</strong> ${data.inspectingOfficer || '-'}</div>
+`;
+
+      let sections = '';
+      let grandScore = 0;
+      let grandMax = 0;
+      ['cleanliness', 'defective', 'recordKeeping', 'essentials', 'safety', 'aesthetics'].forEach(key => {
+        if (data[key]) {
+          const { html, totalScore, totalMax } = renderSection(
+            key.charAt(0).toUpperCase() + key.slice(1),
+            data[key]
+          );
+          sections += html;
+          grandScore += totalScore;
+          grandMax += totalMax;
+        }
+      });
+      document.getElementById('reportContent').innerHTML = sections;
+      document.getElementById('finalTotal').innerHTML = `
+        <h3>Grand Total</h3>
+        <table>
+          <tr><th>Total Score</th><th>Max Score</th></tr>
+          <tr><td class='score'>${grandScore}</td><td class='score'>${grandMax}</td></tr>
+        </table>
+      `;
+document.getElementById('footerInfo').innerHTML = `<strong>Inspecting Officer:</strong> ${data.inspectingOfficer || '-'}`;
+    } else {
+      document.getElementById('reportContent').innerHTML = '<p>No data found. Please generate the report from the main app.</p>';
+    }
+
+    window.onload = () => {
+      const element = document.body;
+      const opt = {
+        margin: 0.3,
+        filename: 'Substation_ScoreSheet_Report.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+      html2pdf().set(opt).from(element).save();
+    };
+  </script>
+
+</body>
+</html>
