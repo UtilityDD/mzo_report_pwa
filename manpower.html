@@ -461,23 +461,24 @@
                 </button>
             </div>
 
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-icon">👥</div>
-                    <div class="stat-number" id="totalEmployees">-</div>
-                    <div class="stat-label">Total Employees</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon">🏢</div>
-                    <div class="stat-number" id="profitCenters">-</div>
-                    <div class="stat-label">Profit Centers</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon">🎯</div>
-                    <div class="stat-number" id="costCenters">-</div>
-                    <div class="stat-label">Cost Centers</div>
-                </div>
-            </div>
+<div class="stats-grid">
+  <div class="stat-card" onclick="openDesignationModal()">
+    <div class="stat-icon">👥</div>
+    <div class="stat-number" id="totalEmployees">-</div>
+    <div class="stat-label">Total Employees</div>
+  </div>
+  <div class="stat-card" onclick="openProfitCenterModal()">
+    <div class="stat-icon">🏢</div>
+    <div class="stat-number" id="profitCenters">-</div>
+    <div class="stat-label">Profit Centers</div>
+  </div>
+  <div class="stat-card" onclick="openCostCenterModal()">
+    <div class="stat-icon">🎯</div>
+    <div class="stat-number" id="costCenters">-</div>
+    <div class="stat-label">Cost Centers</div>
+  </div>
+</div>
+
         </div>
 
         <!-- Search Modal -->
@@ -509,6 +510,50 @@
             </div>
         </div>
     </div>
+
+<!-- Designation Modal -->
+<div id="designationModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Designation-wise Count</h2>
+      <span class="close" onclick="closeDesignationModal()">&times;</span>
+    </div>
+    <div class="modal-body" id="designationList"></div>
+  </div>
+</div>
+
+<!-- Employee List Modal -->
+<div id="employeeListModal" class="modal" style="z-index: 1100;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Employee List</h2>
+      <span class="close" onclick="closeEmployeeListModal()">&times;</span>
+    </div>
+    <div class="modal-body" id="employeeListBody"></div>
+  </div>
+</div>
+<!-- Profit Center Modal -->
+<div id="profitCenterModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Profit Center-wise Summary</h2>
+      <span class="close" onclick="closeProfitCenterModal()">&times;</span>
+    </div>
+    <div class="modal-body" id="profitCenterList"></div>
+  </div>
+</div>
+
+<!-- Cost Center Modal -->
+<div id="costCenterModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Cost Center-wise Summary</h2>
+      <span class="close" onclick="closeCostCenterModal()">&times;</span>
+    </div>
+    <div class="modal-body" id="costCenterList"></div>
+  </div>
+</div>
+
 
     <script>
         let employeeData = [];
@@ -797,7 +842,225 @@
             if (event.target === detailModal) {
                 closeDetailModal();
             }
+            if (event.target === document.getElementById('designationModal')) {
+  closeDesignationModal();
+}
+if (event.target === document.getElementById('employeeListModal')) {
+  closeEmployeeListModal();
+}
+if (event.target === document.getElementById('profitCenterModal')) {
+  closeProfitCenterModal();
+}
+if (event.target === document.getElementById('costCenterModal')) {
+  closeCostCenterModal();
+}
+
         }
+
+function openDesignationModal() {
+  if (!isDataLoaded) return alert("Data is still loading...");
+
+  const designationMap = {};
+
+  // Group by designation, track highest salary in each group
+  employeeData.forEach(emp => {
+    const desig = emp.Designation || "Unknown";
+    const gross = parseFloat(emp['Gross Salary']) || 0;
+
+    if (!designationMap[desig]) {
+      designationMap[desig] = {
+        count: 1,
+        topSalary: gross
+      };
+    } else {
+      designationMap[desig].count += 1;
+      if (gross > designationMap[desig].topSalary) {
+        designationMap[desig].topSalary = gross;
+      }
+    }
+  });
+
+  // Sort by top salary within each designation
+  const sorted = Object.entries(designationMap).sort((a, b) => {
+    return b[1].topSalary - a[1].topSalary;
+  });
+
+  const container = document.getElementById('designationList');
+  container.innerHTML = '';
+
+  sorted.forEach(([desig, data]) => {
+    const div = document.createElement('div');
+    div.className = 'employee-item';
+    div.innerHTML = `
+      <div class="employee-info">
+        <h4>${desig}</h4>
+        <p>${data.count} employees</p>
+      </div>
+      <button class="detail-btn" onclick="openEmployeeList('${desig.replace(/'/g, "\\'")}')">View</button>
+    `;
+    container.appendChild(div);
+  });
+
+  document.getElementById('designationModal').style.display = 'block';
+}
+
+
+
+function openProfitCenterModal() {
+  if (!isDataLoaded) return alert("Data is still loading...");
+
+  const map = {};
+
+  employeeData.forEach(emp => {
+    const code = emp['Profit Center Code'] || 'Unknown';
+    const name = emp['Profit Center Name'] || 'Unnamed';
+    const gross = parseFloat(emp['Gross Salary']) || 0;
+
+    if (!map[code]) {
+      map[code] = { name, count: 1, topSalary: gross };
+    } else {
+      map[code].count++;
+      map[code].topSalary = Math.max(map[code].topSalary, gross);
+    }
+  });
+
+const sorted = Object.entries(map).sort((a, b) => b[1].count - a[1].count);
+  const container = document.getElementById('profitCenterList');
+  container.innerHTML = '';
+
+  sorted.forEach(([code, data]) => {
+    const div = document.createElement('div');
+    div.className = 'employee-item';
+    div.innerHTML = `
+      <div class="employee-info">
+        <h4>${data.name} (${code})</h4>
+        <p>${data.count} employees</p>
+      </div>
+      <button class="detail-btn" onclick="openGroupEmployeeList('Profit Center Code', '${code.replace(/'/g, "\\'")}')">View</button>
+    `;
+    container.appendChild(div);
+  });
+
+  document.getElementById('profitCenterModal').style.display = 'block';
+}
+
+function openCostCenterModal() {
+  if (!isDataLoaded) return alert("Data is still loading...");
+
+  const map = {};
+
+  employeeData.forEach(emp => {
+    const code = emp['Cost Center Code'] || 'Unknown';
+    const name = emp['Cost Center Name'] || 'Unnamed';
+    const gross = parseFloat(emp['Gross Salary']) || 0;
+
+    if (!map[code]) {
+      map[code] = { name, count: 1, topSalary: gross };
+    } else {
+      map[code].count++;
+      map[code].topSalary = Math.max(map[code].topSalary, gross);
+    }
+  });
+
+const sorted = Object.entries(map).sort((a, b) => b[1].count - a[1].count);
+  const container = document.getElementById('costCenterList');
+  container.innerHTML = '';
+
+  sorted.forEach(([code, data]) => {
+    const div = document.createElement('div');
+    div.className = 'employee-item';
+    div.innerHTML = `
+      <div class="employee-info">
+        <h4>${data.name} (${code})</h4>
+        <p>${data.count} employees</p>
+      </div>
+      <button class="detail-btn" onclick="openGroupEmployeeList('Cost Center Code', '${code.replace(/'/g, "\\'")}')">View</button>
+    `;
+    container.appendChild(div);
+  });
+
+  document.getElementById('costCenterModal').style.display = 'block';
+}
+
+function openGroupEmployeeList(fieldName, value) {
+  const list = employeeData
+    .filter(emp => (emp[fieldName] || '') === value)
+.sort((a, b) => {
+  const placeA = (a['Cost Center Name'] || '').toLowerCase();
+  const placeB = (b['Cost Center Name'] || '').toLowerCase();
+  return placeA.localeCompare(placeB);
+});
+
+  const container = document.getElementById('employeeListBody');
+
+  if (list.length === 0) {
+    container.innerHTML = '<p class="no-results">No employees found.</p>';
+  } else {
+    let html = '<table class="detail-table"><tr><th>Name</th><th>Employee No</th><th>Place of Posting</th></tr>';
+    list.forEach(emp => {
+      html += `
+        <tr>
+          <td>${emp.Name || 'N/A'}</td>
+          <td>${emp['Employee No'] || 'N/A'}</td>
+          <td>${emp['Cost Center Name'] || 'N/A'}</td>
+        </tr>
+      `;
+    });
+    html += '</table>';
+    container.innerHTML = html;
+  }
+
+  document.getElementById('employeeListModal').style.display = 'block';
+}
+
+function closeProfitCenterModal() {
+  document.getElementById('profitCenterModal').style.display = 'none';
+}
+
+function closeCostCenterModal() {
+  document.getElementById('costCenterModal').style.display = 'none';
+}
+
+
+function closeDesignationModal() {
+  document.getElementById('designationModal').style.display = 'none';
+}
+
+function openEmployeeList(designation) {
+const list = employeeData
+  .filter(emp => (emp.Designation || '') === designation)
+.sort((a, b) => {
+  const placeA = (a['Cost Center Name'] || '').toLowerCase();
+  const placeB = (b['Cost Center Name'] || '').toLowerCase();
+  return placeA.localeCompare(placeB);
+});
+
+  const container = document.getElementById('employeeListBody');
+  
+  if (list.length === 0) {
+    container.innerHTML = '<p class="no-results">No employees found.</p>';
+  } else {
+    let html = '<table class="detail-table"><tr><th>Name</th><th>Employee No</th><th>Place of Posting</th></tr>';
+    list.forEach(emp => {
+      html += `
+        <tr>
+          <td>${emp.Name || 'N/A'}</td>
+          <td>${emp['Employee No'] || 'N/A'}</td>
+          <td>${emp['Cost Center Name'] || 'N/A'}</td>
+        </tr>
+      `;
+    });
+    html += '</table>';
+    container.innerHTML = html;
+  }
+
+  document.getElementById('employeeListModal').style.display = 'block';
+}
+
+function closeEmployeeListModal() {
+  document.getElementById('employeeListModal').style.display = 'none';
+}
+
     </script>
 </body>
 </html>
