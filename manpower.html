@@ -228,7 +228,9 @@
             height: 100%;
             background-color: rgba(0, 0, 0, 0.3);
         }
-
+#detailModal {
+    z-index: 1200;
+}
         .modal-content {
             background: white;
             margin: 0;
@@ -452,6 +454,11 @@
     <div class="stat-number" id="costCenters">-</div>
     <div class="stat-label">Cost Centers</div>
   </div>
+<div class="stat-card" onclick="openRetirementModal()" style="border-left: 4px solid #d32f2f;">
+  <div class="stat-icon" style="color: #d32f2f;">🎯</div>
+  <div class="stat-number" style="color: #d32f2f;" id="upcomingRetirements">-</div>
+  <div class="stat-label" style="color: #d32f2f;">Upcoming Retirements</div>
+</div>
 </div>
 
         </div>
@@ -529,7 +536,59 @@
   </div>
 </div>
 
-
+<!-- Retirement Modal -->
+<div id="retirementModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header" style="background: #d32f2f;">
+      <h2>Upcoming Retirements</h2>
+      <span class="close" onclick="closeRetirementModal()">&times;</span>
+    </div>
+    <div class="modal-body">
+      <div class="stats-grid">
+        <div class="stat-card" onclick="openRetirementListModal('3 months')" style="border-left: 4px solid #ff5722;">
+          <div class="stat-content">
+            <div class="stat-icon" style="color: #ff5722;">⚠️</div>
+            <div class="stat-text">
+              <div class="stat-number" style="color: #ff5722;" id="retire3Months">-</div>
+              <div class="stat-label">Within 3 Months</div>
+            </div>
+          </div>
+          <div class="stat-arrow">›</div>
+        </div>
+        <div class="stat-card" onclick="openRetirementListModal('6 months')" style="border-left: 4px solid #ff9800;">
+          <div class="stat-content">
+            <div class="stat-icon" style="color: #ff9800;">📅</div>
+            <div class="stat-text">
+              <div class="stat-number" style="color: #ff9800;" id="retire6Months">-</div>
+              <div class="stat-label">Within 6 Months</div>
+            </div>
+          </div>
+          <div class="stat-arrow">›</div>
+        </div>
+        <div class="stat-card" onclick="openRetirementListModal('1 year')" style="border-left: 4px solid #ffc107;">
+          <div class="stat-content">
+            <div class="stat-icon" style="color: #ffc107;">📋</div>
+            <div class="stat-text">
+              <div class="stat-number" style="color: #ffc107;" id="retire1Year">-</div>
+              <div class="stat-label">Within 1 Year</div>
+            </div>
+          </div>
+          <div class="stat-arrow">›</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- Retirement List Modal -->
+<div id="retirementListModal" class="modal" style="z-index: 1100;">
+  <div class="modal-content">
+    <div class="modal-header" style="background: #d32f2f;">
+      <h2 id="retirementListTitle">Retirement List</h2>
+      <span class="close" onclick="closeRetirementListModal()">&times;</span>
+    </div>
+    <div class="modal-body" id="retirementListBody"></div>
+  </div>
+</div>
     <script>
         let employeeData = [];
         let authorizedPins = [];
@@ -773,12 +832,79 @@
             resultsDiv.innerHTML = html;
         }
 
-        function showEmployeeDetails(index) {
-            const employee = employeeData[index];
-            const detailsDiv = document.getElementById('employeeDetails');
+function showEmployeeDetails(index) {
+    const employee = employeeData[index];
+    const detailsDiv = document.getElementById('employeeDetails');
+    
+    // Update modal header with employee name
+    const modalHeader = document.querySelector('#detailModal .modal-header h2');
+    modalHeader.innerHTML = `${employee.Name || 'Employee Details'}`;
+    
+    // Calculate service duration
+// Calculate service duration
+let serviceDuration = '';
+const joiningDate = employee['Date of joining'];
+if (joiningDate && joiningDate !== 'N/A' && joiningDate !== '' && joiningDate !== null && joiningDate !== undefined) {
+    let joinDate;
+    if (typeof joiningDate === 'number') {
+        // Convert Excel serial date
+        const excelEpoch = new Date(1900, 0, 1);
+        joinDate = new Date(excelEpoch.getTime() + (joiningDate - 2) * 24 * 60 * 60 * 1000);
+    } else {
+        // Handle string dates - check format
+        const dateStr = joiningDate.toString().trim();
+        if (dateStr.includes('/')) {
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+                // Assume DD/MM/YYYY format and convert to MM/DD/YYYY
+                const day = parts[0];
+                const month = parts[1];
+                const year = parts[2];
+                joinDate = new Date(`${month}/${day}/${year}`);
+            } else {
+                joinDate = new Date(dateStr);
+            }
+        } else if (dateStr.includes('.')) {
+            const parts = dateStr.split('.');
+            if (parts.length === 3) {
+                // Handle DD.MM.YYYY format
+                const day = parts[0];
+                const month = parts[1];
+                const year = parts[2];
+                joinDate = new Date(`${month}/${day}/${year}`);
+            } else {
+                joinDate = new Date(dateStr);
+            }
+        } else {
+            joinDate = new Date(dateStr);
+        }
+    }
+    
+    if (!isNaN(joinDate.getTime()) && joinDate.getFullYear() > 1900) {
+        const today = new Date();
+        let years = today.getFullYear() - joinDate.getFullYear();
+        let months = today.getMonth() - joinDate.getMonth();
+        let days = today.getDate() - joinDate.getDate();
+        
+        if (days < 0) {
+            months--;
+            days += new Date(today.getFullYear(), today.getMonth(), 0).getDate();
+        }
+        if (months < 0) {
+            years--;
+            months += 12;
+        }
+        
+        // Ensure non-negative values
+        years = Math.max(0, years);
+        months = Math.max(0, months);
+        days = Math.max(0, days);
+        
+        serviceDuration = `<p style="color: #1976d2; font-weight: bold; margin-bottom: 16px;">Serving for ${years} yrs, ${months} months, ${days} days</p>`;
+    }
+}
 
-            let html = '<table class="detail-table">';
-            
+let html = serviceDuration + '<table class="detail-table">';            
             const fieldsToShow = [
                 'Employee No', 'Name', 'Profit Center Code', 'Profit Center Name',
                 'Cost Center Code', 'Cost Center Name', 'Legacy ID', 'Position',
@@ -789,21 +915,33 @@
                 'PF Trust ID', 'Lock Status'
             ];
 
-            fieldsToShow.forEach(field => {
-                const value = employee[field] || 'N/A';
-                html += `
-                    <tr>
-                        <th>${field}</th>
-                        <td>${value}</td>
-                    </tr>
-                `;
-            });
+fieldsToShow.forEach(field => {
+    let value = employee[field] || 'N/A';
+    
+    // Handle date fields
+    if ((field === 'Date of joining' || field === 'Date of Retirement' || field === 'Date of Increment') && value !== 'N/A') {
+        if (typeof value === 'number') {
+            // Convert Excel serial date to JavaScript date
+            const excelEpoch = new Date(1900, 0, 1);
+            const jsDate = new Date(excelEpoch.getTime() + (value - 2) * 24 * 60 * 60 * 1000);
+            value = jsDate.toLocaleDateString('en-GB');
+        }
+    }
+    
+    html += `
+        <tr>
+            <th>${field}</th>
+            <td>${value}</td>
+        </tr>
+    `;
+});
 
             html += '</table>';
             detailsDiv.innerHTML = html;
 
-            closeSearchModal();
-            document.getElementById('detailModal').style.display = 'block';
+closeSearchModal();
+closeEmployeeListModal();
+document.getElementById('detailModal').style.display = 'block';
         }
 
         // Close modals when clicking outside
@@ -958,29 +1096,36 @@ const sorted = Object.entries(map).sort((a, b) => b[1].count - a[1].count);
 }
 
 function openGroupEmployeeList(fieldName, value) {
-  const list = employeeData
-    .filter(emp => (emp[fieldName] || '') === value)
-.sort((a, b) => {
-  const placeA = (a['Cost Center Name'] || '').toLowerCase();
-  const placeB = (b['Cost Center Name'] || '').toLowerCase();
-  return placeA.localeCompare(placeB);
-});
+const list = employeeData
+  .filter(emp => (emp[fieldName] || '') === value)
+  .sort((a, b) => {
+    const salaryA = parseFloat(a['Gross Salary']) || 0;
+    const salaryB = parseFloat(b['Gross Salary']) || 0;
+    const salaryCompare = salaryB - salaryA;
+    
+    if (salaryCompare !== 0) return salaryCompare;
+    
+    const placeA = (a['Cost Center Name'] || '').toLowerCase();
+    const placeB = (b['Cost Center Name'] || '').toLowerCase();
+    return placeA.localeCompare(placeB);
+  });
 
   const container = document.getElementById('employeeListBody');
 
   if (list.length === 0) {
     container.innerHTML = '<p class="no-results">No employees found.</p>';
   } else {
-    let html = '<table class="detail-table"><tr><th>Name</th><th>Employee No</th><th>Place of Posting</th></tr>';
-    list.forEach(emp => {
-      html += `
-        <tr>
-          <td>${emp.Name || 'N/A'}</td>
-          <td>${emp['Employee No'] || 'N/A'}</td>
-          <td>${emp['Cost Center Name'] || 'N/A'}</td>
-        </tr>
-      `;
-    });
+let html = '<table class="detail-table"><tr><th>Name</th><th>Employee No</th><th>Place of Posting</th></tr>';
+list.forEach(emp => {
+  const empIndex = employeeData.indexOf(emp);
+  html += `
+    <tr style="cursor: pointer;" onclick="showEmployeeDetails(${empIndex})">
+      <td>${emp.Name || 'N/A'}<br><i>${emp.Designation || 'N/A'}</i></td>
+      <td>${emp['Employee No'] || 'N/A'}</td>
+      <td>${emp['Cost Center Name'] || 'N/A'}</td>
+    </tr>
+  `;
+});
     html += '</table>';
     container.innerHTML = html;
   }
@@ -1004,27 +1149,34 @@ function closeDesignationModal() {
 function openEmployeeList(designation) {
 const list = employeeData
   .filter(emp => (emp.Designation || '') === designation)
-.sort((a, b) => {
-  const placeA = (a['Cost Center Name'] || '').toLowerCase();
-  const placeB = (b['Cost Center Name'] || '').toLowerCase();
-  return placeA.localeCompare(placeB);
-});
+  .sort((a, b) => {
+    const salaryA = parseFloat(a['Gross Salary']) || 0;
+    const salaryB = parseFloat(b['Gross Salary']) || 0;
+    const salaryCompare = salaryB - salaryA;
+    
+    if (salaryCompare !== 0) return salaryCompare;
+    
+    const placeA = (a['Cost Center Name'] || '').toLowerCase();
+    const placeB = (b['Cost Center Name'] || '').toLowerCase();
+    return placeA.localeCompare(placeB);
+  });
 
   const container = document.getElementById('employeeListBody');
   
   if (list.length === 0) {
     container.innerHTML = '<p class="no-results">No employees found.</p>';
   } else {
-    let html = '<table class="detail-table"><tr><th>Name</th><th>Employee No</th><th>Place of Posting</th></tr>';
-    list.forEach(emp => {
-      html += `
-        <tr>
-          <td>${emp.Name || 'N/A'}</td>
-          <td>${emp['Employee No'] || 'N/A'}</td>
-          <td>${emp['Cost Center Name'] || 'N/A'}</td>
-        </tr>
-      `;
-    });
+let html = '<table class="detail-table"><tr><th>Name</th><th>Employee No</th><th>Place of Posting</th></tr>';
+list.forEach(emp => {
+  const empIndex = employeeData.indexOf(emp);
+  html += `
+    <tr style="cursor: pointer;" onclick="showEmployeeDetails(${empIndex})">
+      <td>${emp.Name || 'N/A'}<br><i>${emp.Designation || 'N/A'}</i></td>
+      <td>${emp['Employee No'] || 'N/A'}</td>
+      <td>${emp['Cost Center Name'] || 'N/A'}</td>
+    </tr>
+  `;
+});
     html += '</table>';
     container.innerHTML = html;
   }
@@ -1035,7 +1187,182 @@ const list = employeeData
 function closeEmployeeListModal() {
   document.getElementById('employeeListModal').style.display = 'none';
 }
+// ADD THESE FUNCTIONS TO YOUR JAVASCRIPT SECTION
 
+function updateStats() {
+    const totalEmployees = employeeData.length;
+    const profitCenters = new Set(employeeData.map(emp => emp['Profit Center Code']).filter(code => code)).size;
+    const costCenters = new Set(employeeData.map(emp => emp['Cost Center Code']).filter(code => code)).size;
+    
+    // Calculate upcoming retirements
+    const retirementCounts = calculateUpcomingRetirements();
+
+    document.getElementById('totalEmployees').textContent = totalEmployees;
+    document.getElementById('profitCenters').textContent = profitCenters;
+    document.getElementById('costCenters').textContent = costCenters;
+    document.getElementById('upcomingRetirements').textContent = retirementCounts.total;
+}
+
+function calculateUpcomingRetirements() {
+    const today = new Date();
+    const threeMonths = new Date(today.getTime() + (90 * 24 * 60 * 60 * 1000));
+    const sixMonths = new Date(today.getTime() + (180 * 24 * 60 * 60 * 1000));
+    const oneYear = new Date(today.getTime() + (365 * 24 * 60 * 60 * 1000));
+    
+    let retire3Months = 0;
+    let retire6Months = 0;
+    let retire1Year = 0;
+    
+    employeeData.forEach(emp => {
+        const retirementDate = parseRetirementDate(emp['Date of Retirement']);
+        if (retirementDate && !isNaN(retirementDate.getTime()) && retirementDate > today) {
+            if (retirementDate <= oneYear) {
+                retire1Year++;
+            }
+            if (retirementDate <= threeMonths) {
+                retire3Months++;
+            }
+            if (retirementDate <= sixMonths) {
+                retire6Months++;
+            }
+        }
+    });
+    
+    // Update the retirement modal counters
+    if (document.getElementById('retire3Months')) {
+        document.getElementById('retire3Months').textContent = retire3Months;
+        document.getElementById('retire6Months').textContent = retire6Months;
+        document.getElementById('retire1Year').textContent = retire1Year;
+    }
+    
+    // Main card should show total within 1 year only
+    return { total: retire1Year, retire3Months, retire6Months, retire1Year };
+}
+
+function parseRetirementDate(dateStr) {
+    if (!dateStr || dateStr === 'N/A' || dateStr === '' || dateStr === null || dateStr === undefined) {
+        return null;
+    }
+    
+    let retirementDate;
+    if (typeof dateStr === 'number') {
+        // Convert Excel serial date
+        const excelEpoch = new Date(1900, 0, 1);
+        retirementDate = new Date(excelEpoch.getTime() + (dateStr - 2) * 24 * 60 * 60 * 1000);
+    } else {
+        // Handle string dates - check if it's DD.MM.YYYY format
+        const dateString = dateStr.toString().trim();
+        if (dateString.includes('.')) {
+            const parts = dateString.split('.');
+            if (parts.length === 3) {
+                // Convert DD.MM.YYYY to MM/DD/YYYY
+                const day = parts[0];
+                const month = parts[1];
+                const year = parts[2];
+                retirementDate = new Date(`${month}/${day}/${year}`);
+            } else {
+                retirementDate = new Date(dateString);
+            }
+        } else if (dateString.includes('/')) {
+            const parts = dateString.split('/');
+            if (parts.length === 3) {
+                // Assume DD/MM/YYYY format
+                const day = parts[0];
+                const month = parts[1];
+                const year = parts[2];
+                retirementDate = new Date(`${month}/${day}/${year}`);
+            } else {
+                retirementDate = new Date(dateString);
+            }
+        } else {
+            retirementDate = new Date(dateString);
+        }
+    }
+    
+    return retirementDate;
+}
+
+function openRetirementModal() {
+    if (!isDataLoaded) return alert("Data is still loading...");
+    
+    calculateUpcomingRetirements();
+    document.getElementById('retirementModal').style.display = 'block';
+}
+
+function closeRetirementModal() {
+    document.getElementById('retirementModal').style.display = 'none';
+}
+
+function openRetirementListModal(period) {
+    const today = new Date();
+    let endDate;
+    let title;
+    
+    switch(period) {
+        case '3 months':
+            endDate = new Date(today.getTime() + (90 * 24 * 60 * 60 * 1000));
+            title = 'Retiring within 3 Months';
+            break;
+        case '6 months':
+            endDate = new Date(today.getTime() + (180 * 24 * 60 * 60 * 1000));
+            title = 'Retiring within 6 Months';
+            break;
+        case '1 year':
+            endDate = new Date(today.getTime() + (365 * 24 * 60 * 60 * 1000));
+            title = 'Retiring within 1 Year';
+            break;
+    }
+    
+    const retiringEmployees = employeeData.filter(emp => {
+        const retirementDate = parseRetirementDate(emp['Date of Retirement']);
+        return retirementDate && !isNaN(retirementDate.getTime()) && 
+               retirementDate > today && retirementDate <= endDate;
+    }).sort((a, b) => {
+        const dateA = parseRetirementDate(a['Date of Retirement']);
+        const dateB = parseRetirementDate(b['Date of Retirement']);
+        return dateA - dateB; // Sort by retirement date (earliest first)
+    });
+    
+    document.getElementById('retirementListTitle').textContent = title;
+    const container = document.getElementById('retirementListBody');
+    
+    if (retiringEmployees.length === 0) {
+        container.innerHTML = '<p class="no-results">No employees retiring in this period.</p>';
+    } else {
+        let html = '<table class="detail-table"><tr><th>Name</th><th>Employee No</th><th>Retirement Date</th><th>Place of Posting</th></tr>';
+        retiringEmployees.forEach(emp => {
+            const empIndex = employeeData.indexOf(emp);
+            const retirementDate = parseRetirementDate(emp['Date of Retirement']);
+            const formattedDate = retirementDate ? retirementDate.toLocaleDateString('en-GB') : 'N/A';
+            
+            html += `
+                <tr style="cursor: pointer;" onclick="showEmployeeDetails(${empIndex})">
+                    <td>${emp.Name || 'N/A'}<br><i>${emp.Designation || 'N/A'}</i></td>
+                    <td>${emp['Employee No'] || 'N/A'}</td>
+                    <td style="color: #d32f2f; font-weight: bold;">${formattedDate}</td>
+                    <td>${emp['Cost Center Name'] || 'N/A'}</td>
+                </tr>
+            `;
+        });
+        html += '</table>';
+        container.innerHTML = html;
+    }
+    
+    document.getElementById('retirementListModal').style.display = 'block';
+}
+
+function closeRetirementListModal() {
+    document.getElementById('retirementListModal').style.display = 'none';
+}
+
+// ADD THIS TO THE EXISTING window.onclick FUNCTION
+// Add these lines to the existing window.onclick function:
+if (event.target === document.getElementById('retirementModal')) {
+    closeRetirementModal();
+}
+if (event.target === document.getElementById('retirementListModal')) {
+    closeRetirementListModal();
+}
     </script>
 </body>
 </html>
