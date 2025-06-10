@@ -817,20 +817,50 @@ function openPage(page, title) {
 
   let loadFailed = false;
 
-  // Fallback: if iframe doesn't load in 4 sec, assume error
 const timeout = setTimeout(() => {
   try {
     const doc = iframe.contentDocument || iframe.contentWindow.document;
-    if (!doc || doc.readyState !== 'complete' || doc.body.innerText.includes("404") || doc.title.includes("Not Found")) {
-      loadFailed = true;
-      errorDiv.style.display = "flex";
+    const title = (doc.title || "").toLowerCase();
+    const body = (doc.body && doc.body.innerText || "").toLowerCase();
+
+    // Try to infer 404
+    if (title.includes("404") || title.includes("not found") || body.includes("404") || body.includes("not found")) {
+      showIframeError("🚫 Page Not Found (404). This file might be missing.");
+      return;
     }
-  } catch (e) {
-    // Cross-origin or loading error
-    errorDiv.style.display = "flex";
+
+    // Check for empty/blank load (often a network failure)
+    if (!body.trim() || body.trim().length < 20) {
+      showIframeError("🛑 Unable to load. Network might be unstable.");
+      return;
+    }
+
+    // Generic fallback
+    showIframeError("⚠️ Something went wrong. Please try again.");
+  } catch (err) {
+    // Catch iframe load failure (possibly network)
+    showIframeError("🛑 Network issue or unreachable content.");
   }
 }, 4000);
 
+
+function showIframeError(message) {
+  const errorDiv = document.getElementById("iframeError");
+  errorDiv.innerHTML = `${message}<br/><br/>
+    <button onclick="retryIframe()" style="margin-top: 12px; padding: 8px 16px; font-size: 14px;">🔄 Retry</button>`;
+  errorDiv.style.display = "flex";
+}
+
+function retryIframe() {
+  const iframe = document.getElementById("subPageFrame");
+  const errorDiv = document.getElementById("iframeError");
+  const currentSrc = iframe.src;
+  errorDiv.style.display = "none";
+  iframe.src = "";
+  setTimeout(() => {
+    iframe.src = currentSrc;
+  }, 150);
+}
 
   // If iframe loads successfully, cancel timeout
   iframe.onload = () => {
