@@ -121,7 +121,7 @@
   </style>
 </head>
 <body>
-<div class="container-fluid p-2 p-md-3">
+<div class="container-fluid page-container p-2 p-md-3">
 <div class="header text-center">
   <h2 class="mb-1">DD Visit Report</h2>
   <small class="opacity-75">From May 2025 • By Departmental Manning Only</small>
@@ -564,9 +564,17 @@ if (prevModal) prevModal.hide();
   modal.show();
 }
 
+function fieldId(field) {
+  return field.replace(/\s+/g, '').toLowerCase(); // e.g., "Visit By" → "visitby"
+}
 
 function openLeaderboardModal() {
-  const fields = ["Region", "Division", "CCC"];
+  if (!filteredData || filteredData.length === 0) {
+    alert("Data is still loading. Please wait a moment.");
+    return;
+  }
+
+  const fields = ["Region", "Division", "CCC", "Visit By"];
   fields.forEach(field => renderLeaderboardTable(field));
   new bootstrap.Modal(document.getElementById("leaderboardModal")).show();
 }
@@ -576,7 +584,9 @@ const leaderboardSortState = {
   Region: { column: null, asc: false },
   Division: { column: null, asc: false },
   CCC: { column: null, asc: false },
+  "Visit By": { column: null, asc: false },
 };
+
 
 function renderLeaderboardTable(field) {
   const grouped = {};
@@ -589,10 +599,26 @@ function renderLeaderboardTable(field) {
     grouped[key].amount += parseFloat(d["Recovered Amount (Rs.)"] || 0);
   });
 
-  const rows = Object.entries(grouped).map(([unitName, data]) => ({
-    unitName,
-    ...data
-  }));
+let rows = Object.entries(grouped).map(([unitName, data]) => ({
+  unitName,
+  ...data
+}));
+
+// Sort by visited count (descending) for top ranking
+if (field === "Visit By") {
+  rows.sort((a, b) => b.visited - a.visited);
+  const stars = ["⭐️⭐️⭐️⭐️⭐️", "⭐️⭐️⭐️⭐️", "⭐️⭐️⭐️", "⭐️⭐️", "⭐️"];
+rows = rows.map((r, i) => {
+  const displayName = i < 5 ? `${r.unitName} ${stars[i]}` : r.unitName;
+  return {
+    ...r,
+    displayName,
+    originalName: r.unitName
+  };
+});
+
+}
+
 
   const totals = rows.reduce((acc, r) => {
     acc.visited += r.visited;
@@ -602,39 +628,50 @@ function renderLeaderboardTable(field) {
     return acc;
   }, { visited: 0, action: 0, unit: 0, amount: 0 });
 
-  const tableHTML = `
-    <table class="table table-sm table-bordered small">
-      <thead>
-        <tr>
-          <th>SL</th>
-          <th>${field} Name</th>
-          <th onclick="sortLeaderboard('${field}', 'visited')" style="cursor:pointer">Visited <span class="text-muted">⇅</span></th>
-          <th onclick="sortLeaderboard('${field}', 'action')" style="cursor:pointer">Action Taken <span class="text-muted">⇅</span></th>
-          <th onclick="sortLeaderboard('${field}', 'unit')" style="cursor:pointer">Units Billed <span class="text-muted">⇅</span></th>
-          <th onclick="sortLeaderboard('${field}', 'amount')" style="cursor:pointer">Amount Realized <span class="text-muted">⇅</span></th>
-        </tr>
-      </thead>
-      <tbody id="${field.toLowerCase()}-tbody">
-        ${rows.map((r, i) => `
-          <tr>
-            <td>${i + 1}</td>
-            <td>${r.unitName}</td>
-            <td>${r.visited}</td>
-            <td>${r.action}</td>
-            <td>${r.unit.toLocaleString()}</td>
-            <td>₹${r.amount.toLocaleString()}</td>
-          </tr>`).join("")}
-        <tr class="fw-bold bg-light" id="${field.toLowerCase()}-total">
-          <td colspan="2">Total</td>
-          <td>${totals.visited}</td>
-          <td>${totals.action}</td>
-          <td>${totals.unit.toLocaleString()}</td>
-          <td>₹${totals.amount.toLocaleString()}</td>
-        </tr>
-      </tbody>
-    </table>`;
+const tableHTML = `
+  <table class="table table-sm table-bordered small">
+    <thead>
+      <tr>
+        <th>SL</th>
+        <th>${field} Name</th>
+        ${field === "Visit By" ? "<th>CCC</th>" : ""}
+        <th onclick="sortLeaderboard('${field}', 'visited')" style="cursor:pointer">Visited <span class="text-muted">⇅</span></th>
+        <th onclick="sortLeaderboard('${field}', 'action')" style="cursor:pointer">Action Taken <span class="text-muted">⇅</span></th>
+        <th onclick="sortLeaderboard('${field}', 'unit')" style="cursor:pointer">Units Billed <span class="text-muted">⇅</span></th>
+        <th onclick="sortLeaderboard('${field}', 'amount')" style="cursor:pointer">Amount Realized <span class="text-muted">⇅</span></th>
+      </tr>
+    </thead>
+    <tbody id="${field.toLowerCase()}-tbody">
+      ${rows.map((r, i) => {
+const ccclist = field === "Visit By"
+  ? fullData.filter(d => d["Visit By"] === r.originalName).map(d => d.CCC).filter(Boolean)
+  : [];
 
-  document.getElementById(field.toLowerCase() + "Tab").innerHTML = tableHTML;
+        const uniqueCCCs = [...new Set(ccclist)].join(", ");
+        return `
+        <tr>
+          <td>${i + 1}</td>
+<td>${r.displayName}</td>
+          ${field === "Visit By" ? `<td>${uniqueCCCs}</td>` : ""}
+          <td>${r.visited}</td>
+          <td>${r.action}</td>
+          <td>${r.unit.toLocaleString()}</td>
+          <td>₹${r.amount.toLocaleString()}</td>
+        </tr>`;
+      }).join("")}
+      <tr class="fw-bold bg-light" id="${field.toLowerCase()}-total">
+        <td colspan="${field === "Visit By" ? 3 : 2}">Total</td>
+        <td>${totals.visited}</td>
+        <td>${totals.action}</td>
+        <td>${totals.unit.toLocaleString()}</td>
+        <td>₹${totals.amount.toLocaleString()}</td>
+      </tr>
+    </tbody>
+  </table>`;
+
+
+
+document.getElementById(fieldId(field) + "Tab").innerHTML = tableHTML;
 
   if (!leaderboardSortState[field].column) {
   sortLeaderboard(field, "visited");
@@ -643,11 +680,17 @@ function renderLeaderboardTable(field) {
 }
 
 function sortLeaderboard(field, column) {
-  const tabId = field.toLowerCase() + "Tab";
+const tabId = fieldId(field) + "Tab";
   const table = document.querySelector(`#${tabId} table`);
   const rows = Array.from(table.querySelectorAll("tbody tr")).slice(0, -1); // Exclude total row
 
-  const idx = { visited: 2, action: 3, unit: 4, amount: 5 }[column];
+const columnIndexMap = {
+  visited: field === "Visit By" ? 3 : 2,
+  action: field === "Visit By" ? 4 : 3,
+  unit: field === "Visit By" ? 5 : 4,
+  amount: field === "Visit By" ? 6 : 5,
+};
+const idx = columnIndexMap[column];
 
   // Track sort state
   const state = leaderboardSortState[field];
@@ -725,7 +768,7 @@ function sortLeaderboard(field, column) {
 <input class="form-control form-control-sm mb-2" id="detailSearchInput" placeholder="🔍 Search..." type="text"/>
 <table class="table table-sm table-bordered">
 <thead>
-<tr>
+<tr>  
 <th>CCC</th>
 <th>Con ID</th>
 <th>Name</th>
@@ -752,11 +795,15 @@ function sortLeaderboard(field, column) {
 <li class="nav-item"><button class="nav-link active" data-bs-target="#regionTab" data-bs-toggle="tab">Region</button></li>
 <li class="nav-item"><button class="nav-link" data-bs-target="#divisionTab" data-bs-toggle="tab">Division</button></li>
 <li class="nav-item"><button class="nav-link" data-bs-target="#cccTab" data-bs-toggle="tab">CCC</button></li>
+<li class="nav-item"><button class="nav-link" data-bs-target="#visitbyTab" data-bs-toggle="tab">Visit By</button>
+</li>
+
 </ul>
 <div class="tab-content">
 <div class="tab-pane fade show active" id="regionTab"></div>
 <div class="tab-pane fade" id="divisionTab"></div>
 <div class="tab-pane fade" id="cccTab"></div>
+<div class="tab-pane fade" id="visitbyTab"></div>
 </div>
 </div>
 </div>
