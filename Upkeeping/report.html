@@ -57,6 +57,7 @@
   <div class="footer" id="footerInfo"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  
   <script>
     const data = JSON.parse(localStorage.getItem('scoreReport'));
 
@@ -137,48 +138,33 @@ document.getElementById('footerInfo').innerHTML = `<strong>Inspecting Officer:</
 
   </script>
 <div style="text-align:center; margin-top: 20px;">
-  <button onclick="shareViaWhatsApp()" style="padding: 10px 20px; font-size: 14px;">📤 Share via WhatsApp</button>
+  <button onclick="exportPdfAndShare()" style="padding: 10px 20px;">📤 Share PDF via WhatsApp</button>
 </div>
 
 <script>
-  function extractReportText() {
-    let text = '';
-    const title = document.getElementById('substationTitle')?.innerText.trim() || '';
-    const officer = document.getElementById('officerName')?.innerText.trim() || '';
-    const footer = document.getElementById('footerInfo')?.innerText.trim() || '';
-    const finalTotal = document.getElementById('finalTotal')?.innerText.trim().replace(/\s+/g, ' ') || '';
+function exportPdfAndShare() {
+  const element = document.body;
+  const opt = {
+    margin: 0.3,
+    filename: 'Substation_Report.pdf',
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
+  };
 
-    text += `📋 *${title}*\n${officer}\n\n`;
-
-    document.querySelectorAll('#reportContent .section').forEach(section => {
-      const heading = section.querySelector('h3')?.innerText.trim();
-      text += `🗂️ *${heading}*\n`;
-      const rows = section.querySelectorAll('table tr');
-      rows.forEach((row, index) => {
-        const cols = row.querySelectorAll('td');
-        if (cols.length >= 2) {
-          const label = cols[0].innerText.trim();
-          const value = cols[1].innerText.trim();
-          text += `- ${label}: ${value}\n`;
-        }
-      });
-      text += '\n';
-    });
-
-    text += `📊 *${finalTotal}*\n${footer}`;
-    return text;
-  }
-
-  function shareViaWhatsApp() {
-    const msg = extractReportText();
-    const encoded = encodeURIComponent(msg);
-
-    if (window.Android && Android.openWhatsAppLink) {
-      Android.openWhatsAppLink(`https://wa.me/?text=${encoded}`);
+  html2pdf().set(opt).from(element).outputPdf('datauristring').then((pdfBase64) => {
+    const cleanBase64 = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
+    if (window.Android && typeof Android.sharePdfBase64 === 'function') {
+      Android.sharePdfBase64(cleanBase64, "Substation_Report.pdf");
     } else {
-      window.location.href = `https://wa.me/?text=${encoded}`;
+      alert("PDF sharing not supported outside the app.");
     }
-  }
+  }).catch(err => {
+    console.error("PDF generation failed:", err);
+    alert("Failed to generate PDF.");
+  });
+}
+
 </script>
 
 
