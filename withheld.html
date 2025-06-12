@@ -39,19 +39,23 @@
       padding: 10px;
     }
     
-    header {
-      background-color: var(--dark);
-      color: white;
-      padding: 1rem;
-      box-shadow: var(--box-shadow);
-      margin-bottom: 0.5rem;
-    }
-    
-    header h1 {
-      margin: 0;
-      font-size: 1.75rem;
-      font-weight: 600;
-    }
+header {
+  background-color: var(--dark);
+  color: white;
+  padding: 0.5rem 1rem; /* reduced */
+  box-shadow: var(--box-shadow);
+  margin-bottom: 0.5rem;
+  position: sticky;
+  top: 0;
+  width: 100%;
+  z-index: 100;
+}
+
+header h1 {
+  font-size: 1.5rem;
+  margin: 0;
+}
+
 
     .dashboard-stats {
       display: grid;
@@ -397,6 +401,12 @@
 #details .table-responsive tbody tr:hover {
   background-color: #eef3ff;
 }
+header {
+  position: sticky;
+  top: 0;
+  width: 100%;
+  z-index: 100;
+}
 
   </style>
 </head>
@@ -407,8 +417,10 @@
 
   <header>
     <div class="container">
-      <h1>Witheld NSC</h1>
-<p id="update-date" style="font-size: 0.85rem; margin-top: 4px; color: #ccc;"></p>
+<h1 style="margin: 0; font-size: 1.5rem;">
+  Witheld NSC <span id="update-date" style="font-size: 0.9rem; font-weight: normal; color: #ccc; margin-left: 10px;">(Loading...)</span>
+</h1>
+
 
     </div>
   </header>
@@ -556,10 +568,27 @@ document.querySelectorAll('.stat-card').forEach(card => {
         const csvText = await response.text();
         rawData = parseCSV(csvText);
         // Set update date from second row
-const updateDate = rawData[1]?.['TODAY'];
-if (updateDate) {
-  document.getElementById('update-date').textContent = `Updated on ${updateDate}`;
+// Get all valid dates from 'TODAY' column
+const allTodayDates = rawData
+  .map(row => parseDate(row['TODAY']))
+  .filter(date => date instanceof Date && !isNaN(date.getTime()));
+
+// Find max/latest date
+const maxTodayDate = allTodayDates.length
+  ? new Date(Math.max(...allTodayDates.map(d => d.getTime())))
+  : null;
+
+if (maxTodayDate) {
+  const formatted = maxTodayDate.toLocaleDateString('en-GB', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  });
+  document.getElementById('update-date').textContent = `Updated on ${formatted}`;
+} else {
+  document.getElementById('update-date').textContent = `Updated date unavailable`;
 }
+
 
         // Build regionMap: REGION -> DIVISION -> SUPPORT
 regionMap = {};
@@ -589,7 +618,8 @@ applyFilters();
 
     function parseCSV(text) {
       const lines = text.split('\n');
-      const headers = parseCSVRow(lines[0]);
+const headers = parseCSVRow(lines[0]).map(h => h.trim());
+
       const data = [];
 
       for (let i = 1; i < lines.length; i++) {
@@ -612,26 +642,19 @@ applyFilters();
       return data;
     }
 
-    function parseDate(dateStr) {
+function parseDate(dateStr) {
   if (!dateStr || typeof dateStr !== 'string') return null;
 
-  // Match dd/mm/yy hh:mm (e.g., 25/04/24 00:00)
-  const withTimeMatch = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})$/);
-  if (withTimeMatch) {
-    const [_, dd, mm, yy, hh, min] = withTimeMatch;
-    const fullYear = parseInt(yy, 10) + 2000;
-    return new Date(fullYear, parseInt(mm) - 1, parseInt(dd), parseInt(hh), parseInt(min));
-  }
-
-  // Match dd/mm/yyyy (e.g., 25/04/2024)
-  const todayMatch = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (todayMatch) {
-    const [_, dd, mm, yyyy] = todayMatch;
-    return new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd));
+  // Match dd/mm/yyyy
+  const match = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (match) {
+    const [, dd, mm, yyyy] = match;
+    return new Date(`${yyyy}-${mm}-${dd}T00:00:00`);
   }
 
   return null;
 }
+
 
 
 
