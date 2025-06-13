@@ -7,6 +7,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+  <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+
 
   <style>
     * {
@@ -410,6 +412,22 @@ input {
 @keyframes shimmer {
   0% { background-position: 100% 0; }
   100% { background-position: -100% 0; }
+}
+#startupAlert {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6); /* dark overlay */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+@media (max-width: 640px) {
+  #startupAlert .modal-box {
+    max-width: 90vw;
+    font-size: 0.8rem;
+    padding: 0.75rem;
+  }
 }
 
   </style>
@@ -1001,6 +1019,8 @@ allData.push({
           });
         });
 
+
+
 await Promise.all(promises);
 populateDropdowns(true); // Reset all dependent filters on initial load
 filterAndProcessData();
@@ -1035,6 +1055,94 @@ populateLocationDropdown();
 
     // Initial load
     loadData();
+// Initial load
+loadData().then(() => {
+  setTimeout(() => showStartupAlerts(), 500);
+});
+
+// Now define the showStartupAlerts function below:
+function showStartupAlerts() {
+  const data = allData;
+  if (!data.length) return;
+
+  const summary = { all: {}, overdue: {} };
+
+  for (const row of data) {
+    const ageInMonths = (new Date() - row.date) / (1000 * 60 * 60 * 24 * 30);
+
+    ['location', 'unit', 'vendor'].forEach(key => {
+      const val = row[key] || 'Unknown';
+      if (!summary.all[key]) summary.all[key] = {};
+      if (!summary.overdue[key]) summary.overdue[key] = {};
+      summary.all[key][val] = (summary.all[key][val] || 0) + row.value;
+      if (ageInMonths > 12) summary.overdue[key][val] = (summary.overdue[key][val] || 0) + row.value;
+    });
+  }
+
+  function topName(map) {
+    const entries = Object.entries(map || {});
+    if (!entries.length) return ['-', 0];
+    const [name, val] = entries.sort((a, b) => b[1] - a[1])[0];
+    return [name, val];
+  }
+
+  const alerts = [];
+
+  // Message 1 – Highest Advance
+  const [div1, val1] = topName(summary.all.location);
+  const [unit1, val2] = topName(summary.all.unit);
+  const [vendor1, val3] = topName(summary.all.vendor);
+
+  if (val1 > 0 || val2 > 0 || val3 > 0) {
+alerts.push(`
+  <b>Highest Advance:</b><br>
+  Division: <b>${formatName(div1)}</b> (₹${formatCurrency(val1)})<br>
+  Unit: <b>${formatName(unit1)}</b> (₹${formatCurrency(val2)})<br>
+  Vendor: <b>${formatName(vendor1)}</b> (₹${formatCurrency(val3)})
+`);
+
+  }
+
+  // Message 2 – Highest Overdue
+  const [div2, val4] = topName(summary.overdue.location);
+  const [unit2, val5] = topName(summary.overdue.unit);
+  const [vendor2, val6] = topName(summary.overdue.vendor);
+
+  if (val4 > 0 || val5 > 0 || val6 > 0) {
+alerts.push(`
+  <b>Overdue &gt;12 Months:</b><br>
+  Division: <b>${formatName(div2)}</b> (₹${formatCurrency(val4)})<br>
+  Unit: <b>${formatName(unit2)}</b> (₹${formatCurrency(val5)})<br>
+  Vendor: <b>${formatName(vendor2)}</b> (₹${formatCurrency(val6)})
+`);
+
+  }
+
+  if (!alerts.length) return;
+
+  let idx = 0;
+  const alertBox = document.getElementById('startupAlert');
+  const alertText = document.getElementById('alertText');
+
+  const updateAlert = () => {
+    alertText.innerHTML = alerts[idx];
+    document.getElementById('prevAlertBtn').disabled = idx === 0;
+    document.getElementById('nextAlertBtn').disabled = idx === alerts.length - 1;
+  };
+
+  document.getElementById('prevAlertBtn').onclick = () => {
+    if (idx > 0) { idx--; updateAlert(); }
+  };
+  document.getElementById('nextAlertBtn').onclick = () => {
+    if (idx < alerts.length - 1) { idx++; updateAlert(); }
+  };
+  document.getElementById('okAlertBtn').onclick = () => {
+    alertBox.style.display = 'none';
+  };
+
+  alertBox.style.display = 'flex';
+  updateAlert();
+}
 
 
 let modalDataMap = {}; // holds the currently rendered map
@@ -1243,6 +1351,17 @@ statCards.forEach((card, i) => {
   </div>
 </div>
 
+<div id="startupAlert" class="modal-backdrop" style="display:none;">
+  <div class="modal-box" style="max-width:400px; padding:1rem; text-align:center;">
+    <div style="font-weight:600; font-size:1rem; margin-bottom:0.5rem;">🚨 Critical Summary</div>
+    <div id="alertText" style="font-size:0.85rem; min-height:60px;"></div>
+    <div style="margin-top:1rem; display:flex; justify-content:space-between;">
+      <button id="prevAlertBtn" class="tab-btn">⬅ Prev</button>
+      <button id="nextAlertBtn" class="tab-btn">Next ➡</button>
+      <button id="okAlertBtn" class="tab-btn" style="background:#3b82f6; color:white;">OK</button>
+    </div>
+  </div>
+</div>
 
 
 </body>
