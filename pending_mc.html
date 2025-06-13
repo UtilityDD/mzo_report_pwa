@@ -454,6 +454,10 @@
         margin-bottom: 0;
       }
     }
+      .modal-body p i {
+    vertical-align: middle;
+    font-size: 1.2rem;
+  }
   </style>
 </head>
 <body>
@@ -851,6 +855,75 @@ function renderConnectionTable(rows) {
     renderClassTable(filteredData);
   }
 
+function showCriticalAlerts(data) {
+  const groupBy = (rows, key) => {
+    const map = new Map();
+    for (const row of rows) {
+      const k = row[key] || 'Unknown';
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(row);
+    }
+    return map;
+  };
+
+  const messages = [];
+
+  // A. Most pending > 3 months
+  const delayed = data.filter(row => {
+    const r = parseDate(row['Report Date']);
+    const i = parseDate(row['Meter Installation Date']);
+    return r && i && getDaysDifference(r, i) >= 90;
+  });
+  const delayedCCC = groupBy(delayed, 'CCC');
+  if (delayedCCC.size > 0) {
+    const topCCC = [...delayedCCC.entries()].sort((a, b) => b[1].length - a[1].length)[0];
+    messages.push(`<i class="bx bx-error-circle text-danger me-1"></i><b>${topCCC[0]}</b> has the <b>highest pending</b> M/C over 3 months <span class="badge bg-danger">${topCCC[1].length}</span>`);
+  }
+
+  // B. Most Industrial
+  const industrial = data.filter(row => row.CLASS?.toLowerCase() === 'industrial');
+  const industrialCCC = groupBy(industrial, 'CCC');
+  if (industrialCCC.size > 0) {
+    const topCCC = [...industrialCCC.entries()].sort((a, b) => b[1].length - a[1].length)[0];
+    messages.push(`<i class="bx bxs-factory text-warning me-1"></i><b>${topCCC[0]}</b> has the most <b>pending Industrial</b> M/C <span class="badge bg-warning text-dark">${topCCC[1].length}</span>`);
+  }
+
+  // C. Most Commercial
+  const commercial = data.filter(row => row.CLASS?.toLowerCase() === 'commercial');
+  const commercialCCC = groupBy(commercial, 'CCC');
+  if (commercialCCC.size > 0) {
+    const topCCC = [...commercialCCC.entries()].sort((a, b) => b[1].length - a[1].length)[0];
+    messages.push(`<i class="bx bxs-briefcase-alt-2 text-primary me-1"></i><b>${topCCC[0]}</b> has the most <b>pending Commercial</b> M/C <span class="badge bg-primary">${topCCC[1].length}</span>`);
+  }
+
+  if (messages.length === 0) return;
+
+  let index = 0;
+  const updateModal = () => {
+    document.getElementById('alertMessage').innerHTML = messages[index];
+    document.getElementById('prevAlert').disabled = index === 0;
+    document.getElementById('nextAlert').disabled = index === messages.length - 1;
+  };
+
+  document.getElementById('prevAlert').onclick = () => {
+    if (index > 0) index--;
+    updateModal();
+  };
+
+  document.getElementById('nextAlert').onclick = () => {
+    if (index < messages.length - 1) index++;
+    updateModal();
+  };
+
+  document.getElementById('closeAlert').onclick = () => {
+    const modal = bootstrap.Modal.getInstance(document.getElementById('alertModal'));
+    modal.hide();
+  };
+
+  updateModal();
+  new bootstrap.Modal(document.getElementById('alertModal'), { backdrop: 'static' }).show();
+}
+
   // Initialize
   Papa.parse(CSV_URL, {
     download: true,
@@ -877,6 +950,8 @@ const formatted = `${String(maxDate.getDate()).padStart(2, '0')}/${String(maxDat
       
       loadFilters();
       updateDashboard();
+      showCriticalAlerts(rawData); // ✅ <- PUT THIS HERE
+
     },
     error: function(error) {
       console.error('Error loading data:', error);
@@ -886,5 +961,25 @@ const formatted = `${String(maxDate.getDate()).padStart(2, '0')}/${String(maxDat
     }
   });
 </script>
+
+<!-- Alert Modal -->
+<div class="modal fade" id="alertModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title">Critical Alerts</h5>
+      </div>
+      <div class="modal-body">
+        <p id="alertMessage" class="m-0"></p>
+      </div>
+      <div class="modal-footer">
+        <button id="prevAlert" class="btn btn-outline-secondary btn-sm">Previous</button>
+        <button id="nextAlert" class="btn btn-outline-secondary btn-sm">Next</button>
+        <button id="closeAlert" class="btn btn-primary btn-sm">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
