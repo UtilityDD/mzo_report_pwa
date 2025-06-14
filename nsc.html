@@ -704,7 +704,56 @@ body {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
+.modal-backdrop {
+    z-index: 1040 !important; /* Bootstrap's default is often 1040, but you might need higher */
+  }
+  .modal {
+    z-index: 1050 !important; /* Bootstrap's default is often 1050, ensure it's higher than backdrop */
+  }
+@media (max-width: 767.98px) {
+    /* Adjust modal title font size */
+    #urgentModal .modal-title {
+      font-size: 1rem; /* Adjust as needed, 1rem is usually 16px */
+    }
 
+    /* Adjust font size for content within the modal body */
+    #urgentModal .modal-body p,
+    #urgentModal .modal-body h6 {
+      font-size: 0.85rem; /* Smaller than title, adjust as needed */
+    }
+
+    /* Adjust font size for the button text */
+    #urgentModal .modal-footer .btn {
+      font-size: 0.9rem; /* Adjust as needed */
+      padding: 0.6rem 1rem; /* Adjust padding for smaller button */
+    }
+
+    /* Optionally, make the carousel icons smaller */
+    #urgentModal .carousel-control-prev-icon,
+    #urgentModal .carousel-control-next-icon {
+        width: 1.5rem; /* Smaller width */
+        height: 1.5rem; /* Smaller height */
+        font-size: 1.5rem; /* Adjust icon font size if applicable */
+    }
+    
+    /* Make the exclamation icon smaller in the title */
+    #urgentModal .modal-title .fas {
+        font-size: 1.1rem; /* Adjust icon size */
+    }
+
+    /* You might also want to adjust padding or margin within the modal for better fit on small screens */
+    #urgentModal .modal-body {
+        padding-top: 0.5rem;
+        padding-bottom: 0.5rem;
+    }
+    #urgentModal .modal-header {
+        padding-bottom: 0.5rem;
+    }
+    #urgentModal .modal-footer {
+        padding-top: 0.5rem;
+        padding-bottom: 0.5rem;
+    }
+  }
   </style>
 </head>
 
@@ -1087,6 +1136,7 @@ slider.noUiSlider.on('change', applyFilters); // Trigger filtering only on relea
         populateFilters();
         updateDashboard();
         drawTables(); // instead of drawCharts();
+        showUrgentModal(rawData); 
         showLoading(false);
       } catch (error) {
         console.error("Error loading data:", error);
@@ -1096,6 +1146,83 @@ slider.noUiSlider.on('change', applyFilters); // Trigger filtering only on relea
         showLoading(false);
       }
     }
+function showUrgentModal(data) {
+  const categories = [
+    { key: "D", label: "Domestic (DOM)", icon: "fa-house" },
+    { key: "C", label: "Commercial (COM)", icon: "fa-store" },
+    { key: "I", label: "Industrial (IND)", icon: "fa-industry" },
+    { key: "A", label: "Agricultural (AGRI)", icon: "fa-tractor" }
+  ];
+
+  const container = document.getElementById("urgentCarouselInner");
+  container.innerHTML = "";
+
+  let anyData = false;
+
+  categories.forEach((cat, idx) => {
+    const group = data.filter(d => (d.CONN_CLASS || "").trim().toUpperCase() === cat.key);
+    if (group.length === 0) return;
+
+    anyData = true;
+    const earliest = group.reduce((a, b) => {
+      const aDate = parseDate(a.COLL_DATE);
+      const bDate = parseDate(b.COLL_DATE);
+      return aDate < bDate ? a : b;
+    });
+
+    const duration = formatDuration(earliest.DelayInSC);
+    const slide = document.createElement("div");
+    slide.className = "carousel-item" + (idx === 0 ? " active" : "");
+    slide.innerHTML = `
+      <div class="text-center px-3">
+        <i class="fas ${cat.icon} fa-3x text-danger mb-3"></i>
+        <h6>${cat.label}</h6>
+        <p><strong>Name:</strong> ${earliest.NAME || '-'}</p>
+        <p><strong>Application No.:</strong> ${earliest.APPL_NO || '-'}</p>
+        <p><strong>CCC:</strong> ${earliest.SUPP_OFF || '-'}</p>
+        <p class="text-danger"><strong>Pending:</strong> ${duration}</p>
+      </div>
+    `;
+    container.appendChild(slide);
+  });
+
+  if (anyData) {
+    const urgentModal = new bootstrap.Modal(document.getElementById("urgentModal"));
+    urgentModal.show();
+  }
+}
+
+function parseDate(dateStr) {
+  if (!dateStr || !dateStr.includes('/')) return new Date(0);
+  const [dd, mm, yyyy] = dateStr.split('/');
+  return new Date(`${yyyy}-${mm}-${dd}`);
+}
+
+function formatDuration(days) {
+  const total = parseFloat(days) || 0;
+  const yrs = Math.floor(total / 365);
+  const remDays = total % 365;
+  const months = Math.floor(remDays / 30);
+  const d = Math.floor(remDays % 30);
+  return `${yrs} yrs ${months} months ${d} days`;
+}
+
+
+function parseDate(dstr) {
+  if (!dstr || !dstr.includes('/')) return new Date(0);
+  const [dd, mm, yyyy] = dstr.split('/');
+  return new Date(`${yyyy}-${mm}-${dd}`);
+}
+
+function formatDuration(days) {
+  const total = parseFloat(days) || 0;
+  const yrs = Math.floor(total / 365);
+  const remDays = total % 365;
+  const months = Math.floor(remDays / 30);
+  const d = Math.floor(remDays % 30);
+  return `${yrs} yrs ${months} months ${d} days`;
+}
+
 
     // Show/hide loading indicators
     function showLoading(isLoading) {
@@ -2412,7 +2539,32 @@ function showLoading(isLoading) {
     overlay.style.display = isLoading ? 'flex' : 'none';
   }
 }
+document.addEventListener("DOMContentLoaded", () => {
+  const okBtn = document.getElementById("urgentOkBtn");
+  okBtn.addEventListener("click", () => {
+    const modalInstance = bootstrap.Modal.getInstance(document.getElementById("urgentModal"));
+    if (modalInstance) modalInstance.hide();
+  });
+});
 
+document.addEventListener("DOMContentLoaded", function () {
+  const okBtn = document.getElementById("urgentOkBtn");
+  
+  // Get the modal instance
+  const urgentModalElement = document.getElementById("urgentModal");
+  const urgentModal = new bootstrap.Modal(urgentModalElement); // Initialize Bootstrap Modal instance
+
+  okBtn?.addEventListener("click", function() {
+    // This line is the correction: hide the modal
+    urgentModal.hide(); 
+  });
+
+  // You can also add this for the close button if data-bs-dismiss="modal" isn't sufficient
+  const closeBtn = urgentModalElement.querySelector('.btn-close');
+  closeBtn?.addEventListener("click", function() {
+    urgentModal.hide();
+  });
+});
 
   </script>
 
@@ -2428,6 +2580,61 @@ function showLoading(isLoading) {
 
 <!-- noUiSlider JS -->
 <script src="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.js"></script>
+
+
+<!-- Urgent Action Modal -->
+<div class="modal fade" id="urgentModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-fullscreen-sm-down modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title">
+          <i class="fas fa-exclamation-triangle me-2"></i>Urgent Action Needed!
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body px-3 pt-4 pb-0">
+        <div id="urgentCarousel" class="carousel slide" data-bs-touch="true" data-bs-ride="carousel">
+          <div class="carousel-inner" id="urgentCarouselInner">
+            <!-- Slides will be injected dynamically -->
+          </div>
+          <button class="carousel-control-prev" type="button" data-bs-target="#urgentCarousel" data-bs-slide="prev">
+            <span class="carousel-control-prev-icon"></span>
+          </button>
+          <button class="carousel-control-next" type="button" data-bs-target="#urgentCarousel" data-bs-slide="next">
+            <span class="carousel-control-next-icon"></span>
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer p-3">
+        <button type="button" class="btn btn-primary w-100" id="urgentOkBtn">OK, Proceed</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const okBtn = document.getElementById("urgentOkBtn");
+  
+  // Get the modal instance
+  const urgentModalElement = document.getElementById("urgentModal");
+  const urgentModal = new bootstrap.Modal(urgentModalElement); // Initialize Bootstrap Modal instance
+
+  okBtn?.addEventListener("click", function() {
+    // This line is the correction: hide the modal
+    urgentModal.hide(); 
+  });
+
+  // You can also add this for the close button if data-bs-dismiss="modal" isn't sufficient
+  const closeBtn = urgentModalElement.querySelector('.btn-close');
+  closeBtn?.addEventListener("click", function() {
+    urgentModal.hide();
+  });
+});
+</script>
+
 
 </body>
 </html>
