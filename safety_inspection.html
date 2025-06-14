@@ -1,523 +1,501 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Safety Inspection Dashboard</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: #f5f5f5;
-            color: #333;
-            line-height: 1.6;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 16px;
-        }
-
-        .header {
-            background: linear-gradient(135deg, #2196F3, #1976D2);
-            color: white;
-            padding: 24px 16px;
-            margin: -16px -16px 24px -16px;
-            border-radius: 0 0 16px 16px;
-            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
-        }
-
-        .header h1 {
-            font-size: 24px;
-            font-weight: 500;
-            margin-bottom: 8px;
-        }
-
-        .header p {
-            opacity: 0.9;
-            font-size: 14px;
-            margin-bottom: 4px;
-        }
-
-        .header .updated-on {
-            opacity: 0.8;
-            font-size: 12px;
-            font-style: italic;
-            margin-top: 8px;
-            padding-top: 8px;
-            border-top: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 12px;
-            margin-bottom: 24px;
-        }
-
-        .stat-card {
-            background: white;
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            cursor: pointer;
-            transition: all 0.3s ease;
-            border: 2px solid transparent;
-            position: relative;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-            border-color: #2196F3;
-        }
-
-        .stat-card.total { border-left: 4px solid #4CAF50; }
-        .stat-card.rectified { border-left: 4px solid #2196F3; }
-        .stat-card.pending { border-left: 4px solid #FF9800; }
-        .stat-card.week-inspected { border-left: 4px solid #9C27B0; }
-        .stat-card.week-rectified { border-left: 4px solid #00BCD4; }
-
-        .stat-number {
-            font-size: 28px;
-            font-weight: 700;
-            color: #333;
-            margin-bottom: 4px;
-        }
-
-        .stat-label {
-            font-size: 12px;
-            color: #666;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 12px;
-        }
-
-        .office-counts {
-            border-top: 1px solid #e0e0e0;
-            padding-top: 12px;
-            margin-top: 8px;
-        }
-
-        .office-count-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 6px;
-            font-size: 11px;
-        }
-
-        .office-count-row:last-child {
-            margin-bottom: 0;
-        }
-
-        .office-count-label {
-            color: #666;
-            font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
-        }
-
-        .office-count-value {
-            color: #333;
-            font-weight: 600;
-            font-size: 12px;
-        }
-
-        .office-count-name {
-            color: #555;
-            font-size: 10px;
-            margin-left: 4px;
-            opacity: 0.8;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 120px;
-        }
-
-        .charts-section {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 24px;
-            margin-bottom: 24px;
-        }
-
-        .chart-container {
-            background: white;
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-
-        .chart-title {
-            font-size: 18px;
-            font-weight: 500;
-            margin-bottom: 16px;
-            color: #333;
-        }
-
-        .chart-wrapper {
-            position: relative;
-            height: 300px;
-        }
-
-        .timeline-chart {
-            height: 400px;
-        }
-
-        /* Modal Styles */
-        .modal {
-            display: none;
-            position: fixed;
-            z-index: 1000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.5);
-            backdrop-filter: blur(4px);
-        }
-
-        .modal-content {
-            background: white;
-            margin: 5% auto;
-            padding: 0;
-            border-radius: 16px;
-            width: 90%;
-            max-width: 600px;
-            max-height: 80vh;
-            overflow: hidden;
-            animation: modalSlideIn 0.3s ease;
-        }
-
-        @keyframes modalSlideIn {
-            from { transform: translateY(-50px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-
-        .modal-header {
-            background: linear-gradient(135deg, #2196F3, #1976D2);
-            color: white;
-            padding: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .modal-title {
-            font-size: 20px;
-            font-weight: 500;
-        }
-
-        .close {
-            background: none;
-            border: none;
-            color: white;
-            font-size: 24px;
-            cursor: pointer;
-            padding: 4px;
-            border-radius: 4px;
-            transition: background 0.2s;
-        }
-
-        .close:hover {
-            background: rgba(255,255,255,0.2);
-        }
-
-        .modal-body {
-            padding: 20px;
-            max-height: 50vh;
-            overflow-y: auto;
-        }
-
-        .office-summary {
-            display: grid;
-            gap: 12px;
-        }
-
-        .office-item {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 16px;
-            border-left: 4px solid #2196F3;
-        }
-
-        .office-item.clickable {
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .office-item.clickable:hover {
-            background: #e3f2fd;
-            transform: translateY(-1px);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-
-        .office-name {
-            font-weight: 500;
-            margin-bottom: 8px;
-            color: #333;
-        }
-
-        .office-stats {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 8px;
-            font-size: 12px;
-        }
-
-        .office-stat {
-            text-align: center;
-            padding: 8px;
-            background: white;
-            border-radius: 4px;
-        }
-
-        .office-stat-number {
-            display: block;
-            font-weight: 600;
-            font-size: 16px;
-            color: #333;
-        }
-
-        .office-stat-label {
-            color: #666;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        /* Details Modal Styles */
-        .details-modal {
-            z-index: 1100;
-        }
-
-        .details-list {
-            display: grid;
-            gap: 12px;
-            max-height: 60vh;
-            overflow-y: auto;
-        }
-
-        .detail-item {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 16px;
-            border-left: 4px solid #FF9800;
-        }
-
-        .detail-location {
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
-
-        .detail-description {
-            color: #555;
-            font-size: 13px;
-            line-height: 1.5;
-            word-wrap: break-word;
-            word-break: break-word;
-            hyphens: auto;
-        }
-
-        .detail-meta {
-            margin-top: 12px;
-            padding-top: 12px;
-            border-top: 1px solid #e0e0e0;
-            font-size: 11px;
-            color: #666;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-        }
-
-        .detail-meta-item {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .detail-meta-label {
-            font-weight: 500;
-            margin-bottom: 2px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .detail-meta-value {
-            color: #333;
-        }
-
-        .no-items {
-            text-align: center;
-            padding: 40px 20px;
-            color: #666;
-            font-style: italic;
-        }
-
-        /* Responsive Design */
-        @media (max-width: 768px) {
-            .container {
-                padding: 12px;
-            }
-
-            .header {
-                margin: -12px -12px 20px -12px;
-                padding: 20px 12px;
-            }
-
-            .header h1 {
-                font-size: 20px;
-            }
-
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-                gap: 8px;
-            }
-
-            .stat-card {
-                padding: 16px;
-            }
-
-            .stat-number {
-                font-size: 24px;
-            }
-
-            .office-count-name {
-                max-width: 80px;
-            }
-
-            .chart-wrapper {
-                height: 250px;
-            }
-
-            .timeline-chart {
-                height: 300px;
-            }
-
-            .modal-content {
-                width: 95%;
-                margin: 10% auto;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .stats-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .office-stats {
-                grid-template-columns: 1fr;
-            }
-
-            .office-count-name {
-                max-width: 100px;
-            }
-        }
-    </style>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Safety Inspection Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+/* Reset and Base */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+body {
+  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #f5f5f5;
+  color: #333;
+  line-height: 1.6;
+}
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px;
+  padding-top: 90px; /* to prevent overlap under sticky header */
+}
+
+
+/* Header */
+.header {
+  background: linear-gradient(135deg, #2196F3, #1976D2);
+  color: white;
+  padding: 16px;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  width: 100%;
+}
+
+.header h1 {
+  font-size: 24px;
+  font-weight: 500;
+}
+.header p {
+  opacity: 0.9;
+  font-size: 14px;
+}
+.header .updated-on {
+  font-size: 12px;
+  font-style: italic;
+  opacity: 0.8;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255,255,255,0.2);
+}
+
+/* Loading */
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+}
+
+/* Stat Cards */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.stat-card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: 0.3s;
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  border-color: #2196F3;
+}
+.stat-card.total { border-left: 4px solid #4CAF50; }
+.stat-card.rectified { border-left: 4px solid #2196F3; }
+.stat-card.pending { border-left: 4px solid #FF9800; }
+.stat-card.week-inspected { border-left: 4px solid #9C27B0; }
+.stat-card.week-rectified { border-left: 4px solid #00BCD4; }
+.stat-number {
+  font-size: 28px;
+  font-weight: 700;
+}
+.stat-label {
+  font-size: 12px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
+.office-counts {
+  border-top: 1px solid #e0e0e0;
+  padding-top: 12px;
+  margin-top: 8px;
+}
+.office-count-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+.office-count-label {
+  font-weight: 500;
+  color: #666;
+}
+.office-count-value {
+  font-weight: 600;
+  font-size: 12px;
+}
+.office-count-name {
+  font-size: 10px;
+  margin-left: 4px;
+  opacity: 0.8;
+  max-width: 120px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Chart Layout */
+.charts-section {
+  display: grid;
+  gap: 24px;
+}
+.chart-container {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  overflow-x: auto;
+}
+.chart-title {
+  font-size: 18px;
+  font-weight: 500;
+  margin-bottom: 16px;
+}
+.chart-wrapper {
+  position: relative;
+  width: 100%;
+  min-width: unset;
+  height: auto;
+  overflow-x: auto;
+}
+
+
+.timeline-chart {
+  height: 350px;
+}
+canvas {
+  display: block;
+  max-width: 100%;
+  height: 100% !important;
+}
+
+/* Mini Tables */
+.mini-table {
+  margin-top: 16px;
+  font-size: 13px;
+  color: #333;
+  overflow-x: auto;
+  overflow-y: hidden; /* ✅ prevents vertical scrolling */
+  max-height: none;   /* ✅ ensures full height grows naturally */
+}
+.mini-table table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fafafa;
+}
+.mini-table th, .mini-table td {
+  border: 1px solid #ccc;
+  padding: 4px 6px; /* reduced from 6px 10px */
+  font-size: 12px;
+  text-align: left;
+}
+
+.mini-table th {
+  background: #e0e0e0;
+}
+
+/* Modals */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  backdrop-filter: blur(4px);
+}
+.modal-content {
+  background: white;
+  margin: 5% auto;
+  padding: 0;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow: hidden;
+  animation: modalSlideIn 0.3s ease;
+}
+@keyframes modalSlideIn {
+  from { transform: translateY(-50px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.modal-header {
+  background: linear-gradient(135deg, #2196F3, #1976D2);
+  color: white;
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+}
+.modal-title {
+  font-size: 20px;
+  font-weight: 500;
+}
+.close {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 24px;
+  cursor: pointer;
+}
+.modal-body {
+  padding: 20px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.office-summary {
+  display: grid;
+  gap: 12px;
+}
+.office-item {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px 16px;
+  border-left: 4px solid #2196F3;
+  display: flex;
+  justify-content: space-between;
+}
+.office-item.clickable:hover {
+  background: #e3f2fd;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Detail Modal */
+.details-modal {
+  z-index: 1100;
+}
+.details-list {
+  display: grid;
+  gap: 12px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.detail-item {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 16px;
+  border-left: 4px solid #FF9800;
+}
+.detail-location {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+.detail-description {
+  color: #555;
+  font-size: 13px;
+}
+.detail-meta {
+  margin-top: 12px;
+  border-top: 1px solid #e0e0e0;
+  padding-top: 12px;
+  font-size: 11px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.detail-meta-label {
+  font-weight: 500;
+  margin-bottom: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.detail-meta-value {
+  color: #333;
+}
+.no-items {
+  text-align: center;
+  padding: 40px 20px;
+  color: #666;
+  font-style: italic;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .container {
+    padding: 12px;
+  }
+  .header {
+    padding: 10px 12px;
+  }
+  .header h1 {
+    font-size: 16px;
+  }
+  .header p {
+    font-size: 12px;
+  }
+    .header .updated-on {
+    font-size: 11px;
+  }
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .stat-card {
+    padding: 16px;
+  }
+  .chart-wrapper {
+    min-width: 500px;
+  }
+  .timeline-chart {
+    height: 300px;
+  }
+  .modal-content {
+    width: 95%;
+  }
+  
+}
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+  .office-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chart-wrapper::-webkit-scrollbar {
+  height: 4px;
+}
+.chart-wrapper::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 2px;
+}
+@media (max-width: 768px) {
+  .mini-table table {
+    font-size: 11px;
+  }
+  .mini-table th, .mini-table td {
+    padding: 4px;
+  }
+}
+
+</style>
+
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>Safety Inspection Dashboard</h1>
-            <p>Monitor inspection progress and rectification status</p>
-            <div class="updated-on" id="updatedOn">
+<div class="container">
+<div class="header">
+<h1>Safety Inspection Dashboard</h1>
+<p>Monitor inspection progress and rectification status</p>
+<div class="updated-on" id="updatedOn">
                 Last updated: Loading...
             </div>
-        </div>
+</div>
+<div class="loading" id="loading">
+<p>Loading inspection data...</p>
+</div>
+<div id="dashboard" style="display: none;">
+<!-- Stats Cards -->
+<div class="stats-grid">
+<div class="stat-card total" onclick="openModal('total')">
+<div class="stat-number" id="totalInspected">0</div>
+<div class="stat-label">Total Inspected</div>
+<div class="office-counts" id="totalOfficeCounts"></div>
+</div>
+<div class="stat-card rectified" onclick="openModal('rectified')">
+<div class="stat-number" id="totalRectified">0</div>
+<div class="stat-label">Total Rectified</div>
+<div class="office-counts" id="rectifiedOfficeCounts"></div>
+</div>
+<div class="stat-card pending" onclick="openModal('pending')">
+<div class="stat-number" id="totalPending">0</div>
+<div class="stat-label">Total Pending</div>
+<div class="office-counts" id="pendingOfficeCounts"></div>
+</div>
+<div class="stat-card week-inspected" onclick="openModal('weekInspected')">
+<div class="stat-number" id="weekInspected">0</div>
+<div class="stat-label">Inspected This Week</div>
+<div class="office-counts" id="weekInspectedOfficeCounts"></div>
+</div>
+<div class="stat-card week-rectified" onclick="openModal('weekRectified')">
+<div class="stat-number" id="weekRectified">0</div>
+<div class="stat-label">Rectified This Week</div>
+<div class="office-counts" id="weekRectifiedOfficeCounts"></div>
+</div>
+</div>
+<!-- Charts Section -->
+<div class="charts-section">
+<div class="chart-container">
+<div class="chart-title">Office-wise Status Distribution</div>
+<div class="chart-wrapper">
+<div class="chart-container"><div class="chart-wrapper"><canvas id="officeChart"></canvas></div></div>
+<details>
+  <summary style="font-weight: 500; margin-top: 8px; cursor: pointer;">Office-wise Table (Click to Collapse/Expand)</summary>
+  <div class="mini-table">
+    <table>
+<thead>
+  <tr>
+    <th style="width: 1%; white-space: nowrap;">Sl.</th>
+    <th>Office</th>
+    <th>Total</th>
+    <th>Rectified</th>
+    <th>Pending</th>
+    <th>% Complete</th>
+  </tr>
+</thead>
 
-        <div id="loading" class="loading">
-            <p>Loading inspection data...</p>
-        </div>
+    <tbody id="officeTableBody">
+    </tbody>
+      <tbody id="officeTableBody"></tbody>
+    </table>
+  </div>
+</details>
+</div>
+</div>
+<div class="chart-container">
+  <div class="chart-title">Inspection vs Rectification Timeline</div>
+  <div class="chart-wrapper timeline-chart">
+    <canvas id="timelineChart"></canvas>
+  </div>
+</div>
 
-        <div id="dashboard" style="display: none;">
-            <!-- Stats Cards -->
-            <div class="stats-grid">
-                <div class="stat-card total" onclick="openModal('total')">
-                    <div class="stat-number" id="totalInspected">0</div>
-                    <div class="stat-label">Total Inspected</div>
-                    <div class="office-counts" id="totalOfficeCounts"></div>
-                </div>
-                <div class="stat-card rectified" onclick="openModal('rectified')">
-                    <div class="stat-number" id="totalRectified">0</div>
-                    <div class="stat-label">Total Rectified</div>
-                    <div class="office-counts" id="rectifiedOfficeCounts"></div>
-                </div>
-                <div class="stat-card pending" onclick="openModal('pending')">
-                    <div class="stat-number" id="totalPending">0</div>
-                    <div class="stat-label">Total Pending</div>
-                    <div class="office-counts" id="pendingOfficeCounts"></div>
-                </div>
-                <div class="stat-card week-inspected" onclick="openModal('weekInspected')">
-                    <div class="stat-number" id="weekInspected">0</div>
-                    <div class="stat-label">Inspected This Week</div>
-                    <div class="office-counts" id="weekInspectedOfficeCounts"></div>
-                </div>
-                <div class="stat-card week-rectified" onclick="openModal('weekRectified')">
-                    <div class="stat-number" id="weekRectified">0</div>
-                    <div class="stat-label">Rectified This Week</div>
-                    <div class="office-counts" id="weekRectifiedOfficeCounts"></div>
-                </div>
-            </div>
+<details>
+  <summary style="font-weight: 500; margin-top: 8px; cursor: pointer;">Monthly Trend Table (Click to Collapse/Expand)</summary>
+  <div class="mini-table" style="overflow-y: hidden; max-height: none;">
+    <table>
+      <thead>
+        <tr>
+          <th style="white-space: nowrap;">Sl.</th>
+          <th>Month</th>
+          <th>Inspections</th>
+          <th>Rectified</th>
+          <th>Net Pending</th>
+        </tr>
+      </thead>
+      <tbody id="timelineTableBody"></tbody>
+    </table>
+  </div>
+</details>
 
-            <!-- Charts Section -->
-            <div class="charts-section">
-                <div class="chart-container">
-                    <div class="chart-title">Office-wise Status Distribution</div>
-                    <div class="chart-wrapper">
-                        <canvas id="officeChart"></canvas>
-                    </div>
-                </div>
+</details>
 
-                <div class="chart-container">
-                    <div class="chart-title">Inspection vs Rectification Timeline</div>
-                    <div class="chart-wrapper timeline-chart">
-                        <canvas id="timelineChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
 
-        <!-- Modal -->
-        <div id="modal" class="modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <div class="modal-title" id="modalTitle">Office Summary</div>
-                    <button class="close" onclick="closeModal()">&times;</button>
-                </div>
-                <div class="modal-body" id="modalBody">
-                </div>
-            </div>
-        </div>
-
-        <!-- Details Modal -->
-        <div id="detailsModal" class="modal details-modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <div class="modal-title" id="detailsModalTitle">Pending Items Details</div>
-                    <button class="close" onclick="closeDetailsModal()">&times;</button>
-                </div>
-                <div class="modal-body" id="detailsModalBody">
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script>
+</div>
+</div>
+</div>
+<!-- Modal -->
+<div class="modal" id="modal">
+<div class="modal-content">
+<div class="modal-header">
+<div class="modal-title" id="modalTitle">Office Summary</div>
+<button class="close" onclick="closeModal()">×</button>
+</div>
+<div class="modal-body" id="modalBody">
+</div>
+</div>
+</div>
+<!-- Details Modal -->
+<div class="modal details-modal" id="detailsModal">
+<div class="modal-content">
+<div class="modal-header">
+<div class="modal-title" id="detailsModalTitle">Pending Items Details</div>
+<button class="close" onclick="closeDetailsModal()">×</button>
+</div>
+<div class="modal-body" id="detailsModalBody">
+</div>
+</div>
+</div>
+</div>
+<script>
         let inspectionData = [];
         let officeChart, timelineChart;
         let currentModalData = [];
@@ -613,11 +591,15 @@
                         
                         // Update the "Updated on" information in header
                         const updatedOnElement = document.getElementById('updatedOn');
-                        if (lastUpdatedDate) {
-                            updatedOnElement.textContent = `Last updated: ${lastUpdatedDate.toLocaleDateString('en-GB')} at ${lastUpdatedDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
-                        } else {
-                            updatedOnElement.textContent = 'Last updated: Information not available';
-                        }
+const dates = inspectionData.flatMap(item => [item.enteredOn, item.updatedOn].filter(Boolean));
+if (dates.length > 0) {
+    const earliestDate = new Date(Math.min(...dates.map(d => d.getTime())));
+    const latestDate = new Date(Math.max(...dates.map(d => d.getTime())));
+    updatedOnElement.textContent = `Report from ${earliestDate.toLocaleDateString('en-GB')} to ${latestDate.toLocaleDateString('en-GB')}`;
+} else {
+    updatedOnElement.textContent = 'Report period: Not available';
+}
+
                         
                         processData();
                         document.getElementById('loading').style.display = 'none';
@@ -682,68 +664,120 @@
             element.innerHTML = getOfficeCountsHtml(officeStats);
         }
 
-        function createOfficeChart() {
-            const officeStats = {};
-            
-            inspectionData.forEach(item => {
-                if (!officeStats[item.office]) {
-                    officeStats[item.office] = { total: 0, rectified: 0, pending: 0 };
-                }
-                officeStats[item.office].total++;
-                if (item.isRectified) {
-                    officeStats[item.office].rectified++;
-                } else {
-                    officeStats[item.office].pending++;
-                }
-            });
+function createOfficeChart() {
+    if (officeChart) officeChart.destroy();
 
-            const offices = Object.keys(officeStats);
-            const rectifiedData = offices.map(office => officeStats[office].rectified);
-            const pendingData = offices.map(office => officeStats[office].pending);
+    const officeStats = {};
+    inspectionData.forEach(item => {
+        if (!officeStats[item.office]) {
+            officeStats[item.office] = { total: 0, rectified: 0, pending: 0 };
+        }
+        officeStats[item.office].total++;
+        if (item.isRectified) {
+            officeStats[item.office].rectified++;
+        } else {
+            officeStats[item.office].pending++;
+        }
+    });
 
-            const ctx = document.getElementById('officeChart').getContext('2d');
-            officeChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: offices,
-                    datasets: [
-                        {
-                            label: 'Rectified',
-                            data: rectifiedData,
-                            backgroundColor: '#2196F3',
-                            borderRadius: 4
-                        },
-                        {
-                            label: 'Pending',
-                            data: pendingData,
-                            backgroundColor: '#FF9800',
-                            borderRadius: 4
-                        }
-                    ]
+    const offices = Object.keys(officeStats);
+    const rectifiedData = offices.map(office => officeStats[office].rectified);
+    const pendingData = offices.map(office => officeStats[office].pending);
+
+    const canvas = document.getElementById('officeChart');
+    canvas.removeAttribute('style');
+    const ctx = canvas.getContext('2d');
+
+    officeChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: offices,
+            datasets: [
+                {
+                    label: 'Rectified',
+                    data: rectifiedData,
+                    backgroundColor: '#2196F3',
+                    borderRadius: 4
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'top',
-                        }
-                    },
-                    scales: {
-                        x: {
-                            stacked: true,
-                            ticks: {
-                                maxRotation: 45
-                            }
-                        },
-                        y: {
-                            stacked: true,
-                            beginAtZero: true
+                {
+                    label: 'Pending',
+                    data: pendingData,
+                    backgroundColor: '#FF9800',
+                    borderRadius: 4
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+plugins: {
+    tooltip: {
+        callbacks: {
+            label: function(context) {
+                // Don’t show anything here (handled below)
+                return null;
+            },
+            afterLabel: function(context) {
+                const index = context.dataIndex;
+                const rectified = context.chart.data.datasets[0].data[index];
+                const pending = context.chart.data.datasets[1].data[index];
+                const total = rectified + pending;
+
+                return [
+                    `Total: ${total}`,
+                    `Pending: ${pending}`,  // Yellow
+                    `Rectified: ${rectified}` // Blue
+                ];
+            }
+        }
+    },
+    legend: {
+        position: 'top'
+    }
+},
+            scales: {
+                x: {
+                    stacked: true,
+                    ticks: {
+                        maxRotation: 90,
+                        minRotation: 90,
+                        autoSkip: false,
+                        font: {
+                            size: 10
                         }
                     }
+                },
+                y: {
+                    stacked: true,
+                    beginAtZero: true
                 }
-            });
+            }
         }
+    });
+
+    // Populate mini table
+    const tableBody = document.getElementById('officeTableBody');
+    let tableHtml = '';
+const sortedOffices = [...offices].sort((a, b) => officeStats[b].total - officeStats[a].total);
+    sortedOffices.forEach((office, index) => {
+        const stats = officeStats[office];
+        const percentage = stats.total > 0 ? Math.round((stats.rectified / stats.total) * 100) : 0;
+        tableHtml += `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${office}</td>
+                <td>${stats.total}</td>
+                <td>${stats.rectified}</td>
+                <td>${stats.pending}</td>
+                <td>${percentage}%</td>
+            </tr>
+        `;
+    });
+    tableBody.innerHTML = tableHtml;
+}
+
+
+
 
         function createTimelineChart() {
             const monthlyData = {};
@@ -796,6 +830,17 @@
                     ]
                 },
                 options: {
+
+        tooltips: {
+            callbacks: {
+                label: function(tooltipItem, data) {
+                    const datasetLabel = data.datasets[tooltipItem.datasetIndex].label || '';
+                    const value = tooltipItem.yLabel;
+                    return datasetLabel + ': ' + value;
+                }
+            }
+        },
+        
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
@@ -810,6 +855,30 @@
                     }
                 }
             });
+
+const timelineTableBody = document.getElementById('timelineTableBody');
+let timelineTableHTML = '';
+
+months.forEach((month, index) => {
+    const data = monthlyData[month];
+    const netPending = (data.inspected || 0) - (data.rectified || 0);
+    const date = new Date(month + '-01');
+    const monthLabel = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+
+    timelineTableHTML += `
+        <tr>
+            <td>${index + 1}</td>
+            <td>${monthLabel}</td>
+            <td>${data.inspected}</td>
+            <td>${data.rectified}</td>
+            <td>${netPending}</td>
+        </tr>
+    `;
+});
+
+timelineTableBody.innerHTML = timelineTableHTML;
+
+
         }
 
         function openModal(type) {
@@ -848,47 +917,28 @@
             currentModalData = filteredData;
             modalTitle.textContent = title;
             
-            const officeStats = {};
-            filteredData.forEach(item => {
-                if (!officeStats[item.office]) {
-                    officeStats[item.office] = { total: 0, rectified: 0, pending: 0 };
-                }
-                officeStats[item.office].total++;
-                if (item.isRectified) {
-                    officeStats[item.office].rectified++;
-                } else {
-                    officeStats[item.office].pending++;
-                }
-            });
+const officeStats = {};
+filteredData.forEach(item => {
+    if (!officeStats[item.office]) officeStats[item.office] = 0;
+    officeStats[item.office]++;
+});
+
             
-            let html = '<div class="office-summary">';
+let html = '<div class="office-summary">';
 Object.keys(officeStats)
-    .sort((a, b) => officeStats[b].total - officeStats[a].total)
+    .sort((a, b) => officeStats[b] - officeStats[a])
     .forEach(office => {
-                const stats = officeStats[office];
-                const hasPending = stats.pending > 0;
-                html += `
-                    <div class="office-item ${hasPending ? 'clickable' : ''}" ${hasPending ? `onclick="openDetailsModal('${office}')"` : ''}>
-                        <div class="office-name">${office}</div>
-                        <div class="office-stats">
-                            <div class="office-stat">
-                                <span class="office-stat-number">${stats.total}</span>
-                                <span class="office-stat-label">Total</span>
-                            </div>
-                            <div class="office-stat">
-                                <span class="office-stat-number">${stats.rectified}</span>
-                                <span class="office-stat-label">Rectified</span>
-                            </div>
-                            <div class="office-stat">
-                                <span class="office-stat-number">${stats.pending}</span>
-                                <span class="office-stat-label">Pending</span>
-                            </div>
-                        </div>
-                        ${hasPending ? '<div style="margin-top: 8px; font-size: 11px; color: #2196F3; font-weight: 500;">📝 Click to view pending details</div>' : ''}
-                    </div>
-                `;
-            });
-            html += '</div>';
+        html += `
+            <div class="office-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 16px;">
+                <span style="font-size: 14px; color: #333;">${office}</span>
+                <span style="font-weight: 600; color: #2196F3;">${officeStats[office]}</span>
+            </div>
+        `;
+    });
+html += '</div>';
+
+
+
             
             modalBody.innerHTML = html;
             modal.style.display = 'block';
