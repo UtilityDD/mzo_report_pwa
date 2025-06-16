@@ -87,11 +87,38 @@ body {
   box-shadow: 0 4px 16px rgba(0,0,0,0.15);
   border-color: #2196F3;
 }
-.stat-card.total { border-left: 4px solid #4CAF50; }
-.stat-card.rectified { border-left: 4px solid #2196F3; }
-.stat-card.pending { border-left: 4px solid #FF9800; }
-.stat-card.week-inspected { border-left: 4px solid #9C27B0; }
-.stat-card.week-rectified { border-left: 4px solid #00BCD4; }
+.stat-card:hover {
+  background-color: #fafafa;
+  transform: translateY(-2px);
+}
+
+.stat-card.total {
+  border-left: 4px solid #2E7D32;
+  background: #E8F5E9;
+}
+.stat-card.rectified {
+  border-left: 4px solid #1565C0;
+  background: #E3F2FD;
+}
+.stat-card.pending {
+  border-left: 4px solid #f44336;
+  background: linear-gradient(135deg, #ffe5e5, #fff5f5);
+  box-shadow: 0 2px 6px rgba(244, 67, 54, 0.2);
+}
+.stat-card.pending:hover {
+  border-color: #e53935;
+  box-shadow: 0 4px 10px rgba(244, 67, 54, 0.3);
+}
+
+.stat-card.week-inspected {
+  border-left: 4px solid #6A1B9A;
+  background: #F3E5F5;
+}
+.stat-card.week-rectified {
+  border-left: 4px solid #00838F;
+  background: #E0F7FA;
+}
+
 .stat-number {
   font-size: 28px;
   font-weight: 700;
@@ -177,10 +204,12 @@ canvas {
   max-height: none;   /* ✅ ensures full height grows naturally */
 }
 .mini-table table {
-  width: 100%;
+  width: auto;
+  table-layout: auto;         /* ✅ allows columns to size based on content */
   border-collapse: collapse;
   background: #fafafa;
 }
+
 .mini-table th, .mini-table td {
   border: 1px solid #ccc;
   padding: 4px 6px; /* reduced from 6px 10px */
@@ -264,8 +293,7 @@ canvas {
 .details-list {
   display: grid;
   gap: 12px;
-  max-height: 60vh;
-  overflow-y: auto;
+
 }
 .detail-item {
   background: #f8f9fa;
@@ -361,7 +389,7 @@ canvas {
     height: auto;
   }
     .modal-body {
-    max-height: 65vh; /* adjust to use more screen */
+    max-height: 70vh; /* adjust to use more screen */
     padding: 16px;
   }
   
@@ -392,41 +420,49 @@ canvas {
 }
 @media (max-width: 768px) {
   .stat-card {
-    padding: 12px; /* reduce padding */
+    padding: 10px 12px;
+    min-height: unset;
   }
 
   .stat-number {
-    font-size: 22px; /* reduce number size */
+    font-size: 20px;
   }
-.chart-wrapper {
-  min-width: 500px;
-}
-
-.timeline-chart {
-  height: 300px;
-}
 
   .stat-label {
-    font-size: 10px; /* reduce label text */
-    margin-bottom: 8px;
+    font-size: 10px;
+    margin-bottom: 6px;
   }
 
   .office-count-row {
-    font-size: 10px;
-    margin-bottom: 4px;
+    font-size: 9px;
+    margin-bottom: 2px;
   }
 
   .office-count-value {
-    font-size: 11px;
+    font-size: 10px;
   }
 
   .office-count-name {
-    font-size: 9px;
-    max-width: 90px;
+    font-size: 8px;
+    max-width: 80px;
   }
 }
+
 .chart-wrapper canvas {
   height: 250px !important; /* Applies to both charts */
+}
+.category-tab {
+  padding: 6px 12px;
+  border: none;
+  background: #e0e0e0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.category-tab.active {
+  background: #2196F3;
+  color: white;
+  font-weight: 500;
 }
 
 </style>
@@ -447,6 +483,20 @@ canvas {
 <p>Loading inspection data...</p>
 </div>
 <div id="dashboard" style="display: none;">
+
+
+  <div id="categoryTabs" style="margin-bottom: 16px; display: flex; gap: 10px; flex-wrap: wrap;">
+<button class="category-tab active" data-category="all" id="tab-all">All</button>
+<button class="category-tab" data-category="Spacer Issues" id="tab-Spacer Issues">Spacer Issues</button>
+<button class="category-tab" data-category="LT Kiosk Issues" id="tab-LT Kiosk Issues">LT Kiosk Issues</button>
+<button class="category-tab" data-category="Other LT Issues" id="tab-Other LT Issues">Other LT Issues</button>
+<button class="category-tab" data-category="HT 11 KV Issues" id="tab-HT 11 KV Issues">HT 11 KV Issues</button>
+<button class="category-tab" data-category="HT 33 KV Issues" id="tab-HT 33 KV Issues">HT 33 KV Issues</button>
+<button class="category-tab" data-category="Other Issues" id="tab-Other Issues">Other Issues</button>
+
+</div>
+
+
 <!-- Stats Cards -->
 <div class="stats-grid">
 <div class="stat-card total" onclick="openModal('total')">
@@ -487,7 +537,7 @@ canvas {
     <table>
 <thead>
   <tr>
-    <th style="width: 1%; white-space: nowrap;">Sl.</th>
+<th>Sl.</th>
     <th>Office</th>
     <th>Total</th>
     <th>Rectified</th>
@@ -498,7 +548,7 @@ canvas {
 
     <tbody id="officeTableBody">
     </tbody>
-      <tbody id="officeTableBody"></tbody>
+
     </table>
   </div>
 </details>
@@ -622,6 +672,16 @@ canvas {
             return html;
         }
 
+function getCategory(description) {
+  const desc = description.toLowerCase();
+  if (desc.includes("lt spacer")) return "Spacer Issues";
+  if (desc.includes("kiosk")) return "LT Kiosk Issues";
+  if (desc.includes("lt")) return "Other LT Issues";
+  if (desc.includes("ht 33 kv")) return "HT 33 KV Issues";
+  if (desc.includes("ht 11 kv")) return "HT 11 KV Issues";
+  return "Other Issues";
+}
+
         // Load and process data
         async function loadData() {
             try {
@@ -642,6 +702,7 @@ canvas {
                                 office: cleanOfficeName(row.Office || ''),
                                 location: row.Location || '',
                                 description: row.Description || '',
+                                  category: getCategory(row.Description || ''),
                                 rectificationDoneBy: row['Rectification done by'] || '',
                                 rectificationDoneOn: parseDate(row['Rectification done on']),
                                 remarks: row.Remarks || '',
@@ -665,6 +726,7 @@ if (dates.length > 0) {
 
                         
                         processData();
+                        updateTabCounts(); // ← ✅ Add this line here
                         document.getElementById('loading').style.display = 'none';
                         document.getElementById('dashboard').style.display = 'block';
                     }
@@ -675,36 +737,88 @@ if (dates.length > 0) {
             }
         }
 
-        function processData() {
-            // Calculate stats
-            const totalInspected = inspectionData.length;
-            const totalRectified = inspectionData.filter(item => item.isRectified).length;
-            const totalPending = totalInspected - totalRectified;
-            
-            const weekInspected = inspectionData.filter(item => isWithinLastWeek(item.enteredOn)).length;
-            const weekRectified = inspectionData.filter(item => 
-                item.isRectified && isWithinLastWeek(item.rectificationDoneOn)
-            ).length;
 
-            // Update stat cards
-            document.getElementById('totalInspected').textContent = totalInspected;
-            document.getElementById('totalRectified').textContent = totalRectified;
-            document.getElementById('totalPending').textContent = totalPending;
-            document.getElementById('weekInspected').textContent = weekInspected;
-            document.getElementById('weekRectified').textContent = weekRectified;
+let currentCategoryFilter = "all";
+document.querySelectorAll(".category-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".category-tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    currentCategoryFilter = tab.dataset.category;
+    processData(); // Refresh dashboard based on filter
+  });
+});
 
-            // Update office counts for each card
-            updateOfficeCountsForCard('total', inspectionData);
-            updateOfficeCountsForCard('rectified', inspectionData.filter(item => item.isRectified));
-            updateOfficeCountsForCard('pending', inspectionData.filter(item => !item.isRectified));
-            updateOfficeCountsForCard('weekInspected', inspectionData.filter(item => isWithinLastWeek(item.enteredOn)));
-            updateOfficeCountsForCard('weekRectified', inspectionData.filter(item => 
-                item.isRectified && isWithinLastWeek(item.rectificationDoneOn)
-            ));
+function updateTabCounts() {
+  const total = inspectionData.length;
 
-            // Create charts
-            createOfficeChart();
-            createTimelineChart();
+  const categories = {
+    "Spacer Issues": 0,
+    "LT Kiosk Issues": 0,
+    "Other LT Issues": 0,
+    "HT 11 KV Issues": 0,
+    "HT 33 KV Issues": 0,
+    "Other Issues": 0
+  };
+
+  inspectionData.forEach(item => {
+    if (categories[item.category] !== undefined) {
+      categories[item.category]++;
+    }
+  });
+
+  Object.entries(categories).forEach(([category, count]) => {
+    const percent = total > 0 ? Math.round((count / total) * 100) : 0;
+    const tab = document.getElementById(`tab-${category}`);
+    if (tab) {
+      tab.innerText = `${category} (${percent}%)`;
+    }
+  });
+
+  // Update "All" tab without percentage
+  const allTab = document.getElementById("tab-all");
+  if (allTab) {
+    allTab.innerText = "All";
+  }
+}
+
+
+function processData() {
+  let filteredData = inspectionData;
+  if (currentCategoryFilter !== "all") {
+    filteredData = inspectionData.filter(item => item.category === currentCategoryFilter);
+  }
+
+  const totalInspected = filteredData.length;
+  const totalRectified = filteredData.filter(item => item.isRectified).length;
+  const totalPending = totalInspected - totalRectified;
+
+  const weekInspected = filteredData.filter(item => isWithinLastWeek(item.enteredOn)).length;
+  const weekRectified = filteredData.filter(item => 
+    item.isRectified && isWithinLastWeek(item.rectificationDoneOn)
+  ).length;
+
+  // Update stat cards
+  document.getElementById('totalInspected').textContent = totalInspected;
+  document.getElementById('totalRectified').textContent = totalRectified;
+  document.getElementById('totalPending').textContent = totalPending;
+  document.getElementById('weekInspected').textContent = weekInspected;
+  document.getElementById('weekRectified').textContent = weekRectified;
+
+  // Update office counts
+  updateOfficeCountsForCard('total', filteredData);
+  updateOfficeCountsForCard('rectified', filteredData.filter(item => item.isRectified));
+  updateOfficeCountsForCard('pending', filteredData.filter(item => !item.isRectified));
+  updateOfficeCountsForCard('weekInspected', filteredData.filter(item => isWithinLastWeek(item.enteredOn)));
+  updateOfficeCountsForCard('weekRectified', filteredData.filter(item => 
+    item.isRectified && isWithinLastWeek(item.rectificationDoneOn)
+  ));
+
+  // Update charts
+  createOfficeChart(filteredData);
+  createTimelineChart(filteredData);
+
+
+
         }
 
         function updateOfficeCountsForCard(cardType, data) {
@@ -727,11 +841,11 @@ if (dates.length > 0) {
             element.innerHTML = getOfficeCountsHtml(officeStats);
         }
 
-function createOfficeChart() {
+function createOfficeChart(data) {
     if (officeChart) officeChart.destroy();
 
     const officeStats = {};
-    inspectionData.forEach(item => {
+data.forEach(item => {
         if (!officeStats[item.office]) {
             officeStats[item.office] = { total: 0, rectified: 0, pending: 0 };
         }
@@ -847,24 +961,26 @@ const sortedOffices = [...offices].sort((a, b) => officeStats[b].total - officeS
 
 
 
-        function createTimelineChart() {
-            const monthlyData = {};
-            
-            inspectionData.forEach(item => {
-                const enteredMonth = item.enteredOn.toISOString().slice(0, 7);
-                if (!monthlyData[enteredMonth]) {
-                    monthlyData[enteredMonth] = { inspected: 0, rectified: 0 };
-                }
-                monthlyData[enteredMonth].inspected++;
-                
-                if (item.rectificationDoneOn) {
-                    const rectifiedMonth = item.rectificationDoneOn.toISOString().slice(0, 7);
-                    if (!monthlyData[rectifiedMonth]) {
-                        monthlyData[rectifiedMonth] = { inspected: 0, rectified: 0 };
-                    }
-                    monthlyData[rectifiedMonth].rectified++;
-                }
-            });
+function createTimelineChart(data) {
+  if (timelineChart) timelineChart.destroy();  // ✅ destroy old chart
+
+  const monthlyData = {};
+
+  data.forEach(item => {  // ✅ USE FILTERED DATA
+    const enteredMonth = item.enteredOn.toISOString().slice(0, 7);
+    if (!monthlyData[enteredMonth]) {
+      monthlyData[enteredMonth] = { inspected: 0, rectified: 0 };
+    }
+    monthlyData[enteredMonth].inspected++;
+
+    if (item.rectificationDoneOn) {
+      const rectifiedMonth = item.rectificationDoneOn.toISOString().slice(0, 7);
+      if (!monthlyData[rectifiedMonth]) {
+        monthlyData[rectifiedMonth] = { inspected: 0, rectified: 0 };
+      }
+      monthlyData[rectifiedMonth].rectified++;
+    }
+  });
 
             const months = Object.keys(monthlyData).sort();
             const inspectedData = months.map(month => monthlyData[month].inspected);
@@ -959,23 +1075,29 @@ function openModal(type) {
   switch (type) {
     case 'total':
       title = 'Total Inspected - Office Summary';
-      filteredData = inspectionData;
+filteredData = currentCategoryFilter === "all"
+  ? inspectionData
+  : inspectionData.filter(item => item.category === currentCategoryFilter);
       break;
     case 'rectified':
       title = 'Rectified Items - Office Summary';
-      filteredData = inspectionData.filter(item => item.isRectified);
+filteredData = (currentCategoryFilter === "all" ? inspectionData : inspectionData.filter(item => item.category === currentCategoryFilter))
+  .filter(item => item.isRectified);
       break;
     case 'pending':
       title = 'Pending Items - Office Summary';
-      filteredData = inspectionData.filter(item => !item.isRectified);
+filteredData = (currentCategoryFilter === "all" ? inspectionData : inspectionData.filter(item => item.category === currentCategoryFilter))
+  .filter(item => !item.isRectified);
       break;
     case 'weekInspected':
       title = 'This Week Inspected - Office Summary';
-      filteredData = inspectionData.filter(item => isWithinLastWeek(item.enteredOn));
+filteredData = (currentCategoryFilter === "all" ? inspectionData : inspectionData.filter(item => item.category === currentCategoryFilter))
+  .filter(item => isWithinLastWeek(item.enteredOn));
       break;
     case 'weekRectified':
       title = 'This Week Rectified - Office Summary';
-      filteredData = inspectionData.filter(item =>
+filteredData = (currentCategoryFilter === "all" ? inspectionData : inspectionData.filter(item => item.category === currentCategoryFilter))
+  .filter(item =>
         item.isRectified && isWithinLastWeek(item.rectificationDoneOn)
       );
       break;
@@ -986,7 +1108,8 @@ function openModal(type) {
 
   // ✅ First: gather full stats from all data
   const officeStats = {};
-  inspectionData.forEach(item => {
+
+data.forEach(item => {
     const office = item.office;
     if (!officeStats[office]) {
       officeStats[office] = { total: 0, rectified: 0, pending: 0, weekInspected: 0, weekRectified: 0 };
@@ -1026,15 +1149,19 @@ function openModal(type) {
         extra = `<div style="font-size: 11px; color: #666;">Inspected This Week: ${stat.weekInspected}</div>`;
       }
 
-      html += `
-        <div class="office-item" style="flex-direction: column; align-items: flex-start;">
-          <div style="display: flex; justify-content: space-between; width: 100%;">
-            <span style="font-size: 14px; color: #333;">${office}</span>
-            <span style="font-weight: 600; color: #2196F3;">${displayCounts[office]}</span>
-          </div>
-          ${extra}
-        </div>
-      `;
+html += `
+  <div class="office-item" style="flex-direction: column; align-items: flex-start;">
+    <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+      <span style="font-size: 14px; color: #333;">${office}</span>
+      <span style="display: flex; align-items: center; gap: 6px;">
+        <span style="font-weight: 600; color: #2196F3;">${displayCounts[office]}</span>
+        ${type === 'pending' ? `<span style="color:#1976D2; font-size: 18px; cursor: pointer;" title="View pending items" onclick="openDetailsModal('${office}')">&#128269;</span>` : ''}
+      </span>
+    </div>
+    ${extra}
+  </div>
+`;
+
     });
   html += '</div>';
 
@@ -1044,54 +1171,51 @@ function openModal(type) {
 
 
 
-        function openDetailsModal(officeName) {
-            const detailsModal = document.getElementById('detailsModal');
-            const detailsModalTitle = document.getElementById('detailsModalTitle');
-            const detailsModalBody = document.getElementById('detailsModalBody');
-            
-            const pendingItems = currentModalData.filter(item => 
-                item.office === officeName && !item.isRectified
-            );
-            
-            detailsModalTitle.textContent = `${officeName} - Pending Items (${pendingItems.length})`;
-            
-            if (pendingItems.length === 0) {
-                detailsModalBody.innerHTML = '<div class="no-items">No pending items found for this office.</div>';
-            } else {
-                let html = '<div class="details-list">';
-                pendingItems.forEach((item, index) => {
-                    const enteredDate = item.enteredOn ? item.enteredOn.toLocaleDateString('en-GB') : 'N/A';
-                    html += `
-                        <div class="detail-item">
-                            <div class="detail-location">${item.location || 'Location not specified'}</div>
-                            <div class="detail-description">${item.description || 'No description available'}</div>
-                            <div class="detail-meta">
-                                <div class="detail-meta-item">
-                                    <span class="detail-meta-label">Entered On</span>
-                                    <span class="detail-meta-value">${enteredDate}</span>
-                                </div>
-                                <div class="detail-meta-item">
-                                    <span class="detail-meta-label">Status</span>
-                                    <span class="detail-meta-value">${item.status || 'Pending'}</span>
-                                </div>
-                            </div>
-                            ${item.remarks ? `
-                                <div class="detail-meta" style="margin-top: 8px; grid-template-columns: 1fr;">
-                                    <div class="detail-meta-item">
-                                        <span class="detail-meta-label">Remarks</span>
-                                        <span class="detail-meta-value">${item.remarks}</span>
-                                    </div>
-                                </div>
-                            ` : ''}
-                        </div>
-                    `;
-                });
-                html += '</div>';
-                detailsModalBody.innerHTML = html;
-            }
-            
-            detailsModal.style.display = 'block';
-        }
+function openDetailsModal(officeName) {
+  const detailsModal = document.getElementById('detailsModal');
+  const detailsModalTitle = document.getElementById('detailsModalTitle');
+  const detailsModalBody = document.getElementById('detailsModalBody');
+
+  const today = new Date();
+  const pendingItems = currentModalData
+    .filter(item => item.office === officeName && !item.isRectified)
+    .sort((a, b) => a.enteredOn - b.enteredOn);
+
+  detailsModalTitle.textContent = `${officeName} - Pending Items (${pendingItems.length})`;
+
+  if (pendingItems.length === 0) {
+    detailsModalBody.innerHTML = '<div class="no-items">No pending items found for this office.</div>';
+  } else {
+    let html = '<div class="details-list">';
+    pendingItems.forEach(item => {
+      const enteredDate = item.enteredOn ? item.enteredOn.toLocaleDateString('en-GB') : 'N/A';
+      const daysPending = item.enteredOn
+        ? Math.floor((today - item.enteredOn) / (1000 * 60 * 60 * 24))
+        : 'N/A';
+      html += `
+        <div class="detail-item">
+          <div class="detail-location">${item.location || 'Location not specified'}</div>
+          <div class="detail-description">${item.description || 'No description available'}</div>
+          <div class="detail-meta">
+            <div class="detail-meta-item">
+              <span class="detail-meta-label">Entered On</span>
+              <span class="detail-meta-value">${enteredDate}</span>
+            </div>
+            <div class="detail-meta-item">
+              <span class="detail-meta-label">Pending Since</span>
+              <span class="detail-meta-value" style="color: red;">${daysPending} days</span>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+    html += '</div>';
+    detailsModalBody.innerHTML = html;
+  }
+
+  detailsModal.style.display = 'block';
+}
+
 
         function closeModal() {
             document.getElementById('modal').style.display = 'none';
