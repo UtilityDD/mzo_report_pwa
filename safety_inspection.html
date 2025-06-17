@@ -1,652 +1,768 @@
 <!DOCTYPE html>
 
 <html lang="en">
+
 <head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Safety Inspection Dashboard</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<style>
-/* Reset and Base */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-body {
-  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
-  background: #f5f5f5;
-  color: #333;
-  line-height: 1.6;
-}
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 16px;
-  padding-top: 90px; /* to prevent overlap under sticky header */
-}
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>Safety Inspection Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <style>
+    /* Reset and Base */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 16px;
+      padding-top: 90px;
+      /* to prevent overlap under sticky header */
+    }
 
 
-/* Header */
-.header {
-  background: linear-gradient(135deg, #2196F3, #1976D2);
-  color: white;
-  padding: 16px;
-  margin: 0;
-  border-radius: 0;
-  box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  width: 100%;
-}
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #2196F3, #1976D2);
+      color: white;
+      padding: 16px;
+      margin: 0;
+      border-radius: 0;
+      box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      width: 100%;
+    }
 
-.header h1 {
-  font-size: 24px;
-  font-weight: 500;
-}
-.header p {
-  opacity: 0.9;
-  font-size: 14px;
-}
-.header .updated-on {
-  font-size: 12px;
-  font-style: italic;
-  opacity: 0.8;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255,255,255,0.2);
-}
+    .header h1 {
+      font-size: 24px;
+      font-weight: 500;
+    }
 
-/* Loading */
-.loading {
-  text-align: center;
-  padding: 40px;
-  color: #666;
-}
+    .header p {
+      opacity: 0.9;
+      font-size: 14px;
+    }
 
-/* Stat Cards */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
-  margin-bottom: 24px;
-}
-.stat-card {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  cursor: pointer;
-  border: 2px solid transparent;
-  transition: 0.3s;
-}
-.stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-  border-color: #2196F3;
-}
-.stat-card:hover {
-  background-color: #fafafa;
-  transform: translateY(-2px);
-}
+    .header .updated-on {
+      font-size: 12px;
+      font-style: italic;
+      opacity: 0.8;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+    }
 
-.stat-card.total {
-  border-left: 4px solid #2E7D32;
-  background: #E8F5E9;
-}
-.stat-card.rectified {
-  border-left: 4px solid #1565C0;
-  background: #E3F2FD;
-}
-.stat-card.pending {
-  border-left: 4px solid #f44336;
-  background: linear-gradient(135deg, #ffe5e5, #fff5f5);
-  box-shadow: 0 2px 6px rgba(244, 67, 54, 0.2);
-}
-.stat-card.pending:hover {
-  border-color: #e53935;
-  box-shadow: 0 4px 10px rgba(244, 67, 54, 0.3);
-}
+    /* Loading */
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
 
-.stat-card.week-inspected {
-  border-left: 4px solid #6A1B9A;
-  background: #F3E5F5;
-}
-.stat-card.week-rectified {
-  border-left: 4px solid #00838F;
-  background: #E0F7FA;
-}
+    /* Stat Cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
 
-.stat-number {
-  font-size: 28px;
-  font-weight: 700;
-}
-.stat-label {
-  font-size: 12px;
-  color: #666;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 12px;
-}
-.office-counts {
-  border-top: 1px solid #e0e0e0;
-  padding-top: 12px;
-  margin-top: 8px;
-}
-.office-count-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  margin-bottom: 6px;
-}
-.office-count-label {
-  font-weight: 500;
-  color: #666;
-}
-.office-count-value {
-  font-weight: 600;
-  font-size: 12px;
-}
-.office-count-name {
-  font-size: 10px;
-  margin-left: 4px;
-  opacity: 0.8;
-  max-width: 120px;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  white-space: nowrap;
-}
+    .stat-card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: 0.3s;
+    }
 
-/* Chart Layout */
-.charts-section {
-  display: grid;
-  gap: 24px;
-}
-.chart-container {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  overflow-x: auto;
-}
-.chart-title {
-  font-size: 18px;
-  font-weight: 500;
-  margin-bottom: 16px;
-}
-.chart-wrapper {
-  position: relative;
-  width: 100%;
-  min-width: unset;
-  height: auto;
-  overflow-x: auto;
-}
+    .stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+      border-color: #2196F3;
+    }
+
+    .stat-card:hover {
+      background-color: #fafafa;
+      transform: translateY(-2px);
+    }
+
+    .stat-card.total {
+      border-left: 4px solid #2E7D32;
+      background: #E8F5E9;
+    }
+
+    .stat-card.rectified {
+      border-left: 4px solid #1565C0;
+      background: #E3F2FD;
+    }
+
+    .stat-card.pending {
+      border-left: 4px solid #f44336;
+      background: linear-gradient(135deg, #ffe5e5, #fff5f5);
+      box-shadow: 0 2px 6px rgba(244, 67, 54, 0.2);
+    }
+
+    .stat-card.pending:hover {
+      border-color: #e53935;
+      box-shadow: 0 4px 10px rgba(244, 67, 54, 0.3);
+    }
+
+    .stat-card.week-inspected {
+      border-left: 4px solid #6A1B9A;
+      background: #F3E5F5;
+    }
+
+    .stat-card.week-rectified {
+      border-left: 4px solid #00838F;
+      background: #E0F7FA;
+    }
+
+    .stat-number {
+      font-size: 28px;
+      font-weight: 700;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+
+    .office-counts {
+      border-top: 1px solid #e0e0e0;
+      padding-top: 12px;
+      margin-top: 8px;
+    }
+
+    .office-count-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      margin-bottom: 6px;
+    }
+
+    .office-count-label {
+      font-weight: 500;
+      color: #666;
+    }
+
+    .office-count-value {
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    .office-count-name {
+      font-size: 10px;
+      margin-left: 4px;
+      opacity: 0.8;
+      max-width: 120px;
+      text-overflow: ellipsis;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    /* Chart Layout */
+    .charts-section {
+      display: grid;
+      gap: 24px;
+    }
+
+    .chart-container {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      overflow-x: auto;
+    }
+
+    .chart-title {
+      font-size: 18px;
+      font-weight: 500;
+      margin-bottom: 16px;
+    }
+
+    .chart-wrapper {
+      position: relative;
+      width: 100%;
+      min-width: unset;
+      height: auto;
+      overflow-x: auto;
+    }
 
 
-.timeline-chart {
-  height: 250px;
-}
-canvas {
-  display: block;
-  max-width: 100%;
-  height: 100% !important;
-}
+    .timeline-chart {
+      height: 250px;
+    }
 
-/* Mini Tables */
-.mini-table {
-  margin-top: 16px;
-  font-size: 13px;
-  color: #333;
-  overflow-x: auto;
-  overflow-y: hidden; /* ✅ prevents vertical scrolling */
-  max-height: none;   /* ✅ ensures full height grows naturally */
-}
-.mini-table table {
-  width: auto;
-  table-layout: auto;         /* ✅ allows columns to size based on content */
-  border-collapse: collapse;
-  background: #fafafa;
-}
+    canvas {
+      display: block;
+      max-width: 100%;
+      height: 100% !important;
+    }
 
-.mini-table th, .mini-table td {
-  border: 1px solid #ccc;
-  padding: 4px 6px; /* reduced from 6px 10px */
-  font-size: 12px;
-  text-align: left;
-}
+    /* Mini Tables */
+    .mini-table {
+      margin-top: 16px;
+      font-size: 13px;
+      color: #333;
+      overflow-x: auto;
+      overflow-y: hidden;
+      /* ✅ prevents vertical scrolling */
+      max-height: none;
+      /* ✅ ensures full height grows naturally */
+    }
 
-.mini-table th {
-  background: #e0e0e0;
-}
+    .mini-table table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fafafa;
+    }
 
-/* Modals */
-.modal {
-  display: none;
-  position: fixed;
-  z-index: 1000;
-  inset: 0;
-  background: rgba(0,0,0,0.5);
-  backdrop-filter: blur(4px);
-}
-.modal-content {
-  background: white;
-  margin: 5% auto;
-  padding: 0;
-  border-radius: 16px;
-  width: 90%;
-  max-width: 600px;
-  max-height: 80vh;
-  overflow: hidden;
-  animation: modalSlideIn 0.3s ease;
-}
-@keyframes modalSlideIn {
-  from { transform: translateY(-50px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-.modal-header {
-  background: linear-gradient(135deg, #2196F3, #1976D2);
-  color: white;
-  padding: 20px;
-  display: flex;
-  justify-content: space-between;
-}
-.modal-title {
-  font-size: 20px;
-  font-weight: 500;
-}
-.close {
-  background: none;
-  border: none;
-  color: white;
-  font-size: 24px;
-  cursor: pointer;
-}
-.modal-body {
-  padding: 20px;
-  max-height: 50vh;
-  overflow-y: auto;
-}
-.office-summary {
-  display: grid;
-  gap: 12px;
-}
-.office-item {
-  background: #f8f9fa;
-  border-radius: 8px;
-  padding: 12px 16px;
-  border-left: 4px solid #2196F3;
-  display: flex;
-  justify-content: space-between;
-}
-.office-item.clickable:hover {
-  background: #e3f2fd;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
+    .mini-table th,
+    .mini-table td {
+      border: 1px solid #ccc;
+      padding: 4px 6px;
+      /* reduced from 6px 10px */
+      font-size: 12px;
+      text-align: left;
+    }
 
-/* Detail Modal */
-.details-modal {
-  z-index: 1100;
-}
-.details-list {
-  display: grid;
-  gap: 12px;
+    .mini-table th {
+      background: #e0e0e0;
+    }
 
-}
-.detail-item {
-  background: #f8f9fa;
-  border-radius: 8px;
-  padding: 16px;
-  border-left: 4px solid #FF9800;
-}
-.detail-location {
-  font-weight: 600;
-  color: #333;
-  margin-bottom: 8px;
-  font-size: 14px;
-}
-.detail-description {
-  color: #555;
-  font-size: 13px;
-}
-.detail-meta {
-  margin-top: 12px;
-  border-top: 1px solid #e0e0e0;
-  padding-top: 12px;
-  font-size: 11px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-.detail-meta-label {
-  font-weight: 500;
-  margin-bottom: 2px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-.detail-meta-value {
-  color: #333;
-}
-.no-items {
-  text-align: center;
-  padding: 40px 20px;
-  color: #666;
-  font-style: italic;
-}
+    /* Modals */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+    }
 
-/* Responsive */
-@media (max-width: 768px) {
-.container {
-    padding: 8px;
-    
-  }
+    .modal-content {
+      background: white;
+      margin: 5% auto;
+      padding: 0;
+      border-radius: 16px;
+      width: 95%;
+      max-width: 600px;
+      /* default mobile/tablet */
+      max-height: 80vh;
+      overflow: hidden;
+      animation: modalSlideIn 0.3s ease;
+    }
 
-  .header {
-    padding: 8px 12px;         /* less vertical space */
-    width: 100vw;              /* full width on small screens */
-    border-radius: 0;   
-           /* remove rounding if present */
-  }
+    /* ✅ Larger modal on wider screens */
+    @media (min-width: 992px) {
+      .modal-content {
+        max-width: 900px;
+        max-height: 90vh;
+      }
+    }
 
-  .header h1 {
-    font-size: 18px;           /* slightly bigger for readability */
-    line-height: 1.2;
-    font-weight: 600;
-  }
+    @media (min-width: 1200px) {
+      .modal-content {
+        max-width: 1100px;
+        max-height: 100vh;
+      }
+    }
 
-  .header p {
-    font-size: 12px;
-    line-height: 1.4;
-  }
 
-  .header .updated-on {
-    font-size: 11px;
-    padding-top: 4px;
-    margin-top: 6px;
-  }
+    @keyframes modalSlideIn {
+      from {
+        transform: translateY(-50px);
+        opacity: 0;
+      }
 
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-  }
-  .stat-card {
-    padding: 16px;
-  }
-  .chart-wrapper {
-    min-width: 500px;
-  }
-  .timeline-chart {
-  height: 300px;
-}
-  .timeline-chart {
-    height: 180px;
-  }
-  .modal-content {
-    margin: 5% auto;
-    max-height: 90vh; /* increase modal height */
-    height: auto;
-  }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .modal-header {
+      background: linear-gradient(135deg, #2196F3, #1976D2);
+      color: white;
+      padding: 20px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .modal-title {
+      font-size: 20px;
+      font-weight: 500;
+    }
+
+    .close {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+    }
+
     .modal-body {
-    max-height: 70vh; /* adjust to use more screen */
-    padding: 16px;
-  }
-  
-}
-@media (max-width: 480px) {
-  .stats-grid {
-    grid-template-columns: 1fr;
-  }
-  .office-stats {
-    grid-template-columns: 1fr;
-  }
-}
+      padding: 20px;
+      max-height: 50vh;
+      overflow-y: auto;
+    }
 
-.chart-wrapper::-webkit-scrollbar {
-  height: 4px;
-}
-.chart-wrapper::-webkit-scrollbar-thumb {
-  background: #ccc;
-  border-radius: 2px;
-}
-@media (max-width: 768px) {
-  .mini-table table {
-    font-size: 11px;
-  }
-  .mini-table th, .mini-table td {
-    padding: 4px;
-  }
-}
-@media (max-width: 768px) {
-  .stat-card {
-    padding: 10px 12px;
-    min-height: unset;
-  }
+    .office-summary {
+      display: grid;
+      gap: 12px;
+    }
 
-  .stat-number {
-    font-size: 20px;
-  }
+    .office-item {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 12px 16px;
+      border-left: 4px solid #2196F3;
+      display: flex;
+      justify-content: space-between;
+    }
 
-  .stat-label {
-    font-size: 10px;
-    margin-bottom: 6px;
-  }
+    .office-item.clickable:hover {
+      background: #e3f2fd;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
 
-  .office-count-row {
-    font-size: 9px;
-    margin-bottom: 2px;
-  }
+    /* Detail Modal */
+    .details-modal {
+      z-index: 1100;
+    }
 
-  .office-count-value {
-    font-size: 10px;
-  }
+    .details-list {
+      display: grid;
+      gap: 12px;
 
-  .office-count-name {
-    font-size: 8px;
-    max-width: 80px;
-  }
-}
+    }
 
-.chart-wrapper canvas {
-  height: 250px !important; /* Applies to both charts */
-}
-.category-tab {
-  padding: 6px 12px;
-  border: none;
-  background: #e0e0e0;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-}
-.category-tab.active {
-  background: #2196F3;
-  color: white;
-  font-weight: 500;
-}
+    .detail-item {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 16px;
+      border-left: 4px solid #FF9800;
+    }
 
-</style>
+    .detail-location {
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .detail-description {
+      color: #555;
+      font-size: 13px;
+    }
+
+    .detail-meta {
+      margin-top: 12px;
+      border-top: 1px solid #e0e0e0;
+      padding-top: 12px;
+      font-size: 11px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .detail-meta-label {
+      font-weight: 500;
+      margin-bottom: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .detail-meta-value {
+      color: #333;
+    }
+
+    .no-items {
+      text-align: center;
+      padding: 40px 20px;
+      color: #666;
+      font-style: italic;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .container {
+        padding: 8px;
+
+      }
+
+      .header {
+        padding: 8px 12px;
+        /* less vertical space */
+        width: 100vw;
+        /* full width on small screens */
+        border-radius: 0;
+        /* remove rounding if present */
+      }
+
+      .header h1 {
+        font-size: 18px;
+        /* slightly bigger for readability */
+        line-height: 1.2;
+        font-weight: 600;
+      }
+
+      .header p {
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .header .updated-on {
+        font-size: 11px;
+        padding-top: 4px;
+        margin-top: 6px;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+      }
+
+      .stat-card {
+        padding: 16px;
+      }
+
+      .chart-wrapper {
+        min-width: 500px;
+      }
+
+      .timeline-chart {
+        height: 300px;
+      }
+
+      .timeline-chart {
+        height: 180px;
+      }
+
+      .modal-content {
+        margin: 5% auto;
+        max-height: 90vh;
+        /* increase modal height */
+        height: auto;
+      }
+
+      .modal-body {
+        max-height: 70vh;
+        /* adjust to use more screen */
+        padding: 16px;
+      }
+
+    }
+
+    @media (max-width: 480px) {
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .office-stats {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .chart-wrapper::-webkit-scrollbar {
+      height: 4px;
+    }
+
+    .chart-wrapper::-webkit-scrollbar-thumb {
+      background: #ccc;
+      border-radius: 2px;
+    }
+
+    @media (max-width: 768px) {
+      .mini-table table {
+        font-size: 11px;
+      }
+
+      .mini-table th,
+      .mini-table td {
+        padding: 4px;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .stat-card {
+        padding: 10px 12px;
+        min-height: unset;
+      }
+
+      .stat-number {
+        font-size: 20px;
+      }
+
+      .stat-label {
+        font-size: 10px;
+        margin-bottom: 6px;
+      }
+
+      .office-count-row {
+        font-size: 9px;
+        margin-bottom: 2px;
+      }
+
+      .office-count-value {
+        font-size: 10px;
+      }
+
+      .office-count-name {
+        font-size: 8px;
+        max-width: 80px;
+      }
+    }
+
+    .chart-wrapper canvas {
+      height: 250px !important;
+      /* Applies to both charts */
+    }
+
+    .category-tab {
+      padding: 6px 12px;
+      border: none;
+      background: #e0e0e0;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .category-tab.active {
+      background: #2196F3;
+      color: white;
+      font-weight: 500;
+    }
+
+    #mapModal {
+      z-index: 1200;
+    }
+  </style>
 
 </head>
+
 <body>
 
   <div class="header">
-<h1>Safety Inspection Dashboard</h1>
-<p>Monitor inspection progress and rectification status</p>
-<div class="updated-on" id="updatedOn">
-                Last updated: Loading...
+    <h1>Safety Inspection Dashboard</h1>
+    <p>Monitor inspection progress and rectification status</p>
+    <div class="updated-on" id="updatedOn">
+      Last updated: Loading...
+    </div>
+  </div>
+  <div class="container">
+
+    <div class="loading" id="loading">
+      <p>Loading inspection data...</p>
+    </div>
+    <div id="dashboard" style="display: none;">
+
+
+      <div id="categoryTabs" style="margin-bottom: 16px; display: flex; gap: 10px; flex-wrap: wrap;">
+        <button class="category-tab active" data-category="all">All</button>
+        <button class="category-tab" data-category="Spacer Issues">Spacer Issues</button>
+        <button class="category-tab" data-category="LT Kiosk Issues">LT Kiosk Issues</button>
+        <button class="category-tab" data-category="Other LT Issues">Other LT Issues</button>
+        <button class="category-tab" data-category="HT 11 KV Issues">HT 11 KV Issues</button>
+        <button class="category-tab" data-category="HT 33 KV Issues">HT 33 KV Issues</button>
+        <button class="category-tab" data-category="Other Issues">Other Issues</button>
+      </div>
+
+
+
+      <!-- Stats Cards -->
+      <div class="stats-grid">
+        <div class="stat-card total" onclick="openModal('total')">
+          <div class="stat-number" id="totalInspected">0</div>
+          <div class="stat-label">Total Inspected</div>
+          <div class="office-counts" id="totalOfficeCounts"></div>
+        </div>
+        <div class="stat-card rectified" onclick="openModal('rectified')">
+          <div class="stat-number" id="totalRectified">0</div>
+          <div class="stat-label">Total Rectified</div>
+          <div class="office-counts" id="rectifiedOfficeCounts"></div>
+        </div>
+        <div class="stat-card pending" onclick="openModal('pending')">
+          <div class="stat-number" id="totalPending">0</div>
+          <div class="stat-label">Total Pending</div>
+          <div class="office-counts" id="pendingOfficeCounts"></div>
+        </div>
+        <div class="stat-card week-inspected" onclick="openModal('weekInspected')">
+          <div class="stat-number" id="weekInspected">0</div>
+          <div class="stat-label">Inspected This Week</div>
+          <div class="office-counts" id="weekInspectedOfficeCounts"></div>
+        </div>
+        <div class="stat-card week-rectified" onclick="openModal('weekRectified')">
+          <div class="stat-number" id="weekRectified">0</div>
+          <div class="stat-label">Rectified This Week</div>
+          <div class="office-counts" id="weekRectifiedOfficeCounts"></div>
+        </div>
+      </div>
+      <!-- Charts Section -->
+      <div class="charts-section">
+        <div class="chart-container">
+          <div class="chart-title">Office-wise Status Distribution</div>
+          <div class="chart-wrapper">
+            <div class="chart-container">
+              <div class="chart-wrapper"><canvas id="officeChart"></canvas></div>
             </div>
-</div>
-<div class="container">
+            <details>
+              <summary style="font-weight: 500; margin-top: 8px; cursor: pointer;">Office-wise Table (Click to
+                Collapse/Expand)</summary>
+              <div class="mini-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="width: 1%; white-space: nowrap;">Sl.</th>
+                      <th>Office</th>
+                      <th>Total</th>
+                      <th>Rectified</th>
+                      <th>Pending</th>
+                      <th>% Complete</th>
+                    </tr>
+                  </thead>
 
-<div class="loading" id="loading">
-<p>Loading inspection data...</p>
-</div>
-<div id="dashboard" style="display: none;">
+                  <tbody id="officeTableBody">
+                  </tbody>
+                  <tbody id="officeTableBody"></tbody>
+                </table>
+              </div>
+            </details>
+          </div>
+        </div>
+        <div class="chart-container">
+          <div class="chart-title">Inspection vs Rectification Timeline</div>
+          <div class="chart-wrapper timeline-chart">
+            <canvas id="timelineChart"></canvas>
+          </div>
+        </div>
+
+        <details>
+          <summary style="font-weight: 500; margin-top: 8px; cursor: pointer;">Monthly Trend Table (Click to
+            Collapse/Expand)</summary>
+          <div class="mini-table" style="overflow-y: hidden; max-height: none;">
+            <table>
+              <thead>
+                <tr>
+                  <th style="white-space: nowrap;">Sl.</th>
+                  <th>Month</th>
+                  <th>Inspections</th>
+                  <th>Rectified</th>
+                  <th>Net Pending</th>
+                </tr>
+              </thead>
+              <tbody id="timelineTableBody"></tbody>
+            </table>
+          </div>
+        </details>
+
+        </details>
 
 
-  <div id="categoryTabs" style="margin-bottom: 16px; display: flex; gap: 10px; flex-wrap: wrap;">
-<button class="category-tab active" data-category="all" id="tab-all">All</button>
-<button class="category-tab" data-category="Spacer Issues" id="tab-Spacer Issues">Spacer Issues</button>
-<button class="category-tab" data-category="LT Kiosk Issues" id="tab-LT Kiosk Issues">LT Kiosk Issues</button>
-<button class="category-tab" data-category="Other LT Issues" id="tab-Other LT Issues">Other LT Issues</button>
-<button class="category-tab" data-category="HT 11 KV Issues" id="tab-HT 11 KV Issues">HT 11 KV Issues</button>
-<button class="category-tab" data-category="HT 33 KV Issues" id="tab-HT 33 KV Issues">HT 33 KV Issues</button>
-<button class="category-tab" data-category="Other Issues" id="tab-Other Issues">Other Issues</button>
-
-</div>
-
-
-<!-- Stats Cards -->
-<div class="stats-grid">
-<div class="stat-card total" onclick="openModal('total')">
-<div class="stat-number" id="totalInspected">0</div>
-<div class="stat-label">Total Inspected</div>
-<div class="office-counts" id="totalOfficeCounts"></div>
-</div>
-<div class="stat-card rectified" onclick="openModal('rectified')">
-<div class="stat-number" id="totalRectified">0</div>
-<div class="stat-label">Total Rectified</div>
-<div class="office-counts" id="rectifiedOfficeCounts"></div>
-</div>
-<div class="stat-card pending" onclick="openModal('pending')">
-<div class="stat-number" id="totalPending">0</div>
-<div class="stat-label">Total Pending</div>
-<div class="office-counts" id="pendingOfficeCounts"></div>
-</div>
-<div class="stat-card week-inspected" onclick="openModal('weekInspected')">
-<div class="stat-number" id="weekInspected">0</div>
-<div class="stat-label">Inspected This Week</div>
-<div class="office-counts" id="weekInspectedOfficeCounts"></div>
-</div>
-<div class="stat-card week-rectified" onclick="openModal('weekRectified')">
-<div class="stat-number" id="weekRectified">0</div>
-<div class="stat-label">Rectified This Week</div>
-<div class="office-counts" id="weekRectifiedOfficeCounts"></div>
-</div>
-</div>
-<!-- Charts Section -->
-<div class="charts-section">
-<div class="chart-container">
-<div class="chart-title">Office-wise Status Distribution</div>
-<div class="chart-wrapper">
-<div class="chart-container"><div class="chart-wrapper"><canvas id="officeChart"></canvas></div></div>
-<details>
-  <summary style="font-weight: 500; margin-top: 8px; cursor: pointer;">Office-wise Table (Click to Collapse/Expand)</summary>
-  <div class="mini-table">
-    <table>
-<thead>
-  <tr>
-<th>Sl.</th>
-    <th>Office</th>
-    <th>Total</th>
-    <th>Rectified</th>
-    <th>Pending</th>
-    <th>% Complete</th>
-  </tr>
-</thead>
-
-    <tbody id="officeTableBody">
-    </tbody>
-
-    </table>
+      </div>
+    </div>
   </div>
-</details>
-</div>
-</div>
-<div class="chart-container">
-  <div class="chart-title">Inspection vs Rectification Timeline</div>
-  <div class="chart-wrapper timeline-chart">
-    <canvas id="timelineChart"></canvas>
+  <!-- Modal -->
+  <div class="modal" id="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title" id="modalTitle">Office Summary</div>
+        <button class="close" onclick="closeModal()">×</button>
+      </div>
+      <div class="modal-body" id="modalBody">
+      </div>
+    </div>
   </div>
-</div>
-
-<details>
-  <summary style="font-weight: 500; margin-top: 8px; cursor: pointer;">Monthly Trend Table (Click to Collapse/Expand)</summary>
-  <div class="mini-table" style="overflow-y: hidden; max-height: none;">
-    <table>
-      <thead>
-        <tr>
-          <th style="white-space: nowrap;">Sl.</th>
-          <th>Month</th>
-          <th>Inspections</th>
-          <th>Rectified</th>
-          <th>Net Pending</th>
-        </tr>
-      </thead>
-      <tbody id="timelineTableBody"></tbody>
-    </table>
+  <!-- Details Modal -->
+  <div class="modal details-modal" id="detailsModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title" id="detailsModalTitle">Pending Items Details</div>
+        <button class="close" onclick="closeDetailsModal()">×</button>
+      </div>
+      <div class="modal-body" id="detailsModalBody">
+      </div>
+    </div>
   </div>
-</details>
-
-</details>
 
 
-</div>
-</div>
-</div>
-<!-- Modal -->
-<div class="modal" id="modal">
-<div class="modal-content">
-<div class="modal-header">
-<div class="modal-title" id="modalTitle">Office Summary</div>
-<button class="close" onclick="closeModal()">×</button>
-</div>
-<div class="modal-body" id="modalBody">
-</div>
-</div>
-</div>
-<!-- Details Modal -->
-<div class="modal details-modal" id="detailsModal">
-<div class="modal-content">
-<div class="modal-header">
-<div class="modal-title" id="detailsModalTitle">Pending Items Details</div>
-<button class="close" onclick="closeDetailsModal()">×</button>
-</div>
-<div class="modal-body" id="detailsModalBody">
-</div>
-</div>
-</div>
-</div>
-<script>
-        let inspectionData = [];
-        let officeChart, timelineChart;
-        let currentModalData = [];
-        let lastUpdatedDate = null;
+  <!-- Embedded Google Maps Modal -->
+  <div class="modal" id="mapModal">
+    <div class="modal-content" style="max-width: 800px; height: 70vh;">
+      <div class="modal-header">
+        <div class="modal-title" id="mapModalTitle">Map View</div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <a id="mapDirectionLink" href="#" target="_blank" title="Get Directions"
+            style="color: white; font-size: 20px;">🧭</a>
+          <button class="close" onclick="closeMapModal()">×</button>
+        </div>
+      </div>
+      <div class="modal-body" style="height: calc(100% - 60px); padding: 0;">
+        <iframe id="mapIframe" style="border:0; width: 100%; height: 100%;" loading="lazy" allowfullscreen></iframe>
+      </div>
+    </div>
+  </div>
 
-        // Utility functions
-        function parseDate(dateStr) {
-            if (!dateStr || dateStr.trim() === '') return null;
-            const parts = dateStr.split('/');
-            if (parts.length !== 3) return null;
-            return new Date(parts[2], parts[1] - 1, parts[0]);
-        }
+  </div>
+  <script>
+    let inspectionData = [];
+    let officeChart, timelineChart;
+    let currentModalData = [];
+    let lastUpdatedDate = null;
 
-        function cleanOfficeName(officeName) {
-            return officeName.replace(/\s*\(\d{7}\)$/, '').trim();
-        }
+    // Utility functions
+    function parseDate(dateStr) {
+      if (!dateStr || dateStr.trim() === '') return null;
+      const parts = dateStr.split('/');
+      if (parts.length !== 3) return null;
+      return new Date(parts[2], parts[1] - 1, parts[0]);
+    }
 
-        function isWithinLastWeek(date) {
-            if (!date) return false;
-            const weekAgo = new Date();
-            weekAgo.setDate(weekAgo.getDate() - 7);
-            return date >= weekAgo;
-        }
+    function cleanOfficeName(officeName) {
+      return officeName.replace(/\s*\(\d{7}\)$/, '').trim();
+    }
 
-        function getOfficeCountsHtml(officeStats) {
-            const offices = Object.keys(officeStats);
-            if (offices.length === 0) return '';
-            
-            // Sort offices by count (descending)
-            offices.sort((a, b) => officeStats[b].count - officeStats[a].count);
-            
-            const highest = offices[0];
-            const lowest = offices[offices.length - 1];
-            
-            let html = '';
-            
-            // Show highest count office
-            html += `
+    function isWithinLastWeek(date) {
+      if (!date) return false;
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      return date >= weekAgo;
+    }
+
+    function getOfficeCountsHtml(officeStats) {
+      const offices = Object.keys(officeStats);
+      if (offices.length === 0) return '';
+
+      // Sort offices by count (descending)
+      offices.sort((a, b) => officeStats[b].count - officeStats[a].count);
+
+      const highest = offices[0];
+      const lowest = offices[offices.length - 1];
+
+      let html = '';
+
+      // Show highest count office
+      html += `
                 <div class="office-count-row">
                     <span class="office-count-label">Highest:</span>
                     <span>
@@ -655,10 +771,10 @@ canvas {
                     </span>
                 </div>
             `;
-            
-            // Show lowest count office (only if different from highest)
-            if (lowest !== highest) {
-                html += `
+
+      // Show lowest count office (only if different from highest)
+      if (lowest !== highest) {
+        html += `
                     <div class="office-count-row">
                         <span class="office-count-label">Lowest:</span>
                         <span>
@@ -667,281 +783,268 @@ canvas {
                         </span>
                     </div>
                 `;
-            }
-            
-            return html;
-        }
+      }
 
-function getCategory(description) {
-  const desc = description.toLowerCase();
-  if (desc.includes("lt spacer")) return "Spacer Issues";
-  if (desc.includes("kiosk")) return "LT Kiosk Issues";
-  if (desc.includes("lt")) return "Other LT Issues";
-  if (desc.includes("ht 33 kv")) return "HT 33 KV Issues";
-  if (desc.includes("ht 11 kv")) return "HT 11 KV Issues";
-  return "Other Issues";
-}
-
-        // Load and process data
-        async function loadData() {
-            try {
-                const response = await fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vTUm6Gh0XpY34TNrlP1vR767xZQ8KGAHmx4jKVSoai-QB07mo5eblxOmjaE9OiTMy8FdoqYdhZ3izmE/pub?gid=612020297&single=true&output=csv');
-                const csvText = await response.text();
-                
-                Papa.parse(csvText, {
-                    header: true,
-                    skipEmptyLines: true,
-                    complete: function(results) {
-                        inspectionData = results.data.map(row => {
-                            const updatedOnDate = parseDate(row['Updated on']);
-                            if (updatedOnDate && (!lastUpdatedDate || updatedOnDate > lastUpdatedDate)) {
-                                lastUpdatedDate = updatedOnDate;
-                            }
-                            
-                            return {
-                                office: cleanOfficeName(row.Office || ''),
-                                location: row.Location || '',
-                                description: row.Description || '',
-                                  category: getCategory(row.Description || ''),
-                                rectificationDoneBy: row['Rectification done by'] || '',
-                                rectificationDoneOn: parseDate(row['Rectification done on']),
-                                remarks: row.Remarks || '',
-                                status: row.Status || '',
-                                enteredOn: parseDate(row['Entered on']) || new Date(),
-                                updatedOn: updatedOnDate,
-                                isRectified: row['Rectification done on'] && row['Rectification done on'].trim() !== ''
-                            };
-                        });
-                        
-                        // Update the "Updated on" information in header
-                        const updatedOnElement = document.getElementById('updatedOn');
-const dates = inspectionData.flatMap(item => [item.enteredOn, item.updatedOn].filter(Boolean));
-if (dates.length > 0) {
-    const earliestDate = new Date(Math.min(...dates.map(d => d.getTime())));
-    const latestDate = new Date(Math.max(...dates.map(d => d.getTime())));
-    updatedOnElement.textContent = `Report from ${earliestDate.toLocaleDateString('en-GB')} to ${latestDate.toLocaleDateString('en-GB')}`;
-} else {
-    updatedOnElement.textContent = 'Report period: Not available';
-}
-
-                        
-                        processData();
-                        updateTabCounts(); // ← ✅ Add this line here
-                        document.getElementById('loading').style.display = 'none';
-                        document.getElementById('dashboard').style.display = 'block';
-                    }
-                });
-            } catch (error) {
-                console.error('Error loading data:', error);
-                document.getElementById('loading').innerHTML = '<p>Error loading data. Please try again later.</p>';
-            }
-        }
-
-
-let currentCategoryFilter = "all";
-document.querySelectorAll(".category-tab").forEach(tab => {
-  tab.addEventListener("click", () => {
-    document.querySelectorAll(".category-tab").forEach(t => t.classList.remove("active"));
-    tab.classList.add("active");
-    currentCategoryFilter = tab.dataset.category;
-    processData(); // Refresh dashboard based on filter
-  });
-});
-
-function updateTabCounts() {
-  const total = inspectionData.length;
-
-  const categories = {
-    "Spacer Issues": 0,
-    "LT Kiosk Issues": 0,
-    "Other LT Issues": 0,
-    "HT 11 KV Issues": 0,
-    "HT 33 KV Issues": 0,
-    "Other Issues": 0
-  };
-
-  inspectionData.forEach(item => {
-    if (categories[item.category] !== undefined) {
-      categories[item.category]++;
+      return html;
     }
-  });
 
-  Object.entries(categories).forEach(([category, count]) => {
-    const percent = total > 0 ? Math.round((count / total) * 100) : 0;
-    const tab = document.getElementById(`tab-${category}`);
-    if (tab) {
-      tab.innerText = `${category} (${percent}%)`;
+    function getCategory(description) {
+      const desc = description.toLowerCase();
+      if (desc.includes("lt spacer")) return "Spacer Issues";
+      if (desc.includes("kiosk")) return "LT Kiosk Issues";
+      if (desc.includes("lt")) return "Other LT Issues";
+      if (desc.includes("ht 33 kv")) return "HT 33 KV Issues";
+      if (desc.includes("ht 11 kv")) return "HT 11 KV Issues";
+      return "Other Issues";
     }
-  });
 
-  // Update "All" tab without percentage
-  const allTab = document.getElementById("tab-all");
-  if (allTab) {
-    allTab.innerText = "All";
-  }
-}
+    // Load and process data
+    async function loadData() {
+      try {
+        const response = await fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vTUm6Gh0XpY34TNrlP1vR767xZQ8KGAHmx4jKVSoai-QB07mo5eblxOmjaE9OiTMy8FdoqYdhZ3izmE/pub?gid=612020297&single=true&output=csv');
+        const csvText = await response.text();
 
+        Papa.parse(csvText, {
+          header: true,
+          skipEmptyLines: true,
+          complete: function (results) {
+            inspectionData = results.data.map(row => {
+              const updatedOnDate = parseDate(row['Updated on']);
+              if (updatedOnDate && (!lastUpdatedDate || updatedOnDate > lastUpdatedDate)) {
+                lastUpdatedDate = updatedOnDate;
+              }
 
-function processData() {
-  let filteredData = inspectionData;
-  if (currentCategoryFilter !== "all") {
-    filteredData = inspectionData.filter(item => item.category === currentCategoryFilter);
-  }
-
-  const totalInspected = filteredData.length;
-  const totalRectified = filteredData.filter(item => item.isRectified).length;
-  const totalPending = totalInspected - totalRectified;
-
-  const weekInspected = filteredData.filter(item => isWithinLastWeek(item.enteredOn)).length;
-  const weekRectified = filteredData.filter(item => 
-    item.isRectified && isWithinLastWeek(item.rectificationDoneOn)
-  ).length;
-
-  // Update stat cards
-  document.getElementById('totalInspected').textContent = totalInspected;
-  document.getElementById('totalRectified').textContent = totalRectified;
-  document.getElementById('totalPending').textContent = totalPending;
-  document.getElementById('weekInspected').textContent = weekInspected;
-  document.getElementById('weekRectified').textContent = weekRectified;
-
-  // Update office counts
-  updateOfficeCountsForCard('total', filteredData);
-  updateOfficeCountsForCard('rectified', filteredData.filter(item => item.isRectified));
-  updateOfficeCountsForCard('pending', filteredData.filter(item => !item.isRectified));
-  updateOfficeCountsForCard('weekInspected', filteredData.filter(item => isWithinLastWeek(item.enteredOn)));
-  updateOfficeCountsForCard('weekRectified', filteredData.filter(item => 
-    item.isRectified && isWithinLastWeek(item.rectificationDoneOn)
-  ));
-
-  // Update charts
-  createOfficeChart(filteredData);
-  createTimelineChart(filteredData);
-
-
-
-        }
-
-        function updateOfficeCountsForCard(cardType, data) {
-            const officeStats = {};
-            
-            data.forEach(item => {
-                if (!officeStats[item.office]) {
-                    officeStats[item.office] = { count: 0 };
-                }
-                officeStats[item.office].count++;
+              return {
+                office: cleanOfficeName(row.Office || ''),
+                location: row.Location || '',
+                description: row.Description || '',
+                category: getCategory(row.Description || ''),
+                rectificationDoneBy: row['Rectification done by'] || '',
+                rectificationDoneOn: parseDate(row['Rectification done on']),
+                remarks: row.Remarks || '',
+                status: row.Status || '',
+                enteredOn: parseDate(row['Entered on']) || new Date(),
+                updatedOn: updatedOnDate,
+                isRectified: row['Rectification done on'] && row['Rectification done on'].trim() !== ''
+              };
             });
-            
-            const elementId = cardType === 'total' ? 'totalOfficeCounts' :
-                             cardType === 'rectified' ? 'rectifiedOfficeCounts' :
-                             cardType === 'pending' ? 'pendingOfficeCounts' :
-                             cardType === 'weekInspected' ? 'weekInspectedOfficeCounts' :
-                             'weekRectifiedOfficeCounts';
-            
-            const element = document.getElementById(elementId);
-            element.innerHTML = getOfficeCountsHtml(officeStats);
-        }
 
-function createOfficeChart(data) {
-    if (officeChart) officeChart.destroy();
+            // Update the "Updated on" information in header
+            const updatedOnElement = document.getElementById('updatedOn');
+            const dates = inspectionData.flatMap(item => [item.enteredOn, item.updatedOn].filter(Boolean));
+            if (dates.length > 0) {
+              const earliestDate = new Date(Math.min(...dates.map(d => d.getTime())));
+              const latestDate = new Date(Math.max(...dates.map(d => d.getTime())));
+              updatedOnElement.textContent = `Report from ${earliestDate.toLocaleDateString('en-GB')} to ${latestDate.toLocaleDateString('en-GB')}`;
+            } else {
+              updatedOnElement.textContent = 'Report period: Not available';
+            }
 
-    const officeStats = {};
-data.forEach(item => {
+            function updateCategoryTabPercentages() {
+              const totalCount = inspectionData.length;
+              const categoryCounts = {};
+
+              inspectionData.forEach(item => {
+                const category = item.category || 'Other Issues';
+                categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+              });
+
+              document.querySelectorAll(".category-tab").forEach(tab => {
+                const category = tab.dataset.category;
+                const count = category === "all" ? totalCount : (categoryCounts[category] || 0);
+                const percent = Math.round((count / totalCount) * 100);
+                const baseLabel = category === "all" ? "All" : category;
+                const showPercent = category === "all" ? "" : ` (${percent}%)`;
+                tab.textContent = baseLabel + showPercent;
+              });
+            }
+
+            processData();
+            updateCategoryTabPercentages(); // ✅ Add this
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+          }
+        });
+      } catch (error) {
+        console.error('Error loading data:', error);
+        document.getElementById('loading').innerHTML = '<p>Error loading data. Please try again later.</p>';
+      }
+    }
+
+
+    let currentCategoryFilter = "all";
+    document.querySelectorAll(".category-tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".category-tab").forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+        currentCategoryFilter = tab.dataset.category;
+        processData(); // Refresh dashboard based on filter
+      });
+    });
+
+
+
+    function processData() {
+      let filteredData = inspectionData;
+      if (currentCategoryFilter !== "all") {
+        filteredData = inspectionData.filter(item => item.category === currentCategoryFilter);
+      }
+
+      const totalInspected = filteredData.length;
+      const totalRectified = filteredData.filter(item => item.isRectified).length;
+      const totalPending = totalInspected - totalRectified;
+
+      const weekInspected = filteredData.filter(item => isWithinLastWeek(item.enteredOn)).length;
+      const weekRectified = filteredData.filter(item =>
+        item.isRectified && isWithinLastWeek(item.rectificationDoneOn)
+      ).length;
+
+      // Update stat cards
+      document.getElementById('totalInspected').textContent = totalInspected;
+      document.getElementById('totalRectified').textContent = totalRectified;
+      document.getElementById('totalPending').textContent = totalPending;
+      document.getElementById('weekInspected').textContent = weekInspected;
+      document.getElementById('weekRectified').textContent = weekRectified;
+
+      // Update office counts
+      updateOfficeCountsForCard('total', filteredData);
+      updateOfficeCountsForCard('rectified', filteredData.filter(item => item.isRectified));
+      updateOfficeCountsForCard('pending', filteredData.filter(item => !item.isRectified));
+      updateOfficeCountsForCard('weekInspected', filteredData.filter(item => isWithinLastWeek(item.enteredOn)));
+      updateOfficeCountsForCard('weekRectified', filteredData.filter(item =>
+        item.isRectified && isWithinLastWeek(item.rectificationDoneOn)
+      ));
+
+      // Update charts
+      createOfficeChart(filteredData);
+      createTimelineChart(filteredData);
+
+
+
+    }
+
+    function updateOfficeCountsForCard(cardType, data) {
+      const officeStats = {};
+
+      data.forEach(item => {
         if (!officeStats[item.office]) {
-            officeStats[item.office] = { total: 0, rectified: 0, pending: 0 };
+          officeStats[item.office] = { count: 0 };
+        }
+        officeStats[item.office].count++;
+      });
+
+      const elementId = cardType === 'total' ? 'totalOfficeCounts' :
+        cardType === 'rectified' ? 'rectifiedOfficeCounts' :
+          cardType === 'pending' ? 'pendingOfficeCounts' :
+            cardType === 'weekInspected' ? 'weekInspectedOfficeCounts' :
+              'weekRectifiedOfficeCounts';
+
+      const element = document.getElementById(elementId);
+      element.innerHTML = getOfficeCountsHtml(officeStats);
+    }
+
+    function createOfficeChart(data) {
+      if (officeChart) officeChart.destroy();
+
+      const officeStats = {};
+
+      data.forEach(item => {
+        if (!officeStats[item.office]) {
+          officeStats[item.office] = { total: 0, rectified: 0, pending: 0 };
         }
         officeStats[item.office].total++;
         if (item.isRectified) {
-            officeStats[item.office].rectified++;
+          officeStats[item.office].rectified++;
         } else {
-            officeStats[item.office].pending++;
+          officeStats[item.office].pending++;
         }
-    });
+      });
 
-    const offices = Object.keys(officeStats);
-    const rectifiedData = offices.map(office => officeStats[office].rectified);
-    const pendingData = offices.map(office => officeStats[office].pending);
+      const offices = Object.keys(officeStats);
+      const rectifiedData = offices.map(office => officeStats[office].rectified);
+      const pendingData = offices.map(office => officeStats[office].pending);
 
-    const canvas = document.getElementById('officeChart');
-    canvas.removeAttribute('style');
-    const ctx = canvas.getContext('2d');
+      const canvas = document.getElementById('officeChart');
+      canvas.removeAttribute('style');
+      const ctx = canvas.getContext('2d');
 
-    officeChart = new Chart(ctx, {
+      officeChart = new Chart(ctx, {
         type: 'bar',
         data: {
-            labels: offices,
-            datasets: [
-                {
-                    label: 'Rectified',
-                    data: rectifiedData,
-                    backgroundColor: '#2196F3',
-                    borderRadius: 4
-                },
-                {
-                    label: 'Pending',
-                    data: pendingData,
-                    backgroundColor: '#FF9800',
-                    borderRadius: 4
+          labels: offices,
+          datasets: [
+            {
+              label: 'Rectified',
+              data: rectifiedData,
+              backgroundColor: '#2196F3',
+              borderRadius: 4
+            },
+            {
+              label: 'Pending',
+              data: pendingData,
+              backgroundColor: '#FF9800',
+              borderRadius: 4
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'nearest',
+            intersect: false, // ✅ triggers tooltip even if not directly over point
+            axis: 'x'
+          },
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: function (context) {
+                  // Show only once per bar group
+                  if (context.datasetIndex !== 0) return;
+
+                  const index = context.dataIndex;
+                  const rectified = context.chart.data.datasets[0].data[index];
+                  const pending = context.chart.data.datasets[1].data[index];
+                  const total = rectified + pending;
+
+                  return [
+                    `Total: ${total}`,
+                    `Pending: ${pending}`,
+                    `Rectified: ${rectified}`
+                  ];
                 }
-            ]
-        },
-options: {
-  responsive: true,
-  maintainAspectRatio: false,
-  interaction: {
-    mode: 'nearest',
-    intersect: false, // ✅ triggers tooltip even if not directly over point
-    axis: 'x'
-  },
-  plugins: {
-    tooltip: {
-      callbacks: {
-        label: function(context) {
-          return null;
-        },
-        afterLabel: function(context) {
-          const index = context.dataIndex;
-          const rectified = context.chart.data.datasets[0].data[index];
-          const pending = context.chart.data.datasets[1].data[index];
-          const total = rectified + pending;
-
-          return [
-            `Total: ${total}`,
-            `Pending: ${pending}`,
-            `Rectified: ${rectified}`
-          ];
+              }
+            },
+            legend: {
+              position: 'top'
+            }
+          },
+          scales: {
+            x: {
+              stacked: true,
+              ticks: {
+                maxRotation: 90,
+                minRotation: 90,
+                autoSkip: false,
+                font: {
+                  size: 10
+                }
+              }
+            },
+            y: {
+              stacked: true,
+              beginAtZero: true
+            }
+          }
         }
-      }
-    },
-    legend: {
-      position: 'top'
-    }
-  },
-  scales: {
-    x: {
-      stacked: true,
-      ticks: {
-        maxRotation: 90,
-        minRotation: 90,
-        autoSkip: false,
-        font: {
-          size: 10
-        }
-      }
-    },
-    y: {
-      stacked: true,
-      beginAtZero: true
-    }
-  }
-}
 
-    });
+      });
 
-    // Populate mini table
-    const tableBody = document.getElementById('officeTableBody');
-    let tableHtml = '';
-const sortedOffices = [...offices].sort((a, b) => officeStats[b].total - officeStats[a].total);
-    sortedOffices.forEach((office, index) => {
+      // Populate mini table
+      const tableBody = document.getElementById('officeTableBody');
+      let tableHtml = '';
+      const sortedOffices = [...offices].sort((a, b) => officeStats[b].total - officeStats[a].total);
+      sortedOffices.forEach((office, index) => {
         const stats = officeStats[office];
         const percentage = stats.total > 0 ? Math.round((stats.rectified / stats.total) * 100) : 0;
         tableHtml += `
@@ -954,202 +1057,210 @@ const sortedOffices = [...offices].sort((a, b) => officeStats[b].total - officeS
                 <td>${percentage}%</td>
             </tr>
         `;
-    });
-    tableBody.innerHTML = tableHtml;
-}
-
-
-
-
-function createTimelineChart(data) {
-  if (timelineChart) timelineChart.destroy();  // ✅ destroy old chart
-
-  const monthlyData = {};
-
-  data.forEach(item => {  // ✅ USE FILTERED DATA
-    const enteredMonth = item.enteredOn.toISOString().slice(0, 7);
-    if (!monthlyData[enteredMonth]) {
-      monthlyData[enteredMonth] = { inspected: 0, rectified: 0 };
+      });
+      tableBody.innerHTML = tableHtml;
     }
-    monthlyData[enteredMonth].inspected++;
-
-    if (item.rectificationDoneOn) {
-      const rectifiedMonth = item.rectificationDoneOn.toISOString().slice(0, 7);
-      if (!monthlyData[rectifiedMonth]) {
-        monthlyData[rectifiedMonth] = { inspected: 0, rectified: 0 };
-      }
-      monthlyData[rectifiedMonth].rectified++;
-    }
-  });
-
-            const months = Object.keys(monthlyData).sort();
-            const inspectedData = months.map(month => monthlyData[month].inspected);
-            const rectifiedData = months.map(month => monthlyData[month].rectified);
-
-            const ctx = document.getElementById('timelineChart').getContext('2d');
-            timelineChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: months.map(month => {
-                        const date = new Date(month + '-01');
-                        return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-                    }),
-                    datasets: [
-                        {
-                            label: 'Inspections',
-                            data: inspectedData,
-                            borderColor: '#4CAF50',
-                            backgroundColor: 'rgba(76, 175, 80, 0.1)',
-                            tension: 0.4,
-                            fill: true
-                        },
-                        {
-                            label: 'Rectifications',
-                            data: rectifiedData,
-                            borderColor: '#2196F3',
-                            backgroundColor: 'rgba(33, 150, 243, 0.1)',
-                            tension: 0.4,
-                            fill: true
-                        }
-                    ]
-                },
-options: {
-  responsive: true,
-  maintainAspectRatio: false,
-  interaction: {
-    mode: 'nearest',
-    intersect: false,
-    axis: 'x'
-  },
-  plugins: {
-    legend: {
-      position: 'top'
-    },
-    tooltip: {
-      mode: 'nearest',
-      intersect: false
-    }
-  },
-  scales: {
-    y: {
-      beginAtZero: true
-    }
-  }
-}
-
-            });
-
-const timelineTableBody = document.getElementById('timelineTableBody');
-let timelineTableHTML = '';
-
-months.forEach((month, index) => {
-    const data = monthlyData[month];
-    const netPending = (data.inspected || 0) - (data.rectified || 0);
-    const date = new Date(month + '-01');
-    const monthLabel = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-
-    timelineTableHTML += `
-        <tr>
-            <td>${index + 1}</td>
-            <td>${monthLabel}</td>
-            <td>${data.inspected}</td>
-            <td>${data.rectified}</td>
-            <td>${netPending}</td>
-        </tr>
-    `;
-});
-
-timelineTableBody.innerHTML = timelineTableHTML;
 
 
+
+
+    function createTimelineChart(data) {
+      const monthlyData = {};
+
+      data.forEach(item => {
+        const enteredMonth = item.enteredOn.toISOString().slice(0, 7);
+        if (!monthlyData[enteredMonth]) {
+          monthlyData[enteredMonth] = { inspected: 0, rectified: 0 };
         }
+        monthlyData[enteredMonth].inspected++;
 
-function openModal(type) {
-  const modal = document.getElementById('modal');
-  const modalTitle = document.getElementById('modalTitle');
-  const modalBody = document.getElementById('modalBody');
+        if (item.rectificationDoneOn) {
+          const rectifiedMonth = item.rectificationDoneOn.toISOString().slice(0, 7);
+          if (!monthlyData[rectifiedMonth]) {
+            monthlyData[rectifiedMonth] = { inspected: 0, rectified: 0 };
+          }
+          monthlyData[rectifiedMonth].rectified++;
+        }
+      });
 
-  let title = '';
-  let filteredData = [];
+      const months = Object.keys(monthlyData).sort();
+      const inspectedData = months.map(month => monthlyData[month].inspected);
+      const rectifiedData = months.map(month => monthlyData[month].rectified);
 
-  switch (type) {
-    case 'total':
-      title = 'Total Inspected - Office Summary';
-filteredData = currentCategoryFilter === "all"
-  ? inspectionData
-  : inspectionData.filter(item => item.category === currentCategoryFilter);
-      break;
-    case 'rectified':
-      title = 'Rectified Items - Office Summary';
-filteredData = (currentCategoryFilter === "all" ? inspectionData : inspectionData.filter(item => item.category === currentCategoryFilter))
-  .filter(item => item.isRectified);
-      break;
-    case 'pending':
-      title = 'Pending Items - Office Summary';
-filteredData = (currentCategoryFilter === "all" ? inspectionData : inspectionData.filter(item => item.category === currentCategoryFilter))
-  .filter(item => !item.isRectified);
-      break;
-    case 'weekInspected':
-      title = 'This Week Inspected - Office Summary';
-filteredData = (currentCategoryFilter === "all" ? inspectionData : inspectionData.filter(item => item.category === currentCategoryFilter))
-  .filter(item => isWithinLastWeek(item.enteredOn));
-      break;
-    case 'weekRectified':
-      title = 'This Week Rectified - Office Summary';
-filteredData = (currentCategoryFilter === "all" ? inspectionData : inspectionData.filter(item => item.category === currentCategoryFilter))
-  .filter(item =>
-        item.isRectified && isWithinLastWeek(item.rectificationDoneOn)
-      );
-      break;
-  }
+      const ctx = document.getElementById('timelineChart').getContext('2d');
 
-  currentModalData = filteredData;
-  modalTitle.textContent = title;
+      if (timelineChart) timelineChart.destroy();
 
-  // ✅ First: gather full stats from all data
-  const officeStats = {};
+      timelineChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: months.map(month => {
+            const date = new Date(month + '-01');
+            return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+          }),
+          datasets: [
+            {
+              label: 'Inspections',
+              data: inspectedData,
+              borderColor: '#4CAF50',
+              backgroundColor: 'rgba(76, 175, 80, 0.1)',
+              tension: 0.4,
+              fill: true
+            },
+            {
+              label: 'Rectifications',
+              data: rectifiedData,
+              borderColor: '#2196F3',
+              backgroundColor: 'rgba(33, 150, 243, 0.1)',
+              tension: 0.4,
+              fill: true
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'nearest',
+            intersect: false,
+            axis: 'x'
+          },
+          plugins: {
+            legend: {
+              position: 'top'
+            },
+            tooltip: {
+              mode: 'nearest',
+              intersect: false
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      });
 
-data.forEach(item => {
-    const office = item.office;
-    if (!officeStats[office]) {
-      officeStats[office] = { total: 0, rectified: 0, pending: 0, weekInspected: 0, weekRectified: 0 };
+      // ✅ Update monthly table too
+      const timelineTableBody = document.getElementById('timelineTableBody');
+      let timelineTableHTML = '';
+
+      months.forEach((month, index) => {
+        const data = monthlyData[month];
+        const netPending = (data.inspected || 0) - (data.rectified || 0);
+        const date = new Date(month + '-01');
+        const monthLabel = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+
+        timelineTableHTML += `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${monthLabel}</td>
+        <td>${data.inspected}</td>
+        <td>${data.rectified}</td>
+        <td>${netPending}</td>
+      </tr>
+    `;
+      });
+
+      timelineTableBody.innerHTML = timelineTableHTML;
     }
-    officeStats[office].total++;
-    if (item.isRectified) officeStats[office].rectified++;
-    else officeStats[office].pending++;
 
-    if (isWithinLastWeek(item.enteredOn)) officeStats[office].weekInspected++;
-    if (item.isRectified && isWithinLastWeek(item.rectificationDoneOn)) officeStats[office].weekRectified++;
-  });
 
-  // ✅ Filter displayed offices from filteredData
-  const displayCounts = {};
-  filteredData.forEach(item => {
-    const office = item.office;
-    if (!displayCounts[office]) displayCounts[office] = 0;
-    displayCounts[office]++;
-  });
+    function openModal(type) {
+      const modal = document.getElementById('modal');
+      const modalTitle = document.getElementById('modalTitle');
+      const modalBody = document.getElementById('modalBody');
 
-  let html = '<div class="office-summary">';
-  Object.keys(displayCounts)
-    .sort((a, b) => displayCounts[b] - displayCounts[a])
-    .forEach(office => {
-      const stat = officeStats[office];
-      let extra = '';
+      let title = '';
+      let filteredData = [];
 
-      if (type === 'total') {
-        extra = `<div style="font-size: 11px; color: #666;">Rectified: ${stat.rectified} | Pending: ${stat.pending}</div>`;
-      } else if (type === 'rectified') {
-        extra = `<div style="font-size: 11px; color: #666;">Total: ${stat.total} | Pending: ${stat.pending}</div>`;
-      } else if (type === 'pending') {
-        extra = `<div style="font-size: 11px; color: #666;">Total: ${stat.total} | Rectified: ${stat.rectified}</div>`;
-      } else if (type === 'weekInspected') {
-        extra = `<div style="font-size: 11px; color: #666;">Rectified This Week: ${stat.weekRectified}</div>`;
-      } else if (type === 'weekRectified') {
-        extra = `<div style="font-size: 11px; color: #666;">Inspected This Week: ${stat.weekInspected}</div>`;
+      switch (type) {
+        case 'total':
+          title = 'Total Inspected - Office Summary';
+          filteredData = (currentCategoryFilter === "all"
+            ? inspectionData
+            : inspectionData.filter(item => item.category === currentCategoryFilter));
+          break;
+        case 'rectified':
+          title = 'Rectified Items - Office Summary';
+          filteredData = (currentCategoryFilter === "all"
+            ? inspectionData
+            : inspectionData.filter(item => item.category === currentCategoryFilter))
+            .filter(item => item.isRectified);
+          break;
+        case 'pending':
+          title = 'Pending Items - Office Summary';
+          filteredData = (currentCategoryFilter === "all"
+            ? inspectionData
+            : inspectionData.filter(item => item.category === currentCategoryFilter))
+            .filter(item => !item.isRectified);
+          break;
+        case 'weekInspected':
+          title = 'This Week Inspected - Office Summary';
+          filteredData = (currentCategoryFilter === "all"
+            ? inspectionData
+            : inspectionData.filter(item => item.category === currentCategoryFilter))
+            .filter(item => isWithinLastWeek(item.enteredOn));
+          break;
+        case 'weekRectified':
+          title = 'This Week Rectified - Office Summary';
+          filteredData = (currentCategoryFilter === "all"
+            ? inspectionData
+            : inspectionData.filter(item => item.category === currentCategoryFilter))
+            .filter(item => item.isRectified && isWithinLastWeek(item.rectificationDoneOn));
+          break;
       }
 
-html += `
+
+
+      currentModalData = filteredData;
+      modalTitle.textContent = title;
+
+      // ✅ First: gather full stats from all data
+      const officeStats = {};
+      inspectionData.forEach(item => {
+        const office = item.office;
+        if (!officeStats[office]) {
+          officeStats[office] = { total: 0, rectified: 0, pending: 0, weekInspected: 0, weekRectified: 0 };
+        }
+        officeStats[office].total++;
+        if (item.isRectified) officeStats[office].rectified++;
+        else officeStats[office].pending++;
+
+        if (isWithinLastWeek(item.enteredOn)) officeStats[office].weekInspected++;
+        if (item.isRectified && isWithinLastWeek(item.rectificationDoneOn)) officeStats[office].weekRectified++;
+      });
+
+      // ✅ Filter displayed offices from filteredData
+      const displayCounts = {};
+      filteredData.forEach(item => {
+        const office = item.office;
+        if (!displayCounts[office]) displayCounts[office] = 0;
+        displayCounts[office]++;
+      });
+      modalTitle.innerHTML = `${title} <span style="font-size: 13px; opacity: 0.7;">(${Object.keys(displayCounts).length} Offices)</span>`;
+
+      let html = '<div class="office-summary">';
+      Object.keys(displayCounts)
+        .sort((a, b) => displayCounts[b] - displayCounts[a])
+        .forEach(office => {
+          const stat = officeStats[office];
+          let extra = '';
+
+          if (type === 'total') {
+            extra = `<div style="font-size: 11px; color: #666;">Rectified: ${stat.rectified} | Pending: ${stat.pending}</div>`;
+          } else if (type === 'rectified') {
+            extra = `<div style="font-size: 11px; color: #666;">Total: ${stat.total} | Pending: ${stat.pending}</div>`;
+          } else if (type === 'pending') {
+            extra = `<div style="font-size: 11px; color: #666;">Total: ${stat.total} | Rectified: ${stat.rectified}</div>`;
+          } else if (type === 'weekInspected') {
+            extra = `<div style="font-size: 11px; color: #666;">Rectified This Week: ${stat.weekRectified}</div>`;
+          } else if (type === 'weekRectified') {
+            extra = `<div style="font-size: 11px; color: #666;">Inspected This Week: ${stat.weekInspected}</div>`;
+          }
+
+          html += `
   <div class="office-item" style="flex-direction: column; align-items: flex-start;">
     <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
       <span style="font-size: 14px; color: #333;">${office}</span>
@@ -1162,39 +1273,43 @@ html += `
   </div>
 `;
 
-    });
-  html += '</div>';
+        });
+      html += '</div>';
 
-  modalBody.innerHTML = html;
-  modal.style.display = 'block';
-}
+      modalBody.innerHTML = html;
+      modal.style.display = 'block';
+    }
 
 
 
-function openDetailsModal(officeName) {
-  const detailsModal = document.getElementById('detailsModal');
-  const detailsModalTitle = document.getElementById('detailsModalTitle');
-  const detailsModalBody = document.getElementById('detailsModalBody');
+    function openDetailsModal(officeName) {
+      const detailsModal = document.getElementById('detailsModal');
+      const detailsModalTitle = document.getElementById('detailsModalTitle');
+      const detailsModalBody = document.getElementById('detailsModalBody');
 
-  const today = new Date();
-  const pendingItems = currentModalData
-    .filter(item => item.office === officeName && !item.isRectified)
-    .sort((a, b) => a.enteredOn - b.enteredOn);
+      const today = new Date();
+      const pendingItems = currentModalData
+        .filter(item => item.office === officeName && !item.isRectified)
+        .sort((a, b) => a.enteredOn - b.enteredOn);
 
-  detailsModalTitle.textContent = `${officeName} - Pending Items (${pendingItems.length})`;
+      detailsModalTitle.textContent = `${officeName} - Pending Items (${pendingItems.length})`;
 
-  if (pendingItems.length === 0) {
-    detailsModalBody.innerHTML = '<div class="no-items">No pending items found for this office.</div>';
-  } else {
-    let html = '<div class="details-list">';
-    pendingItems.forEach(item => {
-      const enteredDate = item.enteredOn ? item.enteredOn.toLocaleDateString('en-GB') : 'N/A';
-      const daysPending = item.enteredOn
-        ? Math.floor((today - item.enteredOn) / (1000 * 60 * 60 * 24))
-        : 'N/A';
-      html += `
+      if (pendingItems.length === 0) {
+        detailsModalBody.innerHTML = '<div class="no-items">No pending items found for this office.</div>';
+      } else {
+        let html = '<div class="details-list">';
+        pendingItems.forEach(item => {
+          const enteredDate = item.enteredOn ? item.enteredOn.toLocaleDateString('en-GB') : 'N/A';
+          const daysPending = item.enteredOn
+            ? Math.floor((today - item.enteredOn) / (1000 * 60 * 60 * 24))
+            : 'N/A';
+          html += `
         <div class="detail-item">
-          <div class="detail-location">${item.location || 'Location not specified'}</div>
+<div class="detail-location">
+  ${item.location
+              ? `<a href="#" style="text-decoration: none; color: #1976D2;" onclick="openMapModal('${encodeURIComponent(item.location)}'); return false;">${item.location}</a>`
+              : 'Location not specified'}
+</div>
           <div class="detail-description">${item.description || 'No description available'}</div>
           <div class="detail-meta">
             <div class="detail-meta-item">
@@ -1208,37 +1323,60 @@ function openDetailsModal(officeName) {
           </div>
         </div>
       `;
-    });
-    html += '</div>';
-    detailsModalBody.innerHTML = html;
-  }
+        });
+        html += '</div>';
+        detailsModalBody.innerHTML = html;
+      }
 
-  detailsModal.style.display = 'block';
-}
+      detailsModal.style.display = 'block';
+    }
 
 
-        function closeModal() {
-            document.getElementById('modal').style.display = 'none';
-        }
+    function closeModal() {
+      document.getElementById('modal').style.display = 'none';
+      document.getElementById("mapIframe").src = ""; // Unload iframe for cleanup
 
-        function closeDetailsModal() {
-            document.getElementById('detailsModal').style.display = 'none';
-        }
+    }
+    function closeMapModal() {
+      document.getElementById('mapModal').style.display = 'none';
+      document.getElementById("mapIframe").src = ""; // Optional: reset iframe
+    }
+    function closeDetailsModal() {
+      document.getElementById('detailsModal').style.display = 'none';
+    }
 
-        // Close modal when clicking outside
-        window.onclick = function(event) {
-            const modal = document.getElementById('modal');
-            const detailsModal = document.getElementById('detailsModal');
-            if (event.target === modal) {
-                closeModal();
-            }
-            if (event.target === detailsModal) {
-                closeDetailsModal();
-            }
-        }
+    function openMapModal(location) {
+      const decoded = decodeURIComponent(location || '').trim();
 
-        // Initialize
-        loadData();
-    </script>
+      if (!decoded || decoded.toLowerCase().includes('not specified')) {
+        alert("Location is not valid or missing.");
+        return;
+      }
+
+      const embedUrl = `https://www.google.com/maps?q=${encodeURIComponent(decoded)}&output=embed`;
+      const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(decoded)}`;
+
+      document.getElementById("mapIframe").src = embedUrl;
+      document.getElementById("mapDirectionLink").href = directionsUrl;
+
+      document.getElementById("mapModal").style.display = "block";
+    }
+
+
+    window.onclick = function (event) {
+      const modal = document.getElementById('modal');
+      const detailsModal = document.getElementById('detailsModal');
+      const mapModal = document.getElementById('mapModal');
+
+      if (event.target === modal) closeModal();
+      if (event.target === detailsModal) closeDetailsModal();
+      if (event.target === mapModal) closeMapModal(); // ✅ Add this
+    };
+
+
+    // Initialize
+    loadData();
+  </script>
 </body>
+
 </html>
