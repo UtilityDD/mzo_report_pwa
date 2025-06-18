@@ -507,16 +507,7 @@
         </div>
     </div>
 
-<!-- Designation Modal -->
-<div id="designationModal" class="modal">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h2>Designation-wise Count</h2>
-      <span class="close" onclick="closeDesignationModal()">&times;</span>
-    </div>
-    <div class="modal-body" id="designationList"></div>
-  </div>
-</div>
+
 
 <!-- Employee List Modal -->
 <div id="employeeListModal" class="modal" style="z-index: 1100;">
@@ -549,7 +540,16 @@
     <div class="modal-body" id="costCenterList"></div>
   </div>
 </div>
-
+<!-- Designation Modal -->
+<div id="designationModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Designation-wise Count</h2>
+      <span class="close" onclick="closeDesignationModal()">&times;</span>
+    </div>
+    <div class="modal-body" id="designationList"></div>
+  </div>
+</div>
 <!-- Retirement Modal -->
 <div id="retirementModal" class="modal">
   <div class="modal-content">
@@ -1078,12 +1078,90 @@ const sorted = Object.entries(map).sort((a, b) => b[1].count - a[1].count);
         <h4>${data.name} (${code})</h4>
         <p>${data.count} employees</p>
       </div>
-      <button class="detail-btn" onclick="openGroupEmployeeList('Profit Center Code', '${code.replace(/'/g, "\\'")}')">View</button>
+<button class="detail-btn" onclick="openDesignationWithinProfitCenter('${code.replace(/'/g, "\\'")}')">View</button>
     `;
     container.appendChild(div);
   });
 
   document.getElementById('profitCenterModal').style.display = 'block';
+}
+
+function openDesignationWithinProfitCenter(profitCenterCode) {
+  const filtered = employeeData.filter(emp => (emp['Profit Center Code'] || '') === profitCenterCode);
+  const designationMap = {};
+
+  filtered.forEach(emp => {
+    const desig = emp.Designation || "Unknown";
+    const gross = parseFloat(emp['Gross Salary']) || 0;
+
+    if (!designationMap[desig]) {
+      designationMap[desig] = {
+        count: 1,
+        topSalary: gross
+      };
+    } else {
+      designationMap[desig].count += 1;
+      designationMap[desig].topSalary = Math.max(designationMap[desig].topSalary, gross);
+    }
+  });
+
+  const sorted = Object.entries(designationMap).sort((a, b) => b[1].topSalary - a[1].topSalary);
+  const container = document.getElementById('designationList');
+  container.innerHTML = '';
+
+  sorted.forEach(([desig, data]) => {
+    const div = document.createElement('div');
+    div.className = 'employee-item';
+    div.innerHTML = `
+      <div class="employee-info">
+        <h4>${desig}</h4>
+        <p>${data.count} employees</p>
+      </div>
+      <button class="detail-btn" onclick="openEmployeeListFiltered('${profitCenterCode.replace(/'/g, "\\'")}', '${desig.replace(/'/g, "\\'")}')">View</button>
+    `;
+    container.appendChild(div);
+  });
+
+  document.getElementById('designationModal').style.display = 'block';
+}
+
+function openDesignationWithinCostCenter(costCenterCode) {
+  const filtered = employeeData.filter(emp => (emp['Cost Center Code'] || '') === costCenterCode);
+  const designationMap = {};
+
+  filtered.forEach(emp => {
+    const desig = emp.Designation || "Unknown";
+    const gross = parseFloat(emp['Gross Salary']) || 0;
+
+    if (!designationMap[desig]) {
+      designationMap[desig] = {
+        count: 1,
+        topSalary: gross
+      };
+    } else {
+      designationMap[desig].count += 1;
+      designationMap[desig].topSalary = Math.max(designationMap[desig].topSalary, gross);
+    }
+  });
+
+  const sorted = Object.entries(designationMap).sort((a, b) => b[1].topSalary - a[1].topSalary);
+  const container = document.getElementById('designationList');
+  container.innerHTML = '';
+
+  sorted.forEach(([desig, data]) => {
+    const div = document.createElement('div');
+    div.className = 'employee-item';
+    div.innerHTML = `
+      <div class="employee-info">
+        <h4>${desig}</h4>
+        <p>${data.count} employees</p>
+      </div>
+      <button class="detail-btn" onclick="openEmployeeListFilteredByCostCenter('${costCenterCode.replace(/'/g, "\\'")}', '${desig.replace(/'/g, "\\'")}')">View</button>
+    `;
+    container.appendChild(div);
+  });
+
+  document.getElementById('designationModal').style.display = 'block';
 }
 
 function openCostCenterModal() {
@@ -1116,7 +1194,7 @@ const sorted = Object.entries(map).sort((a, b) => b[1].count - a[1].count);
         <h4>${data.name} (${code})</h4>
         <p>${data.count} employees</p>
       </div>
-      <button class="detail-btn" onclick="openGroupEmployeeList('Cost Center Code', '${code.replace(/'/g, "\\'")}')">View</button>
+<button class="detail-btn" onclick="openDesignationWithinCostCenter('${code.replace(/'/g, "\\'")}')">View</button>
     `;
     container.appendChild(div);
   });
@@ -1213,6 +1291,82 @@ function openEmployeeList(designation) {
     container.innerHTML = html;
   }
 
+  document.getElementById('employeeListModal').style.display = 'block';
+}
+function openEmployeeListFiltered(profitCenterCode, designation) {
+  const list = employeeData.filter(emp => 
+    (emp['Profit Center Code'] || '') === profitCenterCode &&
+    (emp.Designation || 'Unknown') === designation
+  ).sort((a, b) => {
+    const salaryA = parseFloat(a['Gross Salary']) || 0;
+    const salaryB = parseFloat(b['Gross Salary']) || 0;
+    const salaryCompare = salaryB - salaryA;
+    if (salaryCompare !== 0) return salaryCompare;
+
+    const placeA = (a['Cost Center Name'] || '').toLowerCase();
+    const placeB = (b['Cost Center Name'] || '').toLowerCase();
+    return placeA.localeCompare(placeB);
+  });
+
+  const container = document.getElementById('employeeListBody');
+  
+  if (list.length === 0) {
+    container.innerHTML = '<p class="no-results">No employees found.</p>';
+  } else {
+    let html = '<table class="detail-table"><tr><th>Name</th><th>Employee No</th><th>Place of Posting</th></tr>';
+    list.forEach(emp => {
+      const empIndex = employeeData.indexOf(emp);
+      html += `
+<tr style="cursor: pointer;" onclick="openedFromList = true; showEmployeeDetails(${empIndex})">
+        <td>${emp.Name || 'N/A'}<br><i>${emp.Designation || 'N/A'}</i></td>
+        <td>${emp['Employee No'] || 'N/A'}</td>
+        <td>${emp['Cost Center Name'] || 'N/A'}</td>
+      </tr>
+    `;
+    });
+    html += '</table>';
+    container.innerHTML = html;
+  }
+
+  closeDesignationModal();  // Optional: Close Designation Modal
+  document.getElementById('employeeListModal').style.display = 'block';
+}
+function openEmployeeListFilteredByCostCenter(costCenterCode, designation) {
+  const list = employeeData.filter(emp => 
+    (emp['Cost Center Code'] || '') === costCenterCode &&
+    (emp.Designation || 'Unknown') === designation
+  ).sort((a, b) => {
+    const salaryA = parseFloat(a['Gross Salary']) || 0;
+    const salaryB = parseFloat(b['Gross Salary']) || 0;
+    const salaryCompare = salaryB - salaryA;
+    if (salaryCompare !== 0) return salaryCompare;
+
+    const placeA = (a['Cost Center Name'] || '').toLowerCase();
+    const placeB = (b['Cost Center Name'] || '').toLowerCase();
+    return placeA.localeCompare(placeB);
+  });
+
+  const container = document.getElementById('employeeListBody');
+
+  if (list.length === 0) {
+    container.innerHTML = '<p class="no-results">No employees found.</p>';
+  } else {
+    let html = '<table class="detail-table"><tr><th>Name</th><th>Employee No</th><th>Place of Posting</th></tr>';
+    list.forEach(emp => {
+      const empIndex = employeeData.indexOf(emp);
+      html += `
+<tr style="cursor: pointer;" onclick="openedFromList = true; showEmployeeDetails(${empIndex})">
+        <td>${emp.Name || 'N/A'}<br><i>${emp.Designation || 'N/A'}</i></td>
+        <td>${emp['Employee No'] || 'N/A'}</td>
+        <td>${emp['Cost Center Name'] || 'N/A'}</td>
+      </tr>
+    `;
+    });
+    html += '</table>';
+    container.innerHTML = html;
+  }
+
+  closeDesignationModal();  // Optional
   document.getElementById('employeeListModal').style.display = 'block';
 }
 
