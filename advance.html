@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -51,8 +52,6 @@
 .app-container {
   padding-top: 50px;
 }
-
-
 
 
 
@@ -438,7 +437,99 @@ input {
   justify-content: center;
   z-index: 3000;
 }
+/* Styles for the new data table */
+.data-table-container {
+  padding: 1rem;
+  margin-top: 1rem;
+  background: white;
+  border-top: 1px solid #e2e8f0;
+  overflow-x: auto; /* Enable horizontal scrolling for small screens */
+}
 
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.data-table th,
+.data-table td {
+  border: 1px solid #e5e7eb;
+  padding: 0.6rem 0.8rem;
+  text-align: left;
+}
+
+.data-table th {
+  background: #f1f5f9;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap; /* Prevent wrapping of headers */
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.data-table tbody tr:hover {
+  background: #eff6ff; /* Light blue on hover */
+}
+
+@media (max-width: 640px) {
+  .data-table-container {
+    padding: 0.5rem;
+  }
+  .data-table th,
+  .data-table td {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.75rem;
+  }
+}
+
+.summary-table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.summary-table-header .bx {
+  font-size: 1.2rem;
+  transition: transform 0.2s ease-in-out;
+}
+
+.summary-table-header.collapsed .bx {
+  transform: rotate(-90deg);
+}
+
+.summary-table-content {
+  overflow: hidden;
+  transition: max-height 0.3s ease-out;
+  max-height: 1000px; /* Arbitrary large value for expanded state */
+}
+
+.summary-table-content.hidden {
+  max-height: 0;
+  padding-bottom: 0;
+  padding-top: 0;
+}
+
+.summary-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.summary-tabs .tab-btn {
+  flex: 1;
+  text-align: center;
+  padding: 0.5rem;
+  font-size: 0.875rem;
+}
   </style>
 </head>
 <body>
@@ -526,6 +617,26 @@ input {
   </div>
 </div>
 
+    <div class="data-table-container">
+      <div id="summaryTableHeader" class="summary-table-header">
+        <h2>Summary Table</h2>
+        <i class="bx bx-chevron-down"></i>
+      </div>
+      <div id="summaryTableContent" class="summary-table-content">
+        <div class="summary-tabs">
+          <button id="monthlySummaryTabBtn" class="tab-btn active-tab">Monthly Summary</button>
+          <button id="divisionSummaryTabBtn" class="tab-btn">Division Summary</button>
+        </div>
+        <table id="miniDataTable" class="data-table">
+          <thead>
+            <tr>
+              </tr>
+          </thead>
+          <tbody>
+            </tbody>
+        </table>
+      </div>
+    </div>
 
   </div>
 
@@ -565,6 +676,11 @@ function populateLocationDropdown() {
     let selectedUnit = 'all';
     let selectedVendor = 'all';
     let chart;
+
+    // Global variables to store summary data for tables
+    let globalMonthlyBuckets = {};
+    let globalLocationSums = {};
+    let currentSummaryTab = 'monthly'; // default tab
 
   function toggleLoading(show) {
   document.getElementById('loadingOverlay').classList.toggle('hidden', !show);
@@ -707,7 +823,7 @@ Array.from(vendors).sort().forEach(vendor => {
     function filterAndProcessData() {
       const filteredData = getFilteredData();
 
-      // Process filtered data
+      // Process filtered data for monthly chart and stats
       const monthlyBuckets = {};
       const vendorTotals = {};
       let topVendor = { name: '', total: 0 };
@@ -723,8 +839,22 @@ Array.from(vendors).sort().forEach(vendor => {
         }
       });
 
+      globalMonthlyBuckets = monthlyBuckets; // Store for summary table
       updateStats(monthlyBuckets, topVendor);
       renderChart(monthlyBuckets);
+
+      // Process filtered data for division chart
+      const locationSums = {};
+      filteredData.forEach(row => {
+        if (!locationSums[row.location]) {
+          locationSums[row.location] = 0;
+        }
+        locationSums[row.location] += row.value;
+      });
+      globalLocationSums = locationSums; // Store for summary table
+
+      renderDivisionChart(locationSums); // Pass locationSums to renderDivisionChart
+      showSummaryTab(currentSummaryTab); // Re-render current summary tab with new data
     }
 
     function updateStats(monthlyBuckets, topVendor) {
@@ -757,7 +887,7 @@ Array.from(vendors).sort().forEach(vendor => {
       document.getElementById('overdueValue').textContent = `₹${formatCurrency(stats.overdue12mo)}`;
       document.getElementById('overdue24mo').textContent = `₹${formatCurrency(stats.overdue24mo)}`;
       document.getElementById('topVendorValue').textContent = `₹${formatCurrency(topVendor.total)}`;
-      document.getElementById('topVendorLabel').textContent = `Top: ${topVendor.name || 'N/A'}`;
+      document.getElementById('topVendorLabel').textContent = `Top: ${formatName(topVendor.name) || 'N/A'}`;
     }
 
 function renderChart(monthlyBuckets) {
@@ -896,18 +1026,28 @@ function renderChart(monthlyBuckets) {
 
 
 
-function renderDivisionChart() {
-  const locationSums = {};
+function renderDivisionChart(locationSums) { // Now accepts locationSums as an argument
+  // If no specific locationSums passed, use global (e.g., for initial load)
+  if (!locationSums) {
+    locationSums = {};
+    allData.forEach(row => {
+      if (!locationSums[row.location]) {
+        locationSums[row.location] = 0;
+      }
+      locationSums[row.location] += row.value;
+    });
+    globalLocationSums = locationSums; // Ensure global is updated even if called without arg
+  }
 
-  allData.forEach(row => {
-    if (!locationSums[row.location]) {
-      locationSums[row.location] = 0;
-    }
-    locationSums[row.location] += row.value;
-  });
 
   const labels = Object.keys(locationSums).sort();
   const data = labels.map(loc => locationSums[loc]);
+
+  // Destroy existing chart instance if it exists
+  const existingChart = Chart.getChart('divisionChart');
+  if (existingChart) {
+    existingChart.destroy();
+  }
 
   const ctx = document.getElementById('divisionChart').getContext('2d');
   new Chart(ctx, {
@@ -963,32 +1103,127 @@ function renderDivisionChart() {
   });
 }
 
+// Function to toggle the summary table visibility
+function toggleSummaryTable() {
+  const content = document.getElementById('summaryTableContent');
+  const header = document.getElementById('summaryTableHeader');
+  const icon = header.querySelector('.bx');
+
+  content.classList.toggle('hidden');
+  header.classList.toggle('collapsed');
+
+  // Adjust max-height based on visibility
+  if (content.classList.contains('hidden')) {
+    content.style.maxHeight = '0';
+  } else {
+    content.style.maxHeight = content.scrollHeight + 'px'; // Set to actual scroll height
+  }
+}
+
+// Function to render the monthly summary table
+function renderMonthlySummaryTable() {
+  const table = document.getElementById('miniDataTable');
+  const thead = table.querySelector('thead tr');
+  const tbody = table.querySelector('tbody');
+
+  // Clear existing content
+  thead.innerHTML = '<th>Month</th><th>Total Value (₹)</th>';
+  tbody.innerHTML = '';
+
+  // Sort monthly buckets by date
+  const sortedMonths = Object.keys(globalMonthlyBuckets).sort((a, b) => {
+    const [ma, ya] = a.split('/').map(Number);
+    const [mb, yb] = b.split('/').map(Number);
+    const dateA = new Date(2000 + ya, ma - 1);
+    const dateB = new Date(2000 + yb, mb - 1);
+    return dateA - dateB;
+  });
+
+  sortedMonths.forEach(month => {
+    const value = globalMonthlyBuckets[month];
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${month}</td><td>₹${formatCurrency(value)}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// Function to render the division summary table
+function renderDivisionSummaryTable() {
+  const table = document.getElementById('miniDataTable');
+  const thead = table.querySelector('thead tr');
+  const tbody = table.querySelector('tbody');
+
+  // Clear existing content
+  thead.innerHTML = '<th>Division</th><th>Total Value (₹)</th>';
+  tbody.innerHTML = '';
+
+  // Sort divisions by value (descending)
+  const sortedDivisions = Object.entries(globalLocationSums).sort((a, b) => b[1] - a[1]);
+
+  sortedDivisions.forEach(([division, value]) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${formatName(division)}</td><td>₹${formatCurrency(value)}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// Function to switch between summary tabs
+function showSummaryTab(tabName) {
+  currentSummaryTab = tabName;
+
+  // Update active tab styling
+  document.getElementById('monthlySummaryTabBtn').classList.remove('active-tab');
+  document.getElementById('divisionSummaryTabBtn').classList.remove('active-tab');
+
+  if (tabName === 'monthly') {
+    document.getElementById('monthlySummaryTabBtn').classList.add('active-tab');
+    renderMonthlySummaryTable();
+  } else if (tabName === 'division') {
+    document.getElementById('divisionSummaryTabBtn').classList.add('active-tab');
+    renderDivisionSummaryTable();
+  }
+
+  // Adjust the max-height of the collapsible content to fit the new table
+  const content = document.getElementById('summaryTableContent');
+  if (!content.classList.contains('hidden')) {
+    content.style.maxHeight = content.scrollHeight + 'px';
+  }
+}
+
+
 async function checkDataAge() {
   const outdatedDivisions = [];
-
   const today = new Date();
+
   const checkPromises = Object.entries(sources).map(async ([division, url]) => {
     try {
       const response = await fetch(url);
       const text = await response.text();
       const lines = text.trim().split('\n');
 
-      if (lines.length < 2) return;
+      if (lines.length < 2) {
+        outdatedDivisions.push(`${division} — No data row found — Please update`);
+        return;
+      }
 
       const firstRow = lines[1].split(',');
       const dateStr = firstRow[0].trim();
-      const parts = dateStr.split(/[/-]/);
-      if (parts.length !== 3) return;
 
-      const [dd, mm, yyyy] = parts.map(p => parseInt(p));
+      if (!/^\d{1,2}[\/-]\d{1,2}[\/-]\d{4}$/.test(dateStr)) {
+        outdatedDivisions.push(`${division} — Invalid or missing date — Please update`);
+        return;
+      }
+
+      const [dd, mm, yyyy] = dateStr.split(/[/-]/).map(Number);
       const fileDate = new Date(yyyy, mm - 1, dd);
       const diffDays = Math.floor((today - fileDate) / (1000 * 60 * 60 * 24));
 
       if (diffDays > 10) {
-        outdatedDivisions.push(`${division} — Data ${diffDays} days old`);
+        outdatedDivisions.push(`${division} — Data ${diffDays} days old — Please update`);
       }
     } catch (err) {
       console.warn(`Date check failed for ${division}`, err);
+      outdatedDivisions.push(`${division} — Error loading data — Please update`);
     }
   });
 
@@ -997,11 +1232,11 @@ async function checkDataAge() {
   if (outdatedDivisions.length > 0) {
     const alertBox = document.getElementById('dataAgeAlert');
     const message = document.getElementById('dataAgeMessage');
-message.innerHTML = outdatedDivisions
-  .map(d => `<div style="color: #dc2626; font-weight: 500;">${d} — Please update</div>`)
-  .join('');
+    message.innerHTML = outdatedDivisions
+      .map(d => `<div style="color: #dc2626; font-weight: 500;">${d}</div>`)
+      .join('');
     alertBox.style.display = 'flex';
-
+document.getElementById('initialLoader').style.display = 'none';
     return new Promise(resolve => {
       document.getElementById('dataAgeProceedBtn').onclick = () => {
         alertBox.style.display = 'none';
@@ -1010,6 +1245,7 @@ message.innerHTML = outdatedDivisions
     });
   }
 }
+
 
     async function loadData() {
       toggleLoading(true);
@@ -1113,22 +1349,25 @@ populateLocationDropdown();
 
 // Initial load
 checkDataAge().then(() => {
-  loadData().then(() => {
-    setTimeout(() => showStartupAlerts(), 500);
-  });
+loadData().then(() => {
+  showStartupAlerts();
+});
+
 });
 
 
 // Now define the showStartupAlerts function below:
 function showStartupAlerts() {
   const data = allData;
-  if (!data.length) return;
+  if (!data.length) {
+    document.getElementById('initialLoader').style.display = 'none'; // ✅ hide if no data
+    return;
+  }
 
   const summary = { all: {}, overdue: {} };
 
   for (const row of data) {
     const ageInMonths = (new Date() - row.date) / (1000 * 60 * 60 * 24 * 30);
-
     ['location', 'unit', 'vendor'].forEach(key => {
       const val = row[key] || 'Unknown';
       if (!summary.all[key]) summary.all[key] = {};
@@ -1147,37 +1386,12 @@ function showStartupAlerts() {
 
   const alerts = [];
 
-  // Message 1 – Highest Advance
-  const [div1, val1] = topName(summary.all.location);
-  const [unit1, val2] = topName(summary.all.unit);
-  const [vendor1, val3] = topName(summary.all.vendor);
+  // ... (existing alert creation code)
 
-  if (val1 > 0 || val2 > 0 || val3 > 0) {
-alerts.push(`
-  <b>Highest Advance:</b><br>
-  Division: <b>${formatName(div1)}</b> (₹${formatCurrency(val1)})<br>
-  Unit: <b>${formatName(unit1)}</b> (₹${formatCurrency(val2)})<br>
-  Vendor: <b>${formatName(vendor1)}</b> (₹${formatCurrency(val3)})
-`);
-
+  if (!alerts.length) {
+    document.getElementById('initialLoader').style.display = 'none'; // ✅ hide loader if no alerts
+    return;
   }
-
-  // Message 2 – Highest Overdue
-  const [div2, val4] = topName(summary.overdue.location);
-  const [unit2, val5] = topName(summary.overdue.unit);
-  const [vendor2, val6] = topName(summary.overdue.vendor);
-
-  if (val4 > 0 || val5 > 0 || val6 > 0) {
-alerts.push(`
-  <b>Max. Overdue &gt;12 Months:</b><br>
-  Division: <b>${formatName(div2)}</b> (₹${formatCurrency(val4)})<br>
-  Unit: <b>${formatName(unit2)}</b> (₹${formatCurrency(val5)})<br>
-  Vendor: <b>${formatName(vendor2)}</b> (₹${formatCurrency(val6)})
-`);
-
-  }
-
-  if (!alerts.length) return;
 
   let idx = 0;
   const alertBox = document.getElementById('startupAlert');
@@ -1200,8 +1414,13 @@ alerts.push(`
   };
 
   alertBox.style.display = 'flex';
+
+  // ✅ hide loader when modal appears
+  document.getElementById('initialLoader').style.display = 'none';
+
   updateAlert();
 }
+
 
 
 let modalDataMap = {}; // holds the currently rendered map
@@ -1373,6 +1592,9 @@ statCards.forEach((card, i) => {
   });
 });
 
+document.getElementById('summaryTableHeader').addEventListener('click', toggleSummaryTable);
+document.getElementById('monthlySummaryTabBtn').addEventListener('click', () => showSummaryTab('monthly'));
+document.getElementById('divisionSummaryTabBtn').addEventListener('click', () => showSummaryTab('division'));
   });
 
   function formatName(text) {
@@ -1430,6 +1652,13 @@ statCards.forEach((card, i) => {
   </div>
 </div>
 
+<div id="initialLoader" class="fullscreen-modal" style="display:flex;">
+  <div style="text-align: center;">
+    <div class="loading-spinner" style="margin: 1rem auto;"></div>
+    <div style="color:white; font-size: 1rem;">Initializing Dashboard...</div>
+  </div>
+</div>
 
 </body>
 </html>
+```
