@@ -429,10 +429,20 @@ input {
     padding: 0.75rem;
   }
 }
+.fullscreen-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+}
 
   </style>
 </head>
 <body>
+  
       <div class="header">
       <h1>📊 Advance to Vendors</h1>
     </div>
@@ -953,6 +963,53 @@ function renderDivisionChart() {
   });
 }
 
+async function checkDataAge() {
+  const outdatedDivisions = [];
+
+  const today = new Date();
+  const checkPromises = Object.entries(sources).map(async ([division, url]) => {
+    try {
+      const response = await fetch(url);
+      const text = await response.text();
+      const lines = text.trim().split('\n');
+
+      if (lines.length < 2) return;
+
+      const firstRow = lines[1].split(',');
+      const dateStr = firstRow[0].trim();
+      const parts = dateStr.split(/[/-]/);
+      if (parts.length !== 3) return;
+
+      const [dd, mm, yyyy] = parts.map(p => parseInt(p));
+      const fileDate = new Date(yyyy, mm - 1, dd);
+      const diffDays = Math.floor((today - fileDate) / (1000 * 60 * 60 * 24));
+
+      if (diffDays > 10) {
+        outdatedDivisions.push(`${division} — Data ${diffDays} days old`);
+      }
+    } catch (err) {
+      console.warn(`Date check failed for ${division}`, err);
+    }
+  });
+
+  await Promise.all(checkPromises);
+
+  if (outdatedDivisions.length > 0) {
+    const alertBox = document.getElementById('dataAgeAlert');
+    const message = document.getElementById('dataAgeMessage');
+message.innerHTML = outdatedDivisions
+  .map(d => `<div style="color: #dc2626; font-weight: 500;">${d} — Please update</div>`)
+  .join('');
+    alertBox.style.display = 'flex';
+
+    return new Promise(resolve => {
+      document.getElementById('dataAgeProceedBtn').onclick = () => {
+        alertBox.style.display = 'none';
+        resolve(); // continue after user clicks proceed
+      };
+    });
+  }
+}
 
     async function loadData() {
       toggleLoading(true);
@@ -1053,12 +1110,14 @@ renderDivisionChart();
     });
 populateLocationDropdown();
 
-    // Initial load
-    loadData();
+
 // Initial load
-loadData().then(() => {
-  setTimeout(() => showStartupAlerts(), 500);
+checkDataAge().then(() => {
+  loadData().then(() => {
+    setTimeout(() => showStartupAlerts(), 500);
+  });
 });
+
 
 // Now define the showStartupAlerts function below:
 function showStartupAlerts() {
@@ -1360,6 +1419,14 @@ statCards.forEach((card, i) => {
       <button id="nextAlertBtn" class="tab-btn">Next ➡</button>
       <button id="okAlertBtn" class="tab-btn" style="background:#3b82f6; color:white;">OK</button>
     </div>
+  </div>
+</div>
+
+<div id="dataAgeAlert" style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: none; align-items: center; justify-content: center; z-index: 3000;">
+  <div class="modal-box" style="max-width: 500px; text-align: center; padding: 1rem;">
+    <div style="font-weight: bold; font-size: 1rem; margin-bottom: 0.5rem;">⚠️ Data Age Alert</div>
+    <div id="dataAgeMessage" style="font-size: 0.9rem; padding: 0.5rem; max-height: 60vh; overflow-y: auto;"></div>
+    <button id="dataAgeProceedBtn" class="tab-btn" style="margin-top: 1rem; background: #2563eb; color: white;">Proceed</button>
   </div>
 </div>
 
