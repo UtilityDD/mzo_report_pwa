@@ -1,0 +1,1468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Line Chart</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+    <style>
+/* Base styles */
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 5px;
+  background-color: #f5f8fa;
+  color: #333;
+  padding-top: 5px;
+}
+
+h2 {
+  text-align: center;
+  color: #2c3e50;
+  margin-bottom: 5px;
+  font-weight: 600;
+  font-size: 18px;
+}
+
+/* Button styles */
+.toggle-button, .toggle-filters-button {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.toggle-button {
+  padding: 8px 12px;
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto 10px auto;
+  display: block;
+}
+
+.toggle-filters-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  margin: 5px auto;
+  min-width: 120px;
+  width: auto;
+}
+
+.toggle-button:hover, .toggle-filters-button:hover {
+  background-color: #2980b9;
+}
+
+.filter-icon {
+  margin-left: 5px;
+  transition: transform 0.3s ease;
+}
+
+.filters-container.collapsed + .toggle-filters-button .filter-icon {
+  transform: rotate(180deg);
+}
+
+/* Chart container */
+.chart-container {
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+  padding: 10px;
+  margin: 10px auto;
+  width: 100%;
+  max-width: 1000px;
+  min-height: 300px;
+  box-sizing: border-box;
+}
+
+canvas {
+  max-width: 100%;
+  max-height: 500px;
+}
+
+/* Filters */
+.filters-container {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background-color: #f5f8fa;
+  padding: 10px 0;
+  border-bottom: 1px solid #e0e0e0;
+  transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease;
+  max-height: 500px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  width: 100%;
+}
+
+.filters-container.collapsed {
+  max-height: 0;
+  opacity: 0;
+  padding: 0;
+  margin: 0;
+  border-bottom: none;
+}
+
+.filters {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 5px;
+  padding: 5px;
+  border-radius: 6px;
+  width: 85%;
+  max-width: 1000px;
+  justify-content: center;
+  position: sticky;
+  top: 0;
+  background: #f5f8fa;
+  z-index: 10;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 4px;
+  flex: 1;
+  min-width: 150px;
+}
+
+.filter-group label {
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+
+select {
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  background-color: white;
+  font-size: 12px;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  row-gap: 2px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background-color: #f9f9f9;
+  border-radius: 4px;
+  font-size: 11px;
+  border: 1px solid #ddd;
+  white-space: nowrap;
+}
+
+.region-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+  background: #f5f8fa;
+  padding: 6px;
+  border-radius: 6px;
+}
+
+/* Tooltip */
+#differenceTooltip {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid #ddd;
+  padding: 12px;
+  border-radius: 8px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+  display: none;
+  z-index: 1000;
+  font-size: 12px;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  opacity: 0;
+  transform: translateY(10px);
+  max-width: 300px;
+}
+
+#differenceTooltip.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#differenceTooltip .month-title {
+  font-weight: 600;
+  font-size: 13px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  color: #2c3e50;
+}
+
+#differenceTooltip .metric-title {
+  font-weight: 600;
+  color: #3498db;
+  margin-top: 10px;
+  margin-bottom: 5px;
+}
+
+#differenceTooltip .year-value {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+
+#differenceTooltip .diff-value {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+  margin-top: 3px;
+  font-weight: 500;
+}
+
+#differenceTooltip hr {
+  border: none;
+  height: 1px;
+  background-color: #eee;
+  margin: 10px 0;
+}
+
+#differenceTooltip .increase {
+  color: #e74c3c;
+}
+
+#differenceTooltip .decrease {
+  color: #27ae60;
+}
+
+#differenceTooltip .neutral {
+  color: #7f8c8d;
+}
+
+/* Table shared styles */
+#dataTableWrapper, #regionTableWrapper {
+  width: 90%;
+  max-width: 1000px;
+  margin: 0 auto;
+  overflow-x: auto;
+}
+
+#dataTable, #regionTable {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: auto;
+  min-width: 600px;
+}
+
+#dataTable th, #dataTable td,
+#regionTable th, #regionTable td {
+  padding: 6px 10px;
+  text-align: center;
+  border: 1px solid #e0e0e0;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+#dataTable th:first-child, #dataTable td:first-child,
+#regionTable th:first-child, #regionTable td:first-child {
+  position: sticky;
+  left: 0;
+  background-color: #f5f8fa;
+  z-index: 1;
+  box-shadow: 2px 0 4px rgba(0,0,0,0.04);
+  font-weight: 600;
+  width: 1%;
+}
+
+#dataTable th, #regionTable th {
+  background-color: #f5f8fa;
+  font-weight: 600;
+}
+
+#dataTable tr:hover, #regionTable tr:hover {
+  background-color: #f0f8ff;
+  transition: background-color 0.2s ease;
+}
+
+/* RegionTable specific styles */
+#regionTable {
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 5px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+#regionTable th {
+  position: sticky;
+  top: 0;
+  background-color: #e9f2fb;
+  color: #2c3e50;
+  padding: 10px;
+  border: 1px solid #d0e1f2;
+}
+
+#regionTable td {
+  padding: 8px 10px;
+  border: 1px solid #e5e5e5;
+  transition: background-color 0.2s;
+}
+
+.table-container {
+  overflow-x: auto;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+}
+
+#regionTable tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+#regionTable .positive, .positive {
+  color: #e74c3c;
+  font-weight: 500;
+}
+
+#regionTable .negative, .negative {
+  color: #27ae60;
+  font-weight: 500;
+}
+
+/* Expandable table */
+.expandable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.expand-icon {
+  display: inline-block;
+  width: 10px;
+  text-align: center;
+  font-weight: bold;
+  color: #3498db;
+  transition: transform 0.2s ease;
+}
+
+.region-row {
+  font-weight: 600;
+  background-color: #f0f7ff;
+}
+
+.division-row {
+  font-weight: 500;
+  background-color: #f5f9ff;
+  border-left: 3px solid #d6e9ff;
+}
+
+.ccc-row {
+  font-weight: normal;
+  background-color: #fafcff;
+  border-left: 3px solid #ebf5ff;
+}
+
+.region-row:hover, .division-row:hover, .ccc-row:hover {
+  background-color: #e6f3ff !important;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.division-row.show, .ccc-row.show {
+  animation: fadeIn 0.3s ease forwards;
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+  #dataTable, #regionTable {
+    width: 100%;
+    min-width: unset;
+    table-layout: auto;
+  }
+  
+  #dataTable th, #dataTable td,
+  #regionTable th, #regionTable td {
+    font-size: 11px;
+    padding: 1px 1px;
+  }
+  
+  .filter-group label {
+    font-size: 12px;
+  }
+  
+  .checkbox-item {
+    font-size: 11px;
+    padding: 2px 2px;
+  }
+  
+  .expand-icon {
+    width: 12px;
+  }
+  
+  .region-filters select,
+  .region-filters option {
+    font-size: 11px;
+  }
+  
+  .region-filters label {
+    font-size: 12px;
+  }
+}
+
+    </style>
+</head>
+<body>
+    <h2>Performance Parameters: Malda Zone</h2>
+    <button id="toggleFilters" class="toggle-filters-button">
+        <span class="filter-text">Hide Filters</span>
+        <span class="filter-icon">▲</span>
+    </button>
+    <div class="filters-container">
+        <div class="filters">
+            <div class="filter-group">
+                <label for="cccFilter">Select Unit / Office:</label>
+                <select id="cccFilter"></select>
+            </div>
+            <div class="filter-group">
+                <label>Year:</label>
+                <div id="yearCheckboxes" class="checkbox-group"></div>
+            </div>
+            <div class="filter-group">
+                <label>Parameters:</label>
+                <div id="parameterCheckboxes" class="checkbox-group"></div>
+            </div>
+        </div>
+    </div>
+    <div class="chart-container">
+        <canvas id="chart"></canvas>
+    </div>
+    
+    <!-- Add here -->
+    <button onclick="toggleTable()" class="toggle-button">Data Table</button>
+    <div id="dataTableWrapper" style="display:none;">
+        <table id="dataTable" border="1">
+            <thead></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div id="differenceTooltip"></div>
+    <div style="width: 90%; max-width: 1000px; margin: 0 auto 20px auto;">
+<button onclick="toggleRegionTable()" class="toggle-button">Comparison</button>
+<div id="regionTableWrapper" style="display:none;">
+    <div class="region-filters">
+        <div class="filter-group">
+            <label for="regionMonthSelect1">Period 1:</label>
+            <div style="display:flex;gap:4px;">
+                <select id="regionMonthSelect1" onchange="updateRegionTable()" style="flex:1"></select>
+                <select id="regionYearSelect1" onchange="updateRegionTable()" style="flex:1"></select>
+            </div>
+        </div>
+        <div class="filter-group">
+            <label for="regionMonthSelect2">Period 2:</label>
+            <div style="display:flex;gap:4px;">
+                <select id="regionMonthSelect2" onchange="updateRegionTable()" style="flex:1"></select>
+                <select id="regionYearSelect2" onchange="updateRegionTable()" style="flex:1"></select>
+            </div>
+        </div>
+        <div class="filter-group">
+            <label for="regionParameterSelect">Parameter:</label>
+            <select id="regionParameterSelect" onchange="updateRegionTable()"></select>
+        </div>
+    </div>
+    <table id="regionTable" border="1">
+        <thead>
+            <tr>
+                <th>Unit</th>
+                <th id="period1Header">Period 1</th>
+                <th id="period2Header">Period 2</th>
+                <th>Change</th>
+                <th>Change %</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+        </div>
+    </div>
+    <br>
+    <br>
+    <br>
+    <script>
+        const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSYyqn0urGdbqXarhELRbSCeRvgUCSHID_1Z4E_kptBTR5u69R0HHX0Jk23n6KseriNct2q9XwXu04E/pub?output=csv";
+        let rawData = [];
+        let chart;
+        const monthNames = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
+        const parameters = ["CUM. INPUT (MU)", "CUM. DEMAND(MU)", "CUM. COLLEC. (MU)", "CUM. AT&C LOSS", "CUM. DIST. LOSS", "COLL. EFF."];
+        const parameterDisplayMap = {
+    "CUM. INPUT (MU)": "Input",
+    "CUM. DEMAND(MU)": "Demand",
+    "CUM. COLLEC. (MU)": "Collection",
+    "CUM. AT&C LOSS": "AT&C Loss",
+    "CUM. DIST. LOSS": "T&D Loss",
+    "COLL. EFF.": "Collection Efficiency"
+};
+
+        let chartData = {};
+        let tooltipTimeout = null;
+        
+        function fetchCSV() {
+    Papa.parse(csvUrl, {
+        download: true,
+        header: true,
+        complete: function(results) {
+            rawData = results.data;
+            populateCCCFilter();
+            // Setup toggle functionality after data is loaded
+            setupFilterToggle();
+        }
+    });
+}
+        
+        function populateCCCFilter() {
+    const cccFilter = document.getElementById("cccFilter");
+    const uniqueCCCs = [...new Set(
+    rawData
+        .map(row => row.CCC?.trim())
+        .filter(ccc => ccc && ccc !== "")
+)].sort((a, b) => a.localeCompare(b));
+
+    cccFilter.innerHTML = `<option value="" disabled selected>--Select Office--</option>` +
+    uniqueCCCs.map(ccc => `<option value="${ccc}">${ccc}</option>`).join('');
+
+    cccFilter.addEventListener("change", updateChart);
+
+    generateYearCheckboxes();
+    generateParameterCheckboxes();  
+}
+
+
+        
+        function generateYearCheckboxes() {
+            const years = [...new Set(rawData
+    .map(row => row.YEAR)
+    .filter(year => year && !isNaN(parseInt(year)))
+)];
+
+    // Sort years in ascending order (chronological)
+    years.sort((a, b) => a - b);
+    const container = document.getElementById("yearCheckboxes");
+    container.innerHTML = years.map(year => 
+        `<div class="checkbox-item">
+            <input type="checkbox" id="year-${year}" value="${year}" checked>
+ <label for="year-${year}">${year}-${(parseInt(year)+1).toString().slice(-2)}</label>
+
+        </div>`
+    ).join('');
+    container.addEventListener("change", updateChart);
+}
+        
+function generateParameterCheckboxes() {
+    const container = document.getElementById("parameterCheckboxes");
+    container.innerHTML = parameters.map(param =>
+        `<div class="checkbox-item">
+            <input type="checkbox" id="param-${param.replace(/\s+/g, '-').replace(/[()]/g, '')}" value="${param}" ${param === "CUM. AT&C LOSS" ? "checked" : ""}>
+            <label for="param-${param.replace(/\s+/g, '-').replace(/[()]/g, '')}">${parameterDisplayMap[param]}</label>
+        </div>`
+    ).join('');
+    container.addEventListener("change", updateChart);
+}
+
+        
+        function getParameterColor(param, index) {
+    const colorMap = {
+        "CUM. INPUT (MU)": ["#3498db", "#135078", "#5dade2", "#1f618d"],
+        "CUM. DEMAND(MU)": ["#9b59b6", "#8e44ad", "#bb8fce", "#5b2c6f"],
+        "CUM. COLLEC. (MU)": ["#2ecc71", "#27ae60", "#58d68d", "#145a32"],
+        "CUM. AT&C LOSS": ["#ff7c78", "#d82a2a", "#990404", "#9c0e0a"],
+        "CUM. DIST. LOSS": ["#ffc578", "#f1a745", "#e0840b", "#b56b09"],
+        "COLL. EFF.": ["#1abc9c", "#16a085", "#48c9b0", "#0e6251"]
+    };
+    
+    return colorMap[param][index % 4]; // Ensures 4 distinct colors per parameter
+}
+
+
+        
+        function updateChart() {
+            const selectedCCC = document.getElementById("cccFilter").value;
+            if (!selectedCCC) return; // ⛔ Do not proceed if no office is selected
+            const selectedYears = [...document.querySelectorAll("#yearCheckboxes input:checked")].map(cb => cb.value);
+            const selectedParameters = [...document.querySelectorAll("#parameterCheckboxes input:checked")].map(cb => cb.value);
+            const filteredData = rawData.filter(row => row.CCC === selectedCCC && selectedYears.includes(row.YEAR));
+            
+            const labels = monthNames;
+            const datasets = [];
+            
+            // Store the data for hover comparison
+            chartData = {};
+            
+            selectedParameters.forEach((metric, paramIndex) => {
+                // Initialize metric data structure
+                if (!chartData[metric]) {
+                    chartData[metric] = {};
+                }
+                
+                selectedYears
+    .filter(y => y && !isNaN(parseInt(y)))
+    .forEach((year, yearIndex) => {
+
+                    // Store data by year and month for this metric
+                    if (!chartData[metric][year]) {
+                        chartData[metric][year] = {};
+                    }
+                    
+                    datasets.push({
+                        label: `${parameterDisplayMap[metric]} (${year}-${(parseInt(year)+1 || 0).toString().slice(-2)})`,
+
+
+                        data: labels.map((_, index) => {
+    const monthMap = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];  // April to March
+    const month = monthMap[index];
+    
+    // FY 2023-24 should fetch: Apr–Dec from 2023, Jan–Mar from 2024
+    const fiscalYearStart = parseInt(year);
+    const actualYear = (month >= 4) ? fiscalYearStart : fiscalYearStart + 1;
+
+    const entry = rawData.find(row => 
+        row.CCC === selectedCCC &&
+        parseInt(row.MONTH) === month &&
+        parseInt(row.YEAR) === actualYear
+    );
+
+    const value = entry ? parseFloat(entry[metric]) : null;
+
+    // Store for tooltip
+    if (value !== null) {
+        chartData[metric][year][month] = value;
+    }
+
+    return value;
+}),
+
+borderWidth: window.innerWidth <= 768 ? 1.5 : 3,
+                        tension: 0.4,
+                        fill: false,
+                        borderColor: getParameterColor(metric, yearIndex),
+                        backgroundColor: getParameterColor(metric, yearIndex),
+                        pointBackgroundColor: getParameterColor(metric, yearIndex),
+                        pointBorderColor: "#fff",
+                        pointRadius: window.innerWidth <= 768 ? 3 : 5,
+                        pointHoverRadius: window.innerWidth <= 768 ? 4 : 7,
+                        borderWidth: window.innerWidth <= 768 ? 1.5 : 3,
+pointBorderWidth: window.innerWidth <= 768 ? 1 : 2,
+
+                        metric: metric,
+                        year: year,
+                        datalabels: {
+                            align: 'top',
+                            anchor: 'end',
+                            formatter: (value) => value ? `${value.toFixed(1)}` : '',
+                            color: getParameterColor(metric, yearIndex),
+                            backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                            borderRadius: 4,
+                            padding: { top: 2, bottom: 2, left: 2, right: 2 },
+                            font: { 
+                                weight: 'normal',
+                                size: window.innerWidth <= 768 ? 9 : 12,
+                            }
+                        }
+                    });
+                });
+            });
+            
+            renderChart(labels, datasets);
+            updateDataTable();
+        }
+        
+        function renderChart(labels, datasets) {
+            if (chart) chart.destroy();
+            const ctx = document.getElementById("chart").getContext("2d");
+            const tooltipEl = document.getElementById('differenceTooltip');
+            
+            // Set tooltip initial state
+            tooltipEl.style.display = 'none';
+            tooltipEl.classList.remove('active');
+            
+            chart = new Chart(ctx, {
+                type: "line",
+                data: { labels, datasets },
+                options: { 
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    layout: {
+    padding: window.innerWidth <= 768
+        ? { left: 5, right: 5, top: 30, bottom: 5 }
+        : { left: 10, right: 10, top: 40, bottom: 10 }
+},
+
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    onHover: function(event, elements) {
+                        if (elements && elements.length) {
+                            document.getElementById('chart').style.cursor = 'pointer';
+                        } else {
+                            document.getElementById('chart').style.cursor = 'default';
+                            
+                            // Clear any existing timeout
+                            if (tooltipTimeout) {
+                                clearTimeout(tooltipTimeout);
+                            }
+                            
+                            // Set a timeout to hide the tooltip to prevent flickering
+                            tooltipTimeout = setTimeout(() => {
+                                tooltipEl.classList.remove('active');
+                                setTimeout(() => {
+                                    tooltipEl.style.display = 'none';
+                                }, 300);
+                            }, 100);
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'bottom',
+                            labels: {
+                                boxWidth: 12,
+                                usePointStyle: true,
+                                pointStyle: 'circle',
+                                padding: 9,
+                                font: {
+                                    size: window.innerWidth <= 768 ? 9 : 12,
+                                }
+                            }
+                        },
+                        
+                        tooltip: {
+                            enabled: false, // Disable the default tooltip
+                            mode: 'index',
+                            intersect: false,
+                            external: function(context) {
+                                // Clear any existing timeout
+                                if (tooltipTimeout) {
+                                    clearTimeout(tooltipTimeout);
+                                }
+                                
+                                // Hide the tooltip if no tooltip
+                                if (context.tooltip.opacity === 0) {
+                                    tooltipTimeout = setTimeout(() => {
+                                        tooltipEl.classList.remove('active');
+                                        setTimeout(() => {
+                                            tooltipEl.style.display = 'none';
+                                        }, 300);
+                                    }, 100);
+                                    return;
+                                }
+                                
+                                // Set display to block and position
+                                tooltipEl.style.display = 'block';
+                                
+                                // Position the tooltip with a small delay to prevent flickering
+                                setTimeout(() => {
+                                    const position = context.chart.canvas.getBoundingClientRect();
+                                    tooltipEl.style.left = position.left + window.pageXOffset + context.tooltip.caretX + 'px';
+                                    tooltipEl.style.top = position.top + window.pageYOffset + context.tooltip.caretY + 'px';
+                                    tooltipEl.classList.add('active');
+                                }, 10);
+                                
+                                // Get data from active elements
+                                const activeElements = context.tooltip.dataPoints;
+                                if (activeElements.length < 1) return;
+                                
+                                // Group data points by metric
+                                const metricGroups = {};
+                                activeElements.forEach(element => {
+                                    const dataset = context.chart.data.datasets[element.datasetIndex];
+                                    const metric = dataset.metric;
+                                    const year = dataset.year;
+                                    
+                                    if (!metricGroups[metric]) {
+                                        metricGroups[metric] = [];
+                                    }
+                                    
+                                    metricGroups[metric].push({
+                                        year: year,
+                                        value: element.raw,
+                                        datasetIndex: element.datasetIndex
+                                    });
+                                });
+                                
+                                // Generate the difference content
+                                const monthMap = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
+const monthIndex = context.tooltip.dataPoints[0].dataIndex;
+const displayMonth = monthMap[monthIndex];
+let tooltipContent = `<div class="month-title">${displayMonth}</div>`;
+
+                                
+                                // For each metric, calculate differences between years
+                                Object.keys(metricGroups).forEach(metric => {
+                                    const points = metricGroups[metric];
+                                    if (points.length < 2) return; // Need at least two years to compare
+                                    
+                                    tooltipContent += `<div class="metric-title">${parameterDisplayMap[metric]}</div>`;
+
+                                    
+                                    // Show each year's value
+                                    points.forEach(point => {
+                                        if (point.value !== null) {
+                                            tooltipContent += `<div class="year-value">
+                                                <span>${point.year}:</span>
+                                                <span>${point.value.toFixed(2)}</span>
+                                            </div>`;
+                                        }
+                                    });
+                                    
+                                    // Calculate differences between consecutive years
+                                    for (let i = 0; i < points.length - 1; i++) {
+                                        for (let j = i + 1; j < points.length; j++) {
+                                            const pointA = points[i];
+                                            const pointB = points[j];
+                                            
+                                            if (pointA.value !== null && pointB.value !== null) {
+                                                const difference = pointB.value - pointA.value;
+                                                const percentChange = (difference / Math.abs(pointA.value)) * 100;
+                                                
+                                                const cssClass = difference > 0 ? 'increase' : difference < 0 ? 'decrease' : 'neutral';
+                                                const symbol = difference > 0 ? '↑' : difference < 0 ? '↓' : '→';
+                                                
+                                                tooltipContent += `<div class="diff-value ${cssClass}">
+                                                    <span>${pointB.year} - ${pointA.year}:</span>
+                                                    <span>${difference.toFixed(2)} ${symbol} (${percentChange.toFixed(1)}%)</span>
+                                                </div>`;
+                                            }
+                                        }
+                                    }
+                                    
+                                    tooltipContent += '<hr>';
+                                });
+                                
+                                tooltipEl.innerHTML = tooltipContent;
+                            }
+                        },
+                        datalabels: {
+                            display: true,
+                            clip: false
+                        }
+                    },
+                    scales: {
+                        x: { 
+    title: { display: false },
+    grid: {
+        display: true,
+        color: 'rgba(0, 0, 0, 0.05)'
+    },
+    ticks: {
+        font: {
+            size: window.innerWidth <= 768 ? 10 : 12
+        }
+    }
+},
+y: { 
+    title: { display: false },
+    suggestedMax: 1.03, // temporary placeholder, see below
+    grid: {
+        display: true,
+        color: 'rgba(0, 0, 0, 0.05)'
+    },
+    ticks: {
+        font: {
+            size: window.innerWidth <= 768 ? 10 : 12
+        }
+    }
+}
+
+
+                    }
+                },
+                plugins: [ChartDataLabels]
+            });
+        }
+        
+        fetchCSV();
+        function toggleTable() {
+    const wrapper = document.getElementById("dataTableWrapper");
+    wrapper.style.display = wrapper.style.display === "none" ? "block" : "none";
+}
+
+function updateDataTable() {
+    const table = document.getElementById("dataTable");
+    const selectedParameters = [...document.querySelectorAll("#parameterCheckboxes input:checked")].map(cb => cb.value);
+    const selectedYears = [...document.querySelectorAll("#yearCheckboxes input:checked")].map(cb => cb.value);
+
+    let thead = "<tr><th>Month</th>";
+selectedParameters.forEach(param => {
+    selectedYears.forEach(year => {
+        thead += `<th>${parameterDisplayMap[param]}<br>(${year}-${(parseInt(year)+1).toString().slice(-2)})</th>`;
+    });
+});
+    thead += "</tr>";
+    table.querySelector("thead").innerHTML = thead;
+
+    const monthMap = [4,5,6,7,8,9,10,11,12,1,2,3];
+    let tbody = "";
+    for (let i = 0; i < 12; i++) {
+        const monthNum = monthMap[i];
+        const monthLabel = monthNames[i];
+        let row = `<tr><td>${monthLabel}</td>`;
+        selectedParameters.forEach(param => {
+            selectedYears.forEach(year => {
+                const value = chartData[param]?.[year]?.[monthNum];
+                row += `<td>${value != null ? value.toFixed(2) : "-"}</td>`;
+            });
+        });
+        row += "</tr>";
+        tbody += row;
+    }
+    table.querySelector("tbody").innerHTML = tbody;
+}
+let regionData = [];
+    
+    // Function to toggle the region table visibility
+    function toggleRegionTable() {
+        const wrapper = document.getElementById("regionTableWrapper");
+        const isHidden = wrapper.style.display === "none";
+        wrapper.style.display = isHidden ? "block" : "none";
+        
+        // If showing the table, initialize it if it hasn't been already
+        if (isHidden && regionData.length === 0) {
+            initializeRegionTable();
+        }
+    }
+    
+    // Function to initialize the region table filters and data
+    function initializeRegionTable() {
+    // Populate month selects
+    const monthSelect1 = document.getElementById("regionMonthSelect1");
+    const monthSelect2 = document.getElementById("regionMonthSelect2");
+    
+    monthNames.forEach((month, index) => {
+        const option1 = document.createElement("option");
+        option1.value = index;
+        option1.textContent = month;
+        
+        const option2 = document.createElement("option");
+        option2.value = index;
+        option2.textContent = month;
+        
+        monthSelect1.appendChild(option1);
+        monthSelect2.appendChild(option2);
+    });
+    
+ 
+ // Set default months (e.g., March and previous March)
+monthSelect1.value = 11; // March (0-indexed)
+monthSelect2.value = 11; // March (0-indexed)
+
+    
+    // Populate year selects
+    const yearSelect1 = document.getElementById("regionYearSelect1");
+    const yearSelect2 = document.getElementById("regionYearSelect2");
+    
+    const years = [...new Set(rawData
+        .map(row => row.YEAR)
+        .filter(year => year && !isNaN(parseInt(year)))
+    )].sort((a, b) => b - a); // Sort years in descending order
+    
+    years.forEach(year => {
+        const option1 = document.createElement("option");
+        option1.value = year;
+        // Just show the year value from YEAR column
+        option1.textContent = year;
+        
+        const option2 = document.createElement("option");
+        option2.value = year;
+        // Just show the year value from YEAR column
+        option2.textContent = year;
+        
+        yearSelect1.appendChild(option1);
+        yearSelect2.appendChild(option2);
+    });
+    
+    // Set default years (latest and previous year)
+    yearSelect1.value = "2024";
+yearSelect2.value = "2025";
+
+    
+    // Populate parameter select
+    const parameterSelect = document.getElementById("regionParameterSelect");
+    
+    parameters.forEach(param => {
+        const option = document.createElement("option");
+        option.value = param;
+        option.textContent = parameterDisplayMap[param];
+        parameterSelect.appendChild(option);
+    });
+    
+    // Set default parameter (AT&C Loss)
+    parameterSelect.value = "CUM. AT&C LOSS";
+    
+    // Extract region data
+    fetchRegionData();
+}
+    
+    // Function to fetch and process region data
+    function fetchRegionData() {
+        // Filter data for regions (entries where CCC contains "REGION")
+        regionData = rawData.filter(row => row.CCC && row.CCC.includes("REGION"));
+        
+        // If we have region data, update the table
+        if (regionData.length > 0) {
+            updateRegionTable();
+        } else {
+            console.log("No region data found");
+            document.getElementById("regionTable").querySelector("tbody").innerHTML = "<tr><td colspan='5'>No region data available</td></tr>";
+        }
+    }
+    
+    // Function to update the region comparison table
+    function updateRegionTable() {
+    const monthSelect1 = document.getElementById("regionMonthSelect1");
+    const yearSelect1 = document.getElementById("regionYearSelect1");
+    const monthSelect2 = document.getElementById("regionMonthSelect2");
+    const yearSelect2 = document.getElementById("regionYearSelect2");
+    const parameterSelect = document.getElementById("regionParameterSelect");
+    
+    const month1 = parseInt(monthSelect1.value);
+    const year1 = yearSelect1.value;
+    const month2 = parseInt(monthSelect2.value);
+    const year2 = yearSelect2.value;
+    const parameter = parameterSelect.value;
+    
+    // Update header labels - just use the year value alone
+    const actualYearDisplay1 = (actualMonth1 >= 4) ? year1 : (parseInt(year1) - 1);
+const actualYearDisplay2 = (actualMonth2 >= 4) ? year2 : (parseInt(year2) - 1);
+
+document.getElementById("period1Header").textContent = `${monthNames[month1]} ${actualYearDisplay1}`;
+document.getElementById("period2Header").textContent = `${monthNames[month2]} ${actualYearDisplay2}`;
+
+        
+        // Get the actual month numbers (Apr=4, May=5, ..., Mar=3)
+        const monthMap = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];
+        const actualMonth1 = monthMap[month1];
+        const actualMonth2 = monthMap[month2];
+        
+        // Determine actual years based on fiscal year selection
+        const actualYear1 = (actualMonth1 >= 4) ? parseInt(year1) : parseInt(year1) - 1;
+        const actualYear2 = (actualMonth2 >= 4) ? parseInt(year2) : parseInt(year2) - 1;
+        
+        // Get unique regions
+        const regions = [...new Set(regionData.map(row => row.CCC))].sort();
+        
+        // Prepare table body
+        let tbody = "";
+        
+        regions.forEach(region => {
+            // Find data for this region for both periods
+            const period1Data = regionData.find(row => 
+                row.CCC === region && 
+                parseInt(row.MONTH) === actualMonth1 && 
+                parseInt(row.YEAR) === actualYear1
+            );
+            
+            const period2Data = regionData.find(row => 
+                row.CCC === region && 
+                parseInt(row.MONTH) === actualMonth2 && 
+                parseInt(row.YEAR) === actualYear2
+            );
+            
+            // Get parameter values
+            const value1 = period1Data ? parseFloat(period1Data[parameter]) : null;
+            const value2 = period2Data ? parseFloat(period2Data[parameter]) : null;
+            
+            // Calculate difference and percentage
+            let difference = null;
+            let percentDiff = null;
+            let diffClass = "";
+            
+            if (value1 !== null && value2 !== null) {
+                difference = value2 - value1;
+                percentDiff = (value1 !== 0) ? (difference / Math.abs(value1)) * 100 : null;
+                
+                // Determine if positive/negative is good (depends on the parameter)
+                if (parameter.includes("LOSS")) {
+                    // For loss parameters, decrease is good (negative is good)
+                    diffClass = difference < 0 ? "negative" : difference > 0 ? "positive" : "";
+                } else {
+                    // For other parameters, increase is good (positive is good)
+                    diffClass = difference > 0 ? "positive" : difference < 0 ? "negative" : "";
+                }
+            }
+            
+            // Create row
+            tbody += `<tr>
+                <td>${region}</td>
+                <td>${value1 !== null ? value1.toFixed(2) : "-"}</td>
+                <td>${value2 !== null ? value2.toFixed(2) : "-"}</td>
+                <td class="${diffClass}">${difference !== null ? difference.toFixed(2) : "-"}</td>
+                <td class="${diffClass}">${percentDiff !== null ? percentDiff.toFixed(2) + "%" : "-"}</td>
+            </tr>`;
+        });
+        
+        // Update table
+        document.getElementById("regionTable").querySelector("tbody").innerHTML = tbody || "<tr><td colspan='5'>No data available for selected periods</td></tr>";
+    }
+
+    function setupFilterToggle() {
+    const filtersContainer = document.querySelector('.filters-container');
+    const toggleButton = document.getElementById('toggleFilters');
+    const filterText = toggleButton.querySelector('.filter-text');
+    const filterIcon = toggleButton.querySelector('.filter-icon');
+    
+    toggleButton.addEventListener('click', () => {
+        filtersContainer.classList.toggle('collapsed');
+        
+        if (filtersContainer.classList.contains('collapsed')) {
+            filterText.textContent = 'Show Filters';
+            filterIcon.textContent = '▼';
+        } else {
+            filterText.textContent = 'Hide Filters';
+            filterIcon.textContent = '▲';
+        }
+    });
+    
+    // Optional: Auto-collapse on scroll
+    let lastScrollTop = 0;
+    window.addEventListener('scroll', () => {
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        
+        if (scrollTop > lastScrollTop && scrollTop > 100) {
+            // Scrolling down & past filters
+            filtersContainer.classList.add('collapsed');
+            filterText.textContent = 'Show Filters';
+            filterIcon.textContent = '▼';
+        }
+        
+        lastScrollTop = scrollTop;
+    });
+}
+
+// Call this function after the page loads
+document.addEventListener('DOMContentLoaded', () => {
+    fetchCSV();
+    setupFilterToggle();
+});
+// Define the hierarchical structure of regions, divisions, and CCCs
+const hierarchyData = {
+  "MALDA REGION": {
+    divisions: ["South Malda Div Total", "North Malda Div Total", "Gazole Div Total", "Chanchal Div Total", "Malda Div Total"],
+    cccs: {}
+  },
+  "U/DINAJPUR REGION": {
+    divisions: ["Raiganj Div Total", "Islampur Div Total"],
+    cccs: {}
+  },
+  "D/DINAJPUR REGION": {
+    divisions: ["Balurghat Div Total", "Buniadpur Div Total"],
+    cccs: {}
+  }
+};
+
+const monthNameMap = {
+  1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
+  7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"
+};
+
+hierarchyData["MALDA REGION"].cccs = {
+  "South Malda Div Total": ["RATHBARI", "FULBARI", "MOKDAMPUR", "OLD MALDA", "KALIACHAK", "SUJAPUR", "AIHO", "MOTHABARI", "MATHURAPUR", "BAISNABNAGAR", "GOLAPGANJ"],
+  "North Malda Div Total": ["SAMSI", "PARANPUR", "GAZOLE", "CHANCHAL", "H.C. PUR", "BHALUKA", "BAMANGOLA", "MALATIPUR", "KUSHIDA", "PANDUA"],
+  "Gazole Div Total": ["OLD MALDA", "AIHO", "GAZOLE", "BAMANGOLA", "PANDUA"],
+  "Chanchal Div Total": ["SAMSI", "PARANPUR", "CHANCHAL", "H.C. PUR", "BHALUKA", "MALATIPUR", "KUSHIDA"],
+  "Malda Div Total": ["RATHBARI", "FULBARI", "MOKDAMPUR", "KALIACHAK", "SUJAPUR", "MOTHABARI", "MATHURAPUR", "BAISNABNAGAR", "GOLAPGANJ"]
+};
+
+hierarchyData["U/DINAJPUR REGION"].cccs = {
+  "Raiganj Div Total": ["RAIGANJ", "KALIAGANJ", "HEMTABAD", "BIRNAGAR", "ITAHAR", "KARANDEGHI"],
+  "Islampur Div Total": ["DALKHOLA", "KANKI", "GOALPOKHAR", "ISLAMPUR", "CHOPRA"]
+};
+
+hierarchyData["D/DINAJPUR REGION"].cccs = {
+  "Balurghat Div Total": ["BALURGHAT", "HILI", "KUMARGUNJ", "TAPAN", "PATIRAM"],
+  "Buniadpur Div Total": ["BUNIADPUR", "HARIRAMPUR", "GANGARAMPUR", "KUSHMUNDI"]
+};
+
+function updateRegionTable() {
+  const monthSelect1 = document.getElementById("regionMonthSelect1");
+  const yearSelect1 = document.getElementById("regionYearSelect1");
+  const monthSelect2 = document.getElementById("regionMonthSelect2");
+  const yearSelect2 = document.getElementById("regionYearSelect2");
+  const parameterSelect = document.getElementById("regionParameterSelect");
+
+  const fiscalMonthMap = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];
+  const actualMonth1 = fiscalMonthMap[parseInt(monthSelect1.value)];
+  const actualMonth2 = fiscalMonthMap[parseInt(monthSelect2.value)];
+  const actualYear1 = parseInt(yearSelect1.value);
+  const actualYear2 = parseInt(yearSelect2.value);
+  const parameter = parameterSelect.value;
+
+  document.getElementById("period1Header").textContent = `${monthNameMap[actualMonth1]} ${actualYear1}`;
+  document.getElementById("period2Header").textContent = `${monthNameMap[actualMonth2]} ${actualYear2}`;
+
+  const period1Data = rawData.filter(row => 
+    parseInt(row.MONTH) === actualMonth1 && parseInt(row.YEAR) === actualYear1
+  );
+
+  const period2Data = rawData.filter(row => 
+    parseInt(row.MONTH) === actualMonth2 && parseInt(row.YEAR) === actualYear2
+  );
+
+  const regionEntries = processHierarchyLevel(period1Data, period2Data, parameter, entry =>
+    entry.CCC && entry.CCC.includes("REGION")
+  );
+
+  regionEntries.sort((a, b) => Math.abs(b.percentDiff || 0) - Math.abs(a.percentDiff || 0));
+
+  let tbody = "";
+  regionEntries.forEach(region => {
+    tbody += generateRegionRow(region, period1Data, period2Data, parameter, actualMonth1, actualYear1, actualMonth2, actualYear2);
+  });
+
+  document.getElementById("regionTable").querySelector("tbody").innerHTML = tbody ||
+    "<tr><td colspan='5'>No data available for selected periods</td></tr>";
+
+  attachExpandListeners();
+}
+
+
+function processHierarchyLevel(period1Data, period2Data, parameter, filterFn) {
+    const entries = [];
+    
+    // Get unique entries based on the filter function
+    const uniqueEntries = [...new Set(
+        [...period1Data, ...period2Data]
+            .filter(filterFn)
+            .map(row => row.CCC)
+    )].sort();
+    
+    uniqueEntries.forEach(entryName => {
+        // Find data for both periods
+        const entry1 = period1Data.find(row => row.CCC === entryName);
+        const entry2 = period2Data.find(row => row.CCC === entryName);
+        
+        // Get parameter values
+        const value1 = entry1 ? parseFloat(entry1[parameter]) : null;
+        const value2 = entry2 ? parseFloat(entry2[parameter]) : null;
+        
+        // Calculate difference and percentage
+        let difference = null;
+        let percentDiff = null;
+        let diffClass = "";
+        
+        if (value1 !== null && value2 !== null) {
+            difference = value2 - value1;
+            percentDiff = (value1 !== 0) ? (difference / Math.abs(value1)) * 100 : null;
+            
+            // Determine if positive/negative is good (depends on the parameter)
+            if (parameter.includes("LOSS")) {
+                // For loss parameters, decrease is good (negative is good)
+                diffClass = difference < 0 ? "negative" : difference > 0 ? "positive" : "";
+            } else {
+                // For other parameters, increase is good (positive is good)
+                diffClass = difference > 0 ? "positive" : difference < 0 ? "negative" : "";
+            }
+        }
+        
+        entries.push({
+            name: entryName,
+            value1: value1,
+            value2: value2,
+            difference: difference,
+            percentDiff: percentDiff,
+            diffClass: diffClass
+        });
+    });
+    
+    return entries;
+}
+
+function generateRegionRow(region, period1Data, period2Data, parameter, actualMonth1, actualYear1, actualMonth2, actualYear2) {
+    const expandIcon = '+'; // Icon for expandable row
+    
+    // Create region row
+    let row = `
+        <tr class="region-row" data-region="${region.name}">
+            <td class="expandable"><span class="expand-icon">${expandIcon}</span> ${region.name}</td>
+            <td>${region.value1 !== null ? region.value1.toFixed(2) : "-"}</td>
+            <td>${region.value2 !== null ? region.value2.toFixed(2) : "-"}</td>
+            <td class="${region.diffClass}">${region.difference !== null ? region.difference.toFixed(2) : "-"}</td>
+            <td class="${region.diffClass}">${region.percentDiff !== null ? region.percentDiff.toFixed(2) + "%" : "-"}</td>
+        </tr>
+    `;
+    
+    // Create hidden division rows (will be shown when region is expanded)
+    if (hierarchyData[region.name]) {
+        const divisionFilter = entry => entry.CCC && entry.CCC.includes("Div") && !entry.CCC.includes("REGION");
+        
+        // For each division under this region
+        hierarchyData[region.name].divisions.forEach(divName => {
+            // Get data for this division
+            const divisionData = processHierarchyLevel(
+                period1Data.filter(row => row.CCC === divName),
+                period2Data.filter(row => row.CCC === divName),
+                parameter,
+                () => true // Include all rows since we've already filtered
+            );
+            
+            if (divisionData.length > 0) {
+                const division = divisionData[0];
+                
+                // Add division row
+                row += `
+                    <tr class="division-row" data-region="${region.name}" data-division="${division.name}" style="display:none; background-color:#f0f8ff;">
+                        <td class="expandable" style="padding-left:30px;"><span class="expand-icon">${expandIcon}</span> ${division.name}</td>
+                        <td>${division.value1 !== null ? division.value1.toFixed(2) : "-"}</td>
+                        <td>${division.value2 !== null ? division.value2.toFixed(2) : "-"}</td>
+                        <td class="${division.diffClass}">${division.difference !== null ? division.difference.toFixed(2) : "-"}</td>
+                        <td class="${division.diffClass}">${division.percentDiff !== null ? division.percentDiff.toFixed(2) + "%" : "-"}</td>
+                    </tr>
+                `;
+                
+                // Add CCC rows for this division (initially hidden)
+                if (hierarchyData[region.name].cccs[division.name]) {
+                    hierarchyData[region.name].cccs[division.name].forEach(cccName => {
+                        // Find CCC data
+                        const cccData = processHierarchyLevel(
+                            period1Data.filter(row => row.CCC === cccName),
+                            period2Data.filter(row => row.CCC === cccName),
+                            parameter,
+                            () => true
+                        );
+                        
+                        if (cccData.length > 0) {
+                            const ccc = cccData[0];
+                            
+                            // Add CCC row
+                            row += `
+                                <tr class="ccc-row" data-region="${region.name}" data-division="${division.name}" style="display:none; background-color:#f5f5f5;">
+                                    <td style="padding-left:60px;">${ccc.name}</td>
+                                    <td>${ccc.value1 !== null ? ccc.value1.toFixed(2) : "-"}</td>
+                                    <td>${ccc.value2 !== null ? ccc.value2.toFixed(2) : "-"}</td>
+                                    <td class="${ccc.diffClass}">${ccc.difference !== null ? ccc.difference.toFixed(2) : "-"}</td>
+                                    <td class="${ccc.diffClass}">${ccc.percentDiff !== null ? ccc.percentDiff.toFixed(2) + "%" : "-"}</td>
+                                </tr>
+                            `;
+                        }
+                    });
+                }
+            }
+        });
+    }
+    
+    return row;
+}
+
+function attachExpandListeners() {
+    // Add event listeners to region rows
+    document.querySelectorAll('.region-row').forEach(row => {
+        const expandIcon = row.querySelector('.expand-icon');
+        const regionName = row.getAttribute('data-region');
+        
+        expandIcon.addEventListener('click', (e) => {
+            e.stopPropagation();
+            
+            // Toggle division rows for this region
+            const divisionRows = document.querySelectorAll(`.division-row[data-region="${regionName}"]`);
+            const isExpanded = expandIcon.textContent === '-';
+            
+            divisionRows.forEach(divRow => {
+                divRow.style.display = isExpanded ? 'none' : 'table-row';
+            });
+            
+            // Update icon
+            expandIcon.textContent = isExpanded ? '+' : '-';
+            
+            // Hide all CCC rows when collapsing a region
+            if (isExpanded) {
+                document.querySelectorAll(`.ccc-row[data-region="${regionName}"]`).forEach(cccRow => {
+                    cccRow.style.display = 'none';
+                });
+                
+                // Reset division expand icons
+                document.querySelectorAll(`.division-row[data-region="${regionName}"] .expand-icon`).forEach(icon => {
+                    icon.textContent = '+';
+                });
+            }
+        });
+    });
+    
+    // Add event listeners to division rows
+    document.querySelectorAll('.division-row').forEach(row => {
+        const expandIcon = row.querySelector('.expand-icon');
+        const regionName = row.getAttribute('data-region');
+        const divisionName = row.getAttribute('data-division');
+        
+        expandIcon.addEventListener('click', (e) => {
+            e.stopPropagation();
+            
+            // Toggle CCC rows for this division
+            const cccRows = document.querySelectorAll(`.ccc-row[data-region="${regionName}"][data-division="${divisionName}"]`);
+            const isExpanded = expandIcon.textContent === '-';
+            
+            cccRows.forEach(cccRow => {
+                cccRow.style.display = isExpanded ? 'none' : 'table-row';
+            });
+            
+            // Update icon
+            expandIcon.textContent = isExpanded ? '+' : '-';
+        });
+    });
+}
+
+// Add CSS styles for the expandable rows
+function addExpandableStyles() {
+    const styleElement = document.createElement('style');
+    styleElement.textContent = `
+        .expandable {
+            cursor: pointer;
+        }
+        
+        .expand-icon {
+            display: inline-block;
+            width: 20px;
+            text-align: left;
+            font-weight: bold;
+        }
+        
+        .region-row {
+            font-weight: 600;
+        }
+        
+        .division-row {
+            font-weight: 500;
+        }
+        
+        .ccc-row {
+            font-weight: normal;
+        }
+    `;
+    
+    document.head.appendChild(styleElement);
+}
+
+// Call this once when initializing
+document.addEventListener('DOMContentLoaded', () => {
+    addExpandableStyles();
+});
+    </script>
+
+</body>
+</html>
