@@ -513,59 +513,44 @@ document.getElementById('resetFilters').addEventListener('click', resetFilters);
         
         // Load data from the CSV file
         function loadData() {
-            const url = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRooKVx76f92WX_Q3j2u4UmA1yXN2cNcwSPVqiFjyY58oTplAg_Ieze4xket4Lq3qHEuLt9js0-kU8a/pub?gid=98784562&single=true&output=csv';
+const url = 'data/advance-balurghat.json';
             
-            Papa.parse(url, {
-                download: true,
-                header: true,
-                skipEmptyLines: true,
-                dynamicTyping: true,
-                delimiter: ',',
-                complete: function(results) {
-                    // Clean the data
-                    allData = cleanData(results.data);
-                    filteredData = [...allData];
-// Parse dates manually assuming format is dd/mm/yyyy or dd-mm-yyyy
-const reportingDates = results.data
-    .map(item => item["Reporting Date"])
-    .filter(Boolean)
-    .map(dateStr => {
-        const parts = dateStr.includes('/') ? dateStr.split('/') : dateStr.split('-');
-        const day = parseInt(parts[0], 10);
-        const month = parseInt(parts[1], 10) - 1; // month is 0-indexed
-        const year = parseInt(parts[2], 10);
-        return new Date(year, month, day);
-    });
+fetch(url)
+  .then(res => res.json())
+  .then(json => {
+    allData = cleanData(json);
+    filteredData = [...allData];
 
-const maxDate = _.max(reportingDates);
+    const reportingDates = allData
+      .map(item => item["Reporting Date"])
+      .filter(Boolean)
+      .map(dateStr => {
+          const parts = dateStr.includes('/') ? dateStr.split('/') : dateStr.split('-');
+          const day = parseInt(parts[0], 10);
+          const month = parseInt(parts[1], 10) - 1;
+          const year = parseInt(parts[2], 10);
+          return new Date(year, month, day);
+      });
 
-if (maxDate instanceof Date && !isNaN(maxDate)) {
-    const day = String(maxDate.getDate()).padStart(2, '0');
-    const month = String(maxDate.getMonth() + 1).padStart(2, '0');
-    const year = maxDate.getFullYear();
-    const formattedDate = `${day}/${month}/${year}`;
-    document.getElementById('reportDate').textContent = `Report updated on: ${formattedDate}`;
-}
+    const maxDate = _.max(reportingDates);
+    if (maxDate instanceof Date && !isNaN(maxDate)) {
+      const formattedDate = maxDate.toLocaleDateString('en-GB');
+      document.getElementById('reportDate').textContent = `Report updated on: ${formattedDate}`;
+    }
+
+    initializeFilters();
+    initializeAgeSlider();
+    updateTables();
+    updateCapexTotal();
+    document.getElementById('loadingSpinner').classList.add('hidden');
+  })
+  .catch(error => {
+    console.error('Error loading data:', error);
+    document.getElementById('loadingSpinner').classList.add('hidden');
+    alert('Error loading data. Please check the console for details.');
+  });
 
 
-
-                    // Initialize the components
-                    initializeFilters();
-                    initializeAgeSlider();
-                    updateTables();
-                    updateCapexTotal(); // Add this line
-
-                    
-                    // Hide loading spinner
-                    document.getElementById('loadingSpinner').classList.add('hidden');
-                },
-                error: function(error) {
-                    console.error('Error loading data:', error);
-                    document.getElementById('loadingSpinner').classList.add('hidden');
-                    alert('Error loading data. Please check the console for details.');
-                }
-            });
-        }
         
         // Clean and transform the data
         function cleanData(data) {
