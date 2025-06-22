@@ -1,0 +1,30 @@
+name: Update Withheld NSC JSON
+
+on:
+  schedule:
+    - cron: '30 5 * * *'  # Runs daily at 11 AM IST
+  workflow_dispatch:
+
+jobs:
+  update-withheld:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: 🧰 Install csvtojson
+        run: npm install -g csvtojson
+
+      - name: 📥 Fetch & Convert Withheld NSC Sheet to JSON
+        run: |
+          mkdir -p data
+          curl -L "https://docs.google.com/spreadsheets/d/e/2PACX-1vTrAdXDfJDrgfq3X2sKjoZKRoiKrCcwsvEyHb-ANwpm6zTno76_AMqjNshHkkhyIvyGVrE9m9feHP0G/pub?gid=0&single=true&output=csv" -o data/withheld.csv
+          csvtojson data/withheld.csv > data/withheld.json
+
+      - name: 🚀 Commit & Push JSON (if changed)
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add data/withheld.json || true
+          git diff --cached --quiet && echo "✅ No changes to commit." || (git commit -m "Auto-update withheld.json" && git push)
