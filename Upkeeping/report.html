@@ -21,21 +21,40 @@
       margin-bottom: 16px;
     }
     table {
+  border-left: none;
+}
+
+    table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 6px;
+      table-layout: fixed;
     }
     table, th, td {
       border: 1px solid #000;
       font-size: 13px;
     }
     th, td {
-      padding: 4px;
-      text-align: left;
-      vertical-align: top;
+  padding: 4px;
+  text-align: center;  /* ⬅️ center everything */
+  vertical-align: middle;
     }
+    
+    /* Keep your original column widths */
+    th:first-child, td:first-child {
+      width: 68%;
+    }
+
+    th:nth-child(2), td:nth-child(2) {
+      width: 10%;
+    }
+
+    th:nth-child(3), td:nth-child(3) {
+      width: 8%;
+    }
+
     .score {
-      text-align: right;
+      text-align: center;
       font-weight: bold;
     }
     .footer {
@@ -43,33 +62,77 @@
       font-size: 12px;
       text-align: left;
     }
-  @media print {
-  body {
-    margin: 0;
-    padding: 0;
-    font-size: 13px;
-  }
-  #pdfContent {
-    width: 100%;
-    padding: 0;
-  }
-  .section {
-    break-inside: avoid;
-    page-break-inside: avoid;
-    page-break-after: auto;
-    margin-bottom: 16px;
-  }
-  h1, h2, h3 {
-    break-after: avoid;
-    page-break-after: avoid;
-    page-break-inside: avoid;
-  }
-  table, th, td {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
+    
+    @media print {
+      body {
+        margin: 0;
+        padding: 8px; /* Reduced padding */
+        font-size: 12px; /* Slightly smaller font */
+      }
+      #pdfContent {
+        width: 100%;
+        padding: 0;
+        max-width: none;
+      }
+      .section {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        page-break-after: auto;
+        margin-bottom: 12px; /* Reduced margin */
+      }
+      h1, h2, h3 {
+        break-after: avoid;
+        page-break-after: avoid;
+        page-break-inside: avoid;
+      }
+      table, th, td {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      
+      /* Ensure table fits within page */
+      table {
+        max-width: 100%;
+        font-size: 11px; /* Even smaller for print */
+      }
+      
+      th, td {
+        padding: 2px; /* Reduced padding for print */
+      }
+    }
+    
+    .pdf-page {
+      page-break-after: always;
+      break-after: page;
+      position: relative;
+      /* Add some breathing room */
+      padding-right: 4px;
+    }
+
+.page-header {
+  position: relative;
+  top: 0;
+  margin-bottom: 6px;
+  text-align: left;     /* ⬅️ align left */
+  font-style: italic;
+  font-size: 12px;
 }
 
+    
+    .pdf-page:last-child {
+      page-break-after: auto !important;
+    }
+
+    /* Container to ensure proper width */
+    #pdfContent {
+      max-width: 100%;
+      overflow: hidden;
+    }
+/* Remove the left border from the entire table */
+table, th:first-child, td:first-child {
+  border-left: none !important;
+  border-right: none !important;
+}
 
   </style>
 </head>
@@ -82,7 +145,6 @@
     <div class="section" id="finalTotal"></div>
     <div class="footer" id="footerInfo"></div>
   </div>
-
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   
@@ -119,7 +181,7 @@
           }).join(' ');
         }
 
-html += `<tr><td>${i.name}<span style="margin-left: 8px;">${optionNotes || ''}</span></td><td class='score'>${score}</td><td class='score'>${max}</td></tr>`;
+        html += `<tr><td>${i.name}<span style="margin-left: 8px;">${optionNotes || ''}</span></td><td class='score'>${score}</td><td class='score'>${max}</td></tr>`;
         totalScore += (i.score || 0);
         totalMax += max;
       });
@@ -130,76 +192,109 @@ html += `<tr><td>${i.name}<span style="margin-left: 8px;">${optionNotes || ''}</
 
     if (data) {
       const dateFormatted = formatDate(data.date);
-document.getElementById('substationTitle').textContent = `${data.ssName} - ${data.division || '-'} - ${dateFormatted}`;
-document.getElementById('officerName').innerHTML = `
-    <div><strong>Supervising AE/DE:</strong> ${data.supervisor || '-'}</div>
-    <div><strong>Inspecting Officer:</strong> ${data.inspectingOfficer || '-'}</div>
-`;
+      document.getElementById('substationTitle').textContent = `${data.ssName} - ${data.division || '-'} - ${dateFormatted}`;
+      document.getElementById('officerName').innerHTML = `
+        <div><strong>Supervising AE/DE:</strong> ${data.supervisor || '-'}</div>
+        <div><strong>Inspecting Officer:</strong> ${data.inspectingOfficer || '-'}</div>
+      `;
 
-      let sections = '';
       let grandScore = 0;
       let grandMax = 0;
+
+      const sections = {};
+
       ['cleanliness', 'defective', 'recordKeeping', 'essentials', 'safety', 'aesthetics'].forEach(key => {
         if (data[key]) {
           const { html, totalScore, totalMax } = renderSection(
             key.charAt(0).toUpperCase() + key.slice(1),
             data[key]
           );
-          sections += html;
+          sections[key] = html;
           grandScore += totalScore;
           grandMax += totalMax;
         }
       });
-      document.getElementById('reportContent').innerHTML = sections;
-      document.getElementById('finalTotal').innerHTML = `
-        <h3>Grand Total</h3>
-        <table>
-          <tr><th>Total Score</th><th>Max Score</th></tr>
-          <tr><td class='score'>${grandScore}</td><td class='score'>${grandMax}</td></tr>
-        </table>
-      `;
-document.getElementById('footerInfo').innerHTML = `<strong>Inspecting Officer:</strong> ${data.inspectingOfficer || '-'}`;
-    } else {
-      document.getElementById('reportContent').innerHTML = '<p>No data found. Please generate the report from the main app.</p>';
+
+      // Group the sections into pages
+      const page1 = `
+        <div class="pdf-page">
+          <div class="page-header">Page 1 of 3</div>
+          ${sections.cleanliness || ''}
+          ${sections.defective || ''}
+        </div>`;
+
+      const page2 = `
+        <div class="pdf-page">
+          <div class="page-header">Page 2 of 3</div>
+          ${sections.recordKeeping || ''}
+          ${sections.essentials || ''}
+        </div>`;
+
+      const page3 = `
+        <div class="pdf-page">
+          <div class="page-header">Page 3 of 3</div>
+          ${sections.safety || ''}
+          ${sections.aesthetics || ''}
+          <div class="section" id="grandTotal">
+            <h3>Grand Total</h3>
+            <table>
+              <tr><th>Total Score</th><th>Max Score</th></tr>
+              <tr><td class='score'>${grandScore}</td><td class='score'>${grandMax}</td></tr>
+            </table>
+          </div>
+          <div class="footer">
+            <strong>Inspecting Officer:</strong> ${data.inspectingOfficer || '-'}
+          </div>
+        </div>`;
+
+      document.getElementById('reportContent').innerHTML = page1 + page2 + page3;
     }
-
-
   </script>
-<div style="text-align:center; margin-top: 20px;">
-<button onclick="exportPdfAndSaveToAndroid()" style="padding: 10px 20px;">📥 Save PDF</button>
 
-<script>
-function exportPdfAndSaveToAndroid() {
-  const element = document.getElementById('pdfContent');
-const opt = {
-  margin: [0.5, 0.8, 0.7, 0.8],  // top, right, bottom, left
-  filename: 'Substation_Report.pdf',
-  image: { type: 'jpeg', quality: 1 },
-  html2canvas: { scale: 3, useCORS: true, scrollY: 0 },
-  jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
-};
+  <div style="text-align:center; margin-top: 20px;">
+    <button onclick="exportPdfAndSaveToAndroid()" style="padding: 10px 20px;">📥 Save PDF</button>
+  </div>
 
+  <script>
+    function exportPdfAndSaveToAndroid() {
+      const element = document.getElementById('pdfContent');
+      
+      // Updated PDF options - try wider margins and different scale
+      const opt = {
+        margin: [0.5, 0.5, 0.7, 0.5],  // Increased margins to give more space
+        filename: 'Substation_Report.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { 
+          scale: 2.5,  // Reduced scale to fit better
+          useCORS: true, 
+          scrollY: 0
+        },
+        jsPDF: { 
+          unit: 'in', 
+          format: 'a4', 
+          orientation: 'portrait',
+          compress: true
+        }
+      };
 
-  html2pdf().set(opt).from(element).output('blob').then(blob => {
-    const reader = new FileReader();
-    reader.onloadend = function () {
-      const base64data = reader.result.split(',')[1];
-      if (window.Android && typeof Android.savePdfBase64 === 'function') {
-        Android.savePdfBase64(base64data, "Substation_Report.pdf");
-      } else {
-        alert("Saving not supported outside the app.");
-      }
-    };
-    reader.readAsDataURL(blob);
-  });
-}
-
-</script>
-
-
-
-</script>
-
-
+      html2pdf().set(opt).from(element).output('blob').then(blob => {
+        const reader = new FileReader();
+        reader.onloadend = function () {
+          const base64data = reader.result.split(',')[1];
+          if (window.Android && typeof Android.savePdfBase64 === 'function') {
+            Android.savePdfBase64(base64data, "Substation_Report.pdf");
+          } else {
+            // Fall back to browser download
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'Substation_Report.pdf';
+            link.click();
+            URL.revokeObjectURL(link.href);
+          }
+        };
+        reader.readAsDataURL(blob);
+      });
+    }
+  </script>
 </body>
 </html>
