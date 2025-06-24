@@ -28,9 +28,28 @@ jobs:
           urls[advance-chanchal]="https://docs.google.com/spreadsheets/d/e/2PACX-1vQzN7wwuCEyA9bH6sdBoW3dIxCK9Dvh5bS0vWyRM57YXLH9iMIxLIXGyWqffE1xFtPCk2sZXtcDbtlC/pub?output=csv"
 
           for key in "${!urls[@]}"; do
-            echo "Fetching ${key}.csv"
-            curl -L "${urls[$key]}" -o "data/${key}.csv"
+            echo "🔄 Fetching ${key}.csv"
+            curl -fSL "${urls[$key]}" -o "data/${key}.csv"
+
+            if [ $? -ne 0 ]; then
+              echo "❌ Failed to fetch ${key}.csv — skipping."
+              continue
+            fi
+
+            echo "📄 Preview of ${key}.csv:"
+            head -n 5 "data/${key}.csv"
+
+            linecount=$(wc -l < "data/${key}.csv")
+            if [ "$linecount" -le 1 ]; then
+              echo "⚠️ No data rows in ${key}.csv — skipping JSON conversion."
+              continue
+            fi
+
+            echo "✅ Converting ${key}.csv to ${key}.json"
             csvtojson "data/${key}.csv" > "data/${key}.json"
+
+            # Optional: Avoid rate limiting
+            sleep 2
           done
 
       - name: Commit and Push JSONs
