@@ -1,64 +1,30 @@
-name: Update Advance Division JSONs
+name: Update Withheld NSC JSON
 
 on:
   schedule:
-    - cron: '30 5 * * *'  # 11 AM IST
+    - cron: '30 5 * * *'  # Runs daily at 11 AM IST
   workflow_dispatch:
 
 jobs:
-  update:
+  update-withheld:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
+      - name: ⬇️ Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Install dependencies
+      - name: 🧰 Install csvtojson
         run: npm install -g csvtojson
 
-      - name: Fetch and convert each division sheet
+      - name: 📥 Fetch & Convert Withheld NSC Sheet to JSON
         run: |
           mkdir -p data
-          rm -f data/*.json  # 🧹 Remove old JSONs
+          curl -L "https://docs.google.com/spreadsheets/d/e/2PACX-1vTrAdXDfJDrgfq3X2sKjoZKRoiKrCcwsvEyHb-ANwpm6zTno76_AMqjNshHkkhyIvyGVrE9m9feHP0G/pub?gid=0&single=true&output=csv" -o data/withheld.csv
+          csvtojson data/withheld.csv > data/withheld.json
 
-          declare -A urls
-          urls[advance-balurghat]="https://docs.google.com/spreadsheets/d/e/2PACX-1vRooKVx76f92WX_Q3j2u4UmA1yXN2cNcwSPVqiFjyY58oTplAg_Ieze4xket4Lq3qHEuLt9js0-kU8a/pub?output=csv"
-          urls[advance-malda]="https://docs.google.com/spreadsheets/d/e/2PACX-1vQHtBkI-9-cafLDNyCNtbnHX0B65dCawQHoO8oiFYQzeWBxu0u4VBXCqR5zgj5ylceF3piSl8rnholp/pub?output=csv"
-          urls[advance-raiganj]="https://docs.google.com/spreadsheets/d/e/2PACX-1vR-jd3bm9BCgUKNQCgr0Lj9paLYQ9oacLPlleCHXrtV1__58NyK_w19hbC4thzgPkdHtIAAP2nrnmyC/pub?output=csv"
-          urls[advance-buniadpur]="https://docs.google.com/spreadsheets/d/e/2PACX-1vT7Q8EgbBzDoLIGRZh-5dPUmJUIXtfzlsz64AKKLXUowEfnq-Ke7MNW_XWd8UsyAKqOT4nxJ0m_czzc/pub?output=csv"
-          urls[advance-gazole]="https://docs.google.com/spreadsheets/d/e/2PACX-1vQekKrHhSpV7p6yaYVSA4UXTO6DYws9eZBhD0JTXoWxog7L9eLDkFyxtb3ohtJOGTC-XEwhT2s0x4Aj/pub?output=csv"
-          urls[advance-islampur]="https://docs.google.com/spreadsheets/d/e/2PACX-1vRY_EzVWtDZxQlvktlWsTbvHpK_lIPMuDABdV_-xqbGOGEvR4ZJrJrRaEjWZIG70sB8gg_HbLTpxaC2/pub?output=csv"
-          urls[advance-chanchal]="https://docs.google.com/spreadsheets/d/e/2PACX-1vQzN7wwuCEyA9bH6sdBoW3dIxCK9Dvh5bS0vWyRM57YXLH9iMIxLIXGyWqffE1xFtPCk2sZXtcDbtlC/pub?output=csv"
-
-          for key in "${!urls[@]}"; do
-            echo "🔄 Fetching ${key}.csv"
-
-            if ! curl -fSL "${urls[$key]}" -o "data/${key}.csv"; then
-              echo "❌ Failed to fetch ${key}.csv — skipping."
-              continue
-            fi
-
-            echo "📄 Preview of ${key}.csv:"
-            head -n 5 "data/${key}.csv"
-
-            linecount=$(wc -l < "data/${key}.csv")
-            if [ "$linecount" -le 1 ]; then
-              echo "⚠️ No data rows in ${key}.csv — skipping JSON conversion."
-              continue
-            fi
-
-            echo "✅ Converting ${key}.csv to ${key}.json"
-            csvtojson "data/${key}.csv" > "data/${key}.json"
-            echo "📁 Saved: data/${key}.json"
-
-            sleep 2  # throttle requests to avoid being blocked
-          done
-
-          echo "✅ All divisions processed. Generated files:"
-          ls -lh data/*.json || echo "⚠️ No JSONs created"
-
-      - name: Commit and Push JSONs
+      - name: 🚀 Commit & Push JSON (if changed)
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
-          git add data/*.json || true
-          git diff --cached --quiet || git commit -m "Update advance division JSONs" && git push || echo "🟢 No changes to commit"
+          git add data/withheld.json || true
+          git diff --cached --quiet && echo "✅ No changes to commit." || (git commit -m "Auto-update withheld.json" && git push)
