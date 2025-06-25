@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Estimate Generator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    
+    * {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    
+    body { 
+      background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+      min-height: 100vh;
+    }
+    
+    .glass {
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    
+    .card {
+      position: relative;
+      padding: 16px;
+      border-radius: 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      color: white;
+      font-weight: 500;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      overflow: hidden;
+    }
+    
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+    
+    .card.expanded {
+      transform: none !important;
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    
+    .card-action-buttons {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      display: flex;
+      gap: 6px;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      z-index: 10;
+    }
+    
+    .card:hover .card-action-buttons {
+      opacity: 1;
+    }
+    
+    .action-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      backdrop-filter: blur(8px);
+    }
+    
+    .check-btn {
+      background: rgba(34, 197, 94, 0.2);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    
+    .check-btn:hover {
+      background: rgba(34, 197, 94, 0.3);
+      transform: scale(1.1);
+    }
+    
+    .check-btn.checked {
+      background: rgba(34, 197, 94, 0.8);
+      border-color: rgba(34, 197, 94, 1);
+    }
+    
+    .check-btn.checked::before {
+      content: '✓';
+      font-size: 14px;
+      font-weight: 600;
+    }
+    
+    .delete-btn {
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    
+    .delete-btn:hover {
+      background: rgba(239, 68, 68, 0.3);
+      transform: scale(1.1);
+    }
+    
+    .delete-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+    
+    .structure-container {
+      margin-top: 12px;
+      animation: slideDown 0.3s ease-out;
+    }
+    
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .structure-header {
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      margin-bottom: 12px;
+    }
+    
+    .structure-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 8px;
+    }
+    
+    .structure-card {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 400;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: left;
+    }
+    
+    .structure-card:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.15);
+      transform: translateY(-1px);
+    }
+    
+    .structure-card-title {
+      font-weight: 600;
+      color: #e2e8f0;
+      margin-bottom: 6px;
+      font-size: 0.85rem;
+    }
+    
+    .structure-card-detail {
+      color: #94a3b8;
+      font-size: 0.75rem;
+      line-height: 1.3;
+    }
+    
+    .voltage-card {
+      background: linear-gradient(135deg, var(--gradient-from), var(--gradient-to));
+      border: none;
+    }
+    
+    .selected-item {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 16px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      animation: fadeIn 0.3s ease-out;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .delete-btn-left {
+      color: #ef4444;
+      transition: all 0.2s ease;
+      margin-left: 12px;
+    }
+    
+    .delete-btn-left:hover {
+      color: #dc2626;
+      transform: scale(1.1);
+    }
+    
+    .header-sticky {
+      backdrop-filter: blur(20px);
+      background: rgba(17, 24, 39, 0.8);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .btn-reset {
+      background: rgba(239, 68, 68, 0.1);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+    
+    .btn-reset:hover {
+      background: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+    }
+    
+    .hidden-btn {
+      display: none !important;
+    }
+    
+    .smooth-scroll {
+      scroll-behavior: smooth;
+    }
+    .card-checked {
+  background: rgba(34, 197, 94, 0.15); /* light green tint */
+  border-color: rgba(34, 197, 94, 0.4);
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
+}
+.structure-card {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 400;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: left;
+      position: relative;
+    }
+    
+    .structure-card:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.15);
+      transform: translateY(-1px);
+    }
+    
+.structure-card.selected {
+  background: rgba(34, 197, 94, 0.15) !important;
+  border-color: rgba(34, 197, 94, 0.4) !important;
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.2);
+}
+    .quantity-input {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 6px;
+      padding: 4px 8px;
+      color: white;
+      font-size: 0.75rem;
+      width: 60px;
+      margin-top: 8px;
+      text-align: center;
+    }
+    
+    .quantity-input:focus {
+      outline: none;
+      border-color: rgba(34, 197, 94, 0.5);
+      background: rgba(255, 255, 255, 0.15);
+    }
+    
+    .quantity-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    
+    .quantity-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 0.7rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    
+    .quantity-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+.structure-card.unselected {
+  background: rgba(239, 68, 68, 0.1) !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+}
+.check-tooltip {
+  transition: all 0.3s ease;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+
+
+  </style>
+</head>
+<body class="text-white antialiased">
+
+  <div class="min-h-screen flex flex-col">
+    <!-- Header -->
+    <div class="p-6 text-center">
+      <h1 class="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+        Electrical Estimate Generator
+      </h1>
+      <p class="text-slate-400 mt-2 font-light">Modern electrical estimation tool</p>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex px-6 pb-6 gap-6 overflow-hidden">
+
+      <!-- Left Panel -->
+      <div class="w-80 flex-shrink-0 glass rounded-2xl h-full overflow-y-auto smooth-scroll">
+        <div class="p-6">
+          <div class="flex justify-between items-center mb-6">
+            <h2 class="text-xl font-semibold text-slate-100">Selection</h2>
+            <button id="resetBtn" onclick="resetAll()" class="btn-reset hidden">Reset</button>
+          </div>
+          
+          <div id="selectedVoltage" class="mb-6"></div>
+          <div id="selectedItems" class="space-y-3"></div>
+          <div id="total" class="mt-8 p-4 glass rounded-xl">
+            <div class="text-slate-400 text-sm mb-1">Total Cost</div>
+            <div class="text-2xl font-bold text-emerald-400">Calculation Pending</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Panel -->
+      <div class="flex-1 flex flex-col overflow-hidden">
+        
+        <!-- Voltage Selection -->
+        <div id="voltageCards" class="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+          <div class="card voltage-card text-center" style="--gradient-from: #dc2626; --gradient-to: #b91c1c;" onclick="selectVoltage('33kV')">
+            <div class="text-lg font-semibold">33kV</div>
+            <div class="text-xs opacity-75 mt-1">High Voltage</div>
+          </div>
+          <div class="card voltage-card text-center" style="--gradient-from: #ea580c; --gradient-to: #c2410c;" onclick="selectVoltage('11kV')">
+            <div class="text-lg font-semibold">11kV</div>
+            <div class="text-xs opacity-75 mt-1">Medium Voltage</div>
+          </div>
+          <div class="card voltage-card text-center" style="--gradient-from: #2563eb; --gradient-to: #1d4ed8;" onclick="selectVoltage('11kV-DTR-LT')">
+            <div class="text-lg font-semibold">11kV + DTR + LT</div>
+            <div class="text-xs opacity-75 mt-1">Combined System</div>
+          </div>
+          <div class="card voltage-card text-center" style="--gradient-from: #059669; --gradient-to: #047857;" onclick="selectVoltage('LT-3Ph')">
+            <div class="text-lg font-semibold">LT-3Ph</div>
+            <div class="text-xs opacity-75 mt-1">Three Phase</div>
+          </div>
+          <div class="card voltage-card text-center" style="--gradient-from: #0d9488; --gradient-to: #0f766e;" onclick="selectVoltage('LT-1Ph')">
+            <div class="text-lg font-semibold">LT-1Ph</div>
+            <div class="text-xs opacity-75 mt-1">Single Phase</div>
+          </div>
+          <div class="card voltage-card text-center" style="--gradient-from: #7c3aed; --gradient-to: #6d28d9;" onclick="selectVoltage('LT-ABC')">
+            <div class="text-lg font-semibold">LT-ABC</div>
+            <div class="text-xs opacity-75 mt-1">ABC Cable</div>
+          </div>
+        </div>
+
+        <!-- Workspace -->
+        <div id="workspace" class="hidden flex-1 glass rounded-2xl overflow-hidden">
+          <div class="flex flex-col h-full">
+            <div class="header-sticky px-6 py-4">
+              <h2 class="text-xl font-semibold text-slate-100" id="workspaceHeader">Select Conductor Type</h2>
+            </div>
+            <div id="columns" class="flex-1 overflow-y-auto smooth-scroll p-6"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+let fullData = [];
+let selectedItems = [];
+let selectedVoltage = null;
+let currentSelection = {};
+
+const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTmblEOf1hutE2nB7zzBT_LoeV87EC7uNE0FOjnfmWpiBqr5lSRvkWYCeqQNwjvWIyCZ_08VJarU2Uk/pub?gid=1925995900&single=true&output=csv";
+
+// Load data from Google Sheets
+Papa.parse(SHEET_URL, {
+  download: true,
+  header: true,
+  complete: (res) => {
+    fullData = res.data.filter(row => row["Voltage"]);
+  }
+});
+
+function selectVoltage(voltage) {
+  selectedVoltage = voltage;
+  currentSelection = {};
+  document.getElementById("resetBtn").classList.remove("hidden");
+
+  // Smooth transition
+  const voltageCards = document.getElementById("voltageCards");
+  const workspace = document.getElementById("workspace");
+  
+  voltageCards.style.transform = "translateY(-20px)";
+  voltageCards.style.opacity = "0";
+  
+  setTimeout(() => {
+    voltageCards.classList.add("hidden");
+    workspace.classList.remove("hidden");
+    workspace.style.transform = "translateY(20px)";
+    workspace.style.opacity = "0";
+    
+    setTimeout(() => {
+      workspace.style.transform = "translateY(0)";
+      workspace.style.opacity = "1";
+    }, 50);
+  }, 200);
+
+  document.getElementById("workspaceHeader").innerText = "Select Conductor Type";
+  renderSelectedVoltage();
+  renderWorkspace();
+  updateLeftPanel();
+}
+
+function renderSelectedVoltage() {
+  document.getElementById("selectedVoltage").innerHTML = `
+    <div class="glass px-4 py-3 rounded-xl border border-purple-500/20">
+      <div class="text-xs text-slate-400 mb-1">Selected Voltage</div>
+      <div class="font-semibold text-purple-300">${selectedVoltage}</div>
+    </div>
+  `;
+}
+
+function renderWorkspace() {
+  const container = document.getElementById("columns");
+  container.innerHTML = "";
+
+  let groups = {};
+  let voltagesToDisplay = selectedVoltage === "11kV-DTR-LT" 
+    ? ["11kV", "DTR", "LT-3Ph", "LT-1Ph", "LT-ABC"]
+    : [selectedVoltage];
+
+  voltagesToDisplay.forEach(v => {
+    groups[v] = fullData.filter(row => row["Voltage"] === v);
+  });
+
+  const colCount = Object.keys(groups).length;
+  container.className = `grid grid-cols-${Math.min(colCount, 3)} gap-6`;
+
+  for (let key in groups) {
+    const col = document.createElement("div");
+    col.setAttribute("data-col", key);
+    col.className = "flex flex-col";
+
+    col.innerHTML = `
+      <div class="mb-4">
+        <h3 class="text-lg font-semibold text-slate-200 mb-1">${key}</h3>
+        <div class="h-px bg-gradient-to-r from-slate-600 to-transparent"></div>
+      </div>
+      <div id="col-content-${key}" class="space-y-2"></div>
+    `;
+    container.appendChild(col);
+    renderConductorCards(key, groups[key]);
+  }
+}
+
+function renderConductorCards(voltageKey, items) {
+  const colContent = document.getElementById(`col-content-${voltageKey}`);
+  colContent.innerHTML = "";
+
+  const uniqueConductors = [...new Set(items.map(i => i["Conductor Type"]))].filter(c => c);
+
+  uniqueConductors.forEach((conductor, index) => {
+    const item = items.find(i => i["Conductor Type"] === conductor && i["Voltage"] === voltageKey);
+    const card = document.createElement("div");
+    card.className = "card glass text-center hover:bg-white/10";
+    card.style.animationDelay = `${index * 50}ms`;
+    card.innerHTML = `<div class="font-medium">${conductor}</div>`;
+    card.onclick = () => selectConductor(item, voltageKey);
+    colContent.appendChild(card);
+  });
+}
+
+function selectConductor(item, voltageKey) {
+  currentSelection = {
+    Voltage: item["Voltage"],
+    "Conductor Type": item["Conductor Type"],
+    selectedColumnVoltageKey: voltageKey
+  };
+  renderPoleWorkspace(item["Conductor Type"], voltageKey);
+}
+
+function renderPoleWorkspace(selectedConductor, voltageKey) {
+  const colContent = document.getElementById(`col-content-${voltageKey}`);
+  if (!colContent) return;
+
+  colContent.innerHTML = "";
+  const colHeader = document.querySelector(`[data-col="${voltageKey}"] h3`);
+  if (colHeader) {
+    colHeader.innerHTML = `
+      <div>${voltageKey}</div>
+      <div class="text-sm text-slate-400 font-normal">${selectedConductor}</div>
+    `;
+  }
+
+  const filteredPoles = fullData.filter(i =>
+    i["Voltage"] === voltageKey &&
+    i["Conductor Type"] === selectedConductor &&
+    i["Pole Type"]
+  );
+
+  const uniquePoles = [...new Set(filteredPoles.map(i => i["Pole Type"]))];
+
+// === Route Length Input Card ===
+const routeCard = document.createElement("div");
+routeCard.className = "card glass";
+routeCard.innerHTML = `
+  <div class="text-sm font-semibold mb-2">Route Length in km:</div>
+  <input type="number" min="0" step="0.01"
+         class="quantity-input w-full"
+         placeholder="Enter length"
+         oninput="handleRouteLengthInput('${voltageKey}', '${selectedConductor}', this.value)">
+`;
+colContent.appendChild(routeCard);
+
+  uniquePoles.forEach((pole, index) => {
+    const card = document.createElement("div");
+    card.className = "card glass relative";
+    card.setAttribute("data-pole", pole);
+    card.style.animationDelay = `${index * 50}ms`;
+    
+    const cardContent = document.createElement("div");
+    cardContent.className = "text-center font-medium";
+    cardContent.textContent = pole;
+    card.appendChild(cardContent);
+
+    const actionButtons = document.createElement("div");
+    actionButtons.className = "card-action-buttons";
+
+    const checkBtn = document.createElement("button");
+    checkBtn.className = "action-btn check-btn";
+    checkBtn.onclick = (e) => {
+      e.stopPropagation();
+      const checked = checkBtn.classList.toggle("checked");
+      card.classList.toggle("card-checked");
+
+      const item = {
+        Voltage: voltageKey,
+        "Conductor Type": selectedConductor,
+        "Pole Type": pole
+      };
+
+if (!checked) {
+  // On unchecking, remove any structures added under this pole
+  selectedItems = selectedItems.filter(i =>
+    !(i["Voltage"] === voltageKey &&
+      i["Conductor Type"] === selectedConductor &&
+      i["Pole Type"] === pole)
+  );
+}
+
+
+      updateLeftPanel();
+    };
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "action-btn delete-btn";
+    deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+    deleteBtn.onclick = (e) => {
+      e.stopPropagation();
+
+      const pole = card.getAttribute('data-pole');
+
+      // Remove from selectedItems (if selected)
+      selectedItems = selectedItems.filter(i =>
+        !(i["Voltage"] === voltageKey &&
+          i["Conductor Type"] === selectedConductor &&
+          i["Pole Type"] === pole)
+      );
+
+      // Update UI
+      updateLeftPanel();
+
+      // Uncheck button if needed
+      const checkBtn = card.querySelector('.check-btn');
+      if (checkBtn) checkBtn.classList.remove("checked");
+
+      card.classList.remove("card-checked");
+      card.style.transform = "scale(0)";
+      card.style.opacity = "0";
+      setTimeout(() => card.remove(), 200);
+    };
+
+    actionButtons.appendChild(checkBtn);
+    actionButtons.appendChild(deleteBtn);
+    card.appendChild(actionButtons);
+
+    card.onclick = () => handlePoleCardClick(card, pole, selectedConductor, voltageKey, checkBtn);
+    colContent.appendChild(card);
+  });
+}
+
+function handlePoleCardClick(card, pole, selectedConductor, voltageKey, checkBtn) {
+  if (checkBtn.classList.contains('checked')) {
+    togglePoleExpansion(card, pole, selectedConductor, voltageKey);
+  } else {
+    showCheckFirstTooltip(checkBtn);
+  }
+}
+
+
+
+function togglePoleExpansion(card, pole, selectedConductor, voltageKey) {
+  const isExpanded = card.classList.contains('expanded');
+  
+  if (isExpanded) {
+    card.classList.remove('expanded');
+    const container = card.querySelector('.structure-container');
+    if (container) {
+      container.style.opacity = '0';
+      container.style.transform = 'translateY(-10px)';
+      setTimeout(() => container.remove(), 200);
+    }
+  } else {
+    card.classList.add('expanded');
+    const structureCombinations = getUniqueStructureCombinations(pole, selectedConductor, voltageKey);
+    
+    const container = document.createElement('div');
+    container.className = 'structure-container';
+    container.style.opacity = '0';
+    
+container.innerHTML = `
+  <div class="structure-header">
+    <div class="font-semibold text-sm text-slate-200">${pole}</div>
+    <div class="text-xs text-slate-400">Select Structure Configuration & Quantity</div>
+  </div>
+  <div class="structure-grid">
+${structureCombinations.map((combo, index) => {
+  const match = selectedItems.find(i =>
+    i["Voltage"] === voltageKey &&
+    i["Conductor Type"] === selectedConductor &&
+    i["Pole Type"] === pole &&
+    i["Structure"] === combo.structure
+  );
+
+      const quantity = match ? match.Quantity : 0;
+      const selectedClass = quantity > 0 ? 'selected' : 'unselected';
+
+      
+return `
+  <div class="structure-card ${selectedClass}"
+       onclick="event.stopPropagation()"
+       data-structure="${combo.structure}"
+       data-pole="${pole}"
+       data-conductor="${selectedConductor}"
+       data-voltage="${voltageKey}"
+       data-index="${index}">
+    
+    <div class="flex items-center justify-between mt-2">
+      <div>
+        <div class="structure-card-title">${combo.structure}</div>
+      </div>
+      <input type="number" class="quantity-input ml-2"
+             value="${quantity}"
+             min="0" max="999"
+             onchange="setQuantity('${voltageKey}', '${selectedConductor}', '${pole}', '${combo.structure}', ${index}, this.value)"
+             onclick="event.stopPropagation()">
+    </div>
+  </div>
+`;
+
+    }).join('')}
+  </div>
+`;
+
+    
+    card.appendChild(container);
+    
+    setTimeout(() => {
+      container.style.opacity = '1';
+      container.style.transform = 'translateY(0)';
+    }, 50);
+  }
+}
+
+function getUniqueStructureCombinations(pole, selectedConductor, voltageKey) {
+  const filtered = fullData.filter(i =>
+    i["Voltage"] === voltageKey &&
+    i["Pole Type"] === pole &&
+    i["Structure"] &&
+    i["Structure"].trim() !== ""
+  );
+
+  const seen = new Set();
+  const structures = [];
+
+  filtered.forEach(item => {
+    const structure = item["Structure"].trim();
+    if (!seen.has(structure)) {
+      seen.add(structure);
+      structures.push({ structure });
+    }
+  });
+
+  return structures;
+}
+
+
+
+
+function updateQuantity(voltageKey, selectedConductor, pole, structureType, position, extension, index, change) {
+let card = document.querySelector(`[data-index="${index}"]`);
+if (!card) {
+  // Fallback: find matching card by data attributes
+  card = document.querySelector(`.structure-card[data-structure-type="${structureType}"][data-position="${position}"][data-extension="${extension}"]`);
+}
+  const input = card.querySelector('.quantity-input');
+  const currentValue = parseInt(input.value) || 0;
+  const newValue = Math.max(0, Math.min(999, currentValue + change));
+  
+  input.value = newValue;
+  updateItemQuantity(voltageKey, selectedConductor, pole, structureType, position, extension, newValue, card);
+}
+
+function setQuantity(voltageKey, selectedConductor, pole, structure, index, value) {
+  const selector = `.structure-card[data-structure="${CSS.escape(structure)}"]
+                                  [data-pole="${CSS.escape(pole)}"]
+                                  [data-conductor="${CSS.escape(selectedConductor)}"]
+                                  [data-voltage="${CSS.escape(voltageKey)}"]`;
+  const card = document.querySelector(selector);
+
+  const quantity = Math.max(0, Math.min(999, parseInt(value) || 0));
+  updateItemQuantity(voltageKey, selectedConductor, pole, structure, quantity, card);
+}
+
+
+function updateItemQuantity(voltageKey, selectedConductor, pole, structure, quantity, card) {
+  selectedItems = selectedItems.filter(i =>
+    !(i["Voltage"] === voltageKey &&
+      i["Pole Type"] === pole &&
+      i["Structure"] === structure)
+  );
+
+  if (card) {
+    card.classList.remove('selected', 'unselected');
+    if (quantity > 0) {
+      selectedItems.push({
+        Voltage: voltageKey,
+        "Conductor Type": selectedConductor,
+        "Pole Type": pole,
+        "Structure": structure,
+        Quantity: quantity
+      });
+      card.classList.add('selected');
+    } else {
+      card.classList.add('unselected');
+    }
+  }
+
+  updateLeftPanel();
+}
+
+
+function selectPole(item) {
+  currentSelection["Pole Type"] = item["Pole Type"];
+  updateLeftPanel();
+}
+
+function removeSelectionPart(part) {
+  if (part === "Pole Type") {
+    delete currentSelection["Pole Type"];
+    delete currentSelection["Structure-Type"];
+    delete currentSelection["Position"];
+    delete currentSelection["Extension"];
+  } else if (part === "Structure-Type") {
+    delete currentSelection["Structure-Type"];
+    delete currentSelection["Position"];
+    delete currentSelection["Extension"];
+  }
+}
+
+function updateLeftPanel() {
+  const container = document.getElementById("selectedItems");
+  container.innerHTML = "";
+
+  const grouped = {};
+  selectedItems.forEach(item => {
+    const key = `${item["Voltage"]}|${item["Conductor Type"]}`;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(item);
+  });
+
+  Object.entries(grouped).forEach(([key, items]) => {
+    const [Voltage, Conductor] = key.split('|');
+
+    const selectionCard = document.createElement("div");
+    selectionCard.className = "selected-item";
+
+    let html = `<div class='text-sm font-bold text-purple-300 mb-1'>Voltage: ${Voltage}</div>`;
+html += `<div class='text-sm font-bold text-sky-300 mb-1'>Conductor: ${Conductor}</div>`;
+
+const route = items.find(i => i["Route Length"]);
+if (route) {
+  html += `<div class='text-sm font-medium text-sky-300 mb-2 ml-1'>Route Length: ${route["Route Length"]} km</div>`;
+}
+
+    html += `<div class='pl-2 space-y-1'>`;
+
+items.forEach(i => {
+  // Skip route length entry from quantity listing
+  if (i["Route Length"]) return;
+
+  const detail = `${i["Pole Type"] || ''} ${i["Structure"] || ''}`.trim(); // ← update here
+  const quantity = i["Quantity"] || 1;
+  html += `<div class='text-xs text-emerald-400 flex justify-between items-center'>
+    <span>• ${detail}</span>
+    <span class='text-yellow-400 font-semibold'>Qty: ${quantity}</span>
+  </div>`;
+});
+
+
+
+    html += `</div>`;
+    selectionCard.innerHTML = html;
+    container.appendChild(selectionCard);
+  });
+}
+
+function removeItem(voltage, conductor, pole) {
+  selectedItems = selectedItems.filter(i =>
+    !(i["Voltage"] === voltage && i["Conductor Type"] === conductor && i["Pole Type"] === pole)
+  );
+  updateLeftPanel();
+
+  // Also uncheck the checkbox and un-highlight card
+  document.querySelectorAll('.card[data-pole]').forEach(card => {
+    if (card.getAttribute('data-pole') === pole) {
+      const checkBtn = card.querySelector('.check-btn');
+      if (checkBtn && checkBtn.classList.contains('checked')) {
+        checkBtn.classList.remove('checked');
+        card.classList.remove('card-checked');
+      }
+    }
+  });
+}
+
+function removeGroup(voltage, conductor) {
+  selectedItems = selectedItems.filter(i =>
+    !(i["Voltage"] === voltage && i["Conductor Type"] === conductor)
+  );
+  updateLeftPanel();
+
+  // Uncheck checkboxes
+  document.querySelectorAll('.card[data-pole]').forEach(card => {
+    const pole = card.getAttribute('data-pole');
+    const checkBtn = card.querySelector('.check-btn');
+    if (!checkBtn || !checkBtn.classList.contains('checked')) return;
+
+    const found = selectedItems.find(i =>
+      i["Pole Type"] === pole &&
+      i["Conductor Type"] === conductor &&
+      i["Voltage"] === voltage
+    );
+    if (!found) {
+      checkBtn.classList.remove('checked');
+      card.classList.remove('card-checked');
+    }
+  });
+}
+
+function resetAll() {
+  selectedVoltage = null;
+  currentSelection = {};
+  selectedItems = []; // <-- Add this line to clear previous selections
+
+  const voltageCards = document.getElementById("voltageCards");
+  const workspace = document.getElementById("workspace");
+
+  workspace.style.transform = "translateY(-20px)";
+  workspace.style.opacity = "0";
+
+  setTimeout(() => {
+    workspace.classList.add("hidden");
+    voltageCards.classList.remove("hidden");
+    voltageCards.style.transform = "translateY(20px)";
+    voltageCards.style.opacity = "0";
+
+    setTimeout(() => {
+      voltageCards.style.transform = "translateY(0)";
+      voltageCards.style.opacity = "1";
+    }, 50);
+  }, 200);
+
+  document.getElementById("selectedVoltage").innerHTML = "";
+  document.getElementById("selectedItems").innerHTML = "";
+  document.getElementById("resetBtn").classList.add("hidden");
+  document.getElementById("workspaceHeader").innerText = "Select Conductor Type";
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  lucide.createIcons();
+});
+
+
+function showCheckFirstTooltip(targetBtn) {
+  // Avoid duplicates
+  if (targetBtn.parentElement.querySelector('.check-tooltip')) return;
+
+  const tooltip = document.createElement('div');
+  tooltip.className = 'check-tooltip text-xs px-2 py-1 rounded bg-emerald-600 text-white shadow-md';
+  tooltip.innerText = 'Check (✓) first!';
+
+  // Insert before the check button
+  targetBtn.parentElement.insertBefore(tooltip, targetBtn);
+
+  // Animate and remove after 1.5 seconds
+  setTimeout(() => {
+    tooltip.style.opacity = '0';
+    tooltip.style.transform = 'translateY(-4px)';
+  }, 1200);
+  setTimeout(() => tooltip.remove(), 1600);
+}
+function handleRouteLengthInput(voltageKey, conductor, value) {
+  const routeLength = parseFloat(value);
+  if (isNaN(routeLength)) return;
+
+  // Remove existing route entry
+  selectedItems = selectedItems.filter(i =>
+    !(i["Voltage"] === voltageKey &&
+      i["Conductor Type"] === conductor &&
+      i["Route Length"])
+  );
+
+  // Add new entry for route length
+  selectedItems.push({
+    Voltage: voltageKey,
+    "Conductor Type": conductor,
+    "Route Length": routeLength
+  });
+
+  updateLeftPanel();
+}
+
+  </script>
+</body>
+</html>
