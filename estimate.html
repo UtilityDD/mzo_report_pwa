@@ -129,30 +129,36 @@
       }
     }
     
-    .structure-header {
-      padding: 12px 0;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      margin-bottom: 12px;
-    }
+.structure-header {
+  padding: 4px 0 6px; /* reduced top & bottom padding */
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 8px; /* tighter spacing below */
+}
+
     
-    .structure-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 8px;
-    }
+.structure-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr); /* max 3 per row */
+  gap: 12px;
+}
+
     
-    .structure-card {
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      padding: 12px;
-      border-radius: 8px;
-      font-size: 0.8rem;
-      font-weight: 400;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      text-align: left;
-    }
-    
+.structure-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 400;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  position: relative;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
     .structure-card:hover {
       background: rgba(255, 255, 255, 0.1);
       border-color: rgba(255, 255, 255, 0.15);
@@ -269,6 +275,8 @@
       font-size: 0.75rem;
       width: 60px;
       margin-top: 8px;
+       vertical-align: baseline;
+  margin-top: 0 !important;
       text-align: center;
     }
     
@@ -313,7 +321,21 @@
   margin-right: 6px;
   white-space: nowrap;
 }
+.toggle-arrow {
+  font-size: 0.9rem;
+  transition: transform 0.3s ease;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
 
+.card.expanded .toggle-arrow {
+  transform: rotate(180deg);
+}
+
+.whitespace-nowrap {
+  white-space: nowrap;
+}
 
   </style>
 </head>
@@ -332,7 +354,7 @@
     <div class="flex-1 flex px-6 pb-6 gap-6 overflow-hidden">
 
       <!-- Left Panel -->
-      <div class="w-80 flex-shrink-0 glass rounded-2xl h-full overflow-y-auto smooth-scroll">
+<div class="min-w-[420px] max-w-[600px] w-fit flex-shrink-0 glass rounded-2xl h-full overflow-y-auto smooth-scroll">
         <div class="p-6">
           <div class="flex justify-between items-center mb-6">
             <h2 class="text-xl font-semibold text-slate-100">Selection</h2>
@@ -468,7 +490,8 @@ function renderWorkspace() {
   for (let key in groups) {
     const col = document.createElement("div");
     col.setAttribute("data-col", key);
-    col.className = "flex flex-col";
+col.className = "flex flex-col px-3 pb-4";
+
 
     col.innerHTML = `
       <div class="mb-4">
@@ -533,12 +556,15 @@ function renderPoleWorkspace(selectedConductor, voltageKey) {
 const routeCard = document.createElement("div");
 routeCard.className = "card glass";
 routeCard.innerHTML = `
-  <div class="text-sm font-semibold mb-2">Route Length in km:</div>
-  <input type="number" min="0" step="0.01"
-         class="quantity-input w-full"
-         placeholder="Enter length"
-         oninput="handleRouteLengthInput('${voltageKey}', '${selectedConductor}', this.value)">
+  <div class="flex items-center gap-2">
+    <div class="text-sm font-semibold">Route Length in km:</div>
+    <input type="number" min="0" step="0.01"
+           class="quantity-input w-24"
+           placeholder="0.00"
+           oninput="handleRouteLengthInput('${voltageKey}', '${selectedConductor}', this.value)">
+  </div>
 `;
+
 colContent.appendChild(routeCard);
 
   uniquePoles.forEach((pole, index) => {
@@ -548,8 +574,17 @@ colContent.appendChild(routeCard);
     card.style.animationDelay = `${index * 50}ms`;
     
     const cardContent = document.createElement("div");
-    cardContent.className = "text-center font-medium";
-    cardContent.textContent = pole;
+cardContent.className = "flex justify-center items-center font-medium text-sm";
+cardContent.innerHTML = `
+  <div class="flex items-center gap-1">
+    <span>${pole}</span>
+    <button class="toggle-arrow text-slate-300" onclick="event.stopPropagation(); togglePoleExpansion(this.closest('.card'), '${pole}', '${selectedConductor}', '${voltageKey}')">
+      ▼
+    </button>
+  </div>
+`;
+
+
     card.appendChild(cardContent);
 
     const actionButtons = document.createElement("div");
@@ -613,7 +648,6 @@ if (!checked) {
     actionButtons.appendChild(deleteBtn);
     card.appendChild(actionButtons);
 
-    card.onclick = () => handlePoleCardClick(card, pole, selectedConductor, voltageKey, checkBtn);
     colContent.appendChild(card);
   });
 }
@@ -648,9 +682,8 @@ function togglePoleExpansion(card, pole, selectedConductor, voltageKey) {
     container.style.opacity = '0';
     
 container.innerHTML = `
-  <div class="structure-header">
-    <div class="font-semibold text-sm text-slate-200">${pole}</div>
-    <div class="text-xs text-slate-400">Select Structure Configuration & Quantity</div>
+  <div class="structure-header text-center">
+    <div class="text-sm text-slate-300 font-medium">Select Structure Configuration & Quantity</div>
   </div>
   <div class="structure-grid">
 ${structureCombinations.map((combo, index) => {
@@ -674,16 +707,15 @@ return `
        data-voltage="${voltageKey}"
        data-index="${index}">
     
-    <div class="flex items-center justify-between mt-2">
-      <div>
-        <div class="structure-card-title">${combo.structure}</div>
-      </div>
-      <input type="number" class="quantity-input ml-2"
-             value="${quantity}"
-             min="0" max="999"
-             onchange="setQuantity('${voltageKey}', '${selectedConductor}', '${pole}', '${combo.structure}', ${index}, this.value)"
-             onclick="event.stopPropagation()">
-    </div>
+<div class="flex items-center justify-between mt-2">
+  <div class="structure-card-title">${combo.structure}</div>
+  <input type="number" class="quantity-input ml-2"
+         value="${quantity}"
+         min="0" max="999"
+         oninput="setQuantity('${voltageKey}', '${selectedConductor}', '${pole}', '${combo.structure}', ${index}, this.value)"
+         onclick="event.stopPropagation()">
+</div>
+
   </div>
 `;
 
@@ -741,34 +773,51 @@ if (!card) {
 }
 
 function setQuantity(voltageKey, selectedConductor, pole, structure, index, value) {
-  const selector = `.structure-card[data-structure="${CSS.escape(structure)}"]
-                                  [data-pole="${CSS.escape(pole)}"]
-                                  [data-conductor="${CSS.escape(selectedConductor)}"]
-                                  [data-voltage="${CSS.escape(voltageKey)}"]`;
+const selector = `.structure-card[data-structure="${CSS.escape(structure)}"][data-pole="${CSS.escape(pole)}"][data-conductor="${CSS.escape(selectedConductor)}"][data-voltage="${CSS.escape(voltageKey)}"]`;
+
   const card = document.querySelector(selector);
 
   const quantity = Math.max(0, Math.min(999, parseInt(value) || 0));
+
+  // 🔁 Auto-check pole if user types quantity > 0 and it's not already checked
+  if (quantity > 0 && card) {
+    const poleCard = card.closest('.card[data-pole]');
+    const checkBtn = poleCard?.querySelector('.check-btn');
+    if (checkBtn && !checkBtn.classList.contains('checked')) {
+      checkBtn.click(); // Triggers full logic and expansion
+    }
+  }
+
   updateItemQuantity(voltageKey, selectedConductor, pole, structure, quantity, card);
 }
 
 
+
+
 function updateItemQuantity(voltageKey, selectedConductor, pole, structure, quantity, card) {
+  // Remove any existing item with the same combination
   selectedItems = selectedItems.filter(i =>
     !(i["Voltage"] === voltageKey &&
+      i["Conductor Type"] === selectedConductor &&
       i["Pole Type"] === pole &&
       i["Structure"] === structure)
   );
 
+  // Always push updated item if quantity > 0
+  if (quantity > 0) {
+    selectedItems.push({
+      Voltage: voltageKey,
+      "Conductor Type": selectedConductor,
+      "Pole Type": pole,
+      "Structure": structure,
+      Quantity: quantity
+    });
+  }
+
+  // If card exists, update UI state
   if (card) {
     card.classList.remove('selected', 'unselected');
     if (quantity > 0) {
-      selectedItems.push({
-        Voltage: voltageKey,
-        "Conductor Type": selectedConductor,
-        "Pole Type": pole,
-        "Structure": structure,
-        Quantity: quantity
-      });
       card.classList.add('selected');
     } else {
       card.classList.add('unselected');
@@ -777,6 +826,8 @@ function updateItemQuantity(voltageKey, selectedConductor, pole, structure, quan
 
   updateLeftPanel();
 }
+
+
 
 
 function selectPole(item) {
@@ -815,34 +866,51 @@ function updateLeftPanel() {
     selectionCard.className = "selected-item";
 
     let html = `<div class='text-sm font-bold text-purple-300 mb-1'>Voltage: ${Voltage}</div>`;
-html += `<div class='text-sm font-bold text-sky-300 mb-1'>Conductor: ${Conductor}</div>`;
+    html += `<div class='text-sm font-bold text-sky-300 mb-1'>Conductor: ${Conductor}</div>`;
 
-const route = items.find(i => i["Route Length"]);
-if (route) {
-  html += `<div class='text-sm font-medium text-sky-300 mb-2 ml-1'>Route Length: ${route["Route Length"]} km</div>`;
-}
+    const route = items.find(i => i["Route Length"]);
+    if (route) {
+      html += `<div class='text-sm font-medium text-sky-300 mb-2 ml-1'>Route Length: ${route["Route Length"]} km</div>`;
+    }
 
     html += `<div class='pl-2 space-y-1'>`;
 
-items.forEach(i => {
-  // Skip route length entry from quantity listing
-  if (i["Route Length"]) return;
+    items.forEach(i => {
+      if (i["Route Length"]) return;
 
-  const detail = `${i["Pole Type"] || ''} ${i["Structure"] || ''}`.trim(); // ← update here
-  const quantity = i["Quantity"] || 1;
-  html += `<div class='text-xs text-emerald-400 flex justify-between items-center'>
-    <span>• ${detail}</span>
-    <span class='text-yellow-400 font-semibold'>Qty: ${quantity}</span>
-  </div>`;
-});
+      const detail = `${i["Pole Type"] || ''} ${i["Structure"] || ''}`.trim();
+      const quantity = i["Quantity"] || 1;
+      html += `<div class='text-xs text-emerald-400 flex justify-between items-center'>
+        <span class="whitespace-nowrap">• ${detail}</span>
+        <span class='text-yellow-400 font-semibold whitespace-nowrap'>Qty: ${quantity}</span>
+      </div>`;
+    });
 
+    // ✅ Insert Average Span Length calculation here
+    let totalStructures = 0;
+    let excludedQty = 0;
 
+    items.forEach(i => {
+      if (i["Route Length"]) return;
+      const qty = parseInt(i["Quantity"]) || 0;
+      totalStructures += qty;
+
+      if ((i["Structure"] || "").toLowerCase().includes("existing pole")) {
+        excludedQty += qty;
+      }
+    });
+
+    if (route && (totalStructures - excludedQty) > 0) {
+      const avgSpan = Math.round((parseFloat(route["Route Length"]) * 1000) / (totalStructures - excludedQty));
+      html += `<div class='mt-2 text-xs text-slate-400 italic'>Average Span Length: ${avgSpan} m</div>`;
+    }
 
     html += `</div>`;
     selectionCard.innerHTML = html;
     container.appendChild(selectionCard);
   });
 }
+
 
 function removeItem(voltage, conductor, pole) {
   selectedItems = selectedItems.filter(i =>
