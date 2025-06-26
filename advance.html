@@ -1251,86 +1251,44 @@ async function checkDataAge() {
 
 
 
-    async function loadData() {
-      toggleLoading(true);
-      allData = [];
-      
-      try {
-const urls = Object.entries(sources);
-const promises = urls.map(async ([location, url]) => {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const json = await response.json();
+async function loadData() {
+  toggleLoading(true);
+  allData = [];
 
-  json.forEach(row => {
-    const date = new Date(row.date);
-    allData.push({ ...row, location, date }); // attach location and parsed date
-  });
-});
+  try {
+    const urls = Object.entries(sources);
+    const promises = urls.map(async ([location, url]) => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const json = await response.json();
 
-
-          const sampleRow = results.data[0] || {};
-          const balanceCol = findColumn(sampleRow, ['Net Balance Value', 'Net Balance', 'Balance Value', 'Balance']);
-          const dateCol = findColumn(sampleRow, ['Issued Date', 'Issue Date', 'Date']);
-          const unitCol = findColumn(sampleRow, ['Unit', 'Units']);
-          const vendorCol = findColumn(sampleRow, ['VendorName', 'Vendor']);
-          const projectCol = findColumn(sampleRow, ['Project ID', 'ProjectID', 'Project Id', 'Project']);
-
-
-          if (!balanceCol || !dateCol) {
-            console.warn(`Missing columns in ${location}`);
-            return;
-          }
-
-          results.data.forEach(row => {
-            const dateValue = row[dateCol];
-            const balanceValue = row[balanceCol];
-            if (!dateValue || !balanceValue || balanceValue === '') return;
-
-            const date = parseDate(dateValue);
-            if (!date) return;
-
-            let cleanValue = String(balanceValue).trim();
-            cleanValue = cleanValue.replace(/[₹,\s]/g, '').replace(/[^\d.-]/g, '');
-            const value = parseFloat(cleanValue);
-            if (isNaN(value)) return;
-
-const qtyCol = findColumn(sampleRow, ['Net Balance Qty', 'Qty', 'Quantity']);
-const quantityRaw = qtyCol ? row[qtyCol]?.trim() : '';
-let quantity = parseFloat(String(quantityRaw).replace(/[^\d.-]/g, ''));
-if (isNaN(quantity)) quantity = 0;
-
-allData.push({
-  location: location,
-  unit: unitCol ? row[unitCol]?.trim() : 'Unknown',
-  vendor: vendorCol ? row[vendorCol]?.trim() : 'Unknown',
-  material: row['Material description']?.trim() || 'Unknown',
-  projectid: projectCol ? row[projectCol]?.trim() : '',
-  date: date,
-  value: value,
-  qty: quantity
-});
-
-
-
-
-          });
+      json.forEach(row => {
+        const date = new Date(row.date);
+        allData.push({
+          ...row,
+          location,
+          date,
+          qty: row.qty || 0,
+          unit: row.unit || 'Unknown',
+          vendor: row.vendor || 'Unknown',
+          material: row.material || 'Unknown',
+          projectid: row.projectid || ''
         });
+      });
+    });
 
+    await Promise.all(promises);
+    populateDropdowns(true); // Reset all dependent filters on initial load
+    filterAndProcessData();
+    renderDivisionChart();
 
+  } catch (error) {
+    console.error("Loading error:", error);
+  } finally {
+    toggleLoading(false);
+  }
+}
 
-await Promise.all(promises);
-populateDropdowns(true); // Reset all dependent filters on initial load
-filterAndProcessData();
-renderDivisionChart();
-
-
-      } catch (error) {
-        console.error("Loading error:", error);
-      } finally {
-        toggleLoading(false);
-      }
-    }
 
     // Event listeners
     document.getElementById("locationFilter").addEventListener("change", e => {
