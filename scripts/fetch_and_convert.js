@@ -27,15 +27,17 @@ const parseDate = (str) => {
 
       const { data } = Papa.parse(csv, { header: true, skipEmptyLines: true });
 
-      const out = data
-        .filter(row => row['Issued Date'] && row['Net Balance Value'])
-        .map(row => ({
-          date: parseDate(row['Issued Date']),
-          unit: row['Unit'] || '',
-          vendor: row['VendorName'] || '',
-          material: row['Material description'] || '',
-          value: parseFloat(String(row['Net Balance Value']).replace(/[₹,]/g, '')) || 0
-        }));
+const out = data
+  .filter(row => row['Issued Date'] && row['Net Balance Value'])
+  .map(row => ({
+rawDate: row['Reporting Date'],
+date: parseDate(row['Reporting Date']),
+    unit: row['Unit'] || '',
+    vendor: row['VendorName'] || '',
+    material: row['Material description'] || '',
+    value: parseFloat(String(row['Net Balance Value']).replace(/[₹,]/g, '')) || 0
+  }));
+
 
       fs.writeFileSync(`data/adv_${division}.json`, JSON.stringify(out, null, 2));
       console.log(`✅ Saved: data/adv_${division}.json`);
