@@ -1198,27 +1198,26 @@ async function checkDataAge() {
   const checkPromises = Object.entries(sources).map(async ([division, url]) => {
     try {
       const response = await fetch(url);
-      const text = await response.text();
-      const lines = text.trim().split('\n');
+      const json = await response.json();
 
-      if (lines.length < 2) {
-        outdatedDivisions.push(`<div style="color: #dc2626; font-weight: 500;">${division} — No data row found ❌</div>`);
+      if (!json.length) {
+        outdatedDivisions.push(`<div style="color: #dc2626; font-weight: 500;">${division} — No data ❌</div>`);
         return;
       }
 
-      const firstRow = lines[1].split(',');
-      const dateStr = firstRow[0].trim();
+      const latestDate = json
+        .map(row => new Date(row.reportingDate || row.date))
+        .filter(date => !isNaN(date))
+        .sort((a, b) => b - a)[0];
 
-      if (!/^\d{1,2}[\/-]\d{1,2}[\/-]\d{4}$/.test(dateStr)) {
+      if (!latestDate) {
         outdatedDivisions.push(`<div style="color: #dc2626; font-weight: 500;">${division} — Invalid or missing date ❌</div>`);
         return;
       }
 
-      const [dd, mm, yyyy] = dateStr.split(/[/-]/).map(Number);
-      const fileDate = new Date(yyyy, mm - 1, dd);
-      const diffDays = Math.floor((today - fileDate) / (1000 * 60 * 60 * 24));
-
+      const diffDays = Math.floor((today - latestDate) / (1000 * 60 * 60 * 24));
       const line = `${formatName(division)} - ${diffDays} Days Old Data`;
+
       outdatedDivisions.push(
         `<div style="color: ${diffDays > 10 ? '#dc2626' : '#16a34a'}; font-weight: 500;">${line} ${diffDays > 10 ? '❌' : '✅'}</div>`
       );
@@ -1229,9 +1228,10 @@ async function checkDataAge() {
 
   await Promise.all(checkPromises);
 
-  if (outdatedDivisions.length > 0) {
-    const alertBox = document.getElementById('dataAgeAlert');
-    const message = document.getElementById('dataAgeMessage');
+  const alertBox = document.getElementById('dataAgeAlert');
+  const message = document.getElementById('dataAgeMessage');
+
+  if (outdatedDivisions.length) {
     message.innerHTML = outdatedDivisions.join('');
     alertBox.style.display = 'flex';
     document.getElementById('initialLoader').style.display = 'none';
@@ -1244,9 +1244,10 @@ async function checkDataAge() {
     });
   } else {
     document.getElementById('initialLoader').style.display = 'none';
-    return Promise.resolve(); // ✅ Continue to loadData
+    return Promise.resolve();
   }
 }
+
 
 
 
