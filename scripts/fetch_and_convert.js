@@ -40,8 +40,10 @@ const parseDate = (str) => {
       fs.writeFileSync(`data/adv_${division}.json`, JSON.stringify(out, null, 2));
       console.log(`✅ Saved: data/adv_${division}.json`);
     }
+
+    console.log("✅ All JSONs written.");
   } catch (err) {
-    console.error('❌ Script error:', err);
+    console.error("❌ Script error:", err);
     process.exit(1);
   }
 })();
