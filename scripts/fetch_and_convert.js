@@ -1,6 +1,6 @@
 const fs = require('fs');
-const fetch = require('node-fetch');
 const Papa = require('papaparse');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const sources = {
   "Balurghat": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRooKVx76f92WX_Q3j2u4UmA1yXN2cNcwSPVqiFjyY58oTplAg_Ieze4xket4Lq3qHEuLt9js0-kU8a/pub?gid=98784562&single=true&output=csv",
