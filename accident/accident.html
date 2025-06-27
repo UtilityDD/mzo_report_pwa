@@ -666,6 +666,31 @@
 .search-result:hover {
   background: #f9f9f9;
 }
+.accordion-button {
+  width: 100%;
+  text-align: left;
+  padding: 12px 16px;
+  font-weight: bold;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  margin-top: 10px;
+  cursor: pointer;
+}
+
+.accordion-button.active {
+  background: #0056b3;
+}
+
+.accordion-panel {
+  display: none;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+  background: #fff;
+  border-left: 4px solid #007bff;
+  border-radius: 0 0 6px 6px;
+}
 
   </style>
 </head>
@@ -686,7 +711,21 @@
 <!-- Hidden Analytics Summary -->
 <div id="analysisBox" style="display: none; z-index: 1000; position: relative; background: #f8f9fa; padding: 20px; margin-top: 20px; border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); max-width: 960px; margin-inline: auto;">
   <h3 style="margin-top: 0;">📊 Accident Analytics Summary</h3>
-<div id="accordionContainer"></div>
+<div id="analyticsContent">
+  <div class="accordion">
+    <button class="accordion-button" data-region="zone">Zone (All)</button>
+    <div class="accordion-panel"></div>
+    
+    <button class="accordion-button" data-region="Malda (D) Region">Malda</button>
+    <div class="accordion-panel"></div>
+    
+    <button class="accordion-button" data-region="Uttar Dinajpur (D) Region">Uttar Dinajpur</button>
+    <div class="accordion-panel"></div>
+    
+    <button class="accordion-button" data-region="Dakshin Dinajpur (D) Region">Dakshin Dinajpur</button>
+    <div class="accordion-panel"></div>
+  </div>
+</div>
 </div>
 
 
@@ -1583,6 +1622,8 @@ function openVictimListModal(groupName, modalType, modalTab) {
   overlay.classList.add('active');
 }
 
+
+
 function generateAnalytics(data) {
   const total = data.length;
   const humanVictims = data.filter(row => (row['Type of Victim'] || '').toLowerCase() === 'human');
@@ -1711,59 +1752,50 @@ const voltageList = Object.entries(voltageMap)
 }
 
 
-function generateAnalyticsForRegion(regionFilter) {
-  let data = processedData;
-
-  if (regionFilter !== 'zone') {
-    let regionMap = {
-      'Uttar Dinajpur (D) Region': 'Raiganj (D) Region'
-    };
-    const target = regionMap[regionFilter] || regionFilter;
-    data = data.filter(row => row._mappedRegion === target);
-  }
-
-  return generateAnalytics(data);
-}
-
-
 function toggleAnalytics() {
   const box = document.getElementById('analysisBox');
-  const container = document.getElementById('accordionContainer');
   const backdrop = document.getElementById('analyticsBackdrop');
+  const panels = document.querySelectorAll('.accordion-panel');
+  const buttons = document.querySelectorAll('.accordion-button');
 
   if (box.style.display === 'none') {
     box.style.display = 'block';
     backdrop.style.display = 'block';
-    document.body.classList.add('dimmed');
     box.scrollIntoView({ behavior: 'smooth' });
 
-    // Define regions and their filters
-    const regions = [
-      { name: 'Zone', filter: 'zone' },
-      { name: 'Malda', filter: 'Malda (D) Region' },
-      { name: 'Uttar Dinajpur', filter: 'Uttar Dinajpur (D) Region' },
-      { name: 'Dakshin Dinajpur', filter: 'Dakshin Dinajpur (D) Region' }
-    ];
+    buttons.forEach((btn, index) => {
+      btn.classList.remove('active');
+      panels[index].style.display = 'none';
+    });
 
-    // Generate accordion content
-    container.innerHTML = regions.map((region, index) => `
-      <div style="margin-bottom: 10px; border: 1px solid #ccc; border-radius: 6px;">
-        <button onclick="toggleAccordion(${index})" style="width: 100%; padding: 10px; background: #007bff; color: white; font-weight: bold; border: none; border-radius: 6px 6px 0 0; cursor: pointer;">
-          ${region.name} Analytics
-        </button>
-        <div id="accordionContent${index}" style="display: none; background: #fff; padding: 12px; border-top: 1px solid #ccc;">
-          ${generateAnalyticsForRegion(region.filter)}
-        </div>
-      </div>
-    `).join('');
+    // Add one-time listeners
+    buttons.forEach((button, index) => {
+      button.onclick = () => {
+        const region = button.dataset.region;
+        const panel = panels[index];
+        const isActive = button.classList.contains('active');
+
+        // Close all first
+        buttons.forEach((b, i) => {
+          b.classList.remove('active');
+          panels[i].style.display = 'none';
+        });
+
+        if (!isActive) {
+          const mappedRegion = region === 'Uttar Dinajpur (D) Region' ? 'Raiganj (D) Region' : region;
+          const filtered = region === 'zone'
+            ? processedData
+            : processedData.filter(r => r._mappedRegion === mappedRegion);
+          panel.innerHTML = generateAnalytics(filtered);
+          panel.style.display = 'block';
+          button.classList.add('active');
+        }
+      };
+    });
 
   } else {
     closeAnalytics();
   }
-}
-function toggleAccordion(index) {
-  const content = document.getElementById(`accordionContent${index}`);
-  content.style.display = content.style.display === 'none' ? 'block' : 'none';
 }
 
 
@@ -1782,6 +1814,7 @@ function closeAnalytics() {
   z-index: 900;
   display: none;
 "></div>
+
 
 </body>
 </html>
