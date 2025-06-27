@@ -414,7 +414,10 @@
     padding-top: 80px; /* Add enough space to prevent overlap with fixed header */
   }
 }
-
+@keyframes bloom {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(1.1); opacity: 1; }
+}
     </style>
 </head>
 <body>
@@ -473,6 +476,13 @@
   <div class="stat-number" style="color: #d32f2f;" id="upcomingRetirements">-</div>
   <div class="stat-label" style="color: #d32f2f;">Upcoming Retirements</div>
 </div>
+
+<div class="stat-card" onclick="openBirthdayModal()" style="border-left: 4px solid #4caf50;">
+  <div class="stat-icon" style="color: #4caf50;">🎂</div>
+  <div class="stat-number" style="color: #4caf50;" id="upcomingBirthdays">-</div>
+<div class="stat-label" style="color: #4caf50;">Birthdays in 7 Days</div>
+</div>
+
 </div>
 
         </div>
@@ -603,6 +613,34 @@
     <div class="modal-body" id="retirementListBody"></div>
   </div>
 </div>
+
+<div id="birthdayModal" class="modal" style="z-index: 1100;">
+  <div class="modal-content">
+    <div class="modal-header" style="background: #4caf50;">
+<h2>Birthdays in Next 7 Days</h2>
+      <span class="close" onclick="closeBirthdayModal()">&times;</span>
+    </div>
+    <div class="modal-body" id="birthdayListBody"></div>
+  </div>
+</div>
+<!-- 🌸 Birthday Greeting Modal -->
+<div id="birthdayGreetingModal" class="modal" style="z-index: 2000; display: none;">
+  <div class="modal-content" style="background: linear-gradient(to bottom right, #fff0f5, #e1bee7); text-align: center; padding: 32px; overflow-y: auto; max-height: 100vh;">
+    <div style="font-size: 2rem; margin-bottom: 8px; color: #c2185b;">🎉 Happy Birthday!</div>
+    <div id="birthdayGreetingList" style="font-size: 16px; color: #4a148c; margin-bottom: 24px;">
+      <!-- Populated dynamically -->
+    </div>
+    <div style="margin: 24px auto;">
+      <img src="https://cdn.pixabay.com/photo/2017/08/30/07/52/flower-2697047_960_720.png" alt="" style="max-height: 100px; animation: bloom 4s infinite alternate ease-in-out;">
+    </div>
+    <audio id="birthdayAudio" autoplay loop>
+      <source src="https://cdn.pixabay.com/audio/2022/10/22/audio_2fa402f848.mp3" type="audio/mpeg">
+    </audio>
+    <canvas id="confettiCanvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
+    <button onclick="closeBirthdayGreetingModal()" class="auth-btn" style="max-width: 240px; margin: 0 auto;">Proceed to Dashboard</button>
+  </div>
+</div>
+
     <script>
         
         let employeeData = [];
@@ -687,11 +725,12 @@
                     isAuthenticated = true;
                     showAuthLoading('Access granted! Loading dashboard...');
                     
-                    setTimeout(() => {
-                        document.getElementById('authScreen').style.display = 'none';
-                        document.getElementById('dashboardContent').style.display = 'block';
-                        loadEmployeeData();
-                    }, 1000);
+setTimeout(() => {
+    document.getElementById('authScreen').style.display = 'none';
+    document.getElementById('dashboardContent').style.display = 'block';
+    loadEmployeeDataWithBirthdayGreeting(); // ✅ Correct function
+}, 1000);
+
                 } else {
                     // PIN is invalid
                     showAuthError('Ask admin to authorize you.');
@@ -752,6 +791,8 @@
                         }).filter(row => row.Name && row.Name.trim() !== '');
                         
                         updateStats();
+                        calculateUpcomingBirthdays();
+
                         isDataLoaded = true;
                         hideLoading();
                     },
@@ -995,6 +1036,9 @@ if (event.target === document.getElementById('profitCenterModal')) {
 }
 if (event.target === document.getElementById('costCenterModal')) {
   closeCostCenterModal();
+}
+if (event.target === document.getElementById('birthdayModal')) {
+  closeBirthdayModal();
 }
 
         }
@@ -1424,6 +1468,63 @@ function calculateUpcomingRetirements() {
     // Main card should show total within 1 year only
     return { total: retire1Year, retire3Months, retire6Months, retire1Year };
 }
+// 👇 Place this helper before the birthday functions
+function getBirthdayFromLegacyId(legacyId, year) {
+  if (!legacyId || legacyId.toString().length !== 10) return null;
+
+  const idStr = legacyId.toString().trim();
+  const mm = parseInt(idStr.slice(4, 6), 10) - 1;
+  const dd = parseInt(idStr.slice(6, 8), 10);
+
+  if (isNaN(mm) || isNaN(dd) || mm < 0 || mm > 11 || dd < 1 || dd > 31) {
+    return null;
+  }
+
+  const birthday = new Date(year, mm, dd);
+  return isNaN(birthday) ? null : birthday;
+}
+
+function calculateUpcomingBirthdays() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Normalize to start of day
+  const end = new Date(today);
+  end.setDate(end.getDate() + 6); // 6 days after today = 7 days total incl. today
+
+  const grouped = {};
+
+  employeeData.forEach(emp => {
+    const legacyId = emp['Legacy ID']?.toString().trim();
+    const name = emp.Name?.trim();
+    if (!legacyId || legacyId.length !== 10 || !name) return;
+
+    let birthday = getBirthdayFromLegacyId(legacyId, today.getFullYear());
+    if (!birthday || isNaN(birthday)) return;
+    birthday.setHours(0, 0, 0, 0); // Normalize
+
+    // If birthday has already passed, move to next year
+    if (birthday < today) {
+      birthday = getBirthdayFromLegacyId(legacyId, today.getFullYear() + 1);
+      birthday.setHours(0, 0, 0, 0);
+    }
+
+    if (birthday >= today && birthday <= end) {
+      const mmdd = `${String(birthday.getMonth() + 1).padStart(2, '0')}${String(birthday.getDate()).padStart(2, '0')}`;
+      if (!grouped[mmdd]) grouped[mmdd] = [];
+      grouped[mmdd].push(emp);
+    }
+  });
+
+  window._groupedBirthdays = grouped;
+
+  const total = Object.values(grouped).reduce((sum, arr) => sum + arr.length, 0);
+  document.getElementById('upcomingBirthdays').textContent = total;
+}
+
+
+
+
+
+
 
 function parseRetirementDate(dateStr) {
     if (!dateStr || dateStr === 'N/A' || dateStr === '' || dateStr === null || dateStr === undefined) {
@@ -1548,6 +1649,113 @@ if (event.target === document.getElementById('retirementModal')) {
 }
 if (event.target === document.getElementById('retirementListModal')) {
     closeRetirementListModal();
+}
+
+function openBirthdayModal() {
+  if (!isDataLoaded) return alert("Data is still loading...");
+  const container = document.getElementById('birthdayListBody');
+  const grouped = window._groupedBirthdays || {};
+
+  if (Object.keys(grouped).length === 0) {
+    container.innerHTML = '<p class="no-results">No birthdays in the next 1 month.</p>';
+    return;
+  }
+
+  let html = '';
+  const sortedDates = Object.keys(grouped).sort(); // Sort MMDD
+
+  sortedDates.forEach(mmdd => {
+    const day = mmdd.slice(2);
+    const month = mmdd.slice(0, 2);
+    html += `<h4 style="margin: 16px 0 8px; color: #1976d2;">🎂 ${day}/${month}</h4>`;
+    html += '<table class="detail-table"><tr><th>Name</th><th>Employee No</th><th>Place</th></tr>';
+    
+    grouped[mmdd].forEach(emp => {
+      const empIndex = employeeData.indexOf(emp);
+      html += `
+<tr style="cursor:pointer" onclick="openedFromList=true; showEmployeeDetails(${empIndex})">
+        <td>${emp.Name || 'N/A'}<br><i>${emp.Designation || ''}</i></td>
+        <td>${emp['Employee No'] || 'N/A'}</td>
+        <td>${emp['Cost Center Name'] || 'N/A'}</td>
+      </tr>`;
+    });
+
+    html += '</table>';
+  });
+
+  container.innerHTML = html;
+  document.getElementById('birthdayModal').style.display = 'block';
+}
+
+
+function closeBirthdayModal() {
+  document.getElementById('birthdayModal').style.display = 'none';
+}
+function showBirthdayGreetingModal() {
+  const today = new Date();
+  const mmddToday = `${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+  const grouped = window._groupedBirthdays || {};
+  const list = grouped[mmddToday] || [];
+
+  if (list.length === 0) return; // No birthday today
+
+  const container = document.getElementById('birthdayGreetingList');
+  let html = '';
+  list.forEach(emp => {
+    html += `<div><b>${emp.Name}</b> - ${emp['Cost Center Name'] || 'N/A'}</div>`;
+  });
+  container.innerHTML = html;
+  document.getElementById('birthdayGreetingModal').style.display = 'block';
+  launchConfetti();
+}
+
+function closeBirthdayGreetingModal() {
+  document.getElementById('birthdayGreetingModal').style.display = 'none';
+  document.getElementById('birthdayAudio').pause();
+  if (window._confettiInterval) clearInterval(window._confettiInterval);
+}
+
+function launchConfetti() {
+  const canvas = document.getElementById('confettiCanvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const confetti = Array.from({ length: 150 }, () => createParticle());
+
+  function createParticle() {
+    return {
+      x: Math.random() * canvas.width,
+      y: Math.random() * -canvas.height,
+      size: Math.random() * 6 + 2,
+      speed: Math.random() * 3 + 2,
+      color: `hsl(${Math.random() * 360}, 70%, 60%)`
+    };
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    confetti.forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fillStyle = p.color;
+      ctx.fill();
+      p.y += p.speed;
+      if (p.y > canvas.height) {
+        p.y = Math.random() * -100;
+        p.x = Math.random() * canvas.width;
+      }
+    });
+  }
+
+  window._confettiInterval = setInterval(draw, 30);
+}
+
+// 👇 Call after data is loaded
+function loadEmployeeDataWithBirthdayGreeting() {
+  loadEmployeeData();
+  setTimeout(() => {
+    showBirthdayGreetingModal();
+  }, 2000);
 }
     </script>
 </body>
