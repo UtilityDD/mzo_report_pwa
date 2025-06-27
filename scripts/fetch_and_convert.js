@@ -13,9 +13,12 @@ const sources = {
 };
 
 const parseDate = (str) => {
+  if (!str || typeof str !== 'string') return null;
   const [d, m, y] = str.split(/[/-]/).map(Number);
-  return new Date(y, m - 1, d).toISOString();
+  const date = new Date(y, m - 1, d);
+  return isNaN(date.getTime()) ? null : date.toISOString();
 };
+
 
 (async () => {
   try {
@@ -29,15 +32,23 @@ const parseDate = (str) => {
 
 const out = data
   .filter(row => row['Reporting Date'] && row['Net Balance Value'])
-  .map(row => ({
-    rawReportingDate: row['Reporting Date'],
-    reportingDate: parseDate(row['Reporting Date']),
-    issuedDate: parseDate(row['Issued Date']),
-    unit: row['Unit'] || '',
-    vendor: row['VendorName'] || '',
-    material: row['Material description'] || '',
-    value: parseFloat(String(row['Net Balance Value']).replace(/[₹,]/g, '')) || 0
-  }));
+  .map(row => {
+    const reportingDate = parseDate(row['Reporting Date']);
+    const issuedDate = parseDate(row['Issued Date']);
+    if (!reportingDate || !issuedDate) return null;
+
+    return {
+      rawReportingDate: row['Reporting Date'],
+      reportingDate,
+      issuedDate,
+      unit: row['Unit'] || '',
+      vendor: row['VendorName'] || '',
+      material: row['Material description'] || '',
+      value: parseFloat(String(row['Net Balance Value']).replace(/[₹,]/g, '')) || 0
+    };
+  })
+  .filter(Boolean); // remove any nulls
+
 
 
 
