@@ -41,20 +41,17 @@ function updateMaxTodayDate(data) {
 
 // Load data from nsc.json or use embedded data
 async function loadData() {
-    try {
-        const response = await fetch('nsc.json');
-        if (response.ok) {
-            allData = await response.json();
-            processData();
-            return;
-        }
-    } catch (error) {
-        console.log('Could not load external nsc.json file, using embedded data');
-    }
-
-    console.warn("No external data found and no fallback data defined.");
-    allData = []; // Avoid crash
+  try {
+    const response = await fetch('../data/data.json');
+    if (!response.ok) throw new Error('Network response was not ok');
+    allData = await response.json();
+    processData(); // This should call your processing, filters, UI update, etc.
+  } catch (error) {
+    console.error('Failed to load data.json:', error);
+    allData = [];
+  }
 }
+
 
 
 // Process data after loading
