@@ -42,7 +42,7 @@ function updateMaxTodayDate(data) {
 // Load data from nsc.json or use embedded data
 async function loadData() {
   try {
-    const response = await fetch('../data/data.json');
+    const response = await fetch('../data/nsc.json');
     if (!response.ok) throw new Error('Network response was not ok');
     allData = await response.json();
     processData(); // This should call your processing, filters, UI update, etc.
