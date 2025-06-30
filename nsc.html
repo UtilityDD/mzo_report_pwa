@@ -16,6 +16,7 @@
 
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
   <!-- noUiSlider CSS -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.css">
@@ -890,40 +891,7 @@ body {
       </div>
     </div>
 
-<!-- Average Delay Group - Compact Version -->
-<div class="card p-3 mb-4" style="background-color: #f1f5ff; border-radius: 15px;">
-  <h6 class="mb-3 text-center" style="color: #4361ee; font-size: 0.8rem;">
-    Average Delay Summary <br>
-    <small style="font-size: 0.8rem; color: #666;">(Overall Avg &nbsp; | &nbsp; Pole / Non-Pole)</small>
-  </h6>
-  
-    <div class="row">
-      <div class="col-md-4 mb-2">
-        <div class="card text-center shadow-sm" style="background-color: #e3f2fd; border-radius: 12px;">
-          <div class="card-body p-2">
-            <div style="font-size: 0.8rem; font-weight: 500; color: #555;">Avg Delay for Quotation</div>
-            <div style="font-size: 1.4rem; font-weight: 700;" id="avgDelayQtn">0</div>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-4 mb-2">
-        <div class="card text-center shadow-sm" style="background-color: #e3f2fd; border-radius: 12px;">
-          <div class="card-body p-2">
-            <div style="font-size: 0.8rem; font-weight: 500; color: #555;">Avg Delay for WO</div>
-            <div style="font-size: 1.4rem; font-weight: 700;" id="avgDelayWO">0</div>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-4 mb-2">
-        <div class="card text-center shadow-sm" style="background-color: #e3f2fd; border-radius: 12px;">
-          <div class="card-body p-2">
-            <div style="font-size: 0.8rem; font-weight: 500; color: #555;">Avg Delay for Connection</div>
-            <div style="font-size: 1.4rem; font-weight: 700;" id="avgDelaySC">0</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+
   
     <!-- KPI Cards Row -->
 <!-- KPI Cards Row -->
@@ -1121,7 +1089,7 @@ body {
 let delaySCMax = 100;
 
     // Data URL
-const dataUrl = "data/nsc.json"; // points to GitHub-hosted JSON
+    const dataUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRsUU2viBvYhSgR0RFwmZ1H8LkYCats9roQVCKvQeoU7dzg6ryR6IWZex9FT9tksp_DEM23ZgQ28Iyo/pub?output=csv";
     let rawData = [], filteredData = [];
     let charts = {};
 
@@ -1141,8 +1109,12 @@ const dataUrl = "data/nsc.json"; // points to GitHub-hosted JSON
       try {
         showLoading(true);
         const res = await fetch(dataUrl);
-rawData = await res.json();
-
+        const text = await res.text();
+        const parsed = Papa.parse(text.trim(), {
+          header: true,
+          skipEmptyLines: true
+        });
+        rawData = parsed.data;
         filteredData = [...rawData];
         // Get min/max DelayInSC values from data
 const allSCValues = rawData.map(d => parseFloat(d.DelayInSC)).filter(v => !isNaN(v));
@@ -1543,46 +1515,7 @@ document.getElementById('poleSum').textContent = `(${totalPoles})`;
       document.getElementById('industrialPending').textContent = industrialPending;
 
       // Calculate averages for delays
-function average(arr, key) {
-  const nums = arr
-    .map(d => {
-      const val = d[key];
-      return val !== null && val !== "" && !isNaN(parseFloat(val)) ? parseFloat(val) : null;
-    })
-    .filter(n => n !== null);
 
-  if (nums.length === 0) return 0;
-  const sum = nums.reduce((a, b) => a + b, 0);
-  return (sum / nums.length).toFixed(1);
-}
-
-
-
-// Helper: Pole / Non-Pole filter
-const isPole = d => (d.NO_OF_POLES || "").trim() !== "" && d.NO_OF_POLES !== "0";
-const isNonPole = d => (d.NO_OF_POLES || "").trim() === "" || d.NO_OF_POLES === "0";
-
-// Main
-const avgQtn = average(filteredData, 'DelayInQtn');
-const avgWO = average(filteredData, 'DelayInWO');
-const avgSC = average(filteredData, 'DelayInSC');
-
-// Pole
-const poleData = filteredData.filter(isPole);
-const avgQtnPole = average(poleData, 'DelayInQtn');
-const avgWOPole = average(poleData, 'DelayInWO');
-const avgSCPole = average(poleData, 'DelayInSC');
-
-// Non-Pole
-const nonPoleData = filteredData.filter(isNonPole);
-const avgQtnNonPole = average(nonPoleData, 'DelayInQtn');
-const avgWONonPole = average(nonPoleData, 'DelayInWO');
-const avgSCNonPole = average(nonPoleData, 'DelayInSC');
-
-// Set HTML with breakdown
-document.getElementById('avgDelayQtn').innerHTML = `${avgQtn} <span class="text-muted" style="font-size: 0.9rem;">(${avgQtnPole}/${avgQtnNonPole})</span>`;
-document.getElementById('avgDelayWO').innerHTML = `${avgWO} <span class="text-muted" style="font-size: 0.9rem;">(${avgWOPole}/${avgWONonPole})</span>`;
-document.getElementById('avgDelaySC').innerHTML = `${avgSC} <span class="text-muted" style="font-size: 0.9rem;">(${avgSCPole}/${avgSCNonPole})</span>`;
 
 // Commercial 3-Ph: CONN_CLASS = "A" and APPLIED_PHASE = "III"
 const commercial3ph = filteredData.filter(d => {
