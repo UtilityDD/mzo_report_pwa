@@ -8,20 +8,54 @@ function getSheetData(sheetName) {
 
 // ✅ Add new row to "ptrs" sheet
 function addPTR(data) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("ptrs");
-  const headers = sheet.getDataRange().getValues()[0];
-  const row = headers.map(h => data[h] || '');
-  sheet.appendRow(row);
-  return { status: "PTR added successfully" };
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("ptrs");
+    const headers = sheet.getDataRange().getValues()[0];
+    
+    // Log the received data for debugging
+    console.log('Received PTR data:', JSON.stringify(data));
+    console.log('PTR Sheet headers:', headers);
+    
+    const row = headers.map(header => {
+      const value = data[header];
+      console.log(`PTR Header: "${header}" -> Value: "${value}"`);
+      return value || '';
+    });
+    
+    console.log('PTR Row to be inserted:', row);
+    sheet.appendRow(row);
+    return { status: "PTR added successfully", data: data };
+  } catch (error) {
+    console.error('Error in addPTR:', error);
+    throw error;
+  }
 }
 
 // ✅ Add new row to "testingrecords" sheet
 function submitTestRecord(data) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("testingrecords");
-  const headers = sheet.getDataRange().getValues()[0];
-  const row = headers.map(h => data[h] || '');
-  sheet.appendRow(row);
-  return { status: "Test record submitted successfully" };
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("testingrecords");
+    const headers = sheet.getDataRange().getValues()[0];
+    
+    // Log the received data for debugging
+    console.log('Received test record data:', JSON.stringify(data));
+    console.log('Sheet headers:', headers);
+    
+    // Create row array mapping headers to data values
+    const row = headers.map(header => {
+      const value = data[header];
+      console.log(`Header: "${header}" -> Value: "${value}"`);
+      return value || '';
+    });
+    
+    console.log('Row to be inserted:', row);
+    sheet.appendRow(row);
+    
+    return { status: "Test record submitted successfully", data: data };
+  } catch (error) {
+    console.error('Error in submitTestRecord:', error);
+    throw error;
+  }
 }
 
 // ✅ Handle GET for data load
