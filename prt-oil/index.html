@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>PTR Oil Testing Entry</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+<body class="p-4">
+
+<div class="container">
+  <h3 class="mb-4">PTR Oil Testing Record Form</h3>
+
+  <form id="testForm">
+    <div class="row mb-3">
+      <div class="col">
+        <label>Region</label>
+        <select class="form-select" id="region" required></select>
+      </div>
+      <div class="col">
+        <label>Division</label>
+        <select class="form-select" id="division" required></select>
+      </div>
+      <div class="col">
+        <label>Substation</label>
+        <select class="form-select" id="substation" required></select>
+      </div>
+    </div>
+
+    <div class="row mb-3">
+      <div class="col">
+        <label>PTR (Equipment Info)</label>
+        <select class="form-select" id="ptrSelect" required></select>
+        <div class="form-text">
+          Can't find PTR? <a href="#" onclick="showPTRModal()">Add New</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="row mb-3">
+      <div class="col">
+        <label>Sample Collection Date</label>
+        <input type="date" class="form-control" name="Sample Collection Date" required>
+      </div>
+      <div class="col">
+        <label>Sample Testing Date</label>
+        <input type="date" class="form-control" name="Sample Testing Date" required>
+      </div>
+      <div class="col">
+        <label>Sample Collected By</label>
+        <input type="text" class="form-control" name="Sample Collected By">
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Submit Record</button>
+  </form>
+
+  <!-- PTR Modal -->
+  <div class="modal fade" id="ptrModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Add New PTR</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <form id="ptrForm">
+          <div class="modal-body row g-3 p-3">
+            <div class="col-md-4"><label>Region</label><input name="Region" id="modalRegion" class="form-control" readonly required></div>
+            <div class="col-md-4"><label>Division</label><input name="Division" id="modalDivision" class="form-control" readonly required></div>
+            <div class="col-md-4"><label>Substation</label><input name="Substation" id="modalSubstation" class="form-control" readonly required></div>
+            <div class="col-md-4"><label>Equipment</label><input name="Equipment" class="form-control" required></div>
+            <div class="col-md-4"><label>Capacity (MVA)</label><input name="Capacity (MVA)" class="form-control"></div>
+            <div class="col-md-4"><label>Make</label><input name="Make" class="form-control"></div>
+            <div class="col-md-4"><label>Serial No.</label><input name="Serial No." class="form-control" required></div>
+            <div class="col-md-4"><label>Year of Manufacture</label><input name="Year of Manufacture" class="form-control"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-success">Add PTR</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const scriptUrl = 'https://script.google.com/macros/s/AKfycbxhEdt6LWidyEwq0VUoHv55vSXX1DyWbAHqEppFA1X59j43mlgfxS1NVhXNdz5KpVbe/exec';
+let mapData = [], ptrData = [];
+
+// Initial load
+document.addEventListener("DOMContentLoaded", () => fetchData());
+
+function fetchData() {
+  fetch(scriptUrl + '?action=getInitialData')
+    .then(res => res.json())
+    .then(data => {
+      mapData = data.map;
+      ptrData = data.ptrs;
+      populateRegionDropdown();
+      populatePTRDropdown();
+    })
+    .catch(err => console.error('Error fetching data:', err));
+}
+
+function populateRegionDropdown() {
+  const regionSet = [...new Set(mapData.map(r => r.Region))];
+  const regionSelect = document.getElementById("region");
+  regionSelect.innerHTML = `<option value="">Select</option>` + regionSet.map(r => `<option>${r}</option>`).join("");
+
+  regionSelect.onchange = () => {
+    const divisions = mapData.filter(e => e.Region === regionSelect.value).map(e => e.Division);
+    const divisionSelect = document.getElementById("division");
+    divisionSelect.innerHTML = `<option value="">Select</option>` + [...new Set(divisions)].map(d => `<option>${d}</option>`).join("");
+    
+    // Reset substation when region changes
+    document.getElementById("substation").innerHTML = `<option value="">Select</option>`;
+
+    divisionSelect.onchange = () => {
+      const substations = mapData.filter(e => e.Division === divisionSelect.value).map(e => e.Substation);
+      const substationSelect = document.getElementById("substation");
+      substationSelect.innerHTML = `<option value="">Select</option>` + [...new Set(substations)].map(s => `<option>${s}</option>`).join("");
+    };
+  };
+}
+
+function populatePTRDropdown() {
+  const ptrSelect = document.getElementById("ptrSelect");
+  ptrSelect.innerHTML = `<option value="">Select</option>` + ptrData.map(p =>
+    `<option value="${p['Serial No.']}">${p['Equipment']} | ${p['Make']} | ${p['Capacity (MVA)']} | ${p['Serial No.']}</option>`
+  ).join("");
+}
+
+function showPTRModal() {
+  // Pre-fill modal with current selections
+  document.getElementById("modalRegion").value = document.getElementById("region").value || '';
+  document.getElementById("modalDivision").value = document.getElementById("division").value || '';
+  document.getElementById("modalSubstation").value = document.getElementById("substation").value || '';
+  new bootstrap.Modal(document.getElementById("ptrModal")).show();
+}
+
+// Submit test form
+document.getElementById("testForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  const form = e.target;
+  
+  // Get form data
+  const formData = new FormData(form);
+  const record = Object.fromEntries(formData.entries());
+
+  // Add selected dropdown values
+  record.Region = document.getElementById("region").value;
+  record.Division = document.getElementById("division").value;
+  record.Substation = document.getElementById("substation").value;
+
+  // Add PTR details
+  const ptrSerial = document.getElementById("ptrSelect").value;
+  const ptrDetails = ptrData.find(p => p['Serial No.'] === ptrSerial);
+  if (ptrDetails) {
+    Object.assign(record, ptrDetails);
+  }
+
+  // Submit to Google Apps Script
+  fetch(scriptUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `action=submitTestRecord&${new URLSearchParams({data: JSON.stringify(record)}).toString()}`
+  })
+  .then(res => res.json())
+  .then(result => {
+    alert("Test Record Submitted Successfully!");
+    form.reset();
+    // Reset dropdowns
+    document.getElementById("region").value = "";
+    document.getElementById("division").innerHTML = `<option value="">Select</option>`;
+    document.getElementById("substation").innerHTML = `<option value="">Select</option>`;
+    document.getElementById("ptrSelect").value = "";
+  })
+  .catch(err => {
+    console.error('Error submitting test record:', err);
+    alert("Error submitting record. Please try again.");
+  });
+});
+
+// Submit PTR modal form
+document.getElementById("ptrForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  const form = e.target;
+  const formData = new FormData(form);
+  const data = Object.fromEntries(formData.entries());
+
+  // Submit PTR to Google Apps Script
+  fetch(scriptUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `action=addPTR&${new URLSearchParams({data: JSON.stringify(data)}).toString()}`
+  })
+  .then(res => res.json())
+  .then(result => {
+    alert("PTR Added Successfully!");
+    bootstrap.Modal.getInstance(document.getElementById("ptrModal")).hide();
+    form.reset();
+    // Refresh data to include new PTR
+    fetchData();
+  })
+  .catch(err => {
+    console.error('Error adding PTR:', err);
+    alert("Error adding PTR. Please try again.");
+  });
+});
+</script>
+
+</body>
+</html>
