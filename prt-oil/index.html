@@ -1,4 +1,3 @@
-<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
@@ -77,9 +76,79 @@
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-            <button type="submit" class="btn btn-success">Add PTR</button>
+            <button type="submit" class="btn btn-success" id="addPtrBtn">
+              <span class="btn-text">Add PTR</span>
+              <span class="spinner-border spinner-border-sm d-none" role="status"></span>
+            </button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Test Record Confirmation Modal -->
+  <div class="modal fade" id="confirmTestModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Confirm Test Record Submission</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p>Are you sure you want to submit this test record?</p>
+          <div id="testRecordSummary" class="bg-light p-3 rounded"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="confirmTestSubmit">
+            <span class="btn-text">Yes, Submit</span>
+            <span class="spinner-border spinner-border-sm d-none" role="status"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PTR Confirmation Modal -->
+  <div class="modal fade" id="confirmPtrModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Confirm PTR Addition</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p>Are you sure you want to add this PTR?</p>
+          <div id="ptrSummary" class="bg-light p-3 rounded"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-success" id="confirmPtrSubmit">
+            <span class="btn-text">Yes, Add PTR</span>
+            <span class="spinner-border spinner-border-sm d-none" role="status"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Success Modal -->
+  <div class="modal fade" id="successModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header bg-success text-white">
+          <h5 class="modal-title">Success!</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="text-center">
+            <i class="bi bi-check-circle-fill text-success" style="font-size: 3rem;"></i>
+            <p class="mt-3" id="successMessage">Operation completed successfully!</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-success" data-bs-dismiss="modal">OK</button>
+        </div>
       </div>
     </div>
   </div>
@@ -88,6 +157,29 @@
 <script>
 const scriptUrl = 'https://script.google.com/macros/s/AKfycbxhEdt6LWidyEwq0VUoHv55vSXX1DyWbAHqEppFA1X59j43mlgfxS1NVhXNdz5KpVbe/exec';
 let mapData = [], ptrData = [];
+let pendingTestRecord = null;
+let pendingPtrData = null;
+
+// Utility functions for loading states
+function setLoadingState(button, isLoading) {
+  const btnText = button.querySelector('.btn-text');
+  const spinner = button.querySelector('.spinner-border');
+  
+  if (isLoading) {
+    btnText.classList.add('d-none');
+    spinner.classList.remove('d-none');
+    button.disabled = true;
+  } else {
+    btnText.classList.remove('d-none');
+    spinner.classList.add('d-none');
+    button.disabled = false;
+  }
+}
+
+function showSuccessModal(message) {
+  document.getElementById('successMessage').textContent = message;
+  new bootstrap.Modal(document.getElementById('successModal')).show();
+}
 
 // Initial load
 document.addEventListener("DOMContentLoaded", () => fetchData());
@@ -161,23 +253,53 @@ document.getElementById("testForm").addEventListener("submit", function (e) {
     Object.assign(record, ptrDetails);
   }
 
+  // Store pending record and show confirmation
+  pendingTestRecord = record;
+  
+  // Create summary for confirmation
+  const summary = `
+    <strong>Region:</strong> ${record.Region}<br>
+    <strong>Division:</strong> ${record.Division}<br>
+    <strong>Substation:</strong> ${record.Substation}<br>
+    <strong>Equipment:</strong> ${record.Equipment || 'N/A'}<br>
+    <strong>Serial No.:</strong> ${record['Serial No.'] || 'N/A'}<br>
+    <strong>Sample Collection Date:</strong> ${record['Sample Collection Date']}<br>
+    <strong>Sample Testing Date:</strong> ${record['Sample Testing Date']}<br>
+    <strong>Sample Collected By:</strong> ${record['Sample Collected By'] || 'N/A'}
+  `;
+  
+  document.getElementById('testRecordSummary').innerHTML = summary;
+  new bootstrap.Modal(document.getElementById('confirmTestModal')).show();
+});
+
+// Confirm test record submission
+document.getElementById("confirmTestSubmit").addEventListener("click", function () {
+  const button = this;
+  setLoadingState(button, true);
+  
   // Submit to Google Apps Script
   fetch(scriptUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `action=submitTestRecord&${new URLSearchParams({data: JSON.stringify(record)}).toString()}`
+    body: `action=submitTestRecord&${new URLSearchParams({data: JSON.stringify(pendingTestRecord)}).toString()}`
   })
   .then(res => res.json())
   .then(result => {
-    alert("Test Record Submitted Successfully!");
-    form.reset();
-    // Reset dropdowns
+    setLoadingState(button, false);
+    bootstrap.Modal.getInstance(document.getElementById('confirmTestModal')).hide();
+    
+    // Reset form
+    document.getElementById("testForm").reset();
     document.getElementById("region").value = "";
     document.getElementById("division").innerHTML = `<option value="">Select</option>`;
     document.getElementById("substation").innerHTML = `<option value="">Select</option>`;
     document.getElementById("ptrSelect").value = "";
+    
+    showSuccessModal("Test Record Submitted Successfully!");
+    pendingTestRecord = null;
   })
   .catch(err => {
+    setLoadingState(button, false);
     console.error('Error submitting test record:', err);
     alert("Error submitting record. Please try again.");
   });
@@ -190,21 +312,55 @@ document.getElementById("ptrForm").addEventListener("submit", function (e) {
   const formData = new FormData(form);
   const data = Object.fromEntries(formData.entries());
 
+  // Store pending data and show confirmation
+  pendingPtrData = data;
+  
+  // Create summary for confirmation
+  const summary = `
+    <strong>Region:</strong> ${data.Region}<br>
+    <strong>Division:</strong> ${data.Division}<br>
+    <strong>Substation:</strong> ${data.Substation}<br>
+    <strong>Equipment:</strong> ${data.Equipment}<br>
+    <strong>Capacity (MVA):</strong> ${data['Capacity (MVA)'] || 'N/A'}<br>
+    <strong>Make:</strong> ${data.Make || 'N/A'}<br>
+    <strong>Serial No.:</strong> ${data['Serial No.']}<br>
+    <strong>Year of Manufacture:</strong> ${data['Year of Manufacture'] || 'N/A'}
+  `;
+  
+  document.getElementById('ptrSummary').innerHTML = summary;
+  
+  // Hide PTR modal and show confirmation
+  bootstrap.Modal.getInstance(document.getElementById('ptrModal')).hide();
+  new bootstrap.Modal(document.getElementById('confirmPtrModal')).show();
+});
+
+// Confirm PTR submission
+document.getElementById("confirmPtrSubmit").addEventListener("click", function () {
+  const button = this;
+  setLoadingState(button, true);
+  
   // Submit PTR to Google Apps Script
   fetch(scriptUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `action=addPTR&${new URLSearchParams({data: JSON.stringify(data)}).toString()}`
+    body: `action=addPTR&${new URLSearchParams({data: JSON.stringify(pendingPtrData)}).toString()}`
   })
   .then(res => res.json())
   .then(result => {
-    alert("PTR Added Successfully!");
-    bootstrap.Modal.getInstance(document.getElementById("ptrModal")).hide();
-    form.reset();
+    setLoadingState(button, false);
+    bootstrap.Modal.getInstance(document.getElementById('confirmPtrModal')).hide();
+    
+    // Reset PTR form
+    document.getElementById("ptrForm").reset();
+    
     // Refresh data to include new PTR
     fetchData();
+    
+    showSuccessModal("PTR Added Successfully!");
+    pendingPtrData = null;
   })
   .catch(err => {
+    setLoadingState(button, false);
     console.error('Error adding PTR:', err);
     alert("Error adding PTR. Please try again.");
   });
