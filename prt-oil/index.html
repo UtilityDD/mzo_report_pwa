@@ -397,17 +397,6 @@
     .table tbody tr:hover {
       background-color: #d0d0d0; /* Hover effect */
     }
-
-    /* Mobile specific styles */
-    @media (max-width: 768px) {
-      #new-record-tab-item { /* Target the nav-item for the New Test Record tab */
-        display: none !important; /* Hide it on mobile */
-      }
-      /* Ensure View Reports tab is active on mobile if New Test Record is hidden */
-      #view-reports-tab.nav-link {
-        /* No specific style needed here, JS will handle activation */
-      }
-    }
   </style>
 </head>
 <body class="p-4">
@@ -420,7 +409,6 @@
   </button>
 </h3>
 
-  <!-- Tabs Navigation -->
   <ul class="nav nav-tabs" id="myTab" role="tablist">
     <li class="nav-item" role="presentation" id="new-record-tab-item">
       <button class="nav-link active" id="new-record-tab" data-bs-toggle="tab" data-bs-target="#new-record" type="button" role="tab" aria-controls="new-record" aria-selected="true">
@@ -434,9 +422,7 @@
     </li>
   </ul>
 
-  <!-- Tab Content -->
   <div class="tab-content" id="myTabContent">
-    <!-- New Test Record Tab Pane -->
     <div class="tab-pane fade show active" id="new-record" role="tabpanel" aria-labelledby="new-record-tab">
       <form id="testForm">
         <div class="row g-3 mb-4">
@@ -539,7 +525,17 @@
           </div>
           <div class="col-md-4">
             <label class="form-label">Specific Resistance at 90 °C (ohm-cm)</label>
-            <input type="number" step="1" min="0" class="form-control" name="Specific Resistance at 90 °C (ohm-cm)">
+            <div class="input-group">
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                class="form-control"
+                name="Specific Resistance at 90 °C (ohm-cm)"
+                id="resistance90"
+                placeholder="Base value e.g. 5.6">
+              <span class="input-group-text">× 10¹²</span>
+            </div>
           </div>
         </div>
 
@@ -571,7 +567,6 @@
       </form>
     </div>
 
-    <!-- View Reports Tab Pane -->
     <div class="tab-pane fade" id="view-reports" role="tabpanel" aria-labelledby="view-reports-tab">
       <div class="table-responsive">
         <table class="table table-striped table-hover">
@@ -585,7 +580,6 @@
             </tr>
           </thead>
           <tbody id="reportsTableBody">
-            <!-- Records will be populated here by JavaScript -->
             <tr><td colspan="5" class="text-center">Loading reports...</td></tr>
           </tbody>
         </table>
@@ -849,24 +843,26 @@ let viewReportsTabButton;
 let newRecordTabPane;
 let viewReportsTabPane;
 let newRecordNavItem;
+let outdatedListContent = null; // Cache for outdated list content
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Existing calls
-  fetchData();
-  populateYearDropdown();
+  // Initial fetch for essential data
+  fetchData().then(() => {
+    // Get tab elements after DOM is loaded
+    newRecordTabButton = document.getElementById('new-record-tab');
+    viewReportsTabButton = document.getElementById('view-reports-tab');
+    newRecordTabPane = document.getElementById('new-record');
+    viewReportsTabPane = document.getElementById('view-reports');
+    newRecordNavItem = document.getElementById('new-record-tab-item'); // Get the parent nav-item by its new ID
 
-  // Get tab elements after DOM is loaded
-  newRecordTabButton = document.getElementById('new-record-tab');
-  viewReportsTabButton = document.getElementById('view-reports-tab');
-  newRecordTabPane = document.getElementById('new-record');
-  viewReportsTabPane = document.getElementById('view-reports');
-  newRecordNavItem = document.getElementById('new-record-tab-item'); // Get the parent nav-item by its new ID
+    // Initial check for mobile view
+    handleMobileView();
 
-  // Initial check for mobile view
-  handleMobileView();
+    // Listen for window resize to adjust view
+    window.addEventListener('resize', handleMobileView);
+  });
 
-  // Listen for window resize to adjust view
-  window.addEventListener('resize', handleMobileView);
+  populateYearDropdown(); // Populate year dropdown once on load
 });
 
 /**
@@ -905,79 +901,91 @@ function formatDateToDDMMYYYY(dateString) {
 }
 
 function handleMobileView() {
-  if (window.innerWidth <= 768) { // Mobile view breakpoint
-    if (newRecordNavItem) {
-      newRecordNavItem.style.display = 'none'; // Hide the tab item
+  const container = document.querySelector('.container');
+  const myTab = document.getElementById('myTab'); // The ul for nav-tabs
+  const myTabContent = document.getElementById('myTabContent'); // The div for tab-content
+  let desktopMessageDiv = document.getElementById('desktopMessageDiv');
 
-      // Ensure View Reports tab is active
-      if (!viewReportsTabButton.classList.contains('active')) {
-        // Deactivate New Test Record if it was active
-        newRecordTabButton.classList.remove('active');
-        newRecordTabPane.classList.remove('show', 'active');
+  if (window.innerWidth <= 768) {
+    // Hide main tab navigation and content
+    if (myTab) myTab.style.display = 'none';
+    if (myTabContent) myTabContent.style.display = 'none';
 
-        // Activate View Reports
-        viewReportsTabButton.classList.add('active');
-        viewReportsTabPane.classList.add('show', 'active');
-
-        // Manually trigger a tab show event for Bootstrap to re-render if necessary
-        const viewReportsTab = bootstrap.Tab.getInstance(viewReportsTabButton) || new bootstrap.Tab(viewReportsTabButton);
-        viewReportsTab.show();
-      }
-
-      // Add click listener to New Test Record tab to show message
-      newRecordTabButton.removeEventListener('click', preventNewRecordTabClick); // Remove existing to prevent duplicates
-      newRecordTabButton.addEventListener('click', preventNewRecordTabClick);
+    // Create or show the desktop message div
+    if (!desktopMessageDiv) {
+      desktopMessageDiv = document.createElement('div');
+      desktopMessageDiv.id = 'desktopMessageDiv';
+      desktopMessageDiv.className = 'text-center mt-3 p-3'; // Add padding for better look
+      desktopMessageDiv.innerHTML = '<p style="color:red; font-weight:bold;">Please open on desktop for activity.</p>';
+      container.insertBefore(desktopMessageDiv, myTab); // Insert before tabs
     }
+    desktopMessageDiv.style.display = 'block';
+
+    // Automatically open the outdatedModal
+    // Ensure the data is loaded before opening the modal
+    if (testRecords.length === 0) {
+        fetchData().then(() => {
+            document.getElementById("alertButton").click();
+        });
+    } else {
+        document.getElementById("alertButton").click();
+    }
+
   } else { // Desktop view
-    if (newRecordNavItem) {
-      newRecordNavItem.style.display = ''; // Show the tab item
-      newRecordTabButton.removeEventListener('click', preventNewRecordTabClick); // Remove the special click listener
-      // Bootstrap's default behavior will take over
-    }
-  }
-}
+    // Show main tab navigation and content
+    if (myTab) myTab.style.display = '';
+    if (myTabContent) myTabContent.style.display = '';
 
-function preventNewRecordTabClick(e) {
-  if (window.innerWidth <= 768) { // Only prevent on mobile
-    e.preventDefault(); // Prevent tab from becoming active
-    showErrorModal("Please open on desktop/laptop to access 'New Test Record' tab.");
+    // Hide the desktop message div
+    if (desktopMessageDiv) {
+      desktopMessageDiv.style.display = 'none';
+    }
+
+    // Ensure the New Test Record tab is active on desktop by default
+    if (newRecordTabButton && !newRecordTabButton.classList.contains('active')) {
+      const newRecordTab = bootstrap.Tab.getInstance(newRecordTabButton) || new bootstrap.Tab(newRecordTabButton);
+      newRecordTab.show();
+    }
+
+    // Hide outdatedModal if it's open (e.g., if user resized from mobile to desktop)
+    const outdatedModalInstance = bootstrap.Modal.getInstance(document.getElementById('outdatedModal'));
+    if (outdatedModalInstance) {
+        outdatedModalInstance.hide();
+    }
   }
 }
 
 function fetchData() {
-  // Fetch map and ptr data first
-  fetch(scriptUrl + '?action=getInitialData')
-    .then(res => res.json())
-    .then(initialData => {
-      mapData = initialData.map;
-      ptrData = initialData.ptrs;
+  return Promise.all([
+    fetch(scriptUrl + '?action=getInitialData').then(res => res.json()),
+    fetch(testRecordsCsvUrl).then(res => res.text())
+  ])
+  .then(([initialData, csvText]) => {
+    mapData = initialData.map;
+    ptrData = initialData.ptrs;
 
-      // Then fetch test records from the separate CSV URL
-      return fetch(testRecordsCsvUrl);
-    })
-    .then(res => res.text()) // Get text for CSV parsing
-    .then(csvText => {
-      // Parse the CSV data
-      const lines = csvText.split("\n");
-      const headers = lines[0].split(",").map(h => h.trim().replace(/"/g, ''));
-      const parsedRecords = [];
+    const lines = csvText.split("\n");
+    const headers = lines[0].split(",").map(h => h.trim().replace(/"/g, ''));
+    const parsedRecords = [];
 
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(",").map(c => c.trim().replace(/"/g, ''));
-        if (cols.length === headers.length) { // Ensure valid row
-          const record = Object.fromEntries(headers.map((h, j) => [h, cols[j]]));
-          parsedRecords.push(record);
-        }
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(",").map(c => c.trim().replace(/"/g, ''));
+      if (cols.length === headers.length) {
+        const record = Object.fromEntries(headers.map((h, j) => [h, cols[j]]));
+        parsedRecords.push(record);
       }
-      testRecords = parsedRecords; // Update the global testRecords array
+    }
+    testRecords = parsedRecords;
 
-      // Now populate all UI elements
-      populateRegionDropdown();
-      populatePTRDropdown();
-      populateModalRegionDropdown();
-      populateReportsTable();
-    })
-    .catch(err => console.error('Error fetching data:', err));
+    populateRegionDropdown();
+    populatePTRDropdown();
+    populateModalRegionDropdown();
+    populateReportsTable();
+  })
+  .catch(err => {
+    console.error('Error fetching data:', err);
+    showErrorModal("Failed to load initial data. Please try again.");
+  });
 }
 
 function populateRegionDropdown() {
@@ -1159,6 +1167,12 @@ document.getElementById("testForm").addEventListener("submit", function (e) {
     record['Specific Resistance at 27 °C (ohm-cm)'] = sr27 * 1e12;
   }
 
+  // Convert 90°C resistance to actual value in ohm-cm × 10¹²
+  const sr90 = parseFloat(record['Specific Resistance at 90 °C (ohm-cm)']);
+  if (!isNaN(sr90)) {
+    record['Specific Resistance at 90 °C (ohm-cm)'] = sr90 * 1e12;
+  }
+
   // Add selected dropdown values
   record.Region = document.getElementById("region").value;
   record.Division = document.getElementById("division").value;
@@ -1187,16 +1201,21 @@ document.getElementById("testForm").addEventListener("submit", function (e) {
   console.log('Test Record Data:', record); // Debug log to verify data
 
   // Store pending record and show confirmation
-  function colorize(param, value, goodIf) {
+  function colorize(param, value, goodIf, isResistance = false) {
     const number = parseFloat(value);
     if (isNaN(number)) return `<span>${value || 'N/A'}</span>`;
+
+    let displayValue = number;
+    if (isResistance) {
+      displayValue = (number / 1e12).toFixed(4) + ' × 10¹²';
+    }
 
     let isGood = false;
     if (goodIf === "max") isGood = number <= param;
     if (goodIf === "min") isGood = number >= param;
 
     const color = isGood ? "green" : "red";
-    return `<span style="color:${color}; font-weight: 500">${number}</span>`;
+    return `<span style="color:${color}; font-weight: 500">${displayValue}</span>`;
   }
 
   pendingTestRecord = record;
@@ -1221,12 +1240,8 @@ document.getElementById("testForm").addEventListener("submit", function (e) {
     <strong>Density (gm/CC):</strong> ${colorize(0.89, record['Density (gm/CC)'], 'max')}<br>
     <strong>BDV with 2.5mm Gap (kV):</strong> ${colorize(40, record['BDV with 2.5mm Gap (kV)'], 'min')}<br>
     <strong>Acidity (mg of KOH/gm):</strong> ${colorize(0.05, record['Acidity (mg of KOH/gm)'], 'max')}<br>
-    <strong>Specific Resistance at 27 °C (ohm-cm):</strong> ${
-      record['Specific Resistance at 27 °C (ohm-cm)']
-        ? (record['Specific Resistance at 27 °C (ohm-cm)'] / 1e12).toFixed(4) + ' × 10¹²'
-        : 'N/A'
-    }<br>
-    <strong>Specific Resistance at 90 °C (ohm-cm):</strong> ${colorize(6e12, record['Specific Resistance at 90 °C (ohm-cm)'], 'min')}<br>
+    <strong>Specific Resistance at 27 °C (ohm-cm):</strong> ${colorize(6e12, record['Specific Resistance at 27 °C (ohm-cm)'], 'min', true)}<br>
+    <strong>Specific Resistance at 90 °C (ohm-cm):</strong> ${colorize(0.5e12, record['Specific Resistance at 90 °C (ohm-cm)'], 'min', true)}<br>
     <strong>Dielectric Dissipation Factor (tan δ):</strong> ${colorize(0.015, record['Dielectric Disssipation Factor (tan δ)'], 'max')}<br>
     <strong>Moisture Content (PPM):</strong> ${colorize(20, record['Moisture Content (PPM)'], 'max')}<br>
     <strong>IFT (mN/m):</strong> ${colorize(40, record['IFT (mN/m)'], 'min')}<br>
@@ -1286,7 +1301,7 @@ document.getElementById("ptrForm").addEventListener("submit", function (e) {
   // Define fields for comparison and their expected type for normalization
   const fieldsToCompare = [
     { name: "Region", type: "string" },
-    { name: "Division", type: "string" },
+    { name: "Division", "type": "string" },
     { name: "Substation", type: "string" },
     { name: "Equipment", type: "string" },
     { name: "Capacity (MVA)", type: "numeric" }, // Treated as numeric, string comparison after trim
@@ -1426,7 +1441,7 @@ document.getElementById("generateObservation").addEventListener("click", () => {
     "Acidity (mg of KOH/gm)",
     "Specific Resistance at 27 °C (ohm-cm)",
     "Specific Resistance at 90 °C (ohm-cm)",
-    "Dielectric Dissipation Factor (tan δ)",
+    "Dielectric Disssipation Factor (tan δ)",
     "Moisture Content (PPM)",
     "IFT (mN/m)"
   ];
@@ -1459,11 +1474,15 @@ document.getElementById("generateObservation").addEventListener("click", () => {
   check("Acidity (mg of KOH/gm)", getVal("Acidity (mg of KOH/gm)"), 0.05, "max");
 
   const sr27 = getVal("Specific Resistance at 27 °C (ohm-cm)");
-  if (sr27 !== null && sr27 * 1e12 < 6e12) {
+  if (sr27 !== null && sr27 * 1e12 < 6e12) { // Compare against 6e12 after multiplication
     observations.push("Value of Specific Resistance at 27 °C (ohm-cm) is below the standard limit.");
   }
 
-  check("Specific Resistance at 90 °C (ohm-cm)", getVal("Specific Resistance at 90 °C (ohm-cm)"), 6e12, "min");
+  const sr90 = getVal("Specific Resistance at 90 °C (ohm-cm)");
+  if (sr90 !== null && sr90 * 1e12 < 0.5e12) { // Compare against 0.5e12 after multiplication
+    observations.push("Value of Specific Resistance at 90 °C (ohm-cm) is below the standard limit.");
+  }
+
   check("Dielectric Dissipation Factor (tan δ)", getVal("Dielectric Disssipation Factor (tan δ)"), 0.015, "max");
   check("Moisture Content (PPM)", getVal("Moisture Content (PPM)"), 20, "max");
   check("IFT (mN/m)", getVal("IFT (mN/m)"), 40, "min");
