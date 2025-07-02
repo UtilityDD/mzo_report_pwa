@@ -445,6 +445,12 @@
         <i class="fas fa-chart-bar"></i> View Reports
       </button>
     </li>
+    <li class="nav-item" role="presentation">
+  <button class="nav-link" id="view-ptrs-tab" data-bs-toggle="tab" data-bs-target="#view-ptrs" type="button" role="tab" aria-controls="view-ptrs" aria-selected="false">
+    <i class="fas fa-th-list"></i> View PTRs
+  </button>
+</li>
+
   </ul>
 
   <div class="tab-content" id="myTabContent">
@@ -610,6 +616,14 @@
         </table>
       </div>
     </div>
+<div class="tab-pane fade" id="view-ptrs" role="tabpanel" aria-labelledby="view-ptrs-tab">
+  <ul class="nav nav-pills mb-3" id="divisionTabs" role="tablist"></ul>
+  <div class="tab-content" id="divisionTabContent">
+    <div class="text-muted">Loading PTRs...</div>
+  </div>
+</div>
+
+
   </div>
 
   <div class="modal fade" id="ptrModal" tabindex="-1">
@@ -785,7 +799,7 @@
     <div class="modal-content">
       <div class="modal-header bg-danger text-white">
 <h5 class="modal-title" style="color: #f4e806;">
-  <i class="fas fa-exclamation-triangle me-2" style="color: #dc3545;"></i>
+  <i class="fas fa-exclamation-triangle me-2" style="color: #f4e806;"></i>
   Not tested in last 3 months!
 </h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -805,6 +819,7 @@
 <script>
 const scriptUrl = 'https://script.google.com/macros/s/AKfycbxhEdt6LWidyEwq0VUoHv55vSXX1DyWbAHqEppFA1X59j43mlgfxS1NVhXNdz5KpVbe/exec';
 const testRecordsCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRtpueyQwlq63VP2Tm2_vITV31jKBSceDGJQVJtYeqVVDBSg3QAHzLKrv60i6Z9oODXXzOE-fdfMb8b/pub?gid=906452022&single=true&output=csv"; // New constant for CSV URL
+const ptrCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRtpueyQwlq63VP2Tm2_vITV31jKBSceDGJQVJtYeqVVDBSg3QAHzLKrv60i6Z9oODXXzOE-fdfMb8b/pub?gid=0&single=true&output=csv";
 
 let mapData = [], ptrData = [], testRecords = []; // Added testRecords
 
@@ -1135,12 +1150,113 @@ function populateReportsTable() {
   });
 }
 
+function loadPTRs() {
+  fetch(ptrCsvUrl)
+    .then(res => res.text())
+    .then(csv => {
+      const lines = csv.trim().split("\n");
+      const headers = lines[0].split(",").map(h => h.trim().replace(/\"/g, ""));
+      const records = lines.slice(1).map(line => {
+        const cols = line.split(",").map(c => c.trim().replace(/\"/g, ""));
+        return Object.fromEntries(headers.map((h, i) => [h, cols[i]]));
+      });
+
+      // Group by Division > Substation
+      const grouped = {};
+      records.forEach(r => {
+        const division = r["Division"] || "Unknown";
+        const substation = r["Substation"] || "Unknown";
+        if (!grouped[division]) grouped[division] = {};
+        if (!grouped[division][substation]) grouped[division][substation] = [];
+        grouped[division][substation].push(r);
+      });
+
+      // Build Division Tabs
+      const divisionTabs = document.getElementById("divisionTabs");
+      const tabContent = document.getElementById("divisionTabContent");
+      divisionTabs.innerHTML = '';
+      tabContent.innerHTML = '';
+
+      const divisions = Object.keys(grouped).sort();
+      divisions.forEach((division, idx) => {
+        const tabId = `div-${division.replace(/\s+/g, '-')}`;
+
+        // Nav pill
+        divisionTabs.innerHTML += `
+          <li class="nav-item" role="presentation">
+            <button class="nav-link ${idx === 0 ? 'active' : ''}" id="${tabId}-tab" data-bs-toggle="pill" data-bs-target="#${tabId}" type="button" role="tab" aria-controls="${tabId}" aria-selected="${idx === 0}">
+              ${division}
+            </button>
+          </li>
+        `;
+
+        // Tab content
+        const substations = grouped[division];
+        let divisionHtml = '';
+
+        Object.keys(substations).sort().forEach(sub => {
+          const ptrs = substations[sub];
+
+          divisionHtml += `
+            <div class="card mb-3">
+              <div class="card-header bg-primary text-white">${sub}</div>
+              <div class="table-responsive">
+                <table class="table table-striped">
+                  <thead>
+                    <tr>
+                      <th>Equipment</th>
+                      <th>Capacity (MVA)</th>
+                      <th>Make</th>
+                      <th>Serial No.</th>
+                      <th>Year of Manufacture</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${ptrs.map(r => `
+                      <tr>
+                        <td>${r["Equipment"] || 'N/A'}</td>
+                        <td>${r["Capacity (MVA)"] || 'N/A'}</td>
+                        <td>${r["Make"] || 'N/A'}</td>
+                        <td>${r["Serial No."] || 'N/A'}</td>
+                        <td>${r["Year of Manufacture"] || 'N/A'}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        });
+
+        tabContent.innerHTML += `
+          <div class="tab-pane fade ${idx === 0 ? 'show active' : ''}" id="${tabId}" role="tabpanel" aria-labelledby="${tabId}-tab">
+            ${divisionHtml}
+          </div>
+        `;
+      });
+    })
+    .catch(err => {
+      console.error("PTR CSV error:", err);
+      document.getElementById("divisionTabContent").innerHTML = `<div class="text-danger">Failed to load PTRs.</div>`;
+    });
+}
+
+
+
+
+
+
+
+
+
+
+document.getElementById("view-ptrs-tab").addEventListener("click", loadPTRs);
 
 function populateYearDropdown() {
   const yearSelect = document.getElementById("yearDropdown");
   const currentYear = new Date().getFullYear();
   let options = `<option value="">Select</option>`;
-  for (let y = currentYear; y >= 1990; y--) {
+  for (let y = currentYear; y >= 1990; y--) { 
     options += `<option value="${y}">${y}</option>`;
   }
   yearSelect.innerHTML = options;
