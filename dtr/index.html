@@ -553,6 +553,7 @@
 
 <!-- Bootstrap Bundle with Popper -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
 <script>
   let dtrRawData = []; // Will store the fetched data
@@ -690,49 +691,37 @@
 
 
   // Function to fetch and parse CSV data
-  async function fetchDTRData() {
-    // Corrected CSV URL
-    const dtrCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=2125422147&single=true&output=csv';
+async function fetchDTRData() {
+  const dtrCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=2125422147&single=true&output=csv';
 
-    try {
-      const response = await fetch(dtrCsvUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const csvText = await response.text();
-
-      const lines = csvText.split('\n').filter(line => line.trim() !== ''); // Filter out empty lines
-      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-      const parsedData = [];
-
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(',').map(c => c.trim().replace(/"/g, ''));
-        if (cols.length === headers.length) {
-          const record = {};
-          headers.forEach((header, index) => {
-            record[header] = cols[index];
-          });
-          parsedData.push(record);
-        }
-      }
-      dtrRawData = parsedData;
-
-      // Calculate overall totals once after fetching data
-      overallTotals.dtr_count = dtrRawData.length;
-      overallTotals.capa_kv_sum = dtrRawData.reduce((sum, item) => sum + (parseFloat(item.CAPA_KV) || 0), 0);
-
-      overallDTRCountElem.textContent = overallTotals.dtr_count;
-      overallCapacitySumElem.textContent = formatCapacity(overallTotals.capa_kv_sum);
-
-      console.log('DTR Data Loaded:', dtrRawData); // For debugging
-      renderDashboard(); // Render dashboard after data is loaded
-    } catch (error) {
-      console.error('Error loading DTR data:', error);
-      // Display an error message to the user
-      // Corrected colspan for error message in table
-      document.getElementById('regionTable').innerHTML = '<tbody><tr><td colspan="6" class="text-center text-danger">Failed to load DTR data. Please check the source URL or your network connection.</td></tr></tbody>';
+  try {
+    const response = await fetch(dtrCsvUrl);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
+    const csvText = await response.text();
+
+    const parsed = Papa.parse(csvText, {
+      header: true,
+      skipEmptyLines: true,
+    });
+
+    dtrRawData = parsed.data;
+
+    // Calculate overall totals
+    overallTotals.dtr_count = dtrRawData.length;
+    overallTotals.capa_kv_sum = dtrRawData.reduce((sum, item) => sum + (parseFloat(item.CAPA_KV) || 0), 0);
+
+    overallDTRCountElem.textContent = overallTotals.dtr_count;
+    overallCapacitySumElem.textContent = formatCapacity(overallTotals.capa_kv_sum);
+
+    renderDashboard();
+  } catch (error) {
+    console.error('Error loading DTR data:', error);
+    document.getElementById('regionTable').innerHTML = '<tbody><tr><td colspan="6" class="text-center text-danger">Failed to load DTR data. Please check the source URL or your network connection.</td></tr></tbody>';
   }
+}
+
 
   // Helper function to format capacity into kVA or MVA
   function formatCapacity(value) {
