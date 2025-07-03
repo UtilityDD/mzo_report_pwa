@@ -285,6 +285,7 @@
         <option value="SS_NAME">SS-wise</option>
         <option value="FDR_NAME">Feeder-wise</option>
         <option value="CAPA_KV">Capacity-wise</option>
+        <option value="DTR_LIST">DTR List</option> <!-- Added DTR List option -->
       </select>
     </div>
   </div>
@@ -303,6 +304,12 @@
         <div class="value" id="overallCapacitySum">0 kVA</div>
       </div>
     </div>
+  </div>
+
+  <!-- Global DTR Search Input (now always visible) -->
+  <div id="global-dtr-search-container" class="mb-3 d-flex gap-2">
+    <input type="text" id="dtrSearchInput" class="form-control" placeholder="Search DTR Code, Location, Feeder Code...">
+    <button class="btn btn-secondary" id="clearDtrSearchBtn">Clear</button>
   </div>
 
   <!-- Main Visualization Area (now primarily for tables) -->
@@ -484,6 +491,7 @@
         <i class="fas fa-list me-2"></i> DTRs for Capacity: <span id="currentCapacity"></span>
       </div>
       <div class="card-body">
+        <!-- Search input moved to global-dtr-search-container -->
         <div class="table-responsive">
           <table class="table table-striped" id="dtrListTable">
             <thead>
@@ -501,6 +509,22 @@
             </tfoot>
           </table>
         </div>
+        <!-- Pagination Controls for DTR List -->
+        <nav aria-label="DTR list pagination" class="mt-3">
+          <ul class="pagination justify-content-center">
+            <li class="page-item" id="dtrPrevPageBtn">
+              <a class="page-link" href="#" aria-label="Previous">
+                <span aria-hidden="true">&laquo;</span>
+              </a>
+            </li>
+            <li class="page-item disabled"><span class="page-link" id="dtrPageInfo">Page 1 of 1</span></li>
+            <li class="page-item" id="dtrNextPageBtn">
+              <a class="page-link" href="#" aria-label="Next">
+                <span aria-hidden="true">&raquo;</span>
+              </a>
+            </li>
+          </ul>
+        </nav>
       </div>
     </div>
 
@@ -539,6 +563,13 @@
 
   // Global state for sorting
   let sortState = { key: null, direction: 'asc' }; // key: column to sort by, direction: 'asc' or 'desc'
+
+  // Global state for DTR list search
+  let dtrSearchTerm = '';
+
+  // Global state for DTR list pagination
+  let dtrCurrentPage = 1;
+  const dtrItemsPerPage = 20; // Number of DTRs to show per page
 
   const hierarchy = ['REGION', 'DIVN NAME', 'SUPP_OFF', 'SS_NAME', 'FDR_NAME', 'CAPA_KV', 'DTR_LIST'];
   const tableBodies = {
@@ -582,12 +613,24 @@
   const modalDTRCodeElem = document.getElementById('modalDTRCode');
   const modalDTRDetailsBodyElem = document.getElementById('modalDTRDetailsBody');
 
+  const globalDtrSearchContainer = document.getElementById('global-dtr-search-container');
+  const dtrSearchInput = document.getElementById('dtrSearchInput');
+  const clearDtrSearchBtn = document.getElementById('clearDtrSearchBtn');
+
+  // Pagination elements for DTR List
+  const dtrPrevPageBtn = document.getElementById('dtrPrevPageBtn');
+  const dtrNextPageBtn = document.getElementById('dtrNextPageBtn');
+  const dtrPageInfo = document.getElementById('dtrPageInfo');
+
 
   // Event listener for the Home button
   homeBtn.addEventListener('click', () => {
     currentLevel = 'REGION';
     currentFilter = {};
     sortState = { key: null, direction: 'asc' }; // Reset sort state
+    dtrSearchTerm = ''; // Reset search term
+    dtrCurrentPage = 1; // Reset pagination
+    if (dtrSearchInput) dtrSearchInput.value = ''; // Clear input field
     renderDashboard();
   });
 
@@ -597,8 +640,54 @@
     currentLevel = selectedLevel;
     currentFilter = {}; // Reset filter when directly jumping to a level
     sortState = { key: null, direction: 'asc' }; // Reset sort state
+    dtrSearchTerm = ''; // Reset search term
+    dtrCurrentPage = 1; // Reset pagination
+    if (dtrSearchInput) dtrSearchInput.value = ''; // Clear input field
     renderDashboard();
   });
+
+  // Event listener for DTR search input
+  if (dtrSearchInput) {
+      dtrSearchInput.addEventListener('keyup', (event) => {
+          dtrSearchTerm = event.target.value.toLowerCase().trim();
+          dtrCurrentPage = 1; // Reset to first page on new search
+          renderDashboard(); // Re-render to apply search filter
+      });
+  }
+
+  // Event listener for Clear DTR Search button
+  if (clearDtrSearchBtn) {
+      clearDtrSearchBtn.addEventListener('click', () => {
+          dtrSearchTerm = '';
+          dtrCurrentPage = 1; // Reset pagination
+          if (dtrSearchInput) dtrSearchInput.value = '';
+          renderDashboard(); // Re-render to clear search filter
+      });
+  }
+
+  // Event listeners for DTR List Pagination
+  if (dtrPrevPageBtn) {
+      dtrPrevPageBtn.addEventListener('click', (e) => {
+          e.preventDefault(); // Prevent default link behavior
+          if (dtrCurrentPage > 1) {
+              dtrCurrentPage--;
+              renderDashboard();
+          }
+      });
+  }
+
+  if (dtrNextPageBtn) {
+      dtrNextPageBtn.addEventListener('click', (e) => {
+          e.preventDefault(); // Prevent default link behavior
+          const totalDTRs = aggregateData(dtrRawData, 'DTR_LIST', currentFilter, dtrSearchTerm ? true : false).length;
+          const totalPages = Math.ceil(totalDTRs / dtrItemsPerPage);
+          if (dtrCurrentPage < totalPages) {
+              dtrCurrentPage++;
+              renderDashboard();
+          }
+      });
+  }
+
 
   // Function to fetch and parse CSV data
   async function fetchDTRData() {
@@ -655,12 +744,27 @@
   }
 
   // Function to process and aggregate data
-  function aggregateData(data, groupByField, filter = {}) {
-    if (groupByField === 'DTR_LIST') {
-        // For DTR_LIST, just filter the raw data based on the current filter
-        return data.filter(item => {
+  function aggregateData(data, groupByField, filter = {}, isGlobalSearch = false) {
+    let workingData = data;
+
+    if (isGlobalSearch) {
+        // If it's a global search, ignore drill-down filters for initial data selection
+        // and apply search directly to dtrRawData.
+        // The groupByField will be 'DTR_LIST' in this scenario.
+        if (dtrSearchTerm) {
+            const searchTermLower = dtrSearchTerm.toLowerCase();
+            workingData = dtrRawData.filter(item => { // Always filter from raw data for global search
+                const dtrCodeMatch = (item.DTR_CODE || '').toLowerCase().includes(searchTermLower);
+                const locNameMatch = (item.LOC_NAME || '').toLowerCase().includes(searchTermLower);
+                const fdrCodeMatch = (item.FDR_CODE || '').toLowerCase().includes(searchTermLower);
+                return dtrCodeMatch || locNameMatch || fdrCodeMatch;
+            });
+        }
+        groupByField = 'DTR_LIST'; // Ensure it's treated as DTR_LIST for rendering
+    } else {
+        // Apply drill-down filters if not a global search
+        workingData = workingData.filter(item => {
             for (const key in filter) {
-                // Special handling for CAPA_KV to match float values
                 if (key === 'CAPA_KV') {
                     if (parseFloat(item[key]) !== parseFloat(filter[key])) {
                         return false;
@@ -673,23 +777,31 @@
         });
     }
 
+    // The aggregation part needs to be conditional. If groupByField is 'DTR_LIST', we just return workingData.
+    if (groupByField === 'DTR_LIST') {
+        if (sortState.key) {
+            workingData.sort((a, b) => {
+                let valA, valB;
+                if (sortState.key === 'DTR_CODE' || sortState.key === 'LOC_NAME' || sortState.key === 'CAT') {
+                    valA = (a[sortState.key] || '').toLowerCase();
+                    valB = (b[sortState.key] || '').toLowerCase();
+                    return sortState.direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                }
+                return 0; // Should not happen with correct sort keys
+            });
+        } else {
+            workingData.sort((a, b) => (a.DTR_CODE || '').localeCompare(b.DTR_CODE || ''));
+        }
+        return workingData;
+    }
+
+    // Original aggregation logic for non-DTR_LIST views
     const aggregated = {};
     let totalCount = 0;
     let totalCapacity = 0;
 
-    data.forEach(item => {
-      // Apply filters
-      let matchesFilter = true;
-      for (const key in filter) {
-        if (item[key] !== filter[key]) {
-          matchesFilter = false;
-          break;
-        }
-      }
-
-      if (matchesFilter) {
+    workingData.forEach(item => {
         let groupKey = item[groupByField];
-        // Exclude last 12 characters from CCC name for visualization
         if (groupByField === 'SUPP_OFF' && groupKey && groupKey.length > 12) {
             groupKey = groupKey.slice(0, -12).trim();
         }
@@ -699,7 +811,8 @@
             name: groupKey,
             dtr_count: 0,
             capa_kv_sum: 0,
-            original_filter: { ...filter, [groupByField]: item[groupByField] } // Store original value for drill-down
+            // Store original value for drill-down, ensuring it's the actual value from raw data
+            original_filter: { ...filter, [groupByField]: item[groupByField] }
           };
         }
         aggregated[groupKey].dtr_count++;
@@ -707,43 +820,35 @@
 
         totalCount++;
         totalCapacity += parseFloat(item.CAPA_KV) || 0;
-      }
     });
 
-    // Convert to array and calculate percentages
     const result = Object.values(aggregated).map(item => {
       item.percentage_of_count = (totalCount > 0 ? (item.dtr_count / totalCount) * 100 : 0).toFixed(2);
       item.percentage_of_capacity = (totalCapacity > 0 ? (item.capa_kv_sum / totalCapacity) * 100 : 0).toFixed(2);
       return item;
     });
 
-    // Apply sorting based on sortState
+    // Apply sorting for aggregated results
     if (sortState.key) {
         result.sort((a, b) => {
             let valA, valB;
-            if (sortState.key === 'name' || sortState.key === 'DTR_CODE' || sortState.key === 'LOC_NAME' || sortState.key === 'CAT') { // For alphabetical sorting
-                valA = (a[sortState.key] || a.name || '').toLowerCase(); // Use a.name for aggregated data, or actual field for DTR_LIST
-                valB = (b[sortState.key] || b.name || '').toLowerCase();
-                return sortState.direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-            } else if (sortState.key === 'CAPA_KV_value') { // For Capacity-wise table's first column (Capacity kVA)
-                valA = parseFloat(a.name); // 'name' holds the capacity value for CAPA_KV
+            if (sortState.key === 'name') {
+                valA = (a.name || '').toLowerCase();
+                valB = (b.name || '').toLowerCase();
+                return sortState.direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(a.name);
+            } else if (sortState.key === 'CAPA_KV_value') {
+                valA = parseFloat(a.name);
                 valB = parseFloat(b.name);
                 return sortState.direction === 'asc' ? valA - valB : valB - valA;
-            } else { // For numeric columns (dtr_count, capa_kv_sum, percentages)
+            } else {
                 valA = parseFloat(a[sortState.key]);
                 valB = parseFloat(b[sortState.key]);
                 return sortState.direction === 'asc' ? valA - valB : valB - valA;
             }
         });
     } else if (groupByField === 'CAPA_KV') {
-        // Default sort for CAPA_KV if no specific sort key is set (ascending by capacity value)
         result.sort((a, b) => parseFloat(a.name) - parseFloat(b.name));
-    } else if (groupByField === 'DTR_LIST') {
-        // Default sort for DTR_LIST (alphabetical by DTR_CODE)
-        result.sort((a, b) => (a.DTR_CODE || '').localeCompare(b.DTR_CODE || ''));
-    }
-    else {
-        // Default sort for other fields if no specific sort key is set (alphabetical by name)
+    } else {
         result.sort((a, b) => a.name.localeCompare(b.name));
     }
 
@@ -799,13 +904,39 @@
     if (data.length === 0) {
       const colspan = (currentGroupByField === 'CAPA_KV') ? 4 : (currentGroupByField === 'DTR_LIST' ? 3 : 6); // Adjusted colspan for DTR_LIST
       tableBodyElement.innerHTML = `<tr><td colspan="${colspan}" class="text-center">No data available for this selection.</td></tr>`;
+      // Hide pagination if no data
+      if (currentGroupByField === 'DTR_LIST') {
+          dtrPrevPageBtn.classList.add('disabled');
+          dtrNextPageBtn.classList.add('disabled');
+          dtrPageInfo.textContent = 'Page 0 of 0';
+      }
       return;
     }
 
     let currentTableTotalCount = 0;
     let currentTableTotalCapacity = 0; // Only relevant for aggregated tables
 
-    data.forEach(item => {
+    // Handle pagination for DTR_LIST
+    let paginatedData = data;
+    if (currentGroupByField === 'DTR_LIST') {
+        const startIndex = (dtrCurrentPage - 1) * dtrItemsPerPage;
+        const endIndex = startIndex + dtrItemsPerPage;
+        paginatedData = data.slice(startIndex, endIndex);
+
+        const totalPages = Math.ceil(data.length / dtrItemsPerPage);
+        dtrPageInfo.textContent = `Page ${dtrCurrentPage} of ${totalPages}`;
+
+        dtrPrevPageBtn.classList.toggle('disabled', dtrCurrentPage === 1);
+        dtrNextPageBtn.classList.toggle('disabled', dtrCurrentPage === totalPages);
+    } else {
+        // Hide pagination for other tables
+        if (dtrPrevPageBtn) dtrPrevPageBtn.classList.add('disabled');
+        if (dtrNextPageBtn) dtrNextPageBtn.classList.add('disabled');
+        if (dtrPageInfo) dtrPageInfo.textContent = '';
+    }
+
+
+    paginatedData.forEach(item => {
       const row = tableBodyElement.insertRow();
       let cellsHtml = '';
 
@@ -844,6 +975,9 @@
             // The filter for DTR_LIST will be the current filter plus the selected CAPA_KV
             currentFilter = { ...currentFilter, 'CAPA_KV': item.name };
             sortState = { key: null, direction: 'asc' }; // Reset sort state for new table
+            dtrSearchTerm = ''; // Reset search term when navigating to DTR_LIST
+            dtrCurrentPage = 1; // Reset pagination
+            if (dtrSearchInput) dtrSearchInput.value = ''; // Clear input field
             renderDashboard();
         });
 
@@ -885,6 +1019,9 @@
                     currentLevel = hierarchy[nextLevelIndex];
                     currentFilter = item.original_filter;
                     sortState = { key: null, direction: 'asc' }; // Reset sort state on drill-down
+                    dtrSearchTerm = ''; // Reset search term when navigating away from DTR_LIST
+                    dtrCurrentPage = 1; // Reset pagination
+                    if (dtrSearchInput) dtrSearchInput.value = ''; // Clear input field
                     renderDashboard();
                 }
             });
@@ -895,9 +1032,11 @@
     // Add total row at the bottom
     const totalRow = tableFooterElement.insertRow();
     if (currentGroupByField === 'DTR_LIST') {
+        // For DTR_LIST, the total count should reflect the *filtered* data, not just the current page
+        const totalFilteredDTRs = data.length; // 'data' here is the full filtered DTR list
         totalRow.innerHTML = `
-            <td><strong>Total DTRs</strong></td>
-            <td><strong>${currentTableTotalCount}</strong></td>
+            <td><strong>Total DTRs (Filtered)</strong></td>
+            <td><strong>${totalFilteredDTRs}</strong></td>
             <td></td> <!-- Empty cell for Category -->
         `;
     } else if (currentGroupByField !== 'CAPA_KV') {
@@ -927,6 +1066,9 @@
             currentLevel = 'CAPA_KV';
             currentFilter = JSON.parse(button.dataset.originalFilter); // Parse the stored filter
             sortState = { key: null, direction: 'asc' }; // Reset sort state on direct capacity view
+            dtrSearchTerm = ''; // Reset search term when navigating to CAPA_KV
+            dtrCurrentPage = 1; // Reset pagination
+            if (dtrSearchInput) dtrSearchInput.value = ''; // Clear input field
             renderDashboard();
         });
     });
@@ -982,6 +1124,9 @@
           currentLevel = clickedLevel;
           currentFilter = newFilter;
           sortState = { key: null, direction: 'asc' }; // Reset sort state on breadcrumb navigation
+          dtrSearchTerm = ''; // Reset search term on breadcrumb navigation
+          dtrCurrentPage = 1; // Reset pagination
+          if (dtrSearchInput) dtrSearchInput.value = ''; // Clear input field
           renderDashboard();
         });
         breadcrumbNav.appendChild(breadcrumbButton);
@@ -995,47 +1140,60 @@
     // Hide all analysis cards first
     Object.values(analysisCards).forEach(card => card.classList.add('d-none'));
 
-    // Determine the field to group by for the current level
-    const groupByField = currentLevel;
+    let targetGroupByField = currentLevel;
+    let dataForAggregation = dtrRawData;
+    let filterForAggregation = currentFilter;
+    let isGlobalSearchActive = false;
 
-    // Show the relevant card
-    analysisCards[groupByField].classList.remove('d-none');
+    if (dtrSearchTerm) {
+        isGlobalSearchActive = true;
+        targetGroupByField = 'DTR_LIST'; // Force DTR_LIST view when searching
+        filterForAggregation = {}; // Ignore drill-down filters when performing global search
+    }
 
-    // Update current level labels
-    if (groupByField === 'DIVN NAME') {
+    // Show the relevant card based on the targetGroupByField
+    analysisCards[targetGroupByField].classList.remove('d-none');
+
+    // Ensure the input field reflects the current search term
+    if (dtrSearchInput) dtrSearchInput.value = dtrSearchTerm;
+
+
+    // Update current level labels based on the actual drill-down, not the forced DTR_LIST for search
+    if (targetGroupByField === 'DIVN NAME') {
       document.getElementById('currentRegion').textContent = currentFilter.REGION || '';
-    } else if (groupByField === 'SUPP_OFF') {
+    } else if (targetGroupByField === 'SUPP_OFF') {
       document.getElementById('currentDivision').textContent = currentFilter['DIVN NAME'] || '';
-    } else if (groupByField === 'SS_NAME') {
+    } else if (targetGroupByField === 'SS_NAME') {
       document.getElementById('currentCCC').textContent = currentFilter['SUPP_OFF'] || '';
-    } else if (groupByField === 'FDR_NAME') {
+    } else if (targetGroupByField === 'FDR_NAME') {
       document.getElementById('currentSS').textContent = currentFilter['SS_NAME'] || '';
-    } else if (groupByField === 'CAPA_KV') {
+    } else if (targetGroupByField === 'CAPA_KV') {
       // For Capacity-wise, the header should reflect the path leading to it
       let pathDisplay = [];
       if (currentFilter.REGION) pathDisplay.push(currentFilter.REGION);
       if (currentFilter['DIVN NAME']) pathDisplay.push(currentFilter['DIVN NAME']);
       if (currentFilter.SS_NAME) pathDisplay.push(currentFilter.SS_NAME);
       document.getElementById('currentFeeder').textContent = pathDisplay.join(' > ') || 'Overall';
-    } else if (groupByField === 'DTR_LIST') {
-        // For DTR_LIST, show the capacity it's filtering by
+    } else if (targetGroupByField === 'DTR_LIST') {
+        // For DTR_LIST, show the capacity it's filtering by or "Search Results"
         let pathDisplay = [];
         if (currentFilter.REGION) pathDisplay.push(currentFilter.REGION);
         if (currentFilter['DIVN NAME']) pathDisplay.push(currentFilter['DIVN NAME']);
         if (currentFilter.SS_NAME) pathDisplay.push(currentFilter.SS_NAME);
         if (currentFilter.FDR_NAME) pathDisplay.push(currentFilter.FDR_NAME);
         if (currentFilter.CAPA_KV) pathDisplay.push(currentFilter.CAPA_KV + ' kVA');
-        document.getElementById('currentCapacity').textContent = pathDisplay.join(' > ') || 'Overall';
+        document.getElementById('currentCapacity').textContent = (isGlobalSearchActive ? 'Search Results' : pathDisplay.join(' > ')) || 'Overall';
     }
 
     // Update the direct level select dropdown to reflect the current level
-    directLevelSelect.value = currentLevel;
+    // This should reflect the actual drill-down level, not the forced DTR_LIST for search
+    directLevelSelect.value = targetGroupByField; // Set to targetGroupByField (which will be DTR_LIST if searching)
 
-    // Aggregate data for the current view
-    const aggregatedData = aggregateData(dtrRawData, groupByField, currentFilter);
+    // Aggregate data for the current view, passing the isGlobalSearch flag
+    const aggregatedData = aggregateData(dataForAggregation, targetGroupByField, filterForAggregation, isGlobalSearchActive);
 
     // Render table for the current view
-    renderTable(aggregatedData, tableBodies[groupByField], groupByField);
+    renderTable(aggregatedData, tableBodies[targetGroupByField], targetGroupByField);
 
     // Update breadcrumb navigation
     updateBreadcrumb();
