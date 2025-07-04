@@ -1027,6 +1027,13 @@ body {
           <i class="fas fa-layer-group me-2"></i>Class Wise
         </button>
       </li>
+
+      <li class="nav-item" role="presentation">
+  <button class="nav-link" id="phase-tab" data-bs-toggle="pill" data-bs-target="#phase" type="button" role="tab">
+    <i class="fas fa-sitemap me-2"></i>Applied Phase
+  </button>
+</li>
+
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="agency-tab" data-bs-toggle="pill" data-bs-target="#agency" type="button" role="tab">
           <i class="fas fa-briefcase me-2"></i>Agency Wise
@@ -1066,6 +1073,12 @@ body {
           <canvas id="classwiseChart"></canvas> <!-- placeholder -->
         </div>
       </div>
+      <div class="tab-pane fade" id="phase" role="tabpanel">
+  <div class="chart-container">
+    <div id="phaseChartContainer"></div>
+  </div>
+</div>
+
       <div class="tab-pane fade" id="agency" role="tabpanel">
         <div class="chart-container">
           <canvas id="agencyChart"></canvas> <!-- Placeholder, replaced by table -->
@@ -2277,6 +2290,79 @@ document.getElementById('delay2').querySelector('.chart-container').innerHTML = 
     'Count',
     'CONN_CLASS'
   );
+
+   // ➕ INSERT THIS FOR Applied Phase Tab
+  const phaseGroups = {};
+  filteredData.forEach(d => {
+    const phase = (d.APPLIED_PHASE || "Not Specified").trim();
+    if (!phaseGroups[phase]) {
+      phaseGroups[phase] = [];
+    }
+    phaseGroups[phase].push(d);
+  });
+
+  let html = `
+    <div class="card-header bg-white py-3">
+      <h5 class="mb-0 d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-table me-2"></i>Applied Phase</span>
+        <i class="fas fa-copy text-primary" title="Copy Table" style="cursor:pointer;" onclick="copyTableToWhatsApp(this)"></i>
+      </h5>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover">
+        <thead>
+          <tr>
+            <th>Phase</th>
+            <th class="text-end">Count</th>
+            <th class="text-end">%</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  const total = filteredData.length;
+  Object.entries(phaseGroups)
+    .sort((a, b) => b[1].length - a[1].length)
+    .forEach(([phase, entries]) => {
+      const percent = ((entries.length / total) * 100).toFixed(1);
+      const rowId = `row-APPLIED_PHASE-${btoa(phase).replace(/=/g, '')}`;
+      html += `
+<tr class="expandable-row" data-group="${phase}" data-rowid="${rowId}" data-groupby="APPLIED_PHASE" style="cursor:pointer;">
+          <td><i class="fas fa-chevron-right me-2"></i>${phase}</td>
+          <td class="text-end">${entries.length}</td>
+          <td class="text-end">${percent}%</td>
+        </tr>
+        <tr id="${rowId}" class="sub-row" style="display:none;">
+          <td colspan="3"><div id="${rowId}-subdata"></div></td>
+        </tr>
+      `;
+    });
+
+  html += "</tbody></table></div>";
+  document.getElementById("phaseChartContainer").innerHTML = html;
+
+  // ➕ Now bind event listeners
+  document.querySelectorAll('#phaseChartContainer .expandable-row').forEach(row => {
+    row.addEventListener("click", function (e) {
+      e.stopPropagation();
+      const groupKey = this.dataset.group;
+      const rowId = this.dataset.rowid;
+      const subRow = document.getElementById(rowId);
+      const icon = this.querySelector('i');
+
+      if (subRow.style.display === "none") {
+        generateSubRows(groupKey, document.getElementById(`${rowId}-subdata`), 'APPLIED_PHASE', d => true);
+        subRow.style.display = "";
+        icon.classList.remove('fa-chevron-right');
+        icon.classList.add('fa-chevron-down');
+      } else {
+        subRow.style.display = "none";
+        document.getElementById(`${rowId}-subdata`).innerHTML = "";
+        icon.classList.remove('fa-chevron-down');
+        icon.classList.add('fa-chevron-right');
+      }
+    });
+  });
   document.getElementById('agency').querySelector('.chart-container').innerHTML = generateTable(
   agencyData,
   'Agency',
@@ -2315,6 +2401,30 @@ document.getElementById('delay2').querySelector('.chart-container').innerHTML = 
 }
 
     
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     document.addEventListener('DOMContentLoaded', () => {
   ['totalPendingCollapse', 'nonPoleCollapse', 'poleCollapse', 'industrialPendingCollapse', 'detailCollapse'].forEach(id => {
     const el = document.getElementById(id);
