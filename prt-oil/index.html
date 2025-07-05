@@ -849,11 +849,15 @@
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body" id="reportDetailBody" style="font-size: 0.85rem;"></div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">
-          <i class="fas fa-times"></i> Close
-        </button>
-      </div>
+<div class="modal-footer">
+  <button class="btn btn-success me-auto" id="downloadPdfBtn">
+    <i class="fas fa-download"></i> Download PDF
+  </button>
+  <button class="btn btn-secondary" data-bs-dismiss="modal">
+    <i class="fas fa-times"></i> Close
+  </button>
+</div>
+
     </div>
   </div>
 </div>
@@ -891,6 +895,7 @@ const testRecordsCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRtpu
 const ptrCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRtpueyQwlq63VP2Tm2_vITV31jKBSceDGJQVJtYeqVVDBSg3QAHzLKrv60i6Z9oODXXzOE-fdfMb8b/pub?gid=0&single=true&output=csv";
 
 let mapData = [], ptrData = [], testRecords = []; // Added testRecords
+let selectedRecord = null; // will store clicked report
 
 // Utility functions for loading states
 function setLoadingState(button, isLoading) {
@@ -1088,18 +1093,12 @@ function fetchData() {
     mapData = initialData.map;
     ptrData = initialData.ptrs;
 
-    const lines = csvText.split("\n");
-    const headers = lines[0].split(",").map(h => h.trim().replace(/"/g, ''));
-    const parsedRecords = [];
+const parsed = Papa.parse(csvText, {
+  header: true,
+  skipEmptyLines: true
+});
+testRecords = parsed.data;
 
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(",").map(c => c.trim().replace(/"/g, ''));
-      if (cols.length === headers.length) {
-        const record = Object.fromEntries(headers.map((h, j) => [h, cols[j]]));
-        parsedRecords.push(record);
-      }
-    }
-    testRecords = parsedRecords;
 
     populateRegionDropdown();
     populatePTRDropdown();
@@ -1225,7 +1224,7 @@ sortedRecords.forEach((record, index) => {
     <td>${record.Equipment || 'N/A'}</td>
     <td>${record['Capacity (MVA)'] || 'N/A'}</td>
     <td>${formatDateToDDMMYYYY(record['Sample Testing Date'])}</td>
-    <td>${record.Observations || 'N/A'}</td>
+<td>${(record.Observations || 'N/A').split('\n')[0]}</td>
   `;
 
   // Add click handler to show modal with full detail
@@ -1240,6 +1239,8 @@ sortedRecords.forEach((record, index) => {
 };
 
 row.addEventListener("click", () => {
+    selectedRecord = record; // ✅ Store the full record here
+
   let detailHtml = "";
   for (const [key, value] of Object.entries(record)) {
     let displayValue = value || 'N/A';
@@ -1251,10 +1252,14 @@ row.addEventListener("click", () => {
       }
     }
 
-    detailHtml += `<div class="d-flex mb-1 align-items-start">
-<div style="min-width: 300px; white-space: nowrap;" class="text-muted fw-bold">${customLabels[key] || key}:</div>
-      <div class="flex-grow-1 ps-2">${displayValue}</div>
-    </div>`;
+const isObservation = key === "Observations";
+detailHtml += `<div class="d-flex mb-1 align-items-start">
+  <div style="min-width: 300px;" class="text-muted fw-bold">${customLabels[key] || key}:</div>
+  <div class="flex-grow-1 ps-2" style="${isObservation ? 'white-space:pre-wrap;' : ''}">
+    ${displayValue}
+  </div>
+</div>`;
+
   }
 
   document.getElementById("reportDetailBody").innerHTML = detailHtml;
@@ -1985,6 +1990,167 @@ document.getElementById("standardLimitsIcon").addEventListener("click", () => {
 
 
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans&display=swap" rel="stylesheet">
+
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+document.getElementById("downloadPdfBtn")?.addEventListener("click", async () => {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  // Load Noto Sans font
+doc.setFont("helvetica", "normal"); // Default fallback
+doc.setFont("NotoSans", "normal");  // Use NotoSans if embedded
+  const marginLeft = 15;
+  let y = 20;
+
+  if (!selectedRecord) {
+    alert("No report selected.");
+    return;
+  }
+
+  const eqMap = ["Region", "Division", "Substation", "Equipment", "Capacity (MVA)", "Make", "Serial No.", "Year of Manufacture"];
+const sampleMap = [
+  "Sample Collection Date",
+  "Sample Testing Date",
+  "Sample Collected By",
+  "Source Referance",
+  "Oil Sample Position",
+  "Physical Appearance"
+];
+  const testFieldsToSkip = [...eqMap, ...sampleMap, "Observations"];
+  const testData = [];
+
+  // Format resistivity values
+  function formatResistivity(key, value) {
+    if (key.includes("Specific Resistance")) {
+      const num = parseFloat(value);
+      if (!isNaN(num)) return `${(num / 1e12).toFixed(3)} × 10¹²`;
+    }
+    return value;
+  }
+
+  // Extract data from record
+  const eqFields = eqMap.map(k => ({ label: k, value: selectedRecord[k] || 'N/A' }));
+  const sampleFields = sampleMap.map(k => ({ label: k, value: selectedRecord[k] || 'N/A' }));
+
+  Object.entries(selectedRecord).forEach(([k, v]) => {
+    if (testFieldsToSkip.includes(k) || !v) return;
+    testData.push([k, formatResistivity(k, v), "", ""]); // Add unit/status logic if needed
+  });
+
+  const observations = selectedRecord["Observations"] || "";
+
+  // Header
+doc.setFont("NotoSans", "bold"); // Or "times" or "helvetica" if NotoSans not loaded
+doc.setFontSize(13);
+doc.text("West Bengal State Electricity Distribution Company Ltd.", 105, y, { align: "center" });
+y += 6;
+doc.setFontSize(12);
+doc.text("Malda Zonal Testing Unit, Malda Zone", 105, y, { align: "center" });
+y += 6;
+doc.text("Malda", 105, y, { align: "center" });
+y += 6;
+
+doc.line(marginLeft, y, 210 - marginLeft, y); // top line
+y += 6;
+
+// Testing Referance
+doc.setFont("NotoSans", "normal");
+doc.setFontSize(11);
+doc.text(`Testing Referance: ${selectedRecord["Testing Referance"] || 'N/A'}`, marginLeft, y);
+y += 6;
+
+doc.line(marginLeft, y, 210 - marginLeft, y); // bottom line
+y += 10;
+
+
+
+  // Equipment Details – 3 per row
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.text("Equipment Details", marginLeft, y);
+  y += 6;
+  doc.setFont("helvetica", "normal");
+
+  for (let i = 0; i < eqFields.length; i += 3) {
+    const row = eqFields.slice(i, i + 3);
+    row.forEach((f, idx) => {
+      const x = marginLeft + idx * 60;
+      doc.text(`${f.label}: ${f.value}`, x, y);
+    });
+    y += 7;
+  }
+
+  // Sample Details – 4 per row
+// Sample Details – 3 lines
+doc.setFont("helvetica", "bold");
+doc.text("Sample Details", marginLeft, y);
+y += 6;
+doc.setFont("helvetica", "normal");
+
+const line1 = sampleFields.slice(0, 3); // 3 fields
+const line2 = sampleFields.slice(3, 5); // 2 fields
+const line3 = sampleFields.slice(5, 6); // 1 field
+
+
+// 2 items per row layout for Sample Details
+for (let i = 0; i < sampleFields.length; i += 2) {
+  const row = sampleFields.slice(i, i + 2);
+  row.forEach((f, idx) => {
+    const x = marginLeft + idx * 90; // Wider spacing for 2 per row
+    doc.text(`${f.label}: ${f.value}`, x, y);
+  });
+  y += 7;
+}
+
+
+
+  // Test Report – in table
+  doc.setFont("helvetica", "bold");
+  doc.text("Test Report", marginLeft, y);
+  y += 2;
+
+  doc.autoTable({
+    head: [["Parameter", "Value", "Unit", "Status"]],
+    body: testData,
+    startY: y + 4,
+    theme: 'grid',
+    styles: {
+      font: "helvetica",
+      fontSize: 10,
+      cellPadding: 2
+    },
+    headStyles: {
+      fillColor: [200, 200, 200]
+    },
+    margin: { left: marginLeft, right: marginLeft }
+  });
+
+  y = doc.lastAutoTable.finalY + 10;
+
+  // Observations block
+  doc.setFont("helvetica", "bold");
+  doc.text("Observations", marginLeft, y);
+  y += 6;
+  doc.setFont("helvetica", "normal");
+  const obsLines = doc.splitTextToSize(observations, 180);
+  doc.text(obsLines, marginLeft, y);
+  y += obsLines.length * 6;
+
+  // Signature area
+  y += 20;
+  doc.text("Signature:", 180, y);
+  doc.line(160, y + 2, 200, y + 2);
+
+  doc.save("PTR_Test_Report.pdf");
+});
+
+});
+</script>
 
 </body>
 </html>
