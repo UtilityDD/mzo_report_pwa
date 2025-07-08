@@ -958,6 +958,25 @@ width: auto !important;
 
         <span id="maxDateSpan" style="font-size: 0.75rem; color: #ffe600;"></span>
     </div>
+
+
+    <!-- Consumer Class Filter -->
+<div class="d-flex flex-wrap flex-row gap-2 align-items-center mb-3" id="classFilterOptions" style="font-size: 0.8rem;">
+  <label class="form-check mb-0 me-3">
+    <input class="form-check-input" type="radio" name="classFilter" value="all" checked>
+    <span class="form-check-label">All Classes</span>
+  </label>
+  <label class="form-check mb-0 me-3">
+    <input class="form-check-input" type="radio" name="classFilter" value="non-agri">
+    <span class="form-check-label">Excluding Agri</span>
+  </label>
+  <label class="form-check mb-0">
+    <input class="form-check-input" type="radio" name="classFilter" value="agri-only">
+    <span class="form-check-label">Only Agri</span>
+  </label>
+</div>
+
+
       <!-- Delay Range Slider (Dual Handle) -->
 <div class="card p-3 mb-3" style="background: #fff9db; border-left: 5px solid #f9c74f; border-radius: 12px;">
   <label style="font-weight: 600; font-size: 0.9rem;">Select delay range for connection</label>
@@ -1299,6 +1318,11 @@ slider.noUiSlider.on('change', applyFilters); // Trigger filtering only on relea
         updateDashboard();
         drawTables(); // instead of drawCharts();
         showUrgentModal(rawData); 
+
+            // ✅ Add this block here
+    document.querySelectorAll('input[name="classFilter"]').forEach(radio => {
+      radio.addEventListener('change', applyFilters);
+    });
         showLoading(false);
       } catch (error) {
         console.error("Error loading data:", error);
@@ -1308,6 +1332,12 @@ slider.noUiSlider.on('change', applyFilters); // Trigger filtering only on relea
         showLoading(false);
       }
     }
+
+
+
+
+
+
 function showUrgentModal(data) {
   const sorted = data
     .filter(d => !isNaN(parseFloat(d.DelayInSC)))
@@ -1533,19 +1563,25 @@ function applyFilters() {
 
 
   // 1. Filter the raw data based on selected filters
-  filteredData = rawData.filter(d => 
-    (region === "" || d.REGION === region) &&
-    (divn === "" || d.DIVN_NAME === divn) &&
-    (supp === "" || d.SUPP_OFF === supp)
-    && (poleType === "" || 
-     (poleType === "Pole" && d.NO_OF_POLES && d.NO_OF_POLES.trim() !== "" && d.NO_OF_POLES !== "0") ||
-     (poleType === "Non-Pole" && (!d.NO_OF_POLES || d.NO_OF_POLES.trim() === "" || d.NO_OF_POLES === "0")))
-     && (delayRange === "" || d.DelayRange === delayRange)
-     && (delayRange2 === "" || isInDelayRange2(d, delayRange2))
-     && (!d.DelayInSC || (parseFloat(d.DelayInSC) >= delaySCMin && parseFloat(d.DelayInSC) <= delaySCMax))
+const classFilter = document.querySelector('input[name="classFilter"]:checked')?.value || "all";
 
+filteredData = rawData.filter(d =>
+  (region === "" || d.REGION === region) &&
+  (divn === "" || d.DIVN_NAME === divn) &&
+  (supp === "" || d.SUPP_OFF === supp) &&
+  (poleType === "" || 
+    (poleType === "Pole" && d.NO_OF_POLES && d.NO_OF_POLES.trim() !== "" && d.NO_OF_POLES !== "0") ||
+    (poleType === "Non-Pole" && (!d.NO_OF_POLES || d.NO_OF_POLES.trim() === "" || d.NO_OF_POLES === "0"))) &&
+  (delayRange === "" || d.DelayRange === delayRange) &&
+  (delayRange2 === "" || isInDelayRange2(d, delayRange2)) &&
+  (!d.DelayInSC || (parseFloat(d.DelayInSC) >= delaySCMin && parseFloat(d.DelayInSC) <= delaySCMax)) &&
+  (
+    classFilter === "all" ||
+    (classFilter === "non-agri" && (d.CONN_CLASS || "").trim().toUpperCase() !== "A") ||
+    (classFilter === "agri-only" && (d.CONN_CLASS || "").trim().toUpperCase() === "A")
+  )
+);
 
-  );
   function isInDelayRange2(d, selectedRange) {
   const serial = parseInt(d.DelaySerial);
   if (isNaN(serial)) return false;
@@ -1661,7 +1697,7 @@ document.getElementById('poleSum').textContent = `(${totalPoles})`;
 const commercial3ph = filteredData.filter(d => {
   const conn = (d.CONN_CLASS || "").trim().toUpperCase();
   const phase = (d.APPLIED_PHASE || "").trim().toUpperCase();
-  return conn === "A" && phase === "III";
+  return conn === "C" && phase === "III";
 }).length;
 
 document.getElementById('commercial3ph').textContent = commercial3ph;
@@ -2177,29 +2213,31 @@ function generateApplicationsTable(applications, container, hideAgencyColumn = f
   <i class="fas fa-copy text-primary" title="Copy Applications" style="cursor:pointer;" onclick="copyTableToWhatsApp(this)"></i>
 </div>
 <table class="table table-sm mb-0">
-
-      <thead>
-        <tr>
-          <th>APPL NO</th>
-          <th>NAME</th>
-          <th>PHONE NO</th>
-          <th>COLL DATE</th>
-          ${showAgency ? '<th>AGENCY NAME</th>' : ''}
-        </tr>
-      </thead>
-      <tbody>
-  `;
+  <thead>
+    <tr>
+      <th>APPL NO</th>
+      <th>CLASS</th>
+      <th>NAME</th>
+      <th>PHONE NO</th>
+      <th>COLL DATE</th>
+      ${showAgency ? '<th>AGENCY NAME</th>' : ''}
+    </tr>
+  </thead>
+  <tbody>
+`;
 
   applications.forEach(app => {
     const agency = (app.AGENCY_NAME || '').trim();
     const agencyCell = agency ? agency : '<span style="color:red;">WO not issued</span>';
+    const connClass = (app.CONN_CLASS || '-').toUpperCase();
 
     html += `
       <tr>
         <td>${app.APPL_NO || '-'}</td>
+        <td>${connClass}</td>
         <td>${app.NAME || '-'}</td>
         <td>${app.PHONE_NO || '-'}</td>
-<td>${formatDate(app.COLL_DATE)}</td>
+        <td>${formatDate(app.COLL_DATE)}</td>
         ${showAgency ? `<td>${agencyCell}</td>` : ''}
       </tr>
     `;
@@ -2208,7 +2246,6 @@ function generateApplicationsTable(applications, container, hideAgencyColumn = f
   html += `</tbody></table>`;
   container.innerHTML = html;
 }
-
 
 
 
@@ -2238,7 +2275,7 @@ document.getElementById('commercial3phCard').onclick = () =>
   showTable('commercial3phCard', 'SUPP_OFF', d => {
     const conn = (d.CONN_CLASS || "").trim().toUpperCase();
     const phase = (d.APPLIED_PHASE || "").trim().toUpperCase();
-    return conn === "A" && phase === "III";
+return conn === "C" && phase === "III";
   }, 'Commercial 3-Ph (CCC Wise)');
 
   document.getElementById('initiallyWithheldCard').onclick = () =>
