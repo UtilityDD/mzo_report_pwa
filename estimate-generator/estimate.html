@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WBSEDCL Estimate Generator</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom SAP-like styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* Light grey background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .sap-container {
+            background-color: #ffffff; /* White background for the main container */
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 900px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .sap-header {
+            background-color: #3f51b5; /* Dark blue header */
+            color: #ffffff;
+            padding: 16px 24px;
+            font-size: 1.5rem;
+            font-weight: 600;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+        }
+        .sap-tabs {
+            display: flex;
+            border-bottom: 1px solid #e0e0e0;
+            background-color: #e8eaf6; /* Lighter blue for tab background */
+        }
+        .sap-tab-button {
+            padding: 12px 20px;
+            cursor: pointer;
+            font-weight: 500;
+            color: #424242; /* Dark grey text for inactive tabs */
+            border-right: 1px solid #e0e0e0;
+            transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+            flex-grow: 1; /* Make tabs take equal width */
+            text-align: center;
+        }
+        .sap-tab-button:last-child {
+            border-right: none;
+        }
+        .sap-tab-button.active {
+            background-color: #ffffff; /* White background for active tab */
+            color: #3f51b5; /* Dark blue text for active tab */
+            border-bottom: 2px solid #3f51b5; /* Blue underline for active tab */
+            margin-bottom: -1px; /* Overlap border-bottom of tabs */
+        }
+        .sap-tab-content {
+            padding: 24px;
+            background-color: #ffffff;
+            display: none; /* Hidden by default */
+            flex-direction: column; /* Ensure content is column for button at bottom */
+            justify-content: space-between; /* Push button to bottom */
+            min-height: 250px; /* Give some height to tabs for consistent button placement */
+        }
+        .sap-tab-content.active {
+            display: flex; /* Show active content */
+        }
+        .sap-form-group {
+            margin-bottom: 20px;
+        }
+        /* New style for inline form groups */
+        .sap-form-group.inline-inputs {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap; /* Allow wrapping on smaller screens */
+        }
+        .sap-form-group.inline-inputs .sap-label {
+            margin-bottom: 0; /* Remove bottom margin for inline */
+            flex-grow: 1;
+            padding-right: 15px; /* Space between label and input */
+        }
+        .sap-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #424242;
+        }
+        /* Styles for checkboxes and selects */
+        .sap-checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px; /* Space between checkboxes */
+        }
+        .sap-checkbox-item {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            padding: 8px 0;
+            border-radius: 4px;
+            transition: background-color 0.2s ease-in-out;
+            justify-content: space-between; /* Distribute items */
+        }
+        .sap-checkbox-item-content {
+            display: flex;
+            align-items: center;
+            flex-grow: 1;
+        }
+        .sap-checkbox-item:hover {
+            background-color: #f5f5f5; /* Light hover effect */
+        }
+        .sap-checkbox-input {
+            margin-right: 10px;
+            width: 18px;
+            height: 18px;
+            border: 1px solid #bdbdbd;
+            border-radius: 3px;
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            cursor: pointer;
+            position: relative;
+            outline: none;
+        }
+        .sap-checkbox-input:checked {
+            background-color: #3f51b5; /* Blue background when checked */
+            border-color: #3f51b5;
+        }
+        .sap-checkbox-input:checked::before {
+            content: '✔'; /* Checkmark symbol */
+            display: block;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 14px;
+            line-height: 1;
+        }
+        .sap-checkbox-label {
+            color: #333333;
+            font-size: 1rem;
+            flex-grow: 1;
+        }
+        .sap-rl-input, .sap-percentage-input, .sap-currency-input, .sap-text-input {
+            width: 100px; /* Default width for inputs */
+            padding: 6px 8px;
+            border: 1px solid #bdbdbd;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            text-align: right;
+            margin-left: 15px; /* Space from label */
+        }
+        .sap-text-input {
+            text-align: left; /* Align text input left */
+            flex-grow: 1; /* Allow text input to take more space */
+            margin-right: 10px; /* Space between text and number input */
+        }
+        .sap-rl-input:focus, .sap-percentage-input:focus, .sap-currency-input:focus, .sap-text-input:focus {
+            outline: none;
+            border-color: #3f51b5;
+            box-shadow: 0 0 0 2px rgba(63, 81, 181, 0.2);
+        }
+        /* Specific style for R/L label */
+        .rl-label {
+            margin-left: 10px; /* Space between checkbox label and R/L label */
+            color: #555;
+            font-size: 0.9rem;
+            white-space: nowrap; /* Prevent wrapping */
+        }
+
+        .sap-select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #bdbdbd; /* Grey border */
+            border-radius: 4px;
+            font-size: 1rem;
+            background-color: #ffffff;
+            color: #333333;
+            appearance: none; /* Remove default arrow */
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-image: url('data:image/svg+xml;utf8,<svg fill="%23424242" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/><path d="M0 0h24v24H0z" fill="none"/></svg>');
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            background-size: 24px;
+            cursor: pointer;
+        }
+        .sap-select:focus {
+            outline: none;
+            border-color: #3f51b5; /* Blue border on focus */
+            box-shadow: 0 0 0 2px rgba(63, 81, 181, 0.2);
+        }
+
+        .sap-button {
+            background-color: #4caf50; /* Green for action button */
+            color: #ffffff;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px; /* Space between text and icon */
+        }
+        .sap-button:hover {
+            background-color: #43a047; /* Darker green on hover */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.25);
+        }
+        .sap-button:active {
+            background-color: #388e3c; /* Even darker green on active */
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+
+        .sap-reset-button {
+            background-color: #f44336; /* Red for reset button */
+            color: #ffffff;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-right: 10px; /* Space between reset and next/generate buttons */
+        }
+        .sap-reset-button:hover {
+            background-color: #d32f2f; /* Darker red on hover */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.25);
+        }
+        .sap-reset-button:active {
+            background-color: #c62828; /* Even darker red on active */
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Tree-like structure specific styles */
+        .tree-node {
+            margin-left: 20px; /* Indent sub-items */
+            padding-left: 10px;
+            border-left: 1px dashed #cccccc; /* Visual tree line */
+        }
+        .tree-node:last-child {
+            border-left: none; /* No line for the last child */
+        }
+        .tree-node-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            padding: 5px 0;
+        }
+        .tree-node-label .sap-checkbox-label {
+            font-weight: 500; /* Make parent labels a bit bolder */
+        }
+        .tree-node-children {
+            margin-left: 25px; /* Further indent children */
+            border-left: 1px solid #e0e0e0; /* Solid line for children */
+            padding-left: 10px;
+        }
+
+        /* Summary table styles */
+        .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            margin-bottom: 20px; /* Space after table */
+        }
+        .summary-table th, .summary-table td {
+            border: 1px solid #e0e0e0;
+            padding: 12px;
+            text-align: left;
+            font-size: 0.95rem;
+            color: #333;
+        }
+        .summary-table th {
+            background-color: #f5f5f5;
+            font-weight: 600;
+            color: #3f51b5;
+        }
+        .summary-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .summary-table tr:hover {
+            background-color: #f0f0f0;
+        }
+        .summary-table input[type="number"] {
+            width: 80px; /* Adjust width for number input */
+            padding: 6px 8px;
+            border: 1px solid #bdbdbd;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+        .summary-table input[type="number"]:focus {
+            outline: none;
+            border-color: #3f51b5;
+            box-shadow: 0 0 0 2px rgba(63, 81, 181, 0.2);
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .sap-tabs {
+                flex-direction: column;
+            }
+            .sap-tab-button {
+                border-bottom: 1px solid #e0e0e0;
+                border-right: none;
+            }
+            .sap-tab-button.active {
+                border-bottom: 2px solid #3f51b5;
+                margin-bottom: 0;
+            }
+            .tree-node {
+                margin-left: 15px;
+            }
+            .tree-node-children {
+                margin-left: 20px;
+            }
+            .summary-table th, .summary-table td {
+                padding: 8px;
+                font-size: 0.85rem;
+            }
+            .summary-table input[type="number"] {
+                width: 60px;
+                padding: 4px 6px;
+            }
+            .sap-checkbox-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .sap-checkbox-item-content {
+                width: 100%;
+                margin-bottom: 5px;
+            }
+            .sap-rl-input, .sap-percentage-input, .sap-currency-input, .sap-text-input {
+                width: calc(100% - 28px); /* Adjust width to fit */
+                margin-left: 28px; /* Align with checkbox */
+            }
+            .rl-label {
+                margin-left: 0; /* Remove left margin for better stacking */
+                width: 100%; /* Take full width */
+                text-align: left; /* Align text left */
+            }
+            .sap-form-group.inline-inputs {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .sap-form-group.inline-inputs .sap-label {
+                padding-right: 0;
+                margin-bottom: 5px;
+            }
+            .sap-form-group.inline-inputs .sap-percentage-input,
+            .sap-form-group.inline-inputs .sap-currency-input,
+            .sap-form-group.inline-inputs .sap-text-input {
+                width: 100%; /* Full width for inputs on small screens */
+                margin-left: 0;
+                margin-right: 0;
+            }
+            .button-container {
+                flex-direction: column;
+                align-items: flex-end;
+            }
+            .sap-reset-button {
+                margin-right: 0;
+                margin-bottom: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="sap-container">
+        <div class="sap-header">
+            WBSEDCL Estimate Generator
+        </div>
+
+        <div class="sap-tabs" id="sapTabs">
+            <div class="sap-tab-button active" data-tab="voltage">Voltage</div>
+            <div class="sap-tab-button" data-tab="conductor">Conductor Size</div>
+            <div class="sap-tab-button" data-tab="support">Support (Pole)</div>
+            <div class="sap-tab-button" data-tab="structure">Structure Type</div>
+            <div class="sap-tab-button" data-tab="summary">Summary</div>
+            <div class="sap-tab-button" data-tab="escalation-taxes">Escalation & Taxes</div>
+        </div>
+
+        <div class="sap-tab-content active" id="voltage">
+            <div class="sap-form-group">
+                <label class="sap-label">Voltage Level:</label>
+                <div class="sap-checkbox-group" id="voltage-checkboxes">
+                    <label class="sap-checkbox-item">
+                        <div class="sap-checkbox-item-content">
+                            <input type="checkbox" class="sap-checkbox-input" name="voltage" value="LT">
+                            <span class="sap-checkbox-label">LT (Low Tension) - 440V</span>
+                            <span class="rl-label">R/L in km:</span>
+                            <input type="number" class="sap-rl-input" data-voltage-value="LT" value="0" min="0" step="0.1">
+                        </div>
+                    </label>
+                    <label class="sap-checkbox-item">
+                        <div class="sap-checkbox-item-content">
+                            <input type="checkbox" class="sap-checkbox-input" name="voltage" value="11kV">
+                            <span class="sap-checkbox-label">11 kV</span>
+                            <span class="rl-label">R/L in km:</span>
+                            <input type="number" class="sap-rl-input" data-voltage-value="11kV" value="0" min="0" step="0.1">
+                        </div>
+                    </label>
+                    <label class="sap-checkbox-item">
+                        <div class="sap-checkbox-item-content">
+                            <input type="checkbox" class="sap-checkbox-input" name="voltage" value="33kV">
+                            <span class="sap-checkbox-label">33 kV</span>
+                            <span class="rl-label">R/L in km:</span>
+                            <input type="number" class="sap-rl-input" data-voltage-value="33kV" value="0" min="0" step="0.1">
+                        </div>
+                    </label>
+                    <label class="sap-checkbox-item">
+                        <div class="sap-checkbox-item-content">
+                            <input type="checkbox" class="sap-checkbox-input" name="voltage" value="132kV">
+                            <span class="sap-checkbox-label">132 kV</span>
+                            <span class="rl-label">R/L in km:</span>
+                            <input type="number" class="sap-rl-input" data-voltage-value="132kV" value="0" min="0" step="0.1">
+                        </div>
+                    </label>
+                </div>
+            </div>
+            <div class="flex justify-end mt-auto button-container">
+                <button class="sap-reset-button" onclick="resetVoltageTab()">Reset</button>
+                <button class="sap-button" onclick="goToNextTab()">Next <span style="font-size: 1.2em;">&#x2192;</span></button>
+            </div>
+        </div>
+
+        <div class="sap-tab-content" id="conductor">
+            <div class="sap-form-group">
+                <label class="sap-label">Conductor Size:</label>
+                <div class="sap-checkbox-group" id="conductor-checkboxes">
+                    <label class="sap-checkbox-item">
+                        <input type="checkbox" class="sap-checkbox-input" name="conductor" value="ACSR_50">
+                        <span class="sap-checkbox-label">ACSR 50 sq. mm</span>
+                    </label>
+                    <label class="sap-checkbox-item">
+                        <input type="checkbox" class="sap-checkbox-input" name="conductor" value="ACSR_100">
+                        <span class="sap-checkbox-label">ACSR 100 sq. mm</span>
+                    </label>
+                    <label class="sap-checkbox-item">
+                        <input type="checkbox" class="sap-checkbox-input" name="conductor" value="ACSR_150">
+                        <span class="sap-checkbox-label">ACSR 150 sq. mm</span>
+                    </label>
+                    <label class="sap-checkbox-item">
+                        <input type="checkbox" class="sap-checkbox-input" name="conductor" value="AAC_70">
+                        <span class="sap-checkbox-label">AAC 70 sq. mm</span>
+                    </label>
+                    <label class="sap-checkbox-item">
+                        <input type="checkbox" class="sap-checkbox-input" name="conductor" value="XLPE_3C_70">
+                        <span class="sap-checkbox-label">XLPE 3C x 70 sq. mm</span>
+                    </label>
+                </div>
+            </div>
+            <div class="flex justify-end mt-auto button-container">
+                <button class="sap-reset-button" onclick="resetConductorTab()">Reset</button>
+                <button class="sap-button" onclick="goToNextTab()">Next <span style="font-size: 1.2em;">&#x2192;</span></button>
+            </div>
+        </div>
+
+        <div class="sap-tab-content" id="support">
+            <div class="sap-form-group">
+                <label class="sap-label">Support (Pole) Type:</label>
+                <div class="sap-checkbox-group" id="support-checkboxes">
+                    <label class="sap-checkbox-item">
+                        <input type="checkbox" class="sap-checkbox-input" name="support" value="PSC_8m">
+                        <span class="sap-checkbox-label">PSC Pole 8m</span>
+                    </label>
+                    <label class="sap-checkbox-item">
+                        <input type="checkbox" class="sap-checkbox-input" name="support" value="PSC_9m">
+                        <span class="sap-checkbox-label">PSC Pole 9m</span>
+                    </label>
+                    <label class="sap-checkbox-item">
+                        <input type="checkbox" class="sap-checkbox-input" name="support" value="PSC_11m">
+                        <span class="sap-checkbox-label">PSC Pole 11m</span>
+                    </label>
+                    <label class="sap-checkbox-item">
+                        <input type="checkbox" class="sap-checkbox-input" name="support" value="Lattice_15m">
+                        <span class="sap-checkbox-label">Lattice Tower 15m</span>
+                    </label>
+                    <label class="sap-checkbox-item">
+                        <input type="checkbox" class="sap-checkbox-input" name="support" value="GI_Pipe_6m">
+                        <span class="sap-checkbox-label">GI Pipe Pole 6m</span>
+                    </label>
+                </div>
+            </div>
+            <div class="flex justify-end mt-auto button-container">
+                <button class="sap-reset-button" onclick="resetSupportTab()">Reset</button>
+                <button class="sap-button" onclick="goToNextTab()">Next <span style="font-size: 1.2em;">&#x2192;</span></button>
+            </div>
+        </div>
+
+        <div class="sap-tab-content" id="structure">
+            <div class="sap-form-group">
+                <label class="sap-label">Structure Type:</label>
+                <div class="sap-checkbox-group" id="structure-tree">
+                    <!-- Tree-like structure will be dynamically loaded here -->
+                </div>
+            </div>
+            <div class="flex justify-end mt-auto button-container">
+                <button class="sap-reset-button" onclick="resetStructureTab()">Reset</button>
+                <button class="sap-button" onclick="goToNextTab()">Next <span style="font-size: 1.2em;">&#x2192;</span></button>
+            </div>
+        </div>
+
+        <div class="sap-tab-content" id="summary">
+            <div class="sap-form-group">
+                <label class="sap-label">General Selections:</label>
+                <div id="general-summary-table-container">
+                    <!-- General summary table will be rendered here by JavaScript -->
+                </div>
+            </div>
+            <div class="sap-form-group mt-8">
+                <label class="sap-label">Structure Type Quantities:</label>
+                <div id="structure-summary-table-container">
+                    <!-- Structure summary table with quantities will be rendered here by JavaScript -->
+                </div>
+            </div>
+            <div class="flex justify-end mt-auto button-container">
+                <button class="sap-reset-button" onclick="resetSummaryTab()">Reset</button>
+                <button class="sap-button" onclick="goToNextTab()">Next <span style="font-size: 1.2em;">&#x2192;</span></button>
+            </div>
+        </div>
+
+        <div class="sap-tab-content" id="escalation-taxes">
+            <div class="sap-form-group inline-inputs">
+                <label class="sap-label" for="escalation-percent">Escalation (%):</label>
+                <input type="number" id="escalation-percent" class="sap-percentage-input" value="0" min="0" step="0.1" placeholder="e.g., 5.0">
+            </div>
+            <div class="sap-form-group inline-inputs">
+                <label class="sap-label" for="gst-percent">GST (%):</label>
+                <input type="number" id="gst-percent" class="sap-percentage-input" value="18" min="0" step="0.1" placeholder="e.g., 18.0">
+            </div>
+            <div class="sap-form-group inline-inputs">
+                <label class="sap-label" for="supervision-material">Supervision Charges on Material Cost Only (%):</label>
+                <input type="number" id="supervision-material" class="sap-percentage-input" value="0" min="0" step="0.1" placeholder="e.g., 10.0">
+            </div>
+            <div class="sap-form-group inline-inputs">
+                <label class="sap-label" for="supervision-labour">Supervision Charges on Labour Cost Only (%):</label>
+                <input type="number" id="supervision-labour" class="sap-percentage-input" value="0" min="0" step="0.1" placeholder="e.g., 15.0">
+            </div>
+            <div class="sap-form-group inline-inputs">
+                <label class="sap-label" for="supervision-both">Supervision Charges on both Material & Labour Cost (%):</label>
+                <input type="number" id="supervision-both" class="sap-percentage-input" value="0" min="0" step="0.1" placeholder="e.g., 12.0">
+            </div>
+            <div class="sap-form-group inline-inputs">
+                <label class="sap-label" for="adjustment-amount">Adjustment, if any (Rs.):</label>
+                <input type="text" id="adjustment-description" class="sap-text-input" placeholder="Describe...">
+                <input type="number" id="adjustment-amount" class="sap-currency-input" value="0" min="0" step="1" placeholder="e.g., 1000.00">
+            </div>
+            <div class="flex justify-end mt-auto button-container">
+                <button class="sap-reset-button" onclick="resetEscalationTaxesTab()">Reset</button>
+                <button class="sap-button" onclick="generateEstimate()">Generate Estimate</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // JavaScript for tab functionality
+        const tabOrder = ['voltage', 'conductor', 'support', 'structure', 'summary', 'escalation-taxes'];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabsContainer = document.getElementById('sapTabs');
+            const tabButtons = tabsContainer.querySelectorAll('.sap-tab-button');
+            const tabContents = document.querySelectorAll('.sap-tab-content');
+
+            tabButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    activateTab(button.dataset.tab);
+                });
+            });
+
+            // Load the structure tree on page load
+            loadStructureTree();
+        });
+
+        function activateTab(tabId) {
+            const tabButtons = document.querySelectorAll('.sap-tab-button');
+            const tabContents = document.querySelectorAll('.sap-tab-content');
+
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            tabContents.forEach(content => content.classList.remove('active'));
+
+            document.querySelector(`.sap-tab-button[data-tab="${tabId}"]`).classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+
+            // If the summary tab is clicked, update its content
+            if (tabId === 'summary') {
+                updateSummaryTab();
+            }
+        }
+
+        function goToNextTab() {
+            const currentActiveTabButton = document.querySelector('.sap-tab-button.active');
+            const currentTabId = currentActiveTabButton.dataset.tab;
+            const currentIndex = tabOrder.indexOf(currentTabId);
+
+            // Validation logic: Check if at least one checkbox is selected in the current tab
+            let isSelectionMade = false;
+            let checkboxesInCurrentTab;
+
+            if (currentTabId === 'voltage') {
+                checkboxesInCurrentTab = document.querySelectorAll('#voltage-checkboxes input[type="checkbox"]');
+            } else if (currentTabId === 'conductor') {
+                checkboxesInCurrentTab = document.querySelectorAll('#conductor-checkboxes input[type="checkbox"]');
+            } else if (currentTabId === 'support') {
+                checkboxesInCurrentTab = document.querySelectorAll('#support-checkboxes input[type="checkbox"]');
+            } else if (currentTabId === 'structure') {
+                checkboxesInCurrentTab = document.querySelectorAll('#structure-tree input[type="checkbox"]');
+            } else if (currentTabId === 'summary' || currentTabId === 'escalation-taxes') {
+                // Summary and Escalation/Taxes tabs don't require checkbox selections to proceed
+                isSelectionMade = true;
+            }
+
+
+            if (checkboxesInCurrentTab) {
+                isSelectionMade = Array.from(checkboxesInCurrentTab).some(cb => cb.checked);
+            }
+
+            if (!isSelectionMade) {
+                showMessageBox("Please select at least one option before proceeding to the next tab.");
+                return; // Prevent tab change
+            }
+
+            // Proceed to the next tab if validation passes
+            if (currentIndex < tabOrder.length - 1) {
+                const nextTabId = tabOrder[currentIndex + 1];
+                activateTab(nextTabId);
+            }
+        }
+
+        // Data for structure types and sub-types (now structured for tree display)
+        const structureData = [
+            {
+                value: "Single_Pole",
+                label: "Single Pole Structure",
+                subTypes: [
+                    {
+                        value: "SP_Tangent",
+                        label: "Tangent Structure",
+                        subTypes: [ // New nested sub-types
+                            { value: "SP_Tangent_Light", label: "Light Duty" },
+                            { value: "SP_Tangent_Heavy", label: "Heavy Duty" }
+                        ]
+                    },
+                    { value: "SP_Angle", label: "Angle Structure" },
+                    { value: "SP_DeadEnd", label: "Dead End Structure" }
+                ]
+            },
+            {
+                value: "Double_Pole",
+                label: "Double Pole Structure",
+                subTypes: [
+                    {
+                        value: "DP_Tangent",
+                        label: "Tangent Structure",
+                        subTypes: [ // New nested sub-types
+                            { value: "DP_Tangent_Small", label: "Small Span" },
+                            { value: "DP_Tangent_Large", label: "Large Span" }
+                        ]
+                    },
+                    { value: "DP_Angle", label: "Angle Structure" },
+                    { value: "DP_DeadEnd", label: "Dead End Structure" }
+                ]
+            },
+            {
+                value: "H_Type",
+                label: "H-Type Structure",
+                subTypes: [
+                    { value: "H_Tangent", label: "Tangent Structure" },
+                    { value: "H_Angle", label: "Angle Structure" },
+                    { value: "H_DeadEnd", label: "Dead End Structure" }
+                ]
+            },
+            {
+                value: "A_Type",
+                label: "A-Type Structure",
+                subTypes: [
+                    { value: "A_Tangent", label: "Tangent Structure" },
+                    { value: "A_Angle", label: "Angle Structure" },
+                    { value: "A_DeadEnd", label: "Dead End Structure" }
+                ]
+            },
+            {
+                value: "Tower_Structure",
+                label: "Tower Structure",
+                subTypes: [
+                    { value: "Tower_Suspension", label: "Suspension Tower" },
+                    { value: "Tower_Tension", label: "Tension Tower" },
+                    { value: "Tower_Transposition", label: "Transposition Tower" }
+                ]
+            }
+        ];
+
+        // Recursive function to render tree nodes
+        function renderStructureNode(node, level = 0) {
+            let html = '';
+            const nameAttribute = (level === 0) ? 'structure_primary' : 'structure_subtype';
+            const itemClass = (level === 0) ? 'sap-checkbox-item' : 'sap-checkbox-item tree-node';
+            const onChangeHandler = (level > 0) ? 'onchange="handleSubtypeChange(event)"' : ''; // Only sub-types trigger parent selection
+
+            html += `<label class="${itemClass}">
+                        <input type="checkbox" class="sap-checkbox-input" name="${nameAttribute}" value="${node.value}" ${onChangeHandler}>
+                        <span class="sap-checkbox-label">${node.label}</span>
+                    </label>`;
+
+            if (node.subTypes && node.subTypes.length > 0) {
+                html += `<div class="tree-node-children">`;
+                node.subTypes.forEach(subNode => {
+                    html += renderStructureNode(subNode, level + 1); // Recursive call
+                });
+                html += `</div>`;
+            }
+            return html;
+        }
+
+        // Function to load the tree-like structure
+        function loadStructureTree() {
+            const treeContainer = document.getElementById('structure-tree');
+            treeContainer.innerHTML = ''; // Clear previous content
+            structureData.forEach(primaryType => {
+                treeContainer.innerHTML += renderStructureNode(primaryType);
+            });
+        }
+
+        // Function to handle sub-type checkbox changes (auto-select parent)
+        function handleSubtypeChange(event) {
+            const subTypeCheckbox = event.target;
+            if (subTypeCheckbox.checked) {
+                const subTypeValue = subTypeCheckbox.value;
+
+                // Recursive function to find and check parents
+                function checkParents(currentValue, data) {
+                    for (const item of data) {
+                        if (item.subTypes) {
+                            if (item.subTypes.some(st => st.value === currentValue)) {
+                                // current item is the parent of currentValue
+                                const parentCheckbox = document.querySelector(`input[name="structure_primary"][value="${item.value}"]`) ||
+                                                       document.querySelector(`input[name="structure_subtype"][value="${item.value}"]`);
+                                if (parentCheckbox && !parentCheckbox.checked) {
+                                    parentCheckbox.checked = true;
+                                }
+                                // Now check parents of this item recursively
+                                checkParents(item.value, structureData); // Pass structureData to search from top
+                                return; // Found and handled
+                            }
+                            // If not direct child, check in its subTypes recursively
+                            checkParents(currentValue, item.subTypes);
+                        }
+                    }
+                }
+                checkParents(subTypeValue, structureData);
+            }
+            // Logic for unchecking parents if ALL its children are unchecked is more complex
+            // and not explicitly requested, so it's omitted for now.
+        }
+
+        // Function to collect selected checkbox values
+        function getSelectedCheckboxes(name) {
+            const checkboxes = document.querySelectorAll(`input[name="${name}"]:checked`);
+            return Array.from(checkboxes).map(cb => cb.value);
+        }
+
+        // Helper to get label from value (for all levels)
+        function getLabelFromValue(value) {
+            const generalLabels = {
+                "LT": "LT (Low Tension) - 440V",
+                "11kV": "11 kV",
+                "33kV": "33 kV",
+                "132kV": "132 kV",
+                "ACSR_50": "ACSR 50 sq. mm",
+                "ACSR_100": "ACSR 100 sq. mm",
+                "ACSR_150": "ACSR 150 sq. mm",
+                "AAC_70": "AAC 70 sq. mm",
+                "XLPE_3C_70": "XLPE 3C x 70 sq. mm",
+                "PSC_8m": "PSC Pole 8m",
+                "PSC_9m": "PSC Pole 9m",
+                "PSC_11m": "PSC Pole 11m",
+                "Lattice_15m": "Lattice Tower 15m",
+                "GI_Pipe_6m": "GI Pipe Pole 6m"
+            };
+            if (generalLabels[value]) {
+                return generalLabels[value];
+            }
+
+            // Recursive search for structure labels
+            function findStructureLabel(nodes, targetValue, currentPath = []) {
+                for (const node of nodes) {
+                    if (node.value === targetValue) {
+                        return [...currentPath, node.label].join(' - ');
+                    }
+                    if (node.subTypes) {
+                        const foundLabel = findStructureLabel(node.subTypes, targetValue, [...currentPath, node.label]);
+                        if (foundLabel) {
+                            return foundLabel;
+                        }
+                    }
+                }
+                return null;
+            }
+            return findStructureLabel(structureData, value) || value; // Fallback to value
+        }
+
+
+        // Function to update the summary tab content
+        function updateSummaryTab() {
+            const selectedVoltages = [];
+            document.querySelectorAll('input[name="voltage"]:checked').forEach(checkbox => {
+                const rlInput = document.querySelector(`.sap-rl-input[data-voltage-value="${checkbox.value}"]`);
+                selectedVoltages.push({
+                    value: checkbox.value,
+                    label: getLabelFromValue(checkbox.value),
+                    rl: rlInput ? parseFloat(rlInput.value) || 0 : 0
+                });
+            });
+
+            const selectedConductors = getSelectedCheckboxes('conductor');
+            const selectedSupports = getSelectedCheckboxes('support'); // Get selected support values
+
+            const generalSummaryTableContainer = document.getElementById('general-summary-table-container');
+            let generalTableHtml = `
+                <table class="summary-table">
+                    <thead>
+                        <tr>
+                            <th>S.No.</th>
+                            <th>Category</th>
+                            <th>Selected Items</th>
+                            <th>Route Length (km)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            let serialNo = 1;
+
+            if (selectedVoltages.length > 0) {
+                selectedVoltages.forEach(voltage => {
+                    generalTableHtml += `
+                        <tr>
+                            <td>${serialNo++}</td>
+                            <td>Voltage Level</td>
+                            <td>${voltage.label}</td>
+                            <td>${voltage.rl}</td>
+                        </tr>
+                    `;
+                });
+            } else {
+                generalTableHtml += `
+                    <tr>
+                        <td>${serialNo++}</td>
+                        <td>Voltage Level</td>
+                        <td>Not Selected</td>
+                        <td>N/A</td>
+                    </tr>
+                `;
+            }
+
+            generalTableHtml += `
+                        <tr>
+                            <td>${serialNo++}</td>
+                            <td>Conductor Size</td>
+                            <td>${selectedConductors.length > 0 ? selectedConductors.map(c => getLabelFromValue(c)).join(', ') : 'Not Selected'}</td>
+                            <td>N/A</td>
+                        </tr>
+                        <tr>
+                            <td>${serialNo++}</td>
+                            <td>Support (Pole) Type</td>
+                            <td>${selectedSupports.length > 0 ? selectedSupports.map(s => getLabelFromValue(s)).join(', ') : 'Not Selected'}</td>
+                            <td>N/A</td>
+                        </tr>
+                    </tbody>
+                </table>
+            `;
+            generalSummaryTableContainer.innerHTML = generalTableHtml;
+
+            const structureSummaryTableContainer = document.getElementById('structure-summary-table-container');
+            let structureTableHtml = `
+                <table class="summary-table">
+                    <thead>
+                        <tr>
+                            <th>S.No.</th>
+                            <th>Structure Type (with Support)</th>
+                            <th>Quantity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            const allSelectedStructuresForSummary = getSelectedStructureItemsForSummary();
+            const selectedSupportLabels = selectedSupports.map(s => getLabelFromValue(s)); // Get labels for selected supports
+
+            let structureSerialNo = 1;
+            if (allSelectedStructuresForSummary.length > 0) {
+                allSelectedStructuresForSummary.forEach(item => {
+                    // Combine structure label with support label(s)
+                    let combinedLabel = item.label;
+                    if (selectedSupportLabels.length > 0) {
+                        combinedLabel += ` (${selectedSupportLabels.join(', ')})`;
+                    }
+
+                    // Use a unique ID for each quantity input based on its value
+                    const inputId = `qty_${item.value}`;
+                    structureTableHtml += `
+                        <tr>
+                            <td>${structureSerialNo++}</td>
+                            <td>${combinedLabel}</td>
+                            <td><input type="number" id="${inputId}" value="1" min="1" class="rounded-md"></td>
+                        </tr>
+                    `;
+                });
+            } else {
+                structureTableHtml += `
+                    <tr>
+                        <td colspan="3">No Structure Types Selected</td>
+                    </tr>
+                `;
+            }
+
+            structureTableHtml += `
+                    </tbody>
+                </table>
+            `;
+            structureSummaryTableContainer.innerHTML = structureTableHtml;
+        }
+
+        // Function to collect selected structure items with their full hierarchical labels
+        function getSelectedStructureItemsForSummary() {
+            const selectedItems = [];
+
+            function collectItems(nodes, currentLabels = []) {
+                nodes.forEach(node => {
+                    const checkbox = document.querySelector(`input[value="${node.value}"][name^="structure_"]`); // Matches primary or subtype checkbox
+                    if (checkbox && checkbox.checked) {
+                        if (node.subTypes && node.subTypes.length > 0) {
+                            const anyChildChecked = node.subTypes.some(subNode => {
+                                const subCheckbox = document.querySelector(`input[value="${subNode.value}"][name^="structure_"]`);
+                                return subCheckbox && subCheckbox.checked;
+                            });
+
+                            if (anyChildChecked) {
+                                collectItems(node.subTypes, [...currentLabels, node.label]);
+                            } else {
+                                // This node is checked, but none of its children are, so add this node
+                                selectedItems.push({
+                                    value: node.value,
+                                    label: [...currentLabels, node.label].join(' - ')
+                                });
+                            }
+                        } else {
+                            // This is a leaf node (or a node without subTypes) and it's checked, add it.
+                            selectedItems.push({
+                                value: node.value,
+                                label: [...currentLabels, node.label].join(' - ')
+                            });
+                        }
+                    }
+                });
+            }
+
+            collectItems(structureData);
+            return selectedItems;
+        }
+
+
+        // Function to simulate estimate generation (for UI demonstration)
+        function generateEstimate() {
+            const selectedVoltages = [];
+            document.querySelectorAll('input[name="voltage"]:checked').forEach(checkbox => {
+                const rlInput = document.querySelector(`.sap-rl-input[data-voltage-value="${checkbox.value}"]`);
+                selectedVoltages.push({
+                    value: checkbox.value,
+                    label: getLabelFromValue(checkbox.value),
+                    rl: rlInput ? parseFloat(rlInput.value) || 0 : 0
+                });
+            });
+
+            const selectedConductors = getSelectedCheckboxes('conductor');
+            const selectedSupports = getSelectedCheckboxes('support'); // Get selected support values
+            const selectedSupportLabels = selectedSupports.map(s => getLabelFromValue(s)); // Get labels for selected supports
+
+            const escalation = parseFloat(document.getElementById('escalation-percent').value) || 0;
+            const gst = parseFloat(document.getElementById('gst-percent').value) || 0;
+            const supervisionMaterial = parseFloat(document.getElementById('supervision-material').value) || 0;
+            const supervisionLabour = parseFloat(document.getElementById('supervision-labour').value) || 0;
+            const supervisionBoth = parseFloat(document.getElementById('supervision-both').value) || 0;
+            const adjustmentDescription = document.getElementById('adjustment-description').value.trim(); // Get description
+            const adjustmentAmount = parseFloat(document.getElementById('adjustment-amount').value) || 0;
+
+
+            let message = "Generating Estimate with the following selections:\n\n";
+
+            message += "Voltage Levels:\n";
+            if (selectedVoltages.length > 0) {
+                selectedVoltages.forEach(voltage => {
+                    message += `- ${voltage.label} (R/L: ${voltage.rl} km)\n`;
+                });
+            } else {
+                message += "- Not Selected\n";
+            }
+
+            message += `\nConductor Size: ${selectedConductors.length > 0 ? selectedConductors.map(c => getLabelFromValue(c)).join(', ') : 'Not Selected'}\n`;
+            message += `Support (Pole): ${selectedSupportLabels.length > 0 ? selectedSupportLabels.join(', ') : 'Not Selected'}\n`;
+
+            message += "\nStructure Type Quantities:\n";
+            const allSelectedStructuresForEstimate = getSelectedStructureItemsForSummary(); // Re-use the same logic
+
+            if (allSelectedStructuresForEstimate.length > 0) {
+                allSelectedStructuresForEstimate.forEach(item => {
+                    const inputId = `qty_${item.value}`;
+                    const quantityInput = document.getElementById(inputId);
+                    const quantity = quantityInput ? quantityInput.value : 'N/A';
+
+                    let combinedLabel = item.label;
+                    if (selectedSupportLabels.length > 0) {
+                        combinedLabel += ` (${selectedSupportLabels.join(', ')})`;
+                    }
+                    message += `- ${combinedLabel}: ${quantity}\n`;
+                });
+            } else {
+                message += "No Structure Types Selected\n";
+            }
+
+            message += "\nEscalation & Taxes:\n";
+            message += `- Escalation: ${escalation}%\n`;
+            message += `- GST: ${gst}%\n`;
+            message += `- Supervision Charges (Material Only): ${supervisionMaterial}%\n`;
+            message += `- Supervision Charges (Labour Only): ${supervisionLabour}%\n`;
+            message += `- Supervision Charges (Both Material & Labour): ${supervisionBoth}%\n`;
+            message += `- Adjustment: ${adjustmentDescription ? `(${adjustmentDescription}) ` : ''}Rs. ${adjustmentAmount.toFixed(2)}\n`;
+
+
+            message += "\nThis is a UI demonstration. Actual estimate generation logic would go here.";
+
+            // Display a custom message box instead of alert()
+            showMessageBox(message);
+        }
+
+        // Custom message box function
+        function showMessageBox(message) {
+            let messageBox = document.getElementById('customMessageBox');
+            if (!messageBox) {
+                messageBox = document.createElement('div');
+                messageBox.id = 'customMessageBox';
+                messageBox.style.cssText = `
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    background-color: #ffffff;
+                    border: 1px solid #ccc;
+                    border-radius: 8px;
+                    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+                    padding: 20px;
+                    z-index: 1000;
+                    max-width: 400px;
+                    width: 90%;
+                    font-family: 'Inter', sans-serif;
+                    color: #333;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                `;
+                document.body.appendChild(messageBox);
+            }
+
+            messageBox.innerHTML = `
+                <p style="white-space: pre-wrap; text-align: center; margin-bottom: 20px;">${message}</p>
+                <button onclick="closeMessageBox()" style="
+                    background-color: #3f51b5;
+                    color: white;
+                    padding: 10px 20px;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 1rem;
+                    font-weight: 500;
+                    transition: background-color 0.2s ease-in-out;
+                ">OK</button>
+            `;
+            messageBox.style.display = 'flex'; // Show the message box
+        }
+
+        function closeMessageBox() {
+            const messageBox = document.getElementById('customMessageBox');
+            if (messageBox) {
+                messageBox.style.display = 'none'; // Hide the message box
+            }
+        }
+
+        // --- Reset Functions for each tab ---
+
+        function resetVoltageTab() {
+            document.querySelectorAll('#voltage-checkboxes input[type="checkbox"]').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            document.querySelectorAll('.sap-rl-input').forEach(input => {
+                input.value = '0';
+            });
+            updateSummaryTab(); // Update summary after reset
+        }
+
+        function resetConductorTab() {
+            document.querySelectorAll('#conductor-checkboxes input[type="checkbox"]').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            updateSummaryTab(); // Update summary after reset
+        }
+
+        function resetSupportTab() {
+            document.querySelectorAll('#support-checkboxes input[type="checkbox"]').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            updateSummaryTab(); // Update summary after reset
+        }
+
+        function resetStructureTab() {
+            document.querySelectorAll('#structure-tree input[type="checkbox"]').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            updateSummaryTab(); // Update summary after reset
+        }
+
+        function resetSummaryTab() {
+            // Summary tab itself doesn't have inputs to reset directly.
+            // It reflects other tabs' selections.
+            // If the user truly wants to "reset" the summary, it implies resetting all previous tabs.
+            // For now, we'll just re-render it to show the current (potentially empty) state.
+            // If a global "Reset All" is desired, it would call all individual reset functions.
+            updateSummaryTab();
+            showMessageBox("Summary tab reset. Note: This only refreshes the display based on current selections. To clear data, use reset buttons on previous tabs.");
+        }
+
+        function resetEscalationTaxesTab() {
+            document.getElementById('escalation-percent').value = '0';
+            document.getElementById('gst-percent').value = '18';
+            document.getElementById('supervision-material').value = '0';
+            document.getElementById('supervision-labour').value = '0';
+            document.getElementById('supervision-both').value = '0';
+            document.getElementById('adjustment-description').value = '';
+            document.getElementById('adjustment-amount').value = '0';
+            updateSummaryTab(); // Update summary after reset
+        }
+    </script>
+</body>
+</html>
