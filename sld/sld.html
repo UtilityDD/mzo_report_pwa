@@ -1,0 +1,2073 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SLD Substation Designer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Link to your external equipmentSymbols.js file - MOVED HERE TO ENSURE IT LOADS FIRST -->
+    <script src="equipmentSymbols.js"></script>
+
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif; /* Ensure Inter is the primary font */
+            margin: 0;
+            overflow: hidden; /* Prevent body scroll */
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+            /* Added for better text rendering */
+            text-rendering: optimizeLegibility;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        #sidebar {
+            width: 250px;
+            background-color: #f3f4f6; /* Tailwind gray-100 */
+            padding: 1rem;
+            border-right: 1px solid #e5e7eb; /* Tailwind gray-200 */
+            overflow-y: auto;
+            flex-shrink: 0;
+            border-radius: 0.5rem;
+            margin: 0.5rem;
+        }
+        #canvas-container {
+            flex-grow: 1;
+            position: relative;
+            overflow: hidden; /* Important for D3 zoom/pan */
+            background-color: #ffffff; /* White background for canvas */
+            border-radius: 0.5rem;
+            margin: 0.5rem;
+            border: 1px solid #e5e7eb;
+        }
+        #sld-canvas{
+            width: 100%;
+            height: 100%;
+        }
+        svg {
+            display: block;
+        }
+        .grid-line {
+            stroke: #e5e7eb; /* Tailwind gray-200 */
+            stroke-width: 0.5;
+        }
+        .symbol-item {
+            display: flex;
+            flex-direction: row;      /* ⬅️ Make it horizontal */
+            align-items: center !important;
+            gap: 8px;
+            margin-bottom: 6px;
+            padding: 4px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #f9f9f9;
+            cursor: grab;
+        }
+        .symbol-item span {
+            font-size: 0.875rem;
+            color: #4b5563;
+            white-space: nowrap;
+        }
+        .symbol-icon {
+            display: inline-block;
+            line-height: 0;               /* removes vertical wiggle */
+            vertical-align: middle;
+        }
+        .symbol-icon svg {
+            display: block;
+            height: 28px;
+            width: 28px;
+            overflow: visible;
+        }
+        .symbol-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* Tailwind shadow-md */
+        }
+        .symbol-item svg {
+            width: 40px;
+            height: 40px;
+        }
+        .symbol-item span {
+            font-size: 0.875rem; /* Tailwind text-sm */
+            color: #4b5563; /* Tailwind gray-600 */
+            text-align: center;
+            /* Ensure font is applied correctly */
+            font-family: 'Inter', sans-serif;
+            white-space: nowrap; /* Prevent text wrapping */
+            overflow: hidden; /* Hide overflow */
+            text-overflow: ellipsis; /* Add ellipsis for overflowed text */
+            max-width: 100%; /* Ensure it respects parent width */
+            display: block; /* Make it a block element for max-width to work */
+        }
+        .draggable-symbol {
+            cursor: grabbing;
+        }
+        .placed-symbol {
+            /* Cursor for placed symbols when not dragging */
+            cursor: grab;
+        }
+        .placed-symbol:active {
+            /* Cursor for placed symbols when actively dragging */
+            cursor: grabbing;
+        }
+        /* Style for the drag proxy element */
+        #drag-proxy {
+            position: fixed;
+            pointer-events: none; /* Important: allows mouse events to pass through to elements below */
+            z-index: 1000; /* Ensure it's always on top */
+            opacity: 0.7; /* Make it slightly transparent */
+            transform: translate(-50%, -50%); /* Center the symbol on the cursor */
+        }
+        #drag-proxy svg {
+            width: 50px; /* Adjust size as needed for the drag visual */
+            height: 50px;
+        }
+
+        /* Styles for connection mode */
+        body.connection-mode {
+            cursor: crosshair;
+        }
+        .placed-symbol.selected-for-connection {
+            outline: 2px solid #3b82f6; /* Tailwind blue-500 */
+            outline-offset: 2px;
+        }
+        .connection-line {
+            stroke: #1f2937;
+            stroke-width: 2;
+            fill: none;
+            pointer-events: visibleStroke; /* ✅ Allow hover & cursor on stroke only */
+            cursor: crosshair;             /* ✅ Or use 'pointer' or 'move' if preferred */
+            transition: stroke 0.2s ease;
+        }
+        .connection-line:hover {
+            stroke: #3b82f6; /* Tailwind blue-500 */
+        }
+
+        #temp-line {
+            stroke: #9ca3af; /* Tailwind gray-400 */
+            stroke-width: 2;
+            stroke-dasharray: 5 5; /* Dashed line for temporary connection */
+            fill: none;
+            pointer-events: none;
+        }
+        .sidebar-button {
+            @apply w-full px-4 py-2 mt-4 text-white font-semibold rounded-md shadow-md transition-colors duration-200;
+            background-color: #2563eb; /* Tailwind blue-600 */
+        }
+        .sidebar-button:hover {
+            background-color: #1d4ed8; /* Tailwind blue-700 */
+        }
+        .sidebar-button.active {
+            background-color: #dc2626; /* Tailwind red-600 */
+        }
+        .sidebar-button.active:hover {
+            background-color: #b91c1c; /* Tailwind red-700 */
+        }
+
+        /* Rotation Handle Styles */
+        .rotation-handle {
+            cursor: pointer;
+            opacity: 0; /* Hidden by default */
+            transition: opacity 0.2s ease-in-out;
+            pointer-events: none; /* Initially non-interactive */
+        }
+        .placed-symbol:hover .rotation-handle {
+            opacity: 1; /* Visible on symbol hover */
+            pointer-events: all; /* Interactive on symbol hover */
+        }
+        .rotation-handle circle {
+            fill: #3b82f6; /* Blue background */
+            stroke: #1d4ed8; /* Darker blue border */
+            stroke-width: 1;
+        }
+        .rotation-handle path {
+            fill: none;
+            stroke: white; /* White arrow */
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        /* Selection Border Styles */
+        .placed-symbol.selected-element {
+            outline: 2px solid #3b82f6; /* Blue border for symbols */
+            outline-offset: 2px;
+        }
+        /* Styles for text elements */
+        .draggable-text:hover foreignObject div[data-text-type="general"] {
+            border: 2px dashed #2563eb !important;
+        }
+
+        /* Default non-editable text state */
+        .draggable-text foreignObject div[data-text-type="general"] {
+            padding: 2px;
+            border: none;
+            white-space: pre-wrap;
+            overflow: visible; /* Changed to visible to ensure all content is shown */
+            resize: both; /* Changed to both for user resizing */
+            font-family: Arial, sans-serif; /* Explicitly set font to Arial */
+            font-size: 14px;
+            outline: none;
+            min-width: 60px;
+            min-height: 20px;
+            transition: border 0.2s ease;
+            background: transparent;
+            /* Added for better autofit */
+            box-sizing: border-box; /* Include padding in width/height calculations */
+            line-height: 1.2; /* Adjust line height for better spacing */
+        }
+        .draggable-text.selected-element foreignObject div[data-text-type='general'] {
+            border: 1px solid #3b82f6 !important; /* Blue border for text boxes */
+        }
+        /* Ensure foreignObject itself has a min-height and is block-level */
+        .draggable-text foreignObject {
+            min-height: 24px; /* Ensure a minimum height for the foreignObject */
+            display: block; /* Ensure it behaves as a block element */
+        }
+
+
+        #sidebar h2 {
+            position: sticky;
+            top: 0;
+            background: #f3f4f6;
+            z-index: 5;
+            padding-top: 1rem;
+        }
+        .symbol-label {
+            font-size: 14px;
+            color: #333;
+            line-height: 1;
+            vertical-align: middle;
+        }
+        @media print {
+            body {
+                margin: 0;
+                padding: 0;
+            }
+
+            #top-toolbar,
+            #sidebar {
+                display: none !important;
+            }
+
+            #canvas-container {
+                padding: 0 !important;
+                margin: 0 !important;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh; /* Full page height */
+            }
+
+            svg {
+                width: 100%;
+                height: auto;
+                max-height: 95vh;
+                max-width: 95vw;
+            }
+
+            @page {
+                margin: 0;
+                size: auto;
+            }
+        }
+
+        @media print {
+            #selection-box {
+                display: none !important;
+            }
+        }
+        .placed-symbol:hover {
+            outline: 2px dashed #2563eb;
+        }
+
+        /* Modal Styles */
+        #text-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            visibility: hidden;
+            opacity: 0;
+            transition: visibility 0s, opacity 0.3s ease-in-out;
+        }
+        #text-modal-overlay.visible {
+            visibility: visible;
+            opacity: 1;
+        }
+        #text-modal {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            width: 400px;
+            max-width: 90%;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        #modal-text-content {
+            width: 100%;
+            height: 100px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            padding: 5px;
+            font-family: 'Inter', sans-serif; /* Ensure Inter is the primary font */
+            font-size: 14px;
+            color: #333;
+            resize: vertical;
+        }
+        #text-modal .flex {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        #text-modal label {
+            font-size: 0.875rem;
+            color: #4b5563;
+        }
+        #text-modal select,
+        #text-modal input[type="color"] {
+            border: 1px solid #d1d5db;
+            border-radius: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.875rem;
+        }
+        #text-modal .button-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap; /* Allow buttons to wrap */
+        }
+        #text-modal .button-group button {
+            @apply px-3 py-1 rounded-md text-sm font-medium shadow-sm transition-colors duration-200;
+            background-color: #e5e7eb; /* Tailwind gray-200 */
+            color: #374151; /* Tailwind gray-700 */
+        }
+        #text-modal .button-group button:hover {
+            background-color: #d1d5db; /* Tailwind gray-300 */
+        }
+        #text-modal .button-group button.active {
+            background-color: #3b82f6; /* Tailwind blue-500 */
+            color: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        #text-modal .button-group button.active:hover {
+            background-color: #2563eb; /* Tailwind blue-600 */
+        }
+        #modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        #modal-actions button {
+            @apply px-4 py-2 rounded-md font-semibold shadow-md transition-colors duration-200;
+        }
+        #modal-actions #modal-ok-button {
+            background-color: #2563eb; /* Tailwind blue-600 */
+            color: white;
+        }
+        #modal-actions #modal-ok-button:hover {
+            background-color: #1d4ed8; /* Tailwind blue-700 */
+        }
+        #modal-actions #modal-cancel-button {
+            background-color: #f3f4f6; /* Tailwind gray-100 */
+            color: #374151; /* Tailwind gray-700 */
+        }
+        #modal-actions #modal-cancel-button:hover {
+            background-color: #e5e7eb; /* Tailwind gray-200 */
+        }
+    </style>
+</head>
+<body>
+<div id="sidebar" style="margin-top: 60px;" class="rounded-lg shadow-lg">
+    <div id="symbol-list">
+    </div>
+    <div class="mt-6">
+        <label for="grid-size" class="block text-sm font-medium text-gray-700 mb-2">Grid Size:</label>
+        <input type="range" id="grid-size" min="10" max="100" value="20" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+        <span id="grid-size-value" class="text-sm text-gray-500 mt-1 block text-center">20px</span>
+    </div>
+</div>
+
+<div id="top-toolbar" class="flex items-center justify-between px-4 py-2 bg-gray-100 border-b border-gray-300 shadow-md w-full fixed top-0 left-0 z-50">
+    <!-- Logo with Icon -->
+    <div class="flex items-center gap-2 text-xl font-semibold text-blue-600">
+        <img src="https://placehold.co/24x24/000000/FFFFFF?text=SLD" alt="EasySLD Icon" class="w-6 h-6 rounded-full">
+        EasySLD
+    </div>
+
+    <!-- Export + Connect -->
+    <div class="flex items-center gap-3">
+        <select id="page-size" class="text-sm border rounded px-2 py-1">
+            <option value="A4">A4</option>
+            <option value="A3">A3</option>
+            <option value="A2">A2</option>
+            <option value="Poster">Poster</option>
+            <option value="Custom">Custom</option>
+        </select>
+        <select id="orientation" class="text-sm border rounded px-2 py-1">
+            <option value="portrait">Portrait</option>
+            <option value="landscape">Landscape</option>
+        </select>
+        <input type="number" id="custom-width" placeholder="Width (mm)" class="hidden text-sm border rounded px-2 py-1 w-20">
+        <input type="number" id="custom-height" placeholder="Height (mm)" class="hidden text-sm border rounded px-2 py-1 w-20">
+
+        <button onclick="exportToPNG()" class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-200">📸 PNG</button>
+        <button onclick="exportToPDF()" class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-200">📄 PDF</button>
+        <button onclick="preparePrint()"
+                class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-200"
+                title="Print Preview">
+            🖨️ Print Preview
+        </button>
+
+        <!-- New: Add Text Button -->
+        <button id="add-text-button"
+                class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-200"
+                title="Add Text">
+            📝 Insert Text
+        </button>
+
+        <!-- New: Save JSON Button -->
+        <button onclick="exportToJson()"
+                class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-200"
+                title="Save Design as JSON">
+            💾 Save JSON
+        </button>
+
+        <button id="connect-button"
+                class="px-2 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                data-active="false" title="Connect Symbols">
+            🔗 Connect
+        </button>
+    </div>
+
+    <!-- Zoom -->
+    <div class="flex items-center gap-2 bg-white px-2 py-1 border rounded shadow-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+             viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+             class="text-gray-600">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            <line x1="11" y1="8" x2="11" y2="14"/>
+            <line x1="8" y1="11" x2="14" y2="11"/>
+        </svg>
+        <span id="zoom-percent" class="text-sm w-12 text-center">100%</span>
+
+        <button id="zoom-lock-button"
+                class="p-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+                title="Toggle Zoom Lock">
+            🔒
+        </button>
+        <button onclick="fitToView()"
+                class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-200"
+                title="Zoom to Fit">
+            🔍 Fit
+        </button>
+    </div>
+</div>
+
+<div id="canvas-container" class="rounded-lg shadow-lg pt-[60px]">
+    <svg id="sld-canvas"></svg>
+</div>
+
+<!-- Text Editing Modal -->
+<div id="text-modal-overlay">
+    <div id="text-modal">
+        <h3 class="text-lg font-semibold">Edit Text</h3>
+        <textarea id="modal-text-content" placeholder="Enter your text here..."></textarea>
+        <div class="flex items-center gap-2 mb-4">
+            <label for="modal-font-size-select" class="text-sm">Font Size:</label>
+            <select id="modal-font-size-select" class="text-sm border rounded px-2 py-1">
+                <option value="12px">12px</option>
+                <option value="14px" selected>14px</option>
+                <option value="16px">16px</option>
+                <option value="18px">18px</option>
+                <option value="20px">20px</option>
+                <option value="24px">24px</option>
+            </select>
+            <label for="modal-font-family-select" class="text-sm">Font Family:</label>
+            <select id="modal-font-family-select" class="text-sm border rounded px-2 py-1">
+                <option value="Arial, sans-serif" selected>Arial</option> <!-- Changed default to Arial -->
+                <option value="Inter, sans-serif">Inter</option>
+                <option value="Verdana, sans-serif">Verdana</option>
+                <option value="Courier New, monospace">Courier New</option>
+            </select>
+            <label for="modal-font-color-input" class="text-sm">Font Color:</label>
+            <input type="color" id="modal-font-color-input" value="#000000" class="w-8 h-8 p-0 border rounded">
+        </div>
+        <div class="button-group">
+            <button id="modal-bold-btn" onclick="applyModalFormatting('bold', this, event)"><b>B</b></button>
+            <button id="modal-italic-btn" onclick="applyModalFormatting('italic', this, event)"><i>I</i></button>
+            <button id="modal-underline-btn" onclick="applyModalFormatting('underline', this, event)"><u>U</u></button>
+            <button id="modal-align-left-btn" onclick="applyModalFormatting('justifyLeft', this, event)" title="Align Left">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-align-left"><line x1="21" y1="10" x2="3" y2="10"/><line x1="13" y1="6" x2="3" y2="6"/><line x1="13" y1="14" x2="3" y2="14"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
+            </button>
+            <button id="modal-align-center-btn" onclick="applyModalFormatting('justifyCenter', this, event)" title="Align Center">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-align-center"><line x1="21" y1="10" x2="3" y2="10"/><line x1="17" y1="6" x2="7" y2="6"/><line x1="17" y1="14" x2="7" y2="14"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
+            </button>
+            <button id="modal-align-right-btn" onclick="applyModalFormatting('justifyRight', this, event)" title="Align Right">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-align-right"><line x1="21" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="11" y2="6"/><line x1="21" y1="14" x2="11" y2="14"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
+            </button>
+            <button id="modal-align-justify-btn" onclick="applyModalFormatting('justifyFull', this, event)" title="Justify">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-align-justify"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            </button>
+        </div>
+        <div id="modal-actions">
+            <button id="modal-ok-button">OK</button>
+            <button id="modal-cancel-button">Cancel</button>
+        </div>
+    </div>
+</div>
+
+
+<script>
+    let currentGridSize = 55;
+    let zoom;
+    let svg;
+    let g; // Group for zoomable content
+    let gridGroup; // Group for grid lines
+    let symbolsGroup; // Group for placed symbols
+    let connectionsGroup; // Group for connection lines
+    let draggedSymbol = null; // To store the currently dragged symbol data
+    let currentTransform = d3.zoomIdentity; // Store current zoom/pan transform
+    let dragProxyElement = null; // To store the temporary element shown during drag
+
+    let connectionMode = false;
+    let firstConnectionPoint = null; // Stores the D3 selection of the first symbol clicked for connection
+    let tempLine = null; // D3 selection for the temporary line being drawn
+
+    // Array to store all placed symbols and connections
+    let placedSymbols = [];
+    let connections = [];
+
+    // Global variables for text editing
+    let currentEditable = null; // The actual contenteditable div inside foreignObject
+    let editingTextId = null; // ID of the text element currently being edited in the modal
+    let addTextMode = false;
+    let floatingTextIcon = null;
+
+    let zoomLocked = false;
+    let currentlySelectedElement = null; // D3 selection of the currently selected element's G group (either symbol or text)
+
+    // Global variable to store selection range
+    let savedSelectionRange = null;
+
+    // Helper function to save the current text selection
+    function saveSelection() {
+        if (window.getSelection) {
+            const selection = window.getSelection();
+            if (selection.rangeCount > 0) {
+                savedSelectionRange = selection.getRangeAt(0);
+            }
+        } else if (document.selection && document.selection.createRange) {
+            savedSelectionRange = document.selection.createRange();
+        }
+    }
+
+    // Helper function to restore the saved text selection
+    function restoreSelection() {
+        if (savedSelectionRange) {
+            if (window.getSelection) {
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(savedSelectionRange);
+            } else if (document.selection && document.selection.createRange) {
+                savedSelectionRange.select();
+            }
+            // Do not clear savedSelectionRange immediately, as it might be needed for subsequent actions
+        }
+    }
+
+    // Helper function to generate unique IDs
+    const generateId = () => `_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Function to calculate the intersection point of a line segment with a rectangle's perimeter
+    // This is a simplified version for axis-aligned connections, for more complex shapes
+    // or rotated rectangles, a more advanced algorithm would be needed.
+    function getClosestPointOnRect(lineP1, lineP2, rect) {
+        const { x: rX, y: rY, width: rW, height: rH } = rect;
+        const points = [];
+
+        // Check intersection with top edge
+        const topY = rY;
+        if (lineP2.y - lineP1.y !== 0) { // Avoid division by zero
+            const intersectX = lineP1.x + (lineP2.x - lineP1.x) * (topY - lineP1.y) / (lineP2.y - lineP1.y);
+            if (intersectX >= rX && intersectX <= rX + rW) {
+                points.push({ x: intersectX, y: topY });
+            }
+        }
+
+        // Check intersection with bottom edge
+        const bottomY = rY + rH;
+        if (lineP2.y - lineP1.y !== 0) { // Avoid division by zero
+            const intersectX = lineP1.x + (lineP2.x - lineP1.x) * (bottomY - lineP1.y) / (lineP2.y - lineP1.y);
+            if (intersectX >= rX && intersectX <= rX + rW) {
+                points.push({ x: intersectX, y: bottomY });
+            }
+        }
+
+        // Check intersection with left edge
+        const leftX = rX;
+        if (lineP2.x - lineP1.x !== 0) { // Avoid division by zero
+            const intersectY = lineP1.y + (lineP2.y - lineP1.y) * (leftX - lineP1.x) / (lineP2.x - lineP1.x);
+            if (intersectY >= rY && intersectY <= rY + rH) {
+                points.push({ x: leftX, y: intersectY });
+            }
+        }
+
+        // Check intersection with right edge
+        const rightX = rX + rW;
+        if (lineP2.x - lineP1.x !== 0) { // Avoid division by zero
+            const intersectY = lineP1.y + (lineP2.y - lineP1.y) * (rightX - lineP1.x) / (lineP2.x - lineP1.x);
+            if (intersectY >= rY && intersectY <= rY + rH) {
+                points.push({ x: rightX, y: intersectY });
+            }
+        }
+
+        // If no intersection, return the closest corner or center (fallback)
+        if (points.length === 0) {
+            // Fallback to center if no clear intersection (e.g., line is entirely inside or outside but not crossing)
+            return { x: rX + rW / 2, y: rY + rH / 2 };
+        }
+
+        // Find the point closest to lineP1
+        let closestPoint = points[0];
+        let minDist = Math.hypot(points[0].x - lineP1.x, points[0].y - lineP1.y);
+
+        for (let i = 1; i < points.length; i++) {
+            const dist = Math.hypot(points[i].x - lineP1.x, points[i].y - lineP1.y);
+            if (dist < minDist) {
+                minDist = dist;
+                closestPoint = points[i];
+            }
+        }
+        return closestPoint;
+    }
+
+
+    function handleConnectionClick(event) {
+        if (!connectionMode) return;
+        event.stopImmediatePropagation();
+        event.preventDefault();
+
+        const domGroup = event.target.closest(".placed-symbol");
+        const clickedSymbolGroup = domGroup ? d3.select(domGroup) : null;
+
+        if (!clickedSymbolGroup) {
+            // If clicked outside, cancel any selection
+            if (firstConnectionPoint) {
+                firstConnectionPoint.classed('selected-for-connection', false);
+                firstConnectionPoint = null;
+            }
+            if (tempLine) {
+                tempLine.remove();
+                tempLine = null;
+            }
+            return;
+        }
+
+        const clickedSymbolId = clickedSymbolGroup.attr('data-id');
+        const clickedSymbolData = placedSymbols.find(s => s.id === clickedSymbolId);
+
+        if (!firstConnectionPoint) {
+            // First symbol selected
+            firstConnectionPoint = clickedSymbolGroup;
+            firstConnectionPoint.classed('selected-for-connection', true);
+
+            // Start temp line from center of first symbol
+            const startCenter = {
+                x: clickedSymbolData.x + currentGridSize / 2,
+                y: clickedSymbolData.y + currentGridSize / 2
+            };
+
+            tempLine = connectionsGroup.append("line")
+                .attr("id", "temp-line")
+                .attr("x1", startCenter.x)
+                .attr("y1", startCenter.y)
+                .attr("x2", startCenter.x)
+                .attr("y2", startCenter.y);
+
+        } else {
+            // Same symbol clicked again? Cancel.
+            if (clickedSymbolGroup.node() === firstConnectionPoint.node()) {
+                firstConnectionPoint.classed('selected-for-connection', false);
+                firstConnectionPoint = null;
+                if (tempLine) tempLine.remove();
+                tempLine = null;
+                return;
+            }
+
+            // Second symbol clicked — draw the connection
+            const startSymbolId = firstConnectionPoint.attr('data-id');
+            const startSymbolData = placedSymbols.find(s => s.id === startSymbolId);
+
+            const startCenter = {
+                x: startSymbolData.x + currentGridSize / 2,
+                y: startSymbolData.y + currentGridSize / 2
+            };
+            const endCenter = {
+                x: clickedSymbolData.x + currentGridSize / 2,
+                y: clickedSymbolData.y + currentGridSize / 2
+            };
+
+            const p1 = startSymbolData.name === "Bus Junction"
+                ? startCenter
+                : getClosestPointOnRect(startCenter, endCenter, {
+                    x: startSymbolData.x,
+                    y: startSymbolData.y,
+                    width: currentGridSize,
+                    height: currentGridSize
+                });
+
+            const p2 = clickedSymbolData.name === "Bus Junction"
+                ? endCenter
+                : getClosestPointOnRect(endCenter, startCenter, {
+                    x: clickedSymbolData.x,
+                    y: clickedSymbolData.y,
+                    width: currentGridSize,
+                    height: currentGridSize
+                });
+
+            // Store the connection
+            connections.push({
+                id: generateId(),
+                startSymbolId: startSymbolId,
+                endSymbolId: clickedSymbolId,
+                startX: p1.x,
+                startY: p1.y,
+                endX: p2.x,
+                endY: p2.y
+            });
+
+            redrawConnections();
+
+            // Reset state
+            firstConnectionPoint.classed('selected-for-connection', false);
+            firstConnectionPoint = null;
+            if (tempLine) tempLine.remove();
+            tempLine = null;
+
+            toggleConnectionMode(false); // ✅ exit connection mode after successful draw
+        }
+    }
+
+
+    function toggleConnectionMode(forceOff = false) {
+        connectionMode = forceOff ? false : !connectionMode;
+        document.body.classList.toggle('connection-mode', connectionMode);
+
+        const connectButton = document.getElementById('connect-button');
+
+        if (connectionMode) {
+            connectButton.dataset.active = "true";
+            connectButton.style.backgroundColor = "#dc2626";
+            connectButton.textContent = "🛑 Connecting...";
+
+            // ✅ Bind connection click logic only when active
+            symbolsGroup.selectAll(".placed-symbol").on("click.connection", handleConnectionClick);
+
+        } else {
+            connectButton.dataset.active = "false";
+            connectButton.style.backgroundColor = "#2563eb";
+            connectButton.textContent = "🔗 Connect";
+
+            // ✅ Remove only the connection click handler
+            symbolsGroup.selectAll(".placed-symbol").on("click.connection", null);
+        }
+
+        setSymbolDragBehavior(!connectionMode);
+
+        if (firstConnectionPoint) {
+            firstConnectionPoint.classed('selected-for-connection', false);
+            firstConnectionPoint = null;
+        }
+
+        if (tempLine) {
+            tempLine.remove();
+            tempLine = null;
+        }
+    }
+
+    // Function to clear any active selection
+    function clearSelection() {
+        if (currentlySelectedElement) {
+            currentlySelectedElement.classed('selected-element', false);
+            // If it's a text box, also revert its border
+            const textDiv = currentlySelectedElement.select("foreignObject div[data-text-type='general']").node();
+            if (textDiv) {
+                textDiv.style.border = "none"; // Revert to no border
+            }
+            currentlySelectedElement = null;
+        }
+    }
+
+    // Function to open the text editing modal
+    function openTextModal(textElement) {
+        const modalOverlay = document.getElementById('text-modal-overlay');
+        const modalTextContent = document.getElementById('modal-text-content');
+        const modalFontSize = document.getElementById('modal-font-size-select');
+        const modalFontFamily = document.getElementById('modal-font-family-select');
+        const modalFontColor = document.getElementById('modal-font-color-input');
+        const modalBoldButton = document.getElementById('modal-bold-btn');
+        const modalItalicButton = document.getElementById('modal-italic-btn');
+        const modalUnderlineButton = document.getElementById('modal-underline-btn');
+        const modalAlignLeftButton = document.getElementById('modal-align-left-btn');
+        const modalAlignCenterButton = document.getElementById('modal-align-center-btn');
+        const modalAlignRightButton = document.getElementById('modal-align-right-btn');
+        const modalAlignJustifyButton = document.getElementById('modal-align-justify-btn');
+
+
+        // Set the current editable element and its ID
+        currentEditable = textElement;
+        editingTextId = d3.select(textElement.parentNode.parentNode).attr('data-id'); // Get ID from the grand-parent group
+
+        // Populate modal with current text and styles
+        modalTextContent.value = textElement.textContent;
+        modalFontSize.value = textElement.style.fontSize || '14px';
+        modalFontFamily.value = textElement.style.fontFamily || 'Arial, sans-serif'; // Default to Arial
+        modalFontColor.value = textElement.style.color || '#000000';
+
+        // Set active states for bold, italic, underline buttons
+        modalBoldButton.classList.toggle('active', textElement.style.fontWeight === 'bold');
+        modalItalicButton.classList.toggle('active', textElement.style.fontStyle === 'italic');
+        modalUnderlineButton.classList.toggle('active', textElement.style.textDecorationLine === 'underline');
+
+        // Set active states for alignment buttons
+        const textAlign = textElement.style.textAlign || 'left'; // Default to left
+        modalAlignLeftButton.classList.toggle('active', textAlign === 'left');
+        modalAlignCenterButton.classList.toggle('active', textAlign === 'center');
+        modalAlignRightButton.classList.toggle('active', textAlign === 'right');
+        modalAlignJustifyButton.classList.toggle('active', textAlign === 'justify');
+
+
+        modalOverlay.classList.add('visible');
+        modalTextContent.focus(); // Focus on the textarea
+    }
+
+    // Function to close the text editing modal
+    function closeTextModal() {
+        const modalOverlay = document.getElementById('text-modal-overlay');
+        modalOverlay.classList.remove('visible');
+        currentEditable = null;
+        editingTextId = null;
+    }
+
+    // Function to resize the foreignObject based on its content
+    function resizeForeignObject(textDiv, foreignObject) {
+        if (!textDiv || !foreignObject.node()) {
+            return;
+        }
+
+        // Temporarily reset height and overflow to get accurate scrollHeight
+        const originalHeight = foreignObject.attr("height");
+        const originalDivHeight = textDiv.style.height;
+        const originalDivOverflow = textDiv.style.overflow;
+
+        foreignObject.attr("height", "auto");
+        textDiv.style.height = "auto";
+        textDiv.style.overflow = "hidden"; // Hide overflow to get true scrollHeight
+
+        requestAnimationFrame(() => {
+            const contentHeight = textDiv.scrollHeight;
+            const contentWidth = textDiv.scrollWidth;
+
+            // Restore original styles before applying new dimensions
+            foreignObject.attr("height", originalHeight);
+            textDiv.style.height = originalDivHeight;
+            textDiv.style.overflow = originalDivOverflow;
+
+            // Apply new dimensions with a buffer
+            foreignObject
+                .attr("width", contentWidth + 8) // Add a buffer for width
+                .attr("height", contentHeight + 8); // Add a buffer for height
+        });
+    }
+
+
+    // Function to apply changes from the modal back to the text element
+    function applyModalTextChanges() {
+        if (currentEditable && editingTextId) {
+            const modalTextContent = document.getElementById('modal-text-content');
+            const modalFontSize = document.getElementById('modal-font-size-select');
+            const modalFontFamily = document.getElementById('modal-font-family-select');
+            const modalFontColor = document.getElementById('modal-font-color-input');
+
+            currentEditable.textContent = modalTextContent.value;
+            currentEditable.style.fontSize = modalFontSize.value;
+            currentEditable.style.fontFamily = modalFontFamily.value;
+            currentEditable.style.color = modalFontColor.value;
+
+            // Apply bold, italic, underline based on button active states
+            currentEditable.style.fontWeight = document.getElementById('modal-bold-btn').classList.contains('active') ? 'bold' : 'normal';
+            currentEditable.style.fontStyle = document.getElementById('modal-italic-btn').classList.contains('active') ? 'italic' : 'normal';
+            currentEditable.style.textDecorationLine = document.getElementById('modal-underline-btn').classList.contains('active') ? 'underline' : 'none';
+
+            // Apply text alignment
+            if (document.getElementById('modal-align-left-btn').classList.contains('active')) {
+                currentEditable.style.textAlign = 'left';
+            } else if (document.getElementById('modal-align-center-btn').classList.contains('active')) {
+                currentEditable.style.textAlign = 'center';
+            } else if (document.getElementById('modal-align-right-btn').classList.contains('active')) {
+                currentEditable.style.textAlign = 'right';
+            } else if (document.getElementById('modal-align-justify-btn').classList.contains('active')) {
+                currentEditable.style.textAlign = 'justify';
+            } else {
+                currentEditable.style.textAlign = ''; // Clear alignment if none active
+            }
+
+            // Recalculate foreignObject size after text content/style change
+            const foreignObject = d3.select(currentEditable.parentNode);
+            resizeForeignObject(currentEditable, foreignObject);
+        }
+        closeTextModal();
+    }
+
+    // Text formatting functions for the modal's textarea
+    function applyModalFormatting(command, button, event) {
+        if (event) event.preventDefault(); // Prevent button from taking focus
+        if (currentEditable) {
+            currentEditable.focus(); // Ensure focus for execCommand
+            restoreSelection(); // Restore selection (though modal is for overall style, this is good practice)
+
+            // For alignment commands, deactivate all other alignment buttons
+            const alignmentCommands = ['justifyLeft', 'justifyCenter', 'justifyRight', 'justifyFull'];
+            if (alignmentCommands.includes(command)) {
+                document.getElementById('modal-align-left-btn').classList.remove('active');
+                document.getElementById('modal-align-center-btn').classList.remove('active');
+                document.getElementById('modal-align-right-btn').classList.remove('active');
+                document.getElementById('modal-align-justify-btn').classList.remove('active');
+            }
+
+            document.execCommand(command, false, null);
+            button.classList.toggle('active'); // Toggle active class on the button
+        }
+    }
+
+    function changeModalFontSize(size) {
+        if (currentEditable) {
+            currentEditable.style.fontSize = size;
+        }
+    }
+
+    function changeModalFontFamily(font) {
+        if (currentEditable) {
+            currentEditable.style.fontFamily = font;
+        }
+    }
+
+    function changeModalFontColor(color) {
+        if (currentEditable) {
+            currentEditable.style.color = color;
+        }
+    }
+
+    // Global helper function for export fitting
+    function fitForExport(contentBBox, targetWidthPx, targetHeightPx, padding = 50) {
+        const minX = contentBBox.x - padding;
+        const minY = contentBBox.y - padding;
+        const contentWidth = contentBBox.width + padding * 2;
+        const contentHeight = contentBBox.height + padding * 2;
+
+        const scale = Math.min(targetWidthPx / contentWidth, targetHeightPx / contentHeight);
+        const tx = (targetWidthPx - contentWidth * scale) / 2 - minX * scale;
+        const ty = (targetHeightPx - contentHeight * scale) / 2 - minY * scale;
+
+        return d3.zoomIdentity.translate(tx, ty).scale(scale);
+    }
+
+    // --- New functions for top toolbar text formatting ---
+    // These functions are now unused as the toolbar is removed.
+    // Keeping them for reference in case the toolbar is re-added later.
+    function applyToolbarTextCommand(command, button, event) {
+        if (event) event.preventDefault(); // Prevent button from taking focus
+        if (currentlySelectedElement && currentlySelectedElement.classed('draggable-text')) {
+            const textDiv = currentlySelectedElement.select("foreignObject div[data-text-type='general']").node();
+            if (textDiv) {
+                saveSelection(); // Save selection before button click potentially loses focus
+                textDiv.focus(); // Ensure focus is on the contenteditable div
+                restoreSelection(); // Restore selection
+
+                document.execCommand(command, false, null);
+                button.classList.toggle('active'); // Toggle active class on the button
+                resizeForeignObject(textDiv, d3.select(textDiv.parentNode));
+            }
+        }
+    }
+
+    function changeToolbarFontSize(size, event) {
+        if (event) event.preventDefault(); // Prevent dropdown from taking focus
+        if (currentlySelectedElement && currentlySelectedElement.classed('draggable-text')) {
+            const textDiv = currentlySelectedElement.select("foreignObject div[data-text-type='general']").node();
+            if (textDiv) {
+                saveSelection(); // Save selection
+                textDiv.focus(); // Focus
+                restoreSelection(); // Restore
+                document.execCommand('fontSize', false, size); // Apply font size
+                textDiv.style.fontSize = size; // Also apply directly for visual consistency
+                resizeForeignObject(textDiv, d3.select(textDiv.parentNode));
+            }
+        }
+    }
+
+    function changeToolbarFontFamily(font, event) {
+        if (event) event.preventDefault(); // Prevent dropdown from taking focus
+        if (currentlySelectedElement && currentlySelectedElement.classed('draggable-text')) {
+            const textDiv = currentlySelectedElement.select("foreignObject div[data-text-type='general']").node();
+            if (textDiv) {
+                saveSelection(); // Save selection
+                textDiv.focus(); // Focus
+                restoreSelection(); // Restore
+                document.execCommand('fontName', false, font); // Apply font family
+                textDiv.style.fontFamily = font; // Also apply directly for visual consistency
+                resizeForeignObject(textDiv, d3.select(textDiv.parentNode));
+            }
+        }
+    }
+
+    function changeToolbarFontColor(color, event) {
+        if (event) event.preventDefault(); // Prevent color picker from taking focus
+        if (currentlySelectedElement && currentlySelectedElement.classed('draggable-text')) {
+            const textDiv = currentlySelectedElement.select("foreignObject div[data-text-type='general']").node();
+            if (textDiv) {
+                saveSelection(); // Save selection
+                textDiv.focus(); // Focus
+                restoreSelection(); // Restore
+                document.execCommand('foreColor', false, color); // Apply font color
+                textDiv.style.color = color; // Also apply directly for visual consistency
+            }
+        }
+    }
+    // --- End new functions for top toolbar text formatting ---
+
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('zoom-percent').textContent = `${(currentTransform.k * 100).toFixed(0)}%`;
+
+        const canvasContainer = document.getElementById('canvas-container');
+        const sldCanvas = document.getElementById('sld-canvas');
+        const symbolList = document.getElementById('symbol-list');
+        const gridSizeInput = document.getElementById('grid-size');
+        const gridSizeValueSpan = document.getElementById('grid-size-value');
+        const connectButton = document.getElementById('connect-button');
+        const zoomButton = document.getElementById("zoom-lock-button");
+        const addTextButton = document.getElementById("add-text-button");
+
+        // Modal buttons listeners
+        document.getElementById('modal-ok-button').addEventListener('click', applyModalTextChanges);
+        document.getElementById('modal-cancel-button').addEventListener('click', closeTextModal);
+
+        // Update modal's font size/family/color when changed from within modal
+        document.getElementById('modal-font-size-select').addEventListener('change', function() { changeModalFontSize(this.value); });
+        document.getElementById('modal-font-family-select').addEventListener('change', function() { changeModalFontFamily(this.value); });
+        document.getElementById('modal-font-color-input').addEventListener('input', function() { changeModalFontColor(this.value); });
+
+
+        // Initialize D3 canvas
+        svg = d3.select("#sld-canvas");
+        g = svg.append("g"); // Main group for all canvas content
+        gridGroup = g.append("g").attr("class", "grid-group"); // Group for grid lines
+        connectionsGroup = g.append("g").attr("class", "connections-group"); // Group for connection lines
+        symbolsGroup = g.append("g").attr("class", "symbols-group"); // Group for placed symbols
+
+        // Add Text Button Listener
+        addTextButton.addEventListener("click", () => {
+            addTextMode = true;
+            svg.style("cursor", "text");
+
+            // Create floating icon
+            if (!floatingTextIcon) {
+                floatingTextIcon = document.createElement("div");
+                floatingTextIcon.innerHTML = "�";
+                floatingTextIcon.style.position = "fixed";
+                floatingTextIcon.style.zIndex = "9999";
+                floatingTextIcon.style.pointerEvents = "none";
+                floatingTextIcon.style.fontSize = "18px";
+                document.body.appendChild(floatingTextIcon);
+            }
+
+            document.addEventListener("mousemove", moveFloatingTextIcon);
+        });
+
+        function moveFloatingTextIcon(e) {
+            if (floatingTextIcon) {
+                floatingTextIcon.style.left = `${e.clientX + 10}px`;
+                floatingTextIcon.style.top = `${e.clientY + 10}px`;
+            }
+        }
+
+        svg.on("click.insertText", function (event) {
+            if (!addTextMode) return;
+
+            const [x, y] = d3.pointer(event, g.node());
+            const textId = generateId();
+
+            const textGroup = g.append("g")
+                .attr("class", "draggable-text")
+                .attr("data-id", textId)
+                .attr("transform", `translate(${x}, ${y})`);
+
+            const foreignObject = textGroup.append("foreignObject")
+                .attr("width", 200) // Initial width, will adjust
+                .attr("height", 100); // Increased initial height
+
+            const div = foreignObject.append("xhtml:div")
+                .attr("contenteditable", "true")
+                .attr("data-text-type", "general")
+                .style("min-width", "60px")
+                .style("min-height", "20px")
+                .style("position", "relative")
+                .style("white-space", "pre-wrap") // Ensure line breaks are respected
+                .style("word-wrap", "break-word") // Ensure long words wrap
+                .style("font-family", "Arial, sans-serif") // Explicitly set font here to Arial
+                .html("New Text") // Default text
+                .on("click", function (event) {
+                    event.stopPropagation();
+                    clearSelection();
+                    d3.select(this.parentNode.parentNode).classed('selected-element', true);
+                    currentlySelectedElement = d3.select(this.parentNode.parentNode);
+                    this.style.border = "1px solid #3b82f6";
+                })
+                .on("dblclick", function (event) {
+                    event.stopPropagation();
+                    openTextModal(this); // Open modal on double click
+                })
+                .on("focus", function () {
+                    // This focus might happen if user clicks directly on it after selection, but modal is primary
+                    this.style.border = "1px solid #3b82f6";
+                })
+                .on("blur", function () {
+                    this.style.border = "none";
+                })
+                .on("input", function () {
+                    // auto-resize foreignObject height and width
+                    resizeForeignObject(this, d3.select(this.parentNode));
+                });
+
+            // Immediately open the modal for the newly created text
+            openTextModal(div.node());
+
+            // make draggable
+            textGroup.call(d3.drag()
+                .on("start", function () {
+                    d3.select(this).raise();
+                    clearSelection();
+                    currentlySelectedElement = d3.select(this);
+                    d3.select(this).classed("selected-element", true);
+                })
+                .on("drag", function (event) {
+                    d3.select(this).attr("transform", `translate(${event.x}, ${event.y})`);
+                }));
+
+            // Cleanup mode
+            addTextMode = false;
+            svg.style("cursor", "default");
+
+            if (floatingTextIcon) {
+                floatingTextIcon.remove();
+                floatingTextIcon = null;
+            }
+            document.removeEventListener("mousemove", moveFloatingTextIcon);
+        });
+
+        // Function to draw grid
+        function drawGrid() {
+            gridGroup.selectAll(".grid-line").remove(); // Clear existing grid lines
+
+            const view = d3.zoomTransform(svg.node()); // Get current transform (pan/zoom)
+            const containerWidth = canvasContainer.clientWidth;
+            const containerHeight = canvasContainer.clientHeight;
+
+            // Calculate visible boundaries in the world coordinate system
+            const startX = Math.floor(view.invertX(0) / currentGridSize) * currentGridSize;
+            const endX = Math.ceil(view.invertX(containerWidth) / currentGridSize) * currentGridSize;
+            const startY = Math.floor(view.invertY(0) / currentGridSize) * currentGridSize;
+            const endY = Math.ceil(view.invertY(containerHeight) / currentGridSize) * currentGridSize;
+
+            // Draw vertical lines
+            for (let x = startX; x <= endX; x += currentGridSize) {
+                gridGroup.append("line")
+                    .attr("class", "grid-line")
+                    .attr("x1", x)
+                    .attr("y1", startY)
+                    .attr("x2", x)
+                    .attr("y2", endY);
+            }
+
+            // Draw horizontal lines
+            for (let y = startY; y <= endY; y += currentGridSize) {
+                gridGroup.append("line")
+                    .attr("class", "grid-line")
+                    .attr("x1", startX)
+                    .attr("y1", y)
+                    .attr("x2", endX)
+                    .attr("y2", y);
+            }
+        }
+
+        // Function to redraw all connections
+        function redrawConnections() {
+            connectionsGroup.selectAll(".connection-line").remove(); // Clear existing lines
+
+            connections.forEach(conn => {
+                const startSymbolData = placedSymbols.find(s => s.id === conn.startSymbolId);
+                const endSymbolData = placedSymbols.find(s => s.id === conn.endSymbolId);
+
+                if (startSymbolData && endSymbolData) {
+                    const gridRectSize = currentGridSize;
+
+                    const startCenter = {
+                        x: startSymbolData.x + gridRectSize / 2,
+                        y: startSymbolData.y + gridRectSize / 2
+                    };
+                    const endCenter = {
+                        x: endSymbolData.x + gridRectSize / 2,
+                        y: endSymbolData.y + gridRectSize / 2
+                    };
+
+                    const startRect = {
+                        x: startSymbolData.x,
+                        y: startSymbolData.y,
+                        width: gridRectSize,
+                        height: gridRectSize
+                    };
+                    const endRect = {
+                        x: endSymbolData.x,
+                        y: endSymbolData.y,
+                        width: gridRectSize,
+                        height: gridRectSize
+                    };
+
+                    // Compute edge points
+                    const p1 = getClosestPointOnRect(endCenter, startCenter, startRect);
+                    const p2 = getClosestPointOnRect(startCenter, endCenter, endRect);
+
+                    // Draw the line and apply stored dashed style
+                    connectionsGroup.append("line")
+                        .attr("class", "connection-line")
+                        .attr("x1", p1.x)
+                        .attr("y1", p1.y)
+                        .attr("x2", p2.x)
+                        .attr("y2", p2.y)
+                        .attr("stroke-dasharray", conn.dashed ? "4,2" : null)
+                        .on("click", function (event) {
+                            event.stopPropagation();
+                            conn.dashed = !conn.dashed;  // ✅ Toggle stored style
+                            redrawConnections();         // ✅ Re-render all connections
+                        });
+                }
+            });
+        }
+
+        window.redrawConnections = redrawConnections; // ✅ this makes it global
+
+        // Initialize zoom behavior
+        zoom = d3.zoom()
+            .scaleExtent([0.1, 10])
+            .on("zoom", (event) => {
+                currentTransform = event.transform;
+                g.attr("transform", currentTransform);
+                drawGrid();
+
+                // ✅ Update zoom percentage display
+                const zoomLevel = (event.transform.k * 100).toFixed(0);
+                document.getElementById('zoom-percent').textContent = `${zoomLevel}%`;
+            });
+
+        svg.call(zoom);
+
+        // Zoom lock toggle
+        zoomButton.addEventListener("click", () => {
+            zoomLocked = !zoomLocked;
+
+            if (zoomLocked) {
+                // Disable zoom
+                svg.on(".zoom", null); // disable all zoom handlers
+                zoomButton.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+                         viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round"
+                         class="lucide lucide-lock">
+                      <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>`;
+                zoomButton.classList.remove('bg-green-500', 'hover:bg-green-600');
+                zoomButton.classList.add('bg-red-600', 'hover:bg-red-700');
+            } else {
+                // Enable zoom
+                svg.call(zoom); // re-enable zoom
+                document.getElementById('zoom-percent').textContent = `${(currentTransform.k * 100).toFixed(0)}%`;
+
+                zoomButton.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+                         viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round"
+                         class="lucide lucide-unlock">
+                      <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                      <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+                    </svg>`;
+                zoomButton.classList.remove('bg-red-600', 'hover:bg-red-700');
+                zoomButton.classList.add('bg-green-500', 'hover:bg-green-600');
+            }
+        });
+
+        // Set initial icon for zoom lock button and disable zoom
+        zoomLocked = true;
+        svg.on(".zoom", null); // ✅ actually disable zoom
+        zoomButton.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+                 viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round"
+                 class="lucide lucide-lock">
+              <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>`;
+        zoomButton.classList.remove('bg-green-500', 'hover:bg-green-600');
+        zoomButton.classList.add('bg-red-600', 'hover:bg-red-700');
+
+        // Add single-click listener to canvas for deselection
+        svg.on("click.deselect", function(event) {
+            if (connectionMode) return; // Don’t deselect while connecting
+            if (event.target !== this) return; // Only if background (SVG root) is clicked
+            clearSelection();
+        });
+
+        svg.on("click", function (event) {
+            if (event.target === this) {
+                clearSelection();
+            }
+        });
+
+        // Handle clicks on SVG for selection
+        svg.on("click.selection", function(event) {
+            if (connectionMode) return; // Let connection handler handle it
+
+            const clickedTextGroup = d3.select(event.target.closest(".draggable-text"));
+            const clickedSymbolGroup = d3.select(event.target.closest(".placed-symbol"));
+
+            if (!clickedTextGroup.node() && !clickedSymbolGroup.node()) {
+                clearSelection();
+            } else if (clickedTextGroup.node()) {
+                clearSelection();
+                clickedTextGroup.classed('selected-element', true);
+                currentlySelectedElement = clickedTextGroup;
+                clickedTextGroup
+                    .select("foreignObject div[data-text-type='general']")
+                    .style("border", "1px solid #3b82f6");
+            } else if (clickedSymbolGroup.node()) {
+                clearSelection();
+                clickedSymbolGroup.classed('selected-element', true);
+                currentlySelectedElement = clickedSymbolGroup;
+            }
+        });
+
+
+        // Initial grid draw
+        drawGrid();
+
+        // Handle window resize to redraw grid and adjust SVG size
+        window.addEventListener('resize', () => {
+            drawGrid();
+            svg.attr("width", canvasContainer.clientWidth)
+               .attr("height", canvasContainer.clientHeight);
+        });
+
+        // Populate symbol list
+        equipmentSymbols.forEach(symbol => {
+            const symbolDiv = document.createElement('div');
+            symbolDiv.className = 'symbol-item';
+            symbolDiv.title = symbol.name; // ✅ Tooltip on hover
+
+            symbolDiv.innerHTML = `
+                <svg width="24" height="24" viewBox="0 0 50 50" style="display: block;"></svg>
+                <span>${symbol.name}</span>
+            `;
+            const svgEl = symbolDiv.querySelector("svg");
+            svgEl.setAttribute("viewBox", "0 0 60 60");  // Give more room for stroke
+            svgEl.innerHTML = `<g transform="translate(5,5)">${symbol.svg}</g>`;
+
+            symbolDiv.dataset.symbolName = symbol.name;
+            symbolDiv.dataset.symbolSvg = symbol.svg; // Store the raw SVG for canvas placement
+
+            symbolDiv.addEventListener('mousedown', (event) => {
+                if (connectionMode) return; // Prevent dragging if in connection mode
+
+                draggedSymbol = {
+                    name: symbol.name,
+                    svg: symbol.svg, // Use the raw SVG
+                    offsetX: event.clientX - symbolDiv.getBoundingClientRect().left,
+                    offsetY: event.clientY - symbolDiv.getBoundingClientRect().top
+                };
+                symbolDiv.classList.add('draggable-symbol');
+                event.preventDefault(); // Prevent default drag behavior
+
+                // Create and show the drag proxy element
+                dragProxyElement = document.createElement('div');
+                dragProxyElement.id = 'drag-proxy';
+                dragProxyElement.innerHTML = `<svg viewBox="0 0 50 50">${symbol.svg}</svg>`;
+                document.body.appendChild(dragProxyElement);
+
+                // Position the proxy initially
+                dragProxyElement.style.left = `${event.clientX}px`;
+                dragProxyElement.style.top = `${event.clientY}px`;
+            });
+            symbolList.appendChild(symbolDiv);
+        });
+
+        // Grid size adjustment
+        gridSizeInput.addEventListener('input', (event) => {
+            currentGridSize = parseInt(event.target.value);
+            gridSizeValueSpan.textContent = `${currentGridSize}px`;
+            drawGrid(); // Redraw grid with new size
+
+            // When grid size changes, re-scale all placed symbols
+            const symbolBaseViewBoxSize = 50;
+            const newScaleFactor = currentGridSize / symbolBaseViewBoxSize;
+
+            symbolsGroup.selectAll(".placed-symbol").each(function() {
+                const placedSymbolGroup = d3.select(this);
+                // Update the transparent rect size
+                placedSymbolGroup.select("rect")
+                    .attr("width", currentGridSize)
+                    .attr("height", currentGridSize);
+
+                // Update the scale of the symbol's visual group
+                placedSymbolGroup.select(".symbol-visual")
+                    .attr("transform", `scale(${newScaleFactor})`);
+            });
+            redrawConnections(); // Redraw connections as symbol positions might effectively change relative to grid
+        });
+
+        // Function to enable/disable drag behavior on placed symbols
+        function setSymbolDragBehavior(enable) {
+            symbolsGroup.selectAll(".placed-symbol").each(function() {
+                const symbol = d3.select(this);
+                if (enable) {
+                    symbol.call(d3.drag()
+                        .on("start", function(event) {
+                            // Bring the element to the front when dragging starts
+                            d3.select(this).raise();
+
+                            clearSelection(); // Clear selection on drag start
+                            d3.select(this).classed('selected-element', true);
+                            currentlySelectedElement = d3.select(this);
+
+                            // Store initial position for drag from the transform attribute
+                            const currentTransformString = d3.select(this).attr("transform");
+                            const translateMatch = currentTransformString.match(/translate\(([^,]+),\s*([^)]+)\)/);
+                            const currentX = parseFloat(translateMatch[1]);
+                            const currentY = parseFloat(translateMatch[2]);
+                            d3.select(this).datum({ x: currentX, y: currentY });
+                        })
+                        .on("drag", function(event) {
+                            let newX = event.x;
+                            let newY = event.y;
+
+                            // Snap to grid while dragging
+                            newX = Math.round(newX / currentGridSize) * currentGridSize;
+                            newY = Math.round(newY / currentGridSize) * currentGridSize;
+
+                            const symbolData = placedSymbols.find(s => s.id === d3.select(this).attr('data-id'));
+                            d3.select(this)
+                                .attr("transform", `translate(${newX}, ${newY}) rotate(${symbolData.rotation || 0}, ${currentGridSize / 2}, ${currentGridSize / 2})`);
+                            d3.select(this).datum({ x: newX, y: newY }); // Update datum with new position
+
+                            // Update the stored position in placedSymbols array
+                            const id = d3.select(this).attr('data-id');
+                            const symbolIndex = placedSymbols.findIndex(s => s.id === id);
+                            if (symbolIndex !== -1) {
+                                placedSymbols[symbolIndex].x = newX;
+                                placedSymbols[symbolIndex].y = newY;
+                            }
+                            redrawConnections(); // Redraw connections as symbol position changed
+                        })
+                        .on("end", function(event) {
+                            // No specific action on end, position is already updated
+                        }));
+                } else {
+                    // Disable drag by re-applying drag with null handlers
+                    symbol.call(d3.drag().on("start", null).on("drag", null).on("end", null));
+                }
+            });
+        }
+
+        // Toggle Connection Mode
+        connectButton.addEventListener('click', () => {
+            toggleConnectionMode(); // Use the new toggle function
+        });
+
+        // Update temporary line on mouse move when in connection mode
+        svg.on("mousemove", function(event) {
+            if (connectionMode && firstConnectionPoint && tempLine) {
+                const [mx, my] = d3.pointer(event, g.node()); // Get mouse coordinates relative to the 'g' group
+                const startSymbolData = placedSymbols.find(s => s.id === firstConnectionPoint.attr('data-id'));
+                const startCenter = { x: startSymbolData.x + currentGridSize / 2, y: startSymbolData.y + currentGridSize / 2 };
+                const currentMousePoint = { x: mx, y: my };
+
+                let p1_temp;
+                if (startSymbolData.name === "Bus Junction") { // Adjusted to match your symbol name
+                    p1_temp = startCenter;
+                } else {
+                    const firstRect = { x: startSymbolData.x, y: startSymbolData.y, width: currentGridSize, height: currentGridSize };
+                    p1_temp = getClosestPointOnRect(startCenter, currentMousePoint, firstRect);
+                }
+
+                let p2_temp = currentMousePoint; // Default to mouse position
+
+                // Check if the mouse is currently over another placed symbol
+                const hoveredDomGroup = event.target.closest(".placed-symbol");
+                if (hoveredDomGroup) {
+                    const hoveredSymbolD3 = d3.select(hoveredDomGroup);
+                    const hoveredSymbolData = placedSymbols.find(s => s.id === hoveredSymbolD3.attr('data-id'));
+
+                    if (hoveredSymbolData && hoveredSymbolData.id !== startSymbolData.id) { // Ensure it's a different symbol
+                        const hoveredRect = { x: hoveredSymbolData.x, y: hoveredSymbolData.y, width: currentGridSize, height: currentGridSize };
+                        // Calculate the intersection point on the hovered symbol's rectangle
+                        p2_temp = getClosestPointOnRect(currentMousePoint, startCenter, hoveredRect);
+                    }
+                }
+
+                tempLine.attr("x1", p1_temp.x).attr("y1", p1_temp.y);
+                tempLine.attr("x2", p2_temp.x).attr("y2", p2_temp.y);
+            }
+        });
+
+        // Dragging functionality for symbols (for the drag proxy)
+        document.addEventListener('mousemove', (event) => {
+            if (draggedSymbol && dragProxyElement) {
+                // Update the position of the drag proxy to follow the cursor
+                dragProxyElement.style.left = `${event.clientX}px`;
+                dragProxyElement.style.top = `${event.clientY}px`;
+            }
+        });
+
+        document.addEventListener('mouseup', (event) => {
+            if (draggedSymbol) {
+                const canvasRect = canvasContainer.getBoundingClientRect();
+                const x = event.clientX - canvasRect.left;
+                const y = event.clientY - canvasRect.top;
+
+                // Convert screen coordinates to SVG canvas coordinates, considering zoom and pan
+                const [transformedX, transformedY] = currentTransform.invert([x, y]);
+
+                // Snap to grid: Get the top-left corner of the grid cell
+                const snappedX = Math.floor(transformedX / currentGridSize) * currentGridSize;
+                const snappedY = Math.floor(transformedY / currentGridSize) * currentGridSize;
+
+                // Create a new SVG group for the symbol
+                const newSymbolId = generateId();
+                const newSymbol = symbolsGroup.append("g")
+                    .attr("transform", `translate(${snappedX}, ${snappedY})`)
+                    .attr("data-symbol-name", draggedSymbol.name)
+                    .attr("data-id", newSymbolId) // Assign unique ID
+                    .attr("class", "placed-symbol"); // Add a class for styling/selection
+                if (connectionMode) {
+                    newSymbol.on("click.connection", handleConnectionClick);
+                }
+
+                // Store symbol data
+                placedSymbols.push({
+                    id: newSymbolId,
+                    name: draggedSymbol.name,
+                    svg: draggedSymbol.svg,
+                    x: snappedX,
+                    y: snappedY,
+                    rotation: 0 // Initialize rotation to 0
+                });
+
+                // Add a transparent rectangle for easier dragging
+                // This rect covers the area of the symbol and ensures it's easily clickable
+                newSymbol.append("rect")
+                    .attr("x", 0) // Start at the snapped top-left of the grid square
+                    .attr("y", 0)
+                    .attr("width", currentGridSize)
+                    .attr("height", currentGridSize)
+                    .attr("fill", "transparent")
+                    .attr("pointer-events", "all"); // Ensure it captures mouse events
+
+                // Calculate scale factor to fit the symbol into the current grid square size
+                const symbolBaseViewBoxSize = 50; // All symbols are designed on a 50x50 effective canvas
+                const scaleFactor = currentGridSize / symbolBaseViewBoxSize;
+
+                // Append a sub-group to hold the actual symbol SVG content
+                // This ensures the transparent rect is always "under" the symbol's visual
+                // Apply the dynamic scale factor here
+                newSymbol.append("g")
+                    .attr("class", "symbol-visual") // Add a class to target this for rotation
+                    .attr("transform", `scale(${scaleFactor})`)
+                    .html(draggedSymbol.svg);
+
+                // Add the rotation handle
+                const handleSize = currentGridSize * 0.25; // Size relative to grid
+                const handleOffset = currentGridSize * 0.1; // Offset from corner
+
+                const rotationHandle = newSymbol.append("g")
+                    .attr("class", "rotation-handle")
+                    .attr("transform", `translate(${currentGridSize - handleSize - handleOffset}, ${handleOffset})`); // Position top-right
+
+                rotationHandle.append("circle")
+                    .attr("cx", handleSize / 2)
+                    .attr("cy", handleSize / 2)
+                    .attr("r", handleSize / 2);
+
+                // Simple curved arrow SVG path for rotation icon
+                rotationHandle.append("path")
+                    .attr("d", `M ${handleSize * 0.3} ${handleSize * 0.5} A ${handleSize * 0.2} ${handleSize * 0.2} 0 0 1 ${handleSize * 0.7} ${handleSize * 0.5} M ${handleSize * 0.7} ${handleSize * 0.5} L ${handleSize * 0.6} ${handleSize * 0.4} M ${handleSize * 0.7} ${handleSize * 0.5} L ${handleSize * 0.6} ${handleSize * 0.6}`)
+                    .attr("transform", `translate(${handleSize * 0.1}, ${handleSize * 0.1}) scale(0.8)`); // Adjust icon size/position within handle
+
+                // Add click listener to the rotation handle
+                rotationHandle.on("click", function(event) {
+                    event.stopPropagation(); // Prevent click from propagating to the symbol or canvas
+                    const parentSymbol = d3.select(this.parentNode); // Get the parent .placed-symbol group
+                    const id = parentSymbol.attr('data-id');
+                    const symbolData = placedSymbols.find(s => s.id === id);
+
+                    if (symbolData) {
+                        symbolData.rotation = (symbolData.rotation + 90) % 360;
+                        parentSymbol.attr("transform", `translate(${symbolData.x}, ${symbolData.y}) rotate(${symbolData.rotation}, ${currentGridSize / 2}, ${currentGridSize / 2})`);
+                        redrawConnections();
+                    }
+                });
+
+                // Apply draggable behavior only if not in connection mode
+                if (!connectionMode) {
+                    newSymbol.call(d3.drag()
+                        .on("start", function(event) {
+                            // Bring the element to the front when dragging starts
+                            d3.select(this).raise();
+
+                            clearSelection(); // Clear selection on drag start
+                            d3.select(this).classed('selected-element', true);
+                            currentlySelectedElement = d3.select(this);
+
+                            // Store initial position for drag from the transform attribute
+                            const currentTransformString = d3.select(this).attr("transform");
+                            const translateMatch = currentTransformString.match(/translate\(([^,]+),\s*([^)]+)\)/);
+                            const currentX = parseFloat(translateMatch[1]);
+                            const currentY = parseFloat(translateMatch[2]);
+                            d3.select(this).datum({ x: currentX, y: currentY });
+                        })
+                        .on("drag", function(event) {
+                            let newX = event.x;
+                            let newY = event.y;
+
+                            // Snap to grid while dragging
+                            newX = Math.round(newX / currentGridSize) * currentGridSize;
+                            newY = Math.round(newY / currentGridSize) * currentGridSize;
+
+                            const symbolData = placedSymbols.find(s => s.id === d3.select(this).attr('data-id'));
+                            d3.select(this)
+                                .attr("transform", `translate(${newX}, ${newY}) rotate(${symbolData.rotation || 0}, ${currentGridSize / 2}, ${currentGridSize / 2})`);
+                            d3.select(this).datum({ x: newX, y: newY }); // Update datum with new position
+
+                            // Update the stored position in placedSymbols array
+                            const id = d3.select(this).attr('data-id');
+                            const symbolIndex = placedSymbols.findIndex(s => s.id === id);
+                            if (symbolIndex !== -1) {
+                                placedSymbols[symbolIndex].x = newX;
+                                placedSymbols[symbolIndex].y = newY;
+                            }
+                            redrawConnections(); // Redraw connections as symbol position changed
+                        })
+                        .on("end", function(event) {
+                            // No specific action on end, position is already updated
+                        }));
+                }
+
+                // Clean up after drag and drop
+                draggedSymbol = null;
+                document.querySelectorAll('.symbol-item').forEach(item => {
+                    item.classList.remove('draggable-symbol');
+                });
+                if (dragProxyElement) {
+                    dragProxyElement.remove();
+                    dragProxyElement = null;
+                }
+            }
+        });
+    });
+
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<script>
+    const mmToPx = mm => (mm * 96) / 25.4;
+
+    const pageSizes = {
+        A4: { width: 210, height: 297 },
+        A3: { width: 297, height: 420 },
+        A2: { width: 420, height: 594 },
+        Poster: { width: 800, height: 1200 } // Custom large poster
+    };
+
+    document.getElementById('page-size').addEventListener('change', function() {
+        const isCustom = this.value === 'Custom';
+        document.getElementById('custom-width').style.display = isCustom ? 'inline-block' : 'none';
+        document.getElementById('custom-height').style.display = isCustom ? 'inline-block' : 'none';
+    });
+
+    // Function to export the current SLD data to a JSON file
+    function exportToJson() {
+        // Collect all text elements and their properties
+        const textElementsData = [];
+        g.selectAll(".draggable-text").each(function() {
+            const textGroup = d3.select(this);
+            const textDiv = textGroup.select("foreignObject div[data-text-type='general']").node();
+            if (textDiv) {
+                const transform = d3.zoomTransform(textGroup.node()); // Get the transform of the group
+                textElementsData.push({
+                    id: textGroup.attr('data-id'),
+                    x: transform.x,
+                    y: transform.y,
+                    content: textDiv.textContent,
+                    style: {
+                        fontSize: textDiv.style.fontSize,
+                        fontFamily: textDiv.style.fontFamily,
+                        color: textDiv.style.color,
+                        fontWeight: textDiv.style.fontWeight,
+                        fontStyle: textDiv.style.fontStyle,
+                        textDecorationLine: textDiv.style.textDecorationLine,
+                        textAlign: textDiv.style.textAlign,
+                        width: textDiv.style.width, // Capture current width/height
+                        height: textDiv.style.height
+                    }
+                });
+            }
+        });
+
+
+        const sldData = {
+            placedSymbols: placedSymbols,
+            connections: connections,
+            textElements: textElementsData, // Include text elements
+            gridSize: currentGridSize,
+            // You might also want to save the current zoom/pan transform if you want to restore the view
+            // currentTransform: currentTransform // This is a D3 transform object, might need serialization
+        };
+
+        const jsonString = JSON.stringify(sldData, null, 2); // Pretty print JSON
+
+        const blob = new Blob([jsonString], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `sld_design_${Date.now()}.json`; // Unique filename
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url); // Clean up the URL object
+    }
+
+
+    async function exportToPNG() {
+        const svgEl = document.getElementById("sld-canvas");
+        const gEl = svgEl.querySelector("g");
+        const canvasContainer = document.getElementById("canvas-container");
+
+        // Wait for all fonts to be loaded
+        await document.fonts.ready;
+
+        // 1. Save current SVG state
+        const originalGTransform = d3.zoomTransform(svg.node()); // Get the current transform applied to the SVG
+        const originalSvgWidth = svg.attr("width");
+        const originalSvgHeight = svg.attr("height");
+
+        // 2. Define target export dimensions (A4 Landscape)
+        const exportWidthMm = 297; // A4 Landscape width
+        const exportHeightMm = 210; // A4 Landscape height
+        const targetWidthPx = mmToPx(exportWidthMm);
+        const targetHeightPx = mmToPx(exportHeightMm);
+
+        // Get the bounding box of the content within the 'g' element
+        let contentBBox;
+        try {
+            contentBBox = gEl.getBBox();
+        } catch (e) {
+            console.warn("Cannot compute bounding box for export. Using default values.", e);
+            // Fallback to a reasonable default if getBBox fails
+            contentBBox = { x: 0, y: 0, width: 800, height: 600 };
+        }
+
+        // 3. Calculate and apply temporary transform for export
+        const exportTransform = fitForExport(contentBBox, targetWidthPx, targetHeightPx);
+        g.attr("transform", exportTransform); // Apply the calculated transform to the 'g' element
+        // Temporarily set SVG dimensions to match the target export size for html2canvas
+        svg.attr("width", targetWidthPx).attr("height", targetHeightPx);
+
+        // Hide grid and text box borders during capture
+        const gridLines = document.querySelectorAll(".grid-line");
+        const textBoxes = document.querySelectorAll("div[data-text-type]");
+        gridLines.forEach(line => line.style.display = "none");
+        textBoxes.forEach(div => {
+            div.style.border = "none";
+            div.style.resize = "none";
+            div.style.outline = "none";
+        });
+
+        // Use a small delay to ensure rendering updates before html2canvas
+        await new Promise(resolve => setTimeout(resolve, 100)); // Wait for rendering
+
+        // 4. Perform html2canvas
+        const canvas = await html2canvas(canvasContainer, {
+            width: targetWidthPx, // Use calculated target width
+            height: targetHeightPx, // Use calculated target height
+            backgroundColor: "#fff",
+            useCORS: true,
+            scale: 2 // High scale for better resolution
+        });
+
+        // 5. Restore SVG state
+        g.attr("transform", originalGTransform); // Restore original transform
+        svg.attr("width", originalSvgWidth).attr("height", originalSvgHeight); // Restore original SVG dimensions
+
+        // 6. Restore grid and text box styles
+        gridLines.forEach(line => line.style.display = "");
+        textBoxes.forEach(div => {
+            if (div.getAttribute('data-text-type')) {
+                div.style.border = "none"; // Default for text boxes is no border unless selected
+                div.style.resize = "both"; // Allow resize for text boxes
+                div.style.outline = "none";
+            }
+        });
+
+        // Remainder of export logic (link creation for PNG)
+        const link = document.createElement("a");
+        link.download = "sld-export.png";
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+    }
+
+
+    async function exportToPDF() {
+        const svgEl = document.getElementById("sld-canvas");
+        const gEl = svgEl.querySelector("g");
+        const canvasContainer = document.getElementById("canvas-container");
+
+        // Wait for all fonts to be loaded
+        await document.fonts.ready;
+
+        // 1. Save current SVG state
+        const originalGTransform = d3.zoomTransform(svg.node()); // Get the current transform applied to the SVG
+        const originalSvgWidth = svg.attr("width");
+        const originalSvgHeight = svg.attr("height");
+
+        // 2. Define target export dimensions (A4 Landscape)
+        const exportWidthMm = 297; // A4 Landscape width
+        const exportHeightMm = 210; // A4 Landscape height
+        const targetWidthPx = mmToPx(exportWidthMm);
+        const targetHeightPx = mmToPx(exportHeightMm);
+
+        // Get the bounding box of the content within the 'g' element
+        let contentBBox;
+        try {
+            contentBBox = gEl.getBBox();
+        } catch (e) {
+            console.warn("Cannot compute bounding box for export. Using default values.", e);
+            // Fallback to a reasonable default if getBBox fails
+            contentBBox = { x: 0, y: 0, width: 800, height: 600 };
+        }
+
+        // 3. Calculate and apply temporary transform for export
+        const exportTransform = fitForExport(contentBBox, targetWidthPx, targetHeightPx);
+        g.attr("transform", exportTransform); // Apply the calculated transform to the 'g' element
+        // Temporarily set SVG dimensions to match the target export size for html2canvas
+        svg.attr("width", targetWidthPx).attr("height", targetHeightPx);
+
+        // Hide grid and text box borders during capture
+        const gridLines = document.querySelectorAll(".grid-line");
+        const textBoxes = document.querySelectorAll("div[data-text-type]");
+        gridLines.forEach(line => line.style.display = "none");
+        textBoxes.forEach(div => {
+            div.style.border = "none";
+            div.style.resize = "none";
+            div.style.outline = "none";
+        });
+
+        // Use a small delay to ensure rendering updates before html2canvas
+        await new Promise(resolve => setTimeout(resolve, 100)); // Wait for rendering
+
+        // 4. Perform html2canvas
+        const canvas = await html2canvas(canvasContainer, {
+            width: targetWidthPx, // Use calculated target width
+            height: targetHeightPx, // Use calculated target height
+            backgroundColor: "#fff",
+            useCORS: true,
+            scale: 2 // High scale for better resolution
+        });
+
+        // 5. Restore SVG state
+        g.attr("transform", originalGTransform); // Restore original transform
+        svg.attr("width", originalSvgWidth).attr("height", originalSvgHeight); // Restore original SVG dimensions
+
+        // 6. Restore grid and text box styles
+        gridLines.forEach(line => line.style.display = "");
+        textBoxes.forEach(div => {
+            if (div.getAttribute('data-text-type')) {
+                div.style.border = "none"; // Default for text boxes is no border unless selected
+                div.style.resize = "both"; // Allow resize for text boxes
+                div.style.outline = "none";
+            }
+        });
+
+        // Remainder of export logic (jsPDF for PDF)
+        const imgData = canvas.toDataURL("image/png");
+        const { jsPDF } = window.jspdf;
+
+        const pdf = new jsPDF({
+            orientation: "landscape", // Force landscape
+            unit: "mm",
+            format: [exportWidthMm, exportHeightMm] // Use A4 landscape dimensions
+        });
+
+        pdf.addImage(imgData, "PNG", 0, 0, exportWidthMm, exportHeightMm);
+        pdf.save("sld-export.pdf");
+    }
+
+
+    function getPageDimensions() {
+        const selected = document.getElementById("page-size").value;
+        const orientation = document.getElementById("orientation").value;
+
+        let width, height;
+
+        if (selected === "Custom") {
+            width = parseFloat(document.getElementById("custom-width").value) || 210;
+            height = parseFloat(document.getElementById("custom-height").value) || 297;
+        } else {
+            const size = pageSizes[selected];
+            width = size.width;
+            height = size.height;
+        }
+
+        // Swap if portrait selected
+        if (orientation === "portrait" && width > height) {
+            [width, height] = [height, width];
+        } else if (orientation === "landscape" && height > width) {
+            [width, height] = [height, width];
+        }
+
+        return { width, height };
+    }
+
+    document.addEventListener('keydown', function(event) {
+        // Check if the modal exists and is visible
+        const deleteConfirmModal = document.getElementById('delete-confirm-modal');
+        if (deleteConfirmModal && deleteConfirmModal.classList.contains('visible')) {
+            return; // Do nothing if the delete confirmation modal is open
+        }
+
+        if (event.key === 'Delete' && currentlySelectedElement) {
+            event.preventDefault();
+
+            const confirmModal = document.createElement('div');
+            confirmModal.id = 'delete-confirm-modal';
+            confirmModal.style.position = 'fixed';
+            confirmModal.style.top = 0;
+            confirmModal.style.left = 0;
+            confirmModal.style.width = '100%';
+            confirmModal.style.height = '100%';
+            confirmModal.style.backgroundColor = 'rgba(0, 0, 0, 0.4)';
+            confirmModal.style.display = 'flex';
+            confirmModal.style.justifyContent = 'center';
+            confirmModal.style.alignItems = 'center';
+            confirmModal.style.zIndex = 99999;
+            confirmModal.classList.add('visible'); // Make it visible
+
+            confirmModal.innerHTML = `
+                <div style="background:white;padding:20px;border-radius:8px;box-shadow:0 0 10px #0004;">
+                    <p class="text-lg font-semibold mb-4">Are you sure you want to delete this item?</p>
+                    <div class="flex justify-end gap-3">
+                        <button id="confirmDelete" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">Yes, Delete</button>
+                        <button id="cancelDelete" class="bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded">Cancel</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(confirmModal);
+
+            document.getElementById('confirmDelete').addEventListener('click', () => {
+                const id = currentlySelectedElement.attr("data-id");
+                // Check if it's a symbol or text to remove from the correct array
+                if (currentlySelectedElement.classed('placed-symbol')) {
+                    placedSymbols = placedSymbols.filter(s => s.id !== id);
+                    connections = connections.filter(c => c.startSymbolId !== id && c.endSymbolId !== id);
+                    redrawConnections();
+                } else if (currentlySelectedElement.classed('draggable-text')) {
+                    // For text elements, just remove from DOM and clear selection
+                    // No need to filter from a global array if it's not stored in one explicitly
+                }
+
+                currentlySelectedElement.remove();
+                currentlySelectedElement = null;
+                confirmModal.remove();
+            });
+
+            document.getElementById('cancelDelete').addEventListener('click', () => {
+                confirmModal.remove();
+            });
+        }
+    });
+
+    function fitToView(padding = 50) {
+        const svgEl = document.getElementById("sld-canvas");
+        const gEl = svgEl.querySelector("g");
+        if (!svgEl || !gEl) return;
+
+        // ✅ Step 1: Remove any zoom/pan temporarily
+        d3.select(svgEl).call(zoom.transform, d3.zoomIdentity);
+
+        // ✅ Step 2: Wait for DOM to catch up
+        setTimeout(() => {
+            let bbox;
+            try {
+                bbox = gEl.getBBox();
+            } catch (e) {
+                console.warn("Cannot compute bounding box.");
+                return;
+            }
+
+            // Step 3: Calculate padded bounds
+            const minX = bbox.x - padding;
+            const minY = bbox.y - padding;
+            const width = bbox.width + padding * 2;
+            const height = bbox.height + padding * 2;
+
+            const svgRect = svgEl.getBoundingClientRect();
+            const scale = Math.min(svgRect.width / width, svgRect.height / height);
+            const tx = (svgRect.width - width * scale) / 2 - minX * scale;
+            const ty = (svgRect.height - height * scale) / 2 - minY * scale;
+
+            // ✅ Step 4: Apply corrected zoom transform
+            d3.select(svgEl)
+                .transition().duration(400)
+                .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+        }, 50); // slight delay to ensure transform reset finishes
+    }
+
+    function preparePrint() {
+        // Step 1: Set proper viewBox for print
+        fitToView(50, true);
+
+        // Step 2: Print after small delay
+        setTimeout(() => {
+            window.print();
+        }, 200);
+    }
+</script>
+</body>
+</html>
+�
