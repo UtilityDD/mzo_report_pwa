@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docket Call Dashboard</title>
+    <!-- Google Font: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+body {
+      font-family: 'Inter', sans-serif;
+      background-color: #f0f2f5;
+      padding: 1rem;
+    }
+    .dashboard-container {
+      max-width: 1280px;
+      margin: auto;
+      background-color: #fff;
+      border-radius: 0.75rem;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+      padding: 2.5rem;
+    }
+    .main-heading {
+      font-size: 2.25rem;
+      font-weight: 700;
+      color: #1f2937;
+      margin-bottom: 0.5rem;
+    }
+    .sub-heading {
+      font-size: 1.25rem;
+      color: #4b5563;
+      margin-bottom: 1rem;
+    }
+    .latest-date-text {
+      font-weight: 600;
+      color: #dc2626;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+    .blinking-text {
+      animation: blink 1s step-end infinite;
+    }
+    .loader {
+      width: 32px;
+      height: 32px;
+      border: 4px solid #3b82f6;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 1rem auto;
+      display: none;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .filter-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .filter-section {
+      display: flex;
+      flex-direction: column;
+    }
+    .filter-label {
+      font-weight: 500;
+      margin-bottom: 0.25rem;
+    }
+    .filter-select {
+      padding: 0.25rem 0.5rem;
+      font-size: 0.9rem;
+      border-radius: 0.375rem;
+      border: 1px solid #cbd5e1;
+    }
+    .prob-type-cards-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.5rem;
+    }
+    @media (min-width: 640px) {
+      .prob-type-cards-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    .prob-type-card {
+      background-color: #dbeafe;
+      padding: 0.25rem 0.75rem;
+      border-radius: 0.375rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-height: 2rem;
+      font-size: 0.9rem;
+    }
+    .prob-type-card-title {
+      font-weight: 500;
+      color: #1e40af;
+    }
+    .prob-type-card-count {
+      font-weight: 700;
+      color: #1e3a8a;
+    }
+    .no-data-message.hidden {
+      display: none;
+    }
+    .no-data-message {
+      grid-column: 1 / -1;
+      text-align: center;
+      color: #6b7280;
+    }
+@media (max-width: 640px) {
+  body {
+    padding: 0.5rem;
+  }
+
+  .dashboard-container {
+    padding: 1rem;
+  }
+
+  .main-heading {
+    font-size: 1.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .sub-heading {
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .filter-container {
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .filter-select {
+    padding: 0.2rem 0.4rem;
+    font-size: 0.8rem;
+  }
+
+  .prob-type-card {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .prob-type-card-title {
+    font-size: 0.75rem;
+  }
+
+  .prob-type-card-count {
+    font-size: 0.75rem;
+  }
+
+  #details-modal * {
+    font-size: 0.7rem !important;
+  }
+
+  #details-modal table th,
+  #details-modal table td {
+    padding: 0.25rem !important;
+  }
+
+  #details-modal button {
+    font-size: 0.75rem !important;
+    padding: 0.35rem 0.75rem !important;
+  }
+
+  #modal-content {
+    padding: 0.5rem !important;
+  }
+
+  #docket-detail-modal {
+    padding: 0.5rem;
+  }
+
+  #docket-detail-modal div {
+    padding: 0.5rem !important;
+  }
+}
+@media (max-width: 640px) {
+  .prob-type-cards-grid {
+    gap: 0.25rem;
+  }
+}
+
+    </style>
+</head>
+<body>
+
+  <div class="dashboard-container">
+    <!-- Header -->
+    <h1 class="main-heading">Docket Call</h1>
+    <p class="sub-heading">
+      Upto docket at: <span id="latest-docket-date" class="latest-date-text blinking-text">Loading...</span>
+    </p>
+
+    <!-- Loading Indicator -->
+    <div id="loading-indicator" class="loader"></div>
+    <p id="error-message" style="color: red; text-align: center; display: none;">Failed to load data. Please check the CSV URL or your network connection.</p>
+<!-- Description Type Checkboxes -->
+<div style="margin: 1rem 0;">
+<label style="margin-right: 1rem;">
+  <input type="checkbox" id="technical-checkbox" checked> Technical
+</label>
+<label>
+  <input type="checkbox" id="nontechnical-checkbox"> Non-Technical
+</label>
+<label style="margin-left: 1rem;">
+  <input type="checkbox" id="older-checkbox"> 24H or more
+</label>
+
+</div>
+
+    <!-- Filter Controls -->
+    <div class="filter-container" id="filter-controls-container" style="display: none;">
+<!-- Region Filter -->
+<div class="filter-section">
+  <select id="region-select" class="filter-select" title="Region"></select>
+</div>
+
+<!-- Division Filter -->
+<div class="filter-section">
+  <select id="division-select" class="filter-select" title="Division"></select>
+</div>
+
+<!-- CCC Filter -->
+<div class="filter-section">
+  <select id="ccc-select" class="filter-select" title="CCC"></select>
+</div>
+
+</div>
+    <!-- Problem Type Cards -->
+    <div id="prob-type-cards" class="prob-type-cards-grid" style="display: none;">
+      <!-- Problem type cards will be dynamically loaded here -->
+      <p id="no-data-message" class="no-data-message hidden">No data available for the selected filters.</p>
+    </div>
+  </div>
+
+    <script>
+        // Data source URL - IMPORTANT: This URL must be publicly accessible.
+        // If you encounter "Failed to load data" error, ensure the Google Sheet is published to web as CSV.
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTT56PULgjKw_-wu8lmMWNE6SC1KBDyAKxeHaMloZJWUQ9HQsJoqosYF33DrQK3NX9Bvfn0mjfx-dkP/pub?gid=1059428699&single=true&output=csv';
+const TECHNICAL_PRIORITY = {
+    "Conductor snap": 1,
+    "Dis. transformer problem": 2,
+    "Breakage or uprooting of pole": 3,
+    "Flashing/Glowing": 4,
+    "No power": 5,
+    "Single phasing": 6,
+    "Frequent tripping": 7,
+    "Cable fault": 8,
+    "Service (main) problem": 9,
+    "Voltage complaint": 10,
+    "Voltage fluctuation": 11,
+    "Short circuit": 12,
+    "Tree fault": 13,
+    "Sagging of wire": 14,
+    "Load Shedding Problem": 15,
+    "LT wire problem": 16,
+    "Fuse problem": 17,
+    "Earthing problem": 18,
+    "Bird fault": 19
+};
+
+function getCCCNamesByProblemType(data, targetType) {
+    const names = new Set();
+    data.forEach(row => {
+        if (row.prob_type?.trim() === targetType && row.ccc_code?.trim()) {
+            const cccName = getCCCNameByCode(row.ccc_code.trim());
+            if (cccName) names.add(cccName);
+        }
+    });
+    return Array.from(names).sort();
+}
+
+       // Global variable to store fetched docket call data
+        let docketCallData = [];
+
+        // CCC Code / Name Mapping
+        const regionData = {
+            "MALDA REGION": {
+                code: "6610000",
+                divisions: {
+                    "MALDA DIVISION": {
+                        code: "6611000",
+                        cccs: {
+                            "MANIKCHAK CCC": "6611101",
+                            "GOLAPGANJ CCC": "6611102",
+                            "BAISHNABNAGAR CCC": "6611103",
+                            "KALIACHAK CCC": "6611104",
+                            "MOTHABARI CCC": "6611105",
+                            "SUJAPUR CCC": "6611106",
+                            "RATHBARI CCC": "6611107",
+                            "FULBARI CCC": "6611108",
+                            "MOKDUMPUR CCC": "6611109",
+                        }
+                    },
+                    "CHANCHAL DIVISION": {
+                        code: "6612000",
+                        cccs: {
+                            "BHALUKA CCC": "6612101",
+                            "SAMSI CCC": "6612102",
+                            "PARANPUR CCC": "6612103",
+                            "CHANCHAL CCC": "6612104",
+                            "MALATIPUR CCC": "6612105",
+                            "HARISHCHANDRAPUR CCC": "6612106",
+                            "KUSHIDA CCC": "6612107",
+                        }
+                    },
+                    "GAZOLE DIVISION": {
+                        code: "6613000",
+                        cccs: {
+                            "GAZOL CCC": "6613101",
+                            "AIHO. CCC": "6613102",
+                            "PANDUA CCC": "6613103",
+                            "BAMONGOLA CCC": "6613104",
+                            "OLD MALDA CCC": "6613105",
+                        }
+                    }
+                }
+            },
+            "UTTAR DINAJPUR REGION": {
+                code: "6620000",
+                divisions: {
+                    "RAIGANJ DIVISION": {
+                        code: "6621000",
+                        cccs: {
+                            "ITAHAR CCC": "6621101",
+                            "HEMTABAD CCC": "6621102",
+                            "KALIYAGANJ CCC": "6621103",
+                            "RAIGANJ CCC": "6621104",
+                            "BIRNAGAR CCC": "6621105",
+                            "KARANDIGHI CCC": "6621106",
+                        }
+                    },
+                    "ISLAMPUR DIVISION": {
+                        code: "6622000",
+                        cccs: {
+                            "ISLAMPUR CCC": "6622101",
+                            "CHOPRA CCC": "6622102",
+                            "DALKHOLA CCC": "6622103",
+                            "GOALPOKHER CCC": "6622104",
+                            "KANKI CCC": "6622105",
+                        }
+                    }
+                }
+            },
+            "DAKSHIN DINAJPUR REGION": {
+                code: "6630000",
+                divisions: {
+                    "BALURGHAT DIVISION": {
+                        code: "6631000",
+                        cccs: {
+                            "BALURGHAT CCC": "6631101",
+                            "TAPAN CCC": "6631102",
+                            "KUMARGANJ CCC": "6631103",
+                            "HILI CCC": "6631104",
+                            "PATIRAM CCC": "6631105",
+                        }
+                    },
+                    "BUNIADPUR DIVISION": {
+                        code: "6632000",
+                        cccs: {
+                            "BUNIADPUR CCC": "6632101",
+                            "KUSMANDI CCC": "6632102",
+                            "HARIRAMPUR CCC": "6632103",
+                            "GANGARAMPUR CCC": "6632104",
+                        }
+                    }
+                }
+            }
+        };
+
+        // DOM elements
+        const regionSelect = document.getElementById('region-select');
+        const divisionSelect = document.getElementById('division-select');
+        const cccSelect = document.getElementById('ccc-select');
+        const probTypeCardsContainer = document.getElementById('prob-type-cards');
+        const latestDocketDateElement = document.getElementById('latest-docket-date');
+        const noDataMessage = document.getElementById('no-data-message');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const errorMessage = document.getElementById('error-message');
+        const filterControlsContainer = document.getElementById('filter-controls-container');
+
+
+        // Current selections
+        let selectedRegion = null;
+        let selectedDivision = null;
+        let selectedCCC = null;
+
+        /**
+         * Parses a date string "dd/mm/yyyy hh:mm:ss" into a Date object.
+         * @param {string} dateString - The date string to parse.
+         * @returns {Date} The parsed Date object.
+         */
+        function parseDateString(dateString) {
+            const [datePart, timePart] = dateString.split(' ');
+            const [day, month, year] = datePart.split('/').map(Number);
+            const [hours, minutes, seconds] = timePart.split(':').map(Number);
+            // Month is 0-indexed in JavaScript Date object
+            return new Date(year, month - 1, day, hours, minutes, seconds);
+        }
+
+        /**
+         * Formats a Date object into "dd/mm/yyyy hh:mm:ss" string.
+         * @param {Date} date - The Date object to format.
+         * @returns {string} The formatted date string.
+         */
+        function formatDate(date) {
+            if (!date) return '';
+            const pad = (num) => num.toString().padStart(2, '0');
+            const day = pad(date.getDate());
+            const month = pad(date.getMonth() + 1);
+            const year = date.getFullYear();
+            const hours = pad(date.getHours());
+            const minutes = pad(date.getMinutes());
+            const seconds = pad(date.getSeconds());
+            return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+        }
+
+        /**
+         * Fetches and parses CSV data from the given URL.
+         * @param {string} url - The URL of the CSV data.
+         * @returns {Promise<Array>} A promise that resolves with the parsed data.
+         */
+        async function fetchCsvData(url) {
+            loadingIndicator.style.display = 'block';
+            errorMessage.style.display = 'none';
+            filterControlsContainer.style.display = 'none';
+            probTypeCardsContainer.style.display = 'none';
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const csvText = await response.text();
+                return parseCsv(csvText);
+            } catch (error) {
+                console.error("Error fetching or parsing CSV:", error);
+                errorMessage.style.display = 'block';
+                return []; // Return empty array on error
+            } finally {
+                loadingIndicator.style.display = 'none';
+            }
+        }
+
+        /**
+         * Parses CSV text into an array of objects, handling commas within double quotes.
+         * Assumes the first row is the header.
+         * @param {string} csvText - The CSV data as a string.
+         * @returns {Array} An array of objects.
+         */
+        function parseCsv(csvText) {
+            const lines = csvText.trim().split('\n');
+            if (lines.length === 0) return [];
+
+            const headers = lines[0].split(',').map(header => header.trim());
+            const data = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i];
+                const values = [];
+                let inQuote = false;
+                let currentField = '';
+
+                for (let j = 0; j < line.length; j++) {
+                    const char = line[j];
+                    if (char === '"') {
+                        // Handle escaped quotes within a quoted field (e.g., "abc""def")
+                        if (inQuote && line[j + 1] === '"') {
+                            currentField += '"';
+                            j++; // Skip the next quote as it's an escape
+                        } else {
+                            inQuote = !inQuote;
+                        }
+                    } else if (char === ',' && !inQuote) {
+                        values.push(currentField);
+                        currentField = '';
+                    } else {
+                        currentField += char;
+                    }
+                }
+                values.push(currentField); // Add the last field
+
+                // Trim all values after parsing
+                const trimmedValues = values.map(val => val.trim());
+
+                if (trimmedValues.length !== headers.length) {
+                    console.warn(`Skipping malformed row due to incorrect number of fields: ${line}`);
+                    console.warn(`Expected ${headers.length} fields, got ${trimmedValues.length} fields.`);
+                    console.warn(`Headers: ${headers}`);
+                    console.warn(`Parsed Values: ${trimmedValues}`);
+                    continue;
+                }
+
+                const row = {};
+                headers.forEach((header, index) => {
+                    row[header] = trimmedValues[index];
+                });
+                data.push(row);
+            }
+            return data;
+        }
+
+        /**
+         * Filters the docket data based on selected region, division, and CCC.
+         * @returns {Array} The filtered data.
+         */
+        function getFilteredData() {
+            let filtered = docketCallData; // Start with all data
+            console.log("--- Filtering Process Started ---");
+            console.log("Initial data length:", filtered.length);
+
+            // Filter by Region
+            if (selectedRegion && selectedRegion !== "All") {
+                const regionCodePrefix = regionData[selectedRegion].code.substring(0, 3);
+                filtered = filtered.filter(d => {
+                    // Check if Divn_code exists and starts with the region code prefix
+                    const matches = d.Divn_code && d.Divn_code.startsWith(regionCodePrefix);
+                    console.log(`Region filter: d.Divn_code='${d.Divn_code}', prefix='${regionCodePrefix}', matches=${matches}`);
+                    return matches;
+                });
+                console.log(`Filtered by Region (${selectedRegion}, prefix ${regionCodePrefix}): ${filtered.length} records`);
+            }
+
+            // Filter by Division (dependent on Region selection)
+            if (selectedDivision && selectedDivision !== "All") {
+                const divisionCodeFull = regionData[selectedRegion]?.divisions[selectedDivision]?.code;
+                if (divisionCodeFull) {
+                    // Use the first 4 characters of the full division code for comparison with CSV's Divn_code
+                    const divisionCodeCsvFormat = divisionCodeFull.substring(0, 4);
+                    filtered = filtered.filter(d => {
+                        // Check if Divn_code exists and matches the 4-digit division code
+                        const matches = d.Divn_code === divisionCodeCsvFormat;
+                        console.log(`Division filter: d.Divn_code='${d.Divn_code}', targetCode='${divisionCodeCsvFormat}' (from ${divisionCodeFull}), matches=${matches}`);
+                        return matches;
+                    });
+                    console.log(`Filtered by Division (${selectedDivision}, code ${divisionCodeFull}): ${filtered.length} records`);
+                } else {
+                    filtered = []; // If selectedDivision doesn't map to a code, no data matches
+                    console.log(`Division code not found for ${selectedDivision}. Filtered length: ${filtered.length}`);
+                }
+            }
+
+            // Filter by CCC (dependent on Division selection)
+            if (selectedCCC && selectedCCC !== "All") {
+                const cccCode = regionData[selectedRegion]?.divisions[selectedDivision]?.cccs[selectedCCC];
+                if (cccCode) {
+                    filtered = filtered.filter(d => {
+                        const matches = d.ccc_code === cccCode;
+                        console.log(`CCC filter: d.ccc_code='${d.ccc_code}', targetCode='${cccCode}', matches=${matches}`);
+                        return matches;
+                    });
+                    console.log(`Filtered by CCC (${selectedCCC}, code ${cccCode}): ${filtered.length} records`);
+                } else {
+                    filtered = []; // If selectedCCC doesn't map to a code, no data matches
+                    console.log(`CCC code not found for ${selectedCCC}. Filtered length: ${filtered.length}`);
+                }
+            }
+            console.log("--- Filtering Process End ---");
+            return filtered;
+        }
+
+        /**
+         * Calculates the counts of each problem type in the given data.
+         * @param {Array} data - The data to count problem types from.
+         * @returns {Object} An object where keys are prob_type and values are their counts.
+         */
+        function getProbTypeCounts(data) {
+            const counts = {};
+            data.forEach(item => {
+                if (item.prob_type) { // Ensure prob_type exists
+                    counts[item.prob_type] = (counts[item.prob_type] || 0) + 1;
+                }
+            });
+            return counts;
+        }
+
+        /**
+         * Finds the latest docket creation date from the given data.
+         * @param {Array} data - The data to find the latest date from.
+         * @returns {Date | null} The latest Date object, or null if no data.
+         */
+        function getLatestDocketDate(data) {
+            if (data.length === 0) return null;
+
+            let latestDate = null;
+            data.forEach(item => {
+                if (item.doc_crn_dt) { // Ensure doc_crn_dt exists
+                    const currentDate = parseDateString(item.doc_crn_dt);
+                    if (!latestDate || currentDate > latestDate) {
+                        latestDate = currentDate;
+                    }
+                }
+            });
+            return latestDate;
+        }
+
+        /**
+         * Renders the problem type cards based on the counts.
+         * @param {Object} counts - An object with prob_type counts.
+         */
+function renderProbTypeCards(counts) {
+    probTypeCardsContainer.innerHTML = '';
+
+    let filteredData = getFilteredData();
+    filteredData = filterByDescriptionType(filteredData);
+    filteredData = filterByAge(filteredData); // ✅ Now filters 24H+
+
+    // Separate technical and non-technical types
+    const technicalTypes = [];
+    const nonTechnicalTypes = [];
+
+    Object.keys(counts).forEach(type => {
+        const item = filteredData.find(row => row.prob_type?.trim() === type);
+        const isTechnical = item?.DESCRIPTION?.trim().toUpperCase() === 'B';
+        if (isTechnical) {
+            technicalTypes.push(type);
+        } else {
+            nonTechnicalTypes.push(type);
+        }
+    });
+
+    // Sort technical by priority, others alphabetically
+    technicalTypes.sort((a, b) => (TECHNICAL_PRIORITY[a] ?? 999) - (TECHNICAL_PRIORITY[b] ?? 999));
+    nonTechnicalTypes.sort();
+
+    const orderedTypes = [...technicalTypes, ...nonTechnicalTypes];
+
+    if (orderedTypes.length === 0) {
+        noDataMessage.classList.remove('hidden');
+        noDataMessage.style.display = 'block';
+    } else {
+        noDataMessage.classList.add('hidden');
+        noDataMessage.style.display = 'none';
+    }
+
+    orderedTypes.forEach(type => {
+        const count = filteredData.filter(d => d.prob_type?.trim() === type).length;
+        const sampleItem = filteredData.find(d => d.prob_type?.trim() === type);
+        const isTechnical = sampleItem?.DESCRIPTION?.trim().toUpperCase() === 'B';
+
+        const card = document.createElement('div');
+        card.className = 'prob-type-card';
+        card.style.cursor = 'pointer';
+        card.onclick = () => {
+            const detailsList = filteredData.filter(d => d.prob_type?.trim() === type);
+            window.lastModalProblemType = type;
+            showModal(detailsList, type);
+        };
+
+        if (isTechnical) {
+            card.style.backgroundColor = '#fee2e2';
+            card.style.color = '#991b1b';
+        } else {
+            card.style.backgroundColor = '#dbeafe';
+            card.style.color = '#1e40af';
+        }
+
+        // Show CCCs only for top technical types
+        let cccLine = '';
+        if (isTechnical && ["Conductor snap", "Dis. transformer problem", "Breakage or uprooting of pole"].includes(type)) {
+            const cccNames = getCCCNamesByProblemType(filteredData, type);
+            if (cccNames.length) {
+                cccLine = `<div style="font-size: 0.75rem; margin-top: 0.25rem;">${cccNames.join(', ')}</div>`;
+            }
+        }
+
+        card.innerHTML = `
+            <div>
+                <h3 class="prob-type-card-title">${type}</h3>
+                ${cccLine}
+            </div>
+            <p class="prob-type-card-count">${count}</p>
+        `;
+
+        probTypeCardsContainer.appendChild(card);
+    });
+}
+function shortenName(name) {
+  if (!name) return '';
+  const words = name.trim().split(/\s+/); // Split by whitespace
+  return words.slice(0, 2).join(' ') + (words.length > 2 ? '...' : '');
+}
+
+
+function showModal(detailsList, probType) {
+    const modal = document.getElementById("details-modal");
+    const content = document.getElementById("modal-content");
+
+    // 🆕 Set header dynamically
+    document.getElementById("modal-title").textContent = `Docket Details — ${probType}`;
+
+    if (detailsList.length === 0) {
+        content.innerHTML = `<p>No data available.</p>`;
+    } else {
+        content.innerHTML = `
+            <div style="overflow-x: auto;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                  <tr style="background-color: #f3f4f6;">
+                    <th style="text-align:left; padding: 0.3rem;">Doc No</th>
+                    <th style="text-align:left; padding: 0.3rem;">Con ID</th>
+                    <th style="text-align:left; padding: 0.3rem;">Party</th>
+                    <th style="text-align:left; padding: 0.3rem;">Mobile</th>
+                    <th style="text-align:left; padding: 0.3rem;">Since</th>
+                  </tr>
+                </thead>
+                <tbody>
+${detailsList
+  .filter(d => {
+    if (document.getElementById('older-checkbox').checked) {
+      const diffStr = getTimeDifference(d.doc_crn_dt); // e.g., "2D 5H 30M"
+      const match = diffStr.match(/(\d+)D/); // extract days
+      return match && parseInt(match[1]) >= 1;
+    }
+    return true;
+  })
+  .map(d => {
+    const since = getTimeDifference(d.doc_crn_dt);
+    return `
+      <tr style="cursor:pointer;" onclick='showDocketDetail(${JSON.stringify(d).replace(/'/g, "\\'")})'>
+        <td>${d.doc_no}</td>
+        <td>${d.con_id}</td>
+<td>${shortenName(d.PARTY_NAME)}</td>
+        <td>${d.Mob_No}</td>
+        <td>${since}</td>
+      </tr>`;
+}).join('')}
+
+                </tbody>
+              </table>
+            </div>
+        `;
+    }
+
+    modal.style.display = "flex";
+}
+
+
+function closeModal() {
+    document.getElementById("details-modal").style.display = "none";
+}
+
+function getTimeDifference(docDateStr) {
+    const parsed = parseDateString(docDateStr);
+    const now = new Date();
+    const diffMs = now - parsed;
+    const mins = Math.floor(diffMs / 60000);
+    const hrs = Math.floor(mins / 60);
+    const days = Math.floor(hrs / 24);
+    return `${days}D ${hrs % 24}H ${mins % 60}M`;
+}
+
+
+
+
+
+        /**
+         * Updates the latest docket date displayed on the dashboard.
+         * @param {Date | null} date - The latest Date object.
+         */
+        function updateLatestDateDisplay(date) {
+            if (date) {
+                latestDocketDateElement.textContent = formatDate(date);
+                latestDocketDateElement.classList.add('blinking-text'); // Ensure blinking class is present
+            } else {
+                latestDocketDateElement.textContent = 'N/A';
+                latestDocketDateElement.classList.remove('blinking-text');
+            }
+        }
+
+        /**
+         * Populates a select element with options.
+         * @param {HTMLSelectElement} selectElement - The select element to populate.
+         * @param {Array<string>} optionsArray - An array of option values.
+         * @param {string} selectedValue - The currently selected value.
+         * @param {string} defaultText - The text for the default "All" option.
+         */
+        function populateSelect(selectElement, optionsArray, selectedValue, defaultText) {
+            selectElement.innerHTML = ''; // Clear existing options
+            const allOption = document.createElement('option');
+            allOption.value = "All";
+            allOption.textContent = defaultText;
+            selectElement.appendChild(allOption);
+
+            optionsArray.sort().forEach(optionValue => {
+                const option = document.createElement('option');
+                option.value = optionValue;
+                option.textContent = optionValue;
+                if (optionValue === selectedValue) {
+                    option.selected = true;
+                }
+                selectElement.appendChild(option);
+            });
+            selectElement.value = selectedValue || "All"; // Set selected value or default to "All"
+        }
+
+        /**
+         * Renders the filter dropdowns based on current selections.
+         */
+        function renderFilters() {
+            // Get unique regions from the data
+            const regionsInUse = new Set();
+            docketCallData.forEach(d => {
+                const region = getRegionByCCC(d.ccc_code);
+                if (region) regionsInUse.add(region);
+            });
+            populateSelect(regionSelect, Array.from(regionsInUse), selectedRegion, "All Regions");
+
+            // Get unique divisions based on selected region
+            const divisionsInUse = new Set();
+            if (selectedRegion && selectedRegion !== "All") {
+                const divisionsForRegion = regionData[selectedRegion]?.divisions;
+                if (divisionsForRegion) {
+                    for (const divName in divisionsForRegion) {
+                        const divCodeFull = divisionsForRegion[divName].code;
+                        const divCodeCsvFormat = divCodeFull.substring(0, 4); // Get the 4-digit prefix
+                        // Only add divisions that have data matching the selected region AND the 4-digit Divn_code
+                        if (docketCallData.some(d => d.Divn_code === divCodeCsvFormat)) {
+                             divisionsInUse.add(divName);
+                        }
+                    }
+                }
+            }
+            populateSelect(divisionSelect, Array.from(divisionsInUse), selectedDivision, "All Divisions");
+            // Show/hide division filter based on region selection
+            const showDivisionFilter = (selectedRegion && selectedRegion !== "All");
+            divisionSelect.style.display = showDivisionFilter ? 'block' : 'none';
+
+
+            // Get unique CCCs based on selected division
+            const cccsInUse = new Set();
+            if (selectedRegion && selectedRegion !== "All" && selectedDivision && selectedDivision !== "All") {
+                const cccsForDivision = regionData[selectedRegion]?.divisions[selectedDivision]?.cccs;
+                if (cccsForDivision) {
+                    for (const cccName in cccsForDivision) {
+                        const cccCode = cccsForDivision[cccName];
+                        // Only add CCCs that have data matching the selected division
+                        if (docketCallData.some(d => d.ccc_code === cccCode)) {
+                            cccsInUse.add(cccName);
+                        }
+                    }
+                }
+            }
+            populateSelect(cccSelect, Array.from(cccsInUse), selectedCCC, "All CCCs");
+            // Show/hide CCC filter based on division selection
+            const showCccFilter = (selectedDivision && selectedDivision !== "All");
+            cccSelect.style.display = showCccFilter ? 'block' : 'none';
+        }
+
+        /**
+         * Gets the region name from a CCC code using the regionData mapping.
+         * @param {string} cccCode - The CCC code from the data.
+         * @returns {string|null} The region name or null if not found.
+         */
+        function getRegionByCCC(cccCode) {
+            for (const regionName in regionData) {
+                const region = regionData[regionName];
+                for (const divisionName in region.divisions) {
+                    const division = region.divisions[divisionName];
+                    for (const cccName in division.cccs) {
+                        if (division.cccs[cccName] === cccCode) {
+                            return regionName;
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        /**
+         * Gets the division name from a CCC code using the regionData mapping.
+         * @param {string} cccCode - The CCC code from the data.
+         * @returns {string|null} The division name or null if not found.
+         */
+        function getDivisionByCCC(cccCode) {
+            for (const regionName in regionData) {
+                const region = regionData[regionName];
+                for (const divisionName in region.divisions) {
+                    const division = region.divisions[divisionName];
+                    for (const cccName in division.cccs) {
+                        if (division.cccs[cccName] === cccCode) {
+                            return divisionName;
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+// Description Type Filters
+function filterByDescriptionType(data) {
+    const showTechnical = document.getElementById('technical-checkbox').checked;
+    const showNonTechnical = document.getElementById('nontechnical-checkbox').checked;
+
+    return data.filter(item => {
+        const desc = item.DESCRIPTION?.trim().toUpperCase();
+        return (desc === 'A' && showNonTechnical) || (desc === 'B' && showTechnical);
+    });
+}
+
+// Attach change events
+document.getElementById('technical-checkbox').addEventListener('change', updateDashboard);
+document.getElementById('nontechnical-checkbox').addEventListener('change', updateDashboard);
+document.getElementById('older-checkbox').addEventListener('change', updateDashboard);
+
+        /**
+         * Main function to update all dashboard components.
+         */
+        async function updateDashboard() {
+            // Update selected values from dropdowns
+            selectedRegion = regionSelect.value === "All" ? null : regionSelect.value;
+            selectedDivision = divisionSelect.value === "All" ? null : divisionSelect.value;
+            selectedCCC = cccSelect.value === "All" ? null : cccSelect.value;
+
+            // Re-render filters to update dependent dropdowns
+            renderFilters();
+
+            // Filter data and update cards/date
+let filteredData = getFilteredData();
+filteredData = filterByDescriptionType(filteredData);
+            const probTypeCounts = getProbTypeCounts(filteredData);
+            const latestDate = getLatestDocketDate(filteredData);
+
+            renderProbTypeCards(probTypeCounts);
+            updateLatestDateDisplay(latestDate);
+        }
+
+        // Event Listeners for dropdowns
+        regionSelect.addEventListener('change', () => {
+            selectedRegion = regionSelect.value;
+            selectedDivision = null; // Reset dependent filters
+            selectedCCC = null;
+            updateDashboard();
+        });
+
+        divisionSelect.addEventListener('change', () => {
+            selectedDivision = divisionSelect.value;
+            selectedCCC = null; // Reset dependent filter
+            updateDashboard();
+        });
+
+        cccSelect.addEventListener('change', () => {
+            selectedCCC = cccSelect.value;
+            updateDashboard();
+        });
+
+
+        // Initial load of the dashboard: fetch data then update
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Attempt to fetch live data first
+            docketCallData = await fetchCsvData(CSV_URL);
+
+            // If live data fetch fails or returns empty, show error
+            if (docketCallData.length === 0) {
+                errorMessage.textContent = "Failed to load data from CSV. Please ensure the Google Sheet is published to web as CSV and the URL is correct.";
+                errorMessage.style.display = 'block';
+            } else {
+                errorMessage.style.display = 'none'; // Hide error if live data loaded
+                filterControlsContainer.style.display = 'flex'; // Show filters
+                probTypeCardsContainer.style.display = 'grid'; // Show cards grid
+                updateDashboard(); // Initial render of filters and data
+            }
+        });
+function getCCCNameByCode(code) {
+    for (const region of Object.values(regionData)) {
+        for (const division of Object.values(region.divisions)) {
+            for (const [name, cccCode] of Object.entries(division.cccs)) {
+                if (cccCode === code) {
+                    return name;
+                }
+            }
+        }
+    }
+    return null;
+}
+function showDocketDetail(data) {
+  const content = document.getElementById('docket-detail-content');
+  const since = getTimeDifference(data.doc_crn_dt);
+  const cccName = getCCCNameByCode(data.ccc_code?.trim()) || '-';
+
+  content.innerHTML = `
+    <table style="width:100%; border-collapse: collapse;">
+      <tr><td><strong>CCC Name:</strong></td><td>${cccName}</td></tr>
+      <tr><td><strong>Doc No:</strong></td><td>${data.doc_no}</td></tr>
+      <tr><td><strong>Con ID:</strong></td><td>${data.con_id}</td></tr>
+      <tr><td><strong>Party:</strong></td><td>${data.PARTY_NAME}</td></tr>
+      <tr><td><strong>Mobile:</strong></td><td>${data.Mob_No}</td></tr>
+      <tr><td><strong>Address:</strong></td><td>${data.addr}</td></tr>
+      <tr><td><strong>Problem Type:</strong></td><td>${data.prob_type}</td></tr>
+      <tr><td><strong>Created:</strong></td><td>${data.doc_crn_dt}</td></tr>
+      <tr><td><strong>Since:</strong></td><td>${since}</td></tr>
+    </table>
+  `;
+
+  document.getElementById('docket-detail-modal').style.display = 'flex';
+}
+
+function closeDocketDetailModal() {
+  document.getElementById('docket-detail-modal').style.display = 'none';
+}
+document.getElementById('older-checkbox').addEventListener('change', () => {
+    const modal = document.getElementById("details-modal");
+    const isModalVisible = modal.style.display === "flex";
+
+    if (isModalVisible && window.lastModalProblemType) {
+        const filteredData = getFilteredData().filter(d =>
+            filterByDescriptionType([d]).length > 0 && d.prob_type === window.lastModalProblemType
+        );
+        showModal(filteredData, window.lastModalProblemType);
+    }
+});
+
+function filterByAge(data) {
+    const olderChecked = document.getElementById('older-checkbox').checked;
+    if (!olderChecked) return data;
+
+    return data.filter(d => {
+        const diffStr = getTimeDifference(d.doc_crn_dt);
+        const match = diffStr.match(/(\d+)D/); // extract days
+        return match && parseInt(match[1]) >= 1;
+    });
+}
+
+    </script>
+<!-- Compact Sticky-Header Modal -->
+<div id="details-modal" style="display:none; position:fixed; inset:0; background-color:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+<div style="background:white; border-radius:0.5rem; width:95%; max-width:900px; max-height:80vh; overflow:hidden; display: flex; flex-direction: column; font-size:0.8rem;">
+    
+    <!-- Sticky Header -->
+    <div style="position: sticky; top: 0; background: #991b1b; color: white; display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.75rem; font-size: 0.9rem;">
+      <span id="modal-title">Docket Details</span>
+      <button onclick="closeModal()" style="background: none; border: none; color: white; font-size: 1rem; font-weight: bold;">✕</button>
+    </div>
+
+    <!-- Scrollable Content -->
+    <div id="modal-content" style="overflow: auto; padding: 0.75rem;"></div>
+  </div>
+</div>
+
+<!-- Docket Detail Modal -->
+<div id="docket-detail-modal" style="display:none; position:fixed; inset:0; background-color:rgba(0,0,0,0.5); z-index:1100; align-items:center; justify-content:center;">
+  <div style="background:white; border-radius:0.5rem; width:90%; max-width:500px; max-height:90vh; overflow:auto; padding:1rem; font-size:0.85rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+      <strong>Docket Detail</strong>
+      <button onclick="closeDocketDetailModal()" style="background:none; border:none; font-size:1.2rem;">✕</button>
+    </div>
+    <div id="docket-detail-content"></div>
+  </div>
+</div>
+
+</body>
+</html>
