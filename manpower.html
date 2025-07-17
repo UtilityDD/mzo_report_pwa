@@ -1710,8 +1710,8 @@ function closeBirthdayModal() {
 }
 function closeCardPreview() {
   document.getElementById('cardPreviewModal').style.display = 'none';
-  document.getElementById('previewCardImg').src = '';
 }
+
 function downloadPreviewCard() {
   const link = document.createElement('a');
   link.href = document.getElementById('previewCardImg').src;
@@ -1790,53 +1790,19 @@ function loadEmployeeDataWithBirthdayGreeting() {
 
 
 function downloadBirthdayCard(name, legacyId, costCenterName = '') {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  canvas.width = 600;
-  canvas.height = 400;
-
-  // Background
-  ctx.fillStyle = '#fff8e1';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Border
-  ctx.strokeStyle = '#f57c00';
-  ctx.lineWidth = 6;
-  ctx.strokeRect(0, 0, canvas.width, canvas.height);
-
-  // Heading
-  ctx.fillStyle = '#e65100';
-  ctx.font = 'bold 32px sans-serif';
-  ctx.fillText("🎉 Happy Birthday!", 180, 70);
-
-  // Name
-  ctx.fillStyle = '#6a1b9a';
-  ctx.font = 'bold 28px sans-serif';
-  ctx.fillText(name, 50, 150);
-
-  // Cost Center below Name
-  if (costCenterName) {
-    ctx.fillStyle = '#666';
-    ctx.font = 'italic 16px sans-serif';
-    ctx.fillText(`(${costCenterName})`, 50, 175);
-  }
-
-  // Birthday Message
+  const today = new Date();
   let birthdayMessage = '';
+
   if (legacyId && legacyId.length === 10) {
     const birthYear = parseInt(legacyId.slice(0, 4));
     const month = parseInt(legacyId.slice(4, 6)) - 1;
     const day = parseInt(legacyId.slice(6, 8));
-    const today = new Date();
     const currentYear = today.getFullYear();
-
     const dobThisYear = new Date(currentYear, month, day);
     const age = currentYear - birthYear;
 
     const formattedDate = dobThisYear.toLocaleDateString('en-GB', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
+      day: 'numeric', month: 'long', year: 'numeric'
     });
 
     const ordinal = (n) => {
@@ -1849,48 +1815,83 @@ function downloadBirthdayCard(name, legacyId, costCenterName = '') {
     birthdayMessage = `${ordinal(age)} Birthday on ${formattedDate}`;
   }
 
-  ctx.fillStyle = '#424242';
-  ctx.font = '20px sans-serif';
-  ctx.fillText(birthdayMessage, 50, 220);
+  document.getElementById('cardName').textContent = name;
+  document.getElementById('cardCostCenter').textContent = costCenterName ? `(${costCenterName})` : '';
+  document.getElementById('cardBirthdayText').textContent = birthdayMessage;
 
-  // Greeting Line
-  ctx.fillStyle = '#1b5e20';
-  ctx.font = 'italic 18px serif';
-  ctx.fillText("Wishing you joy, health, and success!", 50, 270);
-
-  // Footer
-  ctx.font = '16px sans-serif';
-  ctx.fillStyle = '#777';
-  ctx.fillText("— Malda Zone, WBSEDCL", 360, 360);
-
-  // Generate Image Preview
-  const imgData = canvas.toDataURL("image/png");
-  document.getElementById('previewCardImg').src = imgData;
   document.getElementById('cardPreviewModal').style.display = 'block';
-
-  // Show download instructions conditionally
-  const isMobile = /android|iphone|ipad|mobile/i.test(navigator.userAgent);
-  document.getElementById('previewNote').textContent = isMobile
-    ? 'Long press the image to save'
-    : 'Click ⬇️ Download to save image';
 }
+
+function captureCardAndDownload() {
+  const captureElement = document.getElementById('cardCapture');
+
+  html2canvas(captureElement, {
+    scale: 3,
+    useCORS: true
+  }).then(canvas => {
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const isMobile = /android|iphone|ipad|mobile/i.test(navigator.userAgent);
+
+      if (isMobile) {
+        const win = window.open();
+        win.document.write(`<img src="${url}" style="width:100%;">`);
+      } else {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'Birthday_Card.png';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
+    }, 'image/png');
+  });
+}
+
+
+
 
     </script>
 
 <div id="cardPreviewModal" class="modal" style="z-index: 2000; display: none;">
-  <div class="modal-content" style="text-align: center; padding: 24px;">
-    <h3 style="color: #1976d2;">🎂 Birthday Card Preview</h3>
-    <p id="previewNote" style="color: #555; font-size: 14px;"></p>
+  <div class="modal-content" style="text-align: center; padding: 24px; max-width: 640px; margin: auto;">
+    
+    <div id="cardCapture" style="
+      background: #fff8e1;
+      padding: 30px;
+      border-radius: 12px;
+      border: 4px solid #f57c00;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    ">
+      <div style="font-size: 32px; font-weight: bold; color: #e65100; margin-bottom: 20px;">
+        🎉 Happy Birthday!
+      </div>
+      
+      <div id="cardName" style="font-size: 28px; color: #6a1b9a; font-weight: bold; margin-bottom: 5px;"></div>
+      <div id="cardCostCenter" style="font-size: 16px; color: #666; font-style: italic; margin-bottom: 20px;"></div>
 
-    <img id="previewCardImg" src="" style="max-width: 100%; margin: 16px 0; border: 1px solid #ccc; border-radius: 8px;">
+      <div id="cardBirthdayText" style="font-size: 20px; color: #424242; margin-bottom: 20px;"></div>
 
-    <div style="display: flex; justify-content: center; gap: 12px;">
-      <button onclick="downloadPreviewCard()" class="auth-btn" style="max-width: 200px;">⬇️ Download</button>
-      <button onclick="closeCardPreview()" class="auth-btn" style="max-width: 200px;">Close</button>
+      <div style="font-style: italic; color: #1b5e20; font-size: 18px;">
+        Wishing you joy, health, and success!
+      </div>
+
+      <div style="color: #777; font-size: 16px; margin-top: 30px;">
+        — Malda Zone, WBSEDCL
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: center; gap: 12px; margin-top: 24px;">
+      <button onclick="captureCardAndDownload()" class="auth-btn" style="min-width: 120px;">⬇️ Save</button>
+      <button onclick="closeCardPreview()" class="auth-btn" style="min-width: 120px;">Close</button>
     </div>
   </div>
 </div>
 
+
+
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
 </body>
 </html>
