@@ -1,0 +1,2228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <title>DD Consumers</title>
+  <style>
+    :root {
+      --primary-color: #2196f3; /* A slightly softer blue */
+      --primary-light: #bbdefb;
+      --primary-dark: #1976d2;
+      --accent-color: #ff6b35;
+      --text-color-dark: #212121;
+      --text-color-medium: #616161;
+      --text-color-light: #9e9e9e;
+      --background-light: #f5f5f5;
+      --background-card: #ffffff;
+      --border-color: #e0e0e0;
+      --shadow-light: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+      --shadow-medium: 0 3px 6px rgba(0,0,0,0.16), 0 3px 6px rgba(0,0,0,0.23);
+      --border-radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Roboto', sans-serif;
+      background: var(--background-light);
+      color: var(--text-color-dark);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    .app-bar {
+      background: var(--primary-color);
+      color: white;
+      padding: 1rem 1.5rem;
+      box-shadow: var(--shadow-medium);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .app-bar h1 {
+      font-size: 1.4rem;
+      font-weight: 500;
+    }
+
+    .filter-bar {
+      background: var(--background-card);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 1.5rem;
+      position: sticky;
+      top: 64px; /* Height of app-bar */
+      z-index: 99;
+      box-shadow: var(--shadow-light);
+    }
+
+    .filter-content {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .filter-label {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text-color-medium);
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap; /* Allow buttons to wrap on smaller screens */
+      gap: 0.5rem; /* Spacing between buttons */
+    }
+
+    .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .slider {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border-color);
+      outline: none;
+      -webkit-appearance: none;
+      appearance: none;
+      cursor: grab;
+      transition: background 0.3s ease;
+    }
+
+    .slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--primary-color);
+      cursor: grab;
+      box-shadow: var(--shadow-light);
+      transition: background 0.15s ease, transform 0.15s ease;
+    }
+
+    .slider::-webkit-slider-thumb:active {
+      cursor: grabbing;
+      transform: scale(1.1);
+    }
+
+    .slider::-moz-range-thumb {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--primary-color);
+      cursor: grab;
+      border: none;
+      box-shadow: var(--shadow-light);
+      transition: background 0.15s ease;
+    }
+
+    .slider.high-value {
+      background: linear-gradient(to right, var(--border-color) 0%, var(--accent-color) 100%);
+    }
+
+    .slider.high-value::-webkit-slider-thumb {
+      background: var(--accent-color);
+    }
+
+    .slider.high-value::-moz-range-thumb {
+      background: var(--accent-color);
+    }
+
+    .slider-value {
+      background: var(--background-light);
+      padding: 0.4rem 0.8rem;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--primary-color);
+      min-width: 60px;
+      text-align: center;
+      border: 1px solid var(--border-color);
+      transition: all 0.2s ease;
+    }
+
+    .slider-value.high-value {
+      background: #fff3f0;
+      color: var(--accent-color);
+      border-color: var(--accent-color);
+    }
+
+    .container {
+      padding: 1rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .overview-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem; /* Spacing between cards */
+      margin-bottom: 1rem; /* Space below the row of cards */
+    }
+
+    .due-date-cards { /* New style for due date cards container */
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+
+    .metric-card {
+      background: var(--background-card);
+      border-radius: var(--border-radius);
+      padding: 1rem 1.2rem;
+      box-shadow: var(--shadow-light);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-height: 70px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border-left: 5px solid var(--primary-color);
+    }
+
+    .metric-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-medium);
+    }
+
+    .metric-card:active {
+      transform: scale(0.98);
+      box-shadow: var(--shadow-light);
+    }
+
+    .metric-info h3 {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--text-color-medium);
+      margin-bottom: 0.2rem;
+    }
+
+    .metric-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--primary-color);
+    }
+
+    .metric-icon {
+      width: 45px;
+      height: 45px;
+      background: var(--primary-light);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      color: var(--primary-color);
+      flex-shrink: 0;
+    }
+
+    /* Specific colors for the first three overview cards */
+    .total-consumers-card {
+      border-left-color: #4CAF50; /* Green */
+    }
+    .total-consumers-card .metric-icon {
+      background: #E8F5E8; /* Light Green */
+      color: #2E7D32; /* Darker Green */
+    }
+    .total-consumers-card .metric-value {
+      color: #2E7D32; /* Match icon color for value */
+    }
+
+    .zero-osd-card {
+      border-left-color: #FFC107; /* Amber */
+    }
+    .zero-osd-card .metric-icon {
+      background: #FFF8E1; /* Light Amber */
+      color: #FF8F00; /* Darker Amber */
+    }
+    .zero-osd-card .metric-value {
+      color: #FF8F00; /* Match icon color for value */
+    }
+
+    .low-osd-card {
+      border-left-color: #03A9F4; /* Light Blue */
+    }
+    .low-osd-card .metric-icon {
+      background: #E1F5FE; /* Lighter Blue */
+      color: #0288D1; /* Darker Blue */
+    }
+    .low-osd-card .metric-value {
+      color: #0288D1; /* Match icon color for value */
+    }
+
+
+    .modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.4); /* Overlay background */
+      z-index: 1000;
+      display: flex;
+      justify-content: center; /* Center horizontally */
+      align-items: center; /* Center vertically */
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s ease, visibility 0.3s ease;
+    }
+
+    .modal.is-visible {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .modal-dialog {
+      background: var(--background-card);
+      border-radius: var(--border-radius);
+      width: 90%; /* Max width for smaller screens */
+      max-width: 800px; /* Max width for larger screens */
+      max-height: 90vh; /* Max height to prevent overflow */
+      display: flex;
+      flex-direction: column;
+      transform: translateY(20px); /* Small animation effect */
+      transition: transform 0.3s ease-out;
+      overflow: hidden;
+      box-shadow: var(--shadow-medium);
+    }
+
+    .modal.is-visible .modal-dialog {
+      transform: translateY(0);
+    }
+
+    .modal-header {
+      background: var(--primary-color);
+      color: white;
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow-light); /* Lighter shadow for header */
+      flex-shrink: 0;
+    }
+
+    .modal-title {
+      font-size: 1.2rem;
+      font-weight: 500;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 1.8rem;
+      cursor: pointer;
+      padding: 0.4rem;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s ease;
+    }
+
+    .close-btn:hover {
+      background: rgba(255,255,255,0.15);
+    }
+
+    .close-btn:active {
+      background: rgba(255,255,255,0.25);
+    }
+
+    .modal-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+      -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+    }
+
+    .summary-item {
+      background: var(--background-card);
+      border-radius: var(--border-radius);
+      margin-bottom: 0.8rem;
+      padding: 1rem 1.2rem;
+      box-shadow: var(--shadow-light);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .summary-item:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-medium);
+    }
+
+    .summary-item:active {
+      transform: scale(0.98);
+      background: var(--background-light);
+    }
+
+    .summary-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.6rem;
+    }
+
+    .summary-name {
+      font-weight: 600;
+      color: var(--primary-color);
+      font-size: 1.1rem;
+    }
+
+    .summary-stats {
+      display: flex;
+      gap: 1.2rem;
+    }
+
+    .stat {
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-color-dark);
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--text-color-medium);
+      margin-top: 0.2rem;
+    }
+
+    .consumer-item {
+      background: var(--background-card);
+      border-radius: var(--border-radius);
+      margin-bottom: 0.8rem;
+      padding: 0.8rem 1.2rem;
+      box-shadow: var(--shadow-light);
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .consumer-item:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-medium);
+    }
+
+    .consumer-item:active {
+      transform: scale(0.98);
+      background: var(--background-light);
+    }
+
+    .consumer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 0.5rem;
+    }
+
+    .consumer-id {
+      font-weight: 600;
+      color: var(--primary-color);
+      font-size: 0.95rem;
+    }
+
+    .consumer-osd {
+      background: #e8f5e8; /* Light green */
+      color: #2e7d32; /* Darker green */
+      padding: 0.3rem 0.6rem;
+      border-radius: 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .consumer-name {
+      font-size: 0.9rem;
+      color: var(--text-color-dark);
+      margin-bottom: 0.3rem;
+      word-break: break-word;
+    }
+
+    .consumer-details {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-color-medium);
+    }
+
+    .due-date-text { /* New style for the "Due within" text */
+      color: #D32F2F; /* Red color */
+      font-size: 0.75rem;
+      font-weight: 500;
+      margin-top: 0.3rem;
+      text-align: right;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 2.5rem 1rem;
+      color: var(--text-color-medium);
+    }
+
+    .empty-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      opacity: 0.4;
+    }
+
+    /* Loading Spinner */
+#loadingOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(2px); /* smooth background */
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  pointer-events: auto;
+}
+
+.modern-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid transparent;
+  border-top: 4px solid var(--primary-color);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+
+    .loader {
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.6; }
+      50% { opacity: 1; }
+      100% { opacity: 0.6; }
+    }
+
+    /* Shimmer Placeholder */
+    .shimmer-card {
+      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.2s infinite;
+      height: 70px; /* Match metric-card height */
+      border-radius: var(--border-radius);
+      margin-bottom: 0.8rem;
+      border-left: 5px solid #ccc; /* Placeholder for border */
+    }
+
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+
+    .toggle-btn {
+      margin-left: 0.8rem;
+      font-size: 0.75rem;
+      padding: 0.4rem 0.9rem;
+      border-radius: 20px;
+      background: var(--background-light);
+      border: 1px solid var(--border-color);
+      color: var(--text-color-medium);
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-weight: 500;
+    }
+
+    .toggle-btn.active {
+      background: var(--primary-color);
+      color: white;
+      border-color: var(--primary-color);
+      box-shadow: var(--shadow-light);
+    }
+
+    .toggle-btn:hover:not(.active) {
+      background: #e0e0e0;
+      border-color: #c7c7c7;
+    }
+
+    /* Styles for dropdowns */
+    .filter-dropdown-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 0.8rem;
+      margin-top: 0.8rem;
+    }
+@media (max-width: 480px) {
+  .filter-dropdown-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+  }
+
+  #regionFilter {
+    grid-column: span 2;
+  }
+
+  .filter-dropdown-container select {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+
+    .filter-dropdown-container select {
+      padding: 0.6rem 1rem;
+      border-radius: var(--border-radius);
+      border: 1px solid var(--border-color);
+      background-color: var(--background-card);
+      font-size: 0.9rem;
+      color: var(--text-color-dark);
+      appearance: none; /* Remove default arrow */
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      background-image: url('data:image/svg+xml;utf8,<svg fill="%23616161" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/><path d="M0 0h24v24H0z" fill="none"/></svg>');
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      background-size: 20px;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .filter-dropdown-container select:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
+    }
+
+    /* Consumer Detail Modal specific styles */
+    .consumer-detail-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    .consumer-detail-table th,
+    .consumer-detail-table td {
+      padding: 0.6rem 1rem;
+      border: 1px solid var(--border-color);
+      text-align: left;
+    }
+
+    .consumer-detail-table th {
+      background-color: var(--background-light);
+      font-weight: 500;
+      color: var(--text-color-medium);
+      width: 40%; /* Adjust as needed */
+    }
+
+    .consumer-detail-table tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+
+    .consumer-detail-table tr:hover {
+      background-color: #f0f0f0;
+    }
+
+    .detail-item-value { /* Keep for general styling, though table cells handle specific values */
+      color: var(--text-color-dark);
+      word-break: break-word;
+    }
+
+    /* Styles for the new paginated table */
+    .consumer-table-section {
+      background: var(--background-card);
+      border-radius: var(--border-radius);
+      padding: 1rem;
+      box-shadow: var(--shadow-light);
+      margin-top: 1.5rem;
+    }
+
+    .consumer-table-section h2 {
+      font-size: 1.2rem;
+      font-weight: 500;
+      color: var(--primary-color);
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .consumer-list-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1rem;
+    }
+
+    .consumer-list-table th,
+    .consumer-list-table td {
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border-color);
+      text-align: left;
+      font-size: 0.85rem;
+    }
+
+    .consumer-list-table th {
+      background-color: var(--primary-light);
+      color: var(--primary-dark);
+      font-weight: 600;
+      position: sticky;
+      top: 0; /* Make table header sticky within its container */
+      z-index: 1;
+    }
+
+    .consumer-list-table tbody tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+
+    .consumer-list-table tbody tr:hover {
+      background-color: #e0f2f7; /* Light blue on hover */
+      cursor: pointer;
+    }
+
+    .due-date-text-table { /* Specific style for due date in table */
+      color: #D32F2F; /* Red color */
+      font-weight: 500;
+    }
+
+    .pagination-controls {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .pagination-button {
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 0.6rem 1.2rem;
+      border-radius: var(--border-radius);
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: background 0.2s ease, transform 0.1s ease;
+    }
+
+    .pagination-button:hover:not(:disabled) {
+      background: var(--primary-dark);
+      transform: translateY(-1px);
+    }
+
+    .pagination-button:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .pagination-button:disabled {
+      background: #cccccc;
+      cursor: not-allowed;
+    }
+
+    .page-info {
+      font-size: 0.9rem;
+      color: var(--text-color-medium);
+      font-weight: 500;
+    }
+
+
+    /* Media Queries for responsiveness */
+    @media (max-width: 768px) {
+      .app-bar {
+        padding: 0.8rem 1rem;
+      }
+      .app-bar h1 {
+        font-size: 1.2rem;
+      }
+      .filter-bar {
+        padding: 0.8rem 1rem;
+        top: 56px; /* Adjust for smaller app bar */
+      }
+      .filter-dropdown-container {
+        grid-template-columns: 1fr; /* Stack dropdowns on small screens */
+      }
+      .container {
+        padding: 0.8rem;
+      }
+      .overview-cards, .due-date-cards { /* Apply stacking to both card groups */
+        grid-template-columns: 1fr;
+      }
+      .metric-card {
+        padding: 0.8rem 1rem;
+        min-height: 65px;
+      }
+      .metric-value {
+        font-size: 1.3rem;
+      }
+      .metric-info h3 {
+        font-size: 0.85rem;
+      }
+      .metric-icon {
+        width: 40px;
+        height: 40px;
+        font-size: 1.1rem;
+      }
+      .modal-header {
+        padding: 0.8rem 1rem;
+      }
+      .modal-title {
+        font-size: 1.1rem;
+      }
+      .close-btn {
+        font-size: 1.5rem;
+        width: 36px;
+        height: 36px;
+      }
+      .modal-content {
+        padding: 0.8rem;
+      }
+      .summary-item {
+        padding: 0.8rem 1rem;
+      }
+      .summary-name {
+        font-size: 1rem;
+      }
+      .stat-value {
+        font-size: 0.9rem;
+      }
+      .stat-label {
+        font-size: 0.7rem;
+      }
+      .consumer-item {
+        padding: 0.6rem 1rem;
+      }
+      .consumer-id {
+        font-size: 0.9rem;
+      }
+      .consumer-osd {
+        font-size: 0.7rem;
+      }
+      .consumer-name {
+        font-size: 0.85rem;
+      }
+      .consumer-details {
+        font-size: 0.7rem;
+      }
+      .consumer-detail-table th,
+      .consumer-detail-table td {
+        padding: 0.5rem 0.8rem;
+        font-size: 0.85rem;
+      }
+      .consumer-list-table th,
+      .consumer-list-table td {
+        padding: 0.6rem 0.8rem;
+        font-size: 0.8rem;
+      }
+      .pagination-controls {
+        flex-direction: column;
+        gap: 0.8rem;
+      }
+    }
+
+@media (max-width: 480px) {
+  .filter-label {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .toggle-btn {
+    flex: 1 1 calc(25% - 0.5rem); /* 4 per row with spacing */
+    min-width: 70px;
+    margin-left: 0;
+    text-align: center;
+  }
+}
+.filter-label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.toggle-btn {
+  flex: 1 1 calc(25% - 0.5rem);
+  text-align: center;
+}
+.consumer-table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.download-button {
+  padding: 6px 12px;
+  background-color: #007bff;
+  color: white;
+  font-size: 14px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.download-button:hover {
+  background-color: #0056b3;
+}
+
+/* Custom Alert Modal Styles */
+.custom-alert-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 2000; /* Higher than other modals */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.custom-alert-modal.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.custom-alert-dialog {
+  background: var(--background-card);
+  border-radius: var(--border-radius);
+  padding: 1.5rem;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: var(--shadow-medium);
+  text-align: center;
+  transform: translateY(20px);
+  transition: transform 0.3s ease-out;
+}
+
+.custom-alert-modal.is-visible .custom-alert-dialog {
+  transform: translateY(0);
+}
+
+.custom-alert-message {
+  font-size: 1.1rem;
+  color: var(--text-color-dark);
+  margin-bottom: 1.5rem;
+}
+
+.custom-alert-button {
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  padding: 0.7rem 1.5rem;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 500;
+  transition: background 0.2s ease;
+}
+
+.custom-alert-button:hover {
+  background: var(--primary-dark);
+}
+
+  </style>
+</head>
+<body>
+<div id="loadingOverlay">
+  <div class="modern-spinner"></div>
+  <div>Loading data, please wait...</div>
+</div>
+
+
+  <div class="app-bar">
+    <h1>Upcomming DD Consumers</h1>
+  </div>
+
+  <div class="filter-bar">
+    <div class="filter-content">
+      <div class="filter-label">
+        Filter by OSD
+        <button id="zeroToggle" class="toggle-btn">Zero OSD</button>
+        <button id="nonZeroToggle" class="toggle-btn">Non-Zero OSD</button>
+        <button id="govtToggle" class="toggle-btn">Govt</button>
+        <button id="threePhToggle" class="toggle-btn">3-Ph</button>
+        <button id="industrialToggle" class="toggle-btn">Industrial</button>
+        <button id="schoolToggle" class="toggle-btn">School</button>
+        <button id="towerToggle" class="toggle-btn">Tower</button>
+      </div>
+      <div class="slider-container">
+        <input type="range" id="osdSlider" min="0" max="10000" value="0" step="500" class="slider">
+        <div class="slider-value" id="sliderValue">≥ 0</div>
+      </div>
+
+      <div class="filter-dropdown-container">
+        <select id="regionFilter">
+          <option value="">All Regions</option>
+        </select>
+        <select id="divisionFilter">
+          <option value="">All Divisions</option>
+        </select>
+        <select id="cccFilter">
+          <option value="">All CCCs</option>
+        </select>
+      </div>
+
+      <!-- <div class="filter-stats" id="filterStats">Showing all consumers</div> -->
+    </div>
+  </div>
+
+  <div class="container" id="container">
+    <!-- Cards will be populated here -->
+  </div>
+
+  <!-- Paginated Consumer Table Section -->
+  <div class="container consumer-table-section">
+<div class="consumer-table-header">
+  <h3 class="consumer-table-title">Filtered Consumers List</h3>
+  <button onclick="downloadFilteredConsumers()" class="download-button">📥 Download (Excel)</button>
+</div>
+
+    <div style="overflow-x: auto;">
+      <table class="consumer-list-table" id="consumerTable">
+        <thead>
+          <tr>
+            <th>Consumer ID</th>
+            <th>Name</th>
+            <th>Base Class</th>
+            <th>MRU</th> <!-- Added MRU column header -->
+            <th>Disconn. Date</th>
+            <th>Outstanding</th>
+            <th>Due Date</th>
+          </tr>
+        </thead>
+        <tbody id="consumerTableBody">
+          <!-- Table rows will be populated here -->
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination-controls">
+      <button id="prevPageBtn" class="pagination-button">Previous</button>
+      <span id="pageInfo" class="page-info"></span>
+      <button id="nextPageBtn" class="pagination-button">Next</button>
+    </div>
+  </div>
+
+
+  <!-- Summary Modal -->
+  <div class="modal" id="summaryModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title" id="summaryTitle">Summary</div>
+        <button class="close-btn" onclick="closeSummaryModal()">×</button>
+      </div>
+      <div class="modal-content" id="summaryContent">
+        <!-- Summary items will be populated here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Consumer Modal -->
+  <div class="modal" id="consumerModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title" id="consumerTitle">Consumers</div>
+        <button class="close-btn" onclick="closeConsumerModal()">×</button>
+      </div>
+      <div class="modal-content" id="consumerContent">
+        <!-- Consumer items will be populated here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Consumer Detail Modal -->
+  <div class="modal" id="consumerDetailModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">Consumer Details</div>
+        <button class="close-btn" onclick="closeConsumerDetailModal()">×</button>
+      </div>
+      <div class="modal-content" id="consumerDetailContent">
+        <!-- Details go here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Alert Modal HTML -->
+  <div class="custom-alert-modal" id="customAlertModal">
+    <div class="custom-alert-dialog">
+      <div class="custom-alert-message" id="customAlertMessage"></div>
+      <button class="custom-alert-button" onclick="hideCustomAlert()">OK</button>
+    </div>
+  </div>
+
+
+  <script>
+    function formatINR(value) {
+  const val = parseInt(value);
+  if (val >= 10000000) return `₹${(val / 10000000).toFixed(2)} Cr`;
+  if (val >= 100000) return `₹${(val / 100000).toFixed(2)} L`;
+  if (val >= 1000) return `₹${(val / 1000).toFixed(0)}K`;
+  return `₹${val}`;
+}
+
+    function formatDate(raw) {
+      if (!raw || raw.length !== 8) return raw;
+      const yyyy = raw.slice(0, 4);
+      const mm = raw.slice(4, 6);
+      const dd = raw.slice(6, 8);
+      return `${dd}/${mm}/${yyyy}`;
+    }
+
+    const parseDate = str => {
+      if (!str || str.length !== 8) return null;
+      return new Date(`${str.slice(0, 4)}-${str.slice(4, 6)}-${str.slice(6, 8)}`);
+    };
+
+    // New function to format OSD
+    function formatOSD(valueInCents) {
+        const num = parseFloat(valueInCents); // This should already be a number (in cents)
+        if (isNaN(num)) return "N/A";
+
+        const actualValue = num / 100; // Convert cents back to actual monetary value
+
+        if (actualValue >= 10000000) { // Crore
+            return (actualValue / 10000000).toFixed(2) + " Cr";
+        } else if (actualValue >= 100000) { // Lakh
+            return (actualValue / 100000).toFixed(2) + " L";
+        } else {
+            return actualValue.toFixed(2); // Always two decimal places for consistency
+        }
+    }
+
+
+    const buckets = [
+      { label: "Today", minDays: 0, maxDays: 0, items: [], filteredItems: [], icon: "🎯" }, // Due exactly today
+      { label: "3 Days", minDays: 1, maxDays: 3, items: [], filteredItems: [], icon: "🕒" }, // Due in 1 to 3 days
+      { label: "7 Days", minDays: 4, maxDays: 7, items: [], filteredItems: [], icon: "⏰" },
+      { label: "15 Days", minDays: 8, maxDays: 15, items: [], filteredItems: [], icon: "📅" },
+      { label: "1 Month", minDays: 16, maxDays: 30, items: [], filteredItems: [], icon: "🗓️" },
+      { label: "3 Months", minDays: 31, maxDays: 90, items: [], filteredItems: [], icon: "📊" }
+      // Removed: { label: "6 Months", minDays: 91, maxDays: 180, items: [], filteredItems: [], icon: "📈" }
+    ];
+
+    let allData = [];
+    let maxOSD = 0;
+    let currentOSDFilter = 0;
+    let currentRegionFilter = "";
+    let currentDivisionFilter = "";
+    let currentCCCFilter = "";
+    let isZeroOnly = false; // State for Zero OSD toggle
+    let isNonZeroOnly = false; // State for Non-Zero OSD toggle
+    let isGovtOnly = false; // New state for Govt toggle
+    let is3PhOnly = false; // New state for 3-Ph toggle
+    let isIndustrialOnly = false; // New state for Industrial toggle
+    let isSchoolOnly = false; // New state for School toggle
+    let isTowerOnly = false; // New state for Tower toggle
+
+    // Pagination variables
+    let currentPage = 1;
+    const itemsPerPage = 20; // Number of consumers per page in the table
+    let filteredConsumersData = []; // This will hold the data for the paginated table
+
+
+    // CCC Hierarchy Data
+    const cccHierarchy = {
+      "6610000": {
+        name: "MALDA REGION",
+        divisions: {
+          "6611000": {
+            name: "MALDA DIVISIOIN",
+            cccs: {
+              "6611101": "MANIKCHAK CCC",
+              "6611102": "GOLAPGANJ CCC",
+              "6611103": "BAISHNABNAGAR CCC",
+              "6611104": "KALIACHAK CCC",
+              "6611105": "MOTHABARI CCC",
+              "6611106": "SUJAPUR CCC",
+              "6611107": "RATHBARI CCC",
+              "6611108": "FULBARI CCC",
+              "6611109": "MOKDUMPUR CCC"
+            }
+          },
+          "6612000": {
+            name: "CHANCHAL DIVISION",
+            cccs: {
+              "6612101": "BHALUKA CCC",
+              "6612102": "SAMSI CCC",
+              "6612103": "PARANPUR CCC",
+              "6612104": "CHANCHAL CCC",
+              "6612105": "MALATIPUR CCC",
+              "6612106": "HARISHCHANDRAPUR CCC",
+              "6612107": "KUSHIDA CCC"
+            }
+          }
+        }
+      },
+      "6620000": {
+        name: "UTTAR DINAJPUR REGION",
+        divisions: {
+          "6621000": {
+            name: "RAIGANJ DIVISION",
+            cccs: {
+              "6621101": "ITAHAR CCC",
+              "6621102": "HEMTABAD CCC",
+              "6621103": "KALIYAGANJ CCC",
+              "6621104": "RAIGANJ CCC",
+              "6621105": "BIRNAGAR CCC",
+              "6621106": "KARANDIGHI CCC"
+            }
+          },
+          "6622000": {
+            name: "ISLAMPUR DIVISION",
+            cccs: {
+              "6622101": "ISLAMPUR CCC",
+              "6622102": "CHOPRA CCC",
+              "6622103": "DALKHOLA CCC",
+              "6622104": "GOALPOKHER CCC",
+              "6622105": "KANKI CCC"
+            }
+          }
+        }
+      },
+      "6630000": {
+        name: "DAKSHIN DINAJPUR REGION",
+        divisions: {
+          "6631000": {
+            name: "BALURGHAT DIVISION",
+            cccs: {
+              "6631101": "BALURGHAT CCC",
+              "6631102": "TAPAN CCC",
+              "6631103": "KUMARGANJ CCC",
+              "6631104": "HILI CCC",
+              "6631105": "PATIRAM CCC"
+            }
+          },
+          "6632000": {
+            name: "BUNIADPUR DIVISION",
+            cccs: {
+              "6632101": "BUNIADPUR CCC",
+              "6632102": "KUSMANDI CCC",
+              "6632103": "HARIRAMPUR CCC",
+              "6632104": "GANGARAMPUR CCC"
+            }
+          }
+        }
+      }
+    };
+
+    // Helper function to get filtered consumers for overview modals
+    function getFilteredConsumersForOverview(type) {
+        return allData.filter(item => {
+            const osd = item.OUTSTANDING_CENTS;
+            const cccCode = item.CCC_CODE;
+
+            // Location filters (always apply global location filters)
+            let passesLocationFilter = true;
+            if (currentCCCFilter && cccCode !== currentCCCFilter) {
+                passesLocationFilter = false;
+            } else if (currentDivisionFilter) {
+                let foundInDivision = false;
+                for (const regionCode in cccHierarchy) {
+                    if (cccHierarchy[regionCode].divisions[currentDivisionFilter]) {
+                        if (cccHierarchy[regionCode].divisions[currentDivisionFilter].cccs[cccCode]) {
+                            foundInDivision = true;
+                            break;
+                        }
+                    }
+                }
+                if (!foundInDivision) {
+                    passesLocationFilter = false;
+                }
+            } else if (currentRegionFilter) {
+                let foundInRegion = false;
+                if (cccHierarchy[currentRegionFilter]) {
+                    for (const divCode in cccHierarchy[currentRegionFilter].divisions) {
+                        if (cccHierarchy[currentRegionFilter].divisions[divCode].cccs[cccCode]) {
+                            foundInRegion = true;
+                            break;
+                        }
+                    }
+                }
+                if (!foundInRegion) {
+                    passesLocationFilter = false;
+                }
+            }
+
+            // OSD condition based on type
+            let passesOsdCondition = false;
+            if (type === 'total') {
+                // For "Total Consumers", apply the main OSD slider/toggle filter
+                passesOsdCondition = (isZeroOnly && osd === 0) ||
+                                     (isNonZeroOnly && osd > 0) ||
+                                     (isGovtOnly && item.GOVT_STAT && item.GOVT_STAT.toUpperCase() === 'YES') ||
+                                     (is3PhOnly && item.CONN_PHASE === '3') ||
+                                     (isIndustrialOnly && item.BASE_CLASS && item.BASE_CLASS.toUpperCase() === 'I') ||
+                                     (isSchoolOnly && item.NAT_OF_CONN && item.NAT_OF_CONN.toUpperCase().includes('SCHOOL')) ||
+                                     (isTowerOnly && item.NAT_OF_CONN && item.NAT_OF_CONN.toUpperCase().includes('TOWER')) ||
+                                     (!isZeroOnly && !isNonZeroOnly && !isGovtOnly && !is3PhOnly && !isIndustrialOnly && !isSchoolOnly && !isTowerOnly && osd >= currentOSDFilter * 100);
+            } else if (type === 'zero') {
+                passesOsdCondition = osd === 0;
+            } else if (type === 'low') {
+                passesOsdCondition = osd > 0 && osd < 5000; // OSD < Rs. 50
+            }
+
+            return passesOsdCondition && passesLocationFilter;
+        });
+    }
+
+    // Modified function to show summary modal, now accepts title and consumer list
+    function showSummaryModal(title, consumersList) {
+      document.getElementById("summaryTitle").textContent = title;
+      const content = document.getElementById("summaryContent");
+      content.innerHTML = "";
+
+      if (consumersList.length === 0) {
+        content.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">🎉</div>
+            <div>No consumers match the current filter</div>
+          </div>
+        `;
+      } else {
+        const summary = {};
+
+        consumersList.forEach(item => {
+          const name = item.CCC_NAME || getCCCName(item.CCC_CODE) || "Unknown CCC"; // Use getCCCName
+          const osd = item.OUTSTANDING_CENTS; // Use OUTSTANDING_CENTS here for summary total
+          if (!summary[name]) summary[name] = { count: 0, total: 0, consumers: [] };
+          summary[name].count++;
+          summary[name].total += osd; // total is in cents
+          summary[name].consumers.push(item);
+        });
+
+        for (const [ccc, data] of Object.entries(summary)) {
+          const item = document.createElement("div");
+          item.className = "summary-item";
+          item.innerHTML = `
+            <div class="summary-header">
+              <div class="summary-name">${ccc}</div>
+            </div>
+            <div class="summary-stats">
+              <div class="stat">
+                <div class="stat-value">${data.count}</div>
+                <div class="stat-label">Consumers</div>
+              </div>
+              <div class="stat">
+                <div class="stat-value">${formatOSD(data.total)}</div> <!-- Pass cents to formatOSD -->
+                <div class="stat-label">Total OSD</div>
+              </div>
+            </div>
+          `;
+          item.onclick = () => showConsumerModal(ccc, data.consumers);
+          content.appendChild(item);
+        }
+      }
+
+      document.getElementById("summaryModal").classList.add('is-visible');
+    }
+
+
+    function updateSliderStyle(value, max) {
+      const slider = document.getElementById('osdSlider');
+      const sliderValue = document.getElementById('sliderValue');
+      const threshold = max * 0.6; // Top 40% threshold
+
+      if (value >= threshold) {
+        slider.classList.add('high-value');
+        sliderValue.classList.add('high-value');
+      } else {
+        slider.classList.remove('high-value');
+        sliderValue.classList.remove('high-value');
+      }
+    }
+
+    function applyAllFilters() {
+      const now = new Date();
+      // Normalize 'now' to start of day for consistent date comparisons
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      // Filter allData based on current OSD and Location filters
+      filteredConsumersData = allData.filter(item => {
+          const osd = item.OUTSTANDING_CENTS;
+          const cccCode = item.CCC_CODE;
+
+          // OSD/Mode Filter Logic
+          let passesMainFilter = false;
+          if (isZeroOnly) {
+            passesMainFilter = (osd === 0);
+          } else if (isNonZeroOnly) {
+            passesMainFilter = (osd > 0);
+          } else if (isGovtOnly) {
+            passesMainFilter = (item.GOVT_STAT && item.GOVT_STAT.toUpperCase() === 'YES');
+          } else if (is3PhOnly) {
+            passesMainFilter = (item.CONN_PHASE === '3');
+          } else if (isIndustrialOnly) {
+            passesMainFilter = (item.BASE_CLASS && item.BASE_CLASS.toUpperCase() === 'I');
+          } else if (isSchoolOnly) {
+            passesMainFilter = (item.NAT_OF_CONN && item.NAT_OF_CONN.toUpperCase().includes('SCHOOL'));
+          } else if (isTowerOnly) {
+            passesMainFilter = (item.NAT_OF_CONN && item.NAT_OF_CONN.toUpperCase().includes('TOWER'));
+          }
+          else {
+            // Default slider filtering
+            passesMainFilter = (osd >= currentOSDFilter * 100);
+          }
+
+
+          // Region/Division/CCC Filter
+          let passesLocationFilter = true;
+          if (currentCCCFilter && cccCode !== currentCCCFilter) {
+            passesLocationFilter = false;
+          } else if (currentDivisionFilter) {
+            let foundInDivision = false;
+            for (const regionCode in cccHierarchy) {
+                    if (cccHierarchy[regionCode].divisions[currentDivisionFilter]) {
+                        if (cccHierarchy[regionCode].divisions[currentDivisionFilter].cccs[cccCode]) {
+                            foundInDivision = true;
+                            break;
+                        }
+                    }
+                }
+                if (!foundInDivision) {
+                    passesLocationFilter = false;
+                }
+            } else if (currentRegionFilter) {
+                let foundInRegion = false;
+                if (cccHierarchy[currentRegionFilter]) {
+                    for (const divCode in cccHierarchy[currentRegionFilter].divisions) {
+                        if (cccHierarchy[currentRegionFilter].divisions[divCode].cccs[cccCode]) {
+                            foundInRegion = true;
+                            break;
+                        }
+                    }
+                }
+                if (!foundInRegion) {
+                    passesLocationFilter = false;
+                }
+            }
+            return passesMainFilter && passesLocationFilter;
+        });
+
+
+        buckets.forEach(bucket => {
+            bucket.filteredItems = filteredConsumersData.filter(item => {
+                const disDate = parseDate(item.DISCON_DT);
+                if (!disDate) return false;
+
+                const ddThreshold = new Date(disDate);
+                ddThreshold.setMonth(ddThreshold.getMonth() + 6);
+                // Normalize ddThreshold to start of day for consistent comparisons
+                const ddThresholdNormalized = new Date(ddThreshold.getFullYear(), ddThreshold.getMonth(), ddThreshold.getDate());
+
+                // Calculate days until due. If it's today, daysUntil is 0. If it's tomorrow, 1, etc.
+                const diffTime = ddThresholdNormalized.getTime() - today.getTime();
+                const daysUntil = Math.round(diffTime / (1000 * 60 * 60 * 24)); // Round to nearest whole day
+
+                // Check if the item falls within the current bucket's date range
+                return daysUntil >= bucket.minDays && daysUntil <= bucket.maxDays;
+            });
+        });
+
+        // Show shimmer placeholders
+        const container = document.getElementById("container");
+        container.innerHTML = '';
+        const overviewCardsDiv = document.createElement("div");
+        overviewCardsDiv.className = "overview-cards";
+        container.appendChild(overviewCardsDiv);
+
+        for (let i = 0; i < 4; i++) { // For the 4 new overview cards (combined + zero OSD + low OSD)
+            const placeholder = document.createElement("div");
+            placeholder.className = "shimmer-card";
+            overviewCardsDiv.appendChild(placeholder);
+        }
+
+        const dueDateCardsDiv = document.createElement("div"); // New container for due date cards
+        dueDateCardsDiv.className = "due-date-cards";
+        container.appendChild(dueDateCardsDiv);
+
+        for (let i = 0; i < buckets.length; i++) { // For all bucket cards
+            const placeholder = document.createElement("div");
+            placeholder.className = "shimmer-card";
+            dueDateCardsDiv.appendChild(placeholder); // Append to new container
+        }
+
+        // Reset current page to 1 whenever filters change
+        currentPage = 1;
+
+        // Then draw real data after slight delay
+        setTimeout(() => {
+            updateCards();
+            renderConsumerTable(); // Render the paginated table after cards
+        }, 300);
+    }
+
+
+    function updateCards() {
+      const container = document.getElementById("container");
+      container.innerHTML = "";
+
+      // The `filteredConsumersData` is already updated in `applyAllFilters`
+      let totalFilteredOSD = filteredConsumersData.reduce((sum, item) => sum + item.OUTSTANDING_CENTS, 0);
+      let totalZeroOSDConsumers = filteredConsumersData.filter(item => item.OUTSTANDING_CENTS === 0).length;
+      let lowOSDConsumers = filteredConsumersData.filter(item => item.OUTSTANDING_CENTS > 0 && item.OUTSTANDING_CENTS < 5000);
+      let lowOSDTotal = lowOSDConsumers.reduce((sum, item) => sum + item.OUTSTANDING_CENTS, 0);
+
+
+      const overviewCardsDiv = document.createElement("div");
+      overviewCardsDiv.className = "overview-cards";
+
+      // Add "Total Consumers" and "Total OSD" combined card
+      const totalConsumersAndOsdCard = document.createElement("div");
+      totalConsumersAndOsdCard.className = "metric-card total-consumers-card";
+      totalConsumersAndOsdCard.innerHTML = `
+        <div class="metric-info">
+          <h3>Total Consumers</h3>
+          <div class="metric-value">${filteredConsumersData.length}</div>
+          <div class="stat-label">Total OSD: ${formatOSD(totalFilteredOSD)}</div>
+        </div>
+        <div class="metric-icon">👥💰</div>
+      `;
+      // Pass the filtered list directly to showSummaryModal
+      totalConsumersAndOsdCard.onclick = () => showSummaryModal('All Filtered Consumers', filteredConsumersData);
+      overviewCardsDiv.appendChild(totalConsumersAndOsdCard);
+
+      // Add "Count with Zero OSD" card
+      const zeroOsdCountCard = document.createElement("div");
+      zeroOsdCountCard.className = "metric-card zero-osd-card";
+      zeroOsdCountCard.innerHTML = `
+        <div class="metric-info">
+          <h3>Zero OSD Consumers</h3>
+          <div class="metric-value">${totalZeroOSDConsumers}</div>
+        </div>
+        <div class="metric-icon">✅</div>
+      `;
+      // Pass the filtered list directly to showSummaryModal
+      zeroOsdCountCard.onclick = () => showSummaryModal('Consumers with Zero OSD', filteredConsumersData.filter(item => item.OUTSTANDING_CENTS === 0));
+      overviewCardsDiv.appendChild(zeroOsdCountCard);
+
+      // Add "Low OSD Consumers" card (OSD < Rs. 50)
+      const lowOsdCard = document.createElement("div");
+      lowOsdCard.className = "metric-card low-osd-card";
+      lowOsdCard.innerHTML = `
+        <div class="metric-info">
+          <h3>Low OSD Consumers (&lt; Rs. 50)</h3>
+          <div class="metric-value">${lowOSDConsumers.length}</div>
+          <div class="stat-label">Total OSD: ${formatOSD(lowOSDTotal)}</div>
+        </div>
+        <div class="metric-icon">🤏💰</div>
+      `;
+      // Pass the filtered list directly to showSummaryModal
+      lowOsdCard.onclick = () => showSummaryModal('Consumers with OSD < Rs. 50', lowOSDConsumers);
+      overviewCardsDiv.appendChild(lowOsdCard);
+
+      container.appendChild(overviewCardsDiv);
+
+// Create a wrapper with reddish background
+const dueDateWrapper = document.createElement("div");
+dueDateWrapper.style.background = "#fdecea"; // light reddish
+dueDateWrapper.style.padding = "1rem";
+dueDateWrapper.style.borderRadius = "12px";
+dueDateWrapper.style.marginTop = "1rem";
+dueDateWrapper.style.boxShadow = "0 0 8px rgba(255,0,0,0.1)";
+
+// Optional title
+const title = document.createElement("h3");
+title.style.color = "#b71c1c"; // deep red
+title.style.marginBottom = "0.75rem";
+title.style.fontWeight = "600";
+dueDateWrapper.appendChild(title);
+
+// Card container
+const dueDateCardsDiv = document.createElement("div");
+dueDateCardsDiv.className = "due-date-cards";
+
+// Add each bucket card inside
+for (const bucket of buckets) {
+  const bucketTotalOSD = bucket.filteredItems.reduce((sum, item) => sum + item.OUTSTANDING_CENTS, 0);
+
+  const card = document.createElement("div");
+  card.className = "metric-card";
+  card.innerHTML = `
+    <div class="metric-info">
+      <h3>DD due in ${bucket.label}</h3>
+      <div class="metric-value">${bucket.filteredItems.length}</div>
+      <div class="stat-label">Total OSD: ${formatOSD(bucketTotalOSD)}</div>
+    </div>
+    <div class="metric-icon">${bucket.icon}</div>
+  `;
+  card.onclick = () => showSummaryModal(`DD due in ${bucket.label}`, bucket.filteredItems);
+  dueDateCardsDiv.appendChild(card);
+}
+
+// Append the card group to the wrapper
+dueDateWrapper.appendChild(dueDateCardsDiv);
+
+// Append the wrapper to the container
+container.appendChild(dueDateWrapper);
+
+
+      document.getElementById("loadingOverlay").style.display = "none";
+    }
+
+    function renderConsumerTable() {
+        const tableBody = document.getElementById('consumerTableBody');
+        const pageInfo = document.getElementById('pageInfo');
+        const prevPageBtn = document.getElementById('prevPageBtn');
+        const nextPageBtn = document.getElementById('nextPageBtn');
+
+        tableBody.innerHTML = ''; // Clear existing rows
+
+        const now = new Date();
+        const todayNormalized = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        // Sort the filteredConsumersData by due date
+        const sortedConsumers = [...filteredConsumersData].sort((a, b) => {
+            const dateA = parseDate(a.DISCON_DT);
+            const dateB = parseDate(b.DISCON_DT);
+
+            let ddThresholdA = null;
+            if (dateA) {
+                ddThresholdA = new Date(dateA);
+                ddThresholdA.setMonth(ddThresholdA.getMonth() + 6);
+            }
+
+            let ddThresholdB = null;
+            if (dateB) {
+                ddThresholdB = new Date(dateB);
+                ddThresholdB.setMonth(ddThresholdB.getMonth() + 6);
+            }
+
+            // Calculate days until due for sorting.
+            // If disDate is invalid OR the calculated due date is in the past, treat as "Already DD" (Infinity for sorting).
+            let daysUntilA;
+            if (!ddThresholdA || ddThresholdA.getTime() < todayNormalized.getTime()) {
+                daysUntilA = Infinity;
+            } else {
+                daysUntilA = Math.round((ddThresholdA.getTime() - todayNormalized.getTime()) / (1000 * 60 * 60 * 24));
+            }
+
+            let daysUntilB;
+            if (!ddThresholdB || ddThresholdB.getTime() < todayNormalized.getTime()) {
+                daysUntilB = Infinity;
+            } else {
+                daysUntilB = Math.round((ddThresholdB.getTime() - todayNormalized.getTime()) / (1000 * 60 * 60 * 24));
+            }
+
+            // Primary sort: "DD due on X days" (positive daysUntil) first, then "Already DD" (Infinity) last.
+            if (daysUntilA !== daysUntilB) {
+                return daysUntilA - daysUntilB;
+            }
+
+            // Secondary sort: by OSD (descending) if due dates are the same
+            return (b.OUTSTANDING_CENTS || 0) - (a.OUTSTANDING_CENTS || 0);
+        });
+
+
+        const totalItems = sortedConsumers.length;
+        const totalPages = Math.ceil(totalItems / itemsPerPage);
+
+        // Ensure currentPage is valid
+        if (currentPage < 1) currentPage = 1;
+        if (currentPage > totalPages && totalPages > 0) currentPage = totalPages;
+        if (totalPages === 0) currentPage = 0; // Handle no data case
+
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+        const consumersForPage = sortedConsumers.slice(startIndex, endIndex);
+
+        if (consumersForPage.length === 0 && totalItems > 0) {
+            // This can happen if the last item on a page is filtered out, and currentPage is now empty.
+            // Go back to the previous page if possible.
+            currentPage = Math.max(1, currentPage - 1);
+            renderConsumerTable(); // Recurse to render the adjusted page
+            return;
+        } else if (consumersForPage.length === 0 && totalItems === 0) {
+             tableBody.innerHTML = `<tr><td colspan="7" class="empty-state-table">No consumers found for current filters.</td></tr>`;
+        }
+
+consumersForPage.forEach(con => {
+    let dueDateCellContent = '';
+    const disDate = parseDate(con.DISCON_DT);
+    if (disDate) {
+        const ddThreshold = new Date(disDate);
+        ddThreshold.setMonth(ddThreshold.getMonth() + 6);
+
+        // Calculate days until due. If it's today, daysUntil is 0. If it's tomorrow, 1, etc.
+        const todayNormalizedForDisplay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const diffTimeForDisplay = ddThreshold.getTime() - todayNormalizedForDisplay.getTime();
+        const daysUntilForDisplay = Math.round(diffTimeForDisplay / (1000 * 60 * 60 * 24));
+
+        // Only show "DD due on" if the due date is in the future or today
+        if (daysUntilForDisplay >= 0) {
+            dueDateCellContent = `<span class="due-date-text-table">DD due on ${formatDate(ddThreshold.toISOString().slice(0, 10).replace(/-/g, ''))}</span>`;
+        } else {
+            // If the due date is in the past, display "Already DD"
+            dueDateCellContent = `<span class="due-date-text-table">Already DD</span>`;
+        }
+    } else {
+        // If DISCON_DT is invalid or missing, display "Already DD"
+        dueDateCellContent = `<span class="due-date-text-table">Already DD</span>`;
+    }
+
+    const row = tableBody.insertRow();
+    row.className = "consumer-table-row";
+    row.onclick = () => showConsumerDetailModal(con);
+
+    row.innerHTML = `
+        <td>${con.CON_ID || "N/A"}</td>
+        <td>${con.NAME || "Unknown"}</td>
+        <td>${con.BASE_CLASS || "N/A"}</td>
+        <td>${con.MRU || "N/A"}</td> <!-- Added MRU data cell -->
+        <td>${formatDate(con.DISCON_DT) || "N/A"}</td>
+        <td>${formatOSD(con.OUTSTANDING_CENTS || 0)}</td>
+        <td>${dueDateCellContent}</td>
+    `;
+});
+
+
+
+        // Update pagination controls
+        pageInfo.textContent = `Page ${totalPages > 0 ? currentPage : 0} of ${totalPages}`;
+        prevPageBtn.disabled = currentPage <= 1;
+        nextPageBtn.disabled = currentPage >= totalPages;
+    }
+
+
+    function showConsumerModal(cccName, consumers) {
+      document.getElementById("consumerTitle").textContent = cccName;
+      const content = document.getElementById("consumerContent");
+      content.innerHTML = "";
+
+      const now = new Date(); // Get current date once
+
+      consumers
+        .slice() // to avoid mutating the original array
+        .sort((a, b) => {
+          // Sort by OUTSTANDING_CENTS for consistency
+          const osdA = a.OUTSTANDING_CENTS;
+          const osdB = b.OUTSTANDING_CENTS;
+          return osdB - osdA;
+        })
+        .forEach(con => {
+          let dueDateText = '';
+          const disDate = parseDate(con.DISCON_DT);
+          if (disDate) {
+              const ddThreshold = new Date(disDate);
+              ddThreshold.setMonth(ddThreshold.getMonth() + 6);
+
+              // Calculate days until due. If it's today, daysUntil is 0. If it's tomorrow, 1, etc.
+              const todayNormalizedForDisplay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+              const diffTimeForDisplay = ddThreshold.getTime() - todayNormalizedForDisplay.getTime();
+              const daysUntilForDisplay = Math.round(diffTimeForDisplay / (1000 * 60 * 60 * 24));
+
+              // Only show "DD due on" if the due date is in the future or today
+              if (daysUntilForDisplay >= 0) {
+                  dueDateText = `<div class="due-date-text">DD due on ${formatDate(ddThreshold.toISOString().slice(0, 10).replace(/-/g, ''))}</div>`;
+              } else {
+                  dueDateText = `<div class="due-date-text">Already DD</div>`;
+              }
+          } else {
+              dueDateText = `<div class="due-date-text">Already DD</div>`;
+          }
+
+          const item = document.createElement("div");
+          item.className = "consumer-item";
+          item.innerHTML = `
+            <div class="consumer-header">
+              <div class="consumer-id">${con.CON_ID || "N/A"}</div>
+              <div class="consumer-osd">${formatOSD(con.OUTSTANDING_CENTS || 0)}</div> <!-- Display OUTSTANDING_CENTS here -->
+            </div>
+            <div class="consumer-name">${con.NAME || "Unknown"}</div>
+            <div class="consumer-details">
+              <span>${con.BASE_CLASS || "N/A"}</span>
+              <span>${formatDate(con.DISCON_DT) || "N/A"}</span>
+            </div>
+            ${dueDateText} <!-- Insert the due date text here -->
+          `;
+
+          item.onclick = () => showConsumerDetailModal(con);
+
+          content.appendChild(item);
+        });
+
+      document.getElementById("consumerModal").classList.add('is-visible');
+    }
+
+
+    function showConsumerDetailModal(data) {
+      const fields = [
+        "CON_ID", "INST_NO", "NAME", "ADDRESS", "CCC_CODE", "CATEGORY", "DATE_OF_CO",
+        "BASE_CLASS", "TARIFF_CLASS", "CONN_STAT", "NAT_OF_CONN", "TYPE_OF_METER",
+        "CONN_PHASE", "GOVT_STAT", "CONN_LOAD", "MRU", "DISCON_DT", "CONN_BY",
+        "METER_NO", "REG_MOB_NO", "OUTSTANDING", "TOTAL_OSD", "ZLATITUDE", "ZLONGITUDE", "OSD_DATE"
+      ];
+
+      const labels = {
+        CON_ID: "Consumer ID", INST_NO: "Install No", NAME: "Name", ADDRESS: "Address",
+        CCC_CODE: "CCC Code", CATEGORY: "Category", DATE_OF_CO: "Date of Connection",
+        BASE_CLASS: "Base Class", TARIFF_CLASS: "Tariff", CONN_STAT: "Connection Status",
+        NAT_OF_CONN: "Nature of Conn", TYPE_OF_METER: "Meter Type", CONN_PHASE: "Phase",
+        GOVT_STAT: "Govt. Status", CONN_LOAD: "Load", MRU: "MRU", DISCON_DT: "Disconn. Date",
+        CONN_BY: "Connected By", METER_NO: "Meter No", REG_MOB_NO: "Mobile No",
+        OUTSTANDING: "Outstanding", TOTAL_OSD: "Total OSD", ZLATITUDE: "Latitude",
+        ZLONGITUDE: "Longitude", OSD_DATE: "OSD Date"
+      };
+
+      let html = '<table class="consumer-detail-table"><tbody>';
+      fields.forEach(key => {
+        let value = data[key] || "N/A";
+        if (key.includes("DATE") || key.endsWith("_DT")) value = formatDate(value);
+        if (key === "CCC_CODE") value = `${value} (${getCCCName(value)})`; // Display CCC name along with code
+        // Display both TOTAL_OSD and OUTSTANDING as separate fields using their respective _CENTS values
+        if (key === "TOTAL_OSD") value = formatOSD(data.TOTAL_OSD_CENTS);
+        if (key === "OUTSTANDING") value = formatOSD(data.OUTSTANDING_CENTS);
+        html += `
+          <tr>
+            <th>${labels[key]}</th>
+            <td>${value}</td>
+          </tr>`;
+      });
+
+      // Add "Due within" row
+      const now = new Date();
+      const disDate = parseDate(data.DISCON_DT);
+      if (disDate) {
+        const ddThreshold = new Date(disDate);
+        ddThreshold.setMonth(ddThreshold.getMonth() + 6);
+        // Only show "DD due on" if the due date is in the future or today
+        const todayNormalizedForDetail = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const diffTimeForDetail = ddThreshold.getTime() - todayNormalizedForDetail.getTime();
+        const daysUntilForDetail = Math.round(diffTimeForDetail / (1000 * 60 * 60 * 24));
+
+        if (daysUntilForDetail >= 0) {
+          html += `
+            <tr>
+              <th>DD Due On</th>
+              <td class="due-date-text">${formatDate(ddThreshold.toISOString().slice(0, 10).replace(/-/g, ''))}</td>
+            </tr>`;
+        } else {
+            html += `
+            <tr>
+              <th>DD Due On</th>
+              <td class="due-date-text">Already DD</td>
+            </tr>`;
+        }
+      } else {
+          html += `
+            <tr>
+              <th>DD Due On</th>
+              <td class="due-date-text">Already DD</td>
+            </tr>`;
+      }
+
+      html += '</tbody></table>';
+
+      document.getElementById("consumerDetailContent").innerHTML = html;
+      document.getElementById("consumerDetailModal").classList.add('is-visible');
+    }
+
+    function closeSummaryModal() {
+      document.getElementById("summaryModal").classList.remove('is-visible');
+    }
+
+    function closeConsumerModal() {
+      document.getElementById("consumerModal").classList.remove('is-visible');
+    }
+    function closeConsumerDetailModal() {
+      document.getElementById("consumerDetailModal").classList.remove('is-visible');
+    }
+
+    // Custom Alert Modal Functions
+    function showCustomAlert(message) {
+        document.getElementById('customAlertMessage').textContent = message;
+        document.getElementById('customAlertModal').classList.add('is-visible');
+    }
+
+    function hideCustomAlert() {
+        document.getElementById('customAlertModal').classList.remove('is-visible');
+    }
+
+
+    // Helper functions to get names from codes
+    function getRegionName(code) {
+      return cccHierarchy[code] ? cccHierarchy[code].name : "Unknown Region";
+    }
+
+    function getDivisionName(code) {
+      for (const regionCode in cccHierarchy) {
+        if (cccHierarchy[regionCode].divisions[code]) {
+          return cccHierarchy[regionCode].divisions[code].name;
+        }
+      }
+      return "Unknown Division";
+    }
+
+    function getCCCName(code) {
+      for (const regionCode in cccHierarchy) {
+        for (const divCode in cccHierarchy[regionCode].divisions) {
+          if (cccHierarchy[regionCode].divisions[divCode].cccs[code]) {
+            return cccHierarchy[regionCode].divisions[divCode].cccs[code];
+          }
+        }
+      }
+      return "Unknown CCC";
+    }
+
+
+    // Populate filter dropdowns
+    function populateRegionFilter() {
+      const regionSelect = document.getElementById("regionFilter");
+      regionSelect.innerHTML = '<option value="">All Regions</option>';
+      for (const code in cccHierarchy) {
+        const option = document.createElement("option");
+        option.value = code;
+        option.textContent = cccHierarchy[code].name;
+        regionSelect.appendChild(option);
+      }
+    }
+
+    function populateDivisionFilter(regionCode) {
+      const divisionSelect = document.getElementById("divisionFilter");
+      divisionSelect.innerHTML = '<option value="">All Divisions</option>';
+      if (regionCode && cccHierarchy[regionCode]) {
+        for (const code in cccHierarchy[regionCode].divisions) {
+          const option = document.createElement("option");
+          option.value = code;
+          option.textContent = cccHierarchy[regionCode].divisions[code].name;
+          divisionSelect.appendChild(option);
+        }
+      }
+      populateCCCFilter(""); // Reset CCC filter when division changes
+    }
+
+    function populateCCCFilter(divisionCode) {
+      const cccSelect = document.getElementById("cccFilter");
+      cccSelect.innerHTML = '<option value="">All CCCs</option>';
+      if (divisionCode) {
+        for (const regionCode in cccHierarchy) {
+          if (cccHierarchy[regionCode].divisions[divisionCode]) {
+            for (const code in cccHierarchy[regionCode].divisions[divisionCode].cccs) {
+              const option = document.createElement("option");
+              option.value = code;
+              option.textContent = cccHierarchy[regionCode].divisions[divisionCode].cccs[code];
+              cccSelect.appendChild(option);
+            }
+            break;
+          }
+          }
+      }
+    }
+
+
+    // Event listeners
+    document.addEventListener('DOMContentLoaded', function() {
+      const slider = document.getElementById('osdSlider');
+      const sliderValue = document.getElementById('sliderValue');
+        // Set initial Rupee display
+sliderValue.textContent = `≥ ${formatINR(currentOSDFilter)}`;
+      const zeroToggleBtn = document.getElementById("zeroToggle");
+      const nonZeroToggleBtn = document.getElementById("nonZeroToggle");
+      const govtToggleBtn = document.getElementById("govtToggle"); // New button
+      const threePhToggleBtn = document.getElementById("threePhToggle"); // New button
+      const industrialToggleBtn = document.getElementById("industrialToggle"); // New button
+      const schoolToggleBtn = document.getElementById("schoolToggle"); // New button
+      const towerToggleBtn = document.getElementById("towerToggle"); // New button
+      const regionFilter = document.getElementById("regionFilter");
+      const divisionFilter = document.getElementById("divisionFilter");
+      const cccFilter = document.getElementById("cccFilter");
+      const prevPageBtn = document.getElementById('prevPageBtn');
+      const nextPageBtn = document.getElementById('nextPageBtn');
+
+      function deactivateAllModeToggles() {
+        isZeroOnly = false;
+        isNonZeroOnly = false;
+        isGovtOnly = false;
+        is3PhOnly = false;
+        isIndustrialOnly = false;
+        isSchoolOnly = false; // Deactivate new toggle
+        isTowerOnly = false; // Deactivate new toggle
+        zeroToggleBtn.classList.remove("active");
+        nonZeroToggleBtn.classList.remove("active");
+        govtToggleBtn.classList.remove("active");
+        threePhToggleBtn.classList.remove("active");
+        industrialToggleBtn.classList.remove("active");
+        schoolToggleBtn.classList.remove("active"); // Remove active class from new toggle
+        towerToggleBtn.classList.remove("active"); // Remove active class from new toggle
+      }
+
+      slider.addEventListener('input', function() {
+        currentOSDFilter = parseInt(this.value);
+sliderValue.textContent = `≥ ₹${currentOSDFilter}`;
+        updateSliderStyle(currentOSDFilter, maxOSD);
+        deactivateAllModeToggles(); // Deactivate all other toggles
+        applyAllFilters();
+      });
+
+zeroToggleBtn.addEventListener("click", function () {
+  const wasActive = isZeroOnly;
+  deactivateAllModeToggles();
+  isZeroOnly = !wasActive;
+  zeroToggleBtn.classList.toggle("active", isZeroOnly);
+  slider.value = 0;
+  sliderValue.textContent = `≥ 0`;
+  updateSliderStyle(0, maxOSD);
+  applyAllFilters();
+});
+
+nonZeroToggleBtn.addEventListener("click", function () {
+  const wasActive = isNonZeroOnly;
+  deactivateAllModeToggles();
+  isNonZeroOnly = !wasActive;
+  nonZeroToggleBtn.classList.toggle("active", isNonZeroOnly);
+  slider.value = 0;
+  sliderValue.textContent = `≥ 0`;
+  updateSliderStyle(0, maxOSD);
+  applyAllFilters();
+});
+
+govtToggleBtn.addEventListener("click", function () {
+  const wasActive = isGovtOnly;
+  deactivateAllModeToggles();
+  isGovtOnly = !wasActive;
+  govtToggleBtn.classList.toggle("active", isGovtOnly);
+  slider.value = 0;
+  sliderValue.textContent = `≥ 0`;
+  updateSliderStyle(0, maxOSD);
+  applyAllFilters();
+});
+
+threePhToggleBtn.addEventListener("click", function () {
+  const wasActive = is3PhOnly;
+  deactivateAllModeToggles();
+  is3PhOnly = !wasActive;
+  threePhToggleBtn.classList.toggle("active", is3PhOnly);
+  slider.value = 0;
+  sliderValue.textContent = `≥ 0`;
+  updateSliderStyle(0, maxOSD);
+  applyAllFilters();
+});
+
+industrialToggleBtn.addEventListener("click", function () {
+  const wasActive = isIndustrialOnly;
+  deactivateAllModeToggles();
+  isIndustrialOnly = !wasActive;
+  industrialToggleBtn.classList.toggle("active", isIndustrialOnly);
+  slider.value = 0;
+  sliderValue.textContent = `≥ 0`;
+  updateSliderStyle(0, maxOSD);
+  applyAllFilters();
+});
+
+schoolToggleBtn.addEventListener("click", function () {
+  const wasActive = isSchoolOnly;
+  deactivateAllModeToggles();
+  isSchoolOnly = !wasActive;
+  schoolToggleBtn.classList.toggle("active", isSchoolOnly);
+  slider.value = 0;
+  sliderValue.textContent = `≥ 0`;
+  updateSliderStyle(0, maxOSD);
+  applyAllFilters();
+});
+
+towerToggleBtn.addEventListener("click", function () {
+  const wasActive = isTowerOnly;
+  deactivateAllModeToggles();
+  isTowerOnly = !wasActive;
+  towerToggleBtn.classList.toggle("active", isTowerOnly);
+  slider.value = 0;
+  sliderValue.textContent = `≥ 0`;
+  updateSliderStyle(0, maxOSD);
+  applyAllFilters();
+});
+
+
+      regionFilter.addEventListener("change", function() {
+        currentRegionFilter = this.value;
+        currentDivisionFilter = ""; // Reset division
+        currentCCCFilter = ""; // Reset CCC
+        divisionFilter.value = "";
+        cccFilter.value = "";
+        populateDivisionFilter(currentRegionFilter);
+        applyAllFilters();
+      });
+
+      divisionFilter.addEventListener("change", function() {
+        currentDivisionFilter = this.value;
+        currentCCCFilter = ""; // Reset CCC
+        cccFilter.value = "";
+        populateCCCFilter(currentDivisionFilter);
+        applyAllFilters();
+      });
+
+      cccFilter.addEventListener("change", function() {
+        currentCCCFilter = this.value;
+        applyAllFilters();
+      });
+
+      prevPageBtn.addEventListener('click', () => {
+          if (currentPage > 1) {
+              currentPage--;
+              renderConsumerTable();
+          }
+      });
+
+      nextPageBtn.addEventListener('click', () => {
+          const totalPages = Math.ceil(filteredConsumersData.length / itemsPerPage);
+          if (currentPage < totalPages) {
+              currentPage++;
+              renderConsumerTable();
+          }
+      });
+
+      // Load and process data
+      fetch("https://docs.google.com/spreadsheets/d/e/2PACX-1vQrwjWHH470tEapVprR2Cx1ZpRSxdFWNlI3pOjQ1P1ZzcbuFhd9Sh2MHZcYVu5aq_IzC5t0Rb7gNPTs/pub?gid=1835109650&single=true&output=csv")
+        .then(res => res.text())
+        .then(text => {
+          const result = Papa.parse(text, {
+            header: true,
+            skipEmptyLines: true
+          });
+
+          // Parse OSD and Outstanding into cents for accurate calculations
+          allData = result.data.map(row => {
+              const osdStr = row.TOTAL_OSD || row['TOTAL_OSD'] || '';
+              // Convert to cents and round to avoid floating point issues
+              row.TOTAL_OSD_CENTS = Math.round(parseFloat(osdStr.replace(/[^\d.-]/g, '')) * 100) || 0;
+
+              const outstandingStr = row.OUTSTANDING || row['OUTSTANDING'] || '';
+              row.OUTSTANDING_CENTS = Math.round(parseFloat(outstandingStr.replace(/[^\d.-]/g, '')) * 100) || 0;
+              return row;
+          });
+
+          const now = new Date();
+
+
+          // Calculate max OSD for slider - using OUTSTANDING (not cents)
+          const osdValues = allData.map(item => {
+            const osdNum = item.OUTSTANDING_CENTS / 100; // Convert back to whole for max calculation
+            return osdNum;
+          }).filter(val => val > 0);
+
+          console.log('OSD Values sample:', osdValues.slice(0, 10)); // Debug log
+
+          if (osdValues.length > 0) {
+            maxOSD = Math.max(...osdValues);
+            maxOSD = Math.ceil(maxOSD / 500) * 500; // Round up to nearest 500
+          } else {
+            maxOSD = 10000; // Default fallback
+          }
+
+          console.log('Max OSD calculated:', maxOSD); // Debug log
+
+          // Set up slider
+          const slider = document.getElementById('osdSlider');
+          slider.max = maxOSD;
+          slider.setAttribute('max', maxOSD); // Ensure it's set
+
+          // Populate buckets
+          // The bucket filtering logic is now handled within applyAllFilters to ensure all filters apply
+          // to the bucket counts dynamically. So, we just need to ensure allData is available.
+
+          // Initialize filter dropdowns
+          populateRegionFilter();
+          populateDivisionFilter("");
+          populateCCCFilter("");
+
+          // Initial filter application
+          applyAllFilters();
+
+
+          console.log('Data processing complete'); // Debug log
+        })
+        .catch(err => {
+          console.error('Error loading data:', err);
+          showCustomAlert("Error loading data. Please try again later."); // Using custom alert
+        });
+    });
+
+    // Handle back button for modals
+    window.addEventListener('popstate', function(event) {
+      if (document.getElementById("consumerModal").classList.contains("is-visible")) {
+        closeConsumerModal();
+      } else if (document.getElementById("summaryModal").classList.contains("is-visible")) {
+        closeSummaryModal();
+      } else if (document.getElementById("consumerDetailModal").classList.contains("is-visible")) {
+        closeConsumerDetailModal();
+      }
+    });
+
+    // Modified download function
+    function downloadFilteredConsumers() {
+        if (filteredConsumersData.length === 0) {
+            showCustomAlert("No data to export based on current filters.");
+            return;
+        }
+
+        const now = new Date();
+        const todayNormalized = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        // Prepare data for export, including the "Due Date" calculation
+        const dataToExport = filteredConsumersData.map(con => {
+            let dueDateText = '';
+            const disDate = parseDate(con.DISCON_DT);
+            if (disDate) {
+                const ddThreshold = new Date(disDate);
+                ddThreshold.setMonth(ddThreshold.getMonth() + 6);
+                
+                const diffTimeForDisplay = ddThreshold.getTime() - todayNormalized.getTime();
+                const daysUntilForDisplay = Math.round(diffTimeForDisplay / (1000 * 60 * 60 * 24));
+
+                // Only include "DD due on" if the due date is in the future or today
+                if (daysUntilForDisplay >= 0) {
+                    dueDateText = `DD due on ${formatDate(ddThreshold.toISOString().slice(0, 10).replace(/-/g, ''))}`;
+                }
+            }
+
+            // If dueDateText is empty (meaning no valid future/today due date was calculated), set it to "Already DD"
+            if (!dueDateText) {
+                dueDateText = "Already DD";
+            }
+
+            return {
+                'Consumer ID': con.CON_ID || "N/A",
+                'Name': con.NAME || "Unknown",
+                'Base Class': con.BASE_CLASS || "N/A",
+                'MRU': con.MRU || "N/A", // Added MRU to export
+                'Disconn. Date': formatDate(con.DISCON_DT) || "N/A",
+                'Outstanding': formatOSD(con.OUTSTANDING_CENTS || 0),
+                'Due Date': dueDateText 
+            };
+        }); 
+
+        // No longer filtering `dataToExport` here, as all rows should be included with "Already DD" if no valid due date.
+        if (dataToExport.length === 0) {
+            showCustomAlert("No data to download after processing."); 
+            return;
+        }
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(dataToExport); // Use json_to_sheet for cleaner data
+        XLSX.utils.book_append_sheet(wb, ws, "Filtered Consumers");
+        XLSX.writeFile(wb, "Filtered_Consumers_List.xlsx");
+    }
+
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+</body>
+</html>
