@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Net Balance Analytics</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
   <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
@@ -641,15 +642,14 @@ input {
 
   <script>
 const sources = {
-  "Balurghat": 'data/adv_Balurghat.json',
-  "Malda": 'data/adv_Malda.json',
-  "Raiganj": 'data/adv_Raiganj.json',
-  "Buniadpur": 'data/adv_Buniadpur.json',
-  "Gazole": 'data/adv_Gazole.json',
-  "Islampur": 'data/adv_Islampur.json',
-  "Chanchal": 'data/adv_Chanchal.json'
+  "Balurghat": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRooKVx76f92WX_Q3j2u4UmA1yXN2cNcwSPVqiFjyY58oTplAg_Ieze4xket4Lq3qHEuLt9js0-kU8a/pub?gid=98784562&single=true&output=csv',
+  "Malda": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQHtBkI-9-cafLDNyCNtbnHX0B65dCawQHoO8oiFYQzeWBxu0u4VBXCqR5zgj5ylceF3piSl8rnholp/pub?gid=98784562&single=true&output=csv',
+  "Raiganj": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR-jd3bm9BCgUKNQCgr0Lj9paLYQ9oacLPlleCHXrtV1__58NyK_w19hbC4thzgPkdHtIAAP2nrnmyC/pub?gid=98784562&single=true&output=csv',
+  "Buniadpur": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTZPn6CB_cHTFVb8S5vpvaBnczj63fYMTI0RVEdMzVcQ8O6XQi5iwTbMp2xa5vsL6zHGWxezWUSehrN/pub?gid=98784562&single=true&output=csv',
+  "Gazole": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQeQ8Rj3WDvBw5FEYP2rYbRV7p0HvnxuXfBlfpTtJY_K-rnYCNoMsFM426rrGsK5tYMLmhK2LnJ1HP-/pub?gid=98784562&single=true&output=csv',
+  "Islampur": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTsXWZdt0B4LpbxbstdJv564CnjEBMCC_HwlssthZCXLTKpUFkF_dhQtEpN0KYD-eKiClTwA2WOhSB-/pub?gid=98784562&single=true&output=csv',
+  "Chanchal": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ6XAKcdyjGWhdxB7FPTwzlEUN5fgLXFuLE_8VSSsiGvbfcY4uLPY8zzlnMmqAqEeF7J6FQqW26R-jr/pub?gid=98784562&single=true&output=csv'
 };
-
 
 function formatName(text) {
   if (!text || typeof text !== 'string') return '';
@@ -829,7 +829,7 @@ Array.from(vendors).sort().forEach(vendor => {
       let topVendor = { name: '', total: 0 };
 
       filteredData.forEach(row => {
-const monthKey = formatMonthYear(row.issuedDate);
+        const monthKey = formatMonthYear(row.date);
         monthlyBuckets[monthKey] = (monthlyBuckets[monthKey] || 0) + row.value;
 
         vendorTotals[row.vendor] = (vendorTotals[row.vendor] || 0) + row.value;
@@ -874,7 +874,7 @@ const monthKey = formatMonthYear(row.issuedDate);
         const month = parseInt(monthStr) - 1;
         const year = parseInt('20' + yearStr);
         const date = new Date(year, month);
-const diffMonths = (now.getFullYear() - date.getFullYear()) * 12 + (now.getMonth() - date.getMonth());
+        const diffMonths = (now.getFullYear() - date.getFullYear()) * 12 + (now.getMonth() - date.getMonth());
 
         if (diffMonths > 6) stats.overdue6mo += value;
         if (diffMonths > 12) stats.overdue12mo += value;
@@ -967,12 +967,8 @@ function renderChart(monthlyBuckets) {
 
               const divisions = {};
               getFilteredData().forEach(row => {
-const issued = row.issuedDate instanceof Date ? row.issuedDate : new Date(row.issuedDate);
-if (isNaN(issued)) return;
-
-const rowMonth = issued.getMonth() + 1;
-const rowYear = issued.getFullYear();
-
+                const rowMonth = row.date.getMonth() + 1;
+                const rowYear = row.date.getFullYear();
                 if (rowMonth === monthNum && rowYear === yearNum) {
                   const loc = row.location;
                   if (!divisions[loc]) divisions[loc] = 0;
@@ -1202,26 +1198,27 @@ async function checkDataAge() {
   const checkPromises = Object.entries(sources).map(async ([division, url]) => {
     try {
       const response = await fetch(url);
-      const json = await response.json();
+      const text = await response.text();
+      const lines = text.trim().split('\n');
 
-      if (!json.length) {
-        outdatedDivisions.push(`<div style="color: #dc2626; font-weight: 500;">${division} — No data ❌</div>`);
+      if (lines.length < 2) {
+        outdatedDivisions.push(`<div style="color: #dc2626; font-weight: 500;">${division} — No data row found ❌</div>`);
         return;
       }
 
-      const latestDate = json
-        .map(row => new Date(row.reportingDate || row.date))
-        .filter(date => !isNaN(date))
-        .sort((a, b) => b - a)[0];
+      const firstRow = lines[1].split(',');
+      const dateStr = firstRow[0].trim();
 
-      if (!latestDate) {
+      if (!/^\d{1,2}[\/-]\d{1,2}[\/-]\d{4}$/.test(dateStr)) {
         outdatedDivisions.push(`<div style="color: #dc2626; font-weight: 500;">${division} — Invalid or missing date ❌</div>`);
         return;
       }
 
-      const diffDays = Math.floor((today - latestDate) / (1000 * 60 * 60 * 24));
-      const line = `${formatName(division)} - ${diffDays} Days Old Data`;
+      const [dd, mm, yyyy] = dateStr.split(/[/-]/).map(Number);
+      const fileDate = new Date(yyyy, mm - 1, dd);
+      const diffDays = Math.floor((today - fileDate) / (1000 * 60 * 60 * 24));
 
+      const line = `${formatName(division)} - ${diffDays} Days Old Data`;
       outdatedDivisions.push(
         `<div style="color: ${diffDays > 10 ? '#dc2626' : '#16a34a'}; font-weight: 500;">${line} ${diffDays > 10 ? '❌' : '✅'}</div>`
       );
@@ -1232,10 +1229,9 @@ async function checkDataAge() {
 
   await Promise.all(checkPromises);
 
-  const alertBox = document.getElementById('dataAgeAlert');
-  const message = document.getElementById('dataAgeMessage');
-
-  if (outdatedDivisions.length) {
+  if (outdatedDivisions.length > 0) {
+    const alertBox = document.getElementById('dataAgeAlert');
+    const message = document.getElementById('dataAgeMessage');
     message.innerHTML = outdatedDivisions.join('');
     alertBox.style.display = 'flex';
     document.getElementById('initialLoader').style.display = 'none';
@@ -1248,54 +1244,92 @@ async function checkDataAge() {
     });
   } else {
     document.getElementById('initialLoader').style.display = 'none';
-    return Promise.resolve();
+    return Promise.resolve(); // ✅ Continue to loadData
   }
 }
 
 
 
 
+    async function loadData() {
+      toggleLoading(true);
+      allData = [];
+      
+      try {
+        const urls = Object.entries(sources);
+        const promises = urls.map(async ([location, url]) => {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const csvText = await response.text();
+          
+          const results = Papa.parse(csvText, {
+            header: true,
+            skipEmptyLines: true,
+            dynamicTyping: false
+          });
 
-async function loadData() {
-  toggleLoading(true);
-  allData = [];
+          const sampleRow = results.data[0] || {};
+          const balanceCol = findColumn(sampleRow, ['Net Balance Value', 'Net Balance', 'Balance Value', 'Balance']);
+          const dateCol = findColumn(sampleRow, ['Issued Date', 'Issue Date', 'Date']);
+          const unitCol = findColumn(sampleRow, ['Unit', 'Units']);
+          const vendorCol = findColumn(sampleRow, ['VendorName', 'Vendor']);
+          const projectCol = findColumn(sampleRow, ['Project ID', 'ProjectID', 'Project Id', 'Project']);
 
-  try {
-    const urls = Object.entries(sources);
-    const promises = urls.map(async ([location, url]) => {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const json = await response.json();
 
-      json.forEach(row => {
-row.reportingDate = new Date(row.reportingDate);
-row.issuedDate = new Date(row.issuedDate);
+          if (!balanceCol || !dateCol) {
+            console.warn(`Missing columns in ${location}`);
+            return;
+          }
+
+          results.data.forEach(row => {
+            const dateValue = row[dateCol];
+            const balanceValue = row[balanceCol];
+            if (!dateValue || !balanceValue || balanceValue === '') return;
+
+            const date = parseDate(dateValue);
+            if (!date) return;
+
+            let cleanValue = String(balanceValue).trim();
+            cleanValue = cleanValue.replace(/[₹,\s]/g, '').replace(/[^\d.-]/g, '');
+            const value = parseFloat(cleanValue);
+            if (isNaN(value)) return;
+
+const qtyCol = findColumn(sampleRow, ['Net Balance Qty', 'Qty', 'Quantity']);
+const quantityRaw = qtyCol ? row[qtyCol]?.trim() : '';
+let quantity = parseFloat(String(quantityRaw).replace(/[^\d.-]/g, ''));
+if (isNaN(quantity)) quantity = 0;
+
 allData.push({
-  ...row,
-  location,
-  reportingDate: row.reportingDate,
-  issuedDate: row.issuedDate,
-  qty: row.qty || 0,
-  unit: row.unit || 'Unknown',
-  vendor: row.vendor || 'Unknown',
-  material: row.material || 'Unknown',
-  projectid: row.projectid || ''
+  location: location,
+  unit: unitCol ? row[unitCol]?.trim() : 'Unknown',
+  vendor: vendorCol ? row[vendorCol]?.trim() : 'Unknown',
+  material: row['Material description']?.trim() || 'Unknown',
+  projectid: projectCol ? row[projectCol]?.trim() : '',
+  date: date,
+  value: value,
+  qty: quantity
 });
-      });
-    });
 
-    await Promise.all(promises);
-    populateDropdowns(true); // Reset all dependent filters on initial load
-    filterAndProcessData();
-    renderDivisionChart();
 
-  } catch (error) {
-    console.error("Loading error:", error);
-  } finally {
-    toggleLoading(false);
-  }
-}
 
+
+          });
+        });
+
+
+
+await Promise.all(promises);
+populateDropdowns(true); // Reset all dependent filters on initial load
+filterAndProcessData();
+renderDivisionChart();
+
+
+      } catch (error) {
+        console.error("Loading error:", error);
+      } finally {
+        toggleLoading(false);
+      }
+    }
 
     // Event listeners
     document.getElementById("locationFilter").addEventListener("change", e => {
