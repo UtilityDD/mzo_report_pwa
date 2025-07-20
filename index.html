@@ -8,6 +8,7 @@
 <link href="manifest.json" rel="manifest"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
 
 
@@ -941,6 +942,7 @@ body {
 
 
 
+
 <div class="footer">
       © 2025 MZO | Think outside the box
     </div>
@@ -1283,45 +1285,159 @@ document.addEventListener('DOMContentLoaded', function() {
 })();
 
 
-// Fetch and display media links with local logo support
-fetch("https://raw.githubusercontent.com/UtilityDD/mzo_report/main/data/news-links.json")
-  .then(res => res.json())
-  .then(newsLinks => {
-    const container = document.getElementById("mediaLinksContainer");
-    container.innerHTML = ""; // Clear loading text
 
-    const logoBase = "https://raw.githubusercontent.com/UtilityDD/mzo_report/main/data/logo/";
-
-    newsLinks.forEach(news => {
-      const a = document.createElement("a");
-      a.className = "sub-option";
-      a.href = news.url;
-      a.target = "_blank";
-
-      const logo = document.createElement("img");
-      logo.src = logoBase + news.logo;
-      logo.alt = news.name + " logo";
-      logo.style.width = "24px";
-      logo.style.height = "24px";
-      logo.style.borderRadius = "4px";
-      logo.style.flexShrink = "0";
-      logo.style.marginRight = "10px";
-
-      const span = document.createElement("span");
-      span.textContent = news.name;
-
-      a.appendChild(logo);
-      a.appendChild(span);
-      container.appendChild(a);
-    });
-  })
-  .catch(err => {
-    console.error("Failed to load news links", err);
-    const container = document.getElementById("mediaLinksContainer");
-    container.innerHTML = `<div style="padding: 16px; color: red;">❌ Unable to load news links</div>`;
-  });
 
 
 </script>
+
+<!-- Single Responsive Modal with Quote and Dynamic Notice -->
+<div id="noticeModal" style="
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 9999;
+  font-family: 'Segoe UI', sans-serif;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+">
+  <div style="
+    background-color: #ffffff;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 500px;
+    padding: 20px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+    max-height: 90vh;
+    overflow-y: auto;
+    text-align: center;
+  ">
+    <!-- Motivational quote section (initially shown) -->
+    <div id="quoteSection" style="color: #2563eb; font-size: 16px; line-height: 1.6; font-weight: bold;">
+      Success is the sum of small efforts, repeated daily.
+    </div>
+
+    <!-- Notice content (hidden until data is loaded) -->
+    <div id="noticeContentSection" style="display: none; text-align: left;">
+      <h2 id="noticeTitle" style="
+        font-size: 18px;
+        color: #2563eb;
+        margin-top: 20px;
+        text-align: left;
+      "></h2>
+      <div id="noticeBody" style="
+        font-size: 15px;
+        color: #333;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        margin-top: 8px;
+      "></div>
+    </div>
+
+    <!-- Button appears only after content loads -->
+    <div id="noticeButtonSection" style="display: none; text-align: right; margin-top: 20px;">
+<button onclick="onContinueClick()" style="
+  background-color: #2563eb;
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  font-size: 14px;
+  border-radius: 6px;
+  cursor: pointer;">
+  Continue
+</button>
+
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.addEventListener("DOMContentLoaded", () => {
+  const baseUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSiBAAv6fTB3Yd6yWMc3O3w3nplfaNyI1FR9S570KaXehdG4sPjakxctFqRaY4vh1_hs6i3D-ej216W/pub?gid=0&single=true&output=csv";
+
+  let timerFinished = false;
+  let csvLoaded = false;
+  let rows = [];
+  let currentIndex = 0;
+
+  function showNoticeIfReady() {
+    if (timerFinished && csvLoaded) {
+      document.getElementById("quoteSection").style.display = "none";
+      document.getElementById("noticeContentSection").style.display = "block";
+      document.getElementById("noticeButtonSection").style.display = "block";
+      showRow(currentIndex);
+    }
+  }
+
+function showRow(index) {
+  const row = rows[index];
+  if (!row) return;
+
+  const titleElem = document.getElementById("noticeTitle");
+  const bodyElem = document.getElementById("noticeBody");
+
+  titleElem.textContent = row.header || "Notice";
+  bodyElem.textContent = row.content || "No content.";
+
+  // Apply red color to header only if it contains 'Alert!'
+  if ((row.header || "").toLowerCase().includes("alert!")) {
+    titleElem.style.color = "#dc2626"; // red-600
+  } else {
+    titleElem.style.color = "#2563eb"; // default blue
+  }
+
+  // Keep body color always normal
+  bodyElem.style.color = "#333";
+}
+
+
+
+  window.onContinueClick = () => {
+    currentIndex++;
+    if (currentIndex >= rows.length) {
+      document.getElementById("noticeModal").style.display = "none";
+    } else {
+      showRow(currentIndex);
+    }
+  };
+
+  // Show quote at least 2 seconds
+  setTimeout(() => {
+    timerFinished = true;
+    showNoticeIfReady();
+  }, 2000);
+
+  // Fetch CSV with cache busting
+  const csvUrl = `${baseUrl}&t=${Date.now()}`;
+fetch(`${baseUrl}&t=${Date.now()}`)
+  .then(res => res.text())
+  .then(csv => {
+    const parsed = Papa.parse(csv, { header: true }).data;
+
+    parsed.forEach(row => {
+      rows.push({
+        header: (row["Header"] || "").trim(),
+        content: (row["Content"] || "").trim()
+      });
+    });
+
+    csvLoaded = true;
+    showNoticeIfReady();
+  })
+  .catch(err => {
+    console.error("Failed to load notice from CSV:", err);
+    rows = [{ header: "Notice", content: "⚠️ Could not load notice content." }];
+    csvLoaded = true;
+    showNoticeIfReady();
+  });
+
+});
+</script>
+
+
+
+
+
 </body>
 </html>
