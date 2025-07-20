@@ -226,38 +226,73 @@
         transform: translate(1px, 1px);
     }
 
+    
+
     /* Responsive adjustments */
     @media (max-width: 768px) {
+      body {
+        padding: 10px; /* Add some padding for mobile view */
+      }
       .container {
-        margin-top: 10px;
-        margin-bottom: 10px;
-        padding: 10px;
+        margin-top: 0;
+        margin-bottom: 0;
+        padding: 15px;
+        width: 100%;
+        max-width: 100%;
+        border-radius: 0;
+        border: none;
+        box-shadow: none;
       }
       h3 {
-        font-size: 1rem;
-        padding: 5px 10px;
+        font-size: 1.1rem;
+        padding: 10px 15px;
+        margin-left: -15px;
+        margin-right: -15px;
+        margin-top: -15px;
+        border-radius: 0;
+      }
+      .card {
+        border-radius: 0;
       }
       .card-header {
-        font-size: 0.9rem;
-        padding: 5px 10px;
+        font-size: 1rem;
+        padding: 10px 15px;
+        border-radius: 0;
       }
       .btn {
-        padding: 4px 10px;
-        font-size: 0.8rem;
+        padding: 10px 16px; /* Increased padding for better touch experience */
+        font-size: 0.9rem;
       }
       .table th, .table td {
-        padding: 6px;
-        font-size: 0.75rem;
+        padding: 8px;
+        font-size: 0.9rem; /* Increased font size for readability */
+        white-space: normal; /* Allow table content to wrap */
+      }
+      .table-responsive {
+          border: 1px solid var(--border-light);
       }
       .summary-card {
-          padding: 10px;
-          font-size: 0.8rem;
+          padding: 15px;
+          font-size: 0.9rem;
+          width: 100%; /* Make summary cards full width */
       }
       .summary-card h5 {
-          font-size: 0.9rem;
+          font-size: 1rem;
       }
       .summary-card .value {
-          font-size: 1rem;
+          font-size: 1.1rem;
+      }
+      /* Stack navigation controls on mobile */
+      #breadcrumb-navigation {
+          width: 100%;
+      }
+      .ms-auto {
+          width: 100%;
+          margin-left: 0 !important;
+          margin-top: 10px;
+      }
+      #directLevelSelect {
+          width: 100% !important;
       }
     }
   </style>
@@ -285,7 +320,6 @@
         <option value="SS_NAME">SS-wise</option>
         <option value="FDR_NAME">Feeder-wise</option>
         <option value="CAPA_KV">Capacity-wise</option>
-        <option value="DTR_LIST">DTR List</option> <!-- Added DTR List option -->
       </select>
     </div>
   </div>
@@ -304,12 +338,6 @@
         <div class="value" id="overallCapacitySum">0 kVA</div>
       </div>
     </div>
-  </div>
-
-  <!-- Global DTR Search Input (now always visible) -->
-  <div id="global-dtr-search-container" class="mb-3 d-flex gap-2">
-    <input type="text" id="dtrSearchInput" class="form-control" placeholder="Search DTR Code, Location, Feeder Code...">
-    <button class="btn btn-secondary" id="clearDtrSearchBtn">Clear</button>
   </div>
 
   <!-- Main Visualization Area (now primarily for tables) -->
@@ -334,7 +362,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr><td colspan="6" class="text-center">Loading data...</td></tr>
+              <tr><td colspan="6" class="text-center" id="loadingMessage">Loading data...</td></tr>
             </tbody>
             <tfoot>
               <!-- Total row will be added here by JavaScript -->
@@ -491,7 +519,6 @@
         <i class="fas fa-list me-2"></i> DTRs for Capacity: <span id="currentCapacity"></span>
       </div>
       <div class="card-body">
-        <!-- Search input moved to global-dtr-search-container -->
         <div class="table-responsive">
           <table class="table table-striped" id="dtrListTable">
             <thead>
@@ -509,22 +536,6 @@
             </tfoot>
           </table>
         </div>
-        <!-- Pagination Controls for DTR List -->
-        <nav aria-label="DTR list pagination" class="mt-3">
-          <ul class="pagination justify-content-center">
-            <li class="page-item" id="dtrPrevPageBtn">
-              <a class="page-link" href="#" aria-label="Previous">
-                <span aria-hidden="true">&laquo;</span>
-              </a>
-            </li>
-            <li class="page-item disabled"><span class="page-link" id="dtrPageInfo">Page 1 of 1</span></li>
-            <li class="page-item" id="dtrNextPageBtn">
-              <a class="page-link" href="#" aria-label="Next">
-                <span aria-hidden="true">&raquo;</span>
-              </a>
-            </li>
-          </ul>
-        </nav>
       </div>
     </div>
 
@@ -553,7 +564,6 @@
 
 <!-- Bootstrap Bundle with Popper -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
 <script>
   let dtrRawData = []; // Will store the fetched data
@@ -564,13 +574,6 @@
 
   // Global state for sorting
   let sortState = { key: null, direction: 'asc' }; // key: column to sort by, direction: 'asc' or 'desc'
-
-  // Global state for DTR list search
-  let dtrSearchTerm = '';
-
-  // Global state for DTR list pagination
-  let dtrCurrentPage = 1;
-  const dtrItemsPerPage = 20; // Number of DTRs to show per page
 
   const hierarchy = ['REGION', 'DIVN NAME', 'SUPP_OFF', 'SS_NAME', 'FDR_NAME', 'CAPA_KV', 'DTR_LIST'];
   const tableBodies = {
@@ -614,14 +617,27 @@
   const modalDTRCodeElem = document.getElementById('modalDTRCode');
   const modalDTRDetailsBodyElem = document.getElementById('modalDTRDetailsBody');
 
-  const globalDtrSearchContainer = document.getElementById('global-dtr-search-container');
-  const dtrSearchInput = document.getElementById('dtrSearchInput');
-  const clearDtrSearchBtn = document.getElementById('clearDtrSearchBtn');
+  let loadingInterval; // Variable to hold the interval for loading animation
 
-  // Pagination elements for DTR List
-  const dtrPrevPageBtn = document.getElementById('dtrPrevPageBtn');
-  const dtrNextPageBtn = document.getElementById('dtrNextPageBtn');
-  const dtrPageInfo = document.getElementById('dtrPageInfo');
+  function startLoadingAnimation() {
+    const loadingMessageElement = document.getElementById('loadingMessage');
+    if (!loadingMessageElement) return;
+
+    let dots = 0;
+    loadingMessageElement.textContent = 'Loading data';
+    loadingInterval = setInterval(() => {
+      dots = (dots + 1) % 4;
+      loadingMessageElement.textContent = 'Loading data' + '.'.repeat(dots);
+    }, 300);
+  }
+
+  function stopLoadingAnimation() {
+    clearInterval(loadingInterval);
+    const loadingMessageElement = document.getElementById('loadingMessage');
+    if (loadingMessageElement) {
+      loadingMessageElement.textContent = 'Loading data...'; // Reset to default or empty
+    }
+  }
 
 
   // Event listener for the Home button
@@ -629,9 +645,6 @@
     currentLevel = 'REGION';
     currentFilter = {};
     sortState = { key: null, direction: 'asc' }; // Reset sort state
-    dtrSearchTerm = ''; // Reset search term
-    dtrCurrentPage = 1; // Reset pagination
-    if (dtrSearchInput) dtrSearchInput.value = ''; // Clear input field
     renderDashboard();
   });
 
@@ -641,87 +654,56 @@
     currentLevel = selectedLevel;
     currentFilter = {}; // Reset filter when directly jumping to a level
     sortState = { key: null, direction: 'asc' }; // Reset sort state
-    dtrSearchTerm = ''; // Reset search term
-    dtrCurrentPage = 1; // Reset pagination
-    if (dtrSearchInput) dtrSearchInput.value = ''; // Clear input field
     renderDashboard();
   });
 
-  // Event listener for DTR search input
-  if (dtrSearchInput) {
-      dtrSearchInput.addEventListener('keyup', (event) => {
-          dtrSearchTerm = event.target.value.toLowerCase().trim();
-          dtrCurrentPage = 1; // Reset to first page on new search
-          renderDashboard(); // Re-render to apply search filter
-      });
-  }
-
-  // Event listener for Clear DTR Search button
-  if (clearDtrSearchBtn) {
-      clearDtrSearchBtn.addEventListener('click', () => {
-          dtrSearchTerm = '';
-          dtrCurrentPage = 1; // Reset pagination
-          if (dtrSearchInput) dtrSearchInput.value = '';
-          renderDashboard(); // Re-render to clear search filter
-      });
-  }
-
-  // Event listeners for DTR List Pagination
-  if (dtrPrevPageBtn) {
-      dtrPrevPageBtn.addEventListener('click', (e) => {
-          e.preventDefault(); // Prevent default link behavior
-          if (dtrCurrentPage > 1) {
-              dtrCurrentPage--;
-              renderDashboard();
-          }
-      });
-  }
-
-  if (dtrNextPageBtn) {
-      dtrNextPageBtn.addEventListener('click', (e) => {
-          e.preventDefault(); // Prevent default link behavior
-          const totalDTRs = aggregateData(dtrRawData, 'DTR_LIST', currentFilter, dtrSearchTerm ? true : false).length;
-          const totalPages = Math.ceil(totalDTRs / dtrItemsPerPage);
-          if (dtrCurrentPage < totalPages) {
-              dtrCurrentPage++;
-              renderDashboard();
-          }
-      });
-  }
-
-
   // Function to fetch and parse CSV data
-async function fetchDTRData() {
-  const dtrCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=2125422147&single=true&output=csv';
+  async function fetchDTRData() {
+    startLoadingAnimation(); // Start animation
+    // Corrected CSV URL
+    const dtrCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=2125422147&single=true&output=csv';
 
-  try {
-    const response = await fetch(dtrCsvUrl);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    try {
+      const response = await fetch(dtrCsvUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const csvText = await response.text();
+
+      const lines = csvText.split('\n').filter(line => line.trim() !== ''); // Filter out empty lines
+      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+      const parsedData = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',').map(c => c.trim().replace(/"/g, ''));
+        if (cols.length === headers.length) {
+          const record = {};
+          headers.forEach((header, index) => {
+            record[header] = cols[index];
+          });
+          parsedData.push(record);
+        }
+      }
+      dtrRawData = parsedData;
+
+      // Calculate overall totals once after fetching data
+      overallTotals.dtr_count = dtrRawData.length;
+      overallTotals.capa_kv_sum = dtrRawData.reduce((sum, item) => sum + (parseFloat(item.CAPA_KV) || 0), 0);
+
+      overallDTRCountElem.textContent = overallTotals.dtr_count;
+      overallCapacitySumElem.textContent = formatCapacity(overallTotals.capa_kv_sum);
+
+      console.log('DTR Data Loaded:', dtrRawData); // For debugging
+      renderDashboard(); // Render dashboard after data is loaded
+      stopLoadingAnimation(); // Stop animation on success
+    } catch (error) {
+      console.error('Error loading DTR data:', error);
+      stopLoadingAnimation(); // Stop animation on error
+      // Display an error message to the user
+      // Corrected colspan for error message in table
+      document.getElementById('regionTable').innerHTML = '<tbody><tr><td colspan="6" class="text-center text-danger">Failed to load DTR data. Please check the source URL or your network connection.</td></tr></tbody>';
     }
-    const csvText = await response.text();
-
-    const parsed = Papa.parse(csvText, {
-      header: true,
-      skipEmptyLines: true,
-    });
-
-    dtrRawData = parsed.data;
-
-    // Calculate overall totals
-    overallTotals.dtr_count = dtrRawData.length;
-    overallTotals.capa_kv_sum = dtrRawData.reduce((sum, item) => sum + (parseFloat(item.CAPA_KV) || 0), 0);
-
-    overallDTRCountElem.textContent = overallTotals.dtr_count;
-    overallCapacitySumElem.textContent = formatCapacity(overallTotals.capa_kv_sum);
-
-    renderDashboard();
-  } catch (error) {
-    console.error('Error loading DTR data:', error);
-    document.getElementById('regionTable').innerHTML = '<tbody><tr><td colspan="6" class="text-center text-danger">Failed to load DTR data. Please check the source URL or your network connection.</td></tr></tbody>';
   }
-}
-
 
   // Helper function to format capacity into kVA or MVA
   function formatCapacity(value) {
@@ -733,27 +715,12 @@ async function fetchDTRData() {
   }
 
   // Function to process and aggregate data
-  function aggregateData(data, groupByField, filter = {}, isGlobalSearch = false) {
-    let workingData = data;
-
-    if (isGlobalSearch) {
-        // If it's a global search, ignore drill-down filters for initial data selection
-        // and apply search directly to dtrRawData.
-        // The groupByField will be 'DTR_LIST' in this scenario.
-        if (dtrSearchTerm) {
-            const searchTermLower = dtrSearchTerm.toLowerCase();
-            workingData = dtrRawData.filter(item => { // Always filter from raw data for global search
-                const dtrCodeMatch = (item.DTR_CODE || '').toLowerCase().includes(searchTermLower);
-                const locNameMatch = (item.LOC_NAME || '').toLowerCase().includes(searchTermLower);
-                const fdrCodeMatch = (item.FDR_CODE || '').toLowerCase().includes(searchTermLower);
-                return dtrCodeMatch || locNameMatch || fdrCodeMatch;
-            });
-        }
-        groupByField = 'DTR_LIST'; // Ensure it's treated as DTR_LIST for rendering
-    } else {
-        // Apply drill-down filters if not a global search
-        workingData = workingData.filter(item => {
+  function aggregateData(data, groupByField, filter = {}) {
+    if (groupByField === 'DTR_LIST') {
+        // For DTR_LIST, just filter the raw data based on the current filter
+        return data.filter(item => {
             for (const key in filter) {
+                // Special handling for CAPA_KV to match float values
                 if (key === 'CAPA_KV') {
                     if (parseFloat(item[key]) !== parseFloat(filter[key])) {
                         return false;
@@ -766,31 +733,23 @@ async function fetchDTRData() {
         });
     }
 
-    // The aggregation part needs to be conditional. If groupByField is 'DTR_LIST', we just return workingData.
-    if (groupByField === 'DTR_LIST') {
-        if (sortState.key) {
-            workingData.sort((a, b) => {
-                let valA, valB;
-                if (sortState.key === 'DTR_CODE' || sortState.key === 'LOC_NAME' || sortState.key === 'CAT') {
-                    valA = (a[sortState.key] || '').toLowerCase();
-                    valB = (b[sortState.key] || '').toLowerCase();
-                    return sortState.direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-                }
-                return 0; // Should not happen with correct sort keys
-            });
-        } else {
-            workingData.sort((a, b) => (a.DTR_CODE || '').localeCompare(b.DTR_CODE || ''));
-        }
-        return workingData;
-    }
-
-    // Original aggregation logic for non-DTR_LIST views
     const aggregated = {};
     let totalCount = 0;
     let totalCapacity = 0;
 
-    workingData.forEach(item => {
+    data.forEach(item => {
+      // Apply filters
+      let matchesFilter = true;
+      for (const key in filter) {
+        if (item[key] !== filter[key]) {
+          matchesFilter = false;
+          break;
+        }
+      }
+
+      if (matchesFilter) {
         let groupKey = item[groupByField];
+        // Exclude last 12 characters from CCC name for visualization
         if (groupByField === 'SUPP_OFF' && groupKey && groupKey.length > 12) {
             groupKey = groupKey.slice(0, -12).trim();
         }
@@ -800,8 +759,7 @@ async function fetchDTRData() {
             name: groupKey,
             dtr_count: 0,
             capa_kv_sum: 0,
-            // Store original value for drill-down, ensuring it's the actual value from raw data
-            original_filter: { ...filter, [groupByField]: item[groupByField] }
+            original_filter: { ...filter, [groupByField]: item[groupByField] } // Store original value for drill-down
           };
         }
         aggregated[groupKey].dtr_count++;
@@ -809,35 +767,43 @@ async function fetchDTRData() {
 
         totalCount++;
         totalCapacity += parseFloat(item.CAPA_KV) || 0;
+      }
     });
 
+    // Convert to array and calculate percentages
     const result = Object.values(aggregated).map(item => {
       item.percentage_of_count = (totalCount > 0 ? (item.dtr_count / totalCount) * 100 : 0).toFixed(2);
       item.percentage_of_capacity = (totalCapacity > 0 ? (item.capa_kv_sum / totalCapacity) * 100 : 0).toFixed(2);
       return item;
     });
 
-    // Apply sorting for aggregated results
+    // Apply sorting based on sortState
     if (sortState.key) {
         result.sort((a, b) => {
             let valA, valB;
-            if (sortState.key === 'name') {
-                valA = (a.name || '').toLowerCase();
-                valB = (b.name || '').toLowerCase();
-                return sortState.direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(a.name);
-            } else if (sortState.key === 'CAPA_KV_value') {
-                valA = parseFloat(a.name);
+            if (sortState.key === 'name' || sortState.key === 'DTR_CODE' || sortState.key === 'LOC_NAME' || sortState.key === 'CAT') { // For alphabetical sorting
+                valA = (a[sortState.key] || a.name || '').toLowerCase(); // Use a.name for aggregated data, or actual field for DTR_LIST
+                valB = (b[sortState.key] || b.name || '').toLowerCase();
+                return sortState.direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            } else if (sortState.key === 'CAPA_KV_value') { // For Capacity-wise table's first column (Capacity kVA)
+                valA = parseFloat(a.name); // 'name' holds the capacity value for CAPA_KV
                 valB = parseFloat(b.name);
                 return sortState.direction === 'asc' ? valA - valB : valB - valA;
-            } else {
+            } else { // For numeric columns (dtr_count, capa_kv_sum, percentages)
                 valA = parseFloat(a[sortState.key]);
                 valB = parseFloat(b[sortState.key]);
                 return sortState.direction === 'asc' ? valA - valB : valB - valA;
             }
         });
     } else if (groupByField === 'CAPA_KV') {
+        // Default sort for CAPA_KV if no specific sort key is set (ascending by capacity value)
         result.sort((a, b) => parseFloat(a.name) - parseFloat(b.name));
-    } else {
+    } else if (groupByField === 'DTR_LIST') {
+        // Default sort for DTR_LIST (alphabetical by DTR_CODE)
+        result.sort((a, b) => (a.DTR_CODE || '').localeCompare(b.DTR_CODE || ''));
+    }
+    else {
+        // Default sort for other fields if no specific sort key is set (alphabetical by name)
         result.sort((a, b) => a.name.localeCompare(b.name));
     }
 
@@ -893,39 +859,13 @@ async function fetchDTRData() {
     if (data.length === 0) {
       const colspan = (currentGroupByField === 'CAPA_KV') ? 4 : (currentGroupByField === 'DTR_LIST' ? 3 : 6); // Adjusted colspan for DTR_LIST
       tableBodyElement.innerHTML = `<tr><td colspan="${colspan}" class="text-center">No data available for this selection.</td></tr>`;
-      // Hide pagination if no data
-      if (currentGroupByField === 'DTR_LIST') {
-          dtrPrevPageBtn.classList.add('disabled');
-          dtrNextPageBtn.classList.add('disabled');
-          dtrPageInfo.textContent = 'Page 0 of 0';
-      }
       return;
     }
 
     let currentTableTotalCount = 0;
     let currentTableTotalCapacity = 0; // Only relevant for aggregated tables
 
-    // Handle pagination for DTR_LIST
-    let paginatedData = data;
-    if (currentGroupByField === 'DTR_LIST') {
-        const startIndex = (dtrCurrentPage - 1) * dtrItemsPerPage;
-        const endIndex = startIndex + dtrItemsPerPage;
-        paginatedData = data.slice(startIndex, endIndex);
-
-        const totalPages = Math.ceil(data.length / dtrItemsPerPage);
-        dtrPageInfo.textContent = `Page ${dtrCurrentPage} of ${totalPages}`;
-
-        dtrPrevPageBtn.classList.toggle('disabled', dtrCurrentPage === 1);
-        dtrNextPageBtn.classList.toggle('disabled', dtrCurrentPage === totalPages);
-    } else {
-        // Hide pagination for other tables
-        if (dtrPrevPageBtn) dtrPrevPageBtn.classList.add('disabled');
-        if (dtrNextPageBtn) dtrNextPageBtn.classList.add('disabled');
-        if (dtrPageInfo) dtrPageInfo.textContent = '';
-    }
-
-
-    paginatedData.forEach(item => {
+    data.forEach(item => {
       const row = tableBodyElement.insertRow();
       let cellsHtml = '';
 
@@ -964,9 +904,6 @@ async function fetchDTRData() {
             // The filter for DTR_LIST will be the current filter plus the selected CAPA_KV
             currentFilter = { ...currentFilter, 'CAPA_KV': item.name };
             sortState = { key: null, direction: 'asc' }; // Reset sort state for new table
-            dtrSearchTerm = ''; // Reset search term when navigating to DTR_LIST
-            dtrCurrentPage = 1; // Reset pagination
-            if (dtrSearchInput) dtrSearchInput.value = ''; // Clear input field
             renderDashboard();
         });
 
@@ -1008,9 +945,6 @@ async function fetchDTRData() {
                     currentLevel = hierarchy[nextLevelIndex];
                     currentFilter = item.original_filter;
                     sortState = { key: null, direction: 'asc' }; // Reset sort state on drill-down
-                    dtrSearchTerm = ''; // Reset search term when navigating away from DTR_LIST
-                    dtrCurrentPage = 1; // Reset pagination
-                    if (dtrSearchInput) dtrSearchInput.value = ''; // Clear input field
                     renderDashboard();
                 }
             });
@@ -1021,11 +955,9 @@ async function fetchDTRData() {
     // Add total row at the bottom
     const totalRow = tableFooterElement.insertRow();
     if (currentGroupByField === 'DTR_LIST') {
-        // For DTR_LIST, the total count should reflect the *filtered* data, not just the current page
-        const totalFilteredDTRs = data.length; // 'data' here is the full filtered DTR list
         totalRow.innerHTML = `
-            <td><strong>Total DTRs (Filtered)</strong></td>
-            <td><strong>${totalFilteredDTRs}</strong></td>
+            <td><strong>Total DTRs</strong></td>
+            <td><strong>${currentTableTotalCount}</strong></td>
             <td></td> <!-- Empty cell for Category -->
         `;
     } else if (currentGroupByField !== 'CAPA_KV') {
@@ -1055,9 +987,6 @@ async function fetchDTRData() {
             currentLevel = 'CAPA_KV';
             currentFilter = JSON.parse(button.dataset.originalFilter); // Parse the stored filter
             sortState = { key: null, direction: 'asc' }; // Reset sort state on direct capacity view
-            dtrSearchTerm = ''; // Reset search term when navigating to CAPA_KV
-            dtrCurrentPage = 1; // Reset pagination
-            if (dtrSearchInput) dtrSearchInput.value = ''; // Clear input field
             renderDashboard();
         });
     });
@@ -1113,9 +1042,6 @@ async function fetchDTRData() {
           currentLevel = clickedLevel;
           currentFilter = newFilter;
           sortState = { key: null, direction: 'asc' }; // Reset sort state on breadcrumb navigation
-          dtrSearchTerm = ''; // Reset search term on breadcrumb navigation
-          dtrCurrentPage = 1; // Reset pagination
-          if (dtrSearchInput) dtrSearchInput.value = ''; // Clear input field
           renderDashboard();
         });
         breadcrumbNav.appendChild(breadcrumbButton);
@@ -1129,60 +1055,47 @@ async function fetchDTRData() {
     // Hide all analysis cards first
     Object.values(analysisCards).forEach(card => card.classList.add('d-none'));
 
-    let targetGroupByField = currentLevel;
-    let dataForAggregation = dtrRawData;
-    let filterForAggregation = currentFilter;
-    let isGlobalSearchActive = false;
+    // Determine the field to group by for the current level
+    const groupByField = currentLevel;
 
-    if (dtrSearchTerm) {
-        isGlobalSearchActive = true;
-        targetGroupByField = 'DTR_LIST'; // Force DTR_LIST view when searching
-        filterForAggregation = {}; // Ignore drill-down filters when performing global search
-    }
+    // Show the relevant card
+    analysisCards[groupByField].classList.remove('d-none');
 
-    // Show the relevant card based on the targetGroupByField
-    analysisCards[targetGroupByField].classList.remove('d-none');
-
-    // Ensure the input field reflects the current search term
-    if (dtrSearchInput) dtrSearchInput.value = dtrSearchTerm;
-
-
-    // Update current level labels based on the actual drill-down, not the forced DTR_LIST for search
-    if (targetGroupByField === 'DIVN NAME') {
+    // Update current level labels
+    if (groupByField === 'DIVN NAME') {
       document.getElementById('currentRegion').textContent = currentFilter.REGION || '';
-    } else if (targetGroupByField === 'SUPP_OFF') {
+    } else if (groupByField === 'SUPP_OFF') {
       document.getElementById('currentDivision').textContent = currentFilter['DIVN NAME'] || '';
-    } else if (targetGroupByField === 'SS_NAME') {
+    } else if (groupByField === 'SS_NAME') {
       document.getElementById('currentCCC').textContent = currentFilter['SUPP_OFF'] || '';
-    } else if (targetGroupByField === 'FDR_NAME') {
+    } else if (groupByField === 'FDR_NAME') {
       document.getElementById('currentSS').textContent = currentFilter['SS_NAME'] || '';
-    } else if (targetGroupByField === 'CAPA_KV') {
+    } else if (groupByField === 'CAPA_KV') {
       // For Capacity-wise, the header should reflect the path leading to it
       let pathDisplay = [];
       if (currentFilter.REGION) pathDisplay.push(currentFilter.REGION);
       if (currentFilter['DIVN NAME']) pathDisplay.push(currentFilter['DIVN NAME']);
       if (currentFilter.SS_NAME) pathDisplay.push(currentFilter.SS_NAME);
       document.getElementById('currentFeeder').textContent = pathDisplay.join(' > ') || 'Overall';
-    } else if (targetGroupByField === 'DTR_LIST') {
-        // For DTR_LIST, show the capacity it's filtering by or "Search Results"
+    } else if (groupByField === 'DTR_LIST') {
+        // For DTR_LIST, show the capacity it's filtering by
         let pathDisplay = [];
         if (currentFilter.REGION) pathDisplay.push(currentFilter.REGION);
         if (currentFilter['DIVN NAME']) pathDisplay.push(currentFilter['DIVN NAME']);
         if (currentFilter.SS_NAME) pathDisplay.push(currentFilter.SS_NAME);
         if (currentFilter.FDR_NAME) pathDisplay.push(currentFilter.FDR_NAME);
         if (currentFilter.CAPA_KV) pathDisplay.push(currentFilter.CAPA_KV + ' kVA');
-        document.getElementById('currentCapacity').textContent = (isGlobalSearchActive ? 'Search Results' : pathDisplay.join(' > ')) || 'Overall';
+        document.getElementById('currentCapacity').textContent = pathDisplay.join(' > ') || 'Overall';
     }
 
     // Update the direct level select dropdown to reflect the current level
-    // This should reflect the actual drill-down level, not the forced DTR_LIST for search
-    directLevelSelect.value = targetGroupByField; // Set to targetGroupByField (which will be DTR_LIST if searching)
+    directLevelSelect.value = currentLevel;
 
-    // Aggregate data for the current view, passing the isGlobalSearch flag
-    const aggregatedData = aggregateData(dataForAggregation, targetGroupByField, filterForAggregation, isGlobalSearchActive);
+    // Aggregate data for the current view
+    const aggregatedData = aggregateData(dtrRawData, groupByField, currentFilter);
 
     // Render table for the current view
-    renderTable(aggregatedData, tableBodies[targetGroupByField], targetGroupByField);
+    renderTable(aggregatedData, tableBodies[groupByField], groupByField);
 
     // Update breadcrumb navigation
     updateBreadcrumb();
