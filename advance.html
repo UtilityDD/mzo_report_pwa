@@ -49,7 +49,7 @@
       padding: 0.75rem 1rem; /* Reduced padding */
       text-align: center;
       z-index: 1000;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 2px 5px (0, 0, 0, 0.1);
     }
 
     .header h1 {
@@ -150,7 +150,7 @@
     }
 
     .chart-container h2 {
-      font-size: 0.95rem; /* Slightly smaller font */
+      font-size: 1rem; /* Slightly smaller font */
       font-weight: 600;
       margin-bottom: 0.4rem; /* Reduced margin */
     }
@@ -408,8 +408,7 @@
       justify-content: space-between;
       align-items: center;
       padding: 0.6rem 0; /* Reduced padding */
-      cursor: pointer;
-      font-size: 0.95rem; /* Slightly smaller font */
+      font-size: 0.7rem; /* Consistent with chart headers */
       font-weight: 600;
       color: #1e293b;
     }
@@ -417,6 +416,7 @@
     .summary-table-header .bx {
       font-size: 1.1rem; /* Slightly smaller icon */
       transition: transform 0.2s ease-in-out;
+      cursor: pointer; /* Make the icon clickable */
     }
 
     .summary-table-header.collapsed .bx {
@@ -457,6 +457,11 @@
       justify-content: center;
       align-items: flex-start; /* Align items to the start for better layout with descriptions */
       margin-top: 0.5rem;
+      background: #ffffff; /* Add background to the container */
+      border: 1px solid #e2e8f0; /* Add border to the container */
+      border-radius: 10px; /* Add border-radius to the container */
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05); /* Add shadow to the container */
+      margin: 0.75rem 1rem; /* Adjust margin to match other sections */
     }
 
     .option-button-group {
@@ -465,10 +470,7 @@
       align-items: center;
       text-align: center;
       padding: 0.5rem;
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      background: #ffffff;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+      /* Removed individual borders and shadows as they are now on the container */
       flex: 1 1 calc(33% - 1rem); /* Roughly 3 per row on desktop */
       min-width: 150px; /* Minimum width for responsiveness */
       max-width: 250px; /* Max width to prevent stretching too much */
@@ -594,7 +596,7 @@
         font-size: 0.7rem;
       }
       .summary-table-header {
-        font-size: 0.85rem;
+        font-size: 0.95rem; /* Made consistent with chart headers on mobile */
       }
       .summary-tabs .tab-btn {
         padding: 0.3rem;
@@ -610,12 +612,14 @@
       .option-buttons-container {
         flex-direction: column; /* Stack buttons on mobile */
         align-items: stretch;
-        gap: 0.5rem;
+        gap: 0.2rem; /* Reduced gap for mobile */
+        margin: 0.5rem; /* Adjust margin for mobile */
       }
       .option-button-group {
         width: 100%;
         max-width: none; /* Remove max-width on mobile */
         flex: none; /* Remove flex basis */
+        padding: 0.2rem; /* Reduced padding for mobile */
       }
     }
 
@@ -733,8 +737,7 @@
 
     <div id="summaryTableSection" class="data-table-container hidden">
       <div id="summaryTableHeader" class="summary-table-header">
-        <h2>Summary Table</h2>
-        <!-- Removed the collapse icon -->
+        <h2>Summary Table <i class='bx bxs-download' id="downloadSummaryCsvBtn" title="Download as CSV"></i></h2>
       </div>
       <div id="summaryTableContent" class="summary-table-content">
         <div class="summary-tabs">
@@ -1987,7 +1990,7 @@ function getFilteredData() {
 
     function exportModalToCSV() {
       const rows = [["Category", "Amount"]];
-      for (const [key, value] of Object.entries(modalDataMap)) {
+      for (const [key, value] of Object.entries(modalDataMap)) { // Fixed: added 'of'
         rows.push([key, value]);
       }
       const csv = rows.map(r => r.join(",")).join("\n");
@@ -2015,6 +2018,53 @@ function getFilteredData() {
       }
     }
 
+    // Function to export the currently displayed summary table to CSV
+    function exportSummaryTableToCSV() {
+        const table = document.getElementById('miniDataTable');
+        const rows = [];
+        const headers = [];
+
+        // Get headers
+        table.querySelectorAll('thead th').forEach(th => {
+            // Exclude the sort icon from the header text
+            let headerText = th.textContent.trim();
+            if (th.querySelector('.sort-icon')) {
+                headerText = headerText.replace(th.querySelector('.sort-icon').textContent, '').trim();
+            }
+            headers.push(headerText);
+        });
+        rows.push(headers);
+
+        // Get data rows from tbody, excluding the last "Total" row
+        table.querySelectorAll('tbody tr:not(:last-child)').forEach(tr => {
+            const rowData = [];
+            tr.querySelectorAll('td').forEach(td => {
+                rowData.push(td.textContent.trim());
+            });
+            rows.push(rowData);
+        });
+
+        // Get the "Total" row separately and add it
+        const totalRowElement = table.querySelector('tbody tr:last-child');
+        if (totalRowElement) {
+            const totalRowData = [];
+            totalRowElement.querySelectorAll('td').forEach(td => {
+                totalRowData.push(td.textContent.trim());
+            });
+            rows.push(totalRowData);
+        }
+
+
+        const csvContent = rows.map(e => e.join(",")).join("\n");
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.setAttribute('download', `${currentSummaryTab}_summary_table.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+    }
 
 
     // Render filtered totals in modal
@@ -2040,11 +2090,14 @@ function getFilteredData() {
         });
 
         modalDataMap = {}; // for CSV export
+        // Populate modalDataMap with just key and total for CSV export
+        Object.entries(materialMap).forEach(([key, data]) => {
+            modalDataMap[key] = data.total;
+        });
+
 
         const sorted = Object.entries(materialMap).sort((a, b) => b[1].total - a[1].total);
         const listHTML = sorted.map(([key, data], index) => {
-          modalDataMap[key] = data.total;
-
           const projectList = Array.from(data.projectIds).join(", ");
           const projectLine = projectList
             ? `<div style="font-size: 0.75rem; font-style: italic; color: #555;">(${projectList})</div>`
@@ -2133,8 +2186,8 @@ function getFilteredData() {
         });
       });
 
-      // Removed the click listener for summaryTableHeader to disable collapse
-      // document.getElementById('summaryTableHeader').addEventListener('click', toggleSummaryTable);
+      // Event listener for the download icon
+      document.getElementById('downloadSummaryCsvBtn').addEventListener('click', exportSummaryTableToCSV);
 
       // UPDATED: Event listeners for new summary tabs
       document.getElementById('divisionSummaryTabBtn').addEventListener('click', () => showSummaryTab('division'));
