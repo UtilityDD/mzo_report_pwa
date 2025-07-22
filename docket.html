@@ -646,9 +646,11 @@ function getCCCNamesByProblemType(data, targetType) {
 function renderProbTypeCards(counts) {
     probTypeCardsContainer.innerHTML = '';
 
-    let filteredData = getFilteredData();
-    filteredData = filterByDescriptionType(filteredData);
-    filteredData = filterByAge(filteredData); // ✅ Now filters 24H+
+let filteredData = getFilteredData();
+filteredData = filterByDescriptionType(filteredData);
+filteredData = filterByAge(filteredData); // ✅ Apply age filtering
+const probTypeCounts = getProbTypeCounts(filteredData);
+
 
     // Separate technical and non-technical types
     const technicalTypes = [];
@@ -946,7 +948,21 @@ function filterByDescriptionType(data) {
 // Attach change events
 document.getElementById('technical-checkbox').addEventListener('change', updateDashboard);
 document.getElementById('nontechnical-checkbox').addEventListener('change', updateDashboard);
-document.getElementById('older48-checkbox').addEventListener('change', updateDashboard);
+
+
+const older24 = document.getElementById('older-checkbox');
+const older48 = document.getElementById('older48-checkbox');
+
+older24.addEventListener('change', () => {
+  if (older24.checked) older48.checked = false;
+  updateDashboard();
+});
+
+older48.addEventListener('change', () => {
+  if (older48.checked) older24.checked = false;
+  updateDashboard();
+});
+
 
         /**
          * Main function to update all dashboard components.
@@ -1056,22 +1072,26 @@ document.getElementById('older-checkbox').addEventListener('change', () => {
 });
 
 function filterByAge(data) {
-    const older24Checked = document.getElementById('older-checkbox').checked;
-    const older48Checked = document.getElementById('older48-checkbox').checked;
+  const older24Checked = document.getElementById('older-checkbox').checked;
+  const older48Checked = document.getElementById('older48-checkbox').checked;
 
-    if (!older24Checked && !older48Checked) return data;
+  return data.filter(d => {
+    const parsedDate = parseDateString(d.doc_crn_dt);
+    if (isNaN(parsedDate)) return false; // ignore invalid dates
 
-    return data.filter(d => {
-        const parsedDate = parseDateString(d.doc_crn_dt);
-        const now = new Date();
-        const diffMs = now - parsedDate;
-        const diffHours = diffMs / (1000 * 60 * 60);
+    const now = new Date();
+    const diffMs = now - parsedDate;
+    const diffHours = diffMs / (1000 * 60 * 60);
 
-        if (older48Checked) return diffHours >= 48;
-        if (older24Checked) return diffHours >= 24;
-        return true;
-    });
+    if (older48Checked) return diffHours >= 48;
+    if (older24Checked) return diffHours >= 24;
+
+    return true; // no filter
+  });
 }
+
+
+
 
 
     </script>
