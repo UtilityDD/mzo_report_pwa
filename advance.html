@@ -190,7 +190,7 @@
     .loading-spinner {
       width: 28px; /* Smaller spinner */
       height: 28px;
-      border: 2px solid #e2e8f0;
+      border: 2px solid #e2e8eb;
       border-top: 2px solid #3b82f6;
       border-radius: 50%;
       animation: spin 1s linear infinite;
@@ -200,12 +200,6 @@
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
-    }
-
-    .loading-text {
-      color: #64748b;
-      font-size: 0.8rem; /* Slightly smaller font */
-      font-weight: 500;
     }
 
     .hidden {
@@ -392,7 +386,14 @@
       font-weight: 600;
       color: #475569;
       white-space: nowrap; /* Prevent wrapping of headers */
+      cursor: pointer; /* Indicate sortable */
     }
+    .data-table th .sort-icon {
+        margin-left: 5px;
+        font-size: 0.7em;
+        vertical-align: middle;
+    }
+
 
     .data-table tbody tr:nth-child(even) {
       background: #f8fafc;
@@ -446,6 +447,64 @@
       padding: 0.4rem; /* Reduced padding */
       font-size: 0.8rem; /* Slightly smaller font */
     }
+
+    /* New styles for option buttons */
+    .option-buttons-container {
+      padding: 0.75rem 1rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      justify-content: center;
+      align-items: flex-start; /* Align items to the start for better layout with descriptions */
+      margin-top: 0.5rem;
+    }
+
+    .option-button-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 0.5rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      background: #ffffff;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+      flex: 1 1 calc(33% - 1rem); /* Roughly 3 per row on desktop */
+      min-width: 150px; /* Minimum width for responsiveness */
+      max-width: 250px; /* Max width to prevent stretching too much */
+    }
+
+    .option-button-group .tab-btn {
+      width: 100%;
+      margin-bottom: 0.4rem;
+      background: #e5e7eb; /* Default background */
+      color: #1e293b; /* Default text color */
+      font-weight: 500; /* Default font weight */
+      padding: 0.6rem;
+    }
+
+    .option-button-group .tab-btn:hover {
+      background: #d1d5db;
+    }
+
+    .option-button-group .tab-btn.active-option { /* New class for active option button */
+      background: #3b82f6;
+      color: white;
+      font-weight: 600;
+    }
+
+    .option-button-group .description {
+      font-size: 0.75rem;
+      color: #6b7280;
+      line-height: 1.3;
+      min-height: 3em; /* Ensure consistent height for descriptions */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 0 0.2rem;
+    }
+
 
     /* Mobile optimizations */
     @media (max-width: 640px) {
@@ -548,6 +607,16 @@
       .modal-tabs .tab-btn {
         font-size: 0.7rem;
       }
+      .option-buttons-container {
+        flex-direction: column; /* Stack buttons on mobile */
+        align-items: stretch;
+        gap: 0.5rem;
+      }
+      .option-button-group {
+        width: 100%;
+        max-width: none; /* Remove max-width on mobile */
+        flex: none; /* Remove flex basis */
+      }
     }
 
     @media (max-width: 480px) {
@@ -563,7 +632,7 @@
 <body>
 
   <div class="header">
-    <h1>📊 Advance to Vendors</h1>
+    <h1>📊 Advance to Vendors (CAPEX)</h1>
   </div>
   <div class="app-container">
     <div class="controls">
@@ -626,7 +695,23 @@
       </div>
     </div>
 
-    <div class="chart-container">
+    <!-- New section for option buttons -->
+    <div class="option-buttons-container">
+      <div class="option-button-group">
+        <button id="viewTimelineChartBtn" class="tab-btn">View Advance Timeline Chart</button>
+        <p class="description">Visualize Advance over time</p>
+      </div>
+      <div class="option-button-group">
+        <button id="viewDivisionChartBtn" class="tab-btn">View Division-wise Advance Chart</button>
+        <p class="description">Bar Chart for Division-wise Advance</p>
+      </div>
+      <div class="option-button-group">
+        <button id="viewSummaryTableBtn" class="tab-btn">View Summary Table</button>
+        <p class="description">Tabulated Advance Report</p>
+      </div>
+    </div>
+
+    <div id="advanceTimelineChartSection" class="chart-container hidden">
       <h2 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem;">📈 Advance Timeline</h2>
       <div class="loading-overlay hidden" id="loadingOverlay">
         <div class="loading-spinner"></div>
@@ -636,7 +721,7 @@
         <canvas id="balanceChart"></canvas>
       </div>
     </div>
-    <div class="chart-container">
+    <div id="divisionChartSection" class="chart-container hidden">
       <h2 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem;">📍 Division-wise Advance</h2>
 
       <div class="loading-overlay hidden" id="divisionLoadingOverlay">
@@ -649,15 +734,16 @@
       </div>
     </div>
 
-    <div class="data-table-container">
+    <div id="summaryTableSection" class="data-table-container hidden">
       <div id="summaryTableHeader" class="summary-table-header">
         <h2>Summary Table</h2>
-        <i class="bx bx-chevron-down"></i>
+        <!-- Removed the collapse icon -->
       </div>
       <div id="summaryTableContent" class="summary-table-content">
         <div class="summary-tabs">
-          <button id="monthlySummaryTabBtn" class="tab-btn active-tab">Monthly Summary</button>
-          <button id="divisionSummaryTabBtn" class="tab-btn">Division Summary</button>
+          <button id="divisionSummaryTabBtn" class="tab-btn active-tab">Division</button>
+          <button id="unitSummaryTabBtn" class="tab-btn">Unit</button>
+          <button id="agencySummaryTabBtn" class="tab-btn">Agency</button>
         </div>
         <table id="miniDataTable" class="data-table">
           <thead>
@@ -709,11 +795,19 @@
     let selectedVendor = 'all';
     let selectedMaterial = 'all'; // New state for material filter
     let chart; // This will now only refer to the balanceChart
+    let divisionChart; // Reference for the division chart instance
 
     // Global variables to store summary data for tables
     let globalMonthlyBuckets = {};
     let globalLocationSums = {};
-    let currentSummaryTab = 'monthly'; // default tab
+    let currentSummaryTab = 'division'; // default tab, now 'division'
+
+    // NEW: Global variable to store the filter function for the modal
+    let currentModalFilterFn = null;
+
+    // NEW: Global variables for sorting state in summary table
+    let currentSortColumn = null;
+    let currentSortDirection = 'desc'; // 'asc' or 'desc'
 
     function toggleLoading(show) {
       document.getElementById('loadingOverlay').classList.toggle('hidden', !show);
@@ -767,24 +861,15 @@
       return null;
     }
 
-    function getFilteredData() {
-      let filteredData = allData;
+function getFilteredData() {
+  let filteredData = allData;
+  if (selectedLocation !== 'all') filteredData = filteredData.filter(row => row.location === selectedLocation);
+  if (selectedUnit !== 'all') filteredData = filteredData.filter(row => row.unit === selectedUnit);
+  if (selectedVendor !== 'all') filteredData = filteredData.filter(row => row.vendor === selectedVendor);
+  if (selectedMaterial !== 'all') filteredData = filteredData.filter(row => row.material === selectedMaterial);
+  return filteredData;
+}
 
-      if (selectedLocation !== 'all') {
-        filteredData = filteredData.filter(row => row.location === selectedLocation);
-      }
-      if (selectedUnit !== 'all') {
-        filteredData = filteredData.filter(row => row.unit === selectedUnit);
-      }
-      if (selectedVendor !== 'all') {
-        filteredData = filteredData.filter(row => row.vendor === selectedVendor);
-      }
-      if (selectedMaterial !== 'all') { // Apply material filter
-        filteredData = filteredData.filter(row => row.material === selectedMaterial);
-      }
-
-      return filteredData;
-    }
 
     function populateDropdowns(resetDependent = false) {
       // Get base filtered data (without vendor/material filter for vendor/material dropdown)
@@ -898,7 +983,11 @@
 
       globalMonthlyBuckets = monthlyBuckets; // Store for summary table
       updateStats(monthlyBuckets, topVendor);
-      renderChart(monthlyBuckets);
+      // Only render chart if its section is visible
+      if (!document.getElementById('advanceTimelineChartSection').classList.contains('hidden')) {
+          renderChart(monthlyBuckets);
+      }
+
 
       // Process filtered data for division chart
       const locationSums = {};
@@ -910,8 +999,15 @@
       });
       globalLocationSums = locationSums; // Store for summary table
 
-      renderDivisionChart(locationSums); // Pass locationSums to renderDivisionChart
-      showSummaryTab(currentSummaryTab); // Re-render current summary tab with new data
+      // Only render division chart if its section is visible
+      if (!document.getElementById('divisionChartSection').classList.contains('hidden')) {
+          renderDivisionChart(locationSums);
+      }
+
+      // When data changes, re-render the current summary tab with default sorting
+      if (!document.getElementById('summaryTableSection').classList.contains('hidden')) {
+          showSummaryTab(currentSummaryTab, currentSortColumn, currentSortDirection);
+      }
     }
 
     function updateStats(monthlyBuckets, topVendor) {
@@ -1207,15 +1303,6 @@
         return cumulativeSum;
       });
 
-      const colors = labels.map(label => {
-        const [monthStr, yearStr] = label.split('/');
-        const month = parseInt(monthStr) - 1;
-        const year = parseInt('20' + yearStr);
-        const date = new Date(year, month);
-        const diffMonths = (now.getFullYear() - date.getFullYear()) * 12 + (now.getMonth() - date.getMonth());
-        return diffMonths > 12;
-      });
-
 
       const config = {
         type: 'line', /* Line chart for area */
@@ -1359,13 +1446,12 @@
 
 
       // Destroy existing chart instance if it exists
-      const existingChart = Chart.getChart('divisionChart');
-      if (existingChart) {
-        existingChart.destroy();
+      if (divisionChart) { // Use the new divisionChart variable
+        divisionChart.destroy();
       }
 
       const ctx = document.getElementById('divisionChart').getContext('2d');
-      new Chart(ctx, {
+      divisionChart = new Chart(ctx, { // Assign to divisionChart
         type: 'bar',
         data: {
           labels: labels.map(formatName),
@@ -1425,84 +1511,174 @@
       });
     }
 
-    // Function to toggle the summary table visibility
-    function toggleSummaryTable() {
-      const content = document.getElementById('summaryTableContent');
-      const header = document.getElementById('summaryTableHeader');
-      const icon = header.querySelector('.bx');
+    // Function to set active option button
+    function setActiveOptionButton(buttonId) {
+      document.querySelectorAll('.option-button-group .tab-btn').forEach(btn => {
+        btn.classList.remove('active-option');
+      });
+      document.getElementById(buttonId).classList.add('active-option');
+    }
 
-      content.classList.toggle('hidden');
-      header.classList.toggle('collapsed');
+    // NEW: Generic function to render categorized summary tables
+    function renderCategorizedSummaryTable(categoryType, sortColumn = null, sortDirection = null) {
+      const table = document.getElementById('miniDataTable');
+      const thead = table.querySelector('thead tr');
+      const tbody = table.querySelector('tbody');
 
-      // Adjust max-height based on visibility
-      if (content.classList.contains('hidden')) {
-        content.style.maxHeight = '0';
+      // Clear existing content
+      tbody.innerHTML = ''; // Clear tbody first to prevent flicker
+
+      const now = new Date();
+      const summaryData = {};
+      let totalSum = 0;
+      let totalOverdue6M = 0; // New total for >6M
+      let totalOverdue12M = 0;
+      let totalOverdue24M = 0;
+
+      // Filter data based on global filters (location, unit, vendor, material)
+      const filteredData = getFilteredData();
+
+      filteredData.forEach(row => {
+        const categoryKey = row[categoryType] || 'Unknown';
+        if (!summaryData[categoryKey]) {
+          summaryData[categoryKey] = { total: 0, overdue6M: 0, overdue12M: 0, overdue24M: 0 }; // Added overdue6M
+        }
+
+        summaryData[categoryKey].total += row.value;
+        totalSum += row.value; // Accumulate overall total
+
+        const diffMonths = (now.getFullYear() - row.date.getFullYear()) * 12 + (now.getMonth() - row.date.getMonth());
+
+        if (diffMonths > 6) { // Condition for >6M
+          summaryData[categoryKey].overdue6M += row.value;
+          totalOverdue6M += row.value; // Accumulate overall overdue >6M
+        }
+        if (diffMonths > 12) {
+          summaryData[categoryKey].overdue12M += row.value;
+          totalOverdue12M += row.value; // Accumulate overall overdue >12M
+        }
+        if (diffMonths > 24) {
+          summaryData[categoryKey].overdue24M += row.value;
+          totalOverdue24M += row.value; // Accumulate overall overdue >24M
+        }
+      });
+
+      // Set table headers with sorting icons
+      const categoryHeaderName = categoryType === 'vendor' ? 'Agency' : categoryType.charAt(0).toUpperCase() + categoryType.slice(1);
+      
+      // Store the actual data key for sorting
+      const categorySortKey = categoryType; 
+
+      // Add "Sl. No." header (not sortable) and updated overdue headers
+      thead.innerHTML = `
+        <th>Sl. No.</th>
+        <th data-sort-key="${categorySortKey}">${categoryHeaderName} <span class="sort-icon"></span></th>
+        <th data-sort-key="total">Total <span class="sort-icon"></span></th>
+        <th data-sort-key="overdue6M">>6M <span class="sort-icon"></span></th>
+        <th data-sort-key="overdue12M">>12M <span class="sort-icon"></span></th>
+        <th data-sort-key="overdue24M">>24M <span class="sort-icon"></span></th>
+      `;
+
+      // Attach click listeners to headers for sorting (excluding Sl. No.)
+      thead.querySelectorAll('th[data-sort-key]').forEach(th => {
+        th.addEventListener('click', () => {
+          const key = th.dataset.sortKey;
+          let direction = 'desc'; // Default sort direction for new column click
+
+          if (currentSortColumn === key) {
+            // If clicking the same column, toggle direction
+            direction = currentSortDirection === 'asc' ? 'desc' : 'asc';
+          }
+          currentSortColumn = key;
+          currentSortDirection = direction;
+          renderCategorizedSummaryTable(categoryType, currentSortColumn, currentSortDirection);
+        });
+      });
+
+      // Apply sorting logic
+      let sortedData = Object.entries(summaryData);
+
+      if (sortColumn) {
+        sortedData.sort((a, b) => {
+          let valA, valB;
+          if (sortColumn === categorySortKey) { // Sorting by category name (string)
+            valA = formatName(a[0]);
+            valB = formatName(b[0]);
+            return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+          } else { // Sorting by numeric values
+            valA = a[1][sortColumn];
+            valB = b[1][sortColumn];
+            return sortDirection === 'asc' ? valA - valB : valB - valA;
+          }
+        });
       } else {
-        content.style.maxHeight = content.scrollHeight + 'px'; // Set to actual scroll height
+          // Default sort by total if no sortColumn is provided (initial load)
+          sortedData.sort((a, b) => b[1].total - a[1].total);
+          currentSortColumn = 'total';
+          currentSortDirection = 'desc';
       }
-    }
 
-    // Function to render the monthly summary table
-    function renderMonthlySummaryTable() {
-      const table = document.getElementById('miniDataTable');
-      const thead = table.querySelector('thead tr');
-      const tbody = table.querySelector('tbody');
-
-      // Clear existing content
-      thead.innerHTML = '<th>Month</th><th>Total Value (₹)</th>';
-      tbody.innerHTML = '';
-
-      // Sort monthly buckets by date
-      const sortedMonths = Object.keys(globalMonthlyBuckets).sort((a, b) => {
-        const [ma, ya] = a.split('/').map(Number);
-        const [mb, yb] = b.split('/').map(Number);
-        const dateA = new Date(2000 + ya, ma - 1);
-        const dateB = new Date(2000 + yb, mb - 1);
-        return dateA - dateB;
+      // Update sort icons
+      thead.querySelectorAll('th[data-sort-key]').forEach(th => {
+        const icon = th.querySelector('.sort-icon');
+        if (th.dataset.sortKey === currentSortColumn) {
+          icon.innerHTML = currentSortDirection === 'asc' ? '&#9650;' : '&#9660;'; // Up or Down arrow
+        } else {
+          icon.innerHTML = ''; // Clear icon for other columns
+        }
       });
 
-      sortedMonths.forEach(month => {
-        const value = globalMonthlyBuckets[month];
+
+      sortedData.forEach(([key, data], index) => { // Added index for Sl. No.
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${month}</td><td>₹${formatCurrency(value)}</td>`;
+        tr.innerHTML = `
+          <td>${index + 1}</td> <!-- Serial Number -->
+          <td>${formatName(key)}</td>
+          <td>₹${formatCurrency(data.total)}</td>
+          <td style="color:${data.overdue6M > 0 ? '#dc2626' : 'inherit'};">₹${formatCurrency(data.overdue6M)}</td>
+          <td style="color:${data.overdue12M > 0 ? '#dc2626' : 'inherit'};">₹${formatCurrency(data.overdue12M)}</td>
+          <td style="color:${data.overdue24M > 0 ? '#dc2626' : 'inherit'};">₹${formatCurrency(data.overdue24M)}</td>
+        `;
         tbody.appendChild(tr);
       });
+
+      // Add total row at the end
+      const totalRow = document.createElement('tr');
+      totalRow.style.fontWeight = 'bold';
+      totalRow.style.backgroundColor = '#e0e7ff'; /* Light blue background for total row */
+      totalRow.innerHTML = `
+        <td></td> <!-- Empty for Sl. No. -->
+        <td>Total</td>
+        <td>₹${formatCurrency(totalSum)}</td>
+        <td style="color:${totalOverdue6M > 0 ? '#dc2626' : 'inherit'};">₹${formatCurrency(totalOverdue6M)}</td>
+        <td style="color:${totalOverdue12M > 0 ? '#dc2626' : 'inherit'};">₹${formatCurrency(totalOverdue12M)}</td>
+        <td style="color:${totalOverdue24M > 0 ? '#dc2626' : 'inherit'};">₹${formatCurrency(totalOverdue24M)}</td>
+      `;
+      tbody.appendChild(totalRow);
     }
 
-    // Function to render the division summary table
-    function renderDivisionSummaryTable() {
-      const table = document.getElementById('miniDataTable');
-      const thead = table.querySelector('thead tr');
-      const tbody = table.querySelector('tbody');
-
-      // Clear existing content
-      thead.innerHTML = '<th>Division</th><th>Total Value (₹)</th>';
-      tbody.innerHTML = '';
-
-      // Sort divisions by value (descending)
-      const sortedDivisions = Object.entries(globalLocationSums).sort((a, b) => b[1] - a[1]);
-
-      sortedDivisions.forEach(([division, value]) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${formatName(division)}</td><td>₹${formatCurrency(value)}</td>`;
-        tbody.appendChild(tr);
-      });
-    }
 
     // Function to switch between summary tabs
     function showSummaryTab(tabName) {
       currentSummaryTab = tabName;
+      // Reset sorting when switching tabs
+      currentSortColumn = null;
+      currentSortDirection = 'desc';
 
       // Update active tab styling
-      document.getElementById('monthlySummaryTabBtn').classList.remove('active-tab');
       document.getElementById('divisionSummaryTabBtn').classList.remove('active-tab');
+      document.getElementById('unitSummaryTabBtn').classList.remove('active-tab');
+      document.getElementById('agencySummaryTabBtn').classList.remove('active-tab');
 
-      if (tabName === 'monthly') {
-        document.getElementById('monthlySummaryTabBtn').classList.add('active-tab');
-        renderMonthlySummaryTable();
-      } else if (tabName === 'division') {
+      if (tabName === 'division') {
         document.getElementById('divisionSummaryTabBtn').classList.add('active-tab');
-        renderDivisionSummaryTable();
+        renderCategorizedSummaryTable('location'); // Use 'location' as the internal key for Division
+      } else if (tabName === 'unit') {
+        document.getElementById('unitSummaryTabBtn').classList.add('active-tab');
+        renderCategorizedSummaryTable('unit');
+      } else if (tabName === 'agency') {
+        document.getElementById('agencySummaryTabBtn').classList.add('active-tab');
+        renderCategorizedSummaryTable('vendor'); // Use 'vendor' as the internal key for Agency
       }
 
       // Adjust the max-height of the collapsible content to fit the new table
@@ -1520,6 +1696,11 @@
       const checkPromises = Object.entries(sources).map(async ([division, url]) => {
         try {
           const response = await fetch(url);
+          if (!response.ok) {
+            // Log the specific URL that failed and its status, then skip this location
+            console.error(`Failed to fetch data for ${division}: HTTP ${response.status} from ${url}`);
+            return;
+          }
           const text = await response.text();
           const lines = text.trim().split('\n');
 
@@ -1649,7 +1830,8 @@
       await Promise.all(promises);
       populateDropdowns(true); // Reset all dependent filters on initial load
       filterAndProcessData();
-      renderDivisionChart();
+      // No initial render of charts/tables here, as they will be hidden by default
+      // and rendered when their respective buttons are clicked.
 
 
       toggleLoading(false); // Ensure loading is hidden even if some fetches fail
@@ -1782,16 +1964,19 @@
 
 
     let modalDataMap = {}; // holds the currently rendered map
-    let currentModalType = 'unit'; // current tab
+    let currentModalType = 'division'; // current tab, default to division
+
+    // Modified openModal to store the filterFn
+    function openModal(type = 'division', filterFn = null) {
+      currentModalType = type;
+      currentModalFilterFn = filterFn; // Store the filter function
+      document.getElementById('detailsModal').classList.remove('hidden');
+      renderDetails(type, currentModalFilterFn); // Pass the stored filterFn
+    }
 
     function closeModal() {
       document.getElementById('detailsModal').classList.add('hidden');
-    }
-
-    function openModal(type = 'unit', filterFn = null) {
-      currentModalType = type;
-      document.getElementById('detailsModal').classList.remove('hidden');
-      renderDetails(type, filterFn);
+      currentModalFilterFn = null; // Clear the filter function when modal closes
     }
 
     // Filter modal items based on search input
@@ -1837,6 +2022,7 @@
 
     // Render filtered totals in modal
     function renderDetails(type, filterFn = null) {
+      // Apply global filters first, then the card-specific filter
       const filtered = getFilteredData().filter(row => (typeof filterFn === 'function' ? filterFn(row) : true));
       modalDataMap = {};
 
@@ -1950,9 +2136,43 @@
         });
       });
 
-      document.getElementById('summaryTableHeader').addEventListener('click', toggleSummaryTable);
-      document.getElementById('monthlySummaryTabBtn').addEventListener('click', () => showSummaryTab('monthly'));
+      // Removed the click listener for summaryTableHeader to disable collapse
+      // document.getElementById('summaryTableHeader').addEventListener('click', toggleSummaryTable);
+
+      // UPDATED: Event listeners for new summary tabs
       document.getElementById('divisionSummaryTabBtn').addEventListener('click', () => showSummaryTab('division'));
+      document.getElementById('unitSummaryTabBtn').addEventListener('click', () => showSummaryTab('unit'));
+      document.getElementById('agencySummaryTabBtn').addEventListener('click', () => showSummaryTab('agency'));
+
+      // NEW: Event listeners for option buttons
+      document.getElementById('viewTimelineChartBtn').addEventListener('click', () => {
+        document.getElementById('advanceTimelineChartSection').classList.remove('hidden');
+        document.getElementById('divisionChartSection').classList.add('hidden');
+        document.getElementById('summaryTableSection').classList.add('hidden');
+        renderChart(globalMonthlyBuckets); // Re-render chart when shown
+        setActiveOptionButton('viewTimelineChartBtn'); // Highlight this button
+      });
+
+      document.getElementById('viewDivisionChartBtn').addEventListener('click', () => {
+        document.getElementById('divisionChartSection').classList.remove('hidden');
+        document.getElementById('advanceTimelineChartSection').classList.add('hidden');
+        document.getElementById('summaryTableSection').classList.add('hidden');
+        renderDivisionChart(globalLocationSums); // Re-render chart when shown
+        setActiveOptionButton('viewDivisionChartBtn'); // Highlight this button
+      });
+
+      document.getElementById('viewSummaryTableBtn').addEventListener('click', () => {
+        document.getElementById('summaryTableSection').classList.remove('hidden');
+        document.getElementById('advanceTimelineChartSection').classList.add('hidden');
+        document.getElementById('divisionChartSection').classList.add('hidden');
+        // Ensure summary table content is always visible when this button is clicked
+        document.getElementById('summaryTableContent').classList.remove('hidden');
+        document.getElementById('summaryTableContent').style.maxHeight = document.getElementById('summaryTableContent').scrollHeight + 'px';
+
+        showSummaryTab(currentSummaryTab); // Re-render table when shown
+        setActiveOptionButton('viewSummaryTableBtn'); // Highlight this button
+      });
+
 
       // Re-added balanceChartCanvas event listeners as draggableLinePlugin is re-added
       const balanceChartCanvas = document.getElementById('balanceChart');
@@ -2008,10 +2228,11 @@
           <button onclick="closeModal()">×</button>
         </div>
         <div class="modal-tabs">
-          <button onclick="renderDetails('division')" class="tab-btn">Division</button>
-          <button onclick="renderDetails('unit')" class="tab-btn">Unit</button>
-          <button onclick="renderDetails('vendor')" class="tab-btn">Vendor</button>
-          <button onclick="renderDetails('material')" class="tab-btn">Material</button>
+          <!-- MODIFIED: Pass currentModalFilterFn to each tab's renderDetails call -->
+          <button onclick="renderDetails('division', currentModalFilterFn)" class="tab-btn">Division</button>
+          <button onclick="renderDetails('unit', currentModalFilterFn)" class="tab-btn">Unit</button>
+          <button onclick="renderDetails('vendor', currentModalFilterFn)" class="tab-btn">Vendor</button>
+          <button onclick="renderDetails('material', currentModalFilterFn)" class="tab-btn">Material</button>
         </div>
 
         <div style="padding: 0.5rem 1rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
