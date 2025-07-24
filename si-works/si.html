@@ -1024,7 +1024,10 @@
     
     // !!! IMPORTANT: Replace this with your deployed Google Apps Script Web App URL
     // After deploying your Code.gs, go to Deploy > Manage deployments > Latest version > Web app URL
-    const APP_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbznBTu1VtBo9RN2OnNUY4g4ciHOs3Y_IOO6m74gu4qh4vCtyEPGG93Wsf3V1dDm3-Wm0Q/exec'; 
+    const APP_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbziHxApAHpIZgIPi80qWCkM4kLJt6sOWVkmsRZ-YAqf8oqzJpv5iYOrEpiP7yiXYrybqg/exec'; 
+
+    // URL for the Google Sheet TSV export
+    const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQkS6DiqiMYRjdlyv8XZ3VN81bNRePLwN4AorGWqr9tryya5iz2_o8Etph2Slh46-CdPlGNfeNvjL4G/pub?gid=913696602&single=true&output=tsv';
 
     // Current active filters
     let currentPhaseFilter = 'Phase-I';
@@ -1148,25 +1151,41 @@
             startLoadingAnimation(); 
             elements.errorMessage.style.display = 'none';
             
-            const response = await fetch(APP_SCRIPT_URL + '?action=getData'); // Append action for doGet
+            // Fetch data from the Google Sheet TSV URL directly
+            const response = await fetch(csvUrl); 
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             
-            const result = await response.json();
+            const tsvText = await response.text();
             
-            if (!result.success) {
-                throw new Error(result.error || 'Unknown error fetching data from Apps Script.');
+            // Parse TSV data (re-using the logic from previous versions)
+            const lines = tsvText.trim().split('\n');
+            const rawHeaders = lines[0].split('\t'); // Split by tab for TSV
+            const headers = rawHeaders.map(h => h.trim()); // Trim headers
+
+            // Identify the correct 'Target Date' header and store it globally
+            const foundTargetDateHeader = headers.find(h => h.toLowerCase().includes('target date'));
+            if (foundTargetDateHeader) {
+                actualTargetDateColumnName = foundTargetDateHeader;
+            } else {
+                console.warn("Warning: 'Target Date' column not found or has an unexpected name. Using fallback 'Target Date'. Please check your spreadsheet headers for exact match.");
+                actualTargetDateColumnName = 'Target Date'; // Fallback
             }
 
-            allSchemeData = result.data.map(row => {
-                const newRow = {};
-                for (const key in row) {
-                    newRow[key] = sanitizeValue(row[key]);
-                }
-                return newRow;
+            allSchemeData = lines.slice(1).map(line => {
+                const values = line.split('\t'); // Split by tab for TSV
+                const row = {};
+                headers.forEach((header, index) => {
+                    row[header] = sanitizeValue(values[index] || ''); 
+                });
+                return row;
+            })
+            .filter(row => {
+                const name = row['Name of Scheme'];
+                return name && name.trim() !== '';
             });
-            
+
             await stopLoadingAnimation(); 
             
             if (allSchemeData.length === 0) {
@@ -1554,44 +1573,53 @@
     }
 
     // Handle saving changes (actual functionality via Apps Script)
-    async function saveEditedScheme() {
-        const editedData = {};
-        const inputs = elements.editSchemeForm.querySelectorAll('input, textarea');
-        inputs.forEach(input => {
-            editedData[input.name] = input.value.trim();
+async function saveEditedScheme() {
+    const editedData = {};
+    const inputs = elements.editSchemeForm.querySelectorAll('input, textarea');
+
+    inputs.forEach(input => {
+        editedData[input.name] = input.value.trim();
+    });
+
+    elements.loadingText.textContent = "Saving changes...";
+    elements.loadingOverlay.style.display = 'flex';
+
+    try {
+        const formData = new URLSearchParams();
+        for (const key in editedData) {
+            formData.append(key, editedData[key]);
+        }
+
+        const response = await fetch(APP_SCRIPT_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: formData
         });
 
-        // Add loading state
-        elements.loadingText.textContent = "Saving changes...";
-        elements.loadingOverlay.style.display = 'flex';
-
-        try {
-            const response = await fetch(APP_SCRIPT_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(editedData)
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                showMessage('Successfully saved changes for "' + editedData['Name of Scheme'] + '". Reloading data...', 'success');
-                // Reload data after successful save to reflect changes
-                await loadData(); 
-            } else {
-                showMessage('Error saving changes: ' + result.error, 'error');
-                console.error('Apps Script Error:', result.error);
-            }
-        } catch (error) {
-            showMessage('Failed to connect to Apps Script: ' + error.message, 'error');
-            console.error('Fetch Error:', error);
-        } finally {
-            elements.loadingOverlay.style.display = 'none'; // Hide loading overlay
-            elements.editSchemeModal.classList.remove('show'); // Close the edit modal
+        if (!response.ok) {
+            throw new Error(`Server responded with status ${response.status}`);
         }
+
+        const result = await response.json();
+
+        if (result.success) {
+            showMessage(`✅ Saved "${editedData['Name of Scheme']}". Reloading...`, 'success');
+            await loadData();
+        } else {
+            showMessage(`❌ Save failed: ${result.error}`, 'error');
+        }
+    } catch (error) {
+        console.error('Fetch error:', error);
+        showMessage(`⚠️ Connection failed: ${error.message}`, 'error');
+    } finally {
+        elements.loadingOverlay.style.display = 'none';
+        elements.editSchemeModal.classList.remove('show');
     }
+}
+
+
 
     // Update dashboard with filtered data
     function updateDashboard() {
