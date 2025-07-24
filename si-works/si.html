@@ -1022,11 +1022,10 @@
     // Global variables
     let allSchemeData = [];
     
-    // !!! IMPORTANT: Replace this with your deployed Google Apps Script Web App URL
-    // After deploying your Code.gs, go to Deploy > Manage deployments > Latest version > Web app URL
-    const APP_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbziHxApAHpIZgIPi80qWCkM4kLJt6sOWVkmsRZ-YAqf8oqzJpv5iYOrEpiP7yiXYrybqg/exec'; 
+    // Google Apps Script Web App URL (for POST requests to update data)
+    const APP_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxanLWQYb4angNq1VodWQSJPM6A22nn252GLGirWjd_AVCiL7cFByqaOvxNiA8sBnAy0g/exec'; 
 
-    // URL for the Google Sheet TSV export
+    // URL for the Google Sheet TSV export (for GET requests to fetch data)
     const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQkS6DiqiMYRjdlyv8XZ3VN81bNRePLwN4AorGWqr9tryya5iz2_o8Etph2Slh46-CdPlGNfeNvjL4G/pub?gid=913696602&single=true&output=tsv';
 
     // Current active filters
@@ -1573,53 +1572,44 @@
     }
 
     // Handle saving changes (actual functionality via Apps Script)
-async function saveEditedScheme() {
-    const editedData = {};
-    const inputs = elements.editSchemeForm.querySelectorAll('input, textarea');
-
-    inputs.forEach(input => {
-        editedData[input.name] = input.value.trim();
-    });
-
-    elements.loadingText.textContent = "Saving changes...";
-    elements.loadingOverlay.style.display = 'flex';
-
-    try {
-        const formData = new URLSearchParams();
-        for (const key in editedData) {
-            formData.append(key, editedData[key]);
-        }
-
-        const response = await fetch(APP_SCRIPT_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: formData
+    async function saveEditedScheme() {
+        const editedData = {};
+        const inputs = elements.editSchemeForm.querySelectorAll('input, textarea');
+        inputs.forEach(input => {
+            editedData[input.name] = input.value.trim();
         });
 
-        if (!response.ok) {
-            throw new Error(`Server responded with status ${response.status}`);
-        }
+        // Add loading state
+        elements.loadingText.textContent = "Saving changes...";
+        elements.loadingOverlay.style.display = 'flex';
 
-        const result = await response.json();
+        try {
+            const response = await fetch(APP_SCRIPT_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(editedData)
+            });
 
-        if (result.success) {
-            showMessage(`✅ Saved "${editedData['Name of Scheme']}". Reloading...`, 'success');
-            await loadData();
-        } else {
-            showMessage(`❌ Save failed: ${result.error}`, 'error');
+            const result = await response.json();
+
+            if (result.success) {
+                showMessage('Successfully saved changes for "' + editedData['Name of Scheme'] + '". Reloading data...', 'success');
+                // Reload data after successful save to reflect changes
+                await loadData(); 
+            } else {
+                showMessage('Error saving changes: ' + result.error, 'error');
+                console.error('Apps Script Error:', result.error);
+            }
+        } catch (error) {
+            showMessage('Failed to connect to Apps Script: ' + error.message, 'error');
+            console.error('Fetch Error:', error);
+        } finally {
+            elements.loadingOverlay.style.display = 'none'; // Hide loading overlay
+            elements.editSchemeModal.classList.remove('show'); // Close the edit modal
         }
-    } catch (error) {
-        console.error('Fetch error:', error);
-        showMessage(`⚠️ Connection failed: ${error.message}`, 'error');
-    } finally {
-        elements.loadingOverlay.style.display = 'none';
-        elements.editSchemeModal.classList.remove('show');
     }
-}
-
-
 
     // Update dashboard with filtered data
     function updateDashboard() {
