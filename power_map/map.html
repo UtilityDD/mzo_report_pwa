@@ -223,6 +223,8 @@
             border-radius: 5px;
             max-height: 500px;
             overflow-y: auto;
+            /* Added for smooth transition */
+            transition: transform 0.3s ease-out, opacity 0.3s ease-out;
         }
 
         .filter-category {
@@ -258,7 +260,7 @@
             border-radius: 5px;
             margin-top: 5px; /* Reduced margin-top */
             overflow: hidden;
-            height: 8px; /* Reduced height of the progress bar */
+            height: 15px; /* Increased height of the progress bar */
         }
 
         #progress-bar {
@@ -267,9 +269,9 @@
             background-color: #4CAF50; /* Green color for progress */
             text-align: center;
             color: white;
-            line-height: 8px; /* Center text vertically, adjusted for new height */
+            line-height: 15px; /* Center text vertically, adjusted for new height */
             transition: width 0.5s ease-in-out; /* Smooth transition for width changes */
-            font-size: 8px; /* Smaller font for percentage */
+            font-size: 12px; /* Slightly larger font for percentage */
             font-weight: normal;
         }
 
@@ -281,11 +283,52 @@
             text-align: center;
         }
 
+        /* Floating Action Button for Filters */
+        #filter-fab {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background-color: #007bff; /* Blue color */
+            color: white;
+            display: none; /* Hidden by default, shown on mobile */
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            z-index: 2000;
+            transition: transform 0.3s ease-in-out; /* Added transition for rotation */
+        }
+
+        #filter-fab.rotate-fab {
+            transform: rotate(90deg); /* Rotate 90 degrees when active */
+        }
+
 
         /* Mobile-specific styles */
         @media (max-width: 768px) {
-            #floating-table, #filter-container {
-                display: none; /* Hide tables and filter container on small screens */
+            #floating-table {
+                display: none; /* Hide tables on small screens */
+            }
+            #filter-container {
+                /* Initially hidden off-screen to the right */
+                top: auto;
+                bottom: 70px; /* Position above the FAB */
+                right: 10px;
+                left: auto; /* Ensure it's not bound to the left */
+                width: 200px; /* Compact width */
+                max-height: 50vh; /* Allow scrolling if many filters */
+                transform: translateX(120%); /* Start off-screen */
+                opacity: 0;
+                pointer-events: none; /* Prevent interaction when hidden */
+            }
+            #filter-container.show-filters {
+                transform: translateX(0); /* Slide in */
+                opacity: 1;
+                pointer-events: auto; /* Enable interaction when shown */
             }
             #search-container {
                 width: 90%; /* Make search bar wider on mobile */
@@ -318,6 +361,9 @@
             }
             #summary-card h4 {
                 padding: 2px; /* Reduced padding for h4 inside summary card */
+            }
+            #filter-fab {
+                display: flex; /* Show FAB on mobile */
             }
         }
         
@@ -380,6 +426,11 @@
     <div id="status-message"></div>
     <div id="map"></div>
 
+    <!-- Floating Action Button for Filters -->
+    <div id="filter-fab">
+        <span class="filter-icon">⚙️</span>
+    </div>
+
 <script>
     // Global variables
     const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT8hYE6YBbfVQDJhgB3cIWqrrGrjMQAQ22mcmCJTOa995gCH-xBAfsAPpBvNYS1KlYIFMRHM59iGB7K/pub?output=csv';
@@ -387,6 +438,7 @@
     let map, worldPolygon, stateLayer, maskLayer;
     let selectedFilters = {Region: new Set(), Division: new Set(), Remarks: new Set()};
     let allData = []; // Store all data for filtering
+    let substationMap = {}; // Stores {SubstationName: {lat, lng, marker}}
     let loadingDataComplete = false;
 
     // Show status message and update progress bar
@@ -637,6 +689,10 @@
 
     // Modified applyFilters function to handle connections properly without disturbing the map layers
     function applyFilters() {
+        // Initialize counts for connections within this function call
+        let solidConnectionCount = 0; 
+        let dashedConnectionCount = 0; 
+
         // Create a map to track substations and their visibility
         let substationVisibility = {};
         let visibleMarkers = new Set();
@@ -824,7 +880,7 @@
 
     // Plot map data (substations and connections)
     function plotMapData(data) {
-        let substationMap = {};
+        substationMap = {}; // Reset substationMap on each plot
         let connectionMap = {};
         let markersAdded = 0;
         let connectionsAdded = 0;
@@ -871,8 +927,10 @@
                     .bindTooltip(entry.Substation, {permanent: true, direction: "top", className: "leaflet-tooltip"})
                     .bindPopup(`<b>${entry.Substation}</b><br>Capacity: ${entry['MVA']}<br>Para-2: ${entry['Para-2'] || 'N/A'}<br>Para-3: ${entry['Para-3'] || 'N/A'}`);
 
-                substationMap[entry.Substation] = {lat, lng, marker};
+                substationMap[entry.Substation.trim()] = {lat, lng, marker}; // Store with trimmed name
                 markersAdded++;
+            } else {
+                console.warn(`Skipping substation "${entry.Substation}" due to invalid coordinates: LATITUDE=${entry.LATITUDE}, LONGITUDE=${entry.LONGITUDE}`);
             }
         });
 
@@ -883,11 +941,11 @@
                 let labels = entry['RL'] ? entry['RL'].split(':').map(s => s.trim()) : [];
 
                 connections.forEach((target, index) => {
-                    if (substationMap[target] && substationMap[entry.Substation]) {
-                        let from = substationMap[entry.Substation];
+                    if (substationMap[target] && substationMap[entry.Substation.trim()]) { // Use trimmed name
+                        let from = substationMap[entry.Substation.trim()];
                         let to = substationMap[target];
 
-                        let key = [entry.Substation, target].sort().join("-");
+                        let key = [entry.Substation.trim(), target].sort().join("-"); // Use trimmed name for key
                         if (!connectionMap[key]) {
                             connectionMap[key] = {count: 0, labels: new Set()};
                         }
@@ -917,7 +975,7 @@
                             }).addTo(map);
                             
                             // Store the connected substations with the line for filtering
-                            combinedLine._substations = [entry.Substation, target];
+                            combinedLine._substations = [entry.Substation.trim(), target]; // Use trimmed name
                             
                             // Track connection type
                             if (isDashed) {
@@ -1101,28 +1159,19 @@
             return;
         }
         
-        // Find matching substations
         let matchingStations = [];
-        map.eachLayer(layer => {
-            if (layer instanceof L.Marker && layer.getPopup()) {
-                let popupContent = layer.getPopup().getContent();
-                let match = popupContent.match(/<b>(.*?)<\/b>/);
-                if (match) {
-                    let stationName = match[1].trim();
-                    if (stationName.toLowerCase().includes(query)) {
-                        matchingStations.push({
-                            name: stationName,
-                            marker: layer
-                        });
-                    }
-                }
+        // Iterate through allData to find matches, then check if a marker exists for it
+        allData.forEach(entry => {
+            const stationName = entry.Substation ? entry.Substation.trim() : '';
+            if (stationName.toLowerCase().includes(query) && substationMap[stationName]) { // Check if marker exists
+                matchingStations.push({
+                    name: stationName,
+                    marker: substationMap[stationName].marker // Directly get the marker if it exists
+                });
             }
         });
         
-        // Sort results alphabetically
         matchingStations.sort((a, b) => a.name.localeCompare(b.name));
-        
-        // Limit to 10 results for better performance
         matchingStations = matchingStations.slice(0, 10);
         
         if (matchingStations.length > 0) {
@@ -1134,7 +1183,7 @@
                 li.addEventListener("click", () => {
                     document.getElementById("search-box").value = match.name;
                     searchResultsContainer.style.display = "none";
-                    focusSubstation(match.name);
+                    focusSubstation(match.name); // Pass the exact name
                 });
                 searchResultsContainer.appendChild(li);
             });
@@ -1154,52 +1203,17 @@
             return;
         }
 
-        let lowercaseQuery = name.trim().toLowerCase();
-        let matchingMarkers = [];
+        const targetSubstationName = name.trim();
+        const substationInfo = substationMap[targetSubstationName]; // Directly get info from map
 
-        // Find matching substations
-        map.eachLayer(layer => {
-            if (layer instanceof L.Marker && layer.getPopup()) {
-                let popupContent = layer.getPopup().getContent();
-                let match = popupContent.match(/<b>(.*?)<\/b>/);
-                if (match) {
-                    let stationName = match[1].trim().toLowerCase();
-                    if (stationName.includes(lowercaseQuery)) {
-                        matchingMarkers.push({
-                            name: match[1], // Original case name
-                            marker: layer
-                        });
-                    }
-                }
-            }
-        });
-
-        if (matchingMarkers.length === 0) {
-            showStatus("No substations found matching your search", 3000);
-            return;
-        } else if (matchingMarkers.length === 1) {
-            // If only one match, zoom directly to it
-            let marker = matchingMarkers[0].marker;
+        if (substationInfo && substationInfo.marker) {
+            let marker = substationInfo.marker;
             let latlng = marker.getLatLng();
             map.flyTo(latlng, 14, {duration: 1.5, easeLinearity: 0.3});
             setTimeout(() => marker.openPopup(), 1500);
-            showStatus(`Found: ${matchingMarkers[0].name}`);
+            showStatus(`Found: ${targetSubstationName}`);
         } else {
-            // Multiple matches, show results for selection
-            searchResultsContainer.style.display = "block";
-            matchingMarkers.forEach(match => {
-                let li = document.createElement("li");
-                li.textContent = match.name;
-                li.addEventListener("click", () => {
-                    let latlng = match.marker.getLatLng();
-                    map.flyTo(latlng, 14, {duration: 1.5, easeLinearity: 0.3});
-                    setTimeout(() => match.marker.openPopup(), 1500);
-                    searchResultsContainer.style.display = "none";
-                    document.getElementById("search-box").value = match.name;
-                });
-                searchResultsContainer.appendChild(li);
-            });
-            showStatus(`Found ${matchingMarkers.length} matching substations`);
+            showStatus(`Substation "${targetSubstationName}" not found on map. It might have invalid coordinates or be filtered out.`, 5000);
         }
     }
 
@@ -1266,7 +1280,7 @@
         } catch (error) {
             console.error("Error initializing application:", error);
             document.getElementById("loading-text").textContent = "Error loading map data. Please try again later.";
-            document.getElementById("loading-icon").style.animation = "fade 2s infinite";
+            // document.getElementById("loading-icon").style.animation = "fade 2s infinite"; // Removed rotating animation
             document.getElementById("progress-bar").style.width = "0%"; // Reset progress on error
             document.getElementById("progress-bar").textContent = "Error";
             document.getElementById("progress-container").style.backgroundColor = "#ffdddd"; // Indicate error
@@ -1282,6 +1296,15 @@
             searchResults.style.display = "none";
         }
     });
+
+    // Toggle filter panel visibility and rotate button
+    document.getElementById('filter-fab').addEventListener('click', function() {
+        const filterContainer = document.getElementById('filter-container');
+        const filterFab = document.getElementById('filter-fab');
+        filterContainer.classList.toggle('show-filters');
+        filterFab.classList.toggle('rotate-fab'); // Toggle rotation class
+    });
+
 
     // Initialize the application
     window.onload = function() {
