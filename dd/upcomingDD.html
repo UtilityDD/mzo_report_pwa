@@ -194,6 +194,8 @@
       cursor: pointer;
       transition: all 0.2s ease;
       border-left: 5px solid var(--primary-color);
+      position: relative; /* Needed for pseudo-elements for animation */
+      overflow: hidden; /* Hide overflow of the gradient */
     }
 
     .metric-card:hover {
@@ -992,6 +994,30 @@
   background: var(--primary-dark);
 }
 
+/* Animation for Today card - Swiping color shade */
+@keyframes swipe-today {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.today-card-animate {
+  background: linear-gradient(90deg, var(--background-card) 0%, rgba(255, 255, 0, 0.2) 20%, var(--background-card) 40%);
+  background-size: 200% 100%;
+  animation: swipe-today 2s infinite linear;
+  /* Ensure content is above the animated background */
+  position: relative;
+  z-index: 1;
+}
+
+/* Ensure text and icons are visible above the gradient */
+.today-card-animate .metric-info h3,
+.today-card-animate .metric-value,
+.today-card-animate .stat-label,
+.today-card-animate .metric-icon {
+  position: relative;
+  z-index: 2;
+}
+
   </style>
 </head>
 <body>
@@ -1002,7 +1028,7 @@
 
 
   <div class="app-bar">
-    <h1>Upcomming DD Consumers</h1>
+    <h1>Upcoming DD Consumers</h1>
   </div>
 
   <div class="filter-bar">
@@ -1044,6 +1070,11 @@
           <span class="checkmark"></span>
           Tower
         </label>
+        <label for="theftBillToggle" class="checkbox-container">
+          <input type="checkbox" id="theftBillToggle">
+          <span class="checkmark"></span>
+          Theft Bill
+        </label>
       </div>
       <div class="slider-container">
         <input type="range" id="osdSlider" min="0" max="10000" value="0" step="500" class="slider">
@@ -1058,7 +1089,7 @@
           <option value="">All Divisions</option>
         </select>
         <select id="cccFilter">
-          <option value="">All CCCs</option>
+          <option value="">All CCCs</select>
         </select>
       </div>
 
@@ -1189,15 +1220,16 @@
         }
     }
 
-
+    // Updated buckets for monthly-focused due dates
     const buckets = [
       { label: "Today", minDays: 0, maxDays: 0, items: [], filteredItems: [], icon: "🎯" }, // Due exactly today
       { label: "3 Days", minDays: 1, maxDays: 3, items: [], filteredItems: [], icon: "🕒" }, // Due in 1 to 3 days
       { label: "7 Days", minDays: 4, maxDays: 7, items: [], filteredItems: [], icon: "⏰" },
       { label: "15 Days", minDays: 8, maxDays: 15, items: [], filteredItems: [], icon: "📅" },
-      { label: "1 Month", minDays: 16, maxDays: 30, items: [], filteredItems: [], icon: "🗓️" },
-      { label: "3 Months", minDays: 31, maxDays: 90, items: [], filteredItems: [], icon: "📊" }
-      // Removed: { label: "6 Months", minDays: 91, maxDays: 180, items: [], filteredItems: [], icon: "📈" }
+      { label: "1 Month", minDays: 16, maxDays: 30, items: [], filteredItems: [], icon: "🗓️" }, // DD due in 16 to 30 days
+      { label: "3 Months", minDays: 31, maxDays: 90, items: [], filteredItems: [], icon: "📊" }, // DD due in 31 to 90 days
+      { label: "6 Months", minDays: 91, maxDays: 180, items: [], filteredItems: [], icon: "📈" } // DD due in 91 to 180 days
+      // Removed ">6 Months" card as per user request
     ];
 
     let allData = [];
@@ -1312,6 +1344,7 @@
         const industrialToggleCheckbox = document.getElementById("industrialToggle");
         const schoolToggleCheckbox = document.getElementById("schoolToggle");
         const towerToggleCheckbox = document.getElementById("towerToggle");
+        const theftBillToggleCheckbox = document.getElementById("theftBillToggle"); // New checkbox
 
         if (zeroToggleCheckbox.checked) {
             passesAnyCheckbox = passesAnyCheckbox || (osd === 0);
@@ -1339,6 +1372,10 @@
         }
         if (towerToggleCheckbox.checked) {
             passesAnyCheckbox = passesAnyCheckbox || (item.NAT_OF_CONN && item.NAT_OF_CONN.toUpperCase().includes('TOWER'));
+            anyCheckboxChecked = true;
+        }
+        if (theftBillToggleCheckbox.checked) { // New condition for Theft Bill
+            passesAnyCheckbox = passesAnyCheckbox || (item.CONN_BY && item.CONN_BY.toUpperCase() === 'PILFERAGE');
             anyCheckboxChecked = true;
         }
 
@@ -1472,7 +1509,7 @@
         buckets.forEach(bucket => {
             bucket.filteredItems = filteredConsumersData.filter(item => {
                 const disDate = parseDate(item.DISCON_DT);
-                if (!disDate) return false;
+                if (!disDate) return false; // If no disconnection date, it can't have a future DD due date
 
                 const ddThreshold = new Date(disDate);
                 ddThreshold.setMonth(ddThreshold.getMonth() + 6);
@@ -1483,7 +1520,7 @@
                 const diffTime = ddThresholdNormalized.getTime() - today.getTime();
                 const daysUntil = Math.round(diffTime / (1000 * 60 * 60 * 24)); // Round to nearest whole day
 
-                // Check if the item falls within the current bucket's date range
+                // Check if the item falls within the current bucket's date range AND is not already due
                 return daysUntil >= bucket.minDays && daysUntil <= bucket.maxDays;
             });
         });
@@ -1505,7 +1542,8 @@
         dueDateCardsDiv.className = "due-date-cards";
         container.appendChild(dueDateCardsDiv);
 
-        for (let i = 0; i < buckets.length; i++) { // For all bucket cards
+        // Add shimmer for the new "Already DD" card + the updated buckets
+        for (let i = 0; i < buckets.length + 1; i++) { // For all bucket cards + "Already DD"
             const placeholder = document.createElement("div");
             placeholder.className = "shimmer-card";
             dueDateCardsDiv.appendChild(placeholder); // Append to new container
@@ -1529,7 +1567,7 @@
       // The `filteredConsumersData` is already updated in `applyAllFilters`
       let totalFilteredOSD = filteredConsumersData.reduce((sum, item) => sum + item.OUTSTANDING_CENTS, 0);
       let totalZeroOSDConsumers = filteredConsumersData.filter(item => item.OUTSTANDING_CENTS === 0).length;
-      let lowOSDConsumers = filteredConsumersData.filter(item => item.OUTSTANDING_CENTS > 0 && item.OUTSTANDING_CENTS < 5000);
+      let lowOSDConsumers = filteredConsumersData.filter(item => item.OUTSTANDING_CENTS > 0 && item.OUTSTANDING_CENTS < 5000); // Less than Rs. 50
       let lowOSDTotal = lowOSDConsumers.reduce((sum, item) => sum + item.OUTSTANDING_CENTS, 0);
 
 
@@ -1570,60 +1608,130 @@
       lowOsdCard.className = "metric-card low-osd-card";
       lowOsdCard.innerHTML = `
         <div class="metric-info">
-          <h3>Low OSD Consumers (&lt; Rs. 50)</h3>
+          <h3>Low OSD Consumers (&lt; ₹50)</h3>
           <div class="metric-value">${lowOSDConsumers.length}</div>
           <div class="stat-label">Total OSD: ${formatOSD(lowOSDTotal)}</div>
         </div>
         <div class="metric-icon">🤏💰</div>
       `;
       // Pass the filtered list directly to showSummaryModal
-      lowOsdCard.onclick = () => showSummaryModal('Consumers with OSD < Rs. 50', lowOSDConsumers);
+      lowOsdCard.onclick = () => showSummaryModal('Consumers with OSD < ₹50', lowOSDConsumers);
       overviewCardsDiv.appendChild(lowOsdCard);
 
       container.appendChild(overviewCardsDiv);
 
-// Create a wrapper with reddish background
-const dueDateWrapper = document.createElement("div");
-dueDateWrapper.style.background = "#fdecea"; // light reddish
-dueDateWrapper.style.padding = "1rem";
-dueDateWrapper.style.borderRadius = "12px";
-dueDateWrapper.style.marginTop = "1rem";
-dueDateWrapper.style.boxShadow = "0 0 8px rgba(255,0,0,0.1)";
+      // Calculate "Already DD" consumers
+      const now = new Date();
+      const todayNormalized = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-// Optional title
-const title = document.createElement("h3");
-title.style.color = "#b71c1c"; // deep red
-title.style.marginBottom = "0.75rem";
-title.style.fontWeight = "600";
-dueDateWrapper.appendChild(title);
+      let earliestPastDDDate = null;
+      const alreadyDDConsumers = filteredConsumersData.filter(item => {
+          const disDate = parseDate(item.DISCON_DT);
+          if (!disDate) return true; // Treat invalid/missing DISCON_DT as "Already DD"
 
-// Card container
-const dueDateCardsDiv = document.createElement("div");
-dueDateCardsDiv.className = "due-date-cards";
+          const ddThreshold = new Date(disDate);
+          ddThreshold.setMonth(ddThreshold.getMonth() + 6);
+          const ddThresholdNormalized = new Date(ddThreshold.getFullYear(), ddThreshold.getMonth(), ddThreshold.getDate());
 
-// Add each bucket card inside
-for (const bucket of buckets) {
-  const bucketTotalOSD = bucket.filteredItems.reduce((sum, item) => sum + item.OUTSTANDING_CENTS, 0);
+          const diffTime = ddThresholdNormalized.getTime() - todayNormalized.getTime();
+          const daysUntil = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
-  const card = document.createElement("div");
-  card.className = "metric-card";
-  card.innerHTML = `
-    <div class="metric-info">
-      <h3>DD due in ${bucket.label}</h3>
-      <div class="metric-value">${bucket.filteredItems.length}</div>
-      <div class="stat-label">Total OSD: ${formatOSD(bucketTotalOSD)}</div>
-    </div>
-    <div class="metric-icon">${bucket.icon}</div>
-  `;
-  card.onclick = () => showSummaryModal(`DD due in ${bucket.label}`, bucket.filteredItems);
-  dueDateCardsDiv.appendChild(card);
-}
+          if (daysUntil < 0) {
+              if (earliestPastDDDate === null || ddThresholdNormalized < earliestPastDDDate) {
+                  earliestPastDDDate = ddThresholdNormalized;
+              }
+              return true;
+          }
+          return false;
+      });
+      const alreadyDDTotalOSD = alreadyDDConsumers.reduce((sum, item) => sum + item.OUTSTANDING_CENTS, 0);
 
-// Append the card group to the wrapper
-dueDateWrapper.appendChild(dueDateCardsDiv);
+      let daysSinceEarliestDD = 0;
+      if (earliestPastDDDate) {
+          const diffTime = todayNormalized.getTime() - earliestPastDDDate.getTime();
+          daysSinceEarliestDD = Math.round(diffTime / (1000 * 60 * 60 * 24));
+      }
+      const alreadyDDLabel = daysSinceEarliestDD > 0 ? `Already DD in last ${daysSinceEarliestDD} days` : `Already DD`;
 
-// Append the wrapper to the container
-container.appendChild(dueDateWrapper);
+
+      // Create a wrapper with reddish background for due date cards
+      const dueDateWrapper = document.createElement("div");
+      dueDateWrapper.style.background = "#fdecea"; // light reddish
+      dueDateWrapper.style.padding = "1rem";
+      dueDateWrapper.style.borderRadius = "12px";
+      dueDateWrapper.style.marginTop = "1rem";
+      dueDateWrapper.style.boxShadow = "0 0 8px rgba(255,0,0,0.1)";
+
+      // Title for the due date section
+      const title = document.createElement("h3");
+      title.style.color = "#b71c1c"; // deep red
+      title.style.marginBottom = "0.75rem";
+      title.style.fontWeight = "600";
+      title.textContent = "DD Due Date Categories"; // Add a title for this section
+      dueDateWrapper.appendChild(title);
+
+      // Card container for due date categories
+      const dueDateCardsDiv = document.createElement("div");
+      dueDateCardsDiv.className = "due-date-cards";
+
+      // Add "Already DD" card first
+      const alreadyDDCard = document.createElement("div");
+      alreadyDDCard.className = "metric-card";
+      alreadyDDCard.style.borderLeftColor = "#757575"; // Grey for "Already DD"
+      alreadyDDCard.innerHTML = `
+          <div class="metric-info">
+              <h3>${alreadyDDLabel}</h3>
+              <div class="metric-value">${alreadyDDConsumers.length}</div>
+              <div class="stat-label">Total OSD: ${formatOSD(alreadyDDTotalOSD)}</div>
+          </div>
+          <div class="metric-icon">❌</div>
+      `;
+      alreadyDDCard.onclick = () => showSummaryModal('Already DD Consumers', alreadyDDConsumers);
+      dueDateCardsDiv.appendChild(alreadyDDCard);
+
+
+      // Add each bucket card inside
+      for (const bucket of buckets) {
+        const bucketTotalOSD = bucket.filteredItems.reduce((sum, item) => sum + item.OUTSTANDING_CENTS, 0);
+
+        const card = document.createElement("div");
+        card.className = "metric-card";
+        // Apply animation to "Today" card
+        if (bucket.label === "Today") {
+            card.classList.add("today-card-animate");
+            card.style.borderLeftColor = "#FFC107"; // Amber for Today
+        } else if (bucket.label === "3 Days") {
+            card.style.borderLeftColor = "#FF9800"; // Deep Orange for 3 Days
+        } else if (bucket.label === "7 Days") {
+            card.style.borderLeftColor = "#FF5722"; // Red Orange for 7 Days
+        } else if (bucket.label === "15 Days") {
+            card.style.borderLeftColor = "#F44336"; // Red for 15 Days
+        } else if (bucket.label === "1 Month") {
+            card.style.borderLeftColor = "#E91E63"; // Pink for 1 Month
+        } else if (bucket.label === "3 Months") {
+            card.style.borderLeftColor = "#9C27B0"; // Purple for 3 Months
+        } else if (bucket.label === "6 Months") {
+            card.style.borderLeftColor = "#673AB7"; // Deep Purple for 6 Months
+        }
+        // No ">6 Months" bucket in this version
+
+        card.innerHTML = `
+          <div class="metric-info">
+            <h3>DD due in ${bucket.label}</h3>
+            <div class="metric-value">${bucket.filteredItems.length}</div>
+            <div class="stat-label">Total OSD: ${formatOSD(bucketTotalOSD)}</div>
+          </div>
+          <div class="metric-icon">${bucket.icon}</div>
+        `;
+        card.onclick = () => showSummaryModal(`DD due in ${bucket.label}`, bucket.filteredItems);
+        dueDateCardsDiv.appendChild(card);
+      } 
+
+      // Append the card group to the wrapper
+      dueDateWrapper.appendChild(dueDateCardsDiv);
+
+      // Append the wrapper to the container
+      container.appendChild(dueDateWrapper);
 
 
       document.getElementById("loadingOverlay").style.display = "none";
@@ -1660,14 +1768,14 @@ container.appendChild(dueDateWrapper);
             // Calculate days until due. If it's today, daysUntil is 0. If it's tomorrow, 1, etc.
             let daysUntilA;
             if (!ddThresholdA || ddThresholdA.getTime() < todayNormalized.getTime()) {
-                daysUntilA = Infinity;
+                daysUntilA = Infinity; // Place "Already DD" at the end
             } else {
                 daysUntilA = Math.round((ddThresholdA.getTime() - todayNormalized.getTime()) / (1000 * 60 * 60 * 24));
             }
 
             let daysUntilB;
             if (!ddThresholdB || ddThresholdB.getTime() < todayNormalized.getTime()) {
-                daysUntilB = Infinity;
+                daysUntilB = Infinity; // Place "Already DD" at the end
             } else {
                 daysUntilB = Math.round((ddThresholdB.getTime() - todayNormalized.getTime()) / (1000 * 60 * 60 * 24));
             }
@@ -1801,7 +1909,7 @@ consumersForPage.forEach(con => {
               <span>${con.BASE_CLASS || "N/A"}</span>
               <span>${formatDate(con.DISCON_DT) || "N/A"}</span>
             </div>
-            ${dueDateText} <!-- Insert the due date text here -->
+            ${dueDateText} <!-- Insert the due date here -->
           `;
 
           item.onclick = () => showConsumerDetailModal(con);
@@ -1992,6 +2100,7 @@ consumersForPage.forEach(con => {
       const industrialToggleCheckbox = document.getElementById("industrialToggle");
       const schoolToggleCheckbox = document.getElementById("schoolToggle");
       const towerToggleCheckbox = document.getElementById("towerToggle");
+      const theftBillToggleCheckbox = document.getElementById("theftBillToggle"); // Get reference to new checkbox
 
       const zeroToggleLabel = zeroToggleCheckbox.parentElement;
       const nonZeroToggleLabel = nonZeroToggleCheckbox.parentElement;
@@ -2000,6 +2109,7 @@ consumersForPage.forEach(con => {
       const industrialToggleLabel = industrialToggleCheckbox.parentElement;
       const schoolToggleLabel = schoolToggleCheckbox.parentElement;
       const towerToggleLabel = towerToggleCheckbox.parentElement;
+      const theftBillToggleLabel = theftBillToggleCheckbox.parentElement; // Get reference to new checkbox label
 
       const regionFilter = document.getElementById("regionFilter");
       const divisionFilter = document.getElementById("divisionFilter");
@@ -2024,6 +2134,7 @@ consumersForPage.forEach(con => {
       setupCheckboxListener(industrialToggleCheckbox, industrialToggleLabel);
       setupCheckboxListener(schoolToggleCheckbox, schoolToggleLabel);
       setupCheckboxListener(towerToggleCheckbox, towerToggleLabel);
+      setupCheckboxListener(theftBillToggleCheckbox, theftBillToggleLabel); // Attach listener for new checkbox
 
 
       // Slider event listener: only updates slider and applies filters
