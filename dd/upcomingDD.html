@@ -7,7 +7,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <title>DD Consumers</title>
+  <title>Upcoming DD Consumers</title>
   <style>
     :root {
       --primary-color: #2196f3; /* A slightly softer blue */
@@ -40,6 +40,7 @@
       -moz-osx-font-smoothing: grayscale;
     }
 
+    /* App bar styles - Fixed at the top */
     .app-bar {
       background: var(--primary-color);
       color: white;
@@ -47,7 +48,7 @@
       box-shadow: var(--shadow-medium);
       position: sticky;
       top: 0;
-      z-index: 100;
+      z-index: 100; /* Ensure it's above other content when sticky */
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -58,19 +59,77 @@
       font-weight: 500;
     }
 
+    /* Filter bar styles - Sticky below app-bar */
     .filter-bar {
       background: var(--background-card);
-      border-bottom: 1px solid var(--border-color);
-      padding: 1rem 1.5rem;
+      /* No border-bottom here, it moves to filter-bar-header */
+      padding: 0; /* Remove padding from filter-bar itself, handled by children */
       position: sticky;
       top: 64px; /* Height of app-bar */
-      z-index: 99;
-      box-shadow: var(--shadow-light);
+      z-index: 99; /* Below app-bar, above other content */
+      /* Box-shadow for the entire filter-bar, can be adjusted for header only if preferred */
+    }
+
+    .filter-bar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.8rem 1.5rem; /* Padding for the header of the filter bar */
+      background: var(--background-card);
+      border-bottom: 1px solid var(--border-color); /* Separator for the header */
+      box-shadow: var(--shadow-light); /* Shadow for the header, making it distinct */
+    }
+
+    .filter-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--primary-color);
+    }
+
+    .toggle-filters-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1.5rem; /* Larger icon for better clickability */
+      color: var(--text-color-medium);
+      transition: transform 0.2s ease; /* Smooth arrow rotation */
+      padding: 0;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+    }
+
+    .toggle-filters-btn:hover {
+      background-color: var(--background-light);
+    }
+
+    .toggle-filters-btn.collapsed .arrow-icon {
+      transform: rotate(-90deg); /* Arrow points right when collapsed */
+    }
+
+    /* Collapsible content styles */
+    .collapsible-filter-content {
+      max-height: 500px; /* Max height when expanded (ensure it's enough) */
+      overflow: hidden;
+      transition: max-height 0.4s ease-out; /* Smooth collapse/expand animation */
+      background: var(--background-card); /* Ensure background covers content */
+      padding-bottom: 1rem; /* Padding at the bottom when expanded */
+      box-shadow: var(--shadow-light); /* Shadow for the collapsible content when open */
+    }
+
+    .collapsible-filter-content.collapsed {
+      max-height: 0; /* Collapse height to zero */
+      padding-bottom: 0; /* Remove padding when collapsed */
     }
 
     .filter-content {
       max-width: 1200px;
-      margin: 0 auto;
+      margin: 0 auto; /* Center the content within the filter-bar */
+      padding: 0 1.5rem; /* Horizontal padding for the actual filter elements */
+      padding-top: 1rem; /* Top padding for the filter elements when expanded */
     }
 
     .filter-label {
@@ -80,9 +139,9 @@
       margin-bottom: 0.5rem;
       display: flex;
       align-items: center;
-      justify-content: flex-start; /* Align checkboxes to the start */
-      flex-wrap: wrap; /* Allow checkboxes to wrap on smaller screens */
-      gap: 0.5rem; /* Spacing between checkboxes */
+      justify-content: flex-start;
+      flex-wrap: wrap;
+      gap: 0.5rem;
     }
 
     .slider-container {
@@ -172,11 +231,11 @@
     .overview-cards {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 1rem; /* Spacing between cards */
-      margin-bottom: 1rem; /* Space below the row of cards */
+      gap: 1rem;
+      margin-bottom: 1rem;
     }
 
-    .due-date-cards { /* New style for due date cards container */
+    .due-date-cards {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       gap: 1rem;
@@ -194,8 +253,8 @@
       cursor: pointer;
       transition: all 0.2s ease;
       border-left: 5px solid var(--primary-color);
-      position: relative; /* Needed for pseudo-elements for animation */
-      overflow: hidden; /* Hide overflow of the gradient */
+      position: relative;
+      overflow: hidden;
     }
 
     .metric-card:hover {
@@ -268,18 +327,17 @@
       color: #0288D1; /* Match icon color for value */
     }
 
-
     .modal {
       position: fixed;
       top: 0;
       left: 0;
       width: 100%;
       height: 100vh;
-      background: rgba(0, 0, 0, 0.4); /* Overlay background */
+      background: rgba(0, 0, 0, 0.4);
       z-index: 1000;
       display: flex;
-      justify-content: center; /* Center horizontally */
-      align-items: center; /* Center vertically */
+      justify-content: center;
+      align-items: center;
       opacity: 0;
       visibility: hidden;
       transition: opacity 0.3s ease, visibility 0.3s ease;
@@ -293,12 +351,12 @@
     .modal-dialog {
       background: var(--background-card);
       border-radius: var(--border-radius);
-      width: 90%; /* Max width for smaller screens */
-      max-width: 800px; /* Max width for larger screens */
-      max-height: 90vh; /* Max height to prevent overflow */
+      width: 90%;
+      max-width: 800px;
+      max-height: 90vh;
       display: flex;
       flex-direction: column;
-      transform: translateY(20px); /* Small animation effect */
+      transform: translateY(20px);
       transition: transform 0.3s ease-out;
       overflow: hidden;
       box-shadow: var(--shadow-medium);
@@ -315,7 +373,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      box-shadow: var(--shadow-light); /* Lighter shadow for header */
+      box-shadow: var(--shadow-light);
       flex-shrink: 0;
     }
 
@@ -352,7 +410,7 @@
       flex: 1;
       overflow-y: auto;
       padding: 1rem;
-      -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+      -webkit-overflow-scrolling: touch;
     }
 
     .summary-item {
@@ -452,7 +510,7 @@
       flex-shrink: 0;
     }
 
-    .due-date-text { /* New style for the "Due within" text */
+    .due-date-text {
       color: #D32F2F; /* Red color */
       font-size: 0.75rem;
       font-weight: 500;
@@ -473,34 +531,33 @@
     }
 
     /* Loading Spinner */
-#loadingOverlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(2px); /* smooth background */
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  pointer-events: auto;
-}
+    #loadingOverlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(2px);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      pointer-events: auto;
+    }
 
-.modern-spinner {
-  width: 48px;
-  height: 48px;
-  border: 4px solid transparent;
-  border-top: 4px solid var(--primary-color);
-  border-radius: 50%;
-  animation: spin 0.9s linear infinite;
-}
+    .modern-spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid transparent;
+      border-top: 4px solid var(--primary-color);
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
 
     .loader {
       animation: pulse 1.5s infinite;
@@ -517,10 +574,10 @@
       background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
       background-size: 200% 100%;
       animation: shimmer 1.2s infinite;
-      height: 70px; /* Match metric-card height */
+      height: 70px;
       border-radius: var(--border-radius);
       margin-bottom: 0.8rem;
-      border-left: 5px solid #ccc; /* Placeholder for border */
+      border-left: 5px solid #ccc;
     }
 
     @keyframes shimmer {
@@ -530,22 +587,22 @@
 
     /* Custom Checkbox Styles */
     .checkbox-container {
-      display: flex; /* Use flex to align checkmark and text */
-      align-items: center; /* Vertically align */
+      display: flex;
+      align-items: center;
       position: relative;
-      padding: 0.4rem 0.9rem; /* Initial padding */
-      padding-left: 30px; /* Space for the custom checkbox */
+      padding: 0.4rem 0.9rem;
+      padding-left: 30px;
       cursor: pointer;
       font-size: 0.9rem;
       user-select: none;
-      color: var(--text-color-medium); /* Default text color */
-      background: var(--background-light); /* Background for the label */
+      color: var(--text-color-medium);
+      background: var(--background-light);
       border: 1px solid var(--border-color);
-      border-radius: 20px; /* pill shape */
+      border-radius: 20px;
       transition: all 0.3s ease;
       font-weight: 500;
-      white-space: nowrap; /* Prevent label text from wrapping */
-      gap: 5px; /* Gap between checkmark and text */
+      white-space: nowrap;
+      gap: 5px;
     }
 
     .checkbox-container input {
@@ -559,7 +616,7 @@
     .checkmark {
       position: absolute;
       top: 50%;
-      left: 10px; /* Position checkmark within the padded label */
+      left: 10px;
       transform: translateY(-50%);
       height: 16px;
       width: 16px;
@@ -569,7 +626,6 @@
       transition: all 0.2s ease;
     }
 
-    /* On hover, add a grey background color to the label and checkmark */
     .checkbox-container:hover {
       background: #e0e0e0;
       border-color: #c7c7c7;
@@ -578,25 +634,21 @@
       background-color: #ccc;
     }
 
-    /* When the checkbox is checked, add primary color background to label and checkmark */
     .checkbox-container input:checked + .checkmark {
       background-color: var(--primary-color);
       border-color: var(--primary-color);
     }
 
-    /* Style the checkmark (indicator) */
     .checkmark:after {
       content: "";
       position: absolute;
       display: none;
     }
 
-    /* Show the checkmark when checked */
     .checkbox-container input:checked ~ .checkmark:after {
       display: block;
     }
 
-    /* Style the checkmark itself */
     .checkbox-container .checkmark:after {
       left: 5px;
       top: 2px;
@@ -607,14 +659,12 @@
       transform: rotate(45deg);
     }
 
-    /* Apply background and text color to the label (checkbox-container) when its input is checked */
     .checkbox-container.active {
       background: var(--primary-color);
-      color: white; /* Text color when active */
+      color: white;
       border-color: var(--primary-color);
       box-shadow: var(--shadow-light);
     }
-
 
     /* Styles for dropdowns */
     .filter-dropdown-container {
@@ -623,23 +673,22 @@
       gap: 0.8rem;
       margin-top: 0.8rem;
     }
-@media (max-width: 480px) {
-  .filter-dropdown-container {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.6rem;
-  }
+    @media (max-width: 480px) {
+      .filter-dropdown-container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.6rem;
+      }
 
-  #regionFilter {
-    grid-column: span 2;
-  }
+      #regionFilter {
+        grid-column: span 2;
+      }
 
-  .filter-dropdown-container select {
-    width: 100%;
-    min-width: 0;
-  }
-}
-
+      .filter-dropdown-container select {
+        width: 100%;
+        min-width: 0;
+      }
+    }
 
     .filter-dropdown-container select {
       padding: 0.6rem 1rem;
@@ -648,7 +697,7 @@
       background-color: var(--background-card);
       font-size: 0.9rem;
       color: var(--text-color-dark);
-      appearance: none; /* Remove default arrow */
+      appearance: none;
       -webkit-appearance: none;
       -moz-appearance: none;
       background-image: url('data:image/svg+xml;utf8,<svg fill="%23616161" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/><path d="M0 0h24v24H0z" fill="none"/></svg>');
@@ -683,7 +732,7 @@
       background-color: var(--background-light);
       font-weight: 500;
       color: var(--text-color-medium);
-      width: 40%; /* Adjust as needed */
+      width: 40%;
     }
 
     .consumer-detail-table tr:nth-child(even) {
@@ -694,7 +743,7 @@
       background-color: #f0f0f0;
     }
 
-    .detail-item-value { /* Keep for general styling, though table cells handle specific values */
+    .detail-item-value {
       color: var(--text-color-dark);
       word-break: break-word;
     }
@@ -735,9 +784,9 @@
       background-color: var(--primary-light);
       color: var(--primary-dark);
       font-weight: 600;
-      position: sticky;
-      top: 0; /* Make table header sticky within its container */
-      z-index: 1;
+      position: sticky; /* Make table header sticky within its container */
+      top: 0; /* Sticky to the top of its scrolling container */
+      z-index: 1; /* Ensure it stays above table body */
     }
 
     .consumer-list-table tbody tr:nth-child(even) {
@@ -745,12 +794,12 @@
     }
 
     .consumer-list-table tbody tr:hover {
-      background-color: #e0f2f7; /* Light blue on hover */
+      background-color: #e0f2f7;
       cursor: pointer;
     }
 
-    .due-date-text-table { /* Specific style for due date in table */
-      color: #D32F2F; /* Red color */
+    .due-date-text-table {
+      color: #D32F2F;
       font-weight: 500;
     }
 
@@ -794,7 +843,6 @@
       font-weight: 500;
     }
 
-
     /* Media Queries for responsiveness */
     @media (max-width: 768px) {
       .app-bar {
@@ -803,17 +851,28 @@
       .app-bar h1 {
         font-size: 1.2rem;
       }
-      .filter-bar {
-        padding: 0.8rem 1rem;
-        top: 56px; /* Adjust for smaller app bar */
+      .filter-bar-header {
+        padding: 0.6rem 1rem; /* Adjust padding for filter header */
       }
-      .filter-dropdown-container {
-        grid-template-columns: 1fr; /* Stack dropdowns on small screens */
+      .filter-title {
+        font-size: 1rem;
+      }
+      .toggle-filters-btn {
+        font-size: 1.3rem;
+        width: 28px;
+        height: 28px;
+      }
+      .collapsible-filter-content {
+        /* Adjust padding or max-height if needed for smaller screens */
+      }
+      .filter-content {
+        padding: 0 1rem; /* Adjust horizontal padding for filter elements */
+        padding-top: 0.8rem; /* Adjust top padding */
       }
       .container {
         padding: 0.8rem;
       }
-      .overview-cards, .due-date-cards { /* Apply stacking to both card groups */
+      .overview-cards, .due-date-cards {
         grid-template-columns: 1fr;
       }
       .metric-card {
@@ -890,18 +949,18 @@
 
     @media (max-width: 480px) {
       .filter-label {
-        justify-content: center; /* Center items on small screens */
+        justify-content: center;
       }
       .checkbox-container {
-        flex: 1 1 auto; /* Allow items to grow/shrink based on content but try to fit */
-        max-width: calc(50% - 0.5rem); /* Two per row with gap */
-        justify-content: center; /* Center content within the pill */
-        padding: 0.4rem 0.6rem; /* Adjust padding for smaller screens */
-        padding-left: 28px; /* Maintain space for checkmark */
+        flex: 1 1 auto;
+        max-width: calc(50% - 0.5rem);
+        justify-content: center;
+        padding: 0.4rem 0.6rem;
+        padding-left: 28px;
         font-size: 0.8rem;
       }
       .checkmark {
-        left: 8px; /* Adjust checkmark position for smaller padding */
+        left: 8px;
         height: 14px;
         width: 14px;
       }
@@ -913,111 +972,109 @@
       }
     }
 
-.consumer-table-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
+    .consumer-table-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
 
-.download-button {
-  padding: 6px 12px;
-  background-color: #007bff;
-  color: white;
-  font-size: 14px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
+    .download-button {
+      padding: 6px 12px;
+      background-color: #007bff;
+      color: white;
+      font-size: 14px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
 
-.download-button:hover {
-  background-color: #0056b3;
-}
+    .download-button:hover {
+      background-color: #0056b3;
+    }
 
-/* Custom Alert Modal Styles */
-.custom-alert-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.4);
-  z-index: 2000; /* Higher than other modals */
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.3s ease, visibility 0.3s ease;
-}
+    /* Custom Alert Modal Styles */
+    .custom-alert-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.4);
+      z-index: 2000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s ease, visibility 0.3s ease;
+    }
 
-.custom-alert-modal.is-visible {
-  opacity: 1;
-  visibility: visible;
-}
+    .custom-alert-modal.is-visible {
+      opacity: 1;
+      visibility: visible;
+    }
 
-.custom-alert-dialog {
-  background: var(--background-card);
-  border-radius: var(--border-radius);
-  padding: 1.5rem;
-  width: 90%;
-  max-width: 400px;
-  box-shadow: var(--shadow-medium);
-  text-align: center;
-  transform: translateY(20px);
-  transition: transform 0.3s ease-out;
-}
+    .custom-alert-dialog {
+      background: var(--background-card);
+      border-radius: var(--border-radius);
+      padding: 1.5rem;
+      width: 90%;
+      max-width: 400px;
+      box-shadow: var(--shadow-medium);
+      text-align: center;
+      transform: translateY(20px);
+      transition: transform 0.3s ease-out;
+    }
 
-.custom-alert-modal.is-visible .custom-alert-dialog {
-  transform: translateY(0);
-}
+    .custom-alert-modal.is-visible .custom-alert-dialog {
+      transform: translateY(0);
+    }
 
-.custom-alert-message {
-  font-size: 1.1rem;
-  color: var(--text-color-dark);
-  margin-bottom: 1.5rem;
-}
+    .custom-alert-message {
+      font-size: 1.1rem;
+      color: var(--text-color-dark);
+      margin-bottom: 1.5rem;
+    }
 
-.custom-alert-button {
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  padding: 0.7rem 1.5rem;
-  border-radius: var(--border-radius);
-  cursor: pointer;
-  font-size: 1rem;
-  font-weight: 500;
-  transition: background 0.2s ease;
-}
+    .custom-alert-button {
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 0.7rem 1.5rem;
+      border-radius: var(--border-radius);
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 500;
+      transition: background 0.2s ease;
+    }
 
-.custom-alert-button:hover {
-  background: var(--primary-dark);
-}
+    .custom-alert-button:hover {
+      background: var(--primary-dark);
+    }
 
-/* Animation for Today card - Swiping color shade */
-@keyframes swipe-today {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
+    /* Animation for Today card - Swiping color shade */
+    @keyframes swipe-today {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
 
-.today-card-animate {
-  background: linear-gradient(90deg, var(--background-card) 0%, rgba(255, 255, 0, 0.2) 20%, var(--background-card) 40%);
-  background-size: 200% 100%;
-  animation: swipe-today 2s infinite linear;
-  /* Ensure content is above the animated background */
-  position: relative;
-  z-index: 1;
-}
+    .today-card-animate {
+      background: linear-gradient(90deg, var(--background-card) 0%, rgba(255, 255, 0, 0.2) 20%, var(--background-card) 40%);
+      background-size: 200% 100%;
+      animation: swipe-today 2s infinite linear;
+      position: relative;
+      z-index: 1;
+    }
 
-/* Ensure text and icons are visible above the gradient */
-.today-card-animate .metric-info h3,
-.today-card-animate .metric-value,
-.today-card-animate .stat-label,
-.today-card-animate .metric-icon {
-  position: relative;
-  z-index: 2;
-}
-
+    /* Ensure text and icons are visible above the gradient */
+    .today-card-animate .metric-info h3,
+    .today-card-animate .metric-value,
+    .today-card-animate .stat-label,
+    .today-card-animate .metric-icon {
+      position: relative;
+      z-index: 2;
+    }
   </style>
 </head>
 <body>
@@ -1026,74 +1083,78 @@
   <div>Loading data, please wait...</div>
 </div>
 
-
   <div class="app-bar">
     <h1>Upcoming DD Consumers</h1>
   </div>
 
   <div class="filter-bar">
-    <div class="filter-content">
-      <div class="filter-label" id="osdFilterCheckboxes">
-        <!-- Removed 'Filter by OSD' label -->
-        <label for="zeroToggle" class="checkbox-container">
-          <input type="checkbox" id="zeroToggle">
-          <span class="checkmark"></span>
-          Zero OSD
-        </label>
-        <label for="nonZeroToggle" class="checkbox-container">
-          <input type="checkbox" id="nonZeroToggle">
-          <span class="checkmark"></span>
-          Non-Zero OSD
-        </label>
-        <label for="govtToggle" class="checkbox-container">
-          <input type="checkbox" id="govtToggle">
-          <span class="checkmark"></span>
-          Govt
-        </label>
-        <label for="threePhToggle" class="checkbox-container">
-          <input type="checkbox" id="threePhToggle">
-          <span class="checkmark"></span>
-          3-Ph
-        </label>
-        <label for="industrialToggle" class="checkbox-container">
-          <input type="checkbox" id="industrialToggle">
-          <span class="checkmark"></span>
-          Industrial
-        </label>
-        <label for="schoolToggle" class="checkbox-container">
-          <input type="checkbox" id="schoolToggle">
-          <span class="checkmark"></span>
-          School
-        </label>
-        <label for="towerToggle" class="checkbox-container">
-          <input type="checkbox" id="towerToggle">
-          <span class="checkmark"></span>
-          Tower
-        </label>
-        <label for="theftBillToggle" class="checkbox-container">
-          <input type="checkbox" id="theftBillToggle">
-          <span class="checkmark"></span>
-          Theft Bill
-        </label>
-      </div>
-      <div class="slider-container">
-        <input type="range" id="osdSlider" min="0" max="10000" value="0" step="500" class="slider">
-        <div class="slider-value" id="sliderValue">≥ 0</div>
-      </div>
+    <div class="filter-bar-header">
+        <h2 class="filter-title">Filter Options</h2>
+        <button id="toggleFiltersBtn" class="toggle-filters-btn">
+            <span class="arrow-icon">▼</span>
+        </button>
+    </div>
+    <div class="collapsible-filter-content" id="collapsibleFilterContent">
+      <div class="filter-content">
+        <div class="filter-label" id="osdFilterCheckboxes">
+          <label for="zeroToggle" class="checkbox-container">
+            <input type="checkbox" id="zeroToggle">
+            <span class="checkmark"></span>
+            Zero OSD
+          </label>
+          <label for="nonZeroToggle" class="checkbox-container">
+            <input type="checkbox" id="nonZeroToggle">
+            <span class="checkmark"></span>
+            Non-Zero OSD
+          </label>
+          <label for="govtToggle" class="checkbox-container">
+            <input type="checkbox" id="govtToggle">
+            <span class="checkmark"></span>
+            Govt
+          </label>
+          <label for="threePhToggle" class="checkbox-container">
+            <input type="checkbox" id="threePhToggle">
+            <span class="checkmark"></span>
+            3-Ph
+          </label>
+          <label for="industrialToggle" class="checkbox-container">
+            <input type="checkbox" id="industrialToggle">
+            <span class="checkmark"></span>
+            Industrial
+          </label>
+          <label for="schoolToggle" class="checkbox-container">
+            <input type="checkbox" id="schoolToggle">
+            <span class="checkmark"></span>
+            School
+          </label>
+          <label for="towerToggle" class="checkbox-container">
+            <input type="checkbox" id="towerToggle">
+            <span class="checkmark"></span>
+            Tower
+          </label>
+          <label for="theftBillToggle" class="checkbox-container">
+            <input type="checkbox" id="theftBillToggle">
+            <span class="checkmark"></span>
+            Theft Bill
+          </label>
+        </div>
+        <div class="slider-container">
+          <input type="range" id="osdSlider" min="0" max="10000" value="0" step="500" class="slider">
+          <div class="slider-value" id="sliderValue">≥ 0</div>
+        </div>
 
-      <div class="filter-dropdown-container">
-        <select id="regionFilter">
-          <option value="">All Regions</option>
-        </select>
-        <select id="divisionFilter">
-          <option value="">All Divisions</option>
-        </select>
-        <select id="cccFilter">
-          <option value="">All CCCs</select>
-        </select>
+        <div class="filter-dropdown-container">
+          <select id="regionFilter">
+            <option value="">All Regions</option>
+          </select>
+          <select id="divisionFilter">
+            <option value="">All Divisions</option>
+          </select>
+          <select id="cccFilter">
+            <option value="">All CCCs</select>
+          </select>
+        </div>
       </div>
-
-      <!-- <div class="filter-stats" id="filterStats">Showing all consumers</div> -->
     </div>
   </div>
 
@@ -1103,10 +1164,10 @@
 
   <!-- Paginated Consumer Table Section -->
   <div class="container consumer-table-section">
-<div class="consumer-table-header">
-  <h3 class="consumer-table-title">Filtered Consumers List</h3>
-  <button onclick="downloadFilteredConsumers()" class="download-button">📥 Download (Excel)</button>
-</div>
+    <div class="consumer-table-header">
+      <h3 class="consumer-table-title">Filtered Consumers List</h3>
+      <button onclick="downloadFilteredConsumers()" class="download-button">📥 Download (Excel)</button>
+    </div>
 
     <div style="overflow-x: auto;">
       <table class="consumer-list-table" id="consumerTable">
@@ -1115,7 +1176,7 @@
             <th>Consumer ID</th>
             <th>Name</th>
             <th>Base Class</th>
-            <th>MRU</th> <!-- Added MRU column header -->
+            <th>MRU</th>
             <th>Disconn. Date</th>
             <th>Outstanding</th>
             <th>Due Date</th>
@@ -1132,7 +1193,6 @@
       <button id="nextPageBtn" class="pagination-button">Next</button>
     </div>
   </div>
-
 
   <!-- Summary Modal -->
   <div class="modal" id="summaryModal">
@@ -1181,15 +1241,14 @@
     </div>
   </div>
 
-
   <script>
     function formatINR(value) {
-  const val = parseInt(value);
-  if (val >= 10000000) return `₹${(val / 10000000).toFixed(2)} Cr`;
-  if (val >= 100000) return `₹${(val / 100000).toFixed(2)} L`;
-  if (val >= 1000) return `₹${(val / 1000).toFixed(0)}K`;
-  return `₹${val}`;
-}
+      const val = parseInt(value);
+      if (val >= 10000000) return `₹${(val / 10000000).toFixed(2)} Cr`;
+      if (val >= 100000) return `₹${(val / 100000).toFixed(2)} L`;
+      if (val >= 1000) return `₹${(val / 1000).toFixed(0)}K`;
+      return `₹${val}`;
+    }
 
     function formatDate(raw) {
       if (!raw || raw.length !== 8) return raw;
@@ -1204,32 +1263,29 @@
       return new Date(`${str.slice(0, 4)}-${str.slice(4, 6)}-${str.slice(6, 8)}`);
     };
 
-    // New function to format OSD
     function formatOSD(valueInCents) {
-        const num = parseFloat(valueInCents); // This should already be a number (in cents)
+        const num = parseFloat(valueInCents);
         if (isNaN(num)) return "N/A";
 
-        const actualValue = num / 100; // Convert cents back to actual monetary value
+        const actualValue = num / 100;
 
-        if (actualValue >= 10000000) { // Crore
+        if (actualValue >= 10000000) {
             return (actualValue / 10000000).toFixed(2) + " Cr";
-        } else if (actualValue >= 100000) { // Lakh
+        } else if (actualValue >= 100000) {
             return (actualValue / 100000).toFixed(2) + " L";
         } else {
-            return actualValue.toFixed(2); // Always two decimal places for consistency
+            return actualValue.toFixed(2);
         }
     }
 
-    // Updated buckets for monthly-focused due dates
     const buckets = [
-      { label: "Today", minDays: 0, maxDays: 0, items: [], filteredItems: [], icon: "🎯" }, // Due exactly today
-      { label: "3 Days", minDays: 1, maxDays: 3, items: [], filteredItems: [], icon: "🕒" }, // Due in 1 to 3 days
+      { label: "Today", minDays: 0, maxDays: 0, items: [], filteredItems: [], icon: "🎯" },
+      { label: "3 Days", minDays: 1, maxDays: 3, items: [], filteredItems: [], icon: "🕒" },
       { label: "7 Days", minDays: 4, maxDays: 7, items: [], filteredItems: [], icon: "⏰" },
       { label: "15 Days", minDays: 8, maxDays: 15, items: [], filteredItems: [], icon: "📅" },
-      { label: "1 Month", minDays: 16, maxDays: 30, items: [], filteredItems: [], icon: "🗓️" }, // DD due in 16 to 30 days
-      { label: "3 Months", minDays: 31, maxDays: 90, items: [], filteredItems: [], icon: "📊" }, // DD due in 31 to 90 days
-      { label: "6 Months", minDays: 91, maxDays: 180, items: [], filteredItems: [], icon: "📈" } // DD due in 91 to 180 days
-      // Removed ">6 Months" card as per user request
+      { label: "1 Month", minDays: 16, maxDays: 30, items: [], filteredItems: [], icon: "🗓️" },
+      { label: "3 Months", minDays: 31, maxDays: 90, items: [], filteredItems: [], icon: "📊" },
+      { label: "6 Months", minDays: 91, maxDays: 180, items: [], filteredItems: [], icon: "📈" }
     ];
 
     let allData = [];
@@ -1238,15 +1294,11 @@
     let currentRegionFilter = "";
     let currentDivisionFilter = "";
     let currentCCCFilter = "";
-    // Removed individual `is*Only` flags, will read directly from checkbox.checked
 
-    // Pagination variables
     let currentPage = 1;
-    const itemsPerPage = 20; // Number of consumers per page in the table
-    let filteredConsumersData = []; // This will hold the data for the paginated table
+    const itemsPerPage = 20;
+    let filteredConsumersData = [];
 
-
-    // CCC Hierarchy Data
     const cccHierarchy = {
       "6610000": {
         name: "MALDA REGION",
@@ -1331,7 +1383,6 @@
       }
     };
 
-    // Helper function to get filter conditions based on checkboxes
     function getCheckboxFilterConditions(item) {
         const osd = item.OUTSTANDING_CENTS;
         let passesAnyCheckbox = false;
@@ -1344,7 +1395,7 @@
         const industrialToggleCheckbox = document.getElementById("industrialToggle");
         const schoolToggleCheckbox = document.getElementById("schoolToggle");
         const towerToggleCheckbox = document.getElementById("towerToggle");
-        const theftBillToggleCheckbox = document.getElementById("theftBillToggle"); // New checkbox
+        const theftBillToggleCheckbox = document.getElementById("theftBillToggle");
 
         if (zeroToggleCheckbox.checked) {
             passesAnyCheckbox = passesAnyCheckbox || (osd === 0);
@@ -1374,7 +1425,7 @@
             passesAnyCheckbox = passesAnyCheckbox || (item.NAT_OF_CONN && item.NAT_OF_CONN.toUpperCase().includes('TOWER'));
             anyCheckboxChecked = true;
         }
-        if (theftBillToggleCheckbox.checked) { // New condition for Theft Bill
+        if (theftBillToggleCheckbox.checked) {
             passesAnyCheckbox = passesAnyCheckbox || (item.CONN_BY && item.CONN_BY.toUpperCase() === 'PILFERAGE');
             anyCheckboxChecked = true;
         }
@@ -1382,7 +1433,6 @@
         return { passes: passesAnyCheckbox, active: anyCheckboxChecked };
     }
 
-    // Modified function to show summary modal, now accepts title and consumer list
     function showSummaryModal(title, consumersList) {
       document.getElementById("summaryTitle").textContent = title;
       const content = document.getElementById("summaryContent");
@@ -1399,11 +1449,11 @@
         const summary = {};
 
         consumersList.forEach(item => {
-          const name = item.CCC_NAME || getCCCName(item.CCC_CODE) || "Unknown CCC"; // Use getCCCName
-          const osd = item.OUTSTANDING_CENTS; // Use OUTSTANDING_CENTS here for summary total
+          const name = item.CCC_NAME || getCCCName(item.CCC_CODE) || "Unknown CCC";
+          const osd = item.OUTSTANDING_CENTS;
           if (!summary[name]) summary[name] = { count: 0, total: 0, consumers: [] };
           summary[name].count++;
-          summary[name].total += osd; // total is in cents
+          summary[name].total += osd;
           summary[name].consumers.push(item);
         });
 
@@ -1420,7 +1470,7 @@
                 <div class="stat-label">Consumers</div>
               </div>
               <div class="stat">
-                <div class="stat-value">${formatOSD(data.total)}</div> <!-- Pass cents to formatOSD -->
+                <div class="stat-value">${formatOSD(data.total)}</div>
                 <div class="stat-label">Total OSD</div>
               </div>
             </div>
@@ -1433,11 +1483,10 @@
       document.getElementById("summaryModal").classList.add('is-visible');
     }
 
-
     function updateSliderStyle(value, max) {
       const slider = document.getElementById('osdSlider');
       const sliderValue = document.getElementById('sliderValue');
-      const threshold = max * 0.6; // Top 40% threshold
+      const threshold = max * 0.6;
 
       if (value >= threshold) {
         slider.classList.add('high-value');
@@ -1450,28 +1499,21 @@
 
     function applyAllFilters() {
       const now = new Date();
-      // Normalize 'now' to start of day for consistent date comparisons
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       
-      // Filter allData based on current OSD and Location filters
       filteredConsumersData = allData.filter(item => {
           const osd = item.OUTSTANDING_CENTS;
           const cccCode = item.CCC_CODE;
 
-          // OSD Filter Logic: combines selected checkboxes (OR) and the slider (AND)
           const checkboxFilterResult = getCheckboxFilterConditions(item);
           let passesMainFilter = false;
 
           if (checkboxFilterResult.active) {
-              // If any checkbox is checked, combine checkbox conditions with slider condition using AND
               passesMainFilter = checkboxFilterResult.passes && (osd >= currentOSDFilter * 100);
           } else {
-              // If no checkboxes are checked, only the slider condition applies
               passesMainFilter = (osd >= currentOSDFilter * 100);
           }
 
-
-          // Region/Division/CCC Filter
           let passesLocationFilter = true;
           if (currentCCCFilter && cccCode !== currentCCCFilter) {
             passesLocationFilter = false;
@@ -1505,76 +1547,64 @@
             return passesMainFilter && passesLocationFilter;
         });
 
-
         buckets.forEach(bucket => {
             bucket.filteredItems = filteredConsumersData.filter(item => {
                 const disDate = parseDate(item.DISCON_DT);
-                if (!disDate) return false; // If no disconnection date, it can't have a future DD due date
+                if (!disDate) return false;
 
                 const ddThreshold = new Date(disDate);
                 ddThreshold.setMonth(ddThreshold.getMonth() + 6);
-                // Normalize ddThreshold to start of day for consistent comparisons
                 const ddThresholdNormalized = new Date(ddThreshold.getFullYear(), ddThreshold.getMonth(), ddThreshold.getDate());
 
-                // Calculate days until due. If it's today, daysUntil is 0. If it's tomorrow, 1, etc.
                 const diffTime = ddThresholdNormalized.getTime() - today.getTime();
-                const daysUntil = Math.round(diffTime / (1000 * 60 * 60 * 24)); // Round to nearest whole day
+                const daysUntil = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
-                // Check if the item falls within the current bucket's date range AND is not already due
                 return daysUntil >= bucket.minDays && daysUntil <= bucket.maxDays;
             });
         });
 
-        // Show shimmer placeholders
         const container = document.getElementById("container");
         container.innerHTML = '';
         const overviewCardsDiv = document.createElement("div");
         overviewCardsDiv.className = "overview-cards";
         container.appendChild(overviewCardsDiv);
 
-        for (let i = 0; i < 4; i++) { // For the 4 new overview cards (combined + zero OSD + low OSD)
+        for (let i = 0; i < 4; i++) {
             const placeholder = document.createElement("div");
             placeholder.className = "shimmer-card";
             overviewCardsDiv.appendChild(placeholder);
         }
 
-        const dueDateCardsDiv = document.createElement("div"); // New container for due date cards
+        const dueDateCardsDiv = document.createElement("div");
         dueDateCardsDiv.className = "due-date-cards";
         container.appendChild(dueDateCardsDiv);
 
-        // Add shimmer for the new "Already DD" card + the updated buckets
-        for (let i = 0; i < buckets.length + 1; i++) { // For all bucket cards + "Already DD"
+        for (let i = 0; i < buckets.length + 1; i++) {
             const placeholder = document.createElement("div");
             placeholder.className = "shimmer-card";
-            dueDateCardsDiv.appendChild(placeholder); // Append to new container
+            dueDateCardsDiv.appendChild(placeholder);
         }
 
-        // Reset current page to 1 whenever filters change
         currentPage = 1;
 
-        // Then draw real data after slight delay
         setTimeout(() => {
             updateCards();
-            renderConsumerTable(); // Render the paginated table after cards
+            renderConsumerTable();
         }, 300);
     }
-
 
     function updateCards() {
       const container = document.getElementById("container");
       container.innerHTML = "";
 
-      // The `filteredConsumersData` is already updated in `applyAllFilters`
       let totalFilteredOSD = filteredConsumersData.reduce((sum, item) => sum + item.OUTSTANDING_CENTS, 0);
       let totalZeroOSDConsumers = filteredConsumersData.filter(item => item.OUTSTANDING_CENTS === 0).length;
-      let lowOSDConsumers = filteredConsumersData.filter(item => item.OUTSTANDING_CENTS > 0 && item.OUTSTANDING_CENTS < 5000); // Less than Rs. 50
+      let lowOSDConsumers = filteredConsumersData.filter(item => item.OUTSTANDING_CENTS > 0 && item.OUTSTANDING_CENTS < 5000);
       let lowOSDTotal = lowOSDConsumers.reduce((sum, item) => sum + item.OUTSTANDING_CENTS, 0);
-
 
       const overviewCardsDiv = document.createElement("div");
       overviewCardsDiv.className = "overview-cards";
 
-      // Add "Total Consumers" and "Total OSD" combined card
       const totalConsumersAndOsdCard = document.createElement("div");
       totalConsumersAndOsdCard.className = "metric-card total-consumers-card";
       totalConsumersAndOsdCard.innerHTML = `
@@ -1585,11 +1615,9 @@
         </div>
         <div class="metric-icon">👥💰</div>
       `;
-      // Pass the filtered list directly to showSummaryModal
       totalConsumersAndOsdCard.onclick = () => showSummaryModal('All Filtered Consumers', filteredConsumersData);
       overviewCardsDiv.appendChild(totalConsumersAndOsdCard);
 
-      // Add "Count with Zero OSD" card
       const zeroOsdCountCard = document.createElement("div");
       zeroOsdCountCard.className = "metric-card zero-osd-card";
       zeroOsdCountCard.innerHTML = `
@@ -1599,11 +1627,9 @@
         </div>
         <div class="metric-icon">✅</div>
       `;
-      // Pass the filtered list directly to showSummaryModal
       zeroOsdCountCard.onclick = () => showSummaryModal('Consumers with Zero OSD', filteredConsumersData.filter(item => item.OUTSTANDING_CENTS === 0));
       overviewCardsDiv.appendChild(zeroOsdCountCard);
 
-      // Add "Low OSD Consumers" card (OSD < Rs. 50)
       const lowOsdCard = document.createElement("div");
       lowOsdCard.className = "metric-card low-osd-card";
       lowOsdCard.innerHTML = `
@@ -1614,20 +1640,18 @@
         </div>
         <div class="metric-icon">🤏💰</div>
       `;
-      // Pass the filtered list directly to showSummaryModal
       lowOsdCard.onclick = () => showSummaryModal('Consumers with OSD < ₹50', lowOSDConsumers);
       overviewCardsDiv.appendChild(lowOsdCard);
 
       container.appendChild(overviewCardsDiv);
 
-      // Calculate "Already DD" consumers
       const now = new Date();
       const todayNormalized = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
       let earliestPastDDDate = null;
       const alreadyDDConsumers = filteredConsumersData.filter(item => {
           const disDate = parseDate(item.DISCON_DT);
-          if (!disDate) return true; // Treat invalid/missing DISCON_DT as "Already DD"
+          if (!disDate) return true;
 
           const ddThreshold = new Date(disDate);
           ddThreshold.setMonth(ddThreshold.getMonth() + 6);
@@ -1653,31 +1677,26 @@
       }
       const alreadyDDLabel = daysSinceEarliestDD > 0 ? `Already DD in last ${daysSinceEarliestDD} days` : `Already DD`;
 
-
-      // Create a wrapper with reddish background for due date cards
       const dueDateWrapper = document.createElement("div");
-      dueDateWrapper.style.background = "#fdecea"; // light reddish
+      dueDateWrapper.style.background = "#fdecea";
       dueDateWrapper.style.padding = "1rem";
       dueDateWrapper.style.borderRadius = "12px";
       dueDateWrapper.style.marginTop = "1rem";
       dueDateWrapper.style.boxShadow = "0 0 8px rgba(255,0,0,0.1)";
 
-      // Title for the due date section
       const title = document.createElement("h3");
-      title.style.color = "#b71c1c"; // deep red
+      title.style.color = "#b71c1c";
       title.style.marginBottom = "0.75rem";
       title.style.fontWeight = "600";
-      title.textContent = "DD Due Date Categories"; // Add a title for this section
+      title.textContent = "DD Due Date Categories";
       dueDateWrapper.appendChild(title);
 
-      // Card container for due date categories
       const dueDateCardsDiv = document.createElement("div");
       dueDateCardsDiv.className = "due-date-cards";
 
-      // Add "Already DD" card first
       const alreadyDDCard = document.createElement("div");
       alreadyDDCard.className = "metric-card";
-      alreadyDDCard.style.borderLeftColor = "#757575"; // Grey for "Already DD"
+      alreadyDDCard.style.borderLeftColor = "#757575";
       alreadyDDCard.innerHTML = `
           <div class="metric-info">
               <h3>${alreadyDDLabel}</h3>
@@ -1689,31 +1708,27 @@
       alreadyDDCard.onclick = () => showSummaryModal('Already DD Consumers', alreadyDDConsumers);
       dueDateCardsDiv.appendChild(alreadyDDCard);
 
-
-      // Add each bucket card inside
       for (const bucket of buckets) {
         const bucketTotalOSD = bucket.filteredItems.reduce((sum, item) => sum + item.OUTSTANDING_CENTS, 0);
 
         const card = document.createElement("div");
         card.className = "metric-card";
-        // Apply animation to "Today" card
         if (bucket.label === "Today") {
             card.classList.add("today-card-animate");
-            card.style.borderLeftColor = "#FFC107"; // Amber for Today
+            card.style.borderLeftColor = "#FFC107";
         } else if (bucket.label === "3 Days") {
-            card.style.borderLeftColor = "#FF9800"; // Deep Orange for 3 Days
+            card.style.borderLeftColor = "#FF9800";
         } else if (bucket.label === "7 Days") {
-            card.style.borderLeftColor = "#FF5722"; // Red Orange for 7 Days
+            card.style.borderLeftColor = "#FF5722";
         } else if (bucket.label === "15 Days") {
-            card.style.borderLeftColor = "#F44336"; // Red for 15 Days
+            card.style.borderLeftColor = "#F44336";
         } else if (bucket.label === "1 Month") {
-            card.style.borderLeftColor = "#E91E63"; // Pink for 1 Month
+            card.style.borderLeftColor = "#E91E63";
         } else if (bucket.label === "3 Months") {
-            card.style.borderLeftColor = "#9C27B0"; // Purple for 3 Months
+            card.style.borderLeftColor = "#9C27B0";
         } else if (bucket.label === "6 Months") {
-            card.style.borderLeftColor = "#673AB7"; // Deep Purple for 6 Months
+            card.style.borderLeftColor = "#673AB7";
         }
-        // No ">6 Months" bucket in this version
 
         card.innerHTML = `
           <div class="metric-info">
@@ -1727,13 +1742,8 @@
         dueDateCardsDiv.appendChild(card);
       } 
 
-      // Append the card group to the wrapper
       dueDateWrapper.appendChild(dueDateCardsDiv);
-
-      // Append the wrapper to the container
       container.appendChild(dueDateWrapper);
-
-
       document.getElementById("loadingOverlay").style.display = "none";
     }
 
@@ -1743,12 +1753,11 @@
         const prevPageBtn = document.getElementById('prevPageBtn');
         const nextPageBtn = document.getElementById('nextPageBtn');
 
-        tableBody.innerHTML = ''; // Clear existing rows
+        tableBody.innerHTML = '';
 
         const now = new Date();
         const todayNormalized = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-        // Sort the filteredConsumersData by due date
         const sortedConsumers = [...filteredConsumersData].sort((a, b) => {
             const dateA = parseDate(a.DISCON_DT);
             const dateB = parseDate(b.DISCON_DT);
@@ -1765,112 +1774,96 @@
                 ddThresholdB.setMonth(ddThresholdB.getMonth() + 6);
             }
 
-            // Calculate days until due. If it's today, daysUntil is 0. If it's tomorrow, 1, etc.
             let daysUntilA;
             if (!ddThresholdA || ddThresholdA.getTime() < todayNormalized.getTime()) {
-                daysUntilA = Infinity; // Place "Already DD" at the end
+                daysUntilA = Infinity;
             } else {
                 daysUntilA = Math.round((ddThresholdA.getTime() - todayNormalized.getTime()) / (1000 * 60 * 60 * 24));
             }
 
             let daysUntilB;
             if (!ddThresholdB || ddThresholdB.getTime() < todayNormalized.getTime()) {
-                daysUntilB = Infinity; // Place "Already DD" at the end
+                daysUntilB = Infinity;
             } else {
                 daysUntilB = Math.round((ddThresholdB.getTime() - todayNormalized.getTime()) / (1000 * 60 * 60 * 24));
             }
 
-            // Primary sort: "DD due on X days" (positive daysUntil) first, then "Already DD" (Infinity) last.
             if (daysUntilA !== daysUntilB) {
                 return daysUntilA - daysUntilB;
             }
 
-            // Secondary sort: by OSD (descending) if due dates are the same
             return (b.OUTSTANDING_CENTS || 0) - (a.OUTSTANDING_CENTS || 0);
         });
-
 
         const totalItems = sortedConsumers.length;
         const totalPages = Math.ceil(totalItems / itemsPerPage);
 
-        // Ensure currentPage is valid
         if (currentPage < 1) currentPage = 1;
         if (currentPage > totalPages && totalPages > 0) currentPage = totalPages;
-        if (totalPages === 0) currentPage = 0; // Handle no data case
+        if (totalPages === 0) currentPage = 0;
 
         const startIndex = (currentPage - 1) * itemsPerPage;
         const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
         const consumersForPage = sortedConsumers.slice(startIndex, endIndex);
 
         if (consumersForPage.length === 0 && totalItems > 0) {
-            // This can happen if the last item on a page is filtered out, and currentPage is now empty.
-            // Go back to the previous page if possible.
             currentPage = Math.max(1, currentPage - 1);
-            renderConsumerTable(); // Recurse to render the adjusted page
+            renderConsumerTable();
             return;
         } else if (consumersForPage.length === 0 && totalItems === 0) {
              tableBody.innerHTML = `<tr><td colspan="7" class="empty-state-table">No consumers found for current filters.</td></tr>`;
         }
 
-consumersForPage.forEach(con => {
-    let dueDateCellContent = '';
-    const disDate = parseDate(con.DISCON_DT);
-    if (disDate) {
-        const ddThreshold = new Date(disDate);
-        ddThreshold.setMonth(ddThreshold.getMonth() + 6);
+        consumersForPage.forEach(con => {
+            let dueDateCellContent = '';
+            const disDate = parseDate(con.DISCON_DT);
+            if (disDate) {
+                const ddThreshold = new Date(disDate);
+                ddThreshold.setMonth(ddThreshold.getMonth() + 6);
 
-        // Calculate days until due. If it's today, daysUntil is 0. If it's tomorrow, 1, etc.
-        const todayNormalizedForDisplay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const diffTimeForDisplay = ddThreshold.getTime() - todayNormalizedForDisplay.getTime();
-        const daysUntilForDisplay = Math.round(diffTimeForDisplay / (1000 * 60 * 60 * 24));
+                const todayNormalizedForDisplay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                const diffTimeForDisplay = ddThreshold.getTime() - todayNormalizedForDisplay.getTime();
+                const daysUntilForDisplay = Math.round(diffTimeForDisplay / (1000 * 60 * 60 * 24));
 
-        // Only show "DD due on" if the due date is in the future or today
-        if (daysUntilForDisplay >= 0) {
-            dueDateCellContent = `<span class="due-date-text-table">DD due on ${formatDate(ddThreshold.toISOString().slice(0, 10).replace(/-/g, ''))}</span>`;
-        } else {
-            // If the due date is in the past, display "Already DD"
-            dueDateCellContent = `<span class="due-date-text-table">Already DD</span>`;
-        }
-    } else {
-        // If DISCON_DT is invalid or missing, display "Already DD"
-        dueDateCellContent = `<span class="due-date-text-table">Already DD</span>`;
-    }
+                if (daysUntilForDisplay >= 0) {
+                    dueDateCellContent = `<span class="due-date-text-table">DD due on ${formatDate(ddThreshold.toISOString().slice(0, 10).replace(/-/g, ''))}</span>`;
+                } else {
+                    dueDateCellContent = `<span class="due-date-text-table">Already DD</span>`;
+                }
+            } else {
+                dueDateCellContent = `<span class="due-date-text-table">Already DD</span>`;
+            }
 
-    const row = tableBody.insertRow();
-    row.className = "consumer-table-row";
-    row.onclick = () => showConsumerDetailModal(con);
+            const row = tableBody.insertRow();
+            row.className = "consumer-table-row";
+            row.onclick = () => showConsumerDetailModal(con);
 
-    row.innerHTML = `
-        <td>${con.CON_ID || "N/A"}</td>
-        <td>${con.NAME || "Unknown"}</td>
-        <td>${con.BASE_CLASS || "N/A"}</td>
-        <td>${con.MRU || "N/A"}</td> <!-- Added MRU data cell -->
-        <td>${formatDate(con.DISCON_DT) || "N/A"}</td>
-        <td>${formatOSD(con.OUTSTANDING_CENTS || 0)}</td>
-        <td>${dueDateCellContent}</td>
-    `;
-});
+            row.innerHTML = `
+                <td>${con.CON_ID || "N/A"}</td>
+                <td>${con.NAME || "Unknown"}</td>
+                <td>${con.BASE_CLASS || "N/A"}</td>
+                <td>${con.MRU || "N/A"}</td>
+                <td>${formatDate(con.DISCON_DT) || "N/A"}</td>
+                <td>${formatOSD(con.OUTSTANDING_CENTS || 0)}</td>
+                <td>${dueDateCellContent}</td>
+            `;
+        });
 
-
-
-        // Update pagination controls
         pageInfo.textContent = `Page ${totalPages > 0 ? currentPage : 0} of ${totalPages}`;
         prevPageBtn.disabled = currentPage <= 1;
         nextPageBtn.disabled = currentPage >= totalPages;
     }
-
 
     function showConsumerModal(cccName, consumers) {
       document.getElementById("consumerTitle").textContent = cccName;
       const content = document.getElementById("consumerContent");
       content.innerHTML = "";
 
-      const now = new Date(); // Get current date once
+      const now = new Date();
 
       consumers
-        .slice() // to avoid mutating the original array
+        .slice()
         .sort((a, b) => {
-          // Sort by OUTSTANDING_CENTS for consistency
           const osdA = a.OUTSTANDING_CENTS;
           const osdB = b.OUTSTANDING_CENTS;
           return osdB - osdA;
@@ -1882,12 +1875,10 @@ consumersForPage.forEach(con => {
               const ddThreshold = new Date(disDate);
               ddThreshold.setMonth(ddThreshold.getMonth() + 6);
 
-              // Calculate days until due. If it's today, daysUntil is 0. If it's tomorrow, 1, etc.
               const todayNormalizedForDisplay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
               const diffTimeForDisplay = ddThreshold.getTime() - todayNormalizedForDisplay.getTime();
               const daysUntilForDisplay = Math.round(diffTimeForDisplay / (1000 * 60 * 60 * 24));
 
-              // Only show "DD due on" if the due date is in the future or today
               if (daysUntilForDisplay >= 0) {
                   dueDateText = `<div class="due-date-text">DD due on ${formatDate(ddThreshold.toISOString().slice(0, 10).replace(/-/g, ''))}</div>`;
               } else {
@@ -1902,14 +1893,14 @@ consumersForPage.forEach(con => {
           item.innerHTML = `
             <div class="consumer-header">
               <div class="consumer-id">${con.CON_ID || "N/A"}</div>
-              <div class="consumer-osd">${formatOSD(con.OUTSTANDING_CENTS || 0)}</div> <!-- Display OUTSTANDING_CENTS here -->
+              <div class="consumer-osd">${formatOSD(con.OUTSTANDING_CENTS || 0)}</div>
             </div>
             <div class="consumer-name">${con.NAME || "Unknown"}</div>
             <div class="consumer-details">
               <span>${con.BASE_CLASS || "N/A"}</span>
               <span>${formatDate(con.DISCON_DT) || "N/A"}</span>
             </div>
-            ${dueDateText} <!-- Insert the due date here -->
+            ${dueDateText}
           `;
 
           item.onclick = () => showConsumerDetailModal(con);
@@ -1919,7 +1910,6 @@ consumersForPage.forEach(con => {
 
       document.getElementById("consumerModal").classList.add('is-visible');
     }
-
 
     function showConsumerDetailModal(data) {
       const fields = [
@@ -1944,8 +1934,7 @@ consumersForPage.forEach(con => {
       fields.forEach(key => {
         let value = data[key] || "N/A";
         if (key.includes("DATE") || key.endsWith("_DT")) value = formatDate(value);
-        if (key === "CCC_CODE") value = `${value} (${getCCCName(value)})`; // Display CCC name along with code
-        // Display both TOTAL_OSD and OUTSTANDING as separate fields using their respective _CENTS values
+        if (key === "CCC_CODE") value = `${value} (${getCCCName(value)})`;
         if (key === "TOTAL_OSD") value = formatOSD(data.TOTAL_OSD_CENTS);
         if (key === "OUTSTANDING") value = formatOSD(data.OUTSTANDING_CENTS);
         html += `
@@ -1955,13 +1944,11 @@ consumersForPage.forEach(con => {
           </tr>`;
       });
 
-      // Add "Due within" row
       const now = new Date();
       const disDate = parseDate(data.DISCON_DT);
       if (disDate) {
         const ddThreshold = new Date(disDate);
         ddThreshold.setMonth(ddThreshold.getMonth() + 6);
-        // Only show "DD due on" if the due date is in the future or today
         const todayNormalizedForDetail = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const diffTimeForDetail = ddThreshold.getTime() - todayNormalizedForDetail.getTime();
         const daysUntilForDetail = Math.round(diffTimeForDetail / (1000 * 60 * 60 * 24));
@@ -2004,7 +1991,6 @@ consumersForPage.forEach(con => {
       document.getElementById("consumerDetailModal").classList.remove('is-visible');
     }
 
-    // Custom Alert Modal Functions
     function showCustomAlert(message) {
         document.getElementById('customAlertMessage').textContent = message;
         document.getElementById('customAlertModal').classList.add('is-visible');
@@ -2014,8 +2000,6 @@ consumersForPage.forEach(con => {
         document.getElementById('customAlertModal').classList.remove('is-visible');
     }
 
-
-    // Helper functions to get names from codes
     function getRegionName(code) {
       return cccHierarchy[code] ? cccHierarchy[code].name : "Unknown Region";
     }
@@ -2040,8 +2024,6 @@ consumersForPage.forEach(con => {
       return "Unknown CCC";
     }
 
-
-    // Populate filter dropdowns
     function populateRegionFilter() {
       const regionSelect = document.getElementById("regionFilter");
       regionSelect.innerHTML = '<option value="">All Regions</option>';
@@ -2064,7 +2046,7 @@ consumersForPage.forEach(con => {
           divisionSelect.appendChild(option);
         }
       }
-      populateCCCFilter(""); // Reset CCC filter when division changes
+      populateCCCFilter("");
     }
 
     function populateCCCFilter(divisionCode) {
@@ -2085,14 +2067,11 @@ consumersForPage.forEach(con => {
       }
     }
 
-
-    // Event listeners
     document.addEventListener('DOMContentLoaded', function() {
       const slider = document.getElementById('osdSlider');
       const sliderValue = document.getElementById('sliderValue');
       sliderValue.textContent = `≥ ${formatINR(currentOSDFilter)}`;
       
-      // Get references to checkbox inputs and their labels
       const zeroToggleCheckbox = document.getElementById("zeroToggle");
       const nonZeroToggleCheckbox = document.getElementById("nonZeroToggle");
       const govtToggleCheckbox = document.getElementById("govtToggle");
@@ -2100,7 +2079,7 @@ consumersForPage.forEach(con => {
       const industrialToggleCheckbox = document.getElementById("industrialToggle");
       const schoolToggleCheckbox = document.getElementById("schoolToggle");
       const towerToggleCheckbox = document.getElementById("towerToggle");
-      const theftBillToggleCheckbox = document.getElementById("theftBillToggle"); // Get reference to new checkbox
+      const theftBillToggleCheckbox = document.getElementById("theftBillToggle");
 
       const zeroToggleLabel = zeroToggleCheckbox.parentElement;
       const nonZeroToggleLabel = nonZeroToggleCheckbox.parentElement;
@@ -2109,7 +2088,7 @@ consumersForPage.forEach(con => {
       const industrialToggleLabel = industrialToggleCheckbox.parentElement;
       const schoolToggleLabel = schoolToggleCheckbox.parentElement;
       const towerToggleLabel = towerToggleCheckbox.parentElement;
-      const theftBillToggleLabel = theftBillToggleCheckbox.parentElement; // Get reference to new checkbox label
+      const theftBillToggleLabel = theftBillToggleCheckbox.parentElement;
 
       const regionFilter = document.getElementById("regionFilter");
       const divisionFilter = document.getElementById("divisionFilter");
@@ -2117,16 +2096,23 @@ consumersForPage.forEach(con => {
       const prevPageBtn = document.getElementById('prevPageBtn');
       const nextPageBtn = document.getElementById('nextPageBtn');
 
-      // Helper to attach change listeners for checkboxes
+      // Collapsible filter elements
+      const toggleFiltersBtn = document.getElementById('toggleFiltersBtn');
+      const collapsibleFilterContent = document.getElementById('collapsibleFilterContent');
+
+      // Add event listener for the filter toggle button
+      toggleFiltersBtn.addEventListener('click', function() {
+          this.classList.toggle('collapsed');
+          collapsibleFilterContent.classList.toggle('collapsed');
+      });
+
       function setupCheckboxListener(checkbox, label) {
         checkbox.addEventListener("change", function () {
-          // Toggle the 'active' class on the label based on the checkbox's checked state
           label.classList.toggle("active", this.checked);
-          applyAllFilters(); // Re-apply all filters after a checkbox change
+          applyAllFilters();
         });
       }
 
-      // Attach listeners to all checkboxes
       setupCheckboxListener(zeroToggleCheckbox, zeroToggleLabel);
       setupCheckboxListener(nonZeroToggleCheckbox, nonZeroToggleLabel);
       setupCheckboxListener(govtToggleCheckbox, govtToggleLabel);
@@ -2134,22 +2120,19 @@ consumersForPage.forEach(con => {
       setupCheckboxListener(industrialToggleCheckbox, industrialToggleLabel);
       setupCheckboxListener(schoolToggleCheckbox, schoolToggleLabel);
       setupCheckboxListener(towerToggleCheckbox, towerToggleLabel);
-      setupCheckboxListener(theftBillToggleCheckbox, theftBillToggleLabel); // Attach listener for new checkbox
+      setupCheckboxListener(theftBillToggleCheckbox, theftBillToggleLabel);
 
-
-      // Slider event listener: only updates slider and applies filters
       slider.addEventListener('input', function() {
         currentOSDFilter = parseInt(this.value);
         sliderValue.textContent = `≥ ₹${currentOSDFilter}`;
         updateSliderStyle(currentOSDFilter, maxOSD);
-        applyAllFilters(); // Re-apply all filters after slider moves
+        applyAllFilters();
       });
-
 
       regionFilter.addEventListener("change", function() {
         currentRegionFilter = this.value;
-        currentDivisionFilter = ""; // Reset division
-        currentCCCFilter = ""; // Reset CCC
+        currentDivisionFilter = "";
+        currentCCCFilter = "";
         divisionFilter.value = "";
         cccFilter.value = "";
         populateDivisionFilter(currentRegionFilter);
@@ -2158,7 +2141,7 @@ consumersForPage.forEach(con => {
 
       divisionFilter.addEventListener("change", function() {
         currentDivisionFilter = this.value;
-        currentCCCFilter = ""; // Reset CCC
+        currentCCCFilter = "";
         cccFilter.value = "";
         populateCCCFilter(currentDivisionFilter);
         applyAllFilters();
@@ -2184,7 +2167,6 @@ consumersForPage.forEach(con => {
           }
       });
 
-      // Load and process data
       fetch("https://docs.google.com/spreadsheets/d/e/2PACX-1vQrwjWHH470tEapVprR2Cx1ZpRSxdFWNlI3pOjQ1P1ZzcbuFhd9Sh2MHZcYVu5aq_IzC5t0Rb7gNPTs/pub?gid=1835109650&single=true&output=csv")
         .then(res => res.text())
         .then(text => {
@@ -2193,10 +2175,8 @@ consumersForPage.forEach(con => {
             skipEmptyLines: true
           });
 
-          // Parse OSD and Outstanding into cents for accurate calculations
           allData = result.data.map(row => {
               const osdStr = row.TOTAL_OSD || row['TOTAL_OSD'] || '';
-              // Convert to cents and round to avoid floating point issues
               row.TOTAL_OSD_CENTS = Math.round(parseFloat(osdStr.replace(/[^\d.-]/g, '')) * 100) || 0;
 
               const outstandingStr = row.OUTSTANDING || row['OUTSTANDING'] || '';
@@ -2204,53 +2184,34 @@ consumersForPage.forEach(con => {
               return row;
           });
 
-          const now = new Date();
-
-
-          // Calculate max OSD for slider - using OUTSTANDING (not cents)
           const osdValues = allData.map(item => {
-            const osdNum = item.OUTSTANDING_CENTS / 100; // Convert back to whole for max calculation
+            const osdNum = item.OUTSTANDING_CENTS / 100;
             return osdNum;
           }).filter(val => val > 0);
 
-          console.log('OSD Values sample:', osdValues.slice(0, 10)); // Debug log
-
           if (osdValues.length > 0) {
             maxOSD = Math.max(...osdValues);
-            maxOSD = Math.ceil(maxOSD / 500) * 500; // Round up to nearest 500
+            maxOSD = Math.ceil(maxOSD / 500) * 500;
           } else {
-            maxOSD = 10000; // Default fallback
+            maxOSD = 10000;
           }
 
-          console.log('Max OSD calculated:', maxOSD); // Debug log
-
-          // Set up slider
           const slider = document.getElementById('osdSlider');
           slider.max = maxOSD;
-          slider.setAttribute('max', maxOSD); // Ensure it's set
+          slider.setAttribute('max', maxOSD);
 
-          // Populate buckets
-          // The bucket filtering logic is now handled within applyAllFilters to ensure all filters apply
-          // to the bucket counts dynamically. So, we just need to ensure allData is available.
-
-          // Initialize filter dropdowns
           populateRegionFilter();
           populateDivisionFilter("");
           populateCCCFilter("");
 
-          // Initial filter application
           applyAllFilters();
-
-
-          console.log('Data processing complete'); // Debug log
         })
         .catch(err => {
           console.error('Error loading data:', err);
-          showCustomAlert("Error loading data. Please try again later."); // Using custom alert
+          showCustomAlert("Error loading data. Please try again later.");
         });
     });
 
-    // Handle back button for modals
     window.addEventListener('popstate', function(event) {
       if (document.getElementById("consumerModal").classList.contains("is-visible")) {
         closeConsumerModal();
@@ -2261,7 +2222,6 @@ consumersForPage.forEach(con => {
       }
     });
 
-    // Modified download function
     function downloadFilteredConsumers() {
         if (filteredConsumersData.length === 0) {
             showCustomAlert("No data to export based on current filters.");
@@ -2271,7 +2231,6 @@ consumersForPage.forEach(con => {
         const now = new Date();
         const todayNormalized = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-        // Prepare data for export, including the "Due Date" calculation
         const dataToExport = filteredConsumersData.map(con => {
             let dueDateText = '';
             const disDate = parseDate(con.DISCON_DT);
@@ -2282,13 +2241,11 @@ consumersForPage.forEach(con => {
                 const diffTimeForDisplay = ddThreshold.getTime() - todayNormalized.getTime();
                 const daysUntilForDisplay = Math.round(diffTimeForDisplay / (1000 * 60 * 60 * 24));
 
-                // Only include "DD due on" if the due date is in the future or today
                 if (daysUntilForDisplay >= 0) {
                     dueDateText = `DD due on ${formatDate(ddThreshold.toISOString().slice(0, 10).replace(/-/g, ''))}`;
                 }
             }
 
-            // If dueDateText is empty (meaning no valid future/today due date was calculated), set it to "Already DD"
             if (!dueDateText) {
                 dueDateText = "Already DD";
             }
@@ -2297,27 +2254,23 @@ consumersForPage.forEach(con => {
                 'Consumer ID': con.CON_ID || "N/A",
                 'Name': con.NAME || "Unknown",
                 'Base Class': con.BASE_CLASS || "N/A",
-                'MRU': con.MRU || "N/A", // Added MRU to export
+                'MRU': con.MRU || "N/A",
                 'Disconn. Date': formatDate(con.DISCON_DT) || "N/A",
                 'Outstanding': formatOSD(con.OUTSTANDING_CENTS || 0),
                 'Due Date': dueDateText 
             };
         }); 
 
-        // No longer filtering `dataToExport` here, as all rows should be included with "Already DD" if no valid due date.
         if (dataToExport.length === 0) {
             showCustomAlert("No data to download after processing."); 
             return;
         }
 
         const wb = XLSX.utils.book_new();
-        const ws = XLSX.utils.json_to_sheet(dataToExport); // Use json_to_sheet for cleaner data
+        const ws = XLSX.utils.json_to_sheet(dataToExport);
         XLSX.utils.book_append_sheet(wb, ws, "Filtered Consumers");
         XLSX.writeFile(wb, "Filtered_Consumers_List.xlsx");
     }
-
   </script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-
 </body>
 </html>
