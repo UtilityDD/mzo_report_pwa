@@ -9,7 +9,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-
   <style>
     :root {
       --primary-color: #3949ab;
@@ -67,6 +66,13 @@
       color: var(--primary-color);
     }
     
+    .filters {
+        display: flex; /* Ensures flexbox behavior */
+        flex-wrap: wrap; /* Allows items to wrap on smaller screens */
+        align-items: center; /* Aligns items vertically in the middle */
+        justify-content: space-between; /* Distributes items evenly with space between them */
+    }
+    
     .filters select {
       margin-right: 0.5rem;
       margin-bottom: 0.5rem;
@@ -74,6 +80,8 @@
       border-radius: 6px;
       border: 1px solid #ddd;
       padding: 0.4rem;
+      flex: 1; /* Allows each select element to grow and shrink, taking equal space */
+      min-width: 150px; /* Ensures a minimum width for readability */
     }
     
     .filters select:focus {
@@ -240,12 +248,6 @@
     }
 
     @media (max-width: 768px) {
-      .region-division-header {
-        font-size: 0.7rem !important;
-      }
-    }
-
-    @media (max-width: 768px) {
       .region-division-header > div {
         white-space: normal !important;
         word-break: break-word;
@@ -285,6 +287,40 @@
   margin-top: 0.5rem;
 }
 
+/* New style for clickable rows */
+.clickable-row {
+  cursor: pointer;
+}
+
+.clickable-row:hover {
+  background-color: #f0f0f0; /* Optional: subtle hover effect */
+}
+
+.clear-filters-icon {
+    margin-left: 10px; /* More space */
+    cursor: pointer;
+    color: var(--primary-color); /* Primary color for prominence */
+    font-size: 1.1rem; /* Slightly larger */
+    padding: 2px; /* Make it easier to click */
+    border-radius: 50%; /* Make it round */
+    background-color: rgba(57, 73, 171, 0.1); /* Subtle background */
+    display: inline-block; /* Ensure it respects margin and padding */
+}
+
+.clear-filters-icon:hover {
+    color: var(--accent-color); /* Darker primary on hover */
+    background-color: rgba(57, 73, 171, 0.2);
+}
+
+.sortable-header {
+    cursor: pointer;
+    white-space: nowrap; /* Prevent wrapping for header text and icon */
+}
+
+.sortable-header i {
+    font-size: 0.8em; /* Adjust icon size relative to text */
+    margin-left: 5px; /* Space between text and icon */
+}
   </style>
 </head>
 <body>
@@ -339,7 +375,7 @@
       <div class="col-md-4">
         <div class="card text-center">
           <div class="card-body py-3">
-            <div class="text-muted small">Total OSD (Lakh)</div>
+            <div class="text-muted small">Total OSD</div>
             <h5 id="cardOSD" class="mb-0 text-danger">0.00</h5>
           </div>
         </div>
@@ -354,50 +390,177 @@
       </div>
     </div>
 
-    <div class="card mb-3">
-<div class="card-header bg-white text-dark d-flex align-items-center">
-  <span><i class="fas fa-chart-line text-primary me-2"></i> OSD & Count Trend Over Time</span>
-</div>
+    <!-- New Tab Structure for Chart and OSD Summary -->
+    <div class="tab-container">
+        <ul class="nav nav-tabs" id="mainDisplayTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="chart-tab" data-bs-toggle="tab" data-bs-target="#chartPanel" type="button" role="tab" aria-controls="chartPanel" aria-selected="true">
+                    <i class="fas fa-chart-line me-2"></i>Chart
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="summary-osd-tab" data-bs-toggle="tab" data-bs-target="#summaryOsdPanel" type="button" role="tab" aria-controls="summaryOsdPanel" aria-selected="false">
+                    <i class="fas fa-table me-2"></i>Summary OSD
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="osd-all-class-tab" data-bs-toggle="tab" data-bs-target="#osdAllClassPanel" type="button" role="tab" aria-controls="osdAllClassPanel" aria-selected="false">
+                    <i class="fas fa-cube me-2"></i>OSD All Class
+                </button>
+            </li>
+        </ul>
+        <div class="tab-content pt-3">
+            <!-- Chart Panel -->
+            <div class="tab-pane fade show active" id="chartPanel" role="tabpanel" aria-labelledby="chart-tab">
+                <div class="card mb-3">
+                    <div class="card-header bg-white text-dark d-flex align-items-center">
+                        <span><i class="fas fa-chart-line text-primary me-2"></i> OSD & Count Trend Over Time</span>
+                    </div>
+                    <div class="card-body">
+                        <div id="trendChartWrapper">
+                            <canvas id="trendChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="table-responsive mt-2">
+                        <table id="trendDataTable" class="table table-sm table-striped table-bordered mb-0">
+                            <thead class="table-light text-center">
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Count</th>
+                                    <th>OSD (Lakh)</th>
+                                    <th>Δ Count (%)</th>
+                                    <th>Δ OSD (%)</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-end small"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
 
-      <div class="card-body">
-        <div id="trendChartWrapper">
-          <canvas id="trendChart"></canvas>
+            <!-- Summary OSD Panel -->
+            <div class="tab-pane fade" id="summaryOsdPanel" role="tabpanel" aria-labelledby="summary-osd-tab">
+                <div class="card mb-3">
+                    <div class="card-header bg-white text-dark d-flex align-items-center">
+                        <span>
+                            <i class="fas fa-table me-2 text-primary"></i> OSD Summary
+                            <i class="fas fa-filter-circle-xmark clear-filters-icon d-none" id="clearAllFiltersIcon" title="Clear All Filters"></i>
+                        </span>
+                        <!-- The chevron-down icon might not be needed here anymore as content is always visible via tabs -->
+                    </div>
+                    <div id="summaryOsdTabsContent"> 
+                        <ul class="nav nav-tabs nav-fill mb-3" id="summarySubTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="region-summary-tab" data-bs-toggle="tab" data-bs-target="#regionSummaryPanel" type="button" role="tab" aria-controls="regionSummaryPanel" aria-selected="true">Region</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="division-summary-tab" data-bs-toggle="tab" data-bs-target="#divisionSummaryPanel" type="button" role="tab" aria-controls="divisionSummaryPanel" aria-selected="false">Division</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="ccc-summary-tab" data-bs-toggle="tab" data-bs-target="#cccSummaryPanel" type="button" role="tab" aria-controls="cccSummaryPanel" aria-selected="false">CCC</button>
+                            </li>
+                        </ul>
+                        <div class="tab-content" id="summarySubTabsContent">
+                            <div class="tab-pane fade show active" id="regionSummaryPanel" role="tabpanel" aria-labelledby="region-summary-tab">
+                                <!-- Region Summary Table will be rendered here -->
+                            </div>
+                            <div class="tab-pane fade" id="divisionSummaryPanel" role="tabpanel" aria-labelledby="division-summary-tab">
+                                <!-- Division Summary Table will be rendered here -->
+                            </div>
+                            <div class="tab-pane fade" id="cccSummaryPanel" role="tabpanel" aria-labelledby="ccc-summary-tab">
+                                <!-- CCC Summary Table will be rendered here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OSD All Class Panel (New Tab) -->
+            <div class="tab-pane fade" id="osdAllClassPanel" role="tabpanel" aria-labelledby="osd-all-class-tab">
+                <div class="card mb-3">
+                    <div class="card-header bg-white text-dark d-flex align-items-center">
+                        <span><i class="fas fa-cubes me-2 text-primary"></i> OSD All Class Summary</span>
+                    </div>
+                    <div class="card-body" id="allClassSummaryTable">
+                        <!-- Content for OSD All Class Table will be rendered here -->
+                    </div>
+                </div>
+            </div>
         </div>
-      </div>
-      <div class="table-responsive mt-2">
-  <table id="trendDataTable" class="table table-sm table-striped table-bordered mb-0">
-    <thead class="table-light text-center">
-      <tr>
-        <th>Date</th>
-        <th>Count</th>
-        <th>OSD (Lakh)</th>
-        <th>Δ Count (%)</th>
-        <th>Δ OSD (%)</th>
-      </tr>
-    </thead>
-    <tbody class="text-end small"></tbody>
-  </table>
-</div>
-
     </div>
+    <!-- End New Tab Structure -->
 
-    <div class="card mb-3">
-      <div class="card-header bg-white text-dark d-flex align-items-center" data-bs-toggle="collapse" data-bs-target="#collapseSummary">
-        <span><i class="fas fa-table me-2 text-primary"></i> OSD Summary</span>
-        <i class="fas fa-chevron-down ms-auto"></i>
-      </div>
-      <div id="collapseSummary" class="collapse">
-        <div class="card-body p-0">
-          <div id="regionTable"></div>
-        </div>
-      </div>
-    </div>
   </div>
+
+    <!-- Modal for Row Options (for Region/Division rows) -->
+    <div class="modal fade" id="rowOptionsModal" tabindex="-1" aria-labelledby="rowOptionsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-sm modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="rowOptionsModalLabel">Actions for <span id="modalItemName"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body d-grid gap-2">
+                    <button type="button" class="btn btn-primary" id="viewTrendBtn">View Trend</button>
+                    <button type="button" class="btn btn-secondary" id="viewDivisionBtn">View Divisions</button>
+                    <button type="button" class="btn btn-secondary" id="viewCccBtn">View CCCs</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Modal for Class Summary (from OSD All Class tab) -->
+    <div class="modal fade" id="classSummaryModal" tabindex="-1" aria-labelledby="classSummaryModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="classSummaryModalLabel">Summary for Class: <span id="modalClassName"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <ul class="nav nav-tabs nav-fill mb-3" id="classSubTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="modal-region-tab" data-bs-toggle="tab" data-bs-target="#modalRegionPanel" type="button" role="tab" aria-controls="modalRegionPanel" aria-selected="true">Region</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="modal-division-tab" data-bs-toggle="tab" data-bs-target="#modalDivisionPanel" type="button" role="tab" aria-controls="modalDivisionPanel" aria-selected="false">Division</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="modal-ccc-tab" data-bs-toggle="tab" data-bs-target="#modalCccPanel" type="button" role="tab" aria-controls="modalCccPanel" aria-selected="false">CCC</button>
+                        </li>
+                    </ul>
+                    <div class="tab-content" id="classSubTabsContent">
+                        <div class="tab-pane fade show active" id="modalRegionPanel" role="tabpanel" aria-labelledby="modal-region-tab">
+                            <!-- Region summary for this class will be rendered here -->
+                        </div>
+                        <div class="tab-pane fade" id="modalDivisionPanel" role="tabpanel" aria-labelledby="modal-division-tab">
+                            <!-- Division summary for this class will be rendered here -->
+                        </div>
+                        <div class="tab-pane fade" id="modalCccPanel" role="tabpanel" aria-labelledby="modal-ccc-tab">
+                            <!-- CCC summary for this class will be rendered here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
     let rawData = [], currentClass = "Total";
+
+    // Global sort states for each table
+    let regionSortState = { key: 'amt', direction: 'desc' }; // Default sort by OSD (amount), descending
+    let divisionSortState = { key: 'amt', direction: 'desc' };
+    let cccSortState = { key: 'amt', direction: 'desc' };
+
+    // Sort states for the modal tables (per class)
+    let modalRegionSortState = { key: 'amt', direction: 'desc' };
+    let modalDivisionSortState = { key: 'amt', direction: 'desc' };
+    let modalCccSortState = { key: 'amt', direction: 'desc' };
+
 
     const filters = {
       region: document.getElementById("regionFilter"),
@@ -406,14 +569,18 @@
       date: document.getElementById("dateFilter")
     };
 
-    // Toggle accordion icon rotation
+    // Toggle accordion icon rotation - Adjusted to only target the main summary collapse, which is now gone.
+    // This part is largely obsolete with the new tab structure for OSD Summary.
     document.querySelectorAll('.card-header').forEach(header => {
-      header.addEventListener('click', () => {
-        const icon = header.querySelector('i.fa-chevron-down');
-        if (header.classList.contains('collapsed')) {
-          icon.style.transform = 'rotate(0deg)';
-        } else {
-          icon.style.transform = 'rotate(-90deg)';
+      header.addEventListener('click', (event) => {
+        // Only toggle for the collapse icon, not the clear filters icon
+        if (event.target.classList.contains('fa-chevron-down')) {
+            const icon = event.target;
+            if (icon.classList.contains('collapsed')) {
+                icon.style.transform = 'rotate(0deg)';
+            } else {
+                icon.style.transform = 'rotate(-90deg)';
+            }
         }
       });
     });
@@ -461,6 +628,16 @@
         filters.date.value = latestDate;
       }
       document.getElementById("latestDate").innerText = filters.date.value || latestDate;
+
+      // Show/hide clear filters icon based on active filters
+      const clearAllFiltersIcon = document.getElementById('clearAllFiltersIcon');
+      if (clearAllFiltersIcon) {
+          if (filters.region.value || filters.division.value || filters.ccc.value || filters.date.value) {
+              clearAllFiltersIcon.classList.remove('d-none');
+          } else {
+              clearAllFiltersIcon.classList.add('d-none');
+          }
+      }
     }
 
     function populateSelect(select, items, allLabel, selectedValue) {
@@ -484,133 +661,17 @@
       });
     }
 
-    function updateSummaryCard() {
-      const data = getFilteredData();
-      const classCount = `${currentClass}-Count`;
-      const classAmt = `${currentClass}-Amount in Lakhs`;
-
-      // Compute overall totals for percentages
-      const totalCount = data.reduce((s,r) => s + (+r[classCount]||0), 0);
-      const totalAmt = data.reduce((s,r) => s + (+r[classAmt]||0), 0);
-
-      // Group by Region → Division → CCC
-      const hierarchy = {};
-      data.forEach(r => {
-        const reg = r["Region Name"],
-              div = r["Division"],
-              ccc = r["CCC name"],
-              cnt = +r[classCount]||0,
-              amt = +r[classAmt]||0;
-        if (!hierarchy[reg]) hierarchy[reg] = { count:0, amt:0, divs:{} };
-        hierarchy[reg].count += cnt;
-        hierarchy[reg].amt += amt;
-        if (!hierarchy[reg].divs[div]) hierarchy[reg].divs[div] = { count:0, amt:0, cccs:{} };
-        hierarchy[reg].divs[div].count += cnt;
-        hierarchy[reg].divs[div].amt += amt;
-        if (!hierarchy[reg].divs[div].cccs[ccc]) hierarchy[reg].divs[div].cccs[ccc] = { count:0, amt:0 };
-        hierarchy[reg].divs[div].cccs[ccc].count += cnt;
-        hierarchy[reg].divs[div].cccs[ccc].amt += amt;
-      });
-
-      // Build accordion HTML
-      let html = `
-      <div class="row px-3 fw-bold text-muted border-bottom pb-1 mb-2 text-center region-division-header">
-        <div class="col-6 text-start">Region / Division</div>
-        <div class="col-3">Count</div>
-        <div class="col-3">OSD</div>
-      </div>
-      <div class="accordion" id="regionAccordion">`;
-
-      Object.entries(hierarchy).sort((a,b)=> b[1].amt - a[1].amt).forEach(([reg, rObj], i) => {
-        const regId = `reg${i}`;
-        const pRegCnt = totalCount ? ((rObj.count/totalCount)*100).toFixed(1) : "0";
-        const pRegAmt = totalAmt ? ((rObj.amt/totalAmt)*100).toFixed(1) : "0";
-
-        html += `
-          <div class="accordion-item">
-            <h2 class="accordion-header" id="heading-${regId}">
-              <button class="accordion-button collapsed region-header" type="button"
-                      data-bs-toggle="collapse" data-bs-target="#collapse-${regId}"
-                      aria-expanded="false" aria-controls="collapse-${regId}">
-                <div class="container-fluid">
-                  <div class="row w-100">
-                    <div class="col-6 fw-medium">${reg}</div>
-                    <div class="col-3 text-end">${rObj.count} <small class="text-muted">(${pRegCnt}%)</small></div>
-                    <div class="col-3 text-end">${rObj.amt.toFixed(2)} <small class="text-muted">(${pRegAmt}%)</small></div>
-                  </div>
-                </div>
-              </button>
-            </h2>
-            <div id="collapse-${regId}" class="accordion-collapse collapse"
-                 aria-labelledby="heading-${regId}" data-bs-parent="#regionAccordion">
-              <div class="accordion-body p-0">
-                <div class="accordion" id="divAccordion-${regId}">`;
-
-        // Division level
-        Object.entries(rObj.divs).sort((a,b)=> b[1].amt - a[1].amt).forEach(([div, dObj], j) => {
-          const divId = `${regId}-div${j}`;
-          const pDivCnt = rObj.count ? ((dObj.count/rObj.count)*100).toFixed(1) : "0";
-          const pDivAmt = rObj.amt ? ((dObj.amt/rObj.amt)*100).toFixed(1) : "0";
-
-          html += `
-            <div class="accordion-item">
-              <h2 class="accordion-header" id="heading-${divId}">
-                <button class="accordion-button collapsed ps-4 division-header" type="button"
-                        data-bs-toggle="collapse" data-bs-target="#collapse-${divId}"
-                        aria-expanded="false" aria-controls="collapse-${divId}">
-                  <div class="container-fluid">
-                    <div class="row w-100">
-                      <div class="col-6 fw-medium">${div}</div>
-                      <div class="col-3 text-end">${dObj.count} <small class="text-muted">(${pDivCnt}%)</small></div>
-                      <div class="col-3 text-end">${dObj.amt.toFixed(2)} <small class="text-muted">(${pDivAmt}%)</small></div>
-                    </div>
-                  </div>
-                </button>
-              </h2>
-              <div id="collapse-${divId}" class="accordion-collapse collapse"
-                   aria-labelledby="heading-${divId}" data-bs-parent="#divAccordion-${regId}">
-                <div class="accordion-body p-2">
-                  <div class="table-responsive">
-                    <table class="table table-sm table-hover mb-0">
-                      <thead>
-                        <tr>
-                          <th>CCC</th>
-                          <th class="text-end">Count</th>
-                          <th class="text-end">OSD</th>
-                        </tr>
-                      </thead>
-                      <tbody>`;
-
-          // CCC level rows
-          Object.entries(dObj.cccs).sort((a,b)=> b[1].amt - a[1].amt).forEach(([cccName, cObj]) => {
-            const pCccCnt = dObj.count ? ((cObj.count/dObj.count)*100).toFixed(1) : "0";
-            const pCccAmt = dObj.amt ? ((cObj.amt/dObj.amt)*100).toFixed(1) : "0";
-            html += `
-                      <tr>
-                        <td>${cccName}</td>
-                        <td class="text-end">${cObj.count} <small class="text-muted">(${pCccCnt}%)</small></td>
-                        <td class="text-end">${cObj.amt.toFixed(2)} <small class="text-muted">(${pCccAmt}%)</small></td>
-                      </tr>`;
-          });
-
-          html += `
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            </div>`;
-        });
-
-        html += `
-                </div>
-              </div>
-            </div>
-          </div>`;
-      });
-
-      html += `</div>`;
-      document.getElementById("regionTable").innerHTML = html;
+    // Helper function to format OSD values to Lakhs or Crores
+    function formatOSD(valueInLakhs) {
+      if (valueInLakhs === 0) {
+        return '0.00 Lakh';
+      }
+      if (valueInLakhs >= 100) { // If value is 100 lakhs or more (1 Crore)
+        return (valueInLakhs / 100).toFixed(2) + ' Cr'; // Display in Crores
+      } else if (valueInLakhs < 0.01 && valueInLakhs > 0) { // Handle very small non-zero values
+        return '<0.01 Lakh';
+      }
+      return valueInLakhs.toFixed(2) + ' Lakh'; // Display in Lakhs
     }
 
     function updateSummaryCards() {
@@ -629,13 +690,731 @@
       const avgOSD = totalCount > 0 ? (totalAmt * 100000 / totalCount) : 0;
 
       document.getElementById("cardCount").innerText = totalCount;
-      document.getElementById("cardOSD").innerText = totalAmt.toFixed(2);
-      document.getElementById("cardAvgOSD").innerText = avgOSD.toFixed(2);
+      document.getElementById("cardOSD").innerText = formatOSD(totalAmt); // Apply new formatting
+      document.getElementById("cardAvgOSD").innerText = avgOSD.toFixed(2); // This remains in Rupees
     }
 
+    // Helper function for sorting data arrays
+    function sortData(dataArray, key, direction) {
+        return dataArray.sort((a, b) => {
+            let valA = a[key];
+            let valB = b[key];
+
+            // For numerical sorting, ensure values are numbers
+            if (key === 'count' || key === 'amt') {
+                valA = parseFloat(valA);
+                valB = parseFloat(valB);
+            }
+            // For string sorting (like 'name' if added), use localeCompare
+            // if (typeof valA === 'string' && typeof valB === 'string') {
+            //     return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            // }
+
+            if (direction === 'asc') {
+                return valA - valB;
+            } else { // 'desc'
+                return valB - valA;
+            }
+        });
+    }
+
+    // Function to get sort icon
+    function getSortIcon(currentKey, currentDirection, headerKey) {
+        if (currentKey === headerKey) {
+            return currentDirection === 'asc' ? ' <i class="fas fa-sort-up"></i>' : ' <i class="fas fa-sort-down"></i>';
+        }
+        return ' <i class="fas fa-sort"></i>'; // Default unsorted icon
+    }
+
+
+    // New functions to render separate summary tables
+    function renderRegionTable() {
+        const data = getFilteredData();
+        const classCount = `${currentClass}-Count`;
+        const classAmt = `${currentClass}-Amount in Lakhs`;
+
+        const regionSummary = {};
+        let totalOverallCount = 0;
+        let totalOverallAmt = 0;
+
+        data.forEach(r => {
+            const reg = r["Region Name"];
+            const cnt = +r[classCount] || 0;
+            const amt = +r[classAmt] || 0;
+
+            if (!regionSummary[reg]) regionSummary[reg] = { name: reg, count: 0, amt: 0 };
+            regionSummary[reg].count += cnt;
+            regionSummary[reg].amt += amt;
+            totalOverallCount += cnt;
+            totalOverallAmt += amt;
+        });
+
+        // Convert object to array for sorting and apply current sort state
+        let regionArray = Object.values(regionSummary);
+        regionArray = sortData(regionArray, regionSortState.key, regionSortState.direction);
+
+        let html = `
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light text-center">
+                        <tr>
+                            <th class="text-start">Region</th>
+                            <th class="sortable-header" data-sort-key="count">Count${getSortIcon(regionSortState.key, regionSortState.direction, 'count')}</th>
+                            <th class="sortable-header" data-sort-key="amt">OSD${getSortIcon(regionSortState.key, regionSortState.direction, 'amt')}</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+        regionArray.forEach((rObj) => {
+            const pRegCnt = totalOverallCount ? ((rObj.count / totalOverallCount) * 100).toFixed(1) : "0";
+            const pRegAmt = totalOverallAmt ? ((rObj.amt / totalOverallAmt) * 100).toFixed(1) : "0";
+            html += `
+                <tr class="clickable-row" data-item-type="region" data-region-name="${rObj.name}">
+                    <td class="text-start">${rObj.name}</td>
+                    <td class="text-end">${rObj.count} <small class="text-muted">(${pRegCnt}%)</small></td>
+                    <td class="text-end">${formatOSD(rObj.amt)} <small class="text-muted">(${pRegAmt}%)</small></td>
+                </tr>`;
+        });
+        html += `</tbody></table></div>`;
+        document.getElementById("regionSummaryPanel").innerHTML = html;
+
+        // Add click event listeners for sorting headers
+        document.querySelectorAll('#regionSummaryPanel .sortable-header').forEach(header => {
+            header.addEventListener('click', function() {
+                const key = this.dataset.sortKey;
+                if (regionSortState.key === key) {
+                    regionSortState.direction = regionSortState.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    regionSortState.key = key;
+                    regionSortState.direction = 'desc'; // Default to desc when new key is selected
+                }
+                renderRegionTable(); // Re-render table with new sort
+            });
+        });
+
+        // Add click event listeners for clickable rows
+        document.querySelectorAll('#regionSummaryPanel .clickable-row').forEach(row => {
+            row.addEventListener('click', function() {
+                const regionName = this.dataset.regionName;
+                showRowOptionsModal('region', { name: regionName });
+            });
+        });
+    }
+
+    function renderDivisionTable() {
+        const data = getFilteredData();
+        const classCount = `${currentClass}-Count`;
+        const classAmt = `${currentClass}-Amount in Lakhs`;
+
+        const divisionSummary = {};
+        let totalOverallCount = 0;
+        let totalOverallAmt = 0;
+
+        data.forEach(r => {
+            const div = r["Division"];
+            const cnt = +r[classCount] || 0;
+            const amt = +r[classAmt] || 0;
+
+            if (!divisionSummary[div]) divisionSummary[div] = { name: div, count: 0, amt: 0 };
+            divisionSummary[div].count += cnt;
+            divisionSummary[div].amt += amt;
+            totalOverallCount += cnt;
+            totalOverallAmt += amt;
+        });
+
+        let divisionArray = Object.values(divisionSummary);
+        divisionArray = sortData(divisionArray, divisionSortState.key, divisionSortState.direction);
+
+
+        let html = `
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light text-center">
+                        <tr>
+                            <th class="text-start">Division</th>
+                            <th class="sortable-header" data-sort-key="count">Count${getSortIcon(divisionSortState.key, divisionSortState.direction, 'count')}</th>
+                            <th class="sortable-header" data-sort-key="amt">OSD${getSortIcon(divisionSortState.key, divisionSortState.direction, 'amt')}</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+        divisionArray.forEach((dObj) => {
+            const pDivCnt = totalOverallCount ? ((dObj.count / totalOverallCount) * 100).toFixed(1) : "0";
+            const pDivAmt = totalOverallAmt ? ((dObj.amt / totalOverallAmt) * 100).toFixed(1) : "0";
+            html += `
+                <tr class="clickable-row" data-item-type="division" data-division-name="${dObj.name}" data-region-name="${filters.region.value}">
+                    <td class="text-start">${dObj.name}</td>
+                    <td class="text-end">${dObj.count} <small class="text-muted">(${pDivCnt}%)</small></td>
+                    <td class="text-end">${formatOSD(dObj.amt)} <small class="text-muted">(${pDivAmt}%)</small></td>
+                </tr>`;
+        });
+        html += `</tbody></table></div>`;
+        document.getElementById("divisionSummaryPanel").innerHTML = html;
+
+        // Add click event listeners for sorting
+        document.querySelectorAll('#divisionSummaryPanel .sortable-header').forEach(header => {
+            header.addEventListener('click', function() {
+                const key = this.dataset.sortKey;
+                if (divisionSortState.key === key) {
+                    divisionSortState.direction = divisionSortState.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    divisionSortState.key = key;
+                    divisionSortState.direction = 'desc';
+                }
+                renderDivisionTable();
+            });
+        });
+
+        // Add click event listeners for clickable rows
+        document.querySelectorAll('#divisionSummaryPanel .clickable-row').forEach(row => {
+            row.addEventListener('click', function() {
+                const divisionName = this.dataset.divisionName;
+                const regionName = this.dataset.regionName; // Get the current region filter if any
+                showRowOptionsModal('division', { name: divisionName, region: regionName });
+            });
+        });
+    }
+
+    function renderCccTable() {
+        const data = getFilteredData();
+        const classCount = `${currentClass}-Count`;
+        const classAmt = `${currentClass}-Amount in Lakhs`;
+
+        const cccSummary = {};
+        let totalOverallCount = 0;
+        let totalOverallAmt = 0;
+
+        data.forEach(r => {
+            const ccc = r["CCC name"];
+            const cnt = +r[classCount] || 0;
+            const amt = +r[classAmt] || 0;
+
+            if (!cccSummary[ccc]) cccSummary[ccc] = { name: ccc, count: 0, amt: 0 };
+            cccSummary[ccc].count += cnt;
+            cccSummary[ccc].amt += amt;
+            totalOverallCount += cnt;
+            totalOverallAmt += amt;
+        });
+
+        let cccArray = Object.values(cccSummary);
+        cccArray = sortData(cccArray, cccSortState.key, cccSortState.direction);
+
+        let html = `
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light text-center">
+                        <tr>
+                            <th class="text-start">CCC</th>
+                            <th class="sortable-header" data-sort-key="count">Count${getSortIcon(cccSortState.key, cccSortState.direction, 'count')}</th>
+                            <th class="sortable-header" data-sort-key="amt">OSD${getSortIcon(cccSortState.key, cccSortState.direction, 'amt')}</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+        cccArray.forEach((cObj) => {
+            const pCccCnt = totalOverallCount ? ((cObj.count / totalOverallCount) * 100).toFixed(1) : "0";
+            const pCccAmt = totalOverallAmt ? ((cObj.amt / totalOverallAmt) * 100).toFixed(1) : "0";
+            html += `
+                <tr class="clickable-row" data-ccc="${cObj.name}">
+                    <td class="text-start">${cObj.name}</td>
+                    <td class="text-end">${cObj.count} <small class="text-muted">(${pCccCnt}%)</small></td>
+                    <td class="text-end">${formatOSD(cObj.amt)} <small class="text-muted">(${pCccAmt}%)</small></td>
+                </tr>`;
+        });
+        html += `</tbody></table></div>`;
+        document.getElementById("cccSummaryPanel").innerHTML = html;
+
+        // Add click event listeners for sorting
+        document.querySelectorAll('#cccSummaryPanel .sortable-header').forEach(header => {
+            header.addEventListener('click', function() {
+                const key = this.dataset.sortKey;
+                if (cccSortState.key === key) {
+                    cccSortState.direction = cccSortState.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    cccSortState.key = key;
+                    cccSortState.direction = 'desc';
+                }
+                renderCccTable();
+            });
+        });
+
+        // Add click event listeners for clickable rows (existing functionality)
+        document.querySelectorAll('#cccSummaryPanel .clickable-row').forEach(row => {
+            row.addEventListener('click', function() {
+                const cccName = this.dataset.ccc;
+                filters.ccc.value = cccName;
+                populateFilters(rawData);
+                const chartTabButton = document.getElementById('chart-tab');
+                const chartTab = new bootstrap.Tab(chartTabButton);
+                chartTab.show();
+                render();
+            });
+        });
+    }
+
+    // New function to render OSD All Class Table
+    function renderOsdAllClassTable() {
+        const classes = ["DOM", "COM", "IND", "Others", "Total"];
+        const summaryData = {};
+
+        // Filter rawData by ALL main filters for this table (Region, Division, CCC, Date)
+        const dataForThisTable = getFilteredData();
+
+        // Calculate overall totals for percentage calculation from the filtered data
+        let overallTotalCount = 0;
+        let overallTotalOsd = 0;
+
+        dataForThisTable.forEach(row => {
+            classes.forEach(cls => {
+                // Ensure we sum up only once for 'Total' if it's already a distinct column.
+                // Assuming 'Total-Count' and 'Total-Amount in Lakhs' represent the sum of all classes in the original data structure.
+                // If not, we explicitly sum other classes to get total.
+                if (cls !== "Total") {
+                    overallTotalCount += (+row[`${cls}-Count`] || 0);
+                    overallTotalOsd += (+row[`${cls}-Amount in Lakhs`] || 0);
+                }
+            });
+        });
+
+        classes.forEach(cls => {
+            let currentClassCount = 0;
+            let currentClassOsd = 0;
+
+            if (cls === "Total") {
+                currentClassCount = overallTotalCount;
+                currentClassOsd = overallTotalOsd;
+            } else {
+                dataForThisTable.forEach(row => {
+                    currentClassCount += (+row[`${cls}-Count`] || 0);
+                    currentClassOsd += (+row[`${cls}-Amount in Lakhs`] || 0);
+                });
+            }
+            summaryData[cls] = { count: currentClassCount, osd: currentClassOsd };
+        });
+
+
+        let html = `
+            <div class="table-responsive">
+                <table class="table table-sm table-striped table-bordered mb-0">
+                    <thead class="table-light text-center">
+                        <tr>
+                            <th>Class</th>
+                            <th>Count</th>
+                            <th>OSD</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+        classes.forEach(cls => {
+            const count = summaryData[cls].count;
+            const osd = summaryData[cls].osd;
+
+            // Calculate percentage based on overall totals
+            const pCount = overallTotalCount > 0 ? ((count / overallTotalCount) * 100).toFixed(1) : "0";
+            const pOsd = overallTotalOsd > 0 ? ((osd / overallTotalOsd) * 100).toFixed(1) : "0";
+
+            html += `
+                <tr class="clickable-class-row" data-class-name="${cls}">
+                    <td class="text-start">${cls}</td>
+                    <td class="text-end">${count} <small class="text-muted">(${pCount}%)</small></td>
+                    <td class="text-end">${formatOSD(osd)} <small class="text-muted">(${pOsd}%)</small></td>
+                </tr>`;
+        });
+
+        html += `</tbody></table></div>`;
+        document.getElementById("allClassSummaryTable").innerHTML = html;
+
+        // Add click event listeners for the new clickable rows
+        document.querySelectorAll('#allClassSummaryTable .clickable-class-row').forEach(row => {
+            row.addEventListener('click', function() {
+                const className = this.dataset.className;
+                showClassSummaryModal(className);
+            });
+        });
+    }
+
+
+    // Function to show the row options modal (for Region/Division rows)
+    const rowOptionsModalElement = document.getElementById('rowOptionsModal');
+    const rowOptionsModal = new bootstrap.Modal(rowOptionsModalElement);
+
+    function showRowOptionsModal(itemType, itemData) {
+        document.getElementById('modalItemName').textContent = itemData.name;
+
+        const viewTrendBtn = document.getElementById('viewTrendBtn');
+        const viewDivisionBtn = document.getElementById('viewDivisionBtn');
+        const viewCccBtn = document.getElementById('viewCccBtn');
+
+        // Reset all button listeners and visibility
+        viewTrendBtn.onclick = null;
+        viewDivisionBtn.onclick = null;
+        viewCccBtn.onclick = null;
+        viewDivisionBtn.classList.add('d-none');
+        viewCccBtn.classList.add('d-none');
+
+        // Set up "View Trend" button
+        viewTrendBtn.onclick = () => {
+            filters.region.value = itemType === 'region' ? itemData.name : itemData.region || '';
+            filters.division.value = itemType === 'division' ? itemData.name : '';
+            filters.ccc.value = ''; // Always clear CCC when viewing trend
+            populateFilters(rawData);
+            const chartTabButton = document.getElementById('chart-tab');
+            const chartTab = new bootstrap.Tab(chartTabButton);
+            chartTab.show();
+            render();
+            rowOptionsModal.hide();
+        };
+
+        if (itemType === 'region') {
+            viewDivisionBtn.classList.remove('d-none');
+            viewCccBtn.classList.remove('d-none'); // For region, can view both divisions and CCCs
+
+            // Set up "View Divisions" button for Region
+            viewDivisionBtn.onclick = () => {
+                filters.region.value = itemData.name;
+                filters.division.value = ''; // Clear division and ccc filters
+                filters.ccc.value = '';
+                populateFilters(rawData);
+                const summaryOsdTabButton = document.getElementById('summary-osd-tab');
+                const summaryOsdTab = new bootstrap.Tab(summaryOsdTabButton);
+                summaryOsdTab.show();
+                const divisionSummaryTabButton = document.getElementById('division-summary-tab');
+                const divisionSummaryTab = new bootstrap.Tab(divisionSummaryTabButton);
+                divisionSummaryTab.show();
+                render();
+                rowOptionsModal.hide();
+            };
+
+            // Set up "View CCCs" button for Region
+            viewCccBtn.onclick = () => {
+                filters.region.value = itemData.name;
+                filters.division.value = ''; // Clear division filter
+                filters.ccc.value = '';
+                populateFilters(rawData);
+                const summaryOsdTabButton = document.getElementById('summary-osd-tab');
+                const summaryOsdTab = new bootstrap.Tab(summaryOsdTabButton);
+                summaryOsdTab.show();
+                const cccSummaryTabButton = document.getElementById('ccc-summary-tab');
+                const cccSummaryTab = new bootstrap.Tab(cccSummaryTabButton);
+                cccSummaryTab.show();
+                render();
+                rowOptionsModal.hide();
+            };
+
+        } else if (itemType === 'division') {
+            viewDivisionBtn.classList.add('d-none'); // Hide "View Divisions" for Division row
+            viewCccBtn.classList.remove('d-none');
+
+            // Set up "View CCCs" button for Division
+            viewCccBtn.onclick = () => {
+                filters.region.value = itemData.region; // Keep parent region filter
+                filters.division.value = itemData.name;
+                filters.ccc.value = ''; // Clear CCC filter
+                populateFilters(rawData);
+                const summaryOsdTabButton = document.getElementById('summary-osd-tab');
+                const summaryOsdTab = new bootstrap.Tab(summaryOsdTabButton);
+                summaryOsdTab.show();
+                const cccSummaryTabButton = document.getElementById('ccc-summary-tab');
+                const cccSummaryTab = new bootstrap.Tab(cccSummaryTabButton);
+                cccSummaryTab.show();
+                render();
+                rowOptionsModal.hide();
+            };
+        }
+        
+        rowOptionsModal.show();
+    }
+
+    // --- New Modal for Class Summary ---
+    const classSummaryModalElement = document.getElementById('classSummaryModal');
+    const classSummaryModal = new bootstrap.Modal(classSummaryModalElement);
+    let currentModalClassName = ''; // To store the class selected for the modal
+
+    function showClassSummaryModal(className) {
+        currentModalClassName = className;
+        document.getElementById('modalClassName').textContent = className;
+
+        // Reset sub-tabs to default (Region)
+        document.getElementById('modal-region-tab').classList.add('active');
+        document.getElementById('modalRegionPanel').classList.add('show', 'active');
+        document.getElementById('modal-division-tab').classList.remove('active');
+        document.getElementById('modalDivisionPanel').classList.remove('show', 'active');
+        document.getElementById('modal-ccc-tab').classList.remove('active');
+        document.getElementById('modalCccPanel').classList.remove('show', 'active');
+
+        // Render the default tab content
+        renderModalRegionTable(currentModalClassName);
+        classSummaryModal.show();
+    }
+
+    // Event listeners for the modal's sub-tabs
+    document.getElementById('modal-region-tab').addEventListener('shown.bs.tab', () => {
+        renderModalRegionTable(currentModalClassName);
+    });
+    document.getElementById('modal-division-tab').addEventListener('shown.bs.tab', () => {
+        renderModalDivisionTable(currentModalClassName);
+    });
+    document.getElementById('modal-ccc-tab').addEventListener('shown.bs.tab', () => {
+        renderModalCccTable(currentModalClassName);
+    });
+
+
+    function renderModalRegionTable(className) {
+        // Data for modal should respect all main filters EXCEPT the main class tab
+        const data = getFilteredData();
+
+        // Determine which class-specific columns to use for aggregation
+        const effectiveClassCountKey = className === "Total" ? "Total-Count" : `${className}-Count`;
+        const effectiveClassAmtKey = className === "Total" ? "Total-Amount in Lakhs" : `${className}-Amount in Lakhs`;
+
+        const regionSummary = {};
+        let totalModalCount = 0;
+        let totalModalAmt = 0;
+
+        data.forEach(r => { // Iterate over the globally filtered data
+            const reg = r["Region Name"];
+            // Safely access properties, defaulting to 0 if undefined
+            const cnt = +r[effectiveClassCountKey] || 0; 
+            const amt = +r[effectiveClassAmtKey] || 0; 
+
+            if (!regionSummary[reg]) regionSummary[reg] = { name: reg, count: 0, amt: 0 };
+            regionSummary[reg].count += cnt;
+            regionSummary[reg].amt += amt;
+            totalModalCount += cnt;
+            totalModalAmt += amt;
+        });
+
+        let regionArray = Object.values(regionSummary);
+        regionArray = sortData(regionArray, modalRegionSortState.key, modalRegionSortState.direction);
+
+        let html = `
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light text-center">
+                        <tr>
+                            <th class="text-start">Region</th>
+                            <th class="sortable-header" data-sort-key="count" data-modal-table="region">Count${getSortIcon(modalRegionSortState.key, modalRegionSortState.direction, 'count')}</th>
+                            <th class="sortable-header" data-sort-key="amt" data-modal-table="region">OSD${getSortIcon(modalRegionSortState.key, modalRegionSortState.direction, 'amt')}</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+        regionArray.forEach((rObj) => {
+            const pRegCnt = totalModalCount ? ((rObj.count / totalModalCount) * 100).toFixed(1) : "0";
+            const pRegAmt = totalModalAmt ? ((rObj.amt / totalModalAmt) * 100).toFixed(1) : "0";
+            html += `
+                <tr class="clickable-row" data-item-type="region" data-region-name="${rObj.name}">
+                    <td class="text-start">${rObj.name}</td>
+                    <td class="text-end">${rObj.count} <small class="text-muted">(${pRegCnt}%)</small></td>
+                    <td class="text-end">${formatOSD(rObj.amt)} <small class="text-muted">(${pRegAmt}%)</small></td>
+                </tr>`;
+        });
+        html += `</tbody></table></div>`;
+        document.getElementById("modalRegionPanel").innerHTML = html;
+
+        // Add sorting listeners for modal table headers
+        document.querySelectorAll('#modalRegionPanel .sortable-header').forEach(header => {
+            header.onclick = function() { // Use onclick to replace existing listener
+                const key = this.dataset.sortKey;
+                if (modalRegionSortState.key === key) {
+                    modalRegionSortState.direction = modalRegionSortState.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    modalRegionSortState.key = key;
+                    modalRegionSortState.direction = 'desc';
+                }
+                renderModalRegionTable(currentModalClassName);
+            };
+        });
+
+        // Add clickable row functionality for direct filtering in main dashboard
+        document.querySelectorAll('#modalRegionPanel .clickable-row').forEach(row => {
+            row.onclick = function() { // Use onclick to replace existing listener
+                const regionName = this.dataset.regionName;
+                filters.region.value = regionName;
+                filters.division.value = '';
+                filters.ccc.value = '';
+                populateFilters(rawData);
+                const chartTabButton = document.getElementById('chart-tab');
+                const chartTab = new bootstrap.Tab(chartTabButton);
+                chartTab.show();
+                render();
+                classSummaryModal.hide(); // Close modal after selection
+            };
+        });
+    }
+
+    function renderModalDivisionTable(className) {
+        // Data for modal should respect all main filters EXCEPT the main class tab
+        const data = getFilteredData();
+
+        const effectiveClassCountKey = className === "Total" ? "Total-Count" : `${className}-Count`;
+        const effectiveClassAmtKey = className === "Total" ? "Total-Amount in Lakhs" : `${className}-Amount in Lakhs`;
+
+        const divisionSummary = {};
+        let totalModalCount = 0;
+        let totalModalAmt = 0;
+
+        data.forEach(r => {
+            const div = r["Division"];
+            const cnt = +r[effectiveClassCountKey] || 0;
+            const amt = +r[effectiveClassAmtKey] || 0;
+
+            if (!divisionSummary[div]) divisionSummary[div] = { name: div, count: 0, amt: 0 };
+            divisionSummary[div].count += cnt;
+            divisionSummary[div].amt += amt;
+            totalModalCount += cnt;
+            totalModalAmt += amt;
+        });
+
+        let divisionArray = Object.values(divisionSummary);
+        divisionArray = sortData(divisionArray, modalDivisionSortState.key, modalDivisionSortState.direction);
+
+        let html = `
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light text-center">
+                        <tr>
+                            <th class="text-start">Division</th>
+                            <th class="sortable-header" data-sort-key="count" data-modal-table="division">Count${getSortIcon(modalDivisionSortState.key, modalDivisionSortState.direction, 'count')}</th>
+                            <th class="sortable-header" data-sort-key="amt" data-modal-table="division">OSD${getSortIcon(modalDivisionSortState.key, modalDivisionSortState.direction, 'amt')}</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+        divisionArray.forEach((dObj) => {
+            const pDivCnt = totalModalCount ? ((dObj.count / totalModalCount) * 100).toFixed(1) : "0";
+            const pDivAmt = totalModalAmt ? ((dObj.amt / totalModalAmt) * 100).toFixed(1) : "0";
+            html += `
+                <tr class="clickable-row" data-item-type="division" data-division-name="${dObj.name}">
+                    <td class="text-start">${dObj.name}</td>
+                    <td class="text-end">${dObj.count} <small class="text-muted">(${pDivCnt}%)</small></td>
+                    <td class="text-end">${formatOSD(dObj.amt)} <small class="text-muted">(${pDivAmt}%)</small></td>
+                </tr>`;
+        });
+        html += `</tbody></table></div>`;
+        document.getElementById("modalDivisionPanel").innerHTML = html;
+
+        // Add sorting listeners for modal table headers
+        document.querySelectorAll('#modalDivisionPanel .sortable-header').forEach(header => {
+            header.onclick = function() {
+                const key = this.dataset.sortKey;
+                if (modalDivisionSortState.key === key) {
+                    modalDivisionSortState.direction = modalDivisionSortState.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    modalDivisionSortState.key = key;
+                    modalDivisionSortState.direction = 'desc';
+                }
+                renderModalDivisionTable(currentModalClassName);
+            };
+        });
+
+        // Add clickable row functionality for direct filtering in main dashboard
+        document.querySelectorAll('#modalDivisionPanel .clickable-row').forEach(row => {
+            row.onclick = function() {
+                const divisionName = this.dataset.divisionName;
+                filters.division.value = divisionName;
+                filters.region.value = ''; // Clear region filter as a new division is selected
+                filters.ccc.value = '';
+                populateFilters(rawData);
+                const chartTabButton = document.getElementById('chart-tab');
+                const chartTab = new bootstrap.Tab(chartTabButton);
+                chartTab.show();
+                render();
+                classSummaryModal.hide(); // Close modal after selection
+            };
+        });
+    }
+
+    function renderModalCccTable(className) {
+        // Data for modal should respect all main filters EXCEPT the main class tab
+        const data = getFilteredData();
+
+        const effectiveClassCountKey = className === "Total" ? "Total-Count" : `${className}-Count`;
+        const effectiveClassAmtKey = className === "Total" ? "Total-Amount in Lakhs" : `${className}-Amount in Lakhs`;
+
+        const cccSummary = {};
+        let totalModalCount = 0;
+        let totalModalAmt = 0;
+
+        data.forEach(r => {
+            const ccc = r["CCC name"];
+            const cnt = +r[effectiveClassCountKey] || 0;
+            const amt = +r[effectiveClassAmtKey] || 0;
+
+            if (!cccSummary[ccc]) cccSummary[ccc] = { name: ccc, count: 0, amt: 0 };
+            cccSummary[ccc].count += cnt;
+            cccSummary[ccc].amt += amt;
+            totalModalCount += cnt;
+            totalModalAmt += amt;
+        });
+
+        let cccArray = Object.values(cccSummary);
+        cccArray = sortData(cccArray, modalCccSortState.key, modalCccSortState.direction);
+
+        let html = `
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light text-center">
+                        <tr>
+                            <th class="text-start">CCC</th>
+                            <th class="sortable-header" data-sort-key="count" data-modal-table="ccc">Count${getSortIcon(modalCccSortState.key, modalCccSortState.direction, 'count')}</th>
+                            <th class="sortable-header" data-sort-key="amt" data-modal-table="ccc">OSD${getSortIcon(modalCccSortState.key, modalCccSortState.direction, 'amt')}</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+        cccArray.forEach((cObj) => {
+            const pCccCnt = totalModalCount ? ((cObj.count / totalModalCount) * 100).toFixed(1) : "0";
+            const pCccAmt = totalModalAmt ? ((cObj.amt / totalModalAmt) * 100).toFixed(1) : "0";
+            html += `
+                <tr class="clickable-row" data-ccc="${cObj.name}">
+                    <td class="text-start">${cObj.name}</td>
+                    <td class="text-end">${cObj.count} <small class="text-muted">(${pCccCnt}%)</small></td>
+                    <td class="text-end">${formatOSD(cObj.amt)} <small class="text-muted">(${pCccAmt}%)</small></td>
+                </tr>`;
+        });
+        html += `</tbody></table></div>`;
+        document.getElementById("modalCccPanel").innerHTML = html;
+
+        // Add sorting listeners for modal table headers
+        document.querySelectorAll('#modalCccPanel .sortable-header').forEach(header => {
+            header.onclick = function() {
+                const key = this.dataset.sortKey;
+                if (modalCccSortState.key === key) {
+                    modalCccSortState.direction = modalCccSortState.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    modalCccSortState.key = key;
+                    modalCccSortState.direction = 'desc';
+                }
+                renderModalCccTable(currentModalClassName);
+            };
+        });
+
+        // Add clickable row functionality for direct filtering in main dashboard
+        document.querySelectorAll('#modalCccPanel .clickable-row').forEach(row => {
+            row.onclick = function() {
+                const cccName = this.dataset.ccc;
+                filters.ccc.value = cccName;
+                filters.region.value = ''; // Clear region and division filters when selecting a CCC directly
+                filters.division.value = '';
+                populateFilters(rawData);
+                const chartTabButton = document.getElementById('chart-tab');
+                const chartTab = new bootstrap.Tab(chartTabButton);
+                chartTab.show();
+                render();
+                classSummaryModal.hide(); // Close modal after selection
+            };
+        });
+    }
+
+    // Main render function, now calls updateTrendChart and the new summary table render functions
     function render() {
       updateSummaryCards();
-      updateSummaryCard();
+      renderRegionTable(); // Call to render Region table
+      renderDivisionTable(); // Call to render Division table
+      renderCccTable();     // Call to render CCC table
+      renderOsdAllClassTable(); // Call to render the new OSD All Class table
+      updateTrendChart(); // Call to render the chart
     }
 
     document.querySelectorAll("#classTabs .nav-link").forEach(tab => {
@@ -654,41 +1433,61 @@
       });
     });
 
+    // Event listener for the new "Clear Filters" icon
+    document.addEventListener('DOMContentLoaded', () => {
+        const clearAllFiltersIcon = document.getElementById('clearAllFiltersIcon');
+        if (clearAllFiltersIcon) {
+            clearAllFiltersIcon.addEventListener('click', function(event) {
+                event.stopPropagation(); // Prevent any parent collapse/expand from toggling
+                // Reset all filter dropdowns to their default "All" option
+                filters.region.value = "";
+                filters.division.value = "";
+                filters.ccc.value = "";
+                filters.date.value = "";
+
+                // Repopulate filters to update options based on cleared selections
+                populateFilters(rawData); 
+                // Re-render the dashboard to display data with all filters cleared
+                render();
+                // No need to manually expand accordions as it's now a tab panel
+            });
+        }
+    });
+
+
     // Show loading indicator
     document.querySelector('.content-wrapper').insertAdjacentHTML('afterbegin', 
       '<div id="loadingIndicator" class="text-center py-4"><i class="fas fa-spinner fa-spin text-primary fa-2x"></i><p class="mt-2">Loading data...</p></div>');
 
-const jsonUrl = "data/rem.json"; // Adjust path if needed
+    const jsonUrl = "data/rem.json"; // Adjust path if needed
 
-fetch(jsonUrl)
-  .then(res => {
-    if (!res.ok) throw new Error("Failed to fetch JSON");
-    return res.json();
-  })
-  .then(data => {
-    const loadingElement = document.getElementById('loadingIndicator');
-    if (loadingElement) loadingElement.remove();
+    fetch(jsonUrl)
+      .then(res => {
+        if (!res.ok) throw new Error("Failed to fetch JSON");
+        return res.json();
+      })
+      .then(data => {
+        const loadingElement = document.getElementById('loadingIndicator');
+        if (loadingElement) loadingElement.remove();
 
-    rawData = data;
-    populateFilters(rawData);
-    render();
+        rawData = data;
+        populateFilters(rawData);
+        render();
 
-    const overlay = document.getElementById('loadingOverlay');
-    if (overlay) overlay.remove();
-  })
-  .catch(error => {
-    console.error("Error loading JSON:", error);
-    document.getElementById('loadingIndicator').innerHTML = 
-      `<div class="alert alert-danger">Failed to load data.<br>${error.message}</div>`;
-  });
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) overlay.remove();
+      })
+      .catch(error => {
+        console.error("Error loading JSON:", error);
+        document.getElementById('loadingIndicator').innerHTML = 
+          `<div class="alert alert-danger">Failed to load data.<br>${error.message}</div>`;
+      });
 
 
-    // Auto-collapse summary card on mobile
+    // Auto-collapse summary card on mobile - this is now less relevant with new summary structure
     function handleResize() {
       if (window.innerWidth < 768) {
-        const collapseSummary = document.getElementById('collapseSummary');
-        const bsCollapse = bootstrap.Collapse.getInstance(collapseSummary);
-        if (bsCollapse) bsCollapse.hide();
+        // No accordion to collapse here anymore for summaryOsdPanel
       }
     }
 
@@ -696,219 +1495,214 @@ fetch(jsonUrl)
     window.addEventListener('load', handleResize);
     
 
+    // Chart.js specific code
+    let trendChart;
+    function updateTrendChart() {
+      const classCount = `${currentClass}-Count`;
+      const classAmt = `${currentClass}-Amount in Lakhs`;
 
+      const filtered = rawData.filter(row => {
+        const matchRegion = !filters.region.value || row["Region Name"] === filters.region.value;
+        const matchDivision = !filters.division.value || row["Division"] === filters.division.value;
+        const matchCCC = !filters.ccc.value || row["CCC name"] === filters.ccc.value;
+        return matchRegion && matchDivision && matchCCC;
+      });
 
+      const grouped = {};
+      filtered.forEach(row => {
+        const date = row["Notice Due Date"];
+        if (!grouped[date]) grouped[date] = { count: 0, osd: 0 };
+        grouped[date].count += (+row[classCount] || 0);
+        grouped[date].osd += (+row[classAmt] || 0);
+      });
 
+      const sortedDates = Object.keys(grouped).filter(Boolean).sort((a, b) => {
+        const [da, ma, ya] = a.split('/').map(Number);
+        const [db, mb, yb] = b.split('/').map(Number);
+        return new Date(ya, ma - 1, da) - new Date(yb, mb - 1, db);
+      });
 
+      const labels = [], counts = [], osds = [], countDiff = [], osdDiff = [];
 
-   let trendChart;
-function updateTrendChart() {
-  const classCount = `${currentClass}-Count`;
-  const classAmt = `${currentClass}-Amount in Lakhs`;
-
-  const filtered = rawData.filter(row => {
-    const matchRegion = !filters.region.value || row["Region Name"] === filters.region.value;
-    const matchDivision = !filters.division.value || row["Division"] === filters.division.value;
-    const matchCCC = !filters.ccc.value || row["CCC name"] === filters.ccc.value;
-    return matchRegion && matchDivision && matchCCC;
-  });
-
-  const grouped = {};
-  filtered.forEach(row => {
-    const date = row["Notice Due Date"];
-    if (!grouped[date]) grouped[date] = { count: 0, osd: 0 };
-    grouped[date].count += (+row[classCount] || 0);
-    grouped[date].osd += (+row[classAmt] || 0);
-  });
-
-  const sortedDates = Object.keys(grouped).filter(Boolean).sort((a, b) => {
-    const [da, ma, ya] = a.split('/').map(Number);
-    const [db, mb, yb] = b.split('/').map(Number);
-    return new Date(ya, ma - 1, da) - new Date(yb, mb - 1, db);
-  });
-
-  const labels = [], counts = [], osds = [], countDiff = [], osdDiff = [];
-
-  sortedDates.forEach((d, i) => {
-    labels.push(d);
-    const count = grouped[d].count;
-    const osd = grouped[d].osd;
-    counts.push(count);
-    osds.push(osd.toFixed(2));
-    if (i > 0) {
-      const prev = grouped[sortedDates[i - 1]];
-      countDiff.push(prev.count ? (((count - prev.count) / prev.count) * 100).toFixed(1) : '0');
-      osdDiff.push(prev.osd ? (((osd - prev.osd) / prev.osd) * 100).toFixed(1) : '0');
-    } else {
-      countDiff.push('0'); osdDiff.push('0');
-    }
-  });
-
-  const ctx = document.getElementById("trendChart").getContext("2d");
-  if (trendChart) trendChart.destroy();
-trendChart = new Chart(ctx, {
-  type: 'line',
-  data: {
-    labels,
-    datasets: [
-      {
-        label: 'Count',
-        data: counts,
-        borderColor: '#3949ab',
-        backgroundColor: 'rgba(57,73,171,0.1)',
-        yAxisID: 'y',
-        tension: 0.3,
-        pointRadius: window.innerWidth < 500 ? 1 : 2,
-        borderWidth: window.innerWidth < 500 ? 1 : 2
-      },
-      {
-        label: 'OSD (Lakh)',
-        data: osds,
-        borderColor: '#e53935',
-        backgroundColor: 'rgba(229,57,53,0.1)',
-        yAxisID: 'y1',
-        tension: 0.3,
-        pointRadius: window.innerWidth < 500 ? 1 : 2,
-        borderWidth: window.innerWidth < 500 ? 1 : 2
-      }
-    ]
-  },
-  options: {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: { mode: 'index', intersect: false },
-    layout: { padding: { top: 10, bottom: 10, left: 5, right: 5 } },
-    plugins: {
-      tooltip: {
-        boxPadding: 4,
-        bodyFont: {
-          size: window.innerWidth < 500 ? 10 : 12,
-          family: 'Poppins'
-        },
-        titleFont: {
-          size: window.innerWidth < 500 ? 11 : 13,
-          family: 'Poppins',
-          weight: '600'
-        },
-        callbacks: {
-          afterBody: function(context) {
-            const i = context[0].dataIndex;
-            return [`Δ Count: ${countDiff[i]}%`, `Δ OSD: ${osdDiff[i]}%`];
-          }
+      sortedDates.forEach((d, i) => {
+        labels.push(d);
+        const count = grouped[d].count;
+        const osd = grouped[d].osd;
+        counts.push(count);
+        osds.push(osd); // Keep as number for chart, format in callbacks
+        if (i > 0) {
+          const prev = grouped[sortedDates[i - 1]];
+          countDiff.push(prev.count ? (((count - prev.count) / prev.count) * 100).toFixed(1) : '0');
+          osdDiff.push(prev.osd ? (((osd - prev.osd) / prev.osd) * 100).toFixed(1) : '0');
+        } else {
+          countDiff.push('0'); osdDiff.push('0');
         }
-      },
-      legend: {
-        labels: {
-          font: {
-            size: window.innerWidth < 500 ? 9 : 12
-          }
-        }
-      },
+      });
 
-    },
-    scales: {
-      x: {
-        ticks: {
-          maxRotation: 0,
-          minRotation: 0,
-          font: { size: window.innerWidth < 500 ? 8 : 12 },
-          callback: function(value) {
-            const label = this.getLabelForValue(value);
-            if (window.innerWidth < 500) {
-              const [d, m] = label.split('/');
-              return `${d}/${m}`; // Compact date
+      const ctx = document.getElementById("trendChart").getContext("2d");
+      if (trendChart) trendChart.destroy();
+    trendChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Count',
+            data: counts,
+            borderColor: '#3949ab',
+            backgroundColor: 'rgba(57,73,171,0.1)',
+            yAxisID: 'y',
+            tension: 0.3,
+            pointRadius: window.innerWidth < 500 ? 1 : 2,
+            borderWidth: window.innerWidth < 500 ? 1 : 2
+          },
+          {
+            label: 'OSD',
+            data: osds,
+            borderColor: '#e53935',
+            backgroundColor: 'rgba(229,57,53,0.1)',
+            yAxisID: 'y1',
+            tension: 0.3,
+            pointRadius: window.innerWidth < 500 ? 1 : 2,
+            borderWidth: window.innerWidth < 500 ? 1 : 2
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        layout: { padding: { top: 10, bottom: 10, left: 5, right: 5 } },
+        plugins: {
+          tooltip: {
+            boxPadding: 4,
+            bodyFont: {
+              size: window.innerWidth < 500 ? 10 : 12,
+              family: 'Poppins'
+            },
+            titleFont: {
+              size: window.innerWidth < 500 ? 11 : 13,
+              family: 'Poppins',
+              weight: '600'
+            },
+            callbacks: {
+              label: function(context) { // Format OSD value in tooltip
+                let label = context.dataset.label || '';
+                if (label) {
+                    label += ': ';
+                }
+                if (context.dataset.yAxisID === 'y1') { // OSD (Lakh) dataset
+                    label += formatOSD(context.parsed.y);
+                } else { // Count dataset or others
+                    label += context.parsed.y;
+                }
+                return label;
+              },
+              afterBody: function(context) {
+                const i = context[0].dataIndex;
+                return [`Δ Count: ${countDiff[i]}%`, `Δ OSD: ${osdDiff[i]}%`];
+              }
             }
-            return label;
+          },
+          legend: {
+            labels: {
+              font: {
+                size: window.innerWidth < 500 ? 9 : 12
+              }
+            }
+          },
+
+        },
+        scales: {
+          x: {
+            ticks: {
+              maxRotation: 0,
+              minRotation: 0,
+              font: { size: window.innerWidth < 500 ? 8 : 12 },
+              callback: function(value) {
+                const label = this.getLabelForValue(value);
+                if (window.innerWidth < 500) {
+                  const [d, m] = label.split('/');
+                  return `${d}/${m}`; // Compact date
+                }
+                return label;
+              }
+            }
+          },
+          y: {
+            position: 'left',
+            title: { display: true, text: 'Count' },
+            ticks: {
+              font: { size: window.innerWidth < 500 ? 8 : 12 },
+              callback: val => {
+                if (val >= 100000) return (val / 100000).toFixed(1) + 'L';
+                if (val >= 1000) return (val / 1000).toFixed(1) + 'k';
+                return val;
+              }
+            }
+          },
+          y1: {
+            position: 'right',
+            grid: { drawOnChartArea: false },
+            title: { display: true, text: 'OSD' },
+            ticks: {
+              font: { size: window.innerWidth < 500 ? 8 : 12 },
+              callback: val => formatOSD(val) // Apply new formatting for y-axis ticks
+            }
           }
         }
       },
-      y: {
-        position: 'left',
-        title: { display: true, text: 'Count' },
-        ticks: {
-          font: { size: window.innerWidth < 500 ? 8 : 12 },
-          callback: val => {
-            if (val >= 100000) return (val / 100000).toFixed(1) + 'L';
-            if (val >= 1000) return (val / 1000).toFixed(1) + 'k';
-            return val;
-          }
+      plugins: [{
+        afterDatasetsDraw(chart) {
+          const { ctx } = chart;
+          ctx.save();
+          ctx.font = window.innerWidth < 500 ? '8px Poppins' : '10px Poppins';
+          ctx.fillStyle = '#444';
+          ctx.textAlign = 'center';
+
+          // Draw % change for Count (dataset[0])
+          chart.data.datasets[0].data.forEach((value, i) => {
+            if (i === 0) return;
+            const meta = chart.getDatasetMeta(0);
+            const x = meta.data[i].x;
+            const y = meta.data[i].y;
+            const change = countDiff[i];
+            const sign = parseFloat(change) >= 0 ? '+' : '';
+            ctx.fillText(`${sign}${change}%`, x, y - 8);
+          });
+
+          // Draw % change for OSD (dataset[1])
+          chart.data.datasets[1].data.forEach((value, i) => {
+            if (i === 0) return;
+            const meta = chart.getDatasetMeta(1);
+            const x = meta.data[i].x;
+            const y = meta.data[i].y;
+            const change = osdDiff[i];
+            const sign = parseFloat(change) >= 0 ? '+' : '';
+            ctx.fillText(`${sign}${change}%`, x, y + 12);
+          });
+
+          ctx.restore();
         }
-      },
-      y1: {
-        position: 'right',
-        grid: { drawOnChartArea: false },
-        title: { display: true, text: 'OSD (Lakh)' },
-        ticks: {
-          font: { size: window.innerWidth < 500 ? 8 : 12 },
-          callback: val => {
-            if (val >= 100) return (val / 100).toFixed(1) + ' Cr';
-            return val.toFixed(1);
-          }
-        }
-      }
+      }]
+    });
+    // Render mini data table below the chart
+    const tbody = document.querySelector("#trendDataTable tbody");
+    tbody.innerHTML = "";
+
+    sortedDates.forEach((date, i) => {
+      const tr = document.createElement("tr");
+
+      const tdDate = `<td class="text-start">${date}</td>`;
+      const tdCount = `<td>${counts[i]}</td>`;
+      const tdOSD = `<td>${formatOSD(osds[i])}</td>`; // Apply new formatting to the data table
+      const tdCountDiff = `<td>${i > 0 ? `${countDiff[i]}%` : '-'}</td>`;
+      const tdOSDDiff = `<td>${i > 0 ? `${osdDiff[i]}%` : '-'}</td>`;
+
+      tr.innerHTML = tdDate + tdCount + tdOSD + tdCountDiff + tdOSDDiff;
+      tbody.appendChild(tr);
+    });
     }
-  },
-  plugins: [{
-    afterDatasetsDraw(chart) {
-      const { ctx } = chart;
-      ctx.save();
-      ctx.font = window.innerWidth < 500 ? '8px Poppins' : '10px Poppins';
-      ctx.fillStyle = '#444';
-      ctx.textAlign = 'center';
-
-      // Draw % change for Count (dataset[0])
-      chart.data.datasets[0].data.forEach((value, i) => {
-        if (i === 0) return;
-        const meta = chart.getDatasetMeta(0);
-        const x = meta.data[i].x;
-        const y = meta.data[i].y;
-        const change = countDiff[i];
-        const sign = parseFloat(change) >= 0 ? '+' : '';
-        ctx.fillText(`${sign}${change}%`, x, y - 8);
-      });
-
-      // Draw % change for OSD (dataset[1])
-      chart.data.datasets[1].data.forEach((value, i) => {
-        if (i === 0) return;
-        const meta = chart.getDatasetMeta(1);
-        const x = meta.data[i].x;
-        const y = meta.data[i].y;
-        const change = osdDiff[i];
-        const sign = parseFloat(change) >= 0 ? '+' : '';
-        ctx.fillText(`${sign}${change}%`, x, y + 12);
-      });
-
-      ctx.restore();
-    }
-  }]
-});
-// Render mini data table below the chart
-const tbody = document.querySelector("#trendDataTable tbody");
-tbody.innerHTML = "";
-
-sortedDates.forEach((date, i) => {
-  const tr = document.createElement("tr");
-
-  const tdDate = `<td class="text-start">${date}</td>`;
-  const tdCount = `<td>${counts[i]}</td>`;
-  const tdOSD = `<td>${osds[i]}</td>`;
-  const tdCountDiff = `<td>${i > 0 ? `${countDiff[i]}%` : '-'}</td>`;
-  const tdOSDDiff = `<td>${i > 0 ? `${osdDiff[i]}%` : '-'}</td>`;
-
-  tr.innerHTML = tdDate + tdCount + tdOSD + tdCountDiff + tdOSDDiff;
-  tbody.appendChild(tr);
-});
-
-}
-
-
-
-// Call updateTrendChart after filters/class change
-function render() {
-  updateSummaryCards();
-  updateSummaryCard();
-  updateTrendChart();
-}
 
   </script>
 </body>
