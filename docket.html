@@ -281,6 +281,13 @@ body {
   color: #047857; /* Even darker green for count */
 }
 
+.region-summary-card-unique-count { /* New style for unique count in region cards */
+  font-size: 0.65rem; /* Smaller than main count */
+  color: #6b7280; /* Subdued color */
+  font-weight: 400; /* Lighter weight */
+  margin-top: 0.1rem; /* Small space from the main count */
+}
+
 /* Adjust layout for smaller screens */
 @media (max-width: 480px) {
   .region-summary-cards-grid {
@@ -397,6 +404,7 @@ const TECHNICAL_PROB_TYPES = [
     "Insulator break at pole",
     "Earthing problem",
     "Fuse problem",
+    "Alteration of Services",
     "Load Shedding Problem",
     "Bird fault",
     "Conductor snap",
@@ -1146,23 +1154,55 @@ older48.addEventListener('change', () => {
                 noRegionDataMessage.style.display = 'none';
                 regionSummaryCardsContainer.style.display = 'flex'; // Ensure flex display is set for the container
 
-                const totalCountForAllCurrentFilters = Object.values(counts).reduce((sum, current) => sum + current, 0);
+                // Use the already filtered data from the updateDashboard scope
+                let currentFilteredData = getFilteredData();
+                currentFilteredData = filterByDescriptionType(currentFilteredData);
+                currentFilteredData = filterByAge(currentFilteredData);
 
                 let cardNameForDisplay = "";
+                let totalCountForCard = 0;
+                let uniqueConIdCountForCard = 0;
+
                 if (displayLevel === 'ccc') {
                     cardNameForDisplay = selectedCCC.replace(' CCC', '');
+                    const cccCode = regionData[selectedRegion]?.divisions[selectedDivision]?.cccs[selectedCCC];
+                    // Filter the *already filtered* data further for this specific CCC
+                    const dataForCard = currentFilteredData.filter(d => d.ccc_code === cccCode);
+                    totalCountForCard = dataForCard.length;
+                    const uniqueConIds = new Set(dataForCard.map(d => d.con_id).filter(Boolean));
+                    uniqueConIdCountForCard = uniqueConIds.size;
                 } else if (displayLevel === 'division') {
                     cardNameForDisplay = selectedDivision.replace(' DIVISION', '');
+                    const divisionCodeFull = regionData[selectedRegion]?.divisions[selectedDivision]?.code;
+                    const divisionCodeCsvFormat = divisionCodeFull?.substring(0, 4);
+                    // Filter the *already filtered* data further for this specific division
+                    const dataForCard = currentFilteredData.filter(d => d.Divn_code === divisionCodeCsvFormat);
+                    totalCountForCard = dataForCard.length;
+                    const uniqueConIds = new Set(dataForCard.map(d => d.con_id).filter(Boolean));
+                    uniqueConIdCountForCard = uniqueConIds.size;
                 } else if (displayLevel === 'region' && selectedRegion && selectedRegion !== "All") {
                     cardNameForDisplay = selectedRegion.replace(' REGION', '');
+                    const regionCodePrefix = regionData[selectedRegion]?.code.substring(0, 3);
+                    // Filter the *already filtered* data further for this specific region
+                    const dataForCard = currentFilteredData.filter(d => d.Divn_code?.startsWith(regionCodePrefix));
+                    totalCountForCard = dataForCard.length;
+                    const uniqueConIds = new Set(dataForCard.map(d => d.con_id).filter(Boolean));
+                    uniqueConIdCountForCard = uniqueConIds.size;
                 } else { // 'region' and selectedRegion is "All" (or null) - show individual region cards
                     regionNames.forEach(regionName => {
-                        const count = counts[regionName];
+                        const count = counts[regionName]; // This count is total for the region
+                        const regionCodePrefix = regionData[regionName]?.code.substring(0, 3);
+                        // Filter the *already filtered* data further for this specific region
+                        const dataForRegion = currentFilteredData.filter(d => d.Divn_code?.startsWith(regionCodePrefix));
+                        const uniqueConIdsRegion = new Set(dataForRegion.map(d => d.con_id).filter(Boolean));
+                        const uniqueCountRegion = uniqueConIdsRegion.size;
+
                         const card = document.createElement('div');
                         card.className = 'region-summary-card';
                         card.innerHTML = `
                             <div class="region-summary-card-name">${regionName.replace(' REGION', '')}</div>
                             <div class="region-summary-card-count">${count}</div>
+                            <div class="region-summary-card-unique-count">(${uniqueCountRegion} unique)</div>
                         `;
                         regionSummaryCardsContainer.appendChild(card);
                     });
@@ -1174,7 +1214,8 @@ older48.addEventListener('change', () => {
                 card.className = 'region-summary-card';
                 card.innerHTML = `
                     <div class="region-summary-card-name">${cardNameForDisplay}</div>
-                    <div class="region-summary-card-count">${totalCountForAllCurrentFilters}</div>
+                    <div class="region-summary-card-count">${totalCountForCard}</div>
+                    <div class="region-summary-card-unique-count">(${uniqueConIdCountForCard} unique)</div>
                 `;
                 regionSummaryCardsContainer.appendChild(card);
             }
