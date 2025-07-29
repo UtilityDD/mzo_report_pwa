@@ -98,8 +98,21 @@ body {
       font-weight: 500;
     }
     .prob-type-card-count {
-      font-weight: 700;
+      font-weight: 700; /* Main count stays bold */
+      /* Removed flex properties, letting inline elements flow naturally */
     }
+    /* This class is now largely redundant as totalCount is directly in p, but leaving for future if needed */
+    .prob-type-card-total-count {
+        /* No specific style here, inherits from .prob-type-card-count */
+    }
+    .prob-type-card-unique-conid-count { /* Added style for unique count */
+        font-size: 0.65em; /* Smaller */
+        color: #6b7280; /* Subdued color */
+        font-weight: 400; /* Lighter font weight */
+        white-space: nowrap; /* Keep it on one line if possible */
+        margin-left: 0.25em; /* Small space from the main count */
+    }
+
     .no-data-message.hidden {
       display: none;
     }
@@ -285,6 +298,10 @@ body {
     font-size: 1rem; /* Even smaller on tiny screens */
   }
 }
+    /* Style for duplicate Con ID rows in the modal */
+    .duplicate-row {
+      background-color: #fff3cd; /* Light yellow background */
+    }
     </style>
 </head>
 <body>
@@ -380,7 +397,6 @@ const TECHNICAL_PROB_TYPES = [
     "Insulator break at pole",
     "Earthing problem",
     "Fuse problem",
-    "Alteration of Services",
     "Load Shedding Problem",
     "Bird fault",
     "Conductor snap",
@@ -779,7 +795,18 @@ function renderProbTypeCards(counts) {
     }
 
     orderedTypes.forEach(type => {
-        const count = probTypeCounts[type]; // Get count directly from probTypeCounts
+        const totalCount = probTypeCounts[type]; // Total count of dockets for this problem type
+        // Get unique Con IDs for this problem type
+        const uniqueConIds = new Set();
+        currentFilteredData.filter(d => d.prob_type?.trim() === type)
+                           .forEach(d => {
+                               if (d.con_id) {
+                                   uniqueConIds.add(d.con_id);
+                               }
+                           });
+        const uniqueConIdCount = uniqueConIds.size;
+
+
         const isTechnical = TECHNICAL_PROB_TYPES.includes(type); // Determine technical based on new list
 
         const card = document.createElement('div');
@@ -813,7 +840,9 @@ function renderProbTypeCards(counts) {
                 <h3 class="prob-type-card-title">${type}</h3>
                 ${cccLine}
             </div>
-            <p class="prob-type-card-count">${count}</p>
+            <p class="prob-type-card-count">
+                ${totalCount} <span class="prob-type-card-unique-conid-count">(${uniqueConIdCount} unique)</span>
+            </p>
         `;
 
         probTypeCardsContainer.appendChild(card);
@@ -829,6 +858,14 @@ function shortenName(name) {
 function showModal(detailsList, probType) {
     const modal = document.getElementById("details-modal");
     const content = document.getElementById("modal-content");
+
+    // Calculate duplicate Con IDs for highlighting
+    const conIdCounts = new Map();
+    detailsList.forEach(d => {
+        if (d.con_id) {
+            conIdCounts.set(d.con_id, (conIdCounts.get(d.con_id) || 0) + 1);
+        }
+    });
 
     // 🆕 Set header dynamically
     document.getElementById("modal-title").textContent = `Docket Details — ${probType}`;
@@ -858,8 +895,10 @@ ${detailsList
   })
   .map(d => {
     const since = getTimeDifference(d.doc_crn_dt);
+    // Add 'duplicate-row' class if con_id appears more than once
+    const rowClass = (d.con_id && conIdCounts.get(d.con_id) > 1) ? 'duplicate-row' : '';
     return `
-      <tr style="cursor:pointer;" onclick='showDocketDetail(${JSON.stringify(d).replace(/'/g, "\\'")})'>
+      <tr class="${rowClass}" style="cursor:pointer;" onclick='showDocketDetail(${JSON.stringify(d).replace(/'/g, "\\'")})'>
         <td>${d.doc_no}</td>
         <td>${d.con_id}</td>
 <td>${shortenName(d.PARTY_NAME)}</td>
