@@ -86,7 +86,6 @@ body {
       }
     }
     .prob-type-card {
-      background-color: #dbeafe;
       padding: 0.25rem 0.75rem;
       border-radius: 0.375rem;
       display: flex;
@@ -97,11 +96,9 @@ body {
     }
     .prob-type-card-title {
       font-weight: 500;
-      color: #1e40af;
     }
     .prob-type-card-count {
       font-weight: 700;
-      color: #1e3a8a;
     }
     .no-data-message.hidden {
       display: none;
@@ -228,6 +225,59 @@ body {
   }
 }
 
+/* New CSS for Region Summary Cards */
+.region-summary-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); /* Responsive columns */
+  gap: 0.5rem; /* Compact gap */
+  margin-top: 1rem;
+  margin-bottom: 1.5rem; /* Space below region summary cards */
+}
+
+.region-summary-card {
+  background-color: #ecfdf5; /* Light green background */
+  padding: 0.5rem 0.75rem; /* Compact padding */
+  border-radius: 0.375rem;
+  display: flex;
+  flex-direction: column; /* Stack region name and count */
+  align-items: center;
+  justify-content: center;
+  min-height: 4rem; /* Ensure minimum height */
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* Subtle shadow */
+  text-align: center;
+}
+
+.region-summary-card-name {
+  font-size: 0.75rem; /* Slightly smaller font size */
+  font-weight: 500; /* Less bold */
+  color: #6b7280; /* Gray color for less prominence */
+  margin-bottom: 0.25rem;
+}
+
+.region-summary-card-count {
+  font-size: 1.25rem; /* Larger count */
+  font-weight: 700;
+  color: #047857; /* Even darker green for count */
+}
+
+/* Adjust layout for smaller screens */
+@media (max-width: 480px) {
+  .region-summary-cards-grid {
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 0.4rem;
+  }
+  .region-summary-card {
+    min-height: 3.5rem;
+    font-size: 0.75rem; /* Adjusted base font for card */
+    padding: 0.4rem 0.6rem;
+  }
+  .region-summary-card-name {
+    font-size: 0.7rem; /* Even smaller on tiny screens */
+  }
+  .region-summary-card-count {
+    font-size: 1.1rem;
+  }
+}
     </style>
 </head>
 <body>
@@ -251,7 +301,10 @@ body {
   <label><input type="checkbox" id="older48-checkbox"> 48H+</label>
 </div>
 
-
+    <!-- Region-wise Technical Docket Summary Cards -->
+    <div id="region-summary-cards" class="region-summary-cards-grid" style="display: none;">
+      <p id="no-region-data-message" class="no-data-message hidden">No docket data for selected filters across regions.</p>
+    </div>
 
     <!-- Filter Controls -->
     <div class="filter-container" id="filter-controls-container" style="display: none;">
@@ -282,6 +335,7 @@ body {
         // Data source URL - IMPORTANT: This URL must be publicly accessible.
         // If you encounter "Failed to load data" error, ensure the Google Sheet is published to web as CSV.
         const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTT56PULgjKw_-wu8lmMWNE6SC1KBDyAKxeHaMloZJWUQ9HQsJoqosYF33DrQK3NX9Bvfn0mjfx-dkP/pub?gid=1059428699&single=true&output=csv';
+
 const TECHNICAL_PRIORITY = {
     "Conductor snap": 1,
     "Dis. transformer problem": 2,
@@ -303,6 +357,27 @@ const TECHNICAL_PRIORITY = {
     "Earthing problem": 18,
     "Bird fault": 19
 };
+
+// New list of problem types considered technical
+const TECHNICAL_PROB_TYPES = [
+    "Meter Burnt Problem",
+    "Meter stopped/defective",
+    "Meter defective and No Power",
+    "Meter (Tampering)",
+    "Service (main) problem",
+    "Breakage or uprooting of pole",
+    "Flashing/Glowing",
+    "No power",
+    "Dis. transformer problem",
+    "Voltage fluctuation",
+    "Insulator break at pole",
+    "Earthing problem",
+    "Fuse problem",
+    "Alteration of Services",
+    "Load Shedding Problem",
+    "Bird fault"
+];
+
 
 function getCCCNamesByProblemType(data, targetType) {
     const names = new Set();
@@ -423,6 +498,9 @@ function getCCCNamesByProblemType(data, targetType) {
         const loadingIndicator = document.getElementById('loading-indicator');
         const errorMessage = document.getElementById('error-message');
         const filterControlsContainer = document.getElementById('filter-controls-container');
+        // New DOM elements for region summary cards
+        const regionSummaryCardsContainer = document.getElementById('region-summary-cards');
+        const noRegionDataMessage = document.getElementById('no-region-data-message');
 
 
         // Current selections
@@ -470,6 +548,7 @@ function getCCCNamesByProblemType(data, targetType) {
             errorMessage.style.display = 'none';
             filterControlsContainer.style.display = 'none';
             probTypeCardsContainer.style.display = 'none';
+            regionSummaryCardsContainer.style.display = 'none'; // Hide region summary on load
 
             try {
                 const response = await fetch(url);
@@ -646,19 +725,24 @@ function getCCCNamesByProblemType(data, targetType) {
 function renderProbTypeCards(counts) {
     probTypeCardsContainer.innerHTML = '';
 
-let filteredData = getFilteredData();
-filteredData = filterByDescriptionType(filteredData);
-filteredData = filterByAge(filteredData); // ✅ Apply age filtering
-const probTypeCounts = getProbTypeCounts(filteredData);
+    // The data passed to this function (via `updateDashboard`) is already filtered
+    // by region, division, CCC, description type (Tech/Non-Tech), and age (24H+/48H+).
+    // So we just need to re-filter it based on the current checkboxes, which means
+    // using the full `docketCallData` and reapplying all filters.
+    let currentFilteredData = getFilteredData();
+    currentFilteredData = filterByDescriptionType(currentFilteredData);
+    currentFilteredData = filterByAge(currentFilteredData);
+
+    const probTypeCounts = getProbTypeCounts(currentFilteredData);
 
 
     // Separate technical and non-technical types
     const technicalTypes = [];
     const nonTechnicalTypes = [];
 
-    Object.keys(counts).forEach(type => {
-        const item = filteredData.find(row => row.prob_type?.trim() === type);
-        const isTechnical = item?.DESCRIPTION?.trim().toUpperCase() === 'B';
+    Object.keys(probTypeCounts).forEach(type => { // Use probTypeCounts for types
+        // Determine if a problem type is technical based on the new list
+        const isTechnical = TECHNICAL_PROB_TYPES.includes(type);
         if (isTechnical) {
             technicalTypes.push(type);
         } else {
@@ -681,15 +765,14 @@ const probTypeCounts = getProbTypeCounts(filteredData);
     }
 
     orderedTypes.forEach(type => {
-        const count = filteredData.filter(d => d.prob_type?.trim() === type).length;
-        const sampleItem = filteredData.find(d => d.prob_type?.trim() === type);
-        const isTechnical = sampleItem?.DESCRIPTION?.trim().toUpperCase() === 'B';
+        const count = probTypeCounts[type]; // Get count directly from probTypeCounts
+        const isTechnical = TECHNICAL_PROB_TYPES.includes(type); // Determine technical based on new list
 
         const card = document.createElement('div');
         card.className = 'prob-type-card';
         card.style.cursor = 'pointer';
         card.onclick = () => {
-            const detailsList = filteredData.filter(d => d.prob_type?.trim() === type);
+            const detailsList = currentFilteredData.filter(d => d.prob_type?.trim() === type);
             window.lastModalProblemType = type;
             showModal(detailsList, type);
         };
@@ -705,7 +788,7 @@ const probTypeCounts = getProbTypeCounts(filteredData);
         // Show CCCs only for top technical types
         let cccLine = '';
         if (isTechnical && ["Conductor snap", "Dis. transformer problem", "Breakage or uprooting of pole"].includes(type)) {
-            const cccNames = getCCCNamesByProblemType(filteredData, type);
+            const cccNames = getCCCNamesByProblemType(currentFilteredData, type); // Use currentFilteredData
             if (cccNames.length) {
                 cccLine = `<div style="font-size: 0.75rem; margin-top: 0.25rem;">${cccNames.join(', ')}</div>`;
             }
@@ -754,12 +837,10 @@ function showModal(detailsList, probType) {
                 <tbody>
 ${detailsList
   .filter(d => {
-    if (document.getElementById('older-checkbox').checked) {
-      const diffStr = getTimeDifference(d.doc_crn_dt); // e.g., "2D 5H 30M"
-      const match = diffStr.match(/(\d+)D/); // extract days
-      return match && parseInt(match[1]) >= 1;
-    }
-    return true;
+    // This filter inside the modal is redundant if showModal is called with already filtered data.
+    // However, if we want to re-apply the age filter specifically for the modal view, keep it.
+    // For now, I'll assume the detailsList passed is already age-filtered.
+    return true; // The age filter is handled before calling showModal
   })
   .map(d => {
     const since = getTimeDifference(d.doc_crn_dt);
@@ -939,9 +1020,13 @@ function filterByDescriptionType(data) {
     const showTechnical = document.getElementById('technical-checkbox').checked;
     const showNonTechnical = document.getElementById('nontechnical-checkbox').checked;
 
+    if (!showTechnical && !showNonTechnical) {
+        return []; // If neither is checked, return empty
+    }
+
     return data.filter(item => {
-        const desc = item.DESCRIPTION?.trim().toUpperCase();
-        return (desc === 'A' && showNonTechnical) || (desc === 'B' && showTechnical);
+        const isTechnicalProbType = TECHNICAL_PROB_TYPES.includes(item.prob_type?.trim());
+        return (isTechnicalProbType && showTechnical) || (!isTechnicalProbType && showNonTechnical);
     });
 }
 
@@ -965,6 +1050,86 @@ older48.addEventListener('change', () => {
 
 
         /**
+         * Calculates the count of dockets per region from the given data.
+         * This now counts ALL dockets (technical and non-technical) that pass prior filters.
+         * @param {Array} data - The already filtered data.
+         * @returns {Object} An object where keys are region names and values are their docket counts.
+         */
+        function getRegionDocketCounts(data) {
+            const regionCounts = {};
+            data.forEach(item => {
+                const region = getRegionByCCC(item.ccc_code);
+                if (region) {
+                    regionCounts[region] = (regionCounts[region] || 0) + 1;
+                }
+            });
+            return regionCounts;
+        }
+
+        /**
+         * Renders the region summary cards based on the calculated docket counts.
+         * Displays the last level drilled down (Region, Division, or CCC) as the card name.
+         * @param {Object} counts - An object with region docket counts.
+         */
+        function renderRegionSummaryCards(counts) {
+            regionSummaryCardsContainer.innerHTML = ''; // Clear existing cards
+
+            // Determine the display level based on selected filters
+            let displayLevel = 'region';
+            if (selectedCCC && selectedCCC !== "All") {
+                displayLevel = 'ccc';
+            } else if (selectedDivision && selectedDivision !== "All") {
+                displayLevel = 'division';
+            }
+
+            const regionNames = Object.keys(counts).sort();
+
+            if (regionNames.length === 0) {
+                noRegionDataMessage.classList.remove('hidden');
+                noRegionDataMessage.style.display = 'block';
+                noRegionDataMessage.textContent = 'No docket data for selected filters across regions.';
+                regionSummaryCardsContainer.style.display = 'none';
+            } else {
+                noRegionDataMessage.classList.add('hidden');
+                noRegionDataMessage.style.display = 'none';
+                regionSummaryCardsContainer.style.display = 'grid';
+
+                const totalCountForAllCurrentFilters = Object.values(counts).reduce((sum, current) => sum + current, 0);
+
+                let cardNameForDisplay = "";
+                if (displayLevel === 'ccc') {
+                    cardNameForDisplay = selectedCCC.replace(' CCC', '');
+                } else if (displayLevel === 'division') {
+                    cardNameForDisplay = selectedDivision.replace(' DIVISION', '');
+                } else if (displayLevel === 'region' && selectedRegion && selectedRegion !== "All") {
+                    cardNameForDisplay = selectedRegion.replace(' REGION', '');
+                } else { // 'region' and selectedRegion is "All" (or null) - show individual region cards
+                    regionNames.forEach(regionName => {
+                        const count = counts[regionName];
+                        const card = document.createElement('div');
+                        card.className = 'region-summary-card';
+                        card.innerHTML = `
+                            <div class="region-summary-card-name">${regionName.replace(' REGION', '')}</div>
+                            <div class="region-summary-card-count">${count}</div>
+                        `;
+                        regionSummaryCardsContainer.appendChild(card);
+                    });
+                    return; // Exit after rendering multiple region cards
+                }
+
+                // If a specific region, division, or CCC is selected, render a single card
+                const card = document.createElement('div');
+                card.className = 'region-summary-card';
+                card.innerHTML = `
+                    <div class="region-summary-card-name">${cardNameForDisplay}</div>
+                    <div class="region-summary-card-count">${totalCountForAllCurrentFilters}</div>
+                `;
+                regionSummaryCardsContainer.appendChild(card);
+            }
+        }
+
+
+        /**
          * Main function to update all dashboard components.
          */
         async function updateDashboard() {
@@ -976,13 +1141,22 @@ older48.addEventListener('change', () => {
             // Re-render filters to update dependent dropdowns
             renderFilters();
 
-            // Filter data and update cards/date
-let filteredData = getFilteredData();
-filteredData = filterByDescriptionType(filteredData);
-            const probTypeCounts = getProbTypeCounts(filteredData);
-            const latestDate = getLatestDocketDate(filteredData);
+            // Filter data based on region/division/CCC
+            let filteredData = getFilteredData();
+            // Apply description type (Tech/Non-Tech) and age (24H+/48H+) filters
+            filteredData = filterByDescriptionType(filteredData);
+            filteredData = filterByAge(filteredData);
 
+            // Calculate and render region-wise docket summary (all types)
+            const regionCounts = getRegionDocketCounts(filteredData);
+            renderRegionSummaryCards(regionCounts);
+
+            // Calculate and render problem type cards (still separated by tech/non-tech for individual cards)
+            const probTypeCounts = getProbTypeCounts(filteredData);
             renderProbTypeCards(probTypeCounts);
+
+            // Update latest docket date
+            const latestDate = getLatestDocketDate(filteredData);
             updateLatestDateDisplay(latestDate);
         }
 
@@ -1019,6 +1193,7 @@ filteredData = filterByDescriptionType(filteredData);
                 errorMessage.style.display = 'none'; // Hide error if live data loaded
                 filterControlsContainer.style.display = 'flex'; // Show filters
                 probTypeCardsContainer.style.display = 'grid'; // Show cards grid
+                regionSummaryCardsContainer.style.display = 'grid'; // Show region summary grid
                 updateDashboard(); // Initial render of filters and data
             }
         });
@@ -1064,12 +1239,33 @@ document.getElementById('older-checkbox').addEventListener('change', () => {
     const isModalVisible = modal.style.display === "flex";
 
     if (isModalVisible && window.lastModalProblemType) {
-        const filteredData = getFilteredData().filter(d =>
-            filterByDescriptionType([d]).length > 0 && d.prob_type === window.lastModalProblemType
+        // Re-filter data for the modal based on current dashboard filters
+        let currentFilteredData = getFilteredData(); // Apply region, division, CCC
+        currentFilteredData = filterByDescriptionType(currentFilteredData); // Apply Tech/Non-Tech
+        currentFilteredData = filterByAge(currentFilteredData); // Apply Age
+
+        const detailsList = currentFilteredData.filter(d =>
+            d.prob_type === window.lastModalProblemType
         );
-        showModal(filteredData, window.lastModalProblemType);
+        showModal(detailsList, window.lastModalProblemType);
     }
 });
+document.getElementById('older48-checkbox').addEventListener('change', () => {
+    const modal = document.getElementById("details-modal");
+    const isModalVisible = modal.style.display === "flex";
+
+    if (isModalVisible && window.lastModalProblemType) {
+        let currentFilteredData = getFilteredData();
+        currentFilteredData = filterByDescriptionType(currentFilteredData);
+        currentFilteredData = filterByAge(currentFilteredData);
+
+        const detailsList = currentFilteredData.filter(d =>
+            d.prob_type === window.lastModalProblemType
+        );
+        showModal(detailsList, window.lastModalProblemType);
+    }
+});
+
 
 function filterByAge(data) {
   const older24Checked = document.getElementById('older-checkbox').checked;
@@ -1089,11 +1285,6 @@ function filterByAge(data) {
     return true; // no filter
   });
 }
-
-
-
-
-
     </script>
 <!-- Compact Sticky-Header Modal -->
 <div id="details-modal" style="display:none; position:fixed; inset:0; background-color:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
