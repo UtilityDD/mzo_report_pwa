@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docket Closure Data Visualization</title>
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- D3.js CDN for data processing (still used for aggregation) -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- Google Fonts - Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom styles for elements not covered by Tailwind */
+        .table-container {
+            background-color: #f9fafb; /* gray-50 */
+            border-radius: 0.5rem; /* rounded-lg */
+            padding: 0.75rem; /* Adjusted for mobile, from 1rem */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* shadow-md */
+            margin-bottom: 0.75rem; /* Adjusted for mobile, from 1rem */
+            overflow-x: auto; /* Enable horizontal scrolling for the table */
+        }
+        @media (min-width: 768px) { /* md breakpoint */
+            .table-container {
+                padding: 1rem; /* Revert for desktop */
+                margin-bottom: 1rem; /* Revert for desktop */
+            }
+        }
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            padding: 0.5rem;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            border-radius: 0.25rem;
+            pointer-events: none;
+            font-size: 0.875rem; /* text-sm */
+            line-height: 1.25rem; /* leading-tight */
+            z-index: 1000;
+        }
+        .tab-button {
+            flex-shrink: 0; /* Prevent buttons from shrinking */
+            transition: all 0.2s ease-in-out;
+            border-bottom: 3px solid transparent; /* Default transparent border */
+            padding-top: 0.25rem; /* Adjusted for mobile, from 0.5rem */
+            padding-bottom: 0.25rem; /* Adjusted for mobile, from 0.5rem */
+            padding-left: 0.5rem; /* Adjusted for mobile, from 0.75rem */
+            padding-right: 0.5rem; /* Adjusted for mobile, from 0.75rem */
+            font-size: 0.875rem; /* text-sm */
+        }
+        @media (min-width: 768px) { /* md breakpoint */
+            .tab-button {
+                padding-top: 0.5rem; /* Revert for desktop */
+                padding-bottom: 0.5rem; /* Revert for desktop */
+                padding-left: 0.75rem; /* Revert for desktop */
+                padding-right: 0.75rem; /* Revert for desktop */
+            }
+        }
+        .tab-button.active {
+            border-bottom: 3px solid #10B981; /* emerald-500 */
+            font-weight: 600; /* font-semibold */
+            color: #10B981; /* emerald-500 */
+        }
+        /* Ensure font 'Inter' is used for the body with robust fallbacks */
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+            padding: 0.5rem; /* Adjusted for mobile, from 1rem */
+        }
+        @media (min-width: 768px) { /* md breakpoint */
+            body {
+                padding: 1rem; /* Revert for desktop */
+            }
+        }
+        .tabs-container {
+            border-bottom: 1px solid #e5e7eb; /* gray-200 */
+            margin-bottom: 0.25rem; /* Reduced from 0.5rem for tighter fit */
+            padding-bottom: 0.25rem; /* Reduced from 0.5rem */
+            overflow-x: auto; /* Enable horizontal scrolling */
+            white-space: nowrap; /* Prevent wrapping of tab buttons */
+            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+            scrollbar-width: thin; /* Firefox */
+            scrollbar-color: #d1d5db #f3f4f6; /* Firefox scrollbar colors */
+        }
+        /* Webkit scrollbar styles */
+        .tabs-container::-webkit-scrollbar {
+            height: 8px;
+        }
+        .tabs-container::-webkit-scrollbar-track {
+            background: #f3f4f6; /* gray-100 */
+            border-radius: 10px;
+        }
+        .tabs-container::-webkit-scrollbar-thumb {
+            background-color: #d1d5db; /* gray-300 */
+            border-radius: 10px;
+            border: 2px solid #f3f4f6; /* gray-100 */
+        }
+        th {
+            cursor: pointer; /* Indicate sortable columns */
+        }
+        .active-toggle-btn {
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+        /* Styles for the sorting icons */
+        .sort-icon {
+            display: inline-block;
+            margin-left: 0.5rem;
+            width: 0;
+            height: 0;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            vertical-align: middle;
+            opacity: 0.4; /* Slightly dim by default */
+        }
+        .sort-icon.asc {
+            border-bottom: 5px solid #4a5568; /* Upward triangle */
+        }
+        .sort-icon.desc {
+            border-top: 5px solid #4a5568; /* Downward triangle */
+        }
+        .sort-icon.visible {
+            opacity: 1; /* Fully visible when active */
+        }
+
+        /* Modern Loading Spinner Styles */
+        .spinner-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            z-index: 9999;
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #10B981; /* emerald-500 */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .hidden {
+            display: none;
+        }
+        /* Style for rows with average closure time above the mean */
+        .above-mean {
+            background-color: #fcebeb; /* Light red background */
+        }
+        /* Style for the currently sorted column header */
+        .sorted-column {
+            background-color: #e0f2f7; /* Light blue background for sorted column */
+            color: #0284c7; /* Blue text color */
+            font-weight: 600; /* Semi-bold font */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-8 md:p-8">
+
+    <!-- Loading Spinner -->
+    <div id="loading-spinner-container" class="spinner-container hidden">
+        <div class="spinner"></div>
+    </div>
+
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-2xl md:text-3xl font-bold text-gray-800 mb-0">Docket Closure KPI</h1>
+        <p class="text-xs md:text-sm text-gray-500 mb-4">(from Jan, 2023 - June -2025)</p>
+
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow-md p-3 md:p-4 text-center">
+                <h2 id="total-dockets-header" class="text-sm md:text-base font-semibold text-gray-600 mb-1">Total Dockets (Overall)</h2>
+                <p id="total-dockets-card" class="text-3xl md:text-4xl font-bold text-emerald-600 mb-3">0</p>
+                <!-- Nested Cards for Total Tech/Non-Tech Dockets -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div class="bg-gray-50 rounded-lg p-2 md:p-3 shadow-sm">
+                        <h3 class="text-xs md:text-md font-medium text-gray-500 mb-0.5">Total Tech Dockets</h3>
+                        <p id="total-tech-dockets-card" class="text-xl md:text-2xl font-bold text-blue-600">0</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-2 md:p-3 shadow-sm">
+                        <h3 class="text-xs md:text-md font-medium text-gray-500 mb-0.5">Total Non-Tech Dockets</h3>
+                        <p id="total-nontech-dockets-card" class="text-xl md:text-2xl font-bold text-red-600">0</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-3 md:p-4 text-center">
+                <h2 id="avg-closure-time-header" class="text-sm md:text-base font-semibold text-gray-600 mb-1">Avg. Closure Time (Overall)</h2>
+                <p id="avg-closure-time-card" class="text-3xl md:text-4xl font-bold text-emerald-600 mb-3">00:00</p>
+                <!-- Nested Cards for Avg Tech/Non-Tech Closure Time -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div class="bg-gray-50 rounded-lg p-2 md:p-3 shadow-sm">
+                        <h3 class="text-xs md:text-md font-medium text-gray-500 mb-0.5">Tech Avg. Time</h3>
+                        <p id="avg-tech-closure-time-card" class="text-xl md:text-2xl font-bold text-blue-600">00:00</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-2 md:p-3 shadow-sm">
+                        <h3 class="text-xs md:text-md font-medium text-gray-500 mb-0.5">Non-Tech Avg. Time</h3>
+                        <p id="avg-nontech-closure-time-card" class="text-xl md:text-2xl font-bold text-red-600">00:00</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Three-Layer Tabs Navigation -->
+        <div class="mb-2">
+            <div id="region-tabs-container" class="tabs-container flex space-x-1">
+                <!-- Region tabs will be dynamically loaded here -->
+            </div>
+
+            <div id="division-tabs-container" class="tabs-container flex space-x-1">
+                <!-- Division tabs will be dynamically loaded here -->
+            </div>
+
+            <div id="ccc-tabs-container" class="tabs-container flex space-x-1">
+                <!-- CCC tabs will be dynamically loaded here -->
+            </div>
+        </div>
+
+        <!-- Data Table Container -->
+        <div id="data-table-section" class="table-container">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-xl md:text-2xl font-semibold text-gray-700">KPI Comparison</h2>
+                <div id="table-toggle-container" class="flex items-center space-x-2">
+                    <span class="text-gray-600 text-xs md:text-sm">Group by:</span>
+                    <button id="toggle-division-btn" class="px-2 py-0.5 text-xs md:px-3 md:py-1 md:text-sm rounded-md bg-emerald-100 text-emerald-700 font-medium active-toggle-btn">Division</button>
+                    <button id="toggle-ccc-btn" class="px-2 py-0.5 text-xs md:px-3 md:py-1 md:text-sm rounded-md bg-gray-200 text-gray-700 font-medium">CCC</button>
+                </div>
+            </div>
+            <!-- The table will be rendered here by JavaScript -->
+        </div>
+
+        <!-- Loading and Error Messages -->
+        <div id="loading-message" class="text-center text-lg text-gray-600 mt-4 hidden">Loading data...</div>
+        <div id="error-message" class="text-center text-lg text-red-600 mt-4 hidden"></div>
+    </div>
+
+    <!-- Tooltip Element -->
+    <div id="table-tooltip" class="tooltip hidden"></div>
+
+    <script>
+        // URL for the CSV data source
+        const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vThi-zr48XGYbnQO7YR8xmhVQZV2Wb3t05wTN2kqM254DXNOr5wfeBWNIhywNk2egvpYeSte2EWLLvD/pub?gid=0&single=true&output=csv";
+
+        // Provided mapping object to link CCC codes to Region and Division
+        const mapping = {
+            "MALDA REGION": {
+                "MALDA DIVISIOIN": {"MANIKCHAK CCC": "6611101", "GOLAPGANJ CCC": "6611102", "BAISHNABNAGAR CCC": "6611103", "KALIACHAK CCC": "6611104", "MOTHABARI CCC": "6611105", "SUJAPUR CCC": "6611106", "RATHBARI CCC": "6611107", "FULBARI CCC": "6611108", "MOKDUMPUR CCC": "6611109"},
+                "CHANCHAL DIVISION": {"BHALUKA CCC": "6612101", "SAMSI CCC": "6612102", "PARANPUR CCC": "6612103", "CHANCHAL CCC": "6612104", "MALATIPUR CCC": "6612105", "HARISHCHANDRAPUR CCC": "6612106", "KUSHIDA CCC": "6612107"},
+                "GAZOLE DIVISION": {"GAZOL CCC": "6613101", "AIHO. CCC": "6613102", "PANDUA CCC": "6613103", "BAMONGOLA CCC": "6613104", "OLD MALDA CCC": "6613105"}
+            },
+            "UTTAR DINAJPUR REGION": {
+                "RAIGANJ DIVISION": {"ITAHAR CCC": "6621101", "HEMTABAD CCC": "6621102", "KALIYAGANJ CCC": "6621103", "RAIGANJ CCC": "6621104", "BIRNAGAR CCC": "6621105", "KARANDIGHI CCC": "6621106"},
+                "ISLAMPUR DIVISION": {"ISLAMPUR CCC": "6622101", "CHOPRA CCC": "6622102", "DALKHOLA CCC": "6622103", "GOALPOKHER CCC": "6622104", "KANKI CCC": "6622105"}
+            },
+            "DAKSHIN DINAJPUR REGION": {
+                "BALURGHAT DIVISION": {"BALURGHAT CCC": "6631101", "TAPAN CCC": "6631102", "KUMARGANJ CCC": "6631103", "HILI CCC": "6631104", "PATIRAM CCC": "6631105"},
+                "BUNIADPUR DIVISION": {"BUNIADPUR CCC": "6632101", "KUSMANDI CCC": "6632102", "HARIRAMPUR CCC": "6632103", "GANGARAMPUR CCC": "6632104"}
+            }
+        };
+
+        // Create a reverse mapping for efficient lookup of region and division by ccc_code
+        const reverseMapping = {};
+        for (const regionName in mapping) {
+            for (const divisionName in mapping[regionName]) {
+                for (const cccName in mapping[regionName][divisionName]) {
+                    const cccCode = mapping[regionName][divisionName][cccName];
+                    reverseMapping[cccCode] = {
+                        region: regionName,
+                        division: divisionName,
+                        cccName: cccName
+                    };
+                }
+            }
+        }
+
+        let rawData = []; // Stores the initial fetched and processed data
+        let filteredData = []; // Stores the data after applying tab filters
+
+        // State variables for current selections
+        let selectedRegion = 'All';
+        let selectedDivision = 'All';
+        let selectedCCC = 'All';
+
+        // Global state for sorting
+        let currentSortColumn = 'Avg. Closure Time (Overall)'; // Default sort column
+        let currentSortDirection = 'asc'; // Default sort direction
+
+        // Global state for table grouping mode, only relevant when a Region is selected
+        let tableGroupingMode = 'division'; // 'division' or 'ccc_name'
+
+        /**
+         * Fetches CSV data from the provided URL, processes it by adding Region and Division
+         * based on ccc_code, and converts relevant columns to numbers.
+         * Displays loading and error messages as needed.
+         * @returns {Promise<Array>} A promise that resolves with the processed data array.
+         */
+        async function fetchAndProcessData() {
+            document.getElementById('loading-spinner-container').classList.remove('hidden'); // Show spinner
+            document.getElementById('loading-message').classList.remove('hidden'); // Show loading message
+            document.getElementById('error-message').classList.add('hidden');
+
+            try {
+                const data = await d3.csv(csvUrl);
+                const processedData = data.map(d => {
+                    const cccInfo = reverseMapping[d.ccc_code];
+                    return {
+                        ...d,
+                        region: cccInfo ? cccInfo.region : 'Unknown Region',
+                        division: cccInfo ? cccInfo.division : 'Unknown Division',
+                        ccc_name: cccInfo ? cccInfo.cccName : 'Unknown CCC',
+                        'Count of doc_no': +d['Count of doc_no'],
+                        'Sum of Diff': +d['Sum of Diff'],
+                        'Average of Diff': +d['Average of Diff']
+                    };
+                });
+
+                rawData = processedData;
+                document.getElementById('loading-spinner-container').classList.add('hidden'); // Hide spinner
+                document.getElementById('loading-message').classList.add('hidden');
+                return processedData;
+
+            } catch (error) {
+                console.error("Error fetching or processing data:", error);
+                document.getElementById('loading-spinner-container').classList.add('hidden'); // Hide spinner
+                document.getElementById('loading-message').classList.add('hidden');
+                document.getElementById('error-message').classList.remove('hidden');
+                document.getElementById('error-message').textContent = `Failed to load data. Please check the data source and try again. Error: ${error.message}`;
+                return [];
+            }
+        }
+
+        /**
+         * Converts a total number of days into a formatted HH:MM string.
+         * @param {number} totalDays - The total duration in days.
+         * @returns {string} The formatted duration string (HH:MM).
+         */
+        function formatDuration(totalDays) {
+            if (isNaN(totalDays) || totalDays < 0) return "N/A";
+
+            const totalSeconds = totalDays * 24 * 60 * 60;
+
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            // const seconds = Math.floor(totalSeconds % 60); // Removed seconds
+
+            const pad = (num) => String(num).padStart(2, '0');
+
+            return `${pad(hours)}:${pad(minutes)}`; // Changed to HH:MM
+        }
+
+        /**
+         * Updates the summary cards with calculated total dockets and average closure time.
+         * @param {Array} data - The data array to use for calculations.
+         */
+        function updateSummaryCards(data) {
+            let totalDockets = 0;
+            let totalSumOfDiff = 0;
+
+            data.forEach(d => {
+                totalDockets += d['Count of doc_no'];
+                totalSumOfDiff += d['Sum of Diff'];
+            });
+
+            const overallAvgClosureDays = totalDockets > 0 ? totalSumOfDiff / totalDockets : 0;
+
+            document.getElementById('total-dockets-card').textContent = totalDockets.toLocaleString();
+            document.getElementById('avg-closure-time-card').textContent = formatDuration(overallAvgClosureDays);
+
+            const techData = data.filter(d => d.DESCRIPTION === 'B');
+            const nonTechData = data.filter(d => d.DESCRIPTION === 'A');
+
+            let totalTechDockets = 0;
+            let totalTechSumOfDiff = 0;
+            techData.forEach(d => {
+                totalTechDockets += d['Count of doc_no'];
+                totalTechSumOfDiff += d['Sum of Diff'];
+            });
+            const avgTechClosureDays = totalTechDockets > 0 ? totalTechSumOfDiff / totalTechDockets : 0;
+            document.getElementById('avg-tech-closure-time-card').textContent = formatDuration(avgTechClosureDays);
+            document.getElementById('total-tech-dockets-card').textContent = totalTechDockets.toLocaleString();
+
+            let totalNonTechDockets = 0;
+            let totalNonTechSumOfDiff = 0;
+            nonTechData.forEach(d => {
+                totalNonTechDockets += d['Count of doc_no'];
+                totalNonTechSumOfDiff += d['Sum of Diff'];
+            });
+            const avgNonTechClosureDays = totalNonTechDockets > 0 ? totalNonTechSumOfDiff / totalNonTechDockets : 0;
+            document.getElementById('avg-nontech-closure-time-card').textContent = formatDuration(avgNonTechClosureDays);
+            document.getElementById('total-nontech-dockets-card').textContent = totalNonTechDockets.toLocaleString();
+
+            // Update the "Overall" text based on selections with prefixes
+            let scopeText = '';
+            if (selectedRegion === 'All') {
+                scopeText = 'Zone';
+            } else if (selectedCCC !== 'All') {
+                scopeText = `CCC: ${selectedCCC.replace(/ REGION| DIVISION| DIVISIOIN| CCC/g, '').trim()}`;
+            } else if (selectedDivision !== 'All') {
+                scopeText = `Division: ${selectedDivision.replace(/ REGION| DIVISION| DIVISIOIN| CCC/g, '').trim()}`;
+            } else {
+                scopeText = `Region: ${selectedRegion.replace(/ REGION| DIVISION| DIVISIOIN| CCC/g, '').trim()}`;
+            }
+
+            document.getElementById('total-dockets-header').textContent = `Total Dockets (${scopeText})`;
+            document.getElementById('avg-closure-time-header').textContent = `Avg. Closure Time (${scopeText})`;
+        }
+
+        /**
+         * Renders the data into an HTML table based on the current filtering and grouping.
+         * Includes sorting functionality and visible triangular sorting icons.
+         * @param {Array} data - The data array to display (already filtered).
+         */
+        function renderDataTable(data) {
+            const tableContainer = document.getElementById('data-table-section');
+            // Get the header div, then clear the container and re-append the header
+            const headerDiv = tableContainer.querySelector('.flex.items-center.justify-between');
+            tableContainer.innerHTML = ''; // Clear everything
+            tableContainer.appendChild(headerDiv); // Re-append the header
+
+            const toggleDivisionBtn = document.getElementById('toggle-division-btn');
+            const toggleCCCBtn = document.getElementById('toggle-ccc-btn');
+
+            // Determine the grouping level based on active filters and toggle state
+            let effectiveGroupByField;
+            if (selectedCCC !== 'All') {
+                effectiveGroupByField = 'ccc_name';
+                // When a specific CCC is selected, the grouping is fixed to CCC
+                // Visually indicate this by deactivating both toggle buttons
+                toggleDivisionBtn.classList.remove('bg-emerald-100', 'text-emerald-700', 'active-toggle-btn');
+                toggleDivisionBtn.classList.add('bg-gray-200', 'text-gray-700');
+                toggleCCCBtn.classList.remove('bg-emerald-100', 'text-emerald-700', 'active-toggle-btn');
+                toggleCCCBtn.classList.add('bg-gray-200', 'text-gray-700');
+            } else if (selectedDivision !== 'All') {
+                effectiveGroupByField = 'ccc_name'; // Fixed to CCC-wise for Division selection
+                // When a specific Division is selected, the grouping is fixed to CCC
+                // Visually indicate this by deactivating both toggle buttons
+                toggleDivisionBtn.classList.remove('bg-emerald-100', 'text-emerald-700', 'active-toggle-btn');
+                toggleDivisionBtn.classList.add('bg-gray-200', 'text-gray-700');
+                toggleCCCBtn.classList.remove('bg-emerald-100', 'text-emerald-700', 'active-toggle-btn');
+                toggleCCCBtn.classList.add('bg-gray-200', 'text-gray-700');
+            } else { // selectedRegion is 'All' or a specific region, and selectedDivision/CCC are 'All'
+                effectiveGroupByField = tableGroupingMode; // Use the toggle state
+                // Set active class for toggle buttons based on tableGroupingMode
+                if (tableGroupingMode === 'division') {
+                    toggleDivisionBtn.classList.add('bg-emerald-100', 'text-emerald-700', 'active-toggle-btn');
+                    toggleDivisionBtn.classList.remove('bg-gray-200', 'text-gray-700');
+                    toggleCCCBtn.classList.remove('bg-emerald-100', 'text-emerald-700', 'active-toggle-btn');
+                    toggleCCCBtn.classList.add('bg-gray-200', 'text-gray-700');
+                } else { // tableGroupingMode === 'ccc_name'
+                    toggleCCCBtn.classList.add('bg-emerald-100', 'text-emerald-700', 'active-toggle-btn');
+                    toggleCCCBtn.classList.remove('bg-gray-200', 'text-gray-700');
+                    toggleDivisionBtn.classList.remove('bg-emerald-100', 'text-emerald-700', 'active-toggle-btn');
+                    toggleDivisionBtn.classList.add('bg-gray-200', 'text-gray-700');
+                }
+            }
+
+            // Ensure event listeners are correctly attached to the buttons
+            // It's safer to re-attach them here after the DOM is potentially manipulated by innerHTML
+            toggleDivisionBtn.onclick = () => {
+                tableGroupingMode = 'division';
+                filterDataAndRedrawCharts();
+            };
+            toggleCCCBtn.onclick = () => {
+                tableGroupingMode = 'ccc_name';
+                filterDataAndRedrawCharts();
+            };
+
+            if (data.length === 0) {
+                const noDataMessage = document.createElement('p');
+                noDataMessage.classList.add('text-gray-500', 'text-center', 'py-4');
+                noDataMessage.textContent = "No data available for this table with current filters.";
+                tableContainer.appendChild(noDataMessage);
+                return;
+            }
+
+            // Aggregate data for the table based on effectiveGroupByField
+            const aggregatedTableData = [];
+            const groupedData = d3.group(data, d => d[effectiveGroupByField]);
+
+            groupedData.forEach((group, key) => {
+                let totalDockets = 0;
+                let totalSumOfDiff = 0;
+                let techDockets = 0;
+                let techSumOfDiff = 0;
+                let nonTechDockets = 0;
+                let nonTechSumOfDiff = 0;
+
+                group.forEach(d => {
+                    totalDockets += d['Count of doc_no'];
+                    totalSumOfDiff += d['Sum of Diff'];
+
+                    if (d.DESCRIPTION === 'B') { // Tech
+                        techDockets += d['Count of doc_no'];
+                        techSumOfDiff += d['Sum of Diff'];
+                    } else if (d.DESCRIPTION === 'A') { // Non-Tech
+                        nonTechDockets += d['Count of doc_no'];
+                        nonTechSumOfDiff += d['Sum of Diff'];
+                    }
+                });
+
+                const avgOverallTime = totalDockets > 0 ? totalSumOfDiff / totalDockets : 0;
+                const avgTechTime = techDockets > 0 ? techSumOfDiff / techDockets : 0;
+                const avgNonTechTime = nonTechDockets > 0 ? nonTechSumOfDiff / nonTechDockets : 0;
+
+                aggregatedTableData.push({
+                    [effectiveGroupByField]: key, // Use the dynamic grouping field as the first column
+                    'Total Dockets': totalDockets,
+                    'Tech Dockets': techDockets,
+                    'Non-Tech Dockets': nonTechDockets,
+                    'Avg. Closure Time (Overall)': avgOverallTime,
+                    'Avg. Closure Time (Tech)': avgTechTime,
+                    'Avg. Closure Time (Non-Tech)': avgNonTechTime
+                });
+            });
+
+            // Calculate the mean of 'Avg. Closure Time (Overall)' for highlighting
+            const overallAvgTimes = aggregatedTableData.map(d => d['Avg. Closure Time (Overall)']);
+            const meanOverallAvgTime = overallAvgTimes.length > 0
+                ? overallAvgTimes.reduce((sum, val) => sum + val, 0) / overallAvgTimes.length
+                : 0;
+
+
+            // Apply sorting if a column is selected
+            if (currentSortColumn) {
+                aggregatedTableData.sort((a, b) => {
+                    const valA = a[currentSortColumn];
+                    const valB = b[currentSortColumn];
+
+                    let comparison = 0;
+                    // Handle numeric sorting for time and count values
+                    if (typeof valA === 'number' && typeof valB === 'number') {
+                        comparison = valA - valB;
+                    } else {
+                        // For string values (like Region/Division/CCC names), use localeCompare
+                        comparison = String(valA).localeCompare(String(valB));
+                    }
+
+                    return currentSortDirection === 'asc' ? comparison : -comparison;
+                });
+            }
+
+            const table = document.createElement('table');
+            table.classList.add('min-w-full', 'divide-y', 'divide-gray-200', 'bg-white');
+
+            const thead = table.createTHead();
+            const headerRow = thead.insertRow();
+            
+            // Add Sl. No. header
+            let slNoTh = document.createElement('th');
+            slNoTh.classList.add('px-3', 'py-2', 'text-left', 'text-xs', 'font-medium', 'text-gray-500', 'uppercase', 'tracking-wider', 'md:px-6', 'md:py-3');
+            slNoTh.textContent = 'Sl. No.';
+            headerRow.appendChild(slNoTh);
+
+            const headers = Object.keys(aggregatedTableData[0]);
+
+            headers.forEach(key => {
+                const th = document.createElement('th');
+                // Split the class string into individual classes before adding
+                const classesToAdd = 'px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer relative md:px-6 md:py-3'.split(' ');
+                th.classList.add(...classesToAdd);
+
+                // Add sorted-column class if this is the currently sorted column
+                if (currentSortColumn === key) {
+                    th.classList.add('sorted-column');
+                }
+
+                // Create a container for text and icon to allow for flexible layout
+                const headerContent = document.createElement('div');
+                headerContent.classList.add('flex', 'items-center', 'justify-between', 'group'); // Added 'group' for hover effects
+
+                const textSpan = document.createElement('span');
+                textSpan.textContent = key;
+                headerContent.appendChild(textSpan);
+
+                const sortIcon = document.createElement('span');
+                sortIcon.classList.add('sort-icon');
+                sortIcon.dataset.column = key; // Store column name for easy lookup
+
+                // Initially, hide or set neutral state for icons
+                if (currentSortColumn === key) {
+                    sortIcon.classList.add('visible', currentSortDirection);
+                } else {
+                    // Default to asc icon shape, will be hidden
+                    sortIcon.classList.add('asc'); 
+                    sortIcon.style.opacity = '0.4'; // Dim by default
+                }
+                
+                headerContent.appendChild(sortIcon);
+                th.appendChild(headerContent);
+
+
+                th.onclick = () => {
+                    if (currentSortColumn === key) {
+                        currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        currentSortColumn = key;
+                        currentSortDirection = 'asc';
+                    }
+                    renderDataTable(data); // Re-render table with new sort
+                };
+                headerRow.appendChild(th);
+            });
+
+            const tbody = table.createTBody();
+            const tooltip = document.getElementById('table-tooltip');
+
+            aggregatedTableData.forEach((rowData, index) => {
+                const row = tbody.insertRow();
+                // Add class for highlighting if Avg. Closure Time (Overall) is above the mean
+                if (rowData['Avg. Closure Time (Overall)'] > meanOverallAvgTime) {
+                    row.classList.add('above-mean');
+                }
+
+                // Add Sl. No. cell
+                let slNoCell = row.insertCell();
+                slNoCell.textContent = index + 1;
+                slNoCell.classList.add('px-3', 'py-2', 'whitespace-nowrap', 'text-xs', 'text-gray-900', 'md:px-6', 'md:py-4', 'md:text-sm');
+
+
+                headers.forEach(key => {
+                    const cell = row.insertCell();
+                    if (key.includes('Avg. Closure Time')) {
+                        cell.textContent = formatDuration(rowData[key]);
+                    } else {
+                        cell.textContent = rowData[key].toLocaleString();
+                    }
+                    const classesToAdd = 'px-3 py-2 whitespace-nowrap text-xs text-gray-900 md:px-6 md:py-4 md:text-sm'.split(' ');
+                    cell.classList.add(...classesToAdd);
+                });
+
+                // Add hover event listeners to the row
+                row.addEventListener('mouseover', (event) => {
+                    if (row.classList.contains('above-mean')) {
+                        tooltip.textContent = 'RED: Overall Docket Closure time/docet is below average.'; // Updated text
+                        tooltip.style.left = (event.pageX + 10) + 'px';
+                        tooltip.style.top = (event.pageY + 10) + 'px';
+                        tooltip.classList.remove('hidden');
+                    }
+                });
+
+                row.addEventListener('mouseout', () => {
+                    tooltip.classList.add('hidden');
+                });
+            });
+
+            tableContainer.appendChild(table);
+        }
+
+        /**
+         * Renders the tab buttons for a specific level (Region, Division, or CCC).
+         * @param {string} level - The level of tabs to render ('region', 'division', or 'ccc_name').
+         * @param {string} selectedValue - The currently selected value for this level.
+         */
+        function renderTabs(level, selectedValue) {
+            let containerId;
+            if (level === 'ccc_name') {
+                containerId = 'ccc-tabs-container';
+            } else {
+                containerId = `${level}-tabs-container`;
+            }
+            
+            const container = document.getElementById(containerId);
+            
+            if (container) {
+                container.innerHTML = ''; // Clear existing buttons
+
+                let options = [];
+                let dataForOptions = rawData;
+
+                if (level === 'division' && selectedRegion !== 'All') {
+                    dataForOptions = rawData.filter(d => d.region === selectedRegion);
+                } else if (level === 'ccc_name') {
+                    if (selectedRegion !== 'All') {
+                        dataForOptions = dataForOptions.filter(d => d.region === selectedRegion);
+                    }
+                    if (selectedDivision !== 'All') {
+                        dataForOptions = dataForOptions.filter(d => d.division === selectedDivision);
+                    }
+                }
+
+                // Get unique options for the current level, excluding 'All' initially
+                options = [...new Set(dataForOptions.map(d => d[level]))].sort();
+                // Always place 'All' at the beginning
+                options.unshift('All');
+
+
+                options.forEach(option => {
+                    const button = document.createElement('button');
+                    // Remove " REGION", " DIVISION", " DIVISIOIN", " CCC" from the option text
+                    let buttonText = option.replace(/ REGION| DIVISION| DIVISIOIN| CCC/g, '').trim();
+                    button.textContent = buttonText;
+                    button.classList.add('tab-button', 'rounded-md'); // Removed fixed padding/font to use custom style
+                    if (option === selectedValue) {
+                        button.classList.add('active');
+                    }
+
+                    button.onclick = () => {
+                        if (level === 'region') {
+                            selectedRegion = option;
+                            selectedDivision = 'All';
+                            selectedCCC = 'All';
+                            // Reset table grouping mode to default when region changes
+                            tableGroupingMode = 'division';
+                        } else if (level === 'division') {
+                            selectedDivision = option;
+                            selectedCCC = 'All';
+                        } else if (level === 'ccc_name') {
+                            selectedCCC = option;
+                        }
+                        filterDataAndRedrawCharts();
+                    };
+                    container.appendChild(button);
+                });
+            } else {
+                console.error(`Error: Tab container with ID '${containerId}' not found.`);
+            }
+        }
+
+        /**
+         * Filters the raw data based on current selections and redraws the data table and tabs.
+         */
+        function filterDataAndRedrawCharts() {
+            filteredData = rawData.filter(d => {
+                const matchesRegion = selectedRegion === 'All' || d.region === selectedRegion;
+                const matchesDivision = selectedDivision === 'All' || d.division === selectedDivision;
+                const matchesCCC = selectedCCC === 'All' || d.ccc_name === selectedCCC;
+                return matchesRegion && matchesDivision && matchesCCC;
+            });
+
+            updateSummaryCards(filteredData);
+            renderDataTable(filteredData); // Call renderDataTable
+
+            // Re-render tabs to show only relevant options based on current filters
+            renderTabs('region', selectedRegion);
+            renderTabs('division', selectedDivision);
+            renderTabs('ccc_name', selectedCCC);
+        }
+
+        // Initialize the dashboard when the DOM content is fully loaded
+        document.addEventListener('DOMContentLoaded', async () => {
+            const data = await fetchAndProcessData();
+            if (data.length > 0) {
+                filteredData = rawData;
+                updateSummaryCards(filteredData);
+                renderDataTable(filteredData); // Initial render of the table
+
+                renderTabs('region', selectedRegion);
+                renderTabs('division', selectedDivision);
+                renderTabs('ccc_name', selectedCCC);
+            } else {
+                // If data loading fails, ensure the spinner is hidden
+                document.getElementById('loading-spinner-container').classList.add('hidden');
+                document.getElementById('loading-message').classList.add('hidden');
+                document.getElementById('error-message').classList.remove('hidden');
+                if(!document.getElementById('error-message').textContent){
+                    document.getElementById('error-message').textContent = 'No data available to render dashboard.';
+                }
+            }
+        });
+    </script>
+</body>
+</html>
