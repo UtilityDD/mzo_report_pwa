@@ -9,6 +9,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
     <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- Google Fonts - Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
 /* Base styles */
 body {
@@ -711,7 +713,7 @@ canvas {
 
 .loader-overlay.hidden {
     opacity: 0;
-    visibility: hidden;
+    visibility: hidden; /* Added this line */
     pointer-events: none; /* Allow clicks through once hidden */
 }
 
@@ -842,6 +844,8 @@ canvas {
                             <th id="changePercentHeader" class="sortable-header" onclick="toggleSort('percentDiff')">
                                 Change % <span id="percentSortIcon" class="sort-icon"></span>
                             </th>
+                            <th>Target</th> <!-- New: Target column header -->
+                            <th>Diff (vs. Target)</th> <!-- New: Diff (vs. Target) column header -->
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -854,7 +858,12 @@ canvas {
 
     <script>
         const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSYyqn0urGdbqXarhELRbSCeRvgUCSHID_1Z4E_kptBTR5u69R0HHX0Jk23n6KseriNct2q9XwXu04E/pub?output=csv";
+        const targetCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSYyqn0urGdbqXarhELRbSCeRvgUCSHID_1Z4E_kptBTR5u69R0HHX0Jk23n6KseriNct2q9XwXu04E/pub?gid=2042465667&single=true&output=csv";
+
         let rawData = [];
+        let targetDataRaw = []; // Will store raw target data
+        let targetDataMap = {}; // Processed target data for easy lookup: { 'CCC_NAME': { 'PARAMETER_NAME': TARGET_VALUE, ... }, ... }
+
         let chart;
         const monthNames = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
         const parameters = ["CUM. INPUT (MU)", "CUM. DEMAND(MU)", "CUM. COLLEC. (MU)", "CUM. AT&C LOSS", "CUM. DIST. LOSS", "COLL. EFF."];
@@ -867,16 +876,20 @@ canvas {
             "COLL. EFF.": "Collection Efficiency"
         };
         const parametersToHideChangePercent = ["CUM. AT&C LOSS", "CUM. DIST. LOSS", "COLL. EFF."];
-        // Define parameters where an increase is considered good
-        const parametersGoodWhenIncreasing = ["CUM. DEMAND(MU)", "CUM. COLLEC. (MU)", "COLL. EFF."]; // Removed "CUM. INPUT (MU)"
+        // Define parameters where an increase is considered good (e.g., Demand, Collection, Efficiency)
+        const parametersGoodWhenIncreasing = ["CUM. DEMAND(MU)", "CUM. COLLEC. (MU)", "COLL. EFF."];
+        // Define parameters where a decrease is considered good (e.g., AT&C Loss, T&D Loss, Input)
+        const parametersGoodWhenDecreasing = ["CUM. INPUT (MU)", "CUM. AT&C LOSS", "CUM. DIST. LOSS"];
 
-        let chartData = {};
+
+        let chartData = {}; // Stores data for the chart, used for hover comparison
         let tooltipTimeout = null;
         let currentActiveTab = 'chartTab'; // Track the currently active main tab
         let currentComparisonSubTab = 'division'; // Track the currently active comparison sub-tab - Changed to 'division'
         let currentSortColumn = null; // 'difference' or 'percentDiff'
         let currentSortOrder = 'none'; // 'asc', 'desc', 'none'
         let expandedRowOptions = null; // To keep track of the currently expanded options row (either region or division)
+        let selectedCCC = ""; // Global variable to store the currently selected CCC for tooltip access
 
         // Global variables for filtering comparison table rows
         let currentRegionFilter = null;
@@ -1048,22 +1061,53 @@ canvas {
         // --- Data Fetching and Filter Population ---
         function fetchCSV() {
             showLoader(); // Show loader when fetching starts
-            Papa.parse(csvUrl, {
-                download: true,
-                header: true,
-                complete: function(results) {
-                    rawData = results.data.filter(row => row.CCC && row.YEAR && row.MONTH); // Filter out rows with missing essential data
-                    populateCCCFilter();
-                    generateYearCheckboxes();
-                    generateParameterCheckboxes();
-                    initializeComparisonFilters(); // Initialize comparison dropdowns
-                    showTab('comparisonTab'); // Show comparison tab by default
-                    // Initial setup for comparison tab
-                    document.getElementById('compareLastMarch').checked = true; // Select "vs. Last March"
-                    showComparisonSubTab('division'); // Show division view by default in comparison tab
-                    updateChart(); // Initial chart load for chart tab. Call after everything is set up.
-                    hideLoader(); // Hide loader after all initial data and UI is rendered
-                }
+            Promise.all([
+                new Promise(resolve => {
+                    Papa.parse(csvUrl, {
+                        download: true,
+                        header: true,
+                        complete: function(results) {
+                            rawData = results.data.filter(row => row.CCC && row.YEAR && row.MONTH);
+                            resolve();
+                        }
+                    });
+                }),
+                new Promise(resolve => {
+                    Papa.parse(targetCsvUrl, {
+                        download: true,
+                        header: true,
+                        complete: function(results) {
+                            targetDataRaw = results.data.filter(row => row.CCC); // Filter out rows with missing CCC
+                            // Populate targetDataMap for quick lookup
+                            targetDataRaw.forEach(row => {
+                                const cccName = row.CCC.trim();
+                                targetDataMap[cccName] = {};
+                                parameters.forEach(param => {
+                                    if (row[param] && !isNaN(parseFloat(row[param]))) {
+                                        targetDataMap[cccName][param] = parseFloat(row[param]);
+                                    }
+                                });
+                            });
+                            resolve();
+                        }
+                    });
+                })
+            ]).then(() => {
+                populateCCCFilter();
+                generateYearCheckboxes();
+                generateParameterCheckboxes();
+                initializeComparisonFilters(); // Initialize comparison dropdowns
+                showTab('comparisonTab'); // Show comparison tab by default
+                document.getElementById('compareLastMarch').checked = true; // Select "vs. Last March"
+                showComparisonSubTab('division'); // Show division view by default in comparison tab
+                updateChart(); // Initial chart load for chart tab. Call after everything is set up.
+                hideLoader(); // Hide loader after all initial data and UI is rendered
+            }).catch(error => {
+                console.error("Error fetching CSV data:", error);
+                hideLoader(); // Hide loader even on error
+                // Optionally display an error message to the user
+                document.getElementById("chartMessage").style.display = 'flex';
+                document.getElementById("chartMessage").innerHTML = "Failed to load data. Please check the console for errors.";
             });
         }
 
@@ -1156,7 +1200,7 @@ canvas {
 
         // --- Chart Functions ---
         function updateChart() {
-            const selectedCCC = document.getElementById("cccFilter").value;
+            selectedCCC = document.getElementById("cccFilter").value; // Assign to global variable
             const selectedYears = [...document.querySelectorAll("#yearCheckboxes input:checked")].map(cb => cb.value);
             selectedYears.sort((a, b) => parseInt(a) - parseInt(b)); // Sort years for consistent color assignment
             const selectedParameters = [...document.querySelectorAll("#parameterCheckboxes input:checked")].map(cb => cb.value);
@@ -1197,10 +1241,11 @@ canvas {
             selectedParameters.forEach((metric) => {
                 if (!chartData[metric]) chartData[metric] = {};
 
+                // Add datasets for actual data
                 selectedYears
                     .filter(y => y && !isNaN(parseInt(y)))
                     .forEach((year, yearIndex) => {
-                        if (!chartData[metric][year]) chartData[metric][year] = {};
+                        if (!chartData[metric][year]) chartData[metric][year] = {}; // Initialize inner object
 
                         let baseColor;
                         if (!isParamColoringMode) {
@@ -1212,8 +1257,7 @@ canvas {
                         }
 
                         // Adjust color (brightness and opacity) based on the year's position
-                        // Pass isParamColoringMode to adjustColorForYear for conditional lightness
-                        const lineColor = adjustColorForYear(baseColor, yearIndex, selectedYears.length, isParamColoringMode);
+                        const lineColor = adjustColorForYear(baseColor, yearIndex, selectedYears.length);
                         const dataLabelColor = lineColor; // Data labels match line color
 
                         datasets.push({
@@ -1261,6 +1305,27 @@ canvas {
                             }
                         });
                     });
+
+                // Add dataset for target line if target exists for this CCC and metric
+                const targetValue = targetDataMap[selectedCCC]?.[metric];
+                if (targetValue !== undefined && targetValue !== null) {
+                    datasets.push({
+                        label: `${parameterDisplayMap[metric]} Target`,
+                        data: Array(labels.length).fill(targetValue), // Horizontal line
+                        borderColor: PARAMETER_COLORS[metric] || '#000000', // Use parameter color
+                        backgroundColor: PARAMETER_COLORS[metric] || '#000000',
+                        borderDash: [5, 5], // Dashed line for target
+                        pointRadius: 0, // No points for target line
+                        pointHoverRadius: 0,
+                        borderWidth: window.innerWidth <= 768 ? 1 : 2,
+                        fill: false,
+                        metric: metric, // Keep metric for tooltip if needed, though target is simpler
+                        isTarget: true, // Custom property to identify target line
+                        datalabels: {
+                            display: false // No datalabels for target line
+                        }
+                    });
+                }
             });
 
             renderChart(labels, datasets);
@@ -1343,13 +1408,16 @@ canvas {
                                 activeElements.forEach(element => {
                                     const dataset = context.chart.data.datasets[element.datasetIndex];
                                     const metric = dataset.metric;
-                                    const year = dataset.year;
-                                    if (!metricGroups[metric]) metricGroups[metric] = [];
-                                    metricGroups[metric].push({
-                                        year: year,
-                                        value: element.raw,
-                                        datasetIndex: element.datasetIndex
-                                    });
+                                    // Only include actual data points in year-on-year comparison
+                                    if (!dataset.isTarget) {
+                                        const year = dataset.year;
+                                        if (!metricGroups[metric]) metricGroups[metric] = [];
+                                        metricGroups[metric].push({
+                                            year: year,
+                                            value: element.raw,
+                                            datasetIndex: element.datasetIndex
+                                        });
+                                    }
                                 });
 
                                 const monthIndex = context.tooltip.dataPoints[0].dataIndex;
@@ -1358,9 +1426,11 @@ canvas {
 
                                 Object.keys(metricGroups).forEach(metric => {
                                     const points = metricGroups[metric];
-                                    if (points.length < 2) return;
+                                    if (points.length < 1) return; // Should be at least one point
 
                                     tooltipContent += `<div class="metric-title">${parameterDisplayMap[metric]}</div>`;
+
+                                    // Display actual values for each year
                                     points.forEach(point => {
                                         if (point.value !== null) {
                                             tooltipContent += `<div class="year-value">
@@ -1370,6 +1440,39 @@ canvas {
                                         }
                                     });
 
+                                    // Get target value for this metric and selected CCC
+                                    const targetValue = targetDataMap[selectedCCC]?.[metric];
+                                    if (targetValue !== undefined && targetValue !== null) {
+                                        tooltipContent += `<div class="year-value">
+                                            <span>Target:</span>
+                                            <span>${targetValue.toFixed(2)}</span>
+                                        </div>`;
+
+                                        // Compare each actual value against the target
+                                        points.forEach(point => {
+                                            if (point.value !== null) {
+                                                const difference = point.value - targetValue;
+                                                const percentChange = (targetValue !== 0) ? (difference / Math.abs(targetValue)) * 100 : 0;
+
+                                                let cssClass = "";
+                                                if (parametersGoodWhenIncreasing.includes(metric)) {
+                                                    cssClass = difference > 0 ? 'negative' : difference < 0 ? 'positive' : 'neutral';
+                                                } else if (parametersGoodWhenDecreasing.includes(metric)) { // Added this condition
+                                                    cssClass = difference < 0 ? 'negative' : difference > 0 ? 'positive' : 'neutral';
+                                                } else {
+                                                    cssClass = 'neutral'; // Default if not in either good-when-increasing/decreasing
+                                                }
+                                                const symbol = difference > 0 ? '↑' : difference < 0 ? '↓' : '→';
+
+                                                tooltipContent += `<div class="diff-value ${cssClass}">
+                                                    <span>${point.year} vs Target:</span>
+                                                    <span>${difference.toFixed(2)} ${symbol} (${percentChange.toFixed(1)}%)</span>
+                                                </div>`;
+                                            }
+                                        });
+                                    }
+
+                                    // Add year-on-year comparison (existing logic)
                                     for (let i = 0; i < points.length - 1; i++) {
                                         for (let j = i + 1; j < points.length; j++) {
                                             const pointA = points[i];
@@ -1423,14 +1526,23 @@ canvas {
 
         function updateDataTable() {
             const table = document.getElementById("dataTable");
+            const selectedCCC = document.getElementById("cccFilter").value;
             const selectedParameters = [...document.querySelectorAll("#parameterCheckboxes input:checked")].map(cb => cb.value);
             const selectedYears = [...document.querySelectorAll("#yearCheckboxes input:checked")].map(cb => cb.value);
+            selectedYears.sort((a, b) => parseInt(a) - parseInt(b));
 
-            let thead = "<tr><th>Sl.</th><th>Month</th>"; // Added Sl. header
+            const latestSelectedYear = selectedYears.length > 0 ? selectedYears[selectedYears.length - 1] : null;
+
+            let thead = "<tr><th>Sl.</th><th>Month</th>";
             selectedParameters.forEach(param => {
                 selectedYears.forEach(year => {
                     thead += `<th>${parameterDisplayMap[param]}<br>(${year}-${(parseInt(year) + 1).toString().slice(-2)})</th>`;
                 });
+                thead += `<th>${parameterDisplayMap[param]} Target</th>`;
+                
+                if (latestSelectedYear) {
+                    thead += `<th>Diff (vs. Target)</th>`;
+                }
             });
             thead += "</tr>";
             table.querySelector("thead").innerHTML = thead;
@@ -1440,12 +1552,51 @@ canvas {
             for (let i = 0; i < 12; i++) {
                 const monthNum = fiscalMonthOrder[i];
                 const monthLabel = monthNames[i];
-                let row = `<tr><td>${i + 1}</td><td>${monthLabel}</td>`; // Added serial number
+                let row = `<tr><td>${i + 1}</td><td>${monthLabel}</td>`;
                 selectedParameters.forEach(param => {
                     selectedYears.forEach(year => {
-                        const value = chartData[param]?.[year]?.[monthNum];
-                        row += `<td>${value != null ? value.toFixed(2) : "-"}</td>`;
+                        const actualValue = chartData[param]?.[year]?.[monthNum];
+                        const previousYear = parseInt(year) - 1;
+                        const actualValuePreviousYear = chartData[param]?.[previousYear.toString()]?.[monthNum];
+
+                        let prevYearDiffHtml = "";
+                        if (actualValue != null && !isNaN(actualValue) && actualValuePreviousYear != null && !isNaN(actualValuePreviousYear)) {
+                            const diffFromPrevYear = actualValue - actualValuePreviousYear;
+                            let diffClass = "";
+                            if (parametersGoodWhenIncreasing.includes(param)) {
+                                diffClass = diffFromPrevYear > 0 ? "negative" : diffFromPrevYear < 0 ? "positive" : "neutral";
+                            } else if (parametersGoodWhenDecreasing.includes(param)) {
+                                diffClass = diffFromPrevYear < 0 ? "negative" : diffFromPrevYear > 0 ? "positive" : "neutral";
+                            } else {
+                                diffClass = 'neutral';
+                            }
+                            prevYearDiffHtml = `<span style="font-size: 0.8em;" class="${diffClass}"> (${diffFromPrevYear.toFixed(2)})</span>`;
+                        }
+                        
+                        row += `<td>${actualValue != null ? actualValue.toFixed(2) : "-"} ${prevYearDiffHtml}</td>`;
                     });
+
+                    const targetValue = targetDataMap[selectedCCC]?.[param];
+
+                    row += `<td>${targetValue != null ? targetValue.toFixed(2) : "-"}</td>`;
+
+                    if (latestSelectedYear) {
+                        const actualValueForLatestYear = chartData[param]?.[latestSelectedYear]?.[monthNum];
+                        let diffTargetVsLatestFY = null;
+                        let diffTargetVsLatestFYClass = "";
+
+                        if (actualValueForLatestYear != null && targetValue != null) {
+                            diffTargetVsLatestFY = actualValueForLatestYear - targetValue;
+                            if (parametersGoodWhenIncreasing.includes(param)) {
+                                diffTargetVsLatestFYClass = diffTargetVsLatestFY > 0 ? "negative" : diffTargetVsLatestFY < 0 ? "positive" : "";
+                            } else if (parametersGoodWhenDecreasing.includes(param)) {
+                                diffTargetVsLatestFYClass = diffTargetVsLatestFY < 0 ? "negative" : diffTargetVsLatestFY > 0 ? "positive" : "";
+                            } else {
+                                diffTargetVsLatestFYClass = 'neutral';
+                            }
+                        }
+                        row += `<td class="${diffTargetVsLatestFYClass}">${diffTargetVsLatestFY != null && !isNaN(diffTargetVsLatestFY) ? diffTargetVsLatestFY.toFixed(2) : "-"}</td>`;
+                    }
                 });
                 row += "</tr>";
                 tbody += row;
@@ -1591,7 +1742,7 @@ canvas {
             const selectedParameter = [...document.querySelectorAll("#parameterCheckboxes input:checked")].map(cb => cb.value)[0]; // Use first selected parameter
 
             if (!selectedParameter) {
-                document.getElementById("regionTable").querySelector("tbody").innerHTML = "<tr><td colspan='6'>Please select at least one Parameter.</td></tr>"; // colspan updated
+                document.getElementById("regionTable").querySelector("tbody").innerHTML = "<tr><td colspan='8'>Please select at least one Parameter.</td></tr>"; // colspan updated
                 return;
             }
 
@@ -1712,7 +1863,7 @@ canvas {
             let percentDiff = null;
             let diffClass = "";
 
-            if (value1 !== null && value2 !== null) {
+            if (value1 != null && value2 != null) { // Changed to != null
                 // Change calculation: Current data (Period 1) - Previous data (Period 2)
                 difference = value1 - value2;
                 percentDiff = (value2 !== 0) ? (difference / Math.abs(value2)) * 100 : 0;
@@ -1727,13 +1878,33 @@ canvas {
                 }
             }
 
+            // Get target value for this unit and parameter
+            const targetValue = targetDataMap[unitName]?.[parameter];
+            let diffVsTarget = null;
+            let diffVsTargetClass = "";
+
+            if (value1 != null && targetValue != null) { // Changed to != null
+                diffVsTarget = value1 - targetValue;
+                if (parametersGoodWhenIncreasing.includes(parameter)) {
+                    diffVsTargetClass = diffVsTarget > 0 ? "negative" : diffVsTarget < 0 ? "positive" : "";
+                } else if (parametersGoodWhenDecreasing.includes(parameter)) {
+                    diffVsTargetClass = diffVsTarget < 0 ? "negative" : diffVsTarget > 0 ? "positive" : "";
+                } else {
+                    diffVsTargetClass = 'neutral';
+                }
+            }
+
+
             return {
                 name: unitName,
                 value1: value1,
                 value2: value2,
                 difference: difference,
                 percentDiff: percentDiff,
-                diffClass: diffClass
+                diffClass: diffClass,
+                targetValue: targetValue, // New: Add target value
+                diffVsTarget: diffVsTarget, // New: Add difference vs target
+                diffVsTargetClass: diffVsTargetClass // New: Add class for difference vs target
             };
         }
 
@@ -1770,7 +1941,7 @@ canvas {
                 const newRow = document.createElement('tr');
                 newRow.classList.add('options-row');
                 newRow.innerHTML = `
-                    <td colspan="6">
+                    <td colspan="8"> <!-- Adjusted colspan to 8 -->
                         <div class="option-buttons">
                             <button onclick="showComparisonSubTab('division', '${regionName}', 'region')">View Divisions</button>
                             <button onclick="showComparisonSubTab('ccc', '${regionName}', 'region')">View CCCs</button>
@@ -1806,7 +1977,7 @@ canvas {
                 const newRow = document.createElement('tr');
                 newRow.classList.add('options-row');
                 newRow.innerHTML = `
-                    <td colspan="6">
+                    <td colspan="8"> <!-- Adjusted colspan to 8 -->
                         <div class="option-buttons">
                             <button onclick="showComparisonSubTab('ccc', '${divisionName}', 'division')">View CCCs</button>
                             <button onclick="drillDownToChart('${divisionName}')">View Chart</button>
@@ -1839,10 +2010,12 @@ canvas {
                     <td style="padding-left:${indent + 15}px;">
                         ${entry.name}
                     </td>
-                    <td>${entry.value1 !== null ? entry.value1.toFixed(2) : "-"}</td>
-                    <td>${entry.value2 !== null ? entry.value2.toFixed(2) : "-"}</td>
-                    <td class="${entry.diffClass}">${entry.difference !== null ? entry.difference.toFixed(2) : "-"}</td>
-                    ${hidePercentColumn ? '' : `<td class="${entry.diffClass}">${entry.percentDiff !== null ? entry.percentDiff.toFixed(2) + "%" : "-"}</td>`}
+                    <td>${entry.value1 != null ? entry.value1.toFixed(2) : "-"}</td>
+                    <td>${entry.value2 != null ? entry.value2.toFixed(2) : "-"}</td>
+                    <td class="${entry.diffClass}">${entry.difference != null ? entry.difference.toFixed(2) : "-"}</td>
+                    ${hidePercentColumn ? '' : `<td class="${entry.diffClass}">${entry.percentDiff != null ? entry.percentDiff.toFixed(2) + "%" : "-"}</td>`}
+                    <td>${entry.targetValue != null ? entry.targetValue.toFixed(2) : "-"}</td>
+                    <td class="${entry.diffVsTargetClass}">${entry.diffVsTarget != null && !isNaN(entry.diffVsTarget) ? entry.diffVsTarget.toFixed(2) : "-"}</td>
                 </tr>
             `;
         }
@@ -1882,9 +2055,9 @@ canvas {
                 const valB = b[column];
 
                 // Handle null/undefined values: push them to the end
-                if (valA === null && valB === null) return 0;
-                if (valA === null) return 1;
-                if (valB === null) return -1;
+                if (valA == null && valB == null) return 0; // Changed to == null
+                if (valA == null) return 1; // Changed to == null
+                if (valB == null) return -1; // Changed to == null
 
                 if (order === 'asc') {
                     return valA - valB;
@@ -1911,7 +2084,7 @@ canvas {
             }
 
             if (dataToRender.length === 0) {
-                tbodyHtml = "<tr><td colspan='6'>No data available for selected periods or filters.</td></tr>"; // colspan updated
+                tbodyHtml = "<tr><td colspan='8'>No data available for selected periods or filters.</td></tr>"; // colspan updated
             } else {
                 dataToRender.forEach((entry, index) => { // Added index for serial number
                     // Determine the correct row class based on the entry's name and hierarchy
@@ -2079,7 +2252,7 @@ canvas {
         // Function to update the display of filter clear icons
         function updateFilterIconsDisplay() {
             const divisionIcon = document.getElementById('divisionFilterIcon');
-            const cccIcon = document.getElementById('cccFilterIcon');
+            const cccIcon = document.getElementById('cccFilterIcon'); // Corrected ID reference
 
             // Logic for Division tab filter icon
             // Show icon if current sub-tab is division AND a region filter is active
