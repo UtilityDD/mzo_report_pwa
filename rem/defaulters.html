@@ -636,13 +636,15 @@
                 <thead>
                     <tr>
                         <th>Sl</th>
-                        <th>Con ID</th> <!-- Changed from CON_ID -->
-                        <th>CCC</th> <!-- New CCC Column -->
+                        <th>Con ID</th>
+                        <th>CCC</th>
                         <th>Name</th>
+                        <th>MRU</th> <!-- New MRU Column Header -->
+                        <th>Mobile</th> <!-- New Mobile Column Header -->
                         <th>Base Class</th>
                         <th id="osdHeader" class="sortable-header">
                             OSD (₹)
-                            <span class="sort-icon">&#9660;</span> <!-- Down arrow for descending by default -->
+                            <span class="sort-icon">&#9660;</span>
                         </th>
                         <th>Locked OSD (₹)</th>
                         <th>Last Payment</th>
@@ -676,7 +678,7 @@
     <!-- Loading Overlay -->
     <div id="loadingOverlay" class="loading-overlay">
         <div class="spinner"></div>
-        <div class="loading-text">Loading data... Please wait.</div>
+        <div class="loading-text" id="loadingText">Loading data... Please wait.</div>
     </div>
 
     <script>
@@ -801,10 +803,12 @@
         }
 
         /**
-         * Shows the loading overlay.
+         * Shows the loading overlay with a dynamic message.
+         * @param {string} message - The message to display on the loading overlay.
          */
-        function showLoadingOverlay() {
+        function showLoadingOverlay(message) {
             document.getElementById('loadingOverlay').style.display = 'flex';
+            document.getElementById('loadingText').textContent = message; // Update the loading text
         }
 
         /**
@@ -820,8 +824,9 @@
          * Handles loading and error messages.
          */
         async function loadData() {
-            showLoadingOverlay(); // Show loading overlay at the start
-            document.getElementById('loadingMessage').style.display = 'block';
+            showLoadingOverlay("Downloading data..."); // Initial loading message
+            // Hide the old loading message div, as we are now using the overlay
+            document.getElementById('loadingMessage').style.display = 'none'; 
             document.getElementById('dataTable').style.display = 'none';
             document.getElementById('errorMessage').style.display = 'none';
 
@@ -832,6 +837,7 @@
                 }
                 const tsvData = await response.text();
                 
+                showLoadingOverlay("Analysing data..."); // Update message after download
                 // Parse TSV data
                 const lines = tsvData.trim().split('\n');
                 const headers = lines[0].split('\t').map(h => h.trim());
@@ -847,6 +853,8 @@
 
                 createCCCMapping();
                 initializeFilters();
+                
+                showLoadingOverlay("Loading visualization..."); // Update message before rendering
                 filterAndSortData(); // Initial filter and render
                 
                 document.getElementById('loadingMessage').style.display = 'none';
@@ -1087,8 +1095,11 @@
                     }
                 }
 
-                // Tower filter
+                // Tower filter: Apply only if BASE_CLASS is 'C' (Commercial)
                 if (towerFilterChecked) {
+                    if (item.BASE_CLASS !== 'C') { // Check if Base Class is NOT 'C'
+                        return false; // Exclude if not commercial
+                    }
                     const nameLower = (item.NAME || '').toLowerCase();
                     const addressLower = (item.ADDRESS || '').toLowerCase();
                     const towerKeywords = ['indus', 'bharti', 'jio', 'bsnl' ,'telecom'];
@@ -1156,12 +1167,14 @@
                 row.innerHTML = `
                     <td>${startIndex + index + 1}</td>
                     <td>${item.CON_ID || 'N/A'}</td>
-                    <td>${locationInfo ? locationInfo.ccc : 'N/A'}</td> <!-- New CCC Column, now without " CCC" -->
-                    <td>${item.NAME || 'N/A'}</td> <!-- Display Name -->
+                    <td>${locationInfo ? locationInfo.ccc : 'N/A'}</td>
+                    <td>${item.NAME || 'N/A'}</td>
+                    <td>${item.MRU || 'N/A'}</td> <!-- Display MRU -->
+                    <td>${item.REG_MOB_NO || 'N/A'}</td> <!-- Display Mobile No -->
                     <td>${item.BASE_CLASS || 'N/A'}</td>
                     <td class="amount">${formatIndianCurrency(item.NOTOSD_UPD)}</td>
                     <td class="amount">${formatIndianCurrency(item.LOCKED_OSD)}</td>
-                    <td class="last-payment">${getMonthsSince(item.LAST_PDT)}</td> <!-- Changed to months since -->
+                    <td class="last-payment">${getMonthsSince(item.LAST_PDT)}</td>
                 `;
                 
                 tbody.appendChild(row);
@@ -1254,6 +1267,12 @@
                 <div class="detail-label">CCC:</div>
                 <div class="detail-value">${locationInfo ? locationInfo.ccc : 'N/A'}</div>
                 
+                <div class="detail-label">MRU:</div>
+                <div class="detail-value">${item.MRU || 'N/A'}</div> <!-- Display MRU in modal -->
+
+                <div class="detail-label">Registered Mobile No.:</div>
+                <div class="detail-value">${item.REG_MOB_NO || 'N/A'}</div> <!-- Display Mobile No in modal -->
+                
                 <div class="detail-label">Base Class:</div>
                 <div class="detail-value">${item.BASE_CLASS || 'N/A'}</div>
                 
@@ -1270,7 +1289,7 @@
                 <div class="detail-value">${formatDate(item.BDATE)}</div>
                 
                 <div class="detail-label">Last Payment:</div>
-                <div class="detail-value">${getMonthsSince(item.LAST_PDT)} (Original: ${formatDate(item.LAST_PDT)})</div> <!-- Changed to months since -->
+                <div class="detail-value">${getMonthsSince(item.LAST_PDT)} (Original: ${formatDate(item.LAST_PDT)})</div>
                 
                 <div class="detail-label">Report Date:</div>
                 <div class="detail-value">${formatDate(item.UPD_DT)}</div>
