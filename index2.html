@@ -592,6 +592,7 @@ body {
 /*──────────────────────────────────────
    Loading overlay with modern spinner - FIXED POSITIONING
 ──────────────────────────────────────*/
+/* Ensure loading overlay covers header and content */
 .loading-overlay {
   position: fixed !important;
   top: 0 !important;
@@ -600,15 +601,13 @@ body {
   height: 100vh !important;
   background: rgba(15, 15, 35, 0.9);
   backdrop-filter: var(--blur-backdrop);
-  z-index: 99999 !important;
-  opacity: 0;
-  visibility: hidden;
-  transition: all 0.3s ease;
+  z-index: 20000 !important; /* higher than header */
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  margin: 0 !important;
-  padding: 0 !important;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease;
 }
 
 .loading-overlay.active {
@@ -616,6 +615,7 @@ body {
   visibility: visible;
 }
 
+/* Center the spinner absolutely in viewport */
 .loading-overlay::after {
   content: '';
   width: 60px;
@@ -624,12 +624,12 @@ body {
   border-top: 3px solid var(--accent-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
-  position: absolute;
-  top: 50% !important;
-  left: 50% !important;
-  transform: translate(-50%, -50%) !important;
-  z-index: 100000 !important;
+  position: fixed; /* fixed so it stays in center of viewport */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
+
 
 /*──────────────────────────────────────
    Modern footer
@@ -1339,12 +1339,18 @@ window.refreshIframe = refreshIframe;
 
 // Android-style navigation
 function openPage(page, title) {
+  const overlay = document.getElementById("loadingOverlay");
   const iframe = document.getElementById("subPageFrame");
   const errorDiv = document.getElementById("iframeError");
   const desktopBreakpoint = 768;
 
+  // Show loader immediately
+  overlay.classList.add("active");
+
+  // Desktop opens in new tab
   if (window.innerWidth >= desktopBreakpoint) {
-    window.open(page, '_blank');
+    window.open(page, "_blank");
+    overlay.classList.remove("active");
     return;
   }
 
@@ -1352,26 +1358,29 @@ function openPage(page, title) {
   iframe.onload = null;
   iframe.onerror = null;
   iframe.src = "";
-  iframe.src = page;
+
   document.querySelector("#detailPage .main-title").textContent = title;
 
-  document.getElementById("mainPage").classList.remove("active");
-  document.getElementById("detailPage").classList.add("active");
-
-  let loadFailed = false;
+  // Switch to detail page after a tiny delay so loader paints
+  setTimeout(() => {
+    document.getElementById("mainPage").classList.remove("active");
+    document.getElementById("detailPage").classList.add("active");
+    iframe.src = page;
+  }, 50);
 
   const timeout = setTimeout(() => {
+    overlay.classList.remove("active");
     try {
       const doc = iframe.contentDocument || iframe.contentWindow.document;
-      const title = (doc.title || "").toLowerCase();
-      const body = (doc.body && doc.body.innerText || "").toLowerCase();
+      const t = (doc.title || "").toLowerCase();
+      const b = (doc.body && doc.body.innerText || "").toLowerCase();
 
-      if (title.includes("404") || title.includes("not found") || body.includes("404") || body.includes("not found")) {
+      if (t.includes("404") || t.includes("not found") || b.includes("404") || b.includes("not found")) {
         showIframeError("🚫 Page Not Found (404). This file might be missing.");
         return;
       }
 
-      if (!body.trim() || body.trim().length < 20) {
+      if (!b.trim() || b.trim().length < 20) {
         showIframeError("🛑 Unable to load. Network might be unstable.");
         return;
       }
@@ -1380,18 +1389,15 @@ function openPage(page, title) {
     } catch (err) {
       showIframeError("🛑 Network issue or unreachable content.");
     }
-  }, 4000);
+  }, 8000);
 
   function showIframeError(message) {
-    const errorDiv = document.getElementById("iframeError");
     errorDiv.innerHTML = `${message}<br/><br/>
       <button onclick="retryIframe()" style="margin-top: 12px; padding: 8px 16px; font-size: 14px;">🔄 Retry</button>`;
     errorDiv.style.display = "flex";
   }
 
   function retryIframe() {
-    const iframe = document.getElementById("subPageFrame");
-    const errorDiv = document.getElementById("iframeError");
     const currentSrc = iframe.src;
     errorDiv.style.display = "none";
     iframe.src = "";
@@ -1403,13 +1409,16 @@ function openPage(page, title) {
   iframe.onload = () => {
     clearTimeout(timeout);
     errorDiv.style.display = "none";
+    overlay.classList.remove("active");
   };
 
   iframe.onerror = () => {
     clearTimeout(timeout);
+    overlay.classList.remove("active");
     errorDiv.style.display = "flex";
   };
 }
+
 
 function goBack() {
   document.getElementById("detailPage").classList.remove("active");
