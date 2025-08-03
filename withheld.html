@@ -140,8 +140,9 @@
 <body class="flex min-h-screen">
 
   <!-- Loading Overlay for Initial Data Load -->
-  <div id="loadingOverlay" class="fixed inset-0 z-[2000] bg-gray-900 bg-opacity-80 flex items-center justify-center transition-opacity duration-300 ease-in-out">
-    <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-500"></div>
+  <div id="loadingOverlay" class="fixed inset-0 z-[2000] bg-gray-900 bg-opacity-80 flex flex-col items-center justify-center transition-opacity duration-300 ease-in-out">
+    <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-500 mb-4"></div>
+    <p class="text-lg text-gray-200">Loading dashboard data...</p>
   </div>
 
   <!-- Left Panel (Hideable) -->
@@ -339,6 +340,9 @@
     let currentModalLevel = 0; // 0: closed, 1: region, 2: division, 3: ccc, 4: application list
     let maxTodayDate = null; // Global variable to store the latest "TODAY" date from data
     let currentModalContext = {}; // Stores data and filters for the modal drill-down
+
+    // Constants for lazy loading applications
+    const APPLICATION_PAGE_SIZE = 50;
 
     // DOM Elements
     const loadingOverlay = document.getElementById('loadingOverlay');
@@ -643,7 +647,8 @@
             parentContext: null, // No parent context at the top level
             selectedRegion: undefined,
             selectedDivision: undefined,
-            selectedCcc: undefined
+            selectedCcc: undefined,
+            currentAppPageIndex: 0 // Initialize pagination for applications
         };
 
         showModal(`${cardTitle} (${dataForModal.length})`, 1, currentModalContext);
@@ -666,6 +671,7 @@
             currentModalContext.selectedDivision = drillDownSelectedItems.selectedDivision;
             currentModalContext.selectedCcc = drillDownSelectedItems.selectedCcc;
             currentModalLevel = drillDownLevel; // Update level for drill-down
+            currentModalContext.currentAppPageIndex = 0; // Reset pagination on drill down
         } else {
             // This is a direct tab switch or a back navigation.
             // currentModalContext is already set correctly by handleModalBack or handleModalOpen.
@@ -876,23 +882,43 @@
             modalContentApplicationList.innerHTML = `<div class="p-4 text-center text-gray-500">No applications found for ${cccName}.</div>`;
             return;
         }
+
+        // Store the full data for this level in currentModalContext for pagination
+        currentModalContext.fullApplicationData = data;
+        currentModalContext.currentAppPageIndex = 0; // Start at the first page
+
+        // Initial render of the first chunk
+        renderApplicationsChunk(true);
+    }
+
+    function renderApplicationsChunk(isInitialLoad = false) {
+        const data = currentModalContext.fullApplicationData;
+        const startIndex = currentModalContext.currentAppPageIndex * APPLICATION_PAGE_SIZE;
+        const endIndex = startIndex + APPLICATION_PAGE_SIZE;
+        const chunk = data.slice(startIndex, endIndex);
+
+        let html = '';
+        if (isInitialLoad) {
+            html = `
+                <table class="min-w-full divide-y divide-gray-700">
+                    <thead class="bg-gray-700 sticky top-0">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Appl No.</th>
+                            <th class="px-6 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Name</th>
+                            <th class="px-6 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Phone No.</th>
+                            <th class="px-6 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Class</th>
+                            <th class="px-6 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Phase</th>
+                            <th class="px-6 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-gray-800 divide-y divide-gray-700" id="application-list-tbody">
+            `;
+        } else {
+            // If not initial load, we're appending to an existing table
+            html = document.getElementById('application-list-tbody').innerHTML;
+        }
         
-        let html = `
-            <table class="min-w-full divide-y divide-gray-700">
-                <thead class="bg-gray-700">
-                    <tr>
-                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Appl No.</th>
-                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Name</th>
-                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Phone No.</th>
-                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Class</th>
-                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Phase</th>
-                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Reason</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-gray-800 divide-y divide-gray-700">
-        `;
-        
-        data.forEach(item => {
+        chunk.forEach(item => {
             html += `
                 <tr class="hover:bg-gray-700 transition-colors duration-200">
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${item['APPL_NO'] || '-'}</td>
@@ -905,9 +931,39 @@
             `;
         });
 
-        html += `</tbody></table>`;
-        modalContentApplicationList.innerHTML = html;
+        if (isInitialLoad) {
+            html += `</tbody></table>`;
+            modalContentApplicationList.innerHTML = html;
+        } else {
+            document.getElementById('application-list-tbody').innerHTML = html;
+        }
+
+        // Add/update load more button
+        let loadMoreButton = document.getElementById('load-more-applications');
+        if (!loadMoreButton) {
+            loadMoreButton = document.createElement('button');
+            loadMoreButton.id = 'load-more-applications';
+            loadMoreButton.className = 'mt-4 p-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-500 transition-colors w-full';
+            loadMoreButton.textContent = 'Load More';
+            loadMoreButton.addEventListener('click', () => {
+                currentModalContext.currentAppPageIndex++;
+                showModalLoader();
+                setTimeout(() => {
+                    renderApplicationsChunk(false);
+                    hideModalLoader();
+                }, 50);
+            });
+            modalContentApplicationList.appendChild(loadMoreButton);
+        }
+
+        // Hide load more button if all data is loaded
+        if (endIndex >= data.length) {
+            loadMoreButton.classList.add('hidden');
+        } else {
+            loadMoreButton.classList.remove('hidden');
+        }
     }
+
 
     function populateFilters() {
         const regions = [...new Set(rawData.map(item => item['REGION']).filter(Boolean))].sort();
