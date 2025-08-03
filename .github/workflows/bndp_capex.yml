@@ -1,57 +1,35 @@
-name: Fetch and Convert Buniadpur Capex Data
+name: Update Buniadpur CAPEX JSON
 
 on:
   schedule:
-    - cron: '30 8 * * *'  # 2:00 PM IST = 08:30 AM UTC
+    - cron: '30 8 * * *'  # Every day at 2:00 PM IST
   workflow_dispatch:
 
 jobs:
-  fetch_and_convert:
+  update:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
+      - name: Install csvtojson
+        run: npm install -g csvtojson
 
-      - name: Install Dependencies
-        run: npm install papaparse node-fetch
-
-      - name: Download and Convert CSV to JSON
+      - name: Fetch and Convert Buniadpur CSVs
         run: |
-          node <<EOF
-          const fs = require('fs');
-          const fetch = require('node-fetch');
-          const Papa = require('papaparse');
+          mkdir -p data
 
-          async function fetchCSVtoJSON(url, outputPath) {
-            const response = await fetch(url);
-            const csvText = await response.text();
+          # Download and convert CAPEX CSV
+          curl -L "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZPn6CB_cHTFVb8S5vpvaBnczj63fYMTI0RVEdMzVcQ8O6XQi5iwTbMp2xa5vsL6zHGWxezWUSehrN/pub?gid=1865929221&single=true&output=csv" -o data/bbdp_capex.csv
+          csvtojson data/bbdp_capex.csv > data/bbdp_capex.json
 
-            const parsed = Papa.parse(csvText, {
-              header: true,
-              skipEmptyLines: true
-            });
+          # Download and convert Vendor CSV
+          curl -L "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZPn6CB_cHTFVb8S5vpvaBnczj63fYMTI0RVEdMzVcQ8O6XQi5iwTbMp2xa5vsL6zHGWxezWUSehrN/pub?gid=1818971964&single=true&output=csv" -o data/bndp_vendor.csv
+          csvtojson data/bndp_vendor.csv > data/bndp_vendor.json
 
-            fs.writeFileSync(outputPath, JSON.stringify(parsed.data, null, 2));
-          }
-
-          const urls = {
-            capex: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTZPn6CB_cHTFVb8S5vpvaBnczj63fYMTI0RVEdMzVcQ8O6XQi5iwTbMp2xa5vsL6zHGWxezWUSehrN/pub?gid=1865929221&single=true&output=csv',
-            vendor: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTZPn6CB_cHTFVb8S5vpvaBnczj63fYMTI0RVEdMzVcQ8O6XQi5iwTbMp2xa5vsL6zHGWxezWUSehrN/pub?gid=1818971964&single=true&output=csv'
-          };
-
-          fetchCSVtoJSON(urls.capex, 'data/bbdp_capex.json');
-          fetchCSVtoJSON(urls.vendor, 'data/bndp_vendor.json');
-          EOF
-
-      - name: Commit and Push if Data Changed
+      - name: Commit and Push JSON Files
         run: |
-          git config --global user.name 'github-actions'
-          git config --global user.email 'github-actions@github.com'
-          git add data/*.json
-          git diff --cached --quiet || git commit -m "Update Buniadpur data from Google Sheets"
-          git push
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add data/bbdp_capex.json data/bndp_vendor.json || true
+          git diff --cached --quiet && echo "✅ No changes to commit." || (git commit -m "Update Buniadpur JSON data" && git push)
