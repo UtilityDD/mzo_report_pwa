@@ -420,10 +420,11 @@
                 document.getElementById('update-date').textContent = `Updated date unavailable`;
             }
 
-            populateFilters();
+            // Initial population of filters and data
+            populateRegionFilter(); // Populates only the region filter
+            updateDivisionAndCccFilters(); // Populates division and CCC based on current (initially 'All') region
             populateReasonPanel();
-            updateDependentFilters();
-            applyFilters();
+            applyFilters(); // Apply all filters to update dashboard stats and charts
 
             loadingOverlay.classList.add('opacity-0');
             setTimeout(() => { 
@@ -433,9 +434,17 @@
 
             portalCheckbox.addEventListener('change', applyFilters);
             offlineCheckbox.addEventListener('change', applyFilters);
-            regionSelect.addEventListener('change', () => { updateDependentFilters(); applyFilters(); });
-            divisionSelect.addEventListener('change', () => { updateDependentFilters(); applyFilters(); });
-            supportSelect.addEventListener('change', () => { updateDependentFilters(); applyFilters(); });
+            
+            // Updated event listeners for cascading filters
+            regionSelect.addEventListener('change', () => { 
+                updateDivisionAndCccFilters(); // Update division and CCC based on new region
+                applyFilters(); // Apply all filters
+            });
+            divisionSelect.addEventListener('change', () => { 
+                updateCccFilters(); // Update CCC based on new division
+                applyFilters(); // Apply all filters
+            });
+            supportSelect.addEventListener('change', applyFilters); // Only apply filters for CCC change
             
             reasonFilterContainer.addEventListener('change', applyFilters);
             
@@ -524,7 +533,14 @@
         animate();
     }
 
+    /**
+     * Populates a select element with options.
+     * Preserves the current selection if it exists in the new items, otherwise resets to the first option.
+     * @param {HTMLSelectElement} selectElement The select element to populate.
+     * @param {string[]} items An array of strings to use as options.
+     */
     function populateSelect(selectElement, items) {
+        const currentSelection = selectElement.value; // Store the current selection
         const firstOption = selectElement.options[0].cloneNode(true);
         selectElement.innerHTML = '';
         selectElement.appendChild(firstOption);
@@ -534,6 +550,56 @@
             option.textContent = item;
             selectElement.appendChild(option);
         });
+        // Restore selection if valid, otherwise it will naturally default to the first option (All X)
+        if (items.includes(currentSelection)) {
+            selectElement.value = currentSelection;
+        } else {
+            selectElement.value = ''; // Explicitly reset to "All X" if old selection is invalid
+        }
+    }
+
+    /**
+     * Populates the Region filter dropdown.
+     */
+    function populateRegionFilter() {
+        const regions = [...new Set(rawData.map(item => item['REGION']).filter(Boolean))].sort();
+        populateSelect(regionSelect, regions);
+    }
+
+    /**
+     * Updates the Division and CCC filter dropdowns based on the currently selected Region.
+     * This function is called when the Region filter changes or on initial load.
+     */
+    function updateDivisionAndCccFilters() {
+        const selectedRegion = regionSelect.value;
+        let possibleDivisions = new Set();
+        rawData.forEach(item => {
+            if (!selectedRegion || item['REGION'] === selectedRegion) {
+                if (item['DIVN_NAME']) possibleDivisions.add(item['DIVN_NAME']);
+            }
+        });
+        const sortedDivisions = [...possibleDivisions].sort();
+        populateSelect(divisionSelect, sortedDivisions);
+        
+        // After updating divisions, also update CCCs based on the potentially new division selection
+        updateCccFilters();
+    }
+
+    /**
+     * Updates the CCC filter dropdown based on the currently selected Region and Division.
+     * This function is called when the Division filter changes or when updateDivisionAndCccFilters is called.
+     */
+    function updateCccFilters() {
+        const selectedRegion = regionSelect.value;
+        const selectedDivision = divisionSelect.value; // Use the current value of divisionSelect
+        let possibleSupports = new Set();
+        rawData.forEach(item => {
+            if ((!selectedRegion || item['REGION'] === selectedRegion) &&
+                (!selectedDivision || item['DIVN_NAME'] === selectedDivision)) {
+                if (item['SUPP_OFF']) possibleSupports.add(item['SUPP_OFF']);
+            }
+        });
+        populateSelect(supportSelect, [...possibleSupports].sort());
     }
 
     function populateReasonPanel() {
@@ -962,31 +1028,6 @@
         } else {
             loadMoreButton.classList.remove('hidden');
         }
-    }
-
-
-    function populateFilters() {
-        const regions = [...new Set(rawData.map(item => item['REGION']).filter(Boolean))].sort();
-        populateSelect(regionSelect, regions);
-    }
-
-    function updateDependentFilters() {
-        const selectedRegion = regionSelect.value;
-        const selectedDivision = divisionSelect.value;
-        const selectedSupport = supportSelect.value;
-        let possibleDivisions = new Set();
-        let possibleSupports = new Set();
-
-        rawData.forEach(item => {
-            if (!selectedRegion || item['REGION'] === selectedRegion) {
-                if (item['DIVN_NAME']) possibleDivisions.add(item['DIVN_NAME']);
-                if (!selectedDivision || item['DIVN_NAME'] === selectedDivision) {
-                    if (item['SUPP_OFF']) possibleSupports.add(item['SUPP_OFF']);
-                }
-            }
-        });
-        populateSelect(divisionSelect, [...possibleDivisions].sort());
-        populateSelect(supportSelect, [...possibleSupports].sort());
     }
 
     function applyFilters() {
