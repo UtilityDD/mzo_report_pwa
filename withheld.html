@@ -295,6 +295,13 @@
         </div>
       </div>
 
+      <!-- Modal Tabs -->
+      <div class="flex border-b border-gray-700 mb-4 overflow-x-auto" id="modalTabs">
+        <button id="modal-tab-region" class="py-2 px-4 text-sm font-medium text-indigo-400 border-b-2 border-indigo-500 focus:outline-none transition-colors duration-200 hover:text-indigo-300 whitespace-nowrap">Region</button>
+        <button id="modal-tab-division" class="py-2 px-4 text-sm font-medium text-gray-400 border-b-2 border-transparent focus:outline-none transition-colors duration-200 hover:text-gray-300 whitespace-nowrap">Division</button>
+        <button id="modal-tab-ccc" class="py-2 px-4 text-sm font-medium text-gray-400 border-b-2 border-transparent focus:outline-none transition-colors duration-200 hover:text-gray-300 whitespace-nowrap">CCC</button>
+      </div>
+
       <!-- Modal Body -->
       <div id="modalBody" class="max-h-[70vh] overflow-y-auto custom-scrollbar relative overflow-x-auto">
         <!-- Loading spinner for modal content -->
@@ -302,6 +309,10 @@
             <div class="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-indigo-500"></div>
         </div>
         <!-- Content will be injected here -->
+        <div id="modal-content-region" class="modal-tab-content"></div>
+        <div id="modal-content-division" class="modal-tab-content hidden"></div>
+        <div id="modal-content-ccc" class="modal-tab-content hidden"></div>
+        <div id="modal-content-application-list" class="modal-tab-content hidden"></div>
       </div>
     </div>
   </div>
@@ -325,8 +336,9 @@
     let rawData = [];
     let filteredData = [];
     let chart;
-    let currentModalLevel = 0; // 0: closed, 1: division, 2: ccc, 3: application list
+    let currentModalLevel = 0; // 0: closed, 1: region, 2: division, 3: ccc, 4: application list
     let maxTodayDate = null; // Global variable to store the latest "TODAY" date from data
+    let currentModalContext = {}; // Stores data and filters for the modal drill-down
 
     // DOM Elements
     const loadingOverlay = document.getElementById('loadingOverlay');
@@ -353,14 +365,23 @@
     const modalBackButton = document.getElementById('modalBackButton');
     const modalCloseButton = document.getElementById('modalCloseButton');
     const modalLoader = document.getElementById('modalLoader');
-    const attentionModal = document.getElementById('attentionModal'); // New modal element
-    const attentionModalOkButton = document.getElementById('attentionModalOkButton'); // New button element
+    const attentionModal = document.getElementById('attentionModal');
+    const attentionModalOkButton = document.getElementById('attentionModalOkButton');
     // Tab-specific elements
     const chartTabButton = document.getElementById('chart-tab');
     const dataTabButton = document.getElementById('data-tab');
     const chartView = document.getElementById('chart-view');
     const dataView = document.getElementById('data-view');
     const trendDataTable = document.getElementById('trendDataTable');
+
+    // Modal Tab Elements
+    const modalTabRegionBtn = document.getElementById('modal-tab-region');
+    const modalTabDivisionBtn = document.getElementById('modal-tab-division');
+    const modalTabCccBtn = document.getElementById('modal-tab-ccc');
+    const modalContentRegion = document.getElementById('modal-content-region');
+    const modalContentDivision = document.getElementById('modal-content-division');
+    const modalContentCcc = document.getElementById('modal-content-ccc');
+    const modalContentApplicationList = document.getElementById('modal-content-application-list');
 
 
     // Chart.js global settings for dark theme
@@ -371,7 +392,6 @@
     // Event Listeners
     document.addEventListener('DOMContentLoaded', async () => {
         try {
-            // Restore the original fetch call
             const response = await fetch('data/withheld.json');
             if (!response.ok) {
                 throw new Error('Network response was not ok');
@@ -379,17 +399,14 @@
             rawData = await response.json();
             console.log('Data loaded successfully from withheld.json');
 
-            // Parse dates
             rawData.forEach(obj => {
                 if (obj['SCN_WITHELD_DATE']) {
                     obj['SCN_WITHELD_DATE'] = parseDate(obj['SCN_WITHELD_DATE']);
                 }
             });
             
-            // Set the "Updated on" date from mock data and store it globally
             const allTodayDates = rawData.map(row => parseDate(row['TODAY'])).filter(date => date);
             maxTodayDate = allTodayDates.length ? new Date(Math.max(...allTodayDates.map(d => d.getTime()))) : new Date();
-            // Set time to end of day for comparison to include today's data fully
             maxTodayDate.setHours(23, 59, 59, 999);
 
             if (maxTodayDate) {
@@ -399,31 +416,25 @@
                 document.getElementById('update-date').textContent = `Updated date unavailable`;
             }
 
-            // Initialize dashboard
             populateFilters();
-            // Populate reason panel *only once* on initial load
             populateReasonPanel();
             updateDependentFilters();
             applyFilters();
 
-            // Hide loading overlay
             loadingOverlay.classList.add('opacity-0');
             setTimeout(() => { 
                 loadingOverlay.style.display = 'none'; 
-                attentionModal.classList.add('open'); // Show attention modal after loading
+                attentionModal.classList.add('open');
             }, 300);
 
-            // Add change listeners for the filters
             portalCheckbox.addEventListener('change', applyFilters);
             offlineCheckbox.addEventListener('change', applyFilters);
             regionSelect.addEventListener('change', () => { updateDependentFilters(); applyFilters(); });
             divisionSelect.addEventListener('change', () => { updateDependentFilters(); applyFilters(); });
             supportSelect.addEventListener('change', () => { updateDependentFilters(); applyFilters(); });
             
-            // Event listener for the reason checkboxes (using event delegation)
             reasonFilterContainer.addEventListener('change', applyFilters);
             
-            // New listeners for Select/Unselect All
             selectAllReasonsButton.addEventListener('click', () => {
                 document.querySelectorAll('#reasonFilterContainer input[name="reason"]').forEach(checkbox => {
                     checkbox.checked = true;
@@ -442,37 +453,36 @@
                     const range = card.id.split('-')[1];
                     const cardTitle = card.querySelector('h3').textContent;
                     const cardCount = card.querySelector('p').textContent;
-                    // Call the function to handle the modal with the new async logic
                     handleModalOpen(range, cardTitle, cardCount);
                 });
             });
             
-            // Left panel toggle listeners
             togglePanelButton.addEventListener('click', () => {
                 leftPanel.classList.toggle('open');
-                // Adjust main content margin only on medium and larger screens
                 mainContent.classList.toggle('md:ml-[280px]'); 
             });
             closePanelButton.addEventListener('click', () => {
                 leftPanel.classList.remove('open');
-                mainContent.classList.remove('md:ml-[280px]'); // Reset main content margin on larger screens
+                mainContent.classList.remove('md:ml-[280px]');
             });
 
             modalBackButton.addEventListener('click', () => {
                 handleModalBack();
             });
             modalCloseButton.addEventListener('click', () => closeModal());
-            attentionModalOkButton.addEventListener('click', () => attentionModal.classList.remove('open')); // Close attention modal
+            attentionModalOkButton.addEventListener('click', () => attentionModal.classList.remove('open'));
 
-            // Tab listeners
             chartTabButton.addEventListener('click', () => showTab('chart'));
             dataTabButton.addEventListener('click', () => showTab('data'));
 
-            // Initial tab state
+            // Modal Tab Listeners
+            modalTabRegionBtn.addEventListener('click', () => showModalTab('region'));
+            modalTabDivisionBtn.addEventListener('click', () => showModalTab('division'));
+            modalTabCccBtn.addEventListener('click', () => showModalTab('ccc'));
+
             showTab('chart');
         } catch (error) {
             console.error('Error fetching data:', error);
-            // Handle error state, e.g., show an error message
             loadingOverlay.innerHTML = `<div class="p-6 bg-red-800 text-white rounded-lg shadow-xl"><h2 class="text-xl font-bold mb-2">Error</h2><p>${error.message}. Please ensure 'data/withheld.json' is in the correct directory.</p></div>`;
         }
     });
@@ -522,13 +532,12 @@
         });
     }
 
-    // Function to populate the reason filter panel *once* on load
     function populateReasonPanel() {
         const reasons = [...new Set(rawData.map(item => item['SCN_WITHELD_REASON'] || 'No Reason'))].sort();
         const noReasonIndex = reasons.indexOf('No Reason');
         if (noReasonIndex > -1) {
             const noReason = reasons.splice(noReasonIndex, 1)[0];
-            reasons.unshift(noReason); // Move 'No Reason' to the beginning
+            reasons.unshift(noReason);
         }
 
         let html = '';
@@ -548,7 +557,6 @@
         reasonFilterContainer.innerHTML = html;
     }
     
-    // New function to update percentages without recreating checkboxes
     function updateReasonPanelPercentages(data) {
         const filteredDataTotal = data.length;
         const reasonSpans = document.querySelectorAll('.percentage-span');
@@ -561,91 +569,212 @@
         });
     }
 
-
     // Modal Functions
-    function showModal(title, level, parentData = {}) {
+    function showModal(title, level, context) {
         modalTitle.textContent = title;
         currentModalLevel = level;
         detailsModal.classList.add('open');
-        modalBackButton.classList.toggle('hidden', currentModalLevel === 1);
-        
-        // Store parent data for back navigation
-        modalBody.dataset.parentData = JSON.stringify(parentData);
+        currentModalContext = context; // Store the full context
+        updateModalBackButtonVisibility();
     }
     
     function closeModal() {
         detailsModal.classList.remove('open');
         currentModalLevel = 0;
+        currentModalContext = {}; // Clear context on close
+        // Hide all modal content divs
+        document.querySelectorAll('.modal-tab-content').forEach(content => content.classList.add('hidden'));
     }
     
-    // Function to show the modal loader
     function showModalLoader() {
         modalBody.style.opacity = '0.5';
         modalLoader.classList.remove('hidden');
     }
 
-    // Function to hide the modal loader
     function hideModalLoader() {
         modalLoader.classList.add('hidden');
         modalBody.style.opacity = '1';
     }
+
+    function updateModalBackButtonVisibility() {
+        // The back button should be hidden only if we are at the top-most level of the drill-down (level 1, Region tab)
+        modalBackButton.classList.toggle('hidden', currentModalLevel === 1);
+    }
     
-    // Function to handle back button logic
     function handleModalBack() {
-        const parentData = JSON.parse(modalBody.dataset.parentData || '{}');
-        
-        if (currentModalLevel === 3) {
-            // Go back to the CCC level
-            const { range, cardTitle, divisionName, divisionData } = parentData;
-            // The title for this level is now generated dynamically
-            const newTitle = `${cardTitle} ${divisionName} (${divisionData.length})`;
-            showModal(newTitle, 2, { range, cardTitle, divisionName, divisionData });
-            populateModalWithCccData(divisionName, divisionData, cardTitle, range);
-        } else if (currentModalLevel === 2) {
-            // Go back to the division level
-            const { range, cardTitle } = parentData;
-            const newTitle = `${cardTitle} (${modalBody.querySelector('tbody').children.length})`;
-            showModal(newTitle, 1, { range, cardTitle });
-            populateModalWithDivisionData(range, cardTitle);
+        if (currentModalContext.parentContext) {
+            currentModalContext = { ...currentModalContext.parentContext }; // Restore previous context
+            currentModalLevel--; // Decrement level
+            
+            let targetTabName;
+            if (currentModalLevel === 1) {
+                targetTabName = 'region';
+            } else if (currentModalLevel === 2) {
+                targetTabName = 'division';
+            } else if (currentModalLevel === 3) {
+                targetTabName = 'ccc';
+            }
+            showModalTab(targetTabName); // Show the appropriate tab with restored data
+            updateModalTitleBasedOnContext();
+            updateModalBackButtonVisibility();
+        } else {
+            closeModal(); // If no parent context, close the modal
         }
     }
     
-    // New function to handle the modal opening with proper loading animation
     function handleModalOpen(range, cardTitle, cardCount) {
-        // Show the modal and loader immediately
-        showModal(`${cardTitle} (${cardCount})`, 1, { range, cardTitle });
-        showModalLoader();
-        
-        // Use a small delay to ensure the UI has time to render the loader
-        setTimeout(() => {
-            populateModalWithDivisionData(range, cardTitle);
-        }, 50); // 50ms delay
-    }
-
-    function populateModalWithDivisionData(range, cardTitle) {
-        // Clear previous content
-        modalBody.innerHTML = '';
-
-        // Use the global maxTodayDate for filtering
-        const today = maxTodayDate; 
-        const data = filteredData.filter(item => {
+        // Filter data based on the clicked card's date range
+        const dataForModal = filteredData.filter(item => {
             const date = item['SCN_WITHELD_DATE'];
             if (!(date instanceof Date) || isNaN(date.getTime())) return false;
-            const diff = (today - date) / (1000 * 60 * 60 * 24);
+            const diff = (maxTodayDate - date) / (1000 * 60 * 60 * 24);
             return range === 'total' ||
                    (range === '7' && diff <= 7) ||
                    (range === '30' && diff <= 30) ||
                    (range === '90' && diff <= 90);
         });
 
-        if (data.length === 0) {
-            modalBody.innerHTML = `<div class="p-4 text-center text-gray-500">No data available for this range.</div>`;
-            hideModalLoader();
-            return;
+        // Initialize modal context for the first level (Region)
+        currentModalContext = {
+            range: range,
+            cardTitle: cardTitle,
+            data: dataForModal,
+            originalModalData: dataForModal, // Keep a reference to the initial data for the modal
+            parentContext: null, // No parent context at the top level
+            selectedRegion: undefined,
+            selectedDivision: undefined,
+            selectedCcc: undefined
+        };
+
+        showModal(`${cardTitle} (${dataForModal.length})`, 1, currentModalContext);
+        showModalTab('region'); // Always start on the Region tab
+    }
+
+    function showModalTab(tabName, drillDownData = null, drillDownLevel = null, drillDownSelectedItems = {}) {
+        // Hide all content divs and deactivate all tab buttons
+        document.querySelectorAll('.modal-tab-content').forEach(content => content.classList.add('hidden'));
+        document.querySelectorAll('#modalTabs button').forEach(button => {
+            button.classList.remove('text-indigo-400', 'border-indigo-500');
+            button.classList.add('text-gray-400', 'border-transparent');
+        });
+
+        if (drillDownData !== null && drillDownLevel !== null) {
+            // This is a drill-down action
+            currentModalContext.parentContext = { ...currentModalContext }; // Save current context as parent
+            currentModalContext.data = drillDownData;
+            currentModalContext.selectedRegion = drillDownSelectedItems.selectedRegion;
+            currentModalContext.selectedDivision = drillDownSelectedItems.selectedDivision;
+            currentModalContext.selectedCcc = drillDownSelectedItems.selectedCcc;
+            currentModalLevel = drillDownLevel; // Update level for drill-down
+        } else {
+            // This is a direct tab switch or a back navigation.
+            // currentModalContext is already set correctly by handleModalBack or handleModalOpen.
+            // Just ensure the level is consistent with the tab being shown.
+            if (tabName === 'region') {
+                currentModalLevel = 1;
+            } else if (tabName === 'division') {
+                currentModalLevel = 2;
+            } else if (tabName === 'ccc') {
+                currentModalLevel = 3;
+            } else if (tabName === 'application-list') {
+                currentModalLevel = 4;
+            }
         }
 
+        updateModalTitleBasedOnContext();
+        updateModalBackButtonVisibility();
+
+        showModalLoader(); // Show loader before populating content
+        setTimeout(() => { // Small delay for loader to show
+            if (tabName === 'region') {
+                modalTabRegionBtn.classList.add('text-indigo-400', 'border-indigo-500');
+                modalContentRegion.classList.remove('hidden');
+                populateModalRegionData(currentModalContext.data);
+            } else if (tabName === 'division') {
+                modalTabDivisionBtn.classList.add('text-indigo-400', 'border-indigo-500');
+                modalContentDivision.classList.remove('hidden');
+                populateModalDivisionData(currentModalContext.data);
+            } else if (tabName === 'ccc') {
+                modalTabCccBtn.classList.add('text-indigo-400', 'border-indigo-500');
+                modalContentCcc.classList.remove('hidden');
+                populateModalCccData(currentModalContext.data);
+            } else if (tabName === 'application-list') {
+                // This tab is only reached via drill-down from CCC
+                modalContentApplicationList.classList.remove('hidden');
+                populateModalWithApplicationData(currentModalContext.selectedCcc, currentModalContext.data);
+            }
+            hideModalLoader();
+        }, 50);
+    }
+
+    // Helper function to update the modal title consistently
+    function updateModalTitleBasedOnContext() {
+        let titleSuffix = '';
+        if (currentModalContext.selectedRegion) {
+            titleSuffix += ` > ${currentModalContext.selectedRegion}`;
+        }
+        if (currentModalContext.selectedDivision) {
+            titleSuffix += ` > ${currentModalContext.selectedDivision}`;
+        }
+        if (currentModalContext.selectedCcc) {
+            titleSuffix += ` > ${currentModalContext.selectedCcc}`;
+        }
+        modalTitle.textContent = `${currentModalContext.cardTitle} (${currentModalContext.data.length})${titleSuffix}`;
+    }
+
+
+    function populateModalRegionData(data) {
+        modalContentRegion.innerHTML = ''; // Clear previous content
+
+        const regionMap = data.reduce((acc, item) => {
+            const region = item['REGION'] || 'Unknown Region';
+            acc[region] = (acc[region] || []).concat(item);
+            return acc;
+        }, {});
+        const total = data.length;
+        const sortedRegions = Object.entries(regionMap)
+            .map(([region, items]) => ({ region, count: items.length, items }))
+            .sort((a, b) => b.count - a.count);
+
+        let detailsHTML = `
+            <table class="min-w-full divide-y divide-gray-700">
+                <thead class="bg-gray-700">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Region</th>
+                        <th class="px-6 py-3 text-right text-xs font-semibold text-gray-300 uppercase tracking-wider">Count</th>
+                        <th class="px-6 py-3 text-right text-xs font-semibold text-gray-300 uppercase tracking-wider">%</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-gray-800 divide-y divide-gray-700">
+        `;
+        sortedRegions.forEach(({ region, count, items }) => {
+            const percent = ((count / total) * 100).toFixed(1);
+            detailsHTML += `
+                <tr class="hover:bg-gray-700 transition-colors duration-200 cursor-pointer" data-region="${region}">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-400">${region}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-right">${count}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-right">${percent}%</td>
+                </tr>
+            `;
+        });
+        detailsHTML += `</tbody></table>`;
+        modalContentRegion.innerHTML = detailsHTML;
+        
+        modalContentRegion.querySelectorAll('tr[data-region]').forEach(row => {
+            row.addEventListener('click', (e) => {
+                const region = e.currentTarget.dataset.region;
+                const regionData = regionMap[region];
+                // Drill down to division tab with filtered data
+                showModalTab('division', regionData, 2, { selectedRegion: region });
+            });
+        });
+    }
+
+    function populateModalDivisionData(data) {
+        modalContentDivision.innerHTML = ''; // Clear previous content
+
         const divnMap = data.reduce((acc, item) => {
-            const divn = item['DIVN_NAME'] || 'Unknown';
+            const divn = item['DIVN_NAME'] || 'Unknown Division';
             acc[divn] = (acc[divn] || []).concat(item);
             return acc;
         }, {});
@@ -676,37 +805,20 @@
             `;
         });
         detailsHTML += `</tbody></table>`;
-        modalBody.innerHTML = detailsHTML;
+        modalContentDivision.innerHTML = detailsHTML;
         
-        modalBody.querySelectorAll('tr[data-divn]').forEach(row => {
+        modalContentDivision.querySelectorAll('tr[data-divn]').forEach(row => {
             row.addEventListener('click', (e) => {
                 const divn = e.currentTarget.dataset.divn;
                 const divisionData = divnMap[divn];
-                // Pass cardTitle and range to the next level
-                handleCccModalOpen(divn, divisionData, cardTitle, range);
+                // Drill down to CCC tab with filtered data
+                showModalTab('ccc', divisionData, 3, { selectedRegion: currentModalContext.selectedRegion, selectedDivision: divn });
             });
         });
-
-        hideModalLoader(); // Hide loader after content is ready
     }
 
-    // New function to handle CCC modal with proper loading animation
-    function handleCccModalOpen(divisionName, data, cardTitle, range) {
-        // Construct the new title with the dynamic format
-        const newTitle = `${cardTitle} ${divisionName} (${data.length})`;
-        
-        // Show the loader and set the modal title
-        showModal(newTitle, 2, { range, cardTitle, divisionName, divisionData: data });
-        showModalLoader();
-
-        // Use a small delay to ensure the UI has time to render the loader
-        setTimeout(() => {
-            populateModalWithCccData(divisionName, data, cardTitle, range);
-        }, 50); // 50ms delay
-    }
-
-    function populateModalWithCccData(divisionName, data, cardTitle, range) {
-        modalBody.innerHTML = '';
+    function populateModalCccData(data) {
+        modalContentCcc.innerHTML = ''; // Clear previous content
 
         const groupedByCCC = data.reduce((acc, item) => {
             const ccc = item['SUPP_OFF'] || 'Unknown CCC';
@@ -741,38 +853,27 @@
             `;
         });
         html += `</tbody></table>`;
-        modalBody.innerHTML = html;
-        hideModalLoader(); // Hide loader after content is ready
+        modalContentCcc.innerHTML = html;
         
-        // Add click listener for CCC rows to open application list
-        modalBody.querySelectorAll('tr[data-ccc]').forEach(row => {
+        modalContentCcc.querySelectorAll('tr[data-ccc]').forEach(row => {
             row.addEventListener('click', (e) => {
                 const ccc = e.currentTarget.dataset.ccc;
                 const cccData = groupedByCCC[ccc];
-                openApplicationListModal(ccc, cccData, cardTitle, range, divisionName);
+                // Drill down to application list with filtered data
+                showModalTab('application-list', cccData, 4, { 
+                    selectedRegion: currentModalContext.selectedRegion, 
+                    selectedDivision: currentModalContext.selectedDivision,
+                    selectedCcc: ccc 
+                });
             });
         });
     }
 
-    function openApplicationListModal(cccName, data, cardTitle, range, divisionName) {
-        // Construct the new title for the final level
-        const newTitle = `${cardTitle} ${divisionName} ${cccName} (${data.length})`;
-        
-        const parentData = JSON.parse(modalBody.dataset.parentData);
-        showModal(newTitle, 3, { ...parentData, cccName, cccData: data });
-        showModalLoader();
-
-        setTimeout(() => {
-            populateModalWithApplicationData(cccName, data);
-        }, 50);
-    }
-    
     function populateModalWithApplicationData(cccName, data) {
-        modalBody.innerHTML = '';
+        modalContentApplicationList.innerHTML = ''; // Clear previous content
         
         if (data.length === 0) {
-            modalBody.innerHTML = `<div class="p-4 text-center text-gray-500">No applications found for ${cccName}.</div>`;
-            hideModalLoader();
+            modalContentApplicationList.innerHTML = `<div class="p-4 text-center text-gray-500">No applications found for ${cccName}.</div>`;
             return;
         }
         
@@ -805,8 +906,7 @@
         });
 
         html += `</tbody></table>`;
-        modalBody.innerHTML = html;
-        hideModalLoader();
+        modalContentApplicationList.innerHTML = html;
     }
 
     function populateFilters() {
@@ -840,7 +940,6 @@
         const portalChecked = portalCheckbox.checked;
         const offlineChecked = offlineCheckbox.checked;
 
-        // Step 1: Filter data based on all filters EXCEPT reasons
         const tempFilteredData = rawData.filter(item => {
             const matchesRegion = !region || item['REGION'] === region;
             const matchesDivision = !division || item['DIVN_NAME'] === division;
@@ -853,27 +952,22 @@
             return matchesRegion && matchesDivision && matchesSupport && matchesPortalOffline;
         });
         
-        // Step 2: Update the percentages on the reason panel based on this filtered data
         updateReasonPanelPercentages(tempFilteredData);
 
-        // Step 3: Get the reasons that are currently checked by the user
         const checkedReasons = Array.from(document.querySelectorAll('#reasonFilterContainer input[name="reason"]:checked')).map(cb => cb.value);
         const allReasonsUnchecked = checkedReasons.length === 0;
 
-        // Step 4: Final filter, including the user's reason selections
         filteredData = tempFilteredData.filter(item => {
             const itemReason = item['SCN_WITHELD_REASON'] || 'No Reason';
             return allReasonsUnchecked || checkedReasons.includes(itemReason);
         });
 
-        // Step 5: Update the dashboard with the final filtered data
         updateCards();
         updateChart();
         updateDataTable();
     }
 
     function updateCards() {
-        // Use the global maxTodayDate for filtering
         const today = maxTodayDate;
         let count7 = 0;
         let count30 = 0;
@@ -895,7 +989,6 @@
         animateCounter(count90El, parseInt(count90El.textContent), count90);
     }
     
-    // New function to handle tab switching
     function showTab(tab) {
         if (tab === 'chart') {
             chartTabButton.classList.add('text-indigo-400', 'border-indigo-500');
@@ -904,7 +997,7 @@
             dataTabButton.classList.remove('text-indigo-400', 'border-indigo-500');
             chartView.classList.remove('hidden');
             dataView.classList.add('hidden');
-            updateChart(); // Redraw chart to prevent rendering issues after being hidden
+            updateChart();
         } else if (tab === 'data') {
             dataTabButton.classList.add('text-indigo-400', 'border-indigo-500');
             dataTabButton.classList.remove('text-gray-400', 'border-transparent');
@@ -912,15 +1005,14 @@
             chartTabButton.classList.remove('text-indigo-400', 'border-indigo-500');
             dataView.classList.remove('hidden');
             chartView.classList.add('hidden');
-            updateDataTable(); // Generate and display the table
+            updateDataTable();
         }
     }
 
     function updateChart() {
-        // Filter SCN_WITHELD_DATE to be before or on the maxTodayDate
         const validDates = filteredData
             .map(item => item['SCN_WITHELD_DATE'])
-            .filter(date => date && date <= maxTodayDate); // Use the global maxTodayDate
+            .filter(date => date && date <= maxTodayDate);
         
         if (validDates.length === 0) {
             if (chart) chart.destroy();
@@ -934,7 +1026,7 @@
         }, {});
         
         const minDate = new Date(Math.min(...validDates.map(d => d.getTime())));
-        const maxDateForChart = new Date(Math.max(...validDates.map(d => d.getTime()))); // Use max date from validDates for chart range
+        const maxDateForChart = new Date(Math.max(...validDates.map(d => d.getTime())));
         let fullRange = [];
         let current = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
         const end = new Date(maxDateForChart.getFullYear(), maxDateForChart.getMonth(), 1);
@@ -1013,12 +1105,10 @@
         });
     }
 
-    // New function to update the data table
     function updateDataTable() {
-        // Filter SCN_WITHELD_DATE to be before or on the maxTodayDate
         const validDates = filteredData
             .map(item => item['SCN_WITHELD_DATE'])
-            .filter(date => date && date <= maxTodayDate); // Use the global maxTodayDate
+            .filter(date => date && date <= maxTodayDate);
         
         if (validDates.length === 0) {
             trendDataTable.innerHTML = `<div class="p-4 text-center text-gray-500">No data available for the selected filters.</div>`;
@@ -1031,7 +1121,6 @@
             return acc;
         }, {});
         
-        // Sort the months chronologically (ascending)
         const sortedMonths = Object.keys(monthCounts).sort();
         
         let tableHTML = `
