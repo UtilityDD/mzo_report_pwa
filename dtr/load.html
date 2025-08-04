@@ -4,6 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DTR Load Measurement</title>
+<!-- DataTables CSS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+
+<!-- Bootstrap 5 CSS (needed for DataTables styling) -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+<!-- DataTables JS -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<!-- FixedHeader CSS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/fixedheader/3.4.0/css/fixedHeader.bootstrap5.min.css">
+
+<!-- FixedHeader JS -->
+<script src="https://cdn.datatables.net/fixedheader/3.4.0/js/dataTables.fixedHeader.min.js"></script>
+<script src="https://cdn.datatables.net/fixedheader/3.4.0/js/fixedHeader.bootstrap5.min.js"></script>
+
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
@@ -491,6 +508,16 @@
     font-size: 1.1rem;
     margin-bottom: 1.5rem;
   }
+  .blink-red {
+    color: red;
+    font-weight: bold;
+    animation: blink 1s step-start infinite;
+}
+
+@keyframes blink {
+    50% { opacity: 0; }
+}
+
 </style>
 </head>
 <body>
@@ -528,12 +555,12 @@
         <p style="color: var(--text-secondary); margin: 0;">Search and update transformer load data</p>
       </div>
 
-      <div class="search-container">
-        <input type="text" id="searchCode" class="search-input" placeholder="Enter DTR Code">
-        <button class="btn btn-primary" onclick="searchDTR()">
-          🔍 Search
-        </button>
-      </div>
+<div class="search-container">
+  <input type="text" id="searchCode" class="search-input" placeholder="Enter DTR Code">
+  <button class="btn btn-primary" onclick="searchDTR()">🔍 Search</button>
+  <button class="btn btn-secondary" onclick="showAllLoadData()">📋 View All Load Data</button>
+</div>
+
 
       <!-- Result display area -->
       <div id="result"></div>
@@ -671,6 +698,26 @@
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('rejectionModal')">OK</button>
+    </div>
+  </div>
+</div>
+<!-- All Data Modal -->
+<div id="allDataModal" class="modal">
+  <div class="modal-content" style="max-width:90%; overflow:auto;">
+    <div class="modal-header">
+      <h5 class="modal-title">📊 All Load Measurement Data</h5>
+      <button class="close" onclick="closeModal('allDataModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div style="overflow:auto;">
+<table id="allDataTable" 
+       class="table table-striped table-hover table-bordered" 
+       style="width:100%">
+  <thead></thead>
+  <tbody></tbody>
+</table>
+
+      </div>
     </div>
   </div>
 </div>
@@ -886,27 +933,42 @@ function populateForm(data) {
   // Map fetched data keys to form field IDs
   const fieldMap = {
     'DATE_OF_MEASUREMENT': 'DATE_OF_MEASUREMENT',
-    'LOC_NAME': 'NEW_LOC_NAME', // Assuming LOC_NAME from fetched data maps to NEW_LOC_NAME input
-    'FDR_NAME': 'NEW_FDR_NAME', // Assuming FDR_NAME from fetched data maps to NEW_FDR_NAME input
-    'CAPA_KV': 'NEW_CAPA_KV',   // Assuming CAPA_KV from fetched data maps to NEW_CAPA_KV select
+    'LOC_NAME': 'NEW_LOC_NAME',
+    'FDR_NAME': 'NEW_FDR_NAME',
+    'CAPA_KV': 'NEW_CAPA_KV',
     'LOAD_R': 'LOAD_R',
     'LOAD_Y': 'LOAD_Y',
     'LOAD_B': 'LOAD_B',
-    'LOAD_N': 'LOAD_N', // New field for Neutral Current
-    'KIOSK': 'KIOSK', // Existing field
-    'LA': 'LA', // Existing field
-    'NEUTRAL_FLAT_EARTHING': 'NEUTRAL_FLAT_EARTHING', // Existing field
+    'LOAD_N': 'LOAD_N',
+    'KIOSK': 'KIOSK',
+    'LA': 'LA',
+    'NEUTRAL_FLAT_EARTHING': 'NEUTRAL_FLAT_EARTHING',
     'REMARKS': 'REMARKS'
   };
 
   for (const fetchedKey in fieldMap) {
     const elementId = fieldMap[fetchedKey];
     const element = document.getElementById(elementId);
-    if (element && data[fetchedKey]) {
-      element.value = data[fetchedKey];
+
+    if (!element) continue;
+
+    // Handle <select> dropdowns
+    if (element.tagName === 'SELECT') {
+      if (data[fetchedKey] && Array.from(element.options).some(opt => opt.value === data[fetchedKey])) {
+        element.value = data[fetchedKey]; // match found
+      } else {
+        element.value = ""; // default to "Select ..."
+      }
+    }
+    // Handle normal inputs/textareas
+    else {
+      if (data[fetchedKey]) {
+        element.value = data[fetchedKey];
+      }
     }
   }
 }
+
 
 /**
  * Displays an error message.
@@ -965,6 +1027,45 @@ function validateMeasurementDate() {
   return isValid;
 }
 
+// --- Date helper functions ---
+
+// Parses a Google Sheet date string into a Date object (midnight)
+function parseSheetDate(dateStr) {
+  if (!dateStr) return null;
+
+  // Remove any time part if present
+  const dateOnly = dateStr.split(' ')[0];
+
+  const parts = dateOnly.split(/[\/\-]/); // split on / or -
+  let day, month, year;
+
+  if (parts[0].length === 4) {
+    // Format: YYYY-MM-DD
+    year = parseInt(parts[0], 10);
+    month = parseInt(parts[1], 10) - 1; // 0-based month
+    day = parseInt(parts[2], 10);
+  } else {
+    // Format: DD/MM/YYYY
+    day = parseInt(parts[0], 10);
+    month = parseInt(parts[1], 10) - 1;
+    year = parseInt(parts[2], 10);
+  }
+
+  const d = new Date(year, month, day);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// Returns the difference in full days between two dates
+function getDaysDifference(date1, date2) {
+  if (!date1 || !date2) return null;
+  const d1 = new Date(date1);
+  const d2 = new Date(date2);
+  d1.setHours(0, 0, 0, 0);
+  d2.setHours(0, 0, 0, 0);
+  const diffMs = d1.getTime() - d2.getTime();
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
 
 /**
  * Shows the confirmation modal with the data to be submitted,
@@ -977,14 +1078,30 @@ async function showConfirmation() {
   }
 
   // Added LOAD_N to required fields
-  const requiredFields = ['DATE_OF_MEASUREMENT', 'LOAD_R', 'LOAD_Y', 'LOAD_B', 'LOAD_N'];
-  for (const field of requiredFields) {
-    const value = document.getElementById(field).value.trim();
-    if (!value) {
-      showError(`Please fill in the ${field.replace(/_/g, ' ').toLowerCase()}`);
-      return;
-    }
+const requiredFields = [
+  'DATE_OF_MEASUREMENT',
+  'LOAD_R',
+  'LOAD_Y',
+  'LOAD_B',
+  'LOAD_N',
+  'NEW_CAPA_KV', 
+  'KIOSK',
+  'LA',
+  'NEUTRAL_FLAT_EARTHING'
+];
+
+for (const field of requiredFields) {
+  const el = document.getElementById(field);
+  const value = el.value.trim();
+  if (!value) {
+    const label = el.tagName === 'SELECT'
+      ? `${field.replace(/_/g, ' ')} (please select an option)`
+      : `${field.replace(/_/g, ' ').toLowerCase()}`;
+    showError(`Please fill in the ${label}`);
+    return;
   }
+}
+
 
   const currentMeasurementDateStr = document.getElementById("DATE_OF_MEASUREMENT").value;
   const currentMeasurementDate = new Date(currentMeasurementDateStr);
@@ -1005,21 +1122,21 @@ async function showConfirmation() {
     console.log("Found DTR for 15-day check:", foundDTR); // Log found DTR
 
     if (foundDTR) {
-      const lastMeasurementDateStr = foundDTR['DATE_OF_MEASUREMENT'];
-      const lastMeasurementDate = new Date(lastMeasurementDateStr);
-      console.log("Last Measurement Date:", lastMeasurementDate); // Log last measurement date
+        const lastMeasurementDateStr = foundDTR['DATE_OF_MEASUREMENT'];  // ✅ Keep this line
+const lastMeasurementDate = parseSheetDate(lastMeasurementDateStr);
+const currentMeasurementDateNorm = parseSheetDate(currentMeasurementDateStr);
 
-      const timeDifference = currentMeasurementDate.getTime() - lastMeasurementDate.getTime();
-      const daysDifference = Math.ceil(timeDifference / (1000 * 60 * 60 * 24));
-      console.log("Days Difference:", daysDifference); // Log days difference
+const daysDifference = getDaysDifference(currentMeasurementDateNorm, lastMeasurementDate);
+console.log("Days Difference:", daysDifference);
 
-      if (daysDifference < 15) {
-        window.isReplacingData = true;
-        confirmationModalMessage.textContent = `Last update was on ${lastMeasurementDateStr}. This update is within 15 days. Confirm to replace the last entry:`;
-      } else {
-        window.isReplacingData = false;
-        confirmationModalMessage.textContent = "This update is more than 15 days since the last entry. Confirm to add a new entry:";
-      }
+
+if (daysDifference < 15) {
+    window.isReplacingData = true;
+    confirmationModalMessage.innerHTML = `<span class="blink-red">Last update was on ${lastMeasurementDateStr}. This update is within 15 days. Confirm to replace the last entry:</span>`;
+} else {
+    window.isReplacingData = false;
+    confirmationModalMessage.textContent = "This update is more than 15 days since the last entry. Confirm to add a new entry:";
+}
     } else {
       // No previous record found, so it's a new entry
       window.isReplacingData = false;
@@ -1217,6 +1334,80 @@ window.onload = function() {
     // Add event listener for real-time validation
     dateInput.addEventListener('change', validateMeasurementDate);
 };
+
+async function showAllLoadData() {
+  if (!window.isAuthenticated) {
+    showError("Please enter a valid PIN to view data.");
+    return;
+  }
+  if (!window.userAuthorizedDTRPrefix) {
+    showError("No DTR authorization found.");
+    return;
+  }
+
+  showLoading("Fetching authorized load data...");
+
+  try {
+    const res = await fetch(updateDataSheetUrl);
+    if (!res.ok) throw new Error("Failed to fetch data");
+
+    const csvText = await res.text();
+    let data = parseCSV(csvText);
+
+    // Filter to only authorized DTRs
+    data = data.filter(row => 
+      row.DTR_CODE && row.DTR_CODE.startsWith(window.userAuthorizedDTRPrefix)
+    );
+
+    if (data.length === 0) {
+      hideLoading();
+      showError("No load measurement records found for your authorized DTRs.");
+      return;
+    }
+
+    // Sort latest date first
+    data.sort((a, b) => {
+      const da = parseSheetDate(a.DATE_OF_MEASUREMENT);
+      const db = parseSheetDate(b.DATE_OF_MEASUREMENT);
+      return db - da;
+    });
+
+    // Populate table
+    const thead = document.querySelector("#allDataTable thead");
+    const tbody = document.querySelector("#allDataTable tbody");
+
+    thead.innerHTML = "<tr>" + Object.keys(data[0]).map(h => `<th>${h}</th>`).join("") + "</tr>";
+    tbody.innerHTML = data.map(row =>
+      "<tr>" + Object.values(row).map(val => `<td>${val || ''}</td>`).join("") + "</tr>"
+    ).join("");
+
+    // Destroy old DataTable if exists
+    if ($.fn.DataTable.isDataTable('#allDataTable')) {
+      $('#allDataTable').DataTable().destroy();
+    }
+
+    // Initialize DataTable with DATE_OF_MEASUREMENT sorted newest first
+$('#allDataTable').DataTable({
+  pageLength: 10,
+  lengthMenu: [5, 10, 25, 50, 100],
+  order: [[0, 'desc']],
+  fixedHeader: true
+});
+
+
+    // Show modal
+    document.getElementById("allDataModal").style.display = "flex";
+
+  } catch (err) {
+    console.error(err);
+    showError("Could not load authorized data");
+  } finally {
+    hideLoading();
+  }
+}
+
+
+
 </script>
 
 </body>
