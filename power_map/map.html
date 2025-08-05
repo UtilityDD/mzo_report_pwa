@@ -52,7 +52,7 @@
 
         #floating-table {
             position: fixed;
-            top: 50px;
+            top: 140px; /* Increased top position to lower the table */
             right: 20px;
             background: white;
             border: 1px solid black;
@@ -140,14 +140,14 @@
 
         #search-container {
             position: fixed;
-            top: 10px;
+            top: 20px; /* Adjusted top position for more clearance */
             left: 50%;
             transform: translateX(-50%);
             background: white;
             padding: 5px 10px;
             border: 1px solid black;
             box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.3);
-            z-index: 15000; /* Increased z-index */
+            z-index: 99999; /* Increased z-index */
             font-family: Arial, sans-serif;
             display: flex;
             flex-direction: column;
@@ -176,7 +176,7 @@
             position: absolute;
             top: 100%;
             left: 0;
-            z-index: 20000; /* Increased z-index to be higher than summary card */
+            z-index: 100000; /* Increased z-index to be higher than summary card and floating table */
             display: none;
         }
         #search-results li {
@@ -193,21 +193,21 @@
         #search-results li:last-child {
             border-bottom: none;
         }
-        #summary-card {
-            position: fixed;
-            top: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(255, 255, 255, 0);
-            padding: 1px;
-            border: 1px solid rgba(0, 0, 0, 0);
-            box-shadow: 2px 2px 10px rgba(0, 0, 0, 0);
-            font-family: Arial, sans-serif;
-            font-size: 12px;
-            z-index: 10000;
-            text-align: center;
-            font-weight: lighter;
-        }
+#summary-card {
+    position: fixed;
+    bottom: 40px; /* Place above legend */
+    right: 14px; /* Align with legend's right edge */
+    background: rgba(255, 255, 255, 0);
+    padding: 1px;
+    border: 1px solid rgba(0, 0, 0, 0);
+    box-shadow: 2px 2px 10px rgba(0, 0, 0, 0);
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    z-index: 10000;
+    text-align: right;
+    font-weight: lighter;
+}
+
 
         #filter-container {
             position: fixed;
@@ -334,6 +334,7 @@
                 width: 90%; /* Make search bar wider on mobile */
                 left: 5%;
                 transform: translateX(0%);
+                top: 10px; /* Reset top for mobile */
             }
             #search-box {
                 width: 100%;
@@ -378,16 +379,21 @@
         <p id="loading-text">Loading map data...</p>
     </div>
 
-    <div id="filter-container">
-        <h3>Filter Options</h3>
-        <div id="filter-options"></div>
-        <button onclick="applyFilters()">Apply Filters</button>
+<div id="filter-container">
+    <h3>Filter Options</h3>
 
+    <!-- Step 1: Show/Hide Labels Checkbox -->
+    <div style="margin-bottom:5px;">
+        <label>
+            <input type="checkbox" id="toggle-labels" checked>
+            Feeder labels
+        </label>
     </div>
 
-    <div id="summary-card">
-        <h4 style="align-items: center; color: red;">Total: <span id="total-substations">0</span> no. / <span id="total-capacity">0</span> MVA (including 33/11kV PTRs at GSS)</h4>
-    </div>
+    <div id="filter-options"></div>
+    <button onclick="applyFilters()">Apply Filters</button>
+</div>
+
 
     <div id="floating-table">
         <h3>Substations</h3>
@@ -413,6 +419,9 @@
                type="text">
         <ul id="search-results"></ul>
     </div>
+<div id="summary-card">
+    <h4 style="align-items: center; color: red;">Total: <span id="total-substations">0</span> no. / <span id="total-capacity">0</span> MVA (including 33/11kV PTRs at GSS)</h4>
+</div>
 
     <div id="map-legend">
         <div class="legend-item"><span class="legend-circle" style="color: red;">⬤</span> Existing 33/11kV SS</div>
@@ -440,6 +449,7 @@
     let allData = []; // Store all data for filtering
     let substationMap = {}; // Stores {SubstationName: {lat, lng, marker}}
     let loadingDataComplete = false;
+    let allLineLabels = []; // Store all connection line labels for toggling
 
     // Show status message and update progress bar
     function showStatus(message, duration = 3000, progress = null) {
@@ -488,13 +498,20 @@
             attribution: '© OpenStreetMap contributors'
         });
 
+        // "No map" option - a blank tile layer
+        const noMap = L.tileLayer('', {
+            attribution: 'No Map Selected',
+            maxZoom: 20 // Still allow zooming even if no tiles are loaded
+        });
+
         // Add Google Streets as default
         googleStreets.addTo(map);
 
         // Optional: Add a layer control to switch between map types
         const baseMaps = {
             "Google Maps": googleStreets,
-            "OpenStreetMap": openStreetMap
+            "OpenStreetMap": openStreetMap,
+            "No Map": noMap // Added "No Map" option
         };
 
         L.control.layers(baseMaps).addTo(map);
@@ -1028,6 +1045,7 @@
                                 })
                                     .setContent(label)
                                     .setLatLng([label2Lat, label2Lng]);
+                                    allLineLabels.push(labelTooltip1, labelTooltip2);
 
                                 // Store tooltips with the line for visibility control
                                 combinedLine._tooltips = [labelTooltip1, labelTooltip2];
@@ -1328,6 +1346,22 @@
     window.onload = function() {
         initApp();
     };
+    // Step 4: Handle label toggle checkbox
+document.getElementById('toggle-labels').addEventListener('change', function () {
+    const show = this.checked;
+    allLineLabels.forEach(tooltip => {
+        if (show) {
+            if (!map.hasLayer(tooltip)) {
+                map.addLayer(tooltip);
+            }
+        } else {
+            if (map.hasLayer(tooltip)) {
+                map.removeLayer(tooltip);
+            }
+        }
+    });
+});
+
 </script>
 </body>
 </html>
