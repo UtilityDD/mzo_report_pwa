@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Substation Score Sheet Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 16px; background: #fff; color: #000; font-size: 14px; line-height: 1.5; }
+    h1, h2, h3 { text-align: center; margin-bottom: 6px; }
+    .section { margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 6px; table-layout: fixed; }
+    table, th, td { border: 1px solid #000; font-size: 13px; }
+    th, td { padding: 4px; text-align: center; vertical-align: middle; }
+    th:first-child, td:first-child { width: 68%; }
+    th:nth-child(2), td:nth-child(2) { width: 10%; }
+    th:nth-child(3), td:nth-child(3) { width: 8%; }
+    .score { font-weight: bold; }
+    .footer { margin-top: 20px; font-size: 12px; text-align: left; }
+    @media print {
+      body { margin: 0; padding: 8px; font-size: 12px; }
+      table { font-size: 11px; }
+      th, td { padding: 2px; }
+    }
+    .pdf-page { page-break-after: always; }
+    .page-header { font-style: italic; font-size: 12px; text-align: left; margin-bottom: 6px; }
+    .pdf-page:last-child { page-break-after: auto; }
+  </style>
+</head>
+<body>
+  <div id="pdfContent">
+    <h1>Substation Upkeeping Score Sheet</h1>
+    <h2 id="substationTitle">Substation - Date</h2>
+    <h3 id="officerName"></h3>
+    <div id="reportContent"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script>
+    const data = JSON.parse(localStorage.getItem('scoreReport'));
+
+    function formatDate(input) {
+      if (!input) return '-';
+      const d = new Date(input);
+      return isNaN(d) ? input : d.toLocaleDateString('en-GB');
+    }
+
+    function buildSection(fields) {
+      return fields.map(field => ({
+        name: field,
+        score: Number(data[field]) || 0,
+        maxPoints: 2
+      }));
+    }
+
+    function renderSection(title, items) {
+      let html = `<div class='section'><h3>${title}</h3><table><tr><th>Item</th><th>Score</th><th>Max</th></tr>`;
+      let totalScore = 0, totalMax = 0;
+      items.forEach(i => {
+        html += `<tr><td>${i.name}</td><td class='score'>${i.score}</td><td class='score'>${i.maxPoints}</td></tr>`;
+        totalScore += i.score;
+        totalMax += i.maxPoints;
+      });
+      html += `<tr><td><strong>Total</strong></td><td class='score'><strong>${totalScore}</strong></td><td class='score'><strong>${totalMax}</strong></td></tr>`;
+      html += `</table></div>`;
+      return { html, totalScore, totalMax };
+    }
+
+    if (data) {
+      document.getElementById('substationTitle').textContent =
+        `${data.Substation || '-'} - ${formatDate(data.Date)}`;
+      document.getElementById('officerName').innerHTML = `
+        <div><strong>Supervisor:</strong> ${data.Supervisor || '-'}</div>
+        <div><strong>Inspecting Officer:</strong> ${data["Inspecting Officer"] || '-'}</div>
+      `;
+
+      const sectionsMap = {
+        cleanliness: [
+          "Control room building - inside", "Control room building - outside", "Switchgears, panels", "Switch Yard",
+          "Battery room", "Bathroom / toilet", "Roof & surroundings"
+        ],
+        defective: [
+          "Switchgear", "Ammeter/ voltmeter in circuit", "Relays in circuit", "Indication lamp",
+          "Annunciation (hooter)", "Cell tester", "Hydrometer", "CT / PT (33kV & 11kV)",
+          "LA (33kV & 11kV)", "Yard-light", "Tube-lights in control room", "Fans in control room"
+        ],
+        recordKeeping: [
+          "Standard size SLD", "Notice board", "Duty roster", "Attendance register", "Permit-to-work book",
+          "Shut-down / Break-down register", "Tripping register", "Log-book",
+          "Daily test report of battery", "History Book", "Inspection Book"
+        ],
+        essentials: [
+          "Table & chairs (including visitor's)", "Signboard", "Entry Restricted / প্রবেশ নিষেধ board",
+          "Almirah", "Water purifier", "Shut-down / break-down boards", "Telephone / mobile phone",
+          "Illumination of control room", "Torch", "Wall clock", "Fire extinguisher",
+          "First-aid box with medicines"
+        ],
+        safety: [
+          "33kV hand gloves", "11kV hand gloves", "Discharge rod", "Helmet",
+          "High Voltage detector", "Raincoat", "Gumboot"
+        ],
+        aesthetics: [
+          "Beds in control room", "TV set in control room", "Operating persons dressed properly?",
+          "Switchgear / feeder / PTR name-plates quality", "Helmet use in switch yard",
+          "Back-side of switchgears / panels", "Cable trench cover status",
+          "Garden / plantation condition", "Last condition monitoring issues complied with?"
+        ]
+      };
+
+      let grandScore = 0, grandMax = 0;
+
+      const { html: cleanHTML, totalScore: cleanScore, totalMax: cleanMax } =
+        renderSection("Cleanliness", buildSection(sectionsMap.cleanliness));
+      grandScore += cleanScore; grandMax += cleanMax;
+
+      const { html: defHTML, totalScore: defScore, totalMax: defMax } =
+        renderSection("Defective", buildSection(sectionsMap.defective));
+      grandScore += defScore; grandMax += defMax;
+
+      const { html: recHTML, totalScore: recScore, totalMax: recMax } =
+        renderSection("Record Keeping", buildSection(sectionsMap.recordKeeping));
+      grandScore += recScore; grandMax += recMax;
+
+      const { html: essHTML, totalScore: essScore, totalMax: essMax } =
+        renderSection("Essentials", buildSection(sectionsMap.essentials));
+      grandScore += essScore; grandMax += essMax;
+
+      const { html: safHTML, totalScore: safScore, totalMax: safMax } =
+        renderSection("Safety", buildSection(sectionsMap.safety));
+      grandScore += safScore; grandMax += safMax;
+
+      const { html: aesHTML, totalScore: aesScore, totalMax: aesMax } =
+        renderSection("Aesthetics", buildSection(sectionsMap.aesthetics));
+      grandScore += aesScore; grandMax += aesMax;
+
+      // Group sections into 3 pages
+      const page1 = `<div class="pdf-page"><div class="page-header">Page 1 of 3</div>${cleanHTML}${defHTML}</div>`;
+      const page2 = `<div class="pdf-page"><div class="page-header">Page 2 of 3</div>${recHTML}${essHTML}</div>`;
+      const page3 = `<div class="pdf-page"><div class="page-header">Page 3 of 3</div>${safHTML}${aesHTML}
+        <div class="section">
+          <h3>Grand Total</h3>
+          <table>
+            <tr><th>Total Score</th><th>Max Score</th></tr>
+            <tr><td class='score'>${grandScore}</td><td class='score'>${grandMax}</td></tr>
+          </table>
+        </div>
+        <div class="footer">
+          <strong>Inspecting Officer:</strong> ${data["Inspecting Officer"] || '-'}
+        </div>
+      </div>`;
+
+      document.getElementById('reportContent').innerHTML = page1 + page2 + page3;
+    }
+  </script>
+
+  <div style="text-align:center; margin-top: 20px;">
+    <button onclick="exportPdfAndSaveToAndroid()" style="padding: 10px 20px;">📥 Save PDF</button>
+  </div>
+
+  <script>
+function exportPdfAndSaveToAndroid() {
+  const element = document.getElementById('pdfContent');
+
+  // Use Substation and Date for filename
+  const substationName = (data.Substation || 'Substation').replace(/\s+/g, '_');
+  const dateFormatted = formatDate(data.Date).replace(/\//g, '-'); // replace / with -
+
+  const fileName = `${substationName}_${dateFormatted}_Report.pdf`;
+
+  const opt = {
+    margin: [0.5, 0.5, 0.7, 0.5],
+    filename: fileName,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
+    jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait', compress: true }
+  };
+
+  html2pdf().set(opt).from(element).save();
+}
+
+  </script>
+</body>
+</html>
