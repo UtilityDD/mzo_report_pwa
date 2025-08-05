@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Substation Reports Overview</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light blue-gray background */
+            color: #334155; /* Darker text */
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 1.5rem;
+            background-color: #ffffff;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            font-size: 1.875rem; /* 3xl */
+            font-weight: 700; /* bold */
+            color: #1a202c; /* Darker heading */
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        .table-container {
+            overflow-x: auto;
+            border-radius: 0.5rem;
+            border: 1px solid #e2e8f0; /* Light border */
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem; /* sm */
+            white-space: nowrap; /* Prevent wrapping in cells */
+        }
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0; /* Light border */
+        }
+        th {
+            background-color: #edf2f7; /* Lighter header background */
+            font-weight: 600; /* semibold */
+            color: #4a5568; /* Medium text */
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        tbody tr:hover {
+            background-color: #f7fafc; /* Lighter hover background */
+        }
+        .report-icon-btn {
+            background: none;
+            border: none;
+            color: #3b82f6; /* Blue icon */
+            cursor: pointer;
+            font-size: 1.125rem; /* lg */
+            transition: color 0.2s ease-in-out;
+            padding: 0.25rem;
+            border-radius: 0.375rem;
+        }
+        .report-icon-btn:hover {
+            color: #1d4ed8; /* Darker blue on hover */
+            background-color: #eff6ff; /* Light blue background on hover */
+        }
+        .report-icon-btn:focus {
+            outline: 2px solid #60a5fa; /* Focus ring */
+            outline-offset: 2px;
+        }
+        .loading-spinner {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #3b82f6; /* Blue */
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 2rem auto;
+            display: none; /* Hidden by default */
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Styles for the dynamically generated PDF content */
+        .pdf-report-content {
+            font-family: 'Inter', sans-serif;
+            padding: 20px;
+            color: #334155;
+            font-size: 12px;
+            line-height: 1.5;
+            display: none; /* Hidden from view, only for PDF generation */
+        }
+        .pdf-report-content h2 {
+            font-size: 18px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 10px;
+            color: #1a202c;
+        }
+        .pdf-report-content h3 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 15px;
+            margin-bottom: 5px;
+            color: #4a5568;
+        }
+        .pdf-report-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+        }
+        .pdf-report-content th, .pdf-report-content td {
+            border: 1px solid #cbd5e0;
+            padding: 8px;
+            text-align: left;
+            font-size: 11px;
+        }
+        .pdf-report-content th {
+            background-color: #f1f5f9;
+            font-weight: 600;
+        }
+        .pdf-report-content .total-row td {
+            font-weight: 700;
+            background-color: #e2e8f0;
+        }
+        .pdf-report-content .info-section {
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .pdf-report-content .info-section p {
+            margin: 3px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Substation Inspection Reports Overview</h1>
+        <div class="loading-spinner" id="loadingSpinner"></div>
+        <div class="table-container">
+            <table id="reportsTable">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Substation</th>
+                        <th>Inspecting Officer</th>
+                        <th>Cleanliness Score</th>
+                        <th>Defective Score</th>
+                        <th>Record Keeping Score</th>
+                        <th>Essentials Score</th>
+                        <th>Safety Score</th>
+                        <th>Aesthetics Score</th>
+                        <th>Total Score</th>
+                        <th>Report</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Data will be populated here by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Hidden div for PDF generation content -->
+    <div id="pdfReportContent" class="pdf-report-content"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script>
+        // Original Google Sheet CSV URL
+        const ORIGINAL_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSHoWw-c-KCfsYrkQs67uWaKdag1WXVQobLkngEK-bvbky_LMF6RWg-BwgVYA-5f3RcR4u6rQA5XWhH/pub?gid=422662764&single=true&output=csv';
+
+        // You might need a CORS proxy if running this HTML directly from your file system
+        // or if the server hosting this HTML is different from Google Sheets.
+        // For local development, you can use a public proxy like 'https://cors-anywhere.herokuapp.com/'
+        // For production, consider setting up your own proxy or using a server-side script.
+        // Uncomment the line below and prepend the proxy URL to ORIGINAL_CSV_URL if you face CORS issues.
+        // const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/'; // USE WITH CAUTION: For development only.
+        // const CSV_URL = CORS_PROXY + ORIGINAL_CSV_URL;
+
+        // By default, use the original URL. If CORS issues persist, try the proxy.
+        const CSV_URL = ORIGINAL_CSV_URL;
+
+        const tableBody = document.querySelector('#reportsTable tbody');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const pdfReportContentDiv = document.getElementById('pdfReportContent');
+
+        // Function to fetch and parse CSV data
+        async function fetchCsvData() {
+            loadingSpinner.style.display = 'block'; // Show spinner
+            try {
+                const response = await fetch(CSV_URL);
+                if (!response.ok) {
+                    // Provide more specific error details
+                    let errorMessage = `HTTP error! Status: ${response.status}`;
+                    if (response.status === 0) {
+                        errorMessage += ". This might be a network issue or a CORS (Cross-Origin Resource Sharing) problem.";
+                    }
+                    throw new Error(errorMessage);
+                }
+                const csvText = await response.text();
+                return parseCsv(csvText);
+            } catch (error) {
+                console.error('Error fetching CSV data:', error);
+                // Updated alert message for better guidance
+                alert(`Failed to load data: ${error.message}. Please check your internet connection and ensure the Google Sheet URL is correct and publicly accessible. If running locally, you might need a CORS proxy.`);
+                return [];
+            } finally {
+                loadingSpinner.style.display = 'none'; // Hide spinner
+            }
+        }
+
+        // Robust CSV parser handling quoted fields and escaped quotes
+        function parseCsv(csv) {
+            const lines = csv.split(/\r?\n/).filter(line => line.trim() !== '');
+            if (lines.length === 0) return [];
+
+            // Headers are assumed to be simple comma-separated values without quotes
+            const headers = lines[0].split(',').map(header => header.trim());
+
+            if (headers.length === 0 || headers.some(h => h === '')) {
+                console.error("Failed to parse valid headers from CSV. Headers might be empty or malformed.");
+                return [];
+            }
+
+            const data = [];
+            // Regex for parsing data rows, which might contain quoted commas.
+            // This regex handles fields that are either quoted (and can contain escaped quotes or commas)
+            // or unquoted (cannot contain commas).
+            const CSV_FIELD_REGEX = /(?:\"([^\"]*(?:\"\"[^\"]*)*)\"|([^,]*))(?:,|$)/g;
+
+            for (let i = 1; i < lines.length; i++) {
+                let currentLine = lines[i];
+                if (!currentLine.trim()) continue;
+
+                const row = {};
+                let columnIndex = 0;
+                CSV_FIELD_REGEX.lastIndex = 0; // Reset for each data row
+
+                let match;
+                // Loop through the line, extracting fields using the regex
+                while ((match = CSV_FIELD_REGEX.exec(currentLine)) !== null && columnIndex < headers.length) {
+                    // If the first capturing group (quoted string) exists, use it and unescape internal quotes.
+                    // Otherwise, use the second capturing group (unquoted string).
+                    let field = match[1] !== undefined ? match[1].replace(/""/g, '"') : match[2];
+                    row[headers[columnIndex]] = field.trim();
+                    columnIndex++;
+                }
+
+                // Only push the row if all expected columns were found.
+                // This helps in skipping incomplete or truly malformed rows.
+                if (columnIndex === headers.length) {
+                    data.push(row);
+                } else {
+                    console.warn(`Skipping malformed row ${i + 1} (expected ${headers.length} columns, found ${columnIndex}): ${lines[i]}`);
+                }
+            }
+            return data;
+        }
+
+        // Function to format date
+        function formatDate(dateString) {
+            if (!dateString) return '';
+            try {
+                const date = new Date(dateString);
+                // Check if the date is valid
+                if (isNaN(date.getTime())) {
+                    // Try parsing as DD/MM/YYYY if default fails
+                    const parts = dateString.split('/');
+                    if (parts.length === 3) {
+                        const d = new Date(`${parts[1]}/${parts[0]}/${parts[2]}`);
+                        if (!isNaN(d.getTime())) {
+                            return d.toLocaleDateString('en-GB');
+                        }
+                    }
+                    return dateString; // Return original if cannot parse
+                }
+                return date.toLocaleDateString('en-GB'); // DD/MM/YYYY
+            } catch (e) {
+                return dateString; // Fallback
+            }
+        }
+
+        // Function to populate the table
+        function populateTable(data) {
+            tableBody.innerHTML = ''; // Clear existing rows
+            data.forEach(rowData => {
+                const row = tableBody.insertRow();
+
+                // Display columns
+                const displayColumns = [
+                    'Date',
+                    'Substation',
+                    'Inspecting Officer',
+                    'Subtotal: Cleanliness',
+                    'Subtotal: Defective',
+                    'Subtotal: RecordKeeping',
+                    'Subtotal: Essentials',
+                    'Subtotal: Safety',
+                    'Subtotal: Aesthetics',
+                    'Total Score'
+                ];
+
+                displayColumns.forEach(col => {
+                    const cell = row.insertCell();
+                    if (col === 'Date') {
+                        cell.textContent = formatDate(rowData[col]);
+                    } else {
+                        cell.textContent = rowData[col] || '-';
+                    }
+                });
+
+                // Report icon cell
+                const reportCell = row.insertCell();
+                const reportButton = document.createElement('button');
+                reportButton.className = 'report-icon-btn';
+                reportButton.innerHTML = '<i class="fas fa-file-pdf"></i>';
+                reportButton.title = 'Open Detailed Report'; // Changed tooltip
+                reportButton.onclick = () => openDetailedReport(rowData); // Changed function call
+                reportCell.appendChild(reportButton);
+            });
+        }
+
+        // Function to open report.html with respective data
+        function openDetailedReport(rowData) {
+            // Store the entire rowData in localStorage
+            localStorage.setItem('scoreReport', JSON.stringify(rowData));
+            // Open report.html in a new tab
+            window.open('report1.html', '_blank');
+        }
+
+        // Load data when the DOM is fully loaded
+        document.addEventListener('DOMContentLoaded', async () => {
+            const data = await fetchCsvData();
+            populateTable(data);
+        });
+    </script>
+</body>
+</html>
