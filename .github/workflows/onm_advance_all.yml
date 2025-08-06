@@ -1,0 +1,34 @@
+name: Update Buniadpur CAPEX JSON
+
+on:
+  schedule:
+    - cron: '30 8 * * *'  # Every day at 2:00 PM IST
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Install csvtojson
+        run: npm install -g csvtojson
+
+      - name: Fetch and Convert ONM Advance CSV
+        run: |
+          mkdir -p data
+
+          # Download and convert CSV
+          curl -L "https://docs.google.com/spreadsheets/d/e/2PACX-1vQPBYq0ZQpaAnu0Mp_qN5oGvklgIpjolyRPf3LfSojRaN-GBBBXKHslR9ue1DOv1432oP2PzYznUUmn/pub?gid=512034300&single=true&output=csv" -o data/onm_advance_all.csv
+          csvtojson data/onm_advance_all.csv > data/onm_advance_all.json
+          
+          # Remove intermediate CSV
+          rm data/onm_advance_all.csv
+
+      - name: Commit and Push JSON File
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add data/onm_advance_all.json || true
+          git diff --cached --quiet && echo "✅ No changes to commit." || (git commit -m "Update ONM Advance JSON data" && git push)
