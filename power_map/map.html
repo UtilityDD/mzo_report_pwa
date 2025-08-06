@@ -4,8 +4,15 @@
     <meta charset="UTF-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
     <title>Power Map</title>
+    
+    <!-- Leaflet Core Library (MUST be loaded first) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" rel="stylesheet"/>
+
+    <!-- Leaflet Compass Plugin (MUST be loaded after Leaflet core) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-compass/dist/leaflet-compass.css">
+    <script src="https://unpkg.com/leaflet-compass/dist/leaflet-compass.min.js"></script>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-polylinedecorator/1.6.0/leaflet.polylineDecorator.min.js"></script>
     <!-- Font Awesome CDN for professional icons -->
@@ -65,6 +72,7 @@
             z-index: 10000; /* Ensure it stays above the map */
             font-family: Arial, sans-serif;
             overflow: hidden; /* Hide overflow from table head */
+            display: none; /* Hidden by default */
         }
 
         #table-container {
@@ -139,6 +147,14 @@
             align-items: center;
             gap: 5px;
         }
+#search-container {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+#search-container:hover {
+    opacity: 1;
+}
 
         #search-container {
             position: fixed;
@@ -227,6 +243,11 @@
             overflow-y: auto;
             /* Added for smooth transition */
             transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+            display: none; /* Hidden by default */
+        }
+
+        #filter-container.show-filters {
+            display: block; /* Show when this class is added */
         }
 
         .filter-category {
@@ -240,20 +261,6 @@
             gap: 5px;
         }
 
-        #status-message {
-            position: fixed;
-            bottom: 60px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-            z-index: 1000;
-            display: none;
-        }
 
         /* Progress Bar Styles */
         #progress-container {
@@ -285,29 +292,7 @@
             text-align: center;
         }
 
-        /* Floating Action Button for Filters */
-        #filter-fab {
-            position: fixed;
-            bottom: 10px;
-            right: 10px;
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background-color: #007bff; /* Blue color */
-            color: white;
-            display: none; /* Hidden by default, shown on mobile */
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            cursor: pointer;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-            z-index: 2000;
-            transition: transform 0.3s ease-in-out; /* Added transition for rotation */
-        }
 
-        #filter-fab.rotate-fab {
-            transform: rotate(90deg); /* Rotate 90 degrees when active */
-        }
 
         /* Toggle Icons for Tables */
         .toggle-icon {
@@ -339,8 +324,17 @@
 
         /* Mobile-specific styles */
         @media (max-width: 768px) {
+            /* Floating table is hidden by default on mobile, JS will toggle display */
             #floating-table {
-                display: none; /* Hide tables on small screens */
+                top: auto;
+                bottom: 70px; /* Position above the FAB */
+                right: 10px;
+                left: auto; /* Ensure it's not bound to the left */
+                width: 200px; /* Compact width */
+                max-height: 50vh; /* Allow scrolling if many filters */
+            }
+            #map-legend {
+                display: none !important;
             }
             #filter-container {
                 /* Initially hidden off-screen to the right */
@@ -360,14 +354,16 @@
                 pointer-events: auto; /* Enable interaction when shown */
             }
             #search-container {
-                width: 90%; /* Make search bar wider on mobile */
-                left: 5%;
-                transform: translateX(0%);
-                top: 10px; /* Reset top for mobile */
+                width: 50%;              /* Smaller width */
+                left: 50%;               /* Center horizontally */
+                transform: translateX(-50%);
+                top: 10px;               /* Keep same top position */
             }
+
             #search-box {
-                width: 100%;
+                width: 100%;             /* Fill container */
             }
+
             #map-legend {
                 flex-direction: column; /* Stack legend items vertically */
                 align-items: flex-start;
@@ -408,7 +404,30 @@
                 right: 10px;
             }
         }
-        
+        /* Allow gestures to pass through non-interactive elements */
+#map-legend,
+#summary-card {
+    pointer-events: none;
+}
+
+/* Interactive elements keep clicks but won't block gestures outside them */
+#search-container,
+#floating-table,
+#filter-container {
+    touch-action: auto; /* Allow gestures inside inputs */
+}
+@media (max-width: 768px) {
+#summary-card {
+        display: none !important;
+    }
+}
+
+/* Hide Leaflet Compass on screens wider than 768px (desktop/tablet landscape) */
+@media (min-width: 769px) {
+    .leaflet-control-compass {
+        display: none !important;
+    }
+}
     </style>
 </head>
 <body>
@@ -467,6 +486,7 @@
                type="text">
         <ul id="search-results"></ul>
     </div>
+    
 <div id="summary-card">
     <h4 style="align-items: center; color: red;">Total: <span id="total-substations">0</span> no. / <span id="total-capacity">0</span> MVA (including 33/11kV PTRs at GSS)</h4>
 </div>
@@ -483,10 +503,7 @@
     <div id="status-message"></div>
     <div id="map"></div>
 
-    <!-- Floating Action Button for Filters -->
-    <div id="filter-fab">
-        <span class="filter-icon">⚙️</span>
-    </div>
+
 
 <script>
     // Global variables
@@ -529,10 +546,21 @@
 
     // Initialize map
     function initMap() {
-        map = L.map('map', {
-            zoomControl: true,
-            minZoom: 7,
-        }).setView([23.5, 87.5], 7);
+map = L.map('map', {
+    zoomControl: true,
+    minZoom: 7,
+    zoomAnimation: true,
+    zoomAnimationThreshold: 10,
+    wheelPxPerZoomLevel: 120,
+    inertia: true,
+    inertiaDeceleration: 2000,
+    dragging: true,       // Ensure dragging works
+    touchZoom: true,      // Allow pinch zoom
+    tap: false            // Prevent 300ms delay on mobile
+}).setView([23.5, 87.5], 7);
+
+
+
 
         // Google Maps (Roadmap) tile layer
         const googleStreets = L.tileLayer('http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',{
@@ -562,9 +590,21 @@
             "No Map": noMap // Added "No Map" option
         };
 
-        L.control.layers(baseMaps).addTo(map);
+L.control.layers(baseMaps).addTo(map);
+if (L.control.compass) {
+    L.control.compass({
+        position: 'topright',
+        autoActive: true,  // Start active so it’s visible
+        showDigit: true,   // Show degrees
+        textErr: 'GPS not available'
+    }).addTo(map);
+} else {
+    console.warn("Leaflet Compass plugin not loaded.");
+}
 
-        return map;
+
+return map;
+
     }
 
     // Convert DMS coordinates to decimal
@@ -1380,13 +1420,7 @@
         }
     });
 
-    // Toggle filter panel visibility and rotate button
-    document.getElementById('filter-fab').addEventListener('click', function() {
-        const filterContainer = document.getElementById('filter-container');
-        const filterFab = document.getElementById('filter-fab');
-        filterContainer.classList.toggle('show-filters');
-        filterFab.classList.toggle('rotate-fab'); // Toggle rotation class
-    });
+
 
 
     // Initialize the application
@@ -1394,34 +1428,37 @@
         initApp();
 
         // Add event listener for filter table toggle icon
-        document.getElementById('toggle-filter-table').addEventListener('click', function() {
-            const filterContainer = document.getElementById('filter-container');
-            const icon = this.querySelector('i');
-            if (filterContainer.style.display === 'none') {
-                filterContainer.style.display = 'block';
-                icon.classList.remove('fa-eye-slash');
-                icon.classList.add('fa-filter'); // Change to filter icon when visible
-            } else {
-                filterContainer.style.display = 'none';
-                icon.classList.remove('fa-filter');
-                icon.classList.add('fa-eye-slash'); // Change to eye-slash when hidden
-            }
-        });
+document.getElementById('toggle-filter-table').addEventListener('click', function() {
+    const filterContainer = document.getElementById('filter-container');
+    const icon = this.querySelector('i');
 
-        // Add event listener for summary table toggle icon
-        document.getElementById('toggle-summary-table').addEventListener('click', function() {
-            const floatingTable = document.getElementById('floating-table');
-            const icon = this.querySelector('i');
-            if (floatingTable.style.display === 'none') {
-                floatingTable.style.display = 'block';
-                icon.classList.remove('fa-eye-slash');
-                icon.classList.add('fa-table'); // Change to table icon when visible
-            } else {
-                floatingTable.style.display = 'none';
-                icon.classList.remove('fa-table');
-                icon.classList.add('fa-eye-slash'); // Change to eye-slash when hidden
-            }
-        });
+    if (filterContainer.classList.contains('show-filters')) {
+        filterContainer.classList.remove('show-filters');
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-filter');
+    } else {
+        filterContainer.classList.add('show-filters');
+        icon.classList.remove('fa-filter');
+        icon.classList.add('fa-eye-slash');
+    }
+});
+
+document.getElementById('toggle-summary-table').addEventListener('click', function() {
+    const floatingTable = document.getElementById('floating-table');
+    const icon = this.querySelector('i');
+
+    if (floatingTable.style.display === 'block') {
+        floatingTable.style.display = 'none';
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-table');
+    } else {
+        floatingTable.style.display = 'block';
+        floatingTable.style.setProperty('display', 'block', 'important'); // override mobile CSS
+        icon.classList.remove('fa-table');
+        icon.classList.add('fa-eye-slash');
+    }
+});
+
     };
     // Step 4: Handle label toggle checkbox
 document.getElementById('toggle-labels').addEventListener('change', function () {
