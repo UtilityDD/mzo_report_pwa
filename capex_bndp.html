@@ -429,6 +429,19 @@
             font-weight: 700;
             color: var(--warning-text);
         }
+.division-buttons .btn-division {
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid #007bff;
+  background-color: white;
+  color: #007bff;
+  font-weight: 500;
+  transition: 0.3s;
+}
+.division-buttons .btn-division.active {
+  background-color: #007bff;
+  color: white;
+}
 
     </style>
 </head>
@@ -439,7 +452,7 @@
     </div>
 
 <div class="header">
-    <h1>Advance to Vendor: Buniadpur</h1>
+    <h1>Advance to Vendor: CAPEX All</h1>
     <p id="reportDate" style="font-size: 0.85rem; margin-top: 4px;"></p>
 </div>
 
@@ -466,7 +479,20 @@
     </div>
 </div>
 
+
+<div class="division-buttons mt-2 mb-3 d-flex flex-wrap gap-2 justify-content-start" id="divisionButtonBlock">
+  <!-- Buttons will be dynamically injected here -->
+</div>
+
 <div class="filters-container">
+
+    <div class="filter-group">
+        
+    <select id="divisionFilter">
+        <option value="all">All Divisions</option>
+    </select>
+</div>
+
     <div class="filter-group">
         <select id="unitFilter">
             <option value="all">All Units</option>
@@ -503,14 +529,36 @@
 
     <!-- Tabbed Interface for Tables -->
     <div class="tab-container">
-        <div class="tab-buttons">
-            <button class="tab-button active" data-tab-target="unitTab">Unit Wise</button>
+<div class="tab-buttons">
+<button class="tab-button active" data-tab-target="divisionTab">Division Wise</button>
+    <button class="tab-button" data-tab-target="unitTab">Unit Wise</button>
             <button class="tab-button" data-tab-target="vendorTab">Vendor Wise</button>
             <button class="tab-button" data-tab-target="materialTab">Material Wise</button>
             <button class="tab-button" data-tab-target="detailsTab">Details</button>
         </div>
+<div id="divisionTab" class="tab-content hidden">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <h3>Division Wise Net Balance Value</h3>
+        <i class="fas fa-file-excel download-icon" title="Download Excel" onclick="downloadTable('divisionTable', 'Division_Wise')"></i>
+    </div>
+    <table id="divisionTable">
+        <thead>
+            <tr>
+                <th>Division</th>
+                <th>Value (Rs.)</th>
+                <th>%</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <div class="pagination-controls" id="divisionPagination">
+        <button id="divisionPrevPage">Previous</button>
+        <span id="divisionPageInfo">Page 1 of 1</span>
+        <button id="divisionNextPage">Next</button>
+    </div>
+</div>
 
-        <div id="unitTab" class="tab-content">
+<div id="unitTab" class="tab-content hidden">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                 <h3>Unit Wise Net Balance Value</h3>
                 <i class="fas fa-file-excel download-icon" title="Download Excel" onclick="downloadTable('unitTable', 'Unit_Wise')"></i>
@@ -613,18 +661,31 @@
 
     <script>
         // Global variables
+        let divisionAggregatedData = [];
+
         let allData = [];
         let filteredData = [];
         let vendorNameMap = {}; // New: To store vendor code to name mapping
+        let costCenterMap = {}; // Store "Cost Centre" → Unit Name
+let divisionUnitMap = {}; // Store "Division Name" → [Unit Names]
+const sortStates = {
+    divisionTable: { column: 'netBalanceValue', direction: 'desc' },
+    unitTable: { column: 'netBalanceValue', direction: 'desc' },
+    vendorTable: { column: 'netBalanceValue', direction: 'desc' },
+    materialTable: { column: 'netBalanceValue', direction: 'desc' }
+};
+
         
         // Pagination variables for each table
         let currentPage = {
+            divisionTable: 1,
             unitTable: 1,
             vendorTable: 1,
             materialTable: 1,
             detailsTable: 1
         };
         const itemsPerPage = {
+            divisionTable: 10,
             unitTable: 10, // Items per page for Unit Wise table
             vendorTable: 10, // Items per page for Vendor Wise table
             materialTable: 10, // Items per page for Material Wise table
@@ -641,32 +702,7 @@
         let currentDetailsSearchQuery = '';
 
         // Cost Center to Unit mapping
-        const costCenterMapping = {
-            "C334625010": "BUNIADPUR 33 KV S/S",
-            "C334621010": "BUNIADPUR CCC",
-            "C334620090": "BUNIADPUR DIV STORE",
-            "C334620000": "BUNIADPUR DIVISION",
-            "C334621040": "GANGARAMPUR CCC",
-            "C334625030": "HARIRAMPUR 33 KV S/S",
-            "C334621030": "HARIRAMPUR CCC",
-            "C334625020": "KUSMANDI 33 KV S/S",
-            "C334621020": "KUSMANDI CCC",
-            "C334625050": "PRAN SAGAR 33 KV S/S",
-            "C334625040": "THENGAPARA 33 KV S/S",
-            "C366323010": "BUNIADPUR 33 KV S/S",
-            "C366321010": "BUNIADPUR CCC",
-            "C366320090": "BUNIADPUR DIV STORE",
-            "C366320000": "BUNIADPUR DIVISION",
-            "C366321040": "GANGARAMPUR CCC",
-            "C366323030": "HARIRAMPUR 33 KV S/S",
-            "C366321030": "HARIRAMPUR CCC",
-            "C366323020": "KUSMANDI 33 KV S/S",
-            "C366321020": "KUSMANDI CCC",
-            "C366323060": "MALIGAON 33 KV S/S",
-            "C366323050": "PRAN SAGAR 33 KV S/S",
-            "C366323040": "THENGAPARA 33 KV S/S"
-        };
-
+        
         // Define age ranges for checkboxes
         const ageRanges = {
             "0-180": { min: 0, max: 180 },
@@ -715,6 +751,9 @@
             document.getElementById('unitPrevPage').addEventListener('click', () => changePage('unitTable', -1));
             document.getElementById('unitNextPage').addEventListener('click', () => changePage('unitTable', 1));
             document.getElementById('vendorPrevPage').addEventListener('click', () => changePage('vendorTable', -1));
+            document.getElementById('divisionPrevPage').addEventListener('click', () => changePage('divisionTable', -1));
+document.getElementById('divisionNextPage').addEventListener('click', () => changePage('divisionTable', 1));
+
             // FIXED: Added 'click' event type as the first argument
             document.getElementById('vendorNextPage').addEventListener('click', () => changePage('vendorTable', 1)); 
             document.getElementById('materialPrevPage').addEventListener('click', () => changePage('materialTable', -1));
@@ -758,6 +797,10 @@
             }
 
             // Show pagination for the active summary tab if it has data
+            if (tabId === 'divisionTab') {
+    document.getElementById('divisionPagination').style.display = 'flex';
+}
+
             if (tabId === 'unitTab') {
                 document.getElementById('unitPagination').style.display = 'flex';
             } else if (tabId === 'vendorTab') {
@@ -792,17 +835,17 @@
         }
 
         // Load data from the CSV file
- async function loadData() {
-    const mainDataUrl = 'data/bbdp_capex.json';
+async function loadData() {
+    const mainDataUrl = 'data/capexall.json';
     const vendorMapUrl = 'data/bndp_vendor.json';
+    const costCenterMapUrl = 'data/costcenter.json'; // New
 
     showLoading("Loading vendor map...");
 
     try {
-        // Load Vendor Mapping
+        // 1. Load Vendor Mapping
         const vendorResponse = await fetch(vendorMapUrl);
         const vendorData = await vendorResponse.json();
-
         vendorNameMap = {};
         vendorData.forEach(item => {
             if (item.VENDOR_NO && item.NAME) {
@@ -810,13 +853,34 @@
             }
         });
 
-        showLoading("Loading main data...");
+        // 2. Load Cost Center Mapping
+        showLoading("Loading cost center mapping...");
+// Load Cost Center Mapping
+const costCenterResponse = await fetch(costCenterMapUrl);
+const costCenterData = await costCenterResponse.json();
 
-        // Load Main Data
+costCenterMap = {};
+divisionUnitMap = {};
+costCenterData.forEach(entry => {
+    if (entry["Cost Cen_Code"] && entry["Unit Name"] && entry["Division Name"]) {
+        costCenterMap[entry["Cost Cen_Code"]] = entry["Unit Name"];
+
+        const division = entry["Division Name"];
+        const unit = entry["Unit Name"];
+        if (!divisionUnitMap[division]) {
+            divisionUnitMap[division] = new Set();
+        }
+        divisionUnitMap[division].add(unit);
+    }
+});
+
+
+        // 3. Load Main Data
+        showLoading("Loading main data...");
         const mainResponse = await fetch(mainDataUrl);
         const rawData = await mainResponse.json();
 
-        allData = cleanData(rawData);
+        allData = cleanData(rawData, costCenterMap);
         filteredData = [...allData];
 
         // Parse dates manually assuming format is dd.mm.yyyy
@@ -845,7 +909,7 @@
         initializeFilters();
         updateTables();
         updateCapexTotal();
-        showTab('unitTab');
+showTab('divisionTab');
 
     } catch (errorMessage) {
         const errorDiv = document.createElement('div');
@@ -866,61 +930,111 @@
 }
 
         // Clean and transform the data
-        function cleanData(data) {
-            showLoading("Analyzing data...");
-            return data.map(item => {
-                // Convert string values to numbers
-                const netBalanceValue = typeof item["Net Balance Value"] === 'string' 
-                    ? parseFloat(item["Net Balance Value"].replace(/,/g, '')) 
-                    : item["Net Balance Value"] || 0;
-                
-                const netBalanceQty = typeof item["Net Balance Qty"] === 'string' 
-                    ? parseFloat(item["Net Balance Qty"].replace(/,/g, '')) 
-                    : item["Net Balance Qty"] || 0;
-                
-                const ageingInDays = typeof item["Ageing in Days"] === 'string' 
-                    ? parseInt(item["Ageing in Days"].replace(/,/g, '')) 
-                    : item["Ageing in Days"] || 0;
+function cleanData(data) {
+    showLoading("Analyzing data...");
 
-                // Map Cost Centre to Unit
-                const unit = costCenterMapping[item["Cost Centre"]] || 'Unknown Unit';
+    return data.map(item => {
+        const netBalanceValue = typeof item["Net Balance Value"] === 'string' 
+            ? parseFloat(item["Net Balance Value"].replace(/,/g, '')) 
+            : item["Net Balance Value"] || 0;
 
-                // Map Vendor Code to Vendor Name using the loaded map
-                const vendorCode = item.Vendor != null ? String(item.Vendor).trim() : ''; 
-                const vendorName = vendorNameMap[vendorCode] || `Unknown Vendor (${vendorCode})`;
-                
-                return {
-                    ...item,
-                    "Net Balance Value": netBalanceValue,
-                    "Net Balance Qty": netBalanceQty,
-                    "Ageing in Days": ageingInDays,
-                    "Unit": unit, 
-                    "Vendor": vendorName,
-                    // Ensure other string fields that are sortable are trimmed
-                    "Project ID": (item["Project ID"] || '').toString().trim(),
-                    "Network": (item["Network"] || '').toString().trim(),
-                    "Material Code": (item["Material Code"] || '').toString().trim(),
-                    "Material description": (item["Material description"] || '').toString().trim(),
-                    "Issued Document": (item["Issued Document"] || '').toString().trim()
-                };
-            });
-        }
+        const netBalanceQty = typeof item["Net Balance Qty"] === 'string' 
+            ? parseFloat(item["Net Balance Qty"].replace(/,/g, '')) 
+            : item["Net Balance Qty"] || 0;
+
+        const ageingInDays = typeof item["Ageing in Days"] === 'string' 
+            ? parseInt(item["Ageing in Days"].replace(/,/g, '')) 
+            : item["Ageing in Days"] || 0;
+
+        // 🔄 Use global costCenterMap
+        const costCentreCode = item["Cost Centre"];
+        const unit = costCenterMap[costCentreCode] || 'Unknown Unit';
+
+        const vendorCode = item.Vendor != null ? String(item.Vendor).trim() : ''; 
+        const vendorName = vendorNameMap[vendorCode] || `Unknown Vendor (${vendorCode})`;
+
+        return {
+            ...item,
+            "Net Balance Value": netBalanceValue,
+            "Net Balance Qty": netBalanceQty,
+            "Ageing in Days": ageingInDays,
+            "Unit": unit,
+            "Vendor": vendorName,
+            "Project ID": (item["Project ID"] || '').toString().trim(),
+            "Network": (item["Network"] || '').toString().trim(),
+            "Material Code": (item["Material Code"] || '').toString().trim(),
+            "Material description": (item["Material description"] || '').toString().trim(),
+            "Issued Document": (item["Issued Document"] || '').toString().trim()
+        };
+    });
+}
+
+
         
         // Initialize filter dropdowns
-        function initializeFilters() {
-            const units = [...new Set(allData.map(item => item.Unit).filter(Boolean))].sort();
-            const unitFilter = document.getElementById('unitFilter');
-            unitFilter.innerHTML = '<option value="all">All Units</option>'; 
-            units.forEach(unit => {
-                const option = document.createElement('option');
-                option.value = unit;
-                option.textContent = unit;
-                unitFilter.appendChild(option);
-            });
+function initializeFilters() {
+    // Division Filter
+    divisionFilter.innerHTML = '<option value="all">All Divisions</option>';
+Object.keys(divisionUnitMap).sort().forEach(division => {
+    const units = Array.from(divisionUnitMap[division]);
+    const divisionTotal = _.sumBy(filteredData.filter(item => units.includes(item.Unit)), 'Net Balance Value');
 
-            updateVendorFilter();
-            updateMaterialFilter();
-        }
+    if (divisionTotal > 0) {
+        const option = document.createElement('option');
+        option.value = division;
+        option.textContent = division;
+        divisionFilter.appendChild(option);
+    }
+});
+
+
+    divisionFilter.addEventListener('change', () => {
+        updateUnitFilter(); // Also calls applyFilters()
+    });
+
+    // Initial load of unit filter
+    updateUnitFilter();
+
+    // Vendor and Material filters
+    updateVendorFilter();
+    document.getElementById('vendorFilter').addEventListener('change', applyFilters);
+    document.getElementById('materialFilter').addEventListener('change', applyFilters);
+}
+
+function updateUnitFilter() {
+    const selectedDivision = document.getElementById('divisionFilter').value;
+    const unitFilter = document.getElementById('unitFilter');
+    unitFilter.innerHTML = '<option value="all">All Units</option>';
+
+    let units = [];
+
+    if (selectedDivision === 'all') {
+        // All units across all divisions
+        const unitSet = new Set();
+        Object.values(divisionUnitMap).forEach(unitList => {
+            unitList.forEach(unit => unitSet.add(unit));
+        });
+        units = Array.from(unitSet);
+    } else {
+        units = Array.from(divisionUnitMap[selectedDivision] || []);
+    }
+
+    // Only include units where total Net Balance Value > 0
+    const nonZeroUnits = units.filter(unit => {
+        return _.sumBy(allData.filter(item => item.Unit === unit), 'Net Balance Value') > 0;
+    });
+
+    nonZeroUnits.sort().forEach(unit => {
+        const option = document.createElement('option');
+        option.value = unit;
+        option.textContent = unit;
+        unitFilter.appendChild(option);
+    });
+
+    applyFilters(); // Refresh data based on updated filter
+}
+
+
 
         function updateVendorFilter() {
             const unitValue = document.getElementById('unitFilter').value;
@@ -932,8 +1046,12 @@
                 .map(item => item.Vendor) 
                 .filter(Boolean);
 
-            const uniqueVendors = [...new Set(filteredVendors)].sort();
-            uniqueVendors.forEach(vendor => {
+const uniqueVendors = [...new Set(filteredVendors)].filter(vendor =>
+    _.sumBy(allData.filter(item => item.Vendor === vendor), 'Net Balance Value') > 0
+).sort();
+
+uniqueVendors.forEach(vendor => {
+
                 const option = document.createElement('option');
                 option.value = vendor;
                 option.textContent = vendor;
@@ -951,8 +1069,12 @@
                 .map(item => item["Material description"])
                 .filter(Boolean);
 
-            const uniqueMaterials = [...new Set(filteredMaterials)].sort();
-            uniqueMaterials.forEach(material => {
+const uniqueMaterials = [...new Set(filteredMaterials)].filter(material =>
+    _.sumBy(allData.filter(item => item["Material description"] === material), 'Net Balance Value') > 0
+).sort();
+
+uniqueMaterials.forEach(material => {
+
                 const option = document.createElement('option');
                 option.value = material;
                 option.textContent = material;
@@ -961,60 +1083,77 @@
         }
         
         // Apply all filters to the data
-        function applyFilters() {
-            const unitValue = document.getElementById('unitFilter').value;
-            const vendorValue = document.getElementById('vendorFilter').value;
-            const materialValue = document.getElementById('materialFilter').value;
-            
-            // Get selected age ranges from checkboxes
-            const selectedAgeRanges = Array.from(document.querySelectorAll('input[name="ageFilter"]:checked'))
-                                           .map(checkbox => checkbox.value);
-            
-            filteredData = allData.filter(item => {
-                const passesUnitFilter = (unitValue === 'all' || item.Unit === unitValue);
-                const passesVendorFilter = (vendorValue === 'all' || item.Vendor === vendorValue);
-                const passesMaterialFilter = (materialValue === 'all' || item["Material description"] === materialValue);
-                
-                // If no age filter is selected, all items pass the age filter
-                let passesAgeFilter = true;
-                if (selectedAgeRanges.length > 0) {
-                    passesAgeFilter = selectedAgeRanges.some(rangeKey => {
-                        const range = ageRanges[rangeKey];
-                        const age = item["Ageing in Days"];
-                        return age >= range.min && age <= range.max;
-                    });
-                }
+function applyFilters() {
+    const divisionValue = document.getElementById('divisionFilter').value;
+    const unitValue = document.getElementById('unitFilter').value;
+    const vendorValue = document.getElementById('vendorFilter').value;
+    const materialValue = document.getElementById('materialFilter').value;
 
-                return passesUnitFilter && passesVendorFilter && passesMaterialFilter && passesAgeFilter;
+    // Get selected age ranges from checkboxes
+    const selectedAgeRanges = Array.from(document.querySelectorAll('input[name="ageFilter"]:checked'))
+                                   .map(checkbox => checkbox.value);
+
+    filteredData = allData.filter(item => {
+        // Division filter
+        const passesDivisionFilter = (
+            divisionValue === 'all' ||
+            (divisionUnitMap[divisionValue] && divisionUnitMap[divisionValue].has(item.Unit))
+        );
+
+        const passesUnitFilter = (unitValue === 'all' || item.Unit === unitValue);
+        const passesVendorFilter = (vendorValue === 'all' || item.Vendor === vendorValue);
+        const passesMaterialFilter = (materialValue === 'all' || item["Material description"] === materialValue);
+
+        // Age filter
+        let passesAgeFilter = true;
+        if (selectedAgeRanges.length > 0) {
+            const age = item["Ageing in Days"];
+            passesAgeFilter = selectedAgeRanges.some(rangeKey => {
+                const range = ageRanges[rangeKey];
+                return age >= range.min && age <= range.max;
             });
-            
-            // Reset current page to 1 for all tables when filters change
-            for (const tableId in currentPage) {
-                currentPage[tableId] = 1;
-            }
-            // Update the tables
-            updateTables();
-            updateCapexTotal(); // Ensure Capex total is updated after filtering
         }
+
+        return passesDivisionFilter && passesUnitFilter && passesVendorFilter && passesMaterialFilter && passesAgeFilter;
+    });
+
+    // Reset current page to 1 for all tables when filters change
+    for (const tableId in currentPage) {
+        currentPage[tableId] = 1;
+    }
+
+    updateTables();       // Refresh filtered tables
+    updateCapexTotal();   // Refresh total capex value
+}
+
         
         // Reset all filters to default
-        function resetFilters() {
-            document.getElementById('unitFilter').value = 'all';
-            updateVendorFilter();
-            document.getElementById('vendorFilter').value = 'all';
-            document.getElementById('materialFilter').value = 'all';
-            
-            // Uncheck all age filter checkboxes
-            document.querySelectorAll('input[name="ageFilter"]').forEach(checkbox => {
-                checkbox.checked = false;
-            });
+function resetFilters() {
+    // Reset division first
+    document.getElementById('divisionFilter').value = 'all';
 
-            // Clear details search input
-            document.getElementById('detailsSearchInput').value = '';
-            currentDetailsSearchQuery = ''; // Reset search query
+    // Update unit list based on division reset, which will also trigger applyFilters()
+    updateUnitFilter();
 
-            applyFilters();
-        }
+    // Then reset other filters
+    document.getElementById('unitFilter').value = 'all';
+    updateVendorFilter(); // Repopulate vendors
+    document.getElementById('vendorFilter').value = 'all';
+    document.getElementById('materialFilter').value = 'all';
+
+    // Uncheck all age filter checkboxes
+    document.querySelectorAll('input[name="ageFilter"]').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+
+    // Clear details search input and reset search query
+    document.getElementById('detailsSearchInput').value = '';
+    currentDetailsSearchQuery = '';
+
+    // Reapply all filters and refresh UI
+    applyFilters();
+}
+
 
         // Removed sortTableData function
         // Removed handleSortClick function
@@ -1027,34 +1166,46 @@
             showLoading("Creating visualizations...");
 
             // Prepare aggregated data for summary tables
-            unitAggregatedData = _.chain(filteredData)
-                .groupBy('Unit') 
-                .map((items, unit) => ({
-                    unit: unit || 'Unknown',
-                    netBalanceValue: _.sumBy(items, 'Net Balance Value')
-                }))
-                .value();
-            // No sorting applied here
-            unitAggregatedData = _.sortBy(unitAggregatedData, 'unit'); // Default sort by unit name for consistency
+unitAggregatedData = _.chain(filteredData)
+    .groupBy('Unit') 
+    .map((items, unit) => ({
+        unit: unit || 'Unknown',
+        netBalanceValue: _.sumBy(items, 'Net Balance Value')
+    }))
+    .filter(item => item.netBalanceValue > 0)
+    .orderBy(
+        [sortStates.unitTable.column],
+        [sortStates.unitTable.direction]
+    )
+    .value();
 
-            vendorAggregatedData = _.chain(filteredData)
-                .groupBy('Vendor') 
-                .map((items, vendor) => ({
-                    vendor: vendor || 'Unknown',
-                    netBalanceValue: _.sumBy(items, 'Net Balance Value')
-                }))
-                .value();
-            // No sorting applied here
-            vendorAggregatedData = _.sortBy(vendorAggregatedData, 'vendor'); // Default sort by vendor name for consistency
+vendorAggregatedData = _.chain(filteredData)
+    .groupBy('Vendor') 
+    .map((items, vendor) => ({
+        vendor: vendor || 'Unknown',
+        netBalanceValue: _.sumBy(items, 'Net Balance Value')
+    }))
+    .filter(item => item.netBalanceValue > 0)
+    .orderBy(
+        [sortStates.vendorTable.column],
+        [sortStates.vendorTable.direction]
+    )
+    .value();
 
-            materialAggregatedData = _.chain(filteredData)
-                .groupBy('Material description')
-                .map((items, material) => ({
-                    material: material || 'Unknown',
-                    netBalanceQty: _.sumBy(items, 'Net Balance Qty'),
-                    netBalanceValue: _.sumBy(items, 'Net Balance Value')
-                }))
-                .value();
+materialAggregatedData = _.chain(filteredData)
+    .groupBy('Material description')
+    .map((items, material) => ({
+        material: material || 'Unknown',
+        netBalanceQty: _.sumBy(items, 'Net Balance Qty'),
+        netBalanceValue: _.sumBy(items, 'Net Balance Value')
+    }))
+    .filter(item => item.netBalanceValue > 0)
+    .orderBy(
+        [sortStates.materialTable.column],
+        [sortStates.materialTable.direction]
+    )
+    .value();
+
             // No sorting applied here
             materialAggregatedData = _.sortBy(materialAggregatedData, 'material'); // Default sort by material name for consistency
 
@@ -1074,13 +1225,67 @@
             // No sorting applied here
 
             // Now render the tables based on their respective prepared data
+            updateDivisionTable();   // 👈 Add this line before unit
+
             updateUnitTable();
             updateVendorTable();
             updateMaterialTable();
             updateDetailsTable(); 
             hideLoading();
         }
-        
+        function updateDivisionTable() {
+    const tableBody = document.getElementById('divisionTable').querySelector('tbody');
+    tableBody.innerHTML = '';
+
+    divisionAggregatedData = _.chain(filteredData)
+        .groupBy(item => {
+            return Object.entries(divisionUnitMap).find(([, units]) => units.has(item.Unit))?.[0] || 'Unknown';
+        })
+        .map((items, division) => ({
+            division,
+            netBalanceValue: _.sumBy(items, 'Net Balance Value')
+        }))
+        .filter(item => item.netBalanceValue > 0)
+        .orderBy([sortStates.divisionTable.column], [sortStates.divisionTable.direction])
+        .value();
+
+    if (divisionAggregatedData.length === 0) {
+        showNoDataMessage(tableBody, 3);
+        updatePaginationControls('divisionTable', 0);
+        return;
+    }
+
+    const totalValue = _.sumBy(divisionAggregatedData, 'netBalanceValue');
+
+    const startIndex = (currentPage.divisionTable - 1) * itemsPerPage.divisionTable;
+    const paginated = divisionAggregatedData.slice(startIndex, startIndex + itemsPerPage.divisionTable);
+
+    paginated.forEach(item => {
+        const percent = ((item.netBalanceValue / totalValue) * 100).toFixed(2);
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${item.division}</td>
+            <td>${formatValueInLakhCrore(item.netBalanceValue)}</td>
+            <td>
+                ${percent}%
+                <div class="percentage-bar" style="width: ${percent}%"></div>
+            </td>
+        `;
+        tableBody.appendChild(row);
+    });
+
+    const totalRow = document.createElement('tr');
+    totalRow.className = 'total-row';
+    totalRow.innerHTML = `
+        <td>Total</td>
+        <td>${formatValueInLakhCrore(totalValue)}</td>
+        <td>100%</td>
+    `;
+    tableBody.appendChild(totalRow);
+
+    updatePaginationControls('divisionTable', divisionAggregatedData.length);
+}
+
         // Update the Unit table
         function updateUnitTable() {
             const tableBody = document.getElementById('unitTable').querySelector('tbody');
@@ -1307,15 +1512,18 @@
         }
 
         // New helper function to format values in Lakh/Crore for readability
-        function formatValueInLakhCrore(value) {
-            if (value >= 10000000) { // Crore (10^7)
-                return (value / 10000000).toFixed(2) + ' Cr';
-            } else if (value >= 100000) { // Lakh (10^5)
-                return (value / 100000).toFixed(2) + ' L';
-            } else {
-                return value.toFixed(2); // Keep as is for smaller values
-            }
-        }
+function formatValueInLakhCrore(value) {
+    if (value >= 10000000) { // Crore (10^7)
+        return (value / 10000000).toFixed(2) + ' Cr';
+    } else if (value >= 100000) { // Lakh (10^5)
+        return (value / 100000).toFixed(2) + ' L';
+    } else if (value >= 1000) { // Thousand (10^3)
+        return (value / 1000).toFixed(2) + ' k';
+    } else {
+        return value.toFixed(2); // Raw for small numbers
+    }
+}
+
         
         // Show a message when no data is available
         function showNoDataMessage(tableBody, colspan) {
@@ -1450,6 +1658,35 @@
 
             XLSX.writeFile(wb, filename);
         }
+function addSortListenersToTable() {
+    document.querySelectorAll('th[data-table][data-column]').forEach(th => {
+        th.style.cursor = 'pointer';
+        th.addEventListener('click', () => {
+            const table = th.dataset.table;
+            const column = th.dataset.column;
+            const current = sortStates[table];
+
+            // Toggle or reset
+            if (current.column === column) {
+                current.direction = current.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                current.column = column;
+                current.direction = 'desc';
+            }
+
+            // Update visual arrows
+            document.querySelectorAll(`th[data-table="${table}"]`).forEach(header => {
+                header.textContent = header.textContent.replace(/ ↑| ↓/g, '');
+                if (header.dataset.column === current.column) {
+                    header.textContent += current.direction === 'asc' ? ' ↑' : ' ↓';
+                }
+            });
+
+            updateTables();
+        });
+    });
+}
+
 
     </script>
 </body>
