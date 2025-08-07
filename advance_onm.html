@@ -1,0 +1,1684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advance to Vendor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* Dark Theme Variables */
+        :root {
+            --primary-color: #5d8aa8; /* Steel Blue */
+            --secondary-color: #87ceeb; /* Sky Blue */
+            --accent-color: #ff6347; /* Tomato */
+            --light-bg: #2c2c2c; /* Dark Grey */
+            --dark-bg: #1e1e1e; /* Very Dark Grey */
+            --text-color: #e0e0e0; /* Light Grey */
+            --light-text: #f8f9fa; /* Off-white */
+            --border-color: #444; /* Medium Dark Grey */
+            --card-bg: #3c3c3c; /* Slightly Lighter Dark Grey */
+            --table-header-bg: #4a4a4a; /* Darker Grey for headers */
+            --table-row-even-bg: rgba(0, 0, 0, 0.1); /* Subtle stripe */
+            --hover-bg: rgba(135, 206, 235, 0.1); /* Light Blue hover */
+            --total-row-bg: #555; /* Darker grey for total row */
+            --warning-bg: #ffeeba; /* Yellow for warning */
+            --warning-text: #856404; /* Dark yellow text */
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background-color: var(--dark-bg);
+            color: var(--text-color);
+            line-height: 1.4;
+            padding: 10px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background-color: var(--primary-color);
+            color: var(--light-text);
+            padding: 0.75rem;
+            text-align: center;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        
+        .header h1 {
+            font-weight: 600;
+            font-size: 1.5rem;
+        }
+        
+        .filters-container, .age-filter-container {
+            background-color: var(--card-bg);
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1rem;
+        }
+
+        .filters-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 0.3rem;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .filter-group label, .age-filter-label {
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+            color: var(--secondary-color);
+            font-size: 0.85rem;
+        }
+        
+        select, input[type="text"] {
+            padding: 0.4rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background-color: var(--light-bg);
+            color: var(--text-color);
+            font-size: 0.85rem;
+        }
+
+        select option {
+            background-color: var(--light-bg);
+            color: var(--text-color);
+        }
+        
+        .age-checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .age-checkbox-group label {
+            display: flex;
+            align-items: center;
+            font-size: 0.85rem;
+            color: var(--text-color);
+            cursor: pointer;
+        }
+
+        .age-checkbox-group input[type="checkbox"] {
+            margin-right: 5px;
+            cursor: pointer;
+            accent-color: var(--secondary-color); /* For checked state */
+        }
+        
+        @media (max-width: 768px) {
+            .filters-container {
+                grid-template-columns: 1fr;
+                gap: 0.5rem;
+            }
+        }
+        
+        .card { 
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 0.5rem;
+        }
+        
+        .card-header { 
+            background-color: var(--primary-color);
+            color: var(--light-text);
+            padding: 0.6rem 1rem;
+            font-weight: 500;
+            font-size: 0.95rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+        
+        th, td {
+            padding: 0.1rem 0.2rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-color);
+        }
+        
+        th {
+            background-color: var(--table-header-bg);
+            font-weight: 600;
+            color: var(--light-text);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        /* Styles for sortable table headers */
+        th.sortable {
+            cursor: pointer;
+            position: relative;
+            padding-right: 20px; /* Space for the icon */
+        }
+
+        th .sort-icon {
+            position: absolute;
+            right: 5px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.7em;
+            color: var(--light-text);
+            opacity: 0.6;
+        }
+
+        th.sortable:hover .sort-icon {
+            opacity: 1;
+        }
+
+        th .sort-icon.fa-sort-up {
+            color: var(--secondary-color);
+            opacity: 1;
+        }
+
+        th .sort-icon.fa-sort-down {
+            color: var(--secondary-color);
+            opacity: 1;
+        }
+        
+        tr:nth-child(even) {
+            background-color: var(--table-row-even-bg);
+        }
+        
+        tr:hover {
+            background-color: var(--hover-bg);
+        }
+        
+        .total-row {
+            font-weight: 600;
+            background-color: var(--total-row-bg);
+            color: var(--light-text);
+        }
+        
+        .loading-overlay {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(30, 30, 30, 0.8); /* Darker overlay */
+            z-index: 1000;
+        }
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid var(--border-color);
+            border-top: 5px solid var(--secondary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        .loading-text {
+            margin-top: 15px;
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: var(--secondary-color);
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .percentage-bar {
+            height: 3px;
+            background-color: var(--secondary-color);
+            margin-top: 3px;
+            border-radius: 1px;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .no-data {
+            padding: 1rem;
+            text-align: center;
+            color: var(--text-color);
+            font-style: italic;
+            font-size: 0.85rem;
+        }
+        
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 1.25rem;
+            }
+            
+            th, td {
+                padding: 0.3rem;
+                font-size: 0.75rem;
+            }
+            
+            .card-header {
+                padding: 0.5rem;
+                font-size: 0.85rem;
+            }
+        }
+        
+        button {
+            padding: 0.4rem;
+            background-color: var(--accent-color);
+            border: none;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: background-color 0.2s ease;
+        }
+        
+        button:hover {
+            background-color: #c0392b;
+        }
+        button:disabled {
+            background-color: #666;
+            cursor: not-allowed;
+        }
+
+        td:nth-child(2),
+        td:nth-child(3),
+        td:nth-child(6),
+        td:nth-child(7),
+        th:nth-child(2),
+        th:nth-child(3),
+        th:nth-child(6),
+        th:nth-child(7) {
+            text-align: right;
+        }
+        td.right-align, th.right-align {
+            text-align: right;
+        }
+        .details-card-body {
+            max-height: calc(100vh - 200px);
+        }
+        .download-icon {
+            color: #28a745; /* Green for download icon */
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .download-icon:hover {
+            color: #1e7e34;
+            transform: scale(1.15);
+        }
+
+        .pagination-controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 10px 0;
+            background-color: var(--card-bg);
+            border-top: 1px solid var(--border-color);
+            border-bottom-left-radius: 8px;
+            border-bottom-right-radius: 8px;
+            margin-top: -1px; 
+            box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .pagination-controls button {
+            background-color: var(--secondary-color);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            margin: 0 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: background-color 0.2s ease;
+        }
+
+        .pagination-controls button:hover:not(:disabled) {
+            background-color: #6a9acb; /* Slightly darker secondary */
+        }
+
+        .pagination-controls button:disabled {
+            background-color: #666;
+            cursor: not-allowed;
+        }
+
+        .pagination-controls span {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-color);
+        }
+
+        /* Tab specific styles */
+        .tab-container {
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1rem;
+        }
+
+        .tab-buttons {
+            display: flex;
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 1rem;
+        }
+
+        .tab-button {
+            background-color: transparent;
+            border: none;
+            padding: 10px 15px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-color);
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+            flex-grow: 1; 
+            text-align: center;
+        }
+
+        .tab-button:hover {
+            background-color: var(--light-bg);
+        }
+
+        .tab-button.active {
+            color: var(--secondary-color);
+            border-bottom: 3px solid var(--secondary-color);
+            background-color: var(--light-bg);
+        }
+
+        .tab-content {
+            padding: 1rem;
+            overflow-x: auto;
+            max-height: 500px; 
+        }
+
+        .tab-content.hidden {
+            display: none;
+        }
+
+        /* Style for search box within details tab */
+        #detailsSearchBox.hidden {
+            display: none;
+        }
+        #totalCapexCard {
+            width: 100%;
+            background: var(--warning-bg);
+            color: var(--warning-text);
+            border: 1px solid var(--warning-bg);
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            font-weight: 600;
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: flex; /* Use flexbox for layout */
+            flex-wrap: wrap; /* Allow items to wrap */
+            justify-content: center; /* Center items horizontally */
+            align-items: center; /* Center items vertically */
+            gap: 10px; /* Space between items */
+        }
+        #totalCapexCard .total-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 100px; /* Ensure minimum width for each item */
+        }
+        #totalCapexCard .total-label {
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--warning-text);
+        }
+        #totalCapexCard .total-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--warning-text);
+        }
+.division-toggle-btn.active {
+    background-color: #e74c3c !important; /* Strong red */
+    color: white;
+    font-weight: 600;
+    border-color: #e74c3c;
+}
+
+
+    </style>
+</head>
+<body>
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText"></div>
+    </div>
+
+<div class="header">
+    <h1>O&M Avance: All Division</h1>
+    <p id="reportDate" style="font-size: 0.85rem; margin-top: 4px;"></p>
+</div>
+
+<div id="totalCapexCard">
+    <div class="total-item">
+        <span class="total-label">Total:</span>
+        <span class="total-value">₹ <span id="capexTotalCr">0.00 Cr</span></span>
+    </div>
+    <div class="total-item">
+        <span class="total-label">&gt;6M:</span>
+        <span class="total-value">₹ <span id="over6M">0.00 Cr</span></span>
+    </div>
+    <div class="total-item">
+        <span class="total-label">&gt;12M:</span>
+        <span class="total-value">₹ <span id="over12M">0.00 Cr</span></span>
+    </div>
+    <div class="total-item">
+        <span class="total-label">&gt;24M:</span>
+        <span class="total-value">₹ <span id="over24M">0.00 Cr</span></span>
+    </div>
+    <div class="total-item">
+        <span class="total-label">&gt;36M:</span>
+        <span class="total-value">₹ <span id="over36M">0.00 Cr</span></span>
+    </div>
+</div>
+<div id="divisionButtonsContainer" style="overflow-x: auto; white-space: nowrap; margin-bottom: 10px; padding: 0.5rem 0;">
+    <!-- Buttons will be generated by JS -->
+</div>
+
+<div class="filters-container">
+        <div class="filter-group">
+    <select id="divisionFilter">
+        <option value="all">All Divisions</option>
+    </select>
+</div>
+    <div class="filter-group">
+        <select id="unitFilter">
+            <option value="all">All Units</option>
+        </select>
+    </div>
+    <div class="filter-group">
+        <select id="vendorFilter">
+            <option value="all">All Vendors</option>
+        </select>
+    </div>
+    <div class="filter-group">
+        <button id="resetFilters">Reset All Filters</button>
+    </div>
+
+
+</div>
+
+
+    <div class="age-filter-container">
+        <div class="age-filter-label">Ageing in Days:</div>
+        <div class="age-checkbox-group" id="ageCheckboxes">
+            <label><input type="checkbox" name="ageFilter" value="0-180"> &lt;6M</label>
+            <label><input type="checkbox" name="ageFilter" value="181-365"> 6M-1Y</label>
+            <label><input type="checkbox" name="366-730"> 1Y-2Y</label>
+            <label><input type="checkbox" name="ageFilter" value="731-1095"> 2Y-3Y</label>
+            <label><input type="checkbox" name="ageFilter" value="1096-1460"> 3Y-4Y</label>
+            <label><input type="checkbox" name="ageFilter" value="1461-1825"> 4Y-5Y</label>
+            <label><input type="checkbox" name="ageFilter" value="1826-max"> &gt;5Y</label>
+        </div>
+    </div>
+
+    <!-- Tabbed Interface for Tables -->
+    <div class="tab-container">
+        <div class="tab-buttons">
+            <button class="tab-button" data-tab-target="divisionTab">Division Wise</button>
+            <button class="tab-button active" data-tab-target="unitTab">Unit Wise</button>
+            <button class="tab-button" data-tab-target="vendorTab">Vendor Wise</button>
+            <button class="tab-button" data-tab-target="detailsTab">Details</button>
+        </div>
+<div id="divisionTab" class="tab-content hidden">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <h3>Division Wise Net Balance Value</h3>
+        <i class="fas fa-file-excel download-icon" title="Download Excel" onclick="downloadTable('divisionTable', 'Division_Wise')"></i>
+    </div>
+    <table id="divisionTable">
+        <thead>
+            <tr>
+                <th>Sl.</th>
+                <th class="sortable" data-sort-key="division">Division <span class="sort-icon fas fa-sort"></span></th>
+                <th class="sortable" data-sort-key="netBalanceValue">Value (Rs.) <span class="sort-icon fas fa-sort"></span></th>
+                <th>%</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <div class="pagination-controls" id="divisionPagination">
+        <button id="divisionPrevPage">Previous</button>
+        <span id="divisionPageInfo">Page 1 of 1</span>
+        <button id="divisionNextPage">Next</button>
+    </div>
+</div>
+
+        <div id="unitTab" class="tab-content">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3>Unit Wise Net Balance Value</h3>
+                <i class="fas fa-file-excel download-icon" title="Download Excel" onclick="downloadTable('unitTable', 'Unit_Wise')"></i>
+            </div>
+            <table id="unitTable">
+                <thead>
+                    <tr>
+                        <th>Sl.</th>
+                        <th class="sortable" data-sort-key="unit">Unit <span class="sort-icon fas fa-sort"></span></th>
+                        <th class="sortable" data-sort-key="netBalanceValue">Value (Rs.) <span class="sort-icon fas fa-sort"></span></th>
+                        <th>%</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <div class="pagination-controls" id="unitPagination">
+                <button id="unitPrevPage">Previous</button>
+                <span id="unitPageInfo">Page 1 of 1</span>
+                <button id="unitNextPage">Next</button>
+            </div>
+        </div>
+
+        <div id="vendorTab" class="tab-content hidden">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3>Vendor Wise Net Balance Value</h3>
+                <i class="fas fa-file-excel download-icon" title="Download Excel" onclick="downloadTable('vendorTable', 'Vendor_Wise')"></i>
+            </div>
+            <table id="vendorTable">
+                <thead>
+                    <tr>
+                        <th>Sl.</th>
+                        <th class="sortable" data-sort-key="vendor">Vendor Name <span class="sort-icon fas fa-sort"></span></th>
+                        <th class="sortable" data-sort-key="netBalanceValue">Value (Rs.) <span class="sort-icon fas fa-sort"></span></th>
+                        <th>%</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <div class="pagination-controls" id="vendorPagination">
+                <button id="vendorPrevPage">Previous</button>
+                <span id="vendorPageInfo">Page 1 of 1</span>
+                <button id="vendorNextPage">Next</button>
+            </div>
+        </div>
+
+        <div id="detailsTab" class="tab-content hidden">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3>Details</h3>
+                <i class="fas fa-file-excel download-icon" title="Download Excel" onclick="downloadTable('detailsTable', 'Details')"></i>
+            </div>
+            <div id="detailsSearchBox" style="padding-bottom: 10px;">
+                <input type="text" id="detailsSearchInput" placeholder="Search Order Number, Plant, Material, Vendor, or Description..."
+                    style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border-color); font-size: 0.85rem; background-color: var(--light-bg); color: var(--text-color);">
+            </div>
+            <table id="detailsTable">
+                <thead>
+                    <tr>
+                        <th>Sl.</th>
+                        <th class="sortable" data-sort-key="Order Number">Order Number <span class="sort-icon fas fa-sort"></span></th>
+                        <th class="sortable" data-sort-key="Creation Date">Creation Date <span class="sort-icon fas fa-sort"></span></th>
+                        <th class="sortable" data-sort-key="Vendor Name">Vendor Name <span class="sort-icon fas fa-sort"></span></th>
+                        <th class="right-align sortable" data-sort-key="Net Balance Value">Value (Rs.) <span class="sort-icon fas fa-sort"></span></th>
+                        <th class="sortable" data-sort-key="Plant">Plant <span class="sort-icon fas fa-sort"></span></th>
+                        <th class="sortable" data-sort-key="Unit">Unit <span class="sort-icon fas fa-sort"></span></th>
+                        <th class="sortable" data-sort-key="Description">Description <span class="sort-icon fas fa-sort"></span></th>
+                        <th class="right-align sortable" data-sort-key="Ageing in Days">Age in Days <span class="sort-icon fas fa-sort"></span></th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <div class="pagination-controls" id="detailsPagination">
+                <button id="detailsPrevPage">Previous</button>
+                <span id="detailsPageInfo">Page 1 of 1</span>
+                <button id="detailsNextPage">Next</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+    <script>
+        // Global variables
+        let allData = [];
+        let filteredData = [];
+        let vendorNameMap = {}; // New: To store vendor code to name mapping
+        let costCenterUnitMap = {}; // New: To store cost center code to unit name mapping
+        let divisionAggregatedData = [];
+
+        // Pagination variables for each table
+        let currentPage = {
+            unitTable: 1,
+            vendorTable: 1,
+            detailsTable: 1,
+            divisionTable: 1 // ✅ Add this here
+
+        };
+        const itemsPerPage = {
+            unitTable: 10, // Items per page for Unit Wise table
+            vendorTable: 10, // Items per page for Vendor Wise table
+            detailsTable: 20, // Items per page for Details table
+            divisionTable: 10 // ✅ Add this too
+
+        };
+
+        // Aggregated data for each table (before pagination)
+        let unitAggregatedData = [];
+        let vendorAggregatedData = [];
+        let detailsData = []; // This will hold filtered and searched data, ready for pagination
+
+        // Current search query for details table
+        let currentDetailsSearchQuery = '';
+
+        // Sorting state for each table: { tableId: { sortKey: 'columnName', sortOrder: 'asc' | 'desc' | 'none' } }
+        let sortStates = {
+            unitTable: { sortKey: 'netBalanceValue', sortOrder: 'desc' }, // Default sort by Value (Rs.) desc
+            vendorTable: { sortKey: 'netBalanceValue', sortOrder: 'desc' }, // Default sort by Value (Rs.) desc
+            detailsTable: { sortKey: 'Net Balance Value', sortOrder: 'desc' }, // Default sort by Value (Rs.) desc
+                divisionTable: { sortKey: 'netBalanceValue', sortOrder: 'desc' } // ✅ Add this
+
+        };
+
+        // Define age ranges for checkboxes
+        const ageRanges = {
+            "0-180": { min: 0, max: 180 },
+            "181-365": { min: 181, max: 365 },
+            "366-730": { min: 366, max: 730 },
+            "731-1095": { min: 731, max: 1095 },
+            "1096-1460": { min: 1096, max: 1460 },
+            "1461-1825": { min: 1461, max: 1825 },
+            "1826-max": { min: 1826, max: Infinity } 
+        };
+
+        // Initialize application
+        document.addEventListener('DOMContentLoaded', function() {
+            loadData();
+            
+            document.getElementById('unitFilter').addEventListener('change', () => {
+                updateVendorFilter();
+                applyFilters();
+            });
+
+            document.getElementById('vendorFilter').addEventListener('change', () => {
+                applyFilters();
+            });
+document.getElementById('divisionFilter').addEventListener('change', () => {
+        updateUnitFilter();
+    updateVendorFilter();
+    applyFilters();
+});
+
+            // Add event listeners for age checkboxes
+            const ageCheckboxes = document.querySelectorAll('input[name="ageFilter"]');
+            ageCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', applyFilters);
+            });
+
+            document.getElementById('resetFilters').addEventListener('click', resetFilters);
+
+            // Set up tab switching
+            const tabButtons = document.querySelectorAll('.tab-button');
+            tabButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    showTab(this.dataset.tabTarget);
+                });
+            });
+
+            // Pagination button event listeners for all tables
+            document.getElementById('unitPrevPage').addEventListener('click', () => changePage('unitTable', -1));
+            document.getElementById('unitNextPage').addEventListener('click', () => changePage('unitTable', 1));
+            document.getElementById('vendorPrevPage').addEventListener('click', () => changePage('vendorTable', -1));
+            document.getElementById('vendorNextPage').addEventListener('click', () => changePage('vendorTable', 1)); 
+            document.getElementById('detailsPrevPage').addEventListener('click', () => changePage('detailsTable', -1));
+            document.getElementById('detailsNextPage').addEventListener('click', () => changePage('detailsTable', 1));
+document.getElementById('divisionPrevPage').addEventListener('click', () => changePage('divisionTable', -1));
+document.getElementById('divisionNextPage').addEventListener('click', () => changePage('divisionTable', 1));
+
+            // Attach search input listener for details table
+            document.getElementById('detailsSearchInput').addEventListener('input', handleDetailsSearch);
+
+            // Add sort listeners to tables
+            addSortListenersToTable('unitTable');
+            addSortListenersToTable('vendorTable');
+            addSortListenersToTable('detailsTable');
+            addSortListenersToTable('divisionTable'); // ✅ Add this
+
+        });
+        
+        // Function to show a specific tab
+        function showTab(tabId) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+            // Deactivate all tab buttons
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.classList.remove('active');
+            });
+
+            // Show the selected tab content
+            document.getElementById(tabId).classList.remove('hidden');
+            // Activate the clicked tab button
+            document.querySelector(`.tab-button[data-tab-target="${tabId}"]`).classList.add('active');
+
+            // Hide all pagination controls by default
+            document.getElementById('unitPagination').style.display = 'none';
+            document.getElementById('vendorPagination').style.display = 'none';
+            document.getElementById('detailsPagination').style.display = 'none';
+
+            // Handle visibility of search box and pagination for details tab
+            const detailsSearchBox = document.getElementById('detailsSearchBox');
+            if (tabId === 'detailsTab') {
+                detailsSearchBox.classList.remove('hidden');
+                document.getElementById('detailsPagination').style.display = 'flex'; 
+            } else {
+                detailsSearchBox.classList.add('hidden');
+            }
+
+            // Show pagination for the active summary tab if it has data
+            if (tabId === 'unitTab') {
+                document.getElementById('unitPagination').style.display = 'flex';
+            } else if (tabId === 'vendorTab') {
+                document.getElementById('vendorPagination').style.display = 'flex';
+            }
+
+            // Re-render the active table
+            if (tabId === 'unitTab') updateUnitTable();
+            else if (tabId === 'vendorTab') updateVendorTable();
+            else if (tabId === 'detailsTab') updateDetailsTable();
+            else if (tabId === 'divisionTab') updateDivisionTable();
+
+        }
+
+        // Show loading overlay with a message
+        function showLoading(message) {
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            const loadingText = document.getElementById('loadingText');
+            if (loadingOverlay && loadingText) {
+                loadingText.textContent = message;
+                loadingOverlay.classList.remove('hidden');
+            }
+        }
+
+        // Hide loading overlay
+        function hideLoading() {
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            if (loadingOverlay) {
+                loadingOverlay.classList.add('hidden');
+            }
+        }
+
+        // Load data from the CSV file
+        async function loadData() {
+            const mainDataUrl = 'data/onm_advance_all.json'; // Changed data source
+            const vendorMapUrl = 'data/bndp_vendor.json'; // New vendor map data source
+            const costCenterDataUrl = 'data/costcenter.json'; // New cost center data source
+
+            showLoading("Loading data...");
+
+            try {
+                // Load Vendor Mapping
+                const vendorResponse = await fetch(vendorMapUrl);
+                const vendorData = await vendorResponse.json();
+
+                vendorNameMap = {};
+                vendorData.forEach(item => {
+                    if (item.VENDOR_NO && item.NAME) {
+                        vendorNameMap[item.VENDOR_NO.trim()] = item.NAME.trim();
+                    }
+                });
+
+                // Load Cost Center Mapping
+                const costCenterResponse = await fetch(costCenterDataUrl);
+                const costCenterData = await costCenterResponse.json();
+
+                costCenterUnitMap = {};
+                costCenterData.forEach(item => {
+if (item["Cost Cen_Code"] && item["Unit Name"] && item["Division Name"]) {
+    costCenterUnitMap[item["Cost Cen_Code"].trim()] = {
+        unit: item["Unit Name"].trim(),
+        division: item["Division Name"].trim()
+    };
+}
+
+
+                });
+                console.log('Populated costCenterUnitMap:', costCenterUnitMap); // Log the populated map
+
+                // Load Main Data
+                const mainResponse = await fetch(mainDataUrl);
+                const rawData = await mainResponse.json();
+
+                allData = cleanData(rawData);
+                filteredData = [...allData];
+
+                // Parse dates manually assuming format is dd.mm.yyyy
+                const reportingDates = rawData
+                    .map(item => item["Creation Date"]) // Changed to "Creation Date"
+                    .filter(Boolean)
+                    .map(dateStr => {
+                        const parts = dateStr.split('.');
+                        const day = parseInt(parts[0], 10);
+                        const month = parseInt(parts[1], 10) - 1;
+                        const year = parseInt(parts[2], 10);
+                        return new Date(year, month, day);
+                    });
+
+                const maxDate = _.max(reportingDates);
+
+                if (maxDate instanceof Date && !isNaN(maxDate)) {
+                    const day = String(maxDate.getDate()).padStart(2, '0');
+                    const month = String(maxDate.getMonth() + 1).padStart(2, '0');
+                    const year = maxDate.getFullYear();
+                    const formattedDate = `${day}/${month}/${year}`;
+                    document.getElementById('reportDate').textContent = `Report updated on: ${formattedDate}`;
+                }
+
+                // Initialize and render
+                initializeFilters();
+                initializeFilters();
+createDivisionButtons(); // 👈 Add this
+
+                updateTables();
+                updateCapexTotal();
+showTab('divisionTab');
+
+            } catch (errorMessage) {
+                const errorDiv = document.createElement('div');
+                errorDiv.style.cssText = `
+                    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                    background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb;
+                    padding: 15px; border-radius: 5px; z-index: 1001; text-align: center;
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                `;
+                errorDiv.innerHTML = `
+                    <strong>Error!</strong><br>${errorMessage}<br>
+                    <button onclick="this.parentNode.remove()" style="margin-top: 10px; background-color: #dc3545; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer;">Close</button>
+                `;
+                document.body.appendChild(errorDiv);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Clean and transform the data
+function cleanData(data) {
+    showLoading("Analyzing data...");
+    const today = new Date();
+
+    return data.map(item => {
+        // 1. Parse Net Balance Value
+        const netBalanceValue = typeof item["Mat Balance(Value)"] === 'string'
+            ? parseFloat(item["Mat Balance(Value)"].replace(/,/g, ''))
+            : item["Mat Balance(Value)"] || 0;
+
+        // 2. Calculate Ageing in Days
+        let ageingInDays = 0;
+        if (item["Creation Date"]) {
+            const parts = item["Creation Date"].split('.');
+            const creationDate = new Date(
+                parseInt(parts[2], 10),
+                parseInt(parts[1], 10) - 1,
+                parseInt(parts[0], 10)
+            );
+            const diffTime = Math.abs(today - creationDate);
+            ageingInDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        }
+
+        // 3. Lookup from Cost Center mapping
+        const costCenterRaw = item.Resp && item.Resp[" CCtr"] ? item.Resp[" CCtr"] : '';
+        const costCenterTrimmed = costCenterRaw.trim();
+        const mapped = costCenterUnitMap[costCenterTrimmed] || {};
+        const unit = mapped.unit || 'Unknown Unit';
+        const division = mapped.division || 'Unknown Division';
+
+        // 4. Lookup Vendor Name
+        const vendorCode = item.Vendor != null ? String(item.Vendor).trim() : '';
+        const vendorName = vendorNameMap[vendorCode] || `Unknown Vendor (${vendorCode})`;
+
+        // 5. Return cleaned item
+        return {
+            ...item,
+            "Net Balance Value": netBalanceValue,
+            "Ageing in Days": ageingInDays,
+            "Unit": unit,
+            "Division": division,
+            "Vendor Name": vendorName,
+            "Order Number": (item["Order Number"] || '').toString().trim(),
+            "Creation Date": (item["Creation Date"] || '').toString().trim(),
+            "Plant": (item["Plant"] || '').toString().trim(),
+            "Description": (item["Description"] || '').toString().trim()
+        };
+    });
+}
+     
+
+        
+        // Initialize filter dropdowns
+function initializeFilters() {
+    const divisionFilter = document.getElementById('divisionFilter');
+    const unitFilter = document.getElementById('unitFilter');
+
+    // Populate Division Filter
+    const divisions = [...new Set(allData.map(item => item.Division).filter(Boolean))].sort();
+    divisionFilter.innerHTML = '<option value="all">All Divisions</option>';
+    divisions.forEach(division => {
+        const option = document.createElement('option');
+        option.value = division;
+        option.textContent = division;
+        divisionFilter.appendChild(option);
+    });
+
+    // Populate Unit Filter based on selected Division
+    updateUnitFilter();
+
+    // Populate Vendor Filter based on Division + Unit
+    updateVendorFilter();
+}
+
+
+
+function createDivisionButtons() {
+    const container = document.getElementById('divisionButtonsContainer');
+    container.innerHTML = ''; // clear old buttons
+
+    const uniqueDivisions = [...new Set(allData.map(d => d.Division).filter(Boolean))].sort();
+
+    uniqueDivisions.forEach(division => {
+        const btn = document.createElement('button');
+        btn.textContent = division.replace(/division/i, '').trim();
+        btn.dataset.division = division;
+        btn.classList.add('division-toggle-btn');
+
+        btn.style.marginRight = '10px';
+        btn.style.padding = '6px 12px';
+        btn.style.borderRadius = '20px';
+        btn.style.border = '1px solid var(--secondary-color)';
+        btn.style.backgroundColor = 'transparent';
+        btn.style.color = 'var(--secondary-color)';
+        btn.style.cursor = 'pointer';
+        btn.style.fontSize = '0.85rem';
+        btn.style.whiteSpace = 'nowrap';
+
+        btn.addEventListener('click', function () {
+            const current = document.querySelector('.division-toggle-btn.active');
+            if (current === btn) {
+                // Toggle off
+                btn.classList.remove('active');
+                document.getElementById('divisionFilter').value = 'all';
+            } else {
+                // Toggle new
+                document.querySelectorAll('.division-toggle-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById('divisionFilter').value = division;
+            }
+
+            updateUnitFilter();
+            updateVendorFilter();
+            applyFilters();
+        });
+
+        container.appendChild(btn);
+    });
+}
+
+function updateUnitFilter() {
+    const divisionValue = document.getElementById('divisionFilter').value;
+    const unitFilter = document.getElementById('unitFilter');
+    unitFilter.innerHTML = '<option value="all">All Units</option>';
+
+    const filteredUnits = allData
+        .filter(item => divisionValue === 'all' || item.Division === divisionValue)
+        .map(item => item.Unit)
+        .filter(Boolean);
+
+    const uniqueUnits = [...new Set(filteredUnits)].sort();
+    uniqueUnits.forEach(unit => {
+        const option = document.createElement('option');
+        option.value = unit;
+        option.textContent = unit;
+        unitFilter.appendChild(option);
+    });
+}
+
+
+        function updateVendorFilter() {
+            const unitValue = document.getElementById('unitFilter').value;
+            const vendorFilter = document.getElementById('vendorFilter');
+            vendorFilter.innerHTML = '<option value="all">All Vendors</option>';
+
+            const filteredVendors = allData
+                .filter(item => unitValue === 'all' || item.Unit === unitValue)
+                .map(item => item["Vendor Name"]) // Changed to "Vendor Name"
+                .filter(Boolean);
+
+            const uniqueVendors = [...new Set(filteredVendors)].sort();
+            uniqueVendors.forEach(vendor => {
+                const option = document.createElement('option');
+                option.value = vendor;
+                option.textContent = vendor;
+                vendorFilter.appendChild(option);
+            });
+        }
+        
+        // Apply all filters to the data
+        function applyFilters() {
+            const divisionValue = document.getElementById('divisionFilter').value;
+            const unitValue = document.getElementById('unitFilter').value;
+            const vendorValue = document.getElementById('vendorFilter').value;
+            
+            // Get selected age ranges from checkboxes
+            const selectedAgeRanges = Array.from(document.querySelectorAll('input[name="ageFilter"]:checked'))
+                                           .map(checkbox => checkbox.value);
+            
+filteredData = allData.filter(item => {
+    const passesUnitFilter = (unitValue === 'all' || item.Unit === unitValue);
+    const passesVendorFilter = (vendorValue === 'all' || item["Vendor Name"] === vendorValue);
+    const passesDivisionFilter = (divisionValue === 'all' || item.Division === divisionValue);
+
+    let passesAgeFilter = true;
+    if (selectedAgeRanges.length > 0) {
+        passesAgeFilter = selectedAgeRanges.some(rangeKey => {
+            const range = ageRanges[rangeKey];
+            const age = item["Ageing in Days"];
+            return age >= range.min && age <= range.max;
+        });
+    }
+
+    return passesUnitFilter && passesVendorFilter && passesDivisionFilter && passesAgeFilter;
+});
+
+            
+            // Reset current page to 1 for all tables when filters change
+            for (const tableId in currentPage) {
+                currentPage[tableId] = 1;
+            }
+            // Update the tables
+            updateTables();
+            updateCapexTotal(); // Ensure Capex total is updated after filtering
+        }
+        
+        // Reset all filters to default
+function resetFilters() {
+    // Reset dropdowns
+    document.getElementById('divisionFilter').value = 'all';
+    updateUnitFilter();
+    document.getElementById('unitFilter').value = 'all';
+    updateVendorFilter();
+    document.getElementById('vendorFilter').value = 'all';
+
+    // Reset age filters
+    document.querySelectorAll('input[name="ageFilter"]').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+
+    // Reset search input
+    document.getElementById('detailsSearchInput').value = '';
+    currentDetailsSearchQuery = '';
+
+    // Reset sorting
+    sortStates = {
+        unitTable: { sortKey: 'netBalanceValue', sortOrder: 'desc' },
+        vendorTable: { sortKey: 'netBalanceValue', sortOrder: 'desc' },
+        detailsTable: { sortKey: 'Net Balance Value', sortOrder: 'desc' }
+    };
+
+    // Reset toggle buttons
+    document.querySelectorAll('.division-toggle-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    applyFilters(); // reapply everything
+}
+
+        // Generic sorting function
+        function sortTableData(data, sortKey, sortOrder) {
+            return data.sort((a, b) => {
+                let valA = a[sortKey];
+                let valB = b[sortKey];
+
+                // Handle numeric values
+                if (typeof valA === 'number' && typeof valB === 'number') {
+                    return sortOrder === 'asc' ? valA - valB : valB - valA;
+                }
+                // Handle date strings (dd.mm.yyyy)
+                if (sortKey === "Creation Date") {
+                    const dateA = new Date(valA.split('.').reverse().join('-'));
+                    const dateB = new Date(valB.split('.').reverse().join('-'));
+                    return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+                }
+                // Handle string values (case-insensitive)
+                if (typeof valA === 'string' && typeof valB === 'string') {
+                    valA = valA.toLowerCase();
+                    valB = valB.toLowerCase();
+                    if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+                    if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+                    return 0;
+                }
+                return 0; // No change if types are incomparable
+            });
+        }
+
+        // Add event listeners for sorting to table headers
+        function addSortListenersToTable(tableId) {
+            const table = document.getElementById(tableId);
+            const headers = table.querySelectorAll('th.sortable');
+            headers.forEach(header => {
+                header.addEventListener('click', handleSortClick);
+            });
+        }
+
+        // Handle click on sortable header
+        function handleSortClick(event) {
+            const header = event.currentTarget;
+            const tableId = header.closest('table').id;
+            const sortKey = header.dataset.sortKey;
+
+            let currentSortOrder = sortStates[tableId].sortOrder;
+            let newSortOrder = 'asc';
+
+            if (sortStates[tableId].sortKey === sortKey) {
+                if (currentSortOrder === 'asc') {
+                    newSortOrder = 'desc';
+                } else if (currentSortOrder === 'desc') {
+                    newSortOrder = 'none'; // Cycle to no sort
+                } else {
+                    newSortOrder = 'asc'; // Cycle from no sort to asc
+                }
+            }
+            
+            sortStates[tableId] = { sortKey, sortOrder: newSortOrder };
+            
+            // Re-apply filters and update tables to ensure sorting is applied
+            applyFilters(); 
+        }
+
+        // Update sort icons visually
+        function updateSortIcons(tableId, currentSortKey, currentSortOrder) {
+            const table = document.getElementById(tableId);
+            const headers = table.querySelectorAll('th.sortable');
+
+            headers.forEach(header => {
+                const icon = header.querySelector('.sort-icon');
+                if (icon) {
+                    icon.classList.remove('fa-sort-up', 'fa-sort-down');
+                    icon.classList.add('fa-sort'); // Default icon
+
+                    if (header.dataset.sortKey === currentSortKey) {
+                        if (currentSortOrder === 'asc') {
+                            icon.classList.remove('fa-sort');
+                            icon.classList.add('fa-sort-up');
+                        } else if (currentSortOrder === 'desc') {
+                            icon.classList.remove('fa-sort');
+                            icon.classList.add('fa-sort-down');
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Update all tables with the filtered data
+        function updateTables() {
+            showLoading("Creating visualizations...");
+
+            // Prepare aggregated data for summary tables
+            unitAggregatedData = _.chain(filteredData)
+                .groupBy('Unit') 
+                .map((items, unit) => ({
+                    unit: unit || 'Unknown',
+                    netBalanceValue: _.sumBy(items, 'Net Balance Value')
+                }))
+                .value();
+            // Apply sorting for unit table
+            if (sortStates.unitTable.sortOrder !== 'none') {
+                unitAggregatedData = sortTableData(unitAggregatedData, sortStates.unitTable.sortKey, sortStates.unitTable.sortOrder);
+            } else {
+                unitAggregatedData = _.sortBy(unitAggregatedData, 'unit'); // Default sort if no explicit sort
+            }
+            updateSortIcons('unitTable', sortStates.unitTable.sortKey, sortStates.unitTable.sortOrder);
+
+
+            vendorAggregatedData = _.chain(filteredData)
+                .groupBy('Vendor Name') // Changed to "Vendor Name"
+                .map((items, vendor) => ({
+                    vendor: vendor || 'Unknown',
+                    netBalanceValue: _.sumBy(items, 'Net Balance Value')
+                }))
+                .value();
+            // Apply sorting for vendor table
+            if (sortStates.vendorTable.sortOrder !== 'none') {
+                vendorAggregatedData = sortTableData(vendorAggregatedData, sortStates.vendorTable.sortKey, sortStates.vendorTable.sortOrder);
+            } else {
+                vendorAggregatedData = _.sortBy(vendorAggregatedData, 'vendor'); // Default sort if no explicit sort
+            }
+            updateSortIcons('vendorTable', sortStates.vendorTable.sortKey, sortStates.vendorTable.sortOrder);
+
+
+            // Prepare data for details table (apply search)
+            detailsData = [...filteredData];
+            if (currentDetailsSearchQuery) {
+                const query = currentDetailsSearchQuery.toLowerCase();
+                detailsData = detailsData.filter(item => {
+                    const orderNumber = (item["Order Number"] || '').toString().toLowerCase();
+                    const plant = (item["Plant"] || '').toString().toLowerCase();
+                    const description = (item["Description"] || '').toString().toLowerCase(); // Changed from "Material description"
+                    const vendorName = (item["Vendor Name"] || '').toString().toLowerCase(); // Changed to "Vendor Name"
+                    return orderNumber.includes(query) || plant.includes(query) || description.includes(query) || vendorName.includes(query);
+                });
+            }
+            // Apply sorting for details table
+            if (sortStates.detailsTable.sortOrder !== 'none') {
+                detailsData = sortTableData(detailsData, sortStates.detailsTable.sortKey, sortStates.detailsTable.sortOrder);
+            } else {
+                 // Default sort for details if no explicit sort (e.g., by Order Number)
+                detailsData = _.sortBy(detailsData, 'Order Number'); 
+            }
+            updateSortIcons('detailsTable', sortStates.detailsTable.sortKey, sortStates.detailsTable.sortOrder);
+
+
+            // Now render the tables based on their respective prepared data
+            updateUnitTable();
+            updateVendorTable();
+            updateDetailsTable(); 
+                updateDivisionTable(); // ✅ ADD THIS LINE
+
+            hideLoading();
+        }
+        
+        // Update the Unit table
+        function updateUnitTable() {
+            const tableBody = document.getElementById('unitTable').querySelector('tbody');
+            tableBody.innerHTML = '';
+            
+            if (unitAggregatedData.length === 0) {
+                showNoDataMessage(tableBody, 4); // Increased colspan by 1 for Sl. No.
+                updatePaginationControls('unitTable', 0); 
+                return;
+            }
+            
+            const totalValue = _.sumBy(unitAggregatedData, 'netBalanceValue');
+
+            const startIndex = (currentPage.unitTable - 1) * itemsPerPage.unitTable;
+            const endIndex = startIndex + itemsPerPage.unitTable;
+            const paginatedUnitData = unitAggregatedData.slice(startIndex, endIndex);
+            
+            paginatedUnitData.forEach((item, index) => {
+                const percentage = (item.netBalanceValue / totalValue * 100).toFixed(2);
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${startIndex + index + 1}</td>
+                    <td>${item.unit}</td>
+                    <td>${formatValueInLakhCrore(item.netBalanceValue)}</td>
+                    <td>
+                        ${percentage}%
+                        <div class="percentage-bar" style="width: ${percentage}%"></div>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+            
+            const totalRow = document.createElement('tr');
+            totalRow.className = 'total-row';
+            totalRow.innerHTML = `
+                <td></td> <!-- Empty cell for Sl. No. in total row -->
+                <td>Total</td>
+                <td>${formatValueInLakhCrore(totalValue)}</td>
+                <td>100%</td>
+            `;
+            tableBody.appendChild(totalRow);
+            
+            updatePaginationControls('unitTable', unitAggregatedData.length);
+        }
+        
+        // Update the Vendor table
+        function updateVendorTable() {
+            const tableBody = document.getElementById('vendorTable').querySelector('tbody');
+            tableBody.innerHTML = '';
+            
+            if (vendorAggregatedData.length === 0) {
+                showNoDataMessage(tableBody, 4); // Increased colspan by 1 for Sl. No.
+                updatePaginationControls('vendorTable', 0);
+                return;
+            }
+            
+            const totalValue = _.sumBy(vendorAggregatedData, 'netBalanceValue');
+
+            const startIndex = (currentPage.vendorTable - 1) * itemsPerPage.vendorTable;
+            const endIndex = startIndex + itemsPerPage.vendorTable;
+            const paginatedVendorData = vendorAggregatedData.slice(startIndex, endIndex);
+            
+            paginatedVendorData.forEach((item, index) => {
+                const percentage = (item.netBalanceValue / totalValue * 100).toFixed(2);
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${startIndex + index + 1}</td>
+                    <td>${item.vendor}</td>
+                    <td>${formatValueInLakhCrore(item.netBalanceValue)}</td>
+                    <td>
+                        ${percentage}%
+                        <div class="percentage-bar" style="width: ${percentage}%"></div>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+            
+            const totalRow = document.createElement('tr');
+            totalRow.className = 'total-row';
+            totalRow.innerHTML = `
+                <td></td> <!-- Empty cell for Sl. No. in total row -->
+                <td>Total</td>
+                <td>${formatValueInLakhCrore(totalValue)}</td>
+                <td>100%</td>
+            `;
+            tableBody.appendChild(totalRow);
+
+            updatePaginationControls('vendorTable', vendorAggregatedData.length);
+        }
+        
+        function updateDetailsTable() {
+            const tableBody = document.getElementById('detailsTable').querySelector('tbody');
+            tableBody.innerHTML = '';
+
+            if (detailsData.length === 0) {
+                showNoDataMessage(tableBody, 9); // Increased colspan by 1 for Sl. No.
+                updatePaginationControls('detailsTable', 0); 
+                return;
+            }
+
+            const startIndex = (currentPage.detailsTable - 1) * itemsPerPage.detailsTable;
+            const endIndex = startIndex + itemsPerPage.detailsTable;
+            const paginatedData = detailsData.slice(startIndex, endIndex);
+
+            paginatedData.forEach((item, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${startIndex + index + 1}</td>
+                    <td>${item["Order Number"] || ''}</td>
+                    <td>${item["Creation Date"] || ''}</td>
+                    <td>${item["Vendor Name"] || ''}</td>
+                    <td class="right-align">${formatCurrency(item["Net Balance Value"] || 0)}</td>
+                    <td>${item["Plant"] || ''}</td>
+                    <td>${item["Unit"] || ''}</td>
+                    <td>${item["Description"] || ''}</td>
+                    <td class="right-align">${item["Ageing in Days"] || 0}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+
+            updatePaginationControls('detailsTable', detailsData.length);
+        }
+
+        // Pagination control functions
+        function updatePaginationControls(tableId, totalItems) {
+            const totalPages = Math.ceil(totalItems / itemsPerPage[tableId]);
+            
+            // Match your existing span IDs: unitPageInfo, vendorPageInfo, detailsPageInfo
+            const idPrefix = tableId.replace('Table', ''); 
+            const pageInfoSpan = document.getElementById(`${idPrefix}PageInfo`);
+            const prevButton = document.getElementById(`${idPrefix}PrevPage`);
+            const nextButton = document.getElementById(`${idPrefix}NextPage`);
+
+            if (pageInfoSpan) {
+                pageInfoSpan.textContent = `Page ${currentPage[tableId]} of ${totalPages || 1} (Total: ${totalItems})`;
+            }
+            if (prevButton) {
+                prevButton.disabled = (currentPage[tableId] === 1);
+            }
+            if (nextButton) {
+                nextButton.disabled = (currentPage[tableId] === totalPages || totalPages === 0);
+            }
+        }
+
+
+        function changePage(tableId, direction) {
+            let totalItemsForTable;
+            if (tableId === 'unitTable') {
+                totalItemsForTable = unitAggregatedData.length;
+            } else if (tableId === 'vendorTable') {
+                totalItemsForTable = vendorAggregatedData.length;
+            } else if (tableId === 'detailsTable') {
+                totalItemsForTable = detailsData.length;
+            } else {
+                totalItemsForTable = 0; // Should not happen with current logic
+            }
+
+            const totalPages = Math.ceil(totalItemsForTable / itemsPerPage[tableId]);
+            currentPage[tableId] += direction;
+
+            if (currentPage[tableId] < 1) currentPage[tableId] = 1;
+            if (currentPage[tableId] > totalPages) currentPage[tableId] = totalPages;
+
+            // Re-render the specific table
+            if (tableId === 'unitTable') updateUnitTable();
+            else if (tableId === 'vendorTable') updateVendorTable();
+            else if (tableId === 'detailsTable') updateDetailsTable();
+        }
+
+        // Helper function to format currency values (for exact display in details or download)
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('en-IN', {
+                maximumFractionDigits: 2,
+                minimumFractionDigits: 2
+            }).format(value);
+        }
+
+        // New helper function to format values in Lakh/Crore for readability
+function formatValueInLakhCrore(value) {
+    if (value >= 10000000) { // Crore (10^7)
+        return (value / 10000000).toFixed(2) + ' Cr';
+    } else if (value >= 100000) { // Lakh (10^5)
+        return (value / 100000).toFixed(2) + ' L';
+    } else if (value >= 1000) { // Thousand (10^3)
+        return (value / 1000).toFixed(2) + ' k';
+    } else {
+        return value.toFixed(2);
+    }
+}
+
+        
+        // Show a message when no data is available
+        function showNoDataMessage(tableBody, colspan) {
+            const row = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.colSpan = colspan;
+            cell.className = 'no-data';
+            cell.textContent = 'No data available for the selected filters';
+            row.appendChild(cell);
+            tableBody.appendChild(row);
+        }
+
+        function updateCapexTotal() {
+            const total = _.sumBy(filteredData, item => item["Net Balance Value"] || 0);
+            document.getElementById("capexTotalCr").textContent = formatValueInLakhCrore(total);
+
+            // Calculate totals for different age categories
+            const over6M = _.sumBy(filteredData.filter(item => item["Ageing in Days"] > 180), 'Net Balance Value');
+            const over12M = _.sumBy(filteredData.filter(item => item["Ageing in Days"] > 365), 'Net Balance Value');
+            const over24M = _.sumBy(filteredData.filter(item => item["Ageing in Days"] > 730), 'Net Balance Value');
+            const over36M = _.sumBy(filteredData.filter(item => item["Ageing in Days"] > 1095), 'Net Balance Value');
+
+            document.getElementById("over6M").textContent = formatValueInLakhCrore(over6M);
+            document.getElementById("over12M").textContent = formatValueInLakhCrore(over12M);
+            document.getElementById("over24M").textContent = formatValueInLakhCrore(over24M);
+            document.getElementById("over36M").textContent = formatValueInLakhCrore(over36M);
+        }
+
+        function handleDetailsSearch(event) {
+            currentDetailsSearchQuery = event.target.value.trim();
+            currentPage.detailsTable = 1; 
+            updateTables(); // Re-run updateTables to re-prepare detailsData with new search
+        }
+
+function downloadTable(tableId, filenamePrefix) {
+    let dataToDownload = [];
+    let headers = [];
+
+    if (tableId === 'unitTable') {
+        dataToDownload = unitAggregatedData.map((item, index) => {
+            const totalValue = _.sumBy(unitAggregatedData, 'netBalanceValue');
+            const percentage = (item.netBalanceValue / totalValue * 100).toFixed(2);
+            return {
+                'Sl.': index + 1,
+                'Unit': item.unit,
+                'Value (Rs.)': item.netBalanceValue,
+                '%': percentage + '%'
+            };
+        });
+        headers = ['Sl.', 'Unit', 'Value (Rs.)', '%'];
+
+        // Add total row
+        const totalValue = _.sumBy(unitAggregatedData, 'netBalanceValue');
+        dataToDownload.push({
+            'Sl.': '',
+            'Unit': 'Total',
+            'Value (Rs.)': totalValue,
+            '%': '100%'
+        });
+
+    } else if (tableId === 'vendorTable') {
+        dataToDownload = vendorAggregatedData.map((item, index) => {
+            const totalValue = _.sumBy(vendorAggregatedData, 'netBalanceValue');
+            const percentage = (item.netBalanceValue / totalValue * 100).toFixed(2);
+            return {
+                'Sl.': index + 1,
+                'Vendor Name': item.vendor,
+                'Value (Rs.)': item.netBalanceValue,
+                '%': percentage + '%'
+            };
+        });
+        headers = ['Sl.', 'Vendor Name', 'Value (Rs.)', '%'];
+
+        // Add total row
+        const totalValue = _.sumBy(vendorAggregatedData, 'netBalanceValue');
+        dataToDownload.push({
+            'Sl.': '',
+            'Vendor Name': 'Total',
+            'Value (Rs.)': totalValue,
+            '%': '100%'
+        });
+
+    } else if (tableId === 'detailsTable') {
+        dataToDownload = detailsData.map((item, index) => ({
+            'Sl.': index + 1,
+            'Order Number': item["Order Number"] || '',
+            'Creation Date': item["Creation Date"] || '',
+            'Vendor Name': item["Vendor Name"] || '',
+            'Value (Rs.)': item["Net Balance Value"] || 0,
+            'Plant': item["Plant"] || '',
+            'Unit': item["Unit"] || '',
+            'Description': item["Description"] || '',
+            'Age in Days': item["Ageing in Days"] || 0
+        }));
+        headers = ['Sl.', 'Order Number', 'Creation Date', 'Vendor Name', 'Value (Rs.)', 'Plant', 'Unit', 'Description', 'Age in Days'];
+    }
+
+    // Convert to worksheet and download
+    const ws = XLSX.utils.json_to_sheet(dataToDownload, { header: headers });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const filename = `${filenamePrefix}_${dateStr}.xlsx`;
+
+    XLSX.writeFile(wb, filename);
+}
+
+function updateDivisionTable() {
+    const tableId = 'divisionTable';
+    const page = currentPage[tableId];
+    const perPage = itemsPerPage[tableId];
+
+    const divisionMap = {};
+    let totalValue = 0;
+
+    filteredData.forEach(item => {
+        const division = item.Division || 'Unknown';
+        const value = item["Net Balance Value"] || 0;
+        divisionMap[division] = (divisionMap[division] || 0) + value;
+        totalValue += value;
+    });
+
+    divisionAggregatedData = Object.entries(divisionMap).map(([division, value]) => ({
+        division,
+        netBalanceValue: value,
+        percentage: totalValue ? (value / totalValue * 100).toFixed(2) : '0.00'
+    }));
+
+    // Sort
+    const { sortKey, sortOrder } = sortStates[tableId];
+    if (sortOrder !== 'none') {
+        divisionAggregatedData.sort((a, b) => {
+            const valA = a[sortKey];
+            const valB = b[sortKey];
+
+            if (typeof valA === 'number' && typeof valB === 'number') {
+                return sortOrder === 'asc' ? valA - valB : valB - valA;
+            }
+            if (typeof valA === 'string' && typeof valB === 'string') {
+                return sortOrder === 'asc'
+                    ? valA.localeCompare(valB)
+                    : valB.localeCompare(valA);
+            }
+            return 0;
+        });
+    }
+
+    // Paginate
+    const start = (page - 1) * perPage;
+    const end = start + perPage;
+    const pageData = divisionAggregatedData.slice(start, end);
+
+    const tbody = document.querySelector('#divisionTable tbody');
+    tbody.innerHTML = '';
+
+    if (pageData.length === 0) {
+        showNoDataMessage(tbody, 4);
+        updatePaginationControls(tableId, 0);
+        return;
+    }
+
+    pageData.forEach((row, i) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${start + i + 1}</td>
+            <td>${row.division}</td>
+            <td class="right-align">${row.netBalanceValue.toLocaleString()}</td>
+            <td class="right-align">${row.percentage}%</td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    const totalRow = document.createElement('tr');
+    totalRow.className = 'total-row';
+    totalRow.innerHTML = `
+        <td></td>
+        <td>Total</td>
+        <td class="right-align">${totalValue.toLocaleString()}</td>
+        <td class="right-align">100%</td>
+    `;
+    tbody.appendChild(totalRow);
+
+    updatePaginationControls(tableId, divisionAggregatedData.length);
+    updateSortIcons(tableId, sortStates[tableId].sortKey, sortStates[tableId].sortOrder);
+}
+
+
+    </script>
+</body>
+</html>
