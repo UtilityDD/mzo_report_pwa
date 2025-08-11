@@ -1,15 +1,1390 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-  <title>Embedded GAS App</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>prioritySI — Smart CRUD</title>
+  
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+  
+  <!-- Custom Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    /* Updated root variables for a cleaner look */
+    :root {
+      --primary-color: #4a55a8;
+      --secondary-color: #6c757d;
+      --background-light: #f8f9fa;
+      --card-bg: #ffffff;
+      --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      --border-radius-xl: 16px;
+      --sidebar-width: 300px;
+      --completed-row-bg: #e6f7e9; /* Light green for completed rows */
+    }
+    
+    body { 
+      font-family: 'Inter', sans-serif; 
+      background: var(--background-light);
+      font-size: 14px;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* --- NEW CSS for responsive layout with sidebar --- */
+    /* Container for the entire application layout */
+    .app-container {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Main content wrapper */
+    .main-content-wrapper {
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow-y: auto;
+      transition: margin-left 0.3s ease;
+    }
+
+    /* Left Sidebar */
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: var(--sidebar-width);
+      height: 100%;
+      background: var(--card-bg);
+      box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+      z-index: 1050;
+      transform: translateX(-100%);
+      transition: transform 0.3s ease;
+      overflow-y: auto;
+    }
+
+    .sidebar.active {
+      transform: translateX(0);
+    }
+    
+    /* Main content container, which now sits next to the sidebar */
+    .main-content-container {
+      padding: 1.5rem;
+      width: 100%;
+      max-width: 100%; /* No longer 70% width, it adapts */
+    }
+
+    /* Responsive adjustments */
+    @media (min-width: 992px) {
+      .sidebar {
+        position: relative;
+        transform: translateX(0);
+      }
+
+      .main-content-wrapper {
+        margin-left: 0;
+      }
+      
+      .sidebar-toggle-btn {
+        display: none;
+      }
+    }
+
+    @media (max-width: 991.98px) {
+      /* On mobile, main content is full screen and sidebar is an overlay */
+      .main-content-wrapper {
+        margin-left: 0;
+      }
+    }
+
+    /* --- END NEW CSS --- */
+    
+    .glass-card {
+      background: var(--card-bg);
+      border-radius: var(--border-radius-xl);
+      box-shadow: var(--card-shadow);
+      border: 1px solid rgba(0, 0, 0, 0.05);
+    }
+    
+    .table-compact {
+      font-size: 13px;
+    }
+    
+    .table-compact th {
+      padding: 6px 8px;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+      background: #f1f3f5;
+    }
+    
+    .table-compact td {
+      padding: 6px 8px;
+      vertical-align: middle;
+      line-height: 1.5;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+
+    /* New style for completed rows */
+    .completed-row {
+      background-color: var(--completed-row-bg) !important;
+    }
+    
+    .row-hover {
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+    
+    .row-hover:hover {
+      background: #f1f3f5;
+    }
+    
+    .btn-action {
+      padding: 6px 12px;
+      font-size: 13px;
+      border-radius: 8px;
+    }
+    
+    .badge-priority {
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 16px;
+      font-weight: 600;
+    }
+    
+    /* Updated status-badge to remove background and match font style */
+    .status-badge {
+      font-size: 13px; /* Match table cell font size */
+      padding: 0;
+      font-weight: 400; /* Normal weight to match other content */
+      background-color: transparent;
+      color: #495057;
+      display: inline-block;
+    }
+
+    .tooltip-custom {
+      position: absolute;
+      z-index: 1070;
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      max-width: 250px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    
+    .tooltip-custom.show {
+      opacity: 1;
+    }
+    
+    .filter-chip {
+      font-size: 13px;
+      padding: 8px 16px;
+      border-radius: 20px;
+      border: 1px solid #dee2e6;
+      background: white;
+      transition: all 0.2s ease;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .filter-chip.active {
+      background: var(--primary-color);
+      color: white;
+      border-color: transparent;
+      box-shadow: 0 2px 8px rgba(74, 85, 168, 0.3);
+    }
+    
+    .stats-card {
+      background: white;
+      border-radius: var(--border-radius-xl);
+      padding: 16px;
+      box-shadow: var(--card-shadow);
+      text-align: center;
+      transition: all 0.2s ease;
+    }
+
+    .stats-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+    }
+    
+    .stats-number {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--primary-color);
+    }
+    
+    .stats-label {
+      font-size: 12px;
+      color: var(--secondary-color);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 4px;
+    }
+
+    /* New styles for a cleaner header */
+    .main-header {
+      background-color: var(--card-bg);
+      border-bottom: 1px solid #e9ecef;
+    }
+
+    #editModal .form-label {
+      background-color: #f8f9fa;  /* light grey background */
+      padding: 2px 6px;
+      border-radius: 4px;
+      display: inline-block;
+    }
+    /* Style modal form labels */
+    #editModal .form-label {
+      font-weight: 600;       /* bold */
+      font-size: 0.85rem;     /* slightly smaller */
+      color: #6c757d;         /* Bootstrap's muted grey */
+      margin-bottom: 4px;     /* tighter spacing */
+    }
+
+    /* --- Loading Overlay Styles --- */
+    #loadingOverlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(255, 255, 255, 0.8);
+        display: none; /* Changed from flex to none */
+        justify-content: center;
+        align-items: center;
+        z-index: 2000;
+        transition: opacity 0.3s ease-in-out;
+        opacity: 0;
+    }
+    #loadingOverlay.show {
+        display: flex;
+        opacity: 1;
+    }
+    .spinner {
+        width: 50px;
+        height: 50px;
+        border: 5px solid rgba(0, 0, 0, 0.1);
+        border-top-color: var(--primary-color);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* Add this new CSS for the count badge */
+    .count-badge {
+      background-color: #dc3545; /* Bootstrap's red color */
+      color: white;
+      border-radius: 50%;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 6px;
+      min-width: 24px;
+      text-align: center;
+    }
+
+    /* New styles for login page */
+    .login-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        background: var(--background-light);
+    }
+    .login-card {
+        width: 100%;
+        max-width: 400px;
+        padding: 2rem;
+    }
+  </style>
 </head>
 <body>
-  <h1>Google Apps Script Web App</h1>
-  <iframe 
-    src="https://script.google.com/macros/s/AKfycbz1JeLsz5zmrs5VYhOHLcV847KxSa7s1k8lgpRka8XnuhLUPwysB6bob4PahvHohUBeHQ/exec" 
-    width="100%" 
-    height="600" 
-    frameborder="0">
-  </iframe>
+  
+  <!-- Login Container (initially visible) -->
+  <div id="loginContainer" class="login-container">
+    <div class="glass-card login-card text-center">
+      <h2 class="fw-bold mb-3" style="color: var(--primary-color);">prioritySI</h2>
+      <p class="text-muted mb-4">Enter your PIN to access the dashboard.</p>
+      <form id="loginForm">
+        <div class="form-floating mb-3">
+          <input type="password" class="form-control" id="pinInput" placeholder="PIN" required>
+          <label for="pinInput">PIN</label>
+        </div>
+        <button type="submit" class="btn btn-primary w-100 rounded-pill mt-2">Log In</button>
+      </form>
+      <p id="loginError" class="text-danger mt-3" style="display: none;"></p>
+    </div>
+  </div>
+
+  <!-- App Container (initially hidden) -->
+  <div id="appContainer" class="app-container" style="display: none;">
+    <!-- Collapsible Sidebar -->
+    <div id="sidebar" class="sidebar p-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h5 class="fw-bold mb-0">Scheme Heads</h5>
+        <button id="closeSidebar" class="btn btn-sm" aria-label="Close sidebar">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+      <div id="schemeHeadFiltersContainer"></div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="main-content-wrapper">
+      <!-- Smart Header -->
+      <nav class="navbar navbar-expand-lg main-header shadow-sm sticky-top">
+        <div class="container-fluid">
+          <div class="d-flex align-items-center">
+            <button id="toggleSidebar" class="btn btn-sm d-lg-none me-2" aria-controls="sidebar" aria-expanded="false" aria-label="Toggle navigation">
+              <i class="bi bi-list fs-4"></i>
+            </button>
+            <span class="navbar-brand mb-0 h1 fw-bold fs-4">Priority System Improvement Work</span>
+          </div>
+          
+          <div class="d-flex align-items-center gap-3">
+            <div class="position-relative">
+              <input type="text" id="searchInput" class="form-control form-control-sm rounded-pill ps-4 pe-2" 
+                     placeholder="Search records..." style="width: 250px;">
+              <i class="bi bi-search position-absolute" style="left: 12px; top: 50%; transform: translateY(-50%); color: #6b7280;"></i>
+            </div>
+            <button id="btnAdd" class="btn btn-primary btn-sm rounded-pill d-flex align-items-center gap-2 px-3">
+              <i class="bi bi-plus-circle"></i>
+              Add New Scheme
+            </button>
+            <button id="btnLogout" class="btn btn-outline-danger btn-sm rounded-pill">
+              <i class="bi bi-box-arrow-right"></i>
+              Logout
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      <div class="main-content-container">
+        <!-- Smart Filters & Stats (Division filter remains here) -->
+        <div class="row mb-4 g-4">
+          <div class="col-md-8">
+            <div class="glass-card p-4">
+              <div class="row g-3">
+                <!-- Division Filter -->
+                <div class="col-md-12">
+                  <div id="divisionTabs" class="d-flex flex-wrap gap-2"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="col-md-4">
+            <div class="row g-3 h-100">
+              <div class="col-6 d-flex">
+                <div class="stats-card w-100">
+                  <div class="stats-number" id="totalCount">0</div>
+                  <div class="stats-label">Total Records</div>
+                </div>
+              </div>
+              <div class="col-6 d-flex">
+                <div class="stats-card w-100">
+                  <div class="stats-number" id="filteredCount">0</div>
+                  <div class="stats-label">Filtered Records</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- New location for the Download CSV button -->
+        <div class="d-flex justify-content-end mb-3">
+            <button id="btnDownloadCsv" class="btn btn-outline-secondary btn-sm rounded-pill d-flex align-items-center gap-2 px-3">
+              <i class="bi bi-download"></i>
+              Download CSV
+            </button>
+        </div>
+
+        <!-- Compact Table -->
+        <div class="glass-card overflow-hidden">
+          <div class="table-responsive">
+            <table class="table table-hover table-compact mb-0">
+              <thead id="tableHead"></thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+          
+          <!-- Pagination -->
+          <div class="d-flex justify-content-between align-items-center p-3 border-top bg-light">
+            <small class="text-muted">
+              Showing <span id="showingStart">0</span> to <span id="showingEnd">0</span> of <span id="showingTotal">0</span> results
+            </small>
+            <nav id="paginationControls"></nav>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Tooltip -->
+  <div id="customTooltip" class="tooltip-custom"></div>
+
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- Enhanced Modal -->
+  <div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title" id="modalTitle">Add New Scheme</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+          <form id="recordForm">
+            <div class="row g-3" id="formFields"></div>
+            <input type="hidden" id="recordId" />
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button id="btnDelete" class="btn btn-danger me-auto rounded-pill" style="display: none;">
+            <i class="bi bi-trash"></i> Delete
+          </button>
+          <button type="button" class="btn btn-secondary rounded-pill" data-bs-dismiss="modal">Cancel</button>
+          <button id="btnSave" class="btn btn-primary rounded-pill">
+            <i class="bi bi-check-circle"></i> Save
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <script type="module">
+
+    
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+    // ---- CONFIG ----
+    const SUPABASE_URL = "https://unsmtschmcvftfqwabaq.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVuc210c2NobWN2ZnRmcXdhYmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM1NzA1MTYsImV4cCI6MjA2OTE0NjUxNn0.X3_q0FyEjam4ct03sjiqINz0_Hfu0AlWgRcymA3us9o";
+    const TABLE_NAME = "prioritySI";
+    const USER_ACCESS_TABLE = "user_access"; // New table for authentication
+
+    // UPDATED: Added 'Status' to the visible columns
+    const TABLE_COLUMNS = [
+      'id', 'Division', 'Name of Scheme', 'TAA No.', 'Detail Work Status', 'Status', 'Target Date'
+    ];
+    
+    // All columns for form (kept for editing)
+    const ALL_COLUMNS = [
+      'id','Region','Division','Scheme Head','Related SS','Name of Scheme',
+      'Existing Parameter (Capacity/RL/Size)',
+      'Proposed Parameter (Capacity/RL/Size)',
+      'Loading (%) / Peak Load (A)',
+      'Major Material Requirement','TAA No.','TAA Date',
+      'Priority','eOffice ref.','Presently with','Detail Work Status',
+      'Target Date','Status'
+    ];
+    
+    // UPDATED: Renamed 'Detail Work Status' header to 'Work Status' and added 'Overall Status' for the 'Status' column
+    const COMPACT_HEADERS = {
+      'id': 'ID',
+      'Division': 'Division',
+      'Name of Scheme': 'Scheme Name',
+      'TAA No.': 'TAA No.',
+      'Detail Work Status': 'Work Status',
+      'Status': 'Overall Status',
+      'Target Date': 'Target'
+    };
+    // Mapping: Division → Related SS list
+    const relatedSSMap = {
+      'Malda': ['Englishbazar', 'Mothabari', 'Kaliachak', 'Sujapur', 'Baishnabnagar', 'Gopalganj','Rabindra Bhaban', 'KPS Malda','Mankchak','Milki'],
+      'Gazole': ['Nalagola', 'Deotala', 'Narayanpur', 'Mobaeakpur','Habibpur','Balia','Bamongola','Gazole','Ranipur OD','Chandipur','Mangalbari'],
+      'Chanchal': ['Shibnagar', 'Ratua', 'Pukuria', 'Chanchal','Bhaluka','Ashapur','Chatrak','Harishchandrapur'],
+      'Raiganj': ['Raiganj', 'Kasba', 'Durgapur', 'Itahar','Bangar','Tungidighi','Bikore','Laxmania','Hemtabad','Malon','Kaliyaganj','Dalimgaon','Belua','Kunor', 'Spinning Mill','Mahespur'],
+      'Islampur': ['Sonapur', 'Bholagach', 'Chopra', 'Srikrishnapur','Islampur','Panjipara','Lodhan','Kahata','Kanki','Choprajhar','Sujali','Tajpur'],
+      'Buniadpur': ['Buniadpur', 'Harirampur', 'Kushmandi', 'Thangapara','Pransagar','Maligaon'],
+      'Balurghat': ['Baro-Raghunathpur', 'Amrail', 'Trimohini', 'Patiram','Mahipur','Rampur','Salas']
+    };
+
+    // Region → Divisions mapping
+const regionDivisionMap = {
+  'Dakshin Dinajpur': ['Balurghat', 'Buniadpur'],
+  'Uttar Dinajpur': ['Islampur', 'Raiganj'],
+  'Malda': ['Malda', 'Gazole', 'Chanchal'] // rest already fall here
+};
+// Get allowed regions for current user
+function getAllowedRegions() {
+  if (currentUser?.can_view_all) {
+    return Object.keys(regionDivisionMap);
+  }
+  const userDivs = currentUser?.divisions || [];
+  const allowedRegions = new Set();
+  for (const [region, divs] of Object.entries(regionDivisionMap)) {
+    if (divs.some(d => userDivs.includes(d))) {
+      allowedRegions.add(region);
+    }
+  }
+  return Array.from(allowedRegions);
+}
+    const client = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // DOM elements
+    const tableHead = document.getElementById('tableHead');
+    const tableBody = document.getElementById('tableBody');
+    const formFields = document.getElementById('formFields');
+    const btnAdd = document.getElementById('btnAdd');
+    const btnSave = document.getElementById('btnSave');
+    const btnDelete = document.getElementById('btnDelete');
+    const btnDownloadCsv = document.getElementById('btnDownloadCsv');
+    const recordId = document.getElementById('recordId');
+    const searchInput = document.getElementById('searchInput');
+    const divisionTabsContainer = document.getElementById('divisionTabs');
+    const paginationControls = document.getElementById('paginationControls');
+    const schemeHeadFiltersContainer = document.getElementById('schemeHeadFiltersContainer');
+    const totalCount = document.getElementById('totalCount');
+    const filteredCount = document.getElementById('filteredCount');
+    const showingStart = document.getElementById('showingStart');
+    const showingEnd = document.getElementById('showingEnd');
+    const showingTotal = document.getElementById('showingTotal');
+    const customTooltip = document.getElementById('customTooltip');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    // Login elements
+    const loginContainer = document.getElementById('loginContainer');
+    const loginForm = document.getElementById('loginForm');
+    const pinInput = document.getElementById('pinInput');
+    const loginError = document.getElementById('loginError');
+    // App elements
+    const appContainer = document.getElementById('appContainer');
+    const btnLogout = document.getElementById('btnLogout');
+    // Sidebar elements
+    const sidebar = document.getElementById('sidebar');
+    const toggleSidebarBtn = document.getElementById('toggleSidebar');
+    const closeSidebarBtn = document.getElementById('closeSidebar');
+    const mainContentWrapper = document.querySelector('.main-content-wrapper');
+
+    // State
+    let allRecords = [];
+    let divisions = [];
+    let schemeHeads = [];
+    let selectedSchemeHeads = new Set();
+    let currentDivision = 'All';
+    let currentPage = 1;
+    const recordsPerPage = 15;
+    let editModal;
+    // User-specific state
+    let currentUser = null;
+
+    // ---- UTILITY FUNCTIONS ----
+    function escapeId(s) {
+      return s.replace(/[^a-z0-9]/ig, '_');
+    }
+    function debounce(func, delay) {
+      let timeout;
+      return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), delay);
+      };
+    }
+    function getPriorityBadge(priority) {
+      const p = String(priority).toLowerCase();
+      if (p.includes('high') || p === '1') return 'priority-high';
+      if (p.includes('medium') || p === '2') return 'priority-medium';
+      if (p.includes('low') || p === '3') return 'priority-low';
+      return 'badge bg-secondary';
+    }
+    function showLoading() {
+      loadingOverlay.classList.add('show');
+    }
+    function hideLoading() {
+      loadingOverlay.classList.remove('show');
+    }
+    // Custom alert/modal function
+    function showMessage(message, type = 'info') {
+      const modalElement = document.getElementById('messageModal');
+      if (!modalElement) {
+        const modalHtml = `
+          <div class="modal fade" id="messageModal" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title" id="messageModalTitle">Message</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="messageModalBody"></div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-secondary rounded-pill" data-bs-dismiss="modal">Close</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+      }
+      const modalTitle = document.getElementById('messageModalTitle');
+      const modalBody = document.getElementById('messageModalBody');
+      modalTitle.textContent = type === 'error' ? 'Error' : 'Info';
+      modalBody.textContent = message;
+      const messageModal = new bootstrap.Modal(document.getElementById('messageModal'));
+      messageModal.show();
+    }
+
+    // ---- TOOLTIP FUNCTIONS ----
+    function showTooltip(element, content) {
+      if (!content) return;
+      customTooltip.textContent = content;
+      customTooltip.classList.add('show');
+      const rect = element.getBoundingClientRect();
+      const tooltipRect = customTooltip.getBoundingClientRect();
+      let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+      let top = rect.top - tooltipRect.height - 8; // Keep tooltip within viewport
+      if (left < 8) left = 8;
+      if (left + tooltipRect.width > window.innerWidth - 8) {
+        left = window.innerWidth - tooltipRect.width - 8;
+      }
+      if (top < 8) {
+        top = rect.bottom + 8;
+      }
+      customTooltip.style.left = left + 'px';
+      customTooltip.style.top = top + 'px';
+    }
+    function hideTooltip() {
+      customTooltip.classList.remove('show');
+    }
+
+    // ---- AUTHENTICATION FUNCTIONS ----
+    async function handleLogin(pin) {
+      showLoading();
+      loginError.style.display = 'none';
+      try {
+        const { data, error } = await client
+          .from(USER_ACCESS_TABLE)
+          .select('*')
+          .eq('pin', pin)
+          .single();
+
+        if (error || !data) {
+          loginError.textContent = 'Invalid PIN. Please try again.';
+          loginError.style.display = 'block';
+          hideLoading();
+          return;
+        }
+
+        currentUser = data;
+        localStorage.setItem('userPin', pin); // Store PIN for session
+        initializeApp();
+      } catch (err) {
+        console.error('Login error:', err);
+        loginError.textContent = 'An unexpected error occurred during login.';
+        loginError.style.display = 'block';
+        hideLoading();
+      }
+    }
+
+    async function handleLogout() {
+      currentUser = null;
+      localStorage.removeItem('userPin');
+      location.reload(); // Simple way to reset the app state
+    }
+
+    // ---- MAIN APP LOGIC ----
+
+    // ---- GET UNIQUE VALUES FOR DROPDOWNS ----
+    function getUniqueValues(columnName) {
+      const values = new Set();
+      (allRecords || []).forEach(row => {
+        const v = row[columnName];
+        if (v !== undefined && v !== null && String(v).trim() !== '') {
+          values.add(String(v).trim());
+        }
+      });
+      return Array.from(values).sort();
+    }
+    
+    // ---- BUILD FORM FIELDS DYNAMICALLY ----
+    function buildForm() {
+      formFields.innerHTML = '';
+      for (const c of ALL_COLUMNS) {
+        if (c === 'id') continue;
+        const col = document.createElement('div');
+        col.className = 'col-md-6 col-lg-4'; // Mandatory field list
+        const mandatoryFields = ['Region', 'Division', 'Scheme Head', 'Name of Scheme'];
+        const requiredAttr = mandatoryFields.includes(c) ? 'required' : '';
+        // Dropdown for Region, Division, Scheme Head
+        if (['Region', 'Division', 'Scheme Head'].includes(c)) {
+
+          if (['Region', 'Division', 'Scheme Head'].includes(c)) {
+  const allOptions = getUniqueValues(c);
+
+  // Restrict Region dropdown options for non-admin users
+  if (c === 'Region' && !currentUser.can_view_all) {
+    const allowedRegions = getAllowedRegions();
+    let optsHtml = `<option value="">Select</option>`;
+    allOptions.forEach(val => {
+      if (allowedRegions.includes(val)) {
+        optsHtml += `<option value="${val}">${val}</option>`;
+      }
+    });
+    col.innerHTML = ` 
+      <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label>
+      <select class="form-select form-select-sm" id="field_${escapeId(c)}" ${requiredAttr}> 
+        ${optsHtml} 
+      </select> 
+    `;
+    formFields.appendChild(col);
+    continue; // Skip the rest of this iteration for Region
+  }
+
+  let optsHtml = `<option value="">Select</option>`;
+  allOptions.forEach(val => {
+    // Only show divisions the user can access if the field is 'Division'
+    if (c === 'Division' && !currentUser.can_view_all && !currentUser.divisions.includes(val)) {
+      return;
+    }
+    optsHtml += `<option value="${val}">${val}</option>`;
+  });
+  col.innerHTML = ` 
+    <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label>
+    <select class="form-select form-select-sm" id="field_${escapeId(c)}" ${requiredAttr}> 
+      ${optsHtml} 
+    </select> 
+  `;
+}
+
+          const allOptions = getUniqueValues(c);
+          let optsHtml = `<option value="">Select</option>`;
+          allOptions.forEach(val => {
+            // Only show divisions the user can access if the field is 'Division'
+            if (c === 'Division' && !currentUser.can_view_all && !currentUser.divisions.includes(val)) {
+                return;
+            }
+            optsHtml += `<option value="${val}">${val}</option>`;
+          });
+          col.innerHTML = ` <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label> <select class="form-select form-select-sm" id="field_${escapeId(c)}" ${requiredAttr}> ${optsHtml} </select> `;
+        }
+        // Priority dropdown
+        else if (c === 'Priority') {
+          col.innerHTML = ` <label class="form-label fw-semibold">${c}</label> <select class="form-select form-select-sm" id="field_${escapeId(c)}"> <option value="">Select</option> <option value="Phase-I">Phase-I</option> <option value="Phase-II">Phase-II</option> </select> `;
+        }
+        // Status dropdown
+        else if (c === 'Status') {
+          col.innerHTML = ` <label class="form-label fw-semibold">${c}</label> <select class="form-select form-select-sm" id="field_${escapeId(c)}"> <option value="">Select</option> <option value="WIP">WIP</option> <option value="Completed">Completed</option> <option value="Not Started Yet">Not Started Yet</option> </select> `;
+        }
+        // Date input for Target Date
+        else if (c.includes('Date')) {
+          col.innerHTML = ` <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label> <input type="date" class="form-control form-control-sm" id="field_${escapeId(c)}" ${requiredAttr}> `;
+        }
+        // Default text input for all other fields
+        else {
+          col.innerHTML = ` <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label> <input type="text" class="form-control form-control-sm" id="field_${escapeId(c)}" placeholder="${c}" ${requiredAttr}> `;
+        }
+        formFields.appendChild(col);
+      }
+    }
+    
+    // ---- BUILD TABLE HEADER ----
+    function buildHead() {
+      tableHead.innerHTML = '';
+      const tr = document.createElement('tr');
+      // Define column widths
+      // UPDATED: Added width for the new 'Status' column
+      const columnWidths = {
+        'id': '6%',
+        'Division': '8%',
+        'Name of Scheme': 'auto',
+        'TAA No.': '10%',
+        'Detail Work Status': 'auto',
+        'Status': '12%', // New column width
+        'Target Date': '8%',
+        'Actions': '5%'
+      };
+      for (const c of TABLE_COLUMNS) {
+        const th = document.createElement('th');
+        th.textContent = COMPACT_HEADERS[c] || c;
+        if (columnWidths[c]) {
+          th.style.width = columnWidths[c];
+        }
+        tr.appendChild(th);
+      }
+      const th = document.createElement('th');
+      th.textContent = 'Actions';
+      th.style.width = columnWidths['Actions'];
+      tr.appendChild(th);
+      tableHead.appendChild(tr);
+    }
+    
+    // ---- RENDER TABLE ROWS ----
+    function renderTable(records) {
+      tableBody.innerHTML = '';
+      if (!records || records.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="${TABLE_COLUMNS.length + 1}" class="text-center text-muted py-5">No records found.</td></tr>`;
+        return;
+      }
+      records.forEach(record => {
+        const tr = document.createElement('tr');
+        tr.className = `row-hover ${record.Status === 'Completed' ? 'completed-row' : ''}`;
+        tr.dataset.id = record.id;
+        tr.addEventListener('mouseenter', (e) => showTooltip(e.target, record['Detail Work Status']));
+        tr.addEventListener('mouseleave', hideTooltip);
+
+        // Populate cells
+        for (const c of TABLE_COLUMNS) {
+          const td = document.createElement('td');
+          if (c === 'Status') {
+            td.innerHTML = `<span class="status-badge">${record[c] || ''}</span>`;
+          } else if (c === 'Priority') {
+            td.innerHTML = `<span class="badge ${getPriorityBadge(record[c])}">${record[c] || ''}</span>`;
+          } else {
+            td.textContent = record[c] || '';
+          }
+          tr.appendChild(td);
+        }
+
+        // Action buttons
+        const actionTd = document.createElement('td');
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-sm btn-action btn-outline-secondary me-2';
+        editBtn.innerHTML = '<i class="bi bi-pencil-square"></i>';
+        editBtn.addEventListener('click', () => {
+          editRecord(record.id);
+        });
+        // Disable edit button if user doesn't have edit access
+        if (!currentUser.can_edit) {
+            editBtn.disabled = true;
+        }
+        actionTd.appendChild(editBtn);
+        tr.appendChild(actionTd);
+        tableBody.appendChild(tr);
+      });
+    }
+
+    // ---- RENDER DIVISION TABS ----
+    function buildDivisionTabs() {
+      // Get all unique divisions from records
+      let allDivisions = getUniqueValues('Division');
+      
+      // Filter divisions based on user access
+      let accessibleDivisions;
+      if (currentUser.can_view_all) {
+          accessibleDivisions = allDivisions;
+      } else {
+          accessibleDivisions = allDivisions.filter(d => currentUser.divisions.includes(d));
+      }
+
+      divisionTabsContainer.innerHTML = '';
+      
+      // "All" tab (only if can_view_all is true)
+      if (currentUser.can_view_all) {
+        const allTab = createDivisionTab('All');
+        divisionTabsContainer.appendChild(allTab);
+      }
+      
+      // Other division tabs
+      accessibleDivisions.forEach(division => {
+          const tab = createDivisionTab(division);
+          divisionTabsContainer.appendChild(tab);
+      });
+
+      // Set 'All' as active by default, or the first accessible division
+      const defaultDivision = currentUser.can_view_all ? 'All' : accessibleDivisions[0];
+      if (defaultDivision) {
+          currentDivision = defaultDivision;
+          const activeTab = document.querySelector(`#divisionTabs .filter-chip[data-division="${defaultDivision}"]`);
+          if (activeTab) activeTab.classList.add('active');
+      }
+    }
+    
+    function createDivisionTab(divisionName) {
+      const tab = document.createElement('button');
+      tab.className = `filter-chip`;
+      tab.dataset.division = divisionName;
+      tab.innerHTML = `<span>${divisionName}</span>`;
+      if (divisionName === currentDivision) tab.classList.add('active');
+      tab.addEventListener('click', () => {
+          currentDivision = divisionName;
+          currentPage = 1;
+          filterAndRenderTable();
+          document.querySelectorAll('#divisionTabs .filter-chip').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+      });
+      return tab;
+    }
+    
+    // ---- RENDER SCHEME HEAD FILTERS ----
+// ---- RENDER SCHEME HEAD FILTERS ----
+function buildSchemeHeadFilters() {
+  const allSchemeHeads = getUniqueValues('Scheme Head');
+  schemeHeadFiltersContainer.innerHTML = '';
+
+  // Create a map to store counts for each scheme head, based on authorized divisions only
+  const schemeHeadCounts = {};
+  allRecords.forEach(record => {
+    // Only count if user can view this division
+if (
+  currentUser.can_view_all ||
+  (getAllowedRegions().includes(record.Region) && currentUser.divisions.includes(record.Division))
+) {
+
+      const schemeHead = record['Scheme Head'];
+      if (schemeHead) {
+        schemeHeadCounts[schemeHead] = (schemeHeadCounts[schemeHead] || 0) + 1;
+      }
+    }
+  });
+
+  allSchemeHeads.forEach(schemeHead => {
+    const filterItem = document.createElement('div');
+    const filterId = `filter-${escapeId(schemeHead)}`;
+    filterItem.className = 'form-check mb-2';
+    filterItem.innerHTML = `
+      <input class="form-check-input" type="checkbox" value="${schemeHead}" id="${filterId}" checked>
+      <label class="form-check-label d-flex justify-content-between align-items-center" for="${filterId}">
+        <span>${schemeHead}</span>
+        <span class="count-badge">${schemeHeadCounts[schemeHead] || 0}</span>
+      </label>
+    `;
+    schemeHeadFiltersContainer.appendChild(filterItem);
+    selectedSchemeHeads.add(schemeHead);
+  });
+
+  schemeHeadFiltersContainer.addEventListener('change', (e) => {
+    if (e.target.type === 'checkbox') {
+      if (e.target.checked) {
+        selectedSchemeHeads.add(e.target.value);
+      } else {
+        selectedSchemeHeads.delete(e.target.value);
+      }
+      filterAndRenderTable();
+    }
+  });
+}
+
+
+    // ---- PAGINATION ----
+    function setupPagination(totalFilteredRecords) {
+      const totalPages = Math.ceil(totalFilteredRecords / recordsPerPage);
+      paginationControls.innerHTML = '';
+      
+      if (totalPages <= 1) {
+        showingStart.textContent = totalFilteredRecords > 0 ? 1 : 0;
+        showingEnd.textContent = totalFilteredRecords;
+        showingTotal.textContent = allRecords.length;
+        return;
+      }
+      
+      let startPage = Math.max(1, currentPage - 2);
+      let endPage = Math.min(totalPages, currentPage + 2);
+      
+      if (endPage - startPage < 4) {
+        if (currentPage <= 3) endPage = Math.min(totalPages, 5);
+        if (currentPage > totalPages - 3) startPage = Math.max(1, totalPages - 4);
+      }
+      
+      const prevBtn = document.createElement('li');
+      prevBtn.className = `page-item ${currentPage === 1 ? 'disabled' : ''}`;
+      prevBtn.innerHTML = `<a class="page-link" href="#">Previous</a>`;
+      prevBtn.addEventListener('click', () => {
+        if (currentPage > 1) {
+          currentPage--;
+          filterAndRenderTable();
+        }
+      });
+      
+      const nextBtn = document.createElement('li');
+      nextBtn.className = `page-item ${currentPage === totalPages ? 'disabled' : ''}`;
+      nextBtn.innerHTML = `<a class="page-link" href="#">Next</a>`;
+      nextBtn.addEventListener('click', () => {
+        if (currentPage < totalPages) {
+          currentPage++;
+          filterAndRenderTable();
+        }
+      });
+      
+      const ul = document.createElement('ul');
+      ul.className = 'pagination pagination-sm mb-0';
+      ul.appendChild(prevBtn);
+      
+      if (startPage > 1) {
+        ul.appendChild(createPageLink(1));
+        if (startPage > 2) {
+          const ellipsis = document.createElement('li');
+          ellipsis.className = 'page-item disabled';
+          ellipsis.innerHTML = `<span class="page-link">...</span>`;
+          ul.appendChild(ellipsis);
+        }
+      }
+      
+      for (let i = startPage; i <= endPage; i++) {
+        ul.appendChild(createPageLink(i));
+      }
+      
+      if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+          const ellipsis = document.createElement('li');
+          ellipsis.className = 'page-item disabled';
+          ellipsis.innerHTML = `<span class="page-link">...</span>`;
+          ul.appendChild(ellipsis);
+        }
+        ul.appendChild(createPageLink(totalPages));
+      }
+      
+      ul.appendChild(nextBtn);
+      paginationControls.appendChild(ul);
+    }
+    
+    function createPageLink(pageNumber) {
+      const li = document.createElement('li');
+      li.className = `page-item ${pageNumber === currentPage ? 'active' : ''}`;
+      li.innerHTML = `<a class="page-link" href="#">${pageNumber}</a>`;
+      li.addEventListener('click', () => {
+        if (pageNumber !== currentPage) {
+          currentPage = pageNumber;
+          filterAndRenderTable();
+        }
+      });
+      return li;
+    }
+    
+    // ---- FILTER AND RENDER ----
+    function filterAndRenderTable() {
+      let filteredRecords = allRecords;
+
+      // Filter by user's divisions if not an admin
+// Filter by user's allowed regions & divisions if not admin
+if (!currentUser.can_view_all) {
+  const allowedRegions = getAllowedRegions();
+  filteredRecords = filteredRecords.filter(record =>
+    allowedRegions.includes(record.Region) &&
+    currentUser.divisions.includes(record.Division)
+  );
+}
+
+
+      // Filter by Division tab
+      if (currentDivision !== 'All') {
+        filteredRecords = filteredRecords.filter(record => record.Division === currentDivision);
+      }
+      
+      // Filter by Scheme Head sidebar
+      if (selectedSchemeHeads.size > 0 && selectedSchemeHeads.size < schemeHeads.length) {
+        filteredRecords = filteredRecords.filter(record => selectedSchemeHeads.has(record['Scheme Head']));
+      }
+      
+      // Filter by search input
+      const searchQuery = searchInput.value.toLowerCase().trim();
+      if (searchQuery) {
+        filteredRecords = filteredRecords.filter(record =>
+          TABLE_COLUMNS.some(column =>
+            String(record[column]).toLowerCase().includes(searchQuery)
+          )
+        );
+      }
+      
+      // Update counts
+      totalCount.textContent = allRecords.length;
+      filteredCount.textContent = filteredRecords.length;
+      
+      // Update pagination info
+      const start = (currentPage - 1) * recordsPerPage;
+      const end = Math.min(start + recordsPerPage, filteredRecords.length);
+      showingStart.textContent = filteredRecords.length > 0 ? start + 1 : 0;
+      showingEnd.textContent = end;
+      showingTotal.textContent = filteredRecords.length;
+      
+      // Get the records for the current page and render the table
+      const recordsForPage = filteredRecords.slice(start, end);
+      renderTable(recordsForPage);
+      setupPagination(filteredRecords.length);
+    }
+
+    // ---- MODAL FUNCTIONS ----
+    function newRecord() {
+      document.getElementById('modalTitle').textContent = 'Add New Scheme';
+      document.getElementById('recordForm').reset();
+      recordId.value = '';
+      btnDelete.style.display = 'none';
+      editModal.show();
+    }
+    
+    async function editRecord(id) {
+      showLoading();
+      document.getElementById('modalTitle').textContent = 'Edit Scheme';
+      btnDelete.style.display = 'block';
+      
+      const { data, error } = await client
+        .from(TABLE_NAME)
+        .select('*')
+        .eq('id', id)
+        .single();
+        
+      hideLoading();
+      
+      if (error) {
+        showMessage(`Error fetching record: ${error.message}`, 'error');
+        return;
+      }
+      
+      recordId.value = data.id;
+      for (const c of ALL_COLUMNS) {
+        if (c !== 'id') {
+          const field = document.getElementById(`field_${escapeId(c)}`);
+          if (field) {
+            field.value = data[c] || '';
+          }
+        }
+      }
+      editModal.show();
+    }
+
+async function saveRecord(e) {
+  e.preventDefault();
+  showLoading();
+  
+  const isNew = !recordId.value;
+  const record = {};
+  for (const c of ALL_COLUMNS) {
+    if (c !== 'id') {
+      const field = document.getElementById(`field_${escapeId(c)}`);
+      if (field) {
+        record[c] = field.value || null;
+      }
+    }
+  }
+
+  // Restrict submission if user not authorized for this division
+  if (record.Division) {
+    if (!currentUser.can_view_all && !currentUser.divisions.includes(record.Division)) {
+      hideLoading();
+      showMessage('You are not authorized to add/edit records for this division.', 'error');
+      return;
+    }
+  }
+
+  let res;
+  if (isNew) {
+    res = await client.from(TABLE_NAME).insert(record).select();
+    if (!res.error && res.data.length > 0) {
+      allRecords.push(res.data[0]); // Add new record locally
+    }
+  } else {
+    res = await client.from(TABLE_NAME).update(record).eq('id', recordId.value).select();
+    if (!res.error && res.data.length > 0) {
+      // Update local array without resetting filters
+      const idx = allRecords.findIndex(r => r.id == recordId.value);
+      if (idx > -1) {
+        allRecords[idx] = res.data[0];
+      }
+    }
+  }
+
+  if (res.error) {
+    hideLoading();
+    showMessage(`Error saving record: ${res.error.message}`, 'error');
+  } else {
+    editModal.hide();
+    hideLoading();
+    filterAndRenderTable(); // Re-render with current filters & page
+  }
+}
+
+    
+    async function deleteRecord() {
+      showLoading();
+      const id = recordId.value;
+      
+      // Check if user has permission to delete this record
+      const recordToDelete = allRecords.find(r => r.id == id);
+      if (recordToDelete && !currentUser.can_view_all && !currentUser.divisions.includes(recordToDelete.Division)) {
+          hideLoading();
+          showMessage('You do not have permission to delete this record.', 'error');
+          return;
+      }
+
+      const { error } = await client.from(TABLE_NAME).delete().eq('id', id);
+      
+      if (error) {
+        hideLoading();
+        showMessage(`Error deleting record: ${error.message}`, 'error');
+      } else {
+        await fetchData();
+        editModal.hide();
+        hideLoading();
+      }
+    }
+
+    // ---- CSV EXPORT ----
+    function downloadCsv(records) {
+      if (records.length === 0) {
+        showMessage('No records to download.', 'info');
+        return;
+      }
+      const headers = Object.keys(records[0]);
+      const csvContent = "data:text/csv;charset=utf-8," 
+                       + headers.map(h => `"${h}"`).join(',') + "\n"
+                       + records.map(row => 
+                           headers.map(h => `"${(row[h] || '').toString().replace(/"/g, '""')}"`).join(',')
+                         ).join('\n');
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "prioritySI_data.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+    
+    // ---- INITIAL DATA FETCH ----
+    async function fetchData() {
+      showLoading();
+      const { data, error } = await client
+        .from(TABLE_NAME)
+        .select('*');
+        
+      if (error) {
+        showMessage(`Error fetching data: ${error.message}`, 'error');
+        allRecords = [];
+      } else {
+        allRecords = data || [];
+        divisions = getUniqueValues('Division'); // Get divisions from all data
+        schemeHeads = getUniqueValues('Scheme Head'); // Get scheme heads from all data
+      }
+      
+      buildForm();
+      buildDivisionTabs();
+      buildSchemeHeadFilters();
+      filterAndRenderTable();
+      hideLoading();
+    }
+    
+    // ---- EVENT LISTENERS ----
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await handleLogin(pinInput.value);
+    });
+
+    btnLogout.addEventListener('click', handleLogout);
+
+    btnAdd.addEventListener('click', newRecord);
+    btnSave.addEventListener('click', saveRecord);
+    btnDelete.addEventListener('click', deleteRecord);
+    btnDownloadCsv.addEventListener('click', () => {
+      let filteredRecords = allRecords;
+      // Apply filters for the downloaded CSV
+      if (!currentUser.can_view_all) {
+        filteredRecords = filteredRecords.filter(record => currentUser.divisions.includes(record.Division));
+      }
+      if (currentDivision !== 'All') {
+        filteredRecords = filteredRecords.filter(record => record.Division === currentDivision);
+      }
+      if (selectedSchemeHeads.size > 0 && selectedSchemeHeads.size < schemeHeads.length) {
+        filteredRecords = filteredRecords.filter(record => selectedSchemeHeads.has(record['Scheme Head']));
+      }
+      const searchQuery = searchInput.value.toLowerCase().trim();
+      if (searchQuery) {
+        filteredRecords = filteredRecords.filter(record =>
+          TABLE_COLUMNS.some(column =>
+            String(record[column]).toLowerCase().includes(searchQuery)
+          )
+        );
+      }
+      downloadCsv(filteredRecords);
+    });
+    
+    // Hide tooltip when scrolling
+    window.addEventListener('scroll', hideTooltip);
+
+    // Sidebar toggles
+    toggleSidebarBtn.addEventListener('click', () => {
+      sidebar.classList.toggle('active');
+    });
+    closeSidebarBtn.addEventListener('click', () => {
+      sidebar.classList.remove('active');
+    });
+    window.addEventListener('click', (e) => {
+      if (!sidebar.contains(e.target) && !toggleSidebarBtn.contains(e.target)) {
+        if (sidebar.classList.contains('active')) {
+          sidebar.classList.remove('active');
+        }
+      }
+    });
+
+    // Search with debounce
+    const debouncedSearch = debounce(() => {
+      currentPage = 1;
+      filterAndRenderTable();
+    }, 300);
+    searchInput.addEventListener('input', debouncedSearch);
+
+    // ---- INITIALIZE ----
+    async function initializeApp() {
+        // Show the app UI and hide login
+        loginContainer.style.display = 'none';
+        appContainer.style.display = 'flex';
+
+        // Check user permissions and update UI
+        if (!currentUser.can_edit) {
+            btnAdd.style.display = 'none';
+            btnSave.disabled = true;
+            btnDelete.style.display = 'none';
+            document.getElementById('modalTitle').textContent = 'View Scheme';
+            document.querySelector('#editModal .modal-body').style.pointerEvents = 'none';
+        } else {
+            btnAdd.style.display = 'flex';
+            btnSave.disabled = false;
+            document.querySelector('#editModal .modal-body').style.pointerEvents = 'auto';
+        }
+
+        editModal = new bootstrap.Modal(document.getElementById('editModal'));
+        buildHead();
+        await fetchData();
+    }
+    
+    document.addEventListener('DOMContentLoaded', async () => {
+        // Show loading screen immediately
+        showLoading();
+        
+        // Check for existing session
+        const storedPin = localStorage.getItem('userPin');
+        if (storedPin) {
+            const { data, error } = await client
+              .from(USER_ACCESS_TABLE)
+              .select('*')
+              .eq('pin', storedPin)
+              .single();
+
+            if (data && !error) {
+                currentUser = data;
+                initializeApp();
+            } else {
+                // If stored PIN is invalid, clear it and show login screen
+                localStorage.removeItem('userPin');
+                loginContainer.style.display = 'flex';
+                appContainer.style.display = 'none';
+                hideLoading();
+            }
+        } else {
+            // No stored PIN, show login screen
+            loginContainer.style.display = 'flex';
+            appContainer.style.display = 'none';
+            hideLoading();
+        }
+    });
+  </script>
 </body>
 </html>
