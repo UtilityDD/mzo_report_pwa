@@ -653,6 +653,7 @@ function getAllowedRegions() {
     let divisions = [];
     let schemeHeads = [];
     let selectedSchemeHeads = new Set();
+    let selectedStatuses = new Set(); // <-- Added here
     let currentDivision = 'All';
     let currentPage = 1;
     const recordsPerPage = 15;
@@ -852,7 +853,6 @@ else if (c === 'Status') {
       <option value="">Select</option>
       <option value="Proposal not initiated">Proposal not initiated</option>
       <option value="Approval pending">Approval pending</option>
-      <option value="TAA issued">TAA issued</option>
       <option value="TAA issued, work yet to start">TAA issued, work yet to start</option>
       <option value="Work in progress">Work in progress</option>
       <option value="Completed">Completed</option>
@@ -1224,7 +1224,10 @@ const completed = filteredRecords.filter(r => r.Status === 'Completed').length;
   if (selectedSchemeHeads.size > 0 && selectedSchemeHeads.size < schemeHeads.length) {
     filteredRecords = filteredRecords.filter(record => selectedSchemeHeads.has(record['Scheme Head']));
   }
-  
+    // Filter by selected Status buttons   <-- INSERT HERE
+  if (selectedStatuses.size > 0) {
+    filteredRecords = filteredRecords.filter(record => selectedStatuses.has(record.Status));
+  }
   // Filter by search input
   const searchQuery = searchInput.value.toLowerCase().trim();
   if (searchQuery) {
@@ -1237,28 +1240,59 @@ const completed = filteredRecords.filter(r => r.Status === 'Completed').length;
   
   // Filtered Records card
   // Compute counts for each status
+// Compute counts for each status based on all other filters but ignoring status selection
+// Compute counts for each status ignoring status selection
 const statuses = [
   "Proposal not initiated",
   "Approval pending",
-  "TAA issued",
   "TAA issued, work yet to start",
   "Work in progress",
   "Completed"
 ];
 
+// Make a copy of filteredRecords before applying status selection
+let recordsForStatusCount = [...filteredRecords];
+
 let statusCountsHtml = '';
 statuses.forEach(status => {
-  const count = filteredRecords.filter(r => r.Status === status).length;
-  statusCountsHtml += `
-    <li class="list-group-item d-flex justify-content-between align-items-center">
-      ${status}
-      <span class="badge bg-secondary rounded-pill">${count}</span>
-    </li>
-  `;
+  const count = recordsForStatusCount.filter(r => r.Status === status).length;
+
+
+const activeClass = selectedStatuses.has(status) ? 'active' : '';
+statusCountsHtml += `
+  <button type="button" 
+    class="list-group-item list-group-item-action d-flex justify-content-between align-items-center ${activeClass}" 
+    data-status="${status}">
+    ${status}
+    <span class="badge bg-secondary rounded-pill">${count}</span>
+  </button>
+`;
+
 });
 
 document.getElementById('statusCountsList').innerHTML = statusCountsHtml;
-  
+
+// Now apply status selection for table filtering
+if (selectedStatuses.size > 0) {
+  filteredRecords = filteredRecords.filter(record => selectedStatuses.has(record.Status));
+}
+
+
+  document.querySelectorAll('#statusCountsList button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const status = btn.dataset.status;
+    if (selectedStatuses.has(status)) {
+      selectedStatuses.delete(status);
+      btn.classList.remove('active');
+    } else {
+      selectedStatuses.add(status);
+      btn.classList.add('active');
+    }
+    currentPage = 1;
+    filterAndRenderTable();
+  });
+});
+
   // Pagination info
   const start = (currentPage - 1) * recordsPerPage;
   const end = Math.min(start + recordsPerPage, filteredRecords.length);
@@ -1456,17 +1490,26 @@ async function saveRecord(e) {
       if (currentDivision !== 'All') {
         filteredRecords = filteredRecords.filter(record => record.Division === currentDivision);
       }
-      if (selectedSchemeHeads.size > 0 && selectedSchemeHeads.size < schemeHeads.length) {
-        filteredRecords = filteredRecords.filter(record => selectedSchemeHeads.has(record['Scheme Head']));
-      }
-      const searchQuery = searchInput.value.toLowerCase().trim();
-      if (searchQuery) {
-        filteredRecords = filteredRecords.filter(record =>
-          TABLE_COLUMNS.some(column =>
-            String(record[column]).toLowerCase().includes(searchQuery)
-          )
-        );
-      }
+// Filter by Scheme Head sidebar
+if (selectedSchemeHeads.size > 0 && selectedSchemeHeads.size < schemeHeads.length) {
+  filteredRecords = filteredRecords.filter(record => selectedSchemeHeads.has(record['Scheme Head']));
+}
+
+// Filter by selected Status buttons
+if (selectedStatuses.size > 0) {
+filteredRecords = filteredRecords.filter(record => selectedStatuses.has(record['Status']));
+}
+
+// Filter by search input
+const searchQuery = searchInput.value.toLowerCase().trim();
+if (searchQuery) {
+  filteredRecords = filteredRecords.filter(record =>
+    TABLE_COLUMNS.some(column =>
+      String(record[column]).toLowerCase().includes(searchQuery)
+    )
+  );
+}
+
       downloadCsv(filteredRecords);
     });
     
