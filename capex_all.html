@@ -1536,21 +1536,54 @@ function formatValueInLakhCrore(value) {
             tableBody.appendChild(row);
         }
 
-        function updateCapexTotal() {
-            const total = _.sumBy(filteredData, item => item["Net Balance Value"] || 0);
-            document.getElementById("capexTotalCr").textContent = formatValueInLakhCrore(total);
+function updateCapexTotal() {
+    const total = _.sumBy(filteredData, item => item["Net Balance Value"] || 0);
+    document.getElementById("capexTotalCr").textContent = formatValueInLakhCrore(total);
 
-            // Calculate totals for different age categories
-            const over6M = _.sumBy(filteredData.filter(item => item["Ageing in Days"] > 180), 'Net Balance Value');
-            const over12M = _.sumBy(filteredData.filter(item => item["Ageing in Days"] > 365), 'Net Balance Value');
-            const over24M = _.sumBy(filteredData.filter(item => item["Ageing in Days"] > 730), 'Net Balance Value');
-            const over36M = _.sumBy(filteredData.filter(item => item["Ageing in Days"] > 1095), 'Net Balance Value');
+    // Calculate slab values
+    const over6M = _.sumBy(filteredData.filter(item => item["Ageing in Days"] > 180), 'Net Balance Value');
+    const over12M = _.sumBy(filteredData.filter(item => item["Ageing in Days"] > 365), 'Net Balance Value');
+    const over24M = _.sumBy(filteredData.filter(item => item["Ageing in Days"] > 730), 'Net Balance Value');
+    const over36M = _.sumBy(filteredData.filter(item => item["Ageing in Days"] > 1095), 'Net Balance Value');
 
-            document.getElementById("over6M").textContent = formatValueInLakhCrore(over6M);
-            document.getElementById("over12M").textContent = formatValueInLakhCrore(over12M);
-            document.getElementById("over24M").textContent = formatValueInLakhCrore(over24M);
-            document.getElementById("over36M").textContent = formatValueInLakhCrore(over36M);
+    document.getElementById("over6M").textContent = formatValueInLakhCrore(over6M);
+    document.getElementById("over12M").textContent = formatValueInLakhCrore(over12M);
+    document.getElementById("over24M").textContent = formatValueInLakhCrore(over24M);
+    document.getElementById("over36M").textContent = formatValueInLakhCrore(over36M);
+
+    // NEW LOGIC: Hide cards if all values are same
+    const values = [total, over6M, over12M, over24M, over36M];
+    const allSame = values.every(v => v === values[0]);
+
+    const allCards = document.querySelectorAll("#totalCapexCard .total-item");
+    if (allSame) {
+        // Find selected age checkbox
+        const selected = document.querySelector('input[name="ageFilter"]:checked');
+        if (selected) {
+            const val = selected.value;
+            // Map checkbox value to card index
+            const mapping = {
+                "0-180": 0,       // Total
+                "181-365": 1,     // >6M
+                "366-730": 2,     // >12M
+                "731-1095": 3,    // >24M
+                "1096-1460": 4,   // >36M
+                "1461-1825": 4,   // Also >36M in card display
+                "1826-max": 4
+            };
+            allCards.forEach((card, idx) => {
+                card.style.display = (idx === mapping[val]) ? "flex" : "none";
+            });
+        } else {
+            allCards.forEach(card => card.style.display = "flex"); // No checkbox selected
         }
+    } else {
+        allCards.forEach(card => card.style.display = "flex"); // Values differ, show all
+    }
+}
+
+
+
 
         function handleDetailsSearch(event) {
             currentDetailsSearchQuery = event.target.value.trim();
