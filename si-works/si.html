@@ -23,7 +23,7 @@
       --card-bg: #ffffff;
       --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
       --border-radius-xl: 16px;
-      --sidebar-width: 300px;
+      --sidebar-width: 400px;
       --completed-row-bg: #e6f7e9; /* Light green for completed rows */
     }
     
@@ -313,6 +313,33 @@
         max-width: 400px;
         padding: 2rem;
     }
+    .stats-card {
+  padding: 8px 12px;
+  border-radius: 10px;
+  box-shadow: var(--card-shadow);
+  min-width: 90px;
+}
+.stats-number {
+  font-size: 18px;
+}
+.stats-label {
+  font-size: 10px;
+}
+#statusCountsContainer {
+  background: var(--card-bg);
+  border-radius: var(--border-radius-xl);
+  box-shadow: var(--card-shadow);
+  padding: 8px;
+}
+#statusCountsContainer h6 {
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+#statusCountsList .list-group-item {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
   </style>
 </head>
 <body>
@@ -344,6 +371,12 @@
         </button>
       </div>
       <div id="schemeHeadFiltersContainer"></div>
+      <hr>
+<div id="statusCountsContainer" class="mt-3">
+  <h6 class="fw-bold">Status Counts</h6>
+  <ul class="list-group list-group-flush small" id="statusCountsList"></ul>
+</div>
+
     </div>
 
     <!-- Main Content Area -->
@@ -378,35 +411,23 @@
 
       <div class="main-content-container">
         <!-- Smart Filters & Stats (Division filter remains here) -->
-        <div class="row mb-4 g-4">
-          <div class="col-md-8">
-            <div class="glass-card p-4">
-              <div class="row g-3">
-                <!-- Division Filter -->
-                <div class="col-md-12">
-                  <div id="divisionTabs" class="d-flex flex-wrap gap-2"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div class="col-md-4">
-            <div class="row g-3 h-100">
-              <div class="col-6 d-flex">
-                <div class="stats-card w-100">
-                  <div class="stats-number" id="totalCount">0</div>
-                  <div class="stats-label">Total Records</div>
-                </div>
-              </div>
-              <div class="col-6 d-flex">
-                <div class="stats-card w-100">
-                  <div class="stats-number" id="filteredCount">0</div>
-                  <div class="stats-label">Filtered Records</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+<div class="glass-card p-3 mb-4">
+  <div class="d-flex flex-wrap align-items-center gap-2">
+    <!-- Division Filter Tabs -->
+    <div id="divisionTabs" class="d-flex flex-wrap gap-2"></div>
+
+    <!-- Stats Cards -->
+<div class="d-flex flex-wrap gap-2 ms-auto">
+  <div class="stats-card p-2 text-center">
+    <div class="stats-number" id="totalCount">0</div>
+    <div class="stats-label">Total</div>
+  </div>
+
+</div>
+
+  </div>
+</div>
+
         
         <!-- New location for the Download CSV button -->
         <div class="d-flex justify-content-end mb-3">
@@ -718,86 +739,105 @@ function getAllowedRegions() {
     }
     
     // ---- BUILD FORM FIELDS DYNAMICALLY ----
-    function buildForm() {
-      formFields.innerHTML = '';
-      for (const c of ALL_COLUMNS) {
-        if (c === 'id') continue;
-        const col = document.createElement('div');
-        col.className = 'col-md-6 col-lg-4'; // Mandatory field list
-        const mandatoryFields = ['Region', 'Division', 'Scheme Head', 'Name of Scheme'];
-        const requiredAttr = mandatoryFields.includes(c) ? 'required' : '';
-        // Dropdown for Region, Division, Scheme Head
-        if (['Region', 'Division', 'Scheme Head'].includes(c)) {
+function buildForm() {
+  formFields.innerHTML = '';
+  for (const c of ALL_COLUMNS) {
+    if (c === 'id') continue;
+    const col = document.createElement('div');
+    col.className = 'col-md-6 col-lg-4';
+    const mandatoryFields = ['Region', 'Division', 'Scheme Head', 'Name of Scheme'];
+    const requiredAttr = mandatoryFields.includes(c) ? 'required' : '';
 
-          if (['Region', 'Division', 'Scheme Head'].includes(c)) {
-  const allOptions = getUniqueValues(c);
+    // Dropdown for Region, Division, Scheme Head
+    if (['Region', 'Division', 'Scheme Head'].includes(c)) {
+      const allOptions = getUniqueValues(c);
 
-  // Restrict Region dropdown options for non-admin users
-  if (c === 'Region' && !currentUser.can_view_all) {
-    const allowedRegions = getAllowedRegions();
-    let optsHtml = `<option value="">Select</option>`;
-    allOptions.forEach(val => {
-      if (allowedRegions.includes(val)) {
-        optsHtml += `<option value="${val}">${val}</option>`;
+      // Restrict Region dropdown options for non-admin users
+      if (c === 'Region' && !currentUser.can_view_all) {
+        const allowedRegions = getAllowedRegions();
+        let optsHtml = `<option value="">Select</option>`;
+        allOptions.forEach(val => {
+          if (allowedRegions.includes(val)) {
+            optsHtml += `<option value="${val}">${val}</option>`;
+          }
+        });
+        col.innerHTML = `
+          <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label>
+          <select class="form-select form-select-sm" id="field_${escapeId(c)}" ${requiredAttr}>
+            ${optsHtml}
+          </select>
+        `;
+        formFields.appendChild(col);
+        continue;
       }
-    });
-    col.innerHTML = ` 
-      <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label>
-      <select class="form-select form-select-sm" id="field_${escapeId(c)}" ${requiredAttr}> 
-        ${optsHtml} 
-      </select> 
-    `;
-    formFields.appendChild(col);
-    continue; // Skip the rest of this iteration for Region
-  }
 
-  let optsHtml = `<option value="">Select</option>`;
-  allOptions.forEach(val => {
-    // Only show divisions the user can access if the field is 'Division'
-    if (c === 'Division' && !currentUser.can_view_all && !currentUser.divisions.includes(val)) {
-      return;
+      let optsHtml = `<option value="">Select</option>`;
+      allOptions.forEach(val => {
+        if (c === 'Division' && !currentUser.can_view_all && !currentUser.divisions.includes(val)) {
+          return;
+        }
+        optsHtml += `<option value="${val}">${val}</option>`;
+      });
+      col.innerHTML = `
+        <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label>
+        <select class="form-select form-select-sm" id="field_${escapeId(c)}" ${requiredAttr}>
+          ${optsHtml}
+        </select>
+      `;
     }
-    optsHtml += `<option value="${val}">${val}</option>`;
-  });
-  col.innerHTML = ` 
-    <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label>
-    <select class="form-select form-select-sm" id="field_${escapeId(c)}" ${requiredAttr}> 
-      ${optsHtml} 
-    </select> 
+    // Priority dropdown
+    else if (c === 'Priority') {
+      col.innerHTML = `
+        <label class="form-label fw-semibold">${c}</label>
+        <select class="form-select form-select-sm" id="field_${escapeId(c)}">
+          <option value="">Select</option>
+          <option value="Phase-I">Phase-I</option>
+          <option value="Phase-II">Phase-II</option>
+        </select>
+      `;
+    }
+    // Status dropdown
+else if (c === 'Status') {
+  col.innerHTML = `
+    <label class="form-label fw-semibold">${c}</label>
+    <select class="form-select form-select-sm" id="field_${escapeId(c)}">
+      <option value="">Select</option>
+      <option value="Proposal not initiated">Proposal not initiated</option>
+      <option value="Approval pending">Approval pending</option>
+      <option value="TAA issued">TAA issued</option>
+      <option value="TAA issued, work yet to start">TAA issued, work yet to start</option>
+      <option value="Work in progress">Work in progress</option>
+      <option value="Completed">Completed</option>
+    </select>
   `;
 }
 
-          const allOptions = getUniqueValues(c);
-          let optsHtml = `<option value="">Select</option>`;
-          allOptions.forEach(val => {
-            // Only show divisions the user can access if the field is 'Division'
-            if (c === 'Division' && !currentUser.can_view_all && !currentUser.divisions.includes(val)) {
-                return;
-            }
-            optsHtml += `<option value="${val}">${val}</option>`;
-          });
-          col.innerHTML = ` <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label> <select class="form-select form-select-sm" id="field_${escapeId(c)}" ${requiredAttr}> ${optsHtml} </select> `;
-        }
-        // Priority dropdown
-        else if (c === 'Priority') {
-          col.innerHTML = ` <label class="form-label fw-semibold">${c}</label> <select class="form-select form-select-sm" id="field_${escapeId(c)}"> <option value="">Select</option> <option value="Phase-I">Phase-I</option> <option value="Phase-II">Phase-II</option> </select> `;
-        }
-        // Status dropdown
-        else if (c === 'Status') {
-          col.innerHTML = ` <label class="form-label fw-semibold">${c}</label> <select class="form-select form-select-sm" id="field_${escapeId(c)}"> <option value="">Select</option> <option value="WIP">WIP</option> <option value="Completed">Completed</option> <option value="Not Started Yet">Not Started Yet</option> </select> `;
-        }
-        // Date input for Target Date
-        else if (c.includes('Date')) {
-          col.innerHTML = ` <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label> <input type="date" class="form-control form-control-sm" id="field_${escapeId(c)}" ${requiredAttr}> `;
-        }
-        // Default text input for all other fields
-        else {
-          col.innerHTML = ` <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label> <input type="text" class="form-control form-control-sm" id="field_${escapeId(c)}" placeholder="${c}" ${requiredAttr}> `;
-        }
-        formFields.appendChild(col);
-      }
+    // Date input for Target Date
+    else if (c.includes('Date')) {
+      col.innerHTML = `
+        <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label>
+        <input type="date" class="form-control form-control-sm" id="field_${escapeId(c)}" ${requiredAttr}>
+      `;
     }
-    
+    // NEW: Resizable textarea for Detail Work Status
+    else if (c === 'Detail Work Status') {
+      col.className = 'col-12'; // Make textarea span full width
+      col.innerHTML = `
+        <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label>
+        <textarea class="form-control form-control-sm" id="field_${escapeId(c)}" rows="3" style="resize: vertical;" ${requiredAttr}></textarea>
+      `;
+    }
+    // Default text input for all other fields
+    else {
+      col.innerHTML = `
+        <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label>
+        <input type="text" class="form-control form-control-sm" id="field_${escapeId(c)}" placeholder="${c}" ${requiredAttr}>
+      `;
+    }
+    formFields.appendChild(col);
+  }
+}
+
     // ---- BUILD TABLE HEADER ----
     function buildHead() {
       tableHead.innerHTML = '';
@@ -928,32 +968,42 @@ function getAllowedRegions() {
     
     // ---- RENDER SCHEME HEAD FILTERS ----
 // ---- RENDER SCHEME HEAD FILTERS ----
+// Replace the existing buildSchemeHeadFilters() with this function
 function buildSchemeHeadFilters() {
   const allSchemeHeads = getUniqueValues('Scheme Head');
   schemeHeadFiltersContainer.innerHTML = '';
+  selectedSchemeHeads.clear(); // start fresh
 
-  // Create a map to store counts for each scheme head, based on authorized divisions only
+  // Create master checkbox container
+  const masterId = 'filter-all-schemeheads';
+  const masterHtml = document.createElement('div');
+  masterHtml.className = 'form-check mb-2';
+  masterHtml.innerHTML = `
+    <input class="form-check-input" type="checkbox" value="__all__" id="${masterId}">
+    <label class="form-check-label fw-semibold" for="${masterId}">
+      Select / Deselect all
+    </label>
+  `;
+  schemeHeadFiltersContainer.appendChild(masterHtml);
+
+  // Compute counts only for scheme heads the user may view
   const schemeHeadCounts = {};
   allRecords.forEach(record => {
-    // Only count if user can view this division
-if (
-  currentUser.can_view_all ||
-  (getAllowedRegions().includes(record.Region) && currentUser.divisions.includes(record.Division))
-) {
-
+    // Only count records the current user can view
+    if (currentUser.can_view_all ||
+        (getAllowedRegions().includes(record.Region) && currentUser.divisions.includes(record.Division))) {
       const schemeHead = record['Scheme Head'];
-      if (schemeHead) {
-        schemeHeadCounts[schemeHead] = (schemeHeadCounts[schemeHead] || 0) + 1;
-      }
+      if (schemeHead) schemeHeadCounts[schemeHead] = (schemeHeadCounts[schemeHead] || 0) + 1;
     }
   });
 
+  // Create individual checkboxes
   allSchemeHeads.forEach(schemeHead => {
-    const filterItem = document.createElement('div');
     const filterId = `filter-${escapeId(schemeHead)}`;
+    const filterItem = document.createElement('div');
     filterItem.className = 'form-check mb-2';
     filterItem.innerHTML = `
-      <input class="form-check-input" type="checkbox" value="${schemeHead}" id="${filterId}" checked>
+      <input class="form-check-input schemehead-checkbox" type="checkbox" value="${schemeHead}" id="${filterId}" checked>
       <label class="form-check-label d-flex justify-content-between align-items-center" for="${filterId}">
         <span>${schemeHead}</span>
         <span class="count-badge">${schemeHeadCounts[schemeHead] || 0}</span>
@@ -963,17 +1013,47 @@ if (
     selectedSchemeHeads.add(schemeHead);
   });
 
+  // Helper to sync master checkbox state
+  function updateMasterCheckbox() {
+    const checkboxes = schemeHeadFiltersContainer.querySelectorAll('.schemehead-checkbox');
+    const total = checkboxes.length;
+    const checked = schemeHeadFiltersContainer.querySelectorAll('.schemehead-checkbox:checked').length;
+    const master = document.getElementById(masterId);
+    if (!master) return;
+    master.checked = (checked === total && total > 0);
+    master.indeterminate = (checked > 0 && checked < total);
+  }
+
+  // Master checkbox event
+  const masterCheckbox = document.getElementById(masterId);
+  masterCheckbox.addEventListener('change', (e) => {
+    const checked = e.target.checked;
+    const checkboxes = schemeHeadFiltersContainer.querySelectorAll('.schemehead-checkbox');
+    checkboxes.forEach(cb => {
+      cb.checked = checked;
+      if (checked) selectedSchemeHeads.add(cb.value);
+      else selectedSchemeHeads.delete(cb.value);
+    });
+    updateMasterCheckbox();
+    currentPage = 1;
+    filterAndRenderTable();
+  });
+
+  // Individual checkbox event (event delegation)
   schemeHeadFiltersContainer.addEventListener('change', (e) => {
-    if (e.target.type === 'checkbox') {
-      if (e.target.checked) {
-        selectedSchemeHeads.add(e.target.value);
-      } else {
-        selectedSchemeHeads.delete(e.target.value);
-      }
+    if (e.target && e.target.classList.contains('schemehead-checkbox')) {
+      if (e.target.checked) selectedSchemeHeads.add(e.target.value);
+      else selectedSchemeHeads.delete(e.target.value);
+      updateMasterCheckbox();
+      currentPage = 1;
       filterAndRenderTable();
     }
   });
+
+  // initialize master checkbox state
+  updateMasterCheckbox();
 }
+
 
 
     // ---- PAGINATION ----
@@ -1062,56 +1142,92 @@ if (
     }
     
     // ---- FILTER AND RENDER ----
-    function filterAndRenderTable() {
-      let filteredRecords = allRecords;
+function filterAndRenderTable() {
+  let filteredRecords = allRecords;
 
-      // Filter by user's divisions if not an admin
-// Filter by user's allowed regions & divisions if not admin
-if (!currentUser.can_view_all) {
-  const allowedRegions = getAllowedRegions();
-  filteredRecords = filteredRecords.filter(record =>
-    allowedRegions.includes(record.Region) &&
-    currentUser.divisions.includes(record.Division)
-  );
+  // Filter by user's allowed regions & divisions if not admin
+  if (!currentUser.can_view_all) {
+    const allowedRegions = getAllowedRegions();
+    filteredRecords = filteredRecords.filter(record =>
+      allowedRegions.includes(record.Region) &&
+      currentUser.divisions.includes(record.Division)
+    );
+  }
+// Calculate status counts after applying user visibility filter
+const proposalNotInitiated = filteredRecords.filter(r => r.Status === 'Proposal not initiated').length;
+const wip = filteredRecords.filter(r => r.Status === 'Work in progress').length;
+const notStarted = filteredRecords.filter(r => r.Status === 'TAA issued, work yet to start').length;
+const completed = filteredRecords.filter(r => r.Status === 'Completed').length;
+
+
+// Update status cards
+
+
+
+  // For Total Records card — count after applying user visibility rules
+  totalCount.textContent = filteredRecords.length;
+
+  // Filter by Division tab
+  if (currentDivision !== 'All') {
+    filteredRecords = filteredRecords.filter(record => record.Division === currentDivision);
+  }
+  
+  // Filter by Scheme Head sidebar
+  if (selectedSchemeHeads.size > 0 && selectedSchemeHeads.size < schemeHeads.length) {
+    filteredRecords = filteredRecords.filter(record => selectedSchemeHeads.has(record['Scheme Head']));
+  }
+  
+  // Filter by search input
+  const searchQuery = searchInput.value.toLowerCase().trim();
+  if (searchQuery) {
+    filteredRecords = filteredRecords.filter(record =>
+      TABLE_COLUMNS.some(column =>
+        String(record[column]).toLowerCase().includes(searchQuery)
+      )
+    );
+  }
+  
+  // Filtered Records card
+  // Compute counts for each status
+const statuses = [
+  "Proposal not initiated",
+  "Approval pending",
+  "TAA issued",
+  "TAA issued, work yet to start",
+  "Work in progress",
+  "Completed"
+];
+
+let statusCountsHtml = '';
+statuses.forEach(status => {
+  const count = filteredRecords.filter(r => r.Status === status).length;
+  statusCountsHtml += `
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      ${status}
+      <span class="badge bg-secondary rounded-pill">${count}</span>
+    </li>
+  `;
+});
+
+document.getElementById('statusCountsList').innerHTML = statusCountsHtml;
+  
+  // Pagination info
+  const start = (currentPage - 1) * recordsPerPage;
+  const end = Math.min(start + recordsPerPage, filteredRecords.length);
+  showingStart.textContent = filteredRecords.length > 0 ? start + 1 : 0;
+  showingEnd.textContent = end;
+  showingTotal.textContent = filteredRecords.length;
+  
+  // Render table and pagination
+  const recordsForPage = filteredRecords.slice(start, end);
+  renderTable(recordsForPage);
+  setupPagination(filteredRecords.length);
 }
 
 
-      // Filter by Division tab
-      if (currentDivision !== 'All') {
-        filteredRecords = filteredRecords.filter(record => record.Division === currentDivision);
-      }
-      
-      // Filter by Scheme Head sidebar
-      if (selectedSchemeHeads.size > 0 && selectedSchemeHeads.size < schemeHeads.length) {
-        filteredRecords = filteredRecords.filter(record => selectedSchemeHeads.has(record['Scheme Head']));
-      }
-      
-      // Filter by search input
-      const searchQuery = searchInput.value.toLowerCase().trim();
-      if (searchQuery) {
-        filteredRecords = filteredRecords.filter(record =>
-          TABLE_COLUMNS.some(column =>
-            String(record[column]).toLowerCase().includes(searchQuery)
-          )
-        );
-      }
-      
-      // Update counts
-      totalCount.textContent = allRecords.length;
-      filteredCount.textContent = filteredRecords.length;
-      
-      // Update pagination info
-      const start = (currentPage - 1) * recordsPerPage;
-      const end = Math.min(start + recordsPerPage, filteredRecords.length);
-      showingStart.textContent = filteredRecords.length > 0 ? start + 1 : 0;
-      showingEnd.textContent = end;
-      showingTotal.textContent = filteredRecords.length;
-      
-      // Get the records for the current page and render the table
-      const recordsForPage = filteredRecords.slice(start, end);
-      renderTable(recordsForPage);
-      setupPagination(filteredRecords.length);
-    }
+
+
+
 
     // ---- MODAL FUNCTIONS ----
     function newRecord() {
