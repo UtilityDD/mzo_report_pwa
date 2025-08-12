@@ -963,56 +963,64 @@ else if (c === 'Status') {
     }
 
     // ---- RENDER DIVISION TABS ----
-    function buildDivisionTabs() {
-      // Get all unique divisions from records
-      let allDivisions = getUniqueValues('Division');
-      
-      // Filter divisions based on user access
-      let accessibleDivisions;
-      if (currentUser.can_view_all) {
-          accessibleDivisions = allDivisions;
-      } else {
-          accessibleDivisions = allDivisions.filter(d => currentUser.divisions.includes(d));
-      }
+function buildDivisionTabs() {
+  let allDivisions = getUniqueValues('Division');
 
-      divisionTabsContainer.innerHTML = '';
-      
-      // "All" tab (only if can_view_all is true)
-      if (currentUser.can_view_all) {
-        const allTab = createDivisionTab('All');
-        divisionTabsContainer.appendChild(allTab);
-      }
-      
-      // Other division tabs
-      accessibleDivisions.forEach(division => {
-          const tab = createDivisionTab(division);
-          divisionTabsContainer.appendChild(tab);
-      });
+  let accessibleDivisions;
+  if (currentUser.can_view_all) {
+    accessibleDivisions = allDivisions;
+  } else {
+    accessibleDivisions = allDivisions.filter(d => currentUser.divisions.includes(d));
+  }
 
-      // Set 'All' as active by default, or the first accessible division
-      const defaultDivision = currentUser.can_view_all ? 'All' : accessibleDivisions[0];
-      if (defaultDivision) {
-          currentDivision = defaultDivision;
-          const activeTab = document.querySelector(`#divisionTabs .filter-chip[data-division="${defaultDivision}"]`);
-          if (activeTab) activeTab.classList.add('active');
-      }
+  divisionTabsContainer.innerHTML = '';
+
+  // Prepare counts after applying user visibility
+  const divisionCounts = {};
+  allRecords.forEach(record => {
+    if (currentUser.can_view_all ||
+        (getAllowedRegions().includes(record.Region) && currentUser.divisions.includes(record.Division))) {
+      divisionCounts[record.Division] = (divisionCounts[record.Division] || 0) + 1;
     }
-    
-    function createDivisionTab(divisionName) {
-      const tab = document.createElement('button');
-      tab.className = `filter-chip`;
-      tab.dataset.division = divisionName;
-      tab.innerHTML = `<span>${divisionName}</span>`;
-      if (divisionName === currentDivision) tab.classList.add('active');
-      tab.addEventListener('click', () => {
-          currentDivision = divisionName;
-          currentPage = 1;
-          filterAndRenderTable();
-          document.querySelectorAll('#divisionTabs .filter-chip').forEach(t => t.classList.remove('active'));
-          tab.classList.add('active');
-      });
-      return tab;
-    }
+  });
+
+  // "All" tab for admin
+  if (currentUser.can_view_all) {
+    const allCount = Object.values(divisionCounts).reduce((a, b) => a + b, 0);
+    const allTab = createDivisionTab('All', allCount);
+    divisionTabsContainer.appendChild(allTab);
+  }
+
+  accessibleDivisions.forEach(division => {
+    const count = divisionCounts[division] || 0;
+    const tab = createDivisionTab(division, count);
+    divisionTabsContainer.appendChild(tab);
+  });
+
+  const defaultDivision = currentUser.can_view_all ? 'All' : accessibleDivisions[0];
+  if (defaultDivision) {
+    currentDivision = defaultDivision;
+    const activeTab = document.querySelector(`#divisionTabs .filter-chip[data-division="${defaultDivision}"]`);
+    if (activeTab) activeTab.classList.add('active');
+  }
+}
+
+function createDivisionTab(divisionName, count = 0) {
+  const tab = document.createElement('button');
+  tab.className = `filter-chip`;
+  tab.dataset.division = divisionName;
+  tab.innerHTML = `<span>${divisionName} (${count})</span>`;
+  if (divisionName === currentDivision) tab.classList.add('active');
+  tab.addEventListener('click', () => {
+    currentDivision = divisionName;
+    currentPage = 1;
+    filterAndRenderTable();
+    document.querySelectorAll('#divisionTabs .filter-chip').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+  });
+  return tab;
+}
+
     
     // ---- RENDER SCHEME HEAD FILTERS ----
 // ---- RENDER SCHEME HEAD FILTERS ----
