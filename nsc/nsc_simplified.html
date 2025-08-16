@@ -1,0 +1,1485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NSC Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        }
+
+        /* Custom styles - Fixed height layout */
+        .sidebar {
+            width: 280px;
+            transition: transform 0.3s ease-in-out;
+            z-index: 50;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        
+        .secondary-sidebar {
+            width: 240px;
+            background: rgba(30, 41, 59, 0.95);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        
+        /* Ensure full height utilization */
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        /* Custom scrollbar - Dark theme */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(100, 116, 139, 0.6);
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(100, 116, 139, 0.8);
+        }
+        
+        /* Hierarchy items - Dark theme */
+        .filter-hierarchy-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            margin-bottom: 2px;
+            border: 1px solid transparent;
+        }
+        .filter-hierarchy-item:hover {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.2);
+            transform: translateX(2px);
+        }
+        .filter-hierarchy-item.selected {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.2));
+            border-color: rgba(59, 130, 246, 0.4);
+            color: #60a5fa;
+            font-weight: 600;
+        }
+        .filter-hierarchy-item.selected .count-pill {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+        }
+        .filter-hierarchy-item .label-container {
+            display: flex;
+            align-items: center;
+        }
+        .filter-hierarchy-item .count-pill {
+            min-width: 32px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            background: rgba(100, 116, 139, 0.2);
+            color: #cbd5e1;
+            font-size: 0.75rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        .toggle-icon {
+            margin-right: 8px;
+            transition: transform 0.2s ease;
+            flex-shrink: 0;
+            color: #64748b;
+        }
+        .toggle-icon.expanded {
+            transform: rotate(90deg);
+            color: #3b82f6;
+        }
+
+        /* Filter table - Dark theme */
+        .filter-table {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            align-items: center;
+            gap: 0;
+        }
+        .filter-table-row {
+            display: contents;
+        }
+        .filter-table-label {
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            border-radius: 6px;
+            margin-right: 4px;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+        .filter-table-count {
+            padding: 8px 12px;
+            text-align: right;
+            font-weight: 500;
+            font-size: 0.875rem;
+            color: #94a3b8;
+        }
+        .filter-table-row.selected .filter-table-label,
+        .filter-table-row.selected .filter-table-count {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.2));
+            color: #60a5fa;
+            font-weight: 600;
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+        .filter-table-row .filter-table-label:hover {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.2);
+            transform: translateX(2px);
+        }
+
+        /* Cards with glassmorphism */
+        .glass-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+        }
+        .glass-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+
+        /* Table styling */
+        .data-table {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        
+        table th {
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: #94a3b8 !important;
+            font-weight: 600 !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.05em !important;
+            padding: 12px 8px !important;
+            font-size: 0.75rem !important;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.2) !important;
+        }
+        
+        table td {
+            padding: 8px !important;
+            font-size: 0.8rem !important;
+            color: #cbd5e1 !important;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.1) !important;
+        }
+        
+        .table-row:hover {
+            background: rgba(59, 130, 246, 0.05) !important;
+            transform: scale(1.001);
+            transition: all 0.2s ease;
+        }
+
+        /* Compact table cells */
+        .table-cell {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 140px;
+        }
+
+        .sidebar, .secondary-sidebar {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+        }
+
+        /* Button styling */
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+        }
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* Filter sections */
+        .filter-section {
+            margin-bottom: 24px;
+            padding: 16px 0;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        .filter-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+
+        /* Loading animation */
+        .loading-spinner {
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(10px);
+        }
+
+        /* Modal styling */
+        .modal-content {
+            background: rgba(30, 41, 59, 0.95);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            color: #e2e8f0;
+        }
+
+        /* Radio buttons - Dark theme */
+        input[type="radio"] {
+            accent-color: #3b82f6;
+            margin-right: 8px;
+        }
+
+        /* Show/Hide buttons */
+        .panel-toggle-btn {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(8px);
+            transition: all 0.2s ease;
+        }
+        .panel-toggle-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+        }
+          #detailModal .modal-dialog {
+    max-height: 90vh; /* prevent overflow beyond viewport */
+    display: flex;
+    flex-direction: column;
+  }
+
+  #detailModal .modal-content {
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh;
+  }
+
+  #detailModal .modal-header {
+    position: sticky;
+    top: 0;
+    z-index: 1055; /* higher than body content */
+    background: #fff; /* match modal background */
+  }
+
+  #detailModal .modal-body {
+    overflow-y: auto;
+  }
+    </style>
+</head>
+<body class="min-h-screen bg-slate-900 transition-colors duration-300">
+    <div class="flex flex-col h-screen">
+        <!-- Loading Indicator -->
+        <div id="loading" class="fixed inset-0 flex items-center justify-center loading-spinner z-50">
+            <div class="modal-content p-8 rounded-2xl shadow-2xl flex flex-col items-center space-y-6">
+                <svg class="animate-spin h-10 w-10 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="text-lg text-slate-200 font-medium">Loading data...</p>
+            </div>
+        </div>
+
+        <!-- Mobile Header -->
+        <div class="md:hidden flex items-center justify-between p-4 bg-slate-800/90 backdrop-blur-lg shadow-lg z-40 flex-shrink-0 border-b border-slate-700">
+            <button id="sidebar-toggle-btn" class="p-2 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path>
+                </svg>
+            </button>
+            <h1 class="text-xl font-bold text-slate-100">Filters</h1>
+        </div>
+
+        <!-- Main Layout -->
+        <div class="flex flex-1 overflow-hidden relative">
+            <!-- Left Panel -->
+            <aside id="sidebar" class="sidebar left-0 top-0 h-full w-64 shadow-2xl flex flex-col transition-transform duration-300 transform translate-x-0 z-40">
+                <div class="flex justify-between items-center px-6 pt-6 flex-shrink-0 border-b border-slate-700 pb-4">
+                    <h1 class="hidden md:block text-xl font-bold text-slate-100">Filters</h1>
+                    <button onclick="hidePanel('sidebar')" class="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors">Hide</button>
+                </div>
+                <div class="flex-1 px-6 pb-6 overflow-y-auto custom-scrollbar min-h-0">
+                    <!-- Office Hierarchy Filter -->
+                    <div class="filter-section">
+                        <h3 class="text-base font-semibold text-slate-200 mb-4">Office Hierarchy</h3>
+                        <div id="office-hierarchy" class="filter-hierarchy-list"></div>
+                    </div>
+                    <div class="filter-section">
+                        <h3 class="text-base font-semibold text-slate-200 mb-4">Pole / Non-Pole</h3>
+                        <div id="pole-nonpole-filters" class="filter-table"></div>
+                    </div>
+                    <div class="filter-section">
+                        <h3 class="text-base font-semibold text-slate-200 mb-4">Agri / Non-Agri</h3>
+                        <div id="agri-nonagri-filters" class="filter-table"></div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Left show button -->
+            <button id="sidebar-show-btn" onclick="showPanel('sidebar')" class="absolute left-0 top-1/2 -translate-y-1/2 panel-toggle-btn text-white px-3 py-2 rounded-r-xl shadow hidden z-50 font-medium">
+                Show
+            </button>
+
+            <!-- Secondary Left Panel -->
+            <aside id="secondary-sidebar" class="secondary-sidebar left-64 top-0 h-full w-64 shadow-2xl flex flex-col transition-transform duration-300 transform translate-x-0 z-30">
+                <div class="flex justify-between items-center px-6 pt-6 flex-shrink-0 border-b border-slate-700 pb-4">
+                    <h2 class="text-lg font-bold text-slate-100">Additional Filters</h2>
+                    <button onclick="hidePanel('secondary-sidebar')" class="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors">Hide</button>
+                </div>
+                <div class="flex-1 px-6 pb-6 overflow-y-auto custom-scrollbar min-h-0">
+                    <div class="filter-section">
+                        <h3 class="text-base font-semibold text-slate-200 mb-4">Delay Ranges</h3>
+                        <div id="delay-range-filters" class="filter-table"></div>
+                    </div>
+                    <div class="filter-section">
+                        <h3 class="text-base font-semibold text-slate-200 mb-4">Classes</h3>
+                        <div id="class-filters" class="filter-table"></div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Secondary show button -->
+            <button id="secondary-sidebar-show-btn" onclick="showPanel('secondary-sidebar')" class="absolute left-0 top-[60%] -translate-y-1/2 panel-toggle-btn text-white px-3 py-2 rounded-r-xl shadow hidden z-50 font-medium">
+                More
+            </button>
+
+            <!-- Main Content Area -->
+            <main id="main-content" class="flex-1 flex flex-col overflow-hidden" style="margin-left:32rem">
+                <div class="flex-1 p-6 overflow-y-auto custom-scrollbar">
+                    <header class="mb-8 flex-shrink-0">
+                        <h2 id="page-title" class="text-3xl font-bold text-slate-100 mb-2">Overview</h2>
+                        <p class="text-slate-300">Current selection: <span id="current-selection" class="font-semibold text-blue-400">All Offices</span></p>
+                    </header>
+
+                    <!-- Cards Section -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 flex-shrink-0">
+                        <div class="glass-card p-6 rounded-2xl border-l-4 border-blue-500">
+                            <p class="text-slate-400 text-sm font-medium mb-2">Total Applications</p>
+                            <p id="total-applications" class="text-3xl font-bold text-slate-100">0</p>
+                        </div>
+                        <div class="glass-card p-6 rounded-2xl border-l-4 border-green-500">
+                            <p class="text-slate-400 text-sm font-medium mb-2">Avg Qtn. Delay (Days)</p>
+                            <p id="avg-qtn-delay" class="text-3xl font-bold text-slate-100">0</p>
+                        </div>
+                        <div class="glass-card p-6 rounded-2xl border-l-4 border-yellow-500">
+                            <p class="text-slate-400 text-sm font-medium mb-2">Avg WO Delay (Days)</p>
+                            <p id="avg-wo-delay" class="text-3xl font-bold text-slate-100">0</p>
+                        </div>
+                        <div class="glass-card p-6 rounded-2xl border-l-4 border-red-500">
+                            <p class="text-slate-400 text-sm font-medium mb-2">Avg SC Delay (Days)</p>
+                            <p id="avg-sc-delay" class="text-3xl font-bold text-slate-100">0</p>
+                        </div>
+                    </div>
+
+                    <!-- Data Table Section -->
+                    <div class="data-table p-6 rounded-2xl shadow-2xl flex-1 flex flex-col">
+                        <h3 class="text-xl font-semibold text-slate-100 mb-6 flex-shrink-0">Application Data</h3>
+                        <div class="flex-1 overflow-auto rounded-xl">
+                            <table class="min-w-full">
+                                <thead class="sticky top-0">
+                                    <tr>
+                                        <th class="text-left">Appl No.</th>
+                                        <th class="text-left">CCC</th>
+                                        <th class="text-left">Name</th>
+                                        <th class="text-left">Load (W)</th>
+                                        <th class="text-left">Phase</th>
+                                        <th class="text-left">Class</th>
+                                        <th class="text-left">Pole</th>
+                                        <th class="text-left">WO No.</th>
+                                        <th class="text-left">Delay SC</th>
+                                        <th class="text-left">Delay WO</th>
+                                        <th class="text-left">Phone</th>
+                                        <th class="text-left">Agency</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="data-table-body" class="divide-y divide-slate-700"></tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination controls -->
+                        <div id="pagination-controls" class="flex justify-between items-center mt-6 pt-6 border-t border-slate-700 flex-shrink-0">
+                            <button id="prev-btn" class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
+                                Previous
+                            </button>
+                            <span id="page-info" class="text-sm text-slate-300 font-medium">Page 1 of 1</span>
+                            <button id="next-btn" class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- Overlay for mobile view -->
+        <div id="sidebar-overlay" class="fixed inset-0 bg-black opacity-50 z-40 hidden md:hidden"></div>
+    </div>
+
+    <!-- Login Modal -->
+    <div id="login-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 backdrop-blur-sm">
+        <div class="modal-content rounded-2xl shadow-2xl p-8 w-96 max-w-full mx-4">
+            <h2 class="text-2xl font-bold text-slate-100 mb-6">Login</h2>
+            <label class="block mb-3 text-sm font-medium text-slate-300">Enter PIN</label>
+            <input type="password" id="pin-input" class="w-full bg-slate-700 border border-slate-600 rounded-xl p-3 mb-6 text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" placeholder="Enter your PIN" />
+
+            <div class="flex justify-between gap-3">
+                <button id="login-btn" class="btn-primary flex-1">Login</button>
+                <button id="view-all-btn" class="bg-slate-600 hover:bg-slate-500 text-white px-6 py-3 rounded-xl font-medium transition-all flex-1">View All</button>
+            </div>
+            <p id="login-error" class="text-red-400 text-sm mt-4 hidden">Invalid PIN. Try again.</p>
+        </div>
+    </div>
+
+    <!-- Application Details Modal -->
+    <div id="app-modal" class="fixed inset-0 bg-black bg-opacity-75 hidden flex items-center justify-center z-50 backdrop-blur-sm">
+        <div class="modal-content rounded-2xl shadow-2xl w-full max-w-2xl mx-4 p-6 overflow-y-auto max-h-[90vh]">
+            <div class="flex justify-between items-center border-b border-slate-700 pb-4 mb-6">
+                <h2 class="text-xl font-bold text-slate-100">Application Details</h2>
+                <button id="modal-close" class="text-slate-400 hover:text-slate-200 text-2xl leading-none transition-colors">&times;</button>
+            </div>
+            <div id="modal-content" class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                <!-- Filled dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA AND HIERARCHY SETUP ---
+        const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRsUU2viBvYhSgR0RFwmZ1H8LkYCats9roQVCKvQeoU7dzg6ryR6IWZex9FT9tksp_DEM23ZgQ28Iyo/pub?gid=794942572&single=true&output=csv';
+        const authUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRGTMdZNG8ktcf_-CWlhykS75a9RVAL5YHIN7glhcxIDOZssS_c_OmQEx_TzG8Hz1Wa1FbMIKxlHVeR/pub?gid=0&single=true&output=csv";
+        let authorizedCCCs = "All";
+
+        const cccHierarchyOriginal = {
+            "6610000": {
+                name: "MALDA",
+                divisions: {
+                    "6611000": {
+                        name: "MALDA",
+                        cccs: {
+                            "6611101": "MANIKCHAK", "6611102": "GOLAPGANJ", "6611103": "BAISHNABNAGAR",
+                            "6611104": "KALIACHAK", "6611105": "MOTHABARI", "6611106": "SUJAPUR",
+                            "6611107": "RATHBARI", "6611108": "FULBARI", "6611109": "MOKDUMPUR"
+                        }
+                    },
+                    "6613000": {
+                        name: "GAZOLE",
+                        cccs: {
+                            "6613101": "GAZOL", "6613102": "AIHO", "6613103": "PANDUA",
+                            "6613104": "BAMONGOLA", "6613105": "OLD MALDA"
+                        }
+                    },
+                    "6612000": {
+                        name: "CHANCHAL",
+                        cccs: {
+                            "6612101": "BHALUKA", "6612102": "SAMSI", "6612103": "PARANPUR",
+                            "6612104": "CHANCHAL", "6612105": "MALATIPUR", "6612106": "HARISHCHANDRAPUR",
+                            "6612107": "KUSHIDA"
+                        }
+                    }
+                }
+            },
+            "6620000": {
+                name: "UTTAR DINAJPUR",
+                divisions: {
+                    "6621000": {
+                        name: "RAIGANJ",
+                        cccs: {
+                            "6621101": "ITAHAR", "6621102": "HEMTABAD", "6621103": "KALIYAGANJ",
+                            "6621104": "RAIGANJ", "6621105": "BIRNAGAR", "6621106": "KARANDIGHI"
+                        }
+                    },
+                    "6622000": {
+                        name: "ISLAMPUR",
+                        cccs: {
+                            "6622101": "ISLAMPUR", "6622102": "CHOPRA", "6622103": "DALKHOLA",
+                            "6622104": "GOALPOKHER", "6622105": "KANKI"
+                        }
+                    }
+                }
+            },
+            "6630000": {
+                name: "DAKSHIN DINAJPUR",
+                divisions: {
+                    "6631000": {
+                        name: "BALURGHAT",
+                        cccs: {
+                            "6631101": "BALURGHAT", "6631102": "TAPAN", "6631103": "KUMARGANJ",
+                            "6631104": "HILI", "6631105": "PATIRAM"
+                        }
+                    },
+                    "6632000": {
+                        name: "BUNIADPUR",
+                        cccs: {
+                            "6632101": "BUNIADPUR", "6632102": "KUSMANDI", "6632103": "HARIRAMPUR",
+                            "6632104": "GANGARAMPUR"
+                        }
+                    }
+                }
+            }
+        };
+        
+        function toTitleCase(str) {
+            return str.toLowerCase().split(' ').map(word => {
+                return word.charAt(0).toUpperCase() + word.slice(1);
+            }).join(' ');
+        }
+        
+        function convertNamesToProperCase(hierarchy) {
+            for (const regionCode in hierarchy) {
+                const region = hierarchy[regionCode];
+                if (region.name) {
+                    region.name = toTitleCase(region.name);
+                }
+                
+                if (region.divisions) {
+                    for (const divisionCode in region.divisions) {
+                        const division = region.divisions[divisionCode];
+                        if (division.name) {
+                            division.name = toTitleCase(division.name);
+                        }
+                        
+                        if (division.cccs) {
+                            for (const cccCode in division.cccs) {
+                                division.cccs[cccCode] = toTitleCase(division.cccs[cccCode]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        convertNamesToProperCase(cccHierarchyOriginal);
+
+        let cccHierarchy = JSON.parse(JSON.stringify(cccHierarchyOriginal));
+        let rawData = [];
+        let filteredData = [];
+        let filters = {
+            ccc_code: 'All',
+            poleNonPole: 'All',
+            agriNonAgri: 'All',
+            delayRange: 'All',
+            connectionClass: 'All'
+        };
+        let expandedNodes = new Set();
+        let uniqueDelayRanges = [];
+        let uniqueClasses = [];
+
+        let currentPage = 1;
+        const rowsPerPage = 20;
+
+        const loadingDiv = document.getElementById('loading');
+        const officeHierarchyEl = document.getElementById('office-hierarchy');
+        const totalApplicationsEl = document.getElementById('total-applications');
+        const totalLoadEl = document.getElementById('total-load');
+        const avgWODelayEl = document.getElementById('avg-wo-delay');
+        const avgSCDelayEl = document.getElementById('avg-sc-delay');
+        const dataTableBodyEl = document.getElementById('data-table-body');
+        const currentSelectionEl = document.getElementById('current-selection');
+        const poleNonPoleFiltersEl = document.getElementById('pole-nonpole-filters');
+        const agriNonAgriFiltersEl = document.getElementById('agri-nonagri-filters');
+        const delayRangeFiltersEl = document.getElementById('delay-range-filters');
+        const classFiltersEl = document.getElementById('class-filters');
+        
+        // Mobile sidebar toggle
+        const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
+        const sidebarEl = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+        // Pagination elements
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const pageInfoEl = document.getElementById('page-info');
+
+        // --- UTILITY FUNCTIONS ---
+        
+        // Simple CSV parser
+        function parseCSV(csv) {
+            const lines = csv.split('\n').filter(line => line.trim() !== '');
+            const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+            const data = [];
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.trim().replace(/"/g, ''));
+                if (values.length === headers.length) {
+                    const obj = {};
+                    headers.forEach((header, index) => {
+                        obj[header] = values[index];
+                    });
+                    data.push(obj);
+                }
+            }
+            return data;
+        }
+        
+        // Function to get a list of all CCC codes under a given hierarchy code
+        function getFilteredCCCs(code) {
+            let cccList = [];
+            const findCCCs = (node) => {
+                if (node.cccs) {
+                    cccList.push(...Object.keys(node.cccs));
+                }
+                if (node.divisions) {
+                    Object.values(node.divisions).forEach(findCCCs);
+                }
+            };
+            
+            if (cccHierarchyOriginal[code]) {
+                findCCCs(cccHierarchyOriginal[code]);
+            } else {
+                for (const region of Object.values(cccHierarchyOriginal)) {
+                    if (region.divisions[code]) {
+                        findCCCs(region.divisions[code]);
+                        return cccList;
+                    }
+                }
+                return [code];
+            }
+            return cccList;
+        }
+
+        // Calculate counts for each level of the hierarchy
+        function calculateHierarchyCounts(data, hierarchy) {
+            // Reset counts
+            for (const regionCode in hierarchy) {
+                hierarchy[regionCode].count = 0;
+                for (const divisionCode in hierarchy[regionCode].divisions) {
+                    hierarchy[regionCode].divisions[divisionCode].count = 0;
+                    for (const cccCode in hierarchy[regionCode].divisions[divisionCode].cccs) {
+                        const originalName = cccHierarchyOriginal[regionCode].divisions[divisionCode].cccs[cccCode];
+                        hierarchy[regionCode].divisions[divisionCode].cccs[cccCode] = {
+                            name: originalName,
+                            count: 0
+                        };
+                    }
+                }
+            }
+
+            // Calculate counts
+            data.forEach(row => {
+                for (const regionCode in hierarchy) {
+                    for (const divisionCode in hierarchy[regionCode].divisions) {
+                        if (hierarchy[regionCode].divisions[divisionCode].cccs[row.CCC_CODE]) {
+                            hierarchy[regionCode].divisions[divisionCode].cccs[row.CCC_CODE].count++;
+                            hierarchy[regionCode].divisions[divisionCode].count++;
+                            hierarchy[regionCode].count++;
+                            return;
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Get unique delay ranges
+function getUniqueDelayRanges(data) {
+    const rangeMap = new Map();  // DelayRange → DelaySerial
+
+    data.forEach(row => {
+        if (row.DelayRange && row.DelaySerial) {
+            rangeMap.set(row.DelayRange, parseInt(row.DelaySerial));
+        }
+    });
+
+    // Sort by DelaySerial
+    const sortedRanges = Array.from(rangeMap.entries())
+        .sort((a, b) => a[1] - b[1])   // numeric ascending
+        .map(entry => entry[0]);
+
+    return ['All', ...sortedRanges];
+}
+
+
+        // Get unique connection classes
+        function getUniqueClasses(data) {
+            const uniqueClassSet = new Set();
+            data.forEach(row => {
+                if (row.CONN_CLASS) {
+                    uniqueClassSet.add(row.CONN_CLASS);
+                }
+            });
+            const sortedClasses = Array.from(uniqueClassSet).sort();
+            return ['All', ...sortedClasses];
+        }
+
+        // Calculate delay range counts
+        function calculateDelayRangeCounts(data, ranges) {
+            const counts = {};
+            ranges.forEach(range => {
+                counts[range] = 0;
+            });
+
+            data.forEach(row => {
+                if (row.DelayRange && counts.hasOwnProperty(row.DelayRange)) {
+                    counts[row.DelayRange]++;
+                }
+            });
+
+            counts['All'] = data.length;
+            return counts;
+        }
+
+        // Calculate connection class counts
+        function calculateClassCounts(data, classes) {
+            const counts = {};
+            classes.forEach(cls => {
+                counts[cls] = 0;
+            });
+
+            data.forEach(row => {
+                if (row.CONN_CLASS && counts.hasOwnProperty(row.CONN_CLASS)) {
+                    counts[row.CONN_CLASS]++;
+                }
+            });
+
+            counts['All'] = data.length;
+            return counts;
+        }
+
+        // Calculate Pole/Non-Pole and Agri/Non-Agri counts
+        function calculatePolesAgriCounts(data) {
+            const counts = {
+                pole: 0,
+                nonPole: 0,
+                agri: 0,
+                nonAgri: 0
+            };
+            
+            data.forEach(row => {
+                const poles = parseFloat(row.NO_OF_POLES);
+                if (poles > 0) {
+                    counts.pole++;
+                } else {
+                    counts.nonPole++;
+                }
+
+                if (row.CONN_CLASS === 'A') {
+                    counts.agri++;
+                } else {
+                    counts.nonAgri++;
+                }
+            });
+            
+            return counts;
+        }
+        
+        // Build the collapsible hierarchy
+        function buildHierarchy(container, hierarchy) {
+            container.innerHTML = '';
+
+            // Add "All" option
+            const allOption = document.createElement('div');
+            allOption.className = `filter-hierarchy-item ${filters.ccc_code === 'All' ? 'selected' : ''}`;
+            allOption.innerHTML = `
+                <div class="label-container">
+                    <input type="radio" name="ccc_code" value="All" ${filters.ccc_code === 'All' ? 'checked' : ''} class="form-radio text-blue-600 mr-2" />
+                    <span class="text-slate-200">All Offices</span>
+                </div>
+                <span class="count-pill">${filteredData.length}</span>
+            `;
+            container.appendChild(allOption);
+            allOption.addEventListener('click', (e) => {
+                if (e.target.tagName !== 'INPUT') {
+                    allOption.querySelector('input').checked = true;
+                }
+                filters.ccc_code = 'All';
+                currentPage = 1;
+                updateCurrentSelection('all', 'Offices');
+                renderDashboard();
+            });
+
+            // Build hierarchy
+            for (const regionCode in hierarchy) {
+                const region = hierarchy[regionCode];
+                const isRegionSelected = filters.ccc_code === regionCode;
+                const isRegionExpanded = expandedNodes.has(regionCode);
+
+                // Region element
+                const regionEl = document.createElement('div');
+                regionEl.className = `filter-hierarchy-item ${isRegionSelected ? 'selected' : ''}`;
+                regionEl.innerHTML = `
+                    <div class="label-container">
+                        <svg class="w-3 h-3 toggle-icon ${isRegionExpanded ? 'expanded' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                        </svg>
+                        <input type="radio" name="ccc_code" value="${regionCode}" ${isRegionSelected ? 'checked' : ''} class="form-radio text-blue-600 mr-2" />
+                        <span class="text-sm text-slate-200">${region.name}</span>
+                    </div>
+                    <span class="count-pill">${region.count}</span>
+                `;
+                container.appendChild(regionEl);
+
+                const toggleIcon = regionEl.querySelector('.toggle-icon');
+                const radioInput = regionEl.querySelector('input');
+
+                // Toggle functionality
+                toggleIcon.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (expandedNodes.has(regionCode)) {
+                        expandedNodes.delete(regionCode);
+                    } else {
+                        expandedNodes.add(regionCode);
+                    }
+                    renderDashboard();
+                });
+
+                // Selection functionality
+                regionEl.addEventListener('click', (e) => {
+                    if (e.target === toggleIcon) return;
+                    if (e.target.tagName !== 'INPUT') {
+                        radioInput.checked = true;
+                    }
+                    filters.ccc_code = regionCode;
+                    currentPage = 1;
+                    updateCurrentSelection('region', region.name);
+                    renderDashboard();
+                });
+
+                // Division container
+                const divisionsContainer = document.createElement('div');
+                divisionsContainer.style.display = isRegionExpanded ? 'block' : 'none';
+                
+                for (const divisionCode in region.divisions) {
+                    const division = region.divisions[divisionCode];
+                    const isDivisionSelected = filters.ccc_code === divisionCode;
+                    const isDivisionExpanded = expandedNodes.has(divisionCode);
+
+                    const divisionEl = document.createElement('div');
+                    divisionEl.className = `filter-hierarchy-item pl-4 ${isDivisionSelected ? 'selected' : ''}`;
+                    divisionEl.innerHTML = `
+                        <div class="label-container">
+                            <svg class="w-3 h-3 toggle-icon ${isDivisionExpanded ? 'expanded' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                            </svg>
+                            <input type="radio" name="ccc_code" value="${divisionCode}" ${isDivisionSelected ? 'checked' : ''} class="form-radio text-blue-600 mr-2" />
+                            <span class="text-sm text-slate-200">${division.name}</span>
+                        </div>
+                        <span class="count-pill">${division.count}</span>
+                    `;
+                    divisionsContainer.appendChild(divisionEl);
+
+                    const divToggleIcon = divisionEl.querySelector('.toggle-icon');
+                    const divRadioInput = divisionEl.querySelector('input');
+
+                    // Division toggle functionality
+                    divToggleIcon.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (expandedNodes.has(divisionCode)) {
+                            expandedNodes.delete(divisionCode);
+                        } else {
+                            expandedNodes.add(divisionCode);
+                        }
+                        renderDashboard();
+                    });
+
+                    // Division selection functionality
+                    divisionEl.addEventListener('click', (e) => {
+                        if (e.target === divToggleIcon) return;
+                        if (e.target.tagName !== 'INPUT') {
+                            divRadioInput.checked = true;
+                        }
+                        filters.ccc_code = divisionCode;
+                        currentPage = 1;
+                        updateCurrentSelection('division', division.name);
+                        renderDashboard();
+                    });
+
+                    // CCC container
+                    const cccsContainer = document.createElement('div');
+                    cccsContainer.style.display = isDivisionExpanded ? 'block' : 'none';
+                    
+                    for (const cccCode in division.cccs) {
+                        const ccc = division.cccs[cccCode];
+                        const isCccSelected = filters.ccc_code === cccCode;
+
+                        const cccEl = document.createElement('div');
+                        cccEl.className = `filter-hierarchy-item pl-8 ${isCccSelected ? 'selected' : ''}`;
+                        cccEl.innerHTML = `
+                            <div class="label-container">
+                                <div class="w-3 h-3 mr-1"></div>
+                                <input type="radio" name="ccc_code" value="${cccCode}" ${isCccSelected ? 'checked' : ''} class="form-radio text-blue-600 mr-2" />
+                                <span class="text-sm text-slate-200">${ccc.name}</span>
+                            </div>
+                            <span class="count-pill">${ccc.count}</span>
+                        `;
+                        cccsContainer.appendChild(cccEl);
+                        
+                        cccEl.addEventListener('click', (e) => {
+                            if (e.target.tagName !== 'INPUT') {
+                                cccEl.querySelector('input').checked = true;
+                            }
+                            filters.ccc_code = cccCode;
+                            currentPage = 1;
+                            updateCurrentSelection('ccc', ccc.name);
+                            renderDashboard();
+                        });
+                    }
+                    divisionsContainer.appendChild(cccsContainer);
+                }
+                container.appendChild(divisionsContainer);
+            }
+        }
+
+        // Render Pole/Non-Pole and Agri/Non-Agri filters
+        function renderPolesAgriFilters(counts) {
+            // Pole / Non-Pole
+            poleNonPoleFiltersEl.innerHTML = '';
+            const poleNonPoleOptions = ['All', 'Pole', 'Non-Pole'];
+            const poleNonPoleValues = { 'All': counts.totalApplications, 'Pole': counts.pole, 'Non-Pole': counts.nonPole };
+            poleNonPoleOptions.forEach(option => {
+                const isSelected = filters.poleNonPole === option;
+                const div = document.createElement('div');
+                div.className = `filter-table-row ${isSelected ? 'selected' : ''}`;
+                div.innerHTML = `
+                    <div class="filter-table-label">
+                        <input type="radio" name="pole-nonpole" value="${option}" ${isSelected ? 'checked' : ''} class="form-radio text-blue-600 text-sm" />
+                        <span class="ml-2 text-sm text-slate-200">${option}</span>
+                    </div>
+                    <div class="filter-table-count">
+                        <span class="text-sm">${poleNonPoleValues[option]}</span>
+                    </div>
+                `;
+                poleNonPoleFiltersEl.appendChild(div);
+                
+                div.addEventListener('click', (e) => {
+                    if (e.target.tagName !== 'INPUT') {
+                        div.querySelector('input').checked = true;
+                    }
+                    filters.poleNonPole = option;
+                    currentPage = 1;
+                    renderDashboard();
+                });
+            });
+
+            // Agri / Non-Agri
+            agriNonAgriFiltersEl.innerHTML = '';
+            const agriNonAgriOptions = ['All', 'Agri', 'Non-Agri'];
+            const agriNonAgriValues = { 'All': counts.totalApplications, 'Agri': counts.agri, 'Non-Agri': counts.nonAgri };
+            agriNonAgriOptions.forEach(option => {
+                const isSelected = filters.agriNonAgri === option;
+                const div = document.createElement('div');
+                div.className = `filter-table-row ${isSelected ? 'selected' : ''}`;
+                div.innerHTML = `
+                    <div class="filter-table-label">
+                        <input type="radio" name="agri-nonagri" value="${option}" ${isSelected ? 'checked' : ''} class="form-radio text-blue-600 text-sm" />
+                        <span class="ml-2 text-sm text-slate-200">${option}</span>
+                    </div>
+                    <div class="filter-table-count">
+                        <span class="text-sm">${agriNonAgriValues[option]}</span>
+                    </div>
+                `;
+                agriNonAgriFiltersEl.appendChild(div);
+
+                div.addEventListener('click', (e) => {
+                    if (e.target.tagName !== 'INPUT') {
+                        div.querySelector('input').checked = true;
+                    }
+                    filters.agriNonAgri = option;
+                    currentPage = 1;
+                    renderDashboard();
+                });
+            });
+        }
+        
+        // Render delay range filters
+        function renderDelayRanges(delayCounts) {
+            delayRangeFiltersEl.innerHTML = '';
+
+            uniqueDelayRanges.forEach(rangeLabel => {
+                const isSelected = filters.delayRange === rangeLabel;
+                const div = document.createElement('div');
+                div.className = `filter-table-row ${isSelected ? 'selected' : ''}`;
+                div.innerHTML = `
+                    <div class="filter-table-label">
+                        <input type="radio" name="delay-range" value="${rangeLabel}" ${isSelected ? 'checked' : ''} class="form-radio text-blue-600 text-sm" />
+                        <span class="ml-2 text-sm text-slate-200">${rangeLabel}</span>
+                    </div>
+                    <div class="filter-table-count">
+                        <span class="text-sm">${delayCounts[rangeLabel] || 0}</span>
+                    </div>
+                `;
+                delayRangeFiltersEl.appendChild(div);
+
+                div.addEventListener('click', (e) => {
+                    if (e.target.tagName !== 'INPUT' || e.target.type !== 'radio') {
+                        div.querySelector('input[type="radio"]').checked = true;
+                    }
+                    filters.delayRange = rangeLabel;
+                    currentPage = 1;
+                    renderDashboard();
+                });
+            });
+        }
+
+        // Render connection class filters
+        function renderClassFilters(classCounts) {
+            classFiltersEl.innerHTML = '';
+
+            uniqueClasses.forEach(classLabel => {
+                const isSelected = filters.connectionClass === classLabel;
+                const div = document.createElement('div');
+                div.className = `filter-table-row ${isSelected ? 'selected' : ''}`;
+                div.innerHTML = `
+                    <div class="filter-table-label">
+                        <input type="radio" name="connection-class" value="${classLabel}" ${isSelected ? 'checked' : ''} class="form-radio text-blue-600 text-sm" />
+                        <span class="ml-2 text-sm text-slate-200">${classLabel}</span>
+                    </div>
+                    <div class="filter-table-count">
+                        <span class="text-sm">${classCounts[classLabel] || 0}</span>
+                    </div>
+                `;
+                classFiltersEl.appendChild(div);
+
+                div.addEventListener('click', (e) => {
+                    if (e.target.tagName !== 'INPUT' || e.target.type !== 'radio') {
+                        div.querySelector('input[type="radio"]').checked = true;
+                    }
+                    filters.connectionClass = classLabel;
+                    currentPage = 1;
+                    renderDashboard();
+                });
+            });
+        }
+        
+        // Update current selection display
+        function updateCurrentSelection(type, name) {
+            if (type === 'all') {
+                currentSelectionEl.textContent = 'All Offices';
+            } else if (type === 'region') {
+                currentSelectionEl.innerHTML = `<strong class="text-slate-200">Region:</strong> ${name}`;
+            } else if (type === 'division') {
+                currentSelectionEl.innerHTML = `<strong class="text-slate-200">Division:</strong> ${name}`;
+            } else if (type === 'ccc') {
+                 currentSelectionEl.innerHTML = `<strong class="text-slate-200">CCC:</strong> ${name}`;
+            }
+        }
+
+        // Filter data based on current filter state
+        function filterData(data) {
+            let cccListToFilter;
+            if (filters.ccc_code === 'All') {
+                cccListToFilter = Object.values(cccHierarchyOriginal).flatMap(region =>
+                    Object.values(region.divisions).flatMap(division =>
+                        Object.keys(division.cccs)
+                    )
+                );
+            } else {
+                cccListToFilter = getFilteredCCCs(filters.ccc_code);
+            }
+
+            return data.filter(row => {
+                const cccMatch = cccListToFilter.includes(row.CCC_CODE);
+                const poleNonPoleMatch = filters.poleNonPole === 'All' ||
+                                         (filters.poleNonPole === 'Pole' && parseFloat(row.NO_OF_POLES) > 0) ||
+                                         (filters.poleNonPole === 'Non-Pole' && (parseFloat(row.NO_OF_POLES) === 0 || row.NO_OF_POLES === ''));
+                const agriNonAgriMatch = filters.agriNonAgri === 'All' ||
+                                         (filters.agriNonAgri === 'Agri' && row.CONN_CLASS === 'A') ||
+                                         (filters.agriNonAgri === 'Non-Agri' && row.CONN_CLASS !== 'A');
+                const delayRangeMatch = filters.delayRange === 'All' || row.DelayRange === filters.delayRange;
+                const classMatch = filters.connectionClass === 'All' || row.CONN_CLASS === filters.connectionClass;
+                                         
+                return cccMatch && poleNonPoleMatch && agriNonAgriMatch && delayRangeMatch && classMatch;
+            });
+        }
+
+        // Update dashboard cards
+        function updateCards(data) {
+            const totalApplications = data.length;
+
+            // Average WO Delay
+            const totalWODelay = data.reduce((sum, row) => sum + (parseInt(row.DelayInWO) || 0), 0);
+            const avgWODelay = totalApplications > 0 ? (totalWODelay / totalApplications).toFixed(2) : 0;
+
+            // Average SC Delay
+            const totalSCDelay = data.reduce((sum, row) => sum + (parseInt(row.DelayInSC) || 0), 0);
+            const avgSCDelay = totalApplications > 0 ? (totalSCDelay / totalApplications).toFixed(2) : 0;
+
+            // Average Quotation Delay
+            const totalQtnDelay = data.reduce((sum, row) => sum + (parseInt(row.DelayInQtn) || 0), 0);
+            const avgQtnDelay = totalApplications > 0 ? (totalQtnDelay / totalApplications).toFixed(2) : 0;
+
+            totalApplicationsEl.textContent = totalApplications.toLocaleString();
+            document.getElementById("avg-qtn-delay").textContent = avgQtnDelay;
+            avgWODelayEl.textContent = avgWODelay;
+            avgSCDelayEl.textContent = avgSCDelay;
+        }
+
+        // Convert numeric days into human readable format (Y, M, W, D)
+        function formatDelay(days) {
+            days = parseInt(days) || 0;
+            if (days <= 0) return "0D";
+
+            const years = Math.floor(days / 365);
+            days %= 365;
+            const months = Math.floor(days / 30);
+            days %= 30;
+            const weeks = Math.floor(days / 7);
+            days %= 7;
+
+            let parts = [];
+            if (years > 0) parts.push(`${years}Y`);
+            if (months > 0) parts.push(`${months}M`);
+            if (weeks > 0) parts.push(`${weeks}W`);
+            if (days > 0) parts.push(`${days}D`);
+
+            return parts.join(" ");
+        }
+
+        // Update data table with pagination
+        function updateTable(data, page) {
+            dataTableBodyEl.innerHTML = '';
+
+            // Sort by DelayInSC (highest first)
+            const sortedData = [...data].sort((a, b) => (parseInt(b.DelayInSC) || 0) - (parseInt(a.DelayInSC) || 0));
+
+            const start = (page - 1) * rowsPerPage;
+            const end = start + rowsPerPage;
+            const paginatedData = sortedData.slice(start, end);
+
+            paginatedData.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.className = 'table-row hover:bg-slate-800/50 cursor-pointer transition-all duration-200';
+
+                // Format WO No. with red if missing
+                const woCell = row.WON && row.WON.trim() !== "" 
+                    ? row.WON 
+                    : `<span class="text-red-400 font-semibold">Not Issued</span>`;
+
+                // Lookup CCC name from hierarchy
+                let cccName = row.CCC_CODE;
+                for (const region of Object.values(cccHierarchyOriginal)) {
+                    for (const div of Object.values(region.divisions)) {
+                        if (div.cccs[row.CCC_CODE]) {
+                            cccName = div.cccs[row.CCC_CODE];
+                        }
+                    }
+                }
+
+                tr.innerHTML = `
+                    <td class="table-cell">${row.APPL_NO}</td>
+                    <td class="table-cell">${cccName}</td>
+                    <td class="table-cell">${row.NAME}</td>
+                    <td class="table-cell">${(parseFloat(row.LOAD_WATTS) || 0).toLocaleString()}</td>
+                    <td class="table-cell">${row.APPLIED_PHASE}</td>
+                    <td class="table-cell">${row.CONN_CLASS}</td>
+                    <td class="table-cell">${row.NO_OF_POLES || 0}</td>
+                    <td class="table-cell">${woCell}</td>
+                    <td class="table-cell">${formatDelay(row.DelayInSC)}</td>
+                    <td class="table-cell">${formatDelay(row.DelayInWO)}</td>
+                    <td class="table-cell">${row.PHONE_NO || ""}</td>
+                    <td class="table-cell">${row.AGENCY_NAME || ""}</td>
+                `;
+
+                dataTableBodyEl.appendChild(tr);
+                tr.addEventListener("click", () => openAppModal(row));
+            });
+        }
+        
+        // Update pagination controls
+        function updatePagination(data) {
+            const totalPages = Math.ceil(data.length / rowsPerPage);
+            pageInfoEl.textContent = `Page ${currentPage} of ${totalPages}`;
+            prevBtn.disabled = currentPage === 1;
+            nextBtn.disabled = currentPage === totalPages || totalPages === 0;
+
+            // (Re)bind events each time
+            prevBtn.onclick = () => changePage(currentPage - 1, data);
+            nextBtn.onclick = () => changePage(currentPage + 1, data);
+        }
+
+        function changePage(page, data) {
+            const totalPages = Math.ceil(data.length / rowsPerPage);
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            updateTable(data, currentPage);
+            updatePagination(data);
+        }
+        
+        // Main render function
+        function renderDashboard() {
+            filteredData = filterData(rawData);
+            
+            const cccHierarchyDynamic = JSON.parse(JSON.stringify(cccHierarchyOriginal));
+            calculateHierarchyCounts(filteredData, cccHierarchyDynamic);
+            const dynamicDelayCounts = calculateDelayRangeCounts(filteredData, uniqueDelayRanges);
+            const dynamicClassCounts = calculateClassCounts(filteredData, uniqueClasses);
+            const polesAgriCounts = calculatePolesAgriCounts(filteredData);
+            polesAgriCounts.totalApplications = filteredData.length;
+
+            buildHierarchy(officeHierarchyEl, cccHierarchyDynamic);
+            renderDelayRanges(dynamicDelayCounts);
+            renderClassFilters(dynamicClassCounts);
+            renderPolesAgriFilters(polesAgriCounts);
+            
+            updateCards(filteredData);
+            updateTable(filteredData, currentPage);
+            updatePagination(filteredData);
+        }
+
+        // Initialize the application
+        async function init() {
+            try {
+                // Load authorization data
+                const authResp = await fetch(authUrl);
+                const authCSV = await authResp.text();
+                const authData = parseCSV(authCSV);
+
+                // Handle login button
+                document.getElementById("login-btn").addEventListener("click", () => {
+                    const pin = document.getElementById("pin-input").value.trim();
+                    const user = authData.find(u => u.PIN === pin);
+
+                    if (user) {
+                        if (user["nsc-autho"] && user["nsc-autho"].trim() !== "") {
+                            const codes = user["nsc-autho"].split(";").map(x => x.trim());
+
+                            // Expand office/division/region codes into CCC list
+                            authorizedCCCs = codes.flatMap(code => getFilteredCCCs(code));
+
+                            // Pick the first code for selection display
+                            const selCode = codes[0];
+                            let selName = "All Offices";
+                            let selType = "all";
+
+                            // Detect type
+                            if (cccHierarchyOriginal[selCode]) {
+                                selName = cccHierarchyOriginal[selCode].name;
+                                selType = "region";
+                            } else {
+                                for (const regionCode in cccHierarchyOriginal) {
+                                    const region = cccHierarchyOriginal[regionCode];
+                                    if (region.divisions[selCode]) {
+                                        selName = region.divisions[selCode].name;
+                                        selType = "division";
+                                        break;
+                                    }
+                                    for (const divCode in region.divisions) {
+                                        if (region.divisions[divCode].cccs[selCode]) {
+                                            selName = region.divisions[divCode].cccs[selCode];
+                                            selType = "ccc";
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            updateCurrentSelection(selType, selName);
+                        } else {
+                            // If nsc-autho empty → show all
+                            authorizedCCCs = "All";
+                            updateCurrentSelection("all", "Offices");
+                        }
+
+                        document.getElementById("login-modal").style.display = "none";
+                        loadDashboard();
+                    } else {
+                        document.getElementById("login-error").classList.remove("hidden");
+                    }
+                });
+
+                // Handle "View All"
+                document.getElementById("view-all-btn").addEventListener("click", () => {
+                    authorizedCCCs = "All";
+                    updateCurrentSelection("all", "Offices");
+                    document.getElementById("login-modal").style.display = "none";
+                    loadDashboard();
+                });
+
+            } catch (err) {
+                console.error("Error loading auth sheet:", err);
+                alert("Failed to load authorization data.");
+            }
+        }
+
+        // Dashboard data loader
+        async function loadDashboard() {
+            try {
+                // Fetch and parse main data
+                const response = await fetch(csvUrl);
+                if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+
+                const csvText = await response.text();
+                rawData = parseCSV(csvText);
+
+                // Restrict by authorized CCCs if not "All"
+                if (authorizedCCCs !== "All") {
+                    rawData = rawData.filter(r => authorizedCCCs.includes(r.CCC_CODE));
+                }
+
+                // Setup unique filters
+                uniqueDelayRanges = getUniqueDelayRanges(rawData);
+                uniqueClasses = getUniqueClasses(rawData);
+
+                // Update header with latest date
+                const todayDates = rawData.map(r => {
+                    if (!r.TODAY) return null;
+                    const [dd, mm, yyyy] = r.TODAY.split(/[-/]/);
+                    return new Date(`${yyyy}-${mm}-${dd}`);
+                }).filter(d => d && !isNaN(d));
+                if (todayDates.length > 0) {
+                    const maxDate = new Date(Math.max(...todayDates));
+                    const formatted = `${String(maxDate.getDate()).padStart(2, "0")}-${String(maxDate.getMonth() + 1).padStart(2, "0")}-${maxDate.getFullYear()}`;
+                    document.getElementById("page-title").textContent = `Pending NSC (${formatted})`;
+                }
+
+                // Initial render
+                renderDashboard();
+                loadingDiv.style.display = "none";
+
+            } catch (err) {
+                console.error("Error loading dashboard:", err);
+                loadingDiv.innerHTML = '<p class="text-xl text-red-400">Failed to load dashboard data.</p>';
+            }
+        }
+
+        window.onload = init;
+
+        function openAppModal(row) {
+            const modal = document.getElementById("app-modal");
+            const content = document.getElementById("modal-content");
+            content.innerHTML = "";
+
+            Object.keys(row).forEach(key => {
+                if (key === "DelaySerial" || key === "TODAY") return; // skip these
+
+                const label = document.createElement("div");
+                label.className = "font-semibold text-slate-400 truncate";
+                label.textContent = key;
+
+                const value = document.createElement("div");
+                value.className = "text-slate-200 truncate";
+                value.textContent = row[key] || "";
+
+                content.appendChild(label);
+                content.appendChild(value);
+            });
+
+            modal.classList.remove("hidden");
+        }
+
+        // Panel visibility management
+        let isSidebarVisible = true;
+        let isSecondaryVisible = true;
+
+        function updateMainMargin() {
+            // Small screens: let panels overlay, main always full width
+            if (window.innerWidth < 768) {
+                document.getElementById('main-content').style.marginLeft = "0";
+                return;
+            }
+
+            const leftRem = (isSidebarVisible ? 16 : 0) + (isSecondaryVisible ? 16 : 0);
+            document.getElementById('main-content').style.marginLeft = `${leftRem}rem`;
+        }
+
+        function hidePanel(id) {
+            const panel = document.getElementById(id);
+            const btn = document.getElementById(id + "-show-btn");
+
+            if (id === "sidebar") {
+                panel.classList.add("-translate-x-full");
+                isSidebarVisible = false;
+            } else if (id === "secondary-sidebar") {
+                // secondary needs -200% so it clears off the left
+                panel.classList.add("-translate-x-[200%]");
+                isSecondaryVisible = false;
+            }
+            btn.classList.remove("hidden");
+            updateMainMargin();
+        }
+
+        function showPanel(id) {
+            const panel = document.getElementById(id);
+            const btn = document.getElementById(id + "-show-btn");
+
+            if (id === "sidebar") {
+                panel.classList.remove("-translate-x-full");
+                isSidebarVisible = true;
+            } else if (id === "secondary-sidebar") {
+                panel.classList.remove("-translate-x-[200%]");
+                isSecondaryVisible = true;
+            }
+            btn.classList.add("hidden");
+            updateMainMargin();
+        }
+
+        window.addEventListener("resize", updateMainMargin);
+        document.addEventListener("DOMContentLoaded", updateMainMargin);
+
+        // Modal functionality
+        (function () {
+            const modal = document.getElementById("app-modal");
+            const closeBtn = document.getElementById("modal-close");
+
+            // Open (keep as a global so table row click can call it)
+            window.openAppModal = function (row) {
+                const modal = document.getElementById("app-modal");
+                const content = document.getElementById("modal-content");
+                content.innerHTML = "";
+
+                Object.keys(row).forEach(key => {
+                    if (key === "DelaySerial" || key === "TODAY") return; // skip these
+
+                    const label = document.createElement("div");
+                    label.className = "font-semibold text-slate-400 truncate";
+                    label.textContent = key;
+
+                    const value = document.createElement("div");
+                    value.className = "text-slate-200 truncate";
+                    value.textContent = row[key] || "";
+
+                    content.appendChild(label);
+                    content.appendChild(value);
+                });
+
+                modal.classList.remove("hidden");
+            };
+
+            // Close helpers
+            function hideModal() {
+                modal.classList.add("hidden");
+            }
+
+            // Close on ×
+            closeBtn.addEventListener("click", hideModal);
+
+            // Close when clicking the backdrop (outside the white box)
+            modal.addEventListener("click", (e) => {
+                if (e.target === modal) hideModal();
+            });
+
+            // Close on ESC
+            document.addEventListener("keydown", (e) => {
+                if (e.key === "Escape") hideModal();
+            });
+        })();
+    </script>
+</body>
+</html>
