@@ -9,11 +9,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" rel="stylesheet"/>
 
-    <!-- Leaflet Compass Plugin (MUST be loaded after Leaflet core) -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-compass/dist/leaflet-compass.css">
-    <script src="https://unpkg.com/leaflet-compass/dist/leaflet-compass.min.js"></script>
-
+    <!-- PapaParse for CSV parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <!-- Leaflet PolylineDecorator for line styling -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-polylinedecorator/1.6.0/leaflet.polylineDecorator.min.js"></script>
     <!-- Font Awesome CDN for professional icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
@@ -70,7 +68,7 @@
             background: white;
             border: 1px solid black;
             padding: 8px;
-            opacity: 100%;
+            opacity: 80%;
             max-height: 520px; /* Set a fixed height */
             box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.2);
             z-index: 10000; /* Ensure it stays above the map */
@@ -150,6 +148,11 @@
             display: flex;
             align-items: center;
             gap: 5px;
+        }
+
+        /* Change cursor to pointer on hover for interactive elements */
+        .custom-symbol:hover, .leaflet-interactive:hover {
+            cursor: pointer;
         }
 #search-container {
     opacity: 0;
@@ -325,7 +328,30 @@
             z-index: 10001;
         }
 
-        /* Distance measurement tool button - REMOVED */
+        /* Custom Compass Styles */
+        #custom-compass {
+            position: fixed;
+            bottom: 130px; /* Adjusted to be above the measure tool */
+            left: 10px; /* Aligned with zoom control left */
+            z-index: 10001; /* Above other map elements */
+            width: 30px; /* Small size */
+            height: 30px;
+            background-color: white;
+            border: 1px solid #ccc;
+            border-radius: 50%; /* Circular shape */
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: default; /* Not interactive */
+            pointer-events: none; /* Allow map interaction through it */
+        }
+
+        #custom-compass svg {
+            width: 70%; /* Make SVG fill the container */
+            height: 70%;
+            fill: #333; /* Dark color for the arrow */
+        }
 
         /* Mobile-specific styles */
         @media (max-width: 768px) {
@@ -409,7 +435,10 @@
                 right: 10px;
             }
 
-            /* Distance measurement tool button - REMOVED */
+            #custom-compass {
+                bottom: 50px; /* Aligned with zoom control bottom */
+                left: 10px; /* Aligned with zoom control left */
+            }
         }
         /* Allow gestures to pass through non-interactive elements */
 #map-legend,
@@ -423,18 +452,8 @@
 #filter-container {
     touch-action: auto; /* Allow gestures inside inputs */
 }
-@media (max-width: 768px) {
-#summary-card {
-        display: none !important;
-    }
-}
-
 /* Hide Leaflet Compass on screens wider than 768px (desktop/tablet landscape) */
-@media (min-width: 769px) {
-    .leaflet-control-compass {
-        display: none !important;
-    }
-}
+/* Removed specific media query for leaflet-control-compass as it's no longer used */
     </style>
 </head>
 <body>
@@ -510,20 +529,30 @@
     <div id="status-message"></div>
     <div id="map"></div>
 
-    <!-- Distance Measurement Tool Button - REMOVED -->
+    <!-- Custom Compass Element -->
+    <div id="custom-compass">
+        <svg viewBox="0 0 100 100">
+            <polygon points="50,10 60,30 50,25 40,30" fill="red"/>
+            <polygon points="50,10 60,30 50,90 40,30" fill="#333"/>
+            <circle cx="50" cy="50" r="5" fill="white"/>
+            <text x="45" y="20" font-family="Arial" font-size="15" fill="white" font-weight="bold">N</text>
+        </svg>
+    </div>
 
 
 <script>
     // Global variables
     const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT8hYE6YBbfVQDJhgB3cIWqrrGrjMQAQ22mcmCJTOa995gCH-xBAfsAPpBvNYS1KlYIFMRHM59iGB7K/pub?output=csv';
+    // IMPORTANT: Replace this URL with the one you published for your "Taps" sheet
+    const tapsCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT8hYE6YBbfVQDJhgB3cIWqrrGrjMQAQ22mcmCJTOa995gCH-xBAfsAPpBvNYS1KlYIFMRHM59iGB7K/pub?gid=2098159409&single=true&output=csv';
     const geojsonUrl = 'https://raw.githubusercontent.com/shuklaneerajdev/IndiaStateTopojsonFiles/master/WestBengal.geojson';
     let map, worldPolygon, stateLayer, maskLayer;
     let selectedFilters = {Region: new Set(), Division: new Set(), Remarks: new Set()};
     let allData = []; // Store all data for filtering
+    let allTapsData = []; // Store all tap data
     let substationMap = {}; // Stores {SubstationName: {lat, lng, marker}}
     let loadingDataComplete = false;
     let allLineLabels = []; // Store all connection line labels for toggling
-    // let measureControl; // No longer needed as a global for the new plugin
 
     // Show status message and update progress bar
     function showStatus(message, duration = 3000, progress = null) {
@@ -597,17 +626,7 @@
         };
 
         L.control.layers(baseMaps).addTo(map);
-        if (L.control.compass) {
-            L.control.compass({
-                position: 'topright',
-                autoActive: true,  // Start active so it’s visible
-                showDigit: true,   // Show degrees
-                textErr: 'GPS not available'
-            }).addTo(map);
-        } else {
-            console.warn("Leaflet Compass plugin not loaded.");
-        }
-
+        
         // Add Leaflet.PolylineMeasure control
         if (typeof L.control.polylineMeasure !== 'undefined') {
             L.control.polylineMeasure({
@@ -622,6 +641,28 @@
         } else {
             console.error("Leaflet.PolylineMeasure plugin not loaded. Distance measurement tool will not be available.");
         }
+
+        // Add a popup on map click to show coordinates in DMS format
+        map.on('click', function(e) {
+            // Do not show coordinate popup if a marker was clicked, as it has its own popup.
+            if (e.originalEvent.target.closest('.leaflet-marker-icon')) {
+                return;
+            }
+
+            const lat = e.latlng.lat;
+            const lng = e.latlng.lng;
+
+            const dmsLat = decimalToDMS(lat, true);
+            const dmsLng = decimalToDMS(lng, false);
+            const coordinates = `${dmsLat} ${dmsLng}`;
+
+            const popupContent = `
+                <div style="font-family: Arial, sans-serif; font-size: 12px; text-align: center;">
+                    <b>Coordinates</b><br>${coordinates}<br>
+                    <button onclick="navigator.clipboard.writeText('${coordinates}')" style="margin-top: 5px; font-size: 10px; padding: 2px 4px; cursor: pointer;">Copy</button>
+                </div>`;
+            L.popup().setLatLng(e.latlng).setContent(popupContent).openOn(map);
+        });
 
         return map;
     }
@@ -639,6 +680,19 @@
         
         if (dms.includes('S') || dms.includes('W')) decimal *= -1;
         return decimal;
+    }
+
+    // Convert decimal coordinates to Degrees/Decimal Minutes format
+    function decimalToDMS(decimal, isLat) {
+        const hemisphere = isLat ? (decimal >= 0 ? 'N' : 'S') : (decimal >= 0 ? 'E' : 'W');
+        const absDecimal = Math.abs(decimal);
+        const degrees = Math.floor(absDecimal);
+        const minutes = (absDecimal - degrees) * 60;
+        
+        // Format minutes to 3 decimal places
+        const formattedMinutes = minutes.toFixed(3);
+
+        return `${hemisphere}${degrees}°${formattedMinutes}'`;
     }
 
     // Fetch and parse CSV data
@@ -660,16 +714,8 @@
                     skipEmptyLines: true,
                     complete: (results) => {
                         if (results.data && results.data.length > 0) {
-                            // Filter out rows without valid coordinates
-                            const validData = results.data.filter(entry => 
-                                entry.LATITUDE && 
-                                entry.LONGITUDE && 
-                                !isNaN(dmsToDecimal(entry.LATITUDE)) && 
-                                !isNaN(dmsToDecimal(entry.LONGITUDE))
-                            );
-                            
-                            showStatus(`Loaded ${validData.length} substations`, 0, 40); // 40% progress
-                            resolve(validData);
+                            // Resolve with all parsed data; validation will happen in the calling function
+                            resolve(results.data);
                         } else {
                             console.error("CSV parsing returned no data");
                             showStatus("Error: No data found in CSV", 5000, 40);
@@ -714,6 +760,7 @@
             
             // Add state boundaries to map
             stateLayer = L.geoJSON(data, {
+                interactive: false, // Make non-clickable
                 style: {
                     color: "black",
                     weight: 1.5,
@@ -734,6 +781,7 @@
             
             // Add mask layer
             maskLayer = L.geoJSON(worldPolygon, {
+                interactive: false, // Make non-clickable
                 style: {
                     color: "white",
                     weight: 1,
@@ -834,6 +882,7 @@
         // Initialize counts for connections within this function call
         let solidConnectionCount = 0; 
         let dashedConnectionCount = 0; 
+        let tapConnectionCount = 0;
 
         // Create a map to track substations and their visibility
         let substationVisibility = {};
@@ -912,25 +961,27 @@
                 
                 // For connection lines between substations
                 let shouldBeVisible = false;
-                
-                // Extract substation names from the popup if available
-                if (layer._substations) {
-                    // If we've already cached the substation names for this line
-                    shouldBeVisible = layer._substations.every(name => 
-                        substationVisibility[name]);
-                } else if (layer._latlngs && layer._latlngs.length >= 2) {
-                    // This is a simplification - in reality, we'd need to match line endpoints to markers
+
+                // Check if it's a regular connection or a tap connection
+                if (layer._substations) { // Regular connection
+                    shouldBeVisible = layer._substations.every(name => substationVisibility[name]);
+                } else if (layer._tapInfo) { // Tap connection
+                    const { tapped, source } = layer._tapInfo;
+                    shouldBeVisible = substationVisibility[tapped];
+                }
+                else if (layer._latlngs && layer._latlngs.length >= 2) {
+                    // Fallback for lines without metadata (should be rare)
                     let isConnectingVisibleMarkers = false;
-                    
+
                     for (let marker of visibleMarkers) {
                         let markerPos = marker.getLatLng();
                         let firstPoint = layer._latlngs[0];
                         let lastPoint = layer._latlngs[layer._latlngs.length - 1];
-                        
+
                         // Check if this line connects to this marker (approximate)
-                        if ((Math.abs(markerPos.lat - firstPoint.lat) < 0.0001 && 
+                        if ((Math.abs(markerPos.lat - firstPoint.lat) < 0.0001 &&
                             Math.abs(markerPos.lng - firstPoint.lng) < 0.0001) ||
-                            (Math.abs(markerPos.lat - lastPoint.lat) < 0.0001 && 
+                            (Math.abs(markerPos.lat - lastPoint.lat) < 0.0001 &&
                             Math.abs(markerPos.lng - lastPoint.lng) < 0.0001)) {
                             isConnectingVisibleMarkers = true;
                             break;
@@ -958,6 +1009,11 @@
                         dashedConnectionCount++;
                     } else {
                         solidConnectionCount++;
+                    }
+
+                    // If it's a tap, increment the tap counter
+                    if (layer._tapInfo) {
+                        tapConnectionCount++;
                     }
                     
                 } else {
@@ -995,7 +1051,8 @@
         // Update connection counts in window object for summary use
         window.connectionCounts = {
             solid: solidConnectionCount,
-            dashed: dashedConnectionCount
+            dashed: dashedConnectionCount,
+            taps: tapConnectionCount
         };
 
         showStatus(`Displaying ${filteredData.length} substations`);
@@ -1017,6 +1074,57 @@
         if (maskLayer) {
             maskLayer.bringToBack();
         }
+    }
+
+    // Plot tap connections from the Taps sheet
+    function plotTaps(tapsData, substationMap) {
+        if (!tapsData || tapsData.length === 0) {
+            console.log("No tap data to plot.");
+            return;
+        }
+
+        let tapsAdded = 0;
+        tapsData.forEach(tap => {
+            const tappedSubstation = tap.TappedSubstation ? tap.TappedSubstation.trim() : null;
+            const sourceStart = tap.SourceFeederStart ? tap.SourceFeederStart.trim() : null;
+            const sourceEnd = tap.SourceFeederEnd ? tap.SourceFeederEnd.trim() : null;
+            const tapLat = dmsToDecimal(tap.TapPointLatitude);
+            const tapLng = dmsToDecimal(tap.TapPointLongitude);
+
+            // Ensure all required data is present and valid
+            if (tappedSubstation && sourceStart && sourceEnd && !isNaN(tapLat) && !isNaN(tapLng) && substationMap[tappedSubstation]) {
+                const to = substationMap[tappedSubstation];
+                const from = [tapLat, tapLng];
+
+                const isDashed = tap.LineStyle === "dashed";
+                const color = tap.Colour ? tap.Colour.trim() : "green";
+
+                let tapLine = L.polyline([from, [to.lat, to.lng]], {
+                    color: color,
+                    weight: 3,
+                    dashArray: isDashed ? "5,5" : null,
+                    opacity: 0.9
+                }).addTo(map);
+
+                // Attach metadata for filtering
+                tapLine._tapInfo = {
+                    tapped: tappedSubstation,
+                    source: [sourceStart, sourceEnd]
+                };
+
+                tapLine.bringToFront();
+                tapsAdded++;
+            } else {
+                console.warn("Skipping invalid tap entry:", tap);
+            }
+        });
+
+        // Update the global taps count for the summary card
+        if (window.connectionCounts) {
+            window.connectionCounts.taps = tapsAdded;
+        }
+
+        console.log(`Added ${tapsAdded} tap connections to the map.`);
     }
 
     // Plot map data (substations and connections)
@@ -1062,7 +1170,7 @@
                         ${symbol}
                     </div>`,
                         iconSize: iconSize,
-                        iconAnchor: iconAnchor
+                        iconAnchor: iconAnchor,
                     })
                 }).addTo(map)
                     .bindTooltip(entry.Substation, {permanent: true, direction: "top", className: "leaflet-tooltip"})
@@ -1080,6 +1188,8 @@
             if (entry['Connected to']) {
                 let connections = entry['Connected to'].split(':').map(s => s.trim());
                 let labels = entry['RL'] ? entry['RL'].split(':').map(s => s.trim()) : [];
+                let conductorSizes = entry['ConductorSize'] ? String(entry['ConductorSize']).split(':').map(s => s.trim()) : [];
+                let peakLoads = entry['PeakLoad'] ? String(entry['PeakLoad']).split(':').map(s => s.trim()) : [];
 
                 connections.forEach((target, index) => {
                     if (substationMap[target] && substationMap[entry.Substation.trim()]) { // Use trimmed name
@@ -1115,6 +1225,30 @@
                                 opacity: 0.9
                             }).addTo(map);
                             
+                            // Attach feeder data and click event for popup
+                            const feederInfo = {
+                                conductor: conductorSizes[index] || "N/A",
+                                load: peakLoads[index] || "N/A",
+                                source: entry.Substation.trim(),
+                                target: target
+                            };
+
+                            combinedLine.on('click', function(e) {
+                                const info = feederInfo;
+                                const popupContent = `
+                                    <div style="font-family: Arial, sans-serif; font-size: 12px; text-align: left; min-width: 150px;">
+                                        <b style="text-align: center; display: block;">Feeder Details</b>
+                                        <b>From:</b> ${info.source}<br>
+                                        <b>To:</b> ${info.target}<br>
+                                        <b>Conductor:</b> ${info.conductor}<br>
+                                        <b>Peak Load:</b> ${info.load}
+                                    </div>`;
+                                L.popup().setLatLng(e.latlng).setContent(popupContent).openOn(map);
+                                
+                                // Prevent the map's click event (which shows coordinates) from firing
+                                L.DomEvent.stopPropagation(e);
+                            });
+
                             // Store the connected substations with the line for filtering
                             combinedLine._substations = [entry.Substation.trim(), target]; // Use trimmed name
                             
@@ -1168,7 +1302,8 @@
         // Store connection counts globally
         window.connectionCounts = {
             solid: solidConnections,
-            dashed: dashedConnections
+            dashed: dashedConnections,
+            taps: 0 // Initialize taps, will be updated by plotTaps
         };
         
         console.log(`Added ${markersAdded} markers and ${connectionsAdded} connections to the map`);
@@ -1272,17 +1407,20 @@
         });
 
         // Get connection counts (use defaults if not set yet)
-        const connectionCounts = window.connectionCounts || { solid: 0, dashed: 0 };
+        const connectionCounts = window.connectionCounts || { solid: 0, dashed: 0, taps: 0 };
         
         // Update the summary card with the separated counts and add connection info
         document.getElementById("summary-card").innerHTML = `
             <h4 style="align-items: center; background: white; padding: 5px; border-radius: 5px; box-shadow: 0 0 5px rgba(0,0,0,0.2); margin-bottom: 2px;">
                 33/11kV SS: ${ssCount} / ${ssMVA.toFixed(2)} MVA | 
                 GSS: ${gssCount} / ${gssMVA.toFixed(2)} MVA | 
-                Total: ${ssCount + gssCount} / ${(ssMVA + gssMVA).toFixed(2)} MVA
+                Total: ${ssCount + gssCount} Nos. / ${(ssMVA + gssMVA).toFixed(2)} MVA
             </h4>
             <h4 style="align-items: center; background: white; padding: 5px; border-radius: 5px; box-shadow: 0 0 5px rgba(0,0,0,0.2); margin-top: 2px;">
-                33kV Feeders: ${connectionCounts.solid} Existing | ${connectionCounts.dashed} Proposed | ${connectionCounts.solid + connectionCounts.dashed} Total
+                Feeders: ${connectionCounts.solid} Existing | ${connectionCounts.dashed} Proposed | Total: ${connectionCounts.solid + connectionCounts.dashed}
+            </h4>
+            <h4 style="align-items: center; background: white; padding: 5px; border-radius: 5px; box-shadow: 0 0 5px rgba(0,0,0,0.2); margin-top: 2px; color: red;">
+                Tapping Sources: ${connectionCounts.taps}
             </h4>
         `;
     }
@@ -1382,7 +1520,16 @@
             
             while (!success && retries < maxRetries) {
                 try {
-                    allData = await fetchCSV(csvUrl); // Progress updated inside this function
+                    let rawData = await fetchCSV(csvUrl); // Fetch raw data
+                    
+                    // Filter for entries with valid coordinates before storing
+                    allData = rawData.filter(entry => 
+                        entry.LATITUDE && 
+                        entry.LONGITUDE && 
+                        !isNaN(dmsToDecimal(entry.LATITUDE)) && 
+                        !isNaN(dmsToDecimal(entry.LONGITUDE))
+                    );
+                    showStatus(`Loaded ${allData.length} substations`, 0, 40); // 40% progress
                     success = true;
                 } catch (error) {
                     retries++;
@@ -1396,6 +1543,12 @@
                 throw new Error("Failed to load data after multiple retries");
             }
 
+            // Fetch Taps data
+            if (tapsCsvUrl && tapsCsvUrl !== 'YOUR_TAPS_SHEET_PUBLISHED_CSV_URL_HERE') {
+                showStatus("Fetching tapping point data...", 0, 65); // 65% progress
+                allTapsData = await fetchCSV(tapsCsvUrl); // This now correctly fetches all tap rows
+            }
+
             // Create filter options
             showStatus("Creating filter options...", 0, 70); // 70% progress
             createFilterOptions(allData);
@@ -1403,6 +1556,9 @@
             // Plot initial data
             plotMapData(allData); // Progress updated inside this function
             
+            // Plot taps data after substations are mapped
+            plotTaps(allTapsData, substationMap);
+
             // Populate the table
             showStatus("Populating data table...", 0, 95); // 95% progress
             populateTable(allData);
