@@ -1,0 +1,1532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Power Map</title>
+    
+    <!-- Leaflet Core Library (MUST be loaded first) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" rel="stylesheet"/>
+
+    <!-- Leaflet Compass Plugin (MUST be loaded after Leaflet core) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-compass/dist/leaflet-compass.css">
+    <script src="https://unpkg.com/leaflet-compass/dist/leaflet-compass.min.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-polylinedecorator/1.6.0/leaflet.polylineDecorator.min.js"></script>
+    <!-- Font Awesome CDN for professional icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
+    <!-- Leaflet.PolylineMeasure plugin for distance measurement -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.polylinemeasure@3.0.0/Leaflet.PolylineMeasure.css" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet.polylinemeasure@3.0.0/Leaflet.PolylineMeasure.js"></script>
+
+    <style>
+        @keyframes fade {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        #loading-screen {
+            position: fixed;
+            width: 100%;
+            height: 100vh;
+            background: white;
+            display: flex;
+            flex-direction: column; /* Changed to column for progress bar */
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            font-size: 24px;
+            font-family: Arial, sans-serif;
+            font-weight: bold;
+        }
+
+        #loading-icon {
+            /* Removed animation */
+            margin-bottom: 10px; /* Adjusted margin for text below */
+            font-size: 48px; /* Keep it visible but not rotating */
+        }
+
+        /* Removed @keyframes spin as it's no longer used */
+
+        #map {
+            height: 100vh;
+            background: white;
+        }
+
+        .leaflet-tooltip {
+            background: white;
+            border: 1px solid black;
+            padding: 1px 2px;
+            font-size: 10px;
+        }
+
+        #floating-table {
+            position: fixed;
+            top: 140px; /* Increased top position to lower the table */
+            right: 20px;
+            background: white;
+            border: 1px solid black;
+            padding: 8px;
+            opacity: 100%;
+            max-height: 520px; /* Set a fixed height */
+            box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.2);
+            z-index: 10000; /* Ensure it stays above the map */
+            font-family: Arial, sans-serif;
+            overflow: hidden; /* Hide overflow from table head */
+            display: none; /* Hidden by default */
+        }
+
+        #table-container {
+            max-height: 500px; /* Adjust height for scrolling */
+            overflow-y: auto; /* Enable vertical scroll */
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 1px;
+            text-align: left;
+        }
+
+        th {
+            background: #f4f4f4;
+        }
+
+        #map {
+            height: 100vh;
+            z-index: 0; /* Ensures the map stays behind */
+        }
+
+        #floating-table h3 {
+            margin: 0;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        #floating-table table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        #floating-table th, #floating-table td {
+            border: 1px solid black;
+            padding: 1px;
+            font-size: 10px;
+            text-align: center;
+        }
+
+        #floating-table th {
+            background: #f0f0f0;
+            position: sticky;
+            top: 0;
+        }
+
+        #map-legend {
+            position: fixed;
+            bottom: 10px;
+            right: 14px;
+            background: rgba(174, 172, 172, 0.475);
+            padding: 5px 10px;
+            border: 1px solid black;
+            box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.3);
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            z-index: 1000;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            gap: 15px; /* Spacing between items */
+            white-space: nowrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+#search-container {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+#search-container:hover {
+    opacity: 1;
+}
+
+        #search-container {
+            position: fixed;
+            top: 20px; /* Adjusted top position for more clearance */
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 5px 10px;
+            border: 1px solid black;
+            box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.3);
+            z-index: 99999; /* Increased z-index */
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 270px; /* Fixed width */
+        }
+
+        #search-box {
+            width: 250px;
+            padding: 2px;
+            border: 1px solid gray;
+            font-size: 14px;
+        }
+
+        #search-results {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            max-height: 200px;
+            overflow-y: auto;
+            width: 100%;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 0 0 4px 4px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            position: absolute;
+            top: 100%;
+            left: 0;
+            z-index: 100000; /* Increased z-index to be higher than summary card and floating table */
+            display: none;
+        }
+        #search-results li {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+
+        }
+
+        #search-results li:hover {
+            background: #f5f5f5;
+        }
+
+        #search-results li:last-child {
+            border-bottom: none;
+        }
+        #summary-card {
+            position: fixed;
+            bottom: 40px; /* Place above legend */
+            right: 14px; /* Align with legend's right edge */
+            background: rgba(255, 255, 255, 0);
+            padding: 1px;
+            border: 1px solid rgba(0, 0, 0, 0);
+            box-shadow: 2px 2px 10px rgba(0, 0, 0, 0);
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            z-index: 10000;
+            text-align: right;
+            font-weight: lighter;
+        }
+
+
+        #filter-container {
+            position: fixed;
+            top: 110px;
+            left: 10px;
+            background: white;
+            padding: 10px;
+            border: 1px solid black;
+            box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.3);
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            z-index: 1000;
+            border-radius: 5px;
+            max-height: 500px;
+            overflow-y: auto;
+            /* Added for smooth transition */
+            transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+            display: none; /* Hidden by default */
+        }
+
+        #filter-container.show-filters {
+            display: block; /* Show when this class is added */
+        }
+
+        .filter-category {
+            font-weight: bold;
+            margin-top: 5px;
+        }
+
+        .filter-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+
+        /* Progress Bar Styles */
+        #progress-container {
+            width: 60%; /* Made narrower */
+            background-color: #f3f3f3;
+            border-radius: 5px;
+            margin-top: 5px; /* Reduced margin-top */
+            overflow: hidden;
+            height: 15px; /* Increased height of the progress bar */
+        }
+
+        #progress-bar {
+            width: 0%;
+            height: 100%;
+            background-color: #4CAF50; /* Green color for progress */
+            text-align: center;
+            color: white;
+            line-height: 15px; /* Center text vertically, adjusted for new height */
+            transition: width 0.5s ease-in-out; /* Smooth transition for width changes */
+            font-size: 12px; /* Slightly larger font for percentage */
+            font-weight: normal;
+        }
+
+        /* Loading text below progress bar */
+        #loading-text {
+            margin-top: 5px; /* Reduced space between progress bar and text */
+            font-size: 14px; /* Slightly smaller font size */
+            font-weight: normal;
+            text-align: center;
+        }
+
+
+
+        /* Toggle Icons for Tables */
+        .toggle-icon {
+            cursor: pointer;
+            font-size: 1.2em;
+            vertical-align: middle;
+            background-color: white;
+            border: 1px solid #ccc;
+            padding: 2px 6px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            z-index: 10001; /* Ensure it's above the tables */
+        }
+
+        #toggle-filter-table-container {
+            position: fixed;
+            top: 110px;
+            left: 10px;
+            z-index: 10001;
+        }
+
+        #toggle-summary-table-container {
+            position: fixed;
+            top: 110px; /* Align with filter table top */
+            right: 20px;
+            z-index: 10001;
+        }
+
+        /* Distance measurement tool button - REMOVED */
+
+        /* Mobile-specific styles */
+        @media (max-width: 768px) {
+            /* Floating table is hidden by default on mobile, JS will toggle display */
+            #floating-table {
+                top: auto;
+                bottom: 70px; /* Position above the FAB */
+                right: 10px;
+                left: auto; /* Ensure it's not bound to the left */
+                width: 200px; /* Compact width */
+                max-height: 50vh; /* Allow scrolling if many filters */
+            }
+            #map-legend {
+                display: none !important;
+            }
+            #filter-container {
+                /* Initially hidden off-screen to the right */
+                top: auto;
+                bottom: 70px; /* Position above the FAB */
+                right: 10px;
+                left: auto; /* Ensure it's not bound to the left */
+                width: 200px; /* Compact width */
+                max-height: 50vh; /* Allow scrolling if many filters */
+                transform: translateX(120%); /* Start off-screen */
+                opacity: 0;
+                pointer-events: none; /* Prevent interaction when hidden */
+            }
+            #filter-container.show-filters {
+                transform: translateX(0); /* Slide in */
+                opacity: 1;
+                pointer-events: auto; /* Enable interaction when shown */
+            }
+            #search-container {
+                width: 50%;              /* Smaller width */
+                left: 50%;               /* Center horizontally */
+                transform: translateX(-50%);
+                top: 10px;               /* Keep same top position */
+            }
+
+            #search-box {
+                width: 100%;             /* Fill container */
+            }
+
+            #map-legend {
+                flex-direction: column; /* Stack legend items vertically */
+                align-items: flex-start;
+                bottom: 10px;
+                right: 10px;
+                left: 10px;
+                width: auto;
+                padding: 3px 5px; /* Make legend tighter */
+                font-size: 10px; /* Smaller font for mobile */
+                gap: 5px; /* Reduce gap between items */
+            }
+            .legend-item {
+                margin-bottom: 2px; /* Reduce margin between legend items */
+            }
+            #summary-card {
+                top: 45px; /* Adjusted position to be just below search input */
+                width: 90%;
+                left: 5%;
+                transform: translateX(0%);
+                padding: 2px; /* Reduced padding for summary card */
+            }
+            #summary-card h4 {
+                padding: 2px; /* Reduced padding for h4 inside summary card */
+            }
+            #filter-fab {
+                display: flex; /* Show FAB on mobile */
+            }
+
+            #toggle-filter-table-container {
+                top: auto;
+                bottom: 70px;
+                left: 10px;
+            }
+
+            #toggle-summary-table-container {
+                top: auto;
+                bottom: 70px;
+                right: 10px;
+            }
+
+            /* Distance measurement tool button - REMOVED */
+        }
+        /* Allow gestures to pass through non-interactive elements */
+#map-legend,
+#summary-card {
+    pointer-events: none;
+}
+
+/* Interactive elements keep clicks but won't block gestures outside them */
+#search-container,
+#floating-table,
+#filter-container {
+    touch-action: auto; /* Allow gestures inside inputs */
+}
+@media (max-width: 768px) {
+#summary-card {
+        display: none !important;
+    }
+}
+
+/* Hide Leaflet Compass on screens wider than 768px (desktop/tablet landscape) */
+@media (min-width: 769px) {
+    .leaflet-control-compass {
+        display: none !important;
+    }
+}
+    </style>
+</head>
+<body>
+    <div id="loading-screen">
+        <div id="loading-icon">⚡</div>
+        <div id="progress-container">
+            <div id="progress-bar"></div>
+        </div>
+        <p id="loading-text">Loading map data...</p>
+    </div>
+
+<div id="toggle-filter-table-container">
+    <span id="toggle-filter-table" class="toggle-icon"><i class="fa-solid fa-filter"></i></span>
+</div>
+
+<div id="filter-container">
+    <h3>Filter Options</h3>
+
+    <!-- Step 1: Show/Hide Labels Checkbox -->
+    <div style="margin-bottom:5px;">
+        <label>
+            <input type="checkbox" id="toggle-labels" checked>
+            Feeder labels
+        </label>
+    </div>
+
+    <div id="filter-options"></div>
+    <button onclick="applyFilters()">Apply Filters</button>
+</div>
+
+<div id="toggle-summary-table-container">
+    <span id="toggle-summary-table" class="toggle-icon"><i class="fa-solid fa-table"></i></span>
+</div>
+
+    <div id="floating-table">
+        <h3>Substations</h3>
+        <div id="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Substation</th>
+                        <th>MVA</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body">
+                    <!-- Data will be populated here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="search-container">
+        <input id="search-box" 
+               oninput="handleSearchInput(event)" 
+               placeholder="Search Substation..." 
+               type="text">
+        <ul id="search-results"></ul>
+    </div>
+    
+<div id="summary-card">
+    <h4 style="align-items: center; color: red;">Total: <span id="total-substations">0</span> no. / <span id="total-capacity">0</span> MVA (including 33/11kV PTRs at GSS)</h4>
+</div>
+
+    <div id="map-legend">
+        <div class="legend-item"><span class="legend-circle" style="color: red;">⬤</span> Existing 33/11kV SS</div>
+        <div class="legend-item"><span class="legend-circle" style="color: rgb(3, 160, 37);">☉</span> GSS</div>
+        <div class="legend-item"><span class="legend-circle" style="color: blue;">⬤</span> Proposed 33/11kV SS</div>
+        <div class="legend-item"><span class="legend-circle" style="color: rgb(0, 0, 0);">⬤</span> Under Construction 33/11kV SS</div>
+        <div class="legend-item"><span style="border-top: 2px solid rgb(255, 0, 0); width: 20px; display: inline-block;"></span> Existing 33kV Feeder</div>
+        <div class="legend-item"><span style="border-top: 2px dashed blue; width: 20px; display: inline-block;"></span> Proposed 33kV Feeder</div>
+    </div>
+
+    <div id="status-message"></div>
+    <div id="map"></div>
+
+    <!-- Distance Measurement Tool Button - REMOVED -->
+
+
+<script>
+    // Global variables
+    const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT8hYE6YBbfVQDJhgB3cIWqrrGrjMQAQ22mcmCJTOa995gCH-xBAfsAPpBvNYS1KlYIFMRHM59iGB7K/pub?output=csv';
+    const geojsonUrl = 'https://raw.githubusercontent.com/shuklaneerajdev/IndiaStateTopojsonFiles/master/WestBengal.geojson';
+    let map, worldPolygon, stateLayer, maskLayer;
+    let selectedFilters = {Region: new Set(), Division: new Set(), Remarks: new Set()};
+    let allData = []; // Store all data for filtering
+    let substationMap = {}; // Stores {SubstationName: {lat, lng, marker}}
+    let loadingDataComplete = false;
+    let allLineLabels = []; // Store all connection line labels for toggling
+    // let measureControl; // No longer needed as a global for the new plugin
+
+    // Show status message and update progress bar
+    function showStatus(message, duration = 3000, progress = null) {
+        const statusEl = document.getElementById('status-message');
+        const progressBar = document.getElementById('progress-bar');
+        const loadingText = document.getElementById('loading-text');
+
+        loadingText.textContent = message; // Update loading text
+
+        if (progress !== null) {
+            progressBar.style.width = `${progress}%`;
+            progressBar.textContent = `${Math.round(progress)}%`; // Display percentage
+        }
+
+        statusEl.style.display = 'block';
+        
+        // Only hide status message if a duration is provided and it's not the final "Map loaded" message
+        if (duration > 0 && progress !== 100) {
+            setTimeout(() => {
+                statusEl.style.display = 'none';
+            }, duration);
+        } else if (progress === 100) {
+            // Keep "Map loaded successfully" visible briefly before hiding loading screen
+            setTimeout(() => {
+                document.getElementById("loading-screen").style.display = "none";
+            }, 1000); // Short delay to show 100%
+        }
+    }
+
+    // Initialize map
+    function initMap() {
+        map = L.map('map', {
+            zoomControl: true,
+            minZoom: 7,
+            zoomAnimation: true,
+            zoomAnimationThreshold: 10,
+            wheelPxPerZoomLevel: 120,
+            inertia: true,
+            inertiaDeceleration: 2000,
+            dragging: true,       // Ensure dragging works
+            touchZoom: true,      // Allow pinch zoom
+            tap: false            // Prevent 300ms delay on mobile
+        }).setView([23.5, 87.5], 7);
+
+        // Google Maps (Roadmap) tile layer
+        const googleStreets = L.tileLayer('http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',{
+            maxZoom: 20,
+            subdomains:['mt0','mt1','mt2','mt3'],
+            attribution: 'Map data &copy; Google'
+        });
+
+        // OpenStreetMap fallback tile layer
+        const openStreetMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        });
+
+        // "No map" option - a blank tile layer
+        const noMap = L.tileLayer('', {
+            attribution: 'No Map Selected',
+            maxZoom: 20 // Still allow zooming even if no tiles are loaded
+        });
+
+        // Add Google Streets as default
+        googleStreets.addTo(map);
+
+        // Optional: Add a layer control to switch between map types
+        const baseMaps = {
+            "Google Maps": googleStreets,
+            "OpenStreetMap": openStreetMap,
+            "No Map": noMap // Added "No Map" option
+        };
+
+        L.control.layers(baseMaps).addTo(map);
+        if (L.control.compass) {
+            L.control.compass({
+                position: 'topright',
+                autoActive: true,  // Start active so it’s visible
+                showDigit: true,   // Show degrees
+                textErr: 'GPS not available'
+            }).addTo(map);
+        } else {
+            console.warn("Leaflet Compass plugin not loaded.");
+        }
+
+        // Add Leaflet.PolylineMeasure control
+        if (typeof L.control.polylineMeasure !== 'undefined') {
+            L.control.polylineMeasure({
+                position: 'bottomleft', // Changed position to bottomleft
+                unit: 'kilometres', // Default unit
+                showBearings: false, // Do not show bearings
+                clearMeasurementsOnStop: true, // Clear measurements when tool is deactivated
+                showClearControl: true, // Show a clear button
+                showUnitControl: true // Show unit selection control
+            }).addTo(map);
+            console.log("Leaflet.PolylineMeasure control added successfully.");
+        } else {
+            console.error("Leaflet.PolylineMeasure plugin not loaded. Distance measurement tool will not be available.");
+        }
+
+        // Add a popup on map click to show coordinates in DMS format
+        map.on('click', function(e) {
+            // Do not show coordinate popup if a marker was clicked, as it has its own popup.
+            if (e.originalEvent.target.closest('.leaflet-marker-icon')) {
+                return;
+            }
+
+            const lat = e.latlng.lat;
+            const lng = e.latlng.lng;
+
+            const dmsLat = decimalToDMS(lat, true);
+            const dmsLng = decimalToDMS(lng, false);
+            const coordinates = `${dmsLat} ${dmsLng}`;
+
+            const popupContent = `
+                <div style="font-family: Arial, sans-serif; font-size: 12px; text-align: center;">
+                    <b>Coordinates</b><br>${coordinates}<br>
+                    <button onclick="navigator.clipboard.writeText('${coordinates}')" style="margin-top: 5px; font-size: 10px; padding: 2px 4px; cursor: pointer;">Copy</button>
+                </div>`;
+            L.popup().setLatLng(e.latlng).setContent(popupContent).openOn(map);
+        });
+
+        return map;
+    }
+
+    // Convert DMS coordinates to decimal
+    function dmsToDecimal(dms) {
+        if (!dms || typeof dms !== 'string') return NaN;
+        
+        let parts = dms.match(/[NSWE]?\d+°\d+\.\d+'/g);
+        if (!parts) return NaN;
+        
+        let degrees = parseFloat(parts[0].match(/\d+/)[0]);
+        let minutes = parseFloat(parts[0].match(/\d+\.\d+/g)[0]);
+        let decimal = degrees + minutes / 60;
+        
+        if (dms.includes('S') || dms.includes('W')) decimal *= -1;
+        return decimal;
+    }
+
+    // Convert decimal coordinates to Degrees/Decimal Minutes format
+    function decimalToDMS(decimal, isLat) {
+        const hemisphere = isLat ? (decimal >= 0 ? 'N' : 'S') : (decimal >= 0 ? 'E' : 'W');
+        const absDecimal = Math.abs(decimal);
+        const degrees = Math.floor(absDecimal);
+        const minutes = (absDecimal - degrees) * 60;
+        
+        // Format minutes to 3 decimal places
+        const formattedMinutes = minutes.toFixed(3);
+
+        return `${hemisphere}${degrees}°${formattedMinutes}'`;
+    }
+
+    // Fetch and parse CSV data
+    async function fetchCSV(url) {
+        try {
+            showStatus("Fetching substation data...", 0, 10); // 10% progress
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch CSV: ${response.status}`);
+            }
+            
+            const csvText = await response.text();
+            showStatus("Processing substation data...", 0, 25); // 25% progress
+            
+            return new Promise((resolve) => {
+                Papa.parse(csvText, {
+                    header: true,
+                    dynamicTyping: true,
+                    skipEmptyLines: true,
+                    complete: (results) => {
+                        if (results.data && results.data.length > 0) {
+                            // Filter out rows without valid coordinates
+                            const validData = results.data.filter(entry => 
+                                entry.LATITUDE && 
+                                entry.LONGITUDE && 
+                                !isNaN(dmsToDecimal(entry.LATITUDE)) && 
+                                !isNaN(dmsToDecimal(entry.LONGITUDE))
+                            );
+                            
+                            showStatus(`Loaded ${validData.length} substations`, 0, 40); // 40% progress
+                            resolve(validData);
+                        } else {
+                            console.error("CSV parsing returned no data");
+                            showStatus("Error: No data found in CSV", 5000, 40);
+                            resolve([]);
+                        }
+                    },
+                    error: (error) => {
+                        console.error("CSV parsing error:", error);
+                        showStatus("Error parsing data", 5000, 40);
+                        resolve([]);
+                    }
+                });
+            });
+        } catch (error) {
+            console.error("Error fetching CSV:", error);
+            showStatus("Error loading data. Please check console.", 5000, 10);
+            return [];
+        }
+    }
+
+    // Load GeoJSON for West Bengal state boundary
+    async function loadStateGeoJSON() {
+        try {
+            showStatus("Loading state boundaries...", 0, 50); // 50% progress
+            const response = await fetch(geojsonUrl);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch GeoJSON: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            // Create world polygon for masking
+            worldPolygon = {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [-180, -90], [180, -90], [180, 90], [-180, 90], [-180, -90]
+                    ]]
+                }
+            };
+            
+            // Add state boundaries to map
+            stateLayer = L.geoJSON(data, {
+                style: {
+                    color: "black",
+                    weight: 1.5,
+                    fillOpacity: 0
+                }
+            }).addTo(map);
+            
+            // Process for mask layer
+            data.features.forEach(feature => {
+                if (feature.geometry.type === "Polygon") {
+                    worldPolygon.geometry.coordinates.push(feature.geometry.coordinates[0]);
+                } else if (feature.geometry.type === "MultiPolygon") {
+                    feature.geometry.coordinates.forEach(polygon => {
+                        worldPolygon.geometry.coordinates.push(polygon[0]);
+                    });
+                }
+            });
+            
+            // Add mask layer
+            maskLayer = L.geoJSON(worldPolygon, {
+                style: {
+                    color: "white",
+                    weight: 1,
+                    fillColor: "white",
+                    fillOpacity: 0.85
+                }
+            }).addTo(map);
+            
+            // Fit map to state boundaries
+            map.fitBounds(stateLayer.getBounds());
+            stateLayer.bringToFront();
+            
+            showStatus("State boundaries loaded.", 0, 60); // 60% progress
+            return true;
+        } catch (error) {
+            console.error("Error loading GeoJSON:", error);
+            showStatus("Error loading state boundaries", 5000, 50);
+            return false;
+        }
+    }
+
+    // Create filter options
+    function createFilterOptions(data) {
+        let filterContainer = document.getElementById("filter-options");
+        filterContainer.innerHTML = "";
+
+        // Remove the Apply Filters button if it exists
+        const buttonElement = document.querySelector('#filter-container button');
+        if (buttonElement) {
+            buttonElement.remove();
+        }
+
+        let uniqueValues = {Region: new Set(), Division: new Set(), Remarks: new Set()};
+        let valueCounts = {Region: {}, Division: {}, Remarks: {}};
+
+        // Count occurrences of each value
+        data.forEach(entry => {
+            if (entry.Region && entry.Region.trim()) {
+                const region = entry.Region.trim();
+                uniqueValues.Region.add(region);
+                valueCounts.Region[region] = (valueCounts.Region[region] || 0) + 1;
+            }
+            
+            if (entry.Division && entry.Division.trim()) {
+                const division = entry.Division.trim();
+                uniqueValues.Division.add(division);
+                valueCounts.Division[division] = (valueCounts.Division[division] || 0) + 1;
+            }
+            
+            if (entry.Remarks && entry.Remarks.trim()) {
+                const remarks = entry.Remarks.trim();
+                uniqueValues.Remarks.add(remarks);
+                valueCounts.Remarks[remarks] = (valueCounts.Remarks[remarks] || 0) + 1;
+            }
+        });
+
+        ["Region", "Division", "Remarks"].forEach(category => {
+            let categoryDiv = document.createElement("div");
+            categoryDiv.classList.add("filter-category");
+            categoryDiv.textContent = category;
+            filterContainer.appendChild(categoryDiv);
+
+            Array.from(uniqueValues[category]).sort().forEach(value => {
+                let filterItem = document.createElement("div");
+                filterItem.classList.add("filter-item");
+
+                let checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.checked = true;
+                checkbox.dataset.category = category;
+                checkbox.value = value;
+
+                let label = document.createElement("label");
+                // Add count in parentheses next to each filter value
+                label.textContent = `${value} (${valueCounts[category][value]})`;
+
+                filterItem.appendChild(checkbox);
+                filterItem.appendChild(label);
+                filterContainer.appendChild(filterItem);
+
+                checkbox.addEventListener("change", function() {
+                    if (this.checked) {
+                        selectedFilters[category].add(this.value);
+                    } else {
+                        selectedFilters[category].delete(this.value);
+                    }
+                    // Immediately apply filters when checkbox state changes
+                    applyFilters();
+                });
+
+                selectedFilters[category].add(value);
+            });
+        });
+    }
+
+    // Modified applyFilters function to handle connections properly without disturbing the map layers
+    function applyFilters() {
+        // Initialize counts for connections within this function call
+        let solidConnectionCount = 0; 
+        let dashedConnectionCount = 0; 
+
+        // Create a map to track substations and their visibility
+        let substationVisibility = {};
+        let visibleMarkers = new Set();
+        let visibleLines = new Set();
+        let mapLayersToPreserve = new Set();
+        
+        // Make sure we track the layers we want to preserve
+        if (stateLayer) mapLayersToPreserve.add(stateLayer);
+        if (maskLayer) mapLayersToPreserve.add(maskLayer);
+        map.eachLayer(layer => {
+            if (layer instanceof L.TileLayer) {
+                mapLayersToPreserve.add(layer);
+            }
+        });
+        
+        // Filter data based on selected filters
+        let filteredData = allData.filter(entry =>
+            (!entry.Region || !entry.Region.trim() || selectedFilters.Region.has(entry.Region.trim())) &&
+            (!entry.Division || !entry.Division.trim() || selectedFilters.Division.has(entry.Division.trim())) &&
+            (!entry.Remarks || !entry.Remarks.trim() || selectedFilters.Remarks.has(entry.Remarks.trim()))
+        );
+
+        // Build map of substation names that should be visible
+        filteredData.forEach(entry => {
+            if (entry.Substation) {
+                substationVisibility[entry.Substation.trim()] = true;
+            }
+        });
+
+        // Now update visibility of markers and lines without removing base layers
+        map.eachLayer(layer => {
+            // Skip base map layers that should always remain visible
+            if (mapLayersToPreserve.has(layer)) {
+                return;
+            }
+            
+            if (layer instanceof L.Marker) {
+                // For markers (substations)
+                let isVisible = false;
+                if (layer.getPopup()) {
+                    let popupContent = layer.getPopup().getContent();
+                    let match = popupContent.match(/<b>(.*?)<\/b>/);
+                    if (match && substationVisibility[match[1].trim()]) {
+                        isVisible = true;
+                        visibleMarkers.add(layer);
+                    }
+                }
+                
+                // Update visibility without removing/adding layers
+                if (isVisible) {
+                    if (!layer._isVisible) {
+                        layer.setOpacity(1);
+                        // Also show tooltip if it exists
+                        if (layer.getTooltip()) {
+                            layer.openTooltip();
+                        }
+                        layer._isVisible = true;
+                    }
+                } else {
+                    if (layer._isVisible !== false) {
+                        layer.setOpacity(0);
+                        // Also hide tooltip if it exists
+                        if (layer.getTooltip()) {
+                            layer.closeTooltip();
+                        }
+                        layer._isVisible = false;
+                    }
+                }
+            } 
+            else if (layer instanceof L.Polyline) {
+                // Skip the state boundary lines
+                if (stateLayer && stateLayer._layers && layer._leaflet_id in stateLayer._layers) {
+                    return;
+                }
+                
+                // For connection lines between substations
+                let shouldBeVisible = false;
+                
+                // Extract substation names from the popup if available
+                if (layer._substations) {
+                    // If we've already cached the substation names for this line
+                    shouldBeVisible = layer._substations.every(name => 
+                        substationVisibility[name]);
+                } else if (layer._latlngs && layer._latlngs.length >= 2) {
+                    // This is a simplification - in reality, we'd need to match line endpoints to markers
+                    let isConnectingVisibleMarkers = false;
+                    
+                    for (let marker of visibleMarkers) {
+                        let markerPos = marker.getLatLng();
+                        let firstPoint = layer._latlngs[0];
+                        let lastPoint = layer._latlngs[layer._latlngs.length - 1];
+                        
+                        // Check if this line connects to this marker (approximate)
+                        if ((Math.abs(markerPos.lat - firstPoint.lat) < 0.0001 && 
+                            Math.abs(markerPos.lng - firstPoint.lng) < 0.0001) ||
+                            (Math.abs(markerPos.lat - lastPoint.lat) < 0.0001 && 
+                            Math.abs(markerPos.lng - lastPoint.lng) < 0.0001)) {
+                            isConnectingVisibleMarkers = true;
+                            break;
+                        }
+                    }
+                    
+                    shouldBeVisible = isConnectingVisibleMarkers;
+                }
+                
+                // Update visibility without removing/adding layers
+                if (shouldBeVisible) {
+                    if (!layer._isVisible) {
+                        layer.setStyle({ opacity: 1 });
+                        // Show tooltips attached to this line
+                        if (layer._tooltips) {
+                            layer._tooltips.forEach(tooltip => tooltip.openTooltip());
+                        } else if (layer.getTooltip()) {
+                            layer.openTooltip();
+                        }
+                        layer._isVisible = true;
+                    }
+                    
+                    // Count visible connections by style for summary
+                    if (layer.options && layer.options.dashArray) {
+                        dashedConnectionCount++;
+                    } else {
+                        solidConnectionCount++;
+                    }
+                    
+                } else {
+                    if (layer._isVisible !== false) {
+                        layer.setStyle({ opacity: 0 });
+                        // Hide tooltips attached to this line
+                        if (layer._tooltips) {
+                            layer._tooltips.forEach(tooltip => tooltip.closeTooltip());
+                        } else if (layer.getTooltip()) {
+                            layer.closeTooltip();
+                        }
+                        layer._isVisible = false;
+                    }
+                }
+            }
+            // Also check for standalone tooltips (L.Tooltip instances directly added to the map)
+            else if (layer instanceof L.Tooltip) {
+                // Find parent layer of the tooltip
+                let parentFound = false;
+                map.eachLayer(potentialParent => {
+                    if (potentialParent._tooltip === layer && potentialParent._isVisible === false) {
+                        // If parent is not visible, hide this tooltip
+                        map.removeLayer(layer);
+                        parentFound = true;
+                    }
+                });
+                
+                // If no parent found, might be an orphaned tooltip
+                if (!parentFound && layer._source && !layer._source._isVisible) {
+                    map.removeLayer(layer);
+                }
+            }
+        });
+
+        // Update connection counts in window object for summary use
+        window.connectionCounts = {
+            solid: solidConnectionCount,
+            dashed: dashedConnectionCount
+        };
+
+        showStatus(`Displaying ${filteredData.length} substations`);
+        
+        // Update table and summary with filtered data
+        populateTable(filteredData);
+        updateSummary(filteredData);
+        
+        // Ensure state boundaries and mask remain visible
+        restoreMapBorders();
+    }
+
+    // Restore state boundaries
+    function restoreMapBorders() {
+        if (stateLayer) {
+            stateLayer.bringToFront();
+        }
+        
+        if (maskLayer) {
+            maskLayer.bringToBack();
+        }
+    }
+
+    // Plot map data (substations and connections)
+    function plotMapData(data) {
+        substationMap = {}; // Reset substationMap on each plot
+        let connectionMap = {};
+        let markersAdded = 0;
+        let connectionsAdded = 0;
+        // Add counters for connection types
+        let solidConnections = 0;
+        let dashedConnections = 0;
+
+        // First pass: create all substation markers
+        data.forEach(entry => {
+            let lat = dmsToDecimal(entry.LATITUDE);
+            let lng = dmsToDecimal(entry.LONGITUDE);
+            
+            if (!isNaN(lat) && !isNaN(lng) && entry.Substation) {
+                let markerColor = (entry.Comment && ["black", "white", "red", "blue", "green", "yellow", "purple", "orange"].includes(entry.Comment.trim().toLowerCase()))
+                    ? entry.Comment.trim().toLowerCase()
+                    : "black";
+
+                let symbol = entry.Symbol ? entry.Symbol.trim() : "⚡";
+                let fontSize = entry.SymbolSize && !isNaN(entry.SymbolSize) ? parseInt(entry.SymbolSize) : 18;
+                let size = fontSize * 1.2;
+                let iconSize = [size, size];
+                let iconAnchor = [size / 2, size / 2];
+
+                let marker = L.marker([lat, lng], {
+                    icon: L.divIcon({
+                        className: "custom-symbol",
+                        html: `<div style="
+                        width: ${size}px; 
+                        height: ${size}px; 
+                        display: flex; 
+                        align-items: center; 
+                        justify-content: center; 
+                        border-radius: 50%; 
+                        font-size: ${fontSize}px; 
+                        font-weight: bold; 
+                        color: ${markerColor};
+                        text-align: center;">
+                        ${symbol}
+                    </div>`,
+                        iconSize: iconSize,
+                        iconAnchor: iconAnchor
+                    })
+                }).addTo(map)
+                    .bindTooltip(entry.Substation, {permanent: true, direction: "top", className: "leaflet-tooltip"})
+                    .bindPopup(`<b>${entry.Substation}</b><br>Capacity: ${entry['MVA']}<br>Para-2: ${entry['Para-2'] || 'N/A'}<br>Para-3: ${entry['Para-3'] || 'N/A'}`);
+
+                substationMap[entry.Substation.trim()] = {lat, lng, marker}; // Store with trimmed name
+                markersAdded++;
+            } else {
+                console.warn(`Skipping substation "${entry.Substation}" due to invalid coordinates: LATITUDE=${entry.LATITUDE}, LONGITUDE=${entry.LONGITUDE}`);
+            }
+        });
+
+        // Second pass: create connections between substations
+        data.forEach(entry => {
+            if (entry['Connected to']) {
+                let connections = entry['Connected to'].split(':').map(s => s.trim());
+                let labels = entry['RL'] ? entry['RL'].split(':').map(s => s.trim()) : [];
+
+                connections.forEach((target, index) => {
+                    if (substationMap[target] && substationMap[entry.Substation.trim()]) { // Use trimmed name
+                        let from = substationMap[entry.Substation.trim()];
+                        let to = substationMap[target];
+
+                        let key = [entry.Substation.trim(), target].sort().join("-"); // Use trimmed name for key
+                        if (!connectionMap[key]) {
+                            connectionMap[key] = {count: 0, labels: new Set()};
+                        }
+                        let offsetIndex = connectionMap[key].count++;
+
+                        let dx = to.lng - from.lng;
+                        let dy = to.lat - from.lat;
+                        let length = Math.sqrt(dx * dx + dy * dy);
+
+                        if (length > 0) {
+                            let offsetAmount = 0.0020 * offsetIndex;
+                            let perpX = (-dy / length) * offsetAmount;
+                            let perpY = (dx / length) * offsetAmount;
+
+                            let fromOffset = [from.lat + perpY, from.lng + perpX];
+                            let toOffset = [to.lat + perpY, to.lng + perpX];
+
+                            const isDashed = entry['LineStyle'] === "dashed";
+                            
+                            let combinedLine = L.polyline([
+                                [from.lat, from.lng], fromOffset, toOffset, [to.lat, to.lng]
+                            ], {
+                                color: entry['Colour'] ? entry['Colour'].trim() : "blue",
+                                weight: 3,
+                                dashArray: isDashed ? "5,5" : null,
+                                opacity: 0.9
+                            }).addTo(map);
+                            
+                            // Store the connected substations with the line for filtering
+                            combinedLine._substations = [entry.Substation.trim(), target]; // Use trimmed name
+                            
+                            // Track connection type
+                            if (isDashed) {
+                                dashedConnections++;
+                            } else {
+                                solidConnections++;
+                            }
+                            
+                            combinedLine.bringToFront();
+                            connectionsAdded++;
+
+                            let label = labels[index] || "";
+                            if (label) {
+                                let label1Lat = fromOffset[0] + (2 / 3) * (toOffset[0] - fromOffset[0]);
+                                let label1Lng = fromOffset[1] + (2 / 3) * (toOffset[1] - fromOffset[1]);
+
+                                let label2Lat = toOffset[0] + (2 / 3) * (fromOffset[0] - toOffset[0]);
+                                let label2Lng = toOffset[1] + (2 / 3) * (fromOffset[1] - toOffset[1]);
+
+                                let labelTooltip1 = L.tooltip({
+                                    permanent: true,
+                                    direction: "center",
+                                    className: "line-label"
+                                })
+                                    .setContent(label)
+                                    .setLatLng([label1Lat, label1Lng]);
+
+                                let labelTooltip2 = L.tooltip({
+                                    permanent: true,
+                                    direction: "center",
+                                    className: "line-label"
+                                })
+                                    .setContent(label)
+                                    .setLatLng([label2Lat, label2Lng]);
+                                    allLineLabels.push(labelTooltip1, labelTooltip2);
+
+                                // Store tooltips with the line for visibility control
+                                combinedLine._tooltips = [labelTooltip1, labelTooltip2];
+                                
+                                combinedLine.bindTooltip(labelTooltip1);
+                                combinedLine.bindTooltip(labelTooltip2);
+                            }
+                        }
+                    }
+                });
+            }
+        });
+        
+        // Store connection counts globally
+        window.connectionCounts = {
+            solid: solidConnections,
+            dashed: dashedConnections
+        };
+        
+        console.log(`Added ${markersAdded} markers and ${connectionsAdded} connections to the map`);
+        console.log(`Connection types: ${solidConnections} solid (existing), ${dashedConnections} dashed (proposed)`);
+        showStatus(`Added ${markersAdded} substations and ${connectionsAdded} connections`, 0, 90); // 90% progress
+    }
+
+    // Populate substation table
+    function populateTable(data) {
+        let tableBody = document.getElementById("table-body");
+        tableBody.innerHTML = ""; // Clear table before updating
+
+        if (!data.length) {
+            console.warn("No data to display in the table.");
+            return;
+        }
+
+        // Create a map of divisions to colors
+        const divisionColors = {};
+        const colorPalette = [
+            "#f8f9d2", "#e8f4d9", "#d4eedd", "#c5e8ef", 
+            "#d6d4f0", "#e9d3e4", "#f2dcd4", "#f9e8d2",
+            "#e6f7ff", "#d1e7dd", "#fff3cd", "#f8d7da"
+        ];
+        
+        // Group data by division
+        const divisionGroups = {};
+        
+        data.forEach(entry => {
+            const division = entry.Division ? entry.Division.trim() : "Unknown";
+            if (!divisionGroups[division]) {
+                divisionGroups[division] = [];
+            }
+            if (entry.Substation) { // Only add valid entries
+                divisionGroups[division].push(entry);
+            }
+        });
+        
+        // Sort divisions alphabetically
+        const sortedDivisions = Object.keys(divisionGroups).sort();
+        
+        // Assign colors to divisions
+        sortedDivisions.forEach((division, index) => {
+            divisionColors[division] = colorPalette[index % colorPalette.length];
+        });
+        
+        // Process each division group
+        sortedDivisions.forEach(division => {
+            // Calculate total MVA for this division
+            const totalMVA = divisionGroups[division].reduce((sum, entry) => {
+                const mva = parseFloat(entry.MVA);
+                return sum + (isNaN(mva) ? 0 : mva);
+            }, 0);
+            
+            // Add division header row with total MVA
+            let divisionRow = document.createElement("tr");
+            divisionRow.classList.add("division-header");
+            divisionRow.innerHTML = `<td colspan="2" style="background-color: #f0f0f0; font-weight: bold; text-align: center;">
+                ${division} - Total: ${totalMVA.toFixed(2)} MVA</td>`;
+            tableBody.appendChild(divisionRow);
+            
+            // Sort substations within this division
+            const sortedSubstations = divisionGroups[division].sort((a, b) => 
+                (a.Substation || "").localeCompare(b.Substation || ""));
+            
+            // Add each substation in this division
+            sortedSubstations.forEach(entry => {
+                let substation = entry.Substation ? entry.Substation.trim() : "";
+                let mva = entry.MVA ? entry.MVA : "";
+                
+                let row = document.createElement("tr");
+                
+                // Apply color based on division
+                row.style.backgroundColor = divisionColors[division];
+                
+                row.innerHTML = `<td>${substation}</td><td>${mva || 'N/A'}</td>`;
+                tableBody.appendChild(row);
+            });
+        });
+    }
+
+    // Update summary statistics
+    function updateSummary(data) {
+        let gssCount = 0;
+        let gssMVA = 0;
+        let ssCount = 0;
+        let ssMVA = 0;
+
+        data.forEach(entry => {
+            const mva = parseFloat(entry.MVA);
+            const substation = entry.Substation || "";
+            
+            // Check if it's a GSS (has "GSS" in its name)
+            if (substation.toUpperCase().includes("GSS")) {
+                gssCount++;
+                gssMVA += isNaN(mva) ? 0 : mva;
+            } else {
+                ssCount++;
+                ssMVA += isNaN(mva) ? 0 : mva;
+            }
+        });
+
+        // Get connection counts (use defaults if not set yet)
+        const connectionCounts = window.connectionCounts || { solid: 0, dashed: 0 };
+        
+        // Update the summary card with the separated counts and add connection info
+        document.getElementById("summary-card").innerHTML = `
+            <h4 style="align-items: center; background: white; padding: 5px; border-radius: 5px; box-shadow: 0 0 5px rgba(0,0,0,0.2); margin-bottom: 2px;">
+                33/11kV SS: ${ssCount} / ${ssMVA.toFixed(2)} MVA | 
+                GSS: ${gssCount} / ${gssMVA.toFixed(2)} MVA | 
+                Total: ${ssCount + gssCount} / ${(ssMVA + gssMVA).toFixed(2)} MVA
+            </h4>
+            <h4 style="align-items: center; background: white; padding: 5px; border-radius: 5px; box-shadow: 0 0 5px rgba(0,0,0,0.2); margin-top: 2px;">
+                33kV Feeders: ${connectionCounts.solid} Existing | ${connectionCounts.dashed} Proposed | ${connectionCounts.solid + connectionCounts.dashed} Total
+            </h4>
+        `;
+    }
+
+
+    // Handle search functionality
+    function handleSearchInput(event) {
+        const query = event.target.value.trim().toLowerCase();
+        const searchResultsContainer = document.getElementById("search-results");
+        
+        // Clear previous results
+        searchResultsContainer.innerHTML = "";
+        
+        if (query.length < 2) {
+            searchResultsContainer.style.display = "none";
+            return;
+        }
+        
+        let matchingStations = [];
+        // Iterate through allData to find matches, then check if a marker exists for it
+        allData.forEach(entry => {
+            const stationName = entry.Substation ? entry.Substation.trim() : '';
+            if (stationName.toLowerCase().includes(query) && substationMap[stationName]) { // Check if marker exists
+                matchingStations.push({
+                    name: stationName,
+                    marker: substationMap[stationName].marker // Directly get the marker if it exists
+                });
+            }
+        });
+        
+        matchingStations.sort((a, b) => a.name.localeCompare(b.name));
+        matchingStations = matchingStations.slice(0, 10);
+        
+        if (matchingStations.length > 0) {
+            searchResultsContainer.style.display = "block";
+            
+            matchingStations.forEach(match => {
+                let li = document.createElement("li");
+                li.textContent = match.name;
+                li.addEventListener("click", () => {
+                    document.getElementById("search-box").value = match.name;
+                    searchResultsContainer.style.display = "none";
+                    focusSubstation(match.name); // Pass the exact name
+                });
+                searchResultsContainer.appendChild(li);
+            });
+        } else {
+            searchResultsContainer.style.display = "none";
+        }
+    }
+
+    // Focus map on searched substation
+    function focusSubstation(name) {
+        let searchResultsContainer = document.getElementById("search-results");
+        searchResultsContainer.innerHTML = "";
+        searchResultsContainer.style.display = "none";
+        
+        if (!name || name.length < 2) {
+            showStatus("Please enter at least 2 characters to search");
+            return;
+        }
+
+        const targetSubstationName = name.trim();
+        const substationInfo = substationMap[targetSubstationName]; // Directly get info from map
+
+        if (substationInfo && substationInfo.marker) {
+            let marker = substationInfo.marker;
+            let latlng = marker.getLatLng();
+            map.flyTo(latlng, 14, {duration: 1.5, easeLinearity: 0.3});
+            setTimeout(() => marker.openPopup(), 1500);
+            showStatus(`Found: ${targetSubstationName}`);
+        } else {
+            showStatus(`Substation "${targetSubstationName}" not found on map. It might have invalid coordinates or be filtered out.`, 5000);
+        }
+    }
+
+    // Update legend from data
+    function updateLegend(data) {
+        // This uses the static legend in HTML for now
+        // Could be enhanced to dynamically create from data if needed
+    }
+
+    // Initialize the app
+    async function initApp() {
+        try {
+            showStatus("Initializing map...", 0, 0); // 0% progress
+            // Initialize map
+            initMap(); 
+            
+            // Load state boundaries first
+            await loadStateGeoJSON(); // Progress updated inside this function
+            
+            // Fetch CSV data with retries
+            let retries = 0;
+            let maxRetries = 3;
+            let success = false;
+            
+            while (!success && retries < maxRetries) {
+                try {
+                    allData = await fetchCSV(csvUrl); // Progress updated inside this function
+                    success = true;
+                } catch (error) {
+                    retries++;
+                    showStatus(`Error loading data. Retrying (${retries}/${maxRetries})...`, 0, 10 + (retries * 5)); // Increment progress on retry
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait before retrying
+                }
+            }
+
+            if (!success) {
+                showStatus("Failed to load substation data after multiple attempts", 5000, 100);
+                throw new Error("Failed to load data after multiple retries");
+            }
+
+            // Create filter options
+            showStatus("Creating filter options...", 0, 70); // 70% progress
+            createFilterOptions(allData);
+            
+            // Plot initial data
+            plotMapData(allData); // Progress updated inside this function
+            
+            // Populate the table
+            showStatus("Populating data table...", 0, 95); // 95% progress
+            populateTable(allData);
+            
+            // Update summary stats
+            showStatus("Updating summary statistics...", 0, 98); // 98% progress
+            updateSummary(allData);
+            
+            // Update legend 
+            showStatus("Updating legend...", 0, 99); // 99% progress
+            updateLegend(allData);
+            
+            // Remove loading screen
+            loadingDataComplete = true;
+            showStatus("Map loaded successfully!", 0, 100); // 100% progress
+            
+        } catch (error) {
+            console.error("Error initializing application:", error);
+            document.getElementById("loading-text").textContent = "Error loading map data. Please try again later.";
+            // document.getElementById("loading-icon").style.animation = "fade 2s infinite"; // Removed rotating animation
+            document.getElementById("progress-bar").style.width = "0%"; // Reset progress on error
+            document.getElementById("progress-bar").textContent = "Error";
+            document.getElementById("progress-container").style.backgroundColor = "#ffdddd"; // Indicate error
+        }
+    }
+
+    // Handle clicks outside of search results to close dropdown
+    document.addEventListener("click", function(event) {
+        let searchContainer = document.getElementById("search-container");
+        let searchResults = document.getElementById("search-results");
+        
+        if (!searchContainer.contains(event.target)) {
+            searchResults.style.display = "none";
+        }
+    });
+
+
+    // Initialize the application and attach event listeners once the DOM is fully loaded
+    window.onload = async function() {
+        await initApp(); // Ensure main app initialization is complete
+
+        // Add event listener for filter table toggle icon
+        document.getElementById('toggle-filter-table').addEventListener('click', function() {
+            const filterContainer = document.getElementById('filter-container');
+            const icon = this.querySelector('i');
+
+            if (filterContainer.classList.contains('show-filters')) {
+                filterContainer.classList.remove('show-filters');
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-filter');
+            } else {
+                filterContainer.classList.add('show-filters');
+                icon.classList.remove('fa-filter');
+                icon.classList.add('fa-eye-slash');
+            }
+        });
+
+        document.getElementById('toggle-summary-table').addEventListener('click', function() {
+            const floatingTable = document.getElementById('floating-table');
+            const icon = this.querySelector('i');
+
+            if (floatingTable.style.display === 'block') {
+                floatingTable.style.display = 'none';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-table');
+            } else {
+                floatingTable.style.display = 'block';
+                floatingTable.style.setProperty('display', 'block', 'important'); // override mobile CSS
+                icon.classList.remove('fa-table');
+                icon.classList.add('fa-eye-slash');
+            }
+        });
+
+        // Step 4: Handle label toggle checkbox
+        document.getElementById('toggle-labels').addEventListener('change', function () {
+            const show = this.checked;
+            allLineLabels.forEach(tooltip => {
+                if (show) {
+                    if (!map.hasLayer(tooltip)) {
+                        map.addLayer(tooltip);
+                    }
+                } else {
+                    if (map.hasLayer(tooltip)) {
+                        map.removeLayer(tooltip);
+                    }
+                }
+            });
+        });
+    };
+</script>
+</body>
+</html>
