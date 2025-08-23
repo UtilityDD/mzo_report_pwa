@@ -188,15 +188,19 @@
 <button id="disconnectedBtn" class="btn btn-sm text-sm border border-transparent rounded-lg px-3 py-1 bg-gray-700 text-gray-200 hover:bg-gray-600 transition" onclick="onDisconnectedFilter()">
   Disconnected (<span id="disconnectedBtnCount">0</span>)
 </button>
-
       </div>
-      <input
-        type="text"
-        id="universalSearch"
-        class="w-full sm:w-64 bg-gray-700 text-gray-100 rounded-lg border border-gray-600 focus:ring-blue-500 focus:border-blue-500 px-4 py-2"
-        placeholder="Search by any field..."
-        oninput="onUniversalSearch()"
-      />
+      <div class="flex items-center gap-2">
+        <input
+          type="text"
+          id="universalSearch"
+          class="w-full sm:w-64 bg-gray-700 text-gray-100 rounded-lg border border-gray-600 focus:ring-blue-500 focus:border-blue-500 px-4 py-2"
+          placeholder="Search by any field..."
+          oninput="onUniversalSearch()"
+        />
+        <button id="downloadCsvBtn" title="Download as CSV" onclick="downloadCSV()" class="p-2 bg-gray-700 text-green-400 hover:bg-green-600 rounded-lg transition">
+            <span data-lucide="download" class="w-5 h-5"></span>
+        </button>
+      </div>
     </div>
 
     <div class="overflow-x-auto rounded-xl shadow-lg">
@@ -583,6 +587,7 @@ let dd7Active = false, dd15Active = false, dd30Active = false;
 let dd7Count = 0, dd15Count = 0, dd30Count = 0;
 let foundLiveActive = false, foundDisconnectedActive = false;
 let foundLiveCount = 0, foundDisconnectedCount = 0;
+let currentFilteredRows = [];
 let liveBtnActive = false, disconnectedBtnActive = false;
 let liveBtnCount = 0, disconnectedBtnCount = 0;
 
@@ -679,13 +684,34 @@ async function fetchEarliestDuedate() {
   return data.length > 0 ? data[0].dd_due_date : null;
 }
 
+// Function to fetch the latest DD Due Date
+async function fetchLatestDuedate() {
+  const { data, error } = await client
+    .from("upcomingdd")
+    .select("dd_due_date")
+    .order("dd_due_date", { ascending: false })
+    .not("dd_due_date", "is", null)
+    .limit(1);
+
+  if (error) {
+    console.error("Error fetching latest DD Due Date:", error);
+    return null;
+  }
+  return data.length > 0 ? data[0].dd_due_date : null;
+}
+
 // Initial load: fetch all CCCs, then render left pane and table
 async function initialLoad() {
   showLoading(true);
 
-  // Fetch earliest date and update the header
-  const earliestDate = await fetchEarliestDuedate();
-  if (earliestDate) {
+  // Fetch earliest and latest dates and update the header
+  const [earliestDate, latestDate] = await Promise.all([
+    fetchEarliestDuedate(),
+    fetchLatestDuedate()
+  ]);
+  if (earliestDate && latestDate) {
+    document.getElementById("earliestDateHeader").innerText = `from ${formatDate(earliestDate)} to ${formatDate(latestDate)}`;
+  } else if (earliestDate) {
     document.getElementById("earliestDateHeader").innerText = `from ${formatDate(earliestDate)}`;
   } else {
     document.getElementById("earliestDateHeader").innerText = "No upcoming DD dates found.";
@@ -763,7 +789,7 @@ function renderCCCLeftPane() {
 // Show top "ALL ZONES" only if user can see multiple regions (i.e. dd_view === 'all' or grouped has >1 region)
 if (!AUTH_SCOPE?.dd_view || AUTH_SCOPE.dd_view.toLowerCase() === 'all' || Object.keys(grouped).length > 1) {
   container.innerHTML += `
-    <li class="list-group-item px-3 py-2 text-sm ${(currentCCC === null && !selectedRegion && !selectedDivision) ? "active" : "bg-gray-800 text-gray-200 hover:bg-gray-700"}" onclick="setCCC(null)">ALL REGION</li>
+    <li class="list-group-item px-3 py-2 text-sm ${(currentCCC === null && !selectedRegion && !selectedDivision) ? "active" : "bg-gray-800 text-gray-200 hover:bg-gray-700"}" onclick="setCCC(null)">ALL ZONES</li>
   `;
 }
 
@@ -1013,6 +1039,9 @@ async function fetchPage(page) {
     filteredRows.sort(
       (a, b) => Number(b.OUTSTANDING) - Number(a.OUTSTANDING)
     );
+
+    // Store for CSV export
+    currentFilteredRows = filteredRows;
 
     // --- 7. Pagination ---
     totalRows = filteredRows.length;
@@ -1545,6 +1574,58 @@ function resetAllDDButtons() {
   document.getElementById("disconnectedBtn").classList.remove("bg-red-600", "text-white");
 }
 
+function downloadCSV() {
+  if (currentFilteredRows.length === 0) {
+    showMessageModal("Info", "No data to download.");
+    return;
+  }
+
+  // Define headers.
+  const headers = [
+    "CON_ID", "NAME", "ADDRESS", "MRU", "REG_MOB_NO", "BASE_CLASS", "CONN_PHASE",
+    "GOVT_STAT", "NAT_OF_CONN", "CONN_LOAD", "METER_NO", "discon_dt1", "CCC_CODE",
+    "CCC_NAME", "OUTSTANDING", "dd_due_date", "observation"
+  ];
+
+  // Helper to escape CSV values
+  const escapeCsvValue = (value) => {
+    if (value === null || value === undefined) return "";
+    value = String(value);
+    if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+      value = value.replace(/"/g, '""');
+      return `"${value}"`;
+    }
+    return value;
+  };
+
+  let csvContent = "data:text/csv;charset=utf-8,";
+  csvContent += headers.join(",") + "\r\n";
+
+  currentFilteredRows.forEach(row => {
+    const rowData = [
+      escapeCsvValue(row.CON_ID), escapeCsvValue(row.NAME), escapeCsvValue(row.ADDRESS),
+      escapeCsvValue(row.MRU),
+      escapeCsvValue(row.REG_MOB_NO), escapeCsvValue(row.BASE_CLASS), escapeCsvValue(row.CONN_PHASE),
+      escapeCsvValue(row.GOVT_STAT), escapeCsvValue(row.NAT_OF_CONN), escapeCsvValue(row.CONN_LOAD),
+      escapeCsvValue(row.METER_NO),
+      escapeCsvValue(row.discon_dt1 ? formatDate(row.discon_dt1) : ''),
+      escapeCsvValue(row.CCC_CODE), escapeCsvValue(getCCCName(row.CCC_CODE)),
+      escapeCsvValue(row.OUTSTANDING),
+      escapeCsvValue(row.dd_due_date ? formatDate(row.dd_due_date) : ''),
+      escapeCsvValue(row.observation)
+    ];
+    csvContent += rowData.join(",") + "\r\n";
+  });
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  const today = new Date().toISOString().slice(0, 10);
+  link.setAttribute("download", `upcoming_dd_export_${today}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
 
 
 // Helper to get today's date in YYYY-MM-DD
