@@ -1,0 +1,1787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DTR Load Measurement</title>
+<!-- DataTables CSS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+
+<!-- Bootstrap 5 CSS (needed for DataTables styling) -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+<!-- DataTables JS -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<!-- FixedHeader CSS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/fixedheader/3.4.0/css/fixedHeader.bootstrap5.min.css">
+<!-- DataTables Buttons CSS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap5.min.css">
+
+<!-- FixedHeader JS -->
+<script src="https://cdn.datatables.net/fixedheader/3.4.0/js/dataTables.fixedHeader.min.js"></script>
+<script src="https://cdn.datatables.net/fixedheader/3.4.0/js/fixedHeader.bootstrap5.min.js"></script>
+<!-- DataTables Buttons JS -->
+<script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.bootstrap5.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.print.min.js"></script>
+
+<!-- DataTables Responsive CSS & JS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/responsive/2.5.0/css/responsive.bootstrap5.min.css">
+<script src="https://cdn.datatables.net/responsive/2.5.0/js/dataTables.responsive.min.js"></script>
+<script src="https://cdn.datatables.net/responsive/2.5.0/js/responsive.bootstrap5.min.js"></script>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<style>
+  :root {
+    --bg-dark: #0f0f23;
+    --bg-card: #1a1a2e;
+    --bg-input: #16213e;
+    --text-primary: #e5e7eb;
+    --text-secondary: #9ca3af;
+    --accent: #6366f1;
+    --accent-hover: #4f46e5;
+    --success: #10b981;
+    --error: #ef4444;
+    --warning: #f59e0b;
+    --border: #374151;
+    --shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: linear-gradient(135deg, var(--bg-dark) 0%, #0f172a 50%, #1e1b4b 100%);
+    color: var(--text-primary);
+    font-family: 'SF Pro Display', 'Segoe UI', 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+    min-height: 100vh;
+    margin: 0;
+    overflow-x: hidden;
+  }
+
+  .floating-shapes {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .shape:nth-child(1) { width: 80px; height: 80px; top: 20%; left: 10%; animation-delay: 0s; }
+  .shape:nth-child(2) { width: 60px; height: 60px; top: 60%; right: 15%; animation-delay: 2s; }
+  .shape:nth-child(3) { width: 100px; height: 100px; bottom: 20%; left: 60%; animation-delay: 4s; }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0px) rotate(0deg); }
+    50% { transform: translateY(-20px) rotate(180deg); }
+  }
+
+  .container {
+    max-width: 1000px;
+    margin: 2rem auto;
+    padding: 1rem;
+    position: relative;
+    z-index: 2;
+  }
+
+  .main-card {
+    background: rgba(26, 26, 46, 0.9);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    box-shadow: var(--shadow);
+    padding: 1.5rem; /* Made more compact */
+    animation: slideUp 0.6s ease;
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 1.5rem; /* Made more compact */
+  }
+
+  .header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 0.5rem;
+  }
+
+  .search-container {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .search-input {
+    flex: 1;
+    background: var(--bg-input);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    color: var(--text-primary);
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+  }
+
+  .search-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  }
+
+  .search-input::placeholder {
+    color: var(--text-secondary);
+  }
+
+  .btn {
+    border: none;
+    border-radius: 12px;
+    font-weight: 600;
+    padding: 0.75rem 1.5rem;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+    color: white;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
+  }
+
+  .btn-success {
+    background: linear-gradient(135deg, var(--success), #059669);
+    color: white;
+  }
+
+  .btn-success:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(16, 185, 129, 0.3);
+  }
+
+  .btn-secondary {
+    background: linear-gradient(135deg, #6b7280, #4b5563);
+    color: white;
+  }
+
+  /* Updated style for compact search results */
+  .search-results-compact {
+    background: var(--bg-card);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: 1rem;
+    margin: 1rem 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); /* Multi-column layout */
+    gap: 0.75rem; /* Compact spacing */
+  }
+
+  .search-result-item {
+    padding: 0.5rem 0;
+    border-bottom: 1px dashed var(--border); /* Subtle separator */
+  }
+
+  .search-result-item:last-child {
+    border-bottom: none; /* No border for the last item */
+  }
+
+  .search-result-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.2rem;
+  }
+
+  .search-result-value {
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+
+  .form-section {
+    background: rgba(22, 33, 62, 0.8);
+    border-radius: 20px;
+    padding: 1.25rem; /* Made more compact */
+    margin-top: 1.5rem;
+    border: 1px solid var(--border);
+    animation: fadeIn 0.4s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .form-section h5 {
+    margin-bottom: 1rem; /* Made more compact */
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 0.75rem; /* Made more compact */
+    margin-bottom: 0.75rem; /* Adjusted for compactness */
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .form-label {
+    color: var(--text-primary);
+    font-weight: 500;
+    margin-bottom: 0.4rem;
+    font-size: 0.9rem;
+  }
+
+  .form-control, .form-select {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    padding: 0.6rem 0.8rem;
+    font-size: 0.95rem;
+    transition: all 0.3s ease;
+  }
+
+  .form-control:focus, .form-select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
+  }
+
+  .form-control::placeholder {
+    color: var(--text-secondary);
+  }
+
+  /* Updated load-grid for 4 columns */
+  .load-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr); /* Changed to 4 columns */
+    gap: 1rem;
+  }
+
+  .load-input {
+    text-align: center;
+    position: relative;
+  }
+
+  .load-input.red { border-left: 3px solid #ef4444; }
+  .load-input.yellow { border-left: 3px solid #eab308; }
+  .load-input.blue { border-left: 3px solid #3b82f6; }
+  .load-input.green { border-left: 3px solid #10b981; } /* Style for Neutral */
+
+
+  .error-msg {
+    color: var(--error);
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 8px;
+    padding: 0.75rem;
+    text-align: center;
+    margin: 1rem 0;
+  }
+
+  .success-msg {
+    color: var(--success);
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 8px;
+    padding: 0.75rem;
+    text-align: center;
+    margin: 1rem 0;
+  }
+
+  .loading {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Modal Styles */
+  .modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+    animation: modalFadeIn 0.3s ease;
+  }
+
+  @keyframes modalFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .modal-content {
+    background: var(--bg-card);
+    margin: 5% auto;
+    padding: 2rem;
+    border-radius: 20px;
+    width: 90%;
+    max-width: 600px;
+    border: 1px solid var(--border);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    animation: modalSlideIn 0.3s ease;
+  }
+
+  @keyframes modalSlideIn {
+    from { transform: translateY(-50px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .modal-title {
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+
+  .close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+  }
+
+  .close:hover {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--error);
+  }
+
+  /* Compact confirmation grid styles */
+  .confirmation-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); /* Adjusted minmax for more compactness */
+    gap: 0.5rem; /* Reduced gap */
+    margin-bottom: 0.75rem; /* Reduced margin */
+  }
+
+  .confirmation-item {
+    background: var(--bg-input);
+    padding: 0.5rem; /* Reduced padding */
+    border-radius: 8px;
+    border-left: 3px solid var(--accent);
+  }
+
+  .confirmation-label {
+    font-size: 0.75rem; /* Reduced font size */
+    color: var(--text-secondary);
+    margin-bottom: 0.15rem; /* Reduced margin */
+  }
+
+  .confirmation-value {
+    color: var(--text-primary);
+    font-weight: 500;
+    font-size: 0.85rem; /* Reduced font size */
+    word-break: break-word; /* Ensure long words break and wrap */
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+  }
+
+  /* Loading Overlay Styles */
+  .loading-overlay {
+    display: none; /* Hidden by default */
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7); /* Semi-transparent dark background */
+    backdrop-filter: blur(5px);
+    z-index: 1001; /* Higher than modals */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    color: white;
+    font-size: 1.2rem;
+  }
+
+  .loading-overlay .loading-spinner {
+    border: 4px solid rgba(255, 255, 255, 0.3);
+    border-top: 4px solid #fff;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin-bottom: 10px;
+  }
+
+  /* PIN Modal Specific Styles */
+  #pinModal {
+    display: flex; /* Show by default on load */
+    align-items: center;
+    justify-content: center;
+    z-index: 1002; /* Higher than other modals */
+  }
+
+  #pinModal .modal-content {
+    max-width: 400px; /* Smaller for PIN entry */
+    text-align: center;
+  }
+
+  #pinModal input[type="password"] {
+    margin-bottom: 1rem;
+    text-align: center;
+  }
+
+  #pinModal .error-msg {
+    margin-top: 1rem;
+  }
+
+  /* Initially hide the main content */
+  #mainContentWrapper {
+    display: none;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .container { padding: 0.5rem; margin: 1rem auto; }
+    .main-card { padding: 1rem; } /* Adjusted for smaller screens */
+    .search-container { flex-direction: column; }
+    .form-row { grid-template-columns: 1fr; }
+    .load-grid { grid-template-columns: 1fr; }
+    .confirmation-grid { grid-template-columns: 1fr; }
+    .modal-actions { flex-direction: column; }
+  }
+
+  /* Specific style for button loading spinner */
+  .btn .spinner {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #fff;
+    animation: spin 1s linear infinite;
+    vertical-align: middle;
+    margin-left: 0.5em;
+  }
+
+  /* Rejection Modal Specific Styles */
+  #rejectionModal .modal-content {
+    max-width: 500px;
+    text-align: center;
+  }
+  #rejectionModal .modal-body p {
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    margin-bottom: 1.5rem;
+  }
+  .blink-red {
+    color: red;
+    font-weight: bold;
+    animation: blink 1s step-start infinite;
+}
+
+@keyframes blink {
+    50% { opacity: 0; }
+}
+
+/* --- DataTable Modernization --- */
+#allDataModal .modal-content {
+  max-width: 95vw;
+  max-height: 90vh; /* Limit height to prevent overflow on smaller screens */
+  display: flex; /* Use flexbox to manage header/body layout */
+  flex-direction: column;
+  padding: 0; /* Remove padding from the container */
+  overflow: hidden; /* Clip content to prevent overflow from rounded corners */
+}
+
+#allDataModal .modal-header {
+  /* Add padding back to the header since the parent's is gone */
+  padding: 1rem 1.5rem;
+  flex-shrink: 0; /* Prevent header from shrinking */
+}
+
+#allDataModal .modal-body {
+  /* Make the body scrollable and fill available space */
+  padding: 0.5rem;
+  overflow-y: auto;
+  flex-grow: 1;
+}
+
+#allDataModal .dataTables_wrapper .row:first-child,
+#allDataModal .dataTables_wrapper .row:last-child {
+  padding: 0 0.5rem; /* Align controls with modal padding */
+}
+
+#allDataModal .dataTables_wrapper .row:first-child { /* Top controls (length, filter) */
+  margin-bottom: 1rem; /* Space between controls and table */
+}
+#allDataModal .dataTables_wrapper .row:last-child { /* Bottom controls (info, pagination) */
+  margin-top: 1rem; /* Space between table and pagination */
+}
+
+#allDataTable {
+  border-color: var(--border);
+  border-collapse: collapse; /* For a more minimal look */
+  width: 100% !important; /* Override any inline styles */
+}
+
+#allDataTable thead th {
+  background-color: var(--bg-input);
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--accent);
+  font-size: 0.85rem; /* Slightly smaller header font */
+  font-weight: 600;
+  padding: 0.4rem 0.75rem; /* Reduced padding for a more compact header */
+  white-space: nowrap;
+}
+
+#allDataTable tbody tr {
+  background-color: transparent;
+  border-bottom: 1px solid var(--border);
+  transition: background-color 0.2s ease;
+}
+
+#allDataTable tbody tr:last-child {
+  border-bottom: none;
+}
+
+#allDataTable tbody tr:hover {
+  background-color: rgba(99, 102, 241, 0.15); /* Slightly more visible hover */
+}
+
+#allDataTable tbody td {
+  color: var(--text-secondary);
+  padding: 0.5rem 0.75rem; /* More compact padding */
+  font-size: 0.8rem; /* Smaller font */
+  vertical-align: middle;
+}
+
+/* DataTables controls styling */
+.dataTables_length label,
+.dataTables_filter label,
+.dataTables_info {
+  color: var(--text-secondary) !important;
+  font-size: 0.85rem;
+}
+
+.dataTables_length select,
+.dataTables_filter input {
+  background-color: var(--bg-input) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px;
+  margin: 0 0.5rem;
+  padding: 0.4rem 0.6rem;
+}
+
+/* Pagination styling */
+.page-item.active .page-link { background-color: var(--accent); border-color: var(--accent); }
+.page-link { background-color: var(--bg-input); border-color: var(--border); color: var(--text-primary); }
+.page-link:hover { background-color: var(--bg-card); color: var(--accent); }
+.page-item.disabled .page-link { background-color: var(--bg-input); border-color: var(--border); color: var(--text-secondary); }
+
+/* Responsive styles for collapsed rows */
+table.dataTable.dtr-inline.collapsed>tbody>tr>td.dtr-control:before,
+table.dataTable.dtr-inline.collapsed>tbody>tr>th.dtr-control:before {
+  background-color: var(--accent);
+  border: 2px solid var(--bg-card);
+  box-shadow: none;
+  top: 50%;
+  margin-top: -9px; /* Center the icon */
+}
+
+table.dataTable.dtr-inline.collapsed>tbody>tr.parent>td.dtr-control:before,
+table.dataTable.dtr-inline.collapsed>tbody>tr.parent>th.dtr-control:before {
+  background-color: var(--error);
+}
+
+.dtr-details { background-color: var(--bg-input); }
+.dtr-details li { border-bottom: 1px solid var(--border); padding: 0.5em; }
+.dtr-details li:last-child { border-bottom: none; }
+.dtr-title { color: var(--text-primary); font-weight: bold; }
+.dtr-data { color: var(--text-secondary); }
+
+/* Tab styling to match dark theme */
+.nav-tabs {
+  border-bottom: 1px solid var(--border);
+}
+
+.nav-tabs .nav-link {
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  color: var(--text-secondary);
+  margin-bottom: -1px; /* Align with the bottom border */
+  transition: all 0.2s ease;
+}
+
+.nav-tabs .nav-link:hover, .nav-tabs .nav-link:focus {
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.nav-tabs .nav-link.active {
+  background-color: var(--bg-input);
+  color: var(--accent);
+  border-color: var(--border) var(--border) var(--bg-input);
+  font-weight: 600;
+}
+</style>
+</head>
+<body>
+
+<div class="floating-shapes">
+  <div class="shape"></div>
+  <div class="shape"></div>
+  <div class="shape"></div>
+</div>
+
+<!-- PIN Entry Modal -->
+<div id="pinModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title">🔒 Enter PIN to Proceed</h5>
+      <!-- No close button for PIN modal until authenticated -->
+    </div>
+    <div class="modal-body">
+      <!-- Removed: <p style="color: var(--text-secondary); margin-bottom: 1rem;">Please enter your authorization PIN.</p> -->
+      <input type="password" id="pinInput" class="form-control" placeholder="Enter PIN" maxlength="4">
+      <button class="btn btn-primary" id="submitPinBtn" onclick="validatePin()">
+        🔑 Submit PIN
+      </button>
+      <div id="pinError" class="error-msg" style="display:none;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Main Content Wrapper - Initially hidden -->
+<div id="mainContentWrapper">
+  <div class="container">
+    <div class="main-card">
+      <div class="header">
+        <h1>⚡ DTR Load Measurement</h1>
+        <p style="color: var(--text-secondary); margin: 0;">Search and update transformer load data</p>
+      </div>
+
+<div class="search-container">
+  <input type="text" id="searchCode" class="search-input" placeholder="Enter DTR Code">
+  <button class="btn btn-primary" onclick="searchDTR()">🔍 Search</button>
+  <button class="btn btn-secondary" onclick="showAllLoadData()">📋 View All Load Data</button>
+</div>
+
+
+      <!-- Result display area -->
+      <div id="result"></div>
+
+      <div id="formSection" class="form-section" style="display:none;">
+        <h5 style="color: var(--text-primary);">✏️ Update Load Information</h5>
+        
+        <form id="dtrForm">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">📅 Date and Time</label>
+              <input type="datetime-local" id="DATE_OF_MEASUREMENT" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label">⚙️ Capacity (kVA)</label>
+              <select id="NEW_CAPA_KV" class="form-select">
+                <option value="">Select Capacity</option>
+                <option value="10kVA">10 kVA</option>
+                <option value="25kVA">25 kVA</option>
+                <option value="63kVA">63 kVA</option>
+                <option value="100kVA">100 kVA</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">📍 Location Name</label>
+              <input type="text" id="NEW_LOC_NAME" class="form-control" placeholder="Enter location">
+            </div>
+            <div class="form-group">
+              <label class="form-label">🔌 Feeder Name</label>
+              <input type="text" id="NEW_FDR_NAME" class="form-control" placeholder="Enter feeder">
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">📊 Load Measurements (Amps)</label>
+            <div class="load-grid">
+              <div class="form-group">
+                <input type="number" id="LOAD_R" class="form-control load-input red" placeholder="R Phase" step="0.1">
+              </div>
+              <div class="form-group">
+                <input type="number" id="LOAD_Y" class="form-control load-input yellow" placeholder="Y Phase" step="0.1">
+              </div>
+              <div class="form-group">
+                <input type="number" id="LOAD_B" class="form-control load-input blue" placeholder="B Phase" step="0.1">
+              </div>
+              <div class="form-group">
+                <input type="number" id="LOAD_N" class="form-control load-input green" placeholder="N Neutral" step="0.1">
+              </div>
+            </div>
+          </div>
+
+          <!-- Kiosk, LA, Neutral Flat Earthing Fields -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label"><i class="fas fa-box"></i> Kiosk</label>
+              <select id="KIOSK" class="form-select">
+                <option value="">Select Kiosk Status</option>
+                <option value="Ok">Ok</option>
+                <option value="No kiosk">No kiosk</option>
+                <option value="Damaged">Damaged</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">⚡ LA</label>
+              <select id="LA" class="form-select">
+                <option value="">Select LA Status</option>
+                <option value="Ok">Ok</option>
+                <option value="No LA">No LA</option>
+                <option value="Defective">Defective</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">🌍 Neutral Flat Earthing</label>
+              <select id="NEUTRAL_FLAT_EARTHING" class="form-select">
+                <option value="">Select Status</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+          </div>
+          <!-- End Kiosk, LA, Neutral Flat Earthing Fields -->
+          
+          <div class="form-group">
+            <label class="form-label">💭 Remarks</label>
+            <textarea id="REMARKS" class="form-control" rows="3" placeholder="Additional notes..."></textarea>
+          </div>
+          
+          <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+            <button type="button" class="btn btn-success" style="flex: 1;" onclick="showConfirmation()">
+              ✅ Submit Data
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="resetSearch()">
+              ❌ Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirmation Modal -->
+<div id="confirmationModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title">✅ Confirm Submission</h5>
+      <button class="close" onclick="closeModal('confirmationModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <!-- Added ID to the paragraph for dynamic content -->
+      <p id="confirmationModalMessage" style="color: var(--text-secondary); margin-bottom: 1.5rem;">Please verify the information before submitting:</p>
+      <div id="confirmationData" class="confirmation-grid"></div>
+    </div>
+    <div id="confirmationActions" class="modal-actions">
+      <!-- Actions will be populated dynamically by JavaScript -->
+    </div>
+  </div>
+</div>
+
+<!-- Rejection Modal -->
+<div id="rejectionModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title" style="color: var(--error);">🚫 Update Rejected</h5>
+      <button class="close" onclick="closeModal('rejectionModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p id="rejectionMessage"></p>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('rejectionModal')">OK</button>
+    </div>
+  </div>
+</div>
+<!-- All Data Modal -->
+<div id="allDataModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title">📊 Load Measurement Data</h5>
+      <!-- Buttons will be injected here by DataTables -->
+      <div id="tableButtons" class="ms-auto me-3"></div>
+      <button class="close" onclick="closeModal('allDataModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <!-- Nav tabs -->
+      <ul class="nav nav-tabs" id="dataTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <a class="nav-link active" id="all-tab" href="#">All</a>
+        </li>
+        <li class="nav-item" role="presentation">
+          <a class="nav-link" id="no-kiosk-tab" data-filter-col="KIOSK" data-filter-val="Ok" data-filter-inv="true" href="#">No Kiosk</a>
+        </li>
+        <li class="nav-item" role="presentation">
+          <a class="nav-link" id="no-la-tab" data-filter-col="LA" data-filter-val="Ok" data-filter-inv="true" href="#">No LA</a>
+        </li>
+        <li class="nav-item" role="presentation">
+          <a class="nav-link" id="no-flat-earthing-tab" data-filter-col="NEUTRAL_FLAT_EARTHING" data-filter-val="Yes" data-filter-inv="true" href="#">No Flat Earthing</a>
+        </li>
+        <li class="nav-item" role="presentation">
+          <a class="nav-link" id="over-loaded-tab" href="#">Over-Loaded</a>
+        </li>
+      </ul>
+
+      <!-- Tab content is the single table and a message div -->
+      <div class="tab-content pt-3">
+        <div id="table-container">
+          <table id="allDataTable" class="table table-hover" style="width:100%">
+            <!-- Thead and Tbody will be populated by DataTables -->
+          </table>
+        </div>
+        <div id="overloaded-message" class="p-4 text-center" style="display:none;">
+          Updating soon
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="loading-overlay" style="display:none;">
+  <div class="loading-spinner"></div>
+  <p>Updating data...</p>
+</div>
+
+<script>
+const scriptUrl = "https://script.google.com/macros/s/AKfycbwzaD7imXDsD3gWhxRXf9kx01NHKrzyXZGsBg2-azotO26PjybS-3R07Vyuh7Wscy1UIw/exec";
+const pinSheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRGTMdZNG8ktcf_-CWlhykS75a9RVAL5YHIN7glhcxIDOZssS_c_OmQEx_TzG8Hz1Wa1FbMIKxlHVeR/pub?gid=0&single=true&output=csv";
+const updateDataSheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=1835924766&single=true&output=csv";
+
+
+// Global variables
+window.currentCode = null;
+window.isAuthenticated = false; // Tracks if PIN is successfully authenticated
+window.userAuthorizedDTRPrefix = null; // Stores the dtr-autho value for the logged-in user
+window.isReplacingData = false; // New flag to indicate if data is being replaced
+
+/**
+ * Parses CSV text into an array of objects.
+ * @param {string} csv - The CSV data as a string.
+ * This parser correctly handles fields that are enclosed in double quotes
+ * and may contain commas within them.
+ * @returns {Array<Object>} An array of objects, where each object represents a row.
+ */
+function parseCSV(csv) {
+    const lines = csv.split('\n').filter(line => line.trim() !== '');
+    if (lines.length < 2) return [];
+
+    // Regex to split a CSV row, handling quoted fields and escaped quotes ("").
+    const splitRow = (row) => {
+        const values = [];
+        const regex = /(?:"([^"]*(?:""[^"]*)*)"|([^,]*))(?:,|$)/g;
+        let match;
+        while (match = regex.exec(row)) {
+            let value = match[1] !== undefined ? match[1].replace(/""/g, '"') : match[2];
+            values.push(value.trim());
+            if (match[0].slice(-1) !== ',') break; // Stop if we're at the end of the line
+        }
+        return values;
+    };
+
+    const headers = splitRow(lines[0]);
+    const result = [];
+
+    for (let i = 1; i < lines.length; i++) {
+        const values = splitRow(lines[i]);
+        if (values.length >= headers.length) {
+            const obj = headers.reduce((acc, header, index) => {
+                acc[header.trim()] = values[index] || '';
+                return acc;
+            }, {});
+            result.push(obj);
+        }
+    }
+    return result;
+}
+
+/**
+ * Shows a loading spinner and disables the target button.
+ * @param {HTMLElement} buttonElement - The button element to modify.
+ * @param {string} originalText - The original text content of the button.
+ */
+function showButtonLoading(buttonElement, originalText) {
+    buttonElement.dataset.originalText = originalText; // Store original text
+    buttonElement.innerHTML = `<span class="spinner"></span> Checking...`;
+    buttonElement.disabled = true;
+}
+
+/**
+ * Hides the loading spinner and re-enables the target button.
+ * @param {HTMLElement} buttonElement - The button element to modify.
+ */
+function hideButtonLoading(buttonElement) {
+    buttonElement.innerHTML = buttonElement.dataset.originalText; // Restore original text
+    buttonElement.disabled = false;
+}
+
+/**
+ * Validates the entered PIN against the Google Sheet, checking both PIN and dtr-autho columns.
+ */
+async function validatePin() {
+    const pinInput = document.getElementById("pinInput");
+    const enteredPin = pinInput.value.trim();
+    const pinErrorDiv = document.getElementById("pinError");
+    const submitPinBtn = document.getElementById("submitPinBtn");
+
+    pinErrorDiv.style.display = "none"; // Hide previous errors
+    pinErrorDiv.textContent = "";
+
+    if (!enteredPin) {
+        pinErrorDiv.textContent = "Please enter a PIN.";
+        pinErrorDiv.style.display = "block";
+        return;
+    }
+
+    showButtonLoading(submitPinBtn, '🔑 Submit PIN'); // Show loading on button
+
+    try {
+        const response = await fetch(pinSheetUrl);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const csvText = await response.text();
+        const pinData = parseCSV(csvText);
+        console.log("PIN Data fetched:", pinData); // Log PIN data
+
+        // Find the row where the PIN matches
+        const foundUser = pinData.find(row => row.PIN === enteredPin);
+        console.log("Found User for PIN:", foundUser); // Log found user
+
+        if (foundUser && foundUser['dtr-autho']) { // Check if both PIN and dtr-autho exist
+            window.isAuthenticated = true;
+            window.userAuthorizedDTRPrefix = foundUser['dtr-autho']; // Store the authorized prefix
+            console.log("Authentication successful. Authorized DTR Prefix:", window.userAuthorizedDTRPrefix); // Log authorized prefix
+            document.getElementById("pinModal").style.display = "none";
+            document.getElementById("mainContentWrapper").style.display = "block"; // Show main content
+            pinInput.value = ""; // Clear PIN input
+        } else {
+            window.isAuthenticated = false;
+            window.userAuthorizedDTRPrefix = null; // Clear prefix if authentication fails
+            pinErrorDiv.textContent = "No authorization. Invalid PIN or missing DTR authorization.";
+            pinErrorDiv.style.display = "block";
+            console.log("Authentication failed. Invalid PIN or missing DTR authorization."); // Log failure
+        }
+    } catch (error) {
+        console.error("Error fetching or validating PIN:", error);
+        pinErrorDiv.textContent = "Could not validate PIN. Please try again later.";
+        pinErrorDiv.style.display = "block";
+    } finally {
+        hideButtonLoading(submitPinBtn); // Hide loading on button
+    }
+}
+
+/**
+ * Searches for DTR data based on the provided code, enforcing user authorization.
+ */
+function searchDTR() {
+  const code = document.getElementById("searchCode").value.trim();
+  
+  // Clear previous messages and results
+  document.getElementById("result").innerHTML = "";
+  document.getElementById("formSection").style.display = "none";
+  window.currentCode = null;
+
+  console.log("Search initiated for DTR Code:", code); // Log search initiation
+  console.log("Is Authenticated:", window.isAuthenticated); // Log authentication status
+  console.log("User Authorized DTR Prefix:", window.userAuthorizedDTRPrefix); // Log user prefix
+
+  if (!window.isAuthenticated) {
+    showError("Please enter a valid PIN to access this functionality.");
+    console.log("Search blocked: Not authenticated."); // Log reason for blocking
+    return;
+  }
+
+  if (!code) {
+    showError("Please enter a DTR Code");
+    console.log("Search blocked: No DTR Code entered."); // Log reason for blocking
+    return;
+  }
+
+  // Authorization check based on DTR code and user's dtr-autho prefix
+  if (window.isAuthenticated && window.userAuthorizedDTRPrefix && !code.startsWith(window.userAuthorizedDTRPrefix)) {
+    showError("Either no DTR exists with this code or you are not authorized to update this DTR.");
+    document.getElementById("formSection").style.display = "none"; // Ensure form is hidden
+    console.log(`Search blocked: DTR Code '${code}' does not start with authorized prefix '${window.userAuthorizedDTRPrefix}'.`); // Log specific authorization failure
+    return;
+  }
+
+  showLoading("Searching DTR..."); // Show loading overlay before search with specific text
+
+  fetch(`${scriptUrl}?action=search&code=${code}`)
+    .then(res => res.json())
+    .then(data => {
+      console.log("Search API Response:", data); // Log API response
+      if (data.status === "success" && data.data) {
+        displayResults(data.data);
+        document.getElementById("formSection").style.display = "block";
+        window.currentCode = code;
+        // Fetch last update and populate form with it, or fallback to master data
+        populateFormWithLastUpdate(code, data.data);
+      } else {
+        // Only confirm that no DTR was found, do not offer to add new data
+        showError("Either no DTR exists with this code or you are not authorized to update this DTR.");
+        document.getElementById("formSection").style.display = "none"; // Ensure form is hidden
+        window.currentCode = null; // Clear current code if no DTR found
+        console.log("Search failed: DTR not found or API status not success."); // Log failure
+      }
+    })
+    .catch(err => {
+      console.error("Fetch error during DTR search:", err); // Log fetch error
+      showError("Connection error. Please try again.");
+      document.getElementById("formSection").style.display = "none"; // Hide form on connection error
+    })
+    .finally(() => {
+      hideLoading(); // Hide loading overlay after search (success or error)
+    });
+}
+
+/**
+ * Displays the fetched DTR data in a compact, multi-column text format.
+ * @param {object} data - The DTR data to display.
+ */
+function displayResults(data) {
+  let html = '<div class="search-results-compact">'; // Use a new class for styling
+  for (const key in data) {
+    // Exclude the 'code' from display if it's already in the search input
+    if (key.toLowerCase() === 'code') continue; 
+    const displayKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    html += `
+      <div class="search-result-item">
+        <div class="search-result-label">${displayKey}</div>
+        <div class="search-result-value">${data[key] || 'N/A'}</div>
+      </div>
+    `;
+  }
+  html += '</div>';
+  document.getElementById("result").innerHTML = html;
+}
+
+/**
+ * Fetches the last update for a DTR and populates the form.
+ * Falls back to master data if no update is found.
+ * @param {string} code - The DTR code.
+ * @param {object} masterData - The master data for the DTR as a fallback.
+ */
+async function populateFormWithLastUpdate(code, masterData) {
+    showLoading("Fetching last update...");
+    try {
+        const response = await fetch(updateDataSheetUrl);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
+        const csvText = await response.text();
+        const updateData = parseCSV(csvText);
+
+        // Find ALL updates for this DTR, sort them by date, and get the latest one.
+        const allUpdatesForDTR = updateData
+            .filter(row => row.DTR_CODE === code)
+            .sort((a, b) => {
+                const dateA = parseDateTime(a.DATE_OF_MEASUREMENT);
+                const dateB = parseDateTime(b.DATE_OF_MEASUREMENT);
+                if (!dateA) return 1; // push null dates to the end
+                if (!dateB) return -1;
+                return dateB - dateA; // Sort descending (newest first)
+            });
+
+        const lastUpdate = allUpdatesForDTR.length > 0 ? allUpdatesForDTR[0] : null;
+
+        // Display last update info message in the results area
+        const resultDiv = document.getElementById("result");
+        const existingAlert = resultDiv.querySelector('.last-update-alert');
+        if (existingAlert) existingAlert.remove(); // Clear previous alert
+
+        if (lastUpdate) {
+            console.log("Found last update, populating form:", lastUpdate);
+
+            // Add an alert message to the search results
+            const alertHtml = `
+                <div class="success-msg last-update-alert" style="margin-top: 1rem; text-align: left; padding: 0.75rem;">
+                    <i class="fas fa-info-circle"></i> <strong>Last Update Found:</strong> The form is pre-filled with data from <b>${lastUpdate.DATE_OF_MEASUREMENT}</b>.
+                </div>`;
+            resultDiv.insertAdjacentHTML('beforeend', alertHtml);
+
+            // Format the date for the input field
+            const lastUpdateDate = parseDateTime(lastUpdate.DATE_OF_MEASUREMENT);
+            const formattedDate = formatForDateTimeInput(lastUpdateDate);
+
+            const dataForForm = {
+                'DATE_OF_MEASUREMENT': formattedDate, // Use formatted date
+                'LOC_NAME': lastUpdate.NEW_LOC_NAME,
+                'FDR_NAME': lastUpdate.NEW_FDR_NAME,
+                'CAPA_KV': lastUpdate.NEW_CAPA_KV,
+                'LOAD_R': lastUpdate.LOAD_R,
+                'LOAD_Y': lastUpdate.LOAD_Y,
+                'LOAD_B': lastUpdate.LOAD_B,
+                'LOAD_N': lastUpdate.LOAD_N,
+                'KIOSK': lastUpdate.KIOSK,
+                'LA': lastUpdate.LA,
+                'NEUTRAL_FLAT_EARTHING': lastUpdate.NEUTRAL_FLAT_EARTHING,
+                'REMARKS': lastUpdate.REMARKS
+            };
+            populateForm(dataForForm);
+        } else {
+            console.log("No last update found, using master data to populate form:", masterData);
+            populateForm(masterData); // Fallback to master data from the main sheet
+        }
+    } catch (error) {
+        console.error("Error fetching last update for form population:", error);
+        showError("Could not fetch last update data. Using master data as fallback.");
+        populateForm(masterData); // Fallback on error
+    } finally {
+        hideLoading();
+    }
+}
+
+/**
+ * Populates the form fields with fetched data.
+ * @param {object} data - The DTR data to populate the form with.
+ */
+function populateForm(data) {
+  // Map fetched data keys to form field IDs
+  const fieldMap = {
+    'DATE_OF_MEASUREMENT': 'DATE_OF_MEASUREMENT',
+    'LOC_NAME': 'NEW_LOC_NAME',
+    'FDR_NAME': 'NEW_FDR_NAME',
+    'CAPA_KV': 'NEW_CAPA_KV',
+    'LOAD_R': 'LOAD_R',
+    'LOAD_Y': 'LOAD_Y',
+    'LOAD_B': 'LOAD_B',
+    'LOAD_N': 'LOAD_N',
+    'KIOSK': 'KIOSK',
+    'LA': 'LA',
+    'NEUTRAL_FLAT_EARTHING': 'NEUTRAL_FLAT_EARTHING',
+    'REMARKS': 'REMARKS'
+  };
+
+  for (const fetchedKey in fieldMap) {
+    const elementId = fieldMap[fetchedKey];
+    const element = document.getElementById(elementId);
+
+    if (!element) continue;
+
+    // Handle <select> dropdowns
+    if (element.tagName === 'SELECT') {
+      if (data[fetchedKey] && Array.from(element.options).some(opt => opt.value === data[fetchedKey])) {
+        element.value = data[fetchedKey]; // match found
+      } else {
+        element.value = ""; // default to "Select ..."
+      }
+    }
+    // Handle normal inputs/textareas
+    else {
+      if (data[fetchedKey]) {
+        element.value = data[fetchedKey];
+      }
+    }
+  }
+}
+
+
+/**
+ * Displays an error message.
+ * @param {string} message - The error message to display.
+ */
+function showError(message) {
+  document.getElementById("result").innerHTML = `<div class="error-msg">⚠️ ${message}</div>`;
+}
+
+/**
+ * Displays a success message.
+ * @param {string} message - The success message to display.
+ */
+function showSuccess(message) {
+  document.getElementById("result").innerHTML = `<div class="success-msg">🎉 ${message}</div>`;
+}
+
+/**
+ * Validates the selected date and time for the DATE_OF_MEASUREMENT field.
+ * Ensures the date is not in the future and not older than 15 days from today.
+ */
+function validateMeasurementDate() {
+  const dateInput = document.getElementById("DATE_OF_MEASUREMENT");
+  const selectedDate = new Date(dateInput.value);
+  const now = new Date();
+
+  let isValid = true;
+  let errorMessage = '';
+
+  // Check for future date
+  if (selectedDate > now) {
+    isValid = false;
+    errorMessage = 'Date and Time cannot be in the future.';
+  }
+
+  if (!isValid) {
+    showError(errorMessage);
+    dateInput.value = ''; // Clear the invalid input
+  } else {
+    // Clear any previous date-related errors if valid
+    const resultDiv = document.getElementById("result");
+    if (resultDiv.innerHTML.includes('Date and Time cannot be')) {
+        resultDiv.innerHTML = ''; // Clear only specific error messages
+    }
+  }
+  return isValid;
+}
+
+// --- Date helper functions ---
+
+/**
+ * Parses a date-time string from the sheet into a Date object.
+ * Handles multiple common formats like 'DD/MM/YYYY HH:mm:ss' and 'YYYY-MM-DD HH:mm'.
+ * @param {string} dateStr - The date string from the sheet.
+ * @returns {Date|null} A Date object or null if parsing fails.
+ */
+function parseDateTime(dateStr) {
+    if (!dateStr) return null;
+
+    // 1. Try DD/MM/YYYY format first, as new Date() can misinterpret it as MM/DD/YYYY.
+    const ddmmyyyyMatch = dateStr.match(/(\d{2})\/(\d{2})\/(\d{4})[\sT](\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (ddmmyyyyMatch) {
+        const [, day, month, year, hour, minute, second] = ddmmyyyyMatch;
+        // JS month is 0-indexed
+        return new Date(year, month - 1, day, hour, minute, second);
+    }
+
+    // 2. For other formats like YYYY-MM-DD, new Date() is quite reliable.
+    // It handles 'YYYY-MM-DD HH:mm:ss', 'YYYY-MM-DDTHH:mm:ss', etc.
+    const d = new Date(dateStr);
+    if (d instanceof Date && !isNaN(d)) {
+        return d;
+    }
+
+    console.warn("Could not parse date:", dateStr);
+    return null;
+}
+
+/**
+ * Formats a Date object into a string suitable for a datetime-local input.
+ * @param {Date} date - The date object to format.
+ * @returns {string} The formatted string (YYYY-MM-DDTHH:mm).
+ */
+function formatForDateTimeInput(date) {
+    if (!(date instanceof Date) || isNaN(date)) return '';
+    return new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+}
+
+// Parses a Google Sheet date string into a Date object (midnight)
+function parseSheetDate(dateStr) {
+  if (!dateStr) return null;
+
+  // Remove any time part if present
+  const dateOnly = dateStr.split(' ')[0];
+
+  const parts = dateOnly.split(/[\/\-]/); // split on / or -
+  let day, month, year;
+
+  if (parts[0].length === 4) {
+    // Format: YYYY-MM-DD
+    year = parseInt(parts[0], 10);
+    month = parseInt(parts[1], 10) - 1; // 0-based month
+    day = parseInt(parts[2], 10);
+  } else {
+    // Format: DD/MM/YYYY
+    day = parseInt(parts[0], 10);
+    month = parseInt(parts[1], 10) - 1;
+    year = parseInt(parts[2], 10);
+  }
+
+  const d = new Date(year, month, day);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// Returns the difference in full days between two dates
+function getDaysDifference(date1, date2) {
+  if (!date1 || !date2) return null;
+  const d1 = new Date(date1);
+  const d2 = new Date(date2);
+  d1.setHours(0, 0, 0, 0);
+  d2.setHours(0, 0, 0, 0);
+  const diffMs = d1.getTime() - d2.getTime();
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * Shows the confirmation modal with the data to be submitted,
+ * and updates the message based on the 15-day rule.
+ */
+async function showConfirmation() {
+  // Validate date before proceeding to other validations
+  if (!validateMeasurementDate()) {
+    return; // Stop if date is invalid
+  }
+
+  // Added LOAD_N to required fields
+const requiredFields = [
+  'DATE_OF_MEASUREMENT',
+  'LOAD_R',
+  'LOAD_Y',
+  'LOAD_B',
+  'LOAD_N',
+  'NEW_CAPA_KV', 
+  'KIOSK',
+  'LA',
+  'NEUTRAL_FLAT_EARTHING'
+];
+
+for (const field of requiredFields) {
+  const el = document.getElementById(field);
+  const value = el.value.trim();
+  if (!value) {
+    const label = el.tagName === 'SELECT'
+      ? `${field.replace(/_/g, ' ')} (please select an option)`
+      : `${field.replace(/_/g, ' ').toLowerCase()}`;
+    showError(`Please fill in the ${label}`);
+    return;
+  }
+}
+
+
+  const currentMeasurementDateStr = document.getElementById("DATE_OF_MEASUREMENT").value;
+  const currentMeasurementDate = new Date(currentMeasurementDateStr);
+  const confirmationModalMessage = document.getElementById("confirmationModalMessage");
+  const confirmationActions = document.getElementById("confirmationActions");
+
+  showLoading("Checking previous updates...");
+
+  try {
+    const response = await fetch(updateDataSheetUrl);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const csvText = await response.text();
+    const updateData = parseCSV(csvText);
+    console.log("Update Data fetched for confirmation check:", updateData);
+
+    // Find the LATEST update for this DTR by sorting
+    const allUpdatesForDTR = updateData
+        .filter(row => row.DTR_CODE === window.currentCode)
+        .sort((a, b) => {
+            const dateA = parseDateTime(a.DATE_OF_MEASUREMENT);
+            const dateB = parseDateTime(b.DATE_OF_MEASUREMENT);
+            if (!dateA) return 1; // push null dates to the end
+            if (!dateB) return -1;
+            return dateB - dateA; // Sort descending (newest first)
+        });
+
+    const latestUpdate = allUpdatesForDTR.length > 0 ? allUpdatesForDTR[0] : null;
+    console.log("Latest DTR update for confirmation:", latestUpdate);
+
+    displayConfirmationModalContent(); // This function will populate the data grid
+
+    if (latestUpdate) {
+        const recordCount = allUpdatesForDTR.length;
+        const lastMeasurementDateStr = latestUpdate['DATE_OF_MEASUREMENT'];
+        confirmationModalMessage.innerHTML = `Last update was on <b>${lastMeasurementDateStr}</b>. Would you like to replace this entry or add a new one?`;
+
+        // Populate actions with two choices
+        confirmationActions.innerHTML = `
+            <button class="btn btn-secondary" onclick="closeModal('confirmationModal')">Cancel</button>
+            <button class="btn btn-primary" onclick="confirmAndSubmit(true, ${recordCount})">
+                🔄 Replace Last Entry
+            </button>
+            <button class="btn btn-success" onclick="confirmAndSubmit(false, ${recordCount})">
+                ➕ Add as New Entry
+            </button>
+        `;
+    } else {
+      // No previous record found, so it's a new entry
+      confirmationModalMessage.textContent = "No previous record found for this DTR. Confirm to add a new entry:";
+      // Populate actions with one choice
+      confirmationActions.innerHTML = `
+        <button class="btn btn-secondary" onclick="closeModal('confirmationModal')">Cancel</button>
+        <button class="btn btn-success" onclick="confirmAndSubmit(false, 0)">
+            🚀 Confirm & Submit
+        </button>
+      `;
+    }
+    document.getElementById("confirmationModal").style.display = "flex"; // Show the confirmation modal
+
+  } catch (error) {
+    console.error("Error checking last measurement date:", error);
+    showError("Could not check previous update history. Please try again.");
+  } finally {
+    hideLoading();
+  }
+}
+
+/**
+ * Populates and displays the main confirmation modal.
+ */
+function displayConfirmationModalContent() {
+  const data = {
+    'DTR Code': window.currentCode,
+    'Date and Time': document.getElementById("DATE_OF_MEASUREMENT").value, // Updated label
+    'Location': document.getElementById("NEW_LOC_NAME").value || 'Not specified',
+    'Feeder': document.getElementById("NEW_FDR_NAME").value || 'Not specified',
+    'Capacity': document.getElementById("NEW_CAPA_KV").value || 'Not specified',
+    'Load R': document.getElementById("LOAD_R").value + ' A',
+    'Load Y': document.getElementById("LOAD_Y").value + ' A',
+    'Load B': document.getElementById("LOAD_B").value + ' A',
+    'N Neutral': document.getElementById("LOAD_N").value + ' A', // New field for Neutral Current
+    'Kiosk': document.getElementById("KIOSK").value || 'Not specified', 
+    'LA': document.getElementById("LA").value || 'Not specified', 
+    'Neutral Flat Earthing': document.getElementById("NEUTRAL_FLAT_EARTHING").value || 'Not specified', 
+    'Remarks': document.getElementById("REMARKS").value || 'None'
+  };
+
+  let html = '';
+  for (const [key, value] of Object.entries(data)) {
+    html += `
+      <div class="confirmation-item">
+        <div class="confirmation-label">${key}</div>
+        <div class="confirmation-value">${value}</div>
+      </div>
+    `;
+  }
+
+  document.getElementById("confirmationData").innerHTML = html;
+  // The modal display is now handled in showConfirmation()
+}
+
+
+/**
+ * Closes the specified modal.
+ * @param {string} modalId - The ID of the modal to close.
+ */
+function closeModal(modalId) {
+  // If closing the data modal, reset the table filter and active tab
+  if (modalId === 'allDataModal' && window.allDataTableInstance) {
+    const table = window.allDataTableInstance;
+    table.columns().search('').draw(); // Clear all filters
+    
+    $('#dataTabs a').removeClass('active');
+    $('#all-tab').addClass('active'); // Reset to the 'All' tab
+    $('#table-container').show();
+    $('#overloaded-message').hide();
+  }
+  document.getElementById(modalId).style.display = "none";
+}
+
+/**
+ * Confirms the submission and calls submitData.
+ */
+function confirmAndSubmit(isReplacing, recordCount) {
+  // Reject if user tries to add a new record when 4 already exist.
+  if (!isReplacing && recordCount >= 4) {
+    closeModal('confirmationModal');
+    const rejectionMessage = `Cannot add new entry. This DTR already has ${recordCount} records, which is the maximum allowed. You can only replace the last entry.`;
+    document.getElementById('rejectionMessage').textContent = rejectionMessage;
+    document.getElementById('rejectionModal').style.display = 'flex';
+    return;
+  }
+
+  window.isReplacingData = isReplacing; // Set the flag based on user's choice
+  closeModal('confirmationModal');
+  submitData();
+}
+
+/**
+ * Shows the loading overlay.
+ * @param {string} message - The message to display in the loading overlay.
+ */
+function showLoading(message = "Updating data...") {
+  document.getElementById("loadingOverlay").querySelector('p').textContent = message;
+  document.getElementById("loadingOverlay").style.display = "flex";
+}
+
+/**
+ * Hides the loading overlay.
+ */
+function hideLoading() {
+  document.getElementById("loadingOverlay").style.display = "none";
+}
+
+/**
+ * Submits the DTR data to the Google Apps Script.
+ */
+function submitData() {
+  showLoading(); // Show loading overlay before submission
+  
+  const payload = {
+    DTR_CODE: window.currentCode,
+    DATE_OF_MEASUREMENT: document.getElementById("DATE_OF_MEASUREMENT").value,
+    NEW_LOC_NAME: document.getElementById("NEW_LOC_NAME").value,
+    NEW_FDR_NAME: document.getElementById("NEW_FDR_NAME").value,
+    NEW_CAPA_KV: document.getElementById("NEW_CAPA_KV").value,
+    LOAD_R: parseFloat(document.getElementById("LOAD_R").value) || 0,
+    LOAD_Y: parseFloat(document.getElementById("LOAD_Y").value) || 0,
+    LOAD_B: parseFloat(document.getElementById("LOAD_B").value) || 0,
+    LOAD_N: parseFloat(document.getElementById("LOAD_N").value) || 0, // New field for Neutral Current
+    KIOSK: document.getElementById("KIOSK").value, 
+    LA: document.getElementById("LA").value, 
+    NEUTRAL_FLAT_EARTHING: document.getElementById("NEUTRAL_FLAT_EARTHING").value, 
+    REMARKS: document.getElementById("REMARKS").value,
+    isReplacingData: window.isReplacingData // IMPORTANT: Send this flag to the Apps Script
+  };
+
+  fetch(scriptUrl, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.status === "success") {
+      showSuccess(data.updated ? "Data Successfully Updated!" : "Data Successfully Added!");
+      setTimeout(() => resetSearch(), 2000);
+    } else {
+      showError("Submission failed: " + (data.message || "Unknown error"));
+    }
+  })
+  .catch(err => {
+    showError("Connection error. Please try again.");
+  })
+  .finally(() => {
+    hideLoading(); // Hide loading overlay after submission (success or error)
+  });
+}
+
+/**
+ * Resets the search input, result area, and form.
+ */
+function resetSearch() {
+  document.getElementById("searchCode").value = "";
+  document.getElementById("result").innerHTML = "";
+  document.getElementById("dtrForm").reset();
+  document.getElementById("formSection").style.display = "none";
+  window.currentCode = null;
+}
+
+window.allDataTableInstance = null; // To hold the DataTable instance
+
+// Event listeners
+document.getElementById("searchCode").addEventListener("keypress", function(event) {
+  if (event.key === "Enter") {
+    event.preventDefault(); // Prevent default form submission
+    searchDTR();
+  }
+});
+
+// Event listener for PIN input
+document.getElementById("pinInput").addEventListener("keypress", function(event) {
+    if (event.key === "Enter") {
+        event.preventDefault();
+        validatePin();
+    }
+});
+
+// Close modal when clicking outside (only for confirmation modal and rejection modal)
+window.onclick = function(event) {
+  const confirmationModal = document.getElementById("confirmationModal");
+  const rejectionModal = document.getElementById("rejectionModal");
+  if (event.target === confirmationModal) {
+    closeModal('confirmationModal');
+  }
+  if (event.target === rejectionModal) {
+    closeModal('rejectionModal');
+  }
+}
+
+// On page load, show the PIN modal and hide main content
+window.onload = function() {
+    document.getElementById("pinModal").style.display = "flex";
+    document.getElementById("mainContentWrapper").style.display = "none";
+
+    // Set min/max for DATE_OF_MEASUREMENT on load
+    const dateInput = document.getElementById("DATE_OF_MEASUREMENT");
+    const now = new Date();
+    
+    // Set max to current datetime
+    const year = now.getFullYear();
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const day = now.getDate().toString().padStart(2, '0');
+    const hours = now.getHours().toString().padStart(2, '0');
+    const minutes = now.getMinutes().toString().padStart(2, '0');
+    dateInput.max = `${year}-${month}-${day}T${hours}:${minutes}`;
+
+    // Add event listener for real-time validation
+    dateInput.addEventListener('change', validateMeasurementDate);
+};
+
+async function showAllLoadData() {
+  if (!window.isAuthenticated) {
+    showError("Please enter a valid PIN to view data.");
+    return;
+  }
+  if (!window.userAuthorizedDTRPrefix) {
+    showError("No DTR authorization found.");
+    return;
+  }
+
+  showLoading("Fetching authorized load data...");
+
+  try {
+    const res = await fetch(updateDataSheetUrl);
+    if (!res.ok) throw new Error("Failed to fetch data");
+
+    const csvText = await res.text();
+    let data = parseCSV(csvText);
+
+    // Filter to only authorized DTRs
+    data = data.filter(row => 
+      row.DTR_CODE && row.DTR_CODE.startsWith(window.userAuthorizedDTRPrefix)
+    );
+
+    if (data.length === 0) {
+      hideLoading();
+      showError("No load measurement records found for your authorized DTRs.");
+      return;
+    }
+
+    // Destroy old DataTable if exists, clear table content, and clear buttons
+    if ($.fn.DataTable.isDataTable('#allDataTable')) {
+      $('#allDataTable').DataTable().destroy();
+      $('#allDataTable').empty(); // Important to clear thead/tbody for re-initialization
+      $('#tableButtons').empty();
+    }
+
+    const headers = Object.keys(data[0]);
+    const columnsConfig = headers.map(h => ({ data: h, name: h, title: h }));
+    const dateColumnIndex = headers.indexOf('DATE_OF_MEASUREMENT');
+
+    // Initialize DataTable
+    const table = $('#allDataTable').DataTable({
+      data: data, // Pass data directly to DataTables
+      columns: columnsConfig, // Define columns
+      pageLength: 10,
+      lengthMenu: [5, 10, 25, 50, 100],
+      // Set default sort order to the 'DATE_OF_MEASUREMENT' column, descending
+      order: dateColumnIndex >= 0 ? [[dateColumnIndex, 'desc']] : [],
+      fixedHeader: true,
+      responsive: true, // Make table responsive
+      dom: "B" + 
+           "<'row'<'col-sm-12 col-md-6'l><'col-sm-12 col-md-6'f>>" +
+           "<'row'<'col-sm-12'tr>>" +
+           "<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
+      buttons: [{
+        extend: 'csv',
+        text: '<i class="fas fa-file-csv"></i>', // Icon only
+        titleAttr: 'Download as CSV', // Tooltip for accessibility
+        className: 'btn btn-secondary btn-sm' // Styling
+      }]
+    });
+
+    window.allDataTableInstance = table; // Store instance for filtering
+
+    // Move the buttons container to our placeholder div in the modal header
+    table.buttons().container().appendTo('#tableButtons');
+
+    // Show modal
+    document.getElementById("allDataModal").style.display = "flex";
+
+    // Reset to the 'All' tab view
+    $('#table-container').show();
+    $('#overloaded-message').hide();
+
+  } catch (err) {
+    console.error(err);
+    showError("Could not load authorized data. " + err.message);
+  } finally {
+    hideLoading();
+  }
+}
+
+// Attach a single event listener for tab clicks
+$('#dataTabs').on('click', 'a', function(e) {
+    e.preventDefault();
+
+    $('#dataTabs a').removeClass('active');
+    $(this).addClass('active');
+
+    const table = window.allDataTableInstance;
+    if (!table) return;
+
+    // Handle special "Over-Loaded" tab
+    if (this.id === 'over-loaded-tab') {
+        $('#table-container').hide();
+        $('#overloaded-message').show();
+        return;
+    }
+
+    $('#table-container').show();
+    $('#overloaded-message').hide();
+
+    const filterColName = $(this).data('filter-col');
+    
+    // Clear all column filters before applying a new one
+    table.columns().search('').draw();
+
+    if (filterColName) {
+        const filterVal = $(this).data('filter-val');
+        const isInverse = $(this).data('filter-inv');
+        const colIndex = table.column(`${filterColName}:name`).index();
+
+        if (colIndex !== undefined && isInverse) {
+            // Regex for "not equal to value"
+            const searchTerm = `^(?!${filterVal}$).*`;
+            table.column(colIndex).search(searchTerm, true, false).draw();
+        }
+    }
+});
+
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
