@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NSC Analytics</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --secondary: #64748b;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --surface: #ffffff;
+      --surface-dark: #f8fafc;
+      --surface-darker: #e2e8f0;
+      --text: #0f172a;
+      --text-light: #64748b;
+      --border: #e2e8f0;
+      --radius: 12px;
+      --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      color: var(--text);
+      line-height: 1.6;
+      padding: 1rem;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: white;
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: clamp(1.5rem, 4vw, 2.25rem);
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .header-info {
+      font-size: 0.875rem;
+      opacity: 0.9;
+    }
+
+    .main-content {
+      padding: 1rem;
+    }
+
+    .tabs-container {
+      margin-bottom: 2rem;
+    }
+
+    .tabs-label {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-light);
+      margin-bottom: 0.75rem;
+      text-align: center;
+    }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: center;
+    }
+
+    .tab {
+      background: var(--surface-dark);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.75rem 1rem;
+      border-radius: calc(var(--radius) / 2);
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .tab:hover {
+      background: var(--surface-darker);
+    }
+
+    .tab.active {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+
+    .region-info {
+      background: var(--success);
+      color: white;
+      padding: 0.75rem 1rem;
+      border-radius: calc(var(--radius) / 2);
+      text-align: center;
+      font-size: 0.875rem;
+      font-weight: 500;
+      margin-bottom: 1.5rem;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 1rem;
+      border-radius: calc(var(--radius) / 2);
+      text-align: center;
+      box-shadow: var(--shadow);
+    }
+
+    .metric-value {
+      font-size: clamp(1.5rem, 5vw, 2rem);
+      font-weight: 700;
+      color: var(--primary);
+      line-height: 1;
+    }
+
+    .metric-label {
+      font-size: 0.75rem;
+      color: var(--text-light);
+      margin-top: 0.25rem;
+      font-weight: 500;
+    }
+
+    .analysis-grid {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .card-header {
+      padding: 1rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .card-header.critical {
+      background: linear-gradient(135deg, var(--danger), #dc2626);
+      color: white;
+      border-bottom: none;
+    }
+
+    .card-header.warning {
+      background: linear-gradient(135deg, var(--warning), #d97706);
+      color: white;
+      border-bottom: none;
+    }
+
+    .card-header.info {
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: white;
+      border-bottom: none;
+    }
+
+    .card-header.success {
+      background: linear-gradient(135deg, var(--success), #059669);
+      color: white;
+      border-bottom: none;
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 600;
+      line-height: 1.2;
+    }
+
+    .card-content {
+      padding: 1rem;
+    }
+
+    .stats-list {
+      list-style: none;
+      margin: 0.75rem 0 0 0;
+    }
+
+    .stats-item {
+      padding: 0.5rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.875rem;
+    }
+
+    .stats-item:last-child {
+      border-bottom: none;
+    }
+
+    .highlight {
+      font-weight: 600;
+      color: var(--primary);
+    }
+
+    .loading {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--text-light);
+    }
+
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--border);
+      border-top: 3px solid var(--primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 1rem;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .summary-text {
+      font-size: 0.875rem;
+      line-height: 1.5;
+      margin-bottom: 0.75rem;
+    }
+
+    .empty-state {
+      text-align: center;
+      color: var(--text-light);
+      font-style: italic;
+      padding: 1rem 0;
+    }
+
+    @media (min-width: 768px) {
+      body {
+        padding: 2rem;
+      }
+
+      .main-content {
+        padding: 2rem;
+      }
+
+      .header {
+        padding: 2rem;
+      }
+
+      .metrics-grid {
+        grid-template-columns: repeat(4, 1fr);
+      }
+
+      .analysis-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .tabs {
+        justify-content: center;
+      }
+
+      .tab {
+        padding: 0.875rem 1.25rem;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .analysis-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    .icon {
+      font-size: 1.25rem;
+    }
+
+    /* Dark theme support */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --surface: #1e293b;
+        --surface-dark: #334155;
+        --surface-darker: #475569;
+        --text: #f1f5f9;
+        --text-light: #94a3b8;
+        --border: #334155;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>🔍 NSC Analytics</h1>
+      <div class="header-info">
+        Malda Zone • <span id="reportDate">Loading...</span><br>
+        Performance & Delay Analysis
+      </div>
+    </header>
+
+    <main class="main-content">
+      <div class="tabs-container">
+        <div class="tabs-label">Select Region</div>
+        <div class="tabs" id="regionTabs"></div>
+      </div>
+
+      <div id="loading" class="loading">
+        <div class="loading-spinner"></div>
+        Loading performance data...
+      </div>
+
+      <div id="content" style="display: none;">
+        <div class="region-info" id="regionInfo">
+          Analyzing: All Regions
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-value" id="totalDelayed">-</div>
+            <div class="metric-label">Delayed Cases</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value" id="totalWithheld">-</div>
+            <div class="metric-label">Withheld Cases</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value" id="criticalCCCs">-</div>
+            <div class="metric-label">Critical CCCs</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value" id="totalRecords">-</div>
+            <div class="metric-label">Total Records</div>
+          </div>
+        </div>
+
+        <div class="analysis-grid">
+          <div class="card">
+            <div class="card-header critical">
+              <span class="icon">🚨</span>
+              <h2 class="card-title">Bottom 20% Performers</h2>
+            </div>
+            <div class="card-content" id="bottom20Analysis"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header warning">
+              <span class="icon">⚠️</span>
+              <h2 class="card-title">Withheld Cases</h2>
+            </div>
+            <div class="card-content" id="withheldAnalysis"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header info">
+              <span class="icon">⚡</span>
+              <h2 class="card-title">Non-Pole Violations</h2>
+            </div>
+            <div class="card-content" id="nonPoleAnalysis"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header success">
+              <span class="icon">🏭</span>
+              <h2 class="card-title">Industrial Priority</h2>
+            </div>
+            <div class="card-content" id="industrialAnalysis"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header info">
+              <span class="icon">🔌</span>
+              <h2 class="card-title">Pole Case Analysis</h2>
+            </div>
+            <div class="card-content" id="poleAnalysis"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header" style="background: linear-gradient(135deg, #6366f1, #4f46e5); color: white;">
+              <span class="icon">📊</span>
+              <h2 class="card-title">Key Insights</h2>
+            </div>
+            <div class="card-content" id="keyObservations"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+<script>
+  let selectedRegion = 'All';
+  let globalData = [];
+  let regions = [];
+
+  document.getElementById('reportDate').textContent = new Date().toLocaleDateString();
+
+  function setRegion(region) {
+    selectedRegion = region;
+    updateRegionTabs();
+    generateReport();
+  }
+
+  function updateRegionTabs() {
+    const container = document.getElementById('regionTabs');
+    container.innerHTML = '';
+
+    const createTab = (name, isActive = false) => {
+      const btn = document.createElement('button');
+      btn.textContent = name;
+      btn.className = `tab ${isActive ? 'active' : ''}`;
+      btn.onclick = () => setRegion(name);
+      container.appendChild(btn);
+    };
+
+    createTab('All', selectedRegion === 'All');
+    regions.forEach(region => {
+      createTab(region, selectedRegion === region);
+    });
+  }
+
+  function getFilteredData() {
+    if (selectedRegion === 'All') {
+      return globalData;
+    }
+    return globalData.filter(d => d.REGION && d.REGION.trim().toUpperCase() === selectedRegion.toUpperCase());
+  }
+
+  function countByCCC(arr) {
+    return arr.reduce((acc, curr) => {
+      const ccc = curr.SUPP_OFF || 'UNKNOWN';
+      acc[ccc] = (acc[ccc] || 0) + 1;
+      return acc;
+    }, {});
+  }
+
+  function percent(count, total) {
+    return total > 0 ? ((count / total) * 100).toFixed(1) : '0';
+  }
+
+  function formatCCCList(cccData, limit = 5, showPercentage = true) {
+    const entries = Object.entries(cccData).sort((a, b) => b[1] - a[1]).slice(0, limit);
+    if (entries.length === 0) {
+      return '<div class="empty-state">No data available for this region</div>';
+    }
+    
+    const total = Object.values(cccData).reduce((sum, count) => sum + count, 0);
+    return `<ul class="stats-list">
+      ${entries.map(([ccc, count]) => 
+        `<li class="stats-item">CCC-${ccc}: <span class="highlight">${count} cases</span>${showPercentage ? ` (${percent(count, total)}%)` : ''}</li>`
+      ).join('')}
+    </ul>`;
+  }
+
+  function generateReport() {
+    if (globalData.length === 0) return;
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+
+    const data = getFilteredData();
+    const regionCount = data.length;
+    const totalCount = globalData.length;
+    
+    document.getElementById('regionInfo').textContent = 
+      selectedRegion === 'All' 
+        ? `Analyzing: All Regions (${totalCount} records)`
+        : `Analyzing: ${selectedRegion} (${regionCount} of ${totalCount} records)`;
+
+    const delayData = data.filter(d => parseFloat(d.DelayInSC || 0) > 0);
+    delayData.sort((a, b) => parseFloat(b.DelayInSC || 0) - parseFloat(a.DelayInSC || 0));
+
+    const percentage = 0.20;
+    const bottom20 = delayData.slice(0, Math.ceil(delayData.length * percentage));
+    const withheldData = data.filter(d => d.SCN_WITHELD_DATE && d.SCN_WITHELD_DATE !== '0' && d.SCN_WITHELD_DATE.trim() !== '');
+    const nonPoleDelayed = delayData.filter(d => (!parseInt(d.NO_OF_POLES || 0) || d.NO_OF_POLES === '0') && parseFloat(d.DelayInSC || 0) > 3);
+    const industrialDelayed = delayData.filter(d => d.CLASS_OF_CONSUMER && d.CLASS_OF_CONSUMER.toUpperCase().includes('INDUSTRIAL'));
+    const onePoleDelayed = delayData.filter(d => parseInt(d.NO_OF_POLES || 0) === 1);
+    const twoPoleDelayed = delayData.filter(d => parseInt(d.NO_OF_POLES || 0) === 2);
+
+    // Update metrics
+    document.getElementById('totalDelayed').textContent = delayData.length;
+    document.getElementById('totalWithheld').textContent = withheldData.length;
+    document.getElementById('criticalCCCs').textContent = Object.keys(countByCCC(bottom20)).length;
+    document.getElementById('totalRecords').textContent = data.length;
+
+    // Bottom 20% analysis
+    document.getElementById('bottom20Analysis').innerHTML = 
+      `<div class="summary-text"><strong>${bottom20.length}</strong> consumers representing worst ${percentage * 100}% performance</div>
+       ${formatCCCList(countByCCC(bottom20))}`;
+
+    // Withheld analysis
+    document.getElementById('withheldAnalysis').innerHTML = 
+      `<div class="summary-text"><strong>${withheldData.length}</strong> cases initially withheld - indicates process failures</div>
+       ${formatCCCList(countByCCC(withheldData))}`;
+
+    // Non-pole analysis
+    document.getElementById('nonPoleAnalysis').innerHTML = 
+      `<div class="summary-text"><strong>${nonPoleDelayed.length}</strong> non-pole cases delayed beyond 3-day standard</div>
+       ${formatCCCList(countByCCC(nonPoleDelayed), 5, false)}`;
+
+    // Industrial analysis
+    document.getElementById('industrialAnalysis').innerHTML = 
+      `<div class="summary-text"><strong>${industrialDelayed.length}</strong> industrial connections delayed - high revenue impact</div>
+       ${formatCCCList(countByCCC(industrialDelayed), 5, false)}`;
+
+    // Pole analysis
+    document.getElementById('poleAnalysis').innerHTML = 
+      `<div class="summary-text">
+         <strong>1-Pole Cases:</strong> ${onePoleDelayed.length} delayed<br>
+         <strong>2-Pole Cases:</strong> ${twoPoleDelayed.length} delayed
+       </div>
+       <div style="margin-top: 0.75rem;">
+         <div style="font-weight: 600; margin-bottom: 0.5rem;">1-Pole Issues:</div>
+         ${formatCCCList(countByCCC(onePoleDelayed), 3, false)}
+       </div>`;
+
+    // Key observations
+    const observations = [];
+    
+    if (bottom20.length > 0) {
+      const topPoor = Object.entries(countByCCC(bottom20)).sort((a, b) => b[1] - a[1])[0];
+      observations.push(`Worst performer: CCC-${topPoor[0]} with ${topPoor[1]} cases`);
+    }
+    
+    observations.push(`${nonPoleDelayed.length} cases violating 3-day standard`);
+    observations.push(`${industrialDelayed.length} industrial customers affected`);
+    observations.push(`${withheldData.length} initial process failures`);
+    
+    document.getElementById('keyObservations').innerHTML = 
+      `<ul class="stats-list">
+         ${observations.map(obs => `<li class="stats-item">${obs}</li>`).join('')}
+       </ul>`;
+  }
+
+  // Load data
+  fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vRsUU2viBvYhSgR0RFwmZ1H8LkYCats9roQVCKvQeoU7dzg6ryR6IWZex9FT9tksp_DEM23ZgQ28Iyo/pub?output=csv')
+    .then(res => res.text())
+    .then(csv => {
+      try {
+        const rows = csv.trim().split('\n').map(r => r.split(','));
+        const headers = rows[0];
+        globalData = rows.slice(1).map(r => 
+          Object.fromEntries(headers.map((h, i) => [h.trim(), r[i]?.trim() || '']))
+        );
+        
+        regions = Array.from(new Set(
+          globalData.map(d => d.REGION?.trim()).filter(Boolean)
+        )).sort();
+        
+        updateRegionTabs();
+        generateReport();
+      } catch (error) {
+        document.getElementById('loading').innerHTML = '<div style="color: var(--danger);">❌ Error parsing data</div>';
+      }
+    })
+    .catch(err => {
+      document.getElementById('loading').innerHTML = '<div style="color: var(--danger);">❌ Error loading data</div>';
+    });
+</script>
+
+</body>
+</html>
