@@ -1,587 +1,1921 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NSC Analytics</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NSC Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        }
 
-    :root {
-      --primary: #2563eb;
-      --primary-dark: #1d4ed8;
-      --secondary: #64748b;
-      --success: #10b981;
-      --warning: #f59e0b;
-      --danger: #ef4444;
-      --surface: #ffffff;
-      --surface-dark: #f8fafc;
-      --surface-darker: #e2e8f0;
-      --text: #0f172a;
-      --text-light: #64748b;
-      --border: #e2e8f0;
-      --radius: 12px;
-      --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-    }
+        /* Custom styles - Fixed height layout */
+        .sidebar {
+            width: 280px;
+            transition: transform 0.3s ease-in-out;
+            z-index: 50;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        
+        .secondary-sidebar {
+            width: 240px;
+            background: rgba(30, 41, 59, 0.95);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(148, 163, 184, 0.1);
+            transition: transform 0.3s ease-in-out, left 0.3s ease-in-out;
+        }
+        
+        /* Ensure full height utilization */
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        /* Custom scrollbar - Dark theme */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(100, 116, 139, 0.6);
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(100, 116, 139, 0.8);
+        }
+        
+        /* Hierarchy items - Dark theme */
+        .filter-hierarchy-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            margin-bottom: 2px;
+            border: 1px solid transparent;
+        }
+        .filter-hierarchy-item:hover {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.2);
+            transform: translateX(2px);
+        }
+        .filter-hierarchy-item.selected {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.2));
+            border-color: rgba(59, 130, 246, 0.4);
+            color: #60a5fa;
+            font-weight: 600;
+        }
+        .filter-hierarchy-item.selected .count-pill {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+        }
+        .filter-hierarchy-item .label-container {
+            display: flex;
+            align-items: center;
+        }
+        .filter-hierarchy-item .count-pill {
+            min-width: 32px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            background: rgba(100, 116, 139, 0.2);
+            color: #cbd5e1;
+            font-size: 0.75rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        .toggle-icon {
+            margin-right: 8px;
+            transition: transform 0.2s ease;
+            flex-shrink: 0;
+            color: #64748b;
+        }
+        .toggle-icon.expanded {
+            transform: rotate(90deg);
+            color: #3b82f6;
+        }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      color: var(--text);
-      line-height: 1.6;
-      padding: 1rem;
-    }
+        /* Filter table - Dark theme */
+        .filter-table {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            align-items: center;
+            gap: 0;
+        }
+        .filter-table-row {
+            display: contents;
+        }
+        .filter-table-label {
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            border-radius: 6px;
+            margin-right: 4px;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+        .filter-table-count {
+            padding: 8px 12px;
+            text-align: right;
+            font-weight: 500;
+            font-size: 0.875rem;
+            color: #94a3b8;
+        }
+        .filter-table-row.selected .filter-table-label,
+        .filter-table-row.selected .filter-table-count {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.2));
+            color: #60a5fa;
+            font-weight: 600;
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+        .filter-table-row .filter-table-label:hover {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.2);
+            transform: translateX(2px);
+        }
 
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      background: var(--surface);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow-lg);
-      overflow: hidden;
-    }
+        /* Cards with glassmorphism */
+        .glass-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+        }
+        .glass-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+            border-color: rgba(59, 130, 246, 0.3);
+        }
 
-    .header {
-      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-      color: white;
-      padding: 1.5rem;
-      text-align: center;
-    }
+        /* Table styling */
+        .data-table {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        
+        table th {
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: #94a3b8 !important;
+            font-weight: 600 !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.05em !important;
+            padding: 12px 8px !important;
+            font-size: 0.75rem !important;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.2) !important;
+        }
+        
+        table td {
+            padding: 8px !important;
+            font-size: 0.8rem !important;
+            color: #cbd5e1 !important;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.1) !important;
+        }
+        
+        .table-row:hover {
+            background: rgba(59, 130, 246, 0.05) !important;
+            transform: scale(1.001);
+            transition: all 0.2s ease;
+        }
 
-    .header h1 {
-      font-size: clamp(1.5rem, 4vw, 2.25rem);
-      font-weight: 700;
-      margin-bottom: 0.5rem;
-    }
+        /* Compact table cells */
+        .table-cell {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 140px;
+        }
 
-    .header-info {
-      font-size: 0.875rem;
-      opacity: 0.9;
-    }
+        .sidebar, .secondary-sidebar {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+        }
 
-    .main-content {
-      padding: 1rem;
-    }
+        /* Button styling */
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+        }
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
 
-    .tabs-container {
-      margin-bottom: 2rem;
-    }
+        /* Filter sections */
+        .filter-section {
+            margin-bottom: 24px;
+            padding: 16px 0;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        .filter-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
 
-    .tabs-label {
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: var(--text-light);
-      margin-bottom: 0.75rem;
-      text-align: center;
-    }
+        /* Loading animation */
+        .loading-spinner {
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(10px);
+        }
 
-    .tabs {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      justify-content: center;
-    }
+        /* Modal styling */
+        .modal-content {
+            background: rgba(30, 41, 59, 0.95);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            color: #e2e8f0;
+        }
 
-    .tab {
-      background: var(--surface-dark);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 0.75rem 1rem;
-      border-radius: calc(var(--radius) / 2);
-      font-size: 0.875rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      white-space: nowrap;
-    }
+        /* Radio buttons - Dark theme */
+        input[type="radio"] {
+            accent-color: #3b82f6;
+            margin-right: 8px;
+        }
 
-    .tab:hover {
-      background: var(--surface-darker);
-    }
+        /* Show/Hide buttons */
+        .panel-toggle-btn {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(8px);
+            transition: all 0.2s ease;
+        }
+        .panel-toggle-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+        }
+        .delay-tab-btn {
+            padding: 8px 16px;
+            border: none;
+            background: transparent;
+            color: #94a3b8;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px; /* Overlap with parent border */
+        }
+        .delay-tab-btn.active-tab {
+            color: #60a5fa;
+            border-bottom-color: #3b82f6;
+        }
+          #detailModal .modal-dialog {
+    max-height: 90vh; /* prevent overflow beyond viewport */
+    display: flex;
+    flex-direction: column;
+  }
 
-    .tab.active {
-      background: var(--primary);
-      color: white;
-      border-color: var(--primary);
-    }
+  #detailModal .modal-content {
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh;
+  }
 
-    .region-info {
-      background: var(--success);
-      color: white;
-      padding: 0.75rem 1rem;
-      border-radius: calc(var(--radius) / 2);
-      text-align: center;
-      font-size: 0.875rem;
-      font-weight: 500;
-      margin-bottom: 1.5rem;
-    }
+  #detailModal .modal-header {
+    position: sticky;
+    top: 0;
+    z-index: 1055; /* higher than body content */
+    background: #fff; /* match modal background */
+  }
 
-    .metrics-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 1rem;
-      margin-bottom: 1.5rem;
-    }
+  #detailModal .modal-body {
+    overflow-y: auto;
+  }
 
-    .metric-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      padding: 1rem;
-      border-radius: calc(var(--radius) / 2);
-      text-align: center;
-      box-shadow: var(--shadow);
-    }
+  #mainLayout {
+    display: flex;
+    width: 100%;
+    height: 100%;
+  }
 
-    .metric-value {
-      font-size: clamp(1.5rem, 5vw, 2rem);
-      font-weight: 700;
-      color: var(--primary);
-      line-height: 1;
-    }
+  #filtersPanel {
+    width: 250px; /* or your preferred width */
+    transition: width 0.3s, margin 0.3s;
+  }
 
-    .metric-label {
-      font-size: 0.75rem;
-      color: var(--text-light);
-      margin-top: 0.25rem;
-      font-weight: 500;
-    }
+  #filtersPanel.hidden {
+    width: 0;
+    margin: 0;
+    padding: 0;
+    border: none;
+    overflow: hidden;
+  }
 
-    .analysis-grid {
-      display: grid;
-      gap: 1rem;
-    }
+  #additionalFiltersPanel {
+    width: 250px; /* adjust as needed */
+    transition: margin 0.3s;
+  }
 
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-      box-shadow: var(--shadow);
-    }
-
-    .card-header {
-      padding: 1rem;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .card-header.critical {
-      background: linear-gradient(135deg, var(--danger), #dc2626);
-      color: white;
-      border-bottom: none;
-    }
-
-    .card-header.warning {
-      background: linear-gradient(135deg, var(--warning), #d97706);
-      color: white;
-      border-bottom: none;
-    }
-
-    .card-header.info {
-      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-      color: white;
-      border-bottom: none;
-    }
-
-    .card-header.success {
-      background: linear-gradient(135deg, var(--success), #059669);
-      color: white;
-      border-bottom: none;
-    }
-
-    .card-title {
-      font-size: 1rem;
-      font-weight: 600;
-      line-height: 1.2;
-    }
-
-    .card-content {
-      padding: 1rem;
-    }
-
-    .stats-list {
-      list-style: none;
-      margin: 0.75rem 0 0 0;
-    }
-
-    .stats-item {
-      padding: 0.5rem 0;
-      border-bottom: 1px solid var(--border);
-      font-size: 0.875rem;
-    }
-
-    .stats-item:last-child {
-      border-bottom: none;
-    }
-
-    .highlight {
-      font-weight: 600;
-      color: var(--primary);
-    }
-
-    .loading {
-      text-align: center;
-      padding: 3rem 1rem;
-      color: var(--text-light);
-    }
-
-    .loading-spinner {
-      width: 40px;
-      height: 40px;
-      border: 3px solid var(--border);
-      border-top: 3px solid var(--primary);
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin: 0 auto 1rem;
-    }
-
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-
-    .summary-text {
-      font-size: 0.875rem;
-      line-height: 1.5;
-      margin-bottom: 0.75rem;
-    }
-
-    .empty-state {
-      text-align: center;
-      color: var(--text-light);
-      font-style: italic;
-      padding: 1rem 0;
-    }
-
-    @media (min-width: 768px) {
-      body {
-        padding: 2rem;
-      }
-
-      .main-content {
-        padding: 2rem;
-      }
-
-      .header {
-        padding: 2rem;
-      }
-
-      .metrics-grid {
-        grid-template-columns: repeat(4, 1fr);
-      }
-
-      .analysis-grid {
-        grid-template-columns: repeat(2, 1fr);
-      }
-
-      .tabs {
-        justify-content: center;
-      }
-
-      .tab {
-        padding: 0.875rem 1.25rem;
-      }
-    }
-
-    @media (min-width: 1024px) {
-      .analysis-grid {
-        grid-template-columns: repeat(3, 1fr);
-      }
-    }
-
-    .icon {
-      font-size: 1.25rem;
-    }
-
-    /* Dark theme support */
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --surface: #1e293b;
-        --surface-dark: #334155;
-        --surface-darker: #475569;
-        --text: #f1f5f9;
-        --text-light: #94a3b8;
-        --border: #334155;
-      }
-    }
-  </style>
+  #mainPanel {
+    flex-grow: 1;
+    overflow: auto;
+  }
+    </style>
 </head>
-<body>
-  <div class="container">
-    <header class="header">
-      <h1>🔍 NSC Analytics</h1>
-      <div class="header-info">
-        Malda Zone • <span id="reportDate">Loading...</span><br>
-        Performance & Delay Analysis
-      </div>
-    </header>
-
-    <main class="main-content">
-      <div class="tabs-container">
-        <div class="tabs-label">Select Region</div>
-        <div class="tabs" id="regionTabs"></div>
-      </div>
-
-      <div id="loading" class="loading">
-        <div class="loading-spinner"></div>
-        Loading performance data...
-      </div>
-
-      <div id="content" style="display: none;">
-        <div class="region-info" id="regionInfo">
-          Analyzing: All Regions
+<body class="min-h-screen bg-slate-900 transition-colors duration-300">
+    <div class="flex flex-col h-screen">
+        <!-- Loading Indicator -->
+        <div id="loading" class="fixed inset-0 flex items-center justify-center loading-spinner z-50">
+            <div class="modal-content p-8 rounded-2xl shadow-2xl flex flex-col items-center space-y-6">
+                <svg class="animate-spin h-10 w-10 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="text-lg text-slate-200 font-medium">Loading data...</p>
+            </div>
         </div>
 
-        <div class="metrics-grid">
-          <div class="metric-card">
-            <div class="metric-value" id="totalDelayed">-</div>
-            <div class="metric-label">Delayed Cases</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-value" id="totalWithheld">-</div>
-            <div class="metric-label">Withheld Cases</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-value" id="criticalCCCs">-</div>
-            <div class="metric-label">Critical CCCs</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-value" id="totalRecords">-</div>
-            <div class="metric-label">Total Records</div>
-          </div>
+        <!-- Mobile Header -->
+        <div class="md:hidden flex items-center justify-between p-4 bg-slate-800/90 backdrop-blur-lg shadow-lg z-40 flex-shrink-0 border-b border-slate-700">
+            <button id="sidebar-toggle-btn" class="p-2 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path>
+                </svg>
+            </button>
+            <h1 class="text-xl font-bold text-slate-100">Filters</h1>
         </div>
 
-        <div class="analysis-grid">
-          <div class="card">
-            <div class="card-header critical">
-              <span class="icon">🚨</span>
-              <h2 class="card-title">Bottom 20% Performers</h2>
-            </div>
-            <div class="card-content" id="bottom20Analysis"></div>
-          </div>
+        <!-- Main Layout -->
+        <div class="flex flex-1 overflow-hidden relative">
+            <!-- Left Panel -->
+            <aside id="sidebar" class="sidebar left-0 top-0 h-full w-64 shadow-2xl flex flex-col transition-transform duration-300 transform translate-x-0 z-40">
+                <div class="flex justify-between items-center px-6 pt-6 flex-shrink-0 border-b border-slate-700 pb-4">
+                    <h1 class="hidden md:block text-xl font-bold text-slate-100">Filters</h1>
+                    <button onclick="hidePanel('sidebar')" class="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors">Hide</button>
+                </div>
+                <div class="flex-1 px-6 pb-6 overflow-y-auto custom-scrollbar min-h-0">
+                    <!-- Office Hierarchy Filter -->
+                    <div class="filter-section">
+                        <h3 class="text-base font-semibold text-slate-200 mb-4">Office Hierarchy</h3>
+                        <div id="office-hierarchy" class="filter-hierarchy-list"></div>
+                    </div>
+                    <div class="filter-section">
+                        <h3 class="text-base font-semibold text-slate-200 mb-4">Pole / Non-Pole</h3>
+                        <div id="pole-nonpole-filters" class="filter-table"></div>
+                    </div>
+                    <div class="filter-section">
+                        <h3 class="text-base font-semibold text-slate-200 mb-4">Agri / Non-Agri</h3>
+                        <div id="agri-nonagri-filters" class="filter-table"></div>
+                    </div>
+                </div>
+            </aside>
 
-          <div class="card">
-            <div class="card-header warning">
-              <span class="icon">⚠️</span>
-              <h2 class="card-title">Withheld Cases</h2>
-            </div>
-            <div class="card-content" id="withheldAnalysis"></div>
-          </div>
+            <!-- Left show button -->
+            <button id="sidebar-show-btn" onclick="showPanel('sidebar')" class="absolute left-0 top-1/2 -translate-y-1/2 panel-toggle-btn text-white px-3 py-2 rounded-r-xl shadow hidden z-50 font-medium">
+                Show
+            </button>
 
-          <div class="card">
-            <div class="card-header info">
-              <span class="icon">⚡</span>
-              <h2 class="card-title">Non-Pole Violations</h2>
-            </div>
-            <div class="card-content" id="nonPoleAnalysis"></div>
-          </div>
+            <!-- Secondary Left Panel -->
+            <aside id="secondary-sidebar" class="secondary-sidebar left-64 top-0 h-full w-64 shadow-2xl flex flex-col transition-transform duration-300 transform translate-x-0 z-30">
+                <div class="flex justify-between items-center px-6 pt-6 flex-shrink-0 border-b border-slate-700 pb-4">
+                    <h2 class="text-lg font-bold text-slate-100">Additional Filters</h2>
+                    <button onclick="hidePanel('secondary-sidebar')" class="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors">Hide</button>
+                </div>
+                <div class="flex-1 px-6 pb-6 overflow-y-auto custom-scrollbar min-h-0">
+                    <div class="filter-section">
+                        <h3 class="text-base font-semibold text-slate-200 mb-4">Delay Ranges</h3>
+                        <div class="flex items-center border-b border-slate-600">
+                            <button id="delay-tab-1" class="delay-tab-btn active-tab">Range-1</button>
+                            <button id="delay-tab-2" class="delay-tab-btn">Range-2</button>
+                        </div>
+                        <div id="delay-range-content" class="mt-3">
+                            <div id="delay-range-filters-1" class="filter-table"></div>
+                            <div id="delay-range-filters-2" class="filter-table hidden"></div>
+                        </div>
+                    </div>
+                    <div class="filter-section">
+                        <h3 class="text-base font-semibold text-slate-200 mb-4">Classes</h3>
+                        <div id="class-filters" class="filter-table"></div>
+                    </div>
+                </div>
+            </aside>
 
-          <div class="card">
-            <div class="card-header success">
-              <span class="icon">🏭</span>
-              <h2 class="card-title">Industrial Priority</h2>
-            </div>
-            <div class="card-content" id="industrialAnalysis"></div>
-          </div>
+            <!-- Secondary show button -->
+            <button id="secondary-sidebar-show-btn" onclick="showPanel('secondary-sidebar')" class="absolute left-64 top-[60%] -translate-y-1/2 panel-toggle-btn text-white px-3 py-2 rounded-r-xl shadow hidden z-50 font-medium transition-all duration-300 ease-in-out">
+                More
+            </button>
 
-          <div class="card">
-            <div class="card-header info">
-              <span class="icon">🔌</span>
-              <h2 class="card-title">Pole Case Analysis</h2>
-            </div>
-            <div class="card-content" id="poleAnalysis"></div>
-          </div>
+            <!-- Main Content Area -->
+            <main id="main-content" class="flex-1 flex flex-col overflow-hidden transition-all duration-300 ease-in-out">
+                <div class="flex-1 p-6 overflow-y-auto custom-scrollbar">
+                    <header class="mb-8 flex-shrink-0">
+                        <h2 id="page-title" class="text-3xl font-bold text-slate-100 mb-2">Overview</h2>
+                        <p class="text-slate-300">Current selection: <span id="current-selection" class="font-semibold text-blue-400">All Offices</span></p>
+                    </header>
 
-          <div class="card">
-            <div class="card-header" style="background: linear-gradient(135deg, #6366f1, #4f46e5); color: white;">
-              <span class="icon">📊</span>
-              <h2 class="card-title">Key Insights</h2>
-            </div>
-            <div class="card-content" id="keyObservations"></div>
-          </div>
+                    <!-- Cards Section -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 flex-shrink-0">
+                        <div class="glass-card p-6 rounded-2xl border-l-4 border-blue-500">
+                            <p class="text-slate-400 text-sm font-medium mb-2">Total Applications</p>
+                            <p id="total-applications" class="text-3xl font-bold text-slate-100">0</p>
+                        </div>
+                        <div class="glass-card p-6 rounded-2xl border-l-4 border-green-500">
+                            <p class="text-slate-400 text-sm font-medium mb-2">Avg Qtn. Delay (Days)</p>
+                            <p id="avg-qtn-delay" class="text-3xl font-bold text-slate-100">0</p>
+                        </div>
+                        <div class="glass-card p-6 rounded-2xl border-l-4 border-yellow-500">
+                            <p class="text-slate-400 text-sm font-medium mb-2">Avg WO Delay (Days)</p>
+                            <p id="avg-wo-delay" class="text-3xl font-bold text-slate-100">0</p>
+                        </div>
+                        <div class="glass-card p-6 rounded-2xl border-l-4 border-red-500">
+                            <p class="text-slate-400 text-sm font-medium mb-2">Avg SC Delay (Days)</p>
+                            <p id="avg-sc-delay" class="text-3xl font-bold text-slate-100">0</p>
+                        </div>
+                    </div>
+
+                    <!-- Data Table Section -->
+                    <div class="data-table p-6 rounded-2xl shadow-2xl flex-1 flex flex-col">
+                        <div class="flex justify-between items-center mb-6 flex-shrink-0 gap-4">
+                            <h3 class="text-xl font-semibold text-slate-100">Application Data</h3>
+                            <div class="flex items-center gap-4">
+                                <div class="relative">
+                                    <input type="text" id="search-input" placeholder="Search by Name or Appl No." class="bg-slate-700 border border-slate-600 rounded-xl py-2 pl-10 pr-4 text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all w-64">
+                                    <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                    </svg>
+                                </div>
+                                <button id="export-csv-btn" class="btn-primary py-2 px-4 text-sm flex items-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                    Export CSV
+                                </button>
+                            </div>
+                        </div>
+                        <div class="flex-1 overflow-auto rounded-xl">
+                            <table class="min-w-full">
+                                <thead class="sticky top-0">
+                                    <tr>
+                                        <th class="text-left">Appl No.</th>
+                                        <th class="text-left">CCC</th>
+                                        <th class="text-left">Name</th>
+                                        <th class="text-left">Load (W)</th>
+                                        <th class="text-left">Phase</th>
+                                        <th class="text-left">Class</th>
+                                        <th class="text-left">Pole</th>
+                                        <th class="text-left">WO No.</th>
+                                        <th class="text-left">Delay SC</th>
+                                        <th class="text-left">Delay WO</th>
+                                        <th class="text-left">Phone</th>
+                                        <th class="text-left">Agency</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="data-table-body" class="divide-y divide-slate-700"></tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination controls -->
+                        <div id="pagination-controls" class="flex justify-between items-center mt-6 pt-6 border-t border-slate-700 flex-shrink-0">
+                            <button id="prev-btn" class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
+                                Previous
+                            </button>
+                            <span id="page-info" class="text-sm text-slate-300 font-medium">Page 1 of 1</span>
+                            <button id="next-btn" class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </main>
         </div>
-      </div>
-    </main>
-  </div>
 
-<script>
-  let selectedRegion = 'All';
-  let globalData = [];
-  let regions = [];
+        <!-- Overlay for mobile view -->
+        <div id="sidebar-overlay" class="fixed inset-0 bg-black opacity-50 z-40 hidden md:hidden"></div>
+    </div>
 
-  document.getElementById('reportDate').textContent = new Date().toLocaleDateString();
+    <!-- Login Modal -->
+    <div id="login-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 backdrop-blur-sm">
+        <div class="modal-content rounded-2xl shadow-2xl p-8 w-96 max-w-full mx-4">
+            <h2 class="text-2xl font-bold text-slate-100 mb-6">Login</h2>
+            <label class="block mb-3 text-sm font-medium text-slate-300">Enter PIN</label>
+            <input type="password" id="pin-input" class="w-full bg-slate-700 border border-slate-600 rounded-xl p-3 mb-6 text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" placeholder="Enter your PIN" />
 
-  function setRegion(region) {
-    selectedRegion = region;
-    updateRegionTabs();
-    generateReport();
-  }
+            <div class="flex justify-between gap-3">
+                <button id="login-btn" class="btn-primary flex-1">Login</button>
+                <button id="view-all-btn" class="bg-slate-600 hover:bg-slate-500 text-white px-6 py-3 rounded-xl font-medium transition-all flex-1">View All</button>
+            </div>
+            <p id="login-error" class="text-red-400 text-sm mt-4 hidden">Invalid PIN. Try again.</p>
+        </div>
+    </div>
 
-  function updateRegionTabs() {
-    const container = document.getElementById('regionTabs');
+    <!-- Application Details Modal -->
+    <div id="app-modal" class="fixed inset-0 bg-black bg-opacity-75 hidden flex items-center justify-center z-50 backdrop-blur-sm">
+        <div class="modal-content rounded-2xl shadow-2xl w-full max-w-2xl mx-4 p-6 overflow-y-auto max-h-[90vh]">
+            <div class="flex justify-between items-center border-b border-slate-700 pb-4 mb-6">
+                <h2 class="text-xl font-bold text-slate-100">Application Details</h2>
+                <button id="modal-close" class="text-slate-400 hover:text-slate-200 text-2xl leading-none transition-colors">&times;</button>
+            </div>
+            <div id="modal-content" class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                <!-- Filled dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA AND HIERARCHY SETUP ---
+        const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRsUU2viBvYhSgR0RFwmZ1H8LkYCats9roQVCKvQeoU7dzg6ryR6IWZex9FT9tksp_DEM23ZgQ28Iyo/pub?gid=794942572&single=true&output=csv';
+        const authUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRGTMdZNG8ktcf_-CWlhykS75a9RVAL5YHIN7glhcxIDOZssS_c_OmQEx_TzG8Hz1Wa1FbMIKxlHVeR/pub?gid=0&single=true&output=csv";
+        let authorizedCCCs = "All";
+
+        const cccHierarchyOriginal = {
+            "6610000": {
+                name: "MALDA",
+                divisions: {
+                    "6611000": {
+                        name: "MALDA",
+                        cccs: {
+                            "6611101": "MANIKCHAK", "6611102": "GOLAPGANJ", "6611103": "BAISHNABNAGAR",
+                            "6611104": "KALIACHAK", "6611105": "MOTHABARI", "6611106": "SUJAPUR",
+                            "6611107": "RATHBARI", "6611108": "FULBARI", "6611109": "MOKDUMPUR"
+                        }
+                    },
+                    "6613000": {
+                        name: "GAZOLE",
+                        cccs: {
+                            "6613101": "GAZOL", "6613102": "AIHO", "6613103": "PANDUA",
+                            "6613104": "BAMONGOLA", "6613105": "OLD MALDA"
+                        }
+                    },
+                    "6612000": {
+                        name: "CHANCHAL",
+                        cccs: {
+                            "6612101": "BHALUKA", "6612102": "SAMSI", "6612103": "PARANPUR",
+                            "6612104": "CHANCHAL", "6612105": "MALATIPUR", "6612106": "HARISHCHANDRAPUR",
+                            "6612107": "KUSHIDA"
+                        }
+                    }
+                }
+            },
+            "6620000": {
+                name: "UTTAR DINAJPUR",
+                divisions: {
+                    "6621000": {
+                        name: "RAIGANJ",
+                        cccs: {
+                            "6621101": "ITAHAR", "6621102": "HEMTABAD", "6621103": "KALIYAGANJ",
+                            "6621104": "RAIGANJ", "6621105": "BIRNAGAR", "6621106": "KARANDIGHI"
+                        }
+                    },
+                    "6622000": {
+                        name: "ISLAMPUR",
+                        cccs: {
+                            "6622101": "ISLAMPUR", "6622102": "CHOPRA", "6622103": "DALKHOLA",
+                            "6622104": "GOALPOKHER", "6622105": "KANKI"
+                        }
+                    }
+                }
+            },
+            "6630000": {
+                name: "DAKSHIN DINAJPUR",
+                divisions: {
+                    "6631000": {
+                        name: "BALURGHAT",
+                        cccs: {
+                            "6631101": "BALURGHAT", "6631102": "TAPAN", "6631103": "KUMARGANJ",
+                            "6631104": "HILI", "6631105": "PATIRAM"
+                        }
+                    },
+                    "6632000": {
+                        name: "BUNIADPUR",
+                        cccs: {
+                            "6632101": "BUNIADPUR", "6632102": "KUSMANDI", "6632103": "HARIRAMPUR",
+                            "6632104": "GANGARAMPUR"
+                        }
+                    }
+                }
+            }
+        };
+        
+        function toTitleCase(str) {
+            return str.toLowerCase().split(' ').map(word => {
+                return word.charAt(0).toUpperCase() + word.slice(1);
+            }).join(' ');
+        }
+        
+        function convertNamesToProperCase(hierarchy) {
+            for (const regionCode in hierarchy) {
+                const region = hierarchy[regionCode];
+                if (region.name) {
+                    region.name = toTitleCase(region.name);
+                }
+                
+                if (region.divisions) {
+                    for (const divisionCode in region.divisions) {
+                        const division = region.divisions[divisionCode];
+                        if (division.name) {
+                            division.name = toTitleCase(division.name);
+                        }
+                        
+                        if (division.cccs) {
+                            for (const cccCode in division.cccs) {
+                                division.cccs[cccCode] = toTitleCase(division.cccs[cccCode]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        convertNamesToProperCase(cccHierarchyOriginal);
+
+        // This will hold the hierarchy to be displayed. It's the full hierarchy by default,
+        // but will be filtered upon user login.
+        let displayHierarchy = JSON.parse(JSON.stringify(cccHierarchyOriginal));
+        let rawData = [];
+        let filteredData = [];
+        let filters = {
+            ccc_code: 'All',
+            poleNonPole: 'All',
+            agriNonAgri: 'All',
+            delayRange: 'All',
+            delayRangeType: 'range1', // 'range1' or 'range2'
+            connectionClass: 'All',
+            searchTerm: ''
+        };
+        let expandedNodes = new Set();
+        let uniqueDelayRanges = [];
+        let uniqueClasses = [];
+
+        const predefinedDelayBuckets = [
+            { label: 'Within 3 Days', min: 0, max: 3 },
+            { label: 'Within 7 Days', min: 0, max: 7 },
+            { label: '>7 Days', min: 8, max: Infinity },
+            { label: '>15 Days', min: 16, max: Infinity },
+            { label: '>30 Days', min: 31, max: Infinity },
+            { label: '>2 Months', min: 61, max: Infinity },
+            { label: '>3 Months', min: 91, max: Infinity },
+            { label: '>6 Months', min: 183, max: Infinity },
+            { label: '>1 Year', min: 366, max: Infinity },
+            { label: '>2 Years', min: 731, max: Infinity },
+        ];
+
+        // Creates a new hierarchy object containing only the branch for the given code.
+        function getFilteredHierarchy(code) {
+            const newHierarchy = {};
+
+            // Case 1: Code is a Region
+            if (cccHierarchyOriginal[code]) {
+                newHierarchy[code] = JSON.parse(JSON.stringify(cccHierarchyOriginal[code]));
+                return newHierarchy;
+            }
+
+            // Case 2 & 3: Code is a Division or CCC
+            for (const regionCode in cccHierarchyOriginal) {
+                const region = cccHierarchyOriginal[regionCode];
+
+                // Case 2: Code is a Division
+                if (region.divisions[code]) {
+                    newHierarchy[regionCode] = {
+                        name: region.name,
+                        divisions: {
+                            [code]: JSON.parse(JSON.stringify(region.divisions[code]))
+                        }
+                    };
+                    return newHierarchy;
+                }
+
+                // Case 3: Code is a CCC
+                for (const divisionCode in region.divisions) {
+                    const division = region.divisions[divisionCode];
+                    if (division.cccs[code]) {
+                        newHierarchy[regionCode] = {
+                            name: region.name,
+                            divisions: { [divisionCode]: { name: division.name, cccs: { [code]: division.cccs[code] } } }
+                        };
+                        return newHierarchy;
+                    }
+                }
+            }
+            return JSON.parse(JSON.stringify(cccHierarchyOriginal)); // Fallback to full hierarchy
+        }
+
+        let currentPage = 1;
+        const rowsPerPage = 20;
+
+        const loadingDiv = document.getElementById('loading');
+        const officeHierarchyEl = document.getElementById('office-hierarchy');
+        const totalApplicationsEl = document.getElementById('total-applications');
+        const totalLoadEl = document.getElementById('total-load');
+        const avgWODelayEl = document.getElementById('avg-wo-delay');
+        const avgSCDelayEl = document.getElementById('avg-sc-delay');
+        const dataTableBodyEl = document.getElementById('data-table-body');
+        const currentSelectionEl = document.getElementById('current-selection');
+        const poleNonPoleFiltersEl = document.getElementById('pole-nonpole-filters');
+        const agriNonAgriFiltersEl = document.getElementById('agri-nonagri-filters');
+        const delayRangeFilters1El = document.getElementById('delay-range-filters-1');
+        const delayRangeFilters2El = document.getElementById('delay-range-filters-2');
+        const classFiltersEl = document.getElementById('class-filters');
+        
+        // Mobile sidebar toggle
+        const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
+        const sidebarEl = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+        // Pagination elements
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const pageInfoEl = document.getElementById('page-info');
+
+        // --- UTILITY FUNCTIONS ---
+        
+        // Debounce function
+        function debounce(func, delay) {
+            let timeout;
+            return function(...args) {
+                const context = this;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(context, args), delay);
+            };
+        }
+        
+        // Export to CSV function
+        function exportToCSV(data, filename = 'export.csv') {
+            if (data.length === 0) {
+                alert("No data to export.");
+                return;
+            }
+
+            const headers = Object.keys(data[0]);
+            const csvRows = [];
+            csvRows.push(headers.join(',')); // Add header row
+
+            for (const row of data) {
+                const values = headers.map(header => {
+                    let cell = row[header] === null || row[header] === undefined ? '' : String(row[header]);
+                    // Escape quotes by doubling them
+                    cell = cell.replace(/"/g, '""');
+                    // If the cell contains a comma, wrap it in double quotes
+                    if (cell.includes(',')) {
+                        cell = `"${cell}"`;
+                    }
+                    return cell;
+                });
+                csvRows.push(values.join(','));
+            }
+
+            const csvString = csvRows.join('\n');
+            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Simple CSV parser
+        function parseCSV(csv) {
+            const lines = csv.split('\n').filter(line => line.trim() !== '');
+            const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+            const data = [];
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.trim().replace(/"/g, ''));
+                if (values.length === headers.length) {
+                    const obj = {};
+                    headers.forEach((header, index) => {
+                        obj[header] = values[index];
+                    });
+                    data.push(obj);
+                }
+            }
+            return data;
+        }
+        
+        // Function to get a list of all CCC codes under a given hierarchy code
+        function getFilteredCCCs(code) {
+            let cccList = [];
+            const findCCCs = (node) => {
+                if (node.cccs) {
+                    cccList.push(...Object.keys(node.cccs));
+                }
+                if (node.divisions) {
+                    Object.values(node.divisions).forEach(findCCCs);
+                }
+            };
+            
+            if (cccHierarchyOriginal[code]) {
+                findCCCs(cccHierarchyOriginal[code]);
+            } else {
+                for (const region of Object.values(cccHierarchyOriginal)) {
+                    if (region.divisions[code]) {
+                        findCCCs(region.divisions[code]);
+                        return cccList;
+                    }
+                }
+                return [code];
+            }
+            return cccList;
+        }
+
+        // Calculate counts for each level of the hierarchy
+function calculateHierarchyCounts(data, hierarchy) {
+    // Reset counts
+    for (const regionCode in hierarchy) {
+        hierarchy[regionCode].count = 0;
+        for (const divisionCode in hierarchy[regionCode].divisions) {
+            hierarchy[regionCode].divisions[divisionCode].count = 0;
+            for (const cccCode in hierarchy[regionCode].divisions[divisionCode].cccs) {
+                const originalName = cccHierarchyOriginal[regionCode].divisions[divisionCode].cccs[cccCode];
+                hierarchy[regionCode].divisions[divisionCode].cccs[cccCode] = {
+                    name: originalName,
+                    count: 0
+                };
+            }
+        }
+    }
+
+    // Calculate counts based on provided data
+    data.forEach(row => {
+        for (const regionCode in hierarchy) {
+            for (const divisionCode in hierarchy[regionCode].divisions) {
+                if (hierarchy[regionCode].divisions[divisionCode].cccs[row.CCC_CODE]) {
+                    hierarchy[regionCode].divisions[divisionCode].cccs[row.CCC_CODE].count++;
+                    hierarchy[regionCode].divisions[divisionCode].count++;
+                    hierarchy[regionCode].count++;
+                    return;
+                }
+            }
+        }
+    });
+}
+
+        
+        // Get unique delay ranges
+function getUniqueDelayRanges(data) {
+    const rangeMap = new Map();  // DelayRange → DelaySerial
+
+    data.forEach(row => {
+        if (row.DelayRange && row.DelaySerial) {
+            rangeMap.set(row.DelayRange, parseInt(row.DelaySerial));
+        }
+    });
+
+    // Sort by DelaySerial
+    const sortedRanges = Array.from(rangeMap.entries())
+        .sort((a, b) => a[1] - b[1])   // numeric ascending
+        .map(entry => entry[0]);
+
+    return ['All', ...sortedRanges];
+}
+
+
+        // Get unique connection classes
+        function getUniqueClasses(data) {
+            const uniqueClassSet = new Set();
+            data.forEach(row => {
+                if (row.CONN_CLASS) {
+                    uniqueClassSet.add(row.CONN_CLASS);
+                }
+            });
+            const sortedClasses = Array.from(uniqueClassSet).sort();
+            return ['All', ...sortedClasses];
+        }
+
+        // Calculate counts for predefined delay buckets
+        function calculateDelayBucketCounts(data) {
+            const counts = { 'All': data.length };
+            predefinedDelayBuckets.forEach(bucket => {
+                counts[bucket.label] = 0;
+            });
+
+            data.forEach(row => {
+                const delay = parseInt(row.DelayInSC) || 0;
+                predefinedDelayBuckets.forEach(bucket => {
+                    if (delay >= bucket.min && delay <= bucket.max) {
+                        counts[bucket.label]++;
+                    }
+                });
+            });
+            return counts;
+        }
+
+        // Calculate delay range counts
+        function calculateDelayRangeCounts(data, ranges) {
+            const counts = {};
+            ranges.forEach(range => {
+                counts[range] = 0;
+            });
+
+            data.forEach(row => {
+                if (row.DelayRange && counts.hasOwnProperty(row.DelayRange)) {
+                    counts[row.DelayRange]++;
+                }
+            });
+
+            counts['All'] = data.length;
+            return counts;
+        }
+
+        // Calculate connection class counts
+        function calculateClassCounts(data, classes) {
+            const counts = {};
+            classes.forEach(cls => {
+                counts[cls] = 0;
+            });
+
+            data.forEach(row => {
+                if (row.CONN_CLASS && counts.hasOwnProperty(row.CONN_CLASS)) {
+                    counts[row.CONN_CLASS]++;
+                }
+            });
+
+            counts['All'] = data.length;
+            return counts;
+        }
+
+        // Calculate Pole/Non-Pole and Agri/Non-Agri counts
+        function calculatePolesAgriCounts(data) {
+            const counts = {
+                pole: 0,
+                nonPole: 0,
+                agri: 0,
+                nonAgri: 0
+            };
+            
+            data.forEach(row => {
+                const poles = parseFloat(row.NO_OF_POLES);
+                if (poles > 0) {
+                    counts.pole++;
+                } else {
+                    counts.nonPole++;
+                }
+
+                if (row.CONN_CLASS === 'A') {
+                    counts.agri++;
+                } else {
+                    counts.nonAgri++;
+                }
+            });
+            
+            return counts;
+        }
+        
+        // Build the collapsible hierarchy
+function buildHierarchy(container, hierarchy, allCount) {
     container.innerHTML = '';
+    const isUserRestricted = authorizedCCCs !== "All";
 
-    const createTab = (name, isActive = false) => {
-      const btn = document.createElement('button');
-      btn.textContent = name;
-      btn.className = `tab ${isActive ? 'active' : ''}`;
-      btn.onclick = () => setRegion(name);
-      container.appendChild(btn);
-    };
+    // Only show "All Offices" if the user is not restricted
+    if (!isUserRestricted) {
+        const allOption = document.createElement('div');
+        allOption.className = `filter-hierarchy-item ${filters.ccc_code === 'All' ? 'selected' : ''}`;
+        allOption.innerHTML = `
+            <div class="label-container">
+                <input type="radio" name="ccc_code" value="All" ${filters.ccc_code === 'All' ? 'checked' : ''} class="form-radio text-blue-600 mr-2" />
+                <span class="text-slate-200">All Offices</span>
+            </div>
+            <span class="count-pill">${allCount}</span>
+        `;
+        container.appendChild(allOption);
 
-    createTab('All', selectedRegion === 'All');
-    regions.forEach(region => {
-      createTab(region, selectedRegion === region);
+        allOption.addEventListener('click', () => {
+            filters.ccc_code = 'All';
+            currentPage = 1;
+            updateCurrentSelection('all', 'Offices');
+            renderDashboard();
+        });
+    }
+
+    // Build hierarchy (regions → divisions → CCCs)
+    const sortedRegionCodes = Object.keys(hierarchy).sort((a, b) => (hierarchy[b].count || 0) - (hierarchy[a].count || 0));
+    sortedRegionCodes.forEach(regionCode => {
+        const region = hierarchy[regionCode];
+        const isRegionSelected = filters.ccc_code === regionCode;
+        const isRegionExpanded = expandedNodes.has(regionCode);
+
+        const regionEl = document.createElement('div');
+        regionEl.className = `filter-hierarchy-item ${isRegionSelected ? 'selected' : ''}`;
+        regionEl.innerHTML = `
+            <div class="label-container">
+                <svg class="w-3 h-3 toggle-icon ${isRegionExpanded ? 'expanded' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                </svg>
+                <input type="radio" name="ccc_code" value="${regionCode}" ${isRegionSelected ? 'checked' : ''} class="form-radio text-blue-600 mr-2" />
+                <span class="text-sm text-slate-200">${region.name}</span>
+            </div>
+            <span class="count-pill">${region.count}</span>
+        `;
+        container.appendChild(regionEl);
+
+        const toggleIcon = regionEl.querySelector('.toggle-icon');
+        const radioInput = regionEl.querySelector('input');
+
+        toggleIcon.addEventListener('click', (e) => {
+            e.stopPropagation();
+            isRegionExpanded ? expandedNodes.delete(regionCode) : expandedNodes.add(regionCode);
+            renderDashboard();
+        });
+
+        regionEl.addEventListener('click', (e) => {
+            if (e.target === toggleIcon) return;
+            radioInput.checked = true;
+            filters.ccc_code = regionCode;
+            currentPage = 1;
+            updateCurrentSelection('region', region.name);
+            renderDashboard();
+        });
+
+        // divisions & CCCs rendered same as before (but counts now come from pivot data)
+        const divisionsContainer = document.createElement('div');
+        divisionsContainer.style.display = isRegionExpanded ? 'block' : 'none';
+
+        const sortedDivisionCodes = Object.keys(region.divisions).sort((a, b) => (region.divisions[b].count || 0) - (region.divisions[a].count || 0));
+        sortedDivisionCodes.forEach(divisionCode => {
+            const division = region.divisions[divisionCode];
+            const isDivisionSelected = filters.ccc_code === divisionCode;
+            const isDivisionExpanded = expandedNodes.has(divisionCode);
+
+            const divisionEl = document.createElement('div');
+            divisionEl.className = `filter-hierarchy-item pl-4 ${isDivisionSelected ? 'selected' : ''}`;
+            divisionEl.innerHTML = `
+                <div class="label-container">
+                    <svg class="w-3 h-3 toggle-icon ${isDivisionExpanded ? 'expanded' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                    </svg>
+                    <input type="radio" name="ccc_code" value="${divisionCode}" ${isDivisionSelected ? 'checked' : ''} class="form-radio text-blue-600 mr-2" />
+                    <span class="text-sm text-slate-200">${division.name}</span>
+                </div>
+                <span class="count-pill">${division.count}</span>
+            `;
+            divisionsContainer.appendChild(divisionEl);
+
+            const divToggleIcon = divisionEl.querySelector('.toggle-icon');
+            const divRadioInput = divisionEl.querySelector('input');
+
+            divToggleIcon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                isDivisionExpanded ? expandedNodes.delete(divisionCode) : expandedNodes.add(divisionCode);
+                renderDashboard();
+            });
+
+            divisionEl.addEventListener('click', (e) => {
+                if (e.target === divToggleIcon) return;
+                divRadioInput.checked = true;
+                filters.ccc_code = divisionCode;
+                currentPage = 1;
+                updateCurrentSelection('division', division.name);
+                renderDashboard();
+            });
+
+            const cccsContainer = document.createElement('div');
+            cccsContainer.style.display = isDivisionExpanded ? 'block' : 'none';
+
+            const sortedCccCodes = Object.keys(division.cccs).sort((a, b) => (division.cccs[b].count || 0) - (division.cccs[a].count || 0));
+            sortedCccCodes.forEach(cccCode => {
+                const ccc = division.cccs[cccCode];
+                const isCccSelected = filters.ccc_code === cccCode;
+
+                const cccEl = document.createElement('div');
+                cccEl.className = `filter-hierarchy-item pl-8 ${isCccSelected ? 'selected' : ''}`;
+                cccEl.innerHTML = `
+                    <div class="label-container">
+                        <div class="w-3 h-3 mr-1"></div>
+                        <input type="radio" name="ccc_code" value="${cccCode}" ${isCccSelected ? 'checked' : ''} class="form-radio text-blue-600 mr-2" />
+                        <span class="text-sm text-slate-200">${ccc.name}</span>
+                    </div>
+                    <span class="count-pill">${ccc.count}</span>
+                `;
+                cccsContainer.appendChild(cccEl);
+
+                cccEl.addEventListener('click', () => {
+                    cccEl.querySelector('input').checked = true;
+                    filters.ccc_code = cccCode;
+                    currentPage = 1;
+                    updateCurrentSelection('ccc', ccc.name);
+                    renderDashboard();
+                });
+            });
+            divisionsContainer.appendChild(cccsContainer);
+        });
+        container.appendChild(divisionsContainer);
     });
-  }
+}
 
-  function getFilteredData() {
-    if (selectedRegion === 'All') {
-      return globalData;
-    }
-    return globalData.filter(d => d.REGION && d.REGION.trim().toUpperCase() === selectedRegion.toUpperCase());
-  }
 
-  function countByCCC(arr) {
-    return arr.reduce((acc, curr) => {
-      const ccc = curr.SUPP_OFF || 'UNKNOWN';
-      acc[ccc] = (acc[ccc] || 0) + 1;
-      return acc;
-    }, {});
-  }
+        // Render Pole/Non-Pole and Agri/Non-Agri filters
+        function renderPolesAgriFilters(counts) {
+            // Pole / Non-Pole
+            poleNonPoleFiltersEl.innerHTML = '';
+            const poleNonPoleOptions = ['All', 'Pole', 'Non-Pole'];
+            const poleNonPoleValues = { 'All': counts.totalApplications, 'Pole': counts.pole, 'Non-Pole': counts.nonPole };
+            poleNonPoleOptions.forEach(option => {
+                const isSelected = filters.poleNonPole === option;
+                const div = document.createElement('div');
+                div.className = `filter-table-row ${isSelected ? 'selected' : ''}`;
+                div.innerHTML = `
+                    <div class="filter-table-label">
+                        <input type="radio" name="pole-nonpole" value="${option}" ${isSelected ? 'checked' : ''} class="form-radio text-blue-600 text-sm" />
+                        <span class="ml-2 text-sm text-slate-200">${option}</span>
+                    </div>
+                    <div class="filter-table-count">
+                        <span class="text-sm">${poleNonPoleValues[option]}</span>
+                    </div>
+                `;
+                poleNonPoleFiltersEl.appendChild(div);
+                
+                div.addEventListener('click', (e) => {
+                    if (e.target.tagName !== 'INPUT') {
+                        div.querySelector('input').checked = true;
+                    }
+                    filters.poleNonPole = option;
+                    currentPage = 1;
+                    renderDashboard();
+                });
+            });
 
-  function percent(count, total) {
-    return total > 0 ? ((count / total) * 100).toFixed(1) : '0';
-  }
+            // Agri / Non-Agri
+            agriNonAgriFiltersEl.innerHTML = '';
+            const agriNonAgriOptions = ['All', 'Agri', 'Non-Agri'];
+            const agriNonAgriValues = { 'All': counts.totalApplications, 'Agri': counts.agri, 'Non-Agri': counts.nonAgri };
+            agriNonAgriOptions.forEach(option => {
+                const isSelected = filters.agriNonAgri === option;
+                const div = document.createElement('div');
+                div.className = `filter-table-row ${isSelected ? 'selected' : ''}`;
+                div.innerHTML = `
+                    <div class="filter-table-label">
+                        <input type="radio" name="agri-nonagri" value="${option}" ${isSelected ? 'checked' : ''} class="form-radio text-blue-600 text-sm" />
+                        <span class="ml-2 text-sm text-slate-200">${option}</span>
+                    </div>
+                    <div class="filter-table-count">
+                        <span class="text-sm">${agriNonAgriValues[option]}</span>
+                    </div>
+                `;
+                agriNonAgriFiltersEl.appendChild(div);
 
-  function formatCCCList(cccData, limit = 5, showPercentage = true) {
-    const entries = Object.entries(cccData).sort((a, b) => b[1] - a[1]).slice(0, limit);
-    if (entries.length === 0) {
-      return '<div class="empty-state">No data available for this region</div>';
-    }
-    
-    const total = Object.values(cccData).reduce((sum, count) => sum + count, 0);
-    return `<ul class="stats-list">
-      ${entries.map(([ccc, count]) => 
-        `<li class="stats-item">CCC-${ccc}: <span class="highlight">${count} cases</span>${showPercentage ? ` (${percent(count, total)}%)` : ''}</li>`
-      ).join('')}
-    </ul>`;
-  }
+                div.addEventListener('click', (e) => {
+                    if (e.target.tagName !== 'INPUT') {
+                        div.querySelector('input').checked = true;
+                    }
+                    filters.agriNonAgri = option;
+                    currentPage = 1;
+                    renderDashboard();
+                });
+            });
+        }
+        
+        // Render delay range filters
+        function renderDelayRangesType1(delayCounts) {
+            delayRangeFilters1El.innerHTML = '';
 
-  function generateReport() {
-    if (globalData.length === 0) return;
+            uniqueDelayRanges.forEach(rangeLabel => {
+                const isSelected = filters.delayRange === rangeLabel && filters.delayRangeType === 'range1';
+                const div = document.createElement('div');
+                div.className = `filter-table-row ${isSelected ? 'selected' : ''}`;
+                div.innerHTML = `
+                    <div class="filter-table-label">
+                        <input type="radio" name="delay-range-1" value="${rangeLabel}" ${isSelected ? 'checked' : ''} class="form-radio text-blue-600 text-sm" />
+                        <span class="ml-2 text-sm text-slate-200">${rangeLabel}</span>
+                    </div>
+                    <div class="filter-table-count">
+                        <span class="text-sm">${delayCounts[rangeLabel] || 0}</span>
+                    </div>
+                `;
+                delayRangeFilters1El.appendChild(div);
 
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('content').style.display = 'block';
+                div.addEventListener('click', (e) => {
+                    if (e.target.tagName !== 'INPUT' || e.target.type !== 'radio') {
+                        div.querySelector('input[type="radio"]').checked = true;
+                    }
+                    filters.delayRangeType = 'range1';
+                    filters.delayRange = rangeLabel;
+                    currentPage = 1;
+                    renderDashboard();
+                });
+            });
+        }
 
-    const data = getFilteredData();
-    const regionCount = data.length;
-    const totalCount = globalData.length;
-    
-    document.getElementById('regionInfo').textContent = 
-      selectedRegion === 'All' 
-        ? `Analyzing: All Regions (${totalCount} records)`
-        : `Analyzing: ${selectedRegion} (${regionCount} of ${totalCount} records)`;
+        function renderDelayRangesType2(counts) {
+            delayRangeFilters2El.innerHTML = '';
 
-    const delayData = data.filter(d => parseFloat(d.DelayInSC || 0) > 0);
-    delayData.sort((a, b) => parseFloat(b.DelayInSC || 0) - parseFloat(a.DelayInSC || 0));
+            const allBuckets = [{ label: 'All' }, ...predefinedDelayBuckets];
 
-    const percentage = 0.20;
-    const bottom20 = delayData.slice(0, Math.ceil(delayData.length * percentage));
-    const withheldData = data.filter(d => d.SCN_WITHELD_DATE && d.SCN_WITHELD_DATE !== '0' && d.SCN_WITHELD_DATE.trim() !== '');
-    const nonPoleDelayed = delayData.filter(d => (!parseInt(d.NO_OF_POLES || 0) || d.NO_OF_POLES === '0') && parseFloat(d.DelayInSC || 0) > 3);
-    const industrialDelayed = delayData.filter(d => d.CLASS_OF_CONSUMER && d.CLASS_OF_CONSUMER.toUpperCase().includes('INDUSTRIAL'));
-    const onePoleDelayed = delayData.filter(d => parseInt(d.NO_OF_POLES || 0) === 1);
-    const twoPoleDelayed = delayData.filter(d => parseInt(d.NO_OF_POLES || 0) === 2);
+            allBuckets.forEach(bucket => {
+                const rangeLabel = bucket.label;
+                const isSelected = filters.delayRange === rangeLabel && filters.delayRangeType === 'range2';
+                const div = document.createElement('div');
+                div.className = `filter-table-row ${isSelected ? 'selected' : ''}`;
+                div.innerHTML = `
+                    <div class="filter-table-label">
+                        <input type="radio" name="delay-range-2" value="${rangeLabel}" ${isSelected ? 'checked' : ''} class="form-radio text-blue-600 text-sm" />
+                        <span class="ml-2 text-sm text-slate-200">${rangeLabel}</span>
+                    </div>
+                    <div class="filter-table-count">
+                        <span class="text-sm">${counts[rangeLabel] || 0}</span>
+                    </div>
+                `;
+                delayRangeFilters2El.appendChild(div);
 
-    // Update metrics
-    document.getElementById('totalDelayed').textContent = delayData.length;
-    document.getElementById('totalWithheld').textContent = withheldData.length;
-    document.getElementById('criticalCCCs').textContent = Object.keys(countByCCC(bottom20)).length;
-    document.getElementById('totalRecords').textContent = data.length;
+                div.addEventListener('click', (e) => {
+                    if (e.target.tagName !== 'INPUT' || e.target.type !== 'radio') {
+                        div.querySelector('input[type="radio"]').checked = true;
+                    }
+                    filters.delayRangeType = 'range2';
+                    filters.delayRange = rangeLabel;
+                    currentPage = 1;
+                    renderDashboard();
+                });
+            });
+        }
 
-    // Bottom 20% analysis
-    document.getElementById('bottom20Analysis').innerHTML = 
-      `<div class="summary-text"><strong>${bottom20.length}</strong> consumers representing worst ${percentage * 100}% performance</div>
-       ${formatCCCList(countByCCC(bottom20))}`;
+        // Render connection class filters
+        function renderClassFilters(classCounts) {
+            classFiltersEl.innerHTML = '';
 
-    // Withheld analysis
-    document.getElementById('withheldAnalysis').innerHTML = 
-      `<div class="summary-text"><strong>${withheldData.length}</strong> cases initially withheld - indicates process failures</div>
-       ${formatCCCList(countByCCC(withheldData))}`;
+            uniqueClasses.forEach(classLabel => {
+                const isSelected = filters.connectionClass === classLabel;
+                const div = document.createElement('div');
+                div.className = `filter-table-row ${isSelected ? 'selected' : ''}`;
+                div.innerHTML = `
+                    <div class="filter-table-label">
+                        <input type="radio" name="connection-class" value="${classLabel}" ${isSelected ? 'checked' : ''} class="form-radio text-blue-600 text-sm" />
+                        <span class="ml-2 text-sm text-slate-200">${classLabel}</span>
+                    </div>
+                    <div class="filter-table-count">
+                        <span class="text-sm">${classCounts[classLabel] || 0}</span>
+                    </div>
+                `;
+                classFiltersEl.appendChild(div);
 
-    // Non-pole analysis
-    document.getElementById('nonPoleAnalysis').innerHTML = 
-      `<div class="summary-text"><strong>${nonPoleDelayed.length}</strong> non-pole cases delayed beyond 3-day standard</div>
-       ${formatCCCList(countByCCC(nonPoleDelayed), 5, false)}`;
+                div.addEventListener('click', (e) => {
+                    if (e.target.tagName !== 'INPUT' || e.target.type !== 'radio') {
+                        div.querySelector('input[type="radio"]').checked = true;
+                    }
+                    filters.connectionClass = classLabel;
+                    currentPage = 1;
+                    renderDashboard();
+                });
+            });
+        }
+        
+        // Update current selection display
+        function updateCurrentSelection(type, name) {
+            if (type === 'all') {
+                currentSelectionEl.textContent = 'All Offices';
+            } else if (type === 'region') {
+                currentSelectionEl.innerHTML = `<strong class="text-slate-200">Region:</strong> ${name}`;
+            } else if (type === 'division') {
+                currentSelectionEl.innerHTML = `<strong class="text-slate-200">Division:</strong> ${name}`;
+            } else if (type === 'ccc') {
+                 currentSelectionEl.innerHTML = `<strong class="text-slate-200">CCC:</strong> ${name}`;
+            }
+        }
 
-    // Industrial analysis
-    document.getElementById('industrialAnalysis').innerHTML = 
-      `<div class="summary-text"><strong>${industrialDelayed.length}</strong> industrial connections delayed - high revenue impact</div>
-       ${formatCCCList(countByCCC(industrialDelayed), 5, false)}`;
+        // Filter data based on current filter state
+// --- Filter data based on global `filters` state ---
+function filterData(data) {
+    let cccListToFilter;
 
-    // Pole analysis
-    document.getElementById('poleAnalysis').innerHTML = 
-      `<div class="summary-text">
-         <strong>1-Pole Cases:</strong> ${onePoleDelayed.length} delayed<br>
-         <strong>2-Pole Cases:</strong> ${twoPoleDelayed.length} delayed
-       </div>
-       <div style="margin-top: 0.75rem;">
-         <div style="font-weight: 600; margin-bottom: 0.5rem;">1-Pole Issues:</div>
-         ${formatCCCList(countByCCC(onePoleDelayed), 3, false)}
-       </div>`;
-
-    // Key observations
-    const observations = [];
-    
-    if (bottom20.length > 0) {
-      const topPoor = Object.entries(countByCCC(bottom20)).sort((a, b) => b[1] - a[1])[0];
-      observations.push(`Worst performer: CCC-${topPoor[0]} with ${topPoor[1]} cases`);
-    }
-    
-    observations.push(`${nonPoleDelayed.length} cases violating 3-day standard`);
-    observations.push(`${industrialDelayed.length} industrial customers affected`);
-    observations.push(`${withheldData.length} initial process failures`);
-    
-    document.getElementById('keyObservations').innerHTML = 
-      `<ul class="stats-list">
-         ${observations.map(obs => `<li class="stats-item">${obs}</li>`).join('')}
-       </ul>`;
-  }
-
-  // Load data
-  fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vRsUU2viBvYhSgR0RFwmZ1H8LkYCats9roQVCKvQeoU7dzg6ryR6IWZex9FT9tksp_DEM23ZgQ28Iyo/pub?output=csv')
-    .then(res => res.text())
-    .then(csv => {
-      try {
-        const rows = csv.trim().split('\n').map(r => r.split(','));
-        const headers = rows[0];
-        globalData = rows.slice(1).map(r => 
-          Object.fromEntries(headers.map((h, i) => [h.trim(), r[i]?.trim() || '']))
+    // Resolve CCC codes
+    if (filters.ccc_code === 'All') {
+        // Flatten all CCC codes
+        cccListToFilter = Object.values(cccHierarchyOriginal).flatMap(region =>
+            Object.values(region.divisions).flatMap(division =>
+                Object.keys(division.cccs)
+            )
         );
-        
-        regions = Array.from(new Set(
-          globalData.map(d => d.REGION?.trim()).filter(Boolean)
-        )).sort();
-        
-        updateRegionTabs();
-        generateReport();
-      } catch (error) {
-        document.getElementById('loading').innerHTML = '<div style="color: var(--danger);">❌ Error parsing data</div>';
-      }
-    })
-    .catch(err => {
-      document.getElementById('loading').innerHTML = '<div style="color: var(--danger);">❌ Error loading data</div>';
-    });
-</script>
+    } else {
+        cccListToFilter = getFilteredCCCs(filters.ccc_code);
+    }
 
+    return data.filter(row => {
+        // --- Office filter ---
+        const cccMatch = cccListToFilter.includes(row.CCC_CODE);
+
+        // --- Pole / Non-Pole ---
+        const poles = parseFloat(row.NO_OF_POLES) || 0;
+        const poleNonPoleMatch =
+            filters.poleNonPole === 'All' ||
+            (filters.poleNonPole === 'Pole' && poles > 0) ||
+            (filters.poleNonPole === 'Non-Pole' && poles === 0);
+
+        // --- Agri / Non-Agri ---
+        const agriNonAgriMatch =
+            filters.agriNonAgri === 'All' ||
+            (filters.agriNonAgri === 'Agri' && row.CONN_CLASS === 'A') ||
+            (filters.agriNonAgri === 'Non-Agri' && row.CONN_CLASS !== 'A');
+
+        // --- Delay Range ---
+        let delayRangeMatch = true;
+        if (filters.delayRange !== 'All') {
+            if (filters.delayRangeType === 'range1') {
+                delayRangeMatch = row.DelayRange === filters.delayRange;
+            } else if (filters.delayRangeType === 'range2') {
+                const bucket = predefinedDelayBuckets.find(b => b.label === filters.delayRange);
+                // If a bucket is found, match against it. Otherwise, the row doesn't match the filter.
+                delayRangeMatch = false; // Assume no match unless bucket is found and delay is in range
+                if (bucket) {
+                    const delay = parseInt(row.DelayInSC) || 0;
+                    if (delay >= bucket.min && delay <= bucket.max) {
+                        delayRangeMatch = true;
+                    }
+                }
+            }
+        }
+
+        // --- Connection Class ---
+        const classMatch =
+            filters.connectionClass === 'All' ||
+            row.CONN_CLASS === filters.connectionClass;
+
+        // --- Search filter ---
+        const searchTerm = filters.searchTerm.toLowerCase();
+        const searchMatch = searchTerm === '' ||
+            (row.NAME && row.NAME.toLowerCase().includes(searchTerm)) ||
+            (row.APPL_NO && row.APPL_NO.toLowerCase().includes(searchTerm));
+
+        // --- Final condition (all must match) ---
+        return cccMatch && poleNonPoleMatch && agriNonAgriMatch && delayRangeMatch && classMatch && searchMatch;
+    });
+}
+
+
+        // Update dashboard cards
+        function updateCards(data) {
+            const totalApplications = data.length;
+
+            // Average WO Delay
+            const totalWODelay = data.reduce((sum, row) => sum + (parseInt(row.DelayInWO) || 0), 0);
+            const avgWODelay = totalApplications > 0 ? (totalWODelay / totalApplications).toFixed(2) : 0;
+
+            // Average SC Delay
+            const totalSCDelay = data.reduce((sum, row) => sum + (parseInt(row.DelayInSC) || 0), 0);
+            const avgSCDelay = totalApplications > 0 ? (totalSCDelay / totalApplications).toFixed(2) : 0;
+
+            // Average Quotation Delay
+            const totalQtnDelay = data.reduce((sum, row) => sum + (parseInt(row.DelayInQtn) || 0), 0);
+            const avgQtnDelay = totalApplications > 0 ? (totalQtnDelay / totalApplications).toFixed(2) : 0;
+
+            totalApplicationsEl.textContent = totalApplications.toLocaleString();
+            document.getElementById("avg-qtn-delay").textContent = avgQtnDelay;
+            avgWODelayEl.textContent = avgWODelay;
+            avgSCDelayEl.textContent = avgSCDelay;
+        }
+
+        // Convert numeric days into human readable format (Y, M, W, D)
+        function formatDelay(days) {
+            days = parseInt(days) || 0;
+            if (days <= 0) return "0D";
+
+            const years = Math.floor(days / 365);
+            days %= 365;
+            const months = Math.floor(days / 30);
+            days %= 30;
+            const weeks = Math.floor(days / 7);
+            days %= 7;
+
+            let parts = [];
+            if (years > 0) parts.push(`${years}Y`);
+            if (months > 0) parts.push(`${months}M`);
+            if (weeks > 0) parts.push(`${weeks}W`);
+            if (days > 0) parts.push(`${days}D`);
+
+            return parts.join(" ");
+        }
+
+        // Update data table with pagination
+        function updateTable(data, page) {
+            dataTableBodyEl.innerHTML = '';
+
+            // Sort by DelayInSC (highest first)
+            const sortedData = [...data].sort((a, b) => (parseInt(b.DelayInSC) || 0) - (parseInt(a.DelayInSC) || 0));
+
+            const start = (page - 1) * rowsPerPage;
+            const end = start + rowsPerPage;
+            const paginatedData = sortedData.slice(start, end);
+
+            paginatedData.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.className = 'table-row hover:bg-slate-800/50 cursor-pointer transition-all duration-200';
+
+                // Format WO No. with red if missing
+                const woCell = row.WON && row.WON.trim() !== "" 
+                    ? row.WON 
+                    : `<span class="text-red-400 font-semibold">Not Issued</span>`;
+
+                // Lookup CCC name from hierarchy
+                let cccName = row.CCC_CODE;
+                for (const region of Object.values(cccHierarchyOriginal)) {
+                    for (const div of Object.values(region.divisions)) {
+                        if (div.cccs[row.CCC_CODE]) {
+                            cccName = div.cccs[row.CCC_CODE];
+                        }
+                    }
+                }
+
+                tr.innerHTML = `
+                    <td class="table-cell">${row.APPL_NO}</td>
+                    <td class="table-cell">${cccName}</td>
+                    <td class="table-cell">${row.NAME}</td>
+                    <td class="table-cell">${(parseFloat(row.LOAD_WATTS) || 0).toLocaleString()}</td>
+                    <td class="table-cell">${row.APPLIED_PHASE}</td>
+                    <td class="table-cell">${row.CONN_CLASS}</td>
+                    <td class="table-cell">${row.NO_OF_POLES || 0}</td>
+                    <td class="table-cell">${woCell}</td>
+                    <td class="table-cell">${formatDelay(row.DelayInSC)}</td>
+                    <td class="table-cell">${formatDelay(row.DelayInWO)}</td>
+                    <td class="table-cell">${row.PHONE_NO || ""}</td>
+                    <td class="table-cell">${row.AGENCY_NAME || ""}</td>
+                `;
+
+                dataTableBodyEl.appendChild(tr);
+                tr.addEventListener("click", () => openAppModal(row));
+            });
+        }
+        
+        // Update pagination controls
+        function updatePagination(data) {
+            const totalPages = Math.ceil(data.length / rowsPerPage);
+            pageInfoEl.textContent = `Page ${currentPage} of ${totalPages}`;
+            prevBtn.disabled = currentPage === 1;
+            nextBtn.disabled = currentPage === totalPages || totalPages === 0;
+
+            // (Re)bind events each time
+            prevBtn.onclick = () => changePage(currentPage - 1, data);
+            nextBtn.onclick = () => changePage(currentPage + 1, data);
+        }
+
+        function changePage(page, data) {
+            const totalPages = Math.ceil(data.length / rowsPerPage);
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            updateTable(data, currentPage);
+            updatePagination(data);
+        }
+        
+        // Main render function
+// --- Helper: filter data excluding one dimension ---
+function filterDataExcept(data, excludeKey) {
+  return data.filter(row => {
+    // --- Search filter (always applied) ---
+    const searchTerm = filters.searchTerm.toLowerCase();
+    const searchMatch = searchTerm === '' ||
+        (row.NAME && row.NAME.toLowerCase().includes(searchTerm)) ||
+        (row.APPL_NO && row.APPL_NO.toLowerCase().includes(searchTerm));
+
+    const poles = parseFloat(row.NO_OF_POLES) || 0;
+
+    // --- Office (ccc_code) ---
+    // If we're excluding office, don't filter by CCC at all
+    let cccMatch = true;
+    if (excludeKey !== "ccc_code") {
+      let cccListToFilter;
+      if (filters.ccc_code === 'All') {
+        // all CCCs
+        cccListToFilter = Object.values(cccHierarchyOriginal).flatMap(region =>
+          Object.values(region.divisions).flatMap(division =>
+            Object.keys(division.cccs)
+          )
+        );
+      } else {
+        cccListToFilter = getFilteredCCCs(filters.ccc_code);
+      }
+      cccMatch = cccListToFilter.includes(row.CCC_CODE);
+    }
+
+    // --- Pole / Non-Pole ---
+    const poleNonPoleMatch =
+      excludeKey === "poleNonPole" || filters.poleNonPole === 'All' ||
+      (filters.poleNonPole === 'Pole' && poles > 0) ||
+      (filters.poleNonPole === 'Non-Pole' && poles === 0);
+
+    // --- Agri / Non-Agri ---
+    const agriNonAgriMatch =
+      excludeKey === "agriNonAgri" || filters.agriNonAgri === 'All' ||
+      (filters.agriNonAgri === 'Agri' && row.CONN_CLASS === 'A') ||
+      (filters.agriNonAgri === 'Non-Agri' && row.CONN_CLASS !== 'A');
+
+    // --- Delay Range ---
+    let delayRangeMatch = true;
+    if (excludeKey !== 'delayRange') {
+        if (filters.delayRange !== 'All') {
+            if (filters.delayRangeType === 'range1') {
+                delayRangeMatch = row.DelayRange === filters.delayRange;
+            } else if (filters.delayRangeType === 'range2') {
+                const bucket = predefinedDelayBuckets.find(b => b.label === filters.delayRange);
+                // If a bucket is found, match against it. Otherwise, the row doesn't match the filter.
+                delayRangeMatch = false; // Assume no match unless bucket is found and delay is in range
+                if (bucket) {
+                    const delay = parseInt(row.DelayInSC) || 0;
+                    if (delay >= bucket.min && delay <= bucket.max) {
+                        delayRangeMatch = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Connection Class ---
+    const classMatch =
+      excludeKey === "connectionClass" || filters.connectionClass === 'All' ||
+      row.CONN_CLASS === filters.connectionClass;
+
+    return cccMatch && poleNonPoleMatch && agriNonAgriMatch && delayRangeMatch && classMatch && searchMatch;
+  });
+}
+
+
+// --- Updated renderDashboard ---
+function renderDashboard() {
+    // Table & cards respect all filters
+    filteredData = filterData(rawData);
+
+    // --- Office Hierarchy counts (exclude only office filter) ---
+    const baseForHierarchy = filterDataExcept(rawData, "ccc_code");
+    const cccHierarchyDynamic = JSON.parse(JSON.stringify(displayHierarchy));
+    calculateHierarchyCounts(baseForHierarchy, cccHierarchyDynamic);
+
+    // --- Delay Ranges (exclude own filter) ---
+    const baseForDelay = filterDataExcept(rawData, "delayRange");
+    const dynamicDelayCounts = calculateDelayRangeCounts(baseForDelay, uniqueDelayRanges);
+    const bucketCounts = calculateDelayBucketCounts(baseForDelay);
+
+    // --- Connection Classes (exclude own filter) ---
+    const baseForClass = filterDataExcept(rawData, "connectionClass");
+    const dynamicClassCounts = calculateClassCounts(baseForClass, uniqueClasses);
+
+    // --- Pole / Non-Pole (exclude own filter) ---
+    const baseForPole = filterDataExcept(rawData, "poleNonPole");
+    const poleCounts = calculatePolesAgriCounts(baseForPole);
+
+    // --- Agri / Non-Agri (exclude own filter) ---
+    const baseForAgri = filterDataExcept(rawData, "agriNonAgri");
+    const agriCounts = calculatePolesAgriCounts(baseForAgri);
+
+    // --- Render filter panels ---
+    buildHierarchy(officeHierarchyEl, cccHierarchyDynamic, baseForHierarchy.length);
+    renderDelayRangesType1(dynamicDelayCounts);
+    renderDelayRangesType2(bucketCounts);
+    renderClassFilters(dynamicClassCounts);
+    renderPolesAgriFilters({
+        pole: poleCounts.pole,
+        nonPole: poleCounts.nonPole,
+        agri: agriCounts.agri,
+        nonAgri: agriCounts.nonAgri,
+        totalApplications: filteredData.length
+    });
+
+    // --- Update main content ---
+    updateCards(filteredData);
+    updateTable(filteredData, currentPage);
+    updatePagination(filteredData);
+}
+
+
+
+
+        // Initialize the application
+        async function init() {
+            try {
+                // Load authorization data
+                const authResp = await fetch(authUrl);
+                const authCSV = await authResp.text();
+                const authData = parseCSV(authCSV);
+
+                // Handle Delay Range tabs
+                const delayTab1 = document.getElementById('delay-tab-1');
+                const delayTab2 = document.getElementById('delay-tab-2');
+                const delayContent1 = document.getElementById('delay-range-filters-1');
+                const delayContent2 = document.getElementById('delay-range-filters-2');
+
+                delayTab1.addEventListener('click', () => {
+                    delayTab1.classList.add('active-tab');
+                    delayTab2.classList.remove('active-tab');
+                    delayContent1.classList.remove('hidden');
+                    delayContent2.classList.add('hidden');
+                    
+                    if (filters.delayRangeType !== 'range1') {
+                        filters.delayRangeType = 'range1';
+                        filters.delayRange = 'All';
+                        currentPage = 1;
+                        renderDashboard();
+                    }
+                });
+
+                delayTab2.addEventListener('click', () => {
+                    delayTab2.classList.add('active-tab');
+                    delayTab1.classList.remove('active-tab');
+                    delayContent2.classList.remove('hidden');
+                    delayContent1.classList.add('hidden');
+
+                    if (filters.delayRangeType !== 'range2') {
+                        filters.delayRangeType = 'range2';
+                        filters.delayRange = 'All';
+                        currentPage = 1;
+                        renderDashboard();
+                    }
+                });
+
+                // Handle search input
+                const searchInput = document.getElementById('search-input');
+                searchInput.addEventListener('input', debounce((e) => {
+                    filters.searchTerm = e.target.value.trim();
+                    currentPage = 1; // Reset to first page on new search
+                    renderDashboard();
+                }, 300));
+
+                // Handle Export CSV button
+                document.getElementById('export-csv-btn').addEventListener('click', () => {
+                    if (filteredData.length > 0) {
+                        exportToCSV(filteredData, `nsc_data_export_${new Date().toISOString().slice(0,10)}.csv`);
+                    } else {
+                        alert("There is no data to export.");
+                    }
+                });
+
+                // Handle login button
+                document.getElementById("login-btn").addEventListener("click", () => {
+                    const pin = document.getElementById("pin-input").value.trim();
+                    const user = authData.find(u => u.PIN === pin);
+
+                    if (user) {
+                        if (user["nsc-autho"] && user["nsc-autho"].trim() !== "") {
+                            const codes = user["nsc-autho"].split(";").map(x => x.trim());
+                            // Expand office/division/region codes into CCC list
+                            authorizedCCCs = codes.flatMap(code => getFilteredCCCs(code));
+
+                            // Pick the first code for selection display and set it as the active filter
+                            const selCode = codes[0];
+                            filters.ccc_code = selCode;
+
+                            // NEW: Create a filtered hierarchy for display
+                            displayHierarchy = getFilteredHierarchy(selCode);
+
+                            let selName = "All Offices";
+                            let selType = "all";
+
+                            // Detect type and expand nodes to make selection visible
+                            if (cccHierarchyOriginal[selCode]) { // Region
+                                selName = cccHierarchyOriginal[selCode].name;
+                                selType = "region";
+                            } else {
+                                // Using 'some' to find and break out of loops
+                                Object.keys(cccHierarchyOriginal).some(regionCode => {
+                                    const region = cccHierarchyOriginal[regionCode];
+                                    if (region.divisions[selCode]) { // Division
+                                        selName = region.divisions[selCode].name;
+                                        selType = "division";
+                                        expandedNodes.add(regionCode);
+                                        return true; // Found, break from 'some'
+                                    }
+                                    return Object.keys(region.divisions).some(divCode => {
+                                        const division = region.divisions[divCode];
+                                        if (division.cccs[selCode]) { // CCC
+                                            selName = division.cccs[selCode];
+                                            selType = "ccc";
+                                            expandedNodes.add(regionCode);
+                                            expandedNodes.add(divCode);
+                                            return true; // Found, break from inner 'some'
+                                        }
+                                        return false;
+                                    });
+                                });
+                            }
+
+                            updateCurrentSelection(selType, selName);
+                        } else {
+                            // If nsc-autho empty → show all
+                            authorizedCCCs = "All";
+                            filters.ccc_code = 'All';
+                            displayHierarchy = JSON.parse(JSON.stringify(cccHierarchyOriginal));
+                            updateCurrentSelection("all", "Offices");
+                        }
+
+                        document.getElementById("login-modal").style.display = "none";
+                        loadDashboard();
+                    } else {
+                        document.getElementById("login-error").classList.remove("hidden");
+                    }
+                });
+
+                // Handle "View All"
+                document.getElementById("view-all-btn").addEventListener("click", () => {
+                    authorizedCCCs = "All";
+                    filters.ccc_code = 'All';
+                    displayHierarchy = JSON.parse(JSON.stringify(cccHierarchyOriginal));
+                    updateCurrentSelection("all", "Offices");
+                    document.getElementById("login-modal").style.display = "none";
+                    loadDashboard();
+                });
+
+            } catch (err) {
+                console.error("Error loading auth sheet:", err);
+                alert("Failed to load authorization data.");
+            }
+        }
+
+        // Dashboard data loader
+        async function loadDashboard() {
+            try {
+                // Fetch and parse main data
+                const response = await fetch(csvUrl);
+                if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+
+                const csvText = await response.text();
+                rawData = parseCSV(csvText);
+
+                // Restrict by authorized CCCs if not "All"
+                if (authorizedCCCs !== "All") {
+                    rawData = rawData.filter(r => authorizedCCCs.includes(r.CCC_CODE));
+                }
+
+                // Setup unique filters
+                uniqueDelayRanges = getUniqueDelayRanges(rawData);
+                uniqueClasses = getUniqueClasses(rawData);
+
+                // Update header with latest date
+                const todayDates = rawData.map(r => {
+                    if (!r.TODAY) return null;
+                    const [dd, mm, yyyy] = r.TODAY.split(/[-/]/);
+                    return new Date(`${yyyy}-${mm}-${dd}`);
+                }).filter(d => d && !isNaN(d));
+                if (todayDates.length > 0) {
+                    const maxDate = new Date(Math.max(...todayDates));
+                    const formatted = `${String(maxDate.getDate()).padStart(2, "0")}-${String(maxDate.getMonth() + 1).padStart(2, "0")}-${maxDate.getFullYear()}`;
+                    document.getElementById("page-title").textContent = `Pending NSC (${formatted})`;
+                }
+
+                // Initial render
+                renderDashboard();
+                loadingDiv.style.display = "none";
+
+            } catch (err) {
+                console.error("Error loading dashboard:", err);
+                loadingDiv.innerHTML = '<p class="text-xl text-red-400">Failed to load dashboard data.</p>';
+            }
+        }
+
+        window.onload = init;
+
+        function openAppModal(row) {
+            const modal = document.getElementById("app-modal");
+            const content = document.getElementById("modal-content");
+            content.innerHTML = "";
+
+            Object.keys(row).forEach(key => {
+                if (key === "DelaySerial" || key === "TODAY") return; // skip these
+
+                const label = document.createElement("div");
+                label.className = "font-semibold text-slate-400 truncate";
+                label.textContent = key;
+
+                const value = document.createElement("div");
+                value.className = "text-slate-200 truncate";
+                value.textContent = row[key] || "";
+
+                content.appendChild(label);
+                content.appendChild(value);
+            });
+
+            modal.classList.remove("hidden");
+        }
+
+        // Panel visibility management
+        let isSidebarVisible = true;
+        let isSecondaryVisible = true;
+
+        function updateMainMargin() {
+            // Small screens: let panels overlay, main always full width
+            if (window.innerWidth < 768) {
+                document.getElementById('main-content').style.marginLeft = "0";
+                return;
+            }
+
+            const leftRem = (isSidebarVisible ? 16 : 0) + (isSecondaryVisible ? 16 : 0);
+            document.getElementById('main-content').style.marginLeft = `${leftRem}rem`;
+        }
+
+        function hidePanel(id) {
+            const panel = document.getElementById(id);
+            const btn = document.getElementById(id + "-show-btn");
+            const secondaryPanel = document.getElementById('secondary-sidebar');
+            const secondaryBtn = document.getElementById('secondary-sidebar-show-btn');
+
+            if (id === "sidebar") {
+                panel.classList.add("-translate-x-full");
+                isSidebarVisible = false;
+                secondaryPanel.classList.remove('left-64');
+                secondaryPanel.classList.add('left-0');
+                secondaryBtn.classList.remove('left-64');
+                secondaryBtn.classList.add('left-0');
+            } else if (id === "secondary-sidebar") {
+                // secondary needs -200% so it clears off the left
+                panel.classList.add("-translate-x-[200%]");
+                isSecondaryVisible = false;
+            }
+            btn.classList.remove("hidden");
+            updateMainMargin();
+        }
+
+        function showPanel(id) {
+            const panel = document.getElementById(id);
+            const btn = document.getElementById(id + "-show-btn");
+            const secondaryPanel = document.getElementById('secondary-sidebar');
+            const secondaryBtn = document.getElementById('secondary-sidebar-show-btn');
+
+            if (id === "sidebar") {
+                panel.classList.remove("-translate-x-full");
+                isSidebarVisible = true;
+                secondaryPanel.classList.remove('left-0');
+                secondaryPanel.classList.add('left-64');
+                secondaryBtn.classList.remove('left-0');
+                secondaryBtn.classList.add('left-64');
+            } else if (id === "secondary-sidebar") {
+                panel.classList.remove("-translate-x-[200%]");
+                isSecondaryVisible = true;
+            }
+            btn.classList.add("hidden");
+            updateMainMargin();
+        }
+
+        window.addEventListener("resize", updateMainMargin);
+        document.addEventListener("DOMContentLoaded", () => {
+            document.getElementById('main-content').style.marginLeft = ''; // Clear inline style for JS control
+            updateMainMargin();
+        });
+
+        // Modal functionality
+        (function () {
+            const modal = document.getElementById("app-modal");
+            const closeBtn = document.getElementById("modal-close");
+
+            // Open (keep as a global so table row click can call it)
+            window.openAppModal = function (row) {
+                const modal = document.getElementById("app-modal");
+                const content = document.getElementById("modal-content");
+                content.innerHTML = "";
+
+                Object.keys(row).forEach(key => {
+                    if (key === "DelaySerial" || key === "TODAY") return; // skip these
+
+                    const label = document.createElement("div");
+                    label.className = "font-semibold text-slate-400 truncate";
+                    label.textContent = key;
+
+                    const value = document.createElement("div");
+                    value.className = "text-slate-200 truncate";
+                    value.textContent = row[key] || "";
+
+                    content.appendChild(label);
+                    content.appendChild(value);
+                });
+
+                modal.classList.remove("hidden");
+            };
+
+            // Close helpers
+            function hideModal() {
+                modal.classList.add("hidden");
+            }
+
+            // Close on ×
+            closeBtn.addEventListener("click", hideModal);
+
+            // Close when clicking the backdrop (outside the white box)
+            modal.addEventListener("click", (e) => {
+                if (e.target === modal) hideModal();
+            });
+
+            // Close on ESC
+            document.addEventListener("keydown", (e) => {
+                if (e.key === "Escape") hideModal();
+            });
+        })();
+        function toggleFilters() {
+  const filtersPanel = document.getElementById("filtersPanel");
+  filtersPanel.classList.toggle("hidden");
+}
+
+    </script>
 </body>
 </html>
