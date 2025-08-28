@@ -1,0 +1,1682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Upcoming DD Consumers</title>
+<!-- Google Fonts for Inter and proper fallback -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<!-- Custom Styles -->
+<style>
+  body {
+    font-family: 'Inter', sans-serif;
+  }
+  .loading-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(17, 24, 39, 0.8);
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  /* Custom scrollbar for left pane */
+  .left-pane::-webkit-scrollbar {
+    width: 8px;
+  }
+  .left-pane::-webkit-scrollbar-track {
+    background: #1f2937;
+    border-radius: 10px;
+  }
+  .left-pane::-webkit-scrollbar-thumb {
+    background-color: #4b5563;
+    border-radius: 10px;
+    border: 2px solid #1f2937;
+  }
+  .left-pane::-webkit-scrollbar-thumb:hover {
+    background-color: #6b7280;
+  }
+  .ccc-region-title, .ccc-division-title {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    transition: background-color 0.15s;
+    padding: 8px 12px;
+    border-radius: 8px;
+  }
+  .ccc-region-title:hover:not(.active), .ccc-division-title:hover:not(.active) {
+    background-color: #374151;
+  }
+  .collapsed > .arrow {
+    transform: rotate(-90deg);
+  }
+  .ccc-list-group .list-group-item {
+    cursor: pointer;
+    user-select: none;
+    border: none;
+    border-radius: 8px;
+    margin-bottom: 2px;
+    margin-left: 24px;
+    margin-right: 8px;
+    transition: background-color 0.15s;
+    font-size: 0.9rem;
+    padding: 4px 12px;
+  }
+  .ccc-list-group .active {
+    background-color: #2563eb;
+    color: #fff;
+    font-weight: 500;
+  }
+  .ccc-list-group .list-group-item:hover:not(.active) {
+    background-color: #374151;
+  }
+  .left-loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 120px;
+  }
+  .page-link {
+    transition: all 0.2s;
+  }
+</style>
+<!-- Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Lucide Icons -->
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          }
+        }
+      }
+    }
+</script>
+</head>
+<body class="bg-gray-900 text-gray-100 p-4 min-h-screen">
+<!-- PIN Login Modal -->
+<div id="loginModal" style="position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;z-index:9999;">
+  <div style="background:#111827;padding:20px;border-radius:10px;min-width:280px;max-width:320px;">
+    <h3 class="text-lg font-semibold text-white mb-3">Enter PIN</h3>
+    <input type="password" id="pinInput" placeholder="PIN"
+           class="w-full bg-gray-700 text-gray-100 rounded-lg border border-gray-600 px-3 py-2" />
+    <button id="loginBtn"
+            class="w-full mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+      Login
+    </button>
+    <p id="loginError" class="text-red-400 text-sm mt-2 hidden">Invalid PIN</p>
+  </div>
+</div>
+
+<h2 class="mb-1 text-3xl font-bold">Upcoming DD Consumers</h2>
+<p id="earliestDateHeader" class="mb-4 text-sm text-gray-400"></p>
+
+<!-- Summary Cards -->
+<div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+  <div class="bg-gray-800 p-4 rounded-xl shadow-lg text-center">
+    <h5 class="text-gray-400 text-sm md:text-base">Total Records</h5>
+    <h3 id="totalCount" class="text-3xl md:text-4xl font-extrabold mt-1">0</h3>
+  </div>
+  <div class="bg-gray-800 p-4 rounded-xl shadow-lg text-center">
+    <h5 class="text-gray-400 text-sm md:text-base">Total OSD</h5>
+    <h3 id="totalOSD" class="text-3xl md:text-4xl font-extrabold mt-1">0</h3>
+  </div>
+  <div class="bg-gray-800 p-4 rounded-xl shadow-lg text-center">
+    <h5 class="text-gray-400 text-sm md:text-base">Zero OSD DD</h5>
+    <h3 id="zeroOSDCount" class="text-3xl md:text-4xl font-extrabold mt-1">0</h3>
+  </div>
+  <div id="foundLiveCard" class="bg-gray-800 p-4 rounded-xl shadow-lg text-center cursor-pointer"
+     onclick="onFoundLiveFilter()">
+  <h5 class="text-gray-400 text-sm md:text-base">Found LIVE</h5>
+  <h3 id="foundLiveCount" class="text-3xl md:text-4xl font-extrabold mt-1">0</h3>
+</div>
+
+<div id="foundDisconnectedCard" class="bg-gray-800 p-4 rounded-xl shadow-lg text-center cursor-pointer"
+     onclick="onFoundDisconnectedFilter()">
+  <h5 class="text-gray-400 text-sm md:text-base">Found Disconnected</h5>
+  <h3 id="foundDisconnectedCount" class="text-3xl md:text-4xl font-extrabold mt-1">0</h3>
+</div>
+
+</div>
+
+<!-- Main Flex Layout -->
+<div class="flex flex-col md:flex-row gap-6 items-start">
+  <!-- Left Pane for CCC Codes -->
+  <div class="left-pane w-full md:w-1/4 bg-gray-800 rounded-xl p-4 shadow-lg overflow-y-auto max-h-[80vh] flex-shrink-0">
+    <div class="mb-3 text-lg font-semibold">Select Office</div>
+    <div id="cccLoading" class="left-loading" style="display:none;">
+      <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+    <div id="cccFilterContainer">
+      <ul class="list-group ccc-list-group" id="cccFilter"></ul>
+    </div>
+  </div>
+
+  <!-- Table and Pagination -->
+  <div class="flex-grow w-full">
+    <!-- Universal Search and Filter Buttons -->
+    <div class="mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-2 sm:space-y-0">
+      <div class="flex flex-wrap gap-2">
+<button id="alreadyDDBtn" class="btn btn-sm text-sm border border-transparent rounded-lg px-3 py-1 bg-gray-700 text-gray-200 hover:bg-gray-600 transition" onclick="onAlreadyDDFilter()">
+  Already DD (<span id="alreadyDDCount">0</span>)
+</button>
+<button id="ddTodayBtn" class="btn btn-sm text-sm border border-transparent rounded-lg px-3 py-1 bg-gray-700 text-gray-200 hover:bg-gray-600 transition" onclick="onDDTodayFilter()">
+  DD on Today (<span id="ddTodayCount">0</span>)
+</button>
+<button id="dd7Btn" class="btn btn-sm text-sm border border-transparent rounded-lg px-3 py-1 bg-gray-700 text-gray-200 hover:bg-gray-600 transition" onclick="onDD7Filter()">
+  DD in 7 days (<span id="dd7Count">0</span>)
+</button>
+<button id="dd15Btn" class="btn btn-sm text-sm border border-transparent rounded-lg px-3 py-1 bg-gray-700 text-gray-200 hover:bg-gray-600 transition" onclick="onDD15Filter()">
+  DD in 15 days (<span id="dd15Count">0</span>)
+</button>
+<button id="dd30Btn" class="btn btn-sm text-sm border border-transparent rounded-lg px-3 py-1 bg-gray-700 text-gray-200 hover:bg-gray-600 transition" onclick="onDD30Filter()">
+  DD in 30 days (<span id="dd30Count">0</span>)
+</button>
+<button id="liveBtn" class="btn btn-sm text-sm border border-transparent rounded-lg px-3 py-1 bg-gray-700 text-gray-200 hover:bg-gray-600 transition" onclick="onLiveFilter()">
+  Live (<span id="liveBtnCount">0</span>)
+</button>
+<button id="disconnectedBtn" class="btn btn-sm text-sm border border-transparent rounded-lg px-3 py-1 bg-gray-700 text-gray-200 hover:bg-gray-600 transition" onclick="onDisconnectedFilter()">
+  Disconnected (<span id="disconnectedBtnCount">0</span>)
+</button>
+      </div>
+      <div class="flex items-center gap-2">
+        <input
+          type="text"
+          id="universalSearch"
+          class="w-full sm:w-64 bg-gray-700 text-gray-100 rounded-lg border border-gray-600 focus:ring-blue-500 focus:border-blue-500 px-4 py-2"
+          placeholder="Search by any field..."
+          oninput="onUniversalSearch()"
+        />
+        <button id="downloadCsvBtn" title="Download as CSV" onclick="downloadCSV()" class="p-2 bg-gray-700 text-green-400 hover:bg-green-600 rounded-lg transition">
+            <span data-lucide="download" class="w-5 h-5"></span>
+        </button>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto rounded-xl shadow-lg">
+      <table class="w-full text-sm text-left text-gray-300">
+        <thead class="text-xs text-gray-100 uppercase bg-gray-700">
+          <tr>
+            <th scope="col" class="px-3 py-2 whitespace-nowrap">CON_ID</th>
+            <th scope="col" class="px-3 py-2 whitespace-nowrap">NAME</th>
+            <th scope="col" class="px-3 py-2 whitespace-nowrap">Mobile No.</th>
+            <th scope="col" class="px-3 py-2 whitespace-nowrap">Class</th>
+            <th scope="col" class="px-3 py-2 whitespace-nowrap">Ph</th>
+            <th scope="col" class="px-3 py-2 whitespace-nowrap">Govt.</th>
+            <th scope="col" class="px-3 py-2 whitespace-nowrap">CCC Name</th>
+            <th scope="col" class="px-3 py-2 whitespace-nowrap">DD Due Date</th>
+            <th scope="col" class="px-3 py-2 whitespace-nowrap">OSD</th>
+            <th scope="col" class="px-3 py-2 whitespace-nowrap">Action</th>
+          </tr>
+        </thead>
+        <tbody id="data-body" class="bg-gray-800 divide-y divide-gray-700"></tbody>
+      </table>
+    </div>
+    <nav class="mt-4">
+      <ul class="flex justify-center -space-x-px text-base h-10" id="pagination"></ul>
+    </nav>
+  </div>
+</div>
+
+<!-- Loading Spinner -->
+<div class="loading-overlay" id="loading" style="display:none;">
+  <div id="loadingTimer" class="text-4xl font-bold text-white">0:000</div>
+</div>
+
+
+<!-- Custom Confirmation Modal -->
+<div id="confirmModal" class="fixed inset-0 z-50 overflow-y-auto hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+  <div class="flex items-center justify-center min-h-screen px-4 text-center sm:block sm:p-0">
+    <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
+    <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+    <div class="inline-block align-bottom bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+      <div class="bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+        <div class="sm:flex sm:items-start">
+          <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+            <svg class="h-6 w-6 text-red-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+            <h3 class="text-lg leading-6 font-medium text-gray-100" id="confirmModalTitle">
+              Confirm Action
+            </h3>
+            <div class="mt-2">
+              <p class="text-sm text-gray-300" id="confirmModalMessage">
+                Are you sure you want to perform this action?
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+        <button type="button" id="confirmYesBtn" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm">
+          Yes
+        </button>
+        <button type="button" id="confirmNoBtn" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+          No
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="confirmObservationModal" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 hidden">
+  <div class="bg-white rounded-lg shadow-lg w-96 p-6">
+    <h2 class="text-lg font-bold mb-4">Confirm Update</h2>
+    <p id="confirmObservationText" class="mb-6">Are you sure you want to update the observation?</p>
+    <div class="flex justify-end gap-2">
+      <button id="cancelObservationBtn" class="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded">Cancel</button>
+      <button id="confirmObservationBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Custom Message Modal -->
+<div id="messageModal" class="fixed inset-0 z-50 overflow-y-auto hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+  <div class="flex items-center justify-center min-h-screen px-4 text-center sm:block sm:p-0">
+    <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
+    <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+    <div class="inline-block align-bottom bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-sm sm:w-full">
+      <div class="bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+        <div class="sm:flex sm:items-start">
+          <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
+            <svg class="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+            <h3 class="text-lg leading-6 font-medium text-gray-100" id="messageModalTitle">
+              Message
+            </h3>
+            <div class="mt-2">
+              <p class="text-sm text-gray-300" id="messageModalMessage">
+                This is a message.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+        <button type="button" id="messageOkBtn" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm">
+          OK
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Compact Modal for Row Details -->
+<div id="rowDetailModal" class="fixed inset-0 z-50 overflow-y-auto hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+  <div class="flex items-center justify-center min-h-screen px-4 text-center sm:block sm:p-0">
+    <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
+    <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+    <div class="inline-block align-bottom bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+      <div class="bg-gray-700 px-4 py-3 sm:px-6 flex justify-between items-center">
+        <h3 class="text-lg leading-6 font-medium text-gray-100" id="rowDetailModalTitle">
+          Consumer Details
+        </h3>
+        <button type="button" class="text-gray-400 hover:text-gray-100 focus:outline-none" onclick="hideModal('rowDetailModal')">
+          <span class="sr-only">Close</span>
+          <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4 text-sm" id="rowDetailModalBody">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- New Action Modal -->
+<div id="actionModal" class="fixed inset-0 z-50 overflow-y-auto hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+  <div class="flex items-center justify-center min-h-screen px-4 text-center sm:block sm:p-0">
+    <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
+    <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+    <div class="inline-block align-bottom bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-sm sm:w-full">
+      <div class="bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+        <div class="sm:flex sm:items-start">
+          <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
+            <svg class="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 do 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+          </div>
+          <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+            <h3 class="text-lg leading-6 font-medium text-gray-100" id="actionModalTitle">
+              Update Observation
+            </h3>
+            <div class="mt-2">
+              <p class="text-sm text-gray-300">
+                Please select the observation for this consumer.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-col sm:space-y-2">
+        <button type="button" id="actionDisconnectedBtn" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:w-auto sm:text-sm">
+          Visited, found disconnected
+        </button>
+        <button type="button" id="actionLiveBtn" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:w-auto sm:text-sm">
+          Visited, found live
+        </button>
+        <button type="button" onclick="hideModal('actionModal')" class="w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:w-auto sm:text-sm">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+// Supabase configuration
+const SUPABASE_URL = "https://unsmtschmcvftfqwabaq.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVuc210c2NobWN2ZnRmcXdhYmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM1NzA1MTYsImV4cCI6MjA2OTE0NjUxNn0.X3_q0FyEjam4ct03sjiqINz0_Hfu0AlWgRcymA3us9o";
+const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// --- Auth scope (NEW) ---
+let AUTH_SCOPE = { dd_view: null, dd_edit: null };
+let CAN_EDIT = false;
+
+const cccHierarchy = {
+  "6610000": {
+    name: "MALDA REGION",
+    divisions: {
+      "6611000": {
+        name: "MALDA DIVISIOIN",
+        cccs: {
+          "6611101": "MANIKCHAK CCC",
+          "6611102": "GOLAPGANJ CCC",
+          "6611103": "BAISHNABNAGAR CCC",
+          "6611104": "KALIACHAK CCC",
+          "6611105": "MOTHABARI CCC",
+          "6611106": "SUJAPUR CCC",
+          "6611107": "RATHBARI CCC",
+          "6611108": "FULBARI CCC",
+          "6611109": "MOKDUMPUR CCC"
+        }
+      },
+      "6613000": {
+        name: "GAZOLE DIVISIOIN",
+        cccs: {
+          "6613101": "GAZOL CCC",
+          "6613102": "AIHO CCC",
+          "6613103": "PANDUA CCC",
+          "6613104": "BAMONGOLA CCC",
+          "6613105": "OLD MALDA CCC"
+        }
+      },
+      "6612000": {
+        name: "CHANCHAL DIVISION",
+        cccs: {
+          "6612101": "BHALUKA CCC",
+          "6612102": "SAMSI CCC",
+          "6612103": "PARANPUR CCC",
+          "6612104": "CHANCHAL CCC",
+          "6612105": "MALATIPUR CCC",
+          "6612106": "HARISHCHANDRAPUR CCC",
+          "6612107": "KUSHIDA CCC"
+        }
+      }
+    }
+  },
+  "6620000": {
+    name: "UTTAR DINAJPUR REGION",
+    divisions: {
+      "6621000": {
+        name: "RAIGANJ DIVISION",
+        cccs: {
+          "6621101": "ITAHAR CCC",
+          "6621102": "HEMTABAD CCC",
+          "6621103": "KALIYAGANJ CCC",
+          "6621104": "RAIGANJ CCC",
+          "6621105": "BIRNAGAR CCC",
+          "6621106": "KARANDIGHI CCC"
+        }
+      },
+      "6622000": {
+        name: "ISLAMPUR DIVISION",
+        cccs: {
+          "6622101": "ISLAMPUR CCC",
+          "6622102": "CHOPRA CCC",
+          "6622103": "DALKHOLA CCC",
+          "6622104": "GOALPOKHER CCC",
+          "6622105": "KANKI CCC"
+        }
+      }
+    }
+  },
+  "6630000": {
+    name: "DAKSHIN DINAJPUR REGION",
+    divisions: {
+      "6631000": {
+        name: "BALURGHAT DIVISION",
+        cccs: {
+          "6631101": "BALURGHAT CCC",
+          "6631102": "TAPAN CCC",
+          "6631103": "KUMARGANJ CCC",
+          "6631104": "HILI CCC",
+          "6631105": "PATIRAM CCC"
+        }
+      },
+      "6632000": {
+        name: "BUNIADPUR DIVISION",
+        cccs: {
+          "6632101": "BUNIADPUR CCC",
+          "6632102": "KUSMANDI CCC",
+          "6632103": "HARIRAMPUR CCC",
+          "6632104": "GANGARAMPUR CCC"
+        }
+      }
+    }
+  }
+};
+function getAllowedCCCList(dd_view) {
+  if (!dd_view) return [];
+
+  // If 'all', return an empty array meaning no restriction
+  if (dd_view.toLowerCase() === "all") return [];
+
+  const allowedCCCs = [];
+
+  // If Region code (ends with 0000)
+  if (/^\d{7}$/.test(dd_view) && dd_view.endsWith("0000")) {
+    const region = cccHierarchy[dd_view];
+    if (region) {
+      for (const divisionKey in region.divisions) {
+        const division = region.divisions[divisionKey];
+        allowedCCCs.push(...Object.keys(division.cccs));
+      }
+    }
+  }
+  // If Division code (ends with 000)
+  else if (/^\d{7}$/.test(dd_view) && dd_view.endsWith("000")) {
+    for (const regionKey in cccHierarchy) {
+      const region = cccHierarchy[regionKey];
+      if (region.divisions[dd_view]) {
+        allowedCCCs.push(...Object.keys(region.divisions[dd_view].cccs));
+        break;
+      }
+    }
+  }
+  // If CCC code (full 7 digits, specific office)
+  else if (/^\d{7}$/.test(dd_view)) {
+    allowedCCCs.push(dd_view);
+  }
+
+  return allowedCCCs;
+}
+
+// Helper to map CCC_CODE to name (without "CCC")
+function getCCCName(code) {
+  code = String(code);
+  for (const region of Object.values(cccHierarchy)) {
+    for (const division of Object.values(region.divisions)) {
+      for (const [cccCode, cccName] of Object.entries(division.cccs)) {
+        if (cccCode === code) {
+          return cccName.replace(" CCC", "");
+        }
+      }
+    }
+  }
+  return code; // fallback to code if not found
+}
+
+// Helper to group CCC codes by region/division
+function groupCCCByHierarchy(cccCodes) {
+  const grouped = {};
+  for (const regionKey in cccHierarchy) {
+    const region = cccHierarchy[regionKey];
+    let regionHasAny = false;
+    const divisions = {};
+    for (const divisionKey in region.divisions) {
+      const division = region.divisions[divisionKey];
+      const cccs = {};
+      for (const cccCode in division.cccs) {
+        if (cccCodes.includes(cccCode)) {
+          cccs[cccCode] = division.cccs[cccCode];
+          regionHasAny = true;
+        }
+      }
+      if (Object.keys(cccs).length > 0) {
+        divisions[divisionKey] = { name: division.name, cccs };
+      }
+    }
+    if (regionHasAny) {
+      grouped[regionKey] = { name: region.name, divisions };
+    }
+  }
+  return grouped;
+}
+
+// Helper to format date to DD-MM-YYYY
+function formatDate(dateStr) {
+  if (!dateStr) return "";
+  const [year, month, day] = dateStr.split('-');
+  return `${day}-${month}-${year}`;
+}
+let pendingObservationUpdate = null;
+
+let currentPage = 1;
+const rowsPerPage = 20;
+let totalRows = 0;
+let currentCCC = null;
+let allCCC = [];
+let selectedRegion = null;
+let selectedDivision = null;
+let collapsedRegions = {};
+let collapsedDivisions = {};
+let allCCCLoaded = false;
+let universalSearchValue = "";
+let alreadyDDActive = false;
+let alreadyDDCount = 0;
+let ddTodayActive = false;
+let ddTodayCount = 0;
+let dd7Active = false, dd15Active = false, dd30Active = false;
+let dd7Count = 0, dd15Count = 0, dd30Count = 0;
+let foundLiveActive = false, foundDisconnectedActive = false;
+let foundLiveCount = 0, foundDisconnectedCount = 0;
+let currentFilteredRows = [];
+let liveBtnActive = false, disconnectedBtnActive = false;
+let liveBtnCount = 0, disconnectedBtnCount = 0;
+
+
+
+// Function to show a custom message modal
+function showMessageModal(title, message) {
+  document.getElementById('messageModalTitle').innerText = title;
+  document.getElementById('messageModalMessage').innerText = message;
+  document.getElementById('messageModal').classList.remove('hidden');
+}
+
+// Function to show a custom confirmation modal
+function showConfirmModal(title, message, onConfirm) {
+  document.getElementById('confirmModalTitle').innerText = title;
+  document.getElementById('confirmModalMessage').innerText = message;
+  document.getElementById('confirmModal').classList.remove('hidden');
+
+  const yesBtn = document.getElementById('confirmYesBtn');
+  const noBtn = document.getElementById('confirmNoBtn');
+
+  // Clear previous event listeners
+  const newYesBtn = yesBtn.cloneNode(true);
+  yesBtn.parentNode.replaceChild(newYesBtn, yesBtn);
+  const newNoBtn = noBtn.cloneNode(true);
+  noBtn.parentNode.replaceChild(newNoBtn, noBtn);
+
+  newYesBtn.addEventListener('click', () => {
+    hideModal('confirmModal');
+    onConfirm();
+  });
+
+  newNoBtn.addEventListener('click', () => {
+    hideModal('confirmModal');
+  });
+}
+
+// Function to hide a modal
+function hideModal(modalId) {
+  document.getElementById(modalId).classList.add('hidden');
+}
+
+// Attach event listeners for modals
+document.getElementById('messageOkBtn').addEventListener('click', () => hideModal('messageModal'));
+
+// Fetch all unique CCC_CODEs for the left pane (no row limit)
+async function fetchAllCCCFromDB() {
+  let all = [];
+  let from = 0;
+  let step = 1000;
+  let keepGoing = true;
+  while (keepGoing) {
+    let { data, error } = await client
+      .from("upcomingdd")
+      .select("CCC_CODE")
+      .range(from, from + step - 1);
+    if (error) {
+      console.error(error);
+      break;
+    }
+    if (data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < step) break;
+    from += step;
+  }
+  // Remove duplicates, convert all codes to string, skip null/empty
+  const seen = new Set();
+  let unique = [];
+  for (const row of all) {
+    let val = row.CCC_CODE;
+    if (val === null || val === undefined || val === "") continue;
+    val = String(val);
+    if (!seen.has(val)) {
+      seen.add(val);
+      unique.push(val);
+    }
+  }
+  return unique;
+}
+
+// Function to fetch the earliest DD Due Date
+async function fetchEarliestDuedate() {
+  const { data, error } = await client
+    .from("upcomingdd")
+    .select("dd_due_date")
+    .order("dd_due_date", { ascending: true })
+    .not("dd_due_date", "is", null)
+    .limit(1);
+
+  if (error) {
+    console.error("Error fetching earliest DD Due Date:", error);
+    return null;
+  }
+  return data.length > 0 ? data[0].dd_due_date : null;
+}
+
+// Function to fetch the latest DD Due Date
+async function fetchLatestDuedate() {
+  const { data, error } = await client
+    .from("upcomingdd")
+    .select("dd_due_date")
+    .order("dd_due_date", { ascending: false })
+    .not("dd_due_date", "is", null)
+    .limit(1);
+
+  if (error) {
+    console.error("Error fetching latest DD Due Date:", error);
+    return null;
+  }
+  return data.length > 0 ? data[0].dd_due_date : null;
+}
+
+// Initial load: fetch all CCCs, then render left pane and table
+async function initialLoad() {
+  showLoading(true);
+
+  // Fetch earliest and latest dates and update the header
+  const [earliestDate, latestDate] = await Promise.all([
+    fetchEarliestDuedate(),
+    fetchLatestDuedate()
+  ]);
+  if (earliestDate && latestDate) {
+    document.getElementById("earliestDateHeader").innerText = `from ${formatDate(earliestDate)} to ${formatDate(latestDate)}`;
+  } else if (earliestDate) {
+    document.getElementById("earliestDateHeader").innerText = `from ${formatDate(earliestDate)}`;
+  } else {
+    document.getElementById("earliestDateHeader").innerText = "No upcoming DD dates found.";
+  }
+
+  document.getElementById("cccFilter").style.display = "none";
+  document.getElementById("cccLoading").style.display = "flex";
+  allCCC = await fetchAllCCCFromDB();
+
+  // NEW: limit offices by dd_view
+// NEW: limit offices by dd_view — improved selection
+if (AUTH_SCOPE?.dd_view && AUTH_SCOPE.dd_view !== 'all') {
+  const allowed = new Set(getAllowedCCCList(AUTH_SCOPE.dd_view));
+  allCCC = allCCC.filter(c => allowed.has(c));
+
+  // Preselect based on dd_view type:
+  const dd = String(AUTH_SCOPE.dd_view);
+  if (/^\d{7}$/.test(dd)) {
+    if (dd.endsWith('0000')) {
+      // Region scope -> select region
+      selectedRegion = dd;
+      selectedDivision = null;
+      currentCCC = null;
+    } else if (dd.endsWith('000')) {
+      // Division scope -> find parent region and select division
+      for (const regionKey in cccHierarchy) {
+        if (cccHierarchy[regionKey].divisions && cccHierarchy[regionKey].divisions[dd]) {
+          selectedRegion = regionKey;
+          selectedDivision = dd;
+          currentCCC = null;
+          break;
+        }
+      }
+    } else {
+      // Specific CCC -> lock to that CCC
+      currentCCC = dd;
+      selectedRegion = null;
+      selectedDivision = null;
+    }
+  } else {
+    // fallback - no selection
+    currentCCC = null;
+    selectedRegion = null;
+    selectedDivision = null;
+  }
+
+  // Make sure the selected region/division are expanded in the left pane
+  if (selectedRegion) {
+    collapsedRegions = {}; // reset collapsed state and show the selected region
+    collapsedRegions[selectedRegion] = false;
+    if (selectedDivision) {
+      if (!collapsedDivisions[selectedRegion]) collapsedDivisions[selectedRegion] = {};
+      collapsedDivisions[selectedRegion][selectedDivision] = false;
+    }
+  }
+}
+
+
+  allCCCLoaded = true;
+  document.getElementById("cccLoading").style.display = "none";
+  document.getElementById("cccFilter").style.display = "block";
+  renderCCCLeftPane();
+  fetchPage(1);
+  // Re-render Lucide icons after everything is loaded
+  lucide.createIcons();
+}
+
+// Only render left pane, do not re-fetch
+function renderCCCLeftPane() {
+  const grouped = groupCCCByHierarchy(allCCC);
+  let container = document.getElementById("cccFilter");
+  container.innerHTML = "";
+
+  // Change "Malda Zone" to "MALDA ZONE"
+// Show top "ALL ZONES" only if user can see multiple regions (i.e. dd_view === 'all' or grouped has >1 region)
+if (!AUTH_SCOPE?.dd_view || AUTH_SCOPE.dd_view.toLowerCase() === 'all' || Object.keys(grouped).length > 1) {
+  container.innerHTML += `
+    <li class="list-group-item px-3 py-2 text-sm ${(currentCCC === null && !selectedRegion && !selectedDivision) ? "active" : "bg-gray-800 text-gray-200 hover:bg-gray-700"}" onclick="setCCC(null)">ALL ZONES</li>
+  `;
+}
+
+
+  for (const regionKey in grouped) {
+    const region = grouped[regionKey];
+    const regionCollapsed = collapsedRegions[regionKey] ? "collapsed" : "";
+    const regionArrow = collapsedRegions[regionKey] ? "▶" : "▼";
+    container.innerHTML += `
+      <div class="ccc-region-title font-semibold text-gray-200 text-sm py-2 px-3 rounded-lg ${regionCollapsed} ${selectedRegion === regionKey && !selectedDivision && !currentCCC ? "bg-blue-600 text-white" : "hover:bg-gray-700"}"
+        onclick="selectRegion('${regionKey}');toggleRegion('${regionKey}');event.stopPropagation();">
+        <span class="arrow">${regionArrow}</span>${region.name}
+      </div>
+    `;
+    if (!collapsedRegions[regionKey]) {
+      for (const divisionKey in region.divisions) {
+        const division = region.divisions[divisionKey];
+        const divisionCollapsed = (collapsedDivisions[regionKey] && collapsedDivisions[regionKey][divisionKey]) ? "collapsed" : "";
+        const divisionArrow = (collapsedDivisions[regionKey] && collapsedDivisions[regionKey][divisionKey]) ? "▶" : "▼";
+        container.innerHTML += `
+          <div class="ccc-division-title text-gray-300 text-sm py-2 px-3 rounded-lg ml-6 ${divisionCollapsed} ${selectedRegion === regionKey && selectedDivision === divisionKey && !currentCCC ? "bg-blue-600 text-white" : "hover:bg-gray-700"}"
+            onclick="selectDivision('${regionKey}','${divisionKey}');toggleDivision('${regionKey}','${divisionKey}');event.stopPropagation();">
+            <span class="arrow">${divisionArrow}</span>${division.name}
+          </div>
+        `;
+        if (!(collapsedDivisions[regionKey] && collapsedDivisions[regionKey][divisionKey])) {
+          for (const cccCode in division.cccs) {
+            let display = division.cccs[cccCode].replace(" CCC", "");
+            container.innerHTML += `
+              <li class="list-group-item ${(currentCCC === cccCode) ? "active bg-blue-600 text-white" : "bg-gray-800 text-gray-300 hover:bg-gray-700"} px-3 py-1 text-sm transition-colors duration-200 rounded-lg" onclick='setCCC(${JSON.stringify(cccCode)});event.stopPropagation();'>${display}</li>
+            `;
+          }
+        }
+      }
+    }
+  }
+}
+
+// Toggle functions (do not re-render left pane with data fetch)
+function toggleRegion(regionKey) {
+  collapsedRegions[regionKey] = !collapsedRegions[regionKey];
+  renderCCCLeftPane();
+  lucide.createIcons();
+}
+function toggleDivision(regionKey, divisionKey) {
+  if (!collapsedDivisions[regionKey]) collapsedDivisions[regionKey] = {};
+  collapsedDivisions[regionKey][divisionKey] = !collapsedDivisions[regionKey][divisionKey];
+  renderCCCLeftPane();
+  lucide.createIcons();
+}
+
+// Selection functions
+function setCCC(code) {
+  currentCCC = code;
+  selectedRegion = null;
+  selectedDivision = null;
+  currentPage = 1;
+  renderCCCLeftPane();
+  fetchPage(currentPage);
+}
+function selectRegion(regionKey) {
+  selectedRegion = regionKey;
+  selectedDivision = null;
+  currentCCC = null;
+  currentPage = 1;
+  renderCCCLeftPane();
+  fetchPage(currentPage);
+}
+function selectDivision(regionKey, divisionKey) {
+  selectedRegion = regionKey;
+  selectedDivision = divisionKey;
+  currentCCC = null;
+  currentPage = 1;
+  renderCCCLeftPane();
+  fetchPage(currentPage);
+}
+
+// Helper to format numbers as Cr, Lakh, k
+function formatAmount(num) {
+  num = Number(num);
+  if (isNaN(num)) return "";
+  if (num >= 1e7) return (num / 1e7).toFixed(2).replace(/\.00$/, "") + " Cr";
+  if (num >= 1e5) return (num / 1e5).toFixed(2).replace(/\.00$/, "") + " Lakh";
+  if (num >= 1e3) return (num / 1e3).toFixed(2).replace(/\.00$/, "") + "k";
+  return num.toString();
+}
+
+// --- Update fetchPage to use correct logic for DD in X days buttons ---
+async function fetchPage(page) {
+  showLoading(true);
+  try {
+    currentPage = page;
+    let from = (page - 1) * rowsPerPage;
+    let to = from + rowsPerPage - 1;
+
+    let query = client
+      .from("upcomingdd")
+      .select(
+        "CON_ID,NAME,ADDRESS,REG_MOB_NO,BASE_CLASS,CONN_PHASE,GOVT_STAT,NAT_OF_CONN,CONN_LOAD,MRU,METER_NO,discon_dt1,CCC_CODE,OUTSTANDING,dd_due_date,observation",
+        { count: "exact" }
+      )
+      .order("OUTSTANDING", { ascending: false });
+
+    // --- 1. Apply UI selection filters ---
+    if (currentCCC !== null) {
+      query = query.eq("CCC_CODE", currentCCC);
+    } else if (selectedRegion && !selectedDivision) {
+      let cccList = [];
+      for (const divisionKey in cccHierarchy[selectedRegion].divisions) {
+        const division = cccHierarchy[selectedRegion].divisions[divisionKey];
+        cccList = cccList.concat(Object.keys(division.cccs));
+      }
+      query = query.in("CCC_CODE", cccList);
+    } else if (selectedRegion && selectedDivision) {
+      const cccList = Object.keys(
+        cccHierarchy[selectedRegion].divisions[selectedDivision].cccs
+      );
+      query = query.in("CCC_CODE", cccList);
+    }
+
+    // --- 2. Enforce dd_view scope from PIN login ---
+    if (AUTH_SCOPE?.dd_view && AUTH_SCOPE.dd_view !== "all") {
+      const allowedCCCs = getAllowedCCCList(AUTH_SCOPE.dd_view);
+      if (allowedCCCs && allowedCCCs.length) {
+        query = query.in("CCC_CODE", allowedCCCs);
+      }
+    }
+
+    // --- 3. Fetch all filtered data for search and counts ---
+    let allRows = [];
+    let step = 1000;
+    let offset = 0;
+    while (true) {
+      let q = query.range(offset, offset + step - 1);
+      let { data, error } = await q;
+      if (error) {
+        showLoading(false);
+        return console.error(error);
+      }
+      if (!data || data.length === 0) break;
+      allRows = allRows.concat(data);
+      if (data.length < step) break;
+      offset += step;
+    }
+
+    // --- 4. Filter logic based on active buttons ---
+    let filteredRows = allRows;
+    const today = todayStr();
+    const dd7Start = today,
+      dd7End = dateOffsetStr(6);
+    const dd15Start = today,
+      dd15End = dateOffsetStr(14);
+    const dd30Start = today,
+      dd30End = dateOffsetStr(29);
+    const norm = (s) => (s || "").trim().toLowerCase();
+
+    if (alreadyDDActive) {
+      filteredRows = allRows.filter(
+        (row) => row.dd_due_date && row.dd_due_date < today
+      );
+    } else if (ddTodayActive) {
+      filteredRows = allRows.filter(
+        (row) => row.dd_due_date && row.dd_due_date === today
+      );
+    } else if (dd7Active) {
+      filteredRows = allRows.filter(
+        (row) =>
+          row.dd_due_date &&
+          row.dd_due_date >= dd7Start &&
+          row.dd_due_date <= dd7End
+      );
+    } else if (dd15Active) {
+      filteredRows = allRows.filter(
+        (row) =>
+          row.dd_due_date &&
+          row.dd_due_date >= dd15Start &&
+          row.dd_due_date <= dd15End
+      );
+    } else if (dd30Active) {
+      filteredRows = allRows.filter(
+        (row) =>
+          row.dd_due_date &&
+          row.dd_due_date >= dd30Start &&
+          row.dd_due_date <= dd30End
+      );
+    } else if (foundLiveActive) {
+      filteredRows = allRows.filter(
+        (row) => norm(row.observation) === "visited, found live"
+      );
+    } else if (foundDisconnectedActive) {
+      filteredRows = allRows.filter(
+        (row) => norm(row.observation) === "visited, found disconnected"
+      );
+    } else if (liveBtnActive) {
+      filteredRows = allRows.filter(
+        (row) => norm(row.observation) === "visited, found live"
+      );
+    } else if (disconnectedBtnActive) {
+      filteredRows = allRows.filter(
+        (row) => norm(row.observation) === "visited, found disconnected"
+      );
+    }
+
+    // --- 5. Universal search filter (client-side) ---
+    if (universalSearchValue) {
+      filteredRows = filteredRows.filter((row) => {
+        return (
+          (row.CON_ID &&
+            String(row.CON_ID)
+              .toLowerCase()
+              .includes(universalSearchValue)) ||
+          (row.NAME &&
+            row.NAME.toLowerCase().includes(universalSearchValue)) ||
+          (row.REG_MOB_NO &&
+            String(row.REG_MOB_NO)
+              .toLowerCase()
+              .includes(universalSearchValue)) ||
+          (row.BASE_CLASS &&
+            String(row.BASE_CLASS)
+              .toLowerCase()
+              .includes(universalSearchValue)) ||
+          (row.CONN_PHASE &&
+            String(row.CONN_PHASE)
+              .toLowerCase()
+              .includes(universalSearchValue)) ||
+          (row.GOVT_STAT &&
+            String(row.GOVT_STAT)
+              .toLowerCase()
+              .includes(universalSearchValue)) ||
+          (row.CCC_CODE &&
+            getCCCName(row.CCC_CODE)
+              .toLowerCase()
+              .includes(universalSearchValue)) ||
+          (row.OUTSTANDING &&
+            String(row.OUTSTANDING)
+              .toLowerCase()
+              .includes(universalSearchValue)) ||
+          (row.dd_due_date &&
+            String(row.dd_due_date)
+              .toLowerCase()
+              .includes(universalSearchValue))
+        );
+      });
+    }
+
+    // --- 6. Sort by OUTSTANDING desc ---
+    filteredRows.sort(
+      (a, b) => Number(b.OUTSTANDING) - Number(a.OUTSTANDING)
+    );
+
+    // Store for CSV export
+    currentFilteredRows = filteredRows;
+
+    // --- 7. Pagination ---
+    totalRows = filteredRows.length;
+    document.getElementById("totalCount").innerText = totalRows;
+    let pageRows = filteredRows.slice(from, to + 1);
+
+    // --- 8. Calculate totals ---
+    let totalOSD = 0,
+      zeroOSDCount = 0;
+    for (const row of filteredRows) {
+      let val = Number(row.OUTSTANDING);
+      if (!isNaN(val)) totalOSD += val;
+      if (val === 0 || isNaN(val) || row.OUTSTANDING === null)
+        zeroOSDCount++;
+    }
+    document.getElementById("totalOSD").innerText = formatAmount(totalOSD);
+    document.getElementById("zeroOSDCount").innerText = zeroOSDCount;
+
+    // --- 9. Update DD counts ---
+    alreadyDDCount = allRows.filter(
+      (row) => row.dd_due_date && row.dd_due_date < today
+    ).length;
+    document.getElementById("alreadyDDCount").innerText = alreadyDDCount;
+
+    ddTodayCount = allRows.filter(
+      (row) => row.dd_due_date && row.dd_due_date === today
+    ).length;
+    document.getElementById("ddTodayCount").innerText = ddTodayCount;
+
+    dd7Count = allRows.filter(
+      (row) =>
+        row.dd_due_date &&
+        row.dd_due_date >= dd7Start &&
+        row.dd_due_date <= dd7End
+    ).length;
+    document.getElementById("dd7Count").innerText = dd7Count;
+
+    dd15Count = allRows.filter(
+      (row) =>
+        row.dd_due_date &&
+        row.dd_due_date >= dd15Start &&
+        row.dd_due_date <= dd15End
+    ).length;
+    document.getElementById("dd15Count").innerText = dd15Count;
+
+    dd30Count = allRows.filter(
+      (row) =>
+        row.dd_due_date &&
+        row.dd_due_date >= dd30Start &&
+        row.dd_due_date <= dd30End
+    ).length;
+    document.getElementById("dd30Count").innerText = dd30Count;
+
+    // --- 10. Observation counts ---
+    foundLiveCount = allRows.filter(
+      (r) => norm(r.observation) === "visited, found live"
+    ).length;
+    document.getElementById("foundLiveCount").innerText = foundLiveCount;
+
+    foundDisconnectedCount = allRows.filter(
+      (r) => norm(r.observation) === "visited, found disconnected"
+    ).length;
+    document.getElementById("foundDisconnectedCount").innerText =
+      foundDisconnectedCount;
+
+    liveBtnCount = foundLiveCount;
+    document.getElementById("liveBtnCount").innerText = liveBtnCount;
+
+    disconnectedBtnCount = foundDisconnectedCount;
+    document.getElementById("disconnectedBtnCount").innerText =
+      disconnectedBtnCount;
+
+    // --- 11. Render table + pagination ---
+    renderTable(pageRows);
+    renderPagination();
+    lucide.createIcons();
+  } catch (err) {
+    showMessageModal(
+      "Error",
+      "Failed to load table data. Please check your connection or try again."
+    );
+    console.error(err);
+    renderTable([]);
+    document.getElementById("totalCount").innerText = "0";
+    document.getElementById("totalOSD").innerText = "0";
+    document.getElementById("zeroOSDCount").innerText = "0";
+    document.getElementById("alreadyDDCount").innerText = "0";
+    document.getElementById("ddTodayCount").innerText = "0";
+    document.getElementById("dd7Count").innerText = "0";
+    document.getElementById("dd15Count").innerText = "0";
+    document.getElementById("dd30Count").innerText = "0";
+    document.getElementById("foundLiveCount").innerText = "0";
+    document.getElementById("foundDisconnectedCount").innerText = "0";
+    document.getElementById("liveBtnCount").innerText = "0";
+    document.getElementById("disconnectedBtnCount").innerText = "0";
+    renderPagination();
+  } finally {
+    showLoading(false);
+  }
+}
+
+// Update showRowModal to include new fields in the modal
+function showRowModal(row) {
+  const fields = [
+    { label: "CON_ID", value: row.CON_ID },
+    { label: "NAME", value: row.NAME },
+    { label: "Address", value: row.ADDRESS },
+    { label: "Mobile No.", value: row.REG_MOB_NO },
+    { label: "Class", value: row.BASE_CLASS },
+    { label: "Ph", value: row.CONN_PHASE },
+    { label: "Govt.", value: row.GOVT_STAT },
+    { label: "Nature of Connection", value: row.NAT_OF_CONN },
+    { label: "Load", value: row.CONN_LOAD },
+    { label: "MRU", value: row.MRU },
+    { label: "Meter No.", value: row.METER_NO },
+    { label: "Disconnection Date", value: formatDate(row.discon_dt1) },
+    { label: "CCC Name", value: getCCCName(row.CCC_CODE) },
+    { label: "DD Due Date", value: formatDate(row.dd_due_date) },
+    { label: "OSD", value: formatAmount(row.OUTSTANDING) },
+    { label: "Observation", value: row.observation }
+  ];
+  let html = `<div class="grid grid-cols-2 gap-x-4 gap-y-2">`;
+  for (const f of fields) {
+    html += `<div class="font-medium text-gray-300">${f.label}:</div><div class="text-right text-gray-100">${f.value ?? ""}</div>`;
+  }
+  html += `</div>`;
+  document.getElementById("rowDetailModalBody").innerHTML = html;
+  document.getElementById('rowDetailModal').classList.remove('hidden');
+}
+
+// Update renderTable to add row click handler
+function renderTable(data) {
+  let tbody = document.getElementById("data-body");
+  tbody.innerHTML = "";
+  const today = todayStr();
+
+  // compute allowed edit scope once
+  const allowedSet =
+    AUTH_SCOPE?.dd_edit?.toLowerCase() === 'all'
+      ? null
+      : new Set(getAllowedCCCList(AUTH_SCOPE?.dd_edit));
+
+  // only allow edit if 'all' OR this row's CCC is in the allowed set
+  const canEditRow = (row) =>
+    AUTH_SCOPE?.dd_edit &&
+    (
+      AUTH_SCOPE.dd_edit.toLowerCase() === 'all' ||
+      (allowedSet && allowedSet.has(String(row.CCC_CODE)))
+    );
+
+  data.forEach(row => {
+    const ddDueDate = row.dd_due_date ? formatDate(row.dd_due_date) : "";
+    const ddDueDateStyle = (row.dd_due_date && row.dd_due_date < today)
+      ? 'style="color:#dc2626; font-weight:bold;"'
+      : '';
+
+    // inline cell helper
+    const editable = (field) =>
+      canEditRow(row)
+        ? `contenteditable="true" onblur="updateField(${row.CON_ID}, '${field}', this.innerText)"`
+        : "";
+
+    // gate the Action button too
+// gate the Action button too
+let actionButtonHTML;
+if (row.observation) {
+  actionButtonHTML = `
+    <button class="bg-green-600 text-white p-1 rounded-md text-xs font-medium hover:bg-green-700 transition flex items-center justify-center space-x-1">
+      <span data-lucide="check-circle" class="w-4 h-4"></span>
+      <span>Updated</span>
+    </button>`;
+} else if (canEditRow(row)) {
+  actionButtonHTML = `
+    <button class="bg-blue-600 text-white p-1 rounded-md text-xs font-medium hover:bg-blue-700 transition flex items-center justify-center space-x-1"
+            onclick="event.stopPropagation(); showActionModal(${row.CON_ID})">
+      <span data-lucide="edit" class="w-4 h-4"></span>
+      <span>Action</span>
+    </button>`;
+} else {
+  // Disabled-looking button for unauthorized users
+  actionButtonHTML = `
+    <button class="bg-gray-600 text-gray-300 p-1 rounded-md text-xs font-medium cursor-not-allowed flex items-center justify-center space-x-1"
+            onclick="event.stopPropagation(); showMessageModal('Not Authorized', 'You are not authorized to perform this action.')">
+      <span data-lucide="lock" class="w-4 h-4"></span>
+      <span>Action</span>
+    </button>`;
+}
+
+
+    tbody.innerHTML += `
+      <tr class="border-b border-gray-700 hover:bg-gray-700 transition duration-150 ease-in-out cursor-pointer"
+          onclick='showRowModal(${JSON.stringify(row).replace(/'/g, "&apos;")})'>
+        <td class="px-3 py-2 text-gray-300">${row.CON_ID}</td>
+        <td class="px-3 py-2 text-gray-300" ${editable('NAME')}>${row.NAME || ""}</td>
+        <td class="px-3 py-2 text-gray-300" ${editable('REG_MOB_NO')}>${row.REG_MOB_NO || ""}</td>
+        <td class="px-3 py-2 text-gray-300" ${editable('BASE_CLASS')}>${row.BASE_CLASS || ""}</td>
+        <td class="px-3 py-2 text-gray-300" ${editable('CONN_PHASE')}>${row.CONN_PHASE || ""}</td>
+        <td class="px-3 py-2 text-gray-300" ${editable('GOVT_STAT')}>${row.GOVT_STAT || ""}</td>
+        <td class="px-3 py-2 text-gray-300">${getCCCName(row.CCC_CODE)}</td>
+        <td class="px-3 py-2 text-gray-300" ${ddDueDateStyle}>${ddDueDate}</td>
+        <td class="px-3 py-2 text-gray-300">${formatAmount(row.OUTSTANDING)}</td>
+        <td class="px-3 py-2">${actionButtonHTML}</td>
+      </tr>`;
+  });
+}
+
+function renderPagination() {
+  let totalPages = Math.ceil(totalRows / rowsPerPage);
+  let pagination = document.getElementById("pagination");
+  pagination.innerHTML = "";
+
+  if (totalPages <= 1) return;
+
+  const maxPagesToShow = 5;
+  let startPage = Math.max(1, currentPage - Math.floor(maxPagesToShow / 2));
+  let endPage = startPage + maxPagesToShow - 1;
+  if (endPage > totalPages) {
+    endPage = totalPages;
+    startPage = Math.max(1, endPage - maxPagesToShow + 1);
+  }
+
+  // Previous arrow
+  pagination.innerHTML += `
+    <li>
+      <a href="#" onclick="if(${currentPage > 1}) { fetchPage(${currentPage - 1}); }" class="page-link flex items-center justify-center px-3 h-8 leading-tight text-gray-500 bg-white border border-gray-300 rounded-l-lg hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white ${currentPage === 1 ? 'pointer-events-none opacity-50' : ''}">&laquo;</a>
+    </li>
+  `;
+
+  // Page numbers
+  for (let i = startPage; i <= endPage; i++) {
+    pagination.innerHTML += `
+      <li>
+        <a href="#" onclick="fetchPage(${i})" class="flex items-center justify-center px-3 h-8 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white ${i === currentPage ? 'z-10 text-blue-600 border-blue-300 bg-blue-50 dark:border-gray-700 dark:bg-gray-700 dark:text-white' : ''}">${i}</a>
+      </li>
+    `;
+  }
+
+  // Next arrow
+  pagination.innerHTML += `
+    <li>
+      <a href="#" onclick="if(${currentPage < totalPages}) { fetchPage(${currentPage + 1}); }" class="page-link flex items-center justify-center px-3 h-8 leading-tight text-gray-500 bg-white border border-gray-300 rounded-r-lg hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white ${currentPage === totalPages ? 'pointer-events-none opacity-50' : ''}">&raquo;</a>
+    </li>
+  `;
+}
+
+async function updateField(id, field, value) {
+  let { error } = await client
+    .from("upcomingdd")
+    .update({ [field]: value })
+    .eq("CON_ID", id);
+
+  if (error) {
+    showMessageModal("Error", "Error updating field: " + error.message);
+    console.error(error);
+  }
+}
+
+// Function to show the new action modal
+function showActionModal(id) {
+  document.getElementById('actionModal').classList.remove('hidden');
+
+  const disconnectedBtn = document.getElementById('actionDisconnectedBtn');
+  const liveBtn = document.getElementById('actionLiveBtn');
+
+  // Clear previous event listeners and re-add them to prevent duplicates
+  const newDisconnectedBtn = disconnectedBtn.cloneNode(true);
+  disconnectedBtn.parentNode.replaceChild(newDisconnectedBtn, disconnectedBtn);
+  const newLiveBtn = liveBtn.cloneNode(true);
+  liveBtn.parentNode.replaceChild(newLiveBtn, liveBtn);
+
+  newDisconnectedBtn.addEventListener('click', () => {
+    hideModal('actionModal');
+    // Show confirmation modal before updating observation
+    showConfirmModal("Confirm Observation", "Are you sure you want to mark this as 'Visited, found disconnected'?", () => {
+      updateObservation(id, 'Visited, found disconnected');
+    });
+  });
+
+  newLiveBtn.addEventListener('click', () => {
+    hideModal('actionModal');
+    // Show confirmation modal before updating observation
+    showConfirmModal("Confirm Observation", "Are you sure you want to mark this as 'Visited, found live'?", () => {
+      updateObservation(id, 'Visited, found live');
+    });
+  });
+}
+
+// Function to update the observation column
+async function updateObservation(id, observation) {
+  showLoading(true);
+  let { error } = await client
+    .from("upcomingdd")
+    .update({ observation: observation })
+    .eq("CON_ID", id);
+
+  if (error) {
+    showMessageModal("Error", "Error updating observation: " + error.message);
+    console.error(error);
+  } else {
+    showMessageModal("Success", `Observation updated successfully for CON_ID ${id}.`);
+    // Re-fetch the current page to update the table UI
+    fetchPage(currentPage);
+  }
+  showLoading(false);
+}
+
+let loadingInterval = null;
+let loadingStartTime = null;
+
+function showLoading(show) {
+  const loadingEl = document.getElementById("loading");
+  const timerEl = document.getElementById("loadingTimer");
+
+  if (show) {
+    loadingStartTime = Date.now();
+    loadingEl.style.display = "flex";
+
+    loadingInterval = setInterval(() => {
+      let elapsed = Date.now() - loadingStartTime;
+      let seconds = Math.floor(elapsed / 1000);
+      let centiseconds = Math.floor((elapsed % 1000) / 10); // 2-digit precision
+
+      timerEl.textContent = `${seconds}:${centiseconds.toString().padStart(2, '0')}`;
+    }, 50);
+  } else {
+    loadingEl.style.display = "none";
+    clearInterval(loadingInterval);
+    loadingInterval = null;
+  }
+}
+
+
+
+// Helper to fetch all OUTSTANDING values for the current filter (in batches)
+async function fetchAllOutstandingForFilter() {
+  let all = [];
+  let from = 0;
+  let step = 1000;
+  let filterQuery = client
+    .from("upcomingdd")
+    .select("OUTSTANDING");
+
+  if (currentCCC !== null) {
+    filterQuery = filterQuery.eq("CCC_CODE", currentCCC);
+  } else if (selectedRegion && !selectedDivision) {
+    let cccList = [];
+    for (const divisionKey in cccHierarchy[selectedRegion].divisions) {
+      const division = cccHierarchy[selectedRegion].divisions[divisionKey];
+      cccList = cccList.concat(Object.keys(division.cccs));
+    }
+    filterQuery = filterQuery.in("CCC_CODE", cccList);
+  } else if (selectedRegion && selectedDivision) {
+    const cccList = Object.keys(cccHierarchy[selectedRegion].divisions[selectedDivision].cccs);
+    filterQuery = filterQuery.in("CCC_CODE", cccList);
+  }
+
+  while (true) {
+    let { data, error } = await filterQuery.range(from, from + step - 1);
+    if (error) {
+      console.error(error);
+      break;
+    }
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < step) break;
+    from += step;
+  }
+  return all;
+}
+
+// Universal search handler
+function onUniversalSearch() {
+  universalSearchValue = document.getElementById("universalSearch").value.trim().toLowerCase();
+  resetAllDDButtons();
+  currentPage = 1;
+  fetchPage(currentPage);
+}
+
+// Filter button handlers
+function onAlreadyDDFilter() {
+  const active = !alreadyDDActive;
+  resetAllDDButtons();
+  alreadyDDActive = active;
+  if (alreadyDDActive) {
+    document.getElementById("alreadyDDBtn").classList.add("bg-blue-600", "text-white");
+    document.getElementById("alreadyDDBtn").classList.remove("bg-gray-700", "text-gray-200");
+  }
+  universalSearchValue = "";
+  document.getElementById("universalSearch").value = "";
+  currentPage = 1;
+  fetchPage(currentPage);
+}
+
+function onDDTodayFilter() {
+  const active = !ddTodayActive;
+  resetAllDDButtons();
+  ddTodayActive = active;
+  if (ddTodayActive) {
+    document.getElementById("ddTodayBtn").classList.add("bg-green-600", "text-white");
+    document.getElementById("ddTodayBtn").classList.remove("bg-gray-700", "text-gray-200");
+  }
+  universalSearchValue = "";
+  document.getElementById("universalSearch").value = "";
+  currentPage = 1;
+  fetchPage(currentPage);
+}
+
+function onDD7Filter() {
+  const active = !dd7Active;
+  resetAllDDButtons();
+  dd7Active = active;
+  if (dd7Active) {
+    document.getElementById("dd7Btn").classList.add("bg-yellow-600", "text-white");
+    document.getElementById("dd7Btn").classList.remove("bg-gray-700", "text-gray-200");
+  }
+  universalSearchValue = "";
+  document.getElementById("universalSearch").value = "";
+  currentPage = 1;
+  fetchPage(currentPage);
+}
+
+function onDD15Filter() {
+  const active = !dd15Active;
+  resetAllDDButtons();
+  dd15Active = active;
+  if (dd15Active) {
+    document.getElementById("dd15Btn").classList.add("bg-cyan-600", "text-white");
+    document.getElementById("dd15Btn").classList.remove("bg-gray-700", "text-gray-200");
+  }
+  universalSearchValue = "";
+  document.getElementById("universalSearch").value = "";
+  currentPage = 1;
+  fetchPage(currentPage);
+}
+
+function onDD30Filter() {
+  const active = !dd30Active;
+  resetAllDDButtons();
+  dd30Active = active;
+  if (dd30Active) {
+    document.getElementById("dd30Btn").classList.add("bg-gray-500", "text-white");
+    document.getElementById("dd30Btn").classList.remove("bg-gray-700", "text-gray-200");
+  }
+  universalSearchValue = "";
+  document.getElementById("universalSearch").value = "";
+  currentPage = 1;
+  fetchPage(currentPage);
+}
+function onFoundLiveFilter() {
+  const active = !foundLiveActive;
+  resetAllDDButtons();
+  foundLiveActive = active;
+  if (foundLiveActive) {
+    const el = document.getElementById("foundLiveCard");
+    el.classList.add("bg-green-700", "text-white");
+    el.classList.remove("bg-gray-800");
+  }
+  universalSearchValue = "";
+  document.getElementById("universalSearch").value = "";
+  currentPage = 1;
+  fetchPage(currentPage);
+}
+function onLiveFilter() {
+  const active = !liveBtnActive;
+  resetAllDDButtons();
+  liveBtnActive = active;
+  if (liveBtnActive) {
+    document.getElementById("liveBtn").classList.add("bg-green-600", "text-white");
+    document.getElementById("liveBtn").classList.remove("bg-gray-700", "text-gray-200");
+  }
+  universalSearchValue = "";
+  document.getElementById("universalSearch").value = "";
+  currentPage = 1;
+  fetchPage(currentPage);
+}
+
+function onDisconnectedFilter() {
+  const active = !disconnectedBtnActive;
+  resetAllDDButtons();
+  disconnectedBtnActive = active;
+  if (disconnectedBtnActive) {
+    document.getElementById("disconnectedBtn").classList.add("bg-red-600", "text-white");
+    document.getElementById("disconnectedBtn").classList.remove("bg-gray-700", "text-gray-200");
+  }
+  universalSearchValue = "";
+  document.getElementById("universalSearch").value = "";
+  currentPage = 1;
+  fetchPage(currentPage);
+}
+
+function onFoundDisconnectedFilter() {
+  const active = !foundDisconnectedActive;
+  resetAllDDButtons();
+  foundDisconnectedActive = active;
+  if (foundDisconnectedActive) {
+    const el = document.getElementById("foundDisconnectedCard");
+    el.classList.add("bg-red-700", "text-white");
+    el.classList.remove("bg-gray-800");
+  }
+  universalSearchValue = "";
+  document.getElementById("universalSearch").value = "";
+  currentPage = 1;
+  fetchPage(currentPage);
+}
+
+// Reset all DD filter buttons to default state
+function resetAllDDButtons() {
+  alreadyDDActive = false;
+  ddTodayActive = false;
+  dd7Active = false;
+  dd15Active = false;
+  dd30Active = false;
+  foundLiveActive = false;
+  foundDisconnectedActive = false;
+  liveBtnActive = false;
+  disconnectedBtnActive = false;
+
+  document.querySelectorAll('#alreadyDDBtn, #ddTodayBtn, #dd7Btn, #dd15Btn, #dd30Btn').forEach(btn => {
+    btn.classList.add("bg-gray-700", "text-gray-200");
+    btn.classList.remove("bg-blue-600", "text-white");
+  });
+
+  document.getElementById("foundLiveCard").classList.remove("bg-green-600", "text-white");
+  document.getElementById("foundDisconnectedCard").classList.remove("bg-red-600", "text-white");
+
+  document.getElementById("liveBtn").classList.add("bg-gray-700", "text-gray-200");
+  document.getElementById("liveBtn").classList.remove("bg-green-600", "text-white");
+
+  document.getElementById("disconnectedBtn").classList.add("bg-gray-700", "text-gray-200");
+  document.getElementById("disconnectedBtn").classList.remove("bg-red-600", "text-white");
+}
+
+function downloadCSV() {
+  if (currentFilteredRows.length === 0) {
+    showMessageModal("Info", "No data to download.");
+    return;
+  }
+
+  // Define headers.
+  const headers = [
+    "CON_ID", "NAME", "ADDRESS", "MRU", "REG_MOB_NO", "BASE_CLASS", "CONN_PHASE",
+    "GOVT_STAT", "NAT_OF_CONN", "CONN_LOAD", "METER_NO", "discon_dt1", "CCC_CODE",
+    "CCC_NAME", "OUTSTANDING", "dd_due_date", "observation"
+  ];
+
+  // Helper to escape CSV values
+  const escapeCsvValue = (value) => {
+    if (value === null || value === undefined) return "";
+    value = String(value);
+    if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+      value = value.replace(/"/g, '""');
+      return `"${value}"`;
+    }
+    return value;
+  };
+
+  let csvContent = "data:text/csv;charset=utf-8,";
+  csvContent += headers.join(",") + "\r\n";
+
+  currentFilteredRows.forEach(row => {
+    const rowData = [
+      escapeCsvValue(row.CON_ID), escapeCsvValue(row.NAME), escapeCsvValue(row.ADDRESS),
+      escapeCsvValue(row.MRU),
+      escapeCsvValue(row.REG_MOB_NO), escapeCsvValue(row.BASE_CLASS), escapeCsvValue(row.CONN_PHASE),
+      escapeCsvValue(row.GOVT_STAT), escapeCsvValue(row.NAT_OF_CONN), escapeCsvValue(row.CONN_LOAD),
+      escapeCsvValue(row.METER_NO),
+      escapeCsvValue(row.discon_dt1 ? formatDate(row.discon_dt1) : ''),
+      escapeCsvValue(row.CCC_CODE), escapeCsvValue(getCCCName(row.CCC_CODE)),
+      escapeCsvValue(row.OUTSTANDING),
+      escapeCsvValue(row.dd_due_date ? formatDate(row.dd_due_date) : ''),
+      escapeCsvValue(row.observation)
+    ];
+    csvContent += rowData.join(",") + "\r\n";
+  });
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  const today = new Date().toISOString().slice(0, 10);
+  link.setAttribute("download", `upcoming_dd_export_${today}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+
+// Helper to get today's date in YYYY-MM-DD
+function todayStr() {
+  const d = new Date();
+  return d.toISOString().slice(0, 10);
+}
+
+// Helper to get date string offset by days
+function dateOffsetStr(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+// Initial load
+// --- PIN login flow (NEW) ---
+document.getElementById("loginBtn").addEventListener("click", async () => {
+  const pin = (document.getElementById("pinInput").value || "").trim();
+  if (!pin) return;
+
+  // Look up scope from Supabase user_auth by PIN
+  const { data, error } = await client
+    .from("user_auth")
+    .select("dd_view, dd_edit")
+    .eq("pin", pin)
+    .single();
+
+  if (error || !data) {
+    document.getElementById("loginError").classList.remove("hidden");
+    return;
+  }
+
+  AUTH_SCOPE.dd_view = data.dd_view;
+  AUTH_SCOPE.dd_edit = data.dd_edit;
+  CAN_EDIT = (data.dd_edit === 'all' || data.dd_edit === data.dd_view);
+
+  // Hide modal and load the page
+  document.getElementById("loginModal").style.display = "none";
+  initialLoad();
+});
+</script>
+<!-- Observation Confirmation Modal -->
+<div id="confirmObservationModal" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 hidden z-50">
+  <div class="bg-white rounded-lg shadow-lg w-96 p-6">
+    <h2 class="text-lg font-bold mb-4">Confirm Update</h2>
+    <p id="confirmObservationText" class="mb-6">Are you sure you want to update the observation?</p>
+    <div class="flex justify-end gap-2">
+      <button id="cancelObservationBtn" class="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded">Cancel</button>
+      <button id="confirmObservationBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Confirm</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
