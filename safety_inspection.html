@@ -1,0 +1,1913 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>Safety Inspection Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <style>
+    /* Reset and Base */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 10px;
+      padding-top: 75px;
+      /* to prevent overlap under sticky header */
+    }
+
+
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #2196F3, #1976D2);
+      color: white;
+      padding: 10px 16px;
+      margin: 0;
+      border-radius: 0;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      /* Allow wrapping on small screens */
+    }
+
+    .header h1 {
+      font-size: 22px;
+      margin-bottom: 4px;
+    }
+
+    .header p {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+    
+    .report-period {
+      background-color: rgba(255, 255, 255, 0.15);
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 13px;
+      display: inline-block;
+      margin-top: 5px;
+    }
+
+
+    /* Dashboard Sections */
+
+    .dashboard-section {
+      background: white;
+      padding: 5px 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      margin-bottom: 15px;
+    }
+
+    .dashboard-section h2 {
+      font-size: 18px;
+      color: #1976D2;
+      margin-bottom: 10px;
+      border-bottom: 2px solid #eee;
+      padding-bottom: 8px;
+    }
+
+    .filter-tabs-container {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      flex-wrap: nowrap;
+      padding-bottom: 10px;
+      /* For scrollbar space */
+      margin-bottom: 5px;
+      -webkit-overflow-scrolling: touch;
+      /* Smooth scrolling on mobile */
+    }
+
+    /* Hide scrollbar but keep functionality */
+    .filter-tabs-container::-webkit-scrollbar {
+      display: none;
+    }
+
+    .filter-tabs-container {
+      -ms-overflow-style: none;
+      /* IE and Edge */
+      scrollbar-width: none;
+      /* Firefox */
+    }
+
+    /* Category Tabs */
+    .category-tab {
+      background-color: #e0e0e0;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 14px;
+      color: #555;
+      transition: all 0.3s ease;
+      min-width: 80px;
+      text-align: center;
+    }
+
+    .category-tab:hover {
+      background-color: #d0d0d0;
+    }
+
+    .category-tab.active {
+      background-color: #2196F3;
+      color: white;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    }
+
+
+    /* Stat Cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+
+    .stat-card {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      padding: 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      border-left: 5px solid;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0));
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+    }
+
+    .stat-card .value {
+      font-size: 26px;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+
+    .stat-card .label {
+      font-size: 13px;
+      color: #666;
+    }
+
+    .office-counts {
+      font-size: 11px;
+      color: #000;
+      margin-top: 10px;
+      line-height: 1.4;
+      min-height: 3em;
+      /* Ensure consistent height */
+    }
+
+    .stat-card.total-inspected {
+      border-left-color: #4CAF50;
+    }
+
+    .stat-card.total-rectified {
+      border-left-color: #2196F3;
+    }
+
+    .stat-card.total-pending {
+      border-left-color: #FF5722;
+    }
+
+    .stat-card.week-inspected {
+      border-left-color: #00BCD4;
+    }
+
+    .stat-card.week-rectified {
+      border-left-color: #9C27B0;
+    }
+
+    .stat-card.avg-inspected {
+      border-left-color: #FFC107; /* Amber */
+    }
+
+    .stat-card.avg-rectified {
+      border-left-color: #673AB7; /* Deep Purple */
+    }
+
+
+    /* Charts */
+    .charts-section {
+      display: grid;
+      grid-template-columns: 1fr;
+      /* Default to single column */
+      gap: 15px;
+    }
+
+    .chart-container {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      position: relative;
+      /* Needed for chart responsiveness */
+      height: 350px;
+      /* Set a consistent height for chart containers */
+    }
+
+    .chart-container canvas {
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* Mini Tables (details) */
+    details {
+      background-color: #f9f9f9;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      margin-top: 15px;
+      overflow: hidden;
+    }
+
+    summary {
+      padding: 12px 15px;
+      font-weight: bold;
+      cursor: pointer;
+      background-color: #f0f0f0;
+      border-bottom: 1px solid #e0e0e0;
+      list-style: none;
+      /* Remove default arrow */
+    }
+
+    summary::-webkit-details-marker {
+      display: none;
+      /* Remove default arrow for Webkit */
+    }
+
+    summary::after {
+      content: '▼';
+      /* Custom arrow */
+      float: right;
+      transition: transform 0.3s ease;
+    }
+
+    details[open] summary::after {
+      transform: rotate(180deg);
+    }
+
+    .table-responsive {
+      max-height: 400px;
+      overflow: auto; /* Enables both vertical and horizontal scrolling */
+      width: 100%;
+    }
+
+    .mini-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      background-color: white;
+    }
+
+    .mini-table th,
+    .mini-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #eee;
+      text-align: left;
+    }
+
+    .mini-table th {
+      background-color: #f5f5f5;
+      font-weight: 600;
+      color: #555;
+      position: sticky;
+      top: 0;
+      /* Make header sticky */
+      z-index: 2;
+    }
+
+    .mini-table th.sortable-header {
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+    }
+    .mini-table th.sortable-header:hover {
+        background-color: #e0f2ff;
+    }
+
+    /* Sticky first column for responsive tables */
+    .mini-table th:first-child,
+    .mini-table td:first-child {
+      position: -webkit-sticky; /* For Safari */
+      position: sticky;
+      left: 0;
+      z-index: 1;
+    }
+
+    .mini-table th:first-child {
+      z-index: 3; /* To stay on top of the body cells */
+      background-color: #f5f5f5; /* Match header background */
+    }
+
+    .mini-table td:first-child {
+      background-color: #fff; /* Match row background */
+    }
+
+    .mini-table tbody tr:hover td:first-child {
+      background-color: #f0f0f0; /* Match hovered row background */
+    }
+
+    .mini-table tbody tr:hover {
+      background-color: #f0f0f0;
+    }
+.mini-table tbody tr.clickable-row:hover {
+  background-color: #e9f5ff;
+  cursor: pointer;
+}
+
+.status-inspected {
+  color: #d32f2f;
+  font-weight: bold;
+}
+
+
+    /* Modals */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 2000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0, 0, 0, 0.6);
+      /* Darker overlay */
+      animation: fadeIn 0.3s;
+    }
+
+    .modal-content {
+      background-color: #fefefe;
+      margin: 5% auto;
+      /* Adjust margin for better vertical alignment */
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+      position: relative;
+      width: 90%;
+      max-width: 700px;
+      animation: slideIn 0.3s;
+      max-height: 90vh;
+      /* Limit modal height */
+      display: flex;
+      flex-direction: column;
+    }
+
+    .modal-header {
+      padding-bottom: 15px;
+      border-bottom: 1px solid #eee;
+      margin-bottom: 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h3 {
+      font-size: 22px;
+      color: #1976D2;
+    }
+
+    .close-button {
+      color: #aaa;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+
+    .close-button:hover,
+    .close-button:focus {
+      color: #333;
+      text-decoration: none;
+    }
+
+    .modal-body {
+      overflow-y: auto;
+      /* Enable scrolling for modal content */
+      flex-grow: 1;
+      /* Allow body to take available space */
+    }
+
+    .office-summary .office-item {
+      padding: 12px 0;
+      border-bottom: 1px dashed #eee;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .office-summary .office-item:last-child {
+      border-bottom: none;
+    }
+
+    .office-summary .office-item span:first-child {
+      font-weight: 500;
+      color: #444;
+    }
+
+    .office-summary .office-item span:last-child {
+      font-weight: 600;
+      color: #2196F3;
+    }
+
+    .details-list {
+      list-style: none;
+      padding: 0;
+    }
+
+    .details-list li {
+      background-color: #f9f9f9;
+      margin-bottom: 10px;
+      padding: 15px;
+      border-radius: 8px;
+      border: 1px solid #eee;
+    }
+
+    .details-list li strong {
+      color: #1976D2;
+      font-size: 15px;
+    }
+
+    .details-list li p {
+      margin-top: 5px;
+      font-size: 14px;
+      color: #555;
+    }
+
+    .details-list li a {
+      color: #2196F3;
+      text-decoration: none;
+    }
+
+    .details-list li a:hover {
+      text-decoration: underline;
+    }
+
+
+    /* Map Modal Specific */
+    .map-container {
+      position: relative;
+      width: 100%;
+      padding-top: 75%;
+      /* 4:3 Aspect Ratio (height / width * 100) */
+      background-color: #e0e0e0;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .map-container iframe {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+
+    .map-actions {
+      margin-top: 15px;
+      text-align: center;
+    }
+
+    .map-actions a {
+      display: inline-block;
+      background-color: #2196F3;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
+      text-decoration: none;
+      font-weight: 500;
+      transition: background-color 0.3s ease;
+    }
+
+    .map-actions a:hover {
+      background-color: #1976D2;
+    }
+
+
+    /* Keyframe Animations */
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateY(-20px);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+
+    /* Responsive Design */
+    @media (min-width: 768px) {
+      /* Removed the two-column layout for charts to stack them vertically */
+    }
+
+    @media (max-width: 767px) {
+      body {
+        font-size: 14px;
+        /* Smaller base font for mobile */
+      }
+
+      .header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .header h1 {
+        font-size: 18px;
+      }
+
+      .header p {
+        font-size: 12px;
+      }
+
+      .header .last-updated {
+        margin-top: 8px;
+        font-size: 11px;
+      }
+
+      .container {
+        padding: 10px;
+        padding-top: 90px;
+        /* Adjusted for new header height */
+      }
+
+      .category-tab {
+        padding: 8px 12px;
+        font-size: 12px;
+        min-width: 70px;
+      }
+
+      .stat-card {
+        padding: 12px;
+      }
+
+      .stat-card .value {
+        font-size: 24px;
+      }
+
+      .stat-card .label {
+        font-size: 11px;
+      }
+
+      .office-counts {
+        font-size: 10px;
+        margin-top: 8px;
+      }
+
+      .modal-content {
+        margin: 10px auto;
+        padding: 20px;
+        width: 95%;
+        max-height: 95vh;
+      }
+
+      .modal-header h3 {
+        font-size: 16px;
+      }
+
+      .mini-table th,
+      .mini-table td {
+        padding: 8px 10px;
+        font-size: 11px;
+      }
+
+      .table-responsive {
+        max-height: 300px;
+      }
+
+      .details-list li {
+        padding: 10px;
+      }
+
+      .details-list li strong {
+        font-size: 13px;
+      }
+
+      .details-list li p {
+        font-size: 12px;
+      }
+    }
+
+    .alert-icon {
+  animation: pulse 1s infinite;
+  font-size: 20px;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+  </style>
+</head>
+
+<body>
+  <header class="header">
+    <div>
+      <h1>Safety Inspection Dashboard</h1>
+      <p class="report-period" id="reportPeriodText">Report from 21/10/2024 to 25/08/2025</p>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="loading" id="loading">
+      <p>Loading data, please wait...</p>
+    </div>
+
+    <div class="dashboard" id="dashboard" style="display: none;">
+
+      <div class="dashboard-section">
+        <div id="regionalTabs" class="filter-tabs-container">
+          <button class="category-tab active" data-filter-type="regional" data-filter-value="all">All Regions</button>
+          </div>
+
+        <div id="divisionTabs" class="filter-tabs-container" style="border-top: 1px solid #eee; padding-top: 10px; display: none;">
+          <button class="category-tab active" data-filter-type="division" data-filter-value="all">All Divisions</button>
+          </div>
+
+      </div>
+
+     <div class="stats-grid">
+        <div class="stat-card total-inspected" onclick="openModal('total')">
+          <div class="value" id="totalInspected">0</div>
+          <div class="label">Total Inspected</div>
+          <div class="office-counts" id="totalOfficeCounts"></div>
+        </div>
+        <div class="stat-card total-rectified" onclick="openModal('rectified')">
+          <div class="value" id="totalRectified">0</div>
+          <div class="label">Total Rectified</div>
+          <div class="office-counts" id="rectifiedOfficeCounts"></div>
+        </div>
+        <div class="stat-card total-pending" onclick="openModal('pending')">
+          <div class="value" id="totalPending">0</div>
+          <div class="label">Total Pending</div>
+          <div class="office-counts" id="pendingOfficeCounts"></div>
+        </div>
+        <div class="stat-card week-inspected" onclick="openModal('weekInspected')">
+          <div class="value" id="weekInspected">0</div>
+          <div class="label">Inspected This Week</div>
+          <div class="office-counts" id="weekInspectedOfficeCounts"></div>
+        </div>
+        <div class="stat-card week-rectified" onclick="openModal('weekRectified')">
+          <div class="value" id="weekRectified">0</div>
+          <div class="label">Rectified This Week</div>
+          <div class="office-counts" id="weekRectifiedOfficeCounts"></div>
+        </div>
+        <div class="stat-card avg-inspected" onclick="openModal('avgInspected')">
+          <div class="value" id="avgInspected">0.0</div>
+          <div class="label">Avg Insp/Wk</div>
+          <div class="office-counts" id="avgInspectedOfficeCounts"></div>
+        </div>
+        <div class="stat-card avg-rectified" onclick="openModal('avgRectified')">
+          <div class="value" id="avgRectified">0.0</div>
+          <div class="label">Avg Rect/Wk</div>
+          <div class="office-counts" id="avgRectifiedOfficeCounts"></div>
+        </div>
+      </div>
+
+      <div class="charts-section">
+      <div id="mainTableSection" class="dashboard-section">
+        <div id="viewTabs" class="filter-tabs-container" style="margin-bottom: 15px;">
+          <button class="category-tab active" data-view="ccc">CCC-Wise</button>
+          <button class="category-tab" data-view="division">Div.-Wise</button>
+          <button class="category-tab" data-view="region">Region-Wise</button>
+        </div>
+        <h2 id="tableTitle">CCC-Wise Status</h2>
+        <div class="table-responsive">
+          <table class="mini-table">
+            <thead id="officeTableHeaderContainer">
+            </thead>
+            <tbody id="officeTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+
+        <div class="chart-container">
+          <h2>Inspection vs Rectification Timeline</h2>
+          <canvas id="timelineChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modalTitle">Office Summary</h3>
+        <span class="close-button" onclick="closeModal()">×</span>
+      </div>
+      <div class="modal-body" id="modalBody">
+        </div>
+    </div>
+  </div>
+
+  <div class="modal" id="detailsModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="detailsModalTitle">Pending Items Details</h3>
+        <span class="close-button" onclick="closeDetailsModal()">×</span>
+      </div>
+      <div class="modal-body" id="detailsModalBody">
+        </div>
+    </div>
+  </div>
+
+  <div class="modal" id="mapModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="mapModalTitle">Location Map</h3>
+        <span class="close-button" onclick="closeMapModal()">×</span>
+      </div>
+      <div class="modal-body">
+        <div class="map-container">
+          <iframe id="mapIframe" allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+        </div>
+        <div class="map-actions">
+          <a id="mapDirectionLink" href="#" target="_blank" rel="noopener noreferrer">Get Directions</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="modal" id="itemDetailsModal">
+    <div class="modal-content" style="max-width: 800px;">
+      <div class="modal-header">
+        <h3 id="itemDetailsModalTitle">Inspection Details</h3>
+        <span class="close-button" onclick="closeItemDetailsModal()">×</span>
+      </div>
+      <div class="modal-body" id="itemDetailsModalBody">
+        <!-- Details will be populated here -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let inspectionData = [];
+    let timelineChart;
+    let currentModalData = [];
+    let lastUpdatedDate = null;
+    let currentRegionalFilter = "all"; // NEW: Regional filter
+    let currentDivisionFilter = "all"; // NEW: Division filter
+    let currentView = 'ccc'; // NEW: for table view
+    let sortColumn = 'total';
+    let sortDirection = 'desc';
+    let totalReportWeeks = 1; // NEW: To hold the fixed number of weeks for the entire report
+
+    // NEW: Global variables for hierarchy lookups
+    let officeDetailsMap = {};
+    let regionalOfficeToDivisionsMap = {};
+    let divisionToCCCsMap = {};
+    let dynamicOfficeHierarchy = {}; // This will hold the structured hierarchy for UI filters
+
+
+
+    // NEW: The mapping string provided by the user
+    const newMappingString = `CODE	OFFICE NAME
+6610000	MALDA REGION
+1111111	MALDA DIV.
+6611000	MALDA DIVISIOIN
+6611101	MANIKCHAK CCC
+6611102	GOLAPGANJ CCC
+6611103	BAISHNABNAGAR CCC
+6611104	KALIACHAK CCC
+6611105	MOTHABARI CCC
+6611106	SUJAPUR CCC
+6611107	RATHBARI CCC
+6611108	FULBARI CCC
+6611109	MOKDUMPUR CCC
+2222222	CHANCHAL DIV.
+6612000	CHANCHAL DIVISION
+6612101	BHALUKA CCC
+6612102	SAMSI CCC
+6612103	PARANPUR CCC
+6612104	CHANCHAL CCC
+6612105	MALATIPUR CCC
+6612106	HARISHCHANDRAPUR CCC
+6612107	KUSHIDA CCC
+3333333	GAZOLE DIV.
+6613000	GAZOLE DIVISION
+6613101	GAZOL CCC
+6613102	AIHO. CCC
+6613103	PANDUA CCC
+6613104	BAMONGOLA CCC
+6613105	OLD MALDA CCC
+6620000	UTTAR DINAJPUR REGION
+4444444	RAIGANJ  DIV.
+6621000	RAIGANJ  DIVISION
+6621101	ITAHAR CCC
+6621102	HEMTABAD CCC
+6621103	KALIYAGANJ CCC
+6621104	RAIGANJ CCC
+6621105	BIRNAGAR CCC
+6621106	KARANDIGHI CCC
+5555555	ISLAMPUR DIV.
+6622000	ISLAMPUR DIVISION
+6622101	ISLAMPUR CCC
+6622102	CHOPRA CCC
+6622103	DALKHOLA CCC
+6622104	GOALPOKHER CCC
+6622105	KANKI CCC
+6630000	DAKSHIN DINAJPUR REGION
+6666666	BALURGHAT DIV.
+6631000	BALURGHAT DIVISION
+6631101	BALURGHAT CCC
+6631102	TAPAN CCC
+6631103	KUMARGANJ CCC
+6631104	HILI CCC
+6631105	PATIRAM CCC
+7777777	BUNIADPUR DIV.
+6632000	BUNIADPUR DIVISION
+6632101	BUNIADPUR CCC
+6632102	KUSMANDI CCC
+6632103	HARIRAMPUR CCC
+6632104	GANGARAMPUR CCC`;
+
+
+    // NEW: Function to build the hierarchy maps from the provided mapping string
+    function buildHierarchyMaps(mappingText) {
+      const lines = mappingText.trim().split('\n').slice(1); // Skip header
+      const parsedMapping = lines.map(line => {
+        const parts = line.split('\t');
+        return {
+          code: parts[0].trim(),
+          name: parts[1].trim()
+        };
+      });
+
+      officeDetailsMap = {};
+      regionalOfficeToDivisionsMap = {};
+      divisionToCCCsMap = {};
+
+      // First pass: Populate officeDetailsMap with types and initial data
+      parsedMapping.forEach(item => {
+        const isRegionalOffice = item.name.endsWith(' REGION');
+        const isShortDivision = item.name.endsWith('DIV.'); // Preferred for UI and logic
+        const isLongDivision = item.name.endsWith('DIVISION') && !isRegionalOffice; // Alternative division name, map to short
+        const isCCC = item.name.endsWith('CCC');
+
+        let type;
+        if (isRegionalOffice) {
+          type = 'regionalOffice';
+        } else if (isShortDivision) {
+          type = 'division'; // Use 'division' for both short and long, but prefer short for display
+        } else if (isLongDivision) {
+          type = 'divisionLong'; // Mark as long to link later
+        } else if (isCCC) {
+          type = 'ccc';
+        } else {
+          type = 'unknown';
+        }
+
+        officeDetailsMap[item.code] = {
+          name: item.name, // The name as it appears in the mapping
+          type: type,
+          code: item.code,
+          parentCode: null, // Will populate in second pass
+          alternativeCode: null // For linking long division names to short codes
+        };
+      });
+
+      // Second pass: Establish parent relationships and link long division names to short codes
+      parsedMapping.forEach(item => {
+        const details = officeDetailsMap[item.code];
+
+        if (details.type === 'division') { // Short division names
+          // Determine parent Regional Office Code based on prefix or explicit link
+          let regionalOfficeCode = null;
+          if (item.code === '1111111' || item.code === '2222222' || item.code === '3333333') regionalOfficeCode = '6610000'; // MALDA RO
+          else if (item.code === '4444444' || item.code === '5555555') regionalOfficeCode = '6620000'; // UTTAR DINAJPUR RO
+          else if (item.code === '6666666' || item.code === '7777777') regionalOfficeCode = '6630000'; // DAKSHIN DINAJPUR RO
+
+          details.parentCode = regionalOfficeCode;
+          if (regionalOfficeCode) {
+            if (!regionalOfficeToDivisionsMap[regionalOfficeCode]) regionalOfficeToDivisionsMap[regionalOfficeCode] = [];
+            regionalOfficeToDivisionsMap[regionalOfficeCode].push(item.code);
+          }
+        } else if (details.type === 'divisionLong') {
+          // Find the corresponding short division code and link it
+          let shortDivisionCode = null;
+          if (item.code === '6611000') shortDivisionCode = '1111111'; // MALDA DIV.
+          else if (item.code === '6612000') shortDivisionCode = '2222222'; // CHANCHAL DIV.
+          else if (item.code === '6613000') shortDivisionCode = '3333333'; // GAZOLE DIV.
+          else if (item.code === '6621000') shortDivisionCode = '4444444'; // RAIGANJ DIV.
+          else if (item.code === '6622000') shortDivisionCode = '5555555'; // ISLAMPUR DIV.
+          else if (item.code === '6631000') shortDivisionCode = '6666666'; // BALURGHAT DIV.
+          else if (item.code === '6632000') shortDivisionCode = '7777777'; // BUNIADPUR DIV.
+
+          details.alternativeCode = shortDivisionCode; // Store link to the preferred short code
+        } else if (details.type === 'ccc') {
+          // Find parent Division (short form preferred)
+          let parentDivisionShortCode = null;
+          if (item.code.startsWith('66111')) parentDivisionShortCode = '1111111'; // MALDA DIV.
+          else if (item.code.startsWith('66121')) parentDivisionShortCode = '2222222'; // CHANCHAL DIV.
+          else if (item.code.startsWith('66131')) parentDivisionShortCode = '3333333'; // GAZOLE DIV.
+          else if (item.code.startsWith('66211')) parentDivisionShortCode = '4444444'; // RAIGANJ DIV.
+          else if (item.code.startsWith('66221')) parentDivisionShortCode = '5555555'; // ISLAMPUR DIV.
+          else if (item.code.startsWith('66311')) parentDivisionShortCode = '6666666'; // BALURGHAT DIV.
+          else if (item.code.startsWith('66321')) parentDivisionShortCode = '7777777'; // BUNIADPUR DIV.
+
+          details.parentCode = parentDivisionShortCode;
+          if (parentDivisionShortCode) {
+            if (!divisionToCCCsMap[parentDivisionShortCode]) divisionToCCCsMap[parentDivisionShortCode] = [];
+            divisionToCCCsMap[parentDivisionShortCode].push(item.code);
+          }
+        }
+      });
+
+      // Construct the officeHierarchy for UI filter generation
+      let constructedOfficeHierarchy = {};
+      for (const roCode in regionalOfficeToDivisionsMap) {
+        const roName = officeDetailsMap[roCode].name;
+        constructedOfficeHierarchy[roName] = {
+          divisions: {}
+        };
+        regionalOfficeToDivisionsMap[roCode].forEach(divisionCode => {
+          const divisionName = officeDetailsMap[divisionCode].name;
+          const cccNames = (divisionToCCCsMap[divisionCode] || []).map(cccCode => officeDetailsMap[cccCode].name);
+          constructedOfficeHierarchy[roName].divisions[divisionName] = cccNames;
+        });
+      }
+      return constructedOfficeHierarchy; // Return this new hierarchy
+    }
+
+
+    // Utility functions
+    function parseDate(dateStr) {
+      if (!dateStr) return null;
+      const parts = dateStr.split('/');
+      if (parts.length === 3) {
+        // Assuming DD/MM/YYYY format
+        return new Date(parts[2], parts[1] - 1, parts[0]);
+      }
+      return new Date(dateStr); // Fallback for other formats
+    }
+
+    // NEW: Updated cleanOfficeName to also handle 'CODE NAME' format if needed from CSV 'Office' column
+function cleanOfficeName(officeName) {
+  // This regex will remove any number of digits within parentheses at the end of the string
+  // For example: "Office Name (123)" or "Office Name (123456789)" will both become "Office Name"
+  return officeName.replace(/\s*\(\d+\)$/, '').trim();
+}
+
+    function isWithinLastWeek(date) {
+      if (!date) return false;
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+      return date >= oneWeekAgo;
+    }
+
+function getOfficeCountsHtml(officeStats) {
+  if (Object.keys(officeStats).length === 0) {
+    return 'No data for offices.';
+  }
+
+  const sortedOffices = Object.entries(officeStats).sort(([, a], [, b]) => b.count - a.count);
+
+  let html = '';
+  if (sortedOffices.length > 0 && sortedOffices[0][1].count > 0) {
+    const topOffice = sortedOffices[0];
+    const countDisplay = Number.isInteger(topOffice[1].count) ? topOffice[1].count : topOffice[1].count.toFixed(1);
+    html += `<div style="color: #B8860B; font-weight: bold;">⭐ ${topOffice[0]} (${countDisplay})</div>`;
+  }
+
+  // 🧹 Removed the "Lowest" display line here
+
+  return html;
+}
+
+
+    function getCategory(description) {
+      const lowerDesc = description.toLowerCase();
+      if (lowerDesc.includes("spacer")) return "Spacer Issues";
+      if (lowerDesc.includes("lt kiosk")) return "LT Kiosk Issues";
+      if (lowerDesc.includes("ht 11 kv")) return "HT 11 KV Issues";
+      if (lowerDesc.includes("ht 33 kv")) return "HT 33 KV Issues";
+      if (lowerDesc.includes("lt") || lowerDesc.includes("low tension")) return "Other LT Issues";
+      return "Other Issues";
+    }
+
+    // NEW: Function to get regional office from CCC name (now uses officeDetailsMap)
+function getDivisionFromCCC(cccNameCleaned) {
+  for (const code in officeDetailsMap) {
+    const entry = officeDetailsMap[code];
+
+    if (entry.name === cccNameCleaned) {
+      // If it's a CCC, trace to parent division
+      if (entry.type === 'ccc' && entry.parentCode) {
+        return officeDetailsMap[entry.parentCode]?.name || null;
+      }
+
+      // If it's a DIVISION (long form), resolve to short
+      if (entry.type === 'divisionLong' && entry.alternativeCode) {
+        return officeDetailsMap[entry.alternativeCode]?.name || null;
+      }
+
+      // If it's a DIV. itself
+      if (entry.type === 'division') {
+        return entry.name;
+      }
+    }
+  }
+
+  return null; // Fallback
+}
+
+function getRegionalOfficeFromCode(code) {
+  let currentCode = code;
+  while (currentCode) {
+    const entry = officeDetailsMap[currentCode];
+    if (!entry) break;
+    if (entry.type === 'regionalOffice') return entry.name;
+    if (entry.type === 'divisionLong' && entry.alternativeCode) {
+      currentCode = entry.alternativeCode;
+    } else {
+      currentCode = entry.parentCode;
+    }
+  }
+  return null;
+}
+
+function getDivisionFromCode(code) {
+  let currentCode = code;
+  while (currentCode) {
+    const entry = officeDetailsMap[currentCode];
+    if (!entry) break;
+    if (entry.type === 'division') return entry.name;
+    if (entry.type === 'divisionLong' && entry.alternativeCode) {
+      currentCode = entry.alternativeCode;
+    } else {
+      currentCode = entry.parentCode;
+    }
+  }
+  return null;
+}
+
+function extractOfficeCode(officeRaw) {
+  const match = officeRaw.match(/\((\d+)\)$/); // Extract digits inside last parentheses
+  return match ? match[1] : null;
+}
+
+    // Load and process data
+    async function loadData() {
+      // Build the new hierarchy first
+      dynamicOfficeHierarchy = buildHierarchyMaps(newMappingString);
+      console.log("Dynamically constructed hierarchy:", dynamicOfficeHierarchy); // For debugging
+
+
+      try {
+        const response = await fetch('data/safety_inspection.json');
+        const jsonData = await response.json();
+
+        inspectionData = jsonData.map(row => {
+          const officeCode = extractOfficeCode(row.Office || '');
+          const officeMeta = officeDetailsMap[officeCode] || {};
+          const officeNameForDisplay = officeMeta.name || cleanOfficeName(row.Office || '');
+
+          let cccName = null;
+          let divisionName = null;
+          let regionName = null;
+
+          if (officeMeta.type === 'ccc') {
+            cccName = officeNameForDisplay;
+            const divisionCode = officeMeta.parentCode;
+            if (divisionCode) {
+              divisionName = officeDetailsMap[divisionCode]?.name;
+              const regionalCode = officeDetailsMap[divisionCode]?.parentCode;
+              if (regionalCode) {
+                regionName = officeDetailsMap[regionalCode]?.name;
+              }
+            }
+          } else if (officeMeta.type === 'division' || officeMeta.type === 'divisionLong') {
+            const shortDivisionCode = officeMeta.type === 'divisionLong' ? officeMeta.alternativeCode : officeCode;
+            divisionName = officeDetailsMap[shortDivisionCode]?.name || officeNameForDisplay;
+            const regionalCode = officeDetailsMap[shortDivisionCode]?.parentCode;
+            if (regionalCode) {
+              regionName = officeDetailsMap[regionalCode]?.name;
+            }
+          } else if (officeMeta.type === 'regionalOffice') {
+            regionName = officeNameForDisplay;
+          }
+
+          return {
+            officeCode: officeCode,
+            office: officeNameForDisplay, // The name of the inspecting office (CCC or Division)
+            ccc: cccName,
+            division: divisionName,
+            regionalOffice: regionName,
+            location: row.Location || '',
+            description: row.Description || '',
+            category: getCategory(row.Description || ''),
+            rectificationDoneBy: row['Rectification done by'] || '',
+            rectificationDoneOn: parseDate(row['Rectification done on']),
+            remarks: row.Remarks || '',
+            status: row.Status || '',
+            enteredOn: parseDate(row['Entered on']),
+            updatedOn: parseDate(row['Updated on']),
+            isRectified: row['Rectification done on'] && row['Rectification done on'].trim() !== ''
+          };
+        });
+
+        // NEW: Calculate total weeks for the entire report period
+        const allDatesForWeeks = inspectionData.flatMap(item => [item.enteredOn, item.rectificationDoneOn]).filter(Boolean);
+        if (allDatesForWeeks.length > 1) {
+            const earliestDate = new Date(Math.min(...allDatesForWeeks.map(d => d.getTime())));
+            const latestDate = new Date(Math.max(...allDatesForWeeks.map(d => d.getTime())));
+            const timeDiff = latestDate.getTime() - earliestDate.getTime();
+            const daysDiff = Math.max(1, timeDiff / (1000 * 3600 * 24));
+            totalReportWeeks = Math.max(1, daysDiff / 7);
+        }
+
+        // Update report period text with weeks
+        const reportPeriodElement = document.getElementById('reportPeriodText');
+        if (reportPeriodElement) {
+            reportPeriodElement.textContent = `Report from 21/10/2024 to 25/08/2025 (${Math.round(totalReportWeeks)} weeks)`;
+        }
+
+        // NEW: Populate Regional Tabs dynamically
+        const regionalTabsContainer = document.getElementById('regionalTabs');
+        let regionalHtml = '<button class="category-tab active" data-filter-type="regional" data-filter-value="all">All Regions</button>';
+        for (const roName in dynamicOfficeHierarchy) {
+          regionalHtml += `<button class="category-tab" data-filter-type="regional" data-filter-value="${roName}">${roName}</button>`;
+        }
+        regionalTabsContainer.innerHTML = regionalHtml;
+
+        processData();
+        setupNewFilterListeners(); // NEW: Call new listener setup
+                setupViewTabsListener(); // NEW: Call view tabs listener
+        
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('dashboard').style.display = 'block';
+        showNotStartedModal();
+      } catch (error) {
+        console.error('Error loading data:', error);
+        document.getElementById('loading').innerHTML = '<p>Error loading data. Please try again later.</p>';
+      }
+    }
+
+    // NEW: Setup listeners for new regional/division filters
+    function setupNewFilterListeners() {
+      // Regional Tabs
+      document.querySelectorAll("#regionalTabs .category-tab").forEach(tab => {
+        tab.addEventListener("click", () => {
+          document.querySelectorAll("#regionalTabs .category-tab").forEach(t => t.classList.remove("active"));
+          tab.classList.add("active");
+          currentRegionalFilter = tab.dataset.filterValue;
+
+          // Reset division filter when regional changes
+          currentDivisionFilter = "all";
+          document.getElementById('divisionTabs').style.display = 'none'; // Hide divisions by default
+          generateDivisionTabs(currentRegionalFilter); // Generate divisions for selected region
+          processData();
+        });
+      });
+
+      // Division Tabs (dynamic, so add listener after generation)
+      document.getElementById('divisionTabs').addEventListener('click', (event) => {
+        if (event.target.classList.contains('category-tab')) {
+          document.querySelectorAll("#divisionTabs .category-tab").forEach(t => t.classList.remove("active"));
+          event.target.classList.add("active");
+          currentDivisionFilter = event.target.dataset.filterValue;
+          processData();
+        }
+      });
+    }
+
+    // NEW: Function to generate division tabs (uses dynamicOfficeHierarchy)
+    function generateDivisionTabs(regionalOfficeName) {
+      const divisionTabsContainer = document.getElementById('divisionTabs');
+      let html = '<button class="category-tab active" data-filter-type="division" data-filter-value="all">All Divisions</button>';
+
+      if (regionalOfficeName !== "all" && dynamicOfficeHierarchy[regionalOfficeName]) {
+        for (const division in dynamicOfficeHierarchy[regionalOfficeName].divisions) {
+          html += `<button class="category-tab" data-filter-type="division" data-filter-value="${division}">${division}</button>`;
+        }
+        divisionTabsContainer.style.display = 'flex'; // Show divisions if a regional office is selected
+      } else {
+        divisionTabsContainer.style.display = 'none'; // Hide if "All Regions" or no region selected
+      }
+      divisionTabsContainer.innerHTML = html;
+    }
+        // NEW: Function to set up listeners for the new view tabs
+        function setupViewTabsListener() {
+          document.querySelectorAll("#viewTabs .category-tab").forEach(tab => {
+            tab.addEventListener("click", () => {
+              document.querySelectorAll("#viewTabs .category-tab").forEach(t => t.classList.remove("active"));
+              tab.classList.add("active");
+              currentView = tab.dataset.view;
+              processData();
+            });
+          });
+        }
+    
+
+
+    function processData() {
+      let filteredData = inspectionData;
+      // NEW: Apply regional filter
+      if (currentRegionalFilter !== "all") {
+        filteredData = filteredData.filter(item => item.regionalOffice === currentRegionalFilter);
+      }
+
+      // NEW: Apply division filter
+      if (currentDivisionFilter !== "all") {
+        filteredData = filteredData.filter(item => item.division === currentDivisionFilter);
+      }
+
+      const totalInspected = filteredData.length;
+      const totalRectified = filteredData.filter(item => item.isRectified).length;
+      const totalPending = totalInspected - totalRectified;
+
+      const weekInspected = filteredData.filter(item => isWithinLastWeek(item.enteredOn)).length;
+      const weekRectified = filteredData.filter(item =>
+        item.isRectified && isWithinLastWeek(item.rectificationDoneOn)
+      ).length;
+      const avgInspected = (totalInspected / totalReportWeeks).toFixed(1);
+      const avgRectified = (totalRectified / totalReportWeeks).toFixed(1);
+
+      // Update stat cards
+      document.getElementById('totalInspected').textContent = totalInspected;
+      document.getElementById('totalRectified').textContent = totalRectified;
+      document.getElementById('totalPending').textContent = totalPending;
+      document.getElementById('weekInspected').textContent = weekInspected;
+      document.getElementById('weekRectified').textContent = weekRectified;
+      document.getElementById('avgInspected').textContent = avgInspected;
+      document.getElementById('avgRectified').textContent = avgRectified;
+
+      // Update office counts
+      updateOfficeCountsForCard('total', filteredData);
+      updateOfficeCountsForCard('rectified', filteredData.filter(item => item.isRectified));
+      updateOfficeCountsForCard('pending', filteredData.filter(item => !item.isRectified));
+      updateOfficeCountsForCard('weekInspected', filteredData.filter(item => isWithinLastWeek(item.enteredOn)));
+      updateOfficeCountsForCard('weekRectified', filteredData.filter(item => item.isRectified && isWithinLastWeek(item.rectificationDoneOn)));
+      updateOfficeCountsForCard('avgInspected', filteredData);
+      updateOfficeCountsForCard('avgRectified', filteredData);
+
+      // Update charts
+      updateMainTable(filteredData, totalReportWeeks);
+      createTimelineChart(filteredData);
+    }
+
+    function updateOfficeCountsForCard(cardType, data) {
+      const officeStats = {};
+      const weeks = totalReportWeeks;
+
+      if (cardType === 'avgInspected' || cardType === 'avgRectified') {
+        const tempStats = {};
+        data.forEach(item => {
+            if (!tempStats[item.office]) {
+                tempStats[item.office] = { total: 0, rectified: 0 };
+            }
+            tempStats[item.office].total++;
+            if (item.isRectified) {
+                tempStats[item.office].rectified++;
+            }
+        });
+
+        for (const officeName in tempStats) {
+            const stats = tempStats[officeName];
+            officeStats[officeName] = {
+                count: (cardType === 'avgInspected') ? (stats.total / weeks) : (stats.rectified / weeks)
+            };
+        }
+      } else {
+        data.forEach(item => {
+          if (!officeStats[item.office]) {
+            officeStats[item.office] = { count: 0 };
+          }
+          officeStats[item.office].count++;
+        });
+      }
+
+      const elementIdMap = {
+        'total': 'totalOfficeCounts',
+        'rectified': 'rectifiedOfficeCounts',
+        'pending': 'pendingOfficeCounts',
+        'weekInspected': 'weekInspectedOfficeCounts',
+        'weekRectified': 'weekRectifiedOfficeCounts',
+        'avgInspected': 'avgInspectedOfficeCounts',
+        'avgRectified': 'avgRectifiedOfficeCounts'
+      };
+
+      const elementId = elementIdMap[cardType];
+      if (elementId) {
+        const element = document.getElementById(elementId);
+        element.innerHTML = getOfficeCountsHtml(officeStats);
+      }
+    }
+
+     function updateMainTable(data, weeks = 1) {
+       const tableHeaderContainer = document.getElementById('officeTableHeaderContainer');
+       const tableBody = document.getElementById('officeTableBody');
+       const tableTitle = document.getElementById('tableTitle');
+       let tableHtml = '';
+ 
+       // --- Aggregated Views ---
+       const stats = {};
+       let aggregationKey = 'office';
+       let headerLabel = 'CCC / Office';
+ 
+       if (currentView === 'region') {
+         aggregationKey = 'regionalOffice';
+         headerLabel = 'Region';
+         tableTitle.textContent = 'Region-Wise Status';
+       } else if (currentView === 'division') {
+         aggregationKey = 'division';
+         headerLabel = 'Division';
+         tableTitle.textContent = 'Division-Wise Status';
+       } else {
+         headerLabel = 'CCC / Office';
+         tableTitle.textContent = 'CCC-Wise Status';
+       }
+ 
+       data.forEach(item => {
+         const key = item[aggregationKey];
+         if (!key) return;
+ 
+         if (!stats[key]) {
+           stats[key] = {
+             total: 0,
+             rectified: 0,
+             weekInspected: 0,
+             weekRectified: 0,
+             lastInspectionDate: null
+           };
+         }
+         stats[key].total++;
+         if (item.isRectified) stats[key].rectified++;
+         if (isWithinLastWeek(item.enteredOn)) stats[key].weekInspected++;
+         if (item.isRectified && isWithinLastWeek(item.rectificationDoneOn)) stats[key].weekRectified++;
+         if (item.enteredOn) {
+             if (!stats[key].lastInspectionDate || item.enteredOn > stats[key].lastInspectionDate) {
+                 stats[key].lastInspectionDate = item.enteredOn;
+             }
+         }
+       });
+ 
+       tableHeaderContainer.innerHTML = `
+         <tr>
+            <th>#</th>
+            <th class="sortable-header" onclick="setSort('name')">${headerLabel}${getSortIcon('name')}</th>
+            <th class="sortable-header" onclick="setSort('lastInspectionDate')">Last Inspection${getSortIcon('lastInspectionDate')}</th>
+            <th class="sortable-header" onclick="setSort('total')">Total${getSortIcon('total')}</th>
+            <th class="sortable-header" onclick="setSort('rectified')">Rectified${getSortIcon('rectified')}</th>
+            <th class="sortable-header" onclick="setSort('pending')">Pending${getSortIcon('pending')}</th>
+            <th class="sortable-header" onclick="setSort('percentage')">% Complete${getSortIcon('percentage')}</th>
+            <th class="sortable-header" style="text-align:center;" onclick="setSort('avgInspected')">Insp/Wk${getSortIcon('avgInspected')}</th>
+            <th class="sortable-header" style="text-align:center;" onclick="setSort('avgRectified')">Rect/Wk${getSortIcon('avgRectified')}</th>
+         </tr>
+     `;
+ 
+      const itemsArray = Object.entries(stats).map(([name, s]) => {
+        const pending = s.total - s.rectified;
+        const percentage = s.total > 0 ? Math.round((s.rectified / s.total) * 100) : 0;
+        const avgInspected = parseFloat((s.total / weeks).toFixed(1));
+        const avgRectified = parseFloat((s.rectified / weeks).toFixed(1));
+        return {
+          name,
+          ...s,
+          pending,
+          percentage,
+          avgInspected,
+          avgRectified
+        };
+      });
+
+      itemsArray.sort((a, b) => {
+        let valA = a[sortColumn];
+        let valB = b[sortColumn];
+
+        // Handle nulls for dates: always at the bottom
+        if (sortColumn === 'lastInspectionDate') {
+            if (valA === null && valB === null) return 0;
+            if (valA === null) return 1;
+            if (valB === null) return -1;
+        }
+
+        // Handle different data types
+        if (valA instanceof Date) {
+          valA = valA.getTime();
+          valB = valB.getTime();
+        } else if (typeof valA === 'string') {
+          valA = valA.toLowerCase();
+          valB = valB.toLowerCase();
+        }
+
+        let comparison = 0;
+        if (valA > valB) {
+          comparison = 1;
+        } else if (valA < valB) {
+          comparison = -1;
+        }
+
+        return sortDirection === 'desc' ? comparison * -1 : comparison;
+      });
+
+       itemsArray.forEach((item, index) => {
+         const lastInspectionFormatted = item.lastInspectionDate ? item.lastInspectionDate.toLocaleDateString('en-GB') : 'N/A';
+tableHtml += `
+     <tr class="clickable-row" onclick="openItemDetailsModal('${item.name.replace(/'/g, "\'")}', '${currentView}')">
+
+                 <td>${index + 1}</td>
+                <td>${item.name}</td>
+                <td>${lastInspectionFormatted}</td>
+                 <td>${item.total}</td>
+                 <td>${item.rectified}</td>
+                <td>${item.pending}</td>
+                <td>${item.percentage}%</td>
+                 <td style="text-align:center;">${item.avgInspected.toFixed(1)}</td>
+                 <td style="text-align:center;">${item.avgRectified.toFixed(1)}</td>
+             </tr>
+         `;
+       });
+       tableBody.innerHTML = tableHtml;
+     }
+ 
+
+    function createTimelineChart(data) {
+      if (timelineChart) timelineChart.destroy();
+
+      const monthlyData = {};
+
+      data.forEach(item => {
+        const monthYearEntered = item.enteredOn ? `${item.enteredOn.getFullYear()}-${(item.enteredOn.getMonth() + 1).toString().padStart(2, '0')}` : null;
+        const monthYearRectified = item.rectificationDoneOn ? `${item.rectificationDoneOn.getFullYear()}-${(item.rectificationDoneOn.getMonth() + 1).toString().padStart(2, '0')}` : null;
+
+        if (monthYearEntered) {
+          if (!monthlyData[monthYearEntered]) {
+            monthlyData[monthYearEntered] = {
+              inspected: 0,
+              rectified: 0
+            };
+          }
+          monthlyData[monthYearEntered].inspected++;
+        }
+
+        if (monthYearRectified) {
+          if (!monthlyData[monthYearRectified]) {
+            monthlyData[monthYearRectified] = {
+              inspected: 0,
+              rectified: 0
+            };
+          }
+          monthlyData[monthYearRectified].rectified++;
+        }
+      });
+
+      const sortedMonths = Object.keys(monthlyData).sort();
+      const labels = sortedMonths.map(my => {
+        const [year, month] = my.split('-');
+        return new Date(year, month - 1, 1).toLocaleDateString('en-US', {
+          month: 'short',
+          year: '2-digit'
+        });
+      });
+      const inspectedCounts = sortedMonths.map(month => monthlyData[month].inspected);
+      const rectifiedCounts = sortedMonths.map(month => monthlyData[month].rectified);
+
+      const canvas = document.getElementById('timelineChart');
+      // Ensure canvas itself doesn't have conflicting height from previous renders
+      canvas.removeAttribute('style');
+      const ctx = canvas.getContext('2d');
+
+      timelineChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Inspected',
+            data: inspectedCounts,
+            borderColor: '#4CAF50',
+            backgroundColor: 'rgba(76, 175, 80, 0.2)',
+            fill: true,
+            tension: 0.3
+          }, {
+            label: 'Rectified',
+            data: rectifiedCounts,
+            borderColor: '#2196F3',
+            backgroundColor: 'rgba(33, 150, 243, 0.2)',
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      });
+
+    }
+
+
+    function openModal(type) {
+      const modal = document.getElementById('modal');
+      const modalTitle = document.getElementById('modalTitle');
+      const modalBody = document.getElementById('modalBody');
+
+      let title = '';
+      let baseDataForModal = inspectionData;
+
+      // Apply filters
+      if (currentRegionalFilter !== "all") {
+        baseDataForModal = baseDataForModal.filter(item => item.regionalOffice === currentRegionalFilter);
+      }
+      if (currentDivisionFilter !== "all") {
+        baseDataForModal = baseDataForModal.filter(item => item.division === currentDivisionFilter);
+      }
+
+      // Set title and currentModalData. currentModalData is used by openDetailsModal.
+      currentModalData = baseDataForModal;
+
+      switch (type) {
+        case 'total':
+          title = 'Total Inspected - Office Summary';
+          break;
+        case 'rectified':
+          title = 'Rectified Items - Office Summary';
+          break;
+        case 'pending':
+          title = 'Pending Items - Office Summary';
+          break;
+        case 'weekInspected':
+          title = 'This Week Inspected - Office Summary';
+          break;
+        case 'weekRectified':
+          title = 'This Week Rectified - Office Summary';
+          break;
+        case 'avgInspected':
+          title = 'Average Inspections per Week - Office Summary';
+          break;
+        case 'avgRectified':
+          title = 'Average Rectifications per Week - Office Summary';
+          break;
+      }
+
+      // Calculate comprehensive stats for all relevant offices in the current view
+      const officeStats = {};
+      const officesInView = new Set(baseDataForModal.map(item => item.office));
+
+      officesInView.forEach(office => {
+        officeStats[office] = {
+          total: 0,
+          rectified: 0,
+          pending: 0,
+          weekInspected: 0,
+          weekRectified: 0
+        };
+      });
+
+      baseDataForModal.forEach(item => {
+        const office = item.office;
+        if (officeStats[office]) {
+          officeStats[office].total++;
+          if (item.isRectified) {
+            officeStats[office].rectified++;
+          } else {
+            officeStats[office].pending++;
+          }
+          if (isWithinLastWeek(item.enteredOn)) {
+            officeStats[office].weekInspected++;
+          }
+          if (item.isRectified && isWithinLastWeek(item.rectificationDoneOn)) {
+            officeStats[office].weekRectified++;
+          }
+        }
+      });
+
+      modalTitle.innerHTML = `${title} <span style="font-size: 13px; opacity: 0.7;">(${Object.keys(officeStats).length} Offices)</span>`;
+
+      let html = `
+        <div class="table-responsive">
+          <table class="mini-table">
+            <thead>
+              <tr>
+                <th>Office</th>
+                <th style="text-align:center;">Total</th>
+                <th style="text-align:center;">Rectified</th>
+                <th style="text-align:center;">Pending</th>
+                <th style="text-align:center;">%</th>
+                <th style="text-align:center;">Insp (W)</th>
+                <th style="text-align:center;">Rect (W)</th>
+                <th style="text-align:center;">Avg Insp/Wk</th>
+                <th style="text-align:center;">Avg Rect/Wk</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      const sortedOffices = Object.entries(officeStats).sort(([, a], [, b]) => {
+        switch (type) {
+          case 'total':
+            return b.total - a.total;
+          case 'rectified':
+            return b.rectified - a.rectified;
+          case 'pending':
+            return b.pending - a.pending;
+          case 'weekInspected':
+            return b.weekInspected - a.weekInspected;
+          case 'weekRectified':
+            return b.weekRectified - a.weekRectified;
+          case 'avgInspected':
+            return (b.total / totalReportWeeks) - (a.total / totalReportWeeks);
+          case 'avgRectified':
+            return (b.rectified / totalReportWeeks) - (a.rectified / totalReportWeeks);
+          default:
+            return b.total - a.total;
+        }
+      });
+
+      for (const [officeName, stats] of sortedOffices) {
+        const percentage = stats.total > 0 ? Math.round((stats.rectified / stats.total) * 100) : 0;
+        const avgInsp = (stats.total / totalReportWeeks).toFixed(1);
+        const avgRect = (stats.rectified / totalReportWeeks).toFixed(1);
+        html += `
+            <tr>
+                <td>${officeName}</td>
+                <td style="text-align:center;">${stats.total}</td>
+                <td style="text-align:center;">${stats.rectified}</td>
+                <td style="text-align:center;">${stats.pending} ${stats.pending > 0 ? `<span style="color:#1976D2; font-size: 14px; cursor: pointer;" title="View pending items" onclick="openDetailsModal('${officeName}')">🔍</span>` : ''}</td>
+                <td style="text-align:center;">${percentage}%</td>
+                <td style="text-align:center;">${stats.weekInspected}</td>
+                <td style="text-align:center;">${stats.weekRectified}</td>
+                <td style="text-align:center;">${avgInsp}</td>
+                <td style="text-align:center;">${avgRect}</td>
+            </tr>
+        `;
+      }
+
+      html += `
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      modalBody.innerHTML = html;
+      modal.style.display = 'block';
+    }
+
+
+
+    function openDetailsModal(officeName) {
+      const detailsModal = document.getElementById('detailsModal');
+      const detailsModalTitle = document.getElementById('detailsModalTitle');
+      const detailsModalBody = document.getElementById('detailsModalBody');
+
+      detailsModalTitle.textContent = `Pending Items for ${officeName}`;
+
+      const pendingItems = currentModalData.filter(item => item.office === officeName && !item.isRectified);
+
+      let html = '';
+      if (pendingItems.length === 0) {
+        html = '<p>No pending items for this office.</p>';
+      } else {
+        html = '<ul class="details-list">';
+        pendingItems.forEach((item, index) => {
+          const daysPending = Math.floor((new Date() - item.enteredOn) / (1000 * 60 * 60 * 24));
+          html += `
+            <li>
+                <strong>Item ${index + 1}:</strong> ${item.description}<br>
+                <p>Location: <a href="#" onclick="openMapModal('${encodeURIComponent(item.location)}')">${item.location || 'Not Specified'}</a></p>
+                <p>Entered On: ${item.enteredOn ? item.enteredOn.toLocaleDateString('en-GB') : 'N/A'}</p>
+                <p>Days Pending: ${isNaN(daysPending) ? 'N/A' : daysPending}</p>
+            </li>
+          `;
+        });
+        html += '</ul>';
+      }
+
+      detailsModalBody.innerHTML = html;
+      detailsModal.style.display = 'block';
+    }
+
+
+    function openItemDetailsModal(entityName, view) {
+      const modal = document.getElementById('itemDetailsModal');
+      const modalTitle = document.getElementById('itemDetailsModalTitle');
+      const modalBody = document.getElementById('itemDetailsModalBody');
+    
+      let aggregationKey = 'office';
+      if (view === 'division') {
+        aggregationKey = 'division';
+      } else if (view === 'region') {
+        aggregationKey = 'regionalOffice';
+      }
+    
+      // Filter data based on the current global filters first
+      let baseData = inspectionData;
+      if (currentRegionalFilter !== "all") {
+        baseData = baseData.filter(item => item.regionalOffice === currentRegionalFilter);
+      }
+      if (currentDivisionFilter !== "all") {
+        baseData = baseData.filter(item => item.division === currentDivisionFilter);
+      }
+    
+      // Then filter for the specific entity clicked
+      const items = baseData.filter(item => item[aggregationKey] === entityName);
+
+      // Sort items by date, latest first. Handle null dates.
+      items.sort((a, b) => {
+        if (!b.enteredOn) return -1;
+        if (!a.enteredOn) return 1;
+        return b.enteredOn.getTime() - a.enteredOn.getTime();
+      });
+
+      modalTitle.textContent = `Inspection Details for ${entityName} (${items.length} items)`;
+    
+      let html = '<p>No inspection details found for this selection.</p>';
+      if (items.length > 0) {
+        html = `<div class="table-responsive"><table class="mini-table"><thead><tr><th>Date</th><th>Description</th><th>Status</th></tr></thead><tbody>`;
+        items.forEach(item => {
+          const isPending = item.status === 'INSPECTED';
+          const statusClass = isPending ? 'class="status-inspected"' : '';
+          const statusText = isPending ? 'PENDING' : item.status;
+          const formattedDate = item.enteredOn ? item.enteredOn.toLocaleDateString('en-GB') : 'N/A';
+          html += `
+            <tr>
+              <td>${formattedDate}</td>
+              <td>${item.description}</td>
+              <td ${statusClass}>${statusText}</td>
+            </tr>
+          `;
+        });
+        html += `</tbody></table></div>`;
+      }
+    
+      modalBody.innerHTML = html;
+      modal.style.display = 'block';
+    }
+    
+    function closeModal() {
+      document.getElementById('modal').style.display = 'none';
+    }
+
+    function closeMapModal() {
+      document.getElementById('mapModal').style.display = 'none';
+      document.getElementById("mapIframe").src = ""; // Optional: reset iframe
+    }
+
+    function closeDetailsModal() {
+      document.getElementById('detailsModal').style.display = 'none';
+    }
+
+function closeItemDetailsModal() {
+  document.getElementById('itemDetailsModal').style.display = 'none';
+}
+
+    function isWebView() {
+      return /(wv|WebView)/i.test(navigator.userAgent);
+    }
+
+    function openMapModal(location) {
+      const decoded = decodeURIComponent(location || '').trim();
+
+      if (!decoded || decoded.toLowerCase().includes('not specified')) {
+        alert("Location is not valid or missing.");
+        return;
+      }
+
+      const embedUrl = `https://maps.google.com/maps?q=${encodeURIComponent(decoded)}&output=embed`;
+      const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(decoded)}`;
+
+      document.getElementById("mapIframe").src = embedUrl;
+      document.getElementById("mapDirectionLink").href = directionsUrl;
+
+      document.getElementById("mapModal").style.display = "block";
+    }
+
+
+    window.onclick = function(event) {
+      const modal = document.getElementById('modal');
+      const detailsModal = document.getElementById('detailsModal');
+      const mapModal = document.getElementById('mapModal');
+        const itemDetailsModal = document.getElementById('itemDetailsModal'); // Add this line
+
+
+      if (event.target === modal) closeModal();
+      if (event.target === detailsModal) closeDetailsModal();
+      if (event.target === mapModal) closeMapModal();
+        if (event.target === itemDetailsModal) closeItemDetailsModal(); // Add this line
+
+    };
+
+
+    // Initialize
+    loadData();
+
+    function setSort(column) {
+      if (sortColumn === column) {
+        sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
+      } else {
+        sortColumn = column;
+        sortDirection = 'desc';
+      }
+      processData();
+    }
+
+    function getSortIcon(column) {
+      if (sortColumn === column) {
+        return sortDirection === 'desc' ? ' &#9660;' : ' &#9650;';
+      }
+      return '';
+    }
+
+    function showNotStartedModal() {
+      const inspectedThisWeekCodes = new Set(
+        inspectionData.filter(item => isWithinLastWeek(item.enteredOn)).map(item => item.officeCode)
+      );
+
+      const notInspectedThisWeekOffices = Object.entries(officeDetailsMap)
+        .filter(([code, entry]) => entry.type === 'ccc' && !inspectedThisWeekCodes.has(code))
+        .map(([code, entry]) => entry.name)
+        .sort();
+
+      const body = document.getElementById('notStartedBody');
+      if (notInspectedThisWeekOffices.length === 0) {
+        body.innerHTML = '<p>All offices have performed inspections this week. Great job!</p>';
+      } else {
+        body.innerHTML = `
+      <p><strong>${notInspectedThisWeekOffices.length}</strong> offices have not done any inspection this week:</p>
+      <ul style="margin-top: 10px; padding-left: 20px; max-height: 200px; overflow-y: auto;">
+        ${notInspectedThisWeekOffices.map(name => `<li>${name}</li>`).join('')}
+      </ul>
+    `;
+      }
+
+      document.getElementById('notStartedModal').style.display = 'block';
+    }
+
+function closeNotStartedModal() {
+  document.getElementById('notStartedModal').style.display = 'none';
+}
+
+  </script>
+<div class="modal" id="notStartedModal" style="display: none;">
+  <div class="modal-content" style="max-width: 520px;">
+    <div class="modal-header" style="border-bottom: none; padding-bottom: 0;">
+      <h3 style="color: #d32f2f; display: flex; align-items: center; gap: 10px;">
+        <span class="alert-icon">⚠️</span>
+        Inspection Not Done This Week
+      </h3>
+    </div>
+    <div class="modal-body" id="notStartedBody" style="margin-top: 10px; font-size: 14px; color: #333;"></div>
+    <div style="text-align: right; margin-top: 20px;">
+      <button onclick="closeNotStartedModal()" style="padding: 8px 16px; background-color: #d32f2f; color: white; border: none; border-radius: 5px; cursor: pointer;">OK</button>
+    </div>
+  </div>
+</div>
+</body>
+
+</html>
