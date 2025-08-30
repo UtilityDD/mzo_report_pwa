@@ -944,7 +944,7 @@
             return;
         }
 
-        let csvContent = "Category,Value,Count,HT Spans,LT Spans,HT Length (m),LT Length (m),UG Cable (m),OH-HT (m),OH-LT (m)\r\n"; // Expanded CSV Header
+        let csvContent = "Category,Value,Location Count,HT Spans (count),LT Spans (count),HT Length (m),LT Length (m),UG Cable (m),OH-HT (m),OH-LT (m)\r\n"; // Expanded CSV Header
 
         const categoriesToSummarize = ['Division', 'CCC', 'NH/SH', 'Voltage Level', 'DTR Required', 'UG Cable Required', 'Status'];
 
@@ -1077,7 +1077,16 @@
             return '<p>No data available for this selection based on current filters.</p>';
         }
 
-        let html = `<h4>Total Crossings: ${data.length}</h4>`;
+        // Calculate total locations (items) and total crossings (spans)
+        const totalLocations = data.length;
+        
+        const totalCrossings = data.reduce((sum, entry) => {
+            const htSpans = parseFloat(entry['Number of Span (HT)']) || 0;
+            const ltSpans = parseFloat(entry['Number of Span (LT)']) || 0;
+            return sum + htSpans + ltSpans;
+        }, 0);
+
+        let html = `<h4>Total Loc: ${totalLocations}, Total X-ing: ${totalCrossings}</h4>`;
         const categoriesToSummarize = ['Division', 'CCC', 'NH/SH', 'Voltage Level', 'DTR Required', 'UG Cable Required', 'Status'];
 
         categoriesToSummarize.forEach(cat => {
@@ -1105,7 +1114,7 @@
                 if (Object.keys(voltageSummary).length > 0) {
                     html += `<h5>Breakdown by ${cat}</h5>`;
                     html += '<table class="report-summary-table">';
-                    html += `<thead><tr><th>${cat} Value</th><th>Count</th><th>HT Spans</th><th>LT Spans</th><th>HT Length (m)</th><th>LT Length (m)</th></tr></thead>`;
+                    html += `<thead><tr><th>${cat} Value</th><th>Location Count</th><th>HT Spans (count)</th><th>LT Spans (count)</th><th>HT Length (m)</th><th>LT Length (m)</th></tr></thead>`;
                     html += '<tbody>';
                     Object.entries(voltageSummary).sort().forEach(([key, summary]) => {
                         html += `<tr><td>${key}</td><td>${summary.count}</td><td>${summary.ht_spans}</td><td>${summary.lt_spans}</td><td>${summary.ht_length.toFixed(2)}</td><td>${summary.lt_length.toFixed(2)}</td></tr>`;
@@ -1129,7 +1138,7 @@
                 if (Object.keys(dtrSummary).length > 0) {
                     html += `<h5>Breakdown by ${cat}</h5>`;
                     html += '<table class="report-summary-table">';
-                    html += `<thead><tr><th>${cat} Value</th><th>Count</th><th>UG Cable (m)</th><th>OH-HT (m)</th><th>OH-LT (m)</th></tr></thead>`;
+                    html += `<thead><tr><th>${cat} Value</th><th>Location Count</th><th>UG Cable (m)</th><th>OH-HT (m)</th><th>OH-LT (m)</th></tr></thead>`;
                     html += '<tbody>';
                     Object.entries(dtrSummary).sort().forEach(([key, summary]) => {
                         html += `<tr><td>${key}</td><td>${summary.count}</td><td>${summary.ug_cable.toFixed(2)}</td><td>${summary.oh_ht.toFixed(2)}</td><td>${summary.oh_lt.toFixed(2)}</td></tr>`;
@@ -1186,7 +1195,7 @@
                 if (Object.keys(ugSummary).length > 0) {
                     html += `<h5>Breakdown by ${cat}</h5>`;
                     html += '<table class="report-summary-table">';
-                    html += `<thead><tr><th>${cat} Value</th><th>Count</th><th>Total UG Cable (m)</th></tr></thead>`;
+                    html += `<thead><tr><th>${cat} Value</th><th>Location Count</th><th>Total UG Cable (m)</th></tr></thead>`;
                     html += '<tbody>';
                     Object.entries(ugSummary).sort().forEach(([key, summary]) => {
                         html += `<tr><td>${key}</td><td>${summary.count}</td><td>${summary.ug_cable.toFixed(2)}</td></tr>`;
@@ -1205,7 +1214,7 @@
                 if (Object.keys(counts).length > 0) {
                     html += `<h5>Breakdown by ${cat}</h5>`;
                     html += '<table class="report-summary-table">';
-                    html += `<thead><tr><th>${cat} Value</th><th>Count</th></tr></thead>`;
+                    html += `<thead><tr><th>${cat} Value</th><th>Location Count</th></tr></thead>`;
                     html += '<tbody>';
                     Object.entries(counts).sort().forEach(([key, count]) => {
                         html += `<tr><td>${key}</td><td>${count}</td></tr>`;
@@ -1232,7 +1241,7 @@
             });
         });
 
-        const reportTitle = `Overall Report (${filteredData.length} items)`;
+        const reportTitle = `Overall Report (${filteredData.length} Locations)`;
         
         // Generate summary HTML, passing null for primaryCategory to include all categories
         const summaryHtml = generateSummaryHtml(filteredData, null);
@@ -1332,9 +1341,12 @@
                         return;
                     }
 
+                    // Google Street View link
+                    const streetViewLink = `<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" title="View in Google Street View" style="margin-left: 10px; color: #0056b3; text-decoration: none;"><i class="fa-solid fa-street-view"></i> 3D Street View</a>`;
+
                     // Build initial content with a loading indicator
                     let initialPopupContent = getPopupHeader(entry);
-                    initialPopupContent += `<b>Location:</b> <i class="fa-solid fa-spinner fa-spin"></i> Loading...<br><hr style="margin: 5px 0;">`;
+                    initialPopupContent += `<b>Location:</b> <i class="fa-solid fa-spinner fa-spin"></i> Loading... ${streetViewLink}<br><hr style="margin: 5px 0;">`;
                     initialPopupContent += generatePropertiesHtml(entry);
                     
                     // Bind and open the initial popup
@@ -1350,7 +1362,7 @@
 
                         // Build final content with the fetched location
                         let finalPopupContent = getPopupHeader(entry);
-                        finalPopupContent += `<b>Location:</b> ${locationString}<br><hr style="margin: 5px 0;">`;
+                        finalPopupContent += `<b>Location:</b> ${locationString} ${streetViewLink}<br><hr style="margin: 5px 0;">`;
                         finalPopupContent += generatePropertiesHtml(entry);
 
                         // Update the popup and mark as fetched
@@ -1362,7 +1374,7 @@
                         
                         // Build content to show the error
                         let errorPopupContent = getPopupHeader(entry);
-                        errorPopupContent += `<b>Location:</b> Could not be retrieved.<br><hr style="margin: 5px 0;">`;
+                        errorPopupContent += `<b>Location:</b> Could not be retrieved. ${streetViewLink}<br><hr style="margin: 5px 0;">`;
                         errorPopupContent += generatePropertiesHtml(entry);
                         this.setPopupContent(errorPopupContent);
                         this.locationFetched = false; // Allow a retry on next click
