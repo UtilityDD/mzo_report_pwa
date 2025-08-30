@@ -1,0 +1,1450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>NH Shifting Map</title>
+    
+    <!-- Leaflet Core Library (MUST be loaded first) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" rel="stylesheet"/>
+
+    <!-- PapaParse for CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <!-- Font Awesome CDN for professional icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
+    <!-- Leaflet.PolylineMeasure plugin for distance measurement -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.polylinemeasure@3.0.0/Leaflet.PolylineMeasure.css" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet.polylinemeasure@3.0.0/Leaflet.PolylineMeasure.js"></script>
+
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        #loading-screen {
+            position: fixed;
+            width: 100%;
+            height: 100vh;
+            background: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            font-size: 24px;
+            font-family: Arial, sans-serif;
+            font-weight: bold;
+        }
+
+        #map-header {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.85);
+            padding: 5px 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1002;
+            pointer-events: none;
+        }
+
+        #map-header h1 {
+            margin: 0;
+            font-size: 18px;
+            font-family: Arial, sans-serif;
+            color: #333;
+        }
+
+        /* Filter Pane */
+        #filter-container {
+            position: fixed;
+            top: 70px;
+            left: 50px;
+            background: white;
+            padding: 10px;
+            border: 1px solid #ccc;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            z-index: 1001;
+            border-radius: 5px;
+            max-height: 80vh;
+            overflow-y: auto;
+            display: block; /* Shown by default on desktop */
+        }
+
+        #filter-container h3 {
+            cursor: move;
+            margin: -10px -10px 10px -10px;
+            padding: 8px;
+            background: #f1f1f1;
+            border-bottom: 1px solid #ccc;
+            border-radius: 5px 5px 0 0;
+            position: sticky;
+            top: -10px; /* Counteracts the container's top padding */
+            z-index: 1; /* Ensures it stays above scrolling content */
+        }
+
+        .filter-category {
+            font-weight: bold;
+            margin-top: 10px;
+            margin-bottom: 5px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 3px;
+        }
+
+        .filter-item {
+            display: flex; /* Use flexbox */
+            justify-content: space-between; /* Pushes icon to the right */
+            align-items: center; /* Vertically align */
+            margin-bottom: 2px;
+        }
+
+        .filter-item label {
+            flex-grow: 1; /* Allow label to take up available space */
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .report-icon {
+            cursor: pointer;
+            color: #007bff;
+            margin-left: 8px;
+            flex-shrink: 0; /* Prevent icon from shrinking */
+        }
+        .report-icon:hover {
+            color: #0056b3;
+        }
+
+        .filter-item label .count {
+            color: #666;
+            margin-left: 4px;
+        }
+
+        .filter-item label.disabled {
+            color: #999;
+            cursor: default;
+        }
+
+        /* Filter Toggle Button */
+        #toggle-filter-container {
+            position: fixed;
+            top: 70px;
+            left: 10px;
+            z-index: 1002;
+            display: none; /* Hidden on desktop */
+        }
+
+        .toggle-icon {
+            cursor: pointer;
+            font-size: 1.2em;
+            background-color: white;
+            border: 1px solid #ccc;
+            padding: 5px 8px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        #dancing-text-container {
+            font-size: 2em;
+            font-weight: bold;
+            font-family: 'Arial', sans-serif;
+            color: #333;
+            margin-bottom: 20px;
+            min-height: 40px; /* Prevents layout shift */
+        }
+
+        #dancing-text-container span {
+            position: relative;
+            display: inline-block;
+            animation: dance 1.6s ease-in-out infinite;
+            animation-delay: calc(0.1s * var(--i));
+        }
+
+        @keyframes dance {
+            0%, 40%, 100% {
+                transform: translateY(0);
+            }
+            20% {
+                transform: translateY(-20px);
+            }
+        }
+
+        #map {
+            height: 100vh;
+            background: white;
+        }
+
+        /* Progress Bar Styles */
+        #progress-container {
+            width: 60%;
+            background-color: #f3f3f3;
+            border-radius: 5px;
+            margin-top: 10px;
+            overflow: hidden;
+            height: 15px;
+        }
+
+        #progress-bar {
+            width: 0%;
+            height: 100%;
+            background-color: #4CAF50;
+            text-align: center;
+            color: white;
+            line-height: 15px;
+            transition: width 0.5s ease-in-out;
+            font-size: 12px;
+            font-weight: normal;
+        }
+
+        #loading-text {
+            margin-top: 5px;
+            font-size: 14px;
+            font-weight: normal;
+            text-align: center;
+        }
+
+        /* Custom Compass Styles */
+        #custom-compass {
+            position: fixed;
+            bottom: 130px;
+            left: 10px;
+            z-index: 1001;
+            width: 30px;
+            height: 30px;
+            background-color: white;
+            border: 1px solid #ccc;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: default;
+            pointer-events: none;
+        }
+
+        #custom-compass svg {
+            width: 70%;
+            height: 70%;
+            fill: #333;
+        }
+
+        /* Legend */
+        #map-legend {
+            position: fixed;
+            bottom: 40px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.85);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+            font-family: Arial, sans-serif;
+        }
+
+        #map-legend h4 {
+            margin: 0 0 5px 0;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+
+        .legend-symbol {
+            height: 12px;
+            width: 12px;
+            border-radius: 50%;
+            border: 1px solid #333;
+        }
+
+        @media (max-width: 768px) {
+            #custom-compass {
+                bottom: 50px;
+            }
+            #map-header h1 { font-size: 14px; }
+            #filter-container { display: none; }
+            #filter-container.show { display: block; }
+            #toggle-filter-container { display: block; }
+        }
+
+        /* Modal Styles */
+        #report-modal {
+            display: none; /* Hidden by default */
+            position: fixed;
+            z-index: 2000; /* Above everything else */
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5); /* Dim background */
+            align-items: center;
+            justify-content: center;
+        }
+
+        #report-modal.modal-visible {
+            display: flex;
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: auto;
+            padding: 15px;
+            border: 1px solid #888;
+            width: 90%;
+            max-width: 800px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2),0 6px 20px 0 rgba(0,0,0,0.19);
+            display: flex;
+            flex-direction: column;
+            max-height: 90vh;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 8px;
+            margin-bottom: 10px;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 1.2em;
+        }
+
+        .modal-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .modal-action-btn {
+            background: none;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            cursor: pointer;
+            padding: 4px 8px;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .modal-action-btn:hover,
+        .close-button:hover,
+        .close-button:focus {
+            background-color: #f0f0f0;
+            color: black;
+            text-decoration: none;
+        }
+
+        .close-button:hover,
+        .close-button:focus {
+            color: black;
+            text-decoration: none;
+        }
+
+        .modal-body {
+            overflow-y: auto;
+        }
+
+        .report-summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .report-summary-table th, .report-summary-table td {
+            border: 1px solid #ddd;
+            padding: 4px 6px;
+            text-align: left;
+            font-size: 12px;
+        }
+
+        .report-summary-table th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+
+        .report-summary-table h5 {
+            margin: 8px 0 4px 0;
+            font-size: 1em;
+        }
+
+        @media (max-width: 768px) {
+            .modal-content {
+                width: 95%;
+                padding: 15px;
+            }
+            .modal-header h2 {
+                font-size: 1.2em;
+            }
+        }
+
+        /* Material Required Table Style */
+        .material-required-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background-color: #fffde7; /* Light yellow for highlighting */
+            border: 1px solid #fbc02d; /* Matching border color */
+        }
+        .material-required-table th, .material-required-table td {
+            border: 1px solid #fbc02d;
+            padding: 6px 8px;
+            font-size: 13px;
+        }
+        .material-required-table th {
+            background-color: #fdd835;
+            text-align: center;
+        }
+        .material-required-table td:first-child {
+            font-weight: bold;
+            width: 40%;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading-screen">
+        <div id="dancing-text-container"></div>
+        <div id="progress-container">
+            <div id="progress-bar"></div>
+        </div>
+        <p id="loading-text">Loading map data...</p>
+    </div>
+
+    <div id="map-header">
+        <h1>Electric Line – Highway Crossings</h1>
+    </div>
+
+    <div id="toggle-filter-container">
+        <span id="toggle-filter" class="toggle-icon"><i class="fa-solid fa-filter"></i></span>
+    </div>
+
+    <div id="filter-container">
+        <h3>Filter Options</h3>
+        <div id="filter-actions" style="margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+             <button id="overall-report-btn" class="modal-action-btn" style="width: 100%; text-align: left; padding: 5px 8px;"><i class="fa-solid fa-chart-pie" style="margin-right: 5px;"></i>Show Overall Report</button>
+        </div>
+        <div id="filter-options"></div>
+    </div>
+
+    <div id="map"></div>
+    <div id="map-legend"></div>
+
+    <div id="report-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="report-modal-title">Report</h2>
+                <div class="modal-header-actions">
+                    <button id="download-report-btn" class="modal-action-btn" title="Download as CSV">
+                        <i class="fa-solid fa-download"></i>
+                    </button>
+                    <span class="close-button">&times;</span>
+                </div>
+            </div>
+            <div class="modal-body" id="report-modal-body"></div>
+        </div>
+    </div>
+
+    <!-- Custom Compass Element -->
+    <div id="custom-compass">
+        <svg viewBox="0 0 100 100">
+            <polygon points="50,10 60,30 50,25 40,30" fill="red"/>
+            <polygon points="50,10 60,30 50,90 40,30" fill="#333"/>
+            <circle cx="50" cy="50" r="5" fill="white"/>
+            <text x="45" y="20" font-family="Arial" font-size="15" fill="white" font-weight="bold">N</text>
+        </svg>
+    </div>
+
+<script>
+    // Global variables
+    const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQTy_LCddlFuzZx9ZyJQTLbqrQ8sb76DG4jyw8ys-s_w6LDxOYhnTTY49eddhqxb9RnTAbksh32y1bH/pub?gid=870376934&single=true&output=csv';
+    const geojsonUrl = 'https://raw.githubusercontent.com/shuklaneerajdev/IndiaStateTopojsonFiles/master/WestBengal.geojson';
+    let map, worldPolygon, stateLayer, maskLayer, allMarkersLayerGroup;
+    let allData = [];
+    let selectedFilters = {
+        'Division': new Set(),
+        'CCC': new Set(),
+        'NH/SH': new Set(),
+        'Voltage Level': new Set(),
+        'DTR Required': new Set(),
+        'UG Cable Required': new Set(),
+        'Status': new Set()
+    };
+
+    // Make an element draggable
+    function makeDraggable(elmnt) {
+        let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+        const header = elmnt.querySelector("h3");
+
+        if (header) {
+            // if present, the header is where you move the DIV from:
+            header.onmousedown = dragMouseDown;
+        } else {
+            // otherwise, move the DIV from anywhere inside the DIV:
+            elmnt.onmousedown = dragMouseDown;
+        }
+
+        function dragMouseDown(e) {
+            e = e || window.event;
+            e.preventDefault();
+            // get the mouse cursor position at startup:
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+            document.onmouseup = closeDragElement;
+            // call a function whenever the cursor moves:
+            document.onmousemove = elementDrag;
+        }
+
+        function elementDrag(e) {
+            e = e || window.event;
+            e.preventDefault();
+            // calculate the new cursor position:
+            pos1 = pos3 - e.clientX;
+            pos2 = pos4 - e.clientY;
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+            // set the element's new position:
+            elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+            elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+        }
+
+        function closeDragElement() {
+            // stop moving when mouse button is released:
+            document.onmouseup = null;
+            document.onmousemove = null;
+        }
+    }
+
+    // Show status message and update progress bar
+    function showStatus(message, progress = null) {
+        const progressBar = document.getElementById('progress-bar');
+        const loadingText = document.getElementById('loading-text');
+
+        loadingText.textContent = message;
+
+        if (progress !== null) {
+            progressBar.style.width = `${progress}%`;
+            progressBar.textContent = `${Math.round(progress)}%`;
+        }
+
+        if (progress === 100) {
+            setTimeout(() => {
+                document.getElementById("loading-screen").style.display = "none";
+            }, 1000);
+        }
+    }
+
+    // Initialize map
+    function initMap() {
+        map = L.map('map', {
+            zoomControl: true,
+            minZoom: 7,
+            zoomAnimation: true,
+            zoomAnimationThreshold: 10,
+            wheelPxPerZoomLevel: 120,
+            inertia: true,
+            inertiaDeceleration: 2000,
+            dragging: true,
+            touchZoom: true,
+            tap: false
+        }).setView([23.5, 87.5], 7);
+
+        allMarkersLayerGroup = L.featureGroup().addTo(map);
+
+        const googleStreets = L.tileLayer('http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',{
+            maxZoom: 20,
+            subdomains:['mt0','mt1','mt2','mt3'],
+            attribution: 'Map data &copy; Google'
+        });
+
+        const googleSat = L.tileLayer('http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{
+            maxZoom: 20,
+            subdomains:['mt0','mt1','mt2','mt3'],
+            attribution: 'Map data &copy; Google'
+        });
+
+        const googleHybrid = L.tileLayer('http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}',{
+            maxZoom: 20,
+            subdomains:['mt0','mt1','mt2','mt3'],
+            attribution: 'Map data &copy; Google'
+        });
+
+        const openStreetMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        });
+
+        googleHybrid.addTo(map);
+
+        const baseMaps = {
+            "Google Maps": googleStreets,
+            "Google Satellite": googleSat,
+            "Google Hybrid": googleHybrid,
+            "OpenStreetMap": openStreetMap,
+        };
+
+        L.control.layers(baseMaps).addTo(map);
+        
+        if (typeof L.control.polylineMeasure !== 'undefined') {
+            L.control.polylineMeasure({
+                position: 'bottomleft',
+                unit: 'kilometres',
+                showBearings: false,
+                clearMeasurementsOnStop: true,
+                showClearControl: true,
+                showUnitControl: true
+            }).addTo(map);
+        } else {
+            console.error("Leaflet.PolylineMeasure plugin not loaded.");
+        }
+
+        return map;
+    }
+
+    // Fetch and parse CSV data
+    async function fetchCSV(url) {
+        try {
+            showStatus("Fetching data...", 10);
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch CSV: ${response.status}`);
+            }
+            
+            const csvText = await response.text();
+            showStatus("Processing data...", 25);
+            
+            return new Promise((resolve) => {
+                Papa.parse(csvText, {
+                    header: true,
+                    dynamicTyping: true,
+                    skipEmptyLines: true,
+                    complete: (results) => {
+                        if (results.data && results.data.length > 0) {
+                            resolve(results.data);
+                        } else {
+                            console.error("CSV parsing returned no data");
+                            showStatus("Error: No data found in CSV");
+                            resolve([]);
+                        }
+                    },
+                    error: (error) => {
+                        console.error("CSV parsing error:", error);
+                        showStatus("Error parsing data");
+                        resolve([]);
+                    }
+                });
+            });
+        } catch (error) {
+            console.error("Error fetching CSV:", error);
+            showStatus("Error loading data. Please check console.");
+            return [];
+        }
+    }
+
+    // Load GeoJSON for West Bengal state boundary
+    async function loadStateGeoJSON() {
+        try {
+            showStatus("Loading state boundaries...", 50);
+            const response = await fetch(geojsonUrl);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch GeoJSON: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            worldPolygon = {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [-180, -90], [180, -90], [180, 90], [-180, 90], [-180, -90]
+                    ]]
+                }
+            };
+            
+            stateLayer = L.geoJSON(data, {
+                interactive: false,
+                style: {
+                    color: "black",
+                    weight: 1.5,
+                    fillOpacity: 0
+                }
+            }).addTo(map);
+            
+            data.features.forEach(feature => {
+                if (feature.geometry.type === "Polygon") {
+                    worldPolygon.geometry.coordinates.push(feature.geometry.coordinates[0]);
+                } else if (feature.geometry.type === "MultiPolygon") {
+                    feature.geometry.coordinates.forEach(polygon => {
+                        worldPolygon.geometry.coordinates.push(polygon[0]);
+                    });
+                }
+            });
+            
+            maskLayer = L.geoJSON(worldPolygon, {
+                interactive: false,
+                style: {
+                    color: "white",
+                    weight: 1,
+                    fillColor: "white",
+                    fillOpacity: 0.85
+                }
+            }).addTo(map);
+            
+            map.fitBounds(stateLayer.getBounds());
+            stateLayer.bringToFront();
+            
+            showStatus("State boundaries loaded.", 60);
+            return true;
+        } catch (error) {
+            console.error("Error loading GeoJSON:", error);
+            showStatus("Error loading state boundaries");
+            return false;
+        }
+    }
+
+    // Get a style for the colored dots based on voltage level
+    function getStyleForVoltage(level) {
+        let color = 'rgb(128, 0, 128)'; // Purple for 'Other'
+
+        if (typeof level === 'string') {
+            const upperLevel = level.toUpperCase();
+            if (upperLevel.includes('33')) {
+                color = 'rgb(255, 0, 0)'; // Red
+            } else if (upperLevel.includes('11')) {
+                color = 'rgb(0, 100, 255)'; // Blue
+            } else if (upperLevel.includes('LT')) {
+                color = 'rgb(255, 0, 255)'; // Fuchsia/Magenta for high contrast
+            }
+        }
+
+        return {
+            radius: 6,
+            fillColor: color,
+            color: "#000", // Black border for all dots
+            weight: 1,
+            opacity: 1,
+            fillOpacity: 0.9 // Slightly more solid
+        };
+    }
+
+    // Create filter UI from data
+    function createFilterOptions(data) {
+        const filterOptionsContainer = document.getElementById('filter-options');
+        const categories = ['Division', 'CCC', 'NH/SH', 'Voltage Level', 'DTR Required', 'UG Cable Required', 'Status'];
+        const uniqueValues = {};
+
+        categories.forEach(cat => uniqueValues[cat] = new Set());
+
+        data.forEach(entry => {
+            // Handle standard categories from CSV
+            ['Division', 'CCC', 'NH/SH', 'Voltage Level', 'DTR Required', 'Status'].forEach(cat => {
+                const value = String(entry[cat] || '').trim();
+                if (value) uniqueValues[cat].add(value);
+            });
+
+            // Handle synthetic category for UG Cable
+            const ugCableValue = (entry['Approx. UG Cable required (m)'] > 0) ? 'Yes' : 'No';
+            uniqueValues['UG Cable Required'].add(ugCableValue);
+        });
+
+        categories.forEach(cat => {
+            if (uniqueValues[cat].size > 0) {
+                const categoryDiv = document.createElement('div');
+                categoryDiv.className = 'filter-category';
+                categoryDiv.textContent = cat;
+                filterOptionsContainer.appendChild(categoryDiv);
+
+                const sortedValues = Array.from(uniqueValues[cat]).sort();
+                
+                // Add "Select All"
+                const allItem = document.createElement('div');
+                allItem.className = 'filter-item';
+                const allLabel = document.createElement('label');
+                const allCheckbox = document.createElement('input');
+                allCheckbox.type = 'checkbox';
+                allCheckbox.checked = true;
+                allCheckbox.onchange = (e) => {
+                    const isChecked = e.target.checked;
+                    document.querySelectorAll(`#filter-options input[data-category="${cat}"]`).forEach(cb => {
+                        cb.checked = isChecked;
+                        if (isChecked) selectedFilters[cat].add(cb.value);
+                        else selectedFilters[cat].delete(cb.value);
+                    });
+                    applyFilters();
+                };
+                allLabel.appendChild(allCheckbox);
+                allLabel.append(' (Select All)');
+                const allCountSpan = document.createElement('span');
+                allCountSpan.className = 'count';
+                allLabel.appendChild(allCountSpan);
+                allItem.appendChild(allLabel);
+                categoryDiv.appendChild(allItem);
+
+                // Add individual items
+                sortedValues.forEach(value => {
+                    selectedFilters[cat].add(value); // Initially select all
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'filter-item';
+                    const label = document.createElement('label');
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = true;
+                    checkbox.value = value;
+                    checkbox.dataset.category = cat;
+                    checkbox.onchange = (e) => {
+                        if (e.target.checked) selectedFilters[cat].add(e.target.value);
+                        else selectedFilters[cat].delete(e.target.value);
+                        applyFilters();
+                    };
+                    label.appendChild(checkbox);
+                    label.append(` ${value}`);
+                    const countSpan = document.createElement('span');
+                    countSpan.className = 'count';
+                    label.appendChild(countSpan);
+
+                    const reportIcon = document.createElement('i');
+                    reportIcon.className = 'fa-solid fa-chart-bar report-icon';
+                    reportIcon.title = `Show report for ${value}`;
+                    reportIcon.onclick = (e) => { 
+                        e.stopPropagation(); 
+                        e.preventDefault(); 
+                        showReportFor(cat, value); 
+                    };
+
+                    itemDiv.appendChild(label);
+                    itemDiv.appendChild(reportIcon);
+                    categoryDiv.appendChild(itemDiv);
+                });
+            }
+        });
+    }
+
+    // Create the legend for symbols
+    function createLegend() {
+        const legendContainer = document.getElementById('map-legend');
+        legendContainer.innerHTML = '<h4>Legend</h4>';
+        const voltageLevels = {
+            '33kV Line': getStyleForVoltage('33kV'),
+            '11kV Line': getStyleForVoltage('11kV'),
+            'LT Line': getStyleForVoltage('LT')
+        };
+
+        for (const [name, style] of Object.entries(voltageLevels)) {
+            const item = document.createElement('div');
+            item.className = 'legend-item';
+            item.innerHTML = `<span class="legend-symbol" style="background-color: ${style.fillColor};"></span> ${name}`;
+            legendContainer.appendChild(item);
+        }
+    }
+
+    // Update filter counts based on visible data
+    function updateFilterCounts(visibleData) {
+        const categories = ['Division', 'CCC', 'NH/SH', 'Voltage Level', 'DTR Required', 'UG Cable Required', 'Status'];
+
+        // Calculate counts from the currently visible data
+        const counts = {};
+        categories.forEach(cat => { counts[cat] = {}; });
+
+        visibleData.forEach(entry => {
+            categories.forEach(cat => {
+                let value;
+                if (cat === 'UG Cable Required') {
+                    value = (entry['Approx. UG Cable required (m)'] > 0) ? 'Yes' : 'No';
+                } else {
+                    value = String(entry[cat] || '').trim();
+                }
+
+                if (value) {
+                    counts[cat][value] = (counts[cat][value] || 0) + 1;
+                }
+            });
+        });
+
+        // Update the DOM for each category
+        categories.forEach(cat => {
+            const categoryCheckboxes = document.querySelectorAll(`#filter-options input[data-category="${cat}"]`);
+            
+            // Update individual item counts
+            categoryCheckboxes.forEach(checkbox => {
+                const value = checkbox.value;
+                const count = counts[cat] ? (counts[cat][value] || 0) : 0;
+                const label = checkbox.parentElement;
+                const countSpan = label.querySelector('.count');
+                if (countSpan) {
+                    countSpan.textContent = `(${count})`;
+                }
+                // A disabled checkbox can't be unchecked, which is bad UX.
+                // Only disable if it's not checked and has no items.
+                label.classList.toggle('disabled', count === 0 && !checkbox.checked);
+            });
+
+            // Update "Select All" count for the category
+            if (categoryCheckboxes.length > 0) {
+                const categoryDiv = categoryCheckboxes[0].closest('.filter-category');
+                if (categoryDiv) {
+                    const allCountSpan = categoryDiv.querySelector('.filter-item:first-child .count');
+                    if (allCountSpan) {
+                        const totalInCategory = counts[cat] ? Object.values(counts[cat]).reduce((sum, current) => sum + current, 0) : 0;
+                        allCountSpan.textContent = `(${totalInCategory})`;
+                    }
+                }
+            }
+        });
+    }
+
+    // Apply filters and update map
+    function applyFilters() {
+        allMarkersLayerGroup.clearLayers();
+        const filteredData = allData.filter(entry => {
+            return Object.keys(selectedFilters).every(cat => {
+                let value;
+                if (cat === 'UG Cable Required') {
+                    value = (entry['Approx. UG Cable required (m)'] > 0) ? 'Yes' : 'No';
+                } else {
+                    value = String(entry[cat] || '').trim();
+                }
+                return !value || selectedFilters[cat].has(value);
+            });
+        });
+        filteredData.forEach(entry => {
+            if (entry.marker) entry.marker.addTo(allMarkersLayerGroup);
+        });
+
+        updateFilterCounts(filteredData);
+    }
+
+    // Export report data to a CSV file
+    function exportReportToCsv(data, primaryCategory, title) {
+        if (data.length === 0) {
+            alert("No data to export.");
+            return;
+        }
+
+        let csvContent = "Category,Value,Count,HT Spans,LT Spans,HT Length (m),LT Length (m),UG Cable (m),OH-HT (m),OH-LT (m)\r\n"; // Expanded CSV Header
+
+        const categoriesToSummarize = ['Division', 'CCC', 'NH/SH', 'Voltage Level', 'DTR Required', 'UG Cable Required', 'Status'];
+
+        categoriesToSummarize.forEach(cat => {
+            if (cat === primaryCategory) {
+                return; // Skip self
+            }
+
+            if (cat === 'Voltage Level') {
+                const voltageSummary = {};
+                data.forEach(entry => {
+                    const value = String(entry[cat] || 'N/A').trim();
+                    if (value) {
+                        if (!voltageSummary[value]) {
+                            voltageSummary[value] = { count: 0, ht_spans: 0, lt_spans: 0, ht_length: 0, lt_length: 0 };
+                        }
+                        voltageSummary[value].count++;
+                        voltageSummary[value].ht_spans += parseFloat(entry['Number of Span (HT)']) || 0;
+                        voltageSummary[value].lt_spans += parseFloat(entry['Number of Span (LT)']) || 0;
+                        voltageSummary[value].lt_length += parseFloat(entry['R/L LT (in m)']) || 0;
+                        voltageSummary[value].ht_length += (parseFloat(entry['R/L HT-11kV (in m)']) || 0) + (parseFloat(entry['R/L HT-33kV (in m)']) || 0);
+                    }
+                });
+
+                if (Object.keys(voltageSummary).length > 0) {
+                    Object.entries(voltageSummary).sort().forEach(([key, summary]) => {
+                        const escapedKey = `"${key.replace(/"/g, '""')}"`;
+                        csvContent += `${cat},${escapedKey},${summary.count},${summary.ht_spans},${summary.lt_spans},${summary.ht_length.toFixed(2)},${summary.lt_length.toFixed(2)},,,\r\n`;
+                    });
+                }
+            } else if (cat === 'DTR Required') {
+                const dtrSummary = {};
+                data.forEach(entry => {
+                    const value = String(entry[cat] || 'N/A').trim();
+                    if (value) {
+                        if (!dtrSummary[value]) {
+                            dtrSummary[value] = { count: 0, ug_cable: 0, oh_ht: 0, oh_lt: 0 };
+                        }
+                        dtrSummary[value].count++;
+                        dtrSummary[value].ug_cable += parseFloat(entry['Approx. UG Cable required (m)']) || 0;
+                        dtrSummary[value].oh_ht += parseFloat(entry['Approx. OH-HT required (m)']) || 0;
+                        dtrSummary[value].oh_lt += parseFloat(entry['Approx. OH-LT required (m)']) || 0;
+                    }
+                });
+                if (Object.keys(dtrSummary).length > 0) {
+                    Object.entries(dtrSummary).sort().forEach(([key, summary]) => {
+                        const escapedKey = `"${key.replace(/"/g, '""')}"`;
+                        csvContent += `${cat},${escapedKey},${summary.count},,,,${summary.ug_cable.toFixed(2)},${summary.oh_ht.toFixed(2)},${summary.oh_lt.toFixed(2)}\r\n`;
+                    });
+                }
+            } else if (cat === 'UG Cable Required') {
+                const ugSummary = {};
+                data.forEach(entry => {
+                    const value = (entry['Approx. UG Cable required (m)'] > 0) ? 'Yes' : 'No';
+                    if (!ugSummary[value]) {
+                        ugSummary[value] = { count: 0, ug_cable: 0 };
+                    }
+                    ugSummary[value].count++;
+                    ugSummary[value].ug_cable += parseFloat(entry['Approx. UG Cable required (m)']) || 0;
+                });
+                if (Object.keys(ugSummary).length > 0) {
+                    Object.entries(ugSummary).sort().forEach(([key, summary]) => {
+                        const escapedKey = `"${key.replace(/"/g, '""')}"`;
+                        csvContent += `${cat},${escapedKey},${summary.count},,,,,${summary.ug_cable.toFixed(2)},,,\r\n`;
+                    });
+                }
+            } else {
+                const counts = {};
+                data.forEach(entry => {
+                    const value = String(entry[cat] || 'N/A').trim();
+                    if (value) {
+                       counts[value] = (counts[value] || 0) + 1;
+                    }
+                });
+
+                if (Object.keys(counts).length > 0) {
+                    Object.entries(counts).sort().forEach(([key, count]) => {
+                        const escapedKey = `"${key.replace(/"/g, '""')}"`;
+                        csvContent += `${cat},${escapedKey},${count},,,,,,,,\r\n`; // Add empty commas for all summary columns
+                    });
+                }
+            }
+        });
+
+        // --- Add Material Required Summary to CSV ---
+        const dtrRequiredData = data.filter(entry => {
+            const dtrValue = String(entry['DTR Required'] || '').trim().toLowerCase();
+            return dtrValue && dtrValue !== 'no' && dtrValue !== 'n/a' && dtrValue !== 'not required' && dtrValue !== '0';
+        });
+
+        if (dtrRequiredData.length > 0) {
+            csvContent += "\r\n"; // Add a blank line for separation
+            csvContent += "Material Required Summary\r\n";
+            csvContent += "Material,Value\r\n";
+
+            // DTR counts
+            const dtrCounts = {};
+            dtrRequiredData.forEach(d => {
+                const type = String(d['DTR Required'] || 'Unknown').trim();
+                dtrCounts[type] = (dtrCounts[type] || 0) + 1;
+            });
+            const dtrTypesWithCounts = Object.entries(dtrCounts).map(([type, count]) => `${type} (${count})`).join(', ');
+            csvContent += `Required DTR,"${dtrTypesWithCounts}"\r\n`;
+
+            const totalUgCableM = dtrRequiredData.reduce((sum, d) => sum + (parseFloat(d['Approx. UG Cable required (m)']) || 0), 0);
+            csvContent += `Required UG Cable (km),${(totalUgCableM / 1000).toFixed(3)}\r\n`;
+
+            const totalOhHtM = dtrRequiredData.reduce((sum, d) => sum + (parseFloat(d['Approx. OH-HT required (m)']) || 0), 0);
+            csvContent += `Conductor Required for HT (km),${((totalOhHtM * 3 * 1.03) / 1000).toFixed(3)}\r\n`;
+
+            const totalOhLtM = dtrRequiredData.reduce((sum, d) => sum + (parseFloat(d['Approx. OH-LT required (m)']) || 0), 0);
+            csvContent += `Conductor Required for LT (km),${((totalOhLtM * 4 * 1.03) / 1000).toFixed(3)}\r\n`;
+        }
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        const filename = title.replace(/[^a-z0-9]/gi, '_').toLowerCase() + '.csv';
+        link.setAttribute("download", filename);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    // Generate summary HTML for the report modal
+    function generateSummaryHtml(data, primaryCategory) {
+        if (data.length === 0) {
+            return '<p>No data available for this selection based on current filters.</p>';
+        }
+
+        let html = `<h4>Total Crossings: ${data.length}</h4>`;
+        const categoriesToSummarize = ['Division', 'CCC', 'NH/SH', 'Voltage Level', 'DTR Required', 'UG Cable Required', 'Status'];
+
+        categoriesToSummarize.forEach(cat => {
+            // Don't generate a breakdown for the category we are already reporting on
+            if (cat === primaryCategory) {
+                return;
+            }
+
+            if (cat === 'Voltage Level') {
+                const voltageSummary = {};
+                data.forEach(entry => {
+                    const value = String(entry[cat] || 'N/A').trim();
+                    if (value) {
+                        if (!voltageSummary[value]) {
+                            voltageSummary[value] = { count: 0, ht_spans: 0, lt_spans: 0, ht_length: 0, lt_length: 0 };
+                        }
+                        voltageSummary[value].count++;
+                        voltageSummary[value].ht_spans += parseFloat(entry['Number of Span (HT)']) || 0;
+                        voltageSummary[value].lt_spans += parseFloat(entry['Number of Span (LT)']) || 0;
+                        voltageSummary[value].lt_length += parseFloat(entry['R/L LT (in m)']) || 0;
+                        voltageSummary[value].ht_length += (parseFloat(entry['R/L HT-11kV (in m)']) || 0) + (parseFloat(entry['R/L HT-33kV (in m)']) || 0);
+                    }
+                });
+
+                if (Object.keys(voltageSummary).length > 0) {
+                    html += `<h5>Breakdown by ${cat}</h5>`;
+                    html += '<table class="report-summary-table">';
+                    html += `<thead><tr><th>${cat} Value</th><th>Count</th><th>HT Spans</th><th>LT Spans</th><th>HT Length (m)</th><th>LT Length (m)</th></tr></thead>`;
+                    html += '<tbody>';
+                    Object.entries(voltageSummary).sort().forEach(([key, summary]) => {
+                        html += `<tr><td>${key}</td><td>${summary.count}</td><td>${summary.ht_spans}</td><td>${summary.lt_spans}</td><td>${summary.ht_length.toFixed(2)}</td><td>${summary.lt_length.toFixed(2)}</td></tr>`;
+                    });
+                    html += '</tbody></table>';
+                }
+            } else if (cat === 'DTR Required') {
+                const dtrSummary = {};
+                data.forEach(entry => {
+                    const value = String(entry[cat] || 'N/A').trim();
+                    if (value) {
+                        if (!dtrSummary[value]) {
+                            dtrSummary[value] = { count: 0, ug_cable: 0, oh_ht: 0, oh_lt: 0 };
+                        }
+                        dtrSummary[value].count++;
+                        dtrSummary[value].ug_cable += parseFloat(entry['Approx. UG Cable required (m)']) || 0;
+                        dtrSummary[value].oh_ht += parseFloat(entry['Approx. OH-HT required (m)']) || 0;
+                        dtrSummary[value].oh_lt += parseFloat(entry['Approx. OH-LT required (m)']) || 0;
+                    }
+                });
+                if (Object.keys(dtrSummary).length > 0) {
+                    html += `<h5>Breakdown by ${cat}</h5>`;
+                    html += '<table class="report-summary-table">';
+                    html += `<thead><tr><th>${cat} Value</th><th>Count</th><th>UG Cable (m)</th><th>OH-HT (m)</th><th>OH-LT (m)</th></tr></thead>`;
+                    html += '<tbody>';
+                    Object.entries(dtrSummary).sort().forEach(([key, summary]) => {
+                        html += `<tr><td>${key}</td><td>${summary.count}</td><td>${summary.ug_cable.toFixed(2)}</td><td>${summary.oh_ht.toFixed(2)}</td><td>${summary.oh_lt.toFixed(2)}</td></tr>`;
+                    });
+                    html += '</tbody></table>';
+
+                    // --- New Material Required Table Logic ---
+                    // Filter for only the rows where a DTR is actually required.
+                    const dtrRequiredData = data.filter(entry => {
+                        const dtrValue = String(entry['DTR Required'] || '').trim().toLowerCase();
+                        return dtrValue && dtrValue !== 'no' && dtrValue !== 'n/a' && dtrValue !== 'not required' && dtrValue !== '0';
+                    });
+
+                    if (dtrRequiredData.length > 0) {
+                        // Count occurrences of each DTR type
+                        const dtrCounts = {};
+                        dtrRequiredData.forEach(d => {
+                            const type = String(d['DTR Required'] || 'Unknown').trim();
+                            dtrCounts[type] = (dtrCounts[type] || 0) + 1;
+                        });
+                        const dtrTypesWithCounts = Object.entries(dtrCounts)
+                            .map(([type, count]) => `${type} (${count})`)
+                            .join(', ');
+
+                        const totalUgCableM = dtrRequiredData.reduce((sum, d) => sum + (parseFloat(d['Approx. UG Cable required (m)']) || 0), 0);
+                        const totalUgCableKm = (totalUgCableM / 1000).toFixed(3);
+
+                        const totalOhHtM = dtrRequiredData.reduce((sum, d) => sum + (parseFloat(d['Approx. OH-HT required (m)']) || 0), 0);
+                        const totalHtConductorKm = ((totalOhHtM * 3 * 1.03) / 1000).toFixed(3);
+
+                        const totalOhLtM = dtrRequiredData.reduce((sum, d) => sum + (parseFloat(d['Approx. OH-LT required (m)']) || 0), 0);
+                        const totalLtConductorKm = ((totalOhLtM * 4 * 1.03) / 1000).toFixed(3);
+
+                        html += '<table class="material-required-table">';
+                        html += '<thead><tr><th colspan="2">Material Required Summary</th></tr></thead>';
+                        html += '<tbody>';
+                        html += `<tr><td>Required DTR</td><td>${dtrTypesWithCounts}</td></tr>`;
+                        html += `<tr><td>Required UG Cable (km)</td><td>${totalUgCableKm}</td></tr>`;
+                        html += `<tr><td>Conductor Required for HT (km)</td><td>${totalHtConductorKm}</td></tr>`;
+                        html += `<tr><td>Conductor Required for LT (km)</td><td>${totalLtConductorKm}</td></tr>`;
+                        html += '</tbody></table>';
+                    }
+                }
+            } else if (cat === 'UG Cable Required') {
+                const ugSummary = {};
+                data.forEach(entry => {
+                    const value = (entry['Approx. UG Cable required (m)'] > 0) ? 'Yes' : 'No';
+                    if (!ugSummary[value]) {
+                        ugSummary[value] = { count: 0, ug_cable: 0 };
+                    }
+                    ugSummary[value].count++;
+                    ugSummary[value].ug_cable += parseFloat(entry['Approx. UG Cable required (m)']) || 0;
+                });
+                if (Object.keys(ugSummary).length > 0) {
+                    html += `<h5>Breakdown by ${cat}</h5>`;
+                    html += '<table class="report-summary-table">';
+                    html += `<thead><tr><th>${cat} Value</th><th>Count</th><th>Total UG Cable (m)</th></tr></thead>`;
+                    html += '<tbody>';
+                    Object.entries(ugSummary).sort().forEach(([key, summary]) => {
+                        html += `<tr><td>${key}</td><td>${summary.count}</td><td>${summary.ug_cable.toFixed(2)}</td></tr>`;
+                    });
+                    html += '</tbody></table>';
+                }
+            } else {
+                const counts = {};
+                data.forEach(entry => {
+                    const value = String(entry[cat] || 'N/A').trim();
+                    if (value) {
+                       counts[value] = (counts[value] || 0) + 1;
+                    }
+                });
+
+                if (Object.keys(counts).length > 0) {
+                    html += `<h5>Breakdown by ${cat}</h5>`;
+                    html += '<table class="report-summary-table">';
+                    html += `<thead><tr><th>${cat} Value</th><th>Count</th></tr></thead>`;
+                    html += '<tbody>';
+                    Object.entries(counts).sort().forEach(([key, count]) => {
+                        html += `<tr><td>${key}</td><td>${count}</td></tr>`;
+                    });
+                    html += '</tbody></table>';
+                }
+            }
+        });
+
+        return html;
+    }
+
+    // Show a report for all currently filtered items
+    function showOverallReport() {
+        const filteredData = allData.filter(entry => {
+            return Object.keys(selectedFilters).every(cat => {
+                let value;
+                if (cat === 'UG Cable Required') {
+                    value = (entry['Approx. UG Cable required (m)'] > 0) ? 'Yes' : 'No';
+                } else {
+                    value = String(entry[cat] || '').trim();
+                }
+                return !value || selectedFilters[cat].has(value);
+            });
+        });
+
+        const reportTitle = `Overall Report (${filteredData.length} items)`;
+        
+        // Generate summary HTML, passing null for primaryCategory to include all categories
+        const summaryHtml = generateSummaryHtml(filteredData, null);
+        
+        document.getElementById('report-modal-title').textContent = reportTitle;
+        document.getElementById('report-modal-body').innerHTML = summaryHtml;
+        document.getElementById('report-modal').classList.add('modal-visible');
+
+        // Set up the download button for the current report context
+        const downloadBtn = document.getElementById('download-report-btn');
+        downloadBtn.onclick = () => {
+            exportReportToCsv(filteredData, null, reportTitle);
+        };
+    }
+
+    // Show a detailed report in a modal
+    function showReportFor(category, value) {
+        // Filter data for the specific item, considering other active filters.
+        const reportData = allData.filter(entry => {
+            let mainCondition = false;
+            if (category === 'UG Cable Required') {
+                mainCondition = ((entry['Approx. UG Cable required (m)'] > 0 ? 'Yes' : 'No') === value);
+            } else {
+                mainCondition = (String(entry[category] || '').trim() === value);
+            }
+            if (!mainCondition) return false;
+
+            // Check against all *other* active filters.
+            return Object.keys(selectedFilters).every(otherCat => {
+                if (otherCat === category) return true; // Skip self
+                let entryValue = (otherCat === 'UG Cable Required')
+                    ? (entry['Approx. UG Cable required (m)'] > 0 ? 'Yes' : 'No')
+                    : String(entry[otherCat] || '').trim();
+                return !entryValue || selectedFilters[otherCat].has(entryValue);
+            });
+        });
+
+        const reportTitle = `Summary for ${category}: ${value}`;
+        const summaryHtml = generateSummaryHtml(reportData, category);
+        
+        document.getElementById('report-modal-title').textContent = reportTitle;
+        document.getElementById('report-modal-body').innerHTML = summaryHtml;
+        document.getElementById('report-modal').classList.add('modal-visible');
+
+        // Set up the download button for the current report context
+        const downloadBtn = document.getElementById('download-report-btn');
+        downloadBtn.onclick = () => {
+            exportReportToCsv(reportData, category, reportTitle);
+        };
+    }
+
+    // Create markers from data and store them
+    function createAllMarkers(data) {
+        let markersAdded = 0;
+        data.forEach(entry => {
+            let lat = parseFloat(entry.Lat);
+            let lng = parseFloat(entry.Long);
+            
+            if (!isNaN(lat) && !isNaN(lng)) {
+                const style = getStyleForVoltage(entry['Voltage Level']);
+                let marker = L.circleMarker([lat, lng], style);
+
+                // This property will track if we've fetched the location
+                marker.locationFetched = false;
+
+                // Helper to generate the popup header
+                const getPopupHeader = (entry) => {
+                    let headerText = entry['NH/SH'] || 'N/A';
+                    const upperHeaderText = String(headerText).toUpperCase();
+                    if (upperHeaderText === 'NH') {
+                        headerText = 'NH-crossing';
+                    } else if (upperHeaderText === 'SH') {
+                        headerText = 'SH-crossing';
+                    }
+                    return `<b>${headerText}</b><br><hr style="margin: 5px 0;">`;
+                };
+
+                // Helper to generate the properties part of the popup
+                const generatePropertiesHtml = (entry) => {
+                    let propertiesHtml = '';
+                    for (const [key, value] of Object.entries(entry)) {
+                        if (key !== 'Lat' && key !== 'Long' && key !== 'marker') {
+                            if (key === 'Status' && String(value || '').trim().toLowerCase() === 'e-note not prepared') {
+                                propertiesHtml += `<b>${key}:</b> <span style="color: red; font-weight: bold;">${value || 'N/A'}</span><br>`;
+                            } else {
+                                propertiesHtml += `<b>${key}:</b> ${value || 'N/A'}<br>`;
+                            }
+                        }
+                    }
+                    return propertiesHtml;
+                };
+
+                marker.on('click', async function() {
+                    // If we already have the location, just open the popup
+                    if (this.locationFetched) {
+                        this.openPopup();
+                        return;
+                    }
+
+                    // Build initial content with a loading indicator
+                    let initialPopupContent = getPopupHeader(entry);
+                    initialPopupContent += `<b>Location:</b> <i class="fa-solid fa-spinner fa-spin"></i> Loading...<br><hr style="margin: 5px 0;">`;
+                    initialPopupContent += generatePropertiesHtml(entry);
+                    
+                    // Bind and open the initial popup
+                    this.bindPopup(initialPopupContent).openPopup();
+
+                    // Fetch location from Nominatim (OpenStreetMap's free service)
+                    try {
+                        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`);
+                        if (!response.ok) throw new Error('Failed to fetch location');
+                        const locationData = await response.json();
+                        
+                        const locationString = locationData.display_name || 'Location not found';
+
+                        // Build final content with the fetched location
+                        let finalPopupContent = getPopupHeader(entry);
+                        finalPopupContent += `<b>Location:</b> ${locationString}<br><hr style="margin: 5px 0;">`;
+                        finalPopupContent += generatePropertiesHtml(entry);
+
+                        // Update the popup and mark as fetched
+                        this.setPopupContent(finalPopupContent);
+                        this.locationFetched = true;
+
+                    } catch (error) {
+                        console.error('Reverse geocoding error:', error);
+                        
+                        // Build content to show the error
+                        let errorPopupContent = getPopupHeader(entry);
+                        errorPopupContent += `<b>Location:</b> Could not be retrieved.<br><hr style="margin: 5px 0;">`;
+                        errorPopupContent += generatePropertiesHtml(entry);
+                        this.setPopupContent(errorPopupContent);
+                        this.locationFetched = false; // Allow a retry on next click
+                    }
+                });
+
+                entry.marker = marker; // Store marker reference
+                markersAdded++;
+            } else {
+                console.warn(`Skipping entry due to invalid coordinates:`, entry);
+            }
+        });
+        console.log(`Created ${markersAdded} total markers.`);
+    }
+
+    // Initialize the app
+    async function initApp() {
+        try {
+            // --- Setup Dancing Text Animation ---
+            const dancingTextContainer = document.getElementById('dancing-text-container');
+            const text = "Loading...";
+            text.split('').forEach((char, index) => {
+                const span = document.createElement('span');
+                if (char === ' ') {
+                    span.innerHTML = '&nbsp;'; // Use non-breaking space
+                } else {
+                    span.textContent = char;
+                }
+                span.style.setProperty('--i', index);
+                dancingTextContainer.appendChild(span);
+            });
+
+            showStatus("Initializing map...", 0);
+            initMap(); 
+
+            // Make the filter pane draggable
+            makeDraggable(document.getElementById('filter-container'));
+            
+            await loadStateGeoJSON();
+            
+            allData = await fetchCSV(csvUrl);
+            
+            if (allData.length > 0) {
+                createAllMarkers(allData);
+                createFilterOptions(allData);
+                createLegend();
+                applyFilters(); // Show initial data
+            }
+            
+            showStatus("Map loaded successfully!", 100);
+            
+            // Add event listener for overall report button
+            document.getElementById('overall-report-btn').addEventListener('click', showOverallReport);
+
+            // Add event listener for filter toggle button
+            document.getElementById('toggle-filter').addEventListener('click', () => {
+                document.getElementById('filter-container').classList.toggle('show');
+            });
+
+            // Add event listeners for modal
+            const modal = document.getElementById('report-modal');
+            const closeBtn = modal.querySelector('.close-button');
+            closeBtn.onclick = () => {
+                modal.classList.remove('modal-visible');
+            };
+            window.onclick = (event) => {
+                if (event.target == modal) {
+                    modal.classList.remove('modal-visible');
+                }
+            };
+
+        } catch (error) {
+            console.error("Error initializing application:", error);
+            document.getElementById("loading-text").textContent = "Error loading map data. Please try again later.";
+            document.getElementById("progress-bar").style.width = "0%";
+            document.getElementById("progress-bar").textContent = "Error";
+            document.getElementById("progress-container").style.backgroundColor = "#ffdddd";
+        }
+    }
+
+    // Initialize the application
+    window.onload = initApp;
+</script>
+</body>
+</html>
