@@ -231,6 +231,64 @@
             pointer-events: none;
         }
 
+        /* Push layer control down to avoid search bar */
+        .leaflet-top.leaflet-right .leaflet-control-layers {
+            margin-top: 50px;
+        }
+
+        /* Search Box */
+        #search-container {
+            position: fixed;
+            top: 10px; /* Positioned at the top, near the header */
+            right: 10px;
+            background: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1002;
+            width: 250px;
+        }
+
+        #search-box {
+            width: 100%;
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+
+        #search-results {
+            list-style: none;
+            margin: 5px 0 0 0;
+            padding: 0;
+            max-height: 200px;
+            overflow-y: auto;
+            width: 100%;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 0 0 3px 3px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            position: absolute;
+            top: 100%;
+            left: 0;
+            display: none; /* Initially hidden */
+        }
+
+        #search-results li {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+        }
+
+        #search-results li:hover {
+            background: #f5f5f5;
+        }
+
+        #search-results li:last-child {
+            border-bottom: none;
+        }
+
         #custom-compass svg {
             width: 70%;
             height: 70%;
@@ -424,6 +482,16 @@
             font-weight: bold;
             width: 40%;
         }
+
+        #filter-summary {
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #333;
+            text-align: center;
+            padding: 4px;
+            background-color: #f9f9f9;
+        }
     </style>
 </head>
 <body>
@@ -440,15 +508,21 @@
     </div>
 
     <div id="toggle-filter-container">
-        <span id="toggle-filter" class="toggle-icon"><i class="fa-solid fa-filter"></i></span>
+        <span id="toggle-filter" class="toggle-icon" title="Toggle Filters"><i class="fa-solid fa-filter"></i></span>
     </div>
 
     <div id="filter-container">
         <h3>Filter Options</h3>
+        <div id="filter-summary" style="font-weight: bold; margin-bottom: 8px; font-size: 12px; color: #333; text-align: center; padding: 4px; background-color: #f9f9f9; border-radius: 3px;"></div>
         <div id="filter-actions" style="margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
              <button id="overall-report-btn" class="modal-action-btn" style="width: 100%; text-align: left; padding: 5px 8px;"><i class="fa-solid fa-chart-pie" style="margin-right: 5px;"></i>Show Overall Report</button>
         </div>
         <div id="filter-options"></div>
+    </div>
+
+    <div id="search-container">
+        <input type="text" id="search-box" placeholder="Search by ID..." oninput="handleSearchInput(event)">
+        <ul id="search-results"></ul>
     </div>
 
     <div id="map"></div>
@@ -930,6 +1004,17 @@
                 return !value || selectedFilters[cat].has(value);
             });
         });
+
+        // Update summary in the filter panel
+        const totalLocations = filteredData.length;
+        const totalCrossings = filteredData.reduce((sum, entry) => {
+            const htSpans = parseFloat(entry['Number of Span (HT)']) || 0;
+            const ltSpans = parseFloat(entry['Number of Span (LT)']) || 0;
+            return sum + htSpans + ltSpans;
+        }, 0);
+        const summaryElement = document.getElementById('filter-summary');
+        if (summaryElement) summaryElement.innerHTML = `Total Loc: ${totalLocations}, Total X-ing: ${totalCrossings}`;
+
         filteredData.forEach(entry => {
             if (entry.marker) entry.marker.addTo(allMarkersLayerGroup);
         });
@@ -1293,6 +1378,63 @@
         };
     }
 
+    // Handle search functionality
+    function handleSearchInput(event) {
+        const query = event.target.value.trim().toLowerCase();
+        const resultsContainer = document.getElementById('search-results');
+        resultsContainer.innerHTML = '';
+
+        if (query.length < 1) {
+            resultsContainer.style.display = 'none';
+            return;
+        }
+
+        const matchingEntries = allData.filter(entry => {
+            // Assuming the column is named 'ID'
+            const id = String(entry.ID || '').toLowerCase();
+            return id.includes(query);
+        });
+
+        if (matchingEntries.length > 0) {
+            resultsContainer.style.display = 'block';
+            matchingEntries.slice(0, 10).forEach(entry => { // Limit to 10 results
+                const li = document.createElement('li');
+                li.textContent = `ID: ${entry.ID}`; // Display the ID
+                li.onclick = () => {
+                    document.getElementById('search-box').value = entry.ID;
+                    resultsContainer.style.display = 'none';
+                    focusOnLocation(entry.ID);
+                };
+                resultsContainer.appendChild(li);
+            });
+        } else {
+            resultsContainer.style.display = 'none';
+        }
+    }
+
+    // Focus map on searched location
+    function focusOnLocation(id) {
+        const targetEntry = allData.find(entry => String(entry.ID) === String(id));
+
+        if (targetEntry && targetEntry.marker) {
+            const marker = targetEntry.marker;
+            const latlng = marker.getLatLng();
+            
+            // Check if marker is on the map (i.e., not filtered out)
+            if (map.hasLayer(marker)) {
+                map.flyTo(latlng, 16, { duration: 1.5 }); // Zoom in closer
+                // The popup is now generated on click, so we'll trigger a click.
+                setTimeout(() => {
+                    marker.fire('click');
+                }, 1600); // After flyTo animation
+            } else {
+                alert(`Location with ID ${id} is currently hidden by filters. Please adjust filters to show it.`);
+            }
+        } else {
+            alert(`Location with ID ${id} not found.`);
+        }
+    }
+
     // Create markers from data and store them
     function createAllMarkers(data) {
         let markersAdded = 0;
@@ -1303,9 +1445,6 @@
             if (!isNaN(lat) && !isNaN(lng)) {
                 const style = getStyleForVoltage(entry['Voltage Level']);
                 let marker = L.circleMarker([lat, lng], style);
-
-                // This property will track if we've fetched the location
-                marker.locationFetched = false;
 
                 // Helper to generate the popup header
                 const getPopupHeader = (entry) => {
@@ -1336,8 +1475,8 @@
 
                 marker.on('click', async function() {
                     // If we already have the location, just open the popup
-                    if (this.locationFetched) {
-                        this.openPopup();
+                    if (this.getPopup() && this.getPopup().getContent().includes('Location:</b> <i')) {
+                        // Already fetching or fetched, just open it
                         return;
                     }
 
@@ -1359,7 +1498,7 @@
                         const locationData = await response.json();
                         
                         const locationString = locationData.display_name || 'Location not found';
-
+                        entry.fetchedLocation = locationString; // Store fetched location back into the data object
                         // Build final content with the fetched location
                         let finalPopupContent = getPopupHeader(entry);
                         finalPopupContent += `<b>Location:</b> ${locationString} ${streetViewLink}<br><hr style="margin: 5px 0;">`;
@@ -1445,6 +1584,14 @@
                     modal.classList.remove('modal-visible');
                 }
             };
+
+            // Close search results when clicking outside
+            document.addEventListener('click', function(event) {
+                const searchContainer = document.getElementById('search-container');
+                if (searchContainer && !searchContainer.contains(event.target)) {
+                    document.getElementById('search-results').style.display = 'none';
+                }
+            });
 
         } catch (error) {
             console.error("Error initializing application:", error);
