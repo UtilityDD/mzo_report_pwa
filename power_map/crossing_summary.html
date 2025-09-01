@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Electric Line-Highway Crossing - Summary</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 15px;
+            background-color: #121212; /* Dark background */
+            color: #e0e0e0; /* Light text */
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: #1e1e1e; /* Slightly lighter dark background */
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5); /* Adjusted shadow for dark theme */
+        }
+        h1 {
+             text-align: center;
+             color: #ffffff; /* White text for main heading */
+             margin-bottom: 5px;
+        }
+        h2 {
+            text-align: left;
+            color: #e0e0e0; /* Light text */
+            margin-top: 0;
+            border-bottom: 1px solid #444; /* Lighter border */
+            padding-bottom: 5px;
+            font-size: 1em;
+            margin-bottom: 10px;
+        }
+        .report-summary {
+            text-align: center;
+            font-size: 1.1em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #2a2a2a; /* Darker summary background */
+            border: 1px solid #444;
+            color: #ffffff;
+            border-radius: 5px;
+            grid-column: 1 / -1; /* Span all columns in a grid */
+        }
+        .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        .summary-table th, .summary-table td {
+            padding: 4px 8px;
+            border: 1px solid #444; /* Lighter border */
+            text-align: left;
+            font-size: 0.85em;
+        }
+        .summary-table thead th {
+            background-color: #333; /* Dark header */
+            color: #e0e0e0; /* Light text */
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+        }
+        .summary-table tbody tr:nth-child(even) {
+            background-color: #2a2a2a; /* Dark alternating row */
+        }
+        .summary-table tbody tr:hover {
+            background-color: #383838; /* Dark hover */
+        }
+        .summary-table tbody tr.active-filter {
+            background-color: #007bff !important; /* A strong blue for high contrast */
+            color: white !important;
+            font-weight: bold;
+        }
+        .summary-table tfoot td {
+            font-weight: bold;
+            background-color: #333;
+        }
+        #loading-spinner {
+            text-align: center;
+            padding: 50px;
+            font-size: 24px;
+            color: #e0e0e0;
+        }
+        .fa-spinner {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .report-note {
+            text-align: center;
+            margin: -5px 0 20px 0;
+            font-weight: bold;
+            color: #e0e0e0; /* Light text */
+        }
+        .report-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+        }
+        .report-card {
+            background: #1e1e1e; /* Match container background */
+            border: 1px solid #444; /* Lighter border */
+            border-radius: 5px;
+            padding: 15px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        @media (max-width: 768px) {
+            body {
+                padding: 0; /* Remove body padding on mobile */
+                background-color: #1e1e1e; /* Match container background for seamless look */
+            }
+            .container {
+                padding: 10px; /* Reduce padding for content spacing */
+                box-shadow: none;
+                border-radius: 0;
+            }
+            .report-grid {
+                grid-template-columns: 1fr; /* Force a single column layout */
+            }
+            h1 {
+                font-size: 1.5em; /* Adjust title size for mobile */
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Electric Line-Highway Crossing</h1>
+        <p class="report-note">Visit Substation/Network ➤ Electric Line–Highway Crossing</p>
+
+        <div id="filter-controls" style="text-align: center; margin-bottom: 15px;">
+            <div id="active-filters-display" style="margin-bottom: 10px; font-size: 12px; color: #bbb; min-height: 1em;"></div>
+            <button id="clear-filters-btn" style="display: none; padding: 8px 16px; font-size: 14px; cursor: pointer; background-color: #dc3545; color: white; border: none; border-radius: 4px;">Clear All Filters</button>
+        </div>
+
+        <div id="report-container">
+            <div id="loading-spinner">
+                <i class="fas fa-spinner"></i><p>Loading data...</p>
+            </div>
+            <!-- Report content will be injected here -->
+        </div>
+    </div>
+
+    <script>
+        const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQTy_LCddlFuzZx9ZyJQTLbqrQ8sb76DG4jyw8ys-s_w6LDxOYhnTTY49eddhqxb9RnTAbksh32y1bH/pub?gid=870376934&single=true&output=csv';
+        let allData = [];
+        let activeFilter = null; // Will hold an object like { category, value }
+        const categoriesToSummarize = ['Division', 'CCC', 'NH/SH', 'Voltage Level', 'DTR Required', 'UG Cable Required', 'Status'];
+
+        async function fetchCSV(url) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Failed to fetch CSV: ${response.status}`);
+                const csvText = await response.text();
+                return new Promise((resolve) => {
+                    Papa.parse(csvText, {
+                        header: true,
+                        dynamicTyping: true,
+                        skipEmptyLines: true,
+                        complete: (results) => resolve(results.data || []),
+                        error: (error) => {
+                            console.error("CSV parsing error:", error);
+                            resolve([]);
+                        }
+                    });
+                });
+            } catch (error) {
+                console.error("Error fetching CSV:", error);
+                return [];
+            }
+        }
+
+        function filterData(data, filter) {
+            if (!filter) {
+                return data;
+            }
+            return data.filter(entry => {
+                let entryValue;
+                if (filter.category === 'UG Cable Required') {
+                    entryValue = (entry['Approx. UG Cable required (m)'] > 0) ? 'Yes' : 'No';
+                } else {
+                    entryValue = String(entry[filter.category] || 'N/A').trim();
+                }
+                return entryValue === filter.value;
+            });
+        }
+
+        function generateSummaryTableForCategory(category, dataForCounts) {
+            const counts = {};
+            // Get all possible values for the category from the complete dataset
+            const allPossibleValues = new Set();
+            allData.forEach(entry => {
+                let value;
+                if (category === 'UG Cable Required') {
+                    value = (entry['Approx. UG Cable required (m)'] > 0) ? 'Yes' : 'No';
+                } else {
+                    value = String(entry[category] || 'N/A').trim();
+                }
+                allPossibleValues.add(value);
+            });
+
+            // Initialize counts for all possible values to 0
+            allPossibleValues.forEach(value => counts[value] = 0);
+
+            // Now, populate counts from the provided (potentially filtered) data
+            dataForCounts.forEach(entry => {
+                let value;
+                if (category === 'UG Cable Required') {
+                    value = (entry['Approx. UG Cable required (m)'] > 0) ? 'Yes' : 'No';
+                } else {
+                    value = String(entry[category] || 'N/A').trim();
+                }
+                if (counts.hasOwnProperty(value)) {
+                    counts[value]++;
+                }
+            });
+
+            let tableHtml = `
+                <h2>${category} Summary</h2>
+                <table class="summary-table">
+                    <thead>
+                        <tr>
+                            <th>${category}</th>
+                            <th>Location Count</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            const sortedKeys = Array.from(allPossibleValues).sort();
+            
+            sortedKeys.forEach(key => {
+                const count = counts[key];
+                const isActive = activeFilter && activeFilter.category === category && activeFilter.value === key;
+                const activeClass = isActive ? 'class="active-filter"' : '';
+                // Add data attributes to the row for click handling
+                tableHtml += `<tr data-category="${category}" data-value="${key}" ${activeClass}><td>${key}</td><td>${count}</td></tr>`;
+            });
+
+            tableHtml += `
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td>Total</td>
+                            <td>${dataForCounts.length}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            `;
+            return tableHtml;
+        }
+
+        function generateReport() {
+            const reportContainer = document.getElementById('report-container');
+            const loadingSpinner = document.getElementById('loading-spinner');
+            
+            if (allData.length === 0) {
+                loadingSpinner.innerHTML = '<p>No data to display.</p>';
+                return;
+            }
+
+            const currentlyFilteredData = filterData(allData, activeFilter);
+            const totalLocations = currentlyFilteredData.length;
+            const totalCrossings = currentlyFilteredData.reduce((sum, entry) => {
+                const htSpans = parseFloat(entry['Number of Span (HT)']) || 0;
+                const ltSpans = parseFloat(entry['Number of Span (LT)']) || 0;
+                return sum + htSpans + ltSpans;
+            }, 0);
+
+            let html = `<div class="report-summary">Showing: ${totalLocations} Locations | ${totalCrossings.toFixed(0)} Crossings</div>`;
+
+            categoriesToSummarize.forEach(cat => {
+                // For the active category's table, show all data to see context. For others, show filtered data.
+                const dataForThisTable = (activeFilter && activeFilter.category !== cat) ? currentlyFilteredData : allData;
+                
+                html += `<div class="report-card">${generateSummaryTableForCategory(cat, dataForThisTable)}</div>`;
+            });
+
+            reportContainer.className = 'report-grid';
+            reportContainer.innerHTML = html;
+            addEventListenersToTables();
+
+            updateActiveFiltersDisplay();
+
+            // Show/hide clear button
+            const clearBtn = document.getElementById('clear-filters-btn');
+            if (clearBtn) {
+                const hasActiveFilters = activeFilter !== null;
+                clearBtn.style.display = hasActiveFilters ? 'inline-block' : 'none';
+            }
+        }
+
+        function updateActiveFiltersDisplay() {
+            const displayEl = document.getElementById('active-filters-display');
+            if (!displayEl) return;
+
+            if (activeFilter) {
+                displayEl.innerHTML = `<strong>Active Filter:</strong> <b>${activeFilter.category}:</b> ${activeFilter.value}`;
+            } else {
+                displayEl.innerHTML = '';
+            }
+        }
+
+        function addEventListenersToTables() {
+            document.querySelectorAll('.summary-table tbody tr').forEach(row => {
+                row.addEventListener('click', handleFilterClick);
+            });
+        }
+
+        function handleFilterClick(event) {
+            const row = event.currentTarget;
+            const category = row.dataset.category;
+            const value = row.dataset.value;
+
+            // If the clicked filter is already active, turn it off.
+            if (activeFilter && activeFilter.category === category && activeFilter.value === value) {
+                activeFilter = null;
+            } else {
+                // Otherwise, set it as the new active filter.
+                activeFilter = { category, value };
+            }
+            generateReport();
+        }
+
+        function clearAllFilters() {
+            activeFilter = null;
+            generateReport();
+        }
+
+        async function init() {
+            allData = await fetchCSV(csvUrl);
+            document.getElementById('clear-filters-btn').addEventListener('click', clearAllFilters);
+            generateReport();
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
