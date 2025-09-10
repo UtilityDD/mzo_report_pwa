@@ -4,6 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>REM OSD Dashboard - DOM & AGRI</title>
+    <!-- Prevent Caching during development -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+    
     <style>
         /* General Styles */
         * {
@@ -13,7 +24,7 @@
         }
 
         body {
-            font-family: 'Inter', sans-serif; /* Changed to Inter as per instructions */
+            font-family: 'Inter', sans-serif; /* Use imported Inter font with a simple fallback */
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
@@ -55,6 +66,19 @@
             font-size: 0.9rem;
             opacity: 0.8;
             font-style: italic;
+        }
+
+        .summary-button {
+            background-color: #f59e0b; /* Amber color */
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: background-color 0.3s ease;
+            margin-top: 20px;
         }
 
         /* Summary Cards */
@@ -319,7 +343,7 @@
             height: 100%;
             background: rgba(0,0,0,0.6); /* Darker overlay */
             z-index: 1000;
-            overflow: auto; /* Enable scrolling for modal content */
+            overflow-y: auto; /* Allow vertical scrolling for the whole overlay if needed */
             backdrop-filter: blur(5px); /* Frosted glass effect */
         }
 
@@ -328,11 +352,13 @@
             margin: 50px auto; /* Centered with margin */
             background: white;
             border-radius: 12px;
-            padding: 30px;
             max-width: 700px; /* Slightly wider modal */
             width: 90%;
             box-shadow: 0 25px 50px rgba(0,0,0,0.2);
             animation: fadeInScale 0.3s ease-out forwards; /* Add animation */
+            display: flex; /* Use flexbox for layout */
+            flex-direction: column; /* Stack header and body vertically */
+            max-height: calc(100vh - 100px); /* Limit height to avoid overflowing viewport */
         }
 
         @keyframes fadeInScale {
@@ -350,8 +376,8 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
+            padding: 20px 30px; /* Add padding here */
+            flex-shrink: 0; /* Prevent header from shrinking */
             border-bottom: 2px solid #e2e8f0;
         }
 
@@ -380,6 +406,51 @@
         .close-btn:hover {
             color: #374151;
             background-color: #f0f4f8;
+        }
+
+        .modal-body-scrollable {
+            overflow-y: auto; /* Enable vertical scrolling for the body */
+            padding: 20px 30px; /* Add padding to the scrollable area */
+            flex-grow: 1; /* Allow body to take up remaining space */
+        }
+
+        /* Summary Modal Table */
+        .summary-modal-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .summary-modal-table th, .summary-modal-table td {
+            border: 1px solid #e2e8f0;
+            padding: 10px;
+            text-align: left;
+        }
+        .summary-modal-table th {
+            background-color: #f1f5f9;
+            font-weight: 600;
+        }
+
+        /* Class Toggle Switch in Modal */
+        .class-toggle {
+            display: flex;
+            background-color: #e2e8f0;
+            border-radius: 8px;
+            padding: 4px;
+        }
+        .class-toggle-btn {
+            padding: 6px 12px;
+            border: none;
+            background-color: transparent;
+            color: #475569;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        .class-toggle-btn.active {
+            background-color: white;
+            color: #3b82f6;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
         .detail-grid {
@@ -524,7 +595,8 @@
         <div class="header">
             <h1>TOP 200 DOM & AGRI Defaulters</h1>
             <div class="subtitle">Outstanding Dues Dashboard</div>
-            <div class="update-date" id="updateDate">Notice Due Date: Loading...</div>
+            <div class="update-date" id="updateDate">Bill Date: Loading...</div>
+            <button class="summary-button" onclick="showSummaryModal()">Show CCC Summary</button>
         </div>
 
         <div class="summary-cards">
@@ -636,7 +708,24 @@
                 <div class="modal-title">Consumer Details</div>
                 <button class="close-btn" onclick="closeModal()">&times;</button>
             </div>
-            <div id="modalBody" class="detail-grid">
+            <div id="modalBody" class="detail-grid modal-body-scrollable">
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Modal -->
+    <div id="summaryModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">CCC-wise Summary</div>
+                <div class="class-toggle" id="summaryClassToggle">
+                    <button class="class-toggle-btn active" onclick="showSummaryModal('all')">All</button>
+                    <button class="class-toggle-btn" onclick="showSummaryModal('AGRI')">AGRI</button>
+                    <button class="class-toggle-btn" onclick="showSummaryModal('DOM')">DOM</button>
+                </div>
+                <button class="close-btn" onclick="closeSummaryModal()">&times;</button>
+            </div>
+            <div id="summaryModalBody" class="modal-body-scrollable">
             </div>
         </div>
     </div>
@@ -1003,7 +1092,7 @@
             
             // Find max date from UPD_DT from allData for overall last updated date
             const maxDate = allData.reduce((max, item) => {
-                const date = item.NOT_ISSUE_DT; // Changed to NOT_ISSUE_DT
+                const date = item.BDATE;
                 if (date && date > max) return date;
                 return max;
             }, '');
@@ -1014,7 +1103,7 @@
             document.getElementById('totalDOMDefaulters').textContent = formatIndianCurrency(domDefaulters);
             document.getElementById('agriOSD').textContent = formatIndianCurrency(agriOSD);
             document.getElementById('domOSD').textContent = formatIndianCurrency(domOSD);
-            document.getElementById('updateDate').textContent = `Notice Due Date: ${formatDate(maxDate)}`; // Changed text here
+            document.getElementById('updateDate').textContent = `Bill Date: ${formatDate(maxDate)}`;
         }
 
         /**
@@ -1268,6 +1357,71 @@
         }
 
         /**
+         * Calculates and displays a CCC-wise summary in a modal.
+         * The summary is based on the currently filtered data.
+         */
+        function showSummaryModal(classType = 'all') {
+            // Update active state on toggle buttons
+            document.querySelectorAll('#summaryClassToggle .class-toggle-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`#summaryClassToggle .class-toggle-btn[onclick="showSummaryModal('${classType}')"]`).classList.add('active');
+
+            let dataForSummary = filteredData;
+            if (classType !== 'all') {
+                dataForSummary = filteredData.filter(item => item.TYPE === classType);
+            }
+
+            const summary = dataForSummary.reduce((acc, item) => {
+                const cccCode = item.CCC_CODE;
+                const locationInfo = cccCodeToNames[cccCode];
+                const cccName = locationInfo ? locationInfo.ccc : 'Unknown CCC';
+                const osd = parseFloat(item.NOTOSD_UPD || 0);
+
+                if (!acc[cccName]) {
+                    acc[cccName] = { count: 0, totalOSD: 0 };
+                }
+
+                acc[cccName].count++;
+                acc[cccName].totalOSD += osd;
+
+                return acc;
+            }, {});
+
+            // Convert to array and sort by total OSD descending
+            const summaryArray = Object.keys(summary).map(cccName => ({
+                cccName: cccName,
+                count: summary[cccName].count,
+                totalOSD: summary[cccName].totalOSD
+            })).sort((a, b) => b.totalOSD - a.totalOSD);
+
+            const modalBody = document.getElementById('summaryModalBody');
+            let tableHTML = `<table class="summary-modal-table">
+                                <thead>
+                                    <tr>
+                                        <th>Sl</th>
+                                        <th>CCC Name</th>
+                                        <th>Defaulter Count</th>
+                                        <th>Total OSD (₹)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>`;
+            
+            summaryArray.forEach((item, index) => {
+                tableHTML += `<tr>
+                                <td>${index + 1}</td>
+                                <td>${item.cccName}</td>
+                                <td>${item.count}</td>
+                                <td class="amount">${formatIndianCurrency(item.totalOSD)}</td>
+                              </tr>`;
+            });
+
+            tableHTML += `</tbody></table>`;
+            modalBody.innerHTML = tableHTML;
+            document.getElementById('summaryModal').style.display = 'block';
+        }
+
+        /**
          * Closes the detail modal.
          */
         function closeModal() {
@@ -1275,12 +1429,22 @@
         }
 
         /**
+         * Closes the summary modal.
+         */
+        function closeSummaryModal() {
+            document.getElementById('summaryModal').style.display = 'none';
+        }
+
+        /**
          * Closes the modal when clicking outside of its content.
          * @param {Event} event - The click event object.
          */
         window.onclick = function(event) {
-            const modal = document.getElementById('detailModal');
-            if (event.target === modal) {
+            const detailModal = document.getElementById('detailModal');
+            const summaryModal = document.getElementById('summaryModal');
+            if (event.target === summaryModal) {
+                closeSummaryModal();
+            } else if (event.target === detailModal) {
                 closeModal();
             }
         }
