@@ -531,7 +531,7 @@
     </div>
 
     <div id="search-container">
-        <input type="text" id="search-box" placeholder="Search by ID..." oninput="handleSearchInput(event)">
+        <input type="text" id="search-box" placeholder="Search by ID or E-Note No..." oninput="handleSearchInput(event)">
         <ul id="search-results"></ul>
     </div>
 
@@ -1509,21 +1509,27 @@
             return;
         }
 
+        // Explicitly check ID and the CSV column "e-note no."
         const matchingEntries = allData.filter(entry => {
-            // Assuming the column is named 'ID'
             const id = String(entry.ID || '').toLowerCase();
-            return id.includes(query);
+            const enote = String(entry['e-note no.'] || '').toLowerCase();
+            return (id && id.includes(query)) || (enote && enote.includes(query));
         });
 
         if (matchingEntries.length > 0) {
             resultsContainer.style.display = 'block';
             matchingEntries.slice(0, 10).forEach(entry => { // Limit to 10 results
                 const li = document.createElement('li');
-                li.textContent = `ID: ${entry.ID}`; // Display the ID
+                const enoteVal = entry['e-note no.'] || '';
+                const idText = entry.ID ? `ID: ${entry.ID}` : '';
+                const enoteText = enoteVal ? `E-Note: ${enoteVal}` : '';
+                li.textContent = [idText, enoteText].filter(Boolean).join(' — ');
                 li.onclick = () => {
-                    document.getElementById('search-box').value = entry.ID;
+                    // Prefer focusing by ID if available, otherwise by E-Note
+                    const focusValue = entry.ID ? entry.ID : enoteVal;
+                    document.getElementById('search-box').value = focusValue || '';
                     resultsContainer.style.display = 'none';
-                    focusOnLocation(entry.ID);
+                    focusOnLocation(focusValue);
                 };
                 resultsContainer.appendChild(li);
             });
@@ -1533,8 +1539,10 @@
     }
 
     // Focus map on searched location
-    function focusOnLocation(id) {
-        const targetEntry = allData.find(entry => String(entry.ID) === String(id));
+    function focusOnLocation(idOrEnote) {
+        // Try to find by ID first, then by "e-note no."
+        const targetEntry = allData.find(entry => String(entry.ID) === String(idOrEnote))
+            || allData.find(entry => String(entry['e-note no.'] || '') === String(idOrEnote));
 
         if (targetEntry && targetEntry.marker) {
             const marker = targetEntry.marker;
@@ -1548,10 +1556,11 @@
                     marker.fire('click');
                 }, 1600); // After flyTo animation
             } else {
-                alert(`Location with ID ${id} is currently hidden by filters. Please adjust filters to show it.`);
+                const displayVal = targetEntry.ID || targetEntry['e-note no.'] || idOrEnote;
+                alert(`Location (${displayVal}) is currently hidden by filters. Please adjust filters to show it.`);
             }
         } else {
-            alert(`Location with ID ${id} not found.`);
+            alert(`Location (${idOrEnote}) not found.`);
         }
     }
 
