@@ -45,6 +45,10 @@
             justify-content: space-between; /* Distribute items with space between */
             align-items: center;
         }
+
+        .modal-header .modal-actions {
+            display: flex;
+        }
         
         .title {
             font-size: 20px; /* Larger title */
@@ -538,10 +542,13 @@
     <div id="ccc-modal-overlay" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title" id="ccc-modal-title">CCC-wise Data</h3>
-                <button class="modal-close-btn" onclick="closeModal('ccc-modal-overlay')">&times;</button>
+                <h3 class="modal-title" id="ccc-modal-title"></h3>
+                <div class="modal-actions">
+                    <button class="modal-close-btn" onclick="downloadCccData()" title="Download as CSV">&#x2193;</button>
+                    <button class="modal-close-btn" onclick="closeModal('ccc-modal-overlay')">&times;</button>
+                </div>
             </div>
-            <div id="ccc-modal-body" class="table-container">
+            <div id="ccc-modal-body" class="table-container" style="flex-grow: 1;">
                 <!-- CCC-wise data will be loaded here -->
             </div>
         </div>
@@ -551,10 +558,13 @@
     <div id="consumer-modal-overlay" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title" id="consumer-modal-title">Consumer-wise Data</h3>
-                <button class="modal-close-btn" onclick="closeModal('consumer-modal-overlay')">&times;</button>
+                <h3 class="modal-title" id="consumer-modal-title"></h3>
+                <div class="modal-actions">
+                    <button class="modal-close-btn" onclick="downloadConsumerData()" title="Download as CSV">&#x2193;</button>
+                    <button class="modal-close-btn" onclick="closeModal('consumer-modal-overlay')">&times;</button>
+                </div>
             </div>
-            <div id="consumer-modal-body" class="table-container">
+            <div id="consumer-modal-body" class="table-container" style="flex-grow: 1;">
                 <!-- Consumer-wise data will be loaded here -->
             </div>
         </div>
@@ -564,10 +574,13 @@
     <div id="detail-modal-overlay" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title" id="detail-modal-title">Consumer Details</h3>
-                <button class="modal-close-btn" onclick="closeModal('detail-modal-overlay')">&times;</button>
+                <h3 class="modal-title" id="detail-modal-title"></h3>
+                <div class="modal-actions">
+                    <button class="modal-close-btn" onclick="downloadDetailData()" title="Download as CSV">&#x2193;</button>
+                    <button class="modal-close-btn" onclick="closeModal('detail-modal-overlay')">&times;</button>
+                </div>
             </div>
-            <div id="detail-modal-body" class="table-container">
+            <div id="detail-modal-body" class="table-container" style="flex-grow: 1;">
                 <!-- Full row details will be loaded here -->
             </div>
         </div>
@@ -579,6 +592,12 @@
         let filteredData = [];
         let currentActiveTab = 'by-class'; // Default active tab changed to 'by-class'
         let currentSelectedYear = 'All'; // Default selected year for filtering
+
+        // --- ADDED: Global variables to hold data for modal downloads ---
+        let cccModalData = {};
+        let consumerModalData = [];
+        let detailModalData = null;
+
 let smartMeterCount = 0;
 
         // Hardcoded mapping for regions, divisions, and CCCs
@@ -1392,6 +1411,7 @@ function renderCccWiseModalContent(metricType) {
     dataForModal.forEach(item => {
         const cccCode = item.CCC_CODE;
         cccCounts[cccCode] = (cccCounts[cccCode] || 0) + 1;
+            cccModalData = cccCounts; // Store for download
     });
 
     let modalContent = `
@@ -1442,6 +1462,7 @@ function renderCccWiseModalContent(metricType) {
          * @param {string} originalMetricType - The type of metric that initiated the first modal.
          */
 function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
+    consumerModalData = []; // Clear previous data
     let consumersInCcc = filteredData.filter(item => item.CCC_CODE === cccCode);
     const reportAsOnDate = parseDate(defectiveMeterData[0].REPORT_AS_ON);
 
@@ -1483,14 +1504,17 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
         return da - db; // ascending: earliest (smallest) first
     });
 
+    consumerModalData = consumersInCcc; // Store for download
+
     consumerModalTitle.textContent = `${cccName} – Consumers`;
 
     let modalContent = `
         <div class="table-header">
-            <div class="grid-5">
+            <div class="grid-6">
                 <div>Name</div>
                 <div>Meter No</div>
                 <div class="text-right">Reported Date</div>
+                <div class="text-right">MRU</div>
                 <div class="text-right">Class</div>
                 <div class="text-right">Load</div>
             </div>
@@ -1501,10 +1525,11 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
     consumersInCcc.forEach(item => {
         modalContent += `
             <div class="table-row consumer-row-modal" data-idx="${item.__idx}">
-                <div class="grid-5">
+                <div class="grid-6">
                     <div class="truncate">${item.NAME || ''}</div>
                     <div class="truncate">${item.METER_NO || ''}</div>
                     <div class="text-right">${formatDateToDDMMYYYY(parseDate(item.FIRST_REPORTED_DEF_DT))}</div>
+                    <div class="text-right">${item.MRU || ''}</div>
                     <div class="text-right">${item.BASE_CLASS || ''}</div>
                     <div class="text-right">${item.CONN_LOAD || ''}</div>
                 </div>
@@ -1617,6 +1642,7 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
         // --- ADDED: render detail modal for a single row by original index ---
         function renderDetailModal(originalIndex) {
             const row = defectiveMeterData[originalIndex];
+            detailModalData = row; // Store for download
             if (!row) return;
             detailModalTitle.textContent = `${row.NAME || row.METER_NO || 'Record Details'}`;
 
@@ -1649,6 +1675,69 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
                 }
             }
         });
+    </script>
+    
+    <!-- ADDED: CSV Download Functions -->
+    <script>
+        /**
+         * Generic function to download an array of objects as a CSV file.
+         * @param {Array<Object>} dataArray - The data to download.
+         * @param {string} filename - The name of the file.
+         */
+        function downloadCSV(dataArray, filename) {
+            if (!dataArray || dataArray.length === 0) {
+                alert("No data to download.");
+                return;
+            }
+
+            const headers = Object.keys(dataArray[0]);
+            const csvContent = [
+                headers.join(','),
+                ...dataArray.map(row => 
+                    headers.map(header => {
+                        let value = row[header];
+                        // Handle values that might contain commas or quotes
+                        if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+                            return `"${value.replace(/"/g, '""')}"`;
+                        }
+                        return value;
+                    }).join(',')
+                )
+            ].join('\n');
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.setAttribute("download", filename);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function downloadCccData() {
+            if (!cccModalData || Object.keys(cccModalData).length === 0) {
+                alert("No CCC data to download.");
+                return;
+            }
+            const dataToDownload = Object.entries(cccModalData).map(([cccCode, count]) => ({
+                'CCC Name': getCccName(cccCode),
+                'Count': count
+            }));
+            downloadCSV(dataToDownload, 'ccc_summary.csv');
+        }
+
+        function downloadConsumerData() {
+            if (!consumerModalData || consumerModalData.length === 0) {
+                alert("No consumer data to download.");
+                return;
+            }
+            downloadCSV(consumerModalData, 'consumer_list.csv');
+        }
+
+        function downloadDetailData() {
+            if (!detailModalData) return alert("No detail data to download.");
+            downloadCSV([detailModalData], 'consumer_detail.csv');
+        }
     </script>
 
 <!-- Suggestion Modal -->
