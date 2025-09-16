@@ -473,6 +473,12 @@
                 <div class="metric-label">Industrial Defective</div>
                 <div id="industrial-defective" class="metric-value">0</div>
             </div>
+            <!-- New Metric Card: Smart Meter -->
+<div class="metric-card bg-red-100 border-red-400 hover:shadow-md hover:shadow-red-300" data-metric-type="smartmeter">
+    <div class="metric-label text-red-800">Smart Meter</div>
+    <div id="smart-meter-count" class="metric-value text-red-700">0</div>
+</div>
+
         </div>
 
         <!-- Main content area, including filters, year tabs, and main tabs -->
@@ -544,12 +550,26 @@
         </div>
     </div>
 
+    <!-- DETAIL Modal: show full row details -->
+    <div id="detail-modal-overlay" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="detail-modal-title">Consumer Details</h3>
+                <button class="modal-close-btn" onclick="closeModal('detail-modal-overlay')">&times;</button>
+            </div>
+            <div id="detail-modal-body" class="table-container">
+                <!-- Full row details will be loaded here -->
+            </div>
+        </div>
+    </div>
+    
     <script>
         // Global variables to store data and current state
         let defectiveMeterData = [];
         let filteredData = [];
         let currentActiveTab = 'by-class'; // Default active tab changed to 'by-class'
         let currentSelectedYear = 'All'; // Default selected year for filtering
+let smartMeterCount = 0;
 
         // Hardcoded mapping for regions, divisions, and CCCs
         const regionDivisionCccMapping = [
@@ -664,14 +684,88 @@
         const yearTabsContainer = document.getElementById('year-tabs-container');
         const metricCards = document.querySelectorAll('.metric-card'); // All metric cards
 
-        // Modal elements
-        const cccModalOverlay = document.getElementById('ccc-modal-overlay');
-        const cccModalTitle = document.getElementById('ccc-modal-title');
-        const cccModalBody = document.getElementById('ccc-modal-body');
-        const consumerModalOverlay = document.getElementById('consumer-modal-overlay');
-        const consumerModalTitle = document.getElementById('consumer-modal-title');
-        const consumerModalBody = document.getElementById('consumer-modal-body');
+        // --- ADDED: modal DOM references (fixes runtime errors when opening modals) ---
+const cccModalOverlay = document.getElementById('ccc-modal-overlay');
+const cccModalTitle = document.getElementById('ccc-modal-title');
+const cccModalBody = document.getElementById('ccc-modal-body');
 
+const consumerModalOverlay = document.getElementById('consumer-modal-overlay');
+const consumerModalTitle = document.getElementById('consumer-modal-title');
+const consumerModalBody = document.getElementById('consumer-modal-body');
+
+// --- ADDED: detail modal DOM references ---
+const detailModalOverlay = document.getElementById('detail-modal-overlay');
+const detailModalTitle = document.getElementById('detail-modal-title');
+const detailModalBody = document.getElementById('detail-modal-body');
+        // --- ADDED: event listeners for filters, tabs and metric cards ---
+/**
+ * Wire up UI interactions: filters, tabs, metric cards.
+ */
+(function attachUiListeners() {
+    // Region -> populate divisions, then filter
+    regionSelect.addEventListener('change', () => {
+        populateDivisions(regionSelect.value);
+        globalLoadingOverlay.classList.add('visible');
+        debouncedFilterData();
+    });
+
+    // Division -> populate cccs, then filter
+    divisionSelect.addEventListener('change', () => {
+        populateCccs(divisionSelect.value);
+        globalLoadingOverlay.classList.add('visible');
+        debouncedFilterData();
+    });
+
+    // CCC -> filter
+    cccSelect.addEventListener('change', () => {
+        globalLoadingOverlay.classList.add('visible');
+        debouncedFilterData();
+    });
+
+    // Class -> filter
+    classSelect.addEventListener('change', () => {
+        globalLoadingOverlay.classList.add('visible');
+        debouncedFilterData();
+    });
+
+    // Tab buttons -> switch active tab and render
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            tabButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Map button id to renderTabContent tab names
+            switch (btn.id) {
+                case 'tab-age-analysis':
+                    currentActiveTab = 'age-analysis';
+                    break;
+                case 'tab-ccc-wise':
+                    currentActiveTab = 'ccc-wise';
+                    break;
+                case 'tab-phase-wise':
+                    currentActiveTab = 'phase-wise';
+                    break;
+                case 'tab-by-class':
+                default:
+                    currentActiveTab = 'by-class';
+                    break;
+            }
+
+            globalLoadingOverlay.classList.add('visible');
+            debouncedRenderTabContent(currentActiveTab);
+        });
+    });
+
+    // Metric cards -> open CCC-wise modal for that metric
+    metricCards.forEach(card => {
+        card.addEventListener('click', () => {
+            const metricType = card.dataset.metricType;
+            if (metricType) {
+                renderCccWiseModalContent(metricType);
+            }
+        });
+    });
+})();
         /**
          * Debounce utility function to limit how often a function can run.
          * @param {function} func - The function to debounce.
@@ -940,47 +1034,62 @@
         /**
          * Updates the dashboard's metric cards and renders the current tab content.
          */
-        function updateDashboard() {
-            const reportAsOnDateStr = defectiveMeterData.length > 0 ? defectiveMeterData[0].REPORT_AS_ON : null;
-            const reportAsOnDate = parseDate(reportAsOnDateStr);
-            reportDateElement.textContent = `Updated: ${formatDateToDDMMYYYY(reportAsOnDate)}`;
+function updateDashboard() {
+    const reportAsOnDateStr = defectiveMeterData.length > 0 ? defectiveMeterData[0].REPORT_AS_ON : null;
+    const reportAsOnDate = parseDate(reportAsOnDateStr);
+    reportDateElement.textContent = `Updated: ${formatDateToDDMMYYYY(reportAsOnDate)}`;
 
-            totalMetersCard.textContent = filteredData.length.toLocaleString();
-            totalAgriCard.textContent = filteredData.filter(item => item.BASE_CLASS === 'A').length.toLocaleString();
+    totalMetersCard.textContent = filteredData.length.toLocaleString();
+    totalAgriCard.textContent = filteredData.filter(item => item.BASE_CLASS === 'A').length.toLocaleString();
 
-            let moreThan10YearsCount = 0;
-            let moreThan5YearsCount = 0; 
-            let threePhDefectiveCount = 0; 
-            let industrialDefectiveCount = 0; 
+    let moreThan10YearsCount = 0;
+    let moreThan5YearsCount = 0;
+    let threePhDefectiveCount = 0;
+    let industrialDefectiveCount = 0;
+    let smartMeterCount = 0;
 
-            if (reportAsOnDate) {
-                filteredData.forEach(item => {
-                    const firstReportedDefDate = parseDate(item.FIRST_REPORTED_DEF_DT);
-                    if (firstReportedDefDate) {
-                        const diffTime = Math.abs(reportAsOnDate.getTime() - firstReportedDefDate.getTime());
-                        const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
-                        if (diffYears > 10) {
-                            moreThan10YearsCount++;
-                        }
-                        if (diffYears > 5) {
-                            moreThan5YearsCount++;
-                        }
-                    }
-                    if (item.PHASE === '3') {
-                        threePhDefectiveCount++;
-                    }
-                    if (item.BASE_CLASS === 'I') {
-                        industrialDefectiveCount++;
-                    }
-                });
+    if (reportAsOnDate) {
+        filteredData.forEach(item => {
+            const firstReportedDefDate = parseDate(item.FIRST_REPORTED_DEF_DT);
+            if (firstReportedDefDate) {
+                const diffTime = Math.abs(reportAsOnDate.getTime() - firstReportedDefDate.getTime());
+                const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
+                if (diffYears > 10) {
+                    moreThan10YearsCount++;
+                }
+                if (diffYears > 5) {
+                    moreThan5YearsCount++;
+                }
             }
-            moreThan10YearsCard.textContent = moreThan10YearsCount.toLocaleString();
-            moreThan5YearsCard.textContent = moreThan5YearsCount.toLocaleString(); 
-            threePhDefectiveCard.textContent = threePhDefectiveCount.toLocaleString(); 
-            industrialDefectiveCard.textContent = industrialDefectiveCount.toLocaleString(); 
 
-            debouncedRenderTabContent(currentActiveTab); // Call debounced renderTabContent
-        }
+            if (item.PHASE === '3') {
+                threePhDefectiveCount++;
+            }
+
+            if (item.BASE_CLASS === 'I') {
+                industrialDefectiveCount++;
+            }
+
+            // Smart Meter logic: Meter number starts with IJ, IL, or IT
+            if (/^IJ|^IL|^IT/.test(item.METER_NO || '')) {
+                smartMeterCount++;
+            }
+        });
+    }
+
+    moreThan10YearsCard.textContent = moreThan10YearsCount.toLocaleString();
+    moreThan5YearsCard.textContent = moreThan5YearsCount.toLocaleString();
+    threePhDefectiveCard.textContent = threePhDefectiveCount.toLocaleString();
+    industrialDefectiveCard.textContent = industrialDefectiveCount.toLocaleString();
+
+    const smartMeterCard = document.getElementById('smart-meter-count');
+    if (smartMeterCard) {
+        smartMeterCard.textContent = smartMeterCount.toLocaleString();
+    }
+
+    debouncedRenderTabContent(currentActiveTab);
+}
+
 
         /**
          * Renders the content for the currently active tab.
@@ -1216,94 +1325,100 @@ if (tabName === 'age-analysis') {
          * Renders the CCC-wise data in a modal based on the clicked metric card.
          * @param {string} metricType - The type of metric clicked ('total', 'agri', 'over10years', 'over5years', '3phase', 'industrial').
          */
-        function renderCccWiseModalContent(metricType) {
-            globalLoadingOverlay.classList.add('visible'); // Show loading overlay immediately
-            
-            let modalTitleText = '';
-            let dataForModal = [];
+function renderCccWiseModalContent(metricType) {
+    globalLoadingOverlay.classList.add('visible'); // Show loading overlay immediately
 
-            // Apply specific filter based on metric type
-            if (metricType === 'total') {
-                modalTitleText = 'Total Defective Meters (CCC-wise)';
-                dataForModal = filteredData;
-            } else if (metricType === 'agri') {
-                modalTitleText = 'Agri Meters (CCC-wise)';
-                dataForModal = filteredData.filter(item => item.BASE_CLASS === 'A');
-            } else if (metricType === 'over10years') {
-                modalTitleText = 'Defects >10 Years (CCC-wise)';
-                const reportAsOnDate = parseDate(defectiveMeterData[0].REPORT_AS_ON);
-                dataForModal = filteredData.filter(item => {
-                    const firstReportedDefDate = parseDate(item.FIRST_REPORTED_DEF_DT);
-                    if (firstReportedDefDate && reportAsOnDate) {
-                        const diffTime = Math.abs(reportAsOnDate.getTime() - firstReportedDefDate.getTime());
-                        const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
-                        return diffYears > 10;
-                    }
-                    return false;
-                });
-            } else if (metricType === 'over5years') {
-                modalTitleText = 'Defects >5 Years (CCC-wise)';
-                const reportAsOnDate = parseDate(defectiveMeterData[0].REPORT_AS_ON);
-                dataForModal = filteredData.filter(item => {
-                    const firstReportedDefDate = parseDate(item.FIRST_REPORTED_DEF_DT);
-                    if (firstReportedDefDate && reportAsOnDate) {
-                        const diffTime = Math.abs(reportAsOnDate.getTime() - firstReportedDefDate.getTime());
-                        const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
-                        return diffYears > 5;
-                    }
-                    return false;
-                });
-            } else if (metricType === '3phase') {
-                modalTitleText = '3-Phase Defective Meters (CCC-wise)';
-                dataForModal = filteredData.filter(item => item.PHASE === '3');
-            } else if (metricType === 'industrial') {
-                modalTitleText = 'Industrial Defective Meters (CCC-wise)';
-                dataForModal = filteredData.filter(item => item.BASE_CLASS === 'I');
+    let modalTitleText = '';
+    let dataForModal = [];
+
+    if (metricType === 'total') {
+        modalTitleText = 'Total Defective Meters (CCC-wise)';
+        dataForModal = filteredData;
+    } else if (metricType === 'agri') {
+        modalTitleText = 'Agri Meters (CCC-wise)';
+        dataForModal = filteredData.filter(item => item.BASE_CLASS === 'A');
+    } else if (metricType === 'over10years') {
+        modalTitleText = 'Defects >10 Years (CCC-wise)';
+        const reportAsOnDate = parseDate(defectiveMeterData[0].REPORT_AS_ON);
+        dataForModal = filteredData.filter(item => {
+            const firstReportedDefDate = parseDate(item.FIRST_REPORTED_DEF_DT);
+            if (firstReportedDefDate && reportAsOnDate) {
+                const diffTime = Math.abs(reportAsOnDate.getTime() - firstReportedDefDate.getTime());
+                const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
+                return diffYears > 10;
             }
+            return false;
+        });
+    } else if (metricType === 'over5years') {
+        modalTitleText = 'Defects >5 Years (CCC-wise)';
+        const reportAsOnDate = parseDate(defectiveMeterData[0].REPORT_AS_ON);
+        dataForModal = filteredData.filter(item => {
+            const firstReportedDefDate = parseDate(item.FIRST_REPORTED_DEF_DT);
+            if (firstReportedDefDate && reportAsOnDate) {
+                const diffTime = Math.abs(reportAsOnDate.getTime() - firstReportedDefDate.getTime());
+                const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
+                return diffYears > 5;
+            }
+            return false;
+        });
+    } else if (metricType === '3phase') {
+        modalTitleText = '3-Phase Defective Meters (CCC-wise)';
+        dataForModal = filteredData.filter(item => item.PHASE === '3');
+    } else if (metricType === 'industrial') {
+        modalTitleText = 'Industrial Defective Meters (CCC-wise)';
+        dataForModal = filteredData.filter(item => item.BASE_CLASS === 'I');
+    } else if (metricType === 'smartmeter') {
+        modalTitleText = 'Smart Meters (CCC-wise)';
+        dataForModal = filteredData.filter(item => /^(IJ|IL|IT)/.test(item.METER_NO || ''));
+    }
 
-            const cccCounts = {};
-            dataForModal.forEach(item => {
-                const cccCode = item.CCC_CODE;
-                cccCounts[cccCode] = (cccCounts[cccCode] || 0) + 1;
-            });
 
-            let modalContent = `
-                <div class="table-header">
-                    <div class="grid-2">
-                        <div>Name</div>
-                        <div class="text-right">Count</div>
-                    </div>
+    const cccCounts = {};
+    dataForModal.forEach(item => {
+        const cccCode = item.CCC_CODE;
+        cccCounts[cccCode] = (cccCounts[cccCode] || 0) + 1;
+    });
+
+    let modalContent = `
+        <div class="table-header">
+            <div class="grid-2">
+                <div>Name</div>
+                <div class="text-right">Count</div>
+            </div>
+        </div>
+        <div class="table-container">
+    `;
+
+    Object.entries(cccCounts).sort(([,a],[,b]) => b-a).forEach(([cccCode, count]) => {
+        modalContent += `
+            <div class="table-row ccc-row-modal" data-ccc-code="${cccCode}" data-ccc-name="${getCccName(cccCode)}" data-metric-type="${metricType}">
+                <div class="grid-2">
+                    <div class="truncate">${getCccName(cccCode)}</div>
+                    <div class="text-right font-semibold">${count.toLocaleString()}</div>
                 </div>
-                <div class="table-container">
-            `;
+            </div>
+        `;
+    });
 
-            Object.entries(cccCounts).sort(([,a],[,b]) => b-a).forEach(([cccCode, count]) => {
-                modalContent += `
-                    <div class="table-row ccc-row-modal" data-ccc-code="${cccCode}" data-ccc-name="${getCccName(cccCode)}" data-metric-type="${metricType}">
-                        <div class="grid-2">
-                            <div class="truncate">${getCccName(cccCode)}</div>
-                            <div class="text-right font-semibold">${count.toLocaleString()}</div>
-                        </div>
-                    </div>
-                `;
-            });
-            modalContent += `</div>`;
+    modalContent += `</div>`;
 
-            cccModalTitle.textContent = modalTitleText;
-            cccModalBody.innerHTML = modalContent;
-            openModal('ccc-modal-overlay');
+    cccModalTitle.textContent = modalTitleText;
+    cccModalBody.innerHTML = modalContent;
+    openModal('ccc-modal-overlay');
 
-            // Add event listeners to CCC rows in the modal
-            document.querySelectorAll('.ccc-row-modal').forEach(row => {
-                row.addEventListener('click', function() {
-                    const cccCode = this.dataset.cccCode;
-                    const cccName = this.dataset.cccName;
-                    const originalMetricType = this.dataset.metricType; // Get the original metric type
-                    renderConsumerWiseModalContent(cccCode, cccName, originalMetricType);
-                });
-            });
-            globalLoadingOverlay.classList.remove('visible'); // Hide loading overlay
-        }
+    // Event listeners to show consumer-wise details on CCC row click
+    document.querySelectorAll('.ccc-row-modal').forEach(row => {
+        row.addEventListener('click', function () {
+            const cccCode = this.dataset.cccCode;
+            const cccName = this.dataset.cccName;
+            const originalMetricType = this.dataset.metricType;
+            renderConsumerWiseModalContent(cccCode, cccName, originalMetricType);
+        });
+    });
+
+    globalLoadingOverlay.classList.remove('visible'); // Hide overlay
+}
+
 
         /**
          * Renders the consumer-wise data in a modal for a specific CCC.
@@ -1311,175 +1426,153 @@ if (tabName === 'age-analysis') {
          * @param {string} cccName - The name of the CCC for the modal title.
          * @param {string} originalMetricType - The type of metric that initiated the first modal.
          */
-        function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
-            globalLoadingOverlay.classList.add('visible'); // Show loading overlay immediately
+function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
+    let consumersInCcc = filteredData.filter(item => item.CCC_CODE === cccCode);
+    const reportAsOnDate = parseDate(defectiveMeterData[0].REPORT_AS_ON);
 
-            let consumersInCcc = filteredData.filter(item => item.CCC_CODE === cccCode);
-
-            // Apply the original metric type filter to the consumer list
-            if (originalMetricType === 'agri') {
-                consumersInCcc = consumersInCcc.filter(item => item.BASE_CLASS === 'A');
-            } else if (originalMetricType === 'over10years') {
-                const reportAsOnDate = parseDate(defectiveMeterData[0].REPORT_AS_ON);
-                consumersInCcc = consumersInCcc.filter(item => {
-                    const firstReportedDefDate = parseDate(item.FIRST_REPORTED_DEF_DT);
-                    if (firstReportedDefDate && reportAsOnDate) {
-                        const diffTime = Math.abs(reportAsOnDate.getTime() - firstReportedDefDate.getTime());
-                        const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
-                        return diffYears > 10;
-                    }
-                    return false;
-                });
-            } else if (originalMetricType === 'over5years') {
-                const reportAsOnDate = parseDate(defectiveMeterData[0].REPORT_AS_ON);
-                consumersInCcc = consumersInCcc.filter(item => {
-                    const firstReportedDefDate = parseDate(item.FIRST_REPORTED_DEF_DT);
-                    if (firstReportedDefDate && reportAsOnDate) {
-                        const diffTime = Math.abs(reportAsOnDate.getTime() - firstReportedDefDate.getTime());
-                        const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
-                        return diffYears > 5;
-                    }
-                    return false;
-                });
-            } else if (originalMetricType === '3phase') {
-                consumersInCcc = consumersInCcc.filter(item => item.PHASE === '3');
-            } else if (originalMetricType === 'industrial') {
-                consumersInCcc = consumersInCcc.filter(item => item.BASE_CLASS === 'I');
+    if (originalMetricType === 'over10years') {
+        consumersInCcc = consumersInCcc.filter(item => {
+            const firstReportedDefDate = parseDate(item.FIRST_REPORTED_DEF_DT);
+            if (firstReportedDefDate && reportAsOnDate) {
+                const diffYears = (reportAsOnDate - firstReportedDefDate) / (1000 * 60 * 60 * 24 * 365.25);
+                return diffYears > 10;
             }
+            return false;
+        });
+    } else if (originalMetricType === 'over5years') {
+        consumersInCcc = consumersInCcc.filter(item => {
+            const firstReportedDefDate = parseDate(item.FIRST_REPORTED_DEF_DT);
+            if (firstReportedDefDate && reportAsOnDate) {
+                const diffYears = (reportAsOnDate - firstReportedDefDate) / (1000 * 60 * 60 * 24 * 365.25);
+                return diffYears > 5;
+            }
+            return false;
+        });
+    } else if (originalMetricType === '3phase') {
+        consumersInCcc = consumersInCcc.filter(item => item.PHASE === '3');
+    } else if (originalMetricType === 'agri') {
+        consumersInCcc = consumersInCcc.filter(item => item.BASE_CLASS === 'A');
+    } else if (originalMetricType === 'industrial') {
+        consumersInCcc = consumersInCcc.filter(item => item.BASE_CLASS === 'I');
+    } else if (originalMetricType === 'smartmeter') {
+        consumersInCcc = consumersInCcc.filter(item => /^(IJ|IL|IT)/.test(item.METER_NO || ''));
+    }
 
+    consumerModalTitle.textContent = `${cccName} – Consumers`;
 
-            // Sort consumers by defect date (earliest to latest)
-            consumersInCcc.sort((a, b) => {
-                const dateA = parseDate(a.FIRST_REPORTED_DEF_DT);
-                const dateB = parseDate(b.FIRST_REPORTED_DEF_DT);
-                if (!dateA && !dateB) return 0;
-                if (!dateA) return 1;
-                if (!dateB) return -1;
-                return dateA.getTime() - dateB.getTime();
-            });
+    let modalContent = `
+        <div class="table-header">
+            <div class="grid-5">
+                <div>Name</div>
+                <div>Meter No</div>
+                <div class="text-right">Reported Date</div>
+                <div class="text-right">Class</div>
+                <div class="text-right">Load</div>
+            </div>
+        </div>
+        <div class="table-container">
+    `;
 
-            let modalContent = `
-                <div class="table-header">
-                    <div class="grid-7">
-                        <div>Consumer ID</div>
-                        <div>Meter No.</div>
-                        <div>Phase</div>
-                        <div>Conn. Load</div>
-                        <div>Base Class</div>
-                        <div>Defect Date</div>
-                        <div>Conn. Stat</div>
-                    </div>
+    consumersInCcc.forEach(item => {
+        modalContent += `
+            <div class="table-row consumer-row-modal" data-idx="${item.__idx}">
+                <div class="grid-5">
+                    <div class="truncate">${item.NAME || ''}</div>
+                    <div class="truncate">${item.METER_NO || ''}</div>
+                    <div class="text-right">${formatDateToDDMMYYYY(parseDate(item.FIRST_REPORTED_DEF_DT))}</div>
+                    <div class="text-right">${item.BASE_CLASS || ''}</div>
+                    <div class="text-right">${item.CONN_LOAD || ''}</div>
                 </div>
-                <div class="table-container">
-            `;
+            </div>
+        `;
+    });
 
-            if (consumersInCcc.length === 0) {
-                modalContent += `<div class="text-center py-4 text-gray-500">No consumer data found for this CCC.</div>`;
-            } else {
-                consumersInCcc.forEach(item => {
-                    modalContent += `
-                        <div class="table-row">
-                            <div class="grid-7">
-                                <div class="font-mono">${item.CON_ID || 'N/A'}</div>
-                                <div>${item.METER_NO || 'N/A'}</div>
-                                <div>${item.PHASE || 'N/A'}</div>
-                                <div>${item.CONN_LOAD || 'N/A'}</div>
-                                <div>${item.BASE_CLASS || 'N/A'}</div>
-                                <div>${formatDateToDDMMYYYY(parseDate(item.FIRST_REPORTED_DEF_DT))}</div>
-                                <div>${item.CONN_STAT || 'N/A'}</div>
-                            </div>
-                        </div>
-                    `;
+    modalContent += `</div>`;
+    consumerModalBody.innerHTML = modalContent;
+    openModal('consumer-modal-overlay');
+
+    // attach click handlers to consumer rows to open detail modal
+    document.querySelectorAll('.consumer-row-modal').forEach(row => {
+        row.addEventListener('click', function () {
+            const idx = parseInt(this.dataset.idx, 10);
+            if (!Number.isNaN(idx)) renderDetailModal(idx);
+        });
+    });
+}
+
+/**
+         * Simple CSV parser that returns array of objects using first row as headers.
+         * Handles quoted fields and doubled quotes inside quotes.
+         * @param {string} text - Raw CSV text
+         * @returns {Array<Object>}
+         */
+        function parseCSV(text) {
+            if (!text) return [];
+            const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+            if (lines.length === 0) return [];
+            const parseLine = (line) => {
+                const values = [];
+                let cur = '';
+                let inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                    const ch = line[i];
+                    if (ch === '"') {
+                        // If double quotes inside quoted field, consume one and append a quote
+                        if (inQuotes && line[i + 1] === '"') {
+                            cur += '"';
+                            i++;
+                        } else {
+                            inQuotes = !inQuotes;
+                        }
+                    } else if (ch === ',' && !inQuotes) {
+                        values.push(cur);
+                        cur = '';
+                    } else {
+                        cur += ch;
+                    }
+                }
+                values.push(cur);
+                return values;
+            };
+
+            const headers = parseLine(lines[0]).map(h => h.trim());
+            const rows = lines.slice(1);
+            const result = rows.map(row => {
+                const values = parseLine(row);
+                const obj = {};
+                headers.forEach((h, idx) => {
+                    obj[h] = values[idx] !== undefined ? values[idx] : '';
                 });
-            }
-            modalContent += `</div>`;
-
-            consumerModalTitle.textContent = `Consumers in ${cccName} (${cccCode})`;
-            consumerModalBody.innerHTML = modalContent;
-            openModal('consumer-modal-overlay');
-            globalLoadingOverlay.classList.remove('visible'); // Hide loading overlay
+                return obj;
+            });
+            return result;
         }
-
-
-        // Event Listeners for filter dropdowns
-        regionSelect.addEventListener('change', () => {
-            globalLoadingOverlay.classList.add('visible'); // Show loading overlay immediately
-            populateDivisions(regionSelect.value); 
-            debouncedFilterData(); // Call debounced filterData
-        });
-
-        divisionSelect.addEventListener('change', () => {
-            globalLoadingOverlay.classList.add('visible'); // Show loading overlay immediately
-            populateCccs(divisionSelect.value); 
-            debouncedFilterData(); // Call debounced filterData
-        });
-
-        cccSelect.addEventListener('change', () => {
-            globalLoadingOverlay.classList.add('visible'); // Show loading overlay immediately
-            debouncedFilterData(); // Call debounced filterData
-        }); 
-
-        // New: Event Listener for Class filter dropdown
-        classSelect.addEventListener('change', () => {
-            globalLoadingOverlay.classList.add('visible'); // Show loading overlay immediately
-            debouncedFilterData(); // Call debounced filterData
-        });
-
-        // Event Listeners for main tabs
-        tabButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                globalLoadingOverlay.classList.add('visible'); // Show loading overlay immediately
-                tabButtons.forEach(btn => btn.classList.remove('active'));
-                button.classList.add('active'); 
-                currentActiveTab = button.id.replace('tab-', ''); 
-                debouncedRenderTabContent(currentActiveTab); // Call debounced renderTabContent
-            });
-        });
-
-        // Event listeners for metric cards to open CCC-wise modal
-        metricCards.forEach(card => {
-            card.addEventListener('click', function() {
-                globalLoadingOverlay.classList.add('visible'); // Show loading overlay immediately
-                const metricType = this.dataset.metricType;
-                renderCccWiseModalContent(metricType);
-            });
-        });
 
         // Initialize the dashboard when the DOM is fully loaded
         document.addEventListener('DOMContentLoaded', async () => {
             globalLoadingOverlay.classList.add('visible'); // Show global loading overlay on initial load
 
             try {
-                const allParts = [
-                    'defective_meter_part1.json',
-                    'defective_meter_part2.json',
-                    'defective_meter_part3.json',
-                    'defective_meter_part4.json',
-                    'defective_meter_part5.json',
-                    'defective_meter_part6.json',
-                    'defective_meter_part7.json'
-                ];
-
-                // Fetch all parts concurrently using Promise.all
-                const responses = await Promise.all(allParts.map(part => fetch(part)));
-
-                // Check if all responses are OK
-                for (const response of responses) {
-                    if (!response.ok) {
-                        throw new Error(`Failed to fetch ${response.url}`);
-                    }
+                // Load a single CSV file from the project root
+                const response = await fetch('defective_meter.csv');
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch defective_meter.csv (${response.status})`);
                 }
+                const csvText = await response.text();
 
-                // Parse all JSON data concurrently
-                const dataPromises = responses.map(response => response.json());
-                const allData = await Promise.all(dataPromises);
+                // Parse CSV into array of objects. CSV header must match field names used in the script
+                defectiveMeterData = parseCSV(csvText);
 
-                // Concatenate all data into defectiveMeterData
-                defectiveMeterData = allData.flat(); // Use flat() to merge arrays of arrays
+                // --- ADDED: keep original index for each row so we can open details later ---
+                defectiveMeterData.forEach((r, i) => { r.__idx = i; });
 
-                populateRegions(); 
-                populateClasses(); 
-                populateYearTabs(); 
+                // If there are numeric fields stored as strings and you need conversions,
+                // add conversions here (optional). The rest of the code expects keys like:
+                // FIRST_REPORTED_DEF_DT, REPORT_AS_ON, CCC_CODE, BASE_CLASS, PHASE, METER_NO, NAME, CONN_LOAD, etc.
+                
+                populateRegions();
+                populateClasses();
+                populateYearTabs();
                 filterData(); // Initial update
 
             } catch (error) {
@@ -1487,13 +1580,48 @@ if (tabName === 'age-analysis') {
                 tabContent.innerHTML = `
                     <div class="text-center py-4">
                         <p class="font-medium text-red-500">Failed to load data</p>
-                        <p class="text-gray-500 opacity-70 mt-1">Please ensure all 7 parts are correctly formatted.</p>
+                        <p class="text-gray-500 opacity-70 mt-1">Please ensure defective_meter.csv is present in the project root and correctly formatted.</p>
                     </div>
                 `;
             } finally {
                 globalLoadingOverlay.classList.remove('visible');
                 openModal('suggestion-modal-overlay');
+            }
+        });
 
+        // --- ADDED: render detail modal for a single row by original index ---
+        function renderDetailModal(originalIndex) {
+            const row = defectiveMeterData[originalIndex];
+            if (!row) return;
+            detailModalTitle.textContent = `${row.NAME || row.METER_NO || 'Record Details'}`;
+
+            // Build key/value list (skip __idx)
+            let html = `<div class="table-header"><div class="grid-2"><div>Field</div><div class="text-right">Value</div></div></div><div class="table-container">`;
+            Object.entries(row).forEach(([k, v]) => {
+                if (k === '__idx') return;
+                html += `
+                    <div class="table-row">
+                        <div class="grid-2">
+                            <div class="font-medium">${k}</div>
+                            <div class="text-right">${String(v ?? '')}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += `</div>`;
+
+            detailModalBody.innerHTML = html;
+            openModal('detail-modal-overlay');
+        }
+
+        // --- ADDED: open detail modal on consumer row click in consumer-wise modal ---
+        document.addEventListener('click', function(e) {
+            const target = e.target.closest('.consumer-row-modal');
+            if (target) {
+                const idx = target.dataset.idx;
+                if (idx) {
+                    renderDetailModal(idx);
+                }
             }
         });
     </script>
