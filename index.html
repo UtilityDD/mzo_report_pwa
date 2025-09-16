@@ -1,0 +1,1738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>MZO Reports</title>
+<link href="manifest.json" rel="manifest"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet"/>
+<style>
+/*──────────────────────────────────────
+   Global reset
+──────────────────────────────────────*/
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg-dark: #0f172a; /* Dark Slate Blue */
+  --bg-med: rgba(31, 41, 55, 0.5); /* Semi-transparent Slate */
+  --bg-light: rgba(55, 65, 81, 0.4); /* Lighter semi-transparent Slate */
+  --border-color: rgba(255, 255, 255, 0.1);
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --accent-primary: #4f46e5;
+  --accent-secondary: #7c3aed;
+  --danger: #f43f5e; /* Rose Red */
+}
+
+/*──────────────────────────────────────
+   Base styles - Modern Dark Theme
+──────────────────────────────────────*/
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden; /* Prevent horizontal scroll */
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-dark);
+  background-image: 
+    radial-gradient(at 10% 20%, hsla(260, 80%, 40%, 0.2) 0px, transparent 50%),
+    radial-gradient(at 80% 15%, hsla(212, 70%, 50%, 0.25) 0px, transparent 50%),
+    radial-gradient(at 75% 85%, hsla(320, 65%, 35%, 0.15) 0px, transparent 50%);
+  color: var(--text-secondary);
+  min-height: 100vh;
+}
+
+
+
+/*──────────────────────────────────────
+   Layout
+──────────────────────────────────────*/
+#mainApp, #pageContainer {
+  width: 100%;
+  max-width: 100vw; /* Prevent overflow */
+  overflow-x: hidden;
+}
+
+.page {
+  position: relative;
+  width: 100%;
+  max-width: 100vw;
+  height: 100vh;
+  display: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.page.active {
+  display: block;
+}
+
+/*──────────────────────────────────────
+   App container & grid - Modern Dark Theme
+──────────────────────────────────────*/
+.app-container {
+  width: 100%;
+  max-width: 800px; /* desktop width stays same */
+  margin: 0 auto;
+  background: transparent;
+  min-height: calc(100vh - 56px - 48px); /* header height + footer height */
+  overflow-x: visible;
+}
+
+.report-grid {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .report-grid { 
+    grid-template-columns: repeat(2, 1fr); 
+  }
+  .app-container { 
+    max-width: 800px;
+    border-radius: 16px;
+    border: none;
+    box-shadow: none;
+  }
+}
+
+/*──────────────────────────────────────
+   Header - Modern Dark Theme
+──────────────────────────────────────*/
+.header {
+  background: rgba(31, 41, 55, 0.5);
+  backdrop-filter: blur(16px);
+  color: white;
+  padding: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  width: 100%;
+  max-width: 100vw;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border-color); /* Glass edge */
+}
+
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0; /* Allow flex shrink */
+}
+
+.header-texts {
+  flex: 1;
+  min-width: 0;
+}
+
+.main-title {
+  font-size: 24px;
+  font-weight: 600;
+  word-wrap: break-word;
+  color: var(--text-primary);
+}
+
+.subtitle {
+  font-size: 14px;
+  opacity: 0.9;
+  margin-top: 2px;
+  color: var(--text-secondary);
+}
+
+/*──────────────────────────────────────
+   Icons & refresh button - Modern Dark Theme
+──────────────────────────────────────*/
+.header-icon, .refresh-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--bg-light);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0; /* Prevent shrinking */
+  border: none;
+}
+
+.header-icon {
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+}
+
+.refresh-icon {
+  width: 44px;
+  height: 44px;
+  color: var(--text-primary);
+  outline: none;
+  position: relative;
+  z-index: 1;
+}
+
+.refresh-icon:hover {
+  background: var(--border-color);
+  transform: translateY(-2px) scale(1.05);
+}
+
+.refresh-icon:active {
+  transform: translateY(0) scale(1);
+}
+
+.refresh-icon.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Detail page header specific styles */
+#detailPage .header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/*──────────────────────────────────────
+   Error banner - Dark Theme
+──────────────────────────────────────*/
+.error-banner {
+  display: none;
+  background: rgb(153 27 27 / 0.2);
+  color: #fca5a5;
+  padding: 12px 16px;
+  border-left: 4px solid var(--danger);
+  margin: 16px;
+  border-radius: 8px;
+  word-wrap: break-word;
+}
+
+/*──────────────────────────────────────
+   Content & cards - Modern Dark Theme
+──────────────────────────────────────*/
+.content {
+  padding: 16px;
+  padding-bottom: 100px; /* Increased padding to account for footer height */
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+.report-card {
+  background: var(--bg-light); /* Glass background */
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  margin-bottom: 0;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  width: 100%;
+  overflow: hidden;
+}
+
+.report-card:hover {
+  transform: translateY(-5px) scale(1.01);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.card-header {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  width: 100%;
+  border-bottom: 0.5px solid rgba(255,255,255,0.05); /* Thinner subtle separator */
+}
+
+.card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.card-icon {
+  width: 48px;
+  height: 48px;
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+  font-size: 28px; /* Larger icon for visibility */
+  color: var(--text-primary); /* Default color, overridden by specific classes */
+  flex-shrink: 0;
+  background: transparent; /* Remove background from the container */
+}
+
+.card-title {
+  font-weight: 500;
+  font-size: 16px;
+  color: var(--text-primary);
+  line-height: 1.4;
+  word-wrap: break-word;
+  flex: 1;
+}
+
+.chevron {
+  font-size: 18px;
+  color: var(--text-secondary);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.chevron.rotated {
+  transform: rotate(180deg);
+}
+
+.sub-options {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+  background: var(--bg-med); /* Darker glass for sub-options */
+  border-top: 1px solid var(--border-color);
+  width: 100%;
+}
+
+.sub-options.active {
+  max-height: 500px;
+}
+
+.sub-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  text-decoration: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  border-top: 1px solid var(--bg-light);
+  transition: all 0.2s ease;
+  width: 100%;
+  word-wrap: break-word;
+  border-left: 2px solid transparent;
+}
+
+.sub-option:hover {
+  background: rgba(55, 65, 81, 0.6); /* Lighter glass on hover */
+  color: var(--text-primary);
+  border-left-color: var(--accent-primary);
+}
+
+.sub-option i {
+  width: 20px;
+  text-align: center;
+  font-size: 16px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+/*──────────────────────────────────────
+   Card-icon color variants - Modern
+──────────────────────────────────────*/
+.card-icon.connections { color: #10b981; } /* Emerald */
+.card-icon.financial   { color: #f59e0b; } /* Amber */
+.card-icon.maintenance { color: #8b5cf6; } /* Violet */
+.card-icon.visits      { color: #f43f5e; } /* Rose */
+.card-icon.grievance   { color: #f97316; } /* Orange */
+.card-icon.revenue     { color: #06b6d4; } /* Cyan */
+.card-icon.water       { color: #3b82f6; } /* Blue */
+.card-icon.safety      { color: #84cc16; } /* Lime */
+.card-icon.solar       { color: #eab308; } /* Yellow */
+.card-icon.industrial  { color: #6366f1; } /* Indigo */
+.card-icon.civil       { color: #14b8a6; } /* Teal */
+.card-icon.priority    { 
+  background: linear-gradient(135deg, #d946ef, #a855f7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+
+/*──────────────────────────────────────
+   Detail‐page iframe - Dark Theme
+──────────────────────────────────────*/
+#subPageFrame {
+  width: 100%;
+  height: calc(100vh - 56px);
+  border: none;
+  background-color: var(--bg-dark);
+}
+
+/*──────────────────────────────────────
+   Loading overlay - Dark Theme
+──────────────────────────────────────*/
+.loading-overlay {
+  position: fixed;
+  top: 0; 
+  left: 0;
+  width: 100%; 
+  height: 100%;
+  background: rgba(17, 24, 39, 0.8);
+  z-index: 9999;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s, visibility 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Add a spinner for loading overlay */
+.loading-overlay::after {
+  content: '';
+  border: 5px solid var(--bg-light);
+  border-top: 5px solid var(--text-secondary);
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  animation: spin 1s linear infinite;
+}
+
+
+/*──────────────────────────────────────
+   Footer - Dark Theme
+──────────────────────────────────────*/
+.footer {
+  position: fixed;
+  bottom: 0;
+  left: 50%; /* Center the footer */
+  transform: translateX(-50%); /* Center the footer */
+  width: 100%; /* Default to 100% width */
+  max-width: 800px; /* Match app-container max-width for smaller screens */
+  background: rgba(31, 41, 55, 0.5);
+  backdrop-filter: blur(16px);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 16px;
+  border-top: 1px solid var(--border-color);
+  z-index: 1000;
+}
+
+
+/*──────────────────────────────────────
+   Mobile-specific fixes
+──────────────────────────────────────*/
+@media (max-width: 480px) {
+  .content { 
+    padding: 12px;
+    padding-bottom: 100px; /* Ensure enough space for footer on small screens */
+  }
+  
+  .card-header { 
+    padding: 12px;
+  }
+  
+  .sub-option { 
+    padding: 12px 14px;
+  }
+  
+  .refresh-icon { 
+    width: 40px; 
+    height: 40px; 
+    padding: 4px; 
+  }
+  
+  .main-title {
+    font-size: 18px;
+  }
+  
+  .card-title {
+    font-size: 15px;
+  }
+  
+  .card-header-left {
+    gap: 12px;
+  }
+}
+
+/* Additional mobile safety */
+@media (max-width: 767px) {
+  * {
+    max-width: 100vw;
+  }
+  
+  .app-container {
+    margin: 0;
+    border-radius: 0;
+  }
+  
+  .header {
+    padding: 32px 12px 16px; /* Increased top padding for status bar */
+  }
+  
+  .error-banner {
+    margin: 12px;
+  }
+
+  /* New Mobile Grid UI - Replaces Accordion */
+  .report-grid {
+    grid-template-columns: 1fr; /* Single column for main cards */
+    gap: 16px;
+  }
+
+  .report-card {
+    background: var(--bg-light); /* Glass background */
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
+    padding: 12px;
+    margin: 0;
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .report-card:hover {
+    transform: none;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
+  }
+
+  .card-header {
+    display: flex;
+    padding: 0;
+    cursor: default; /* Not clickable on mobile */
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 8px;
+    align-items: center;
+  }
+
+  .card-header .card-icon {
+    display: none; /* Remove icon from mobile group header */
+  }
+
+  .card-header .chevron {
+    display: none; /* Hide accordion chevron on mobile */
+  }
+
+  .card-title {
+    font-size: 13px; /* Smaller, modern title size */
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .sub-options {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr); /* Two columns for sub-items */
+    gap: 12px; /* Gap for the new grid */
+    max-height: none; /* Override accordion styles */
+    overflow: visible;
+    background: none;
+    border-top: none;
+  }
+
+  .sub-option {
+    /* Modernized sub-item row */
+    display: flex;
+    flex-direction: column; /* Stack icon and text vertically */
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 8px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 12px; /* Add radius for hover effect */
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 12px; /* Smaller text */
+    text-align: center;
+    min-height: 90px;
+  }
+
+  .sub-option i {
+    /* Icon inside a rounded square with shadow */
+    display: inline-flex;
+    background: none;
+    box-shadow: none;
+    font-size: 24px; /* Prominent icon size */
+    /* Color is now inherited from parent card below */
+  }
+
+  .sub-option:hover {
+    background: var(--bg-med);
+    color: var(--text-primary);
+    border-left-color: transparent; /* Ensure override on hover */
+  }
+
+  /* Colorful icons for mobile view, inheriting from parent card */
+  .report-card:has(.card-icon.connections) .sub-option i { color: #10b981; }
+  .report-card:has(.card-icon.financial) .sub-option i { color: #f59e0b; }
+  .report-card:has(.card-icon.maintenance) .sub-option i { color: #8b5cf6; }
+  .report-card:has(.card-icon.visits) .sub-option i { color: #f43f5e; }
+  .report-card:has(.card-icon.grievance) .sub-option i { color: #f97316; }
+  .report-card:has(.card-icon.revenue) .sub-option i { color: #06b6d4; }
+  .report-card:has(.card-icon.water) .sub-option i { color: #3b82f6; }
+  .report-card:has(.card-icon.safety) .sub-option i { color: #84cc16; }
+  .report-card:has(.card-icon.solar) .sub-option i { color: #eab308; }
+  .report-card:has(.card-icon.industrial) .sub-option i { color: #6366f1; }
+  .report-card:has(.card-icon.civil) .sub-option i { color: #14b8a6; }
+  .report-card:has(.card-icon.priority) .sub-option i {
+    background: linear-gradient(135deg, #d946ef, #a855f7);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+}
+
+/* Desktop enhancements - Dark Theme & Thin 3D */
+@media (min-width: 1024px) {
+  .footer {
+    width: 70%; /* Match app-container width for desktop */
+    max-width: none; /* Remove max-width constraint if width is fixed */
+    left: 50%; /* Center it */
+    transform: translateX(-50%); /* Center it */
+    margin: 0 auto; /* Center it */
+    right: auto; /* Ensure no conflicting right */
+  }
+  body {
+    background: var(--bg-dark);
+  }
+
+.app-container {
+  width: 70%;
+  max-width: 100vw;
+  margin: 0 auto;
+  background: transparent;
+  min-height: calc(100vh - 56px - 48px); /* header height + footer height */
+  overflow-x: visible;
+}
+}
+
+/* Detail page back button */
+.back-button {
+  background: none;
+  border: none;
+  color: white;
+  margin-right: 16px;
+  cursor: pointer;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transition: all 0.2s ease;
+}
+
+
+.back-button:hover {
+  opacity: 0.8;
+}
+
+.back-button:active {
+  transform: scale(0.95);
+}
+
+/* iframe wrapper adjustments */
+#iframeWrapper {
+  height: calc(100vh - 56px); 
+  overflow-y: auto; 
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+  max-width: 100vw;
+}
+
+#iframeError {
+  display: none;
+  position: absolute;
+  top: 56px;
+  left: 0;
+  width: 100%;
+  height: calc(100% - 56px);
+  background: var(--bg-dark);
+  color: var(--text-secondary);
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 20px;
+  z-index: 10;
+}
+
+#iframeError button {
+  background: var(--danger);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+#iframeError button:hover {
+  background: #c22545;
+}
+
+#pullToRefresh {
+  display: none; 
+  text-align: center; 
+  padding: 10px;
+  color: var(--text-secondary);
+  font-weight: 500; 
+  font-size: 14px;
+}
+.sub-option img {
+  margin-right: 10px;
+  vertical-align: middle;
+}
+
+.action-btn-container {
+  width: 100%; 
+  display: flex; 
+  justify-content: center; 
+  margin-top: 16px;
+  gap: 12px;
+}
+
+.btn {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  font-size: 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+}
+
+.btn-docket {
+  background: linear-gradient(135deg, var(--danger), #be123c);
+  color: white;
+  animation: livePulseRed 2s infinite;
+}
+
+.btn-kpi {
+  background: var(--bg-light);
+  color: var(--text-primary);
+}
+
+.loading-text {
+  padding: 16px;
+  color: var(--text-secondary);
+  font-style: italic;
+  text-align: center;
+}
+
+@keyframes blinkAnim {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; } /* Slightly less opaque */
+}
+
+@keyframes livePulseRed {
+  0% {
+    box-shadow: 0 0 0 0 hsla(349, 89%, 60%, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px hsla(349, 89%, 60%, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 hsla(349, 89%, 60%, 0);
+  }
+}
+
+/* Styles for the Notice Modal - Prominent Light Theme */
+#noticeModal {
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  background-color: rgba(15, 23, 42, 0.8); /* Darker, more opaque overlay */
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+  font-family: 'Segoe UI', sans-serif;
+  display: flex; align-items: center; justify-content: center;
+  padding: 15px;
+}
+
+#noticeModal > div { /* This targets the inner content box */
+  background-color: #ffffff;
+  border-radius: 16px; /* Larger radius */
+  width: 100%;
+  max-width: 600px; /* Increased max-width */
+  padding: 30px; /* Increased padding */
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0,0,0,0.05);
+  max-height: 90vh;
+  overflow-y: auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 1px solid rgba(0,0,0,0.1);
+}
+
+#quoteSection {
+  color: #4b5563;
+  font-family: 'Lora', serif;
+  font-size: 28px;
+  line-height: 1.6;
+  font-weight: 700;
+  text-align: center;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 20px;
+  margin: auto 0; /* This will vertically center the quote section */
+}
+
+#noticeContentSection {
+  display: none;
+  text-align: left;
+  flex-grow: 1;
+  margin-bottom: 25px;
+}
+
+#noticeTitle {
+  font-size: 24px; /* Larger font for notice title */
+  color: #1e3a8a; /* Dark blue */
+  margin-top: 0;
+  text-align: left;
+  font-weight: 700; /* Bolder */
+}
+
+#noticeBody {
+  font-size: 16px; /* Larger font for notice body */
+  color: #374151; /* Darker grey */
+  line-height: 1.7; /* More readable */
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin-top: 12px;
+}
+
+#noticeButtonSection {
+  display: none;
+  text-align: right;
+  margin-top: 0;
+}
+
+#noticeButtonSection button {
+  background-color: #2563eb; /* Vibrant blue */
+  color: #fff;
+  border: none;
+  padding: 12px 24px; /* Bigger button */
+  font-size: 16px; /* Bigger font */
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+}
+
+#noticeButtonSection button:hover {
+  background-color: #1d4ed8;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+}
+
+#noticeButtonSection button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2);
+}
+
+/* Responsive adjustments for the modal */
+@media (max-width: 768px) {
+  #noticeModal > div {
+    max-width: 95%;
+    padding: 20px;
+  }
+
+  #quoteSection {
+    font-size: 24px;
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+  }
+
+  #quoteSection i {
+    font-size: 22px;
+  }
+
+  #noticeTitle {
+    font-size: 20px;
+  }
+
+  #noticeBody {
+    font-size: 15px;
+  }
+
+  #noticeButtonSection button {
+    padding: 10px 20px;
+    font-size: 15px;
+    width: 100%; /* Full width on mobile */
+  }
+}
+
+/* New animation for the quote */
+.quote-word {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(15px) scale(0.95);
+  animation: fadeInWord 0.5s cubic-bezier(0.215, 0.610, 0.355, 1) forwards;
+}
+
+@keyframes fadeInWord {
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Smart forward button */
+#forwardButtonContainer {
+  text-align: center;
+  margin-top: 20px;
+}
+
+#smartForwardBtn {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  color: #4b5563;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+#smartForwardBtn:hover:not(:disabled) {
+  background: #e5e7eb;
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+#smartForwardBtn:disabled {
+  cursor: not-allowed;
+  background: #e5e7eb;
+}
+
+/* Keep this separate from the button group above */
+.blinking-button {
+  font-weight: 600;
+  color: #f87171; /* Changed text color to red */
+  background-color: transparent; /* Changed background to transparent */
+  border: 2px solid #991b1b; /* Added red border */
+  border-radius: 5px;
+  cursor: pointer;
+  animation: glowRed 1.5s infinite alternate; /* New animation for glow */
+  box-shadow: 0 0 0 rgba(153, 27, 27, 0); /* Initial state for shadow */
+}
+</style>
+
+</head>
+<body>  
+
+<div id="mainApp" style="display: block;">
+
+<div id="pageContainer"><div class="page active" id="mainPage"><div class="app-container">
+<div class="error-banner" id="errorBanner">
+<i class="fas fa-exclamation-triangle"></i>
+      Connectivity issue detected. Please check your internet connection.
+    </div>
+<div class="header">
+
+
+<div class="header-content">
+<div class="header-row">
+<div class="header-left">
+<div class="header-icon">
+<i class="fas fa-chart-line"></i>
+</div>
+<div class="header-texts">
+<h1 class="main-title">MZO Reports</h1>
+<div class="subtitle">Actionable Insights</div>
+</div>
+</div>
+<button class="refresh-icon" onclick="refreshMainPage()" id="mainRefreshBtn">
+<i class="fas fa-sync-alt"></i>
+</button>
+</div>
+</div>
+
+</div>
+<div class="action-btn-container">
+    <!-- Docket Calls Button -->
+    <button class="btn btn-docket" onclick="openPage('docket.html', 'Docket Calls')">
+      <i class="fas fa-headset"></i> 
+      <span>Docket Calls</span>
+    </button>
+
+    <!-- Highway Crossing Button -->
+    <button class="btn btn-kpi" onclick="openPage('power_map/crossing_summary.html', 'Highway Crossings')" title="View Highway Crossings">
+      <span class="fa-stack" style="font-size: 0.8em; vertical-align: middle;">
+        <i class="fas fa-road fa-stack-2x" style="color: #6c757d;"></i>
+        <i class="fas fa-tower-broadcast fa-stack-1x" style="color: var(--danger);"></i>
+      </span>
+    </button>
+</div>
+
+
+<div class="content">
+  <div class="report-grid">
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon connections"><i class="fas fa-user-plus"></i></div>
+          <div class="card-title">New Service Connection</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+        <a class="sub-option" data-page="nsc.html" href="#"><i class="fas fa-chart-bar"></i> Summary</a>
+        <a class="sub-option" data-page="nsc/index.html" href="#"><i class="fas fa-lightbulb"></i> KPIs</a>
+        <a class="sub-option" data-page="weekly.html" href="#"><i class="fas fa-calendar-week"></i> Weekly Deposit vs Disposal</a>
+        <a class="sub-option" data-page="pending_mc.html" href="#"><i class="fas fa-credit-card"></i> Pending Master Card</a>
+        <a class="sub-option" data-page="withheld.html" href="#"><i class="fas fa-pause-circle"></i> Withheld</a>
+      </div>
+    </div>
+
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon financial"><i class="fas fa-credit-card"></i></div>
+          <div class="card-title">Advance to Vendor</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+<a class="sub-option" data-page="capex_all.html" href="#"><i class="fas fa-chart-bar"></i> Capex Summary</a>
+  <a class="sub-option" data-page="advance_onm.html" href="#"><i class="fas fa-tools"></i> O&M Summary</a>
+      </div>
+    </div>
+
+<div class="report-card" onclick="toggleSub(this)">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-icon revenue"><i class="fas fa-bolt"></i></div>
+      <div class="card-title">Consumer / Meter Analytics</div>
+    </div>
+    <i class="fas fa-chevron-down chevron"></i>
+  </div>
+  <div class="sub-options">
+    <a class="sub-option" data-page="consumer/defective_meter.html" href="#"><i class="fas fa-exclamation-circle"></i> Defective Meter</a>
+    <a class="sub-option" data-page="under_construction.html" href="#"><i class="fas fa-users"></i> Consumers</a>
+    <a class="sub-option" data-page="docket.html" href="#"><i class="fas fa-headset"></i> Docket Call</a>
+    <a class="sub-option" data-page="docket/kpi.html" href="#"><i class="fas fa-tachometer-alt"></i> Docket KPI</a>
+  </div>
+</div>
+
+
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon maintenance"><i class="fas fa-tools"></i></div>
+          <div class="card-title">Substation Upkeeping</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+        <a class="sub-option" data-page="Upkeeping/index.html" href="#"><i class="fas fa-chart-line"></i> Inspection Report Entry</a>
+        <a class="sub-option" data-page="under_construction.html" href="#"><i class="fas fa-camera"></i> Photo Reports</a>
+      </div>
+    </div>
+<div class="report-card" onclick="toggleSub(this)">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-icon industrial"><i class="fas fa-industry"></i></div>
+      <div class="card-title">Substation / Network</div>
+    </div>
+    <i class="fas fa-chevron-down chevron"></i>
+  </div>
+  <div class="sub-options">
+    <a class="sub-option" data-page="power_map/map.html" href="#">
+      <i class="fas fa-map-marked-alt"></i> Power Map
+    </a>
+        <a class="sub-option" data-page="power_map/nh_sh_crossings.html" href="#">
+      <i class="fas fa-road"></i> Electric Line–Highway Crossings
+    </a>
+    <a class="sub-option" data-page="prt-oil/index.html" href="#">
+      <i class="fas fa-industry"></i> PRT/Transformer Records
+    </a>
+
+  </div>
+</div>
+
+
+<div class="report-card" onclick="toggleSub(this)">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-icon priority"><i class="fas fa-diagram-project"></i></div>
+    <div class="card-title">Priority SI Works</div>
+    </div>
+    <i class="fas fa-chevron-down chevron"></i>
+  </div>
+  <div class="sub-options">
+    <a class="sub-option" data-page="si-works/si.html" href="#"><i class="fas fa-chart-pie"></i> Summary</a>
+  </div>
+</div>
+
+
+    <div class="report-card" onclick="toggleSub(this)">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-icon maintenance"><i class="fas fa-screwdriver"></i></div>
+      <div class="card-title">DTR Maintenance</div>
+    </div>
+    <i class="fas fa-chevron-down chevron"></i>
+  </div>
+  <div class="sub-options">
+    <a class="sub-option" data-page="dtr/index.html" href="#"><i class="fas fa-clipboard-list"></i> DTR Records</a>
+    <a class="sub-option" data-page="dtr/load.html" href="#"><i class="fas fa-chart-area"></i> Peak Load Measurements</a>
+    <a class="sub-option" data-page="health_checkup.html" href="#"><i class="fas fa-heartbeat"></i> Health Check-up</a>
+  </div>
+</div>
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon visits"><i class="fas fa-user-check"></i></div>
+          <div class="card-title">DD Visit</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+        <a class="sub-option" data-page="dd/upcomingDD.html" href="#"><i class="fas fa-calendar-alt"></i> Upcoming DD</a>
+        <a class="sub-option" data-page="ddbysmdm.html" href="#"><i class="fas fa-user-tie"></i> Entry by SM/DM</a>
+        <a class="sub-option" data-page="ddbyro.html" href="#"><i class="fas fa-user-cog"></i> Entry by RM</a>
+        <a class="sub-option" data-page="ddsummary.html" href="#"><i class="fas fa-file-alt"></i> Summary Report</a>
+      </div>
+    </div>
+
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon grievance"><i class="fas fa-exclamation-circle"></i></div>
+          <div class="card-title">CMO Grievance</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+        <a class="sub-option" data-page="cmo.html" href="#"><i class="fas fa-chart-pie"></i> Summary</a>
+      </div>
+    </div>
+
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon revenue"><i class="fas fa-rupee-sign"></i></div>
+          <div class="card-title">Revenue Reports</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+        <a class="sub-option" data-page="loss.html" href="#"><i class="fas fa-chart-area"></i> Losses</a>
+    <a class="sub-option" data-page="remosd5000.html" href="#"><i class="fas fa-rupee-sign"></i> REM OSD >₹5000/-</a>
+    <a class="sub-option" data-page="rem/defaulters.html" href="#"><i class="fas fa-user-times"></i> Defaulters (Class I&C >₹5000/-)</a>
+  <a class="sub-option" data-page="rem/top200agridom.html" href="#"><i class="fas fa-home"></i> TOP 200 Agri-Dom Consumers</a>      
+      </div>
+    </div>
+
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon water"><i class="fas fa-tint"></i></div>
+          <div class="card-title">JJM Report</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+        <a class="sub-option" data-page="jjm.html" href="#"><i class="fas fa-chart-bar"></i> Summary</a>
+      </div>
+    </div>
+
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon safety"><i class="fas fa-hard-hat"></i></div>
+          <div class="card-title">Safety</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+        <a class="sub-option" data-page="accident/accident.html" href="#"><i class="fas fa-exclamation-triangle"></i> Accident Reports</a>
+        <a class="sub-option" data-page="safety_inspection.html" href="#"><i class="fas fa-mobile-alt"></i> Safety App Reports</a>
+      </div>
+    </div>
+
+
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon civil"><i class="fas fa-building"></i></div>
+          <div class="card-title">Manpower Report</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+        <a class="sub-option" data-page="manpower.html" href="#"><i class="fas fa-clipboard-list"></i> Summary Reports</a>
+      </div>
+    </div>
+
+        <!-- Tools -->
+<div class="report-card" onclick="toggleSub(this)">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-icon safety"><i class="fas fa-tools"></i></div>
+      <div class="card-title">Tools</div>
+    </div>
+    <i class="fas fa-chevron-down chevron"></i>
+  </div>
+  <div class="sub-options">
+    <a class="sub-option" data-page="under_construction.html" href="#"><i class="fas fa-project-diagram"></i> Easy SLD</a>
+    <a class="sub-option" data-page="under_construction.html" href="#"><i class="fas fa-file-invoice-dollar"></i> Estimate Generator</a>
+  </div>
+</div>
+
+
+    <!-- Media Report Card (Place inside .report-grid) -->
+<div class="report-card" onclick="toggleSub(this)">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-icon solar"><i class="fas fa-newspaper"></i></div>
+      <div class="card-title">Media Corner</div>
+    </div>
+    <i class="fas fa-chevron-down chevron"></i>
+  </div>
+  <div class="sub-options" id="mediaLinksContainer">
+    <a class="sub-option" href="https://www.uttarbangasambad.in/malda.php" target="_blank" rel="noopener noreferrer">
+        <img src="data/logo/uttarbanga.png" alt="Uttarbanga Sambad" style="width: 24px; height: 24px; border-radius: 4px; object-fit: cover;">
+        উত্তরবঙ্গ পত্রিকা</a>
+    <a class="sub-option" href="https://www.anandabazar.com/west-bengal/north-bengal" target="_blank" rel="noopener noreferrer">
+        <img src="data/logo/abp.png" alt="Anandabazar Patrika" style="width: 24px; height: 24px; border-radius: 4px; object-fit: cover;">
+        আনন্দবাজার পত্রিকা</a>
+  </div>
+</div>
+
+  </div>
+ 
+</div>
+
+
+<div class="footer">
+      © 2025 MZO | Think outside the box
+    </div>
+</div></div>
+<div class="page" id="detailPage">
+<div class="header">
+<div style="display: flex; align-items: center;">
+<button class="back-button" onclick="goBack()">
+<i class="fas fa-arrow-left"></i>
+</button>
+<h1 class="main-title" style="color: white; font-size: 20px;">Page Title</h1>
+</div>
+<button class="refresh-icon" onclick="refreshIframe()" id="iframeRefreshBtn">
+<i class="fas fa-sync-alt"></i>
+</button>
+</div>
+
+   
+<div id="iframeWrapper" style="height: calc(100vh - 56px); overflow-y: auto; -webkit-overflow-scrolling: touch;">
+  <div id="pullToRefresh" style="display: none; text-align: center; padding: 10px; color: var(--text-secondary); font-weight: 500; font-size: 14px;">
+    🔄 Refreshing...
+  </div>
+  <iframe id="subPageFrame" src="" style="width: 100%; height: calc(100vh - 96px); border: none; background-color: var(--bg-dark);"></iframe>
+</div>
+
+
+<div id="iframeError" style="
+  display: none;
+  position: absolute;
+  top: 70px; /* Adjusted for new header height */
+  left: 0;
+  width: 100%;
+  height: calc(100% - 70px);
+  background: var(--bg-dark);
+  color: var(--text-secondary);
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 16px;
+  z-index: 10;
+">
+  🚫 Failed to load the page. Please check your internet connection or try again later.
+</div>
+   
+</div></div></div></div>
+
+<div class="loading-overlay" id="loadingOverlay"></div>
+
+<script>
+
+// Refresh functions
+// Refresh functions
+function refreshMainPage() {
+  console.log('Main page refresh clicked');
+  const refreshBtn = document.getElementById('mainRefreshBtn');
+  const overlay = document.getElementById('loadingOverlay');
+  
+  if (refreshBtn) {
+    refreshBtn.classList.add('spinning');
+    console.log('Added spinning class to main refresh');
+  }
+  if (overlay) {
+    overlay.classList.add('active');
+  }
+  
+  setTimeout(() => {
+    window.location.reload();
+  }, 800);
+}
+
+function refreshIframe() {
+  const refreshBtn = document.getElementById('iframeRefreshBtn');
+  const iframe = document.getElementById('subPageFrame');
+  const overlay = document.getElementById('loadingOverlay');
+  const errorDiv = document.getElementById('iframeError');
+
+  if (refreshBtn) refreshBtn.classList.add('spinning');
+  if (overlay) overlay.classList.add('active');
+  if (errorDiv) errorDiv.style.display = 'none';
+
+  if (iframe && iframe.src) {
+    const currentSrc = iframe.src;
+    // Fix: Just reload with cache-busting
+    iframe.src = currentSrc + (currentSrc.includes('?') ? '&' : '?') + 't=' + Date.now();
+  }
+
+  setTimeout(() => {
+    if (refreshBtn) refreshBtn.classList.remove('spinning');
+    if (overlay) overlay.classList.remove('active');
+  }, 2000);
+}
+
+
+// Make functions globally available
+window.refreshMainPage = refreshMainPage;
+window.refreshIframe = refreshIframe;
+
+
+// Debug - Add event listeners manually
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('DOM loaded, checking refresh buttons...');
+  
+  const mainRefresh = document.getElementById('mainRefreshBtn');
+  const iframeRefresh = document.getElementById('iframeRefreshBtn');
+  
+  console.log('Main refresh button:', !!mainRefresh);
+  console.log('Iframe refresh button:', !!iframeRefresh);
+  
+  if (mainRefresh) {
+    mainRefresh.addEventListener('click', function(e) {
+      e.preventDefault();
+      console.log('Main refresh clicked via event listener');
+      refreshMainPage();
+    });
+  }
+  
+  // Check for iframe refresh button periodically since it's created dynamically
+  const checkIframeButton = setInterval(() => {
+    const btn = document.getElementById('iframeRefreshBtn');
+    if (btn && !btn.hasAttribute('data-listener-added')) {
+      btn.setAttribute('data-listener-added', 'true');
+      btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        console.log('Iframe refresh clicked via event listener');
+        refreshIframe();
+      });
+      console.log('Added event listener to iframe refresh button');
+      clearInterval(checkIframeButton);
+    }
+  }, 500);
+});
+
+
+
+
+// Android-style navigation
+function openPage(page, title) {
+  const iframe = document.getElementById("subPageFrame");
+  const errorDiv = document.getElementById("iframeError");
+  const desktopBreakpoint = 768; // Define your desktop breakpoint
+
+  if (window.innerWidth >= desktopBreakpoint) {
+    // Open in new tab for desktop
+    window.open(page, '_blank');
+    return; // Exit function, no need to proceed with iframe logic
+  }
+
+  // Hide any previous error
+  errorDiv.style.display = "none";
+
+  // Temporarily remove previous event listener
+  iframe.onload = null;
+  iframe.onerror = null;
+
+  // Show loading state and set the new src
+  iframe.src = "";
+  iframe.src = page;
+  document.querySelector("#detailPage .main-title").textContent = title;
+
+  document.getElementById("mainPage").classList.remove("active");
+  document.getElementById("detailPage").classList.add("active");
+
+  let loadFailed = false;
+
+const timeout = setTimeout(() => {
+  try {
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    const title = (doc.title || "").toLowerCase();
+    const body = (doc.body && doc.body.innerText || "").toLowerCase();
+
+    // Try to infer 404
+    if (title.includes("404") || title.includes("not found") || body.includes("404") || body.includes("not found")) {
+      showIframeError("🚫 Page Not Found (404). This file might be missing.");
+      return;
+    }
+
+    // Check for empty/blank load (often a network failure)
+    if (!body.trim() || body.trim().length < 20) {
+      showIframeError("🛑 Unable to load. Network might be unstable.");
+      return;
+    }
+
+    // Generic fallback
+    showIframeError("⚠️ Something went wrong. Please try again.");
+  } catch (err) {
+    // Catch iframe load failure (possibly network)
+    showIframeError("🛑 Network issue or unreachable content.");
+  }
+}, 4000);
+
+
+function showIframeError(message) {
+  const errorDiv = document.getElementById("iframeError");
+  errorDiv.innerHTML = `${message}<br/><br/> 
+    <button onclick="retryIframe()" style="background: var(--danger); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer;">🔄 Retry</button>`;
+  errorDiv.style.display = "flex";
+}
+
+function retryIframe() {
+  const iframe = document.getElementById("subPageFrame");
+  const errorDiv = document.getElementById("iframeError");
+  const currentSrc = iframe.src;
+  errorDiv.style.display = "none";
+  iframe.src = "";
+  setTimeout(() => {
+    iframe.src = currentSrc;
+  }, 150);
+}
+
+  // If iframe loads successfully, cancel timeout
+  iframe.onload = () => {
+    clearTimeout(timeout);
+    errorDiv.style.display = "none";
+  };
+
+  // Catch iframe load error (rarely works in some browsers)
+  iframe.onerror = () => {
+    clearTimeout(timeout);
+    errorDiv.style.display = "flex";
+  };
+}
+
+
+function goBack() {
+  document.getElementById("detailPage").classList.remove("active");
+  document.getElementById("mainPage").classList.add("active");
+  document.getElementById("subPageFrame").src = "";
+}
+
+document.querySelectorAll('.sub-option').forEach(link => {
+  link.addEventListener('click', function(e) {
+    // If the link is meant to open in a new tab, let the browser handle it.
+    if (this.getAttribute('target') === '_blank') {
+      return;
+    }
+    e.preventDefault();
+    const page = this.getAttribute('data-page') || "#";
+    const title = this.textContent.trim();
+    openPage(page, title);
+  });
+});
+
+// Configuration
+const scriptURL = "https://script.google.com/macros/s/AKfycbxDplwAiaxSMzMjRDLsmGQ5A01MQcvqMLT9B5imoRFh7XEWYgBqtRc63bUALKPXuu7jlA/exec";
+
+
+// Report card toggle function
+function toggleSub(card) {
+  // Do not run accordion logic on mobile view
+  // Do not run accordion logic on mobile view.
+  // Also, prevent click action on media card which has no sub-options to toggle.
+  const subOptionsContainer = card.querySelector('.sub-options');
+
+  if (window.innerWidth < 768) return;
+
+  const subOptions = card.querySelector('.sub-options');
+  const chevron = card.querySelector('.chevron');
+
+  // Close all other expanded cards
+  document.querySelectorAll('.sub-options.active').forEach(option => {
+    if (option !== subOptions) {
+      option.classList.remove('active');
+      option.parentElement.querySelector('.chevron').classList.remove('rotated');
+    }
+  });
+
+  // Toggle current card
+  subOptions.classList.toggle('active');
+  chevron.classList.toggle('rotated');
+}
+
+// Connectivity check
+function checkConnectivity() {
+  const errorBanner = document.getElementById('errorBanner');
+  if (!navigator.onLine) {
+    errorBanner.style.display = 'block';
+  } else {
+    errorBanner.style.display = 'none';
+  }
+}
+
+// Event listeners - wait for DOM to load
+document.addEventListener('DOMContentLoaded', function() {
+  console.log("DOM loaded"); // Debug log
+
+
+  // Connectivity checks
+  checkConnectivity();
+  window.addEventListener('online', checkConnectivity);
+  window.addEventListener('offline', checkConnectivity);
+  
+  // Add touch feedback for report cards
+  document.querySelectorAll('.report-card').forEach(card => {
+    card.addEventListener('touchstart', function() {
+      this.style.transform = 'scale(0.98)';
+    });
+    
+    card.addEventListener('touchend', function() {
+      setTimeout(() => {
+        this.style.transform = '';
+      }, 100);
+    });
+  });
+});
+
+   // Pull-to-refresh for iframe
+(function() {
+  const wrapper = document.getElementById("iframeWrapper");
+  const iframe = document.getElementById("subPageFrame");
+  const pullToRefresh = document.getElementById("pullToRefresh");
+
+  let startY = 0;
+  let isPulling = false;
+
+  wrapper.addEventListener('touchstart', function(e) {
+    if (wrapper.scrollTop === 0) {
+      startY = e.touches[0].clientY;
+      isPulling = true;
+    }
+  });
+
+  wrapper.addEventListener('touchmove', function(e) {
+    if (!isPulling) return;
+
+    const distance = e.touches[0].clientY - startY;
+    if (distance > 60) {
+      pullToRefresh.style.display = "block";
+    }
+  });
+
+  wrapper.addEventListener('touchend', function() {
+    if (pullToRefresh.style.display === "block") {
+      const src = iframe.src;
+      iframe.src = "";
+      setTimeout(() => {
+        iframe.src = src;
+        pullToRefresh.style.display = "none";
+      }, 150);
+    }
+    isPulling = false;
+  });
+})();
+
+
+
+</script>
+
+<!-- Single Responsive Modal with Quote and Dynamic Notice -->
+<div id="noticeModal">
+  <div>
+    <!-- Motivational quote section (initially shown) -->
+    <div id="quoteSection">
+      <span id="typedQuote"></span>
+    </div>
+
+    <!-- Smart Forward Button -->
+    <div id="forwardButtonContainer">
+        <button id="smartForwardBtn" onclick="skipToNotice()" title="Skip intro">
+            <i class="fas fa-arrow-right"></i>
+        </button>
+    </div>
+
+    <!-- Notice content (hidden until data is loaded) -->
+    <div id="noticeContentSection">
+      <h2 id="noticeTitle"></h2>
+      <div id="noticeBody"></div>
+    </div>
+
+    <!-- Button appears only after content loads -->
+    <div id="noticeButtonSection">
+      <button onclick="onContinueClick()">
+        Continue
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.addEventListener("DOMContentLoaded", () => {
+  const baseUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSiBAAv6fTB3Yd6yWMc3O3w3nplfaNyI1FR9S570KaXehdG4sPjakxctFqRaY4vh1_hs6i3D-ej216W/pub?gid=0&single=true&output=csv";
+
+  let csvLoaded = false;
+  let rows = [];
+  let currentIndex = 0;
+  let skipRequested = false;
+const quotes = [
+  "Every quick response turns grievance into trust. 🤝",
+  "Stable power is the truest form of our service. ⚡",
+  "A leader’s care is measured in consumer satisfaction. 😊",
+  "Resolving complaints swiftly builds lasting confidence. ✅",
+  "Strong leadership shines brightest during crisis. 🔦",
+  "Every call from a consumer is a call to action. 📞",
+  "Grievances handled well become bridges of trust. 🤝",
+  "Reliable supply speaks louder than promises. 🤲",
+  "Leaders who act fast prevent consumer frustration. ⏱️",
+  "Service delayed is trust denied. ⛔",
+  "Stability in power is stability in our lives. 🏠",
+  "Leadership during crisis decides tomorrow’s reputation. 🛡️",
+  "True leaders treat every complaint as an opportunity to improve. 📋",
+  "Every satisfied consumer is a silent reward for leadership. 🏆"
+];
+  const quoteText = quotes[Math.floor(Math.random() * quotes.length)]; // The quote to be animated
+  const typedQuoteElement = document.getElementById("typedQuote");
+
+  function animateQuote() {
+    const words = quoteText.split(' ');
+    // Wrap each word in a span with a staggered animation delay
+    typedQuoteElement.innerHTML = words.map((word, index) => 
+      `<span class="quote-word" style="animation-delay: ${index * 0.12}s;">${word}</span>`
+    ).join(' ');
+
+  }
+  function showNoticeIfReady() {
+    if (skipRequested && csvLoaded) {
+      document.getElementById("quoteSection").style.display = "none";
+      document.getElementById("forwardButtonContainer").style.display = "none";
+      document.getElementById("noticeContentSection").style.display = "block";
+      document.getElementById("noticeButtonSection").style.display = "block";
+      showRow(currentIndex);
+    }
+  }
+
+function showRow(index) {
+  const row = rows[index];
+  if (!row) return;
+
+  const titleElem = document.getElementById("noticeTitle");
+  const bodyElem = document.getElementById("noticeBody");
+
+  titleElem.textContent = row.header || "Notice";
+  bodyElem.textContent = row.content || "No content.";
+
+  // Apply red color to header only if it contains 'Alert!'
+  if ((row.header || "").toLowerCase().includes("alert!")) {
+    titleElem.style.color = "#dc2626"; // A strong red for alerts on a light background
+  } else {
+    titleElem.style.color = ""; // Revert to stylesheet color
+  }
+
+  // Body color is controlled by stylesheet, no need to set it here.
+  bodyElem.style.color = "";
+}
+
+  window.skipToNotice = () => {
+    skipRequested = true;
+    const forwardBtn = document.getElementById('smartForwardBtn');
+    if (forwardBtn) {
+      forwardBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+      forwardBtn.disabled = true;
+    }
+    showNoticeIfReady(); // Attempt to show, will work if csv is already loaded.
+  };
+
+
+
+  window.onContinueClick = () => {
+    currentIndex++;
+    if (currentIndex >= rows.length) {
+      document.getElementById("noticeModal").style.display = "none";
+    } else {
+      showRow(currentIndex);
+    }
+  };
+
+  // Start animating the quote
+  animateQuote();
+
+  // Fetch CSV with cache busting
+  const csvUrl = `${baseUrl}&t=${Date.now()}`;
+fetch(`${csvUrl}`)
+  .then(res => res.text())
+  .then(csv => {
+    const parsed = Papa.parse(csv, { header: true }).data;
+
+    parsed.forEach(row => {
+      rows.push({
+        header: (row["Header"] || "").trim(),
+        content: (row["Content"] || "").trim()
+      });
+    });
+
+    csvLoaded = true;
+    showNoticeIfReady();
+  })
+  .catch(err => {
+    console.error("Failed to load notice from CSV:", err);
+    rows = [{ header: "Notice", content: "⚠️ Could not load notice content." }];
+    csvLoaded = true;
+    showNoticeIfReady();
+  });
+
+});
+</script>
+
+</body>
+</html>
