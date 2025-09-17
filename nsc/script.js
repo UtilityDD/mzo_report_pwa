@@ -41,7 +41,7 @@ function updateMaxTodayDate(data) {
 // Load data from nsc.json or use embedded data
 async function loadData() {
     try {
-        const response = await fetch('data/nsc.json');
+        const response = await fetch('../data/nsc.json');
         if (response.ok) {
             allData = await response.json();
             processData();
