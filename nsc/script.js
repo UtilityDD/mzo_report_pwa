@@ -6,7 +6,6 @@ let selectedRegion = '';
 let selectedDivision = '';
 let selectedCCC = '';
 let selectedCCCName = ''; // Added to store the readable CCC name
-let selectedClasses = new Set();
 let selectedDelayRange = 'all';
 let delayRanges = []; // This will be dynamically populated
 let groupedModalDataMap = {}; // Holds the grouped consumer arrays
@@ -41,17 +40,20 @@ function updateMaxTodayDate(data) {
 
 // Load data from nsc.json or use embedded data
 async function loadData() {
-  try {
-    const response = await fetch('../data/nsc.json');
-    if (!response.ok) throw new Error('Network response was not ok');
-    allData = await response.json();
-    processData(); // This should call your processing, filters, UI update, etc.
-  } catch (error) {
-    console.error('Failed to load data.json:', error);
-    allData = [];
-  }
-}
+    try {
+        const response = await fetch('data/nsc.json');
+        if (response.ok) {
+            allData = await response.json();
+            processData();
+            return;
+        }
+    } catch (error) {
+        console.log('Could not load external nsc.json file, using embedded data');
+    }
 
+    console.warn("No external data found and no fallback data defined.");
+    allData = []; // Avoid crash
+}
 
 
 // Process data after loading
@@ -156,86 +158,6 @@ let maxSliderIndex = 0;
 
 // Initialize filters
 function initializeFilters() {
-    // Initialize class checkboxes
-    const classes = [...new Set(allData.map(item => item.CONN_CLASS))].filter(Boolean);
-    const checkboxContainer = document.getElementById('classCheckboxes');
-    
-    // ✅ ENSURE ALL CLASSES ARE SELECTED ON INITIAL LOAD
-    if (selectedClasses.size === 0) {
-        classes.forEach(className => selectedClasses.add(className));
-    }
-    
-    // Create or clear container
-    checkboxContainer.innerHTML = '';
-
-    // Add "Toggle All" button event listener (only once)
-    const toggleBtn = document.getElementById('toggleAllClasses');
-    if (!toggleBtn.hasEventListener) {
-        toggleBtn.addEventListener('click', () => {
-            const unchecking = toggleBtn.textContent === 'Uncheck All';
-            const checkboxes = document.querySelectorAll('#classCheckboxes input[type="checkbox"]');
-
-            checkboxes.forEach(checkbox => {
-                const className = checkbox.id.replace('class-', '');
-                const checkboxItem = checkbox.closest('.checkbox-item');
-
-                checkbox.checked = !unchecking;
-
-                if (!unchecking) {
-                    selectedClasses.add(className);
-                    checkboxItem.classList.add('active');
-                } else {
-                    selectedClasses.delete(className);
-                    checkboxItem.classList.remove('active');
-                }
-            });
-
-            applyFilters(); // Apply the new state
-            toggleBtn.textContent = unchecking ? 'Check All' : 'Uncheck All';
-        });
-        toggleBtn.hasEventListener = true; // Prevent multiple listeners
-    }
-
-    // Count applications per class (using current delay filter)
-    const classCounts = {};
-    allData.forEach(item => {
-        const totalDelay = item.TotalDelay || 0;
-        
-        // Apply current delay filter for counting
-        let includeInCount = true;
-        if (selectedDelayRange !== 'all') {
-            const selectedRange = delayRanges.find(r => r.value === selectedDelayRange);
-            if (selectedRange && totalDelay > selectedRange.days) {
-                includeInCount = false;
-            }
-        }
-
-        if (includeInCount) {
-            const cls = item.CONN_CLASS;
-            if (cls) {
-                classCounts[cls] = (classCounts[cls] || 0) + 1;
-            }
-        }
-    });
-
-    // Render checkboxes with updated counts
-    classes.forEach(className => {
-        // ✅ ENSURE CLASS IS SELECTED (this handles both initial load and updates)
-        if (!selectedClasses.has(className)) {
-            selectedClasses.add(className);
-        }
-        
-        const count = classCounts[className] || 0;
-        const checkboxItem = document.createElement('div');
-        checkboxItem.className = 'checkbox-item active'; // ✅ Always active initially
-
-        checkboxItem.innerHTML = `
-            <input type="checkbox" id="class-${className}" checked onchange="toggleClass('${className}')">
-            <label for="class-${className}">${className} (${count})</label>
-        `;
-        checkboxContainer.appendChild(checkboxItem);
-    });
-
     // Initialize slider ranges if not already done
     if (delayRanges.length === 0) {
         const maxTotalDelay = allData.reduce((max, item) => Math.max(max, item.TotalDelay || 0), 0);
@@ -261,7 +183,7 @@ function initializeFilters() {
 
 // Generate average delay cards
 function generateAverageDelayCards() {
-    const averageDelayCardsContainer = document.getElementById('averageDelayCards');
+    const averageDelayCardsContainer = document.getElementById('dashboardAverageDelayCards');
     averageDelayCardsContainer.innerHTML = '';
 
     const totalQtnDelay = allData.reduce((sum, item) => sum + (parseInt(item.DelayInQtn) || 0), 0);
@@ -276,6 +198,7 @@ function generateAverageDelayCards() {
     const createAverageCard = (title, value) => {
         const card = document.createElement('div');
         card.className = 'average-card';
+        card.onclick = () => openBreakdownModal();
         card.innerHTML = `<h4>${title}</h4><div class="value">${value} Days</div>`;
         return card;
     };
@@ -283,6 +206,26 @@ function generateAverageDelayCards() {
     averageDelayCardsContainer.appendChild(createAverageCard('Avg Delay in Quotation', avgQtnDelay));
     averageDelayCardsContainer.appendChild(createAverageCard('Avg Delay in WO', avgWODelay));
     averageDelayCardsContainer.appendChild(createAverageCard('Avg Delay in Connection', avgSCDelay)); // Renamed from SC to Connection
+}
+
+function generateKpiAverageDelayCards() {
+    const kpiAverageCardsContainer = document.getElementById('kpiAverageDelayCards');
+    if (!kpiAverageCardsContainer) return;
+    kpiAverageCardsContainer.innerHTML = '';
+
+    const totalQtnDelay = allData.reduce((sum, item) => sum + (parseInt(item.DelayInQtn) || 0), 0);
+    const totalWODelay = allData.reduce((sum, item) => sum + (parseInt(item.DelayInWO) || 0), 0);
+    const totalSCDelay = allData.reduce((sum, item) => sum + (parseInt(item.DelayInSC) || 0), 0);
+    const dataCount = allData.length;
+
+    const avgQtnDelay = dataCount > 0 ? (totalQtnDelay / dataCount).toFixed(1) : 0;
+    const avgWODelay = dataCount > 0 ? (totalWODelay / dataCount).toFixed(1) : 0;
+    const avgSCDelay = dataCount > 0 ? (totalSCDelay / dataCount).toFixed(1) : 0;
+
+    const createCard = (title, value) => `<div class="average-card"><h4>${title}</h4><div class="value">${value} Days</div></div>`;
+    kpiAverageCardsContainer.innerHTML += createCard('Avg Delay in Quotation', avgQtnDelay);
+    kpiAverageCardsContainer.innerHTML += createCard('Avg Delay in WO', avgWODelay);
+    kpiAverageCardsContainer.innerHTML += createCard('Avg Delay in Connection', avgSCDelay);
 }
 
 function generateKpiSummaryTables() {
@@ -314,6 +257,7 @@ function generateKpiSummaryTables() {
   populateKpiTable(regionMap, 'kpiRegionTable');
   populateKpiTable(divisionMap, 'kpiDivisionTable');
   populateKpiTable(cccMap, 'kpiCCCTable', true); // use readable name
+  generateKpiAverageDelayCards();
 }
 
 function populateKpiTable(dataMap, tableId, useCCCName = false) {
@@ -335,8 +279,15 @@ function populateKpiTable(dataMap, tableId, useCCCName = false) {
     };
   });
 
+  // --- Calculate Ranks ---
+  const getRank = (value, sortedValues) => sortedValues.indexOf(value) + 1;
+  const sortedQtn = [...new Set(rows.map(r => r.Qtn))].sort((a, b) => a - b);
+  const sortedWO = [...new Set(rows.map(r => r.WO))].sort((a, b) => a - b);
+  const sortedConn = [...new Set(rows.map(r => r.Conn))].sort((a, b) => a - b);
+
+
   // Sort handling
-  const sortKey = table.dataset.sortKey || 'name';
+  const sortKey = table.dataset.sortKey || 'Conn';
   const sortDir = table.dataset.sortDir || 'asc';
 
   rows.sort((a, b) => {
@@ -353,10 +304,10 @@ function populateKpiTable(dataMap, tableId, useCCCName = false) {
   rows.forEach(r => {
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td>${r.name}</td>
-      <td>${r.Qtn.toFixed(1)} days</td>
-      <td>${r.WO.toFixed(1)} days</td>
-      <td>${r.Conn.toFixed(1)} days</td>
+      <td data-label="${useCCCName ? 'CCC' : tableId === 'kpiRegionTable' ? 'Region' : 'Division'}">${r.name}</td>
+      <td data-label="Avg Quotation Delay">${r.Qtn.toFixed(1)} days <span class="rank-number">(${getRank(r.Qtn, sortedQtn)})</span></td>
+      <td data-label="Avg WO Delay">${r.WO.toFixed(1)} days <span class="rank-number">(${getRank(r.WO, sortedWO)})</span></td>
+      <td data-label="Avg Connection Delay">${r.Conn.toFixed(1)} days <span class="rank-number">(${getRank(r.Conn, sortedConn)})</span></td>
     `;
     tbody.appendChild(row);
   });
@@ -428,6 +379,7 @@ function setupEventListeners() {
         
         // Update KPI tables
         const filtered = filteredData; // Use the updated filteredData
+        generateKpiAverageDelayCards();
         updateKpiTables(filtered);
     });
 }
@@ -442,19 +394,66 @@ window.closeKpiModal = function() {
     document.getElementById('kpiModal').style.display = 'none';
 };
 
-// Toggle class filter
-function toggleClass(className) {
-    const checkbox = document.getElementById(`class-${className}`);
-    const checkboxItem = checkbox.closest('.checkbox-item');
-    if (checkbox.checked) {
-        selectedClasses.add(className);
-        checkboxItem.classList.add('active');
-    } else {
-        selectedClasses.delete(className);
-        checkboxItem.classList.remove('active');
-    }
-    applyFilters();
+// --- NEW: Functions for Breakdown Modal ---
+
+function openBreakdownModal() {
+    const modal = document.getElementById('breakdownModal');
+    modal.style.display = 'block';
+
+    // Populate tables inside the new modal
+    const regionMap = {}, divisionMap = {}, cccMap = {};
+    const dataToUse = filteredData.length > 0 ? filteredData : allData;
+
+    dataToUse.forEach(d => {
+        if (d.REGION) (regionMap[d.REGION] = regionMap[d.REGION] || []).push(d);
+        if (d.DIVN_NAME) (divisionMap[d.DIVN_NAME] = divisionMap[d.DIVN_NAME] || []).push(d);
+        if (d.CCC_CODE) (cccMap[d.CCC_CODE] = cccMap[d.CCC_CODE] || []).push(d);
+    });
+
+    // Populate tables with new IDs
+    populateKpiTable(regionMap, 'modalRegionTable');
+    populateKpiTable(divisionMap, 'modalDivisionTable');
+    populateKpiTable(cccMap, 'modalCCCTable', true);
+
+    // Ensure the first tab is active
+    openTab({ currentTarget: document.querySelector('.tab-link') }, 'RegionTab');
 }
+
+function closeBreakdownModal() {
+    document.getElementById('breakdownModal').style.display = 'none';
+}
+
+function openTab(evt, tabName) {
+    let i, tabcontent, tablinks;
+
+    // Hide all tab content
+    tabcontent = document.getElementsByClassName("tab-content");
+    for (i = 0; i < tabcontent.length; i++) {
+        tabcontent[i].style.display = "none";
+    }
+
+    // Remove "active" class from all tab links
+    tablinks = document.getElementsByClassName("tab-link");
+    for (i = 0; i < tablinks.length; i++) {
+        tablinks[i].className = tablinks[i].className.replace(" active", "");
+    }
+
+    // Show the current tab and add an "active" class to the button that opened the tab
+    document.getElementById(tabName).style.display = "block";
+    if (evt && evt.currentTarget) {
+        evt.currentTarget.className += " active";
+    }
+}
+
+// Add a unique ID to the dashboard's average card container in the HTML
+document.addEventListener('DOMContentLoaded', () => {
+    const mainCardsContainer = document.querySelector('.main-content .container > .average-delay-cards');
+    if (mainCardsContainer) {
+        mainCardsContainer.id = 'dashboardAverageDelayCards';
+    }
+});
+
+
 
 // Update slider value display
 // Fixed updateSliderValue function
@@ -518,6 +517,7 @@ function updateKpiTables(filteredData) {
     populateKpiTable(regionMap, 'kpiRegionTable');
     populateKpiTable(divisionMap, 'kpiDivisionTable');
     populateKpiTable(cccMap, 'kpiCCCTable', true);
+    populateKpiTable(cccMap, 'kpiCCCTable', true);
 }
 
 
@@ -525,9 +525,6 @@ function updateKpiTables(filteredData) {
 // Fixed applyFilters function
 function applyFilters() {
     filteredData = allData.filter(item => {
-        // Class filter
-        if (!selectedClasses.has(item.CONN_CLASS)) return false;
-
         // Delay filter - FIXED LOGIC
         if (selectedDelayRange !== 'all') {
             const selectedRange = delayRanges.find(r => r.value === selectedDelayRange);
@@ -1088,4 +1085,3 @@ function calculateDelay(startDateStr, endDateStr) {
         return 0;
     }
 }
-
