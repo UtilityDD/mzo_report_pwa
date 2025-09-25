@@ -1,0 +1,2302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>MZO Reports</title>
+<link href="manifest.json" rel="manifest"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet"/>
+<style>
+/*──────────────────────────────────────
+   Global reset
+──────────────────────────────────────*/
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg-dark: #0f172a;
+  --bg-med: rgba(31, 41, 55, 0.5);
+  --bg-light: rgba(55, 65, 81, 0.4);
+  --border-color: rgba(255, 255, 255, 0.1);
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --accent-primary: #4f46e5;
+  --accent-secondary: #7c3aed;
+  --danger: #f43f5e;
+  
+  /* New mobile-specific variables */
+  --mobile-bg: #ffffff;
+  --mobile-text-primary: #1f2937;
+  --mobile-text-secondary: #6b7280;
+  --mobile-border: #e5e7eb;
+  --mobile-card-bg: #ffffff;
+  --mobile-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --mobile-shadow-hover: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+/*──────────────────────────────────────
+   Base styles - Modern Dark Theme
+──────────────────────────────────────*/
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-dark);
+  background-image: 
+    radial-gradient(at 10% 20%, hsla(260, 80%, 40%, 0.2) 0px, transparent 50%),
+    radial-gradient(at 80% 15%, hsla(212, 70%, 50%, 0.25) 0px, transparent 50%),
+    radial-gradient(at 75% 85%, hsla(320, 65%, 35%, 0.15) 0px, transparent 50%);
+  color: var(--text-secondary);
+  min-height: 100vh;
+}
+
+/*──────────────────────────────────────
+   Layout
+──────────────────────────────────────*/
+#mainApp, #pageContainer {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+.page {
+  position: relative;
+  width: 100%;
+  max-width: 100vw;
+  height: 100vh;
+  display: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.page.active {
+  display: block;
+}
+
+/*──────────────────────────────────────
+   App container & grid - Modern Dark Theme
+──────────────────────────────────────*/
+.app-container {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  background: transparent;
+  min-height: calc(100vh - 56px - 48px);
+  overflow-x: visible;
+}
+
+.report-grid {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .report-grid { 
+    grid-template-columns: repeat(2, 1fr); 
+  }
+  .app-container { 
+    max-width: 800px;
+    border-radius: 16px;
+    border: none;
+    box-shadow: none;
+  }
+}
+
+/*──────────────────────────────────────
+   Header - Modern Dark Theme
+──────────────────────────────────────*/
+.header {
+  background: rgba(31, 41, 55, 0.5);
+  backdrop-filter: blur(16px);
+  color: white;
+  padding: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  width: 100%;
+  max-width: 100vw;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.header-texts {
+  flex: 1;
+  min-width: 0;
+}
+
+.main-title {
+  font-size: 24px;
+  font-weight: 600;
+  word-wrap: break-word;
+  color: var(--text-primary);
+}
+
+.subtitle {
+  font-size: 14px;
+  opacity: 0.9;
+  margin-top: 2px;
+  color: var(--text-secondary);
+}
+
+/*──────────────────────────────────────
+   Icons & refresh button - Modern Dark Theme
+──────────────────────────────────────*/
+.header-icon, .refresh-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--bg-light);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  border: none;
+}
+
+.header-icon {
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+}
+
+.refresh-icon {
+  width: 44px;
+  height: 44px;
+  color: var(--text-primary);
+  outline: none;
+  position: relative;
+  z-index: 1;
+}
+
+.refresh-icon:hover {
+  background: var(--border-color);
+  transform: translateY(-2px) scale(1.05);
+}
+
+.refresh-icon:active {
+  transform: translateY(0) scale(1);
+}
+
+.refresh-icon.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+#detailPage .header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/*──────────────────────────────────────
+   Error banner - Dark Theme
+──────────────────────────────────────*/
+.error-banner {
+  display: none;
+  background: rgb(153 27 27 / 0.2);
+  color: #fca5a5;
+  padding: 12px 16px;
+  border-left: 4px solid var(--danger);
+  margin: 16px;
+  border-radius: 8px;
+  word-wrap: break-word;
+}
+
+/*──────────────────────────────────────
+   Content & cards - Modern Dark Theme
+──────────────────────────────────────*/
+.content {
+  padding: 16px;
+  padding-bottom: 100px;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+.report-card {
+  background: var(--bg-light);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  margin-bottom: 0;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  width: 100%;
+  overflow: hidden;
+}
+
+.report-card:hover {
+  transform: translateY(-5px) scale(1.01);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.card-header {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  width: 100%;
+  border-bottom: 0.5px solid rgba(255,255,255,0.05);
+}
+
+.card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.card-icon {
+  width: 48px;
+  height: 48px;
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+  font-size: 28px;
+  color: var(--text-primary);
+  flex-shrink: 0;
+  background: transparent;
+}
+
+.card-title {
+  font-weight: 500;
+  font-size: 16px;
+  color: var(--text-primary);
+  line-height: 1.4;
+  word-wrap: break-word;
+  flex: 1;
+}
+
+.chevron {
+  font-size: 18px;
+  color: var(--text-secondary);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.chevron.rotated {
+  transform: rotate(180deg);
+}
+
+.sub-options {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+  background: var(--bg-med);
+  border-top: 1px solid var(--border-color);
+  width: 100%;
+}
+
+.sub-options.active {
+  max-height: 500px;
+}
+
+.sub-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  text-decoration: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  border-top: 1px solid var(--bg-light);
+  transition: all 0.2s ease;
+  width: 100%;
+  word-wrap: break-word;
+  border-left: 2px solid transparent;
+}
+
+.sub-option:hover {
+  background: rgba(55, 65, 81, 0.6);
+  color: var(--text-primary);
+  border-left-color: var(--accent-primary);
+}
+
+.sub-option i {
+  width: 20px;
+  text-align: center;
+  font-size: 16px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+/*──────────────────────────────────────
+   Card-icon color variants - Modern
+──────────────────────────────────────*/
+.card-icon.connections { color: #10b981; }
+.card-icon.financial   { color: #f59e0b; }
+.card-icon.maintenance { color: #8b5cf6; }
+.card-icon.visits      { color: #f43f5e; }
+.card-icon.grievance   { color: #f97316; }
+.card-icon.revenue     { color: #06b6d4; }
+.card-icon.water       { color: #3b82f6; }
+.card-icon.safety      { color: #84cc16; }
+.card-icon.solar       { color: #eab308; }
+.card-icon.industrial  { color: #6366f1; }
+.card-icon.civil       { color: #14b8a6; }
+.card-icon.priority    { 
+  background: linear-gradient(135deg, #d946ef, #a855f7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/*──────────────────────────────────────
+   Detail‐page iframe - Dark Theme
+──────────────────────────────────────*/
+#subPageFrame {
+  width: 100%;
+  height: calc(100vh - 56px);
+  border: none;
+  background-color: var(--bg-dark);
+}
+
+/*──────────────────────────────────────
+   Loading overlay - Dark Theme
+──────────────────────────────────────*/
+.loading-overlay {
+  position: fixed;
+  top: 0; 
+  left: 0;
+  width: 100%; 
+  height: 100%;
+  background: rgba(17, 24, 39, 0.8);
+  z-index: 9999;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s, visibility 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.loading-overlay::after {
+  content: '';
+  border: 5px solid var(--bg-light);
+  border-top: 5px solid var(--text-secondary);
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  animation: spin 1s linear infinite;
+}
+
+/*──────────────────────────────────────
+   Footer - Dark Theme
+──────────────────────────────────────*/
+.footer {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 800px;
+  background: rgba(31, 41, 55, 0.5);
+  backdrop-filter: blur(16px);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 16px;
+  border-top: 1px solid var(--border-color);
+  z-index: 1000;
+}
+
+/*──────────────────────────────────────
+   Mobile-specific modern redesign
+──────────────────────────────────────*/
+@media (max-width: 767px) {
+  /* Default mobile body styles */
+  body.dark-theme {
+    background-color: var(--bg-dark);
+    color: var(--text-secondary);
+  }
+  body.light-theme {
+    background-image: none;
+  }
+  
+  .content { 
+    padding: 8px;
+    padding-bottom: 100px;
+  }
+  
+  body.light-theme .content { background: #f8fafc; }
+  body.dark-theme .content { background: transparent; }
+  
+  
+  /* Mobile header layout */
+  .header {
+    padding: calc(30px + env(safe-area-inset-top)) 16px 12px;
+  }
+
+  /* Dark theme mobile header */
+  body.dark-theme .header {
+    background: rgba(31, 41, 55, 0.5);
+    backdrop-filter: blur(16px);
+    color: white;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  /* Light theme mobile header */
+  body.light-theme .header {
+    box-shadow: var(--mobile-shadow);
+  }
+  
+  /* Light theme mobile header icons */
+  body.light-theme .header-icon {
+    background: var(--mobile-bg);
+    color: var(--mobile-text-primary);
+    border: 1px solid var(--mobile-border);
+  }
+  
+  /* Dark theme mobile header icons */
+  body.dark-theme .header-icon {
+    background: var(--bg-light);
+    color: var(--text-primary);
+  }
+
+  body.dark-theme .refresh-icon {
+    background: var(--bg-light);
+    color: var(--text-primary);
+    border: none;
+  }
+
+  body.light-theme .refresh-icon {
+    background: var(--mobile-bg);
+    color: var(--mobile-text-primary);
+    border: 1px solid var(--mobile-border);
+    width: 40px;
+    height: 40px;
+  }
+  
+  .refresh-icon:hover {
+    background: #f3f4f6;
+    transform: none;
+    border-color: #d1d5db;
+  }
+  
+  .main-title {
+    font-size: 20px;
+    font-weight: 700;
+  }
+  
+  body.light-theme .main-title { color: var(--mobile-text-primary); }
+  body.dark-theme .main-title { color: var(--text-primary); }
+
+  .subtitle {
+    font-size: 13px;
+  }
+  
+  body.light-theme .subtitle { color: var(--mobile-text-secondary); }
+  body.dark-theme .subtitle { color: var(--text-secondary); }
+
+  /* Clean mobile grid */
+  .report-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* Modern mobile cards */
+  .report-card {
+    backdrop-filter: none;
+    border-radius: 12px;
+    margin: 0;
+    transition: all 0.2s ease;
+  }
+
+  body.dark-theme .report-card {
+    background: var(--bg-light);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  }
+  body.light-theme .report-card {
+    background: var(--mobile-card-bg);
+    border: 1px solid var(--mobile-border);
+    box-shadow: var(--mobile-shadow);
+  }
+  
+  .report-card:hover {
+    transform: none;
+    box-shadow: var(--mobile-shadow-hover);
+    border-color: #d1d5db;
+  }
+
+  body.dark-theme .report-card:hover {
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  /* Clean card headers */
+  .card-header {
+    padding: 16px;
+    cursor: default;
+  }
+
+  body.dark-theme .card-header {
+    border-bottom: 0.5px solid rgba(255,255,255,0.05);
+  }
+  body.light-theme .card-header {
+    border-bottom: 1px solid var(--mobile-border);
+    background: #fafbfc;
+  }
+
+  .card-header .card-icon {
+    display: none;
+  }
+
+  .card-header .chevron {
+    display: none;
+  }
+
+  .card-title {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  body.dark-theme .card-title {
+    color: var(--text-primary);
+  }
+  body.light-theme .card-title {
+    color: var(--mobile-text-primary);
+  }
+
+  /* Modern grid layout for sub-options */
+  .sub-options {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    max-height: none;
+    overflow: visible;
+    border-top: none;
+    padding: 12px;
+  }
+
+  body.dark-theme .sub-options {
+    background: var(--bg-med);
+  }
+  body.light-theme .sub-options {
+    background: none;
+  }
+
+  /* Clean modern sub-option tiles */
+  .sub-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px 8px;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 12px;
+    text-align: center;
+    min-height: 80px;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  }
+
+  body.dark-theme .sub-option {
+    background: var(--bg-light);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+  }
+  body.light-theme .sub-option {
+    background: var(--mobile-card-bg);
+    border: 1px solid var(--mobile-border);
+    color: var(--mobile-text-secondary);
+  }
+
+  .sub-option:hover {
+    background: #f8fafc;
+    color: var(--mobile-text-primary);
+    border-color: #d1d5db;
+    border-left-color: #d1d5db;
+    box-shadow: var(--mobile-shadow);
+  }
+
+  body.dark-theme .sub-option:hover {
+    background: rgba(55, 65, 81, 0.6);
+    color: var(--text-primary);
+    border-left-color: var(--accent-primary);
+    box-shadow: none;
+  }
+
+  .sub-option i {
+    font-size: 20px;
+    margin: 0;
+    width: auto;
+    text-align: center;
+  }
+
+  /* Color inheritance for mobile icons */
+  .report-card:has(.card-icon.connections) .sub-option i { color: #059669; }
+  .report-card:has(.card-icon.financial) .sub-option i { color: #d97706; }
+  .report-card:has(.card-icon.maintenance) .sub-option i { color: #7c3aed; }
+  .report-card:has(.card-icon.visits) .sub-option i { color: #dc2626; }
+  .report-card:has(.card-icon.grievance) .sub-option i { color: #ea580c; }
+  .report-card:has(.card-icon.revenue) .sub-option i { color: #0891b2; }
+  .report-card:has(.card-icon.water) .sub-option i { color: #2563eb; }
+  .report-card:has(.card-icon.safety) .sub-option i { color: #65a30d; }
+  .report-card:has(.card-icon.solar) .sub-option i { color: #ca8a04; }
+  .report-card:has(.card-icon.industrial) .sub-option i { color: #4f46e5; }
+  .report-card:has(.card-icon.civil) .sub-option i { color: #0d9488; }
+  .report-card:has(.card-icon.priority) .sub-option i { color: #a855f7; }
+  
+  /* Mobile footer */
+  body.dark-theme .footer {
+    background: rgba(31, 41, 55, 0.5);
+    backdrop-filter: blur(16px);
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border-color);
+  }
+
+  body.light-theme .footer {
+    background: var(--mobile-bg);
+    color: var(--mobile-text-secondary);
+    border-top: 1px solid var(--mobile-border);
+    backdrop-filter: none;
+    box-shadow: 0 -1px 3px 0 rgb(0 0 0 / 0.05);
+  }
+  
+  /* Mobile action buttons */
+  .action-btn-container {
+    margin: 16px 8px;
+    gap: 8px;
+  }
+  
+  .btn {
+    height: 44px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  
+  .btn-docket {
+    background: linear-gradient(135deg, #dc2626, #991b1b);
+    box-shadow: 0 2px 4px rgb(220 38 38 / 0.2);
+  }
+  
+  /* Light theme mobile KPI button */
+  body.light-theme .btn-kpi {
+    background: var(--mobile-bg);
+    color: var(--mobile-text-primary);
+    border: 1px solid var(--mobile-border);
+    box-shadow: var(--mobile-shadow);
+  }
+
+  /* Dark theme mobile KPI button */
+  body.dark-theme .btn-kpi {
+    background: var(--bg-light);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  }
+  
+  .btn:hover {
+    transform: none;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  }
+  
+  /* Mobile error banner */
+  body.dark-theme .error-banner {
+    background: rgb(153 27 27 / 0.2);
+    color: #fca5a5;
+    border-left-color: var(--danger);
+    margin: 12px 8px;
+    border-radius: 8px;
+  }
+  body.light-theme .error-banner {
+    background: #fef2f2;
+    color: #dc2626;
+    border-left-color: #dc2626;
+    margin: 12px 8px;
+    border-radius: 8px;
+  }
+}
+
+/* Desktop enhancements - Dark Theme & Thin 3D */
+@media (min-width: 1024px) {
+  .footer {
+    width: 70%;
+    max-width: none;
+    left: 50%;
+    transform: translateX(-50%);
+    margin: 0 auto;
+    right: auto;
+  }
+  
+  body {
+    background: var(--bg-dark);
+  }
+
+  .app-container {
+    width: 70%;
+    max-width: 100vw;
+    margin: 0 auto;
+    background: transparent;
+    min-height: calc(100vh - 56px - 48px);
+    overflow-x: visible;
+  }
+}
+
+/* Detail page back button */
+.back-button {
+  background: none;
+  border: none;
+  color: white;
+  margin-right: 16px;
+  cursor: pointer;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transition: all 0.2s ease;
+}
+
+/* Theme-aware back button color */
+body.light-theme .back-button {
+  color: var(--mobile-text-primary);
+}
+
+.back-button:hover {
+  opacity: 0.8;
+}
+
+.back-button:active {
+  transform: scale(0.95);
+}
+
+/* iframe wrapper adjustments */
+#iframeWrapper {
+  height: calc(100vh - 56px); 
+  overflow-y: auto; 
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+  max-width: 100vw;
+}
+
+#iframeError {
+  display: none;
+  position: absolute;
+  top: 56px;
+  left: 0;
+  width: 100%;
+  height: calc(100% - 56px);
+  background: var(--bg-dark);
+  color: var(--text-secondary);
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 20px;
+  z-index: 10;
+}
+
+#iframeError button {
+  background: var(--danger);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+#iframeError button:hover {
+  background: #c22545;
+}
+
+#pullToRefresh {
+  display: none; 
+  text-align: center; 
+  padding: 10px;
+  color: var(--text-secondary);
+  font-weight: 500; 
+  font-size: 14px;
+}
+
+.sub-option img {
+  margin-right: 10px;
+  vertical-align: middle;
+}
+
+.loading-text {
+  padding: 16px;
+  color: var(--text-secondary);
+  font-style: italic;
+  text-align: center;
+}
+
+@keyframes blinkAnim {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes livePulseRed {
+  0% {
+    box-shadow: 0 0 0 0 hsla(349, 89%, 60%, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px hsla(349, 89%, 60%, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 hsla(349, 89%, 60%, 0);
+  }
+}
+
+/* Styles for the Notice Modal - Prominent Light Theme */
+#noticeModal {
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  background-color: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+  font-family: 'Segoe UI', sans-serif;
+  display: flex; align-items: center; justify-content: center;
+  padding: 15px;
+}
+
+#noticeModal > div {
+  background-color: #ffffff;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 600px;
+  padding: 30px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0,0,0,0.05);
+  max-height: 90vh;
+  overflow-y: auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 1px solid rgba(0,0,0,0.1);
+}
+
+#quoteSection {
+  color: #4b5563;
+  font-family: 'Lora', serif;
+  font-size: 28px;
+  line-height: 1.6;
+  font-weight: 700;
+  text-align: center;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 20px;
+  margin: auto 0;
+}
+
+#noticeContentSection {
+  display: none;
+  text-align: left;
+  flex-grow: 1;
+  margin-bottom: 25px;
+}
+
+#noticeTitle {
+  font-size: 24px;
+  color: #1e3a8a;
+  margin-top: 0;
+  text-align: left;
+  font-weight: 700;
+}
+
+#noticeBody {
+  font-size: 16px;
+  color: #374151;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin-top: 12px;
+}
+
+#noticeButtonSection {
+  display: none;
+  text-align: right;
+  margin-top: 0;
+}
+
+#noticeButtonSection button {
+  background-color: #2563eb;
+  color: #fff;
+  border: none;
+  padding: 12px 24px;
+  font-size: 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+}
+
+#noticeButtonSection button:hover {
+  background-color: #1d4ed8;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+}
+
+#noticeButtonSection button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2);
+}
+
+/* Responsive adjustments for the modal */
+@media (max-width: 768px) {
+  #noticeModal > div {
+    max-width: 95%;
+    padding: 20px;
+  }
+
+  #quoteSection {
+    font-size: 24px;
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+  }
+
+  #quoteSection i {
+    font-size: 22px;
+  }
+
+  #noticeTitle {
+    font-size: 20px;
+  }
+
+  #noticeBody {
+    font-size: 15px;
+  }
+
+  #noticeButtonSection button {
+    padding: 10px 20px;
+    font-size: 15px;
+    width: 100%;
+  }
+}
+
+/* New animation for the quote */
+.quote-word {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(15px) scale(0.95);
+  animation: fadeInWord 0.5s cubic-bezier(0.215, 0.610, 0.355, 1) forwards;
+}
+
+@keyframes fadeInWord {
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Smart forward button */
+#forwardButtonContainer {
+  text-align: center;
+  margin-top: 20px;
+}
+
+#smartForwardBtn {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  color: #4b5563;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+#smartForwardBtn:hover:not(:disabled) {
+  background: #e5e7eb;
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+#smartForwardBtn:disabled {
+  cursor: not-allowed;
+  background: #e5e7eb;
+}
+
+.blinking-button {
+  font-weight: 600;
+  color: #f87171;
+  background-color: transparent;
+  border: 2px solid #991b1b;
+  border-radius: 5px;
+  cursor: pointer;
+  animation: glowRed 1.5s infinite alternate;
+  box-shadow: 0 0 0 rgba(153, 27, 27, 0);
+}
+
+@keyframes glowRed {
+  0% {
+    box-shadow: 0 0 5px rgba(153, 27, 27, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 20px rgba(153, 27, 27, 0.6);
+  }
+}
+
+/* Add these new styles and modify existing ones */
+
+/* Theme toggle button */
+.theme-toggle {
+  background: var(--bg-light);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  margin-left: 8px;
+  outline: none;
+}
+
+.theme-toggle:hover {
+  background: var(--border-color);
+  transform: translateY(-2px) scale(1.05);
+}
+
+/* Center-aligned action buttons */
+.action-btn-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 16px;
+  padding: 0;
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 10px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-decoration: none;
+  color: white;
+  min-height: 48px;
+  flex: 1;
+  max-width: 180px;
+}
+
+.btn-docket {
+  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+  box-shadow: 0 4px 15px rgba(79, 70, 229, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.btn-docket:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(79, 70, 229, 0.4);
+  background: linear-gradient(135deg, #5b52f0 0%, #8b4cf7 100%);
+}
+
+.btn-kpi {
+  background: var(--bg-light);
+  backdrop-filter: blur(12px);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.btn-kpi:hover {
+  transform: translateY(-3px);
+  background: rgba(75, 85, 101, 0.6);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Mobile theme adjustments */
+@media (max-width: 767px) {
+  body.light-theme .theme-toggle {
+    background: var(--mobile-bg);
+    color: var(--mobile-text-primary);
+    border: 1px solid var(--mobile-border);
+  }
+
+  .theme-toggle {
+    width: 40px;
+    height: 40px;
+  }
+  
+  body.light-theme .theme-toggle:hover {
+    background: #f3f4f6;
+  }
+
+  .action-btn-container {
+    margin: 16px 8px;
+    gap: 8px;
+  }
+  
+  .btn {
+    height: 44px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    flex: 1;
+    max-width: none;
+  }
+  
+  .btn-docket {
+    background: linear-gradient(135deg, #4f46e5, #7c3aed);
+    box-shadow: 0 2px 8px rgba(79, 70, 229, 0.2);
+    border: none;
+  }
+  
+  .btn-docket:hover {
+    transform: none;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+  }
+  
+  body.light-theme .btn-kpi {
+    background: var(--mobile-bg);
+    color: var(--mobile-text-primary);
+    border: 1px solid var(--mobile-border);
+    box-shadow: var(--mobile-shadow);
+  }
+
+  /* This rule was redundant and is now handled by the specific light-theme rule above */
+  /* .btn-kpi { ... } */
+  .btn-kpi:hover {
+    transform: none;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    background: #f8fafc;
+  }
+}
+
+/* Dark theme class for body */
+body.dark-theme {
+  background-color: var(--bg-dark);
+  background-image: 
+    radial-gradient(at 10% 20%, hsla(260, 80%, 40%, 0.2) 0px, transparent 50%),
+    radial-gradient(at 80% 15%, hsla(212, 70%, 50%, 0.25) 0px, transparent 50%),
+    radial-gradient(at 75% 85%, hsla(320, 65%, 35%, 0.15) 0px, transparent 50%);
+  color: var(--text-secondary);
+}
+
+body.light-theme {
+  background: var(--mobile-bg);
+  color: var(--mobile-text-primary);
+  background-image: none;
+}
+
+/* Theme-aware header */
+body.light-theme .header {
+  background: var(--mobile-bg);
+  backdrop-filter: none;
+  color: var(--mobile-text-primary);
+  border-bottom: 1px solid var(--mobile-border);
+  box-shadow: var(--mobile-shadow);
+}
+
+body.light-theme .refresh-icon:hover,
+body.light-theme .theme-toggle:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+body.light-theme .main-title {
+  color: var(--mobile-text-primary);
+}
+
+body.light-theme .subtitle {
+  color: var(--mobile-text-secondary);
+}
+
+/* Theme-aware content */
+body.light-theme .content {
+  background: #f8fafc;
+}
+
+body.light-theme .footer {
+  background: var(--mobile-bg);
+  color: var(--mobile-text-secondary);
+  border-top: 1px solid var(--mobile-border);
+  backdrop-filter: none;
+  box-shadow: 0 -1px 3px 0 rgb(0 0 0 / 0.1);
+}
+
+/* Theme-aware cards for desktop light theme */
+body.light-theme .report-card {
+  background: var(--mobile-card-bg);
+  backdrop-filter: none;
+  border: 1px solid var(--mobile-border);
+  box-shadow: var(--mobile-shadow);
+}
+
+body.light-theme .report-card:hover {
+  box-shadow: var(--mobile-shadow-hover);
+  border-color: #d1d5db;
+}
+
+body.light-theme .card-header {
+  border-bottom: 1px solid var(--mobile-border);
+  background: #fafbfc;
+}
+
+body.light-theme .card-title {
+  color: var(--mobile-text-primary);
+}
+
+body.light-theme .sub-options {
+  background: none;
+  border-top: none;
+}
+
+body.light-theme .sub-option {
+  background: var(--mobile-card-bg);
+  border: 1px solid var(--mobile-border);
+  color: var(--mobile-text-secondary);
+}
+
+body.light-theme .sub-option:hover {
+  background: #f8fafc;
+  color: var(--mobile-text-primary);
+  border-color: #d1d5db;
+}
+
+/* ---------- Modal button colour + size fixes (added) ---------- */
+/* Ensure modal buttons are full-width and not affected by page .btn flex rules */
+#sheetsModal .btn,
+#sheetsModal a.btn {
+  flex: none !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 44px !important;
+  padding: 10px 14px !important;
+  border-radius: 10px !important;
+  font-weight: 700 !important;
+  color: white !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 10px !important;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+}
+
+/* Distinct colours for each sheet link */
+#sheetsModal a.btn:nth-of-type(1) {
+  background: linear-gradient(90deg,#f59e0b,#f97316);
+  color: #0b1220;
+}
+#sheetsModal a.btn:nth-of-type(2) {
+  background: linear-gradient(90deg,#ef4444,#be123c);
+  color: #fff;
+}
+#sheetsModal a.btn:nth-of-type(3) {
+  background: linear-gradient(90deg,#06b6d4,#0ea5a4);
+  color: #042027;
+}
+
+/* Tweak the small icon inside to be consistent on desktop */
+#sheetsModal a.btn i {
+  width: 28px;
+  text-align: center;
+  font-size: 16px;
+  opacity: 0.98;
+}
+
+/* Close button style (subtle) */
+#sheetsModal > div > button[aria-label="Close"] {
+  background: transparent;
+  color: #374151;
+  border-radius: 6px;
+  padding: 6px;
+}
+
+/* Notice modal buttons: unify size and set a pleasant accent */
+#noticeModal #noticeButtonSection button,
+#noticeModal #smartForwardBtn {
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+}
+
+/* Continue button (notice modal) - green accent */
+#noticeModal #noticeButtonSection button {
+  background: linear-gradient(90deg,#10b981,#059669);
+  color: #fff;
+}
+
+/* Smart forward button (intro) - festive accent */
+#noticeModal #smartForwardBtn {
+  background: linear-gradient(90deg,#f43f5e,#ef4444);
+  color: #fff;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Desktop-specific: ensure modal inner container doesn't force page-level flex rules */
+@media (min-width: 768px) {
+  #sheetsModal .btn,
+  #noticeModal #noticeButtonSection button {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  /* Reduce the overly large .btn min-height on desktop where not needed */
+  .action-btn-container .btn {
+    min-height: 44px;
+    max-width: 220px;
+  }
+}
+/* ---------- end added styles ---------- */
+</style>
+
+</head>
+<body>  
+
+<div id="mainApp" style="display: block;">
+
+<div id="pageContainer"><div class="page active" id="mainPage"><div class="app-container">
+<div class="error-banner" id="errorBanner">
+<i class="fas fa-exclamation-triangle"></i>
+      Connectivity issue detected. Please check your internet connection.
+    </div>
+<div class="header">
+
+
+<div class="header-content">
+<div class="header-row">
+<div class="header-left">
+<div class="header-icon">
+<i class="fas fa-chart-line"></i>
+</div>
+<div class="header-texts">
+<h1 class="main-title">MZO Reports</h1>
+<div class="subtitle">Actionable Insights</div>
+</div>
+</div>
+<div style="display: flex; align-items: center; gap: 8px;">
+<button class="theme-toggle" onclick="toggleTheme()" id="themeToggleBtn" title="Toggle theme">
+<i class="fas fa-sun"></i>
+</button>
+<button class="refresh-icon" onclick="refreshMainPage()" id="mainRefreshBtn">
+<i class="fas fa-sync-alt"></i>
+</button>
+</div>
+</div>
+</div>
+
+</div>
+<div class="action-btn-container">
+    <!-- Docket Calls Button -->
+    <button class="btn btn-docket" onclick="openPage('docket.html', 'Docket Calls')">
+      <i class="fas fa-headset"></i> 
+      <span>Docket Calls</span>
+    </button>
+
+    <!-- Sheets List Button (replaced Highway Crossing) -->
+    <button class="btn btn-kpi" onclick="openSheetsModal()" title="Puja 2025">
+      <i class="fas fa-gift"></i>
+      <span>Puja 2025</span>
+    </button>
+</div>
+
+
+<div class="content">
+  <div class="report-grid">
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon connections"><i class="fas fa-user-plus"></i></div>
+          <div class="card-title">New Service Connection</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+        <a class="sub-option" data-page="nsc.html" href="#"><i class="fas fa-chart-bar"></i> Summary</a>
+        <a class="sub-option" data-page="nsc/kpi.html" href="#"><i class="fas fa-lightbulb"></i> KPIs</a>
+        <a class="sub-option" data-page="weekly.html" href="#"><i class="fas fa-calendar-week"></i> Weekly Deposit vs Disposal</a>
+        <a class="sub-option" data-page="pending_mc.html" href="#"><i class="fas fa-credit-card"></i> Pending Master Card</a>
+        <a class="sub-option" data-page="withheld.html" href="#"><i class="fas fa-pause-circle"></i> Withheld</a>
+      </div>
+    </div>
+
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon financial"><i class="fas fa-credit-card"></i></div>
+          <div class="card-title">Advance to Vendor</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+<a class="sub-option" data-page="capex_all.html" href="#"><i class="fas fa-chart-bar"></i> Capex Summary</a>
+  <a class="sub-option" data-page="advance_onm.html" href="#"><i class="fas fa-tools"></i> O&M Summary</a>
+      </div>
+    </div>
+
+<div class="report-card" onclick="toggleSub(this)">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-icon revenue"><i class="fas fa-bolt"></i></div>
+      <div class="card-title">Consumer / Meter Analytics</div>
+    </div>
+    <i class="fas fa-chevron-down chevron"></i>
+  </div>
+  <div class="sub-options">
+    <a class="sub-option" data-page="consumer/defective_meter.html" href="#"><i class="fas fa-exclamation-circle"></i> Defective Meter</a>
+    <a class="sub-option" data-page="under_construction.html" href="#"><i class="fas fa-users"></i> Consumers</a>
+    <a class="sub-option" data-page="docket.html" href="#"><i class="fas fa-headset"></i> Docket Call</a>
+    <a class="sub-option" data-page="docket/kpi.html" href="#"><i class="fas fa-tachometer-alt"></i> Docket KPI</a>
+  </div>
+</div>
+
+
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon maintenance"><i class="fas fa-tools"></i></div>
+          <div class="card-title">Substation Upkeeping</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+        <a class="sub-option" data-page="Upkeeping/index.html" href="#"><i class="fas fa-chart-line"></i> Inspection Report Entry</a>
+        <a class="sub-option" data-page="under_construction.html" href="#"><i class="fas fa-camera"></i> Photo Reports</a>
+      </div>
+    </div>
+<div class="report-card" onclick="toggleSub(this)">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-icon industrial"><i class="fas fa-industry"></i></div>
+      <div class="card-title">Substation / Network</div>
+    </div>
+    <i class="fas fa-chevron-down chevron"></i>
+  </div>
+  <div class="sub-options">
+    <a class="sub-option" data-page="power_map/map.html" href="#">
+      <i class="fas fa-map-marked-alt"></i> Power Map
+    </a>
+        <a class="sub-option" data-page="power_map/nh_sh_crossings.html" href="#">
+      <i class="fas fa-road"></i> Electric Line–Highway Crossings
+    </a>
+    <a class="sub-option" data-page="prt-oil/index.html" href="#">
+      <i class="fas fa-industry"></i> PRT/Transformer Records
+    </a>
+
+  </div>
+</div>
+
+
+<div class="report-card" onclick="toggleSub(this)">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-icon priority"><i class="fas fa-diagram-project"></i></div>
+    <div class="card-title">Priority SI Works</div>
+    </div>
+    <i class="fas fa-chevron-down chevron"></i>
+  </div>
+  <div class="sub-options">
+    <a class="sub-option" data-page="si-works/si.html" href="#"><i class="fas fa-chart-pie"></i> Summary</a>
+  </div>
+</div>
+
+
+    <div class="report-card" onclick="toggleSub(this)">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-icon maintenance"><i class="fas fa-screwdriver"></i></div>
+      <div class="card-title">DTR Maintenance</div>
+    </div>
+    <i class="fas fa-chevron-down chevron"></i>
+  </div>
+  <div class="sub-options">
+    <a class="sub-option" data-page="dtr/index.html" href="#"><i class="fas fa-clipboard-list"></i> DTR Records</a>
+    <a class="sub-option" data-page="dtr/load.html" href="#"><i class="fas fa-chart-area"></i> Peak Load Measurements</a>
+    <a class="sub-option" data-page="health_checkup.html" href="#"><i class="fas fa-heartbeat"></i> Health Check-up</a>
+  </div>
+</div>
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon visits"><i class="fas fa-user-check"></i></div>
+          <div class="card-title">DD Visit</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+        <a class="sub-option" data-page="dd/upcomingDD.html" href="#"><i class="fas fa-calendar-alt"></i> Upcoming DD</a>
+        <a class="sub-option" data-page="ddbysmdm.html" href="#"><i class="fas fa-user-tie"></i> Entry by SM/DM</a>
+        <a class="sub-option" data-page="ddbyro.html" href="#"><i class="fas fa-user-cog"></i> Entry by RM</a>
+        <a class="sub-option" data-page="ddsummary.html" href="#"><i class="fas fa-file-alt"></i> Summary Report</a>
+      </div>
+    </div>
+
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon grievance"><i class="fas fa-exclamation-circle"></i></div>
+          <div class="card-title">CMO Grievance</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+        <a class="sub-option" data-page="cmo.html" href="#"><i class="fas fa-chart-pie"></i> Summary</a>
+      </div>
+    </div>
+
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon revenue"><i class="fas fa-rupee-sign"></i></div>
+          <div class="card-title">Revenue Reports</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+        <a class="sub-option" data-page="loss.html" href="#"><i class="fas fa-chart-area"></i> Losses</a>
+    <a class="sub-option" data-page="remosd5000.html" href="#"><i class="fas fa-rupee-sign"></i> REM OSD >₹5000/-</a>
+    <a class="sub-option" data-page="rem/defaulters.html" href="#"><i class="fas fa-user-times"></i> Defaulters (Class I&C >₹5000/-)</a>
+  <a class="sub-option" data-page="rem/top200agridom.html" href="#"><i class="fas fa-home"></i> TOP 200 Agri-Dom Consumers</a>      
+      </div>
+    </div>
+
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon water"><i class="fas fa-tint"></i></div>
+          <div class="card-title">JJM Report</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+        <a class="sub-option" data-page="jjm.html" href="#"><i class="fas fa-chart-bar"></i> Summary</a>
+      </div>
+    </div>
+
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon safety"><i class="fas fa-hard-hat"></i></div>
+          <div class="card-title">Safety</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+        <a class="sub-option" data-page="accident/accident.html" href="#"><i class="fas fa-exclamation-triangle"></i> Accident Reports</a>
+        <a class="sub-option" data-page="safety_inspection.html" href="#"><i class="fas fa-mobile-alt"></i> Safety App Reports</a>
+      </div>
+    </div>
+
+
+    <div class="report-card" onclick="toggleSub(this)">
+      <div class="card-header">
+        <div class="card-header-left">
+          <div class="card-icon civil"><i class="fas fa-building"></i></div>
+          <div class="card-title">Manpower Report</div>
+        </div>
+        <i class="fas fa-chevron-down chevron"></i>
+      </div>
+      <div class="sub-options">
+        <a class="sub-option" data-page="manpower.html" href="#"><i class="fas fa-clipboard-list"></i> Summary Reports</a>
+      </div>
+    </div>
+
+        <!-- Tools -->
+<div class="report-card" onclick="toggleSub(this)">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-icon safety"><i class="fas fa-tools"></i></div>
+      <div class="card-title">Tools</div>
+    </div>
+    <i class="fas fa-chevron-down chevron"></i>
+  </div>
+  <div class="sub-options">
+    <a class="sub-option" data-page="under_construction.html" href="#"><i class="fas fa-project-diagram"></i> Easy SLD</a>
+    <a class="sub-option" data-page="under_construction.html" href="#"><i class="fas fa-file-invoice-dollar"></i> Estimate Generator</a>
+  </div>
+</div>
+
+
+    <!-- Media Report Card (Place inside .report-grid) -->
+<div class="report-card" onclick="toggleSub(this)">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-icon solar"><i class="fas fa-newspaper"></i></div>
+      <div class="card-title">Media Corner</div>
+    </div>
+    <i class="fas fa-chevron-down chevron"></i>
+  </div>
+  <div class="sub-options" id="mediaLinksContainer">
+    <a class="sub-option" href="https://www.uttarbangasambad.in/malda.php" target="_blank" rel="noopener noreferrer">
+        <img src="data/logo/uttarbanga.png" alt="Uttarbanga Sambad" style="width: 24px; height: 24px; border-radius: 4px; object-fit: cover;">
+        উত্তরবঙ্গ পত্রিকা</a>
+    <a class="sub-option" href="https://www.anandabazar.com/west-bengal/north-bengal" target="_blank" rel="noopener noreferrer">
+        <img src="data/logo/abp.png" alt="Anandabazar Patrika" style="width: 24px; height: 24px; border-radius: 4px; object-fit: cover;">
+        আনন্দবাজার পত্রিকা</a>
+  </div>
+</div>
+
+  </div>
+ 
+</div>
+
+
+<div class="footer">
+      © 2025 MZO | Think outside the box
+    </div>
+</div></div>
+<div class="page" id="detailPage">
+<div class="header">
+<div style="display: flex; align-items: center;">
+<button class="back-button" onclick="goBack()">
+<i class="fas fa-arrow-left"></i>
+</button>
+<h1 class="main-title" style="font-size: 20px;">Page Title</h1>
+</div>
+<button class="refresh-icon" onclick="refreshIframe()" id="iframeRefreshBtn">
+<i class="fas fa-sync-alt"></i>
+</button>
+</div>
+
+   
+<div id="iframeWrapper" style="height: calc(100vh - 56px); overflow-y: auto; -webkit-overflow-scrolling: touch;">
+  <div id="pullToRefresh" style="display: none; text-align: center; padding: 10px; color: var(--text-secondary); font-weight: 500; font-size: 14px;">
+    🔄 Refreshing...
+  </div>
+  <iframe id="subPageFrame" src="" style="width: 100%; height: calc(100vh - 96px); border: none; background-color: var(--bg-dark);"></iframe>
+</div>
+
+
+<div id="iframeError" style="
+  display: none;
+  position: absolute;
+  top: 70px; /* Adjusted for new header height */
+  left: 0;
+  width: 100%;
+  height: calc(100% - 70px);
+  background: var(--bg-dark);
+  color: var(--text-secondary);
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 16px;
+  z-index: 10;
+">
+  🚫 Failed to load the page. Please check your internet connection or try again later.
+</div>
+   
+</div></div></div></div>
+
+<div class="loading-overlay" id="loadingOverlay"></div>
+
+<!-- Sheets list modal (added) -->
+<div id="sheetsModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:10000; align-items:center; justify-content:center; padding:16px;">
+  <div style="width:100%; max-width:520px; background:#fff; border-radius:12px; padding:20px; box-shadow:0 10px 30px rgba(0,0,0,0.2); position:relative;">
+    <button aria-label="Close" onclick="closeSheetsModal()" style="position:absolute; right:12px; top:12px; background:none; border:none; font-size:18px; cursor:pointer; color:#374151;">
+      <i class="fas fa-times"></i>
+    </button>
+    <h3 style="margin:0 0 12px; color:#0f172a; font-size:18px;">Puja 2025 Reports</h3>
+    <p style="margin:0 0 16px; color:#4b5563; font-size:14px;">Open the required Google Sheet in a new tab.</p>
+
+    <div style="display:grid; gap:10px;">
+      <a class="btn btn-kpi" href="https://docs.google.com/spreadsheets/d/1lkQlOv4sWzSTIOKAkem-oJmEvA7RNTLT0w-tsKi-_kI/edit?gid=0#gid=0" target="_blank" rel="noopener noreferrer" style="justify-content:flex-start;">
+        <i class="fas fa-bolt" style="width:22px;text-align:center;"></i>
+        <span style="margin-left:8px;">Daily Peak Loading</span>
+      </a>
+
+      <!-- changed: Puja 2025 with festive icon -->
+      <a class="btn btn-kpi" href="https://docs.google.com/spreadsheets/d/1EGhWifLAYcnX6ZKVxPxtpxafdCrk_ueR67ObR9vDUM8/edit?gid=0#gid=0" target="_blank" rel="noopener noreferrer" style="justify-content:flex-start;">
+        <i class="fas fa-gift" style="width:22px;text-align:center;"></i>
+        <span style="margin-left:8px;">Puja Report Format-I</span>
+      </a>
+
+      <a class="btn btn-kpi" href="https://docs.google.com/spreadsheets/d/1Jh5-C7HXNoByxaGvzb8kBku1ov_HqwDS_wID-sS85Pk/edit?gid=0#gid=0" target="_blank" rel="noopener noreferrer" style="justify-content:flex-start;">
+        <i class="fas fa-file-alt" style="width:22px;text-align:center;"></i>
+        <span style="margin-left:8px;">Puja Report Format-II</span>
+      </a>
+    </div>
+
+    <div style="margin-top:18px; text-align:right;">
+      <button onclick="closeSheetsModal()" style="background:#e5e7eb; color:#111827; border:none; padding:10px 14px; border-radius:8px; cursor:pointer;">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ──────────────────────────────────────
+//   Theme Toggling
+// ──────────────────────────────────────
+const themeToggleButton = document.getElementById('themeToggleBtn');
+const themeIcon = themeToggleButton.querySelector('i');
+const body = document.body;
+
+function applyTheme(theme) {
+  if (theme === 'light') {
+    body.classList.add('light-theme');
+    body.classList.remove('dark-theme');
+    themeIcon.classList.remove('fa-sun');
+    themeIcon.classList.add('fa-moon');
+    localStorage.setItem('theme', 'light');
+  } else {
+    body.classList.add('dark-theme');
+    body.classList.remove('light-theme');
+    themeIcon.classList.remove('fa-moon');
+    themeIcon.classList.add('fa-sun');
+    localStorage.setItem('theme', 'dark');
+  }
+}
+
+function toggleTheme() {
+  const currentTheme = localStorage.getItem('theme') || 'dark';
+  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  applyTheme(newTheme);
+}
+
+// Apply saved theme on initial load
+const savedTheme = localStorage.getItem('theme') || 'dark'; // Default to dark
+applyTheme(savedTheme);
+</script>
+<script>
+
+// Refresh functions
+// Refresh functions
+function refreshMainPage() {
+  console.log('Main page refresh clicked');
+  const refreshBtn = document.getElementById('mainRefreshBtn');
+  const overlay = document.getElementById('loadingOverlay');
+  
+  if (refreshBtn) {
+    refreshBtn.classList.add('spinning');
+    console.log('Added spinning class to main refresh');
+  }
+  if (overlay) {
+    overlay.classList.add('active');
+  }
+  
+  setTimeout(() => {
+    window.location.reload();
+  }, 800);
+}
+
+function refreshIframe() {
+  const refreshBtn = document.getElementById('iframeRefreshBtn');
+  const iframe = document.getElementById('subPageFrame');
+  const overlay = document.getElementById('loadingOverlay');
+  const errorDiv = document.getElementById('iframeError');
+
+  if (refreshBtn) refreshBtn.classList.add('spinning');
+  if (overlay) overlay.classList.add('active');
+  if (errorDiv) errorDiv.style.display = 'none';
+
+  if (iframe && iframe.src) {
+    const currentSrc = iframe.src;
+    // Fix: Just reload with cache-busting
+    iframe.src = currentSrc + (currentSrc.includes('?') ? '&' : '?') + 't=' + Date.now();
+  }
+
+  setTimeout(() => {
+    if (refreshBtn) refreshBtn.classList.remove('spinning');
+    if (overlay) overlay.classList.remove('active');
+  }, 2000);
+}
+
+
+// Make functions globally available
+window.refreshMainPage = refreshMainPage;
+window.refreshIframe = refreshIframe;
+
+
+// Debug - Add event listeners manually
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('DOM loaded, checking refresh buttons...');
+  
+  const mainRefresh = document.getElementById('mainRefreshBtn');
+  const iframeRefresh = document.getElementById('iframeRefreshBtn');
+  
+  console.log('Main refresh button:', !!mainRefresh);
+  console.log('Iframe refresh button:', !!iframeRefresh);
+  
+  if (mainRefresh) {
+    mainRefresh.addEventListener('click', function(e) {
+      e.preventDefault();
+      console.log('Main refresh clicked via event listener');
+      refreshMainPage();
+    });
+  }
+  
+  // Check for iframe refresh button periodically since it's created dynamically
+  const checkIframeButton = setInterval(() => {
+    const btn = document.getElementById('iframeRefreshBtn');
+    if (btn && !btn.hasAttribute('data-listener-added')) {
+      btn.setAttribute('data-listener-added', 'true');
+      btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        console.log('Iframe refresh clicked via event listener');
+        refreshIframe();
+      });
+      console.log('Added event listener to iframe refresh button');
+      clearInterval(checkIframeButton);
+    }
+  }, 500);
+});
+
+
+
+
+// Android-style navigation
+function openPage(page, title) {
+  const iframe = document.getElementById("subPageFrame");
+  const errorDiv = document.getElementById("iframeError");
+  const desktopBreakpoint = 768; // Define your desktop breakpoint
+
+  if (window.innerWidth >= desktopBreakpoint) {
+    // Open in new tab for desktop
+    window.open(page, '_blank');
+    return; // Exit function, no need to proceed with iframe logic
+  }
+
+  // Hide any previous error
+  errorDiv.style.display = "none";
+
+  // Temporarily remove previous event listener
+  iframe.onload = null;
+  iframe.onerror = null;
+
+  // Show loading state and set the new src
+  iframe.src = "";
+  iframe.src = page;
+  document.querySelector("#detailPage .main-title").textContent = title;
+
+  document.getElementById("mainPage").classList.remove("active");
+  document.getElementById("detailPage").classList.add("active");
+
+  let loadFailed = false;
+
+const timeout = setTimeout(() => {
+  try {
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    const title = (doc.title || "").toLowerCase();
+    const body = (doc.body && doc.body.innerText || "").toLowerCase();
+
+    // Try to infer 404
+    if (title.includes("404") || title.includes("not found") || body.includes("404") || body.includes("not found")) {
+      showIframeError("🚫 Page Not Found (404). This file might be missing.");
+      return;
+    }
+
+    // Check for empty/blank load (often a network failure)
+    if (!body.trim() || body.trim().length < 20) {
+      showIframeError("🛑 Unable to load. Network might be unstable.");
+      return;
+    }
+
+    // Generic fallback
+    showIframeError("⚠️ Something went wrong. Please try again.");
+  } catch (err) {
+    // Catch iframe load failure (possibly network)
+    showIframeError("🛑 Network issue or unreachable content.");
+  }
+}, 4000);
+
+
+function showIframeError(message) {
+  const errorDiv = document.getElementById("iframeError");
+  errorDiv.innerHTML = `${message}<br/><br/> 
+    <button onclick="retryIframe()" style="background: var(--danger); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer;">🔄 Retry</button>`;
+  errorDiv.style.display = "flex";
+}
+
+function retryIframe() {
+  const iframe = document.getElementById("subPageFrame");
+  const errorDiv = document.getElementById("iframeError");
+  const currentSrc = iframe.src;
+  errorDiv.style.display = "none";
+  iframe.src = "";
+  setTimeout(() => {
+    iframe.src = currentSrc;
+  }, 150);
+}
+
+  // If iframe loads successfully, cancel timeout
+  iframe.onload = () => {
+    clearTimeout(timeout);
+    errorDiv.style.display = "none";
+  };
+
+  // Catch iframe load error (rarely works in some browsers)
+  iframe.onerror = () => {
+    clearTimeout(timeout);
+    errorDiv.style.display = "flex";
+  };
+}
+
+
+function goBack() {
+  document.getElementById("detailPage").classList.remove("active");
+  document.getElementById("mainPage").classList.add("active");
+  document.getElementById("subPageFrame").src = "";
+}
+
+document.querySelectorAll('.sub-option').forEach(link => {
+  link.addEventListener('click', function(e) {
+    // If the link is meant to open in a new tab, let the browser handle it.
+    if (this.getAttribute('target') === '_blank') {
+      return;
+    }
+    e.preventDefault();
+    const page = this.getAttribute('data-page') || "#";
+    const title = this.textContent.trim();
+    openPage(page, title);
+  });
+});
+
+// Configuration
+const scriptURL = "https://script.google.com/macros/s/AKfycbxDplwAiaxSMzMjRDLsmGQ5A01MQcvqMLT9B5imoRFh7XEWYgBqtRc63bUALKPXuu7jlA/exec";
+
+
+// Report card toggle function
+function toggleSub(card) {
+  // Do not run accordion logic on mobile view
+  // Do not run accordion logic on mobile view.
+  // Also, prevent click action on media card which has no sub-options to toggle.
+  const subOptionsContainer = card.querySelector('.sub-options');
+
+  if (window.innerWidth < 768) return;
+
+  const subOptions = card.querySelector('.sub-options');
+  const chevron = card.querySelector('.chevron');
+
+  // Close all other expanded cards
+  document.querySelectorAll('.sub-options.active').forEach(option => {
+    if (option !== subOptions) {
+      option.classList.remove('active');
+      option.parentElement.querySelector('.chevron').classList.remove('rotated');
+    }
+  });
+
+  // Toggle current card
+  subOptions.classList.toggle('active');
+  chevron.classList.toggle('rotated');
+}
+
+// Connectivity check
+function checkConnectivity() {
+  const errorBanner = document.getElementById('errorBanner');
+  if (!navigator.onLine) {
+    errorBanner.style.display = 'block';
+  } else {
+    errorBanner.style.display = 'none';
+  }
+}
+
+// Event listeners - wait for DOM to load
+document.addEventListener('DOMContentLoaded', function() {
+  console.log("DOM loaded"); // Debug log
+
+  // Re-apply theme to ensure correct icon state after all scripts load
+  applyTheme(localStorage.getItem('theme') || 'dark');
+
+
+  // Connectivity checks
+  checkConnectivity();
+  window.addEventListener('online', checkConnectivity);
+  window.addEventListener('offline', checkConnectivity);
+  
+  // Add touch feedback for report cards
+  document.querySelectorAll('.report-card').forEach(card => {
+    card.addEventListener('touchstart', function() {
+      this.style.transform = 'scale(0.98)';
+    });
+    
+    card.addEventListener('touchend', function() {
+      setTimeout(() => {
+        this.style.transform = '';
+      }, 100);
+    });
+  });
+});
+
+   // Pull-to-refresh for iframe
+(function() {
+  const wrapper = document.getElementById("iframeWrapper");
+  const iframe = document.getElementById("subPageFrame");
+  const pullToRefresh = document.getElementById("pullToRefresh");
+
+  let startY = 0;
+  let isPulling = false;
+
+  wrapper.addEventListener('touchstart', function(e) {
+    if (wrapper.scrollTop === 0) {
+      startY = e.touches[0].clientY;
+      isPulling = true;
+    }
+  });
+
+  wrapper.addEventListener('touchmove', function(e) {
+    if (!isPulling) return;
+
+    const distance = e.touches[0].clientY - startY;
+    if (distance > 60) {
+      pullToRefresh.style.display = "block";
+    }
+  });
+
+  wrapper.addEventListener('touchend', function() {
+    if (pullToRefresh.style.display === "block") {
+      const src = iframe.src;
+      iframe.src = "";
+      setTimeout(() => {
+        iframe.src = src;
+        pullToRefresh.style.display = "none";
+      }, 150);
+    }
+    isPulling = false;
+  });
+})();
+
+// Sheets modal controls (added)
+function openSheetsModal() {
+  const modal = document.getElementById('sheetsModal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  // focus for accessibility
+  const firstLink = modal.querySelector('a, button');
+  if (firstLink) firstLink.focus();
+}
+function closeSheetsModal() {
+  const modal = document.getElementById('sheetsModal');
+  if (!modal) return;
+  modal.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+// Close modal when clicking backdrop
+document.addEventListener('click', function (e) {
+  const modal = document.getElementById('sheetsModal');
+  if (!modal) return;
+  if (modal.style.display === 'flex' && e.target === modal) {
+    closeSheetsModal();
+  }
+});
+
+// Close modal on Escape
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') {
+    const modal = document.getElementById('sheetsModal');
+    if (modal && modal.style.display === 'flex') closeSheetsModal();
+  }
+});
+
+// expose to global scope for inline onclick handlers
+window.openSheetsModal = openSheetsModal;
+window.closeSheetsModal = closeSheetsModal;
+// ...existing code...
+</script>
+
+<!-- Single Responsive Modal with Quote and Dynamic Notice -->
+<div id="noticeModal">
+  <div>
+    <!-- Motivational quote section (initially shown) -->
+    <div id="quoteSection">
+      <span id="typedQuote"></span>
+    </div>
+
+    <!-- Smart Forward Button -->
+    <div id="forwardButtonContainer">
+        <button id="smartForwardBtn" onclick="skipToNotice()" title="Skip intro">
+            <i class="fas fa-arrow-right"></i>
+        </button>
+    </div>
+
+    <!-- Notice content (hidden until data is loaded) -->
+    <div id="noticeContentSection">
+      <h2 id="noticeTitle"></h2>
+      <div id="noticeBody"></div>
+    </div>
+
+    <!-- Button appears only after content loads -->
+    <div id="noticeButtonSection">
+      <button onclick="onContinueClick()">
+        Continue
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.addEventListener("DOMContentLoaded", () => {
+  const baseUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSiBAAv6fTB3Yd6yWMc3O3w3nplfaNyI1FR9S570KaXehdG4sPjakxctFqRaY4vh1_hs6i3D-ej216W/pub?gid=0&single=true&output=csv";
+
+  let csvLoaded = false;
+  let rows = [];
+  let currentIndex = 0;
+  let skipRequested = false;
+const quotes = [
+  "Every quick response turns grievance into trust. 🤝",
+  "Stable power is the truest form of our service. ⚡",
+  "A leader’s care is measured in consumer satisfaction. 😊",
+  "Resolving complaints swiftly builds lasting confidence. ✅",
+  "Strong leadership shines brightest during crisis. 🔦",
+  "Every call from a consumer is a call to action. 📞",
+  "Grievances handled well become bridges of trust. 🤝",
+  "Reliable supply speaks louder than promises. 🤲",
+  "Leaders who act fast prevent consumer frustration. ⏱️",
+  "Service delayed is trust denied. ⛔",
+  "Stability in power is stability in our lives. 🏠",
+  "Leadership during crisis decides tomorrow’s reputation. 🛡️",
+  "True leaders treat every complaint as an opportunity to improve. 📋",
+  "Every satisfied consumer is a silent reward for leadership. 🏆"
+];
+  const quoteText = quotes[Math.floor(Math.random() * quotes.length)]; // The quote to be animated
+  const typedQuoteElement = document.getElementById("typedQuote");
+
+  function animateQuote() {
+    const words = quoteText.split(' ');
+    // Wrap each word in a span with a staggered animation delay
+    typedQuoteElement.innerHTML = words.map((word, index) => 
+      `<span class="quote-word" style="animation-delay: ${index * 0.12}s;">${word}</span>`
+    ).join(' ');
+
+  }
+  function showNoticeIfReady() {
+    if (skipRequested && csvLoaded) {
+      document.getElementById("quoteSection").style.display = "none";
+      document.getElementById("forwardButtonContainer").style.display = "none";
+      document.getElementById("noticeContentSection").style.display = "block";
+      document.getElementById("noticeButtonSection").style.display = "block";
+      showRow(currentIndex);
+    }
+  }
+
+function showRow(index) {
+  const row = rows[index];
+  if (!row) return;
+
+  const titleElem = document.getElementById("noticeTitle");
+  const bodyElem = document.getElementById("noticeBody");
+
+  titleElem.textContent = row.header || "Notice";
+  bodyElem.textContent = row.content || "No content.";
+
+  // Apply red color to header only if it contains 'Alert!'
+  if ((row.header || "").toLowerCase().includes("alert!")) {
+    titleElem.style.color = "#dc2626"; // A strong red for alerts on a light background
+  } else {
+    titleElem.style.color = ""; // Revert to stylesheet color
+  }
+
+  // Body color is controlled by stylesheet, no need to set it here.
+  bodyElem.style.color = "";
+}
+
+  window.skipToNotice = () => {
+    skipRequested = true;
+    const forwardBtn = document.getElementById('smartForwardBtn');
+    if (forwardBtn) {
+      forwardBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+      forwardBtn.disabled = true;
+    }
+    showNoticeIfReady(); // Attempt to show, will work if csv is already loaded.
+  };
+
+
+
+  window.onContinueClick = () => {
+    currentIndex++;
+    if (currentIndex >= rows.length) {
+      document.getElementById("noticeModal").style.display = "none";
+    } else {
+      showRow(currentIndex);
+    }
+  };
+
+  // Start animating the quote
+  animateQuote();
+
+  // Fetch CSV with cache busting
+  const csvUrl = `${baseUrl}&t=${Date.now()}`;
+fetch(`${csvUrl}`)
+  .then(res => res.text())
+  .then(csv => {
+    const parsed = Papa.parse(csv, { header: true }).data;
+
+    parsed.forEach(row => {
+      rows.push({
+        header: (row["Header"] || "").trim(),
+        content: (row["Content"] || "").trim()
+      });
+    });
+
+    csvLoaded = true;
+    showNoticeIfReady();
+  })
+  .catch(err => {
+    console.error("Failed to load notice from CSV:", err);
+    rows = [{ header: "Notice", content: "⚠️ Could not load notice content." }];
+    csvLoaded = true;
+    showNoticeIfReady();
+  });
+
+});
+</script>
+
+</body>
+</html>
