@@ -1,0 +1,1920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Collection Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+    <style>
+        :root {
+            --elevation-1: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+            --elevation-2: 0 3px 6px rgba(0,0,0,0.16), 0 3px 6px rgba(0,0,0,0.23);
+        }
+        body { 
+            font-family: 'Roboto', sans-serif;
+            background-color: #f0f2f5; 
+            font-size: 0.9rem;
+        }
+        body.dark { background-color: #121212; color: #e0e0e0; }
+        .dashboard-header {
+            background: #1976D2;
+            color: white;
+            padding: 0.75rem 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.5rem;
+            box-shadow: var(--elevation-2);
+        }
+        .dashboard-title {
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        .dashboard-title h1 {
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+        .dashboard-subtitle {
+            font-size: 0.75rem;
+            opacity: 0.9;
+            font-weight: normal;
+            color: #e3f2fd;
+        }
+        .filter-bar {
+            background: var(--bs-body-bg);
+            border-radius: 8px;
+            padding: 0.75rem;
+            margin-bottom: 0.75rem;
+            box-shadow: var(--elevation-1);
+            border: 1px solid #e0e0e0;
+        }
+        .dark .filter-bar {
+            background: #1e1e1e;
+            border-color: rgba(255,255,255,0.1);
+        }
+        /* No special .filter-row styles needed, Bootstrap grid handles it */
+        .filter-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        .filter-chip {
+            display: inline-flex;
+            align-items: center;
+            background: #e3f2fd;
+            padding: 0.2rem 0.6rem;
+            border-radius: 1rem;
+            font-size: 0.75rem;
+            color: #1976D2;
+        }
+        .filter-chip i { margin-left: 0.4rem; cursor: pointer; }
+        .dark .filter-chip {
+            background: rgba(25, 118, 210, 0.2);
+            color: #90caf9;
+        }
+        .dark .filter-chip:hover {
+            background: rgba(25, 118, 210, 0.3);
+        }
+        .chart-container {
+            background-color: #fff;
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: var(--elevation-1);
+            height: 60vh;
+        }
+        .chart-container.dark {
+            background: #1e1e1e;
+            color: #e0e0e0;
+        }
+        .stats-card {
+            border: none;
+            background: #fff;
+            box-shadow: var(--elevation-1);
+            transition: transform 0.2s;
+            border-radius: 8px;
+        }
+        .stats-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--elevation-2);
+            cursor: pointer;
+        }
+        .stats-card.active, .stats-card:active {
+            transform: translateY(1px);
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.15);
+        }
+        .stats-card.dark {
+            background: #1e1e1e;
+        }
+        .stats-card .card-title {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-bottom: 0.25rem;
+            font-weight: 500;
+        }
+        .dark .stats-card .card-title {
+            color: #94a3b8;
+        }
+        .stats-value {
+            font-size: 1.25rem;
+            font-weight: 500;
+            color: #0f172a;
+        }
+        .dark .stats-value {
+            color: #e2e8f0;
+        }
+        .stats-secondary-value {
+            font-size: 0.8rem;
+            font-weight: 400;
+            color: #1976D2;
+            opacity: 0.9;
+        }
+        .dark .stats-secondary-value { color: #90caf9; }
+        .btn-icon {
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-size: 1rem;
+        }
+        .timeline-buttons {
+            position: absolute;
+            right: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            z-index: 10;
+        }
+        .timeline-buttons .btn {
+            background-color: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            border: 1px solid rgba(0,0,0,0.1);
+            box-shadow: var(--elevation-1);
+        }
+        .dark .timeline-buttons .btn {
+            background-color: rgba(50, 50, 50, 0.6);
+            border-color: rgba(255,255,255,0.15);
+        }
+        .timeline-buttons .btn.active.btn-primary {
+            background-color: rgba(25, 118, 210, 0.8); /* Primary color with transparency */
+            border-color: transparent;
+        }
+        .form-select, .form-control {
+            transition: border-color .15s ease-in-out,box-shadow .15s ease-in-out;
+        }
+        .form-select-sm {
+            font-size: 0.8rem;
+        }
+        .text-muted {
+            color: #64748b !important;
+        }
+        .dark .text-muted {
+            color: #94a3b8 !important;
+        }
+        #loader-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            z-index: 1050;
+            display: flex;
+        }
+        .dark #loader-container {
+            background: rgba(18, 18, 18, 0.8);
+        }
+        /* Dark theme overrides for Modals */
+        .dark .modal-content {
+            background-color: #212529;
+            color: #dee2e6;
+        }
+        .dark .modal-header {
+            border-bottom-color: #495057;
+        }
+        .dark .modal-footer {
+            border-top-color: #495057;
+        }
+        .dark .btn-close {
+            filter: invert(1) grayscale(100%) brightness(200%);
+        }
+        @media (max-width: 767px) {
+            body {
+                font-size: 0.85rem; /* Reduce base font size for mobile */
+            }
+            .dashboard-title h1 {
+                font-size: 1rem; /* Was 1.1rem */
+            }
+            .stats-value {
+                font-size: 1.1rem; /* Was 1.25rem */
+            }
+            .stats-card .card-body {
+                padding: 0.75rem;
+            }
+            .chart-container {
+                height: 55vh;
+            }
+            .dashboard-header {
+                margin-bottom: 0.75rem;
+            }
+            /* On mobile, let the container be full-width */
+            .container {
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Changed to .container and added style for desktop width -->
+    <div class="container p-2 p-md-3" style="--bs-container-max-width: 70%;">
+        <!-- Header section with theme toggle -->
+        <div class="dashboard-header d-flex justify-content-between align-items-center">
+            <div class="dashboard-title">
+                <h1 class="mb-0">Payment Collection</h1>
+                <span class="dashboard-subtitle" id="header-date-range"></span>
+            </div>
+            <div class="d-flex align-items-center gap-3">
+                <div class="form-check form-switch d-flex align-items-center gap-2">
+                    <input class="form-check-input" type="checkbox" id="themeToggle" role="switch" aria-checked="false">
+                    <label class="form-check-label small" for="themeToggle">
+                        <i class="bi bi-moon-stars"></i>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div id="summary-cards" class="row g-2 mb-2 d-none">
+            <div class="col-6 col-md-6 col-lg-3">
+                <div id="total-collection-card" class="stats-card card h-100" tabindex="0" role="article" aria-label="Total collection card">
+                    <div class="card-body">
+                        <h5 class="card-title">Total Collection</h5>
+                        <p id="total-collection-readable" class="stats-value mb-0">0</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-6 col-lg-3">
+                <div id="monthly-average-card" class="stats-card card h-100" tabindex="0" role="article" aria-label="Monthly average collection card">
+                    <div class="card-body">
+                        <h5 class="card-title">Monthly Average</h5>
+                        <p id="monthly-average-readable" class="stats-value mb-0">0</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-6 col-lg-3">
+                <div id="weekly-average-card" class="stats-card card h-100" tabindex="0" role="article" aria-label="Weekly average collection card">
+                    <div class="card-body">
+                        <h5 class="card-title">Weekly Average</h5>
+                        <p id="weekly-average-readable" class="stats-value mb-0">0</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-6 col-lg-3">
+                <div id="daily-average-card" class="stats-card card h-100" tabindex="0" role="article" aria-label="Daily average collection card">
+                    <div class="card-body">
+                        <h5 class="card-title">Daily Average</h5>
+                        <p id="daily-average-readable" class="stats-value mb-0">0</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="filter-bar">
+            <div class="row g-2">
+                <div class="col-6 col-md-4">
+                    <select id="regionFilter" class="form-select form-select-sm" aria-label="Select Region"></select>
+                </div>
+                <div class="col-6 col-md-4">
+                    <select id="divisionFilter" class="form-select form-select-sm" aria-label="Select Division"></select>
+                </div>
+                <div class="col-12 col-md-4">
+                    <select id="cccFilter" class="form-select form-select-sm" aria-label="Select CCC"></select>
+                </div>
+                <div class="d-none">
+                    <select id="timeScale" class="form-select form-select-sm">
+                        <option value="day">Daily</option>
+                        <option value="week">Weekly</option>
+                        <option value="month" selected>Monthly</option>
+                    </select>
+                </div>
+            </div>
+            <div id="activeFilters" class="filter-chips"></div>
+        </div>
+
+        <div class="chart-container position-relative">
+            <div class="d-flex justify-content-end align-items-center mb-2 gap-1">
+                <div class="form-check form-switch me-2">
+                    <input class="form-check-input" type="checkbox" role="switch" id="toggleDataLabels">
+                    <label class="form-check-label small" for="toggleDataLabels" style="cursor: pointer;">
+                        Data Labels
+                    </label>
+                </div>
+                <button id="backToMainViewBtn" class="btn btn-sm btn-primary d-none" title="Back to Main View"><i class="bi bi-arrow-left"></i> Back to Main View</button>
+                <button id="compareBtn" class="btn btn-icon btn-outline-info" title="Compare Day of Month">
+                    <i class="bi bi-sliders"></i>
+                </button>
+                <button id="quickCompareBtn" class="btn btn-icon btn-outline-info" title="Day-over-Month Comparison">
+                    <i class="bi bi-table"></i>
+                </button>
+                <button id="toggleCumulativeView" class="btn btn-icon btn-outline-secondary" title="Toggle Cumulative View">
+                    <i class="bi bi-graph-up"></i>
+                </button>
+                <button id="toggleChartType" class="btn btn-icon btn-outline-secondary" title="Toggle Chart Type">
+                    <i class="bi bi-bar-chart-line"></i>
+                </button>
+                <button id="resetZoom" class="btn btn-icon btn-outline-secondary" title="Reset Zoom">
+                    <i class="bi bi-arrows-angle-contract"></i>
+                </button>
+                <button id="downloadPng" class="btn btn-icon btn-outline-primary" title="Download PNG">
+                    <i class="bi bi-download"></i>
+                </button>
+                <button id="exportCsv" class="btn btn-icon btn-outline-success" title="Export CSV">
+                    <i class="bi bi-file-earmark-spreadsheet"></i>
+                </button>
+            </div>
+            <div class="timeline-buttons">
+                <button class="btn btn-icon btn-light" data-scale="day" title="Daily View">D</button>
+                <button class="btn btn-icon btn-light" data-scale="week" title="Weekly View">W</button>
+                <button class="btn btn-icon btn-light active btn-primary" data-scale="month" title="Monthly View">M</button>
+            </div>
+            <canvas id="collectionChart"></canvas>
+        </div>
+
+        <!-- Summary Breakdown Modal -->
+        <div class="modal fade" id="summaryModal" tabindex="-1" aria-labelledby="summaryModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="summaryModalLabel">Collection Breakdown</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <!-- Nav tabs -->
+                        <ul class="nav nav-tabs" id="summaryTab" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="region-summary-tab" data-bs-toggle="tab" data-bs-target="#region-summary" type="button" role="tab" aria-controls="region-summary" aria-selected="true">Region-wise</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="division-summary-tab" data-bs-toggle="tab" data-bs-target="#division-summary" type="button" role="tab" aria-controls="division-summary" aria-selected="false">Division-wise</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="ccc-summary-tab" data-bs-toggle="tab" data-bs-target="#ccc-summary" type="button" role="tab" aria-controls="ccc-summary" aria-selected="false">CCC-wise</button>
+                            </li>
+                        </ul>
+                        <!-- Tab panes -->
+                        <div class="tab-content pt-3" id="summaryTabContent">
+                            <div class="tab-pane fade show active" id="region-summary" role="tabpanel" aria-labelledby="region-summary-tab"></div>
+                            <div class="tab-pane fade" id="division-summary" role="tabpanel" aria-labelledby="division-summary-tab"></div>
+                            <div class="tab-pane fade" id="ccc-summary" role="tabpanel" aria-labelledby="ccc-summary-tab"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Comparison Modal -->
+        <div class="modal fade" id="compareModal" tabindex="-1" aria-labelledby="compareModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="compareModalLabel">Compare Day of Month</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Select a day and comparison type to analyze across all months.</p>
+                        <div class="mb-3">
+                            <label for="compareDaySelect" class="form-label">Day of the Month:</label>
+                            <select id="compareDaySelect" class="form-select">
+                                <!-- Options will be populated by JS -->
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label">Comparison Type:</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="comparisonType" id="compareOnDay" value="onDay" checked>
+                                <label class="form-check-label" for="compareOnDay">
+                                    Collection on selected day
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="comparisonType" id="compareUpToDay" value="upToDay">
+                                <label class="form-check-label" for="compareUpToDay">
+                                    Total collection up to selected day
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" id="startComparisonBtn" class="btn btn-primary">Compare</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Monthly Office-wise Breakdown Modal (Level 3) -->
+        <div class="modal fade" id="monthlyOfficeBreakdownModal" tabindex="-1" aria-labelledby="monthlyOfficeBreakdownModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="monthlyOfficeBreakdownModalLabel">Breakdown</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body" id="monthlyOfficeBreakdownModalBody">
+                        <!-- Content will be populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Monthly Breakdown Modal -->
+        <div class="modal fade" id="monthlyBreakdownModal" tabindex="-1" aria-labelledby="monthlyBreakdownModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="monthlyBreakdownModalLabel">Monthly Collection Summary</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body" id="monthlyBreakdownModalBody">
+                        <!-- Content will be populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- Quick Compare Modal -->
+        <div class="modal fade" id="quickCompareModal" tabindex="-1" aria-labelledby="quickCompareModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="quickCompareModalLabel">Day-over-Month Comparison</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body" id="quickCompareModalBody">
+                        <!-- Content will be populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- Loader -->
+        <div id="loader-container" class="align-items-center justify-content-center">
+            <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+
+        <div id="error-container" class="alert alert-danger mt-4 d-none" role="alert"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const regionDivisionCccMapping = [
+            // This data will be processed on load to abbreviate names
+            { "regionName": "MALDA REGION", "regionCode": "6610000", "divisions": [
+                { "divisionName": "MALDA DIVISIOIN", "divisionCode": "6611000", "cccs": [
+                    {"cccName": "MANIKCHAK CCC", "cccCode": "6611101"}, {"cccName": "GOLAPGANJ CCC", "cccCode": "6611102"},
+                    {"cccName": "BAISHNABNAGAR CCC", "cccCode": "6611103"}, {"cccName": "KALIACHAK CCC", "cccCode": "6611104"},
+                    {"cccName": "MOTHABARI CCC", "cccCode": "6611105"}, {"cccName": "SUJAPUR CCC", "cccCode": "6611106"},
+                    {"cccName": "RATHBARI CCC", "cccCode": "6611107"}, {"cccName": "FULBARI CCC", "cccCode": "6611108"},
+                    {"cccName": "MOKDUMPUR CCC", "cccCode": "6611109"}
+                ]},
+                { "divisionName": "CHANCHAL DIVISION", "divisionCode": "6612000", "cccs": [
+                    {"cccName": "BHALUKA CCC", "cccCode": "6612101"}, 
+                    {"cccName": "SAMSI CCC", "cccCode": "6612102"},
+                    {"cccName": "PARANPUR CCC", "cccCode": "6612103"}, {"cccName": "CHANCHAL CCC", "cccCode": "6612104"},
+                    {"cccName": "MALATIPUR CCC", "cccCode": "6612105"}, {"cccName": "HARISHCHANDRAPUR CCC", "cccCode": "6612106"},
+                    {"cccName": "KUSHIDA CCC", "cccCode": "6612107"}
+                ]},
+                { "divisionName": "GAZOLE DIVISION", "divisionCode": "6613000", "cccs": [
+                    {"cccName": "GAZOL CCC", "cccCode": "6613101"}, {"cccName": "AIHO. CCC", "cccCode": "6613102"},
+                    {"cccName": "PANDUA CCC", "cccCode": "6613103"}, {"cccName": "BAMONGOLA CCC", "cccCode": "6613104"},
+                    {"cccName": "OLD MALDA CCC", "cccCode": "6613105"}
+                ]}
+            ], "bulkCcc": { "divisionName": "Bulk", "ccc": { "cccName": "MALDA REGION BULK", "cccCode": "6610000" } }
+        },
+            { "regionName": "UTTAR DINAJPUR REGION", "regionCode": "6620000", "divisions": [
+                { "divisionName": "RAIGANJ DIVISION", "divisionCode": "6621000", "cccs": [
+                    {"cccName": "ITAHAR CCC", "cccCode": "6621101"}, {"cccName": "HEMTABAD CCC", "cccCode": "6621102"},
+                    {"cccName": "KALIYAGANJ CCC", "cccCode": "6621103"}, {"cccName": "RAIGANJ CCC", "cccCode": "6621104"},
+                    {"cccName": "BIRNAGAR CCC", "cccCode": "6621105"}, {"cccName": "KARANDIGHI CCC", "cccCode": "6621106"}
+                ]},
+                { "divisionName": "ISLAMPUR DIVISION", "divisionCode": "6622000", "cccs": [
+                    {"cccName": "ISLAMPUR CCC", "cccCode": "6622101"}, {"cccName": "CHOPRA CCC", "cccCode": "6622102"},
+                    {"cccName": "DALKHOLA CCC", "cccCode": "6622103"}, {"cccName": "GOALPOKHER CCC", "cccCode": "6622104"},
+                    {"cccName": "KANKI CCC", "cccCode": "6622105"}
+                ]}
+            ], "bulkCcc": { "divisionName": "Bulk", "ccc": { "cccName": "U/D REGION BULK", "cccCode": "6620000" } }
+        },
+            { "regionName": "DAKSHIN DINAJPUR REGION", "regionCode": "6630000", "divisions": [
+                { "divisionName": "BALURGHAT DIVISION", "divisionCode": "6631000", "cccs": [
+                    {"cccName": "BALURGHAT CCC", "cccCode": "6631101"}, {"cccName": "TAPAN CCC", "cccCode": "6631102"},
+                    {"cccName": "KUMARGANJ CCC", "cccCode": "6631103"}, {"cccName": "HILI CCC", "cccCode": "6631104"},
+                    {"cccName": "PATIRAM CCC", "cccCode": "6631105"}
+                ]},
+                { "divisionName": "BUNIADPUR DIVISION", "divisionCode": "6632000", "cccs": [
+                    {"cccName": "BUNIADPUR CCC", "cccCode": "6632101"}, {"cccName": "KUSMANDI CCC", "cccCode": "6632102"},
+                    {"cccName": "HARIRAMPUR CCC", "cccCode": "6632103"}, {"cccName": "GANGARAMPUR CCC", "cccCode": "6632104"}
+                ]}
+            ], "bulkCcc": { "divisionName": "Bulk", "ccc": { "cccName": "D/D REGION BULK", "cccCode": "6630000" } }
+        }
+        ];
+
+        // Abbreviate names for a more compact view
+        regionDivisionCccMapping.forEach(region => {
+            region.regionName = region.regionName.replace(/ REGION$/i, '').trim();
+            if (region.bulkCcc) {
+                region.divisions.push({
+                    divisionName: region.bulkCcc.divisionName,
+                    divisionCode: `${region.regionCode}_bulk`, // Synthetic code
+                    cccs: [region.bulkCcc.ccc]
+                });
+            }
+            region.divisions.forEach(division => {
+                division.divisionName = division.divisionName.replace(/ DIVISIOIN| DIVISION$/i, '').trim();
+                division.cccs.forEach(ccc => ccc.cccName = ccc.cccName.replace(/ CCC$/i, '').trim());
+            });
+        });
+
+        const cccToDetailsMap = new Map();
+        regionDivisionCccMapping.forEach(region => {
+            region.divisions.forEach(division => {
+                division.cccs.forEach(ccc => {
+                    cccToDetailsMap.set(ccc.cccCode, {
+                        cccName: ccc.cccName,
+                        divisionName: division.divisionName,
+                        regionName: region.regionName
+                    });
+                });
+            });
+        });
+
+    const ctx = document.getElementById('collectionChart').getContext('2d');
+    let chart;
+    let processedData = [];
+    // State for comparison mode
+    let isCompareMode = false;
+    let comparisonDay = null;
+    let comparisonType = 'onDay'; // 'onDay' or 'upToDay'
+    let quickCompareModalInstance;
+    let summaryModalInstance;
+    let compareModalInstance;
+    let monthlyBreakdownModalInstance;
+    let monthlyOfficeBreakdownModalInstance;
+    let isSufficientlyZoomed = false;
+    let isCumulativeView = false;
+
+    let showDataLabels = false; // State for data labels visibility
+
+        // Filter elements
+        const regionFilter = document.getElementById('regionFilter');
+        const divisionFilter = document.getElementById('divisionFilter');
+        const cccFilter = document.getElementById('cccFilter');
+        const timeScaleSelect = document.getElementById('timeScale');
+        const compareBtn = document.getElementById('compareBtn');
+        const quickCompareBtn = document.getElementById('quickCompareBtn');
+        const backToMainViewBtn = document.getElementById('backToMainViewBtn');
+        const startComparisonBtn = document.getElementById('startComparisonBtn');
+        const toggleChartTypeBtn = document.getElementById('toggleChartType');
+        const toggleCumulativeViewBtn = document.getElementById('toggleCumulativeView');
+        const toggleDataLabels = document.getElementById('toggleDataLabels');
+
+        const loaderContainer = document.getElementById('loader-container');
+        const errorContainer = document.getElementById('error-container');
+        const summaryCards = document.getElementById('summary-cards');
+            const headerDateRangeEl = document.getElementById('header-date-range');        function parseDate(yyyymmdd) {
+            if (!yyyymmdd || yyyymmdd.length < 8) return null;
+            const year = yyyymmdd.substring(0, 4);
+            const month = parseInt(yyyymmdd.substring(4, 6), 10) - 1; // JS months are 0-indexed
+            const day = yyyymmdd.substring(6, 8);
+            const dt = new Date(year, month, day);
+            return isNaN(dt) ? null : dt;
+        }
+
+        // Theme handling: persists to localStorage, toggles classes and re-renders chart
+        const themeToggle = document.getElementById('themeToggle');
+        function applyTheme(dark) {
+            document.body.classList.toggle('dark', dark);
+            document.querySelectorAll('.chart-container').forEach(el => el.classList.toggle('dark', dark));
+            document.querySelectorAll('.stats-card').forEach(el => el.classList.toggle('dark', dark));
+            themeToggle.setAttribute('aria-checked', dark ? 'true' : 'false');
+            // If a chart exists, re-render to pick up any CSS changes or palette adjustments
+            if (chart) updateChart();
+        }
+
+        // Initialize theme from localStorage
+        const savedTheme = localStorage.getItem('collectionDashboardTheme');
+        const isDark = savedTheme === 'dark';
+        if (isDark) themeToggle.checked = true;
+        applyTheme(isDark);
+
+        themeToggle.addEventListener('change', (e) => {
+            const dark = !!e.target.checked;
+            localStorage.setItem('collectionDashboardTheme', dark ? 'dark' : 'light');
+            applyTheme(dark);
+        });
+
+        async function fetchData() {
+            const url = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ2S20QZ57pQpdawzKFHAIqD_OpCNmbmMbYlttluLVA0JZpVK405pS0-2ZIqm-X9jAA8ZB1XwF2serr/pub?gid=1977250749&single=true&output=csv';
+            
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}. Failed to fetch data from Google Sheets.`);
+                }
+                const csvText = await response.text();
+
+                // Robust CSV parsing (handles CRLF and possible trailing empty lines)
+                const lines = csvText.replace(/\r/g, '').split('\n').filter(Boolean);
+                if (lines.length <= 1) {
+                    processedData = [];
+                } else {
+                    const rows = lines.slice(1);
+                    processedData = rows.map(row => {
+                        // split on comma but handle quoted commas simply by removing quotes
+                        const cols = row.split(',').map(c => c.replace(/^"|"$/g, '').trim());
+                        const paymentDt = cols[0];
+                        const cccCode = cols[1];
+                        const amountPaid = cols[4];
+                        if (!paymentDt || !cccCode) return null;
+
+                        const details = cccToDetailsMap.get(cccCode.trim());
+                        const parsedDate = parseDate(paymentDt.trim());
+                        return parsedDate ? {
+                            date: parsedDate,
+                            cccCode: cccCode.trim(),
+                            amount: (parseFloat(amountPaid) || 0) * 100000, // Amount is in Lakhs -> convert to rupees
+                            region: details ? details.regionName : 'Unknown',
+                            division: details ? details.divisionName : 'Unknown',
+                            ccc: details ? details.cccName : 'Unknown'
+                        } : null;
+                    }).filter(d => d !== null);
+                }
+
+                populateFilters();
+                updateSummaryCards();
+                updateChart();
+            } catch (error) {
+                console.error('Error fetching or parsing data:', error);
+                errorContainer.textContent = `Failed to load data. ${error.message} Please check your internet connection and ensure the Google Sheet is published to the web.`;
+                errorContainer.classList.remove('d-none');
+            } finally {
+                loaderContainer.classList.add('d-none');
+            }
+        }
+
+        function formatReadableAmount(amount) {
+            if (amount >= 10000000) { // 1 crore
+                return `${(amount / 10000000).toFixed(2)} Cr`;
+            } else if (amount >= 100000) { // 1 lakh
+                return `${(amount / 100000).toFixed(2)} L`;
+            } else if (amount >= 1000) {
+                return `${(amount / 1000).toFixed(2)} K`;
+            }
+            return amount.toFixed(0);
+        }
+
+        function updateSummaryCards() {
+            if (processedData.length === 0) return;
+
+            const filteredData = applyFilters();
+            const totalAmount = filteredData.reduce((sum, d) => sum + d.amount, 0);
+            
+            const dates = filteredData.map(d => d.date);
+            const minDate = new Date(Math.min.apply(null, dates));
+            const maxDate = new Date(Math.max.apply(null, dates));
+
+            const numberFormatter = new Intl.NumberFormat('en-IN', {
+                style: 'decimal',
+                maximumFractionDigits: 0
+            });
+            const dateFormatter = new Intl.DateTimeFormat('en-GB', { 
+                day: '2-digit', 
+                month: 'short', 
+                year: 'numeric' 
+            });
+
+            // Calculate date differences
+            const daysDiff = Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24)) + 1;
+            const monthsDiff = (maxDate.getFullYear() - minDate.getFullYear()) * 12 + 
+                             (maxDate.getMonth() - minDate.getMonth()) + (maxDate.getDate() >= minDate.getDate() ? 1 : 0);
+            const weeksDiff = daysDiff / 7;
+
+            // Calculate averages
+            const dailyAvg = totalAmount / daysDiff;
+            const monthlyAvg = totalAmount / monthsDiff;
+            const weeklyAvg = totalAmount / weeksDiff;
+
+            // Update all summary cards
+            document.getElementById('total-collection-readable').innerHTML = formatReadableAmount(totalAmount);
+
+            // --- Calculate latest period collections ---
+            const latestMonth = maxDate.getMonth();
+            const latestYear = maxDate.getFullYear();
+            const latestMonthCollection = filteredData
+                .filter(d => d.date.getMonth() === latestMonth && d.date.getFullYear() === latestYear)
+                .reduce((sum, d) => sum + d.amount, 0);
+
+            const latestWeekStart = new Date(maxDate);
+            latestWeekStart.setDate(maxDate.getDate() - maxDate.getDay() + (maxDate.getDay() === 0 ? -6 : 1)); // Monday of the latest week
+            latestWeekStart.setHours(0, 0, 0, 0);
+            const latestWeekCollection = filteredData
+                .filter(d => d.date >= latestWeekStart && d.date <= maxDate)
+                .reduce((sum, d) => sum + d.amount, 0);
+
+            const latestDayCollection = filteredData
+                .filter(d => d.date.toDateString() === maxDate.toDateString())
+                .reduce((sum, d) => sum + d.amount, 0);
+
+            // --- Create dynamic labels for tooltips ---
+            const latestMonthLabel = maxDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+            const latestWeekLabel = `Week: ${dateFormatter.format(latestWeekStart)} - ${dateFormatter.format(maxDate)}`;
+            const latestDayLabel = `Date: ${dateFormatter.format(maxDate)}`;
+
+            // --- Update card HTML with primary and secondary values ---
+            const setCardValue = (elementId, primaryValue, secondaryValue, primaryLabel, secondaryLabel) => {
+                const element = document.getElementById(elementId);
+                const secondaryValueHtml = `<span class="stats-secondary-value"> / ${formatReadableAmount(secondaryValue)}</span>`;
+                element.innerHTML = formatReadableAmount(primaryValue) + secondaryValueHtml;
+                // Ensure previous tooltip instance is disposed before setting new attributes
+                const existingTooltip = bootstrap.Tooltip.getInstance(element);
+                if (existingTooltip) existingTooltip.dispose();
+                element.setAttribute('data-bs-toggle', 'tooltip');
+                element.setAttribute('data-bs-placement', 'bottom');
+                element.setAttribute('title', `${primaryLabel}: ${formatIndianCurrency(primaryValue)} / ${secondaryLabel}: ${formatIndianCurrency(secondaryValue)}`);
+            };
+
+            setCardValue('monthly-average-readable', monthlyAvg, latestMonthCollection, 'Avg', latestMonthLabel);
+            setCardValue('weekly-average-readable', weeklyAvg, latestWeekCollection, 'Avg', latestWeekLabel);
+            setCardValue('daily-average-readable', dailyAvg, latestDayCollection, 'Avg', latestDayLabel);
+
+            // Initialize tooltips on the updated cards
+            const tooltipTriggerList = [].slice.call(summaryCards.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.forEach(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+
+            // Update period information
+            const dateRange = `${dateFormatter.format(minDate)} - ${dateFormatter.format(maxDate)}`;
+            // Update header date range
+            headerDateRangeEl.textContent = dateRange;
+
+            summaryCards.classList.remove('d-none');
+        }
+
+
+        function groupData(data, groupBy, timeScale) {
+            const getGroupKey = (d) => {
+                if (groupBy === 'region') return d.region;
+                if (groupBy === 'division') return d.division;
+                return d.ccc;
+            };
+
+            const getTimeKey = (date) => {
+                const d = new Date(date);
+                d.setHours(0, 0, 0, 0);
+                if (timeScale === 'month') {
+                    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString();
+                }
+                if (timeScale === 'week') {
+                    const day = d.getDay();
+                    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust to Monday
+                    const monday = new Date(d);
+                    monday.setDate(diff);
+                    monday.setHours(0,0,0,0);
+                    return monday.toISOString();
+                }
+                return d.toISOString(); // Day
+            };
+
+            const aggregated = {};
+            data.forEach(d => {
+                const groupKey = getGroupKey(d);
+                const timeKey = getTimeKey(d.date);
+                if (!aggregated[groupKey]) {
+                    aggregated[groupKey] = {};
+                }
+                if (!aggregated[groupKey][timeKey]) {
+                    aggregated[groupKey][timeKey] = 0;
+                }
+                aggregated[groupKey][timeKey] += d.amount;
+            });
+            return aggregated;
+        }
+
+        function updateChart() {
+            // Delegate to comparison chart if in that mode
+            if (isCompareMode) {
+                updateChartForComparison();
+                return;
+            }
+
+            const filteredData = applyFilters();
+            
+            // Update date range in header with month count
+            if (filteredData.length > 0) {
+                const dates = filteredData.map(d => d.date);
+                const firstDate = new Date(Math.min(...dates));
+                const lastDate = new Date(Math.max(...dates));
+                const months = Math.round((lastDate - firstDate) / (1000 * 60 * 60 * 24 * 30.44));
+                const dateRange = `${firstDate.toLocaleDateString()} to ${lastDate.toLocaleDateString()}`;
+                headerDateRangeEl.textContent = `Collection Period: ${dateRange} (${months} ${months === 1 ? 'month' : 'months'})`;
+            } else {
+                headerDateRangeEl.textContent = 'No data available';
+            }
+
+            // Automatic grouping logic
+            let groupBy;
+            if (regionFilter.value === 'all') {
+                groupBy = 'region';
+            } else if (divisionFilter.value === 'all') {
+                groupBy = 'division';
+            } else {
+                groupBy = 'ccc';
+            }
+
+            const timeScale = timeScaleSelect.value;
+            let chartType = toggleChartTypeBtn.dataset.chartType || 'bar';
+            const aggregatedData = groupData(filteredData, groupBy, timeScale);
+
+            const allTimeKeys = new Set();
+            Object.values(aggregatedData).forEach(timeData => {
+                Object.keys(timeData).forEach(key => allTimeKeys.add(key));
+            });
+            const sortedTimeKeys = Array.from(allTimeKeys).sort();
+            const labels = sortedTimeKeys.map(key => new Date(key));
+
+            // Modern color palette
+            const bulkColor = '#546E7A'; // Fixed color for Bulk
+            const colors = [
+                '#1976D2', '#D32F2F', '#2E7D32', '#F9A825', '#6A1B9A',
+                '#00897B', '#C2185B', '#FFA000', '#3949AB'
+            ];
+
+            const darkMode = document.body.classList.contains('dark');
+            const sortedGroupKeys = Object.keys(aggregatedData).sort();
+            let colorIndex = 0;
+
+            const datasets = sortedGroupKeys.map(groupKey => {
+                let color;
+                if (groupKey === 'Bulk') {
+                    color = bulkColor;
+                } else {
+                    color = colors[colorIndex++ % colors.length];
+                }
+                const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+                if (darkMode) {
+                    gradient.addColorStop(0, hexToRgba(color, 0.32));
+                    gradient.addColorStop(1, hexToRgba(color, 0.02));
+                } else {
+                    gradient.addColorStop(0, `${color}80`); // 50% opacity
+                    gradient.addColorStop(1, `${color}00`); // 0% opacity
+                }
+
+                const stroke = darkMode ? lightenHex(color, 18) : color;
+
+                let datasetOptions = {};
+                if (chartType === 'bar') {
+                    datasetOptions = {
+                        backgroundColor: darkMode ? hexToRgba(color, 0.7) : hexToRgba(color, 0.85),
+                        borderColor: darkMode ? lightenHex(color, 15) : color,
+                        borderWidth: 1,
+                        borderRadius: 4,
+                        hoverBackgroundColor: darkMode ? hexToRgba(color, 0.9) : color,
+                        hoverBorderColor: darkMode ? lightenHex(color, 25) : darkenHex(color, 15),
+                        hoverBorderWidth: 2
+                    };
+                } else { // line chart
+                    datasetOptions = {
+                        backgroundColor: gradient,
+                        borderColor: stroke,
+                        pointBackgroundColor: stroke,
+                        fill: true,
+                        tension: 0.3
+                    };
+                }
+                
+                return {
+                    label: groupKey,
+                    data: sortedTimeKeys.map(timeKey => aggregatedData[groupKey][timeKey] || 0),
+                    ...datasetOptions
+                };
+            });
+
+            // If cumulative view is active, transform the data
+            if (isCumulativeView) {
+                datasets.forEach(dataset => {
+                    let cumulativeTotal = 0;
+                    dataset.data = dataset.data.map(value => {
+                        cumulativeTotal += value;
+                        return cumulativeTotal;
+                    });
+                });
+            }
+
+            // small helpers for color transformations
+            function hexToRgba(hex, alpha) {
+                const h = hex.replace('#','');
+                const bigint = parseInt(h, 16);
+                const r = (bigint >> 16) & 255;
+                const g = (bigint >> 8) & 255;
+                const b = bigint & 255;
+                return `rgba(${r},${g},${b},${alpha})`;
+            }
+
+            function lightenHex(hex, percent) {
+                // percent: 0-100
+                const h = hex.replace('#','');
+                const num = parseInt(h,16);
+                let r = (num >> 16) + Math.round(255 * (percent/100));
+                let g = ((num >> 8) & 0x00FF) + Math.round(255 * (percent/100));
+                let b = (num & 0x0000FF) + Math.round(255 * (percent/100));
+                r = Math.min(255, r); g = Math.min(255, g); b = Math.min(255, b);
+                return '#' + (r<<16 | g<<8 | b).toString(16).padStart(6,'0');
+            }
+
+            function darkenHex(hex, percent) {
+                // percent: 0-100
+                const h = hex.replace('#','');
+                const num = parseInt(h,16);
+                let r = (num >> 16) * (1 - percent/100);
+                let g = ((num >> 8) & 0x00FF) * (1 - percent/100);
+                let b = (num & 0x0000FF) * (1 - percent/100);
+                r = Math.max(0, Math.round(r));
+                g = Math.max(0, Math.round(g));
+                b = Math.max(0, Math.round(b));
+                return '#' + (r<<16 | g<<8 | b).toString(16).padStart(6,'0');
+            }
+
+            if (chart) {
+                chart.destroy();
+            }
+            // Choose time unit automatically based on range if user selected 'day'
+            function autoTimeUnit(dates, requestedUnit) {
+                if (requestedUnit && requestedUnit !== 'auto') return requestedUnit;
+                if (!dates.length) return 'day';
+                const range = (Math.max(...dates.map(d => d.getTime())) - Math.min(...dates.map(d => d.getTime())));
+                const days = range / (1000 * 60 * 60 * 24);
+                if (days > 800) return 'year';
+                if (days > 90) return 'month';
+                if (days > 14) return 'week';
+                return 'day';
+            }
+
+            const unit = autoTimeUnit(labels, timeScale === 'day' ? 'auto' : timeScale);
+
+            const chartConfig = {
+                type: chartType,
+                data: {
+                    labels: labels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    barThickness: 'flex',
+                    maxBarThickness: 32,
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: unit,
+                                tooltipFormat: 'd/M/yy', // e.g., 1/4/25
+                                displayFormats: {
+                                    day: 'd/M/yy',   // e.g., "1/4/25"
+                                    month: "M/yy"    // e.g., "6/25"
+                                }
+                            },
+                            ticks: {
+                                callback: function(value, index, ticks) {
+                                    // For weekly view, create a date range string
+                                    if (timeScale === 'week') {
+                                        const start = new Date(value);
+                                        const end = new Date(start);
+                                        end.setDate(start.getDate() + 6);
+                                        
+                                        const startDay = start.getDate();
+                                        const startMonth = start.getMonth() + 1;
+                                        const endDay = end.getDate();
+                                        const endMonth = end.getMonth() + 1;
+                                        
+                                        if (startMonth === endMonth) {
+                                            return `${startDay}-${endDay}/${startMonth}`;
+                                        }
+                                        return `${startDay}/${startMonth}-${endDay}/${endMonth}`;
+                                    }
+                                    // For monthly view, force the M/yy format
+                                    if (timeScale === 'month') {
+                                        const d = new Date(value);
+                                        return `${d.getMonth() + 1}/${String(d.getFullYear()).slice(-2)}`;
+                                    }
+                                    // For other views, let Chart.js use the default displayFormats
+                                    return this.getLabelForValue(value);
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            },
+                            stacked: chartType === 'bar' && !isCumulativeView
+                        },
+                        y: {
+                            ...getYScaleOptions(datasets),
+                            stacked: chartType === 'bar' && !isCumulativeView
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                pointStyle: 'rect',
+                                padding: 15
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: `Collection Amount by ${groupBy.charAt(0).toUpperCase() + groupBy.slice(1)}`
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: tooltipCallbacks
+                        },
+                        zoom: {
+                            zoom: {
+                                wheel: { enabled: true },
+                                pinch: { enabled: true },
+                                mode: 'x'
+                                ,
+                                onZoomComplete: ({chart}) => {
+                                    const visiblePoints = chart.data.labels.filter(label => {
+                                        const time = new Date(label).getTime();
+                                        return time >= chart.scales.x.min && time <= chart.scales.x.max;
+                                    }).length;
+                                    isSufficientlyZoomed = visiblePoints <= 20;
+                                    chart.update('none'); // Update without animation
+                                }
+                            },
+                            pan: {
+                                enabled: true,
+                                mode: 'x'
+                                ,
+                                onPanComplete: ({chart}) => {
+                                    const visiblePoints = chart.data.labels.filter(label => {
+                                        const time = new Date(label).getTime();
+                                        return time >= chart.scales.x.min && time <= chart.scales.x.max;
+                                    }).length;
+                                    isSufficientlyZoomed = visiblePoints <= 20;
+                                    chart.update('none'); // Update without animation
+                                }
+                            }
+                        },
+                        datalabels: {
+                            // Display only for stacked bar charts
+                            display: showDataLabels,
+                            rotation: -90,
+                            color: darkMode ? '#fff' : '#333',
+                            font: { size: 8, weight: '500' },
+                            align: 'center',
+                            anchor: 'center',
+                            formatter: (value, context) => {
+                                const isStackedBar = chartType === 'bar' && !isCumulativeView;
+                                if (isStackedBar) {
+                                    const datasets = context.chart.data.datasets;
+                                    let total = 0;
+                                    for (let i = 0; i < datasets.length; i++) {
+                                        if (context.chart.isDatasetVisible(i)) {
+                                            const dsValue = datasets[i].data[context.dataIndex];
+                                            if (typeof dsValue === 'number') total += dsValue;
+                                        }
+                                    }
+                                    if (total === 0 || value === 0) return '';
+                                    // Only show label if it's a significant portion of the stack
+                                    const percentage = (value / total) * 100;
+                                    return percentage > 5 ? percentage.toFixed(0) + '%' : '';
+                                } else {
+                                    // For line charts or non-stacked bars, show the compact value
+                                    if (value === 0) return '';
+                                    return formatIndianCompact(value);
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            // Ensure the datalabels plugin is registered globally
+            Chart.register(ChartDataLabels);
+
+            chart = new Chart(ctx, chartConfig);
+
+            // Initial check for zoom level on first render
+            isSufficientlyZoomed = (chart.data.labels || []).length <= 20;
+            if(isSufficientlyZoomed) chart.update('none');
+
+            // Wire up buttons
+            document.getElementById('resetZoom').onclick = () => {
+                if (chart) chart.resetZoom();
+            };
+            document.getElementById('downloadPng').onclick = () => {
+                if (!chart) return;
+                const a = document.createElement('a');
+                a.href = chart.toBase64Image('image/png', 1);
+                a.download = `collection-chart-${new Date().toISOString().slice(0,10)}.png`;
+                a.click();
+            };
+            document.getElementById('exportCsv').onclick = () => exportFilteredCsv(filteredData);
+        }
+
+        function updateChartForComparison() {
+            const filteredData = applyFilters();
+            let aggregated = {};
+            let chartTitleText = '';
+
+            if (comparisonType === 'onDay') {
+                chartTitleText = `Comparison of Collections for Day ${comparisonDay} of Each Month`;
+                const dataForDay = filteredData.filter(d => d.date.getDate() === comparisonDay);
+                dataForDay.forEach(d => {
+                    const monthKey = `${d.date.getFullYear()}-${String(d.date.getMonth() + 1).padStart(2, '0')}`;
+                    aggregated[monthKey] = (aggregated[monthKey] || 0) + d.amount;
+                });
+            } else { // 'upToDay'
+                chartTitleText = `Comparison of Total Collections up to Day ${comparisonDay} of Each Month`;
+                const dataUpToDay = filteredData.filter(d => d.date.getDate() <= comparisonDay);
+                dataUpToDay.forEach(d => {
+                    const monthKey = `${d.date.getFullYear()}-${String(d.date.getMonth() + 1).padStart(2, '0')}`;
+                    aggregated[monthKey] = (aggregated[monthKey] || 0) + d.amount;
+                });
+            }
+
+            const sortedMonths = Object.keys(aggregated).sort();
+            const labels = sortedMonths.map(monthKey => {
+                const [year, month] = monthKey.split('-');
+                if (comparisonType === 'onDay') {
+                    const d = comparisonDay;
+                    const m = parseInt(month);
+                    const yy = String(parseInt(year)).slice(-2);
+                    return `${d}/${m}/${yy}`;
+                }
+                // For cumulative, just show the month
+                return new Date(year, month - 1, 1).toLocaleString('default', { month: 'short', year: '2-digit' });
+            });
+            const dataPoints = sortedMonths.map(monthKey => aggregated[monthKey]);
+
+            if (chart) {
+                chart.destroy();
+            }
+
+            if (dataPoints.length === 0) {
+                ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+                ctx.font = "16px 'Roboto'";
+                ctx.fillStyle = document.body.classList.contains('dark') ? '#e0e0e0' : '#333';
+                ctx.textAlign = "center";
+                ctx.fillText(`No data found for day ${comparisonDay} of the month.`, ctx.canvas.width / 2, 50);
+                return;
+            }
+
+            const maxVal = Math.max(...dataPoints);
+            const minVal = Math.min(...dataPoints);
+            const darkMode = document.body.classList.contains('dark');
+
+            const backgroundColors = dataPoints.map(val => {
+                if (val === maxVal) return darkMode ? '#4caf50' : '#2e7d32'; // Green for highest
+                if (val === minVal) return darkMode ? '#f44336' : '#c62828'; // Red for lowest
+                return darkMode ? '#42a5f5' : '#1976d2'; // Default blue
+            });
+
+            const chartConfig = {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: `Collection on Day ${comparisonDay}`,
+                        data: dataPoints,
+                        backgroundColor: backgroundColors,
+                        borderColor: darkMode ? '#fff' : '#333',
+                        borderWidth: 1,
+                        borderRadius: 4,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: 'Amount Paid (INR)' },
+                            ticks: {
+                                callback: function(value) {
+                                    return formatIndianCompact(value);
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        title: {
+                            display: true,
+                            text: chartTitleText
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return formatIndianCurrency(context.parsed.y);
+                                }
+                            }
+                        },
+                        datalabels: {
+                            anchor: 'end',
+                            align: 'top',
+                            formatter: (value) => formatIndianCompact(value).replace('₹',''),
+                            color: darkMode ? '#e0e0e0' : '#333',
+                            font: {
+                                weight: 'bold',
+                                size: 10,
+                            }
+                        }
+                    }
+                },
+                plugins: [ChartDataLabels] // Using the datalabels plugin
+            };
+            chart = new Chart(ctx, chartConfig);
+        }
+
+        function toggleCompareMode(active, day, type) {
+            isCompareMode = active;
+            comparisonDay = day;
+            comparisonType = type;
+            compareBtn.classList.toggle('d-none', active);
+            backToMainViewBtn.classList.toggle('d-none', !active);
+            updateChart();
+        }
+
+        // Y-axis options factory: choose nice max and formatting for Indian numbers
+        function getYScaleOptions(datasets) {
+            let maxVal = 0;
+            const chartType = chart?.config.type || 'bar';
+            if (chartType === 'bar' && chart?.options.scales.y.stacked) {
+                // For stacked bar, sum values at each time point
+                const sums = chart.data.labels.map((_, i) => datasets.reduce((sum, ds) => sum + (ds.data[i] || 0), 0));
+                maxVal = sums.length ? Math.max(...sums) : 0;
+            } else {
+                // For line or non-stacked bar, find the overall max
+                const allValues = datasets.flatMap(ds => ds.data || []);
+                maxVal = allValues.length ? Math.max(...allValues) : 0;
+            }
+
+            return {
+                beginAtZero: true,
+                title: { display: false }, // Removed title to maximize chart area
+                ticks: {
+                    callback: function(value) {
+                        return formatIndianCompact(value);
+                    }
+                }
+            };
+        }
+
+        function niceNumber(value) {
+            if (!value || value <= 0) return 1000;
+            const exp = Math.floor(Math.log10(value));
+            const base = Math.pow(10, exp);
+            const leading = value / base;
+            const niceLeading = leading <= 1 ? 1 : leading <= 2 ? 2 : leading <= 5 ? 5 : 10;
+            return niceLeading * base;
+        }
+
+            const tooltipCallbacks = {
+                label: function(context) {
+                    let label = context.dataset.label || '';
+                    // Names are already abbreviated at the source
+                    if (label) {
+                        label += ': ';
+                    }
+                    if (context.parsed.y !== null) {
+                        label += formatIndianCurrency(context.parsed.y);
+                    }
+                    return label;
+                },
+                footer: function(tooltipItems) {
+                    let sum = 0;
+                    tooltipItems.forEach(function(tooltipItem) {
+                        sum += tooltipItem.parsed.y;
+                    });
+                    if (sum > 0) {
+                        return 'Total: ' + formatIndianCurrency(sum);
+                    }
+                    return '';
+                }
+            };
+        // Format numbers into Indian compact notation (K, Lakh, Cr) with rupee symbol
+        function formatIndianCurrency(value) {
+            if (value === null || value === undefined) return '';
+            // Use lakhs/crores logic
+            const abs = Math.abs(value);
+            let formatted;
+            if (abs >= 10000000) { // crore
+                formatted = (value / 10000000).toFixed(2) + ' Cr';
+            } else if (abs >= 100000) { // lakh
+                formatted = (value / 100000).toFixed(2) + ' L';
+            } else if (abs >= 1000) {
+                formatted = (value / 1000).toFixed(2) + ' K';
+            } else {
+                formatted = value.toFixed(0);
+            }
+            return '₹' + formatted;
+        }
+
+        function formatIndianCompact(value) {
+            if (value === null || value === undefined) return '';
+            const abs = Math.abs(value);
+            if (abs >= 10000000) return (value / 10000000).toFixed(1) + 'Cr';
+            if (abs >= 100000) return (value / 100000).toFixed(1) + 'L';
+            if (abs >= 1000) return (value / 1000).toFixed(1) + 'K';
+            return value.toFixed(0);
+        }
+
+        function exportFilteredCsv(filteredData) {
+            if (!filteredData || !filteredData.length) {
+                alert('No data to export for the current filters.');
+                return;
+            }
+            const header = ['paymentDt','cccCode','region','division','ccc','amountInINR'];
+            const rows = filteredData.map(d => {
+                const dt = d.date.toISOString().slice(0,10).replace(/-/g,'');
+                return [dt, d.cccCode, d.region, d.division, d.ccc, d.amount].map(cell => `"${cell}"`).join(',');
+            });
+            const csv = [header.join(','), ...rows].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `collection-export-${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function populateFilters() {
+            // Populate Regions
+            regionFilter.innerHTML = '<option value="all">All Regions</option>';
+            regionDivisionCccMapping.forEach(region => {
+                regionFilter.innerHTML += `<option value="${region.regionName}">${region.regionName}</option>`;
+            });
+            updateDivisionFilter();
+        }
+
+        function updateDivisionFilter() {
+            const selectedRegion = regionFilter.value;
+            divisionFilter.innerHTML = '<option value="all">All Divisions</option>';
+            cccFilter.innerHTML = '<option value="all">All CCCs</option>'; // Reset CCC
+
+            if (selectedRegion !== 'all') {
+                const region = regionDivisionCccMapping.find(r => r.regionName === selectedRegion);
+                if (region) {
+                    region.divisions.forEach(division => {
+                        divisionFilter.innerHTML += `<option value="${division.divisionName}">${division.divisionName}</option>`;
+                    });
+                }
+            }
+            updateFilterChips();
+            updateSummaryCards();
+            updateChart();
+        }
+
+        function updateCccFilter() {
+            const selectedRegion = regionFilter.value;
+            const selectedDivision = divisionFilter.value;
+            cccFilter.innerHTML = '<option value="all">All CCCs</option>';
+
+            if (selectedRegion !== 'all' && selectedDivision !== 'all') {
+                const region = regionDivisionCccMapping.find(r => r.regionName === selectedRegion);
+                const division = region?.divisions.find(d => d.divisionName === selectedDivision);
+                if (division) {
+                    division.cccs.forEach(ccc => {
+                        cccFilter.innerHTML += `<option value="${ccc.cccName}">${ccc.cccName}</option>`;
+                    });
+                }
+            }
+            updateFilterChips();
+            updateSummaryCards();
+            updateChart();
+        }
+
+        function updateFilterChips() {
+            const activeFilters = document.getElementById('activeFilters');
+            activeFilters.innerHTML = '';
+            
+            const filters = [
+                { value: regionFilter.value, type: 'Region', reset: () => { regionFilter.value = 'all'; updateDivisionFilter(); } },
+                { value: divisionFilter.value, type: 'Division', reset: () => { divisionFilter.value = 'all'; updateCccFilter(); } },
+                { value: cccFilter.value, type: 'CCC', reset: () => { cccFilter.value = 'all'; updateChart(); } }
+            ];
+
+            filters.forEach(filter => {
+                if (filter.value !== 'all') {
+                    const chip = document.createElement('div');
+                    chip.className = 'filter-chip';
+                    chip.innerHTML = `
+                        <span>${filter.type}: ${filter.value}</span>
+                        <i class="bi bi-x-circle" role="button" aria-label="Remove ${filter.type} filter"></i>
+                    `;
+                    chip.querySelector('i').onclick = filter.reset;
+                    activeFilters.appendChild(chip);
+                }
+            });
+
+            // Add Timeline chip if not daily
+            if (timeScaleSelect.value !== 'day') {
+                const timelineText = timeScaleSelect.options[timeScaleSelect.selectedIndex].text;
+                const chip = document.createElement('div');
+                chip.className = 'filter-chip';
+                chip.innerHTML = `
+                    <span>Timeline: ${timelineText}</span>
+                    <i class="bi bi-x-circle" role="button" aria-label="Reset to daily view"></i>
+                `;
+                chip.querySelector('i').onclick = () => {
+                    timeScaleSelect.value = 'day';
+                    updateChart();
+                    updateTimelineButtons();
+                    updateFilterChips();
+                };
+                activeFilters.appendChild(chip);
+            }
+        }
+
+        function updateTimelineButtons() {
+            const currentScale = timeScaleSelect.value;
+            document.querySelectorAll('.timeline-buttons .btn').forEach(b => {
+                b.classList.remove('active', 'btn-primary');
+                if (b.dataset.scale === currentScale) {
+                    b.classList.add('active', 'btn-primary');
+                }
+            });
+        }
+
+
+        function applyFilters() {
+            const selectedRegion = regionFilter.value;
+            const selectedDivision = divisionFilter.value;
+            const selectedCcc = cccFilter.value;
+
+            return processedData.filter(d => {
+                const regionMatch = selectedRegion === 'all' || d.region === selectedRegion;
+                const divisionMatch = selectedDivision === 'all' || d.division === selectedDivision;
+                const cccMatch = selectedCcc === 'all' || d.ccc === selectedCcc;
+                return regionMatch && divisionMatch && cccMatch;
+            });
+        }
+        
+        // Event Listeners
+        regionFilter.addEventListener('change', updateDivisionFilter);
+        divisionFilter.addEventListener('change', updateCccFilter);
+        cccFilter.addEventListener('change', () => {
+            updateFilterChips();
+            updateSummaryCards();
+            updateChart();
+        });
+        timeScaleSelect.addEventListener('change', () => {
+            updateFilterChips();
+            updateChart();
+        });
+
+        // Timeline button handlers
+        document.querySelectorAll('.timeline-buttons .btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (isCompareMode) toggleCompareMode(false, null);
+                timeScaleSelect.value = btn.dataset.scale;
+                updateTimelineButtons(); // Visually update buttons
+                updateFilterChips();
+                updateChart();
+            });
+        });
+
+        // Chart type toggle handler
+        toggleChartTypeBtn.addEventListener('click', () => {
+            if (isCompareMode) toggleCompareMode(false, null);
+            const currentType = toggleChartTypeBtn.dataset.chartType || 'bar';
+            const newType = currentType === 'bar' ? 'line' : 'bar';
+            toggleChartTypeBtn.dataset.chartType = newType;
+            // Re-render chart with new type
+            updateChart();
+        });
+
+        // Data labels toggle handler
+        toggleDataLabels.addEventListener('change', (e) => {
+            showDataLabels = e.target.checked;
+            updateChart();
+        });
+
+        // Cumulative view toggle handler
+        toggleCumulativeViewBtn.addEventListener('click', () => {
+            if (isCompareMode) toggleCompareMode(false, null);
+            isCumulativeView = !isCumulativeView;
+            // Add 'active' class to button for visual feedback
+            toggleCumulativeViewBtn.classList.toggle('active', isCumulativeView);
+            toggleCumulativeViewBtn.classList.toggle('btn-primary', isCumulativeView);
+            // Re-render chart with new view
+            updateChart();
+        });
+
+        // Comparison mode handlers
+        document.addEventListener('DOMContentLoaded', () => {
+            summaryModalInstance = new bootstrap.Modal(document.getElementById('summaryModal'));
+            quickCompareModalInstance = new bootstrap.Modal(document.getElementById('quickCompareModal'));
+            monthlyBreakdownModalInstance = new bootstrap.Modal(document.getElementById('monthlyBreakdownModal'));
+            monthlyOfficeBreakdownModalInstance = new bootstrap.Modal(document.getElementById('monthlyOfficeBreakdownModal'));
+            compareModalInstance = new bootstrap.Modal(document.getElementById('compareModal'));
+            const daySelect = document.getElementById('compareDaySelect');
+            for (let i = 1; i <= 31; i++) {
+                daySelect.innerHTML += `<option value="${i}">${i}</option>`;
+            }
+        });
+
+        compareBtn.addEventListener('click', () => {
+            compareModalInstance.show();
+        });
+
+        startComparisonBtn.addEventListener('click', () => {
+            const selectedDay = parseInt(document.getElementById('compareDaySelect').value);
+            const selectedType = document.querySelector('input[name="comparisonType"]:checked').value;
+            
+            // Reset timeline to Daily view for comparison
+            timeScaleSelect.value = 'day';
+            updateTimelineButtons();
+
+            compareBtn.focus(); // Move focus back to the button that opened the modal
+            compareModalInstance.hide();
+            toggleCompareMode(true, selectedDay, selectedType);
+        });
+
+        backToMainViewBtn.addEventListener('click', () => {
+            toggleCompareMode(false, null);
+        });
+
+        quickCompareBtn.addEventListener('click', () => {
+            showQuickComparison();
+        });
+
+        function openSummaryModal(cardId) {
+            const filteredData = applyFilters();
+            let metricType = 'Total';
+            let divisor = 1;
+
+            if (filteredData.length > 0) {
+                const dates = filteredData.map(d => d.date);
+                const minDate = new Date(Math.min.apply(null, dates));
+                const maxDate = new Date(Math.max.apply(null, dates));
+                const daysDiff = Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24)) + 1;
+
+                if (cardId === 'monthly-average-card') {
+                    metricType = 'Monthly Average';
+                    const monthsDiff = (maxDate.getFullYear() - minDate.getFullYear()) * 12 + (maxDate.getMonth() - minDate.getMonth()) + (maxDate.getDate() >= minDate.getDate() ? 1 : 0);
+                    divisor = monthsDiff > 0 ? monthsDiff : 1;
+                } else if (cardId === 'weekly-average-card') {
+                    metricType = 'Weekly Average';
+                    const weeksDiff = daysDiff / 7;
+                    divisor = weeksDiff > 0 ? weeksDiff : 1;
+                } else if (cardId === 'daily-average-card') {
+                    metricType = 'Daily Average';
+                    divisor = daysDiff > 0 ? daysDiff : 1;
+                }
+            }
+
+            document.getElementById('summaryModalLabel').textContent = `${metricType} Breakdown`;
+
+            // Function to aggregate data by a given key (region, division, ccc)
+            const aggregateBy = (key) => {
+                const summary = {};
+                filteredData.forEach(item => {
+                    const officeName = item[key];
+                    if (officeName !== 'Unknown') {
+                        summary[officeName] = (summary[officeName] || 0) + item.amount;
+                    }
+                });
+                // Convert to array, sort by amount descending, and return
+                return Object.entries(summary)
+                    .map(([name, total]) => ({ 
+                        name, 
+                        value: total / divisor // Apply divisor for averages
+                    }))
+                    .sort((a, b) => b.value - a.value);
+            };
+
+            // Function to render a table for a given summary
+            const renderSummaryTable = (data, containerId, key) => {
+                const container = document.getElementById(containerId);
+                if (data.length === 0) {
+                    container.innerHTML = '<p class="text-center text-muted mt-3">No data for this view.</p>';
+                    return;
+                }
+
+                // Calculate the total value for percentage calculation
+                const totalValue = data.reduce((sum, item) => sum + item.value, 0);
+
+                let tableHtml = `
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th scope="col" style="width: 5%;">Sl.</th>
+                                    <th scope="col">Office Name</th>
+                                    <th scope="col" class="text-end">${metricType}</th>
+                                    <th scope="col" class="text-end" style="width: 15%;">% Share</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                data.forEach((item, index) => {
+                    const percentage = totalValue > 0 ? ((item.value / totalValue) * 100).toFixed(2) : 0;
+                    tableHtml += `
+                        <tr onclick="showMonthlyBreakdown('${item.name}', '${key}')" style="cursor: pointer;">
+                            <td>${index + 1}</td>
+                            <td>${item.name}</td>
+                            <td class="text-end">${formatReadableAmount(item.value)}</td>
+                            <td class="text-end">${percentage}%</td>
+                        </tr>
+                    `;
+                });
+                // Add the total row at the end
+                tableHtml += `
+                            </tbody>
+                            <tfoot>
+                                <tr class="fw-bold table-group-divider">
+                                    <td colspan="2" class="text-end">Total</td>
+                                    <td class="text-end">${formatReadableAmount(totalValue)}</td>
+                                    <td class="text-end">100.00%</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>`;
+                container.innerHTML = tableHtml;
+            };
+
+            // Aggregate and render for each tab
+            renderSummaryTable(aggregateBy('region'), 'region-summary', 'region');
+            renderSummaryTable(aggregateBy('division'), 'division-summary', 'division');
+            renderSummaryTable(aggregateBy('ccc'), 'ccc-summary', 'ccc');
+
+            summaryModalInstance.show();
+        }
+
+        // Add click listeners to summary cards
+        document.querySelectorAll('.stats-card').forEach(card => {
+            card.addEventListener('click', () => openSummaryModal(card.id));
+        });
+
+        // Handle focus return for stacked modals to prevent aria-hidden errors
+        document.getElementById('monthlyBreakdownModal').addEventListener('hidden.bs.modal', event => {
+            // When the monthly breakdown modal is closed, ensure the summary modal is properly focused.
+            const summaryModalEl = document.getElementById('summaryModal');
+            if (summaryModalEl.classList.contains('show')) {
+                summaryModalInstance.show();
+            }
+        });
+
+        // Handle focus return for the third-level modal
+        document.getElementById('monthlyOfficeBreakdownModal').addEventListener('hidden.bs.modal', event => {
+            const monthlyBreakdownModalEl = document.getElementById('monthlyBreakdownModal');
+            if (monthlyBreakdownModalEl.classList.contains('show')) {
+                monthlyBreakdownModalInstance.show();
+            }
+        });
+
+
+        function showMonthlyBreakdown(itemName, itemType) {
+            const dataForItem = processedData.filter(d => d[itemType] === itemName);
+
+            document.getElementById('monthlyBreakdownModalLabel').textContent = `Monthly Summary for: ${itemName}`;
+
+            const monthlyCollections = {};
+            dataForItem.forEach(d => {
+                const monthKey = `${d.date.getFullYear()}-${String(d.date.getMonth() + 1).padStart(2, '0')}`;
+                monthlyCollections[monthKey] = (monthlyCollections[monthKey] || 0) + d.amount;
+            });
+
+            const sortedMonths = Object.keys(monthlyCollections).sort().reverse();
+            if (sortedMonths.length < 1) {
+                document.getElementById('monthlyBreakdownModalBody').innerHTML = `<p class="text-center text-muted mt-3">No monthly data found for ${itemName}.</p>`;
+                monthlyBreakdownModalInstance.show();
+                return;
+            }
+
+            let tableHtml = `
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>Month</th>
+                                <th class="text-end">Collection</th>
+                                <th class="text-end">Change vs. Prev. Month</th>
+                                <th class="text-end">% Change</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            sortedMonths.forEach((monthKey, index) => {
+                const [year, month] = monthKey.split('-');
+                const monthName = new Date(year, month - 1).toLocaleString('default', { month: 'short', year: 'numeric' });
+                const collection = monthlyCollections[monthKey];
+
+                let changeText = '-';
+                let pctChangeText = '-';
+
+                const prevMonthIndex = index + 1;
+                if (prevMonthIndex < sortedMonths.length) {
+                    const prevMonthKey = sortedMonths[prevMonthIndex];
+                    const prevMonthCollection = monthlyCollections[prevMonthKey];
+                    const change = collection - prevMonthCollection;
+                    const pctChange = prevMonthCollection > 0 ? (change / prevMonthCollection) * 100 : (collection > 0 ? 100 : 0);
+
+                    let indicator = '';
+                    if (change > 0) indicator = `<i class="bi bi-arrow-up-circle-fill text-success"></i>`;
+                    else if (change < 0) indicator = `<i class="bi bi-arrow-down-circle-fill text-danger"></i>`;
+                    else indicator = `<i class="bi bi-dash-circle-fill text-muted"></i>`;
+
+                    changeText = `${indicator} ${formatReadableAmount(Math.abs(change))}`;
+                    pctChangeText = `${pctChange.toFixed(1)}%`;
+                }
+
+                tableHtml += `
+                    <tr onclick="showMonthlyOfficeBreakdown('${itemName}', '${itemType}', '${monthKey}')" style="cursor: pointer;">
+                        <td>${monthName}</td>
+                        <td class="text-end">${formatReadableAmount(collection)}</td>
+                        <td class="text-end">${changeText}</td>
+                        <td class="text-end">${pctChangeText}</td>
+                    </tr>
+                `;
+            });
+
+            tableHtml += `</tbody></table></div>`;
+            document.getElementById('monthlyBreakdownModalBody').innerHTML = tableHtml;
+            monthlyBreakdownModalInstance.show();
+        }
+
+        function showMonthlyOfficeBreakdown(itemName, itemType, monthKey) {
+            const [year, month] = monthKey.split('-').map(Number);
+            const monthName = new Date(year, month - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+
+            const breakdownKey = itemType === 'region' ? 'division' : 'ccc';
+            const breakdownTitle = `${breakdownKey.charAt(0).toUpperCase() + breakdownKey.slice(1)}-wise Breakdown`;
+
+            document.getElementById('monthlyOfficeBreakdownModalLabel').textContent = `${breakdownTitle} for ${itemName} (${monthName})`;
+
+            // Filter data for the specific item AND the specific month
+            const dataForMonth = processedData.filter(d => {
+                const dMonth = d.date.getMonth() + 1;
+                const dYear = d.date.getFullYear();
+                return d[itemType] === itemName && dYear === year && dMonth === month;
+            });
+
+            if (dataForMonth.length === 0) {
+                document.getElementById('monthlyOfficeBreakdownModalBody').innerHTML = `<p class="text-center text-muted">No data for this month.</p>`;
+            } else {
+                const breakdownTableHtml = createBreakdownTableHtml(dataForMonth, breakdownKey, ''); // Title is handled by modal header
+                document.getElementById('monthlyOfficeBreakdownModalBody').innerHTML = breakdownTableHtml;
+            }
+            monthlyOfficeBreakdownModalInstance.show();
+        }
+
+        function showQuickComparison(selectedDay = null, isCumulative = false) {
+            const filteredData = applyFilters();
+            if (filteredData.length === 0) {
+                alert('No data available for comparison.');
+                return;
+            }
+
+            // Determine the comparison day and type
+            let comparisonDay;
+            if (selectedDay) {
+                comparisonDay = parseInt(selectedDay, 10);
+            } else {
+                const latestDate = new Date(Math.max(...filteredData.map(d => d.date.getTime())));
+                comparisonDay = latestDate.getDate();
+            }
+
+            // Update modal header with a day selector
+            const modalLabel = document.getElementById('quickCompareModalLabel');
+            let dayOptions = '';
+            for (let i = 1; i <= 31; i++) {
+                dayOptions += `<option value="${i}" ${i === comparisonDay ? 'selected' : ''}>${i}</option>`;
+            }
+            modalLabel.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center w-100">
+                    <span class="h5 mb-0">Day-over-Month Comparison</span>
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">Day</span>
+                            <select id="quickCompareDaySelector" class="form-select" style="width: 4.5rem;">
+                                ${dayOptions}
+                            </select>
+                        </div>
+                        <input class="form-check-input" type="checkbox" role="switch" id="quickCompareTypeToggle" ${isCumulative ? 'checked' : ''}>
+                        <label class="form-check-label small" for="quickCompareTypeToggle">Cumulative</label>
+                    </div>
+                </div>
+            `;
+
+            // Add event listeners to the new controls
+            document.getElementById('quickCompareDaySelector').addEventListener('change', (e) => {
+                const cumulative = document.getElementById('quickCompareTypeToggle').checked;
+                showQuickComparison(e.target.value, cumulative);
+            });
+            document.getElementById('quickCompareTypeToggle').addEventListener('change', (e) => {
+                const day = document.getElementById('quickCompareDaySelector').value;
+                showQuickComparison(day, e.target.checked);
+            });
+
+            // Aggregate collection for the comparisonDay across all months
+            const monthlyCollections = {};
+            const dataToProcess = filteredData.filter(d => {
+                return isCumulative ? d.date.getDate() <= comparisonDay : d.date.getDate() === comparisonDay;
+            });
+
+            dataToProcess.forEach(d => {
+                const monthKey = `${d.date.getFullYear()}-${String(d.date.getMonth() + 1).padStart(2, '0')}`;
+                monthlyCollections[monthKey] = (monthlyCollections[monthKey] || 0) + d.amount;
+            });
+
+            const sortedMonths = Object.keys(monthlyCollections).sort().reverse();
+            if (sortedMonths.length < 1) {
+                document.getElementById('quickCompareModalBody').innerHTML = `<p class="text-center text-muted mt-3">No data found for day ${comparisonDay} to compare.</p>`;
+                quickCompareModalInstance.show();
+                return;
+            }
+
+            let tableHtml = `
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>Month</th>
+                                <th class="text-end">Collection</th>
+                                <th class="text-end">Change vs. Prev. Month</th>
+                                <th class="text-end">% Change</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            sortedMonths.forEach((monthKey, index) => {
+                const [year, month] = monthKey.split('-');
+                const monthName = new Date(year, month - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+                const collection = monthlyCollections[monthKey];
+
+                let change = 0;
+                let pctChange = 0;
+                let indicator = '';
+                let changeText = '-';
+                let pctChangeText = '-';
+
+                const prevMonthIndex = index + 1;
+                if (prevMonthIndex < sortedMonths.length) {
+                    const prevMonthKey = sortedMonths[prevMonthIndex];
+                    const prevMonthCollection = monthlyCollections[prevMonthKey];
+                    change = collection - prevMonthCollection;
+                    pctChange = prevMonthCollection > 0 ? (change / prevMonthCollection) * 100 : (collection > 0 ? 100 : 0);
+
+                    if (change > 0) {
+                        indicator = `<i class="bi bi-arrow-up-circle-fill text-success"></i>`;
+                    } else if (change < 0) {
+                        indicator = `<i class="bi bi-arrow-down-circle-fill text-danger"></i>`;
+                    } else {
+                        indicator = `<i class="bi bi-dash-circle-fill text-muted"></i>`;
+                    }
+                    changeText = `${indicator} ${formatReadableAmount(Math.abs(change))}`;
+                    pctChangeText = `${pctChange.toFixed(1)}%`;
+                }
+
+                tableHtml += `
+                    <tr>
+                        <td>${monthName}</td>
+                        <td class="text-end">${formatReadableAmount(collection)}</td>
+                        <td class="text-end">${changeText}</td>
+                        <td class="text-end">${pctChangeText}</td>
+                    </tr>
+                `;
+            });
+
+            tableHtml += `</tbody></table></div>`;
+            document.getElementById('quickCompareModalBody').innerHTML = tableHtml;
+            quickCompareModalInstance.show();
+        }
+
+        fetchData();
+    </script>
+</body>
+</html>
