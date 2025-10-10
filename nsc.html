@@ -1354,48 +1354,57 @@ container.innerHTML = `
     <div class="p-3">
       <h5 class="text-center mb-3 text-primary">🔟 Top 10 Most Delayed Applications</h5>
       <div class="text-end mb-2">
-        <button class="btn btn-sm btn-outline-primary urgent-download-btn" onclick="downloadUrgentModalAsImage()">Download as PNG</button>
+        <button class="btn btn-sm btn-outline-primary urgent-download-btn" onclick="downloadUrgentModalAsImage()" title="Download">
+          <i class="fas fa-download"></i>
+        </button>
       </div>
 
       <div class="urgent-scroll-wrapper">
         <div class="urgent-scroll-inner">
           <table class="table table-bordered table-striped table-hover mb-0 text-nowrap urgent-delay-table">
-<thead class="table-light text-center">
-  <tr>
-${isMobile
-  ? `<th>#</th><th>Appl. No.</th><th>Class</th><th>Delay</th><th>CCC</th>`
-  : `<th>#</th><th>Appl. No.</th><th>Class</th><th>Name</th><th>CCC</th><th>Delay</th>`}
+            <thead class="table-light text-center">
+              <tr>
+                ${
+                  isMobile
+                    ? `<th>#</th><th>Appl. No.</th><th>Class</th><th>Delay</th><th>CCC</th>`
+                    : `<th>#</th><th>Appl. No.</th><th>Class</th><th>Name</th><th>CCC</th><th>Delay</th>`
+                }
+              </tr>
+            </thead>
 
-  </tr>
-</thead>
-
-<tbody>
-  ${sorted.map((d, i) => `
-    <tr>
-      <td class="text-center">${i + 1}</td>
-      <td>${d.APPL_NO || '-'}</td>
-${isMobile ? `
-  <td>${(d.CONN_CLASS || '-').toUpperCase()}</td>
-  <td class="text-end">${formatDuration(d.DelayInSC)}</td>
-  <td>${d.SUPP_OFF || '-'}</td>
-` : `
-  <td>${(d.CONN_CLASS || '-').toUpperCase()}</td>
-  <td>${d.NAME || '-'}</td>
-  <td>${d.SUPP_OFF || '-'}</td>
-  <td class="text-end">${formatDuration(d.DelayInSC)}</td>
-`}
-
-    </tr>
-  `).join('')}
-</tbody>
-
-
+            <tbody>
+              ${sorted
+                .map(
+                  (d, i) => `
+                <tr>
+                  <td class="text-center">${i + 1}</td>
+                  <td>${d.APPL_NO || '-'}</td>
+                  ${
+                    isMobile
+                      ? `
+                    <td>${(d.CONN_CLASS || '-').toUpperCase()}</td>
+                    <td class="text-end">${formatDuration(d.DelayInSC)}</td>
+                    <td>${d.SUPP_OFF || '-'}</td>
+                  `
+                      : `
+                    <td>${(d.CONN_CLASS || '-').toUpperCase()}</td>
+                    <td>${d.NAME || '-'}</td>
+                    <td>${d.SUPP_OFF || '-'}</td>
+                    <td class="text-end">${formatDuration(d.DelayInSC)}</td>
+                  `
+                  }
+                </tr>
+              `
+                )
+                .join('')}
+            </tbody>
           </table>
         </div>
       </div>
     </div>
   </div>
 `;
+
 
 
   const urgentModal = new bootstrap.Modal(document.getElementById("urgentModal"));
@@ -1943,6 +1952,15 @@ function generateConsumerRows(groupKey, container, groupBy, filterFn) {
   const consumers = filteredData.filter(d => 
     filterFn(d) && (d[groupBy] === groupKey)
   );
+// ✅ Sort by COLL_DATE (earliest first)
+consumers.sort((a, b) => {
+  const parseDate = str => {
+    if (!str || str.trim() === '') return new Date(0);
+    const [d, m, y] = str.trim().split(/[-/]/);
+    return new Date(`20${y.length === 2 ? y : y.slice(-2)}`, m - 1, d);
+  };
+  return parseDate(a.COLL_DATE) - parseDate(b.COLL_DATE);
+});
 
   if (consumers.length === 0) {
     container.innerHTML = `<div class="text-center text-muted p-2">No consumer data found.</div>`;
@@ -2045,7 +2063,18 @@ function generateSubRowsForTabs(groupKey, container, groupByKey) {
       <tbody>
   `;
 
+
   const sortedCCC = Object.entries(groupedByCCC).sort((a, b) => b[1].count - a[1].count);
+
+  // ✅ Sort each CCC’s applications by COLL_DATE (earliest first)
+data.applications.sort((a, b) => {
+  const parseDate = str => {
+    if (!str || str.trim() === '') return new Date(0);
+    const [d, m, y] = str.trim().split(/[-/]/);
+    return new Date(`20${y.length === 2 ? y : y.slice(-2)}`, m - 1, d);
+  };
+  return parseDate(a.COLL_DATE) - parseDate(b.COLL_DATE);
+});
   for (const [ccc, data] of sortedCCC) {
     const count = data.count;
     const percent = total ? ((count / total) * 100).toFixed(1) : 0;
