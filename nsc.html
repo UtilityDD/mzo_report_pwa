@@ -2033,14 +2033,12 @@ row.addEventListener("click", function(e) {
     const icon = this.querySelector('i');
 
     if (subRow.style.display === "none") {
-      if (
-  title.includes('Industrial Pending') ||
-  title.includes('Commercial 3-Ph') ||
-  title.includes('Initially Withheld')
-) {
-  generateConsumerRows(groupKey, document.getElementById(`${rowId}-subdata`), groupBy, filterFn);
-} else {
-  generateSubRows(groupKey, document.getElementById(`${rowId}-subdata`), groupBy, filterFn);
+      // If the main grouping is by Division, the next level is the CCC breakdown.
+      // We use generateSubRowsForTabs as it handles the next level of expansion (CCC -> consumer).
+      if (groupBy === 'DIVN_NAME') {
+        generateSubRowsForTabs(groupKey, document.getElementById(`${rowId}-subdata`), groupBy, filterFn);
+      } else { // Otherwise (e.g., grouped by SUPP_OFF), the next level is the consumer list
+        generateConsumerRows(groupKey, document.getElementById(`${rowId}-subdata`), groupBy, filterFn);
 }
 
 
@@ -2202,7 +2200,7 @@ let html = `
 }
 
 // 1. First, modify the generateSubRowsForTabs function to add expandable rows for CCCs
-function generateSubRowsForTabs(groupKey, container, groupByKey) {
+function generateSubRowsForTabs(groupKey, container, groupByKey, filterFn = null) {
   if (groupByKey === 'DelayRange2') {
   const delaySerialGroups = {
     "Within 3 days": [1],
@@ -2289,7 +2287,7 @@ function generateSubRowsForTabs(groupKey, container, groupByKey) {
 
       if (subRow.style.display === "none") {
         const apps = groupedByCCC[ccc].applications;
-        generateApplicationsTable(apps, document.getElementById(`${rowId}-subdata`));
+        generateApplicationsTable(apps, document.getElementById(`${rowId}-subdata`), false);
         subRow.style.display = "";
         icon.classList.remove('fa-chevron-right');
         icon.classList.add('fa-chevron-down');
@@ -2309,7 +2307,11 @@ function generateSubRowsForTabs(groupKey, container, groupByKey) {
 
   if (groupByKey === 'PoleType') {
     // Special handling for Pole/Non-Pole case
-    if (groupKey === 'Pole Cases') {
+    // Use the passed filterFn if available (for KPI cards)
+    if (filterFn) {
+      children = filteredData.filter(filterFn);
+    }
+    else if (groupKey === 'Pole Cases') {
       children = filteredData.filter(d => (d.NO_OF_POLES || "").trim() !== "" && (d.NO_OF_POLES !== "0"));
     } else if (groupKey === 'Non-Pole Cases') {
       children = filteredData.filter(d => (d.NO_OF_POLES || "").trim() === "" || (d.NO_OF_POLES === "0"));
@@ -2318,6 +2320,12 @@ function generateSubRowsForTabs(groupKey, container, groupByKey) {
     // Normal case
     children = filteredData.filter(d => (d[groupByKey] || 'Not Specified') === groupKey);
   }
+
+  // For KPI card drill-downs (DIVN_NAME -> CCC), we need to further filter the children
+  if (groupByKey === 'DIVN_NAME') {
+    children = children.filter(d => d.DIVN_NAME === groupKey);
+  }
+
 
   const groupedByCCC = {};
   children.forEach(d => {
@@ -2389,7 +2397,7 @@ function generateSubRowsForTabs(groupKey, container, groupByKey) {
       if (subRow.style.display === "none") {
         // Get the applications for this CCC
         const apps = groupedByCCC[ccc].applications;
-        const isFromAgencyTab = (groupByKey === 'AGENCY_NAME');
+        const isFromAgencyTab = (groupByKey === 'AGENCY_NAME'); // This is likely always false here but keep for safety
 generateApplicationsTable(apps, document.getElementById(`${rowId}-subdata`), isFromAgencyTab);
         subRow.style.display = "";
         icon.classList.remove('fa-chevron-right');
@@ -2773,7 +2781,7 @@ document.getElementById('delay2').querySelector('.chart-container').innerHTML = 
     const icon = this.querySelector('i');
 
     if (subRow.style.display === "none") {
-      generateSubRowsForTabs(groupKey, document.getElementById(`${rowId}-subdata`), groupByKey);
+      generateSubRowsForTabs(groupKey, document.getElementById(`${rowId}-subdata`), groupByKey, null); // Pass null for filterFn in tab view
       subRow.style.display = "";
       icon.classList.remove('fa-chevron-right');
       icon.classList.add('fa-chevron-down');
@@ -2787,31 +2795,6 @@ document.getElementById('delay2').querySelector('.chart-container').innerHTML = 
 });
 
 }
-
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     document.addEventListener('DOMContentLoaded', () => {
   ['totalPendingCollapse', 'nonPoleCollapse', 'poleCollapse', 'industrialPendingCollapse', 'detailCollapse'].forEach(id => {
@@ -2865,7 +2848,7 @@ document.addEventListener('DOMContentLoaded', () => {
           filterFn: d => {
             const conn = (d.CONN_CLASS || "").trim().toUpperCase();
             const phase = (d.APPLIED_PHASE || "").trim().toUpperCase();
-            return conn === "A" && phase === "III";
+            return conn === "C" && phase === "III";
           },
           title: 'Commercial 3-Ph (CCC Wise)'
         },
@@ -2882,8 +2865,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const cfg = map[id];
       if (cfg) {
         const tableContainerId = cfg.cardId.replace('Card', 'TableContainer');
-        const container = document.getElementById(tableContainerId);
-        fillTable(container, cfg.groupBy, cfg.filterFn, cfg.title);
+        // This was causing a double-render on mobile. The initial fillTable in showTable is sufficient.
+        // const container = document.getElementById(tableContainerId);
+        // fillTable(container, cfg.groupBy, cfg.filterFn, cfg.title);
       }
     });
   });
