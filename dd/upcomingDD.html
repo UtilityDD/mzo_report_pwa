@@ -123,6 +123,8 @@
   /* Table & Filters */
   .table-container {
     flex-grow: 1;
+    /* Ensure table container can grow and take available space */
+    min-height: 0; /* Allow flex item to shrink below its content size */
     width: 100%;
   }
   .filters-and-search {
@@ -151,6 +153,7 @@
   }
   .search-container {
     display: flex;
+    position: relative; /* For hint positioning */
     align-items: center;
     gap: 0.5rem; /* gap-2 */
   }
@@ -200,9 +203,45 @@
     height: 1.25rem; /* h-5 */
   }
 
+  /* New Summary Hint Styles */
+  .summary-hint {
+    position: absolute;
+    bottom: 100%; /* Position it above the button */
+    right: 0;
+    margin-bottom: 0.75rem; /* 12px space */
+    background-color: #facc15; /* bg-yellow-400 */
+    color: #1f2937; /* text-gray-800 */
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem; /* rounded-lg */
+    font-size: 0.875rem; /* text-sm */
+    font-weight: 500;
+    white-space: nowrap;
+    z-index: 50;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.4s ease-out, transform 0.4s ease-out;
+    pointer-events: none; /* Prevent interaction */
+  }
+  .summary-hint.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .summary-hint-arrow {
+    position: absolute;
+    bottom: -0.4rem; /* Adjust to connect with the hint box */
+    right: 1.25rem; /* Position over the summary button icon */
+    width: 0.8rem;
+    height: 0.8rem;
+    background-color: #facc15; /* bg-yellow-400 */
+    transform: rotate(45deg);
+  }
+
   /* Table */
   .table-wrapper {
     overflow-x: auto;
+    overflow-y: auto; /* Enable vertical scrolling */
+    max-height: 60vh; /* Set a maximum height to enable scrolling */
     border-radius: 0.75rem; /* rounded-xl */
     box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); /* shadow-lg */
   }
@@ -213,6 +252,9 @@
     color: #d1d5db; /* text-gray-300 */
   }
   .data-table thead {
+    position: sticky; /* Make the header sticky */
+    top: 0; /* Stick to the top of the scrolling container */
+    z-index: 10; /* Ensure it stays above scrolling content */
     font-size: 0.75rem; /* text-xs */
     color: #f3f4f6; /* text-gray-100 */
     text-transform: uppercase;
@@ -661,6 +703,10 @@
             <button id="viewSummaryBtn" title="View Summary" onclick="showSummaryModal()" class="summary-btn">
                 <span data-lucide="bar-chart-2" class="lucide"></span>
             </button>
+            <div id="summaryHint" class="summary-hint hidden">
+                Click for a unit-wise summary!
+                <div class="summary-hint-arrow"></div>
+            </div>
         </div>
         </div>
 
@@ -1404,6 +1450,25 @@ function animateCountUp(elementId, endValue, isAmount = false) {
   }
   requestAnimationFrame(animation);
 }
+
+// --- NEW: Show temporary hint for summary button ---
+function showSummaryHint() {
+  const hint = document.getElementById('summaryHint');
+  if (!hint) return;
+
+  // Show the hint after a short delay
+  setTimeout(() => {
+    hint.classList.remove('hidden');
+    setTimeout(() => hint.classList.add('visible'), 10); // Add 'visible' class to trigger transition
+  }, 1000); // 1-second delay before showing
+
+  // Hide the hint after 10 seconds
+  setTimeout(() => {
+    hint.classList.remove('visible');
+    // Optional: add hidden back after transition ends
+    setTimeout(() => hint.classList.add('hidden'), 500);
+  }, 11000); // 1s delay + 10s visible = 11s total
+}
 // --- Update fetchPage to use correct logic for DD in X days buttons ---
 async function fetchPage(page, isForExport = false) {
   showLoading(true);
@@ -2119,6 +2184,10 @@ async function showSummaryModal() {
     generateAndRenderSummary(currentSummaryLevel);
     document.getElementById('summaryModal').classList.remove('hidden');
 
+    // Hide the hint if it's visible when the modal is opened
+    const hint = document.getElementById('summaryHint');
+    if (hint) hint.classList.remove('visible');
+
   } catch (e) {
     console.error("Error generating summary:", e);
     showMessageModal("Error", "Could not generate summary. Please try again.");
@@ -2333,6 +2402,7 @@ document.getElementById("loginBtn").addEventListener("click", async () => {
   // Hide modal and load the page
   document.getElementById("loginModal").classList.add('hidden');
   initialLoad();
+  showSummaryHint(); // Show the hint after successful login and load
 });
 </script>
 
