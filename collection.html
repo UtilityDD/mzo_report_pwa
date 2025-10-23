@@ -244,6 +244,48 @@
                 max-width: 100%;
             }
         }
+        .sortable-header {
+            cursor: pointer;
+        }
+
+        /* Prevent table cell wrapping on small screens and enable horizontal scroll */
+        .table-no-wrap td, .table-no-wrap th {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 12rem; /* reasonable default, will be overridden by desktop styles */
+        }
+
+        /* Make responsive tables horizontally scrollable with smooth touch scrolling */
+        .table-responsive {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch; /* smooth scrolling on iOS */
+        }
+
+        @media (min-width: 768px) {
+            /* On larger screens allow more width before truncation */
+            .table-no-wrap td, .table-no-wrap th { max-width: 20rem; }
+        }
+        .sortable-header:hover {
+            background-color: rgba(0,0,0,0.05);
+        }
+        .sortable-header {
+            position: relative;
+            padding-right: 1.2em; /* Make space for icon */
+        }
+        .sortable-header::after {
+            content: ' \2195'; /* Up-down arrow for unsorted */
+            position: absolute;
+            right: 0.2em;
+            opacity: 0.2;
+            transition: opacity 0.2s;
+        }
+        .sortable-header:hover::after { opacity: 0.6; }
+        .sortable-header.sort-asc::after,
+        .sortable-header.sort-desc::after { opacity: 1; }
+        .sortable-header.sort-asc::after { content: ' \25B2'; } /* Up arrow */
+        .sortable-header.sort-desc::after { content: ' \25BC'; } /* Down arrow */
+
     </style>
 </head>
 <body>
@@ -262,6 +304,22 @@
                         <i class="bi bi-moon-stars"></i>
                     </label>
                 </div>
+            </div>
+        </div>
+
+        <!-- Bulk Filter -->
+        <div class="d-flex justify-content-center gap-3 mb-2">
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="bulkFilterOptions" id="withBulk" value="with" checked>
+                <label class="form-check-label" for="withBulk">
+                    With Bulk
+                </label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="bulkFilterOptions" id="withoutBulk" value="without">
+                <label class="form-check-label" for="withoutBulk">
+                    Without Bulk
+                </label>
             </div>
         </div>
 
@@ -299,6 +357,11 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- Card Hint -->
+        <div id="card-hint" class="text-center text-muted small mb-2 d-none">
+            <i class="bi bi-info-circle me-1"></i>Click on a card to view office-wise breakdown.
         </div>
 
         <!-- Controls -->
@@ -557,6 +620,8 @@
     let monthlyOfficeBreakdownModalInstance;
     let isSufficientlyZoomed = false;
     let isCumulativeView = false;
+    // Track currently active comparison sub-tab (keeps selection when table is re-rendered)
+    let currentComparisonTabId = 'region-comparison-tab';
 
     let showDataLabels = false; // State for data labels visibility
 
@@ -754,6 +819,7 @@
             headerDateRangeEl.textContent = dateRange;
 
             summaryCards.classList.remove('d-none');
+            document.getElementById('card-hint').classList.remove('d-none');
         }
 
 
@@ -798,7 +864,10 @@
 
         function updateChart() {
             const filteredData = applyFilters();
-            renderDayOverMonthComparison(filteredData); // Render the comparison table
+            // Only re-render the data table if the chart tab is not the one being shown.
+            if (!document.getElementById('chart-tab').classList.contains('active')) {
+                renderDayOverMonthComparison(filteredData, (currentComparisonTabId || 'region-comparison-tab').replace('-tab',''));
+            }
             
             // Update date range in header with month count
             if (filteredData.length > 0) {
@@ -1325,12 +1394,20 @@
             const selectedRegion = regionFilter.value;
             const selectedDivision = divisionFilter.value;
             const selectedCcc = cccFilter.value;
+            const bulkFilterValue = document.querySelector('input[name="bulkFilterOptions"]:checked').value;
 
             return processedData.filter(d => {
                 const regionMatch = selectedRegion === 'all' || d.region === selectedRegion;
                 const divisionMatch = selectedDivision === 'all' || d.division === selectedDivision;
                 const cccMatch = selectedCcc === 'all' || d.ccc === selectedCcc;
-                return regionMatch && divisionMatch && cccMatch;
+
+                let bulkMatch = true;
+                if (bulkFilterValue === 'without') {
+                    bulkMatch = d.division !== 'Bulk';
+                }
+                // The 'with' case is implicitly true as it includes all data.
+
+                return regionMatch && divisionMatch && cccMatch && bulkMatch;
             });
         }
         
@@ -1340,12 +1417,26 @@
         cccFilter.addEventListener('change', () => {
             updateFilterChips();
             updateSummaryCards();
-            renderDayOverMonthComparison(applyFilters());
+            renderDayOverMonthComparison(applyFilters(), (currentComparisonTabId || 'region-comparison-tab').replace('-tab',''));
         });
         timeScaleSelect.addEventListener('change', () => {
             updateFilterChips();
             updateChart();
         });
+
+        // Bulk filter handlers
+        document.querySelectorAll('input[name="bulkFilterOptions"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                // Preserve currently active comparison sub-tab (use tracked id)
+                const activeSubTabId = currentComparisonTabId || 'region-comparison-tab';
+
+                updateSummaryCards();
+                // Re-render the comparison table keeping the same active sub-tab
+                renderDayOverMonthComparison(applyFilters(), activeSubTabId.replace('-tab', ''));
+                updateChart(); // Update the chart separately
+            });
+        });
+
 
         // Timeline button handlers
         document.querySelectorAll('.timeline-buttons .btn').forEach(btn => {
@@ -1456,11 +1547,11 @@
 
                 let tableHtml = `
                     <div class="table-responsive">
-                        <table class="table table-sm table-striped table-hover">
-                            <thead>
+                        <table class="table table-sm table-striped table-hover table-no-wrap">
+                            <thead class="table-sortable" data-sort-key="value" data-sort-dir="desc">
                                 <tr>
                                     <th scope="col" style="width: 5%;">Sl.</th>
-                                    <th scope="col">Office Name</th>
+                                    <th scope="col" class="sortable-header sort-desc" data-sort-key="name">Office Name</th>
                                     <th scope="col" class="text-end">${metricType}</th>
                                     <th scope="col" class="text-end" style="width: 15%;">% Share</th>
                                 </tr>
@@ -1471,7 +1562,7 @@
                     const percentage = totalValue > 0 ? ((item.value / totalValue) * 100).toFixed(2) : 0;
                     tableHtml += `
                         <tr onclick="showMonthlyBreakdown('${item.name}', '${key}')" style="cursor: pointer;">
-                            <td>${index + 1}</td>
+                            <td class="row-index">${index + 1}</td>
                             <td>${item.name}</td>
                             <td class="text-end">${formatReadableAmount(item.value)}</td>
                             <td class="text-end">${percentage}%</td>
@@ -1493,12 +1584,65 @@
                 container.innerHTML = tableHtml;
             };
 
-            // Aggregate and render for each tab
-            renderSummaryTable(aggregateBy('region'), 'region-summary', 'region');
-            renderSummaryTable(aggregateBy('division'), 'division-summary', 'division');
-            renderSummaryTable(aggregateBy('ccc'), 'ccc-summary', 'ccc');
+            // Helper for showing a loader
+            const showLoaderInContainer = (container) => {
+                if (container) {
+                    container.innerHTML = `<div class="d-flex justify-content-center align-items-center p-5"><div class="spinner-border text-primary" role="status"></div><span class="ms-3">Please wait...</span></div>`;
+                }
+            };
+
+            // Add sorting listeners to the modal tables
+            const addSortingToModal = (containerId) => {
+                const container = document.getElementById(containerId);
+                container.addEventListener('click', (e) => {
+                    const header = e.target.closest('.sortable-header');
+                    if (!header) return;
+
+                    const thead = header.closest('thead');
+                    const tbody = container.querySelector('tbody');
+                    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+                    const sortKey = header.dataset.sortKey;
+                    const currentDir = thead.dataset.sortDir;
+                    const newDir = currentDir === 'asc' ? 'desc' : 'asc';
+
+                    thead.dataset.sortKey = sortKey;
+                    thead.dataset.sortDir = newDir;
+
+                    // Update sort icons
+                    thead.querySelectorAll('.sortable-header').forEach(th => {
+                        th.classList.remove('sort-asc', 'sort-desc');
+                    });
+                    header.classList.add(`sort-${newDir}`);
+
+                    rows.sort((a, b) => {
+                        const aText = a.cells[1].textContent; // Office Name is always cell 1
+                        const bText = b.cells[1].textContent;
+                        return newDir === 'asc' ? aText.localeCompare(bText) : bText.localeCompare(aText);
+                    }).forEach((row, index) => {
+                        row.querySelector('.row-index').textContent = index + 1;
+                        tbody.appendChild(row);
+                    });
+                });
+            };
+
+            // Show loaders first
+            showLoaderInContainer(document.getElementById('region-summary'));
+            showLoaderInContainer(document.getElementById('division-summary'));
+            showLoaderInContainer(document.getElementById('ccc-summary'));
+
+            setTimeout(() => {
+                renderSummaryTable(aggregateBy('region'), 'region-summary', 'region');
+                renderSummaryTable(aggregateBy('division'), 'division-summary', 'division');
+                renderSummaryTable(aggregateBy('ccc'), 'ccc-summary', 'ccc');
+            }, 0);
 
             summaryModalInstance.show();
+
+            // Attach sorting listeners after rendering
+            addSortingToModal('region-summary');
+            addSortingToModal('division-summary');
+            addSortingToModal('ccc-summary');
         }
 
         // Add click listeners to summary cards
@@ -1530,14 +1674,19 @@
 
             document.getElementById('monthlyBreakdownModalLabel').textContent = `Monthly Summary for: ${itemName}`;
 
-            const monthlyCollections = {};
-            dataForItem.forEach(d => {
-                const monthKey = `${d.date.getFullYear()}-${String(d.date.getMonth() + 1).padStart(2, '0')}`;
-                monthlyCollections[monthKey] = (monthlyCollections[monthKey] || 0) + d.amount;
-            });
+            const modalBody = document.getElementById('monthlyBreakdownModalBody');
+            modalBody.innerHTML = `<div class="d-flex justify-content-center align-items-center p-5"><div class="spinner-border text-primary" role="status"></div><span class="ms-3">Please wait...</span></div>`;
+            monthlyBreakdownModalInstance.show();
 
-            const sortedMonths = Object.keys(monthlyCollections).sort().reverse();
-            if (sortedMonths.length < 1) {
+            setTimeout(() => {
+                const monthlyCollections = {};
+                dataForItem.forEach(d => {
+                    const monthKey = `${d.date.getFullYear()}-${String(d.date.getMonth() + 1).padStart(2, '0')}`;
+                    monthlyCollections[monthKey] = (monthlyCollections[monthKey] || 0) + d.amount;
+                });
+
+                const sortedMonths = Object.keys(monthlyCollections).sort().reverse();
+                if (sortedMonths.length < 1) {
                 document.getElementById('monthlyBreakdownModalBody').innerHTML = `<p class="text-center text-muted mt-3">No monthly data found for ${itemName}.</p>`;
                 monthlyBreakdownModalInstance.show();
                 return;
@@ -1545,12 +1694,12 @@
 
             let tableHtml = `
                 <div class="table-responsive">
-                    <table class="table table-sm table-hover">
-                        <thead>
+                    <table class="table table-sm table-hover table-no-wrap">
+                        <thead class="table-sortable" data-sort-key="monthKey" data-sort-dir="desc">
                             <tr>
-                                <th>Month</th>
-                                <th class="text-end">Collection</th>
-                                <th class="text-end">Change vs. Prev. Month</th>
+                                <th class="sortable-header sort-desc" data-sort-key="monthKey">Month</th>
+                                <th class="text-end sortable-header" data-sort-key="collection">Collection</th>
+                                <th class="text-end">Change vs. Prev. Month</th> 
                                 <th class="text-end">% Change</th>
                             </tr>
                         </thead>
@@ -1592,8 +1741,45 @@
             });
 
             tableHtml += `</tbody></table></div>`;
-            document.getElementById('monthlyBreakdownModalBody').innerHTML = tableHtml;
-            monthlyBreakdownModalInstance.show();
+                modalBody.innerHTML = tableHtml;
+
+            // Add sorting to this modal
+            
+            modalBody.addEventListener('click', (e) => {
+                const header = e.target.closest('.sortable-header');
+                if (!header) return;
+
+                const thead = header.closest('thead');
+                const tbody = modalBody.querySelector('tbody');
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+
+                const sortKey = header.dataset.sortKey;
+                const currentDir = thead.dataset.sortDir;
+                const newDir = currentDir === 'asc' ? 'desc' : 'asc';
+
+                thead.dataset.sortKey = sortKey;
+                thead.dataset.sortDir = newDir;
+
+                // Update sort icons
+                thead.querySelectorAll('.sortable-header').forEach(th => {
+                    th.classList.remove('sort-asc', 'sort-desc');
+                });
+                header.classList.add(`sort-${newDir}`);
+
+                rows.sort((a, b) => {
+                    const aData = sortedMonths.find(m => a.innerHTML.includes(new Date(m.split('-')[0], m.split('-')[1] - 1).toLocaleString('default', { month: 'short', year: 'numeric' })));
+                    const bData = sortedMonths.find(m => b.innerHTML.includes(new Date(m.split('-')[0], m.split('-')[1] - 1).toLocaleString('default', { month: 'short', year: 'numeric' })));
+                    
+                    if (sortKey === 'monthKey') {
+                        return newDir === 'asc' ? aData.localeCompare(bData) : bData.localeCompare(aData);
+                    } else { // collection
+                        const aVal = monthlyCollections[aData];
+                        const bVal = monthlyCollections[bData];
+                        return newDir === 'asc' ? aVal - bVal : bVal - aVal;
+                    }
+                }).forEach(row => tbody.appendChild(row));
+            });
+            }, 0);
         }
 
         function showMonthlyOfficeBreakdown(itemName, itemType, monthKey) {
@@ -1605,23 +1791,28 @@
 
             document.getElementById('monthlyOfficeBreakdownModalLabel').textContent = `${breakdownTitle} for ${itemName} (${monthName})`;
 
-            // Filter data for the specific item AND the specific month
-            const dataForMonth = processedData.filter(d => {
-                const dMonth = d.date.getMonth() + 1;
-                const dYear = d.date.getFullYear();
-                return d[itemType] === itemName && dYear === year && dMonth === month;
-            });
-
-            if (dataForMonth.length === 0) {
-                document.getElementById('monthlyOfficeBreakdownModalBody').innerHTML = `<p class="text-center text-muted">No data for this month.</p>`;
-            } else {
-                const breakdownTableHtml = createBreakdownTableHtml(dataForMonth, breakdownKey, ''); // Title is handled by modal header
-                document.getElementById('monthlyOfficeBreakdownModalBody').innerHTML = breakdownTableHtml;
-            }
+            const modalBody = document.getElementById('monthlyOfficeBreakdownModalBody');
+            modalBody.innerHTML = `<div class="d-flex justify-content-center align-items-center p-5"><div class="spinner-border text-primary" role="status"></div><span class="ms-3">Please wait...</span></div>`;
             monthlyOfficeBreakdownModalInstance.show();
+
+            setTimeout(() => {
+                // Filter data for the specific item AND the specific month
+                const dataForMonth = processedData.filter(d => {
+                    const dMonth = d.date.getMonth() + 1;
+                    const dYear = d.date.getFullYear();
+                    return d[itemType] === itemName && dYear === year && dMonth === month;
+                });
+
+                if (dataForMonth.length === 0) {
+                    modalBody.innerHTML = `<p class="text-center text-muted">No data for this month.</p>`;
+                } else {
+                    const breakdownTableHtml = createBreakdownTableHtml(dataForMonth, breakdownKey, ''); // Title is handled by modal header
+                    modalBody.innerHTML = breakdownTableHtml;
+                }
+            }, 0);
         }
 
-        function renderDayOverMonthComparison(filteredData, activeSubTab = 'region-comparison', currentMonthKey = null, prevMonthKey = null, selectedDay = null) {
+        function renderDayOverMonthComparison(filteredData, activeSubTab = 'region-comparison', currentMonthKey = null, prevMonthKey = null, selectedDay = null, sortConfig = { key: 'fyCollection', dir: 'desc' }) {
             const container = document.getElementById('data-table-container');
             if (filteredData.length === 0) {
                 container.innerHTML = '<p class="text-center text-muted mt-3">No data available for comparison.</p>';
@@ -1662,30 +1853,33 @@
             `;
             container.innerHTML = tabsHtml;
 
+            // Ensure the tracked active tab id matches the rendered activeSubTab
+            currentComparisonTabId = activeSubTab + '-tab';
+
             // --- Render content for the active tab ---
             const activeTabContentId = activeSubTab.replace('-tab', '');
             const breakdownKey = activeTabContentId.split('-')[0]; // 'region', 'division', 'ccc'
 
-            const tableHtml = generateMonthlySummaryTable(filteredData, breakdownKey, currentMonthKey, prevMonthKey, dayToSelect);
-            document.getElementById(activeTabContentId).innerHTML = tableHtml;
+            const tableHtml = generateMonthlySummaryTable(filteredData, breakdownKey, currentMonthKey, prevMonthKey, dayToSelect, sortConfig);
+            document.getElementById(activeTabContentId).innerHTML = tableHtml.html;
 
             // Add event listeners
-            addComparisonEventListeners(filteredData);
+            addComparisonEventListeners(filteredData, tableHtml.allMonthKeys, sortConfig);
         }
 
-        function generateMonthlySummaryTable(data, breakdownKey, currentMonthKey, prevMonthKey, selectedDay) {
-            const uniqueItems = [...new Set(data.map(d => d[breakdownKey]))].sort();
-            if (uniqueItems.length === 0) {
+        function generateMonthlySummaryTable(allData, breakdownKey, currentMonthKey, prevMonthKey, selectedDay, sortConfig) {
+            const fyStartDate = new Date('2025-04-01T00:00:00');
+            if (allData.length === 0) {
                 return `<p class="text-center text-muted mt-3">No data available for this breakdown.</p>`;
             }
 
-            const { currentMonth, prevMonth, allMonthKeys } = getComparisonMonths(data, currentMonthKey, prevMonthKey);
-            const fyStartDate = new Date('2025-04-01T00:00:00');
+            const { currentMonth, prevMonth, allMonthKeys } = getComparisonMonths(allData, currentMonthKey, prevMonthKey);
 
             // Find the actual latest day with data for each month, up to the selected day
             const getActualDay = (month) => {
+                if (!month) return null;
                 const availableDays = [...new Set(
-                    data
+                    allData
                         .filter(d => d.date.getFullYear() === month.getFullYear() && d.date.getMonth() === month.getMonth() && d.date.getDate() <= selectedDay)
                         .map(d => d.date.getDate())
                 )].sort((a, b) => b - a); // Sort descending
@@ -1695,26 +1889,55 @@
             const actualCurrentDay = getActualDay(currentMonth);
             const actualPrevDay = getActualDay(prevMonth);
 
-            const tableData = uniqueItems.map(item => {
-                const itemData = data.filter(d => d[breakdownKey] === item);
-                
-                const fyCollection = itemData
-                    .filter(d => d.date >= fyStartDate)
-                    .reduce((sum, d) => sum + d.amount, 0);
+            // --- Performance Optimization: Pre-aggregate data ---
+            const aggregated = {};
+            allData.forEach(d => {
+                const itemKey = d[breakdownKey];
+                if (!itemKey || itemKey === 'Unknown') return;
 
-                const currentMonthCollection = itemData
-                    .filter(d => d.date.getFullYear() === currentMonth.getFullYear() && d.date.getMonth() === currentMonth.getMonth() && d.date.getDate() <= actualCurrentDay)
-                    .reduce((sum, d) => sum + d.amount, 0);
+                if (!aggregated[itemKey]) {
+                    aggregated[itemKey] = { fyCollection: 0, currentMonthCollection: 0, prevMonthCollection: 0 };
+                }
 
-                const prevMonthCollection = itemData
-                    .filter(d => d.date.getFullYear() === prevMonth.getFullYear() && d.date.getMonth() === prevMonth.getMonth() && d.date.getDate() <= actualPrevDay)
-                    .reduce((sum, d) => sum + d.amount, 0);
+                // FY Collection
+                if (d.date >= fyStartDate) {
+                    aggregated[itemKey].fyCollection += d.amount;
+                }
+                // Current Month Collection
+                if (currentMonth && d.date.getFullYear() === currentMonth.getFullYear() && d.date.getMonth() === currentMonth.getMonth() && (actualCurrentDay === null || d.date.getDate() <= actualCurrentDay)) {
+                    aggregated[itemKey].currentMonthCollection += d.amount;
+                }
+                // Previous Month Collection (may be null when only one month available)
+                if (prevMonth && d.date.getFullYear() === prevMonth.getFullYear() && d.date.getMonth() === prevMonth.getMonth() && (actualPrevDay === null || d.date.getDate() <= actualPrevDay)) {
+                    aggregated[itemKey].prevMonthCollection += d.amount;
+                }
+            });
 
+            const tableData = Object.keys(aggregated).sort().map(item => {
+                const { fyCollection, currentMonthCollection, prevMonthCollection } = aggregated[item];
                 const change = currentMonthCollection - prevMonthCollection;
                 const pctChange = prevMonthCollection > 0 ? (change / prevMonthCollection) * 100 : (currentMonthCollection > 0 ? 100 : 0);
 
                 return { name: item, fyCollection, currentMonthCollection, prevMonthCollection, change, pctChange };
             });
+
+            // --- Sorting ---
+            if (sortConfig && sortConfig.key) {
+                tableData.sort((a, b) => {
+                    let valA = a[sortConfig.key];
+                    let valB = b[sortConfig.key];
+                    if (sortConfig.key === 'name') {
+                        return sortConfig.dir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                    }
+                    // For numeric columns
+                    return sortConfig.dir === 'asc' ? valA - valB : valB - valA;
+                });
+            }
+
+
+             if (tableData.length === 0) {
+                return { html: `<p class="text-center text-muted mt-3">No data available for this breakdown.</p>`, allMonthKeys };
+            }
 
             // Calculate totals for the footer
             const totalFyCollection = tableData.reduce((sum, row) => sum + row.fyCollection, 0);
@@ -1726,14 +1949,16 @@
             if (totalPctChange > 0) totalIndicator = `<i class="bi bi-arrow-up text-success"></i>`;
             else if (totalPctChange < 0) totalIndicator = `<i class="bi bi-arrow-down text-danger"></i>`;
 
-            const currentMonthOptions = getMonthOptions(allMonthKeys, currentMonth.getFullYear() + '-' + String(currentMonth.getMonth() + 1).padStart(2, '0'));
-            const prevMonthOptions = getMonthOptions(allMonthKeys, prevMonth.getFullYear() + '-' + String(prevMonth.getMonth() + 1).padStart(2, '0'));
+            const currentMonthKeyStr = currentMonth ? (currentMonth.getFullYear() + '-' + String(currentMonth.getMonth() + 1).padStart(2, '0')) : (allMonthKeys[0] || null);
+            const prevMonthKeyStr = prevMonth ? (prevMonth.getFullYear() + '-' + String(prevMonth.getMonth() + 1).padStart(2, '0')) : (allMonthKeys.length > 1 ? allMonthKeys[1] : null);
+            const currentMonthOptions = getMonthOptions(allMonthKeys, currentMonthKeyStr);
+            const prevMonthOptions = getMonthOptions(allMonthKeys, prevMonthKeyStr);
 
             const darkMode = document.body.classList.contains('dark');
 
             // Generate footnote first if the actual comparison days are different from the selected day
             let footnoteHtml = '';
-            if (actualCurrentDay !== parseInt(selectedDay, 10) || actualPrevDay !== parseInt(selectedDay, 10)) {
+            if ((actualCurrentDay !== null && actualCurrentDay !== parseInt(selectedDay, 10)) || (actualPrevDay !== null && actualPrevDay !== parseInt(selectedDay, 10))) {
                 const currentMonthName = currentMonth.toLocaleString('default', { month: 'short' });
                 const prevMonthName = prevMonth.toLocaleString('default', { month: 'short' });
                 const currentDayText = actualCurrentDay ? `${actualCurrentDay} ${currentMonthName}` : `start of ${currentMonthName}`;
@@ -1745,15 +1970,15 @@
             let tableHtml = `
                 ${footnoteHtml}
                 <div class="table-responsive" style="height: calc(60vh - 120px); overflow-y: auto;">
-                    <table class="table table-sm table-hover table-striped ${darkMode ? 'table-dark' : ''}" id="monthly-summary-table">
+                    <table class="table table-sm table-hover table-striped ${darkMode ? 'table-dark' : ''} table-no-wrap" id="monthly-summary-table">
                         <thead>
-                            <tr>
-                                <th>${breakdownKey.charAt(0).toUpperCase() + breakdownKey.slice(1)} Name</th>
-                                <th class="text-end">Total FY Collection</th>
-                                <th class="text-end"><span class="d-none d-md-inline">Collection (</span><select id="currentMonthSelector" class="form-select form-select-sm d-inline-block w-auto">${currentMonthOptions}</select><span class="d-none d-md-inline">)</span></th>
-                                <th class="text-end"><span class="d-none d-md-inline">Collection (</span><select id="prevMonthSelector" class="form-select form-select-sm d-inline-block w-auto">${prevMonthOptions}</select><span class="d-none d-md-inline">)</span></th>
-                                <th class="text-end">Change</th>
-                                <th class="text-end">% Change</th>
+                            <tr class="table-sortable" data-sort-key="${sortConfig.key}" data-sort-dir="${sortConfig.dir}">
+                                <th class="sortable-header ${sortConfig.key === 'name' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="name">${breakdownKey.charAt(0).toUpperCase() + breakdownKey.slice(1)} Name</th>
+                                <th class="text-end sortable-header ${sortConfig.key === 'fyCollection' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="fyCollection">Total FY Collection</th>
+                                <th class="text-end sortable-header ${sortConfig.key === 'currentMonthCollection' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="currentMonthCollection"><span class="d-none d-md-inline">Collection (</span><select id="currentMonthSelector" class="form-select form-select-sm d-inline-block w-auto" ${currentMonthKeyStr ? '' : 'disabled'}>${currentMonthOptions}</select><span class="d-none d-md-inline">)</span></th>
+                                <th class="text-end sortable-header ${sortConfig.key === 'prevMonthCollection' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="prevMonthCollection"><span class="d-none d-md-inline">Collection (</span><select id="prevMonthSelector" class="form-select form-select-sm d-inline-block w-auto" ${prevMonthKeyStr ? '' : 'disabled'}>${prevMonthOptions}</select><span class="d-none d-md-inline">)</span></th>
+                                <th class="text-end sortable-header ${sortConfig.key === 'change' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="change">Change</th>
+                                <th class="text-end sortable-header ${sortConfig.key === 'pctChange' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="pctChange">% Change</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1792,7 +2017,7 @@
                 </div>
             `;
 
-            return tableHtml;
+            return { html: tableHtml, allMonthKeys };
         }
 
         function getMonthOptions(monthKeys, selectedKey) {
@@ -1807,31 +2032,48 @@
             const monthKeys = [...new Set(data.map(d => `${d.date.getFullYear()}-${String(d.date.getMonth() + 1).padStart(2, '0')}`))]
                 .sort().reverse(); // Sort descending to easily find latest
 
-            const activeCurrentKey = currentMonthKey || (monthKeys.length > 0 ? monthKeys[0] : null);
+            if (monthKeys.length === 0) {
+                return { currentMonth: null, prevMonth: null, allMonthKeys: monthKeys };
+            }
+
+            // Determine current and previous month keys safely
+            const activeCurrentKey = currentMonthKey || monthKeys[0];
             const activePrevKey = prevMonthKey || (monthKeys.length > 1 ? monthKeys[1] : null);
 
             const [currentYear, currentMonthNum] = activeCurrentKey.split('-').map(Number);
             const currentMonth = new Date(currentYear, currentMonthNum - 1, 1);
 
-            const [prevYear, prevMonthNum] = activePrevKey.split('-').map(Number);
-            const prevMonth = new Date(prevYear, prevMonthNum - 1, 1);
+            let prevMonth = null;
+            if (activePrevKey) {
+                const [prevYear, prevMonthNum] = activePrevKey.split('-').map(Number);
+                prevMonth = new Date(prevYear, prevMonthNum - 1, 1);
+            }
 
             return { currentMonth, prevMonth, allMonthKeys: monthKeys };
         }
 
-        function addComparisonEventListeners(filteredData) {
+        function addComparisonEventListeners(filteredData, allMonthKeys, sortConfig) {
             const handleMonthChange = () => {
-                const activeTabId = document.querySelector('#comparisonTab .nav-link.active').id;
-                const currentMonth = document.getElementById('currentMonthSelector').value;
-                const prevMonth = document.getElementById('prevMonthSelector').value;
-                const day = document.getElementById('summaryDaySelector').value;
-                updateActiveComparisonTable(applyFilters(), activeTabId, currentMonth, prevMonth, day);
+                const activeTabEl = document.querySelector('#comparisonTab .nav-link.active');
+                const activeTabId = activeTabEl ? activeTabEl.id : (currentComparisonTabId || 'region-comparison-tab');
+
+                const currentMonthEl = document.getElementById('currentMonthSelector');
+                const prevMonthEl = document.getElementById('prevMonthSelector');
+                const dayEl = document.getElementById('summaryDaySelector');
+
+                const currentMonth = currentMonthEl ? currentMonthEl.value : null;
+                const prevMonth = prevMonthEl ? prevMonthEl.value : null;
+                const day = dayEl ? dayEl.value : null;
+
+                updateActiveComparisonTable(applyFilters(), activeTabId, currentMonth, prevMonth, day, allMonthKeys, sortConfig);
             };
 
             const table = document.getElementById('monthly-summary-table');
             if (table) {
-                table.querySelector('#currentMonthSelector').addEventListener('change', handleMonthChange);
-                table.querySelector('#prevMonthSelector').addEventListener('change', handleMonthChange);
+                const curEl = table.querySelector('#currentMonthSelector');
+                const prevEl = table.querySelector('#prevMonthSelector');
+                if (curEl) curEl.addEventListener('change', handleMonthChange);
+                if (prevEl) prevEl.addEventListener('change', handleMonthChange);
             }
 
             const daySelector = document.getElementById('summaryDaySelector');
@@ -1843,17 +2085,50 @@
             document.querySelectorAll('#comparisonTab .nav-link').forEach(tab => {
                 tab.addEventListener('shown.bs.tab', event => {
                     const activeTabId = event.target.id;
-                    updateActiveComparisonTable(filteredData, activeTabId, null, null, document.getElementById('summaryDaySelector').value); // Reset months on tab switch, keep day
+                    // Track the active comparison tab so we can preserve it during re-renders
+                    currentComparisonTabId = activeTabId;
+                    // Reset months on tab switch, keep day, and reset sort
+                    updateActiveComparisonTable(filteredData, activeTabId, null, null, document.getElementById('summaryDaySelector').value, allMonthKeys, { key: 'fyCollection', dir: 'desc' });
                 });
             });
+
+            // Sorting listener
+            document.getElementById('monthly-summary-table')?.querySelector('thead').addEventListener('click', (e) => {
+                const header = e.target.closest('.sortable-header');
+                if (!header || e.target.tagName === 'SELECT') return;
+
+                const sortKey = header.dataset.sortKey;
+                const currentDir = sortConfig.key === sortKey ? sortConfig.dir : 'desc';
+                const newDir = currentDir === 'asc' ? 'desc' : 'asc';
+                const newSortConfig = { key: sortKey, dir: newDir };
+
+                const activeTabEl = document.querySelector('#comparisonTab .nav-link.active');
+                const activeTabId = activeTabEl ? activeTabEl.id : (currentComparisonTabId || 'region-comparison-tab');
+                const currentMonth = document.getElementById('currentMonthSelector')?.value || null;
+                const prevMonth = document.getElementById('prevMonthSelector')?.value || null;
+                const day = document.getElementById('summaryDaySelector')?.value || null;
+                updateActiveComparisonTable(filteredData, activeTabId, currentMonth, prevMonth, day, allMonthKeys, newSortConfig);
+            });
         }
-        function updateActiveComparisonTable(data, activeTabId, currentMonthKey, prevMonthKey, selectedDay) {
-            const breakdownKey = activeTabId.split('-')[0];
-            const tableHtml = generateMonthlySummaryTable(data, breakdownKey, currentMonthKey, prevMonthKey, selectedDay);
+        function updateActiveComparisonTable(data, activeTabId, currentMonthKey, prevMonthKey, selectedDay, allMonthKeys, sortConfig) {
             const targetPaneId = activeTabId.replace('-tab', '');
-            document.getElementById(targetPaneId).innerHTML = tableHtml;
-            // Re-attach listeners to the new dropdowns in the newly rendered table
-            addComparisonEventListeners(data);
+            const targetPane = document.getElementById(targetPaneId);
+
+            // Show loader in the target tab pane
+            if (targetPane) {
+                targetPane.innerHTML = `<div class="d-flex justify-content-center align-items-center" style="height: calc(60vh - 120px);"><div class="spinner-border text-primary" role="status"></div><span class="ms-3">Please wait...</span></div>`;
+            }
+
+            // Use setTimeout to allow the browser to render the loader before starting the heavy task
+            setTimeout(() => {
+                const breakdownKey = activeTabId.split('-')[0];
+                const tableResult = generateMonthlySummaryTable(data, breakdownKey, currentMonthKey, prevMonthKey, selectedDay, sortConfig);
+                
+                // Now that the table is generated, replace the loader with the content
+                if (targetPane) targetPane.innerHTML = tableResult.html;
+                // Re-attach listeners to the new table content
+                addComparisonEventListeners(data, allMonthKeys, sortConfig);
+            }, 0);
         }
         
         fetchData();
