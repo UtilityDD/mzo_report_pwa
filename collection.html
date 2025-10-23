@@ -446,7 +446,12 @@
                 <div class="modal-content">
                     <div class="modal-header">
                         <h5 class="modal-title" id="summaryModalLabel">Collection Breakdown</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        <div>
+                            <button type="button" id="downloadSummaryCsv" class="btn btn-sm btn-outline-success me-2" title="Download CSV">
+                                <i class="bi bi-file-earmark-spreadsheet"></i> Download
+                            </button>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
                     </div>
                     <div class="modal-body">
                         <!-- Nav tabs -->
@@ -478,7 +483,12 @@
                 <div class="modal-content">
                     <div class="modal-header">
                         <h5 class="modal-title" id="monthlyOfficeBreakdownModalLabel">Breakdown</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        <div>
+                            <button type="button" id="downloadMonthlyOfficeCsv" class="btn btn-sm btn-outline-success me-2" title="Download CSV">
+                                <i class="bi bi-file-earmark-spreadsheet"></i> Download
+                            </button>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
                     </div>
                     <div class="modal-body" id="monthlyOfficeBreakdownModalBody">
                         <!-- Content will be populated by JS -->
@@ -493,7 +503,12 @@
                 <div class="modal-content">
                     <div class="modal-header">
                         <h5 class="modal-title" id="monthlyBreakdownModalLabel">Monthly Collection Summary</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        <div>
+                            <button type="button" id="downloadMonthlyCsv" class="btn btn-sm btn-outline-success me-2" title="Download CSV">
+                                <i class="bi bi-file-earmark-spreadsheet"></i> Download
+                            </button>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
                     </div>
                     <div class="modal-body" id="monthlyBreakdownModalBody">
                         <!-- Content will be populated by JS -->
@@ -1291,6 +1306,37 @@
             URL.revokeObjectURL(url);
         }
 
+        function exportTableToCsv(table, filename) {
+            if (!table) {
+                console.error('Table element not found for CSV export.');
+                return;
+            }
+
+            const rows = [];
+            // Get headers
+            const headerRow = [];
+            table.querySelectorAll('thead th').forEach(th => {
+                // Try to get text content, but exclude select elements
+                const select = th.querySelector('select');
+                if (select) {
+                    headerRow.push(select.options[select.selectedIndex].text);
+                } else {
+                    headerRow.push(`"${th.textContent.trim()}"`);
+                }
+            });
+            rows.push(headerRow.join(','));
+
+            // Get body and footer rows
+            table.querySelectorAll('tbody tr, tfoot tr').forEach(tr => {
+                const row = [];
+                tr.querySelectorAll('td').forEach(td => row.push(`"${td.textContent.trim()}"`));
+                rows.push(row.join(','));
+            });
+
+            const csvContent = rows.join('\n');
+            downloadCsv(csvContent, filename);
+        }
+
         function populateFilters() {
             // Populate Regions
             regionFilter.innerHTML = '<option value="all">All Regions</option>';
@@ -1644,6 +1690,22 @@
             addSortingToModal('division-summary');
             addSortingToModal('ccc-summary');
         }
+        
+        // Centralized download button listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('downloadSummaryCsv')?.addEventListener('click', () => {
+                const activeTabPane = document.querySelector('#summaryTabContent .tab-pane.active');
+                const table = activeTabPane?.querySelector('table');
+                const breakdownType = activeTabPane?.id.replace('-summary', '') || 'summary';
+                exportTableToCsv(table, `summary-breakdown-${breakdownType}.csv`);
+            });
+            document.getElementById('downloadMonthlyCsv')?.addEventListener('click', () => {
+                exportTableToCsv(document.querySelector('#monthlyBreakdownModalBody table'), 'monthly-summary.csv');
+            });
+            document.getElementById('downloadMonthlyOfficeCsv')?.addEventListener('click', () => {
+                exportTableToCsv(document.querySelector('#monthlyOfficeBreakdownModalBody table'), 'monthly-office-breakdown.csv');
+            });
+        });
 
         // Add click listeners to summary cards
         document.querySelectorAll('.stats-card').forEach(card => {
@@ -1843,6 +1905,9 @@
                     <div class="input-group input-group-sm w-auto">
                         <label class="input-group-text" for="summaryDaySelector">Up to Day</label>
                         <select id="summaryDaySelector" class="form-select">${dayOptions}</select>
+                        <button id="downloadComparisonTable" class="btn btn-sm btn-outline-success" title="Download Table as CSV">
+                            <i class="bi bi-download"></i>
+                        </button>
                     </div>
                 </div>
                 <div class="tab-content" id="comparisonTabContent">
@@ -2110,6 +2175,16 @@
                 updateActiveComparisonTable(filteredData, activeTabId, currentMonth, prevMonth, day, allMonthKeys, newSortConfig);
             });
         }
+
+        function downloadCsv(csvContent, filename) {
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+
         function updateActiveComparisonTable(data, activeTabId, currentMonthKey, prevMonthKey, selectedDay, allMonthKeys, sortConfig) {
             const targetPaneId = activeTabId.replace('-tab', '');
             const targetPane = document.getElementById(targetPaneId);
@@ -2131,6 +2206,13 @@
             }, 0);
         }
         
+        // Listener for main comparison table download
+        document.getElementById('data-table-container').addEventListener('click', (e) => {
+            if (e.target.closest('#downloadComparisonTable')) {
+                const table = document.querySelector('#comparisonTabContent .tab-pane.active table');
+                exportTableToCsv(table, 'month-over-month-comparison.csv');
+            }
+        });
         fetchData();
     </script>
 </body>
