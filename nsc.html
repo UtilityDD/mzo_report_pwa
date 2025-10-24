@@ -971,33 +971,33 @@ body {
       .performance-ticker-container {
         height: 32px;
         overflow: hidden;
-        background-color: #fff;
-        border-radius: var(--spacing-sm);
-        box-shadow: var(--elevation-1);
-        padding: 0 var(--spacing-md);
+        background-color: transparent;
+        box-shadow: none;
+        padding: 0;
       }
       .ticker-wrap {
         height: 100%;
         position: relative;
       }
       .ticker-move {
-        position: absolute;
+        /* This will now be a container for a single, fading item */
         display: flex;
-        flex-direction: column;
-        animation: ticker-scroll 18s linear infinite;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
       }
       .ticker-item {
-        height: 32px;
-        line-height: 32px;
         font-size: 0.8rem;
         font-weight: 500;
         white-space: nowrap;
+        animation: fade-in-out 5s ease-in-out;
       }
       .good-performer { color: var(--success); }
       .bad-performer { color: var(--error); }
-      @keyframes ticker-scroll {
-        0% { transform: translateY(0); }
-        100% { transform: translateY(-100%); }
+      
+      @keyframes fade-in-out {
+        0%, 100% { opacity: 0; }
+        10%, 90% { opacity: 1; }
       }
     </style>
 
@@ -1843,6 +1843,9 @@ document.getElementById('initiallyWithheldPercent').textContent = `(${percentOfT
     }
 
 
+    let tickerItemsList = [];
+    let currentTickerIndex = 0;
+    let tickerInterval;
     function updatePerformanceTicker() {
       const tickerContainer = document.getElementById('performanceTicker');
       const tickerItems = document.getElementById('tickerItems');
@@ -1857,7 +1860,7 @@ document.getElementById('initiallyWithheldPercent').textContent = `(${percentOfT
 
       const sortedCccs = Object.entries(cccCounts).sort((a, b) => a[1] - b[1]);
 
-      if (sortedCccs.length < 4) {
+      if (sortedCccs.length === 0) {
         tickerContainer.style.display = 'none';
         return;
       }
@@ -1868,7 +1871,7 @@ document.getElementById('initiallyWithheldPercent').textContent = `(${percentOfT
       const worstLabels = ['Highest', '2nd Highest', '3rd Highest'];
       const bestLabels = ['Lowest', '2nd Lowest', '3rd Lowest'];
 
-      let itemsHtml = '';
+      let allItems = [];
 
       // --- New: Add oldest cases by class ---
       const classesToHighlight = {
@@ -1881,41 +1884,43 @@ document.getElementById('initiallyWithheldPercent').textContent = `(${percentOfT
       for (const [label, code] of Object.entries(classesToHighlight)) {
         const oldest = findOldestCase(filteredData, code);
         if (oldest) {
-          itemsHtml += `
-            <div class="ticker-item bad-performer">
-              <i class="fas fa-exclamation-triangle me-2"></i>Oldest ${label}: ${oldest.delay}d - ${oldest.name} (${oldest.ccc})
-            </div>
-          `;
+          allItems.push(`<div class="ticker-item bad-performer"><i class="fas fa-exclamation-triangle me-2"></i>Oldest ${label}: ${oldest.delay}d - ${oldest.name} (${oldest.ccc})</div>`);
         }
       }
 
 
       // --- Existing: Highest and Lowest pending CCCs ---
-      worstPerformers.forEach(([name, count], index) => {
-        const label = worstLabels[index] || `${index + 1}th`;
-        itemsHtml += `<div class="ticker-item bad-performer"><i class="fas fa-times-circle me-2"></i>${label} Pending: ${name} (${count})</div>`;
-      });
+      if (sortedCccs.length >= 4) {
+        worstPerformers.forEach(([name, count], index) => {
+          const label = worstLabels[index] || `${index + 1}th`;
+          allItems.push(`<div class="ticker-item bad-performer"><i class="fas fa-times-circle me-2"></i>${label} Pending: ${name} (${count})</div>`);
+        });
 
-      bestPerformers.forEach(([name, count], index) => {
-        // The best performers are already sorted lowest to highest
-        const label = bestLabels[index] || `${index + 1}th`;
-        itemsHtml += `<div class="ticker-item good-performer"><i class="fas fa-check-circle me-2"></i>${label} Pending: ${name} (${count})</div>`;
-      });
+        bestPerformers.forEach(([name, count], index) => {
+          const label = bestLabels[index] || `${index + 1}th`;
+          allItems.push(`<div class="ticker-item good-performer"><i class="fas fa-check-circle me-2"></i>${label} Pending: ${name} (${count})</div>`);
+        });
+      }
 
-      if (!itemsHtml) {
+      if (allItems.length === 0) {
         tickerContainer.style.display = 'none';
         return;
       }
 
-      // Duplicate items for a seamless loop
-      tickerItems.innerHTML = itemsHtml + itemsHtml;
+      tickerItemsList = allItems;
+      currentTickerIndex = 0;
+      
+      // Clear any existing interval
+      if (tickerInterval) clearInterval(tickerInterval);
 
-      // Adjust animation duration based on number of items
-      // Count the actual number of items generated.
-      const numItems = (itemsHtml.match(/<div class="ticker-item/g) || []).length;
-      // Increase the duration per item to slow down the scroll (e.g., 5 seconds per item)
-      const duration = numItems * 10; 
-      tickerItems.style.animation = `ticker-scroll ${duration}s linear infinite`;
+      // Function to display the next item
+      const showNextTickerItem = () => {
+        tickerItems.innerHTML = tickerItemsList[currentTickerIndex];
+        currentTickerIndex = (currentTickerIndex + 1) % tickerItemsList.length;
+      };
+
+      showNextTickerItem(); // Show the first item immediately
+      tickerInterval = setInterval(showNextTickerItem, 5000); // Cycle every 5 seconds
 
       tickerContainer.style.display = 'block';
     }
