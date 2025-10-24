@@ -736,24 +736,41 @@ body {
   justify-content: center;
   transition: opacity 0.3s ease;
 }
-
-/* Optional: shimmer animation or spinner */
-.loading-spinner {
-  border: 6px solid #e2e8f0;
-  border-top: 6px solid #2563eb;
-  border-radius: 50%;
-  width: 48px;
-  height: 48px;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
 .modal-backdrop {
     z-index: 1040 !important; /* Bootstrap's default is often 1040, but you might need higher */
   }
+
+/* Modern 3-dot loading animation */
+.loading-dots {
+  display: flex;
+  gap: 10px;
+}
+
+.loading-dots .dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  animation: dot-bounce 1.4s infinite ease-in-out both;
+}
+
+.loading-dots .dot:nth-child(1) {
+  background-color: var(--primary); /* Blue */
+  animation-delay: -0.32s;
+}
+
+.loading-dots .dot:nth-child(2) {
+  background-color: var(--success); /* Green */
+  animation-delay: -0.16s;
+}
+
+.loading-dots .dot:nth-child(3) {
+  background-color: var(--warning); /* Yellow */
+}
+
+@keyframes dot-bounce {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1.0); }
+}
   .modal {
     z-index: 1050 !important; /* Bootstrap's default is often 1050, ensure it's higher than backdrop */
   }
@@ -992,19 +1009,81 @@ width: auto !important;
 
 <body>
   <div id="loadingOverlay">
-  <div class="loading-spinner"></div>
+    <div class="loading-dots">
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+    </div>
 </div>
 
   <div class="container-fluid">
 
     <!-- Dashboard Header -->
     <div class="dashboard-header d-flex justify-content-between align-items-center mb-3">
-<div class="d-flex flex-wrap align-items-baseline gap-2">
-  <h2 class="mb-0"><i class="fas fa-tachometer-alt me-2"></i> Pending NSC</h2>
-  <div id="reportDateSpan" style="font-size: 0.75rem; color: #ffffff;">Updated on: <span id="reportDate">Loading...</span></div>
-</div>
+      <div class="d-flex flex-wrap align-items-baseline gap-2">
+        <h2 class="mb-0"><i class="fas fa-tachometer-alt me-2"></i> Pending NSC</h2>
+        <div id="reportDateSpan" style="font-size: 0.75rem; color: #ffffff;">Updated on: <span id="reportDate">Loading...</span></div>
+      </div>
+      <span id="maxDateSpan" style="font-size: 0.75rem; color: #ffe600;"></span>
+    </div>
 
-        <span id="maxDateSpan" style="font-size: 0.75rem; color: #ffe600;"></span>
+    <!-- Performance Ticker/Banner -->
+    <div id="performanceTicker" class="performance-ticker-container mb-3" style="display: none;">
+      <div class="ticker-wrap">
+        <div id="tickerItems" class="ticker-move">
+          <!-- Items will be injected by JS -->
+        </div>
+      </div>
+    </div>
+
+    <style>
+      .performance-ticker-container {
+        height: 32px;
+        overflow: hidden;
+        background-color: #fff;
+        border-radius: var(--spacing-sm);
+        box-shadow: var(--elevation-1);
+        padding: 0 var(--spacing-md);
+      }
+      .ticker-wrap {
+        height: 100%;
+        position: relative;
+      }
+      .ticker-move {
+        position: absolute;
+        display: flex;
+        flex-direction: column;
+        animation: ticker-scroll 18s linear infinite;
+      }
+      .ticker-item {
+        height: 32px;
+        line-height: 32px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .good-performer { color: var(--success); }
+      .bad-performer { color: var(--error); }
+      @keyframes ticker-scroll {
+        0% { transform: translateY(0); }
+        100% { transform: translateY(-100%); }
+      }
+    </style>
+
+    <!-- Consumer Class Filter -->
+    <div class="d-flex flex-wrap flex-row gap-2 align-items-center mb-3" id="classFilterOptions" style="font-size: 0.8rem;">
+      <label class="form-check mb-0 me-3">
+        <input class="form-check-input" type="radio" name="classFilter" value="all" checked>
+        <span class="form-check-label">All Classes <span class="text-muted" id="allClassesCountPercent"></span></span>
+      </label>
+      <label class="form-check mb-0 me-3">
+        <input class="form-check-input" type="radio" name="classFilter" value="non-agri">
+        <span class="form-check-label">Excluding Agri <span class="text-muted" id="nonAgriCountPercent"></span></span>
+      </label>
+      <label class="form-check mb-0">
+        <input class="form-check-input" type="radio" name="classFilter" value="agri-only">
+        <span class="form-check-label">Only Agri <span class="text-muted" id="agriOnlyCountPercent"></span></span>
+      </label>
     </div>
 
 
@@ -1827,6 +1906,118 @@ document.getElementById('initiallyWithheldCount').textContent = initiallyWithhel
 const percentOfTotal = filteredData.length ? ((initiallyWithheld / filteredData.length) * 100).toFixed(1) : 0;
 document.getElementById('initiallyWithheldPercent').textContent = `(${percentOfTotal}% of Total)`;
 
+      // Update the performance ticker
+      updatePerformanceTicker();
+    }
+
+    function findOldestCase(data, classCode) {
+      let oldestCase = null;
+      let maxDelay = -1;
+
+      const filtered = data.filter(d => {
+        const connClass = (d.CONN_CLASS || "").trim().toUpperCase();
+        return connClass === classCode;
+      });
+
+      if (filtered.length === 0) {
+        return null;
+      }
+
+      for (const item of filtered) {
+        const delay = parseFloat(item.DelayInSC);
+        if (!isNaN(delay) && delay > maxDelay) {
+          maxDelay = delay;
+          oldestCase = item;
+        }
+      }
+
+      if (oldestCase) {
+        return {
+          name: oldestCase.NAME || 'N/A',
+          ccc: oldestCase.SUPP_OFF || 'N/A',
+          delay: Math.round(maxDelay)
+        };
+      }
+      
+      return null;
+    }
+
+
+    function updatePerformanceTicker() {
+      const tickerContainer = document.getElementById('performanceTicker');
+      const tickerItems = document.getElementById('tickerItems');
+      
+      const cccCounts = {};
+      filteredData.forEach(d => {
+        const ccc = d.SUPP_OFF;
+        if (ccc && ccc.trim() !== '') {
+          cccCounts[ccc] = (cccCounts[ccc] || 0) + 1;
+        }
+      });
+
+      const sortedCccs = Object.entries(cccCounts).sort((a, b) => a[1] - b[1]);
+
+      if (sortedCccs.length < 4) {
+        tickerContainer.style.display = 'none';
+        return;
+      }
+
+      const bestPerformers = sortedCccs.slice(0, 3);
+      const worstPerformers = sortedCccs.slice(-3).reverse();
+
+      const worstLabels = ['Highest', '2nd Highest', '3rd Highest'];
+      const bestLabels = ['Lowest', '2nd Lowest', '3rd Lowest'];
+
+      let itemsHtml = '';
+
+      // --- New: Add oldest cases by class ---
+      const classesToHighlight = {
+        'DOM': 'D',
+        'COM': 'C',
+        'IND': 'I',
+        'AGRI': 'A'
+      };
+
+      for (const [label, code] of Object.entries(classesToHighlight)) {
+        const oldest = findOldestCase(filteredData, code);
+        if (oldest) {
+          itemsHtml += `
+            <div class="ticker-item bad-performer">
+              <i class="fas fa-exclamation-triangle me-2"></i>Oldest ${label}: ${oldest.delay}d - ${oldest.name} (${oldest.ccc})
+            </div>
+          `;
+        }
+      }
+
+
+      // --- Existing: Highest and Lowest pending CCCs ---
+      worstPerformers.forEach(([name, count], index) => {
+        const label = worstLabels[index] || `${index + 1}th`;
+        itemsHtml += `<div class="ticker-item bad-performer"><i class="fas fa-times-circle me-2"></i>${label} Pending: ${name} (${count})</div>`;
+      });
+
+      bestPerformers.forEach(([name, count], index) => {
+        // The best performers are already sorted lowest to highest
+        const label = bestLabels[index] || `${index + 1}th`;
+        itemsHtml += `<div class="ticker-item good-performer"><i class="fas fa-check-circle me-2"></i>${label} Pending: ${name} (${count})</div>`;
+      });
+
+      if (!itemsHtml) {
+        tickerContainer.style.display = 'none';
+        return;
+      }
+
+      // Duplicate items for a seamless loop
+      tickerItems.innerHTML = itemsHtml + itemsHtml;
+
+      // Adjust animation duration based on number of items
+      // Count the actual number of items generated.
+      const numItems = (itemsHtml.match(/<div class="ticker-item/g) || []).length;
+      // Increase the duration per item to slow down the scroll (e.g., 5 seconds per item)
+      const duration = numItems * 10; 
+      tickerItems.style.animation = `ticker-scroll ${duration}s linear infinite`;
+
+      tickerContainer.style.display = 'block';
     }
 
     // Show detailed table for selected filter
