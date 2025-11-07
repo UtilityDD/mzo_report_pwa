@@ -152,9 +152,15 @@
       letter-spacing:-0.02em;
     }
     
-    .charts{
+    .charts-and-builder{
       display:grid;
       grid-template-columns:1fr 480px;
+      gap:24px;
+    }
+
+    .custom-report-builder{
+      display:flex;
+      flex-direction:column;
       gap:24px;
     }
     
@@ -177,11 +183,54 @@
       font-weight:600;
       color:var(--text-primary);
     }
-    
-    .treemap-wrap{
-      height:480px;
-      position:relative;
+
+    /* --- Drag and Drop Styles --- */
+    .field-builder-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
     }
+    
+    .field-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 8px;
+      border-radius: 8px;
+      min-height: 150px;
+      background: var(--bg-end);
+      border: 1px dashed var(--border);
+      overflow-y: auto;
+      max-height: 40vh;
+    }
+    
+    .drop-target {
+      border: 2px dashed var(--accent);
+      background: var(--accent-light);
+    }
+    
+    .drag-item {
+      padding: 8px 12px;
+      border-radius: 6px;
+      background: var(--card-hover);
+      border: 1px solid var(--border);
+      font-size: 14px;
+      cursor: grab;
+      font-weight: 500;
+      transition: background 0.1s ease;
+      user-select: none;
+    }
+    
+    .drag-item:hover {
+      background: var(--text-primary);
+      color: var(--card);
+    }
+    
+    .drag-item.dragging {
+      opacity: 0.4;
+    }
+    /* --- End Drag and Drop Styles --- */
+
     
     .right-col{
       display:flex;
@@ -219,7 +268,7 @@
     
     .table-wrap{
       overflow:auto;
-      max-height:320px;
+      max-height:80vh; /* Increased max-height for better custom table view */
       margin-top:16px;
       border-radius:8px;
       border:1px solid var(--border);
@@ -247,12 +296,14 @@
       text-transform:uppercase;
       letter-spacing:0.05em;
       border-bottom:1px solid var(--border);
+      min-width: 100px;
     }
     
     td{
       padding:12px;
       font-size:13px;
       border-bottom:1px solid var(--border);
+      white-space: nowrap;
     }
     
     tbody tr{
@@ -322,12 +373,13 @@
       align-items:center;
       justify-content:center;
       height:100%;
+      min-height: 150px;
       color:var(--text-muted);
       font-size:14px;
     }
     
     @media(max-width:1200px){
-      .charts{
+      .charts-and-builder{
         grid-template-columns:1fr;
       }
       .kpi-row{
@@ -344,9 +396,6 @@
       .sidebar{
         position:static;
         top:0;
-      }
-      .treemap-wrap{
-        height:360px;
       }
       .pie-row{
         grid-template-columns:1fr;
@@ -365,6 +414,9 @@
       }
       .sidebar{
         padding:16px;
+      }
+      .field-builder-layout {
+        grid-template-columns: 1fr;
       }
     }
   </style>
@@ -462,18 +514,38 @@
         </div>
       </div>
 
-      <div class="charts">
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">Regional Distribution</div>
-            <div class="subtitle">Click to filter by CCC</div>
+      <div class="charts-and-builder">
+        
+        <div class="card custom-report-builder">
+          <div class="card-title">Custom Report Builder (Drag Fields to Columns)</div>
+          <div class="field-builder-layout">
+            <div>
+              <label>Available Fields</label>
+              <div id="availableFieldsList" class="field-list">
+                <div class="empty-state">Loading Fields...</div>
+              </div>
+            </div>
+            <div>
+              <label>Table Columns (Drop Here)</label>
+              <div id="selectedColumnsList" class="field-list drop-target">
+                <div class="empty-state">Drag fields here to build your table.</div>
+              </div>
+            </div>
           </div>
-          <div class="treemap-wrap" id="treemap"></div>
+          <div class="card-title" style="margin-bottom:0; margin-top:16px;">Custom Report Table</div>
+          <div class="table-wrap">
+            <table id="dataTable">
+              <thead>
+                <tr><th>Drag fields above to create columns</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
-
+        
         <div class="right-col">
           <div class="card">
-            <div class="card-title" style="margin-bottom:20px">Base Class Distribution</div>
+            <div class="card-title" style="margin-bottom:20px">Base Class Distribution (Count)</div>
             <canvas id="stackedBar" class="chart-canvas"></canvas>
           </div>
 
@@ -488,30 +560,6 @@
             </div>
           </div>
         </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Detailed Breakdown</div>
-        <div class="table-wrap">
-          <table id="dataTable">
-            <thead>
-              <tr>
-                <th>CCC Code</th>
-                <th>CCC Name</th>
-                <th>Count</th>
-                <th>Load</th>
-                <th>SD (Lakh)</th>
-                <th>OSD (Lakh)</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card footer">
-        <div class="subtitle">Calculated: Avg Load/Consumer = LOAD/COUNT · Avg OSD/Consumer = OSD_LAKH/COUNT · Collection Efficiency = 1-(OSD_LAKH/SD_LAKH)</div>
-        <div class="subtitle">Powered by D3.js + Chart.js</div>
       </div>
     </main>
   </div>
@@ -538,6 +586,27 @@
         }}
       };
 
+      // Define all available fields for the custom report builder
+      const ALL_FIELDS = [
+        { key: 'regionName', label: 'Region Name', type: 'dimension' },
+        { key: 'divisionName', label: 'Division Name', type: 'dimension' },
+        { key: 'cccName', label: 'CCC Name', type: 'dimension' },
+        { key: 'BASE_CLASS', label: 'Base Class', type: 'dimension' },
+        { key: 'CATEGORY', label: 'Category', type: 'dimension' },
+        { key: 'TYPE_OF_METER', label: 'Meter Type', type: 'dimension' },
+        { key: 'CONN_PHASE', label: 'Phase', type: 'dimension' },
+        { key: 'GOVT_STAT', label: 'Govt Status', type: 'dimension' },
+        { key: 'OSB_GROUP', label: 'OSB Group', type: 'dimension' },
+        { key: 'CONN_BY', label: 'Connected By', type: 'dimension' },
+        { key: 'COUNT', label: 'Count', type: 'measure', format: 'number' },
+        { key: 'LOAD', label: 'Load (kW)', type: 'measure', format: 'number' },
+        { key: 'SD_LAKH', label: 'SD (₹ Lakh)', type: 'measure', format: 'number' },
+        { key: 'OSD_LAKH', label: 'OSD (₹ Lakh)', type: 'measure', format: 'number' },
+        { key: 'Average_Load_per_Consumer', label: 'Avg Load/Cons', type: 'measure', format: 'decimal' },
+        { key: 'Average_OSD_per_Consumer', label: 'Avg OSD/Cons', type: 'measure', format: 'decimal' },
+        { key: 'Collection_Efficiency', label: 'Coll Efficiency', type: 'measure', format: 'percent' },
+      ];
+
       // DOM references
       const regionSelect = document.getElementById('regionSelect');
       const divisionSelect = document.getElementById('divisionSelect');
@@ -552,10 +621,21 @@
       const reloadBtn = document.getElementById('reload');
       const exportBtn = document.getElementById('exportBtn');
       const resetBtn = document.getElementById('resetBtn');
+      const availableFieldsList = document.getElementById('availableFieldsList');
+      const selectedColumnsList = document.getElementById('selectedColumnsList');
 
       let rawData = [];
       let filtered = [];
       let stackedBarChart = null, pieMeterChart = null, piePhaseChart = null;
+
+      // Initialize selected columns with a default set of fields
+      let selectedFields = [
+        ALL_FIELDS.find(f => f.key === 'divisionName'),
+        ALL_FIELDS.find(f => f.key === 'cccName'),
+        ALL_FIELDS.find(f => f.key === 'COUNT'),
+        ALL_FIELDS.find(f => f.key === 'LOAD'),
+        ALL_FIELDS.find(f => f.key === 'OSD_LAKH'),
+      ];
 
       function mapHierarchy(ccc_code){
         for(const rKey of Object.keys(HIER)){
@@ -600,12 +680,14 @@
               r.divisionName='UNKNOWN'; 
               r.cccName = r.CCC_CODE; 
             }
+            // Calculated fields are added to each row
             r.Average_Load_per_Consumer = r.COUNT ? r.LOAD / r.COUNT : 0;
             r.Average_OSD_per_Consumer = r.COUNT ? r.OSD_LAKH / r.COUNT : 0;
-            r.Collection_Efficiency = r.SD_LAKH ? (1 - (r.OSD_LAKH / r.SD_LAKH)) : null;
+            r.Collection_Efficiency = r.SD_LAKH > 0 ? (1 - (r.OSD_LAKH / r.SD_LAKH)) : (r.SD_LAKH === 0 && r.OSD_LAKH === 0 ? 1 : null); // null for non-calculable cases
           });
 
           populateFilterOptions();
+          initDragAndDrop();
           applyFilters();
         }catch(err){
           alert('Failed to load CSV: '+err.message);
@@ -774,117 +856,245 @@
         document.getElementById('kpiSD').textContent = d3.sum(filtered, d=>d.SD_LAKH).toLocaleString();
         document.getElementById('kpiOSD').textContent = d3.sum(filtered, d=>d.OSD_LAKH).toLocaleString();
 
-        renderTreemap();
-        renderCharts();
-        renderTable();
+        renderCharts(); // Render existing charts
+        renderCustomTable(); // Render the new custom table
+      }
+      
+      function formatValue(value, format) {
+        if (value === null || value === undefined) return '—';
+        if (format === 'number') return Math.round(value).toLocaleString();
+        if (format === 'decimal') return value.toFixed(2).toLocaleString();
+        if (format === 'percent') return (value * 100).toFixed(2) + '%';
+        return value.toString();
       }
 
-      function buildHierarchyForTreemap(){
-        const root = { name: 'root', children: [] };
-        const regions = {};
+      function renderCustomTable(){
+        const table = document.getElementById('dataTable');
+        const thead = table.querySelector('thead');
+        const tbody = table.querySelector('tbody');
+        thead.innerHTML = '';
+        tbody.innerHTML = '';
 
-        filtered.forEach(r=>{
-          const regKey = r.regionCode || 'UNKNOWN';
-          const divKey = r.divisionCode || ('UNKNOWN-'+(r.regionName||'UNKNOWN'));
-          const cccKey = r.cccCode || r.CCC_CODE || ('UNKNOWN-CCC');
-
-          if(!regions[regKey]) regions[regKey] = { name: r.regionName || regKey, divisions: {} };
-          if(!regions[regKey].divisions[divKey]) regions[regKey].divisions[divKey] = { name: r.divisionName || divKey, cccs: {} };
-          if(!regions[regKey].divisions[divKey].cccs[cccKey]) regions[regKey].divisions[divKey].cccs[cccKey] = { name: r.cccName || cccKey, count:0, load:0 };
-
-          regions[regKey].divisions[divKey].cccs[cccKey].count += r.COUNT;
-          regions[regKey].divisions[divKey].cccs[cccKey].load += r.LOAD;
-        });
-
-        Object.keys(regions).forEach(rKey=>{
-          const r = regions[rKey];
-          const rnode = { name: r.name, children: [] };
-          Object.keys(r.divisions).forEach(dKey=>{
-            const d = r.divisions[dKey];
-            const dnode = { name: d.name, children: [] };
-            Object.keys(d.cccs).forEach(cKey=>{
-              const c = d.cccs[cKey];
-              dnode.children.push({ 
-                name: c.name + ' ('+c.count+')', 
-                value: c.count, 
-                meta: { count: c.count, load: c.load, ccc: c.name } 
-              });
-            });
-            rnode.children.push(dnode);
-          });
-          root.children.push(rnode);
-        });
-
-        return root;
-      }
-
-      function renderTreemap(){
-        const container = document.getElementById('treemap');
-        container.innerHTML = '';
-        const data = buildHierarchyForTreemap();
-        const width = container.clientWidth;
-        const height = container.clientHeight;
-        
-        if(!data.children.length){ 
-          container.innerHTML = '<div class="empty-state">No data available</div>'; 
-          return; 
+        if(selectedFields.length === 0){
+          thead.innerHTML = '<tr><th>Drag fields above to create columns</th></tr>';
+          return;
         }
 
-        const svg = d3.select(container)
-          .append('svg')
-          .attr('width', width)
-          .attr('height', height);
-          
-        const root = d3.hierarchy(data)
-          .sum(d=>d.value || 0)
-          .sort((a,b)=>b.value - a.value);
-          
-        d3.treemap()
-          .size([width, height])
-          .padding(2)(root);
+        // 1. Build Header
+        const headerRow = document.createElement('tr');
+        selectedFields.forEach(field => {
+          const th = document.createElement('th');
+          th.textContent = field.label;
+          headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        
+        // 2. Separate Dimensions and Measures
+        const dimensions = selectedFields.filter(f => f.type === 'dimension');
+        const measures = selectedFields.filter(f => f.type === 'measure');
+        
+        if (dimensions.length === 0) {
+            // If only measures are selected, show a single row with total aggregation
+            const totalAgg = {
+                COUNT: d3.sum(filtered, d => d.COUNT),
+                LOAD: d3.sum(filtered, d => d.LOAD),
+                SD_LAKH: d3.sum(filtered, d => d.SD_LAKH),
+                OSD_LAKH: d3.sum(filtered, d => d.OSD_LAKH),
+                Average_Load_per_Consumer: d3.mean(filtered, d => d.Average_Load_per_Consumer),
+                Average_OSD_per_Consumer: d3.mean(filtered, d => d.Average_OSD_per_Consumer),
+                Collection_Efficiency: d3.mean(filtered, d => d.Collection_Efficiency),
+            };
 
-        const leaves = root.leaves();
+            const tr = document.createElement('tr');
+            measures.forEach(field => {
+                const td = document.createElement('td');
+                td.textContent = formatValue(totalAgg[field.key], field.format);
+                tr.appendChild(td);
+            });
+            // If only measures, the total row is the only row
+            if (measures.length > 0) tbody.appendChild(tr);
 
-        const node = svg.selectAll('g')
-          .data(leaves)
-          .enter()
-          .append('g')
-          .attr('transform', d=>`translate(${d.x0},${d.y0})`);
+        } else {
+            // 3. Aggregate data based on Dimensions (Rollup)
+            const dimKeys = dimensions.map(d => d.key);
+            const aggregatedData = d3.rollups(
+                filtered,
+                v => {
+                    const obj = {};
+                    measures.forEach(m => {
+                        if (m.key === 'COUNT' || m.key === 'LOAD' || m.key === 'SD_LAKH' || m.key === 'OSD_LAKH') {
+                            obj[m.key] = d3.sum(v, d => d[m.key]);
+                        } else if (m.key === 'Average_Load_per_Consumer' || m.key === 'Average_OSD_per_Consumer' || m.key === 'Collection_Efficiency') {
+                            obj[m.key] = d3.mean(v, d => d[m.key]);
+                        }
+                    });
+                    return obj;
+                },
+                ...dimKeys.map(key => d => d[key])
+            );
 
-        node.append('rect')
-          .attr('width', d=>Math.max(0, d.x1 - d.x0))
-          .attr('height', d=>Math.max(0, d.y1 - d.y0))
-          .attr('fill', d=>d3.interpolateCool(d.value / (root.value || 1)))
-          .style('cursor','pointer')
-          .on('click', (evt, d)=>{
-            const name = d.data.meta && d.data.meta.ccc;
-            if(name){
-              const found = rawData.find(rr => (rr.cccName||'').toLowerCase() === (name||'').toLowerCase());
-              if(found){ 
-                cccSelect.value = found.cccCode; 
-                cccSelect.dispatchEvent(new Event('change')); 
-              }
+            // 4. Transform rollups into flat array for table rendering
+            const flatAggregatedData = [];
+            function flatten(arr, currentDimensions) {
+                if (!arr) return;
+                arr.forEach(([key, value]) => {
+                    const nextDimensions = [...currentDimensions, key];
+                    if (Array.isArray(value)) {
+                        flatten(value, nextDimensions);
+                    } else {
+                        const row = {};
+                        dimKeys.forEach((k, i) => {
+                            row[k] = nextDimensions[i];
+                        });
+                        Object.assign(row, value);
+                        flatAggregatedData.push(row);
+                    }
+                });
             }
-          });
+            flatten(aggregatedData, []);
 
-        node.append('text')
-          .attr('x', 4)
-          .attr('y', 14)
-          .attr('font-size', 11)
-          .attr('fill', 'white')
-          .text(d=>d.data.name)
-          .each(function(){
-            const el = d3.select(this);
-            const text = el.text();
-            const parentDatum = d3.select(this.parentNode).datum();
-            const maxWidth = (parentDatum.x1 - parentDatum.x0) - 8;
-            
-            if(this.getComputedTextLength() > maxWidth){
-              const charWidth = this.getComputedTextLength() / text.length;
-              const maxChars = Math.floor(maxWidth / charWidth);
-              el.text(text.slice(0, Math.max(3, maxChars - 3)) + '...');
+            // 5. Render rows
+            flatAggregatedData.forEach(row => {
+                const tr = document.createElement('tr');
+                selectedFields.forEach(field => {
+                    const td = document.createElement('td');
+                    let value;
+                    if (field.type === 'dimension') {
+                        value = row[field.key];
+                    } else {
+                        value = row[field.key];
+                    }
+                    td.textContent = formatValue(value, field.format);
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+        }
+        
+        if(tbody.children.length === 0 && selectedFields.length > 0) {
+            tbody.innerHTML = `<tr><td colspan="${selectedFields.length}" class="empty-state">No data matches current filters for these columns.</td></tr>`;
+        }
+      }
+
+      function initDragAndDrop() {
+        // Render initial available and selected fields
+        renderAvailableFields();
+        renderSelectedColumns();
+
+        // Drag handlers
+        function handleDragStart(e) {
+          this.style.opacity = '0.4';
+          e.dataTransfer.effectAllowed = 'copyMove';
+          e.dataTransfer.setData('text/plain', this.dataset.key);
+          e.dataTransfer.setData('source', this.parentNode.id);
+        }
+
+        function handleDragEnd(e) {
+          this.style.opacity = '1';
+        }
+
+        // Drop handlers
+        function handleDragOver(e) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          this.classList.add('drop-target');
+        }
+
+        function handleDragLeave(e) {
+          this.classList.remove('drop-target');
+        }
+
+        function handleDrop(e) {
+          e.preventDefault();
+          this.classList.remove('drop-target');
+          
+          const key = e.dataTransfer.getData('text/plain');
+          const source = e.dataTransfer.getData('source');
+          const field = ALL_FIELDS.find(f => f.key === key);
+
+          if (!field) return;
+
+          // If dropping into selectedColumnsList and it's not already there
+          if (this.id === 'selectedColumnsList') {
+            const isAlreadySelected = selectedFields.some(f => f.key === key);
+            if (!isAlreadySelected) {
+              selectedFields.push(field);
+              renderAvailableFields();
+              renderSelectedColumns();
+              renderCustomTable();
             }
+          }
+          
+          // Re-render to ensure the source field is removed from available if it was moved
+          if (source === 'selectedColumnsList' && this.id === 'availableFieldsList') {
+             // Handle moving back from selected to available (effectively deleting from selected)
+             selectedFields = selectedFields.filter(f => f.key !== key);
+             renderAvailableFields();
+             renderSelectedColumns();
+             renderCustomTable();
+          }
+        }
+        
+        availableFieldsList.addEventListener('dragover', handleDragOver);
+        availableFieldsList.addEventListener('dragleave', handleDragLeave);
+        availableFieldsList.addEventListener('drop', handleDrop);
+
+        selectedColumnsList.addEventListener('dragover', handleDragOver);
+        selectedColumnsList.addEventListener('dragleave', handleDragLeave);
+        selectedColumnsList.addEventListener('drop', handleDrop);
+        
+        // Event listener for removing a column by clicking
+        selectedColumnsList.addEventListener('click', (e) => {
+            const item = e.target.closest('.drag-item');
+            if (item) {
+                const key = item.dataset.key;
+                selectedFields = selectedFields.filter(f => f.key !== key);
+                renderAvailableFields();
+                renderSelectedColumns();
+                renderCustomTable();
+            }
+        });
+
+        function renderAvailableFields() {
+          availableFieldsList.innerHTML = '';
+          const selectedKeys = selectedFields.map(f => f.key);
+          const available = ALL_FIELDS.filter(f => !selectedKeys.includes(f.key));
+
+          if (available.length === 0) {
+              availableFieldsList.innerHTML = '<div class="empty-state">All fields are in use.</div>';
+              return;
+          }
+
+          available.forEach(field => {
+            const div = document.createElement('div');
+            div.textContent = field.label;
+            div.className = 'drag-item';
+            div.draggable = true;
+            div.dataset.key = field.key;
+            div.addEventListener('dragstart', handleDragStart);
+            div.addEventListener('dragend', handleDragEnd);
+            availableFieldsList.appendChild(div);
           });
+        }
+        
+        function renderSelectedColumns() {
+          selectedColumnsList.innerHTML = '';
+          if (selectedFields.length === 0) {
+              selectedColumnsList.innerHTML = '<div class="empty-state">Drag fields here to build your table.</div>';
+              return;
+          }
+
+          selectedFields.forEach(field => {
+            const div = document.createElement('div');
+            div.textContent = field.label + ' (Click to Remove)';
+            div.className = 'drag-item';
+            div.draggable = true;
+            div.dataset.key = field.key;
+            div.addEventListener('dragstart', handleDragStart);
+            div.addEventListener('dragend', handleDragEnd);
+            selectedColumnsList.appendChild(div);
+          });
+        }
       }
 
       function renderCharts(){
@@ -991,74 +1201,89 @@
         });
       }
 
-      function renderTable(){
-        const tbody = document.querySelector('#dataTable tbody');
-        tbody.innerHTML = '';
-
-        // Aggregate by CCC
-        const agg = d3.rollups(
-          filtered, 
-          v=>({ 
-            COUNT: d3.sum(v, d=>d.COUNT), 
-            LOAD: d3.sum(v, d=>d.LOAD), 
-            SD_LAKH: d3.sum(v, d=>d.SD_LAKH), 
-            OSD_LAKH: d3.sum(v, d=>d.OSD_LAKH) 
-          }), 
-          d=>d.cccCode, 
-          d=>d.cccName
-        ).map(([cccCode, arr])=> ({ 
-          cccCode, 
-          cccName: arr[0][0], 
-          ...arr[0][1] 
-        }));
-
-        if(!agg.length){
-          filtered.forEach(r=>{
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-              <td>${r.CCC_CODE}</td>
-              <td>${r.cccName||''}</td>
-              <td>${r.COUNT.toLocaleString()}</td>
-              <td>${r.LOAD.toLocaleString()}</td>
-              <td>${r.SD_LAKH.toLocaleString()}</td>
-              <td>${r.OSD_LAKH.toLocaleString()}</td>
-            `;
-            tbody.appendChild(tr);
-          });
-          return;
-        }
-
-        agg.forEach(row=>{
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>${row.cccCode}</td>
-            <td>${row.cccName}</td>
-            <td>${row.COUNT.toLocaleString()}</td>
-            <td>${row.LOAD.toLocaleString()}</td>
-            <td>${row.SD_LAKH.toLocaleString()}</td>
-            <td>${row.OSD_LAKH.toLocaleString()}</td>
-          `;
-          tbody.appendChild(tr);
-        });
-      }
 
       function exportFilteredCSV(){
-        const rows = filtered.slice();
-        if(!rows.length){ 
-          alert('No rows to export'); 
+        if(selectedFields.length === 0){
+             alert('Please select columns for the table before exporting.');
+             return;
+        }
+
+        // Use renderCustomTable logic to get the data as it appears in the table
+        const dimensions = selectedFields.filter(f => f.type === 'dimension');
+        const measures = selectedFields.filter(f => f.type === 'measure');
+        const exportKeys = selectedFields.map(f => f.key);
+        const exportLabels = selectedFields.map(f => f.label);
+        
+        let exportRows = [];
+
+        if (dimensions.length === 0) {
+            // Only measures, single aggregated row
+            const totalAgg = {
+                COUNT: d3.sum(filtered, d => d.COUNT),
+                LOAD: d3.sum(filtered, d => d.LOAD),
+                SD_LAKH: d3.sum(filtered, d => d.SD_LAKH),
+                OSD_LAKH: d3.sum(filtered, d => d.OSD_LAKH),
+                Average_Load_per_Consumer: d3.mean(filtered, d => d.Average_Load_per_Consumer),
+                Average_OSD_per_Consumer: d3.mean(filtered, d => d.Average_OSD_per_Consumer),
+                Collection_Efficiency: d3.mean(filtered, d => d.Collection_Efficiency),
+            };
+            
+            const row = {};
+            measures.forEach(m => { row[m.key] = totalAgg[m.key]; });
+            exportRows.push(row);
+        } else {
+            // Dimensions and Measures, aggregated data
+            const dimKeys = dimensions.map(d => d.key);
+            const aggregatedData = d3.rollups(
+                filtered,
+                v => {
+                    const obj = {};
+                    measures.forEach(m => {
+                        if (m.key === 'COUNT' || m.key === 'LOAD' || m.key === 'SD_LAKH' || m.key === 'OSD_LAKH') {
+                            obj[m.key] = d3.sum(v, d => d[m.key]);
+                        } else if (m.key === 'Average_Load_per_Consumer' || m.key === 'Average_OSD_per_Consumer' || m.key === 'Collection_Efficiency') {
+                            obj[m.key] = d3.mean(v, d => d[m.key]);
+                        }
+                    });
+                    return obj;
+                },
+                ...dimKeys.map(key => d => d[key])
+            );
+
+            function flatten(arr, currentDimensions) {
+                if (!arr) return;
+                arr.forEach(([key, value]) => {
+                    const nextDimensions = [...currentDimensions, key];
+                    if (Array.isArray(value)) {
+                        flatten(value, nextDimensions);
+                    } else {
+                        const row = {};
+                        dimKeys.forEach((k, i) => {
+                            row[k] = nextDimensions[i];
+                        });
+                        Object.assign(row, value);
+                        exportRows.push(row);
+                    }
+                });
+            }
+            flatten(aggregatedData, []);
+        }
+
+        if(!exportRows.length){ 
+          alert('No rows to export with current filters and columns'); 
           return; 
         }
-        
-        const keys = Object.keys(rows[0]);
-        const csv = [keys.join(',')]
-          .concat(rows.map(r=> keys.map(k=> JSON.stringify(r[k]===undefined?'':r[k])).join(',')))
+
+        // Construct CSV
+        const csv = [exportLabels.join(',')]
+          .concat(exportRows.map(r=> exportKeys.map(k=> JSON.stringify(formatValue(r[k], ALL_FIELDS.find(f => f.key === k).format))).join(',')))
           .join('\n');
           
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); 
         a.href = url; 
-        a.download = 'filtered_ccc_data.csv'; 
+        a.download = 'custom_ccc_report.csv'; 
         document.body.appendChild(a); 
         a.click(); 
         a.remove();
@@ -1074,7 +1299,6 @@
 
       // Resize handling
       window.addEventListener('resize', ()=>{
-        renderTreemap(); 
         if(stackedBarChart) stackedBarChart.resize(); 
         if(pieMeterChart) pieMeterChart.resize(); 
         if(piePhaseChart) piePhaseChart.resize();
