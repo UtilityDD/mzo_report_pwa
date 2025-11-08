@@ -2,8 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>CCC Hierarchical Dashboard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />  <title>Consumer Summary Report</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root{
@@ -83,6 +82,9 @@
       padding:16px 24px;
       border-radius:12px;
       border:1px solid var(--border);
+      position: sticky;
+      top: 24px;
+      z-index: 15;
     }
     
     .filters{
@@ -142,7 +144,7 @@
     
     .charts-and-builder{
       display:grid;
-      grid-template-columns:1fr 480px;
+      grid-template-columns:1fr;
       gap:24px;
     }
     
@@ -234,7 +236,6 @@
     
     .table-wrap{
       overflow:auto;
-      max-height: calc(100vh - 200px); 
       margin-top:16px;
       border-radius:8px;
       border:1px solid var(--border);
@@ -264,15 +265,95 @@
       border-bottom:1px solid var(--border);
       min-width: 100px;
       cursor: grab; 
+      position: relative;
+    }
+
+    th.sortable {
+      cursor: pointer;
+    }
+
+    th.sortable:hover {
+      background: var(--card-hover);
+    }
+
+    th.sorted-asc::after, th.sorted-desc::after {
+      content: '';
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      border: 4px solid transparent;
+    }
+    th.sorted-asc::after {
+      border-bottom-color: var(--text-secondary);
+    }
+    th.sorted-desc::after {
+      border-top-color: var(--text-secondary);
     }
     
+    .remove-col-btn {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 18px;
+      height: 18px;
+      display: flex; /* Always visible */
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      font-weight: bold;
+      color: #ef4444; /* Red-500 */
+      background: transparent;
+      border-radius: 50%;
+      transition: background 0.2s ease;
+    }
+    .remove-col-btn:hover {
+      background: rgba(239, 68, 68, 0.2); /* Light red background on hover */
+    }
+
     td{
       padding:12px;
       font-size:13px;
       border-bottom:1px solid var(--border);
       white-space: nowrap;
     }
+
+    tfoot tr {
+      background: var(--bg-start);
+    }
+    tfoot td {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
     
+    .pagination-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 4px;
+      color: var(--text-secondary);
+      font-size: 13px;
+      margin-top: 8px;
+    }
+    .pagination-controls button {
+      padding: 6px 12px;
+      margin-left: 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--card-hover);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .pagination-controls button:hover:not(:disabled) {
+      background: var(--accent);
+    }
+    .pagination-controls button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
     .empty-state{
       display:flex;
       align-items:center;
@@ -340,6 +421,29 @@
       }
     }
   </style>
+  <style>
+    /* Spinner Styles */
+    .spinner-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(21, 25, 33, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      border-radius: 8px;
+      transition: opacity 0.2s ease;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .spinner-overlay.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  </style>
 </head>
 <body>
   <div class="app">
@@ -352,6 +456,10 @@
     </aside>
 
     <main class="main">
+      <div>
+        <h1>Consumer Summary Report</h1>
+        <p class="subtitle">An interactive dashboard for analyzing consumer data across regions, divisions, and CCCs.</p>
+      </div>
       <div class="filter-bar">
         <div class="filters">
           <div class="filter-group">
@@ -411,54 +519,25 @@
         </div>
       </div>
       
-      <div class="kpi-row">
-        <div class="kpi">
-          <div class="label">Total Consumers</div>
-          <div id="kpiCount" class="num">—</div>
-        </div>
-        <div class="kpi">
-          <div class="label">Total Load (kW)</div>
-          <div id="kpiLoad" class="num">—</div>
-        </div>
-        <div class="kpi">
-          <div class="label">Total SD (₹ lakh)</div>
-          <div id="kpiSD" class="num">—</div>
-        </div>
-        <div class="kpi">
-          <div class="label">Total OSD (₹ lakh)</div>
-          <div id="kpiOSD" class="num">—</div>
-        </div>
-      </div>
-
       <div class="charts-and-builder">
         
         <div class="card custom-report-builder">
           <div class="card-title">Custom Report Table</div>
           <div class="table-wrap">
+            <div id="tableSpinner" class="spinner-overlay visible">
+              <div class="spinner"></div>
+            </div>
             <table id="dataTable">
               <thead>
                 <tr><th colspan="5" style="text-align: center;">Drag fields from the sidebar to create your report</th></tr>
               </thead>
               <tbody></tbody>
+              <tfoot></tfoot>
             </table>
           </div>
-        </div>
-        
-        <div class="right-col">
-          <div class="card">
-            <div class="card-title" style="margin-bottom:20px">Base Class Distribution (Count)</div>
-            <canvas id="stackedBar" class="chart-canvas"></canvas>
-          </div>
-
-          <div class="pie-row">
-            <div class="pie-card">
-              <div class="card-title">Meter Type</div>
-              <canvas id="pieMeter" class="pie-canvas"></canvas>
-            </div>
-            <div class="pie-card">
-              <div class="card-title">Connection Phase</div>
-              <canvas id="piePhase" class="pie-canvas"></canvas>
-            </div>
+          <div id="paginationControls" class="pagination-controls" style="display: none;">
+            <span id="paginationInfo"></span>
+            <div class="pagination-nav"></div>
           </div>
         </div>
       </div>
@@ -467,6 +546,20 @@
 
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    .spinner {
+      border: 4px solid var(--border);
+      border-top: 4px solid var(--accent);
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
 
   <script>
     try {
@@ -493,21 +586,22 @@
         { key: 'regionName', label: 'Region Name', type: 'dimension' },
         { key: 'divisionName', label: 'Division Name', type: 'dimension' },
         { key: 'cccName', label: 'CCC Name', type: 'dimension' },
-        { key: 'BASE_CLASS', label: 'Base Class', type: 'dimension' },
-        { key: 'CATEGORY', label: 'Category', type: 'dimension' },
-        { key: 'TYPE_OF_METER', label: 'Meter Type', type: 'dimension' },
-        { key: 'CONN_PHASE', label: 'Phase', type: 'dimension' },
+        { key: 'CATEGORY', label: 'Category', type: 'dimension' }, // BASE_CLASS is now dynamically added
+        { key: 'TYPE_OF_METER', label: 'Meter Type', type: 'dimension' },        
+        { key: 'CONN_PHASE', label: 'Phase', type: 'pivot', pivotValue: 'CONN_PHASE', pivotOptions: ['1', '3'], baseMeasure: 'COUNT' },
+        { key: 'CONN_PHASE_1', label: '1-ph', type: 'measure', format: 'number', isPivot: true, pivotKey: 'CONN_PHASE', pivotVal: '1' },
+        { key: 'CONN_PHASE_3', label: '3-ph', type: 'measure', format: 'number', isPivot: true, pivotKey: 'CONN_PHASE', pivotVal: '3' },
         
         { key: 'GOVT_STAT', label: 'Govt Status', type: 'pivot', pivotValue: 'GOVT_STAT', pivotOptions: ['YES', 'NO'], baseMeasure: 'COUNT' },
-        { key: 'GOVT_STAT_YES', label: 'Govt Status (Yes)', type: 'measure', format: 'number', isPivot: true, pivotKey: 'GOVT_STAT', pivotVal: 'YES' },
-        { key: 'GOVT_STAT_NO', label: 'Govt Status (No)', type: 'measure', format: 'number', isPivot: true, pivotKey: 'GOVT_STAT', pivotVal: 'NO' },
+        { key: 'GOVT_STAT_YES', label: 'Govt.', type: 'measure', format: 'number', isPivot: true, pivotKey: 'GOVT_STAT', pivotVal: 'YES' },
+        { key: 'GOVT_STAT_NO', label: 'Non-Govt.', type: 'measure', format: 'number', isPivot: true, pivotKey: 'GOVT_STAT', pivotVal: 'NO' },
         
         { key: 'OSB_GROUP', label: 'OSB Group', type: 'dimension' },
         { key: 'CONN_BY', label: 'Connected By', type: 'dimension' },
-        { key: 'COUNT', label: 'Count', type: 'measure', format: 'number' },
+        { key: 'COUNT', label: 'Total', type: 'measure', format: 'number' },
         { key: 'LOAD', label: 'Load (kW)', type: 'measure', format: 'number' },
-        { key: 'SD_LAKH', label: 'SD (₹ Lakh)', type: 'measure', format: 'number' },
-        { key: 'OSD_LAKH', label: 'OSD (₹ Lakh)', type: 'measure', format: 'number' },
+        { key: 'SD_LAKH', label: 'SD', type: 'measure', format: 'osd' },
+        { key: 'OSD_LAKH', label: 'OSD', type: 'measure', format: 'osd' },
         { key: 'Average_Load_per_Consumer', label: 'Avg Load/Cons', type: 'measure', format: 'decimal' },
         { key: 'Average_OSD_per_Consumer', label: 'Avg OSD/Cons', type: 'measure', format: 'decimal' },
         { key: 'Collection_Efficiency', label: 'Coll Efficiency', type: 'measure', format: 'percent' },
@@ -528,18 +622,22 @@
       const resetBtn = document.getElementById('resetBtn');
       const availableFieldsList = document.getElementById('availableFieldsList');
       const dataTable = document.getElementById('dataTable');
+      const tableSpinner = document.getElementById('tableSpinner');
 
       let rawData = [];
       let filtered = [];
-      let stackedBarChart = null, pieMeterChart = null, piePhaseChart = null;
+
+      let sortKey = null;
+      let sortDirection = 'asc';
+
+      let currentPage = 1;
+      const ITEMS_PER_PAGE = 25;
 
       // Initialize selected columns with a default set of fields
       let selectedFields = [
         ALL_FIELDS.find(f => f.key === 'divisionName'),
-        ALL_FIELDS.find(f => f.key === 'cccName'),
         ALL_FIELDS.find(f => f.key === 'COUNT'),
-        ALL_FIELDS.find(f => f.key === 'LOAD'),
-        ALL_FIELDS.find(f => f.key === 'OSD_LAKH'),
+        ALL_FIELDS.find(f => f.key === 'CONN_PHASE'),
       ];
 
       function mapHierarchy(ccc_code){
@@ -591,6 +689,28 @@
             // Handle division by zero for efficiency calculation
             r.Collection_Efficiency = r.SD_LAKH > 0 ? (1 - (r.OSD_LAKH / r.SD_LAKH)) : (r.SD_LAKH === 0 && r.OSD_LAKH === 0 ? 1 : null); 
           });
+
+          // --- Dynamically create pivot fields for BASE_CLASS ---
+          const uniqueBaseClasses = Array.from(new Set(rawData.map(d => d.BASE_CLASS))).filter(Boolean).sort();
+          if (uniqueBaseClasses.length > 0) {
+              const baseClassPivot = { 
+                  key: 'BASE_CLASS', 
+                  label: 'Base Class', 
+                  type: 'pivot', 
+                  pivotValue: 'BASE_CLASS', 
+                  pivotOptions: uniqueBaseClasses, 
+                  baseMeasure: 'COUNT' 
+              };
+              // Insert it after cccName for a logical order
+              ALL_FIELDS.splice(3, 0, baseClassPivot);
+
+              const baseClassMeasures = uniqueBaseClasses.map(bc => ({
+                  key: `BASE_CLASS_${bc.replace(/[^a-zA-Z0-9]/g, '_')}`, // Sanitize key
+                  label: `Class ${bc}`,
+                  type: 'measure', format: 'number', isPivot: true, pivotKey: 'BASE_CLASS', pivotVal: bc
+              }));
+              ALL_FIELDS.push(...baseClassMeasures);
+          }
 
           populateFilterOptions();
           initDragAndDrop();
@@ -741,6 +861,9 @@
       }
 
       function applyFilters(){
+        showSpinner();
+        currentPage = 1; // Reset to first page on filter change
+
         const R = regionSelect.value;
         const D = divisionSelect.value;
         const C = cccSelect.value;
@@ -759,19 +882,25 @@
           return true;
         });
 
-        document.getElementById('kpiCount').textContent = d3.sum(filtered, d=>d.COUNT).toLocaleString();
-        document.getElementById('kpiLoad').textContent = d3.sum(filtered, d=>d.LOAD).toLocaleString();
-        document.getElementById('kpiSD').textContent = d3.sum(filtered, d=>d.SD_LAKH).toLocaleString();
-        document.getElementById('kpiOSD').textContent = d3.sum(filtered, d=>d.OSD_LAKH).toLocaleString();
+        // Use a small timeout to allow the spinner to render before the blocking table render starts
+        setTimeout(() => {
+          renderCustomTable();
+        }, 10);
+      }
 
-        renderCharts();
-        renderCustomTable();
+      function showSpinner() {
+        tableSpinner.classList.add('visible');
+      }
+
+      function hideSpinner() {
+        tableSpinner.classList.remove('visible');
       }
       
       function formatValue(value, format) {
         if (value === null || value === undefined) return '—';
         if (format === 'number') return Math.round(value).toLocaleString();
         if (format === 'decimal') return value.toFixed(2).toLocaleString();
+        if (format === 'osd') return value.toFixed(2).toLocaleString() + ' ₹ Lakh';
         if (format === 'percent') return (value * 100).toFixed(2) + '%';
         return value.toString();
       }
@@ -881,6 +1010,7 @@
           }
 
           renderAvailableFields();
+          currentPage = 1; // Reset to first page on column change
           renderCustomTable();
       }
       
@@ -917,24 +1047,113 @@
       
       // --- End Global Drag and Drop Handlers ---
 
+      function handleEmptyTableDragOver(e) {
+          // Only activate if the table is actually empty
+          if (selectedFields.length === 0) {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              this.classList.add('table-drop-target');
+          }
+      }
+
+      function handleEmptyTableDragLeave(e) {
+          this.classList.remove('table-drop-target');
+      }
+
+      function handleEmptyTableDrop(e) {
+          if (selectedFields.length === 0) {
+              e.preventDefault();
+              this.classList.remove('table-drop-target');
+              const key = e.dataTransfer.getData('text/plain');
+              const field = ALL_FIELDS.find(f => f.key === key);
+              if (field) {
+                  selectedFields.push(field);
+                  renderCustomTable();
+                  renderAvailableFields();
+              }
+          }
+      }
+
+      function handleSort(e) {
+          const newSortKey = e.currentTarget.dataset.key;
+          const field = ALL_FIELDS.find(f => f.key === newSortKey);
+
+          // Only sortable on dimension and measure fields
+          if (!field || (field.type !== 'dimension' && field.type !== 'measure')) return;
+
+          if (sortKey === newSortKey) {
+              sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+          } else {
+              sortKey = newSortKey;
+              sortDirection = 'asc'; // Default to ascending for new column
+          }
+          
+          currentPage = 1; // Reset to first page on sort change
+          renderCustomTable();
+      }
+
+      function handleRemoveColumn(e) {
+          e.stopPropagation(); // Prevent the sort handler from firing
+          const keyToRemove = e.currentTarget.dataset.originalKey;
+          
+          const index = selectedFields.findIndex(f => f.key === keyToRemove);
+          currentPage = 1; // Reset to first page on column removal
+          if (index > -1) {
+               selectedFields.splice(index, 1);
+               renderAvailableFields();
+               renderCustomTable();
+          }
+      }
+
 
       function renderCustomTable(){
         const table = document.getElementById('dataTable');
         const thead = table.querySelector('thead');
         const tbody = table.querySelector('tbody');
+        const tfoot = table.querySelector('tfoot');
+        const paginationControls = document.getElementById('paginationControls');
         thead.innerHTML = '';
         tbody.innerHTML = '';
+        tfoot.innerHTML = '';
         
+        // Ensure 'Total' (COUNT) column is always last if it exists
+        const totalFieldIndex = selectedFields.findIndex(f => f.key === 'COUNT');
+        if (totalFieldIndex > -1) {
+            const [totalField] = selectedFields.splice(totalFieldIndex, 1);
+            selectedFields.push(totalField);
+        }
+
         // Fields for rendering (pivots expanded)
         const finalRenderFields = getFinalRenderFields(selectedFields);
 
         if(finalRenderFields.length === 0){
+          // Reset sort state when table is empty
+          sortKey = null;
+          sortDirection = 'asc';
+
           thead.innerHTML = '<tr><th colspan="5" style="text-align: center;">Drag fields from the sidebar to create your report</th></tr>';
+          
+          // --- FIX: Add drop listeners to the empty state placeholder ---
+          const placeholderTH = thead.querySelector('th');
+          if (placeholderTH) {
+              placeholderTH.addEventListener('dragover', handleEmptyTableDragOver);
+              placeholderTH.addEventListener('dragleave', handleEmptyTableDragLeave);
+              placeholderTH.addEventListener('drop', handleEmptyTableDrop);
+          }
+
+          paginationControls.style.display = 'none';
+          tfoot.innerHTML = '';
+          hideSpinner();
           return;
         }
 
         // 1. Build Header
         const headerRow = document.createElement('tr');
+
+        // Add Serial Number Header
+        const snTh = document.createElement('th');
+        snTh.textContent = 'SL. NO.';
+        headerRow.appendChild(snTh);
         let fieldCounter = 0; // Tracks the index in the original selectedFields array
         
         selectedFields.forEach((originalField, originalIndex) => {
@@ -947,19 +1166,38 @@
 
           renderFields.forEach(field => {
             const th = document.createElement('th');
+            const isSortable = field.type === 'dimension' || field.type === 'measure';
+
             th.textContent = field.label;
-            // IMPORTANT: Store the index of the *original* field for drag-and-drop logic
-            th.dataset.key = originalField.key; 
+            th.dataset.key = field.key; // Key for the specific rendered column
+            th.dataset.originalKey = originalField.key; // Key for the original field (could be a pivot)
             th.dataset.sourceIndex = originalIndex;
             th.draggable = true; 
             
-            // Attach listeners 
+            if (isSortable) {
+              th.classList.add('sortable');
+              th.addEventListener('click', handleSort);
+              if (sortKey === field.key) {
+                th.classList.add(sortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
+              }
+            }
+            
+            // Add remove button
+            const removeBtn = document.createElement('span');
+            removeBtn.className = 'remove-col-btn';
+            removeBtn.innerHTML = '&times;';
+            removeBtn.title = `Remove ${originalField.label}`;
+            removeBtn.dataset.originalKey = originalField.key;
+            removeBtn.addEventListener('click', handleRemoveColumn);
+
+            // Attach D&D listeners 
             th.addEventListener('dragstart', handleDragStart);
             th.addEventListener('dragover', handleTHDragOver);
             th.addEventListener('dragleave', handleTHDragLeave);
             th.addEventListener('drop', handleTHDrop);
             th.addEventListener('dragend', handleDragEnd);
 
+            th.appendChild(removeBtn);
             headerRow.appendChild(th);
           });
         });
@@ -967,7 +1205,7 @@
         
         // 2. Separate Dimensions and Measures (using original selectedFields)
         const dimensions = selectedFields.filter(f => f.type === 'dimension');
-        const measures = selectedFields.filter(f => f.type === 'measure');
+        const measures = selectedFields.filter(f => f.type === 'measure'); // This gets non-pivoted measures
         const pivotField = selectedFields.find(f => f.type === 'pivot');
         
         if (dimensions.length === 0) {
@@ -983,12 +1221,24 @@
             };
             
             // Add pivot aggregates if present
-            if(pivotField) {
-                 totalAgg['GOVT_STAT_YES'] = d3.sum(filtered.filter(d => d.GOVT_STAT === 'YES'), d => d.COUNT);
-                 totalAgg['GOVT_STAT_NO'] = d3.sum(filtered.filter(d => d.GOVT_STAT === 'NO'), d => d.COUNT);
+            const pivotFields = selectedFields.filter(f => f.type === 'pivot');
+            if (pivotFields.length > 0) {
+                pivotFields.forEach(pivotField => {
+                    const pivotMeasures = ALL_FIELDS.filter(f => f.isPivot && f.pivotKey === pivotField.key);
+                    pivotMeasures.forEach(pm => {
+                        totalAgg[pm.key] = d3.sum(filtered.filter(d => d[pm.pivotKey] == pm.pivotVal), d => {
+                            return d[pivotField.baseMeasure] || 0;
+                        });
+                    });
+                });
             }
 
             const tr = document.createElement('tr');
+            // Add serial number cell for the single aggregated row
+            const snTd = document.createElement('td');
+            snTd.textContent = 1;
+            tr.appendChild(snTd);
+
             finalRenderFields.forEach(field => {
                 const td = document.createElement('td');
                 td.textContent = formatValue(totalAgg[field.key], field.format);
@@ -1012,9 +1262,16 @@
                     });
                     
                     // Add pivot measures to the rollup object
-                    if(pivotField) {
-                         obj['GOVT_STAT_YES'] = d3.sum(v.filter(d => d.GOVT_STAT === 'YES'), d => d.COUNT);
-                         obj['GOVT_STAT_NO'] = d3.sum(v.filter(d => d.GOVT_STAT === 'NO'), d => d.COUNT);
+                    const pivotFields = selectedFields.filter(f => f.type === 'pivot');
+                    if (pivotFields.length > 0) {
+                        pivotFields.forEach(pivotField => {
+                            const pivotMeasures = ALL_FIELDS.filter(f => f.isPivot && f.pivotKey === pivotField.key);
+                            pivotMeasures.forEach(pm => {
+                                obj[pm.key] = d3.sum(v.filter(d => d[pm.pivotKey] == pm.pivotVal), d => {
+                                    return d[pivotField.baseMeasure] || 0;
+                                });
+                            });
+                        });
                     }
                     
                     return obj;
@@ -1042,9 +1299,44 @@
             }
             flatten(aggregatedData, []);
 
+            // 4a. Sort the data if a sortKey is set
+            if (sortKey) {
+                const sortField = ALL_FIELDS.find(f => f.key === sortKey);
+                if (sortField) {
+                    flatAggregatedData.sort((a, b) => {
+                        let valA = a[sortKey];
+                        let valB = b[sortKey];
+
+                        // Handle null/undefined by sorting them to the bottom
+                        if (valA == null) return 1;
+                        if (valB == null) return -1;
+
+                        let comparison = 0;
+                        if (sortField.type === 'measure') {
+                            comparison = valA - valB;
+                        } else { // dimension
+                            comparison = valA.toString().localeCompare(valB.toString());
+                        }
+
+                        return sortDirection === 'asc' ? comparison : -comparison;
+                    });
+                }
+            }
+
+            const totalItems = flatAggregatedData.length;
+            const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+            const endIndex = startIndex + ITEMS_PER_PAGE;
+            const paginatedData = flatAggregatedData.slice(startIndex, endIndex);
+
             // 5. Render rows
-            flatAggregatedData.forEach(row => {
+            paginatedData.forEach((row, index) => {
                 const tr = document.createElement('tr');
+
+                // Add serial number cell
+                const snTd = document.createElement('td');
+                snTd.textContent = startIndex + index + 1;
+                tr.appendChild(snTd);
+
                 finalRenderFields.forEach(field => {
                     const td = document.createElement('td');
                     let value = row[field.key];
@@ -1053,14 +1345,81 @@
                 });
                 tbody.appendChild(tr);
             });
+
+            renderPagination(totalItems);
+        }
+        
+        // 6. Render Footer with Totals (if there are rows and measures)
+        const hasMeasures = finalRenderFields.some(f => f.type === 'measure');
+        if (tbody.children.length > 0 && hasMeasures) {
+            const footerRow = document.createElement('tr');
+            let totalLabelPlaced = false;
+
+            // Add empty cell for Serial Number column
+            footerRow.appendChild(document.createElement('td'));
+
+            finalRenderFields.forEach(field => {
+                const td = document.createElement('td');
+                if (field.type === 'dimension' && !totalLabelPlaced) {
+                    td.textContent = 'Grand Total';
+                    totalLabelPlaced = true;
+                } else if (field.type === 'measure') {
+                    let totalValue;
+                    // Sums
+                    if (['COUNT', 'LOAD', 'SD_LAKH', 'OSD_LAKH'].includes(field.key) || field.isPivot) {
+                        // Pivot fields like GOVT_STAT_YES are essentially sums of COUNT
+                        if (field.isPivot) {
+                            totalValue = d3.sum(filtered.filter(d => d[field.pivotKey] === field.pivotVal), d => d.COUNT);
+                        } else {
+                            totalValue = d3.sum(filtered, d => d[field.key] || 0);
+                        }
+                    } 
+                    // Averages - must be recalculated from the base, not by averaging the averages
+                    else if (field.key === 'Average_Load_per_Consumer') {
+                        const totalCount = d3.sum(filtered, d => d.COUNT);
+                        totalValue = totalCount > 0 ? d3.sum(filtered, d => d.LOAD) / totalCount : 0;
+                    } else if (field.key === 'Average_OSD_per_Consumer') {
+                        const totalCount = d3.sum(filtered, d => d.COUNT);
+                        totalValue = totalCount > 0 ? d3.sum(filtered, d => d.OSD_LAKH) / totalCount : 0;
+                    } else if (field.key === 'Collection_Efficiency') {
+                        const totalSD = d3.sum(filtered, d => d.SD_LAKH);
+                        totalValue = totalSD > 0 ? (1 - (d3.sum(filtered, d => d.OSD_LAKH) / totalSD)) : (d3.sum(filtered, d => d.OSD_LAKH) === 0 ? 1 : null);
+                    }
+                    td.textContent = formatValue(totalValue, field.format);
+                }
+                footerRow.appendChild(td);
+            });
+            tfoot.appendChild(footerRow);
         }
         
         if(tbody.children.length === 0 && finalRenderFields.length > 0) {
-            tbody.innerHTML = `<tr><td colspan="${finalRenderFields.length}" class="empty-state">No data matches current filters for these columns.</td></tr>`;
+            tfoot.innerHTML = ''; // Also clear footer if no rows
+            paginationControls.style.display = 'none';
+            tbody.innerHTML = `<tr><td colspan="${finalRenderFields.length + 1}" class="empty-state">No data matches current filters for these columns.</td></tr>`;
         }
+
+        hideSpinner();
       }
 
       function initDragAndDrop() {
+        // Pagination listeners
+        document.getElementById('paginationControls').addEventListener('click', e => {
+            if (e.target.matches('.prev-btn')) {
+                if (currentPage > 1) {
+                    currentPage--;
+                    renderCustomTable();
+                }
+            }
+            if (e.target.matches('.next-btn')) {
+                const totalItems = document.getElementById('paginationInfo').dataset.totalItems || 0;
+                const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+                if (currentPage < totalPages) {
+                    currentPage++;
+                    renderCustomTable();
+                }
+            }
+        });
+
         // Initial setup for sidebar drop target (to remove columns)
         availableFieldsList.addEventListener('dragover', handleSidebarDragOver);
         availableFieldsList.addEventListener('dragleave', handleSidebarDragLeave);
@@ -1069,11 +1428,40 @@
         renderAvailableFields();
       }
 
+      function renderPagination(totalItems) {
+        const paginationControls = document.getElementById('paginationControls');
+        const paginationInfo = document.getElementById('paginationInfo');
+        const paginationNav = paginationControls.querySelector('.pagination-nav');
+
+        paginationNav.innerHTML = '';
+        paginationInfo.innerHTML = '';
+
+        if (totalItems <= ITEMS_PER_PAGE) {
+            paginationControls.style.display = 'none';
+            return;
+        }
+
+        paginationControls.style.display = 'flex';
+        const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+        
+        // Clamp currentPage just in case
+        if (currentPage > totalPages) currentPage = totalPages;
+        if (currentPage < 1) currentPage = 1;
+
+        paginationInfo.textContent = `Page ${currentPage} of ${totalPages} (${totalItems.toLocaleString()} rows)`;
+        paginationInfo.dataset.totalItems = totalItems;
+
+        const prevBtn = `<button class="prev-btn" ${currentPage === 1 ? 'disabled' : ''}>Previous</button>`;
+        const nextBtn = `<button class="next-btn" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>`;
+        
+        paginationNav.innerHTML = `${prevBtn}${nextBtn}`;
+      }
+
       function renderAvailableFields() {
         availableFieldsList.innerHTML = '';
         const selectedKeys = selectedFields.map(f => f.key);
-        // Only show dimension and pivot fields in the sidebar
-        const available = ALL_FIELDS.filter(f => (f.type === 'dimension' || f.type === 'pivot') && !selectedKeys.includes(f.key));
+        // Show all fields that are not currently selected and are not pivot-derived measures
+        const available = ALL_FIELDS.filter(f => !f.isPivot && !selectedKeys.includes(f.key));
 
         if (available.length === 0) {
             availableFieldsList.innerHTML = '<div class="empty-state">All available fields are in use.</div>';
@@ -1085,114 +1473,10 @@
           div.textContent = field.label;
           div.className = 'drag-item';
           div.draggable = true;
-          div.dataset.key = field.key;
+          div.dataset.key = field.key; // This is the key for the field in the sidebar
           div.addEventListener('dragstart', handleDragStart);
           div.addEventListener('dragend', handleDragEnd);
           availableFieldsList.appendChild(div);
-        });
-      }
-
-      function renderCharts(){
-        // Stacked bar chart
-        const grouped = d3.rollup(
-          filtered, 
-          v=>d3.sum(v, d=>d.COUNT), 
-          d=>d.BASE_CLASS, 
-          d=>d.CATEGORY
-        );
-        
-        const baseClasses = Array.from(new Set(filtered.map(d=>d.BASE_CLASS))).sort();
-        const categories = Array.from(new Set(filtered.map(d=>d.CATEGORY))).sort();
-        
-        const datasets = categories.map(cat=>({ 
-          label: cat, 
-          data: baseClasses.map(b=> (grouped.get(b) && grouped.get(b).get(cat)) || 0),
-          backgroundColor: d3.schemeSet3[categories.indexOf(cat) % d3.schemeSet3.length]
-        }));
-
-        const barCtx = document.getElementById('stackedBar').getContext('2d');
-        if(stackedBarChart) stackedBarChart.destroy();
-        stackedBarChart = new Chart(barCtx, { 
-          type: 'bar', 
-          data: { labels: baseClasses, datasets }, 
-          options: { 
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { 
-              legend: { 
-                position: 'bottom',
-                labels: { color: '#9ca3af', font: { size: 11 } }
-              } 
-            }, 
-            scales: { 
-              x: { 
-                stacked: true,
-                ticks: { color: '#9ca3af', font: { size: 11 } },
-                grid: { color: '#1f2937' }
-              }, 
-              y: { 
-                stacked: true,
-                ticks: { color: '#9ca3af', font: { size: 11 } },
-                grid: { color: '#1f2937' }
-              } 
-            } 
-          } 
-        });
-
-        // Pie chart - Meter
-        const meterCounts = d3.rollup(filtered, v=>d3.sum(v, d=>d.COUNT), d=>d.TYPE_OF_METER);
-        const meterLabels = Array.from(meterCounts.keys());
-        const meterValues = Array.from(meterCounts.values());
-        
-        const meterCtx = document.getElementById('pieMeter').getContext('2d');
-        if(pieMeterChart) pieMeterChart.destroy();
-        pieMeterChart = new Chart(meterCtx, { 
-          type: 'pie', 
-          data: { 
-            labels: meterLabels, 
-            datasets: [{ 
-              data: meterValues,
-              backgroundColor: d3.schemeSet2
-            }] 
-          }, 
-          options: { 
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { 
-              legend: { 
-                position: 'right',
-                labels: { color: '#9ca3af', font: { size: 10 } }
-              } 
-            } 
-          } 
-        });
-
-        // Pie chart - Phase
-        const phaseCounts = d3.rollup(filtered, v=>d3.sum(v, d=>d.COUNT), d=>d.CONN_PHASE);
-        const phaseLabels = Array.from(phaseCounts.keys());
-        const phaseValues = Array.from(phaseCounts.values());
-        
-        const phaseCtx = document.getElementById('piePhase').getContext('2d');
-        if(piePhaseChart) piePhaseChart.destroy();
-        piePhaseChart = new Chart(phaseCtx, { 
-          type: 'pie', 
-          data: { 
-            labels: phaseLabels, 
-            datasets: [{ 
-              data: phaseValues,
-              backgroundColor: d3.schemePastel1
-            }] 
-          }, 
-          options: { 
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { 
-              legend: { 
-                position: 'right',
-                labels: { color: '#9ca3af', font: { size: 10 } }
-              } 
-            } 
-          } 
         });
       }
 
@@ -1227,9 +1511,16 @@
             };
             
             // Add pivot aggregates if present
-            if(pivotField) {
-                 totalAgg['GOVT_STAT_YES'] = d3.sum(filtered.filter(d => d.GOVT_STAT === 'YES'), d => d.COUNT);
-                 totalAgg['GOVT_STAT_NO'] = d3.sum(filtered.filter(d => d.GOVT_STAT === 'NO'), d => d.COUNT);
+            const pivotFields = selectedFields.filter(f => f.type === 'pivot');
+            if (pivotFields.length > 0) {
+                pivotFields.forEach(pivotField => {
+                    const pivotMeasures = ALL_FIELDS.filter(f => f.isPivot && f.pivotKey === pivotField.key);
+                    pivotMeasures.forEach(pm => {
+                        totalAgg[pm.key] = d3.sum(filtered.filter(d => d[pm.pivotKey] == pm.pivotVal), d => {
+                            return d[pivotField.baseMeasure] || 0;
+                        });
+                    });
+                });
             }
             
             exportRows.push(totalAgg);
@@ -1249,9 +1540,16 @@
                     });
                     
                     // Add pivot measures to the rollup object
-                    if(pivotField) {
-                         obj['GOVT_STAT_YES'] = d3.sum(v.filter(d => d.GOVT_STAT === 'YES'), d => d.COUNT);
-                         obj['GOVT_STAT_NO'] = d3.sum(v.filter(d => d.GOVT_STAT === 'NO'), d => d.COUNT);
+                    const pivotFields = selectedFields.filter(f => f.type === 'pivot');
+                    if (pivotFields.length > 0) {
+                        pivotFields.forEach(pivotField => {
+                            const pivotMeasures = ALL_FIELDS.filter(f => f.isPivot && f.pivotKey === pivotField.key);
+                            pivotMeasures.forEach(pm => {
+                                obj[pm.key] = d3.sum(v.filter(d => d[pm.pivotKey] == pm.pivotVal), d => {
+                                    return d[pivotField.baseMeasure] || 0;
+                                });
+                            });
+                        });
                     }
                     
                     return obj;
@@ -1303,13 +1601,6 @@
 
       // Initial load
       loadData('https://docs.google.com/spreadsheets/d/e/2PACX-1vQT4ufTMHJGTUqNSqFSzz0q2x-ShM_WHlfSRxT4tVqA6GcaMK5g38PDLmcJR4JXuxLi-tKafW-Yxwdo/pub?gid=0&single=true&output=csv');
-
-      // Resize handling
-      window.addEventListener('resize', ()=>{
-        if(stackedBarChart) stackedBarChart.resize(); 
-        if(pieMeterChart) pieMeterChart.resize(); 
-        if(piePhaseChart) piePhaseChart.resize();
-      });
 
     } catch(e){
       console.error('Dashboard initialization failed:', e);
