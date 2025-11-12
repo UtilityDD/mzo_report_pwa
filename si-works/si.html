@@ -15,30 +15,27 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
+  <!-- PDF Generation Libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
   <style>
     /* Updated root variables for a cleaner look */
     :root {
-      --primary-color: #6979f8;
-      /* A brighter purple for dark mode */
-      --secondary-color: #a0aec0;
-      /* Lighter grey for text */
-      --background-light: #1a202c;
-      /* Dark background */
-      --card-bg: #2d3748;
-      /* Slightly lighter card background */
+      /* New, more modern color palette */
+      --primary-color: #3b82f6;      /* Vibrant Blue (e.g., Tailwind blue-500) */
+      --primary-color-hover: #2563eb; /* Darker blue for hover */
+      --background-light: #111827;   /* Very Dark Blue/Gray (gray-900) */
+      --card-bg: #1f2937;            /* Dark Gray (gray-800) */
+      --border-color: #374151;       /* Medium Gray (gray-700) */
+      --text-color: #f3f4f6;         /* Light Gray (gray-100) */
+      --text-muted-color: #9ca3af;   /* Muted Gray (gray-400) */
+
+      /* Unchanged variables */
       --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-      --border-color: #4a5568;
-      /* For borders */
-      --text-color: #e2e8f0;
-      /* Main text color */
-      --text-muted-color: #a0aec0;
-      /* Muted text color */
       --border-radius-xl: 12px;
-      /* Slightly smaller radius */
       --sidebar-width: 320px;
-      /* More compact sidebar */
       --completed-row-bg: #e6f7e9;
-      /* Light green for completed rows */
     }
 
     body {
@@ -89,10 +86,19 @@
 
     /* Main content container, which now sits next to the sidebar */
     .main-content-container {
-      padding: 1.5rem;
+      display: flex; /* Enable flexbox for vertical fill */
+      flex-direction: column; /* Stack children vertically */
+      padding: 1rem; /* Reduced padding */
       width: 100%;
       max-width: 100%;
       /* No longer 70% width, it adapts */
+    }
+
+    /* New: Make the main content container itself scrollable */
+    .main-content-container {
+      flex-grow: 1; /* Allow it to grow */
+      overflow-y: auto; /* Make this the primary scroll area */
+      padding-top: 0; /* Remove top padding as it's handled by children */
     }
 
     /* Responsive adjustments */
@@ -130,26 +136,29 @@
 
     .table-compact {
       font-size: 13px;
-      color: var(--text-color);
+      color: var(--text-color); /* This ensures the table itself doesn't have a background */
       border-color: var(--border-color);
     }
 
     .table-compact th {
-      padding: 2px 2px;
+      padding: 4px 5px;
       /* Slightly more padding for clarity */
       font-weight: 600;
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       white-space: nowrap;
-      background: #1a202c;
+      background: var(--background-light);
       /* Darker than card bg */
       color: var(--text-muted-color);
+      position: sticky; /* This is key for the frozen header */
+      top: 0; /* Stick to the top of the scrolling container */
+      z-index: 10; /* Ensure it's above the table body */
       border-bottom: 2px solid var(--primary-color);
     }
 
     .table-compact td {
-      padding: 2px 2px;
+      padding: 4px 5px;
       /* Match th padding */
       vertical-align: middle;
       line-height: 1.5;
@@ -159,13 +168,20 @@
       overflow-wrap: break-word;
     }
 
+    /* New style to make the table container scrollable */
+    .table-scroll-container {
+      flex-grow: 1; /* Allow it to grow and fill space */
+      overflow-y: auto;
+      position: relative;
+    }
     /* New style for completed rows */
-    .completed-row {
+    .completed-row td {
       background-color: var(--completed-row-bg) !important;
+      color: #212529 !important; /* Default black text for completed rows, !important to override dark theme */
     }
 
     .completed-row td {
-      color: #212529; /* Default black text for completed rows */
+      color: #212529 !important; /* Default black text for completed rows, !important to override dark theme */
     }
 
     /* Ensure status text inside completed rows is also black for contrast */
@@ -179,7 +195,7 @@
     }
 
     .row-hover:hover {
-      background: #4a5568;
+      background: #374151; /* Use border-color for a subtle hover */
     }
 
     /* Specific hover for completed rows to maintain green background */
@@ -212,35 +228,16 @@
     }
 
     /* New Status-specific colors */
-    .status-color-pending { color: #f6ad55; } /* Orange 400 */
-    .status-color-not-initiated { color: #a0aec0; } /* Gray 500 */
-    .status-color-not-started { color: #63b3ed; } /* Blue 400 */
-    .status-color-in-progress { color: #805ad5; } /* Purple 500 */
-    .status-color-completed { color: #68d391; } /* Green 400 */
+    .status-color-pending { color: #f59e0b; } /* Amber 500 */
+    .status-color-not-initiated { color: #9ca3af; } /* Gray 400 */
+    .status-color-not-started { color: #60a5fa; } /* Blue 400 */
+    .status-color-in-progress { color: #8b5cf6; } /* Violet 500 */
+    .status-color-completed { color: #22c55e; } /* Green 500 */
     .status-color-not-updated { color: #f56565; } /* Red 400 */
-
-
-    .tooltip-custom {
-      position: absolute;
-      z-index: 1070;
-      background: rgba(0, 0, 0, 0.85);
-      color: white;
-      padding: 8px 12px;
-      border-radius: 8px;
-      font-size: 12px;
-      max-width: 250px;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.2s;
-    }
-
-    .tooltip-custom.show {
-      opacity: 1;
-    }
 
     .filter-chip {
       font-size: 13px;
-      padding: 6px 14px;
+      padding: 5px 12px;
       /* More compact */
       border-radius: 20px;
       border: 1px solid var(--border-color);
@@ -258,7 +255,7 @@
       color: #ffffff;
       /* Explicit white for active */
       border-color: var(--primary-color);
-      box-shadow: 0 2px 8px rgba(105, 121, 248, 0.3);
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
     }
 
     .stats-card {
@@ -273,7 +270,7 @@
     .stats-card:hover {
       transform: translateY(-3px);
       border-color: var(--primary-color);
-      background: #4a5568;
+      background: var(--border-color);
     }
 
     .stats-number {
@@ -292,7 +289,7 @@
 
     /* New styles for a cleaner header */
     .main-header {
-      background-color: var(--card-bg);
+      background-color: var(--card-bg); /* Already dark */
       border-bottom: 1px solid #e9ecef;
       border-bottom: 1px solid var(--border-color);
     }
@@ -442,6 +439,18 @@
       font-weight: 700;
       margin-bottom: 8px;
     }
+    .sidebar .collapsible-header {
+      cursor: pointer;
+      position: relative;
+    }
+    .sidebar .collapsible-header .bi-chevron-down {
+      transition: transform 0.3s ease;
+      position: absolute;
+      right: 10px;
+    }
+    .sidebar .collapsible-header[aria-expanded="true"] .bi-chevron-down {
+      transform: rotate(180deg);
+    }
 
     /* General Overrides for Dark Theme */
     .text-muted {
@@ -547,6 +556,106 @@
       width: 35%;
       color: var(--text-muted-color);
     }
+    /* New styles for inline detail row */
+    .detail-row td {
+      background-color: #252d3a; /* A darker, inset background for details */
+      padding: 1rem !important;
+      border-top: 1px solid var(--border-color);
+    }
+    /* New styles for animatable detail row */
+    .detail-row td {
+      padding: 0 !important; /* Remove padding from the cell itself */
+      background-color: #252d3a;
+    }
+    .detail-wrapper {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.35s ease-in-out, padding 0.35s ease-in-out;
+    }
+    .detail-wrapper.expanded {
+      max-height: 500px; /* A large enough value to accommodate content */
+      padding: 1rem; /* Add padding back when expanded */
+    }
+    .detail-content-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 0.75rem 1.5rem;
+      font-size: 13px;
+    }
+    .detail-content-grid > div > span {
+      color: var(--text-color); /* Ensure consistent text color for values */
+    }
+
+    /* New style for data headers in the detail view */
+    .detail-content-grid > div > strong {
+      display: inline-block; /* Allow background and padding */
+      background-color: var(--border-color); /* A light gray background */
+      color: #e2e8f0 !important; /* A light text color for contrast */
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+
+    /* New styles for Priority tabs */
+    .priority-tab {
+      font-size: 14px;
+      padding: 6px 16px; /* Made more compact */
+      border-radius: 20px;
+      border: 1px solid var(--border-color);
+      background: transparent;
+      color: var(--text-muted-color);
+      transition: all 0.2s ease;
+      font-weight: 600;
+    }
+    .priority-tab.active {
+      color: #ffffff;
+      border-color: var(--primary-color);
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    }
+    .priority-tab[data-priority="Phase-I"].active { background-color: #ef4444; border-color: #ef4444; } /* Red 500 */
+    .priority-tab[data-priority="Phase-II"].active { background-color: #f97316; border-color: #f97316; } /* Orange 500 */
+    .priority-tab[data-priority="All"].active { background-color: var(--primary-color); }
+
+    /* New styles for Region tabs */
+    .region-tab {
+      font-size: 13px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border-color);
+      background: transparent;
+      color: var(--text-muted-color);
+      transition: all 0.2s ease;
+      font-weight: 600;
+    }
+    .region-tab.active {
+      color: #ffffff;
+      background-color: #14b8a6; /* A distinct teal color */
+      border-color: #14b8a6;
+      box-shadow: 0 4px 12px rgba(20, 184, 166, 0.4);
+    }
+    
+    /* New styles for horizontally scrollable tabs on smaller screens */
+    @media (max-width: 1400px) { /* Widen the breakpoint */
+      /* Allow tab groups in the header to have a base width and not shrink */
+      #priorityTabsContainer, #regionTabsContainer {
+        flex-basis: 300px; /* Give them a base width */
+        flex-shrink: 0;    /* Prevent them from shrinking */
+      }
+      /* Make the division tabs container scrollable and not wrap */
+      #divisionTabs {
+        flex-grow: 1;
+        flex-wrap: nowrap !important; /* Force no-wrap */
+      }
+      /* Apply horizontal scrolling to all tab containers */
+      #priorityTabsContainer,
+      #regionTabsContainer,
+      #divisionTabs {
+        overflow-x: auto;
+        -ms-overflow-style: none;  /* IE and Edge */
+        scrollbar-width: none;  /* Firefox */
+      }
+    }
   </style>
 </head>
 
@@ -571,23 +680,28 @@
   <!-- App Container (initially hidden) -->
   <div id="appContainer" class="app-container" style="display: none;">
     <!-- Collapsible Sidebar -->
-    <div id="sidebar" class="sidebar p-4">
-      <div class="d-flex justify-content-between align-items-center mb-4">
-        <h5 class="fw-bold mb-0">Scheme Heads</h5>
-        <button id="closeSidebar" class="btn btn-sm" aria-label="Close sidebar">
-          <i class="bi bi-x-lg"></i>
-        </button>
-      </div>
-      <div id="schemeHeadFiltersContainer"></div>
+    <div id="sidebar" class="sidebar p-3">      <h5 class="fw-bold mb-3 collapsible-header" data-bs-toggle="collapse" data-bs-target="#schemeHeadFiltersContainer" aria-expanded="true" aria-controls="schemeHeadFiltersContainer">
+        Scheme Heads
+        <i class="bi bi-chevron-down"></i>
+      </h5>
+      <div id="schemeHeadFiltersContainer" class="collapse show"></div>
+
       <hr>
-      <div id="statusCountsContainer" class="mt-3">
-        <h6 class="fw-bold">Status Counts</h6>
-        <div class="small" id="statusCountsList"></div>
+
+      <div id="statusCountsContainer" class="mt-3">        <h6 class="fw-bold collapsible-header" data-bs-toggle="collapse" data-bs-target="#statusCountsList" aria-expanded="true" aria-controls="statusCountsList">
+          Status Counts
+          <i class="bi bi-chevron-down"></i>
+        </h6>
+        <div class="small collapse show" id="statusCountsList"></div>
       </div>
+
       <hr>
-      <div id="relatedSsContainer" class="mt-3">
-        <h6 class="fw-bold">Related SS</h6>
-        <div class="small" id="relatedSsList"></div>
+
+      <div id="relatedSsContainer" class="mt-3">        <h6 class="fw-bold collapsible-header" data-bs-toggle="collapse" data-bs-target="#relatedSsList" aria-expanded="false" aria-controls="relatedSsList">
+          Related SS
+          <i class="bi bi-chevron-down"></i>
+        </h6>
+        <div class="small collapse" id="relatedSsList"></div>
       </div>
 
     </div>
@@ -595,28 +709,35 @@
     <!-- Main Content Area -->
     <div class="main-content-wrapper">
       <!-- Smart Header -->
-      <nav class="navbar navbar-expand-lg main-header shadow-sm sticky-top">
-        <div class="container-fluid">
+      <nav class="navbar navbar-expand-lg main-header shadow-sm">
+        <div class="container-fluid px-3">
           <div class="d-flex align-items-center">
-            <button id="toggleSidebar" class="btn btn-sm d-lg-none me-2" aria-controls="sidebar" aria-expanded="false"
-              aria-label="Toggle navigation">
+            <button id="toggleSidebar" class="btn btn-sm d-lg-none me-2" aria-controls="sidebar" aria-expanded="false" aria-label="Toggle navigation">
               <i class="bi bi-list fs-4"></i>
             </button>
-            <span class="navbar-brand mb-0 h1 fw-bold fs-4">Priority SI Work</span>
+            <span class="navbar-brand mb-0 h1 fw-bold fs-4 me-4">Priority SI Work</span>
           </div>
 
-          <div class="d-flex align-items-center gap-3">
-            <div class="position-relative">
-              <input type="text" id="searchInput" class="form-control form-control-sm rounded-pill ps-4 pe-2"
-                placeholder="Search records..." style="width: 250px;">
-              <i class="bi bi-search position-absolute"
-                style="left: 12px; top: 50%; transform: translateY(-50%); color: #6b7280;"></i>
-            </div>
+          <!-- Priority Filter Tabs (Moved Here) -->
+          <div id="priorityTabsContainer" class="d-flex align-items-center gap-3 mx-auto">
+            <!-- Priority tabs will be injected here by JS -->
+          </div>
+
+          <!-- Region Filter Tabs -->
+          <div id="regionTabsContainer" class="d-flex align-items-center gap-2 ms-4 border-start border-secondary ps-4">
+            <!-- Region tabs will be injected here by JS -->
+          </div>
+
+
+          <div class="d-flex align-items-center gap-3 ms-auto">
+            <button id="closeSidebar" class="btn btn-sm d-lg-none" aria-label="Close sidebar">
+              <i class="bi bi-x-lg fs-4"></i>
+            </button>
             <button id="btnAdd" class="btn btn-primary btn-sm rounded-pill d-flex align-items-center gap-2 px-3">
               <i class="bi bi-plus-circle"></i>
               Add New Scheme
             </button>
-            <button id="btnLogout" class="btn btn-outline-danger btn-sm rounded-pill">
+            <button id="btnLogout" class="btn btn-outline-danger btn-sm rounded-pill ms-2">
               <i class="bi bi-box-arrow-right"></i>
               Logout
             </button>
@@ -624,34 +745,44 @@
         </div>
       </nav>
 
-      <div class="main-content-container">
+      <div class="main-content-container p-3">
         <!-- Smart Filters & Stats (Division filter remains here) -->
-        <div class="glass-card p-3 mb-4">
+        <div class="glass-card p-2 mb-3 sticky-top" style="top: 0; z-index: 1020; background-color: var(--background-light);"> <!-- Reduced padding and margin -->
           <div class="d-flex flex-wrap align-items-center gap-2">
             <!-- Division Filter Tabs -->
-            <div id="divisionTabs" class="d-flex flex-wrap gap-2"></div>
-
+            <div id="divisionTabs" class="d-flex flex-wrap gap-2 flex-grow-1"></div>
+            
             <!-- Action Buttons -->
-            <div class="ms-auto btn-group">
-              <button id="btnResetFilters"
-                class="btn btn-outline-secondary btn-sm rounded-pill rounded-end-0 d-flex align-items-center gap-2 px-3">
-                <i class="bi bi-arrow-counterclockwise"></i>
-                Reset
-              </button>
-              <button id="btnDownloadCsv"
-                class="btn btn-outline-secondary btn-sm rounded-pill rounded-start-0 d-flex align-items-center gap-2 px-3">
-                <i class="bi bi-download"></i>
-                CSV
-              </button>
+            <div class="ms-auto d-flex align-items-center gap-2">
+              <div class="position-relative">
+                <input type="text" id="searchInput" class="form-control form-control-sm rounded-pill ps-4 pe-2"
+                  placeholder="Search records..." style="width: 250px;">
+                <i class="bi bi-search position-absolute"
+                  style="left: 12px; top: 50%; transform: translateY(-50%); color: #6b7280;"></i>
+              </div>
+              <div class="btn-group">
+                <button id="btnResetFilters" class="btn btn-outline-secondary btn-sm rounded-pill rounded-end-0 d-flex align-items-center gap-2 px-3">
+                  <i class="bi bi-arrow-counterclockwise"></i>
+                  Reset
+                </button>
+                <button id="btnDownloadCsv" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-2 px-3" style="border-radius: 0;">
+                  <i class="bi bi-file-earmark-spreadsheet"></i>
+                  CSV
+                </button>
+                <button id="btnDownloadPdf" class="btn btn-outline-secondary btn-sm rounded-pill rounded-start-0 d-flex align-items-center gap-2 px-3">
+                  <i class="bi bi-file-earmark-pdf"></i>
+                  PDF
+                </button>
+              </div>
             </div>
 
           </div>
         </div>
 
         <!-- Compact Table -->
-        <div class="glass-card overflow-hidden">
-          <div class="table-responsive">
-            <table class="table table-hover table-compact mb-0">
+        <div class="glass-card overflow-hidden d-flex flex-column flex-grow-1">
+          <div class="table-scroll-container">
+            <table class="table table-hover table-compact mb-0" style="width: 100%;">
               <thead id="tableHead"></thead>
               <tbody id="tableBody"></tbody>
             </table>
@@ -667,9 +798,6 @@
       </div>
     </div>
   </div>
-
-  <!-- Custom Tooltip -->
-  <div id="customTooltip" class="tooltip-custom"></div>
 
   <!-- Loading Overlay -->
   <div id="loadingOverlay">
@@ -703,24 +831,6 @@
     </div>
   </div>
 
-  <!-- Detail View Modal -->
-  <div class="modal fade" id="detailModal" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-      <div class="modal-content">
-        <div class="modal-header bg-primary text-white">
-          <h5 class="modal-title" id="detailModalTitle">Scheme Details</h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body" id="detailModalBody">
-          <!-- Details will be populated here by JS -->
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary rounded-pill" data-bs-dismiss="modal">Close</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Bootstrap JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
@@ -737,7 +847,7 @@
 
     // UPDATED: Added 'Status' to the visible columns
 const TABLE_COLUMNS = [
-  'id', 'Division', 'Scheme Head', 'Name of Scheme', 'TAA No.', 'Detail Work Status', 'Status', 'Target Date'
+  'id', 'Priority', 'Division', 'Scheme Head', 'Name of Scheme', 'TAA No.', 'Detail Work Status', 'Status', 'Target Date'
 ];
 
     
@@ -755,6 +865,7 @@ const TABLE_COLUMNS = [
     // UPDATED: Renamed 'Detail Work Status' header to 'Work Status' and added 'Overall Status' for the 'Status' column
 const COMPACT_HEADERS = {
   'id': 'ID',
+  'Priority': 'Priority',
   'Division': 'Division',
   'Scheme Head': 'Scheme Head',
   'Name of Scheme': 'Scheme Name',
@@ -804,19 +915,21 @@ function getAllowedRegions() {
     const btnAdd = document.getElementById('btnAdd');
     const btnSave = document.getElementById('btnSave');
     const btnDelete = document.getElementById('btnDelete');
+    const btnDownloadPdf = document.getElementById('btnDownloadPdf');
     const btnDownloadCsv = document.getElementById('btnDownloadCsv');
     const btnResetFilters = document.getElementById('btnResetFilters');
     const recordId = document.getElementById('recordId');
     const searchInput = document.getElementById('searchInput');
     const divisionTabsContainer = document.getElementById('divisionTabs');
     const paginationControls = document.getElementById('paginationControls');
+    const regionTabsContainer = document.getElementById('regionTabsContainer');
+    const priorityTabsContainer = document.getElementById('priorityTabsContainer');
     const statusCountsList = document.getElementById('statusCountsList');
     const relatedSsList = document.getElementById('relatedSsList');
     const schemeHeadFiltersContainer = document.getElementById('schemeHeadFiltersContainer');
     const showingStart = document.getElementById('showingStart');
     const showingEnd = document.getElementById('showingEnd');
     const showingTotal = document.getElementById('showingTotal');
-    const customTooltip = document.getElementById('customTooltip');
     const loadingOverlay = document.getElementById('loadingOverlay');
     // Login elements
     const loginContainer = document.getElementById('loginContainer');
@@ -840,9 +953,10 @@ function getAllowedRegions() {
     let selectedStatuses = new Set(); // <-- Added here
     let selectedRelatedSs = new Set();
     let currentDivision = 'All';
+    let currentRegion = 'All';
+    let currentPriority = 'Phase-I';
     let currentPage = 1;
     const recordsPerPage = 15;
-    let detailModal;
     let editModal;
     // User-specific state
     let currentUser = null;
@@ -870,6 +984,13 @@ function getAllowedRegions() {
     }
     function hideLoading() {
       loadingOverlay.classList.remove('show');
+    }
+    function formatDate(dateString) {
+      if (!dateString || !/^\d{4}-\d{2}-\d{2}/.test(dateString)) {
+        return dateString || ''; // Return original or empty string if format is not YYYY-MM-DD
+      }
+      const [year, month, day] = dateString.split('-');
+      return `${day}/${month}/${year.slice(-2)}`;
     }
     // Custom alert/modal function
     function showMessage(message, type = 'info') {
@@ -899,29 +1020,6 @@ function getAllowedRegions() {
       modalBody.textContent = message;
       const messageModal = new bootstrap.Modal(document.getElementById('messageModal'));
       messageModal.show();
-    }
-
-    // ---- TOOLTIP FUNCTIONS ----
-    function showTooltip(element, content) {
-      if (!content) return;
-      customTooltip.textContent = content;
-      customTooltip.classList.add('show');
-      const rect = element.getBoundingClientRect();
-      const tooltipRect = customTooltip.getBoundingClientRect();
-      let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
-      let top = rect.top - tooltipRect.height - 8; // Keep tooltip within viewport
-      if (left < 8) left = 8;
-      if (left + tooltipRect.width > window.innerWidth - 8) {
-        left = window.innerWidth - tooltipRect.width - 8;
-      }
-      if (top < 8) {
-        top = rect.bottom + 8;
-      }
-      customTooltip.style.left = left + 'px';
-      customTooltip.style.top = top + 'px';
-    }
-    function hideTooltip() {
-      customTooltip.classList.remove('show');
     }
 
     // ---- AUTHENTICATION FUNCTIONS ----
@@ -974,118 +1072,97 @@ function getAllowedRegions() {
     }
     
     // ---- BUILD FORM FIELDS DYNAMICALLY ----
-function buildForm() {
-  formFields.innerHTML = '';
-  for (const c of ALL_COLUMNS) {
-    if (c === 'id') continue;
-    const col = document.createElement('div');
-    col.className = 'col-md-6 col-lg-4';
-    const mandatoryFields = ['Region', 'Division', 'Scheme Head', 'Name of Scheme'];
-    const requiredAttr = mandatoryFields.includes(c) ? 'required' : '';
+    function buildForm() {
+        formFields.innerHTML = ''; // Clear previous form
 
-    // Dropdown for Region, Division, Scheme Head
-    if (['Region', 'Division', 'Scheme Head'].includes(c)) {
-      const allOptions = getUniqueValues(c);
+        const mandatoryFields = ['Region', 'Division', 'Scheme Head', 'Name of Scheme'];
 
-      // Restrict Region dropdown options for non-admin users
-      if (c === 'Region' && !currentUser.can_view_all) {
-        const allowedRegions = getAllowedRegions();
-        let optsHtml = `<option value="">Select</option>`;
-        allOptions.forEach(val => {
-          if (allowedRegions.includes(val)) {
-            optsHtml += `<option value="${val}">${val}</option>`;
-          }
-        });
-        col.innerHTML = `
-          <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label>
-          <select class="form-select form-select-sm" id="field_${escapeId(c)}" ${requiredAttr}>
-            ${optsHtml}
-          </select>
-        `;
-        formFields.appendChild(col);
-        continue;
-      }
+        // Helper to create a form field
+        const createField = (c, colClass = 'col-md-4') => {
+            const requiredAttr = mandatoryFields.includes(c) ? 'required' : '';
+            const requiredSpan = requiredAttr ? '<span class="text-danger">*</span>' : '';
+            let fieldHtml = '';
 
-      let optsHtml = `<option value="">Select</option>`;
-      allOptions.forEach(val => {
-        if (c === 'Division' && !currentUser.can_view_all && !currentUser.divisions.includes(val)) {
-          return;
-        }
-        optsHtml += `<option value="${val}">${val}</option>`;
-      });
-      col.innerHTML = `
-        <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label>
-        <select class="form-select form-select-sm" id="field_${escapeId(c)}" ${requiredAttr}>
-          ${optsHtml}
-        </select>
-      `;
-    }
-    // Priority dropdown
-    else if (c === 'Priority') {
-      col.innerHTML = `
-        <label class="form-label fw-semibold">${c}</label>
-        <select class="form-select form-select-sm" id="field_${escapeId(c)}">
-          <option value="">Select</option>
-          <option value="Phase-I">Phase-I</option>
-          <option value="Phase-II">Phase-II</option>
-        </select>
-      `;
-    }
-    // Status dropdown
-else if (c === 'Status') {
-  col.innerHTML = `
-    <label class="form-label fw-semibold">${c}</label>
-    <select class="form-select form-select-sm" id="field_${escapeId(c)}">
-      <option value="">Select</option>
-      <option value="Proposal not initiated">Proposal not initiated</option>
-      <option value="Approval pending">Approval pending</option>
-      <option value="TAA issued, work yet to start">TAA issued, work yet to start</option>
-      <option value="Work in progress">Work in progress</option>
-      <option value="Completed">Completed</option>
-    </select>
-  `;
-}
+            if (['Region', 'Division', 'Scheme Head'].includes(c)) {
+                let allOptions = getUniqueValues(c);
+                if (c === 'Region' && !currentUser.can_view_all) {
+                    allOptions = allOptions.filter(val => getAllowedRegions().includes(val));
+                }
+                if (c === 'Division' && !currentUser.can_view_all) {
+                    allOptions = allOptions.filter(val => currentUser.divisions.includes(val));
+                }
+                const optsHtml = allOptions.map(val => `<option value="${val}">${val}</option>`).join('');
+                fieldHtml = `<select class="form-select form-select-sm" id="field_${escapeId(c)}" ${requiredAttr}><option value="">Select</option>${optsHtml}</select>`;
+            } else if (c === 'Priority') {
+                fieldHtml = `<select class="form-select form-select-sm" id="field_${escapeId(c)}">
+                    <option value="">Select</option><option value="Phase-I">Phase-I</option><option value="Phase-II">Phase-II</option>
+                </select>`;
+            } else if (c === 'Status') {
+                fieldHtml = `<select class="form-select form-select-sm" id="field_${escapeId(c)}">
+                    <option value="">Select</option><option value="Proposal not initiated">Proposal not initiated</option><option value="Approval pending">Approval pending</option><option value="TAA issued, work yet to start">TAA issued, work yet to start</option><option value="Work in progress">Work in progress</option><option value="Completed">Completed</option>
+                </select>`;
+            } else if (c.includes('Date')) {
+                fieldHtml = `<input type="date" class="form-control form-control-sm" id="field_${escapeId(c)}" ${requiredAttr}>`;
+            } else if (c === 'Detail Work Status' || c === 'Major Material Requirement') {
+                fieldHtml = `<textarea class="form-control form-control-sm" id="field_${escapeId(c)}" rows="3" style="resize: vertical;" ${requiredAttr}></textarea>`;
+            } else {
+                fieldHtml = `<input type="text" class="form-control form-control-sm" id="field_${escapeId(c)}" placeholder="${c}" ${requiredAttr}>`;
+            }
 
-    // Date input for Target Date
-    else if (c.includes('Date')) {
-      col.innerHTML = `
-        <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label>
-        <input type="date" class="form-control form-control-sm" id="field_${escapeId(c)}" ${requiredAttr}>
-      `;
+            return `<div class="${colClass}">
+                <label class="form-label fw-semibold">${c} ${requiredSpan}</label>
+                ${fieldHtml}
+            </div>`;
+        };
+
+        // --- Build Form with Structured Layout ---
+        let formHtml = '<div class="row g-3">';
+
+        // Row 1: Core Identification
+        formHtml += createField('Region', 'col-md-6 col-lg-3');
+        formHtml += createField('Division', 'col-md-6 col-lg-3');
+        formHtml += createField('Scheme Head', 'col-md-6 col-lg-3');
+        formHtml += createField('Related SS', 'col-md-6 col-lg-3');
+
+        // Row 2: Scheme Name (Full Width)
+        formHtml += createField('Name of Scheme', 'col-12');
+
+        // Row 3: Parameters
+        formHtml += createField('Existing Parameter (Capacity/RL/Size)', 'col-md-6');
+        formHtml += createField('Proposed Parameter (Capacity/RL/Size)', 'col-md-6');
+
+        // Row 4: Technical Details
+        formHtml += createField('Loading (%) / Peak Load (A)', 'col-md-6');
+        formHtml += createField('Major Material Requirement', 'col-md-6');
+
+        // Row 5: Administrative Details
+        formHtml += createField('TAA No.', 'col-md-6 col-lg-3');
+        formHtml += createField('TAA Date', 'col-md-6 col-lg-3');
+        formHtml += createField('eOffice ref.', 'col-md-6 col-lg-3');
+        formHtml += createField('Presently with', 'col-md-6 col-lg-3');
+
+        // Row 6: Status & Timeline
+        formHtml += createField('Priority', 'col-md-4');
+        formHtml += createField('Status', 'col-md-4');
+        formHtml += createField('Target Date', 'col-md-4');
+
+        // Row 7: Detail Work Status (Full Width)
+        formHtml += createField('Detail Work Status', 'col-12');
+
+        formHtml += '</div>'; // Close main row
+
+        formFields.innerHTML = formHtml;
     }
-    // NEW: Resizable textarea for Detail Work Status
-    else if (c === 'Detail Work Status') {
-      col.className = 'col-12'; // Make textarea span full width
-      col.innerHTML = `
-        <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label>
-        <textarea class="form-control form-control-sm" id="field_${escapeId(c)}" rows="3" style="resize: vertical;" ${requiredAttr}></textarea>
-      `;
-    }
-    // Default text input for all other fields
-    else {
-      col.innerHTML = `
-        <label class="form-label fw-semibold">${c} ${requiredAttr ? '<span class="text-danger">*</span>' : ''}</label>
-        <input type="text" class="form-control form-control-sm" id="field_${escapeId(c)}" placeholder="${c}" ${requiredAttr}>
-      `;
-    }
-    formFields.appendChild(col);
-  }
-}
 
     // ---- BUILD TABLE HEADER ----
     function buildHead() {
       tableHead.innerHTML = '';
       const tr = document.createElement('tr');
-      // Define column widths
-      // UPDATED: Added width for the new 'Status' column
+      // Define column widths for specific columns, others will auto-fit
       const columnWidths = {
-        'id': '6%',
-        'Division': '8%',
         'Name of Scheme': 'auto',
-        'TAA No.': '10%',
-        'Detail Work Status': 'auto',
+        'TAA No.': '8%',
         'Status': '12%', // New column width
-        'Target Date': '8%',
         'Actions': '5%'
       };
       for (const c of TABLE_COLUMNS) {
@@ -1116,6 +1193,27 @@ else if (c === 'Status') {
         return ''; // default
     }
 
+    // New function to build the inline detail view content
+    function buildDetailContent(record) {
+      let contentHtml = '<div class="detail-content-grid">';
+      for (const col of ALL_COLUMNS) {
+        if (col === 'id') continue;
+
+        let value = record[col] || '<span class="text-muted fst-italic">N/A</span>';
+        if (col.includes('Date')) {
+          value = formatDate(record[col]) || '<span class="text-muted fst-italic">N/A</span>';
+        }
+
+        contentHtml += `
+          <div>
+            <strong class="text-muted">${col}</strong>
+            <span>${value}</span>
+          </div>
+        `;
+      }
+      contentHtml += '</div>';
+      return contentHtml;
+    }
     function renderTable(records) {
       tableBody.innerHTML = '';
       if (!records || records.length === 0) {
@@ -1124,9 +1222,8 @@ else if (c === 'Status') {
       }
       records.forEach(record => {
         const tr = document.createElement('tr');
-        tr.className = `row-hover ${record.Status === 'Completed' ? 'completed-row' : ''}`;
-        tr.addEventListener('mouseenter', (e) => showTooltip(e.target, record['Detail Work Status']));
-        tr.addEventListener('mouseleave', hideTooltip);
+        tr.className = `row-hover data-row ${record.Status === 'Completed' ? 'completed-row' : ''}`;
+        tr.dataset.recordId = record.id;
 
         // Populate cells
         for (const c of TABLE_COLUMNS) {
@@ -1135,10 +1232,13 @@ else if (c === 'Status') {
             const statusText = record[c] || 'Not yet updated';
             const statusClass = getStatusClass(record[c]);
             td.innerHTML = `<span class="status-badge ${statusClass}">${statusText}</span>`;
-          } else if (c === 'Priority') {
+          } else if (c === 'Priority' && record[c]) {
             td.innerHTML = `<span class="badge ${getPriorityBadge(record[c])}">${record[c] || ''}</span>`;
           } else {
             td.textContent = record[c] || '';
+            if (c.includes('Date')) {
+              td.textContent = formatDate(record[c]);
+            }
           }
           tr.appendChild(td);
         }
@@ -1159,12 +1259,23 @@ else if (c === 'Status') {
         actionTd.appendChild(editBtn);
         tr.appendChild(actionTd);
 
-        // Add click listener for the detail view
-        tr.addEventListener('click', () => {
-          showDetailModal(record.id);
-        });
-
         tableBody.appendChild(tr);
+
+        // Create the hidden detail row
+        const detailTr = document.createElement('tr');
+        detailTr.id = `detail-row-${record.id}`;
+        detailTr.className = 'detail-row'; // The row is always visible
+        const detailTd = document.createElement('td');
+        detailTd.colSpan = TABLE_COLUMNS.length + 1;
+
+        // Create the animatable wrapper inside the cell
+        const detailWrapper = document.createElement('div');
+        detailWrapper.className = 'detail-wrapper';
+        detailWrapper.id = `detail-wrapper-${record.id}`;
+
+        detailTd.appendChild(detailWrapper);
+        detailTr.appendChild(detailTd);
+        tableBody.appendChild(detailTr);
       });
     }
 
@@ -1238,7 +1349,7 @@ function buildSchemeHeadFilters() {
   // Create master checkbox container
   const masterId = 'filter-all-schemeheads';
   const masterHtml = document.createElement('div');
-  masterHtml.className = 'form-check mb-2';
+  masterHtml.className = 'form-check mb-1'; // Reduced margin
   masterHtml.innerHTML = `
     <input class="form-check-input" type="checkbox" value="__all__" id="${masterId}">
     <label class="form-check-label fw-semibold" for="${masterId}">
@@ -1265,7 +1376,7 @@ function buildSchemeHeadFilters() {
   allSchemeHeads.forEach(schemeHead => {
     const filterId = `filter-${escapeId(schemeHead)}`;
     const filterItem = document.createElement('div');
-    filterItem.className = 'form-check mb-2';
+    filterItem.className = 'form-check mb-1'; // Reduced margin
     filterItem.innerHTML = `
       <input class="form-check-input schemehead-checkbox" type="checkbox" value="${schemeHead}" id="${filterId}" checked>
       <label class="form-check-label d-flex justify-content-between align-items-center" for="${filterId}">
@@ -1349,6 +1460,37 @@ function updateDivisionTabCounts(records) {
     } else {
       const count = divisionCounts[divisionName] || 0;
       tab.innerHTML = `<span>${divisionName} (${count})</span>`;
+    }
+  });
+}
+
+function updateRegionTabCounts(records) {
+  const regionDefinitions = {
+    'All': [],
+    'Dakshin Dinajpur': ['Balurghat', 'Buniadpur'],
+    'Raiganj': ['Islampur', 'Raiganj'],
+    'Malda': ['Chanchal', 'Gazole', 'Malda']
+  };
+
+  const regionCounts = {};
+  for (const region in regionDefinitions) {
+    regionCounts[region] = 0;
+  }
+  regionCounts['All'] = records.length;
+
+  records.forEach(record => {
+    for (const [regionName, divisions] of Object.entries(regionDefinitions)) {
+      if (regionName !== 'All' && divisions.includes(record.Division)) {
+        regionCounts[regionName] = (regionCounts[regionName] || 0) + 1;
+      }
+    }
+  });
+
+  document.querySelectorAll('#regionTabsContainer .region-tab').forEach(tab => {
+    const regionName = tab.dataset.region;
+    const badge = tab.querySelector('.badge');
+    if (badge) {
+      badge.textContent = regionCounts[regionName] || 0;
     }
   });
 }
@@ -1453,7 +1595,7 @@ function buildStatusFilters() {
   // Create master checkbox container
   const masterId = 'filter-all-statuses';
   const masterHtml = document.createElement('div');
-  masterHtml.className = 'form-check mb-2';
+  masterHtml.className = 'form-check mb-1'; // Reduced margin
   masterHtml.innerHTML = `
     <input class="form-check-input" type="checkbox" value="__all__" id="${masterId}">
     <label class="form-check-label fw-semibold" for="${masterId}">
@@ -1481,7 +1623,7 @@ function buildStatusFilters() {
     const count = statusCounts[status] || 0;
     const filterId = `filter-status-${escapeId(status)}`;
     const filterItem = document.createElement('div');
-    filterItem.className = 'form-check mb-2';
+    filterItem.className = 'form-check mb-1'; // Reduced margin
     const labelSpanClass = status === 'Not yet updated' ? 'status-color-not-updated' : '';
     filterItem.innerHTML = `
       <input class="form-check-input status-checkbox" type="checkbox" value="${status}" id="${filterId}" checked>
@@ -1562,7 +1704,7 @@ function buildRelatedSsFilters() {
   // Master checkbox
   const masterId = 'filter-all-relatedss';
   const masterHtml = document.createElement('div');
-  masterHtml.className = 'form-check mb-2';
+  masterHtml.className = 'form-check mb-1'; // Reduced margin
   masterHtml.innerHTML = `
     <input class="form-check-input" type="checkbox" value="__all__" id="${masterId}">
     <label class="form-check-label fw-semibold" for="${masterId}">
@@ -1590,7 +1732,7 @@ function buildRelatedSsFilters() {
     const count = relatedSsCounts[relatedSs] || 0;
     const filterId = `filter-relatedss-${escapeId(relatedSs)}`;
     const filterItem = document.createElement('div');
-    filterItem.className = 'form-check mb-2';
+    filterItem.className = 'form-check mb-1'; // Reduced margin
     const labelSpanClass = relatedSs === 'Not yet updated' ? 'status-color-not-updated' : '';
     filterItem.innerHTML = `
       <input class="form-check-input relatedss-checkbox" type="checkbox" value="${relatedSs}" id="${filterId}" checked>
@@ -1653,6 +1795,116 @@ function buildRelatedSsFilters() {
 
   updateMasterCheckbox();
 }
+
+function updatePriorityTabCounts(records) {
+  const priorityCounts = {};
+  records.forEach(record => {
+    const priority = record.Priority;
+    if (priority) priorityCounts[priority] = (priorityCounts[priority] || 0) + 1;
+  });
+
+  const allTabs = document.querySelectorAll('#priorityTabsContainer .priority-tab');
+  allTabs.forEach(tab => {
+    const priorityName = tab.dataset.priority;
+    const badge = tab.querySelector('.badge');
+    if (!badge) return;
+
+    if (priorityName === 'All') {
+      const allCount = Object.values(priorityCounts).reduce((sum, count) => sum + count, 0);
+      badge.textContent = allCount;
+    } else {
+      const count = priorityCounts[priorityName] || 0;
+      badge.textContent = count;
+    }
+  });
+}
+    // ---- RENDER PRIORITY TABS ----
+    function buildPriorityTabs() {
+      const priorities = ['All', ...getUniqueValues('Priority')];
+      priorityTabsContainer.innerHTML = '';
+
+      const priorityCounts = {};
+      let baseRecords = allRecords;
+      if (!currentUser.can_view_all) {
+        const allowedRegions = getAllowedRegions();
+        baseRecords = baseRecords.filter(record =>
+          allowedRegions.includes(record.Region) &&
+          currentUser.divisions.includes(record.Division)
+        );
+      }
+
+      baseRecords.forEach(record => {
+        const priority = record.Priority;
+        if (priority) priorityCounts[priority] = (priorityCounts[priority] || 0) + 1;
+      });
+      const allCount = Object.values(priorityCounts).reduce((a, b) => a + b, 0);
+
+      priorities.forEach(priority => {
+        const count = priority === 'All' ? allCount : (priorityCounts[priority] || 0);
+        if (count === 0 && priority !== 'All') return;
+
+        const tab = document.createElement('button');
+        tab.className = 'priority-tab';
+        tab.dataset.priority = priority;
+        tab.innerHTML = `${priority} <span class="badge bg-dark rounded-pill">${count}</span>`;
+        if (priority === currentPriority) tab.classList.add('active');
+
+        tab.addEventListener('click', () => {
+          currentPriority = priority;
+          currentPage = 1; // Reset to first page
+          document.querySelectorAll('#priorityTabsContainer .priority-tab').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          filterAndRenderTable();
+        });
+        priorityTabsContainer.appendChild(tab);
+      });
+    }
+
+    // ---- RENDER REGION TABS ----
+    function buildRegionTabs() {
+      const regionDefinitions = {
+        'All': [], // Represents all divisions
+        'Dakshin Dinajpur': ['Balurghat', 'Buniadpur'],
+        'Raiganj': ['Islampur', 'Raiganj'], // As per request, this is Uttar Dinajpur
+        'Malda': ['Chanchal', 'Gazole', 'Malda']
+      };
+
+      regionTabsContainer.innerHTML = '';
+
+      Object.entries(regionDefinitions).forEach(([regionName, divisions]) => {
+        let count;
+        if (regionName === 'All') {
+          // Count all records accessible by the user
+          count = allRecords.filter(r => currentUser.can_view_all || currentUser.divisions.includes(r.Division)).length;
+        } else {
+          count = allRecords.filter(r => divisions.includes(r.Division)).length;
+        }
+
+        if (count === 0 && regionName !== 'All') return; // Don't show empty regions
+
+        const tab = document.createElement('button');
+        tab.className = 'region-tab';
+        tab.dataset.region = regionName;
+        tab.innerHTML = `${regionName} <span class="badge bg-dark rounded-pill">${count}</span>`;
+        if (regionName === currentRegion) tab.classList.add('active');
+
+        tab.addEventListener('click', () => {
+          currentRegion = regionName;
+          currentDivision = 'All'; // Reset division filter when region changes
+          currentPage = 1;
+
+          // Update UI for region tabs
+          document.querySelectorAll('#regionTabsContainer .region-tab').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+
+          // Re-build division tabs based on the selected region and re-render everything
+          buildDivisionTabs();
+          filterAndRenderTable();
+        });
+
+        regionTabsContainer.appendChild(tab);
+      });
+    }
 
 
     // ---- PAGINATION ----
@@ -1756,12 +2008,29 @@ function filterAndRenderTable() {
   // --- DYNAMIC COUNT & FILTERING LOGIC ---
   const applyFilters = (records, {
     ignoreDivision = false,
+    ignorePriority = false,
     ignoreScheme = false,
     ignoreStatus = false,
-    ignoreRelatedSs = false
+    ignoreRelatedSs = false,
+    ignoreRegion = false
   } = {}) => {
     let result = records;
     const searchQuery = searchInput.value.toLowerCase().trim();
+
+    // New Region Filter
+    if (currentRegion !== 'All') {
+      const regionDefinitions = {
+        'Dakshin Dinajpur': ['Balurghat', 'Buniadpur'],
+        'Raiganj': ['Islampur', 'Raiganj'],
+        'Malda': ['Chanchal', 'Gazole', 'Malda']
+      };
+      const divisionsInRegion = regionDefinitions[currentRegion];
+      if (!ignoreRegion) result = result.filter(r => divisionsInRegion.includes(r.Division));
+    }
+
+    if (!ignorePriority && currentPriority !== 'All') {
+      result = result.filter(r => r.Priority === currentPriority);
+    }
 
     if (!ignoreDivision && currentDivision !== 'All') {
       result = result.filter(r => r.Division === currentDivision);
@@ -1803,6 +2072,8 @@ function filterAndRenderTable() {
   };
 
   // Update counts for each filter section based on other active filters
+  updateRegionTabCounts(applyFilters(baseRecords, { ignoreRegion: true }));
+  updatePriorityTabCounts(applyFilters(baseRecords, { ignorePriority: true }));
   updateDivisionTabCounts(applyFilters(baseRecords, { ignoreDivision: true }));
   updateSchemeHeadFilterCounts(applyFilters(baseRecords, { ignoreScheme: true }));
   updateStatusFilterCounts(applyFilters(baseRecords, { ignoreStatus: true }));
@@ -1826,8 +2097,10 @@ function filterAndRenderTable() {
 
     function resetAllFilters() {
       // 1. Reset state variables
-      searchInput.value = '';
+      searchInput.value = ''; // Keep Phase-I as default on reset
+      currentRegion = 'All';
       currentDivision = currentUser.can_view_all ? 'All' : (currentUser.divisions[0] || 'All');
+      currentPriority = 'Phase-I';
 
       // 2. Reset UI and state for Scheme Heads
       selectedSchemeHeads.clear();
@@ -1864,6 +2137,14 @@ function filterAndRenderTable() {
       const activeTab = document.querySelector(`#divisionTabs .filter-chip[data-division="${currentDivision}"]`);
       if (activeTab) activeTab.classList.add('active');
 
+      // 5a. Reset Region tabs UI
+      document.querySelectorAll('#regionTabsContainer .region-tab').forEach(t => t.classList.remove('active'));
+      document.querySelector('#regionTabsContainer .region-tab[data-priority="All"]')?.classList.add('active');
+
+      // 5b. Reset Priority tabs UI
+      document.querySelectorAll('#priorityTabsContainer .priority-tab').forEach(t => t.classList.remove('active'));
+      document.querySelector('#priorityTabsContainer .priority-tab[data-priority="Phase-I"]').classList.add('active');
+
       // 6. Re-render
       currentPage = 1;
       filterAndRenderTable();
@@ -1876,37 +2157,6 @@ function filterAndRenderTable() {
 
 
 
-
-    // ---- DETAIL MODAL ----
-    function showDetailModal(id) {
-      const record = allRecords.find(r => r.id == id);
-      if (!record) {
-        showMessage('Record not found.', 'error');
-        return;
-      }
-
-      const detailModalTitle = document.getElementById('detailModalTitle');
-      const detailModalBody = document.getElementById('detailModalBody');
-
-      detailModalTitle.textContent = `Details for: ${record['Name of Scheme']}`;
-
-      let bodyHtml = '<table class="table table-borderless detail-modal-table w-100">';
-      bodyHtml += '<tbody>';
-      for (const col of ALL_COLUMNS) {
-        if (col === 'id') continue;
-        const value = record[col] || '<span class="text-muted fst-italic">N/A</span>';
-        bodyHtml += `
-            <tr>
-                <td>${col}</td>
-                <td>${value}</td>
-            </tr>
-            `;
-      }
-      bodyHtml += '</tbody></table>';
-
-      detailModalBody.innerHTML = bodyHtml;
-      detailModal.show();
-    }
 
 
     // ---- MODAL FUNCTIONS ----
@@ -2000,30 +2250,118 @@ async function saveRecord(e) {
 }
 
     
-    async function deleteRecord() {
+async function deleteRecord() {
+  const id = recordId.value;
+  const recordToDelete = allRecords.find(r => r.id == id);
+
+  // Use a standard confirmation dialog
+  if (!window.confirm(`Are you sure you want to delete the scheme "${recordToDelete['Name of Scheme']}"?\n\nThis action cannot be undone.`)) {
+    return; // User cancelled
+  }
+
+  showLoading();
+
+  // Check if user has permission to delete this record
+  if (recordToDelete && !currentUser.can_view_all && !currentUser.divisions.includes(recordToDelete.Division)) {
+    hideLoading();
+    showMessage('You do not have permission to delete this record.', 'error');
+    return;
+  }
+
+  const { error } = await client.from(TABLE_NAME).delete().eq('id', id);
+
+  if (error) {
+    hideLoading();
+    showMessage(`Error deleting record: ${error.message}`, 'error');
+  } else {
+    allRecords = allRecords.filter(r => r.id != id); // Remove record locally
+    editModal.hide();
+    filterAndRenderTable(); // Re-render the table with current filters
       showLoading();
-      const id = recordId.value;
-      
-      // Check if user has permission to delete this record
-      const recordToDelete = allRecords.find(r => r.id == id);
-      if (recordToDelete && !currentUser.can_view_all && !currentUser.divisions.includes(recordToDelete.Division)) {
-          hideLoading();
-          showMessage('You do not have permission to delete this record.', 'error');
-          return;
+  }
+}
+
+    // ---- PDF EXPORT ----
+    function downloadPdf(records) {
+      if (records.length === 0) {
+        showMessage('No records to download.', 'info');
+        return;
       }
 
-      const { error } = await client.from(TABLE_NAME).delete().eq('id', id);
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'pt',
+        format: 'a4'
+      });
+
+      // --- Build Dynamic Header ---
+      let headerParts = [];
+      if (currentPriority !== 'All') headerParts.push(`${currentPriority} Priority`);
+      if (currentRegion !== 'All') headerParts.push(`under ${currentRegion} Region`);
+      if (currentDivision !== 'All') headerParts.push(`for ${currentDivision} Division`);
       
-      if (error) {
-        hideLoading();
-        showMessage(`Error deleting record: ${error.message}`, 'error');
-      } else {
-        await fetchData();
-        editModal.hide();
-        hideLoading();
+      const totalSchemeHeads = schemeHeadFiltersContainer.querySelectorAll('.schemehead-checkbox').length;
+      if (selectedSchemeHeads.size > 0 && selectedSchemeHeads.size < totalSchemeHeads) {
+        headerParts.push(`for Scheme Heads: ${Array.from(selectedSchemeHeads).slice(0, 2).join(', ')}${selectedSchemeHeads.size > 2 ? '...' : ''}`);
       }
+
+      const mainTitle = "Priority SI Works Report";
+      const subTitle = headerParts.length > 0 ? headerParts.join(' ') : "All Records";
+
+      // --- Prepare Table Data ---
+      const pdfHeaders = ['Sl. No.', ...TABLE_COLUMNS.map(c => COMPACT_HEADERS[c] || c)];
+      const head = [pdfHeaders];
+      const body = records.map((record, index) => {
+        const rowData = TABLE_COLUMNS.map(col => {
+          if (col.includes('Date')) return formatDate(record[col]);
+          return record[col] || '';
+        });
+        // Prepend the serial number (index + 1) to the row data
+        return [index + 1, ...rowData];
+      });
+
+      // --- Generate PDF using AutoTable ---
+      doc.autoTable({
+        head: head,
+        body: body,
+        margin: { top: 70 }, // Reserve space for the header on every page
+        theme: 'grid',
+        styles: {
+          fontSize: 8,
+          cellPadding: 2,
+        },
+        headStyles: {
+          fillColor: [59, 130, 246], // --primary-color
+          textColor: 255,
+          fontStyle: 'bold',
+        },
+        didDrawPage: function (data) {
+          // Header
+          doc.setFontSize(16);
+          doc.setTextColor(40);
+          doc.text(mainTitle, data.settings.margin.left, 40);
+          doc.setFontSize(10);
+          doc.text(subTitle, data.settings.margin.left, 55);
+
+          // Footer
+          const pageCount = doc.internal.getNumberOfPages();
+          doc.setFontSize(8);
+          doc.text(`Page ${data.pageNumber} of ${pageCount}`, data.settings.margin.left, doc.internal.pageSize.height - 10);
+          doc.text(`Generated on: ${new Date().toLocaleDateString()}`, doc.internal.pageSize.width - data.settings.margin.right, doc.internal.pageSize.height - 10, { align: 'right' });
+        }
+      });
+
+      // --- Create dynamic filename ---
+      let filenamePart = 'All_Records';
+      if (currentRegion !== 'All') {
+        filenamePart = currentRegion;
+      } else if (currentDivision !== 'All') {
+        filenamePart = currentDivision;
+      }
+      const filename = `Priority_SI_Works_${filenamePart.replace(/ /g, '_')}.pdf`;
+      doc.save(filename);
     }
-
     // ---- CSV EXPORT ----
     function downloadCsv(records) {
       if (records.length === 0) {
@@ -2062,6 +2400,8 @@ async function saveRecord(e) {
       }
       
       buildForm();
+      buildRegionTabs();
+      buildPriorityTabs();
       buildDivisionTabs();
       buildSchemeHeadFilters();
       buildStatusFilters();
@@ -2088,6 +2428,20 @@ async function saveRecord(e) {
       if (!currentUser.can_view_all) {
         filteredRecords = filteredRecords.filter(record => currentUser.divisions.includes(record.Division));
       }
+      // Apply Region filter
+      if (currentRegion !== 'All') {
+        const regionDefinitions = {
+          'Dakshin Dinajpur': ['Balurghat', 'Buniadpur'],
+          'Raiganj': ['Islampur', 'Raiganj'],
+          'Malda': ['Chanchal', 'Gazole', 'Malda']
+        };
+        const divisionsInRegion = regionDefinitions[currentRegion];
+        if (divisionsInRegion) filteredRecords = filteredRecords.filter(r => divisionsInRegion.includes(r.Division));
+      }
+      // Apply Priority filter
+      if (currentPriority !== 'All') {
+        filteredRecords = filteredRecords.filter(record => record.Priority === currentPriority);
+      }
       if (currentDivision !== 'All') {
         filteredRecords = filteredRecords.filter(record => record.Division === currentDivision);
       }
@@ -2098,7 +2452,10 @@ if (selectedSchemeHeads.size > 0 && selectedSchemeHeads.size < schemeHeads.lengt
 
 // Filter by selected Status buttons
 if (selectedStatuses.size > 0) {
-filteredRecords = filteredRecords.filter(record => selectedStatuses.has(record['Status']));
+  filteredRecords = filteredRecords.filter(record => {
+    const recordStatus = (record.Status && record.Status.trim()) ? record.Status : 'Not yet updated';
+    return selectedStatuses.has(recordStatus);
+  });
 }
 
 // Filter by search input
@@ -2113,12 +2470,58 @@ if (searchQuery) {
 
       downloadCsv(filteredRecords);
     });
+    btnDownloadPdf.addEventListener('click', () => {
+      // This logic correctly creates a snapshot of filtered records for download
+      let filteredRecords = allRecords;
+      // Apply filters for the downloaded CSV
+      if (!currentUser.can_view_all) {
+        filteredRecords = filteredRecords.filter(record => currentUser.divisions.includes(record.Division));
+      }
+      // Apply Region filter
+      if (currentRegion !== 'All') {
+        const regionDefinitions = {
+          'Dakshin Dinajpur': ['Balurghat', 'Buniadpur'],
+          'Raiganj': ['Islampur', 'Raiganj'],
+          'Malda': ['Chanchal', 'Gazole', 'Malda']
+        };
+        const divisionsInRegion = regionDefinitions[currentRegion];
+        if (divisionsInRegion) filteredRecords = filteredRecords.filter(r => divisionsInRegion.includes(r.Division));
+      }
+      // Apply Priority filter
+      if (currentPriority !== 'All') {
+        filteredRecords = filteredRecords.filter(record => record.Priority === currentPriority);
+      }
+      if (currentDivision !== 'All') {
+        filteredRecords = filteredRecords.filter(record => record.Division === currentDivision);
+      }
+// Filter by Scheme Head sidebar
+if (selectedSchemeHeads.size > 0 && selectedSchemeHeads.size < schemeHeads.length) {
+  filteredRecords = filteredRecords.filter(record => selectedSchemeHeads.has(record['Scheme Head']));
+}
+
+// Filter by selected Status buttons
+if (selectedStatuses.size > 0) {
+  filteredRecords = filteredRecords.filter(record => {
+    const recordStatus = (record.Status && record.Status.trim()) ? record.Status : 'Not yet updated';
+    return selectedStatuses.has(recordStatus);
+  });
+}
+
+// Filter by search input
+const searchQuery = searchInput.value.toLowerCase().trim();
+if (searchQuery) {
+  filteredRecords = filteredRecords.filter(record =>
+    TABLE_COLUMNS.some(column =>
+      String(record[column]).toLowerCase().includes(searchQuery)
+    )
+  );
+}
+
+      downloadPdf(filteredRecords);
+    });
 
     btnResetFilters.addEventListener('click', resetAllFilters);
     
-    // Hide tooltip when scrolling
-    window.addEventListener('scroll', hideTooltip);
-
     // Sidebar toggles
     toggleSidebarBtn.addEventListener('click', () => {
       sidebar.classList.toggle('active');
@@ -2141,9 +2544,48 @@ if (searchQuery) {
     }, 300);
     searchInput.addEventListener('input', debouncedSearch);
 
+    // New event listener for toggling detail rows (using event delegation)
+    tableBody.addEventListener('click', (e) => {
+      const dataRow = e.target.closest('.data-row');
+      if (!dataRow) return; // Click was not on a data row
+
+      // If the click originated from the actions cell, do nothing.
+      const actionCell = e.target.closest('.actions-cell');
+      if (actionCell) return;
+
+      const recordId = dataRow.dataset.recordId;
+      const detailWrapper = document.getElementById(`detail-wrapper-${recordId}`);
+      if (!detailWrapper) return;
+
+      // Hide any other open detail rows
+      const allDetailWrappers = tableBody.querySelectorAll('.detail-wrapper.expanded');
+      allDetailWrappers.forEach(wrapper => {
+        if (wrapper.id !== detailWrapper.id) {
+          wrapper.classList.remove('expanded');
+          // Find the corresponding data row and remove its active class
+          const otherRecordId = wrapper.id.split('-').pop();
+          document.querySelector(`.data-row[data-record-id="${otherRecordId}"]`)?.classList.remove('table-active');
+        }
+      });
+
+      // Toggle the clicked row's detail view
+      const isExpanded = detailWrapper.classList.contains('expanded');
+      if (isExpanded) {
+        detailWrapper.classList.remove('expanded');
+        dataRow.classList.remove('table-active');
+      } else {
+        detailWrapper.innerHTML = buildDetailContent(allRecords.find(r => r.id == recordId));
+        detailWrapper.classList.add('expanded');
+        dataRow.classList.add('table-active');
+      }
+    });
     // ---- INITIALIZE ----
     async function initializeApp() {
         // Show the app UI and hide login
+        // Add a class to the actions column to identify it
+        const actionHeader = document.querySelector('#tableHead th:last-child');
+        if(actionHeader) actionHeader.classList.add('actions-cell');
+
         loginContainer.style.display = 'none';
         appContainer.style.display = 'flex';
 
@@ -2160,7 +2602,6 @@ if (searchQuery) {
             document.querySelector('#editModal .modal-body').style.pointerEvents = 'auto';
         }
 
-        detailModal = new bootstrap.Modal(document.getElementById('detailModal'));
         editModal = new bootstrap.Modal(document.getElementById('editModal'));
         buildHead();
         await fetchData();
