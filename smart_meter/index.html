@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meter Utilization Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 24px;
+      text-align: center;
+    }
+    h1 { font-size: 28px; font-weight: 600; margin-bottom: 8px; }
+    .subtitle { opacity: 0.9; font-size: 14px; }
+    .controls {
+      padding: 24px;
+      background: #f8f9fa;
+      border-bottom: 1px solid #e9ecef;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .control-group {
+      flex: 1;
+      min-width: 200px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #495057;
+      margin-bottom: 6px;
+    }
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 2px solid #dee2e6;
+      border-radius: 8px;
+      font-size: 14px;
+      background: white;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    select:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    .tabs {
+      display: flex;
+      border-bottom: 2px solid #e9ecef;
+      background: #f8f9fa;
+    }
+    .tab {
+      flex: 1;
+      padding: 16px;
+      text-align: center;
+      cursor: pointer;
+      font-weight: 600;
+      color: #6c757d;
+      transition: all 0.2s;
+      border-bottom: 3px solid transparent;
+    }
+    .tab.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+      background: white;
+    }
+    .content {
+      padding: 24px;
+      min-height: 500px;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    .chart-container {
+      position: relative;
+      height: 450px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #e9ecef;
+    }
+    th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #495057;
+      position: sticky;
+      top: 0;
+    }
+    tr:hover {
+      background: #f8f9fa;
+    }
+    .loading {
+      text-align: center;
+      padding: 60px;
+      color: #6c757d;
+    }
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #667eea;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    @media (max-width: 768px) {
+      .controls { flex-direction: column; }
+      .control-group { min-width: 100%; }
+      h1 { font-size: 22px; }
+      .chart-container { height: 350px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>⚡ Meter Utilization Dashboard</h1>
+      <div class="subtitle">Smart Meter Analysis & Work Order Tracking</div>
+    </div>
+
+    <div class="controls">
+      <div class="control-group">
+        <label>Hierarchy Level</label>
+        <select id="hierarchyLevel">
+          <option value="region">Region-wise</option>
+          <option value="division">Division-wise</option>
+          <option value="ccc">CCC-wise</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label>Filter By</label>
+        <select id="filterSelect">
+          <option value="all">All</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label>Meter Type</label>
+        <select id="meterType">
+          <option value="all">All Types</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label>Connection Phase</label>
+        <select id="connPhase">
+          <option value="all">All Phases</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('chart')">📊 Chart View</div>
+      <div class="tab" onclick="switchTab('table')">📋 Table View</div>
+    </div>
+
+    <div class="content">
+      <div id="chartTab" class="tab-content active">
+        <div class="loading" id="loading">
+          <div class="spinner"></div>
+          <div>Loading data...</div>
+        </div>
+        <div class="chart-container" id="chartContainer" style="display:none;">
+          <canvas id="chart"></canvas>
+        </div>
+      </div>
+      <div id="tableTab" class="tab-content">
+        <div style="overflow-x: auto;">
+          <table id="dataTable">
+            <thead>
+              <tr>
+                <th>Location</th>
+                <th>Meter Type</th>
+                <th>Phase</th>
+                <th>Work Orders</th>
+                <th>Meters Installed</th>
+                <th>Utilization %</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const HIER = {
+      "6610000": { name: "MALDA REGION", divisions: {
+        "6611000": { name: "MALDA DIVISION", cccs: {"6611101":"MANIKCHAK","6611102":"GOLAPGANJ","6611103":"BAISHNABNAGAR","6611104":"KALIACHAK","6611105":"MOTHABARI","6611106":"SUJAPUR","6611107":"RATHBARI","6611108":"FULBARI","6611109":"MOKDUMPUR"}},
+        "6612000": { name: "CHANCHAL DIVISION", cccs: {"6612101":"BHALUKA","6612102":"SAMSI","6612103":"PARANPUR","6612104":"CHANCHAL","6612105":"MALATIPUR","6612106":"HARISHCHANDRAPUR","6612107":"KUSHIDA"}},
+        "6613000": { name: "GAZOLE DIVISION", cccs: {"6613101":"GAZOL","6613102":"AIHO","6613103":"PANDUA","6613104":"BAMONGOLA","6613105":"OLD MALDA"}}
+      }},
+      "6620000": { name: "UTTAR DINAJPUR REGION", divisions: {
+        "6621000": { name: "RAIGANJ DIVISION", cccs: {"6621101":"ITAHAR","6621102":"HEMTABAD","6621103":"KALIYAGANJ","6621104":"RAIGANJ","6621105":"BIRNAGAR","6621106":"KARANDIGHI"}},
+        "6622000": { name: "ISLAMPUR DIVISION", cccs: {"6622101":"ISLAMPUR","6622102":"CHOPRA","6622103":"DALKHOLA","6622104":"GOALPOKHER","6622105":"KANKI"}}
+      }},
+      "6630000": { name: "DAKSHIN DINAJPUR REGION", divisions: {
+        "6631000": { name: "BALURGHAT DIVISION", cccs: {"6631101":"BALURGHAT","6631102":"TAPAN","6631103":"KUMARGANJ","6631104":"HILI","6631105":"PATIRAM"}},
+        "6632000": { name: "BUNIADPUR DIVISION", cccs: {"6632101":"BUNIADPUR","6632102":"KUSMANDI","6632103":"HARIRAMPUR","6632104":"GANGARAMPUR"}}
+      }}
+    };
+
+    let rawData = [];
+    let chart = null;
+
+    function getHierarchyInfo(cccCode) {
+      for (const [regCode, region] of Object.entries(HIER)) {
+        for (const [divCode, division] of Object.entries(region.divisions)) {
+          if (division.cccs[cccCode]) {
+            return {
+              region: { code: regCode, name: region.name },
+              division: { code: divCode, name: division.name },
+              ccc: { code: cccCode, name: division.cccs[cccCode] }
+            };
+          }
+        }
+      }
+      return null;
+    }
+
+    function isNumeric(val) {
+      return val && /^\d+$/.test(String(val).trim());
+    }
+
+    Papa.parse('https://docs.google.com/spreadsheets/d/e/2PACX-1vSWjwUI4EUgEABlcggpdOS-WSPKY8my-5T0cLxT4h8tNz_IreQy6jUYKBnB5yc0n-fcs8FpVbwo6Qay/pub?gid=0&single=true&output=tsv', {
+      download: true,
+      header: true,
+      delimiter: '\t',
+      skipEmptyLines: true,
+      complete: function(results) {
+        rawData = results.data.map(row => {
+          const info = getHierarchyInfo(row.CCC_CODE);
+          return {
+            ...row,
+            hierarchy: info,
+            hasNewMeter: isNumeric(row.NEW_METER_NO),
+            hasWorkOrder: isNumeric(row.WORK_ORDER)
+          };
+        }).filter(row => row.hierarchy);
+
+        populateFilters();
+        updateVisualization();
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('chartContainer').style.display = 'block';
+      }
+    });
+
+    function populateFilters() {
+      const meterTypes = [...new Set(rawData.map(r => r['Meter Type']).filter(Boolean))];
+      const phases = [...new Set(rawData.map(r => r.CONN_PHASE).filter(Boolean))];
+
+      const meterSelect = document.getElementById('meterType');
+      meterTypes.forEach(type => {
+        const opt = document.createElement('option');
+        opt.value = type;
+        opt.textContent = type;
+        meterSelect.appendChild(opt);
+      });
+
+      const phaseSelect = document.getElementById('connPhase');
+      phases.forEach(phase => {
+        const opt = document.createElement('option');
+        opt.value = phase;
+        opt.textContent = phase;
+        phaseSelect.appendChild(opt);
+      });
+    }
+
+    function updateFilterOptions() {
+      const level = document.getElementById('hierarchyLevel').value;
+      const filterSelect = document.getElementById('filterSelect');
+      filterSelect.innerHTML = '<option value="all">All</option>';
+
+      if (level === 'region') {
+        Object.entries(HIER).forEach(([code, region]) => {
+          const opt = document.createElement('option');
+          opt.value = code;
+          opt.textContent = region.name;
+          filterSelect.appendChild(opt);
+        });
+      } else if (level === 'division') {
+        Object.values(HIER).forEach(region => {
+          Object.entries(region.divisions).forEach(([code, division]) => {
+            const opt = document.createElement('option');
+            opt.value = code;
+            opt.textContent = division.name;
+            filterSelect.appendChild(opt);
+          });
+        });
+      } else if (level === 'ccc') {
+        Object.values(HIER).forEach(region => {
+          Object.values(region.divisions).forEach(division => {
+            Object.entries(division.cccs).forEach(([code, name]) => {
+              const opt = document.createElement('option');
+              opt.value = code;
+              opt.textContent = name;
+              filterSelect.appendChild(opt);
+            });
+          });
+        });
+      }
+    }
+
+    function getFilteredData() {
+      const level = document.getElementById('hierarchyLevel').value;
+      const filter = document.getElementById('filterSelect').value;
+      const meterType = document.getElementById('meterType').value;
+      const phase = document.getElementById('connPhase').value;
+
+      let filtered = rawData.filter(row => {
+        if (meterType !== 'all' && row['Meter Type'] !== meterType) return false;
+        if (phase !== 'all' && row.CONN_PHASE !== phase) return false;
+        if (filter === 'all') return true;
+        
+        if (level === 'region') return row.hierarchy.region.code === filter;
+        if (level === 'division') return row.hierarchy.division.code === filter;
+        if (level === 'ccc') return row.hierarchy.ccc.code === filter;
+        return true;
+      });
+
+      const grouped = {};
+      filtered.forEach(row => {
+        let key, name;
+        if (level === 'region') {
+          key = row.hierarchy.region.code;
+          name = row.hierarchy.region.name;
+        } else if (level === 'division') {
+          key = row.hierarchy.division.code;
+          name = row.hierarchy.division.name;
+        } else {
+          key = row.hierarchy.ccc.code;
+          name = row.hierarchy.ccc.name;
+        }
+
+        const subKey = `${key}|${row['Meter Type']}|${row.CONN_PHASE}`;
+        if (!grouped[subKey]) {
+          grouped[subKey] = {
+            location: name,
+            meterType: row['Meter Type'] || 'N/A',
+            phase: row.CONN_PHASE || 'N/A',
+            workOrders: 0,
+            metersInstalled: 0
+          };
+        }
+        if (row.hasWorkOrder) grouped[subKey].workOrders++;
+        if (row.hasNewMeter) grouped[subKey].metersInstalled++;
+      });
+
+      return Object.values(grouped).map(item => ({
+        ...item,
+        utilization: item.workOrders > 0 ? ((item.metersInstalled / item.workOrders) * 100).toFixed(1) : 0
+      }));
+    }
+
+    function updateVisualization() {
+      const data = getFilteredData();
+      updateChart(data);
+      updateTable(data);
+    }
+
+    function updateChart(data) {
+      const ctx = document.getElementById('chart').getContext('2d');
+      
+      if (chart) chart.destroy();
+
+      const labels = data.map(d => `${d.location}\n${d.meterType} (${d.phase})`);
+      const workOrders = data.map(d => d.workOrders);
+      const installed = data.map(d => d.metersInstalled);
+
+      chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Work Orders',
+              data: workOrders,
+              backgroundColor: 'rgba(102, 126, 234, 0.8)',
+              borderColor: 'rgba(102, 126, 234, 1)',
+              borderWidth: 2
+            },
+            {
+              label: 'Meters Installed',
+              data: installed,
+              backgroundColor: 'rgba(118, 75, 162, 0.8)',
+              borderColor: 'rgba(118, 75, 162, 1)',
+              borderWidth: 2
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: {
+              callbacks: {
+                afterLabel: function(context) {
+                  const idx = context.dataIndex;
+                  return `Utilization: ${data[idx].utilization}%`;
+                }
+              }
+            }
+          },
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    function updateTable(data) {
+      const tbody = document.getElementById('tableBody');
+      tbody.innerHTML = '';
+      
+      data.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${row.location}</td>
+          <td>${row.meterType}</td>
+          <td>${row.phase}</td>
+          <td>${row.workOrders}</td>
+          <td>${row.metersInstalled}</td>
+          <td>${row.utilization}%</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      
+      if (tab === 'chart') {
+        document.querySelector('.tab:nth-child(1)').classList.add('active');
+        document.getElementById('chartTab').classList.add('active');
+      } else {
+        document.querySelector('.tab:nth-child(2)').classList.add('active');
+        document.getElementById('tableTab').classList.add('active');
+      }
+    }
+
+    document.getElementById('hierarchyLevel').addEventListener('change', () => {
+      updateFilterOptions();
+      updateVisualization();
+    });
+    document.getElementById('filterSelect').addEventListener('change', updateVisualization);
+    document.getElementById('meterType').addEventListener('change', updateVisualization);
+    document.getElementById('connPhase').addEventListener('change', updateVisualization);
+
+    updateFilterOptions();
+  </script>
+</body>
+</html>
