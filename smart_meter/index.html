@@ -4,88 +4,94 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Meter Utilization Dashboard</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
   <style>
+    :root {
+      --primary: #667eea;
+      --secondary: #764ba2;
+      --bg: #f1f3f4;
+      --card: #ffffff;
+      --text: #2d3748;
+      --text-muted: #718096;
+      --border: #e2e8f0;
+      --radius: 6px;
+      --shadow: 0 2px 8px rgba(0,0,0,0.08);
+      --spacing: 8px;
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: var(--bg);
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.4;
       min-height: 100vh;
-      padding: 20px;
+      padding: var(--spacing);
     }
     .container {
-      max-width: 1200px;
+      max-width: 1000px;
       margin: 0 auto;
-      background: white;
-      border-radius: 16px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
       overflow: hidden;
     }
     .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
       color: white;
-      padding: 24px;
+      padding: 12px 16px;
       text-align: center;
     }
-    h1 { font-size: 28px; font-weight: 600; margin-bottom: 8px; }
-    .subtitle { opacity: 0.9; font-size: 14px; }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+    .subtitle { opacity: 0.9; font-size: 13px; }
     .controls {
-      padding: 24px;
-      background: #f8f9fa;
-      border-bottom: 1px solid #e9ecef;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 16px;
-    }
-    .control-group {
-      flex: 1;
-      min-width: 200px;
-    }
-    label {
-      display: block;
-      font-size: 13px;
-      font-weight: 600;
-      color: #495057;
-      margin-bottom: 6px;
+      padding: 12px;
+      background: #fafafa;
+      border-bottom: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: var(--spacing);
     }
     select {
       width: 100%;
-      padding: 10px 12px;
-      border: 2px solid #dee2e6;
-      border-radius: 8px;
-      font-size: 14px;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 13px;
       background: white;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: border-color 0.2s;
     }
     select:focus {
       outline: none;
-      border-color: #667eea;
+      border-color: var(--primary);
     }
     .tabs {
       display: flex;
-      border-bottom: 2px solid #e9ecef;
-      background: #f8f9fa;
+      border-bottom: 1px solid var(--border);
+      background: #fafafa;
     }
     .tab {
       flex: 1;
-      padding: 16px;
+      padding: 10px 8px;
       text-align: center;
       cursor: pointer;
       font-weight: 600;
-      color: #6c757d;
+      font-size: 13px;
+      color: var(--text-muted);
       transition: all 0.2s;
-      border-bottom: 3px solid transparent;
+      border-bottom: 2px solid transparent;
     }
     .tab.active {
-      color: #667eea;
-      border-bottom-color: #667eea;
+      color: var(--primary);
+      border-bottom-color: var(--primary);
       background: white;
     }
     .content {
-      padding: 24px;
-      min-height: 500px;
+      padding: 12px;
+      /* min-height: 300px; */
+      max-height: 65vh;
+      overflow-y: auto;
     }
     .tab-content {
       display: none;
@@ -95,59 +101,129 @@
     }
     .chart-container {
       position: relative;
-      height: 450px;
+      height: 280px;
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 14px;
+      font-size: 13px;
     }
     th, td {
-      padding: 12px;
+      padding: 6px 8px;
       text-align: left;
-      border-bottom: 1px solid #e9ecef;
+      border-bottom: 1px solid var(--border);
     }
     th {
-      background: #f8f9fa;
+      background: #fafafa;
       font-weight: 600;
-      color: #495057;
+      color: var(--text-muted);
       position: sticky;
-      top: 0;
+      top: -1px; /* -1px to avoid gap with container */
+      font-size: 12px;
     }
     tr:hover {
-      background: #f8f9fa;
+      background: #f9f9f9;
+    }
+    .location-summary:hover {
+      background: #e8f4fd !important;
+      transform: translateX(2px);
+      transition: all 0.2s;
+    }
+    .detail-row:hover {
+      background: #f0f0f0 !important;
     }
     .loading {
       text-align: center;
-      padding: 60px;
-      color: #6c757d;
+      padding: 40px 20px;
+      color: var(--text-muted);
     }
     .spinner {
-      border: 4px solid #f3f3f3;
-      border-top: 4px solid #667eea;
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid var(--primary);
       border-radius: 50%;
-      width: 40px;
-      height: 40px;
+      width: 24px;
+      height: 24px;
       animation: spin 1s linear infinite;
-      margin: 0 auto 16px;
+      margin: 0 auto 12px;
     }
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
     @media (max-width: 768px) {
-      .controls { flex-direction: column; }
-      .control-group { min-width: 100%; }
-      h1 { font-size: 22px; }
-      .chart-container { height: 350px; }
+      body { padding: 4px; }
+      .controls { 
+        grid-template-columns: repeat(2, 1fr);
+        padding: 8px;
+        gap: 6px;
+      }
+      .control-group { min-width: 0; }
+      h1 { font-size: 16px; }
+      .subtitle { font-size: 11px; }
+      .chart-container { height: 200px; }
+      .content { padding: 8px; }
+      .header { padding: 8px 12px; }
+      .tab { padding: 8px 6px; font-size: 11px; }
+      th, td { padding: 4px 6px; }
+      table { font-size: 10px; }
+      th { font-size: 9px; }
     }
+    @media (max-width: 480px) {
+      .controls { grid-template-columns: 1fr; }
+      .chart-container { height: 180px; }
+    }
+    /* Modal Styles */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0,0,0,0.6);
+    }
+    .modal-content {
+      background-color: #fefefe;
+      margin: 5% auto;
+      padding: 20px;
+      border: 1px solid #888;
+      width: 90%;
+      max-width: 1100px;
+      border-radius: var(--radius);
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+      margin-bottom: 15px;
+    }
+    .modal-header h2 {
+      font-size: 18px;
+      color: var(--text);
+    }
+    .close-button {
+      color: #aaa;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .close-button:hover,
+    .close-button:focus {
+      color: black;
+      text-decoration: none;
+    }
+    #modalTableContainer { max-height: 60vh; overflow-y: auto; }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <h1>⚡ Meter Utilization Dashboard</h1>
-      <div class="subtitle">Smart Meter Analysis & Work Order Tracking</div>
+      <h1>Progress of Smart Metering</h1>
     </div>
 
     <div class="controls">
@@ -177,42 +253,58 @@
           <option value="all">All Phases</option>
         </select>
       </div>
+      <div class="control-group">
+        <label>Installation Status</label>
+        <select id="installStatus">
+          <option value="all">All</option>
+          <option value="installed">Smart Meter Installed</option>
+          <option value="pending">Smart Meter Pending</option>
+        </select>
+      </div>
     </div>
 
     <div class="tabs">
-      <div class="tab active" onclick="switchTab('chart')">📊 Chart View</div>
-      <div class="tab" onclick="switchTab('table')">📋 Table View</div>
+      <div class="tab active">Office wise utilization summary</div>
     </div>
 
     <div class="content">
-      <div id="chartTab" class="tab-content active">
+      <div id="tableTab" class="tab-content active">
         <div class="loading" id="loading">
           <div class="spinner"></div>
           <div>Loading data...</div>
         </div>
-        <div class="chart-container" id="chartContainer" style="display:none;">
-          <canvas id="chart"></canvas>
-        </div>
-      </div>
-      <div id="tableTab" class="tab-content">
-        <div style="overflow-x: auto;">
+        <div>
           <table id="dataTable">
             <thead>
               <tr>
-                <th>Location</th>
-                <th>Meter Type</th>
-                <th>Phase</th>
-                <th>Work Orders</th>
-                <th>Meters Installed</th>
-                <th>Utilization %</th>
+                <th style="width: 35%">Location / Details</th>
+                <th style="width: 13%">Target</th>
+                <th style="width: 13%">Work Orders</th>
+                <th style="width: 13%">Pending WO</th>
+                <th style="width: 13%">Meters Installed</th>
+                <th style="width: 13%">Achieved (%)</th>
               </tr>
             </thead>
-            <tbody id="tableBody"></tbody>
+            <tbody id="tableBody"></tbody><tfoot id="tableFooter"></tfoot>
           </table>
         </div>
       </div>
     </div>
   </div>
+
+  <!-- Detail Modal -->
+  <div id="detailModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modalTitle">Consumer Details</h2>
+        <span class="close-button">&times;</span>
+      </div>
+      <div id="modalTableContainer">
+        <!-- Consumer detail table will be injected here -->
+      </div>
+    </div>
+  </div>
+
 
   <script>
     const HIER = {
@@ -232,7 +324,6 @@
     };
 
     let rawData = [];
-    let chart = null;
 
     function getHierarchyInfo(cccCode) {
       for (const [regCode, region] of Object.entries(HIER)) {
@@ -250,7 +341,8 @@
     }
 
     function isNumeric(val) {
-      return val && /^\d+$/.test(String(val).trim());
+      const trimmedVal = val ? String(val).trim() : '';
+      return trimmedVal && trimmedVal !== '0';
     }
 
     Papa.parse('https://docs.google.com/spreadsheets/d/e/2PACX-1vSWjwUI4EUgEABlcggpdOS-WSPKY8my-5T0cLxT4h8tNz_IreQy6jUYKBnB5yc0n-fcs8FpVbwo6Qay/pub?gid=0&single=true&output=tsv', {
@@ -259,6 +351,27 @@
       delimiter: '\t',
       skipEmptyLines: true,
       complete: function(results) {
+        if (results.data.length > 0 && results.data[0].Date) {
+          const dateStr = results.data[0].Date; // Assuming format mm/dd/yyyy
+          const parts = dateStr.split('/'); // Correct format is dd/mm/yyyy
+          // new Date(year, monthIndex, day) - month is 0-indexed
+          const dateObj = parts.length === 3 ? new Date(parts[2], parts[1] - 1, parts[0]) : new Date(dateStr);
+
+          // Check if the date is valid before formatting
+          if (!isNaN(dateObj.getTime())) {
+            const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const month = months[dateObj.getMonth()];
+            const day = dateObj.getDate();
+            const year = dateObj.getFullYear();
+            const formattedDate = `${month}, ${day}, ${year}`;
+
+            const headerTitle = document.querySelector('.header h1');
+            if (headerTitle) {
+              headerTitle.textContent = `Progress of Smart Metering (${formattedDate})`;
+            }
+          }
+        }
+
         rawData = results.data.map(row => {
           const info = getHierarchyInfo(row.CCC_CODE);
           return {
@@ -272,7 +385,8 @@
         populateFilters();
         updateVisualization();
         document.getElementById('loading').style.display = 'none';
-        document.getElementById('chartContainer').style.display = 'block';
+        // show table view
+        document.getElementById('tableTab').classList.add('active');
       }
     });
 
@@ -337,10 +451,17 @@
       const filter = document.getElementById('filterSelect').value;
       const meterType = document.getElementById('meterType').value;
       const phase = document.getElementById('connPhase').value;
+      const installStatus = document.getElementById('installStatus').value;
 
       let filtered = rawData.filter(row => {
         if (meterType !== 'all' && row['Meter Type'] !== meterType) return false;
         if (phase !== 'all' && row.CONN_PHASE !== phase) return false;
+
+        if (installStatus === 'installed' && !row.hasNewMeter) return false;
+        // "Pending" means a work order exists, but a new meter is not yet installed.
+        if (installStatus === 'pending' && !(row.hasWorkOrder && !row.hasNewMeter)) return false;
+
+
         if (filter === 'all') return true;
         
         if (level === 'region') return row.hierarchy.region.code === filter;
@@ -369,107 +490,237 @@
             location: name,
             meterType: row['Meter Type'] || 'N/A',
             phase: row.CONN_PHASE || 'N/A',
+            target: 0,
             workOrders: 0,
             metersInstalled: 0
           };
         }
         if (row.hasWorkOrder) grouped[subKey].workOrders++;
         if (row.hasNewMeter) grouped[subKey].metersInstalled++;
+        grouped[subKey].target++;
       });
 
       return Object.values(grouped).map(item => ({
         ...item,
-        utilization: item.workOrders > 0 ? ((item.metersInstalled / item.workOrders) * 100).toFixed(1) : 0
+        pendingWorkOrders: item.target - item.workOrders,
+        utilization: item.target > 0 ? ((item.metersInstalled / item.target) * 100).toFixed(1) : 0
       }));
     }
 
     function updateVisualization() {
       const data = getFilteredData();
-      updateChart(data);
       updateTable(data);
-    }
-
-    function updateChart(data) {
-      const ctx = document.getElementById('chart').getContext('2d');
-      
-      if (chart) chart.destroy();
-
-      const labels = data.map(d => `${d.location}\n${d.meterType} (${d.phase})`);
-      const workOrders = data.map(d => d.workOrders);
-      const installed = data.map(d => d.metersInstalled);
-
-      chart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: labels,
-          datasets: [
-            {
-              label: 'Work Orders',
-              data: workOrders,
-              backgroundColor: 'rgba(102, 126, 234, 0.8)',
-              borderColor: 'rgba(102, 126, 234, 1)',
-              borderWidth: 2
-            },
-            {
-              label: 'Meters Installed',
-              data: installed,
-              backgroundColor: 'rgba(118, 75, 162, 0.8)',
-              borderColor: 'rgba(118, 75, 162, 1)',
-              borderWidth: 2
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'top' },
-            tooltip: {
-              callbacks: {
-                afterLabel: function(context) {
-                  const idx = context.dataIndex;
-                  return `Utilization: ${data[idx].utilization}%`;
-                }
-              }
-            }
-          },
-          scales: {
-            y: { beginAtZero: true }
-          }
-        }
-      });
     }
 
     function updateTable(data) {
       const tbody = document.getElementById('tableBody');
       tbody.innerHTML = '';
       
-      data.forEach(row => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${row.location}</td>
-          <td>${row.meterType}</td>
-          <td>${row.phase}</td>
-          <td>${row.workOrders}</td>
-          <td>${row.metersInstalled}</td>
-          <td>${row.utilization}%</td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
+      // Calculate grand totals from the full dataset for the current view
+      const grandTotalTarget = data.reduce((sum, row) => sum + row.target, 0);
+      const grandTotalWorkOrders = data.reduce((sum, row) => sum + row.workOrders, 0);
+      const grandTotalInstalled = data.reduce((sum, row) => sum + row.metersInstalled, 0);
+      const grandTotalPending = grandTotalTarget - grandTotalWorkOrders;
+      const grandTotalUtilization = grandTotalTarget > 0 ? ((grandTotalInstalled / grandTotalTarget) * 100).toFixed(1) : 0;
 
-    function switchTab(tab) {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      // Group data by location
+      const grouped = {};
+      data.forEach(row => {
+        if (!grouped[row.location]) {
+          grouped[row.location] = [];
+        }
+        grouped[row.location].push(row);
+      });
+
+      // Sort locations alphabetically
+      const sortedLocations = Object.keys(grouped).sort();
+
+      sortedLocations.forEach((location, index) => {
+        const locationData = grouped[location];
+        const totalTarget = locationData.reduce((sum, row) => sum + row.target, 0);
+        const totalWorkOrders = locationData.reduce((sum, row) => sum + row.workOrders, 0);
+        const totalInstalled = locationData.reduce((sum, row) => sum + row.metersInstalled, 0);
+        const totalPending = totalTarget - totalWorkOrders;
+        const avgUtilization = totalTarget > 0 ? ((totalInstalled / totalTarget) * 100).toFixed(1) : 0;
+        
+        // Create summary row for location
+        const summaryRow = document.createElement('tr');
+        summaryRow.className = 'location-summary';
+        summaryRow.style.backgroundColor = '#f8f9fa';
+        summaryRow.style.fontWeight = '600';
+        summaryRow.style.cursor = 'pointer';
+        summaryRow.style.borderLeft = '3px solid var(--primary)';
+        summaryRow.dataset.location = location;
+        summaryRow.dataset.expanded = 'false';
+        
+        summaryRow.innerHTML = `
+          <td style="padding: 8px 12px;">
+            <span class="expand-icon" style="margin-right: 8px; transition: transform 0.2s;">▶</span>
+            📍 ${location}
+          </td>
+          <td style="text-align: center; font-weight: 600;">${totalTarget}</td>
+          <td style="text-align: center; font-weight: 600;">${totalWorkOrders}</td>
+          <td style="text-align: center; font-weight: 600;">${totalPending}</td>
+          <td style="text-align: center; font-weight: 600;">${totalInstalled}</td>
+          <td style="text-align: center; font-weight: 600; color: var(--primary);">${avgUtilization}</td>
+        `;
+        
+        // Add click event to toggle expansion
+        summaryRow.addEventListener('click', function() {
+          toggleLocationDetails(this);
+        });
+        
+        tbody.appendChild(summaryRow);
+        
+        // Add detail rows (initially hidden)
+        locationData.forEach(row => {
+          const detailRow = document.createElement('tr');
+          detailRow.className = 'detail-row';
+          detailRow.style.display = 'none';
+          detailRow.style.backgroundColor = '#fafafa';
+          detailRow.style.cursor = 'pointer';
+          detailRow.dataset.parent = location;
+          
+          detailRow.innerHTML = `
+            <td style="padding: 6px 12px 6px 40px; font-size: 12px;">
+              ${row.meterType}
+            </td>
+            <td style="text-align: center; font-size: 12px;">${row.target}</td>
+            <td style="text-align: center; font-size: 12px;">${row.workOrders}</td>
+            <td style="text-align: center; font-size: 12px;">${row.pendingWorkOrders}</td>
+            <td style="text-align: center; font-size: 12px;">${row.metersInstalled}</td>
+            <td style="text-align: center; font-size: 12px; font-weight: 600;">${row.utilization}%</td>
+          `;
+          
+          detailRow.addEventListener('click', () => {
+            openConsumerModal(row);
+          });
+
+          tbody.appendChild(detailRow);
+        });
+      });
+
+      // Add the grand total row to the footer
+      const tfoot = document.getElementById('tableFooter');
+      tfoot.innerHTML = ''; // Clear previous footer
+
+      const totalRow = document.createElement('tr');
+      totalRow.style.backgroundColor = '#e9ecef';
+      totalRow.style.fontWeight = 'bold';
+      totalRow.style.color = 'var(--text)';
+
+      totalRow.innerHTML = `
+        <td style="padding: 8px 12px; text-align: right;">Grand Total</td>
+        <td style="text-align: center;">${grandTotalTarget}</td>
+        <td style="text-align: center;">${grandTotalWorkOrders}</td>
+        <td style="text-align: center;">${grandTotalPending}</td>
+        <td style="text-align: center;">${grandTotalInstalled}</td>
+        <td style="text-align: center; color: var(--primary);">${grandTotalUtilization}</td>
+      `;
+      tfoot.appendChild(totalRow);
+    }
+    
+    function toggleLocationDetails(summaryRow) {
+      const location = summaryRow.dataset.location;
+      const isExpanded = summaryRow.dataset.expanded === 'true';
+      const expandIcon = summaryRow.querySelector('.expand-icon');
+      const detailRows = document.querySelectorAll(`tr.detail-row[data-parent="${location}"]`);
       
-      if (tab === 'chart') {
-        document.querySelector('.tab:nth-child(1)').classList.add('active');
-        document.getElementById('chartTab').classList.add('active');
+      if (isExpanded) {
+        // Collapse
+        detailRows.forEach(row => row.style.display = 'none');
+        expandIcon.style.transform = 'rotate(0deg)';
+        expandIcon.textContent = '▶';
+        summaryRow.dataset.expanded = 'false';
       } else {
-        document.querySelector('.tab:nth-child(2)').classList.add('active');
-        document.getElementById('tableTab').classList.add('active');
+        // Expand
+        detailRows.forEach(row => row.style.display = 'table-row');
+        expandIcon.style.transform = 'rotate(90deg)';
+        expandIcon.textContent = '▼';
+        summaryRow.dataset.expanded = 'true';
       }
     }
+
+    function openConsumerModal(groupInfo) {
+      const modal = document.getElementById('detailModal');
+      const modalTitle = document.getElementById('modalTitle');
+      const tableContainer = document.getElementById('modalTableContainer');
+
+      modalTitle.textContent = `Consumers for ${groupInfo.location} - ${groupInfo.meterType}`;
+
+      const level = document.getElementById('hierarchyLevel').value;
+      const installStatus = document.getElementById('installStatus').value;
+
+      const consumers = rawData.filter(r => {
+        let locationMatch = false;
+        if (level === 'region') {
+          locationMatch = r.hierarchy.region.name === groupInfo.location;
+        } else if (level === 'division') {
+          locationMatch = r.hierarchy.division.name === groupInfo.location;
+        } else {
+          locationMatch = r.hierarchy.ccc.name === groupInfo.location;
+        }
+        
+        const meterTypeMatch = (r['Meter Type'] || 'N/A') === groupInfo.meterType;
+        const phaseMatch = (r.CONN_PHASE || 'N/A') === groupInfo.phase;
+
+        let statusMatch = true;
+        if (installStatus === 'installed' && !r.hasNewMeter) statusMatch = false;
+        if (installStatus === 'pending' && !(r.hasWorkOrder && !r.hasNewMeter)) statusMatch = false;
+
+
+        return locationMatch && meterTypeMatch && phaseMatch && statusMatch;
+      });
+
+      let tableHTML = `
+        <table style="font-size: 11px;">
+          <thead>
+            <tr>
+              <th>CON_ID</th>
+              <th>CCC</th>
+              <th>NAME</th>
+              <th>NAT_OF_CONN</th>
+              <th>CONN_LOAD</th>
+              <th>CON_CLASS</th>
+              <th>REPL_REASON</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      if (consumers.length > 0) {
+        consumers.forEach(c => {
+          tableHTML += `
+            <tr>
+              <td>${c.CON_ID || ''}</td>
+              <td>${c.hierarchy.ccc.name || ''}</td>
+              <td>${c.NAME || ''}</td>
+              <td>${c.NAT_OF_CONN || ''}</td>
+              <td>${c.CONN_LOAD || ''}</td>
+              <td>${c.CON_CLASS || ''}</td>
+              <td>${c.REPL_REASON || ''}</td>
+            </tr>
+          `;
+        });
+      } else {
+        tableHTML += '<tr><td colspan="7" style="text-align: center; padding: 20px;">No consumer data found for this group.</td></tr>';
+      }
+
+      tableHTML += '</tbody></table>';
+      tableContainer.innerHTML = tableHTML;
+
+      modal.style.display = 'block';
+    }
+    
+    // Modal close logic
+    const modal = document.getElementById('detailModal');
+    const closeBtn = document.querySelector('.close-button');
+    closeBtn.onclick = () => { modal.style.display = "none"; };
+    window.onclick = (event) => {
+      if (event.target == modal) {
+        modal.style.display = "none";
+      }
+    };
 
     document.getElementById('hierarchyLevel').addEventListener('change', () => {
       updateFilterOptions();
@@ -478,6 +729,7 @@
     document.getElementById('filterSelect').addEventListener('change', updateVisualization);
     document.getElementById('meterType').addEventListener('change', updateVisualization);
     document.getElementById('connPhase').addEventListener('change', updateVisualization);
+    document.getElementById('installStatus').addEventListener('change', updateVisualization);
 
     updateFilterOptions();
   </script>
