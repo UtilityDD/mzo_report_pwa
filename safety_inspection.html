@@ -633,14 +633,28 @@
     </div>
 
     <div class="dashboard" id="dashboard" style="display: none;">
-
       <div id="viewOptions" class="view-options-container">
-        <label style="cursor: pointer; display: flex; align-items: center; font-size: 14px; font-weight: 500;">
-          <input type="checkbox" id="weeklyCheckbox" style="margin-right: 5px; transform: scale(1.2);"> Weekly View
-        </label>
-        <label style="cursor: pointer; display: flex; align-items: center; font-size: 14px; font-weight: 500;">
-          <input type="checkbox" id="chartCheckbox" style="margin-right: 5px; transform: scale(1.2);"> Chart View
-        </label>
+        <fieldset style="border: 1px solid #ccc; border-radius: 5px; padding: 5px 10px; display: flex; gap: 15px; align-items: center;">
+          <legend style="font-size: 14px; font-weight: 500; padding: 0 5px; margin-left: 10px;">View Mode</legend>
+          <label style="cursor: pointer; display: flex; align-items: center; font-size: 14px; font-weight: 500;">
+            <input type="radio" name="viewMode" value="office" checked style="margin-right: 5px; transform: scale(1.2);"> Office-Wise View
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; font-size: 14px; font-weight: 500;">
+            <input type="radio" name="viewMode" value="weekly" style="margin-right: 5px; transform: scale(1.2);"> Weekly View
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; font-size: 14px; font-weight: 500;">
+            <input type="radio" name="viewMode" value="chart" style="margin-right: 5px; transform: scale(1.2);"> Chart View
+          </label>
+        </fieldset>
+        <fieldset style="border: 1px solid #ccc; border-radius: 5px; padding: 5px 10px; display: flex; gap: 15px; align-items: center;">
+          <legend style="font-size: 14px; font-weight: 500; padding: 0 5px; margin-left: 10px;">Group By</legend>
+          <label style="cursor: pointer; display: flex; align-items: center; font-size: 14px; font-weight: 500;">
+            <input type="radio" name="groupBy" value="Inspection ID" checked style="margin-right: 5px; transform: scale(1.2);"> Inspection ID
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; font-size: 14px; font-weight: 500;">
+            <input type="radio" name="groupBy" value="Site ID" style="margin-right: 5px; transform: scale(1.2);"> Site ID
+          </label>
+        </fieldset>        
       </div>
 
       <div class="dashboard-section" id="dropdownFiltersContainer"
@@ -715,8 +729,7 @@
     let currentRegionalFilter = "all"; // NEW: Regional filter
     let currentDivisionFilter = "all"; // NEW: Division filter
     let currentCCCFilter = "all"; // NEW: CCC filter
-    let showWeekly = false; // NEW: for checkbox
-    let showChart = false; // NEW: for checkbox
+    let groupBy = 'Inspection ID'; // NEW: for radio buttons
     let sortColumn = 'total';
     let sortDirection = 'desc';
     let totalReportWeeks = 1; // NEW: To hold the fixed number of weeks for the entire report
@@ -970,7 +983,8 @@
 
 
     function getCategory(description) {
-      const lowerDesc = description.toLowerCase();
+      // Ensure the description is always a string before calling toLowerCase()
+      const lowerDesc = String(description).toLowerCase();
       if (lowerDesc.includes("spacer")) return "Spacer Issues";
       if (lowerDesc.includes("lt kiosk")) return "LT Kiosk Issues";
       if (lowerDesc.includes("ht 11 kv")) return "HT 11 KV Issues";
@@ -1025,9 +1039,20 @@
         const response = await fetch('data/safety_inspection.json');
         const jsonData = await response.json();
 
-        inspectionData = jsonData.map(row => {
+        // Filter for unique entries based on the selected grouping
+        const uniqueKeys = new Set();
+        const uniqueJsonData = jsonData.filter(row => {
+          const key = row[groupBy];
+          if (!uniqueKeys.has(key)) {
+            uniqueKeys.add(key);
+            return true;
+          }
+          return false;
+        });
+        
+        inspectionData = uniqueJsonData.map(row => {
           const officeCode = extractOfficeCode(row.Office || '');
-          const officeMeta = officeDetailsMap[officeCode] || {};
+          const officeMeta = officeDetailsMap[officeCode] || { name: row.Office, type: 'unknown' };
           const officeNameForDisplay = officeMeta.name || cleanOfficeName(row.Office || '');
 
           let cccName = null;
@@ -1105,26 +1130,16 @@
     }
 
     function setupViewOptionsListener() {
-      // NEW: Listeners for checkboxes
-      const weeklyCheckbox = document.getElementById('weeklyCheckbox');
-      const chartCheckbox = document.getElementById('chartCheckbox');
-
-      weeklyCheckbox.addEventListener('change', (event) => {
-        showWeekly = event.target.checked;
-        if (showWeekly) {
-          chartCheckbox.checked = false; // Uncheck chart if weekly is checked
-          showChart = false;
-        }
+      document.querySelectorAll('input[name="groupBy"]').forEach(radio => {
+        radio.addEventListener('change', (event) => {
+          groupBy = event.target.value;
+          loadData(); // Reload and re-process data with new grouping
+        });
+      });
+      document.querySelectorAll('input[name="viewMode"]').forEach(radio => {
+        radio.addEventListener('change', () => {
         processData();
       });
-
-      chartCheckbox.addEventListener('change', (event) => {
-        showChart = event.target.checked;
-        if (showChart) {
-          weeklyCheckbox.checked = false; // Uncheck weekly if chart is checked
-          showWeekly = false;
-        }
-        processData();
       });
     }
 
@@ -1254,12 +1269,13 @@
       const tableContainer = document.getElementById('tableContainer');
       const chartContainer = document.getElementById('chartViewContainer');
       let tableHtml = '';
+      const selectedView = document.querySelector('input[name="viewMode"]:checked').value;
 
       // NEW: Toggle view based on checkboxes
       tableContainer.style.display = 'block';
       chartContainer.style.display = 'none';
 
-      if (showChart) {
+      if (selectedView === 'chart') {
         tableContainer.style.display = 'none';
         chartContainer.style.display = 'block';
       } 
@@ -1283,50 +1299,31 @@
         tableTitle.textContent = `CCCs in ${currentDivisionFilter}`;
       }
 
-      // NEW: Pre-filter data to ensure cards and table match
-      // This ensures that items without a valid aggregation key are excluded from all calculations.
-      const tableData = data.filter(item => item[aggregationKey]);
-
-      // Recalculate card totals based on the data that will actually be in the table
-      const cardTotalInspected = tableData.length;
-      const cardTotalRectified = tableData.filter(item => item.isRectified).length;
-      const cardTotalRectifiedPercent = cardTotalInspected > 0 ? Math.round((cardTotalRectified / cardTotalInspected) * 100) : 0;
-
       // Handle weekly view separately
-      if (showWeekly) {
+      if (selectedView === 'weekly') {
         tableTitle.textContent = 'Weekly Progress';
 
         const weeklyStats = {};
 
         data.forEach(item => {
+          // Process inspections based on 'enteredOn' date
           if (item.enteredOn) {
             const weekKey = getWeekKey(item.enteredOn);
             if (!weeklyStats[weekKey]) {
               const monday = getMonday(item.enteredOn);
               const sunday = getSunday(monday);
-              weeklyStats[weekKey] = {
-                monday: monday,
-                sunday: sunday,
-                weekRange: formatWeekRange(monday, sunday),
-                inspected: 0,
-                rectified: 0
-              };
+              weeklyStats[weekKey] = { monday, sunday, weekRange: formatWeekRange(monday, sunday), inspected: 0, rectified: 0 };
             }
             weeklyStats[weekKey].inspected++;
           }
-
+          // Process rectifications based on 'rectificationDoneOn' date
           if (item.isRectified && item.rectificationDoneOn) {
             const weekKey = getWeekKey(item.rectificationDoneOn);
             if (!weeklyStats[weekKey]) {
+              // If a week only has rectifications, it should still be in the list, but with 0 inspections.
               const monday = getMonday(item.rectificationDoneOn);
               const sunday = getSunday(monday);
-              weeklyStats[weekKey] = {
-                monday: monday,
-                sunday: sunday,
-                weekRange: formatWeekRange(monday, sunday),
-                inspected: 0,
-                rectified: 0
-              };
+              weeklyStats[weekKey] = { monday, sunday, weekRange: formatWeekRange(monday, sunday), inspected: 0, rectified: 0 };
             }
             weeklyStats[weekKey].rectified++;
           }
@@ -1381,12 +1378,14 @@
       }
 
       // Regular aggregated views (CCC, Division, Region)
-      tableData.forEach(item => { // Use the pre-filtered tableData
+      data.forEach(item => { // Use the filtered data directly
         const key = item[aggregationKey];
-        if (!key) return;
+        // If the key (e.g., region, division) is missing for an item, we'll group it under "Uncategorized"
+        // This ensures it's still counted in the grand total.
+        const effectiveKey = key || 'Uncategorized';
 
-        if (!stats[key]) {
-          stats[key] = {
+        if (!stats[effectiveKey]) {
+          stats[effectiveKey] = {
             total: 0,
             rectified: 0,
             weekInspected: 0,
@@ -1395,30 +1394,30 @@
             lastInspectionDate: null
           };
         }
-        stats[key].total++;
-        if (item.isRectified) stats[key].rectified++;
-        if (isWithinLastWeek(item.enteredOn)) stats[key].weekInspected++;
-        if (item.isRectified && isWithinLastWeek(item.rectificationDoneOn)) stats[key].weekRectified++;
+        stats[effectiveKey].total++;
+        if (item.isRectified) stats[effectiveKey].rectified++;
+        if (isWithinLastWeek(item.enteredOn)) stats[effectiveKey].weekInspected++;
+        if (item.isRectified && isWithinLastWeek(item.rectificationDoneOn)) stats[effectiveKey].weekRectified++;
         if (item.enteredOn) {
           // Calculate current week inspections for the table
           const today = new Date();
           const lastMonday = getMonday(today);
           const thisSunday = getSunday(lastMonday);
-          if (item.enteredOn >= lastMonday && item.enteredOn <= thisSunday) {
-            stats[key].currentWeekInspected++;
+          if (item.enteredOn >= lastMonday && item.enteredOn <= thisSunday) { // Corrected logic
+            stats[effectiveKey].currentWeekInspected++;
           }
-          if (!stats[key].lastInspectionDate || item.enteredOn > stats[key].lastInspectionDate) {
-            stats[key].lastInspectionDate = item.enteredOn;
+          if (!stats[effectiveKey].lastInspectionDate || item.enteredOn > stats[effectiveKey].lastInspectionDate) {
+            stats[effectiveKey].lastInspectionDate = item.enteredOn;
           }
         }
       });
 
       tableHeaderContainer.innerHTML = `
          <tr>
-            <th>#</th>
-            <th class="sortable-header" onclick="setSort('name')">${headerLabel}${getSortIcon('name')}</th>
-            <th class="sortable-header" onclick="setSort('currentWeekInspected')">This Week${getSortIcon('currentWeekInspected')}</th>
-            <th class="sortable-header" onclick="setSort('lastInspectionDate')">Last Inspection${getSortIcon('lastInspectionDate')}</th>
+            <th class="sortable-header" onclick="setSort('name')">#</th>
+            <th class="sortable-header" onclick="setSort('name')">${headerLabel}</th>
+            <th class="sortable-header" onclick="setSort('currentWeekInspected')">This Week</th>
+            <th class="sortable-header" onclick="setSort('lastInspectionDate')">Last Inspection</th>
             <th class="sortable-header" onclick="setSort('total')">Total${getSortIcon('total')}</th>
             <th class="sortable-header" onclick="setSort('rectified')">Rectified${getSortIcon('rectified')}</th>
             <th class="sortable-header" onclick="setSort('pending')">Pending${getSortIcon('pending')}</th>
@@ -1478,6 +1477,7 @@
       const grandTotalRectified = itemsArray.reduce((sum, item) => sum + item.rectified, 0);
       const grandTotalPending = grandTotalInspected - grandTotalRectified;
       const grandTotalPercentage = grandTotalInspected > 0 ? Math.round((grandTotalRectified / grandTotalInspected) * 100) : 0;
+      const grandTotalThisWeek = itemsArray.reduce((sum, item) => sum + item.currentWeekInspected, 0);
       const grandTotalAvgInspected = (grandTotalInspected / weeks).toFixed(1);
       const grandTotalAvgRectified = (grandTotalRectified / weeks).toFixed(1);
 
@@ -1485,9 +1485,9 @@
       const totalRowHtml = `
         <tr style="background-color: #e3f2fd; font-weight: bold; border-top: 2px solid #90caf9;">
             <td></td>
-            <td></td>
-            <td>Grand Total</td>
-            <td></td>
+            <td>Grand Total</td> <!-- Corresponds to headerLabel -->
+            <td>${grandTotalThisWeek}</td>
+            <td></td> <!-- Corresponds to Last Inspection -->
             <td>${grandTotalInspected}</td>
             <td>${grandTotalRectified}</td>
             <td>${grandTotalPending}</td>
@@ -1499,13 +1499,15 @@
 
       itemsArray.forEach((item, index) => {
         const lastInspectionFormatted = item.lastInspectionDate ? item.lastInspectionDate.toLocaleDateString('en-GB') : 'N/A';
+        // Don't show the 'Uncategorized' row in the table, but its data is included in the grand total.
+        if (item.name === 'Uncategorized') return;
         tableHtml += `
      <tr class="clickable-row" onclick="handleRowClick('${item.name}', '${aggregationKey}')">
                 <td>${index + 1}</td>
                 <td>${item.name}</td>
                 <td>${item.currentWeekInspected}</td>
                 <td>${lastInspectionFormatted}</td>
-                 <td>${item.total}</td>
+                 <td style="font-weight: bold;">${item.total}</td>
                  <td>${item.rectified}</td>
                 <td>${item.pending}</td>
                 <td>${item.percentage}%</td>
@@ -1517,6 +1519,24 @@
       tableBody.innerHTML = tableHtml + totalRowHtml; // Add total row at the end
     }
 
+    function handleRowClick(name, key) {
+      if (key === 'regionalOffice') {
+        // User clicked on a region, so set the region filter and update the view
+        const regionFilter = document.getElementById('regionFilter');
+        regionFilter.value = name;
+        // Manually trigger the change event to update dependent dropdowns and data
+        regionFilter.dispatchEvent(new Event('change'));
+      } else if (key === 'division') {
+        // User clicked on a division, so set the division filter and update the view
+        const divisionFilter = document.getElementById('divisionFilter');
+        divisionFilter.value = name;
+        divisionFilter.dispatchEvent(new Event('change'));
+      } else if (key === 'ccc') {
+        // If a CCC is clicked, you might want to show detailed data for it.
+        // For now, we'll just log it, but this could open a modal in the future.
+        console.log(`Clicked on CCC: ${name}`);
+      }
+    }
 
     function createTimelineChart(data) {
       if (timelineChart) timelineChart.destroy();
