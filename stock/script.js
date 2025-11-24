@@ -1,5 +1,6 @@
 const DATA_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSE7jMusI5YFc4fcuHMyWpbqGp1fIcWBNRYh6yieCY8yUyjOgC1ZRWB7flXE0DAVEbHUfG-KlzWCZyf/pub?gid=202809558&single=true&output=csv';
 
+const searchInput = document.getElementById('search-input');
 const chartHeader = document.getElementById('chart-header');
 const storeFilter = document.getElementById('store-filter');
 const materialGroupFilter = document.getElementById('material-group-filter');
@@ -20,9 +21,15 @@ function formatDate(dateString) {
 
 function applyFilters() {
     let filteredData = [...allData];
+    const searchTerm = searchInput.value.toLowerCase();
     const selectedStore = storeFilter.value;
     const selectedGroup = materialGroupFilter.value;
     const selectedDescription = materialDescriptionFilter.value;
+
+    if (searchTerm) {
+        filteredData = filteredData.filter(item => 
+            item['Material Description'].toLowerCase().includes(searchTerm));
+    }
 
     if (selectedStore) {
         filteredData = filteredData.filter(item => item.Store === selectedStore);
@@ -72,12 +79,18 @@ function updateDescriptionFilter() {
     
     // Get descriptions for selected store and group
     let descriptions = [];
-    if (selectedStore && selectedGroup) {
-        descriptions = [...new Set(
-            allData
-                .filter(item => item.Store === selectedStore && item['Material Group'] === selectedGroup)
-                .map(item => item['Material Description'])
-        )].sort();
+    let filteredItems = allData;
+
+    if (selectedStore) {
+        filteredItems = filteredItems.filter(item => item.Store === selectedStore);
+    }
+    if (selectedGroup) {
+        filteredItems = filteredItems.filter(item => item['Material Group'] === selectedGroup);
+    }
+
+    // Only populate descriptions if a group is selected
+    if (selectedGroup) {
+        descriptions = [...new Set(filteredItems.map(item => item['Material Description']))].sort();
     }
     
     // Clear options except placeholder
@@ -106,9 +119,12 @@ function updateGroupFilter() {
     if (selectedStore) {
         groups = [...new Set(
             allData
-                .filter(item => item.Store === selectedStore)
+                .filter(item => item.Store === selectedStore) // Keep filtering by store if one is selected
                 .map(item => item['Material Group'])
         )].sort();
+    } else {
+        // If no store is selected, do not clear the groups.
+        return;
     }
     
     // Clear options except placeholder
@@ -152,6 +168,7 @@ Papa.parse(DATA_URL, {
             applyFilters();
         });
         materialDescriptionFilter.addEventListener('change', applyFilters);
+        searchInput.addEventListener('input', applyFilters);
 
         // Add sorting to table headers
         document.querySelectorAll('#data-table th').forEach((th, index) => {
