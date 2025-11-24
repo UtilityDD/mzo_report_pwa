@@ -1342,7 +1342,29 @@ function createDivisionTab(divisionName, count = 0) {
     // ---- RENDER SCHEME HEAD FILTERS ----
 // Replace the existing buildSchemeHeadFilters() with this function to add a total row
 function buildSchemeHeadFilters() {
-  const allSchemeHeads = getUniqueValues('Scheme Head');
+  let allSchemeHeads = getUniqueValues('Scheme Head');
+
+  // Custom sort order as requested
+  const customSortOrder = [
+    'New SS',
+    'Control Room Extension / Modification',
+    'PTR Augmetation / New PTR',
+    '33KV Second Source / Tapping Source Elemination',
+    'Augmentation of conductor size of 33kV Feeders',
+    'Augmentation of conductor size of 33kV Switchyard',
+    'Bifurcation of 11kV Feeders',
+    'Augmentation of conductor size of 11kV Feeders'
+  ];
+
+  allSchemeHeads.sort((a, b) => {
+    const indexA = customSortOrder.indexOf(a);
+    const indexB = customSortOrder.indexOf(b);
+    if (indexA !== -1 && indexB !== -1) return indexA - indexB; // Both are in custom sort
+    if (indexA !== -1) return -1; // Only A is in custom sort, so it comes first
+    if (indexB !== -1) return 1;  // Only B is in custom sort, so it comes first
+    return a.localeCompare(b); // Neither are in custom sort, so sort alphabetically
+  });
+
   schemeHeadFiltersContainer.innerHTML = '';
   selectedSchemeHeads.clear(); // start fresh
 
@@ -2309,12 +2331,38 @@ async function deleteRecord() {
       const mainTitle = "Priority SI Works Report";
       const subTitle = headerParts.length > 0 ? headerParts.join(' ') : "All Records";
 
+      // --- Custom Sort for PDF ---
+      const customSortOrder = [
+        'New SS',
+        'Control Room Extension / Modification',
+        'PTR Augmetation / New PTR',
+        '33KV Second Source / Tapping Source Elemination',
+        'Augmentation of conductor size of 33kV Feeders',
+        'Augmentation of conductor size of 33kV Switchyard',
+        'Bifurcation of 11kV Feeders',
+        'Augmentation of conductor size of 11kV Feeders'
+      ];
+
+      records.sort((a, b) => {
+        const headA = a['Scheme Head'];
+        const headB = b['Scheme Head'];
+        const indexA = customSortOrder.indexOf(headA);
+        const indexB = customSortOrder.indexOf(headB);
+
+        if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+        if (indexA !== -1) return -1;
+        if (indexB !== -1) return 1;
+        return (headA || '').localeCompare(headB || '');
+      });
+
       // --- Prepare Table Data ---
-      const pdfHeaders = ['Sl. No.', ...TABLE_COLUMNS.map(c => COMPACT_HEADERS[c] || c)];
+      const columnsForPdf = TABLE_COLUMNS.filter(c => c !== 'id');
+      const pdfHeaders = ['Sl. No.', ...columnsForPdf.map(c => COMPACT_HEADERS[c] || c)];
       const head = [pdfHeaders];
       const body = records.map((record, index) => {
-        const rowData = TABLE_COLUMNS.map(col => {
+        const rowData = columnsForPdf.map(col => {
           if (col.includes('Date')) return formatDate(record[col]);
+          if (col === 'Status') return record[col] || 'Not yet updated';
           return record[col] || '';
         });
         // Prepend the serial number (index + 1) to the row data
@@ -2347,8 +2395,7 @@ async function deleteRecord() {
           // Footer
           const pageCount = doc.internal.getNumberOfPages();
           doc.setFontSize(8);
-          doc.text(`Page ${data.pageNumber} of ${pageCount}`, data.settings.margin.left, doc.internal.pageSize.height - 10);
-          doc.text(`Generated on: ${new Date().toLocaleDateString()}`, doc.internal.pageSize.width - data.settings.margin.right, doc.internal.pageSize.height - 10, { align: 'right' });
+          doc.text(`Page ${data.pageNumber}`, data.settings.margin.left, doc.internal.pageSize.height - 10);
         }
       });
 
