@@ -1,6 +1,7 @@
 const DATA_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSE7jMusI5YFc4fcuHMyWpbqGp1fIcWBNRYh6yieCY8yUyjOgC1ZRWB7flXE0DAVEbHUfG-KlzWCZyf/pub?gid=202809558&single=true&output=csv';
 
 const chartHeader = document.getElementById('chart-header');
+const storeFilter = document.getElementById('store-filter');
 const materialGroupFilter = document.getElementById('material-group-filter');
 const materialDescriptionFilter = document.getElementById('material-description-filter');
 const downloadBtn = document.getElementById('download-btn');
@@ -19,8 +20,13 @@ function formatDate(dateString) {
 
 function applyFilters() {
     let filteredData = [...allData];
+    const selectedStore = storeFilter.value;
     const selectedGroup = materialGroupFilter.value;
     const selectedDescription = materialDescriptionFilter.value;
+
+    if (selectedStore) {
+        filteredData = filteredData.filter(item => item.Store === selectedStore);
+    }
 
     if (selectedGroup) {
         filteredData = filteredData.filter(item => item['Material Group'] === selectedGroup);
@@ -34,6 +40,14 @@ function applyFilters() {
 }
 
 function populateFilters(data) {
+    const stores = [...new Set(data.map(item => item.Store))].sort();
+    stores.forEach(store => {
+        const option = document.createElement('option');
+        option.value = store;
+        option.textContent = store;
+        storeFilter.appendChild(option);
+    });
+
     const materialGroups = [...new Set(data.map(item => item['Material Group']))];
     materialGroups.forEach(group => {
         const option = document.createElement('option');
@@ -52,15 +66,16 @@ function populateFilters(data) {
 }
 
 function updateDescriptionFilter() {
+    const selectedStore = storeFilter.value;
     const selectedGroup = materialGroupFilter.value;
     const option = materialDescriptionFilter;
     
-    // Get descriptions for selected group
+    // Get descriptions for selected store and group
     let descriptions = [];
-    if (selectedGroup) {
+    if (selectedStore && selectedGroup) {
         descriptions = [...new Set(
             allData
-                .filter(item => item['Material Group'] === selectedGroup)
+                .filter(item => item.Store === selectedStore && item['Material Group'] === selectedGroup)
                 .map(item => item['Material Description'])
         )].sort();
     }
@@ -82,6 +97,41 @@ function updateDescriptionFilter() {
     });
 }
 
+function updateGroupFilter() {
+    const selectedStore = storeFilter.value;
+    const option = materialGroupFilter;
+    
+    // Get groups for selected store
+    let groups = [];
+    if (selectedStore) {
+        groups = [...new Set(
+            allData
+                .filter(item => item.Store === selectedStore)
+                .map(item => item['Material Group'])
+        )].sort();
+    }
+    
+    // Clear options except placeholder
+    while (option.options.length > 1) {
+        option.remove(1);
+    }
+    
+    // Reset to placeholder
+    option.value = '';
+    
+    // Add filtered groups
+    groups.forEach(group => {
+        const opt = document.createElement('option');
+        opt.value = group;
+        opt.textContent = group;
+        option.appendChild(opt);
+    });
+    
+    // Reset description filter
+    materialDescriptionFilter.value = '';
+    updateDescriptionFilter();
+}
+
 Papa.parse(DATA_URL, {
     download: true,
     header: true,
@@ -93,6 +143,10 @@ Papa.parse(DATA_URL, {
         populateFilters(allData);
         populateTable(allData);
 
+        storeFilter.addEventListener('change', function() {
+            updateGroupFilter();
+            applyFilters();
+        });
         materialGroupFilter.addEventListener('change', function() {
             updateDescriptionFilter();
             applyFilters();
