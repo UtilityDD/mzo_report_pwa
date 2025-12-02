@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Structure Management</title>
+    <style>
+        :root {
+            --primary-color: #005A9C; --secondary-color: #003366; --accent-color: #FDB813;
+            --light-gray: #f4f4f4; --medium-gray: #e0e0e0; --dark-gray: #333; --white: #ffffff;
+            --success-color: #28a745; --error-color: #dc3545;
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        body { font-family: var(--font-family); background-color: var(--light-gray); margin: 0; padding: 2rem; color: var(--dark-gray); }
+        .container { max-width: 1200px; margin: auto; background: var(--white); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        .header { background-color: var(--secondary-color); color: var(--white); padding: 1rem 2rem; border-radius: 12px 12px 0 0; }
+        .header h1 { margin: 0; font-size: 1.75rem; }
+        .main-content { padding: 2rem; }
+        .structure-editor { display: flex; flex-direction: column; gap: 1.5rem; }
+        .structure-card { border: 1px solid var(--medium-gray); border-radius: 8px; background: #fdfdfd; }
+        .structure-header { background: var(--light-gray); padding: 0.75rem 1.5rem; font-weight: 600; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--medium-gray); }
+        .structure-body { padding: 1.5rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; }
+        .form-group { display: flex; flex-direction: column; }
+        .form-group label { font-weight: 600; margin-bottom: 0.5rem; font-size: 0.9rem; }
+        .form-group input, .form-group textarea { width: 100%; padding: 0.75rem; font-size: 1rem; border: 1px solid var(--medium-gray); border-radius: 4px; box-sizing: border-box; }
+        .form-group textarea { min-height: 120px; resize: vertical; }
+        .btn { padding: 0.75rem 1.5rem; font-size: 1rem; font-weight: 600; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.2s; }
+        .btn-primary { background-color: var(--primary-color); color: var(--white); }
+        .btn-primary:hover { background-color: var(--secondary-color); }
+        .btn-danger { background-color: var(--error-color); color: var(--white); }
+        .btn-success { background-color: var(--success-color); color: var(--white); }
+        .toolbar { padding: 1rem 2rem; text-align: right; border-top: 1px solid var(--medium-gray); background: var(--light-gray); border-radius: 0 0 12px 12px; }
+        .notification { padding: 1rem; margin: 0 2rem 1rem; border-radius: 4px; text-align: center; font-weight: 600; display: none; }
+        .notification.success { background-color: #d4edda; color: #155724; }
+        .notification.error { background-color: #f8d7da; color: #721c24; }
+        .loader { text-align: center; padding: 3rem; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>Admin Panel: Structure Management</h1>
+    </div>
+
+    <div id="notification" class="notification"></div>
+
+    <div class="main-content">
+        <div id="loader" class="loader">
+            <p>Loading structures...</p>
+        </div>
+        <div id="structure-editor" class="structure-editor" style="display: none;">
+            <!-- Structure cards will be rendered here by JavaScript -->
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <button class="btn btn-primary" onclick="addNewStructure()">Add New Structure</button>
+        <button class="btn btn-success" onclick="saveAllChanges()">Save All Changes</button>
+    </div>
+</div>
+
+<script>
+    const API_URL_GET = '/api/structures'; // Read structures from CSV via API
+    const API_URL_UPDATE = '/api/structures/update'; // Update endpoint (saves to CSV)
+    let structureData = [];
+
+    document.addEventListener('DOMContentLoaded', loadStructures);
+
+    async function loadStructures() {
+        showLoader(true);
+        try {
+            const response = await fetch(API_URL_GET);
+            if (!response.ok) throw new Error('Failed to fetch structures from the server.');
+            const rawStructures = await response.json();
+
+            // Convert API data to the JSON structure used by the editor
+            structureData = rawStructures.map(s => {
+                // Parse materials - semicolon separated "1:1;3:1;5:3"
+                let materials = [];
+                if (typeof s.materials === 'string' && s.materials) {
+                    materials = s.materials.split(';')
+                        .map(pair => {
+                            const parts = pair.split(':');
+                            if (parts.length < 2) return null;
+                            return { index: parseInt(parts[0].trim(), 10), qty: parseFloat(parts[1].trim()) };
+                        })
+                        .filter(item => item && !isNaN(item.index) && !isNaN(item.qty));
+                } else if (Array.isArray(s.materials)) {
+                    materials = s.materials;
+                }
+
+                // Parse labour - semicolon separated
+                let labour = [];
+                if (typeof s.labour === 'string' && s.labour) {
+                    labour = s.labour.split(';')
+                        .map(pair => {
+                            const parts = pair.split(':');
+                            if (parts.length < 2) return null;
+                            return { index: parseInt(parts[0].trim(), 10), qty: parseFloat(parts[1].trim()) };
+                        })
+                        .filter(item => item && !isNaN(item.index) && !isNaN(item.qty));
+                } else if (Array.isArray(s.labour)) {
+                    labour = s.labour;
+                }
+
+                // Parse voltage - pipe separated "33 kV|11 kV"
+                let voltage = [];
+                if (typeof s.voltage === 'string') {
+                    voltage = s.voltage.split('|').map(v => v.trim()).filter(v => v);
+                } else if (Array.isArray(s.voltage)) {
+                    voltage = s.voltage;
+                }
+
+                return {
+                    id: s.id,
+                    name: s.name,
+                    description: s.description,
+                    voltage: voltage,
+                    materials: materials,
+                    labour: labour
+                };
+            });
+
+            renderEditor();
+
+        } catch (error) {
+            showNotification(error.message, 'error');
+            console.error(error);
+        } finally {
+            showLoader(false);
+        }
+    }
+
+    function renderEditor() {
+        const editor = document.getElementById('structure-editor');
+        editor.innerHTML = '';
+        structureData.forEach((structure, index) => {
+            const card = document.createElement('div');
+            card.className = 'structure-card';
+            card.dataset.index = index;
+            card.innerHTML = `
+                <div class="structure-header">
+                    <span>ID: ${structure.id}</span>
+                    <button class="btn btn-danger" onclick="deleteStructure(${index})">Delete</button>
+                </div>
+                <div class="structure-body">
+                    <div class="form-group">
+                        <label>ID (unique, no spaces)</label>
+                        <input type="text" data-field="id" value="${structure.id}">
+                    </div>
+                    <div class="form-group">
+                        <label>Name</label>
+                        <input type="text" data-field="name" value="${structure.name}">
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <input type="text" data-field="description" value="${structure.description}">
+                    </div>
+                    <div class="form-group">
+                        <label>Voltage (comma-separated)</label>
+                        <input type="text" data-field="voltage" value="${Array.isArray(structure.voltage) ? structure.voltage.join(', ') : (structure.voltage || '')}">
+                    </div>
+                    <div class="form-group">
+                        <label>Materials (JSON format)</label>
+                        <textarea data-field="materials">${JSON.stringify(structure.materials, null, 2)}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Labour (JSON format)</label>
+                        <textarea data-field="labour">${JSON.stringify(structure.labour, null, 2)}</textarea>
+                    </div>
+                </div>
+            `;
+            editor.appendChild(card);
+        });
+    }
+
+    function addNewStructure() {
+        const newStructure = {
+            id: `new_structure_${Date.now()}`,
+            name: "New Structure",
+            description: "",
+            voltage: [],
+            materials: [],
+            labour: []
+        };
+        structureData.unshift(newStructure); // Add to the beginning of the array
+        renderEditor();
+        window.scrollTo(0, 0);
+    }
+
+    function deleteStructure(index) {
+        if (confirm('Are you sure you want to delete this structure? This action cannot be undone.')) {
+            structureData.splice(index, 1);
+            renderEditor();
+        }
+    }
+
+    async function saveAllChanges() {
+        if (!collectDataFromUI()) {
+            return; // Stop if data collection failed (e.g., invalid JSON)
+        }
+
+        showLoader(true, 'Saving...');
+        try {
+            const response = await fetch(API_URL_UPDATE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                // Convert the UI data back to the CSV format before sending
+                body: JSON.stringify(structureData.map(s => {
+                    const materialsStr = s.materials.map(m => `${m.index}:${m.qty}`).join(';');
+                    const labourStr = s.labour.map(l => `${l.index}:${l.qty}`).join(';');
+                    return {
+                        id: s.id,
+                        name: s.name,
+                        description: s.description,
+                        voltage: Array.isArray(s.voltage) ? s.voltage.join('|') : '',
+                        materials: materialsStr,
+                        labour: labourStr
+                    };
+                }))
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || 'Server returned an error.');
+            }
+
+            showNotification(result.message, 'success');
+            loadStructures(); // Reload to confirm changes
+
+        } catch (error) {
+            showNotification(`Save failed: ${error.message}`, 'error');
+            console.error(error);
+        } finally {
+            showLoader(false);
+        }
+    }
+
+    function collectDataFromUI() {
+        const cards = document.querySelectorAll('.structure-card');
+        const newStructureData = [];
+        let allValid = true;
+
+        cards.forEach(card => {
+            const index = parseInt(card.dataset.index, 10);
+            const structure = { ...structureData[index] }; // Create a copy
+
+            // --- Text and simple inputs ---
+            structure.id = card.querySelector('[data-field="id"]').value.trim();
+            structure.name = card.querySelector('[data-field="name"]').value.trim();
+            structure.description = card.querySelector('[data-field="description"]').value.trim();
+            
+            // --- Voltage array ---
+            const voltageString = card.querySelector('[data-field="voltage"]').value;
+            structure.voltage = typeof voltageString === 'string' ? voltageString.split(',').map(v => v.trim()).filter(Boolean) : [];
+
+            // --- JSON Textareas (Materials & Labour) ---
+            try {
+                const materialsText = card.querySelector('[data-field="materials"]').value;
+                structure.materials = JSON.parse(materialsText);
+
+                const labourText = card.querySelector('[data-field="labour"]').value;
+                structure.labour = JSON.parse(labourText);
+
+                newStructureData.push(structure);
+            } catch (e) {
+                allValid = false;
+                alert(`Invalid JSON format in structure with ID '${structure.id}'. Please correct it before saving.\n\nError: ${e.message}`);
+                const textarea = e.message.includes('materials') ? card.querySelector('[data-field="materials"]') : card.querySelector('[data-field="labour"]');
+                textarea.style.border = '2px solid var(--error-color)';
+            }
+        });
+
+        if (allValid) {
+            // The order might have changed, so we use the new array
+            structureData = newStructureData;
+            return true;
+        }
+        return false;
+    }
+
+    // --- CSV Parser Utility ---
+    function parseCSV(text) {
+        const lines = text.trim().split('\n');
+        const headers = lines[0].split(',').map(h => h.trim());
+        const rows = [];
+        for (let i = 1; i < lines.length; i++) {
+            const values = lines[i].split(',').map(v => v.trim());
+            if (values.length === headers.length) {
+                const row = {};
+                for (let j = 0; j < headers.length; j++) {
+                    row[headers[j]] = values[j];
+                }
+                rows.push(row);
+            }
+        }
+        return rows;
+    }
+
+    // --- UI Helpers ---
+    function showLoader(show, text = 'Loading...') {
+        const loader = document.getElementById('loader');
+        const editor = document.getElementById('structure-editor');
+        if (show) {
+            loader.innerHTML = `<p>${text}</p>`;
+            loader.style.display = 'block';
+            editor.style.display = 'none';
+        } else {
+            loader.style.display = 'none';
+            editor.style.display = 'block';
+        }
+    }
+
+    function showNotification(message, type = 'success') {
+        const notification = document.getElementById('notification');
+        notification.textContent = message;
+        notification.className = `notification ${type}`;
+        notification.style.display = 'block';
+
+        setTimeout(() => {
+            notification.style.display = 'none';
+        }, 5000);
+    }
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,1664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Electrical Network Estimator</title>
+    <style>
+        :root {
+            --primary-color: #005A9C;
+            --secondary-color: #003366;
+            --accent-color: #FDB813;
+            --light-gray: #f4f4f4;
+            --medium-gray: #e0e0e0;
+            --dark-gray: #333;
+            --white: #ffffff;
+            --success-color: #28a745;
+            --error-color: #dc3545;
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background-color: var(--light-gray);
+            margin: 0;
+            padding: 2rem;
+            color: var(--dark-gray);
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+            background: var(--white);
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background-color: var(--primary-color);
+            color: var(--white);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 1.75rem;
+        }
+        .header a {
+            color: var(--white);
+            text-decoration: none;
+            font-weight: 600;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+        .header a:hover {
+            opacity: 1;
+        }
+
+        .step {
+            display: none;
+            padding: 2rem;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+
+        .step.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .step-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--secondary-color);
+            margin-top: 0;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+
+        .card-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .card {
+            background: var(--white);
+            border: 1px solid var(--medium-gray);
+            border-radius: 8px;
+            padding: 1.5rem 1rem;
+            text-align: center;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0, 90, 156, 0.15);
+            border-color: var(--primary-color);
+        }
+
+        .card.selected {
+            background-color: var(--primary-color);
+            color: var(--white);
+            border-color: var(--primary-color);
+        }
+
+        .structure-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .structure-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.8rem 1rem;
+            border: 1px solid var(--medium-gray);
+            border-radius: 8px;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .structure-info {
+            flex-grow: 1;
+        }
+
+        .structure-info h4 {
+            margin: 0 0 0.25rem 0;
+            font-size: 1.1rem;
+            color: var(--secondary-color);
+        }
+
+        .structure-info p {
+            margin: 0; 
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .structure-description {
+            display: none; /* Hidden by default */
+            padding-top: 0.5rem;
+            font-size: 0.9rem; 
+            color: #666;
+        }
+
+        .structure-item.expanded .structure-description {
+            display: block; /* Shown when parent is expanded */
+        }
+ 
+        .quantity-input {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .quantity-input label {
+            font-weight: 600;
+        }
+
+        .quantity-input input {
+            width: 70px;
+            padding: 0.4rem;
+            border: 1px solid var(--medium-gray);
+            border-radius: 4px;
+            font-size: 1rem;
+            text-align: center;
+        }
+
+        /* Tab view styles */
+        .tab-container {
+            width: 100%;
+        }
+
+        .tab-buttons {
+            display: flex;
+            border-bottom: 2px solid var(--medium-gray);
+            margin-bottom: 1.5rem;
+        }
+
+        .tab-button {
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            border: none;
+            background-color: transparent;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--dark-gray);
+            border-bottom: 3px solid transparent;
+            transition: color 0.2s, border-color 0.2s;
+            margin-bottom: -2px; /* Align with the container's bottom border */
+        }
+
+        .tab-button.active {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
+        }
+
+        .tab-pane {
+            display: none;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.6rem 0.75rem;
+            font-size: 1rem;
+            border: 1px solid var(--medium-gray);
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        .radio-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+        }
+
+        .radio-group div {
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .radio-group input[type="radio"] {
+            width: auto;
+            margin-right: 0.5rem;
+        }
+
+        /* New styles for the additional costs table */
+        .additional-costs-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        .additional-costs-table th, .additional-costs-table td {
+            border: 1px solid var(--medium-gray);
+            padding: 0.75rem 1rem;
+            text-align: left;
+            vertical-align: top;
+        }
+        .additional-costs-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        .additional-costs-table td:nth-child(1) {
+            font-weight: 600;
+            width: 25%;
+        }
+        .additional-costs-table td:nth-child(2) {
+            width: 20%;
+        }
+        .additional-costs-table .radio-group label {
+            display: inline;
+            margin: 0;
+        }
+
+        /* R/L Table styles */
+        .rl-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .rl-table th, .rl-table td {
+            border: 1px solid var(--medium-gray);
+            padding: 0.75rem;
+            text-align: left;
+        }
+        .rl-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        .rl-table input, .rl-table select { width: 100%; padding: 0.5rem; box-sizing: border-box; }
+        .rl-table td:first-child { font-weight: 600; width: 20%; }
+
+        .button-group {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 2rem;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: var(--white);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--secondary-color);
+        }
+
+        .btn-secondary {
+            background-color: var(--medium-gray);
+            color: var(--dark-gray);
+        }
+
+        .btn-secondary:hover {
+            background-color: #ccc;
+        }
+
+        #estimate-output {
+            padding: 1.5rem 2rem;
+        }
+
+        .estimate-header, .estimate-summary, .estimate-totals {
+            margin-bottom: 2rem;
+        }
+
+        .estimate-header h2 {
+            text-align: left;
+            color: var(--secondary-color);
+            margin-bottom: 0.5rem;
+            font-size: 1.75rem;
+        }
+
+        .header-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 1rem 1.25rem;
+            border-radius: 8px;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .header-details p {
+            font-size: 0.9rem;
+            margin: 0.25rem 0;
+        }
+
+        .header-details strong {
+            color: var(--secondary-color);
+        }
+
+        /* Print Header - appears on each page */
+        .print-header {
+            display: none;
+        }
+
+        .estimate-summary h3, .estimate-totals h3 {
+            color: var(--secondary-color);
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .estimate-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: var(--font-family); /* Apply consistent font */
+            margin-top: 0.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .estimate-table th, .estimate-table td {
+            border: 1px solid var(--medium-gray);
+            padding: 0.6rem 0.75rem;
+            text-align: left;
+        }
+
+        .estimate-table th {
+            background-color: #f8f9fa;
+            color: var(--secondary-color);
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        .estimate-table tbody tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        .estimate-table tbody tr:hover {
+            background-color: #e3f2fd;
+        }
+
+        .estimate-table tfoot td {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+
+        /* Right-align numeric columns */
+        .estimate-table td:nth-child(5),
+        .estimate-table td:nth-child(6),
+        .estimate-table td:nth-child(7) {
+            text-align: right;
+        }
+
+        .totals-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: var(--font-family); /* Apply consistent font */
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .totals-table td {
+            padding: 0.65rem 1rem;
+            border: 1px solid var(--medium-gray);
+        }
+
+        .totals-table tr:nth-child(odd) {
+            background-color: #f8f9fa;
+        }
+
+        .totals-table td:first-child {
+            font-weight: 600;
+            color: var(--secondary-color);
+        }
+
+        .totals-table tr:last-child {
+            font-size: 1.2rem;
+            font-weight: bold;
+            background-color: var(--secondary-color);
+            color: white;
+        }
+
+        .totals-table td:last-child {
+            text-align: right;
+        }
+
+        .loader {
+            text-align: center;
+            padding: 3rem;
+        }
+
+        .loader p {
+            font-size: 1.2rem;
+            color: var(--secondary-color);
+        }
+
+        .spinner {
+            border: 4px solid var(--light-gray);
+            border-top: 4px solid var(--primary-color);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background-color: #ffeff0;
+            color: var(--error-color);
+            border: 1px solid var(--error-color);
+            padding: 1rem;
+            border-radius: 4px;
+            margin-top: 1.5rem;
+        }
+
+        .export-buttons {
+            text-align: center;
+            padding: 1rem 2rem 2rem;
+            background: var(--light-gray);
+            border-top: 1px solid var(--medium-gray);
+        }
+
+        @media print {
+            @page {
+                size: A4;
+                margin: 15mm 10mm 20mm 10mm;
+            }
+            
+            body {
+                padding: 0;
+                background-color: var(--white);
+                font-size: 10pt;
+            }
+            
+            .container {
+                box-shadow: none;
+                border-radius: 0;
+                max-width: 100%;
+            }
+            
+            .header, .export-buttons, .button-group, #loader, .error-message {
+                display: none !important;
+            }
+            
+            .step {
+                display: none !important;
+            }
+            
+            #step-5 {
+                display: block !important;
+            }
+            
+            #estimate-output {
+                display: block !important;
+                padding: 0;
+            }
+
+            /* Print header that appears on each page */
+            .print-header {
+                display: block !important;
+                background: none !important;
+                color: black !important;
+                padding: 12px 15px;
+                margin-bottom: 15px;
+                border: 1px solid #333;
+            }
+            
+            .print-header-content {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                flex-wrap: wrap;
+            }
+            
+            .print-header h3 {
+                margin: 0;
+                font-size: 14pt;
+                font-weight: 600;
+            }
+            
+            .print-header-info {
+                display: flex;
+                gap: 20px;
+                font-size: 9pt;
+            }
+            
+            .print-header-info span {
+                white-space: nowrap;
+            }
+
+            /* Hide the screen header on print */
+            .estimate-header {
+                display: none !important;
+            }
+            
+            .header-details {
+                background: none !important;
+                border-left: 3px solid #333 !important;
+                padding: 8px 12px;
+            }
+
+            /* Section styling */
+            .estimate-summary, .estimate-totals {
+                margin-bottom: 0;
+            }
+            
+            .estimate-summary h3, .estimate-totals h3 {
+                color: #000 !important;
+                font-size: 12pt;
+                border-bottom: 2px solid #333;
+                padding-bottom: 5px;
+                margin-top: 0;
+                margin-bottom: 10px;
+            }
+
+            /* Table styling for print */
+            .estimate-table {
+                font-size: 9pt;
+                box-shadow: none;
+                border: 1px solid #ccc;
+            }
+            
+            .estimate-table th {
+                background: #e0e0e0 !important; /* Light gray for header */
+                color: black !important;
+                padding: 8px 6px;
+                font-size: 8pt;
+            }
+            
+            .estimate-table td {
+                padding: 6px;
+                border-color: #ddd;
+            }
+            
+            .estimate-table tbody tr:nth-child(even) {
+                background-color: transparent !important;
+            }
+
+            /* Add serial number column styling */
+            .estimate-table th:first-child,
+            .estimate-table td:first-child {
+                width: auto;
+            }
+
+            /* Totals table styling */
+            .totals-table {
+                font-size: 9pt;
+                box-shadow: none;
+            }
+            
+            .totals-table td {
+                padding: 6px 10px;
+            }
+            
+            .totals-table tr:nth-child(odd) {
+                background-color: #f5f5f5 !important; /* Keep light striping for readability */
+            }
+            
+            .totals-table tr:last-child {
+                background: none !important;
+                color: black !important;
+            }
+            
+            .estimate-summary:first-of-type {
+                page-break-before: avoid;
+            }
+            
+            .estimate-totals {
+                page-break-before: always;
+                padding-top: 10px;
+            }
+
+            .totals-in-words {
+                text-align: center;
+                font-style: italic;
+                margin-top: 1rem;
+                padding: 0.25rem;
+                background: none !important;
+                border: 1px solid #ccc;
+            }
+            
+            /* Prevent breaking inside tables */
+            .estimate-table {
+                page-break-inside: auto;
+            }
+            
+            .estimate-table thead {
+                display: table-header-group;
+            }
+            
+            .estimate-table tr {
+                page-break-inside: avoid;
+            }
+            
+            .totals-table {
+                page-break-inside: avoid;
+            }
+        }
+        
+        .signatures {
+            margin-top: 3rem;
+            display: flex;
+            justify-content: space-between;
+            padding: 1.5rem 1rem 0;
+            border-top: 1px solid var(--medium-gray);
+        }
+        .signatures div {
+            text-align: center;
+            width: 45%;
+            font-size: 0.9rem;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>Electrical Network Construction Estimator</h1>
+        <a href="admin.html" target="_blank">Admin Panel</a>
+    </div>
+
+    <!-- Step 1: Work Category -->
+    <div id="step-1" class="step active">
+        <h2 class="step-title">Step 1: Select Work Category</h2>
+        <div class="card-container" id="work-category-cards">
+            <div class="card" data-value="New Network">New Network</div>
+            <div class="card" data-value="Repair & Maintenance">Repair & Maintenance</div>
+            <div class="card" data-value="Shifting of Network">Shifting of Network</div>
+        </div>
+    </div>
+
+    <!-- Step 2: Voltage / Asset Type -->
+    <div id="step-2" class="step">
+        <h2 class="step-title">Step 2: Select Voltage / Asset Type</h2>
+        <div class="card-container" id="voltage-cards">
+            <div class="card" data-value="33 kV">33 kV</div>
+            <div class="card" data-value="11 kV">11 kV</div>
+            <div class="card" data-value="DTR">DTR</div>
+            <div class="card" data-value="LT 3-Ph">LT 3-Ph</div>
+            <div class="card" data-value="LT 1-Ph">LT 1-Ph</div>
+            <div class="card" data-value="Special Structure">Special Structure</div>
+        </div>
+        <div class="button-group">
+            <button class="btn btn-secondary" onclick="goToStep(1)">Back</button>
+            <button class="btn btn-primary" onclick="goToStep(3)">Next</button>
+        </div>
+    </div>
+
+    <!-- Step 3: Structure Types -->
+    <div id="step-3" class="step">
+        <h2 class="step-title">Step 3: Enter Structure Quantities</h2>
+        <div id="structure-tabs-container">
+            <!-- Structure items will be dynamically inserted here -->
+        </div>
+        <div class="button-group">
+            <button class="btn btn-secondary" onclick="goToStep(2)">Back</button>
+            <button class="btn btn-primary" onclick="handleStep3Next()">Next</button>
+        </div>
+    </div>
+
+    <!-- Step 4: Work Name -->
+    <div id="step-4" class="step">
+        <h2 class="step-title">Step 4: Name Your Project</h2>
+        <div class="form-group">
+            <label for="work-name">Work Name / Description</label>
+            <input type="text" id="work-name" placeholder="e.g., 33 kV Line Extension at XYZ" required>
+        </div>
+        <div class="form-group">
+            <label for="prepared-by">Estimate Prepared By</label>
+            <input type="text" id="prepared-by" placeholder="Enter name or department" required>
+        </div>
+        <div class="form-group">
+            <label for="surveyed-by">Survey Done By</label>
+            <input type="text" id="surveyed-by" placeholder="Enter name or department" required>
+        </div>
+        <div class="button-group">
+            <button class="btn btn-secondary" onclick="goToStep(3)">Back</button>
+            <button class="btn btn-primary" onclick="goToStep(4.5)">Next</button>
+        </div>
+    </div>
+
+    <!-- Step 4.5: Additional Costs -->
+    <div id="step-4.5" class="step">
+        <h2 class="step-title">Step 5: Add Additional Costs (Optional)</h2>
+        <table class="additional-costs-table">
+            <thead>
+                <tr>
+                    <th>Cost Type</th>
+                    <th>Percentage (%)</th>
+                    <th>Calculation Basis</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>GST</td>
+                    <td><input type="number" id="gst-percent" value="18" class="form-control"></td>
+                    <td class="radio-group">
+                        <div><input type="radio" id="gst-mat-lab" name="gst-on" value="mat-lab" checked><label for="gst-mat-lab">Material + Labour</label></div>
+                        <div><input type="radio" id="gst-mat" name="gst-on" value="mat"><label for="gst-mat">Material Only</label></div>
+                        <div><input type="radio" id="gst-lab" name="gst-on" value="lab"><label for="gst-lab">Labour Only</label></div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Contingency</td>
+                    <td><input type="number" id="contingency-percent" value="3" class="form-control"></td>
+                    <td class="radio-group">
+                        <div><input type="radio" id="contingency-mat-lab" name="contingency-on" value="mat-lab" checked><label for="contingency-mat-lab">Material + Labour</label></div>
+                        <div><input type="radio" id="contingency-mat" name="contingency-on" value="mat"><label for="contingency-mat">Material Only</label></div>
+                        <div><input type="radio" id="contingency-lab" name="contingency-on" value="lab"><label for="contingency-lab">Labour Only</label></div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Supervision Cost</td>
+                    <td><input type="number" id="supervision-percent" value="5" class="form-control"></td>
+                    <td class="radio-group">
+                        <div><input type="radio" id="supervision-mat-lab" name="supervision-on" value="mat-lab" checked><label for="supervision-mat-lab">Material + Labour</label></div>
+                        <div><input type="radio" id="supervision-mat" name="supervision-on" value="mat"><label for="supervision-mat">Material Only</label></div>
+                        <div><input type="radio" id="supervision-lab" name="supervision-on" value="lab"><label for="supervision-lab">Labour Only</label></div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Cess</td>
+                    <td><input type="number" id="cess-percent" value="1" class="form-control"></td>
+                    <td class="radio-group">
+                        <div><input type="radio" id="cess-mat-lab" name="cess-on" value="mat-lab" checked><label for="cess-mat-lab">Material + Labour</label></div>
+                        <div><input type="radio" id="cess-mat" name="cess-on" value="mat"><label for="cess-mat">Material Only</label></div>
+                        <div><input type="radio" id="cess-lab" name="cess-on" value="lab"><label for="cess-lab">Labour Only</label></div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="button-group">
+            <button class="btn btn-secondary" onclick="goToStep(4)">Back</button>
+            <button class="btn btn-primary" onclick="goToStep(5)">Generate Estimate</button>
+        </div>
+    </div>
+
+
+    <!-- Step 5: Generate Estimate -->
+    <div id="step-5" class="step">
+        <div id="loader" class="loader">
+            <div class="spinner"></div>
+            <p>Generating your estimate...</p>
+        </div>
+        <div id="estimate-output" style="display: none;">
+            <!-- Estimate will be rendered here -->
+        </div>
+        <div id="export-buttons" class="export-buttons" style="display: none;">
+             <button class="btn btn-secondary" onclick="goToStep(1)">Start New Estimate</button>
+             <button class="btn btn-secondary" onclick="goToStep(4.5)">Back to Edit</button>
+             <button class="btn btn-primary" onclick="window.print()">Print / Save as PDF</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- DATA SOURCES ---
+    let structureLibrary = []; // Will be populated from the server
+    const materialsSheetURL = "data/mat.csv"; // Use relative path
+    const labourSheetURL = "data/lab.csv";     // Use relative path
+    const structuresURL = "data/structure.csv";  // Use relative path
+
+    // --- APPLICATION STATE ---
+    const estimate = {
+        workCategory: '',
+        voltageLevels: [],
+        routeLengths: {}, // { voltage: { length: km, conductor: 'size' } }
+        structures: {}, // { structureId: quantity }
+        workName: '',
+        preparedBy: '',
+        surveyedBy: '',
+        estimateId: '',
+        gstPercent: 18,
+        contingencyPercent: 3,
+        gstOn: 'mat-lab',
+        contingencyOn: 'mat-lab',
+        supervisionPercent: 5,
+        cessPercent: 1,
+        supervisionOn: 'mat-lab',
+        cessOn: 'mat-lab'
+    };
+
+    // --- INITIALIZATION ---
+    document.addEventListener('DOMContentLoaded', async () => {
+        try {
+            const rawStructures = await fetchCSV(structuresURL);
+            console.log("Raw structures loaded:", rawStructures.length);
+            console.log("First raw structure:", rawStructures[0]);
+
+            // Process raw structures into the format the app expects
+            structureLibrary = rawStructures.map(s => {
+                // Safely get values with fallbacks
+                const materialsStr = s.materials || '';
+                const labourStr = s.labour || '';
+                const voltageStr = s.voltage || '';
+
+                // Parse materials string "1:1;3:1;5:3" (semicolon separated)
+                const materials = materialsStr.split(';')
+                    .map(pair => {
+                        const parts = pair.split(':');
+                        if (parts.length < 2) return null;
+                        return {
+                            index: parseInt(parts[0].trim(), 10),
+                            qty: parseFloat(parts[1].trim())
+                        };
+                    })
+                    .filter(item => item && !isNaN(item.index) && !isNaN(item.qty));
+
+                // Parse labour string (semicolon separated)
+                const labour = labourStr.split(';')
+                    .map(pair => {
+                        const parts = pair.split(':');
+                        if (parts.length < 2) return null;
+                        return {
+                            index: parseInt(parts[0].trim(), 10),
+                            qty: parseFloat(parts[1].trim())
+                        };
+                    })
+                    .filter(item => item && !isNaN(item.index) && !isNaN(item.qty));
+
+                // Parse voltage (pipe separated for multiple values)
+                const voltage = voltageStr.split('|').map(v => v.trim()).filter(v => v);
+
+                return {
+                    id: s.id || '',
+                    name: s.name || '',
+                    description: s.description || '',
+                    voltage: voltage,
+                    materials: materials,
+                    labour: labour
+                };
+            });
+
+            // Add demo special structures programmatically
+            const demoSpecialStructures = [
+                {
+                    id: 'spec-001',
+                    name: 'Railway Crossing Structure',
+                    description: 'Special steel structure for crossing railway lines, includes extra clearance and safety measures.',
+                    voltage: ['Special Structure'],
+                    materials: [{ index: 10, qty: 5 }, { index: 15, qty: 20 }, { index: 22, qty: 8 }], // Example material indices
+                    labour: [{ index: 5, qty: 40 }, { index: 8, qty: 25 }, { index: 12, qty: 60 }] // Example labour indices
+                },
+                {
+                    id: 'spec-002',
+                    name: 'River Crossing Tower',
+                    description: 'Tall lattice tower designed for crossing wide rivers, ensuring navigational clearance.',
+                    voltage: ['Special Structure'],
+                    materials: [{ index: 18, qty: 12 }, { index: 25, qty: 50 }, { index: 30, qty: 15 }],
+                    labour: [{ index: 7, qty: 150 }, { index: 10, qty: 80 }]
+                },
+                {
+                    id: 'spec-003',
+                    name: 'Highway Gantry Crossing',
+                    description: 'Gantry-type structure for safely crossing multi-lane highways.',
+                    voltage: ['Special Structure'],
+                    materials: [{ index: 12, qty: 8 }, { index: 20, qty: 30 }],
+                    labour: [{ index: 6, qty: 80 }, { index: 9, qty: 40 }]
+                }
+            ];
+            structureLibrary.push(...demoSpecialStructures);
+
+            // Sort the library by name
+            structureLibrary.sort((a, b) => a.name.localeCompare(b.name));
+            console.log("Structure library loaded successfully:", structureLibrary.length, "structures");
+            console.log("Sample structure voltages:", structureLibrary.slice(0, 3).map(s => ({ name: s.name, voltage: s.voltage })));
+
+        } catch (error) {
+            console.error("Failed to load structure library:", error.message);
+            alert("Error: Could not load the core structure data from the server. The application may not function correctly.");
+        }
+    });
+
+    // Styles for collapsible structure descriptions (already present in CSS, no change needed here)
+
+
+
+    // --- UI NAVIGATION ---
+    let currentStep = 1;
+
+    function goToStep(stepNumber) {
+        if (stepNumber === 3) {
+            if (estimate.voltageLevels.length === 0) {
+                alert("Please select at least one voltage level.");
+                return;
+            }
+            renderStructureList();
+        }
+        if (stepNumber === 5) {
+            // Capture values from Step 4 and 4.5 and validate
+            const workName = document.getElementById('work-name').value.trim();
+            const preparedBy = document.getElementById('prepared-by').value.trim();
+            const surveyedBy = document.getElementById('surveyed-by').value.trim();
+
+            if (!workName || !preparedBy || !surveyedBy) {
+                alert('Please fill out all fields in Step 4: Work Name, Prepared By, and Surveyed By.');
+                goToStep(4); // Go back to the form if validation fails
+                return;
+            }
+
+            estimate.workName = workName;
+            estimate.preparedBy = preparedBy;
+            estimate.surveyedBy = surveyedBy;
+
+            estimate.gstPercent = parseFloat(document.getElementById('gst-percent').value) || 0;
+            estimate.gstOn = document.querySelector('input[name="gst-on"]:checked').value;
+            estimate.contingencyPercent = parseFloat(document.getElementById('contingency-percent').value) || 0;
+            estimate.contingencyOn = document.querySelector('input[name="contingency-on"]:checked').value;
+            estimate.supervisionPercent = parseFloat(document.getElementById('supervision-percent').value) || 0;
+            estimate.supervisionOn = document.querySelector('input[name="supervision-on"]:checked').value;
+            estimate.cessPercent = parseFloat(document.getElementById('cess-percent').value) || 0;
+            estimate.cessOn = document.querySelector('input[name="cess-on"]:checked').value;
+            generateEstimate();
+        }
+
+        document.getElementById(`step-${currentStep}`).classList.remove('active');
+        document.getElementById(`step-${stepNumber}`).classList.add('active');
+        currentStep = stepNumber;
+
+        if (stepNumber === 1) { // Reset if going back to start
+            resetEstimate();
+        }
+    }
+
+    function resetEstimate() {
+        estimate.workCategory = '';
+        estimate.voltageLevels = [];
+        estimate.routeLengths = {};
+        estimate.structures = {};
+        estimate.workName = '';
+        estimate.preparedBy = '';
+        estimate.surveyedBy = '';
+        estimate.estimateId = '';
+        estimate.gstPercent = 18;
+        estimate.contingencyPercent = 3;
+        estimate.gstOn = 'mat-lab';
+        estimate.contingencyOn = 'mat-lab';
+        estimate.supervisionPercent = 5;
+        estimate.cessPercent = 1;
+        estimate.supervisionOn = 'mat-lab';
+        estimate.cessOn = 'mat-lab';
+        
+        document.querySelectorAll('.card.selected').forEach(c => c.classList.remove('selected'));
+        document.getElementById('work-name').value = '';
+        document.getElementById('prepared-by').value = '';
+        document.getElementById('surveyed-by').value = '';
+        document.getElementById('estimate-output').style.display = 'none';
+        document.getElementById('export-buttons').style.display = 'none';
+        document.getElementById('loader').style.display = 'block';
+    }
+
+    // --- STEP 1: WORK CATEGORY ---
+    document.getElementById('work-category-cards').addEventListener('click', (e) => {
+        if (e.target.classList.contains('card')) {
+            estimate.workCategory = e.target.dataset.value;
+            goToStep(2);
+        }
+    });
+
+    // --- STEP 2: VOLTAGE LEVELS ---
+    document.getElementById('voltage-cards').addEventListener('click', (e) => {
+        if (e.target.classList.contains('card')) {
+            const card = e.target;
+            const value = card.dataset.value;
+            card.classList.toggle('selected');
+            if (estimate.voltageLevels.includes(value)) {
+                estimate.voltageLevels = estimate.voltageLevels.filter(v => v !== value);
+            } else {
+                estimate.voltageLevels.push(value);
+            }
+        }
+    });
+
+    // --- STEP 3: STRUCTURES ---
+    function renderStructureList() {
+        const tabsContainer = document.getElementById('structure-tabs-container');
+        tabsContainer.innerHTML = ''; // Clear previous content
+        
+        const relevantStructures = structureLibrary.filter(s =>
+            s.voltage.some(v => estimate.voltageLevels.includes(v))
+        );
+
+        if (relevantStructures.length === 0) {
+            tabsContainer.innerHTML = '<p>No structures available for the selected voltage levels.</p>';
+            return;
+        }
+
+        // Create tab structure
+        const tabButtons = document.createElement('div');
+        tabButtons.className = 'tab-buttons';
+        const tabContent = document.createElement('div');
+        tabContent.className = 'tab-content';
+
+        // --- Create R/L (Route Length) Tab ---
+        const applicableRLVoltages = ['33 kV', '11 kV', 'LT 3-Ph', 'LT 1-Ph'];
+        const rlVoltagesToShow = estimate.voltageLevels.filter(v => applicableRLVoltages.includes(v));
+
+        if (rlVoltagesToShow.length > 0) {
+            const rlButton = document.createElement('button');
+            rlButton.className = 'tab-button active'; // Make R/L active by default and stay active
+            rlButton.textContent = 'R/L';
+            rlButton.dataset.voltage = 'RL';
+            tabButtons.appendChild(rlButton);
+
+            const rlPane = document.createElement('div');
+            rlPane.className = 'tab-pane';
+            rlPane.style.display = 'block'; // Show its content
+            rlPane.dataset.voltage = 'RL';
+
+            // Conductor options - can be expanded
+            const conductorOptions = [
+                'Rabbit', 'Weasel', 'Dog', 'Panther', 'Zebra', // ACSR
+                '3x95+1x50+1x16', '3x150+1x70+1x16', '3x240+1x95+1x16', // LT AB Cable
+                '1x11', '1x16', '1x25', '1x35', '1x50', '1x70', '1x95', '1x120', '1x150', '1x185', '1x240', '1x300', '1x400' // XLPE / PVC Cables
+            ];
+            const conductorSelectOptions = conductorOptions.map(c => `<option value="${c}">${c}</option>`).join('');
+
+            let rlTableRows = '';
+            rlVoltagesToShow.forEach(voltage => {
+                const rlData = estimate.routeLengths[voltage] || { length: 0, conductor: '' };
+                rlTableRows += `
+                <tr>
+                    <td>${voltage}</td>
+                    <td><input type="number" id="rl-length-${voltage}" min="0" step="0.01" value="${rlData.length}" onchange="updateRouteLength('${voltage}', this.value)"></td>
+                    <td>
+                        <select id="rl-conductor-${voltage}" onchange="updateConductor('${voltage}', this.value)">
+                            <option value="">-- Select Size --</option>
+                            ${conductorSelectOptions}
+                        </select>
+                    </td>
+                </tr>`;
+            });
+
+            rlPane.innerHTML = `
+                <table class="rl-table">
+                    <thead>
+                        <tr>
+                            <th>Voltage Level</th>
+                            <th>Route Length (km)</th>
+                            <th>Conductor / Cable Size</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rlTableRows}</tbody>
+                </table>`;
+
+            tabContent.appendChild(rlPane);
+        }
+
+        tabsContainer.appendChild(tabButtons);
+        tabsContainer.appendChild(tabContent);
+
+        // Group and render
+        const groupedStructures = {};
+        estimate.voltageLevels.forEach(voltage => {
+            groupedStructures[voltage] = relevantStructures.filter(s => s.voltage.includes(voltage));
+        });
+
+        // If R/L tab exists, it's already active. If not, make the first voltage tab active.
+        let isFirstTab = rlVoltagesToShow.length === 0; // Correctly initialize isFirstTab
+        for (const voltage in groupedStructures) {
+            const structures = groupedStructures[voltage];
+            if (structures.length === 0) continue;
+
+            // Create tab button
+            const button = document.createElement('button');
+            button.className = 'tab-button';
+            button.textContent = voltage;
+            button.dataset.voltage = voltage;
+            tabButtons.appendChild(button);
+
+            // Create tab pane
+            const pane = document.createElement('div');
+            pane.className = 'tab-pane';
+            pane.dataset.voltage = voltage;
+            
+            const structureListDiv = document.createElement('div');
+            structureListDiv.className = 'structure-list';
+            pane.appendChild(structureListDiv);
+
+            structures.forEach(structure => {
+                const quantity = estimate.structures[structure.id] || 0;
+                structureListDiv.innerHTML += `
+                    <div class="structure-item" data-id="${structure.id}" onclick="toggleDescription(this)">
+                        <div class="structure-info"> 
+                            <h4>${structure.name}</h4>
+                            <div class="structure-description">
+                                <p>${structure.description || 'No description available.'}</p>
+                            </div>
+                        </div>
+                        <div class="quantity-input"><label for="qty-${structure.id}">Quantity:</label><input type="number" id="qty-${structure.id}" min="0" value="${quantity}" onchange="updateStructureQuantity('${structure.id}', this.value)"></div>
+                    </div>`;
+            });
+
+            tabContent.appendChild(pane);
+
+            if (isFirstTab) {
+                button.classList.add('active');
+                pane.style.display = 'block';
+                isFirstTab = false;
+            }
+        }
+
+        // After rendering, set the selected conductor values
+        estimate.voltageLevels.forEach(voltage => {
+            const rlData = estimate.routeLengths[voltage];
+            if (rlData && rlData.conductor) {
+                document.getElementById(`rl-conductor-${voltage}`).value = rlData.conductor;
+            }
+        });
+        // Add event listener for tab clicks
+        tabButtons.addEventListener('click', (e) => {
+            if (e.target.matches('.tab-button')) {
+                const targetVoltage = e.target.dataset.voltage;
+
+                // Deactivate all
+                tabButtons.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                tabContent.querySelectorAll('.tab-pane').forEach(p => p.style.display = 'none');
+
+                // Activate target
+                e.target.classList.add('active');
+                tabContent.querySelector(`.tab-pane[data-voltage="${targetVoltage}"]`).style.display = 'block';
+            }
+        });
+    }
+
+    function updateRouteLength(voltage, length) {
+        if (!estimate.routeLengths[voltage]) estimate.routeLengths[voltage] = {};
+        estimate.routeLengths[voltage].length = parseFloat(length) || 0;
+        console.log('Updated Route Lengths:', estimate.routeLengths);
+    }
+
+    function updateConductor(voltage, conductor) {
+        if (!estimate.routeLengths[voltage]) estimate.routeLengths[voltage] = {};
+        estimate.routeLengths[voltage].conductor = conductor;
+        console.log('Updated Conductors:', estimate.routeLengths);
+    }
+
+
+    function updateStructureQuantity(structureId, quantity) {
+        const numQuantity = parseInt(quantity, 10);
+        if (numQuantity > 0) {
+            estimate.structures[structureId] = numQuantity;
+        } else { delete estimate.structures[structureId]; }
+    }
+
+    function toggleDescription(element) {
+        element.classList.toggle('expanded');
+    }
+
+    function handleStep3Next() {
+        const tabsContainer = document.getElementById('structure-tabs-container');
+        const tabButtons = tabsContainer.querySelectorAll('.tab-button');
+        const activeTabButton = tabsContainer.querySelector('.tab-button.active');
+
+        if (!activeTabButton) {
+            goToStep(4); // Should not happen if tabs are rendered, but as a fallback
+            return;
+        }
+
+        const currentIndex = Array.from(tabButtons).indexOf(activeTabButton);
+
+        if (currentIndex < tabButtons.length - 1) {
+            tabButtons[currentIndex + 1].click(); // Simulate click on the next tab
+        } else {
+            goToStep(4); // All tabs viewed, proceed to next step
+        }
+    }
+
+    // --- STEP 5: ESTIMATE GENERATION ---
+    async function generateEstimate() {
+        try {
+            // 1. Fetch data
+            const [materialMaster, labourMaster] = await Promise.all([
+                fetchCSV(materialsSheetURL),
+                fetchCSV(labourSheetURL)
+            ]);
+
+            // 2. Process BOQ
+            const consolidatedMaterials = {};
+            const consolidatedLabour = {};
+            const missingItems = [];
+
+            for (const structureId in estimate.structures) {
+                const quantity = estimate.structures[structureId];
+                const structure = structureLibrary.find(s => s.id === structureId);
+
+                // Process materials
+                structure.materials.forEach(item => {
+                    const masterItem = materialMaster.find(m => parseInt(m.mat_sl, 10) === item.index);
+                    if (!masterItem) {
+                        missingItems.push(`Material at index ${item.index} for structure '${structure.name}' not found in master sheet.`);
+                        return;
+                    }                    
+                    const itemCode = masterItem['Materials Code']; // This is the value from the first column, used as the unique key.
+
+                    if (!consolidatedMaterials[itemCode]) {
+                        consolidatedMaterials[itemCode] = {
+                            code: itemCode, // The code to display is the key itself.
+                            name: masterItem['Description'],
+                            unit: masterItem['Unit'],
+                            rate: parseFloat(masterItem['Rate(Rs)']),
+                            totalQty: 0
+                        };
+                    }
+                    consolidatedMaterials[itemCode].totalQty += item.qty * quantity;
+                });
+
+                // Process labour
+                structure.labour.forEach(item => {
+                    const masterItem = labourMaster.find(l => parseInt(l.lab_sl, 10) === item.index);
+                     if (!masterItem) {
+                        missingItems.push(`Labour item at index ${item.index} for structure '${structure.name}' not found in master sheet.`);
+                        return;
+                    }
+                    const itemCode = masterItem['lab_sl']; // Use lab_sl as the unique key
+                    if (!consolidatedLabour[itemCode]) {
+                        consolidatedLabour[itemCode] = {
+                            name: masterItem['Description'],
+                            unit: masterItem['Unit'],
+                            rate: parseFloat(masterItem['Rate (Rs)']),
+                            totalQty: 0
+                        };
+                    }
+                    consolidatedLabour[itemCode].totalQty += item.qty * quantity;
+                });
+            }
+
+            // 3. Render Output
+            renderOutput(consolidatedMaterials, consolidatedLabour, missingItems);
+
+        } catch (error) {
+            console.error("Failed to generate estimate:", error);
+            document.getElementById('estimate-output').innerHTML = `<div class="error-message"><strong>Error:</strong> Could not fetch data from the server. Please check your internet connection and try again.</div>`;
+        } finally {
+            document.getElementById('loader').style.display = 'none';
+            document.getElementById('estimate-output').style.display = 'block';
+            document.getElementById('export-buttons').style.display = 'block';
+        }
+    }
+
+    function renderOutput(materials, labour, missingItems) {
+        estimate.estimateId = `EST-${Date.now()}`;
+        const outputContainer = document.getElementById('estimate-output');
+
+        let totalMaterialCost = 0;
+        let totalLabourCost = 0;
+
+        const formatCurrency = (num) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
+        const currentDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+        // Print header template for each page
+        const printHeader = `
+            <div class="print-header">
+                <div class="print-header-content">
+                    <h3>${estimate.workName}</h3>
+                    <div class="print-header-info">
+                        <span><strong>ID:</strong> ${estimate.estimateId}</span>
+                        <span><strong>Date:</strong> ${currentDate}</span>
+                        <span><strong>Category:</strong> ${estimate.workCategory}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Material Table with serial numbers
+        let slNo = 1;
+        let materialRows = Object.values(materials).map(item => {
+            const amount = item.totalQty * item.rate;
+            totalMaterialCost += amount;
+            return `
+                <tr>
+                    <td style="text-align: center;">${slNo++}</td>
+                    <td>${item.code}</td>
+                    <td>${item.name}</td>
+                    <td style="text-align: center;">${item.unit}</td>
+                    <td style="text-align: right;">${item.totalQty.toFixed(2)}</td>
+                    <td style="text-align: right;">${item.rate.toFixed(2)}</td>
+                    <td style="text-align: right;">${amount.toFixed(2)}</td>
+                </tr>
+            `;
+        }).join('');
+
+        // Add total row to materials
+        materialRows += `
+            <tfoot>
+                <td colspan="6" style="text-align: right;">Total Material Cost</td>
+                <td style="text-align: right;">${formatCurrency(totalMaterialCost)}</td>
+            </tfoot>
+        `;
+
+        // Labour Table with serial numbers
+        slNo = 1;
+        let labourRows = Object.values(labour).map(item => {
+            const amount = item.totalQty * item.rate;
+            totalLabourCost += amount;
+            return `
+                <tr>
+                    <td style="text-align: center;">${slNo++}</td>
+                    <td>${item.name}</td>
+                    <td style="text-align: center;">${item.unit}</td>
+                    <td style="text-align: right;">${item.totalQty.toFixed(2)}</td>
+                    <td style="text-align: right;">${item.rate.toFixed(2)}</td>
+                    <td style="text-align: right;">${amount.toFixed(2)}</td>
+                </tr>
+            `;
+        }).join('');
+
+        // Add total row to labour
+        labourRows += `
+            <tfoot>
+                <td colspan="5" style="text-align: right;">Total Labour Cost</td>
+                <td style="text-align: right;">${formatCurrency(totalLabourCost)}</td>
+            </tfoot>
+        `;
+
+        const subTotal = totalMaterialCost + totalLabourCost;
+
+        const getBase = (type) => {
+            if (type === 'mat') return totalMaterialCost;
+            if (type === 'lab') return totalLabourCost;
+            return subTotal; // 'mat-lab'
+        };
+
+        const getLabel = (type) => {
+            if (type === 'mat') return 'on Material';
+            if (type === 'lab') return 'on Labour';
+            return 'on Mat+Lab';
+        }
+
+        const gstBase = getBase(estimate.gstOn);
+        const gstAmount = gstBase * (estimate.gstPercent / 100);
+        const gstLabel = getLabel(estimate.gstOn);
+
+        const contingencyBase = getBase(estimate.contingencyOn);
+        const contingencyAmount = contingencyBase * (estimate.contingencyPercent / 100);
+        const contingencyLabel = getLabel(estimate.contingencyOn);
+
+        const supervisionBase = getBase(estimate.supervisionOn);
+        const supervisionAmount = supervisionBase * (estimate.supervisionPercent / 100);
+        const supervisionLabel = getLabel(estimate.supervisionOn);
+
+        const cessBase = getBase(estimate.cessOn);
+        const cessAmount = cessBase * (estimate.cessPercent / 100);
+        const cessLabel = getLabel(estimate.cessOn);
+
+        // Calculate grand total
+        const grandTotal = subTotal + gstAmount + contingencyAmount + supervisionAmount + cessAmount;
+        // Convert grand total to words
+        const grandTotalInWords = convertNumberToWordsINR(grandTotal);
+
+
+        const missingItemsHtml = missingItems.length > 0 
+            ? `<div class="error-message"><strong>Warning:</strong> The following items were not found in the master sheets and have been excluded:<ul>${missingItems.map(i => `<li>${i}</li>`).join('')}</ul></div>`
+            : '';
+
+        const outputHTML = `
+            ${missingItemsHtml}
+            <div class="estimate-header">
+                <h2>${estimate.workName}</h2>
+                <div class="header-details">
+                    <p><strong>Estimate ID:</strong> ${estimate.estimateId}</p>
+                    <p><strong>Work Category:</strong> ${estimate.workCategory}</p>
+                    <p><strong>Date:</strong> ${currentDate}</p>
+                    <p><strong>Voltage Levels:</strong> ${estimate.voltageLevels.join(', ')}</p>
+                </div>
+            </div>
+
+            <div class="estimate-summary">
+                ${printHeader}
+                <h3>📦 Material Schedule</h3>
+                <table class="estimate-table">
+                    <thead>
+                        <tr>
+                            <th style="text-align: center; width: 5%;">Sl.No</th>
+                            <th>Code</th>
+                            <th>Item Description</th>
+                            <th style="text-align: center; width: 8%;">Unit</th>
+                            <th style="text-align: right; width: 10%;">Quantity</th>
+                            <th style="text-align: right; width: 12%;">Rate (₹)</th>
+                            <th style="text-align: right; width: 15%;">Amount (₹)</th>
+                        </tr>
+                    </thead>
+                    <tbody>${materialRows}</tbody>
+                </table>
+            </div>
+
+            <div class="estimate-summary">
+                ${printHeader}
+                <h3>👷 Labour Schedule</h3>
+                <table class="estimate-table">
+                    <thead>
+                        <tr>
+                            <th style="text-align: center; width: 5%;">Sl.No</th>
+                            <th>Labour Activity</th>
+                            <th style="text-align: center; width: 8%;">Unit</th>
+                            <th style="text-align: right; width: 10%;">Quantity</th>
+                            <th style="text-align: right; width: 12%;">Rate (₹)</th>
+                            <th style="text-align: right; width: 15%;">Amount (₹)</th>
+                        </tr>
+                    </thead>
+                    <tbody>${labourRows}</tbody>
+                </table>
+            </div>
+
+            <div class="estimate-totals">
+                ${printHeader}
+                <h3>💰 Cost Summary</h3>
+                <table class="totals-table">
+                    <tbody>
+                        <tr>
+                            <td>Total Material Cost</td>
+                            <td>${formatCurrency(totalMaterialCost)}</td>
+                        </tr>
+                        <tr>
+                            <td>Total Labour Cost</td>
+                            <td>${formatCurrency(totalLabourCost)}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Sub-Total (Material + Labour)</strong></td>
+                            <td><strong>${formatCurrency(subTotal)}</strong></td>
+                        </tr>
+                        <tr>
+                            <td>GST (${estimate.gstPercent}% ${gstLabel})</td>
+                            <td>${formatCurrency(gstAmount)}</td>
+                        </tr>
+                        <tr>
+                            <td>Contingency (${estimate.contingencyPercent}% ${contingencyLabel})</td>
+                            <td>${formatCurrency(contingencyAmount)}</td>
+                        </tr>
+                        <tr>
+                            <td>Supervision (${estimate.supervisionPercent}% ${supervisionLabel})</td>
+                            <td>${formatCurrency(supervisionAmount)}</td>
+                        </tr>
+                        <tr>
+                            <td>Cess (${estimate.cessPercent}% ${cessLabel})</td>
+                            <td>${formatCurrency(cessAmount)}</td>
+                        </tr>
+                        <tr>
+                            <td>Grand Total</td>
+                            <td>${formatCurrency(grandTotal)}</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="totals-in-words">
+                    <strong>In Words:</strong> Rupees ${grandTotalInWords} Only
+                </div>
+
+                <div class="signatures">
+                    <div>
+                        <p><strong>Survey Done By:</strong></p><p>${estimate.surveyedBy}</p>
+                    </div>
+                    <div>
+                        <p><strong>Estimate Prepared By:</strong></p><p>${estimate.preparedBy}</p>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        outputContainer.innerHTML = outputHTML;
+    }
+
+    // --- UTILITIES ---
+    async function fetchCSV(url) {
+        try {
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Network response was not ok: ${response.statusText}`);
+            }
+            const csvText = await response.text();
+            return parseCSV(csvText);
+        } catch (error) {
+            console.error('Error fetching CSV:', error);
+            throw error; // Re-throw to be caught by the caller
+        }
+    }
+
+    function parseCSV(text) {
+        const lines = text.trim().split('\n');
+        const headers = parseCSVLine(lines[0]);
+        const rows = [];
+        for (let i = 1; i < lines.length; i++) {
+            const values = parseCSVLine(lines[i]);
+            if (values.length === headers.length) {
+                const row = {};
+                for (let j = 0; j < headers.length; j++) {
+                    row[headers[j]] = values[j];
+                }
+                rows.push(row);
+            }
+        }
+        return rows;
+    }
+
+    function parseCSVLine(line) {
+        const values = [];
+        let current = '';
+        let inQuotes = false;
+        
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"') {
+                inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+                values.push(current.trim());
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+        values.push(current.trim());
+        return values;
+    }
+
+    // Function to convert numbers to words (Indian Rupees)
+    function convertNumberToWordsINR(num) {
+        if (num === 0) return "Zero";
+
+        const a = [
+            '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+            'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen',
+            'Eighteen', 'Nineteen'
+        ];
+        const b = [
+            '', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'
+        ];
+        const c = [
+            '', 'Hundred', 'Thousand', 'Lakh', 'Crore'
+        ];
+
+        let n = Math.round(num * 100) / 100; // Round to 2 decimal places
+        let integerPart = Math.floor(n);
+        let decimalPart = Math.round((n - integerPart) * 100);
+
+        let words = '';
+
+        function convertChunk(val) {
+            let chunkWords = '';
+            if (val < 20) {
+                chunkWords = a[val];
+            } else {
+                chunkWords = b[Math.floor(val / 10)];
+                if (val % 10 !== 0) {
+                    chunkWords += ' ' + a[val % 10];
+                }
+            }
+            return chunkWords;
+        }
+
+        // Convert integer part
+        let i = 0;
+        let tempNum = integerPart;
+        while (tempNum > 0) {
+            let chunk;
+            if (i === 0) { // Hundreds and tens/units
+                chunk = tempNum % 1000;
+                tempNum = Math.floor(tempNum / 1000);
+                let hundreds = Math.floor(chunk / 100);
+                let tensUnits = chunk % 100;
+                let currentChunkWords = '';
+                if (hundreds > 0) {
+                    currentChunkWords += a[hundreds] + ' Hundred';
+                }
+                if (tensUnits > 0) {
+                    if (hundreds > 0) currentChunkWords += ' and ';
+                    currentChunkWords += convertChunk(tensUnits);
+                }
+                if (currentChunkWords) {
+                    words = currentChunkWords + words;
+                }
+            } else { // Thousands, Lakhs, Crores
+                chunk = tempNum % 100; // Take two digits for Lakhs and Crores
+                tempNum = Math.floor(tempNum / 100);
+                if (chunk > 0) {
+                    words = convertChunk(chunk) + ' ' + c[i] + ' ' + words;
+                }
+            }
+            i++;
+        }
+
+        if (words.trim() === '') words = 'Zero';
+
+        // Add decimal part
+        if (decimalPart > 0) {
+            words += ' and ' + convertChunk(decimalPart) + ' Paisa';
+        }
+
+        return words.trim();
+    }
+
+</script>
+
+
+</body>
+</html>
