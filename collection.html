@@ -82,6 +82,18 @@
         .dark .filter-chip:hover {
             background: rgba(25, 118, 210, 0.3);
         }
+        /* Highlighted Comparison Selector */
+        #comparisonTypeSelector {
+            background-color: #e3f2fd;
+            color: #1976D2;
+            border: 1px solid #1976D2;
+        }
+        .dark #comparisonTypeSelector {
+            background-color: rgba(25, 118, 210, 0.2);
+            color: #90caf9;
+            border-color: #90caf9;
+        }
+        .dark #comparisonTypeSelector option { background-color: #1e1e1e; color: #e0e0e0; }
         .chart-container {
             background-color: #fff;
             padding: 1rem;
@@ -315,6 +327,55 @@
             }
             20% {
                 transform: scaleY(1.0);
+            }
+        }
+
+        /* Sticky Header & Pagination Styles */
+        .table-sticky-header thead th {
+            position: sticky;
+            top: 0;
+            background-color: #fff;
+            z-index: 2;
+            box-shadow: 0 2px 2px -1px rgba(0,0,0,0.1);
+        }
+        .dark .table-sticky-header thead th {
+            background-color: #1e1e1e;
+        }
+
+        /* Mobile Table Optimizations */
+        @media (max-width: 767px) {
+            .table-mobile-compact th, 
+            .table-mobile-compact td {
+                padding: 0.25rem 0.4rem;
+                font-size: 0.75rem;
+                white-space: nowrap;
+            }
+            .table-mobile-compact .form-select-sm {
+                padding-top: 0.1rem;
+                padding-bottom: 0.1rem;
+                font-size: 0.7rem;
+            }
+            
+            /* Sticky First Column */
+            .table-mobile-compact th:first-child,
+            .table-mobile-compact td:first-child {
+                position: sticky;
+                left: 0;
+                z-index: 1;
+                background-color: #fff; /* Match container bg */
+                border-right: 1px solid #dee2e6;
+                max-width: 130px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .dark .table-mobile-compact th:first-child,
+            .dark .table-mobile-compact td:first-child {
+                background-color: #1e1e1e;
+                border-right-color: #495057;
+            }
+            /* Ensure sticky header sits above sticky column */
+            .table-sticky-header thead th:first-child {
+                z-index: 3;
             }
         }
     </style>
@@ -671,6 +732,8 @@
     let isCumulativeView = false;
     // Track currently active comparison sub-tab (keeps selection when table is re-rendered)
     let currentComparisonTabId = 'region-comparison-tab';
+    let currentTablePage = 1;
+    const ROWS_PER_PAGE = 50;
 
     let showDataLabels = false; // State for data labels visibility
 
@@ -730,12 +793,15 @@
                 const csvText = await response.text();
 
                 // Robust CSV parsing (handles CRLF and possible trailing empty lines)
-                const lines = csvText.replace(/\r/g, '').split('\n').filter(Boolean);
+                const lines = csvText.split(/\r?\n/);
                 if (lines.length <= 1) {
                     processedData = [];
                 } else {
-                    const rows = lines.slice(1);
-                    processedData = rows.map(row => {
+                    // Optimized parsing: Single pass, no intermediate arrays
+                    processedData = [];
+                    for (let i = 1; i < lines.length; i++) {
+                        const row = lines[i];
+                        if (!row) continue;
                         // split on comma but handle quoted commas simply by removing quotes
                         const cols = row.split(',').map(c => c.replace(/^"|"$/g, '').trim());
                         const paymentDt = cols[0];
@@ -743,17 +809,19 @@
                         const amountPaid = cols[4];
                         if (!paymentDt || !cccCode) return null;
 
-                        const details = cccToDetailsMap.get(cccCode.trim());
+                        const details = cccToDetailsMap.get(cccCode);
                         const parsedDate = parseDate(paymentDt.trim());
-                        return parsedDate ? {
+                        if (parsedDate) {
+                            processedData.push({
                             date: parsedDate,
-                            cccCode: cccCode.trim(),
+                                cccCode: cccCode,
                             amount: (parseFloat(amountPaid) || 0) * 100000, // Amount is in Lakhs -> convert to rupees
                             region: details ? details.regionName : 'Unknown',
                             division: details ? details.divisionName : 'Unknown',
                             ccc: details ? details.cccName : 'Unknown'
-                        } : null;
-                    }).filter(d => d !== null);
+                            });
+                        }
+                    }
                 }
 
                 populateFilters();
@@ -1495,6 +1563,7 @@
         regionFilter.addEventListener('change', updateDivisionFilter);
         divisionFilter.addEventListener('change', updateCccFilter);
         cccFilter.addEventListener('change', () => {
+            currentTablePage = 1; // Reset pagination on filter change
             updateFilterChips();
             updateSummaryCards();
             renderDayOverMonthComparison(applyFilters(), (currentComparisonTabId || 'region-comparison-tab').replace('-tab',''));
@@ -1509,6 +1578,7 @@
             radio.addEventListener('change', () => {
                 // Preserve currently active comparison sub-tab (use tracked id)
                 const activeSubTabId = currentComparisonTabId || 'region-comparison-tab';
+                currentTablePage = 1; // Reset pagination
 
                 updateSummaryCards();
                 // Re-render the comparison table keeping the same active sub-tab
@@ -1627,10 +1697,9 @@
 
                 let tableHtml = `
                     <div class="table-responsive">
-                        <table class="table table-sm table-striped table-hover table-no-wrap">
+                        <table class="table table-sm table-striped table-hover table-no-wrap table-mobile-compact">
                             <thead class="table-sortable" data-sort-key="value" data-sort-dir="desc">
                                 <tr>
-                                    <th scope="col" style="width: 5%;">Sl.</th>
                                     <th scope="col" class="sortable-header sort-desc" data-sort-key="name">Office Name</th>
                                     <th scope="col" class="text-end">${metricType}</th>
                                     <th scope="col" class="text-end" style="width: 15%;">% Share</th>
@@ -1642,7 +1711,6 @@
                     const percentage = totalValue > 0 ? ((item.value / totalValue) * 100).toFixed(2) : 0;
                     tableHtml += `
                         <tr onclick="showMonthlyBreakdown('${item.name}', '${key}')" style="cursor: pointer;">
-                            <td class="row-index">${index + 1}</td>
                             <td>${item.name}</td>
                             <td class="text-end">${formatReadableAmount(item.value)}</td>
                             <td class="text-end">${percentage}%</td>
@@ -1654,7 +1722,7 @@
                             </tbody>
                             <tfoot>
                                 <tr class="fw-bold table-group-divider">
-                                    <td colspan="2" class="text-end">Total</td>
+                                    <td class="text-end">Total</td>
                                     <td class="text-end">${formatReadableAmount(totalValue)}</td>
                                     <td class="text-end">100.00%</td>
                                 </tr>
@@ -1703,11 +1771,10 @@
                     header.classList.add(`sort-${newDir}`);
 
                     rows.sort((a, b) => {
-                        const aText = a.cells[1].textContent; // Office Name is always cell 1
-                        const bText = b.cells[1].textContent;
+                        const aText = a.cells[0].textContent; // Office Name is now cell 0
+                        const bText = b.cells[0].textContent;
                         return newDir === 'asc' ? aText.localeCompare(bText) : bText.localeCompare(aText);
                     }).forEach((row, index) => {
-                        row.querySelector('.row-index').textContent = index + 1;
                         tbody.appendChild(row);
                     });
                 });
@@ -1804,7 +1871,7 @@
 
             let tableHtml = `
                 <div class="table-responsive">
-                    <table class="table table-sm table-hover table-no-wrap">
+                    <table class="table table-sm table-hover table-no-wrap table-mobile-compact">
                         <thead class="table-sortable" data-sort-key="monthKey" data-sort-dir="desc">
                             <tr>
                                 <th class="sortable-header sort-desc" data-sort-key="monthKey">Month</th>
@@ -1929,7 +1996,7 @@
             }, 0);
         }
 
-        function renderDayOverMonthComparison(filteredData, activeSubTab = 'region-comparison', currentMonthKey = null, prevMonthKey = null, selectedDay = null, sortConfig = { key: 'fyCollection', dir: 'desc' }) {
+        function renderDayOverMonthComparison(filteredData, activeSubTab = 'region-comparison', selectedDay = null, sortConfig = { key: 'fyCollection', dir: 'desc' }) {
             const container = document.getElementById('data-table-container');
             if (filteredData.length === 0) {
                 container.innerHTML = '<p class="text-center text-muted mt-3">No data available for comparison.</p>';
@@ -1937,15 +2004,20 @@
             }
 
             // Create sub-tab navigation
+            // Preserve state of controls before re-rendering them
+            const existingAlignCheckbox = document.getElementById('alignDaysCheckbox');
+            const alignDaysState = existingAlignCheckbox ? existingAlignCheckbox.checked : true; // Default to true
+
+            const existingDaySelector = document.getElementById('summaryDaySelector');
             const latestDate = new Date(Math.max(...filteredData.map(d => d.date.getTime())));
-            const dayToSelect = selectedDay ? parseInt(selectedDay, 10) : latestDate.getDate();
+            const dayToSelect = selectedDay ? parseInt(selectedDay, 10) : (existingDaySelector ? parseInt(existingDaySelector.value, 10) : latestDate.getDate());
             let dayOptions = '';
             for (let i = 1; i <= 31; i++) {
                 dayOptions += `<option value="${i}" ${i === dayToSelect ? 'selected' : ''}>${i}</option>`;
             }
 
             const tabsHtml = `
-                <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
                     <ul class="nav nav-pills nav-pills-sm" id="comparisonTab" role="tablist">
                         <li class="nav-item" role="presentation">
                             <button class="nav-link ${activeSubTab === 'region-comparison' ? 'active' : ''}" id="region-comparison-tab" data-bs-toggle="tab" data-bs-target="#region-comparison" type="button" role="tab">By Region</button>
@@ -1957,12 +2029,18 @@
                             <button class="nav-link ${activeSubTab === 'ccc-comparison' ? 'active' : ''}" id="ccc-comparison-tab" data-bs-toggle="tab" data-bs-target="#ccc-comparison" type="button" role="tab">By CCC</button>
                         </li>
                     </ul>
-                    <div class="input-group input-group-sm w-auto">
-                        <label class="input-group-text" for="summaryDaySelector">Up to Day</label>
-                        <select id="summaryDaySelector" class="form-select">${dayOptions}</select>
-                        <button id="downloadComparisonTable" class="btn btn-sm btn-outline-success" title="Download Table as CSV">
-                            <i class="bi bi-download"></i>
-                        </button>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" id="alignDaysCheckbox" ${alignDaysState ? 'checked' : ''}>
+                            <label class="form-check-label small text-nowrap" for="alignDaysCheckbox">Match Days</label>
+                        </div>
+                        <div class="input-group input-group-sm w-auto">
+                            <label class="input-group-text" for="summaryDaySelector">Up to Day</label>
+                            <select id="summaryDaySelector" class="form-select">${dayOptions}</select>
+                            <button id="downloadComparisonTable" class="btn btn-sm btn-outline-success" title="Download Table as CSV">
+                                <i class="bi bi-download"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="tab-content" id="comparisonTabContent">
@@ -1980,34 +2058,63 @@
             const activeTabContentId = activeSubTab.replace('-tab', '');
             const breakdownKey = activeTabContentId.split('-')[0]; // 'region', 'division', 'ccc'
 
-            const tableHtml = generateMonthlySummaryTable(filteredData, breakdownKey, currentMonthKey, prevMonthKey, dayToSelect, sortConfig);
+            const tableHtml = generateMonthlySummaryTable(filteredData, breakdownKey, dayToSelect, sortConfig, alignDaysState);
             document.getElementById(activeTabContentId).innerHTML = tableHtml.html;
 
             // Add event listeners
-            addComparisonEventListeners(filteredData, tableHtml.allMonthKeys, sortConfig);
+            addComparisonEventListeners(filteredData, sortConfig);
         }
 
-        function generateMonthlySummaryTable(allData, breakdownKey, currentMonthKey, prevMonthKey, selectedDay, sortConfig) {
+        function generateMonthlySummaryTable(allData, breakdownKey, selectedDay, sortConfig, alignDays = true) {
             const fyStartDate = new Date('2025-04-01T00:00:00');
             if (allData.length === 0) {
                 return `<p class="text-center text-muted mt-3">No data available for this breakdown.</p>`;
             }
 
-            const { currentMonth, prevMonth, allMonthKeys } = getComparisonMonths(allData, currentMonthKey, prevMonthKey);
+            // 1. Determine Reference Dates
+            const maxDate = new Date(Math.max(...allData.map(d => d.date.getTime())));
+            
+            // Current Month (CM)
+            const currentMonth = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+            
+            // Previous Month (PM)
+            let prevMonth = new Date(currentMonth);
+            prevMonth.setMonth(prevMonth.getMonth() - 1);
 
-            // Find the actual latest day with data for each month, up to the selected day
-            const getActualDay = (month) => {
+            // Same Month Last Year (SMLY)
+            let smlyMonth = new Date(currentMonth);
+            smlyMonth.setFullYear(smlyMonth.getFullYear() - 1);
+
+            // --- Smart Day Comparison Logic ---
+            const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+            const getMaxDayForMonth = (month) => {
+                if (!month) return null;
+                const days = allData
+                    .filter(d => d.date.getFullYear() === month.getFullYear() && d.date.getMonth() === month.getMonth())
+                    .map(d => d.date.getDate());
+                return days.length > 0 ? Math.max(...days) : null;
+            };
+
+            const isCurrentMonthComplete = currentMonth && getMaxDayForMonth(currentMonth) === getDaysInMonth(currentMonth.getFullYear(), currentMonth.getMonth());
+            
+            // Find the actual latest day with data for each month, up to the determined comparison day.
+            const getActualDay = (month, dayLimit) => {
                 if (!month) return null;
                 const availableDays = [...new Set(
                     allData
-                        .filter(d => d.date.getFullYear() === month.getFullYear() && d.date.getMonth() === month.getMonth() && d.date.getDate() <= selectedDay)
+                        .filter(d => d.date.getFullYear() === month.getFullYear() && d.date.getMonth() === month.getMonth() && d.date.getDate() <= dayLimit)
                         .map(d => d.date.getDate())
                 )].sort((a, b) => b - a); // Sort descending
                 return availableDays.length > 0 ? availableDays[0] : null;
             };
 
-            const actualCurrentDay = getActualDay(currentMonth);
-            const actualPrevDay = getActualDay(prevMonth);
+            const actualCurrentDay = getActualDay(currentMonth, selectedDay);
+
+            // If aligning days is requested and current month is partial, limit comparison months to the current month's actual day
+            const comparisonLimit = (alignDays && !isCurrentMonthComplete) ? (actualCurrentDay || selectedDay) : selectedDay;
+
+            const actualPrevDay = getActualDay(prevMonth, comparisonLimit);
+            const actualSmlyDay = getActualDay(smlyMonth, comparisonLimit);
 
             // --- Performance Optimization: Pre-aggregate data ---
             const aggregated = {};
@@ -2016,7 +2123,7 @@
                 if (!itemKey || itemKey === 'Unknown') return;
 
                 if (!aggregated[itemKey]) {
-                    aggregated[itemKey] = { fyCollection: 0, currentMonthCollection: 0, prevMonthCollection: 0 };
+                    aggregated[itemKey] = { fyCollection: 0, currentMonthCollection: 0, prevMonthCollection: 0, smlyCollection: 0 };
                 }
 
                 // FY Collection
@@ -2027,18 +2134,28 @@
                 if (currentMonth && d.date.getFullYear() === currentMonth.getFullYear() && d.date.getMonth() === currentMonth.getMonth() && (actualCurrentDay === null || d.date.getDate() <= actualCurrentDay)) {
                     aggregated[itemKey].currentMonthCollection += d.amount;
                 }
-                // Previous Month Collection (may be null when only one month available)
+                // Previous Month Collection
                 if (prevMonth && d.date.getFullYear() === prevMonth.getFullYear() && d.date.getMonth() === prevMonth.getMonth() && (actualPrevDay === null || d.date.getDate() <= actualPrevDay)) {
                     aggregated[itemKey].prevMonthCollection += d.amount;
+                }
+                // Same Month Last Year Collection
+                if (smlyMonth && d.date.getFullYear() === smlyMonth.getFullYear() && d.date.getMonth() === smlyMonth.getMonth() && (actualSmlyDay === null || d.date.getDate() <= actualSmlyDay)) {
+                    aggregated[itemKey].smlyCollection += d.amount;
                 }
             });
 
             const tableData = Object.keys(aggregated).sort().map(item => {
-                const { fyCollection, currentMonthCollection, prevMonthCollection } = aggregated[item];
-                const change = currentMonthCollection - prevMonthCollection;
-                const pctChange = prevMonthCollection > 0 ? (change / prevMonthCollection) * 100 : (currentMonthCollection > 0 ? 100 : 0);
+                const { fyCollection, currentMonthCollection, prevMonthCollection, smlyCollection } = aggregated[item];
+                
+                // MoM Change
+                const momChange = currentMonthCollection - prevMonthCollection;
+                const momPct = prevMonthCollection > 0 ? (momChange / prevMonthCollection) * 100 : (currentMonthCollection > 0 ? Infinity : 0);
 
-                return { name: item, fyCollection, currentMonthCollection, prevMonthCollection, change, pctChange };
+                // YoY Change
+                const yoyChange = currentMonthCollection - smlyCollection;
+                const yoyPct = smlyCollection > 0 ? (yoyChange / smlyCollection) * 100 : (currentMonthCollection > 0 ? Infinity : 0);
+
+                return { name: item, fyCollection, currentMonthCollection, prevMonthCollection, smlyCollection, momChange, momPct, yoyChange, yoyPct };
             });
 
             // --- Sorting ---
@@ -2054,166 +2171,222 @@
                 });
             }
 
+            // --- Highlighting Logic ---
+            // Find max and min MoM % change to highlight rows
+            let maxMomPct = -Infinity;
+            let minMomPct = Infinity;
+            tableData.forEach(row => {
+                if (isFinite(row.momPct)) {
+                    if (row.momPct > maxMomPct) maxMomPct = row.momPct;
+                    if (row.momPct < minMomPct) minMomPct = row.momPct;
+                }
+            });
+
+            // Pagination Slicing
+            const totalRows = tableData.length;
+            const totalPages = Math.ceil(totalRows / ROWS_PER_PAGE);
+            const startIndex = (currentTablePage - 1) * ROWS_PER_PAGE;
+            const paginatedData = tableData.slice(startIndex, startIndex + ROWS_PER_PAGE);
+
 
              if (tableData.length === 0) {
-                return { html: `<p class="text-center text-muted mt-3">No data available for this breakdown.</p>`, allMonthKeys };
+                return { html: `<p class="text-center text-muted mt-3">No data available for this breakdown.</p>`, isEmpty: true };
             }
 
             // Calculate totals for the footer
             const totalFyCollection = tableData.reduce((sum, row) => sum + row.fyCollection, 0);
             const totalCurrentMonthCollection = tableData.reduce((sum, row) => sum + row.currentMonthCollection, 0);
             const totalPrevMonthCollection = tableData.reduce((sum, row) => sum + row.prevMonthCollection, 0);
-            const totalChange = totalCurrentMonthCollection - totalPrevMonthCollection;
-            const totalPctChange = totalPrevMonthCollection > 0 ? (totalChange / totalPrevMonthCollection) * 100 : (totalCurrentMonthCollection > 0 ? 100 : 0);
-            let totalIndicator = '';
-            if (totalPctChange > 0) totalIndicator = `<i class="bi bi-arrow-up text-success"></i>`;
-            else if (totalPctChange < 0) totalIndicator = `<i class="bi bi-arrow-down text-danger"></i>`;
+            const totalSmlyCollection = tableData.reduce((sum, row) => sum + row.smlyCollection, 0);
+            
+            const totalMomChange = totalCurrentMonthCollection - totalPrevMonthCollection;
+            const totalMomPct = totalPrevMonthCollection > 0 ? (totalMomChange / totalPrevMonthCollection) * 100 : 0;
+            
+            const totalYoyChange = totalCurrentMonthCollection - totalSmlyCollection;
+            const totalYoyPct = totalSmlyCollection > 0 ? (totalYoyChange / totalSmlyCollection) * 100 : 0;
 
-            const currentMonthKeyStr = currentMonth ? (currentMonth.getFullYear() + '-' + String(currentMonth.getMonth() + 1).padStart(2, '0')) : (allMonthKeys[0] || null);
-            const prevMonthKeyStr = prevMonth ? (prevMonth.getFullYear() + '-' + String(prevMonth.getMonth() + 1).padStart(2, '0')) : (allMonthKeys.length > 1 ? allMonthKeys[1] : null);
-            const currentMonthOptions = getMonthOptions(allMonthKeys, currentMonthKeyStr);
-            const prevMonthOptions = getMonthOptions(allMonthKeys, prevMonthKeyStr);
+            // --- Header Labels ---
+            const getOrdinalSuffix = (d) => {
+                if (d > 3 && d < 21) return 'th';
+                switch (d % 10) {
+                    case 1: return "st";
+                    case 2: return "nd";
+                    case 3: return "rd";
+                    default: return "th";
+                }
+            };
+            const fmtDate = (d) => d.toLocaleString('default', { month: 'short', year: '2-digit' });
+            
+            let currentHeaderLabel = fmtDate(currentMonth);
+            if (actualCurrentDay) {
+                currentHeaderLabel += `<br><span class="small fw-normal ${!isCurrentMonthComplete ? 'text-danger' : 'text-muted'}">(upto ${actualCurrentDay}${getOrdinalSuffix(actualCurrentDay)})</span>`;
+            }
+            
+            let prevHeaderLabel = fmtDate(prevMonth);
+            if (actualPrevDay) {
+                prevHeaderLabel += `<br><span class="small fw-normal text-muted">(upto ${actualPrevDay}${getOrdinalSuffix(actualPrevDay)})</span>`;
+            }
+
+            let smlyHeaderLabel = fmtDate(smlyMonth);
+            if (actualSmlyDay) {
+                smlyHeaderLabel += `<br><span class="small fw-normal text-muted">(upto ${actualSmlyDay}${getOrdinalSuffix(actualSmlyDay)})</span>`;
+            }
 
             const darkMode = document.body.classList.contains('dark');
 
-            // Generate footnote first if the actual comparison days are different from the selected day
             let footnoteHtml = '';
-            if ((actualCurrentDay !== null && actualCurrentDay !== parseInt(selectedDay, 10)) || (actualPrevDay !== null && actualPrevDay !== parseInt(selectedDay, 10))) {
-                const currentMonthName = currentMonth.toLocaleString('default', { month: 'short' });
-                const prevMonthName = prevMonth.toLocaleString('default', { month: 'short' });
-                const currentDayText = actualCurrentDay ? `${actualCurrentDay} ${currentMonthName}` : `start of ${currentMonthName}`;
-                const prevDayText = actualPrevDay ? `${actualPrevDay} ${prevMonthName}` : `start of ${prevMonthName}`;
-                
-                footnoteHtml = `<div class="text-danger small mb-2">* Comparison is for collection up to ${currentDayText} vs. up to ${prevDayText}.</div>`;
+            if (!isCurrentMonthComplete && alignDays) {
+                 footnoteHtml = `<div id="table-footnote" class="text-muted small mb-2">* Current month is partial. Comparison columns are calculated upto the ${actualCurrentDay}th day. Uncheck "Match Days" to view full month data.</div>`;
+            } else if (!isCurrentMonthComplete && !alignDays) {
+                 footnoteHtml = `<div id="table-footnote" class="text-muted small mb-2">* Current month is partial (${actualCurrentDay}th). Comparison columns show full month data.</div>`;
             }
+
+            const theadHtml = `<thead>
+                            <tr class="table-sortable" data-sort-key="${sortConfig.key}" data-sort-dir="${sortConfig.dir}">
+                                <th class="sortable-header ${sortConfig.key === 'name' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="name">${breakdownKey.charAt(0).toUpperCase() + breakdownKey.slice(1)} Name</th>
+                                <th class="text-end sortable-header ${sortConfig.key === 'fyCollection' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="fyCollection">Total FY Collection</th>
+                                <th class="text-end sortable-header ${sortConfig.key === 'smlyCollection' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="smlyCollection" style="max-width: none;">${smlyHeaderLabel}</th>
+                                <th class="text-end sortable-header ${sortConfig.key === 'prevMonthCollection' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="prevMonthCollection" style="max-width: none;">${prevHeaderLabel}</th>
+                                <th class="text-end sortable-header ${sortConfig.key === 'currentMonthCollection' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="currentMonthCollection" style="max-width: none;">${currentHeaderLabel}</th>
+                                <th class="text-end sortable-header ${sortConfig.key === 'momPct' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="momPct">MoM %</th>
+                                <th class="text-end sortable-header ${sortConfig.key === 'yoyPct' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="yoyPct">YoY %</th>
+                            </tr>
+                        </thead>`;
 
             let tableHtml = `
                 ${footnoteHtml}
                 <div class="table-responsive" style="height: calc(60vh - 120px); overflow-y: auto;">
-                    <table class="table table-sm table-hover table-striped ${darkMode ? 'table-dark' : ''} table-no-wrap" id="monthly-summary-table">
-                        <thead>
-                            <tr class="table-sortable" data-sort-key="${sortConfig.key}" data-sort-dir="${sortConfig.dir}">
-                                <th class="sortable-header ${sortConfig.key === 'name' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="name">${breakdownKey.charAt(0).toUpperCase() + breakdownKey.slice(1)} Name</th>
-                                <th class="text-end sortable-header ${sortConfig.key === 'fyCollection' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="fyCollection">Total FY Collection</th>
-                                <th class="text-end sortable-header ${sortConfig.key === 'currentMonthCollection' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="currentMonthCollection"><span class="d-none d-md-inline">Collection (</span><select id="currentMonthSelector" class="form-select form-select-sm d-inline-block w-auto" ${currentMonthKeyStr ? '' : 'disabled'}>${currentMonthOptions}</select><span class="d-none d-md-inline">)</span></th>
-                                <th class="text-end sortable-header ${sortConfig.key === 'prevMonthCollection' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="prevMonthCollection"><span class="d-none d-md-inline">Collection (</span><select id="prevMonthSelector" class="form-select form-select-sm d-inline-block w-auto" ${prevMonthKeyStr ? '' : 'disabled'}>${prevMonthOptions}</select><span class="d-none d-md-inline">)</span></th>
-                                <th class="text-end sortable-header ${sortConfig.key === 'change' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="change">Change</th>
-                                <th class="text-end sortable-header ${sortConfig.key === 'pctChange' ? 'sort-' + sortConfig.dir : ''}" data-sort-key="pctChange">% Change</th>
-                            </tr>
-                        </thead>
+                    <table class="table table-sm table-hover table-striped ${darkMode ? 'table-dark' : ''} table-no-wrap table-sticky-header table-mobile-compact" id="monthly-summary-table">
+                        ${theadHtml}
                         <tbody>
             `;
+            
+            let tbodyHtml = '';
 
-            tableData.forEach(row => {
-                let indicator = '';
-                if (row.pctChange > 0) indicator = `<i class="bi bi-arrow-up text-success"></i>`;
-                else if (row.pctChange < 0) indicator = `<i class="bi bi-arrow-down text-danger"></i>`;
+            paginatedData.forEach(row => {
+                // Helper for indicators
+                const getIndicator = (val) => {
+                    if (val > 0) return `<i class="bi bi-arrow-up text-success"></i>`;
+                    if (val < 0) return `<i class="bi bi-arrow-down text-danger"></i>`;
+                    return '';
+                };
+                
+                const momIndicator = getIndicator(row.momChange);
+                const yoyIndicator = getIndicator(row.yoyChange);
 
-                tableHtml += `
-                    <tr>
+                const momPctDisplay = isFinite(row.momPct) ? `${momIndicator} ${row.momPct.toFixed(1)}%` : 'New';
+                const yoyPctDisplay = isFinite(row.yoyPct) ? `${yoyIndicator} ${row.yoyPct.toFixed(1)}%` : 'New';
+
+                // Row Highlighting
+                let rowClass = '';
+                if (row.momPct === maxMomPct && maxMomPct > 0) rowClass = 'table-success';
+                else if (row.momPct === minMomPct && minMomPct < 0) rowClass = 'table-danger';
+
+                tbodyHtml += `
+                    <tr class="${rowClass}">
                         <td>${row.name}</td>
                         <td class="text-end">${formatReadableAmount(row.fyCollection)}</td>
-                        <td class="text-end">${formatReadableAmount(row.currentMonthCollection)}</td>
+                        <td class="text-end">${formatReadableAmount(row.smlyCollection)}</td>
                         <td class="text-end">${formatReadableAmount(row.prevMonthCollection)}</td>
-                        <td class="text-end">${indicator} ${formatReadableAmount(Math.abs(row.change))}</td>
-                        <td class="text-end">${indicator} ${row.pctChange.toFixed(1)}%</td>
+                        <td class="text-end">${formatReadableAmount(row.currentMonthCollection)}</td>
+                        <td class="text-end">${momPctDisplay}</td>
+                        <td class="text-end">${yoyPctDisplay}</td>
                     </tr>
                 `;
             });
 
-            tableHtml += `
-                        </tbody>
-                        <tfoot>
+            tableHtml += tbodyHtml;
+
+            const totalMomIndicator = totalMomChange > 0 ? `<i class="bi bi-arrow-up text-success"></i>` : (totalMomChange < 0 ? `<i class="bi bi-arrow-down text-danger"></i>` : '');
+            const totalYoyIndicator = totalYoyChange > 0 ? `<i class="bi bi-arrow-up text-success"></i>` : (totalYoyChange < 0 ? `<i class="bi bi-arrow-down text-danger"></i>` : '');
+
+            let tfootHtml = `
                             <tr class="fw-bold table-group-divider">
                                 <td>Total</td>
                                 <td class="text-end">${formatReadableAmount(totalFyCollection)}</td>
-                                <td class="text-end">${formatReadableAmount(totalCurrentMonthCollection)}</td>
+                                <td class="text-end">${formatReadableAmount(totalSmlyCollection)}</td>
                                 <td class="text-end">${formatReadableAmount(totalPrevMonthCollection)}</td>
-                                <td class="text-end">${totalIndicator} ${formatReadableAmount(Math.abs(totalChange))}</td>
-                                <td class="text-end">${totalIndicator} ${totalPctChange.toFixed(1)}%</td>
+                                <td class="text-end">${formatReadableAmount(totalCurrentMonthCollection)}</td>
+                                <td class="text-end">${totalMomIndicator} ${totalMomPct.toFixed(1)}%</td>
+                                <td class="text-end">${totalYoyIndicator} ${totalYoyPct.toFixed(1)}%</td>
                             </tr>
-                        </tfoot>
-                    </table>
-                </div>
             `;
+            
+            tableHtml += `</tbody><tfoot>${tfootHtml}</tfoot></table></div>`;
 
-            return { html: tableHtml, allMonthKeys };
-        }
+            // Generate Pagination Controls
+            let paginationHtml = '';
+            if (totalPages > 1) {
+                const prevDisabled = currentTablePage === 1 ? 'disabled' : '';
+                const nextDisabled = currentTablePage === totalPages ? 'disabled' : '';
+                
+                // Simple pagination: First, Prev, Current, Next, Last
+                // For brevity, just showing a simplified range around current
+                const startPage = Math.max(1, currentTablePage - 2);
+                const endPage = Math.min(totalPages, currentTablePage + 2);
 
-        function getMonthOptions(monthKeys, selectedKey) {
-            return monthKeys.map(key => {
-                const [year, month] = key.split('-');
-                const monthName = new Date(year, month - 1).toLocaleString('default', { month: 'short', year: '2-digit' });
-                return `<option value="${key}" ${key === selectedKey ? 'selected' : ''}>${monthName}</option>`;
-            }).join('');
-        }
+                let pagesHtml = '';
+                for (let i = startPage; i <= endPage; i++) {
+                    pagesHtml += `<li class="page-item ${i === currentTablePage ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
+                }
 
-        function getComparisonMonths(data, currentMonthKey, prevMonthKey) {
-            const monthKeys = [...new Set(data.map(d => `${d.date.getFullYear()}-${String(d.date.getMonth() + 1).padStart(2, '0')}`))]
-                .sort().reverse(); // Sort descending to easily find latest
-
-            if (monthKeys.length === 0) {
-                return { currentMonth: null, prevMonth: null, allMonthKeys: monthKeys };
+                paginationHtml = `
+                    <div id="table-pagination" class="d-flex justify-content-between align-items-center mt-2">
+                        <span class="small text-muted">Showing ${startIndex + 1}-${Math.min(startIndex + ROWS_PER_PAGE, totalRows)} of ${totalRows}</span>
+                        <nav aria-label="Table navigation">
+                            <ul class="pagination pagination-sm mb-0">
+                                <li class="page-item ${prevDisabled}"><a class="page-link" href="#" data-page="${currentTablePage - 1}">Prev</a></li>
+                                ${pagesHtml}
+                                <li class="page-item ${nextDisabled}"><a class="page-link" href="#" data-page="${currentTablePage + 1}">Next</a></li>
+                            </ul>
+                        </nav>
+                    </div>
+                `;
             }
+            
+            tableHtml += paginationHtml;
 
-            // Determine current and previous month keys safely
-            const activeCurrentKey = currentMonthKey || monthKeys[0];
-            const activePrevKey = prevMonthKey || (monthKeys.length > 1 ? monthKeys[1] : null);
-
-            const [currentYear, currentMonthNum] = activeCurrentKey.split('-').map(Number);
-            const currentMonth = new Date(currentYear, currentMonthNum - 1, 1);
-
-            let prevMonth = null;
-            if (activePrevKey) {
-                const [prevYear, prevMonthNum] = activePrevKey.split('-').map(Number);
-                prevMonth = new Date(prevYear, prevMonthNum - 1, 1);
-            }
-
-            return { currentMonth, prevMonth, allMonthKeys: monthKeys };
+            return { html: tableHtml, thead: theadHtml, tbody: tbodyHtml, tfoot: tfootHtml, pagination: paginationHtml, footnote: footnoteHtml, isEmpty: false };
         }
 
-        function addComparisonEventListeners(filteredData, allMonthKeys, sortConfig) {
-            const handleMonthChange = () => {
+        function addComparisonEventListeners(filteredData, sortConfig) {
+            const handleComparisonChange = () => {
                 const activeTabEl = document.querySelector('#comparisonTab .nav-link.active');
                 const activeTabId = activeTabEl ? activeTabEl.id : (currentComparisonTabId || 'region-comparison-tab');
 
-                const currentMonthEl = document.getElementById('currentMonthSelector');
-                const prevMonthEl = document.getElementById('prevMonthSelector');
                 const dayEl = document.getElementById('summaryDaySelector');
 
-                const currentMonth = currentMonthEl ? currentMonthEl.value : null;
-                const prevMonth = prevMonthEl ? prevMonthEl.value : null;
-                const day = dayEl ? dayEl.value : null;
+                const day = dayEl ? parseInt(dayEl.value, 10) : null;
 
-                updateActiveComparisonTable(applyFilters(), activeTabId, currentMonth, prevMonth, day, allMonthKeys, sortConfig);
+                updateActiveComparisonTable(applyFilters(), activeTabId, day, sortConfig);
             };
-
-            const table = document.getElementById('monthly-summary-table');
-            if (table) {
-                const curEl = table.querySelector('#currentMonthSelector');
-                const prevEl = table.querySelector('#prevMonthSelector');
-                if (curEl) curEl.addEventListener('change', handleMonthChange);
-                if (prevEl) prevEl.addEventListener('change', handleMonthChange);
-            }
 
             const daySelector = document.getElementById('summaryDaySelector');
             if (daySelector) {
-                daySelector.addEventListener('change', handleMonthChange);
+                daySelector.onchange = handleComparisonChange;
+            }
+            
+            const alignDaysCheckbox = document.getElementById('alignDaysCheckbox');
+            if (alignDaysCheckbox) {
+                alignDaysCheckbox.onchange = handleComparisonChange;
             }
 
             // Listeners for sub-tabs to re-render content on switch
             document.querySelectorAll('#comparisonTab .nav-link').forEach(tab => {
                 tab.addEventListener('shown.bs.tab', event => {
                     const activeTabId = event.target.id;
+                    currentTablePage = 1; // Reset page on tab switch
                     // Track the active comparison tab so we can preserve it during re-renders
                     currentComparisonTabId = activeTabId;
-                    // Reset months on tab switch, keep day, and reset sort
-                    updateActiveComparisonTable(filteredData, activeTabId, null, null, document.getElementById('summaryDaySelector').value, allMonthKeys, { key: 'fyCollection', dir: 'desc' });
+                    // Keep current comparison type and day, reset sort
+                    updateActiveComparisonTable(filteredData, activeTabId, document.getElementById('summaryDaySelector').value, { key: 'fyCollection', dir: 'desc' });
                 });
             });
 
             // Sorting listener
-            document.getElementById('monthly-summary-table')?.querySelector('thead').addEventListener('click', (e) => {
+            const thead = document.getElementById('monthly-summary-table')?.querySelector('thead');
+            if (thead && !thead.dataset.listenerAttached) {
+                thead.addEventListener('click', (e) => {
                 const header = e.target.closest('.sortable-header');
                 if (!header || e.target.tagName === 'SELECT') return;
 
@@ -2224,10 +2397,27 @@
 
                 const activeTabEl = document.querySelector('#comparisonTab .nav-link.active');
                 const activeTabId = activeTabEl ? activeTabEl.id : (currentComparisonTabId || 'region-comparison-tab');
-                const currentMonth = document.getElementById('currentMonthSelector')?.value || null;
-                const prevMonth = document.getElementById('prevMonthSelector')?.value || null;
                 const day = document.getElementById('summaryDaySelector')?.value || null;
-                updateActiveComparisonTable(filteredData, activeTabId, currentMonth, prevMonth, day, allMonthKeys, newSortConfig);
+                updateActiveComparisonTable(filteredData, activeTabId, day, newSortConfig);
+                });
+                thead.dataset.listenerAttached = 'true';
+            }
+
+            // Pagination listeners
+            document.querySelectorAll('.pagination .page-link').forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const targetPage = parseInt(e.target.dataset.page);
+                    if (targetPage && targetPage !== currentTablePage) {
+                        currentTablePage = targetPage;
+                        const activeTabEl = document.querySelector('#comparisonTab .nav-link.active');
+                        const activeTabId = activeTabEl ? activeTabEl.id : (currentComparisonTabId || 'region-comparison-tab');
+                        const day = document.getElementById('summaryDaySelector')?.value || null;
+                        
+                        // Re-render with new page
+                        updateActiveComparisonTable(filteredData, activeTabId, day, sortConfig);
+                    }
+                });
             });
         }
 
@@ -2240,31 +2430,69 @@
             URL.revokeObjectURL(link.href);
         }
 
-        function updateActiveComparisonTable(data, activeTabId, currentMonthKey, prevMonthKey, selectedDay, allMonthKeys, sortConfig) {
+        function updateActiveComparisonTable(data, activeTabId, selectedDay, sortConfig) {
             const targetPaneId = activeTabId.replace('-tab', '');
             const targetPane = document.getElementById(targetPaneId);
+            const alignDays = document.getElementById('alignDaysCheckbox')?.checked ?? true;
 
-            // Show loader in the target tab pane
-            if (targetPane) {
-                targetPane.innerHTML = `
-                    <div class="d-flex flex-column justify-content-center align-items-center" style="height: calc(60vh - 120px);">
-                        <div class="custom-loader">
-                            <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+            // Clear other panes to prevent ID conflicts and save memory
+            document.querySelectorAll('#comparisonTabContent .tab-pane').forEach(pane => {
+                if (pane.id !== targetPaneId) pane.innerHTML = '';
+            });
+
+            // Check if we can do a partial update (table exists)
+            const existingTable = targetPane ? targetPane.querySelector('#monthly-summary-table') : null;
+
+            if (!existingTable) {
+                // Initial load or full refresh: Show loader
+                if (targetPane) {
+                    targetPane.innerHTML = `
+                        <div class="d-flex flex-column justify-content-center align-items-center" style="height: calc(60vh - 120px);">
+                            <div class="custom-loader">
+                                <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+                            </div>
+                            <span class="ms-3 text-muted">Please wait...</span>
                         </div>
-                        <span class="ms-3 text-muted">Please wait...</span>
-                    </div>
-                `;
+                    `;
+                }
+            } else {
+                // Partial update: Dim the table instead of destroying it
+                existingTable.classList.add('opacity-50');
             }
 
             // Use setTimeout to allow the browser to render the loader before starting the heavy task
             setTimeout(() => {
                 const breakdownKey = activeTabId.split('-')[0];
-                const tableResult = generateMonthlySummaryTable(data, breakdownKey, currentMonthKey, prevMonthKey, selectedDay, sortConfig);
+                const tableResult = generateMonthlySummaryTable(data, breakdownKey, selectedDay, sortConfig, alignDays);
                 
-                // Now that the table is generated, replace the loader with the content
-                if (targetPane) targetPane.innerHTML = tableResult.html;
+                if (targetPane) {
+                    const currentTable = targetPane.querySelector('#monthly-summary-table');
+                    if (currentTable && !tableResult.isEmpty) {
+                        // Partial Update: Replace header, body, footer, and pagination
+                        currentTable.querySelector('thead').outerHTML = tableResult.thead;
+                        currentTable.querySelector('tbody').innerHTML = tableResult.tbody;
+                        currentTable.querySelector('tfoot').innerHTML = tableResult.tfoot;
+                        
+                        // Update Footnote
+                        const existingFootnote = targetPane.querySelector('#table-footnote');
+                        if (existingFootnote && tableResult.footnote) existingFootnote.outerHTML = tableResult.footnote;
+                        else if (!existingFootnote && tableResult.footnote) targetPane.insertAdjacentHTML('afterbegin', tableResult.footnote);
+                        else if (existingFootnote && !tableResult.footnote) existingFootnote.remove();
+
+                        // Update Pagination
+                        const existingPagination = targetPane.querySelector('#table-pagination');
+                        if (existingPagination && tableResult.pagination) existingPagination.outerHTML = tableResult.pagination;
+                        else if (!existingPagination && tableResult.pagination) targetPane.insertAdjacentHTML('beforeend', tableResult.pagination);
+                        else if (existingPagination && !tableResult.pagination) existingPagination.remove();
+
+                        currentTable.classList.remove('opacity-50');
+                    } else {
+                        // Full Replace (Initial load or empty data)
+                        targetPane.innerHTML = tableResult.html;
+                    }
+                }
                 // Re-attach listeners to the new table content
-                addComparisonEventListeners(data, allMonthKeys, sortConfig);
+                addComparisonEventListeners(data, sortConfig);
             }, 0);
         }
         
