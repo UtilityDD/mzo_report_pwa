@@ -1556,47 +1556,88 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
          * @param {string} text - Raw CSV text
          * @returns {Array<Object>}
          */
-        function parseCSV(text) {
-            if (!text) return [];
-            const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
-            if (lines.length === 0) return [];
-            const parseLine = (line) => {
-                const values = [];
-                let cur = '';
-                let inQuotes = false;
-                for (let i = 0; i < line.length; i++) {
-                    const ch = line[i];
-                    if (ch === '"') {
-                        // If double quotes inside quoted field, consume one and append a quote
-                        if (inQuotes && line[i + 1] === '"') {
-                            cur += '"';
-                            i++;
-                        } else {
-                            inQuotes = !inQuotes;
-                        }
-                    } else if (ch === ',' && !inQuotes) {
-                        values.push(cur);
-                        cur = '';
-                    } else {
-                        cur += ch;
-                    }
-                }
-                values.push(cur);
-                return values;
-            };
+        function parseCSV(csvString) {
+  const result = [];
+  const allFields = [];
+  let inQuote = false;
+  let currentField = '';
 
-            const headers = parseLine(lines[0]).map(h => h.trim());
-            const rows = lines.slice(1);
-            const result = rows.map(row => {
-                const values = parseLine(row);
-                const obj = {};
-                headers.forEach((h, idx) => {
-                    obj[h] = values[idx] !== undefined ? values[idx] : '';
-                });
-                return obj;
-            });
-            return result;
-        }
+  for (let i = 0; i < csvString.length; i++) {
+    const char = csvString[i];
+    const nextChar = csvString[i + 1];
+
+    if (char === '"') {
+      if (inQuote && nextChar === '"') { // Handle escaped double quote (e.g., "value""with""quote")
+        currentField += '"';
+        i++; // Skip the next quote
+      } else {
+        inQuote = !inQuote; // Toggle quote state
+      }
+    } else if (char === ',' && !inQuote) { // Field delimiter outside of quotes
+      allFields.push(currentField);
+      currentField = '';
+    } else if (char === '\n' && !inQuote) { // Row delimiter outside of quotes (LF)
+      allFields.push(currentField);
+      currentField = '';
+      allFields.push('__ROW_DELIMITER__'); // Special marker for row end
+    } else if (char === '\r' && nextChar === '\n' && !inQuote) { // Row delimiter outside of quotes (CRLF)
+      allFields.push(currentField);
+      currentField = '';
+      allFields.push('__ROW_DELIMITER__'); // Special marker for row end
+      i++; // Skip the next char (\n)
+    } else {
+      currentField += char; // Append character to current field
+    }
+  }
+  // Add the last field after the loop finishes
+  allFields.push(currentField);
+
+  // Group the extracted fields into rows based on the delimiter marker
+  const rows = [];
+  let currentRowFields = [];
+  for (const field of allFields) {
+    if (field === '__ROW_DELIMITER__') {
+      // Only add rows that contain at least one non-empty field
+      if (currentRowFields.some(f => f !== '')) {
+        rows.push(currentRowFields);
+      }
+      currentRowFields = []; // Reset for the next row
+    } else {
+      currentRowFields.push(field);
+    }
+  }
+  // Add the very last row if it exists and is not empty
+  if (currentRowFields.some(f => f !== '')) {
+    rows.push(currentRowFields);
+  }
+
+  if (rows.length === 0) {
+    return result; // Return empty array if no data rows
+  }
+
+  // The first row is assumed to be the headers
+  const headers = rows[0].map(h => h.trim());
+
+  // Process the remaining rows
+  for (let i = 1; i < rows.length; i++) {
+    const row = {};
+    const rowFields = rows[i];
+
+    // Skip rows that are entirely empty (e.g., from a trailing newline in the CSV)
+    if (!rowFields.some(f => f !== '')) {
+        continue;
+    }
+
+    for (let j = 0; j < headers.length; j++) {
+      const header = headers[j];
+      const value = rowFields[j] !== undefined ? rowFields[j] : '';
+      row[header] = value;
+    }
+    result.push(row);
+  }
+
+  return result;
+}
 
         // Initialize the dashboard when the DOM is fully loaded
         document.addEventListener('DOMContentLoaded', async () => {
@@ -1626,11 +1667,14 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
                 filterData(); // Initial update
 
             } catch (error) {
-                console.error('Error loading data:', error);
+                console.error('Error loading or parsing data:', error);
                 tabContent.innerHTML = `
                     <div class="text-center py-4">
                         <p class="font-medium text-red-500">Failed to load data</p>
-                        <p class="text-gray-500 opacity-70 mt-1">Please ensure defective_meter.csv is present in the project root and correctly formatted.</p>
+                        <p class="text-gray-500 opacity-70 mt-1">
+                            Please ensure <code>defective_meter.csv</code> is present and correctly formatted.
+                            Check the browser's developer console (Ctrl+Shift+I) for more technical details.
+                        </p>
                     </div>
                 `;
             } finally {
