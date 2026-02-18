@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Category-wise Performance Extremes</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --primary: #0ea5e9;
+            --secondary: #64748b;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --bg: #f8fafc;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg);
+            color: #1e293b;
+            padding: 2rem;
+        }
+
+        .extreme-card {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+            transition: transform 0.2s;
+        }
+
+        .extreme-card:hover {
+            transform: translateY(-4px);
+        }
+
+        .badge-high {
+            background-color: #dcfce7;
+            color: #166534;
+        }
+
+        .badge-low {
+            background-color: #fee2e2;
+            color: #991b1b;
+        }
+
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 5px solid #e2e8f0;
+            border-top: 5px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="spinner"></div>
+        <p class="mt-4 font-bold text-slate-600">Calculating Category Extremes...</p>
+    </div>
+
+    <div class="max-w-6xl mx-auto">
+        <header class="flex justify-between items-center mb-8">
+            <div class="flex gap-3">
+                <a href="index.html"
+                    class="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors flex items-center gap-2">
+                    <i class="fas fa-home"></i> Home
+                </a>
+                <a href="analytics.html"
+                    class="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors flex items-center gap-2">
+                    <i class="fas fa-arrow-left"></i> Back to Trends
+                </a>
+            </div>
+            <h1 class="text-2xl font-extrabold text-slate-800">Category Extremes</h1>
+        </header>
+
+        <div id="statsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Cards will be injected here -->
+        </div>
+    </div>
+
+    <script>
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSHoWw-c-KCfsYrkQs67uWaKdag1WXVQobLkngEK-bvbky_LMF6RWg-BwgVYA-5f3RcR4u6rQA5XWhH/pub?gid=422662764&single=true&output=csv';
+
+        const CATEGORIES = [
+            { id: 'Subtotal: Cleanliness', name: 'Cleanliness', max: 14, icon: 'fa-broom' },
+            { id: 'Subtotal: Defective', name: 'Technical / Defective', max: 24, icon: 'fa-tools' },
+            { id: 'Subtotal: RecordKeeping', name: 'Record Keeping', max: 22, icon: 'fa-book' },
+            { id: 'Subtotal: Essentials', name: 'Essentials', max: 20, icon: 'fa-clipboard-list' },
+            { id: 'Subtotal: Safety', name: 'Safety Equipment', max: 18, icon: 'fa-hard-hat' },
+            { id: 'Subtotal: Aesthetics', name: 'Aesthetics & Discipline', max: 52, icon: 'fa-star' }
+        ];
+
+        async function init() {
+            try {
+                const response = await fetch(CSV_URL);
+                const csvText = await response.text();
+                const data = parseCsv(csvText);
+
+                renderExtremes(data);
+                document.getElementById('loadingOverlay').style.display = 'none';
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Cloud data unreachable.');
+            }
+        }
+
+        function parseCsv(csv) {
+            const lines = csv.split(/\r?\n/).filter(line => line.trim() !== '');
+            const CSV_FIELD_REGEX = /(?:\"([^\"]*(?:\"\"[^\"]*)*)\"|([^,]*))(?:,|$)/g;
+            const parseLine = (line) => {
+                const fields = [];
+                CSV_FIELD_REGEX.lastIndex = 0;
+                let match;
+                while ((match = CSV_FIELD_REGEX.exec(line)) !== null) {
+                    let field = match[1] !== undefined ? match[1].replace(/""/g, '"') : match[2];
+                    fields.push(field.trim());
+                    if (match.index === CSV_FIELD_REGEX.lastIndex) CSV_FIELD_REGEX.lastIndex++;
+                }
+                return fields;
+            };
+
+            const headers = parseLine(lines[0]);
+            const results = [];
+            for (let i = 1; i < lines.length; i++) {
+                const row = {};
+                const fields = parseLine(lines[i]);
+                headers.forEach((h, idx) => row[h] = fields[idx] || '');
+                results.push(row);
+            }
+            return results;
+        }
+
+        function renderExtremes(data) {
+            const grid = document.getElementById('statsGrid');
+            grid.innerHTML = '';
+
+            CATEGORIES.forEach(cat => {
+                // Find highest
+                let highest = data.reduce((prev, curr) => {
+                    const prevVal = parseInt(prev[cat.id]) || 0;
+                    const currVal = parseInt(curr[cat.id]) || 0;
+                    return currVal > prevVal ? curr : prev;
+                });
+
+                // Find lowest
+                let lowest = data.reduce((prev, curr) => {
+                    const prevVal = parseInt(prev[cat.id]) || 0;
+                    const currVal = parseInt(curr[cat.id]) || 0;
+                    return currVal < prevVal ? curr : prev;
+                });
+
+                const card = document.createElement('div');
+                card.className = 'extreme-card';
+                card.innerHTML = `
+                    <div class="p-5 border-b border-slate-100 bg-slate-50/50">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-sky-100 text-sky-600 flex items-center justify-center">
+                                <i class="fas ${cat.icon}"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-slate-800">${cat.name}</h3>
+                                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Max Potential: ${cat.max} Pts</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="p-5 space-y-6">
+                        <!-- Highest -->
+                        <div class="relative pl-4 border-l-4 border-green-500">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-xs font-bold text-green-600 uppercase">🏆 Best Performance</span>
+                                <span class="badge-high px-2 py-0.5 rounded text-xs font-bold">${highest[cat.id]}/${cat.max}</span>
+                            </div>
+                            <h4 class="font-bold text-slate-900 leading-tight">${highest.Substation}</h4>
+                            <p class="text-xs text-slate-500 mt-1"><i class="far fa-calendar-alt mr-1"></i> ${formatDate(highest.Date)}</p>
+                        </div>
+
+                        <!-- Lowest -->
+                        <div class="relative pl-4 border-l-4 border-red-500">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-xs font-bold text-red-600 uppercase">⚠️ Area for Improvement</span>
+                                <span class="badge-low px-2 py-0.5 rounded text-xs font-bold">${lowest[cat.id]}/${cat.max}</span>
+                            </div>
+                            <h4 class="font-bold text-slate-900 leading-tight">${lowest.Substation}</h4>
+                            <p class="text-xs text-slate-500 mt-1"><i class="far fa-calendar-alt mr-1"></i> ${formatDate(lowest.Date)}</p>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function formatDate(str) {
+            if (!str) return '-';
+            const d = new Date(str);
+            if (isNaN(d.getTime())) return str;
+            return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

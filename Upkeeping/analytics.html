@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Substation Trends & Analytics</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary-500: #0ea5e9;
+            --primary-600: #0284c7;
+            --neutral-50: #fafafa;
+            --neutral-100: #f5f5f5;
+            --neutral-200: #e5e5e5;
+            --neutral-800: #262626;
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --radius-xl: 1rem;
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        select,
+        button {
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--neutral-200);
+            background: white;
+            font-size: 0.875rem;
+            cursor: pointer;
+        }
+
+        .btn-back {
+            background: var(--neutral-800);
+            color: white;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1.25rem;
+            border-radius: 0.5rem;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: var(--bg-secondary);
+            padding: 1.5rem;
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-md);
+        }
+
+        .full-width {
+            grid-column: 1 / -1;
+        }
+
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary-600);
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+
+        #loadingOverlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--neutral-200);
+            border-top: 4px solid var(--primary-500);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .trend-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-top: 0.5rem;
+        }
+
+        .trend-up {
+            color: #10b981;
+        }
+
+        .trend-down {
+            color: #ef4444;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 1rem;
+            }
+
+            .controls {
+                width: 100%;
+                flex-wrap: wrap;
+            }
+
+            select {
+                flex: 1;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loadingOverlay">
+        <div class="spinner"></div>
+        <p style="margin-top: 1rem;">Loading historical data...</p>
+    </div>
+
+    <div class="container">
+        <header>
+            <div>
+                <a href="index.html" class="btn-back"><i class="fas fa-arrow-left"></i> Home</a>
+            </div>
+            <h1>Substation Trends</h1>
+            <div class="controls">
+                <a href="item_analytics.html"
+                    class="px-4 py-2 bg-sky-100 text-sky-700 rounded-lg text-sm font-bold hover:bg-sky-200 transition-colors flex items-center gap-2">
+                    <i class="fas fa-list-ul"></i> Item Stats
+                </a>
+                <select id="divisionSelect">
+                    <option value="">All Divisions</option>
+                </select>
+                <select id="substationSelect">
+                    <option value="">All Substations</option>
+                </select>
+            </div>
+        </header>
+
+        <div class="dashboard-grid">
+            <!-- Key Stats -->
+            <div class="card">
+                <div class="card-title"><i class="fas fa-star"></i> Avg. Total Score</div>
+                <div id="avgScore" class="stat-value">-</div>
+                <div id="scoreTrend" class="trend-indicator"></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><i class="fas fa-clipboard-check"></i> Total Inspections</div>
+                <div id="totalInspections" class="stat-value">-</div>
+                <div class="stat-label">to date</div>
+            </div>
+            <div class="card">
+                <div class="card-title"><i class="fas fa-trophy text-yellow-500"></i> Highest Score</div>
+                <div id="highestScore" class="stat-value">-</div>
+                <div id="highestScoreLabel" class="stat-label">-</div>
+            </div>
+            <div class="card">
+                <div class="card-title"><i class="fas fa-arrow-down text-red-500"></i> Lowest Score</div>
+                <div id="lowestScore" class="stat-value">-</div>
+                <div id="lowestScoreLabel" class="stat-label">-</div>
+            </div>
+
+            <!-- Main Chart -->
+            <div class="card full-width">
+                <div class="card-title"><i class="fas fa-chart-line"></i> Total Score Trend Over Time</div>
+                <div class="chart-container">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+
+
+            <!-- Score Distribution -->
+            <div class="card">
+                <div class="card-title"><i class="fas fa-chart-bar"></i> Category Averages</div>
+                <div class="chart-container">
+                    <canvas id="barChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSHoWw-c-KCfsYrkQs67uWaKdag1WXVQobLkngEK-bvbky_LMF6RWg-BwgVYA-5f3RcR4u6rQA5XWhH/pub?gid=422662764&single=true&output=csv';
+
+        const DIVISION_MAP = {
+            'Malda': ['Englishbazar', 'Mothabari', 'Kaliachak', 'Sujapur', 'Baishnabnagar', 'Gopalganj', 'Rabindra Bhaban', 'KPS Malda', 'Mankchak', 'Milki'],
+            'Gazole': ['Nalagola', 'Deotala', 'Narayanpur', 'Mobaeakpur', 'Habibpur', 'Balia', 'Bamongola', 'Gazole', 'Ranipur OD', 'Chandipur', 'Mangalbari'],
+            'Chanchal': ['Shibnagar', 'Ratua', 'Pukuria', 'Chanchal', 'Bhaluka', 'Ashapur', 'Chatrak', 'Harishchandrapur'],
+            'Raiganj': ['Raiganj', 'Kasba', 'Durgapur', 'Itahar', 'Bangar', 'Tungidighi', 'Bikore', 'Laxmania', 'Hemtabad', 'Malon', 'Kaliyaganj', 'Dalimgaon', 'Belua', 'Kunor', 'Spinning Mill', 'Mahespur'],
+            'Islampur': ['Sonapur', 'Bholagach', 'Chopra', 'Srikrishnapur', 'Islampur', 'Panjipara', 'Lodhan', 'Kahata', 'Kanki', 'Choprajhar', 'Sujali', 'Tajpur'],
+            'Buniadpur': ['Buniadpur', 'Harirampur', 'Kushmandi', 'Thangapara', 'Pransagar', 'Maligaon'],
+            'Balurghat': ['Baro-Raghunathpur', 'Amrail', 'Trimohini', 'Patiram', 'Mahipur', 'Rampur', 'Salas']
+        };
+
+        let allData = [];
+        let trendChart, barChart;
+
+        async function init() {
+            await fetchData();
+            populateDivisions();
+            populateSubstations();
+            updateDashboard();
+
+            document.getElementById('divisionSelect').addEventListener('change', () => {
+                populateSubstations();
+                updateDashboard();
+            });
+            document.getElementById('substationSelect').addEventListener('change', updateDashboard);
+            document.getElementById('loadingOverlay').style.display = 'none';
+        }
+
+        async function fetchData() {
+            try {
+                const response = await fetch(CSV_URL);
+                const csvText = await response.text();
+                allData = parseCsv(csvText);
+
+                // Map Divisions
+                allData.forEach(row => {
+                    row.Division = 'Other';
+                    for (const [div, sss] of Object.entries(DIVISION_MAP)) {
+                        if (sss.includes(row.Substation)) {
+                            row.Division = div;
+                            break;
+                        }
+                    }
+                });
+
+                // Sort by date
+                allData.sort((a, b) => {
+                    const dateA = parseDate(a.Date);
+                    const dateB = parseDate(b.Date);
+                    return dateA - dateB;
+                });
+            } catch (error) {
+                console.error("Fetch error:", error);
+                alert("Failed to load historical data.");
+            }
+        }
+
+        function parseCsv(csv) {
+            const lines = csv.split(/\r?\n/).filter(line => line.trim() !== '');
+            if (lines.length === 0) return [];
+
+            const CSV_FIELD_REGEX = /(?:\"([^\"]*(?:\"\"[^\"]*)*)\"|([^,]*))(?:,|$)/g;
+
+            const parseLine = (line) => {
+                const fields = [];
+                CSV_FIELD_REGEX.lastIndex = 0;
+                let match;
+                while ((match = CSV_FIELD_REGEX.exec(line)) !== null) {
+                    let field = match[1] !== undefined ? match[1].replace(/""/g, '"') : match[2];
+                    fields.push(field.trim());
+                    if (match.index === CSV_FIELD_REGEX.lastIndex) CSV_FIELD_REGEX.lastIndex++;
+                }
+                if (line.endsWith(',')) fields.push('');
+                return fields;
+            };
+
+            const headers = parseLine(lines[0]);
+            const data = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const lineFields = parseLine(lines[i]);
+                if (lineFields.length === 0) continue;
+
+                const row = {};
+                headers.forEach((header, index) => {
+                    row[header] = lineFields[index] || '';
+                });
+                data.push(row);
+            }
+            return data;
+        }
+
+        function parseDate(dateStr) {
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+                // Assuming DD/MM/YYYY
+                return new Date(parts[2], parts[1] - 1, parts[0]);
+            }
+            return new Date(dateStr);
+        }
+
+        function populateDivisions() {
+            const select = document.getElementById('divisionSelect');
+            const divisions = [...new Set(allData.map(d => d.Division))].sort();
+            divisions.forEach(div => {
+                const opt = document.createElement('option');
+                opt.value = div;
+                opt.textContent = div;
+                select.appendChild(opt);
+            });
+        }
+
+        function populateSubstations() {
+            const divSelect = document.getElementById('divisionSelect');
+            const ssSelect = document.getElementById('substationSelect');
+            const selectedDiv = divSelect.value;
+
+            ssSelect.innerHTML = '<option value="">All Substations</option>';
+
+            let filteredSS = allData;
+            if (selectedDiv) {
+                filteredSS = allData.filter(d => d.Division === selectedDiv);
+            }
+
+            const substations = [...new Set(filteredSS.map(d => d.Substation))].sort();
+            substations.forEach(ss => {
+                const opt = document.createElement('option');
+                opt.value = ss;
+                opt.textContent = ss;
+                ssSelect.appendChild(opt);
+            });
+        }
+
+        function updateDashboard() {
+            const selectedDiv = document.getElementById('divisionSelect').value;
+            const selectedSS = document.getElementById('substationSelect').value;
+
+            let filteredData = allData;
+            if (selectedDiv) {
+                filteredData = filteredData.filter(d => d.Division === selectedDiv);
+            }
+            if (selectedSS) {
+                filteredData = filteredData.filter(d => d.Substation === selectedSS);
+            }
+
+            if (filteredData.length === 0) {
+                // Reset display
+                document.getElementById('avgScore').textContent = '-';
+                document.getElementById('totalInspections').textContent = '0';
+                document.getElementById('highestScore').textContent = '-';
+                document.getElementById('highestScoreLabel').textContent = '-';
+                document.getElementById('lowestScore').textContent = '-';
+                document.getElementById('lowestScoreLabel').textContent = '-';
+                document.getElementById('scoreTrend').innerHTML = '';
+                if (trendChart) trendChart.destroy();
+                if (barChart) barChart.destroy();
+                return;
+            };
+
+            // Stats
+            const scores = filteredData.map(d => parseInt(d['Total Score']) || 0);
+            const avg = (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1);
+            document.getElementById('avgScore').textContent = avg;
+
+            // Trend indicator
+            const trendEl = document.getElementById('scoreTrend');
+            if (scores.length >= 2) {
+                const diff = scores[scores.length - 1] - scores[scores.length - 2];
+                if (diff > 0) {
+                    trendEl.className = 'trend-indicator trend-up';
+                    trendEl.innerHTML = `<i class="fas fa-caret-up"></i> +${diff} from last`;
+                } else if (diff < 0) {
+                    trendEl.className = 'trend-indicator trend-down';
+                    trendEl.innerHTML = `<i class="fas fa-caret-down"></i> ${diff} from last`;
+                } else {
+                    trendEl.className = 'trend-indicator';
+                    trendEl.innerHTML = `No change`;
+                }
+            } else {
+                trendEl.innerHTML = '';
+            }
+
+            document.getElementById('totalInspections').textContent = filteredData.length;
+
+            const maxScore = Math.max(...scores);
+            const maxRow = filteredData[scores.lastIndexOf(maxScore)];
+            document.getElementById('highestScore').textContent = maxScore;
+            document.getElementById('highestScoreLabel').textContent = `${maxRow.Substation} (${maxRow.Date})`;
+
+            const minScore = Math.min(...scores);
+            const minRow = filteredData[scores.lastIndexOf(minScore)];
+            document.getElementById('lowestScore').textContent = minScore;
+            document.getElementById('lowestScoreLabel').textContent = `${minRow.Substation} (${minRow.Date})`;
+
+            renderTrendChart(filteredData);
+            renderBarChart(filteredData);
+        }
+
+        function renderTrendChart(data) {
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            if (trendChart) trendChart.destroy();
+
+            // If too much data, we group by date or just show a subset
+            const labels = data.map(d => d.Date);
+            const values = data.map(d => parseInt(d['Total Score']) || 0);
+
+            trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Total Score',
+                        data: values,
+                        borderColor: '#0ea5e9',
+                        backgroundColor: 'rgba(14, 165, 233, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 3,
+                        pointRadius: 4,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#0ea5e9',
+                        pointBorderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => {
+                                    const d = data[context.dataIndex];
+                                    return `${d.Substation}: ${context.raw} / 150 pts`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            suggestedMax: 150,
+                            grid: { color: '#f1f5f9' },
+                            title: { display: true, text: 'Points (out of 150)', font: { size: 10 } }
+                        },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+
+
+        function renderBarChart(data) {
+            const ctx = document.getElementById('barChart').getContext('2d');
+            if (barChart) barChart.destroy();
+
+            const categories = [
+                'Subtotal: Cleanliness',
+                'Subtotal: Defective',
+                'Subtotal: RecordKeeping',
+                'Subtotal: Essentials',
+                'Subtotal: Safety',
+                'Subtotal: Aesthetics'
+            ];
+
+            const averages = categories.map(cat => {
+                const vals = data.map(d => parseInt(d[cat]) || 0);
+                return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
+            });
+
+            const categoryMaxes = [14, 24, 22, 20, 18, 52];
+
+            barChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Clean', 'Defect', 'Record', 'Essent', 'Safety', 'Aes'],
+                    datasets: [{
+                        label: 'Average Score',
+                        data: averages,
+                        backgroundColor: [
+                            '#38bdf8', '#818cf8', '#fb7185', '#fbbf24', '#4ade80', '#94a3b8'
+                        ],
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    layout: { padding: { top: 25 } },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => {
+                                    const max = categoryMaxes[context.dataIndex];
+                                    return `Avg: ${context.raw} / ${max}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: 'Average Points', font: { size: 10 } }
+                        }
+                    }
+                },
+                plugins: [{
+                    id: 'topLabels',
+                    afterDraw: (chart) => {
+                        const { ctx, data } = chart;
+                        ctx.save();
+                        data.datasets[0].data.forEach((value, i) => {
+                            const meta = chart.getDatasetMeta(0);
+                            const bar = meta.data[i];
+                            const max = categoryMaxes[i];
+
+                            ctx.fillStyle = '#64748b';
+                            ctx.font = 'bold 11px Inter';
+                            ctx.textAlign = 'center';
+                            ctx.fillText(`${value}/${max}`, bar.x, bar.y - 10);
+                        });
+                        ctx.restore();
+                    }
+                }]
+            });
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

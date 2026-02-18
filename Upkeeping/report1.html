@@ -1,31 +1,111 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Substation Score Sheet Report</title>
   <style>
-    body { font-family: Arial, sans-serif; padding: 16px; background: #fff; color: #000; font-size: 14px; line-height: 1.5; }
-    h1, h2, h3 { text-align: center; margin-bottom: 6px; }
-    .section { margin-bottom: 16px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 6px; table-layout: fixed; }
-    table, th, td { border: 1px solid #000; font-size: 13px; }
-    th, td { padding: 4px; text-align: center; vertical-align: middle; }
-    th:first-child, td:first-child { width: 68%; }
-    th:nth-child(2), td:nth-child(2) { width: 10%; }
-    th:nth-child(3), td:nth-child(3) { width: 8%; }
-    .score { font-weight: bold; }
-    .footer { margin-top: 20px; font-size: 12px; text-align: left; }
-    @media print {
-      body { margin: 0; padding: 8px; font-size: 12px; }
-      table { font-size: 11px; }
-      th, td { padding: 2px; }
+    body {
+      font-family: Arial, sans-serif;
+      padding: 16px;
+      background: #fff;
+      color: #000;
+      font-size: 14px;
+      line-height: 1.5;
     }
-    .pdf-page { page-break-after: always; }
-    .page-header { font-style: italic; font-size: 12px; text-align: left; margin-bottom: 6px; }
-    .pdf-page:last-child { page-break-after: auto; }
+
+    h1,
+    h2,
+    h3 {
+      text-align: center;
+      margin-bottom: 6px;
+    }
+
+    .section {
+      margin-bottom: 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 6px;
+      table-layout: fixed;
+    }
+
+    table,
+    th,
+    td {
+      border: 1px solid #000;
+      font-size: 13px;
+    }
+
+    th,
+    td {
+      padding: 4px;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    th:first-child,
+    td:first-child {
+      width: 68%;
+    }
+
+    th:nth-child(2),
+    td:nth-child(2) {
+      width: 10%;
+    }
+
+    th:nth-child(3),
+    td:nth-child(3) {
+      width: 8%;
+    }
+
+    .score {
+      font-weight: bold;
+    }
+
+    .footer {
+      margin-top: 20px;
+      font-size: 12px;
+      text-align: left;
+    }
+
+    @media print {
+      body {
+        margin: 0;
+        padding: 8px;
+        font-size: 12px;
+      }
+
+      table {
+        font-size: 11px;
+      }
+
+      th,
+      td {
+        padding: 2px;
+      }
+    }
+
+    .pdf-page {
+      page-break-after: always;
+    }
+
+    .page-header {
+      font-style: italic;
+      font-size: 12px;
+      text-align: left;
+      margin-bottom: 6px;
+    }
+
+    .pdf-page:last-child {
+      page-break-after: auto;
+    }
   </style>
 </head>
+
 <body>
   <div id="pdfContent">
     <h1>Substation Upkeeping Score Sheet</h1>
@@ -41,14 +121,37 @@
     function formatDate(input) {
       if (!input) return '-';
       const d = new Date(input);
-      return isNaN(d) ? input : d.toLocaleDateString('en-GB');
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString('en-GB');
+      }
+      // Try parsing as DD/MM/YYYY if default fails
+      const parts = input.split('/');
+      if (parts.length === 3) {
+        const d2 = new Date(`${parts[1]}/${parts[0]}/${parts[2]}`);
+        if (!isNaN(d2.getTime())) {
+          return d2.toLocaleDateString('en-GB');
+        }
+      }
+      return input;
     }
 
     function buildSection(fields) {
+      const aestheticsMaxMap = {
+        "Beds in control room": 5,
+        "TV set in control room": 5,
+        "Operating persons dressed properly?": 5,
+        "Switchgear / feeder / PTR name-plates quality": 7,
+        "Helmet use in switch yard": 5,
+        "Back-side of switchgears / panels": 5,
+        "Cable trench cover status": 5,
+        "Garden / plantation condition": 5,
+        "Last condition monitoring issues complied with?": 10
+      };
+
       return fields.map(field => ({
         name: field,
         score: Number(data[field]) || 0,
-        maxPoints: 2
+        maxPoints: aestheticsMaxMap[field] || 2
       }));
     }
 
@@ -91,11 +194,10 @@
         essentials: [
           "Table & chairs (including visitor's)", "Signboard", "Entry Restricted / প্রবেশ নিষেধ board",
           "Almirah", "Water purifier", "Shut-down / break-down boards", "Telephone / mobile phone",
-          "Illumination of control room", "Torch", "Wall clock", "Fire extinguisher",
-          "First-aid box with medicines"
+          "Illumination of control room", "Torch", "Wall clock"
         ],
         safety: [
-          "33kV hand gloves", "11kV hand gloves", "Discharge rod", "Helmet",
+          "Fire extinguisher", "First-aid box with medicines", "33kV hand gloves", "11kV hand gloves", "Discharge rod", "Helmet",
           "High Voltage detector", "Raincoat", "Gumboot"
         ],
         aesthetics: [
@@ -157,26 +259,27 @@
   </div>
 
   <script>
-function exportPdfAndSaveToAndroid() {
-  const element = document.getElementById('pdfContent');
+    function exportPdfAndSaveToAndroid() {
+      const element = document.getElementById('pdfContent');
 
-  // Use Substation and Date for filename
-  const substationName = (data.Substation || 'Substation').replace(/\s+/g, '_');
-  const dateFormatted = formatDate(data.Date).replace(/\//g, '-'); // replace / with -
+      // Use Substation and Date for filename
+      const substationName = (data.Substation || 'Substation').replace(/\s+/g, '_');
+      const dateFormatted = formatDate(data.Date).replace(/\//g, '-'); // replace / with -
 
-  const fileName = `${substationName}_${dateFormatted}_Report.pdf`;
+      const fileName = `${substationName}_${dateFormatted}_Report.pdf`;
 
-  const opt = {
-    margin: [0.5, 0.5, 0.7, 0.5],
-    filename: fileName,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
-    jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait', compress: true }
-  };
+      const opt = {
+        margin: [0.5, 0.5, 0.7, 0.5],
+        filename: fileName,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
+        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait', compress: true }
+      };
 
-  html2pdf().set(opt).from(element).save();
-}
+      html2pdf().set(opt).from(element).save();
+    }
 
   </script>
 </body>
+
 </html>
