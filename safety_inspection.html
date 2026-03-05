@@ -283,10 +283,105 @@
     }
 
     /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 2000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+    }
+
     .modal-content {
+      background: var(--card-bg);
+      margin: 5% auto;
+      padding: 0;
       border-radius: var(--radius);
-      border: none;
+      width: 90%;
+      max-width: 800px;
       box-shadow: var(--shadow-lg);
+      overflow: hidden;
+      animation: modalSlideUp 0.3s ease-out;
+    }
+
+    @keyframes modalSlideUp {
+      from {
+        transform: translateY(20px);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .modal-header {
+      padding: 20px 24px;
+      background: var(--primary-dark);
+      color: white;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h3 {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .close-modal {
+      color: white;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+      line-height: 1;
+    }
+
+    .modal-body {
+      padding: 24px;
+      max-height: 70vh;
+      overflow-y: auto;
+    }
+
+    .pending-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .pending-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px;
+      background: var(--bg-color);
+      border-radius: 8px;
+      border-left: 4px solid var(--danger);
+    }
+
+    .pending-info h4 {
+      font-size: 15px;
+      color: var(--text-main);
+      margin-bottom: 4px;
+    }
+
+    .pending-info p {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .duration-badge {
+      font-size: 12px;
+      font-weight: 600;
+      background: #fee2e2;
+      color: var(--danger);
+      padding: 4px 10px;
+      border-radius: 12px;
+      white-space: nowrap;
     }
 
     /* Responsive */
@@ -446,6 +541,23 @@
         <div id="chartViewContainer" class="dashboard-section chart-container" style="display: none;">
           <h2>Timeline Analysis</h2>
           <canvas id="timelineChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  </div>
+  </div>
+
+  <div id="pendingModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modalTitle">Pending Cases</h3>
+        <span class="close-modal" id="closeModal">&times;</span>
+      </div>
+      <div class="modal-body">
+        <div id="pendingList" class="pending-list">
+          <!-- Pending items will be injected here -->
         </div>
       </div>
     </div>
@@ -1229,12 +1341,12 @@
         </tr>
       `;
 
-      itemsArray.forEach((item, index) => {
-        const lastInspectionFormatted = item.lastInspectionDate ? item.lastInspectionDate.toLocaleDateString('en-GB') : 'N/A';
-        // Don't show the 'Uncategorized' row in the table, but its data is included in the grand total.
-        if (item.name === 'Uncategorized') return;
-        tableHtml += `
-     <tr class="clickable-row" onclick="handleRowClick('${item.name}', '${aggregationKey}')">
+      itemsArray
+        .filter(item => item.name !== 'Uncategorized')
+        .forEach((item, index) => {
+          const lastInspectionFormatted = item.lastInspectionDate ? item.lastInspectionDate.toLocaleDateString('en-GB') : 'N/A';
+          tableHtml += `
+            <tr class="clickable-row" onclick="handleRowClick('${item.name}', '${aggregationKey}')">
                 <td>${index + 1}</td>
                 <td>${item.name}</td>
                 <td>${item.currentWeekInspected}</td>
@@ -1247,27 +1359,71 @@
                  <td style="text-align:center;">${item.avgRectified.toFixed(1)}</td>
              </tr>
         `;
-      });
+        });
       tableBody.innerHTML = tableHtml + totalRowHtml; // Add total row at the end
     }
 
+    function formatPendingDuration(startDate) {
+      if (!startDate) return 'N/A';
+      const now = new Date();
+      const diffTime = Math.abs(now - startDate);
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+      const months = Math.floor(diffDays / 30);
+      const weeks = Math.floor((diffDays % 30) / 7);
+      const days = diffDays % 7;
+
+      let parts = [];
+      if (months > 0) parts.push(`${months} month${months > 1 ? 's' : ''}`);
+      if (weeks > 0) parts.push(`${weeks} week${weeks > 1 ? 's' : ''}`);
+      if (days > 0 || parts.length === 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
+
+      return parts.join(', ') + ' ago';
+    }
+
     function handleRowClick(name, key) {
-      if (key === 'regionalOffice') {
-        // User clicked on a region, so set the region filter and update the view
-        const regionFilter = document.getElementById('regionFilter');
-        regionFilter.value = name;
-        // Manually trigger the change event to update dependent dropdowns and data
-        regionFilter.dispatchEvent(new Event('change'));
-      } else if (key === 'division') {
-        // User clicked on a division, so set the division filter and update the view
-        const divisionFilter = document.getElementById('divisionFilter');
-        divisionFilter.value = name;
-        divisionFilter.dispatchEvent(new Event('change'));
-      } else if (key === 'ccc') {
-        // If a CCC is clicked, you might want to show detailed data for it.
-        // For now, we'll just log it, but this could open a modal in the future.
-        console.log(`Clicked on CCC: ${name}`);
+      const modal = document.getElementById('pendingModal');
+      const modalTitle = document.getElementById('modalTitle');
+      const pendingList = document.getElementById('pendingList');
+
+      // Filter pending cases for this entity
+      const pendingCases = inspectionData.filter(item => {
+        const isEntityMatch = item[key] === name;
+        const isPending = !item.isRectified && !String(item.status).toUpperCase().startsWith('RECTIFIED');
+        return isEntityMatch && isPending;
+      });
+
+      modalTitle.textContent = `Pending Cases: ${name} (${pendingCases.length})`;
+      pendingList.innerHTML = '';
+
+      if (pendingCases.length === 0) {
+        pendingList.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">No pending cases found for this selection.</p>';
+      } else {
+        pendingCases.forEach(item => {
+          const duration = formatPendingDuration(item.enteredOn);
+          const div = document.createElement('div');
+          div.className = 'pending-item';
+          div.innerHTML = `
+            <div class="pending-info">
+              <h4>${item.location || 'Unknown Location'}</h4>
+              <p>${item.description || 'No description provided'}</p>
+              <p style="margin-top: 4px; font-size: 12px; font-style: italic;">Entered on: ${item.enteredOn ? item.enteredOn.toLocaleDateString('en-GB') : 'N/A'}</p>
+            </div>
+            <div class="duration-badge">${duration}</div>
+          `;
+          pendingList.appendChild(div);
+        });
       }
+
+      modal.style.display = 'block';
+
+      // Close modal on button click
+      document.getElementById('closeModal').onclick = () => modal.style.display = 'none';
+
+      // Close modal on outside click
+      window.onclick = (event) => {
+        if (event.target == modal) modal.style.display = 'none';
+      };
     }
 
     function createTimelineChart(data) {
