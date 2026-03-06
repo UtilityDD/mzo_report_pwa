@@ -11,6 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     /* Design Tokens */
     :root {
@@ -235,8 +236,10 @@
 
     .table-responsive {
       border-radius: 8px;
-      overflow: hidden;
+      overflow-x: auto;
+      overflow-y: hidden;
       border: 1px solid var(--border-color);
+      -webkit-overflow-scrolling: touch;
     }
 
     .mini-table {
@@ -339,6 +342,77 @@
       font-weight: bold;
       cursor: pointer;
       line-height: 1;
+    }
+
+    .action-group {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .action-btn {
+      background: rgba(30, 64, 175, 0.1);
+      border: 1px solid var(--border-color);
+      color: var(--primary);
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .action-btn:hover {
+      background: var(--primary);
+      color: white;
+      transform: translateY(-2px);
+    }
+
+    .action-btn.whatsapp:hover {
+      background: #25d366;
+      border-color: #25d366;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-right: 16px;
+    }
+
+    .modal-btn {
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      color: white;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .modal-btn:hover {
+      background: rgba(255, 255, 255, 0.3);
+      transform: translateY(-2px);
+    }
+
+    .modal-btn.whatsapp:hover {
+      background: #25d366;
+    }
+
+    .modal-btn i {
+      font-size: 16px;
+    }
+
+    .modal-header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
     }
 
     .modal-body {
@@ -447,6 +521,10 @@
       .stat-card .label {
         font-size: 11px;
       }
+
+      .mini-table {
+        min-width: 800px;
+      }
     }
 
     @media (max-width: 480px) {
@@ -528,7 +606,17 @@
               style="padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border-color);"></select>
           </div>
           <div id="tableContainer">
-            <h2 id="tableTitle">Status Overview</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+              <h2 id="tableTitle" style="margin-bottom: 0;">Status Overview</h2>
+              <div class="action-group" id="tableActionButtons" style="display: none;">
+                <button class="action-btn" onclick="downloadTableCSV()" title="Download Table CSV">
+                  <i class="fas fa-file-csv"></i>
+                </button>
+                <button class="action-btn whatsapp" onclick="shareTableWhatsApp()" title="Share Summary on WhatsApp">
+                  <i class="fab fa-whatsapp"></i>
+                </button>
+              </div>
+            </div>
             <div class="table-responsive">
               <table class="mini-table">
                 <thead id="officeTableHeaderContainer"></thead>
@@ -552,8 +640,20 @@
   <div id="pendingModal" class="modal">
     <div class="modal-content">
       <div class="modal-header">
-        <h3 id="modalTitle">Pending Cases</h3>
-        <span class="close-modal" id="closeModal">&times;</span>
+        <div class="modal-header-left">
+          <h3 id="modalTitle">Pending Cases</h3>
+        </div>
+        <div style="display: flex; align-items: center;">
+          <div class="modal-actions">
+            <button class="modal-btn" id="downloadCsvBtn" title="Download CSV">
+              <i class="fas fa-file-csv"></i>
+            </button>
+            <button class="modal-btn whatsapp" id="shareWhatsappBtn" title="Share on WhatsApp">
+              <i class="fab fa-whatsapp"></i>
+            </button>
+          </div>
+          <span class="close-modal" id="closeModal">&times;</span>
+        </div>
       </div>
       <div class="modal-body">
         <div id="pendingList" class="pending-list">
@@ -573,6 +673,8 @@
     let currentCCCFilter = "all"; // NEW: CCC filter
     let groupBy = 'Site ID'; // NEW: for radio buttons
     let currentTableLevel = 'regionalOffice'; // NEW: for table aggregation level
+    let currentTableData = []; // NEW: store itemsArray for exports
+    let currentTableHeader = ''; // NEW: store headerLabel for exports
     let sortColumn = 'total';
     let sortDirection = 'desc';
     let totalReportWeeks = 1; // NEW: To hold the fixed number of weeks for the entire report
@@ -936,6 +1038,7 @@
             rectificationDoneOn: parseDate(row['Rectification done on']),
             remarks: row.Remarks || '',
             status: row.Status || '',
+            inspectionBy: row['Inspection By'] || '',
             enteredOn: parseDate(row['Entered on']),
             updatedOn: parseDate(row['Updated on']),
             isRectified: row['Rectification done on'] && row['Rectification done on'].trim() !== ''
@@ -1316,6 +1419,11 @@
         return sortDirection === 'desc' ? comparison * -1 : comparison;
       });
 
+      // NEW: Save for exports
+      currentTableData = itemsArray;
+      currentTableHeader = headerLabel;
+      document.getElementById('tableActionButtons').style.display = 'flex';
+
       // NEW: Calculate totals for the footer row
       const grandTotalInspected = itemsArray.reduce((sum, item) => sum + item.total, 0);
       const grandTotalRectified = itemsArray.reduce((sum, item) => sum + item.rectified, 0);
@@ -1373,10 +1481,11 @@
       const weeks = Math.floor((diffDays % 30) / 7);
       const days = diffDays % 7;
 
+      const isMobile = window.innerWidth <= 768;
       let parts = [];
-      if (months > 0) parts.push(`${months} month${months > 1 ? 's' : ''}`);
-      if (weeks > 0) parts.push(`${weeks} week${weeks > 1 ? 's' : ''}`);
-      if (days > 0 || parts.length === 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
+      if (months > 0) parts.push(isMobile ? `${months} m` : `${months} month${months > 1 ? 's' : ''}`);
+      if (weeks > 0) parts.push(isMobile ? `${weeks} w` : `${weeks} week${weeks > 1 ? 's' : ''}`);
+      if (days > 0 || parts.length === 0) parts.push(isMobile ? `${days} d` : `${days} day${days !== 1 ? 's' : ''}`);
 
       return parts.join(', ') + ' ago';
     }
@@ -1393,6 +1502,13 @@
         return isEntityMatch && isPending;
       });
 
+      // Sort cases by enteredOn date (earliest to latest)
+      pendingCases.sort((a, b) => {
+        if (!a.enteredOn) return 1;
+        if (!b.enteredOn) return -1;
+        return a.enteredOn - b.enteredOn;
+      });
+
       modalTitle.textContent = `Pending Cases: ${name} (${pendingCases.length})`;
       pendingList.innerHTML = '';
 
@@ -1407,6 +1523,9 @@
             <div class="pending-info">
               <h4>${item.location || 'Unknown Location'}</h4>
               <p>${item.description || 'No description provided'}</p>
+              <p style="margin-top: 4px; font-size: 11px; color: var(--primary); font-weight: 500;">
+                <i class="fas fa-user-check me-1"></i> Inspected By: ${item.inspectionBy || 'N/A'}
+              </p>
               <p style="margin-top: 4px; font-size: 12px; font-style: italic;">Entered on: ${item.enteredOn ? item.enteredOn.toLocaleDateString('en-GB') : 'N/A'}</p>
             </div>
             <div class="duration-badge">${duration}</div>
@@ -1416,6 +1535,10 @@
       }
 
       modal.style.display = 'block';
+
+      // Setup actions
+      document.getElementById('downloadCsvBtn').onclick = () => downloadPendingCSV(name, pendingCases);
+      document.getElementById('shareWhatsappBtn').onclick = () => sharePendingWhatsApp(name, pendingCases);
 
       // Close modal on button click
       document.getElementById('closeModal').onclick = () => modal.style.display = 'none';
@@ -1524,6 +1647,100 @@
         return sortDirection === 'desc' ? ' <span style="font-size: 10px;">▼</span>' : ' <span style="font-size: 10px;">▲</span>';
       }
       return '';
+    }
+
+    function downloadPendingCSV(name, data) {
+      if (!data || data.length === 0) return;
+
+      const headers = ['Location', 'Description', 'Inspection By', 'Entered On', 'Age'];
+      const rows = data.map(item => {
+        const loc = String(item.location || '').replace(/"/g, '""');
+        const desc = String(item.description || '').replace(/"/g, '""');
+        const inspector = String(item.inspectionBy || '').replace(/"/g, '""');
+        const date = item.enteredOn ? item.enteredOn.toLocaleDateString('en-GB') : 'N/A';
+        const age = formatPendingDuration(item.enteredOn);
+        return [`"${loc}"`, `"${desc}"`, `"${inspector}"`, date, age];
+      });
+
+      const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+
+      link.setAttribute('href', url);
+      link.setAttribute('download', `pending_cases_${String(name).replace(/\s+/g, '_').toLowerCase()}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function sharePendingWhatsApp(name, data) {
+      if (!data || data.length === 0) return;
+
+      let message = `*Pending Safety Cases: ${name}*\n\n`;
+      data.forEach((item, index) => {
+        const date = item.enteredOn ? item.enteredOn.toLocaleDateString('en-GB') : 'N/A';
+        const loc = String(item.location || 'Unknown Location');
+        const desc = String(item.description || 'No description provided');
+        const inspector = String(item.inspectionBy || 'N/A');
+        const age = formatPendingDuration(item.enteredOn);
+        message += `${index + 1}. *${loc}*\n   _${desc}_\n   *Inspected By:* ${inspector}\n   (Entered: ${date}, ${age})\n\n`;
+      });
+
+      const encodedMessage = encodeURIComponent(message);
+      window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
+    }
+
+    function downloadTableCSV() {
+      if (!currentTableData || currentTableData.length === 0) return;
+
+      const headers = [currentTableHeader, 'This Week', 'Total', 'Rectified', 'Pending', '% Complete', 'Insp/Wk', 'Rect/Wk'];
+      const rows = currentTableData.map(item => [
+        `"${String(item.name || '').replace(/"/g, '""')}"`,
+        item.currentWeekInspected,
+        item.total,
+        item.rectified,
+        item.pending,
+        `${item.percentage}%`,
+        item.avgInspected,
+        item.avgRectified
+      ]);
+
+      const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+
+      link.setAttribute('href', url);
+      link.setAttribute('download', `safety_status_${currentTableHeader.toLowerCase()}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function shareTableWhatsApp() {
+      if (!currentTableData || currentTableData.length === 0) return;
+
+      let message = `*Safety Inspection Summary (${currentTableHeader})*\n\n`;
+      const top3 = [...currentTableData]
+        .filter(i => i.name !== 'Uncategorized')
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 5);
+
+      top3.forEach((item, index) => {
+        message += `${index + 1}. *${item.name}*\n   Inspected: ${item.total}, Rectified: ${item.rectified}, Pending: ${item.pending} (${item.percentage}%)\n\n`;
+      });
+
+      const grandTotal = currentTableData.reduce((acc, i) => acc + i.total, 0);
+      const grandRectified = currentTableData.reduce((acc, i) => acc + i.rectified, 0);
+      const grandPercent = grandTotal > 0 ? Math.round((grandRectified / grandTotal) * 100) : 0;
+
+      message += `*Total System Summary*\nInspected: ${grandTotal}\nRectified: ${grandRectified}\nPending: ${grandTotal - grandRectified}\nCompletion: ${grandPercent}%`;
+
+      const encodedMessage = encodeURIComponent(message);
+      window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
     }
   </script>
 </body>
