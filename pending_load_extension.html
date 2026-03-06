@@ -19,6 +19,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+  <script src="mzo_data_hub.js"></script>
   <!-- noUiSlider CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.css">
 
@@ -1562,29 +1563,49 @@
     async function fetchData() {
       try {
         showLoading(true);
-        const res = await fetch(CSV_URL);
-        const text = await res.text();
-        const parsed = Papa.parse(text.trim(), {
-          header: true,
-          skipEmptyLines: true
-        });
+
+        let data;
+        if (typeof mzoDataHub !== 'undefined') {
+          data = await mzoDataHub.get('CACHE_LOAD_EXT');
+        }
+
+        if (!data) {
+          console.log("Downloading Load Extension data from network...");
+          const res = await fetch(CSV_URL);
+          const text = await res.text();
+          const parsed = Papa.parse(text.trim(), {
+            header: true,
+            skipEmptyLines: true
+          });
+          data = parsed.data;
+        } else {
+          console.log("Successfully fetched Load Extension from DataHub.");
+          // If cached data is raw CSV text, parse it
+          if (typeof data === 'string') {
+            const parsed = Papa.parse(data.trim(), {
+              header: true,
+              skipEmptyLines: true
+            });
+            data = parsed.data;
+          }
+        }
 
         // Robustly extract report date (looking for any key like 'report_date' or 'report date')
         let reportDateRaw = 'N/A';
-        if (parsed.data && parsed.data.length > 0) {
-          const firstRow = parsed.data[0];
+        if (data && data.length > 0) {
+          const firstRow = data[0];
           const dateKey = Object.keys(firstRow).find(k => k.trim().toLowerCase().replace(/[^a-z]/g, '') === 'reportdate')
             || Object.keys(firstRow).find(k => k.toLowerCase().includes('report') && k.toLowerCase().includes('date'))
             || 'report_date';
 
-          const rowWithDate = parsed.data.find(d => d[dateKey] && d[dateKey].trim() !== '');
+          const rowWithDate = data.find(d => d[dateKey] && d[dateKey].trim() !== '');
           if (rowWithDate) {
             reportDateRaw = rowWithDate[dateKey].trim();
           }
         }
 
         // Enrich data with hierarchy and normalized fields
-        rawData = parsed.data.map(d => {
+        rawData = data.map(d => {
           const hierarchy = getHierarchy(d['CCC CODE']);
           const age = parseInt(d.AGE_MONTHS) || 0;
           const delayInSC = age * 30; // Approximation for mapping to NSC logic (days)
