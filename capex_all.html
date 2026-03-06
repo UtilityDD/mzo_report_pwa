@@ -9,6 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="mzo_data_hub.js"></script>
     <style>
         /* Dark Theme Variables */
         :root {
@@ -1157,12 +1158,19 @@
             const vendorMapUrl = 'data/bndp_vendor.json';
             const costCenterMapUrl = 'data/costcenter.json'; // New
 
-            showLoading("Loading vendor map...");
-
             try {
                 // 1. Load Vendor Mapping
-                const vendorResponse = await fetch(vendorMapUrl);
-                const vendorData = await vendorResponse.json();
+                showLoading("Loading vendor map...");
+                let vendorData;
+                if (await mzoDataHub.isCached('CACHE_VENDORS')) {
+                    console.log("DataHub: Loading Vendor Map from cache.");
+                    vendorData = await mzoDataHub.get('CACHE_VENDORS');
+                } else {
+                    console.log("DataHub: Vendor Map cache miss, fetching from network.");
+                    const vendorResponse = await fetch(vendorMapUrl);
+                    vendorData = await vendorResponse.json();
+                }
+
                 vendorNameMap = {};
                 vendorData.forEach(item => {
                     if (item.VENDOR_NO && item.NAME) {
@@ -1172,9 +1180,15 @@
 
                 // 2. Load Cost Center Mapping
                 showLoading("Loading cost center mapping...");
-                // Load Cost Center Mapping
-                const costCenterResponse = await fetch(costCenterMapUrl);
-                const costCenterData = await costCenterResponse.json();
+                let costCenterData;
+                if (await mzoDataHub.isCached('CACHE_COSTCENTER')) {
+                    console.log("DataHub: Loading Cost Center Map from cache.");
+                    costCenterData = await mzoDataHub.get('CACHE_COSTCENTER');
+                } else {
+                    console.log("DataHub: Cost Center Map cache miss, fetching from network.");
+                    const costCenterResponse = await fetch(costCenterMapUrl);
+                    costCenterData = await costCenterResponse.json();
+                }
 
                 costCenterMap = {};
                 divisionUnitMap = {};
@@ -1194,8 +1208,15 @@
 
                 // 3. Load Main Data
                 showLoading("Loading main data...");
-                const mainResponse = await fetch(mainDataUrl);
-                const rawData = await mainResponse.json();
+                let rawData;
+                if (await mzoDataHub.isCached('CACHE_CAPEX')) {
+                    console.log("DataHub: Loading CAPEX Details from cache.");
+                    rawData = await mzoDataHub.get('CACHE_CAPEX');
+                } else {
+                    console.log("DataHub: CAPEX Details cache miss, fetching from network.");
+                    const mainResponse = await fetch(mainDataUrl);
+                    rawData = await mainResponse.json();
+                }
 
                 allData = cleanData(rawData, costCenterMap);
                 filteredData = [...allData];

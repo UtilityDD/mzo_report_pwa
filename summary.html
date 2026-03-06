@@ -367,6 +367,9 @@
     <!-- Include PapaParse for CSV parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
 
+    <!-- Include MZO Data Hub -->
+    <script src="mzo_data_hub.js"></script>
+
     <script>
         async function fetchJsonData(url) {
             try {
@@ -405,29 +408,57 @@
         }
 
         async function initDashboard() {
-            // Data URLs
+            // Data URLs for fallbacks
             const WEEKLY_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSMuO-ddereEG6J2s2Bmqp-HXo85ky4S4R5Yt-0HdoNHHa5r8xOEK4MJ1Syhyqzjpm2lTI4sT85nR4N/pub?gid=0&single=true&output=csv";
             const DEFECTIVE_CSV_URL = "consumer/defective_meter.csv";
             const CMO_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS7GVh5HflVhouhVfFOEN2RuA1kCBedmD4Q0CJP02K61DAtWuo3P8XIS8CO7ocZQuJ20uCJBa9qsgZ6/pub?gid=1066071765&single=true&output=csv";
             const LOAD_EXT_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQP_B-Zl5XhnYkmJiDXKB7B8ksrRRezuLrRqTzEPz4lEw_yDcpGOTnmm0oI8dW9apwuHg9yGqaAqjDS/pub?gid=0&single=true&output=csv";
             const SAFETY_JSON_URL = "data/safety_inspection.json";
 
-            // Concurrent data loading
+            console.log("Initializing Summary Dashboard with DataHub...");
+
+            async function loadDataSource(key, label, type, url, fetchFn) {
+                let data = null;
+                if (typeof mzoDataHub !== 'undefined') {
+                    data = await mzoDataHub.get(key);
+                }
+
+                if (data) {
+                    console.log(`Successfully fetched ${label} from DataHub.`);
+                    // If it's CSV and we need JSON, parse it
+                    if (type === 'csv' && typeof data === 'string') {
+                        const parsed = Papa.parse(data.trim(), {
+                            header: true,
+                            skipEmptyLines: true
+                        });
+                        return parsed.data;
+                    }
+                    return data;
+                } else {
+                    console.log(`Fetching ${label} from network/local...`);
+                    return await fetchFn(url);
+                }
+            }
+
+            // Concurrent data loading with DataHub prioritization
             const [nscData, advancesData, remData, weeklyData, defectiveData, cmoData, safetyData, loadExtData] = await Promise.all([
-                fetchJsonData('data/nsc.json'),
-                fetchJsonData('data/capexall.json'),
-                fetchJsonData('data/rem.json'),
-                fetchCsvData(WEEKLY_CSV_URL),
-                fetchCsvData(DEFECTIVE_CSV_URL),
-                fetchCsvData(CMO_CSV_URL),
-                fetchJsonData(SAFETY_JSON_URL),
-                fetchCsvData(LOAD_EXT_CSV_URL)
+                loadDataSource('CACHE_NSC', 'NSC Data', 'csv', 'data/nsc.json', fetchJsonData),
+                loadDataSource('CACHE_CAPEX', 'CAPEX Details', 'json', 'data/capexall.json', fetchJsonData),
+                loadDataSource('CACHE_REM', 'REM Data', 'json', 'data/rem.json', fetchJsonData),
+                loadDataSource('CACHE_WEEKLY', 'Weekly Report', 'csv', WEEKLY_CSV_URL, fetchCsvData),
+                loadDataSource('CACHE_DEFECTIVE', 'Defective Meter', 'csv', DEFECTIVE_CSV_URL, fetchCsvData),
+                loadDataSource('CACHE_CMO', 'CMO Grievances', 'csv', CMO_CSV_URL, fetchCsvData),
+                loadDataSource('CACHE_SAFETY', 'Safety Inspection', 'json', SAFETY_JSON_URL, fetchJsonData),
+                loadDataSource('CACHE_LOAD_EXT', 'Load Extension', 'csv', LOAD_EXT_CSV_URL, fetchCsvData)
             ]);
 
             // 1. Process NSC
             if (nscData) {
                 const totalPending = nscData.length;
-                const nonPoleCount = _.filter(nscData, item => item.PoleNonPole === "Non Pole Case").length;
+                const nonPoleCount = _.filter(nscData, item => {
+                    const poleVal = item.PoleNonPole || "";
+                    return poleVal.trim() === "Non Pole Case";
+                }).length;
 
                 const nscValEl = document.getElementById('nscValue');
                 nscValEl.textContent = totalPending.toLocaleString();

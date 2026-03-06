@@ -96,7 +96,7 @@ function updateDescriptionFilter() {
     const selectedStore = storeFilter.value;
     const selectedGroup = materialGroupFilter.value;
     const option = materialDescriptionFilter;
-    
+
     // Get descriptions for selected store and group
     let descriptions = [];
     let filteredItems = allData;
@@ -112,15 +112,15 @@ function updateDescriptionFilter() {
     if (selectedGroup) {
         descriptions = [...new Set(filteredItems.map(item => item['Material Description']))].sort();
     }
-    
+
     // Clear options except placeholder
     while (option.options.length > 1) {
         option.remove(1);
     }
-    
+
     // Reset to placeholder
     option.value = '';
-    
+
     // Add filtered descriptions
     descriptions.forEach(desc => {
         const opt = document.createElement('option');
@@ -133,7 +133,7 @@ function updateDescriptionFilter() {
 function updateGroupFilter() {
     const selectedStore = storeFilter.value;
     const option = materialGroupFilter;
-    
+
     // Get groups for selected store
     let groups = [];
     if (selectedStore) {
@@ -146,15 +146,15 @@ function updateGroupFilter() {
         // If no store is selected, do not clear the groups.
         return;
     }
-    
+
     // Clear options except placeholder
     while (option.options.length > 1) {
         option.remove(1);
     }
-    
+
     // Reset to placeholder
     option.value = '';
-    
+
     // Add filtered groups
     groups.forEach(group => {
         const opt = document.createElement('option');
@@ -162,7 +162,7 @@ function updateGroupFilter() {
         opt.textContent = group;
         option.appendChild(opt);
     });
-    
+
     // Reset description filter
     materialDescriptionFilter.value = '';
     updateDescriptionFilter();
@@ -433,108 +433,146 @@ function animatePlaceholder() {
     type();
 }
 
-Papa.parse(DATA_URL, {
-    download: true,
-    header: true,
-    complete: function(results) {
-        allData = results.data;
+// Initialize
+async function initDashboard() {
+    try {
+        let cachedData;
+        if (typeof mzoDataHub !== 'undefined') {
+            cachedData = await mzoDataHub.get('CACHE_STOCK');
+        }
 
-        // Handle potential parsing errors or empty rows from Google Sheets
-        allData = allData.filter(item => item.Store && item['Material Group']);
+        if (cachedData) {
+            console.log("Successfully fetched Stock Data from DataHub.");
+            const results = Papa.parse(cachedData, {
+                header: true,
+                skipEmptyLines: true
+            });
+            handleResults(results.data);
+        } else {
+            console.log("Downloading Stock Data from network...");
+            fetchFromNetwork();
+        }
+    } catch (e) {
+        console.error("DataHub fetch failed, falling back to network.", e);
+        fetchFromNetwork();
+    }
+}
 
-        const latestDate = allData.reduce((max, item) => item.Date > max ? item.Date : max, '');
-        chartHeader.textContent = `Stock of Major Materials (${formatDate(latestDate)})`;
+function fetchFromNetwork() {
+    Papa.parse(DATA_URL, {
+        download: true,
+        header: true,
+        complete: function (results) {
+            handleResults(results.data);
+        },
+        error: function (error) {
+            console.error('Error loading data from network:', error);
+            // Hide loader and show error if needed
+            document.querySelector('.loader-cell').innerHTML = '<div class="no-data-message">Failed to load data from network.</div>';
+        }
+    });
+}
 
-        // Populate the new KPI cards
-        populateKpiCards(allData);
+function handleResults(data) {
+    allData = data;
 
-        // Start placeholder animation
-        animatePlaceholder();
+    // Handle potential parsing errors or empty rows from Google Sheets
+    allData = allData.filter(item => item.Store && item['Material Group']);
 
-        populateFilters(allData);
-        populateTable(allData);
+    const latestDate = allData.reduce((max, item) => item.Date > max ? item.Date : max, '');
+    chartHeader.textContent = `Stock of Major Materials (${formatDate(latestDate)})`;
 
-        storeFilter.addEventListener('change', function() {
-            updateGroupFilter();
-            applyFilters();
-        });
-        materialGroupFilter.addEventListener('change', function() {
-            updateDescriptionFilter();
-            applyFilters();
-        });
-        materialDescriptionFilter.addEventListener('change', applyFilters);
-        searchInput.addEventListener('input', applyFilters);
-        lowStockAlertBtn.addEventListener('click', showLowStockModal);
+    // Populate the new KPI cards
+    populateKpiCards(allData);
 
-        // Modal close functionality
-        const modal = document.getElementById('breakdown-modal');
-        const modalCloseBtn = document.querySelector('.modal-close');
-        modalCloseBtn.onclick = function() {
+    // Start placeholder animation
+    animatePlaceholder();
+
+    populateFilters(allData);
+    populateTable(allData);
+
+    storeFilter.addEventListener('change', function () {
+        updateGroupFilter();
+        applyFilters();
+    });
+    materialGroupFilter.addEventListener('change', function () {
+        updateDescriptionFilter();
+        applyFilters();
+    });
+    materialDescriptionFilter.addEventListener('change', applyFilters);
+    searchInput.addEventListener('input', applyFilters);
+    lowStockAlertBtn.addEventListener('click', showLowStockModal);
+
+    // Modal close functionality
+    const modal = document.getElementById('breakdown-modal');
+    const modalCloseBtn = document.querySelector('.modal-close');
+    modalCloseBtn.onclick = function () {
+        modal.style.display = 'none';
+    }
+    window.onclick = function (event) {
+        if (event.target == modal) {
             modal.style.display = 'none';
         }
-        window.onclick = function(event) {
-            if (event.target == modal) {
-                modal.style.display = 'none';
-            }
-        }
+    }
 
-        // Low Stock Modal close functionality
-        const lowStockModal = document.getElementById('low-stock-modal');
-        const lowStockModalCloseBtn = document.querySelector('.modal-close-low-stock');
-        lowStockModalCloseBtn.onclick = function() {
+    // Low Stock Modal close functionality
+    const lowStockModal = document.getElementById('low-stock-modal');
+    const lowStockModalCloseBtn = document.querySelector('.modal-close-low-stock');
+    lowStockModalCloseBtn.onclick = function () {
+        lowStockModal.style.display = 'none';
+    }
+    window.addEventListener('click', function (event) {
+        if (event.target == lowStockModal) {
             lowStockModal.style.display = 'none';
         }
-        window.addEventListener('click', function(event) {
-            if (event.target == lowStockModal) {
-                lowStockModal.style.display = 'none';
+    });
+
+    // Add sorting to table headers
+    document.querySelectorAll('#data-table th').forEach((th, index) => {
+        th.addEventListener('click', function () {
+            // Toggle sort direction
+            if (currentSortColumn === index) {
+                currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSortColumn = index;
+                currentSortDirection = 'asc';
             }
-        });
 
-        // Add sorting to table headers
-        document.querySelectorAll('#data-table th').forEach((th, index) => {
-            th.addEventListener('click', function() {
-                // Toggle sort direction
-                if (currentSortColumn === index) {
-                    currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
-                } else {
-                    currentSortColumn = index;
-                    currentSortDirection = 'asc';
-                }
-
-                // Update header styles
-                document.querySelectorAll('#data-table th').forEach(header => {
-                    header.classList.remove('sort-asc', 'sort-desc');
-                });
-                if (currentSortDirection === 'asc') {
-                    th.classList.add('sort-asc');
-                } else {
-                    th.classList.add('sort-desc');
-                }
-
-                // Re-render table
-                applyFilters();
+            // Update header styles
+            document.querySelectorAll('#data-table th').forEach(header => {
+                header.classList.remove('sort-asc', 'sort-desc');
             });
-        });
+            if (currentSortDirection === 'asc') {
+                th.classList.add('sort-asc');
+            } else {
+                th.classList.add('sort-desc');
+            }
 
-        // Download CSV functionality
-        downloadBtn.addEventListener('click', downloadTableAsCSV);
-    }
-});
+            // Re-render table
+            applyFilters();
+        });
+    });
+
+    // Download CSV functionality
+    downloadBtn.addEventListener('click', downloadTableAsCSV);
+}
+
+initDashboard();
 
 function downloadTableAsCSV() {
     const table = document.getElementById('data-table');
     let csv = [];
-    
+
     // Add headers
     const headers = [];
     document.querySelectorAll('#data-table th').forEach(th => {
         const text = th.textContent.replace(/\s*[↑↓↕]\s*$/, '').trim();
         if (text) { // Avoid adding empty headers if any
-        headers.push(`"${text}"`);
+            headers.push(`"${text}"`);
         }
     });
     csv.push(headers.join(','));
-    
+
     // Add data rows (excluding total row)
     document.querySelectorAll('#data-table tbody tr:not(.total-row)').forEach(tr => {
         const row = [];
@@ -543,25 +581,25 @@ function downloadTableAsCSV() {
         });
         csv.push(row.join(','));
     });
-    
+
     // Add total row
     const totalRow = [];
     document.querySelector('#data-table tbody tr.total-row').querySelectorAll('td').forEach(td => {
         totalRow.push(`"${td.textContent.trim()}"`);
     });
     csv.push(totalRow.join(','));
-    
+
     // Create blob and download
     const csvContent = csv.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
-    
+
     const timestamp = new Date().toISOString().slice(0, 10);
     link.setAttribute('href', url);
     link.setAttribute('download', `stock-data-${timestamp}.csv`);
     link.style.visibility = 'hidden';
-    
+
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -670,8 +708,8 @@ function sortData(data, column, direction) {
     const sorted = [...data];
     sorted.sort((a, b) => {
         let aVal, bVal;
-        
-        switch(column) {
+
+        switch (column) {
             case 0:
                 aVal = a.store;
                 bVal = b.store;
