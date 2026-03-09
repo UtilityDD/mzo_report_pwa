@@ -1522,6 +1522,77 @@
     let kpiViewData = null; // When a KPI card is active, this narrows the Detailed Analysis to that card's subset
     let kpiViewLabel = ''; // Display name of the active KPI filter
     let charts = {};
+    let isInternalUpdate = false;
+
+    // --- Load Extension Loss Sync Helpers ---
+    function getFixedChargeRate(connClass) {
+      const cls = (connClass || "").trim().toUpperCase();
+      if (cls === 'C' || cls === 'A') return 60;
+      if (cls === 'I') return 75;
+      return 30;
+    }
+
+    function formatRupee(val) {
+      if (isNaN(val)) return '-';
+      const absVal = Math.abs(val);
+      if (absVal >= 10000000) return (val / 10000000).toFixed(2) + ' Cr';
+      if (absVal >= 100000) return (val / 100000).toFixed(2) + ' L';
+      if (absVal >= 1000) return (val / 1000).toFixed(1) + ' K';
+      return val.toString();
+    }
+
+    function calculateFixedChargeLoss(currLoad, appliedLoad, ageMonths, connClass) {
+      const curr = parseFloat(currLoad) || 0;
+      const applied = parseFloat(appliedLoad) || 0;
+      const age = parseFloat(ageMonths) || 0;
+      if (applied <= curr) return 0;
+      const rate = getFixedChargeRate(connClass);
+      return Math.round(((applied - curr) * rate * age) / 850);
+    }
+
+    async function updateLoadExtensionLoss() {
+      try {
+        let leData;
+        if (typeof mzoDataHub !== 'undefined') {
+          leData = await mzoDataHub.get('CACHE_LOAD_EXT');
+        }
+
+        if (leData) {
+          if (typeof leData === 'string') {
+            const parsed = Papa.parse(leData.trim(), {
+              header: true,
+              skipEmptyLines: true
+            });
+            leData = parsed.data;
+          }
+
+          const totalLoss = leData.reduce((sum, d) => {
+            return sum + calculateFixedChargeLoss(d.CURR_LOAD, d.LOAD_APPLIED, d.AGE_MONTHS, d.CONN_CLASS);
+          }, 0);
+
+          const btn = document.querySelector('.btn-blink');
+          if (btn) {
+            const texts = [
+              `<i class="fas fa-plug"></i> Pending Load Extn`,
+              `<i class="fas fa-plug"></i> Loss: ₹${formatRupee(totalLoss)}`
+            ];
+            let index = 0;
+
+            // Clear any existing interval to prevent duplicates
+            if (window.leBtnInterval) clearInterval(window.leBtnInterval);
+
+            btn.innerHTML = texts[index];
+            window.leBtnInterval = setInterval(() => {
+              index = (index + 1) % texts.length;
+              btn.innerHTML = texts[index];
+            }, 3000); // Alternate every 3 seconds
+          }
+        }
+      } catch (e) {
+        console.error("Error updating Load Extension Loss in header:", e);
+      }
+    }
+    // ------------------------------------------
 
     // Helper function to safely parse CSV data
     function parseCsvRow(row, headers) {
@@ -1538,6 +1609,7 @@
     async function fetchData() {
       try {
         showLoading(true);
+        updateLoadExtensionLoss(); // Fetch and display Load Extension loss in parallel
 
         let data;
         if (typeof mzoDataHub !== 'undefined') {
@@ -1811,8 +1883,6 @@
 
 
 
-
-    let isInternalUpdate = false;
 
     function updateSliderBounds() {
       const slider = document.getElementById('delaySlider');
