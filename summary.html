@@ -608,6 +608,37 @@
                 </div>
             </a>
 
+            <!-- Solar Aloshree KPI -->
+            <a href="solar.html" class="kpi-card safety">
+                <div class="kpi-info-group">
+                    <div class="kpi-icon"><i class="fas fa-solar-panel"></i></div>
+                    <div class="kpi-text-meta">
+                        <span class="kpi-title">Solar Aloshree</span>
+                    </div>
+                </div>
+                <div class="kpi-regions" id="solarByRegion">
+                    <div class="region-pill">
+                        <span class="region-pill-label">Malda</span>
+                        <span class="region-pill-value" id="solarMalda">—</span>
+                    </div>
+                    <div class="region-pill">
+                        <span class="region-pill-label">UD</span>
+                        <span class="region-pill-value" id="solarUD">—</span>
+                    </div>
+                    <div class="region-pill">
+                        <span class="region-pill-label">DD</span>
+                        <span class="region-pill-value" id="solarDD">—</span>
+                    </div>
+                </div>
+                <div class="kpi-value-group">
+                    <div class="kpi-value"><span id="solarValue" class="shimmer"></span></div>
+                    <div class="kpi-trend" id="solarSecondary">
+                        <i class="fas fa-clock"></i>
+                        <span>Pending: <span id="solarPending" class="shimmer"></span></span>
+                    </div>
+                </div>
+            </a>
+
             <!-- CAPEX KPI -->
             <a href="capex_all.html" class="kpi-card capex">
                 <div class="kpi-info-group">
@@ -979,6 +1010,7 @@
             const DEFECTIVE_CSV_URL = "consumer/defective_meter.csv";
             const CMO_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS7GVh5HflVhouhVfFOEN2RuA1kCBedmD4Q0CJP02K61DAtWuo3P8XIS8CO7ocZQuJ20uCJBa9qsgZ6/pub?gid=1066071765&single=true&output=csv";
             const LOAD_EXT_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQP_B-Zl5XhnYkmJiDXKB7B8ksrRRezuLrRqTzEPz4lEw_yDcpGOTnmm0oI8dW9apwuHg9yGqaAqjDS/pub?gid=0&single=true&output=csv";
+            const SOLAR_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR5Vnb9TxymVIcBZsUBWZ-21Frkn77O4IyNus3Zo42qPm09N6MlJ3E0Vh3tHywcMAiy2y0uRm5XfIdk/pub?gid=0&single=true&output=csv";
             const SAFETY_JSON_URL = "data/safety_inspection.json";
 
             console.log("Initializing Summary Dashboard with DataHub...");
@@ -1007,7 +1039,7 @@
             }
 
             // Concurrent data loading with DataHub prioritization
-            const [nscData, advancesData, remData, weeklyData, defectiveData, cmoData, safetyData, loadExtData] = await Promise.all([
+            const [nscData, advancesData, remData, weeklyData, defectiveData, cmoData, safetyData, loadExtData, solarData] = await Promise.all([
                 loadDataSource('CACHE_NSC', 'NSC Data', 'csv', 'data/nsc.json', fetchJsonData),
                 loadDataSource('CACHE_CAPEX', 'CAPEX Details', 'json', 'data/capexall.json', fetchJsonData),
                 loadDataSource('CACHE_REM', 'REM Data', 'json', 'data/rem.json', fetchJsonData),
@@ -1015,20 +1047,22 @@
                 loadDataSource('CACHE_DEFECTIVE', 'Defective Meter', 'csv', DEFECTIVE_CSV_URL, fetchCsvData),
                 loadDataSource('CACHE_CMO', 'CMO Grievances', 'csv', CMO_CSV_URL, fetchCsvData),
                 loadDataSource('CACHE_SAFETY', 'Safety Inspection', 'json', SAFETY_JSON_URL, fetchJsonData),
-                loadDataSource('CACHE_LOAD_EXT', 'Load Extension', 'csv', LOAD_EXT_CSV_URL, fetchCsvData)
+                loadDataSource('CACHE_LOAD_EXT', 'Load Extension', 'csv', LOAD_EXT_CSV_URL, fetchCsvData),
+                loadDataSource('CACHE_SOLAR', 'Solar Data', 'csv', SOLAR_CSV_URL, fetchCsvData)
             ]);
 
             // Store in global object for re-rendering
             globalRawData = {
                 nsc: nscData, capex: advancesData, rem: remData, weekly: weeklyData,
-                defective: defectiveData, cmo: cmoData, safety: safetyData, loadExt: loadExtData
+                defective: defectiveData, cmo: cmoData, safety: safetyData, loadExt: loadExtData,
+                solar: solarData
             };
 
             renderDashboardData();
         }
 
         function renderDashboardData() {
-            const { nsc: rawNsc, capex: rawCapex, rem: rawRem, weekly: rawWeekly, defective: rawDefective, cmo: rawCmo, safety: rawSafety, loadExt: rawLoadExt } = globalRawData;
+            const { nsc: rawNsc, capex: rawCapex, rem: rawRem, weekly: rawWeekly, defective: rawDefective, cmo: rawCmo, safety: rawSafety, loadExt: rawLoadExt, solar: rawSolar } = globalRawData;
 
             // 1. Process NSC
             if (rawNsc) {
@@ -1130,6 +1164,48 @@
                 document.getElementById('loadExtMalda').textContent = (loadReg['Malda'] || 0).toLocaleString();
                 document.getElementById('loadExtUD').textContent = (loadReg['UD'] || 0).toLocaleString();
                 document.getElementById('loadExtDD').textContent = (loadReg['DD'] || 0).toLocaleString();
+            }
+
+            // 2.2 Process Solar Aloshree
+            if (rawSolar) {
+                let solarData = rawSolar.filter(r => r["SOLAR_APPL_NO"] || r["CON_ID"]);
+
+                // Filter for ALOSHREE only
+                solarData = _.filter(solarData, r => {
+                    const rem = String(r["REMARKS"] || "").toUpperCase().trim();
+                    return rem === 'ALOSHREE';
+                });
+
+                if (currentViewMode === 'division' && selectedDivision) {
+                    solarData = _.filter(solarData, item => getDivisionFromCCC(item['CCC CODE']) === selectedDivision);
+                }
+
+                const totalAloshree = solarData.length;
+                const pendingAloshree = _.filter(solarData, r => {
+                    const status = String(r["REPLACE_STATUS"] || "").toUpperCase().trim();
+                    return status !== 'SUCCESS';
+                }).length;
+
+                const solarValEl = document.getElementById('solarValue');
+                if (solarValEl) {
+                    solarValEl.textContent = totalAloshree.toLocaleString();
+                    solarValEl.classList.remove('shimmer');
+                }
+
+                const solarPendingEl = document.getElementById('solarPending');
+                if (solarPendingEl) {
+                    solarPendingEl.textContent = pendingAloshree.toLocaleString();
+                    solarPendingEl.classList.remove('shimmer');
+                }
+
+                // Regional Breakdown for Solar
+                const solarReg = _.countBy(solarData, item => getRegionFromCCC(item['CCC CODE']));
+                const mEl = document.getElementById('solarMalda');
+                if (mEl) mEl.textContent = (solarReg['Malda'] || 0).toLocaleString();
+                const uEl = document.getElementById('solarUD');
+                if (uEl) uEl.textContent = (solarReg['UD'] || 0).toLocaleString();
+                const dEl = document.getElementById('solarDD');
+                if (dEl) dEl.textContent = (solarReg['DD'] || 0).toLocaleString();
             }
 
             // 3. Process REM OSD

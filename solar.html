@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Solar Connection Summary</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.4);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-orange: #f59e0b;
+            --accent-red: #ef4444;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --table-header-bg: rgba(15, 23, 42, 0.6);
+            --table-border: rgba(255, 255, 255, 0.05);
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', 'Roboto', sans-serif;
+            background-color: var(--bg-dark);
+            background-image:
+                radial-gradient(at 0% 0%, hsla(253, 16%, 7%, 1) 0, transparent 50%),
+                radial-gradient(at 50% 0%, hsla(225, 39%, 30%, 0.1) 0, transparent 50%),
+                radial-gradient(at 100% 0%, hsla(339, 49%, 30%, 0.1) 0, transparent 50%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 40px 24px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .header-left {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .header h1 {
+            font-size: 26px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header h1::before {
+            content: '';
+            display: block;
+            width: 4px;
+            height: 28px;
+            background: var(--accent-orange);
+            border-radius: 4px;
+        }
+
+        .report-date {
+            color: var(--text-secondary);
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* Tabs Container */
+        .tabs-container {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 32px;
+            overflow-x: auto;
+            padding-bottom: 8px;
+            /* For scrollbar space if needed */
+        }
+
+        .tabs-container::-webkit-scrollbar {
+            height: 4px;
+        }
+
+        .tabs-container::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+
+        .tab-btn {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: var(--text-secondary);
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .tab-btn.active {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--accent-orange);
+            border-color: rgba(245, 158, 11, 0.3);
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.15);
+        }
+
+        /* KPI Cards Grid */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .kpi-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            padding: 24px;
+            border-radius: 20px;
+            backdrop-filter: blur(12px);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--accent-blue);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+        }
+
+        .kpi-total::before {
+            background-color: var(--accent-blue);
+        }
+
+        .kpi-success::before {
+            background-color: var(--accent-green);
+        }
+
+        .kpi-pending::before {
+            background-color: var(--accent-orange);
+        }
+
+        .kpi-failed::before {
+            background-color: var(--accent-red);
+        }
+
+        .kpi-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-secondary);
+            font-size: 15px;
+            font-weight: 500;
+        }
+
+        .kpi-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .kpi-total .kpi-icon {
+            color: var(--accent-blue);
+        }
+
+        .kpi-success .kpi-icon {
+            color: var(--accent-green);
+        }
+
+        .kpi-pending .kpi-icon {
+            color: var(--accent-orange);
+        }
+
+        .kpi-failed .kpi-icon {
+            color: var(--accent-red);
+        }
+
+        .kpi-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1;
+        }
+
+        /* Table Sections */
+        .section-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            backdrop-filter: blur(12px);
+            overflow: hidden;
+        }
+
+        .section-header {
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .table-responsive {
+            overflow-x: auto;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 14px;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--table-border);
+        }
+
+        .data-table th {
+            background: var(--table-header-bg);
+            color: var(--text-secondary);
+            font-weight: 500;
+            white-space: nowrap;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 12px;
+        }
+
+        .data-table tbody tr {
+            transition: background 0.2s;
+        }
+
+        .data-table tbody tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .data-table td {
+            color: var(--text-primary);
+        }
+
+        .col-num {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            font-weight: 500;
+        }
+
+        .data-table tbody tr {
+            cursor: pointer;
+        }
+
+        .data-table th.sortable {
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            padding-right: 25px;
+        }
+
+        .data-table th.sortable:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .data-table th.sortable::after {
+            content: '\f0dc';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            opacity: 0.2;
+            font-size: 10px;
+        }
+
+        .data-table th.sortable.asc::after {
+            content: '\f0de';
+            opacity: 1;
+            color: var(--accent-orange);
+        }
+
+        .data-table th.sortable.desc::after {
+            content: '\f0dd';
+            opacity: 1;
+            color: var(--accent-orange);
+        }
+
+        .val-total {
+            color: var(--accent-blue);
+        }
+
+        .val-success {
+            color: var(--accent-green);
+        }
+
+        .val-pending {
+            color: var(--accent-orange);
+        }
+
+        .val-failed {
+            color: var(--accent-red);
+        }
+
+        /* Shimmer loading */
+        .shimmer {
+            display: inline-block;
+            height: 1em;
+            position: relative;
+            overflow: hidden;
+            background-color: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            min-width: 60px;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 20px 16px;
+            }
+
+            .kpi-grid {
+                grid-template-columns: 1fr 1fr;
+                gap: 12px;
+                margin-bottom: 24px;
+            }
+
+            .kpi-card {
+                padding: 16px;
+                gap: 10px;
+            }
+
+            .kpi-value {
+                font-size: 24px;
+            }
+
+            .kpi-header {
+                font-size: 13px;
+            }
+
+            .kpi-icon {
+                width: 32px;
+                height: 32px;
+                font-size: 14px;
+            }
+
+            .section-container {
+                padding: 16px;
+            }
+
+            .data-table th,
+            .data-table td {
+                padding: 10px 12px;
+                font-size: 13px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .kpi-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .modal.active {
+            display: flex;
+            opacity: 1;
+        }
+
+        .modal-content {
+            background: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            margin: auto;
+            width: 90%;
+            max-width: 1100px;
+            max-height: 85vh;
+            border-radius: 24px;
+            padding: 32px;
+            overflow-y: auto;
+            position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+        }
+
+        .modal-title-group h2 {
+            font-size: 22px;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .modal-subtitle {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .close-modal {
+            background: rgba(255, 255, 255, 0.05);
+            border: none;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .close-modal:hover {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--accent-red);
+        }
+
+        .scheme-badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-secondary);
+        }
+
+        .scheme-aloshree {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .pending-tag {
+            font-size: 12px;
+            color: var(--accent-orange);
+            font-weight: 500;
+        }
+
+        .completed-tag {
+            font-size: 12px;
+            color: var(--accent-green);
+            font-weight: 600;
+        }
+
+        .row-success {
+            background: rgba(16, 185, 129, 0.05) !important;
+        }
+
+        .row-success:hover {
+            background: rgba(16, 185, 129, 0.1) !important;
+        }
+
+        @media (max-width: 768px) {
+            .modal-content {
+                padding: 16px;
+                width: 95%;
+                border-radius: 16px;
+            }
+
+            .detail-table th:nth-child(4),
+            .detail-table td:nth-child(4),
+            .detail-table th:nth-child(5),
+            .detail-table td:nth-child(5) {
+                display: none;
+                /* Hide minor columns on mobile detail view */
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-left">
+                <h1>Solar Connection Dashboard</h1>
+                <div class="report-date" id="reportDateTxt">
+                    <i class="far fa-calendar-alt"></i> Loading...
+                </div>
+            </div>
+        </div>
+
+        <div class="tabs-container" id="tabsTarget">
+            <!-- Tabs injected via JS -->
+        </div>
+
+        <!-- KPI Summary Cards -->
+        <div class="kpi-grid">
+            <div class="kpi-card kpi-total" onclick="showApplicationDetails('status', 'Total')">
+                <div class="kpi-header">
+                    <div class="kpi-icon"><i class="fas fa-file-invoice"></i></div>
+                    Total Applications
+                </div>
+                <div class="kpi-value shimmer" id="kpiTotal">0</div>
+            </div>
+            <div class="kpi-card kpi-success" onclick="showApplicationDetails('status', 'Effected')">
+                <div class="kpi-header">
+                    <div class="kpi-icon"><i class="fas fa-check-circle"></i></div>
+                    Effected Connections
+                </div>
+                <div class="kpi-value shimmer" id="kpiSuccess">0</div>
+            </div>
+            <div class="kpi-card kpi-pending" onclick="showApplicationDetails('status', 'Pending')">
+                <div class="kpi-header">
+                    <div class="kpi-icon"><i class="fas fa-clock"></i></div>
+                    Pending
+                </div>
+                <div class="kpi-value shimmer" id="kpiPending">0</div>
+            </div>
+            <div class="kpi-card kpi-failed" onclick="showApplicationDetails('status', 'Issues')">
+                <div class="kpi-header">
+                    <div class="kpi-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                    Data Updation Issue
+                </div>
+                <div class="kpi-value shimmer" id="kpiFailed">0</div>
+            </div>
+        </div>
+
+        <div class="section-container">
+            <div class="section-header"><i class="fas fa-layer-group"></i> Region Breakdown</div>
+            <div class="table-responsive">
+                <table class="data-table" id="regionTable">
+                    <thead>
+                        <tr>
+                            <th class="sortable" onclick="handleSort('region', 0, event)">Region</th>
+                            <th class="col-num sortable" onclick="handleSort('region', 1, event)">Total</th>
+                            <th class="col-num sortable" onclick="handleSort('region', 2, event)">Effected</th>
+                            <th class="col-num sortable" onclick="handleSort('region', 3, event)">Pending</th>
+                            <th class="col-num sortable" onclick="handleSort('region', 4, event)">Issues</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="section-container">
+            <div class="section-header"><i class="fas fa-sitemap"></i> Division Breakdown</div>
+            <div class="table-responsive">
+                <table class="data-table" id="divisionTable">
+                    <thead>
+                        <tr>
+                            <th class="sortable" onclick="handleSort('division', 0, event)">Division</th>
+                            <th class="col-num sortable" onclick="handleSort('division', 1, event)">Total</th>
+                            <th class="col-num sortable" onclick="handleSort('division', 2, event)">Effected</th>
+                            <th class="col-num sortable" onclick="handleSort('division', 3, event)">Pending</th>
+                            <th class="col-num sortable" onclick="handleSort('division', 4, event)">Issues</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="section-container">
+            <div class="section-header"><i class="fas fa-building"></i> CCC Breakdown</div>
+            <div class="table-responsive">
+                <table class="data-table" id="cccTable">
+                    <thead>
+                        <tr>
+                            <th class="sortable" onclick="handleSort('ccc', 0, event)">CCC</th>
+                            <th class="sortable" onclick="handleSort('ccc', 1, event)">Division</th>
+                            <th class="col-num sortable" onclick="handleSort('ccc', 2, event)">Total</th>
+                            <th class="col-num sortable" onclick="handleSort('ccc', 3, event)">Effected</th>
+                            <th class="col-num sortable" onclick="handleSort('ccc', 4, event)">Pending</th>
+                            <th class="col-num sortable" onclick="handleSort('ccc', 5, event)">Issues</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Detail Modal -->
+    <div class="modal" id="detailModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <h2 id="modalTitle">Application Details</h2>
+                    <div class="modal-subtitle" id="modalSubtitle">Viewing record list</div>
+                </div>
+                <button class="close-modal" onclick="closeModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="table-responsive">
+                <table class="data-table detail-table" id="detailTable">
+                    <thead>
+                        <tr>
+                            <th class="sortable" onclick="handleSort('detail', 0, event)">CON_ID</th>
+                            <th class="sortable" onclick="handleSort('detail', 1, event)">Name</th>
+                            <th class="sortable" onclick="handleSort('detail', 2, event)">Scheme</th>
+                            <th class="sortable" onclick="handleSort('detail', 3, event)">Class</th>
+                            <th class="col-num sortable" onclick="handleSort('detail', 4, event)">Curr Load</th>
+                            <th class="col-num sortable" onclick="handleSort('detail', 5, event)">Applied Load</th>
+                            <th class="sortable" onclick="handleSort('detail', 6, event)">Pending Since</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detailBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SOLAR_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR5Vnb9TxymVIcBZsUBWZ-21Frkn77O4IyNus3Zo42qPm09N6MlJ3E0Vh3tHywcMAiy2y0uRm5XfIdk/pub?gid=0&single=true&output=csv";
+
+        let globalRawData = [];
+        let activeTab = 'ALL';
+        let sortState = {
+            region: { col: 1, dir: 'desc' }, // Sort by Total desc by default
+            division: { col: 1, dir: 'desc' },
+            ccc: { col: 2, dir: 'desc' },
+            detail: { col: 5, dir: 'desc' } // Default to Applied Load descending
+        };
+
+        let lastDetailParams = null; // Store for re-rendering on sort
+
+        // --- Mapping Helpers ---
+        function getRegionFromCCC(cccCode) {
+            const prefix = String(cccCode || '').substring(0, 3);
+            if (prefix === '661') return 'Malda';
+            if (prefix === '662') return 'UD';
+            if (prefix === '663') return 'DD';
+            return 'Unknown';
+        }
+
+        function getDivisionFromCCC(cccCode) {
+            const prefix = String(cccCode || '').substring(0, 4);
+            const map = {
+                "6611": "MALDA", "6612": "CHANCHAL", "6613": "GAZOLE",
+                "6621": "RAIGANJ", "6622": "ISLAMPUR",
+                "6631": "BALURGHAT", "6632": "BUNIADPUR"
+            };
+            return map[prefix] || 'Unknown';
+        }
+
+        function getCccName(row) {
+            if (row["SUPP_OFF"] && String(row["SUPP_OFF"]).toUpperCase() !== "NULL" && String(row["SUPP_OFF"]).trim() !== "") {
+                return String(row["SUPP_OFF"]).trim();
+            }
+            return `CCC ${row["CCC CODE"] || 'Unknown'}`;
+        }
+
+        function normalizeRemark(r) {
+            if (!r) return 'OTHERS';
+            const upper = String(r).toUpperCase().trim();
+            if (upper === 'OTHERS' || upper === 'OTHER' || upper === '(NULL)') return 'OTHERS';
+            return upper;
+        }
+
+        function identifyStatus(statusStr) {
+            const s = String(statusStr || '').toUpperCase().trim();
+            if (s === 'SUCCESS') return 'success';
+            if (s === 'FAILED') return 'failed';
+            return 'pending';
+        }
+
+        // --- Pending Logic ---
+        function parseCustomDate(dateStr) {
+            if (!dateStr) return null;
+            let d = new Date(dateStr);
+            if (!isNaN(d.getTime())) return d;
+
+            // Manual parse for DD-MM-YYYY HH:mm
+            const parts = String(dateStr).split(/[\s\-\/\:]/);
+            if (parts.length >= 3) {
+                const day = parseInt(parts[0]);
+                const month = parseInt(parts[1]) - 1;
+                const year = parseInt(parts[2]);
+                const hour = parseInt(parts[3]) || 0;
+                const min = parseInt(parts[4]) || 0;
+                if (year > 1900 && month >= 0 && month <= 11 && day > 0 && day <= 31) {
+                    return new Date(year, month, day, hour, min);
+                }
+            }
+            return null;
+        }
+
+        function calculatePendingSince(creationDate) {
+            if (!creationDate) return "-";
+            const start = parseCustomDate(creationDate);
+            const now = new Date();
+            if (!start || isNaN(start.getTime())) return creationDate;
+
+            let diff = now - start;
+            // Any uncompleted connection less than a week old (including today/future) shows <1w
+            const daysTotal = Math.floor(diff / (1000 * 60 * 60 * 24));
+            if (daysTotal < 7) return "<1w";
+
+            const months = Math.floor(daysTotal / 30);
+            const remDays = daysTotal % 30;
+            const weeks = Math.floor(remDays / 7);
+            const days = remDays % 7;
+
+            let parts = [];
+            if (months > 0) parts.push(`${months}m`);
+            if (weeks > 0) parts.push(`${weeks}w`);
+            if (days > 0 || (parts.length === 0 && daysTotal >= 7)) parts.push(`${days}d`);
+
+            return parts.join(' ');
+        }
+
+        async function init() {
+            try {
+                const response = await fetch(SOLAR_CSV_URL);
+                const csvText = await response.text();
+                const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+                globalRawData = parsed.data;
+
+                if (globalRawData.length > 0 && globalRawData[0]["Report Date"]) {
+                    document.getElementById('reportDateTxt').innerHTML = `<i class="far fa-calendar-alt"></i> As of ${globalRawData[0]["Report Date"]}`;
+                } else {
+                    document.getElementById('reportDateTxt').innerHTML = `<i class="far fa-calendar-alt"></i> Data Loaded`;
+                }
+
+                setupTabs();
+                renderData();
+            } catch (err) {
+                console.error("Failed to load solar data", err);
+                document.getElementById('reportDateTxt').innerText = "Error loading data.";
+            }
+        }
+
+        function setupTabs() {
+            const categories = new Set();
+            globalRawData.forEach(r => categories.add(normalizeRemark(r["REMARKS"])));
+            const tabsList = ['ALL', ...Array.from(categories).sort()];
+            const container = document.getElementById('tabsTarget');
+            container.innerHTML = '';
+
+            tabsList.forEach(tab => {
+                const btn = document.createElement('button');
+                btn.className = `tab-btn ${tab === activeTab ? 'active' : ''}`;
+                btn.textContent = tab === 'ALL' ? 'All Connections' : tab;
+                btn.onclick = () => {
+                    activeTab = tab;
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    renderData();
+                };
+                container.appendChild(btn);
+            });
+        }
+
+        function handleSort(tableType, colIndex, event) {
+            if (event) event.stopPropagation();
+            const state = sortState[tableType];
+            if (state.col === colIndex) {
+                state.dir = state.dir === 'asc' ? 'desc' : 'asc';
+            } else {
+                state.col = colIndex;
+                state.dir = 'desc';
+            }
+
+            if (tableType === 'detail') {
+                if (lastDetailParams) {
+                    showApplicationDetails(lastDetailParams.type, lastDetailParams.entityName);
+                }
+            } else {
+                renderData();
+            }
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('detailModal');
+            modal.classList.remove('active');
+            setTimeout(() => modal.style.display = 'none', 300);
+        }
+
+        function showApplicationDetails(type, entityName) {
+            document.getElementById('modalTitle').textContent = entityName === 'Total' ? 'All Applications' : entityName;
+            document.getElementById('modalSubtitle').textContent = `Drill-down: ${activeTab === 'ALL' ? 'All Types' : activeTab} - ${entityName} context`;
+
+            lastDetailParams = { type, entityName };
+
+            let data = globalRawData.filter(r => r["SOLAR_APPL_NO"] || r["CON_ID"]);
+            if (activeTab !== 'ALL') data = data.filter(r => normalizeRemark(r["REMARKS"]) === activeTab);
+
+            if (type === 'region') {
+                data = data.filter(r => getRegionFromCCC(r["CCC CODE"]) === entityName);
+            } else if (type === 'division') {
+                data = data.filter(r => getDivisionFromCCC(r["CCC CODE"]) === entityName);
+            } else if (type === 'ccc') {
+                const pieces = entityName.match(/\((.*?)\)/);
+                const code = pieces ? pieces[1] : entityName;
+                data = data.filter(r => String(r["CCC CODE"]).trim() === code);
+            } else if (type === 'status') {
+                if (entityName === 'Effected') data = data.filter(r => identifyStatus(r["REPLACE_STATUS"]) === 'success');
+                else if (entityName === 'Pending') data = data.filter(r => identifyStatus(r["REPLACE_STATUS"]) === 'pending');
+                else if (entityName === 'Issues') data = data.filter(r => identifyStatus(r["REPLACE_STATUS"]) === 'failed');
+                // 'Total' doesn't need extra filter beyond activeTab
+            }
+
+            // --- Sorting logic for detail table ---
+            const state = sortState.detail;
+            const keys = ['CON_ID', 'Name', 'REMARKS', 'CLASS', 'CURR_LOAD', 'LOAD_APPL', 'CREATION_DATE'];
+            const numericCols = [4, 5]; // Curr Load, Applied Load
+
+            data.sort((a, b) => {
+                let valA, valB;
+                if (state.col === 1) { // Name
+                    valA = `${a["FNAME"] || ''} ${a["LNAME"] || ''}`.trim();
+                    valB = `${b["FNAME"] || ''} ${b["LNAME"] || ''}`.trim();
+                } else if (state.col === 6) { // Pending Since (Creation Date)
+                    const dateA = parseCustomDate(a["CREATION_DATE"]);
+                    const dateB = parseCustomDate(b["CREATION_DATE"]);
+                    valA = dateA ? dateA.getTime() : 0;
+                    valB = dateB ? dateB.getTime() : 0;
+                } else {
+                    valA = a[keys[state.col]];
+                    valB = b[keys[state.col]];
+                }
+
+                if (numericCols.includes(state.col)) {
+                    valA = parseFloat(valA) || 0;
+                    valB = parseFloat(valB) || 0;
+                    return state.dir === 'asc' ? valA - valB : valB - valA;
+                } else if (state.col === 6) {
+                    return state.dir === 'asc' ? valA - valB : valB - valA;
+                } else {
+                    return state.dir === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
+                }
+            });
+
+            let html = '';
+            data.forEach(r => {
+                const name = `${r["FNAME"] || ''} ${r["LNAME"] || ''}`.trim() || "N/A";
+                const scheme = normalizeRemark(r["REMARKS"]);
+                const isAloshree = scheme === 'ALOSHREE';
+                const status = identifyStatus(r["REPLACE_STATUS"]);
+
+                let pendingText;
+                let rowClass = "";
+                let tagClass = "pending-tag";
+
+                if (status === 'success') {
+                    pendingText = "Completed";
+                    rowClass = "row-success";
+                    tagClass = "completed-tag";
+                } else {
+                    pendingText = calculatePendingSince(r["CREATION_DATE"]);
+                }
+
+                html += `<tr class="${rowClass}">
+                    <td>${r["CON_ID"] || 'N/A'}</td>
+                    <td><strong>${name}</strong></td>
+                    <td><span class="scheme-badge ${isAloshree ? 'scheme-aloshree' : ''}">${scheme}</span></td>
+                    <td>${r["CLASS"] || '-'}</td>
+                    <td class="col-num">${r["CURR_LOAD"] || '0'}</td>
+                    <td class="col-num">${r["LOAD_APPL"] || '0'}</td>
+                    <td><span class="${tagClass}">${pendingText}</span></td>
+                </tr>`;
+            });
+
+            document.getElementById('detailBody').innerHTML = html || '<tr><td colspan="7" style="text-align:center; padding:40px;">No applications found.</td></tr>';
+            const modal = document.getElementById('detailModal');
+            modal.style.display = 'flex';
+            setTimeout(() => modal.classList.add('active'), 10);
+        }
+
+        function renderData() {
+            let filteredData = globalRawData.filter(r => r["SOLAR_APPL_NO"] || r["CON_ID"]);
+            if (activeTab !== 'ALL') filteredData = filteredData.filter(r => normalizeRemark(r["REMARKS"]) === activeTab);
+
+            const counts = { total: 0, success: 0, pending: 0, failed: 0 };
+            filteredData.forEach(r => {
+                counts.total++;
+                counts[identifyStatus(r["REPLACE_STATUS"])]++;
+            });
+
+            document.getElementById('kpiTotal').textContent = counts.total.toLocaleString();
+            document.getElementById('kpiSuccess').textContent = counts.success.toLocaleString();
+            document.getElementById('kpiPending').textContent = counts.pending.toLocaleString();
+            document.getElementById('kpiFailed').textContent = counts.failed.toLocaleString();
+            ['kpiTotal', 'kpiSuccess', 'kpiPending', 'kpiFailed'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove('shimmer');
+            });
+
+            const regionMap = {}, divisionMap = {}, cccMap = {};
+            const buildRow = () => ({ total: 0, success: 0, pending: 0, failed: 0, name: '', parent: '' });
+
+            filteredData.forEach(r => {
+                const ccc = String(r["CCC CODE"] || '').trim();
+                const region = getRegionFromCCC(ccc), division = getDivisionFromCCC(ccc);
+                const cccName = getCccName(r), stat = identifyStatus(r["REPLACE_STATUS"]);
+
+                if (!regionMap[region]) { regionMap[region] = buildRow(); regionMap[region].name = region; }
+                regionMap[region].total++; regionMap[region][stat]++;
+
+                if (!divisionMap[division]) { divisionMap[division] = buildRow(); divisionMap[division].name = division; }
+                divisionMap[division].total++; divisionMap[division][stat]++;
+
+                if (!cccMap[ccc]) {
+                    cccMap[ccc] = buildRow();
+                    cccMap[ccc].name = cccName;
+                    cccMap[ccc].code = ccc; // store code separately for lookup if needed
+                    cccMap[ccc].parent = division;
+                }
+                cccMap[ccc].total++; cccMap[ccc][stat]++;
+            });
+
+            const sortList = (map, state, numericCols, keyNames) => {
+                return Object.values(map).sort((a, b) => {
+                    let valA = a[keyNames[state.col]], valB = b[keyNames[state.col]];
+                    if (numericCols.includes(state.col)) {
+                        return state.dir === 'asc' ? valA - valB : valB - valA;
+                    }
+                    return state.dir === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
+                });
+            };
+
+            const regionKeys = ['name', 'total', 'success', 'pending', 'failed'];
+            const regionData = sortList(regionMap, sortState.region, [1, 2, 3, 4], regionKeys);
+            document.querySelector('#regionTable tbody').innerHTML = regionData.map(d => `
+                <tr onclick="showApplicationDetails('region', '${d.name}')">
+                    <td><strong>${d.name}</strong></td>
+                    <td class="col-num val-total">${d.total.toLocaleString()}</td>
+                    <td class="col-num val-success">${d.success.toLocaleString()}</td>
+                    <td class="col-num val-pending">${d.pending.toLocaleString()}</td>
+                    <td class="col-num val-failed">${d.failed.toLocaleString()}</td>
+                </tr>`).join('');
+
+            const divisionKeys = ['name', 'total', 'success', 'pending', 'failed'];
+            const divisionData = sortList(divisionMap, sortState.division, [1, 2, 3, 4], divisionKeys);
+            document.querySelector('#divisionTable tbody').innerHTML = divisionData.map(d => `
+                <tr onclick="showApplicationDetails('division', '${d.name}')">
+                    <td><strong>${d.name}</strong></td>
+                    <td class="col-num val-total">${d.total.toLocaleString()}</td>
+                    <td class="col-num val-success">${d.success.toLocaleString()}</td>
+                    <td class="col-num val-pending">${d.pending.toLocaleString()}</td>
+                    <td class="col-num val-failed">${d.failed.toLocaleString()}</td>
+                </tr>`).join('');
+
+            const cccKeys = ['name', 'parent', 'total', 'success', 'pending', 'failed'];
+            const cccData = sortList(cccMap, sortState.ccc, [2, 3, 4, 5], cccKeys);
+            document.querySelector('#cccTable tbody').innerHTML = cccData.map(d => `
+                <tr onclick="showApplicationDetails('ccc', '${d.name} (${d.code})')">
+                    <td>${d.name}</td>
+                    <td style="color:var(--text-secondary); font-size:12px;">${d.parent}</td>
+                    <td class="col-num val-total">${d.total.toLocaleString()}</td>
+                    <td class="col-num val-success">${d.success.toLocaleString()}</td>
+                    <td class="col-num val-pending">${d.pending.toLocaleString()}</td>
+                    <td class="col-num val-failed">${d.failed.toLocaleString()}</td>
+                </tr>`).join('');
+
+            ['region', 'division', 'ccc', 'detail'].forEach(type => {
+                const tableId = type === 'detail' ? 'detailTable' : (type === 'ccc' ? 'cccTable' : (type === 'region' ? 'regionTable' : 'divisionTable'));
+                const ths = document.querySelectorAll(`#${tableId} th`);
+                ths.forEach((th, idx) => {
+                    th.classList.remove('asc', 'desc');
+                    if (idx === sortState[type].col) th.classList.add(sortState[type].dir);
+                });
+            });
+        }
+
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+
+</html>
