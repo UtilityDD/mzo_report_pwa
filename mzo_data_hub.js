@@ -118,6 +118,7 @@ class DataHub {
 }
 
 const mzoDataHub = new DataHub();
+window.mzoDataHub = mzoDataHub;
 
 // Main function to sync all datasets
 async function syncAllData(progressCallback) {
