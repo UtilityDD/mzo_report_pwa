@@ -235,6 +235,36 @@
             color: #3498db;
         }
 
+        /* View Toggle Switch (YoY vs Continuous) */
+        .view-toggle-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            border: 1px solid #d0e1f2;
+            padding: 4px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .view-toggle-btn {
+            background: transparent;
+            border: none;
+            padding: 6px 12px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #7f8c8d;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: all 0.2s ease;
+        }
+
+        .view-toggle-btn.active {
+            background: #3498db;
+            color: #fff;
+            box-shadow: 0 2px 4px rgba(52, 152, 219, 0.3);
+        }
+
         /* Filter clear icon */
         .filter-clear-icon {
             margin-left: 8px;
@@ -282,7 +312,88 @@
             justify-content: center;
             align-items: center;
             position: relative;
-            /* For absolute positioning of message */
+            /* For absolute positioning of message and maximize button */
+            transition: all 0.3s ease;
+            background-color: #fff;
+        }
+
+        /* Maximized state for chart container - layout based */
+        body.chart-max-view .chart-container.maximized {
+            width: 100%;
+            flex-grow: 1; /* Occupy remaining space */
+            margin: 0;
+            border-radius: 0;
+            padding: 10px 20px;
+            min-height: 0; /* Allow shrinking in flex context */
+        }
+
+        /* Hide specific elements to save space, but keep filters */
+        body.chart-max-view h2,
+        body.chart-max-view .filters-container,
+        body.chart-max-view .toggle-button, /* Data Table toggle */
+        body.chart-max-view #dataTableWrapper {
+            display: none !important;
+        }
+
+        body.chart-max-view .tab-container {
+            width: 100%;
+            max-width: 100%;
+            height: 100vh;
+            margin: 0;
+            border-radius: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        body.chart-max-view #chartTab {
+            display: flex !important; /* Force display if active */
+            flex-direction: column;
+            flex-grow: 1;
+            padding: 10px 20px;
+            overflow: hidden;
+        }
+
+        body.chart-max-view .chart-filters {
+            margin-bottom: 10px !important;
+        }
+
+        .maximize-chart-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: #555;
+            transition: all 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .maximize-chart-btn:hover {
+            background: #f8f9fa;
+            color: #3498db;
+            border-color: #3498db;
+        }
+
+        .chart-container.maximized .maximize-chart-btn {
+            top: 10px;
+            right: 10px;
+        }
+
+        body.chart-max-view {
+            overflow: hidden;
+            background-color: #fff;
+        }
+
+        body.chart-max-view #loaderOverlay {
+            display: none;
         }
 
         /* Chart message style */
@@ -860,7 +971,18 @@
                     <div id="yearCheckboxes" class="checkbox-group"></div>
                 </div>
             </div>
-            <div class="chart-container">
+            
+            <div style="display: flex; justify-content: center; width: 100%;">
+                <div class="view-toggle-container">
+                    <button class="view-toggle-btn" id="toggleYoY" onclick="setChartView('yoy')">Year-Over-Year</button>
+                    <button class="view-toggle-btn active" id="toggleContinuous" onclick="setChartView('continuous')">Continuous Year-Month</button>
+                </div>
+            </div>
+
+            <div class="chart-container" id="chartContainer">
+                <button class="maximize-chart-btn" onclick="toggleMaximizeChart()" title="Toggle Maximize">
+                    <i class="fas fa-expand-arrows-alt" id="maximizeIcon"></i>
+                </button>
                 <canvas id="chart"></canvas>
                 <div id="chartMessage" style="display:none;"></div>
             </div>
@@ -984,6 +1106,7 @@
         let currentSortOrder = 'none'; // 'asc', 'desc', 'none'
         let expandedRowOptions = null; // To keep track of the currently expanded options row (either region or division)
         let selectedCCC = ""; // Global variable to store the currently selected CCC for tooltip access
+        let chartTabOpenedOnce = false; // Flag to track if chart tab has been opened
 
         // Global variables for filtering comparison table rows
         let currentRegionFilter = null;
@@ -1276,12 +1399,13 @@
 
         function generateParameterCheckboxes() {
             const container = document.getElementById("parameterCheckboxes");
-            container.innerHTML = parameters.map(param =>
-                `<div class="checkbox-item">
-                    <input type="checkbox" id="param-${param.replace(/\s+/g, '-').replace(/[()]/g, '')}" value="${param}" ${param === "CUM. AT&C LOSS" ? "checked" : ""}>
+            container.innerHTML = parameters.map(param => {
+                const isChecked = param === "CUM. AT&C LOSS" ? "checked" : "";
+                return `<div class="checkbox-item">
+                    <input type="checkbox" id="param-${param.replace(/\s+/g, '-').replace(/[()]/g, '')}" value="${param}" ${isChecked}>
                     <label for="param-${param.replace(/\s+/g, '-').replace(/[()]/g, '')}">${parameterDisplayMap[param]}</label>
-                </div>`
-            ).join('');
+                </div>`;
+            }).join('');
 
             // Add a new event listener specifically for single selection in comparison tab
             container.addEventListener("change", (event) => {
@@ -1312,11 +1436,23 @@
             });
         }
 
-        // --- Chart Functions ---
+        function setChartView(viewType) {
+            currentChartView = viewType;
+            
+            // Update toggle button styles
+            document.getElementById('toggleYoY').classList.toggle('active', viewType === 'yoy');
+            document.getElementById('toggleContinuous').classList.toggle('active', viewType === 'continuous');
+            
+            updateChart();
+        }
+
         function updateChart() {
             selectedCCC = document.getElementById("cccFilter").value; // Assign to global variable
-            const selectedYears = [...document.querySelectorAll("#yearCheckboxes input:checked")].map(cb => cb.value);
-            selectedYears.sort((a, b) => parseInt(a) - parseInt(b)); // Sort years for consistent color assignment
+            const selectedYears = [...document.querySelectorAll("#yearCheckboxes input:checked")]
+                .map(cb => cb.value)
+                .filter(y => y && !isNaN(parseInt(y)));
+            selectedYears.sort((a, b) => parseInt(a) - parseInt(b)); // Sort years chronologically
+
             const selectedParameters = [...document.querySelectorAll("#parameterCheckboxes input:checked")].map(cb => cb.value);
             const chartCanvas = document.getElementById("chart");
             const chartMessageDiv = document.getElementById("chartMessage");
@@ -1346,33 +1482,150 @@
             chartCanvas.style.display = 'block'; // Show canvas
             chartMessageDiv.style.display = 'none'; // Hide message
 
-            const labels = monthNames;
+            let labels = [];
             const datasets = [];
             chartData = {}; // Reset chart data for hover comparison
 
             const isParamColoringMode = selectedParameters.length > 1;
 
-            selectedParameters.forEach((metric) => {
-                if (!chartData[metric]) chartData[metric] = {};
+            if (currentChartView === 'continuous') {
+                // --- CONTINUOUS VIEW ---
+                labels = [];
+                // Build chronological labels across all selected years
+                selectedYears.forEach(year => {
+                    monthNames.forEach((month, index) => {
+                        const fiscalMonthNum = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3][index];
+                        const actualYearForMonth = (fiscalMonthNum >= 4) ? parseInt(year) : parseInt(year) + 1;
+                        labels.push(`${month} '${actualYearForMonth.toString().slice(-2)}`);
+                    });
+                });
 
-                // Add datasets for actual data
-                selectedYears
-                    .filter(y => y && !isNaN(parseInt(y)))
-                    .forEach((year, yearIndex) => {
+                selectedParameters.forEach((metric, metricIndex) => {
+                    if (!chartData[metric]) chartData[metric] = {};
+                    const flatData = [];
+                    const baseColor = PARAMETER_COLORS[metric] || YEAR_COLORS[metricIndex % YEAR_COLORS.length] || '#3498db';
+
+                    selectedYears.forEach(year => {
+                        if (!chartData[metric][year]) chartData[metric][year] = {};
+
+                        monthNames.forEach((_, index) => {
+                            const fiscalMonthNum = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3][index];
+                            const actualYearForMonth = (fiscalMonthNum >= 4) ? parseInt(year) : parseInt(year) + 1;
+
+                            const entry = rawData.find(row =>
+                                row.CCC === selectedCCC &&
+                                parseInt(row.MONTH) === fiscalMonthNum &&
+                                parseInt(row.YEAR) === actualYearForMonth
+                            );
+
+                            const value = entry ? parseFloat(entry[metric]) : null;
+                            if (value !== null) {
+                                chartData[metric][year][fiscalMonthNum] = value;
+                            }
+                            flatData.push(value);
+                        });
+                    });
+
+                    datasets.push({
+                        label: parameterDisplayMap[metric],
+                        data: flatData,
+                        borderColor: baseColor,
+                        backgroundColor: baseColor,
+                        pointBackgroundColor: baseColor,
+                        pointBorderColor: "#fff",
+                        pointRadius: window.innerWidth <= 768 ? 3 : 4,
+                        pointHoverRadius: window.innerWidth <= 768 ? 4 : 6,
+                        borderWidth: window.innerWidth <= 768 ? 1.5 : 3,
+                        pointBorderWidth: window.innerWidth <= 768 ? 1 : 2,
+                        tension: 0.4,
+                        fill: false,
+                        metric: metric,
+                        datalabels: {
+                            display: function(context) {
+                                const val = context.dataset.data[context.dataIndex];
+                                if (val === null || val === undefined) return false;
+                                
+                                const label = context.chart.data.labels[context.dataIndex];
+                                if (label && label.startsWith('Mar')) return true;
+                                
+                                const data = context.dataset.data;
+                                for (let i = data.length - 1; i >= 0; i--) {
+                                    if (data[i] !== null && data[i] !== undefined) {
+                                        return context.dataIndex === i;
+                                    }
+                                }
+                                return false;
+                            },
+                            align: 'top',
+                            anchor: 'end',
+                            formatter: (value) => value ? `${value.toFixed(1)}` : '',
+                            color: baseColor,
+                            backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                            borderRadius: 4,
+                            padding: { top: 2, bottom: 2, left: 2, right: 2 },
+                            font: {
+                                size: document.body.classList.contains('chart-max-view') ? 14 : (window.innerWidth <= 768 ? 9 : 11),
+                                weight: 'bold'
+                            }
+                        }
+                    });
+
+                    // Target Line for continuous view
+                    const targetValue = targetDataMap[selectedCCC]?.[metric];
+                    if (targetValue !== undefined && targetValue !== null) {
+                        datasets.push({
+                            label: `${parameterDisplayMap[metric]} Target`,
+                            data: Array(labels.length).fill(targetValue),
+                            borderColor: baseColor,
+                            backgroundColor: baseColor,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            pointHoverRadius: 0,
+                            borderWidth: window.innerWidth <= 768 ? 1 : 2,
+                            fill: false,
+                            metric: metric,
+                            isTarget: true,
+                            datalabels: {
+                                display: function(context) {
+                                    return context.dataIndex === context.dataset.data.length - 1;
+                                },
+                                align: metricIndex % 2 === 0 ? 'top' : 'bottom',
+                                offset: 8,
+                                textAlign: 'right',
+                                anchor: 'end',
+                                formatter: () => `Target: ${targetValue.toFixed(1)} (${parameterDisplayMap[metric]})`,
+                                color: baseColor,
+                                backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                                borderRadius: 4,
+                                font: { 
+                                    size: document.body.classList.contains('chart-max-view') ? 13 : (window.innerWidth <= 768 ? 9 : 10), 
+                                    weight: 'bold' 
+                                }
+                            }
+                        });
+                    }
+                });
+
+            } else {
+                // --- YEAR-OVER-YEAR VIEW (Original) ---
+                labels = monthNames;
+
+                selectedParameters.forEach((metric, metricIndex) => {
+                    if (!chartData[metric]) chartData[metric] = {};
+
+                    // Add datasets for actual data
+                    selectedYears.forEach((year, yearIndex) => {
                         if (!chartData[metric][year]) chartData[metric][year] = {}; // Initialize inner object
 
                         let baseColor;
                         if (!isParamColoringMode) {
-                            // Scenario 1: One parameter selected, use year-specific fixed colors
                             baseColor = YEAR_COLORS[yearIndex % YEAR_COLORS.length];
                         } else {
-                            // Scenario 2: Multiple parameters selected, use parameter-specific fixed colors
-                            baseColor = PARAMETER_COLORS[metric] || '#000000'; // Fallback to black
+                            baseColor = PARAMETER_COLORS[metric] || '#000000';
                         }
 
-                        // Adjust color (brightness and opacity) based on the year's position
                         const lineColor = adjustColorForYear(baseColor, yearIndex, selectedYears.length);
-                        const dataLabelColor = lineColor; // Data labels match line color
+                        const dataLabelColor = lineColor;
 
                         datasets.push({
                             label: `${parameterDisplayMap[metric]} (${year}-${(parseInt(year) + 1).toString().slice(-2)})`,
@@ -1393,7 +1646,7 @@
                                 return value;
                             }),
                             borderColor: lineColor,
-                            backgroundColor: lineColor, // For point fill
+                            backgroundColor: lineColor,
                             pointBackgroundColor: lineColor,
                             pointBorderColor: "#fff",
                             pointRadius: window.innerWidth <= 768 ? 3 : 5,
@@ -1405,6 +1658,21 @@
                             metric: metric,
                             year: year,
                             datalabels: {
+                                display: function(context) {
+                                    const val = context.dataset.data[context.dataIndex];
+                                    if (val === null || val === undefined) return false;
+                                    
+                                    const label = context.chart.data.labels[context.dataIndex];
+                                    if (label && label.startsWith('Mar')) return true;
+                                    
+                                    const data = context.dataset.data;
+                                    for (let i = data.length - 1; i >= 0; i--) {
+                                        if (data[i] !== null && data[i] !== undefined) {
+                                            return context.dataIndex === i;
+                                        }
+                                    }
+                                    return false;
+                                },
                                 align: 'top',
                                 anchor: 'end',
                                 formatter: (value) => value ? `${value.toFixed(1)}` : '',
@@ -1414,36 +1682,70 @@
                                 padding: { top: 2, bottom: 2, left: 2, right: 2 },
                                 font: {
                                     weight: 'normal',
-                                    size: window.innerWidth <= 768 ? 9 : 12,
+                                    size: document.body.classList.contains('chart-max-view') ? 14 : (window.innerWidth <= 768 ? 9 : 12),
                                 }
                             }
                         });
                     });
 
-                // Add dataset for target line if target exists for this CCC and metric
-                const targetValue = targetDataMap[selectedCCC]?.[metric];
-                if (targetValue !== undefined && targetValue !== null) {
-                    datasets.push({
-                        label: `${parameterDisplayMap[metric]} Target`,
-                        data: Array(labels.length).fill(targetValue), // Horizontal line
-                        borderColor: PARAMETER_COLORS[metric] || '#000000', // Use parameter color
-                        backgroundColor: PARAMETER_COLORS[metric] || '#000000',
-                        borderDash: [5, 5], // Dashed line for target
-                        pointRadius: 0, // No points for target line
-                        pointHoverRadius: 0,
-                        borderWidth: window.innerWidth <= 768 ? 1 : 2,
-                        fill: false,
-                        metric: metric, // Keep metric for tooltip if needed, though target is simpler
-                        isTarget: true, // Custom property to identify target line
-                        datalabels: {
-                            display: false // No datalabels for target line
-                        }
-                    });
-                }
-            });
+                    // Add dataset for target line if target exists
+                    const targetValue = targetDataMap[selectedCCC]?.[metric];
+                    if (targetValue !== undefined && targetValue !== null) {
+                        datasets.push({
+                            label: `${parameterDisplayMap[metric]} Target`,
+                            data: Array(labels.length).fill(targetValue), // Horizontal line over 12 months
+                            borderColor: PARAMETER_COLORS[metric] || '#000000',
+                            backgroundColor: PARAMETER_COLORS[metric] || '#000000',
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            pointHoverRadius: 0,
+                            borderWidth: window.innerWidth <= 768 ? 1 : 2,
+                            fill: false,
+                            metric: metric,
+                            isTarget: true,
+                            datalabels: {
+                                display: function(context) {
+                                    return context.dataIndex === context.dataset.data.length - 1;
+                                },
+                                align: metricIndex % 2 === 0 ? 'top' : 'bottom',
+                                offset: 8,
+                                textAlign: 'right',
+                                anchor: 'end',
+                                formatter: () => `Target: ${targetValue.toFixed(1)} (${parameterDisplayMap[metric]})`,
+                                color: PARAMETER_COLORS[metric] || '#000000',
+                                backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                                borderRadius: 4,
+                                font: { 
+                                    size: document.body.classList.contains('chart-max-view') ? 13 : (window.innerWidth <= 768 ? 9 : 10), 
+                                    weight: 'bold' 
+                                }
+                            }
+                        });
+                    }
+                });
+            }
 
             renderChart(labels, datasets);
             updateDataTable();
+        }
+
+        function toggleMaximizeChart() {
+            const container = document.getElementById('chartContainer');
+            const icon = document.getElementById('maximizeIcon');
+            const isMaximized = container.classList.toggle('maximized');
+            
+            document.body.classList.toggle('chart-max-view', isMaximized);
+            
+            if (isMaximized) {
+                icon.classList.remove('fa-expand-arrows-alt');
+                icon.classList.add('fa-compress-arrows-alt');
+            } else {
+                icon.classList.remove('fa-compress-arrows-alt');
+                icon.classList.add('fa-expand-arrows-alt');
+            }
+            
+            // Re-render chart to apply dynamic font scaling
+            updateChart();
         }
 
         function renderChart(labels, datasets) {
@@ -1462,8 +1764,8 @@
                     maintainAspectRatio: false,
                     layout: {
                         padding: window.innerWidth <= 768
-                            ? { left: 5, right: 5, top: 30, bottom: 5 }
-                            : { left: 10, right: 10, top: 40, bottom: 10 }
+                            ? { left: 5, right: 60, top: 30, bottom: 5 }
+                            : { left: 10, right: 100, top: 40, bottom: 10 }
                     },
                     interaction: {
                         mode: 'index',
@@ -1490,7 +1792,13 @@
                                 usePointStyle: true,
                                 pointStyle: 'circle',
                                 padding: 9,
-                                font: { size: window.innerWidth <= 768 ? 9 : 12 }
+                                font: { size: document.body.classList.contains('chart-max-view') ? 14 : (window.innerWidth <= 768 ? 9 : 12) },
+                                filter: function(item, data) {
+                                    if (data.datasets[item.datasetIndex].isTarget) {
+                                        return false;
+                                    }
+                                    return true;
+                                }
                             }
                         },
                         tooltip: {
@@ -1519,89 +1827,145 @@
                                 if (activeElements.length < 1) return;
 
                                 const metricGroups = {};
+                                const monthIndex = context.tooltip.dataPoints[0].dataIndex;
+                                let displayMonth = "";
+
+                                if (currentChartView === 'continuous') {
+                                    // In continuous mode, the label IS the month+year
+                                    displayMonth = context.chart.data.labels[monthIndex];
+                                } else {
+                                    // In YoY mode, the label is just the month
+                                    displayMonth = monthNames[monthIndex];
+                                }
+
+                                let tooltipContent = `<div class="month-title">${displayMonth}</div>`;
+
                                 activeElements.forEach(element => {
                                     const dataset = context.chart.data.datasets[element.datasetIndex];
                                     const metric = dataset.metric;
-                                    // Only include actual data points in year-on-year comparison
-                                    if (!dataset.isTarget) {
-                                        const year = dataset.year;
-                                        if (!metricGroups[metric]) metricGroups[metric] = [];
+                                    
+                                    if (!metricGroups[metric]) metricGroups[metric] = [];
+                                    
+                                    if (currentChartView === 'continuous') {
+                                        // Continuous mode: just record the value
                                         metricGroups[metric].push({
-                                            year: year,
                                             value: element.raw,
-                                            datasetIndex: element.datasetIndex
+                                            isTarget: dataset.isTarget
                                         });
+                                    } else {
+                                        // YoY mode: record year and value
+                                        if (!dataset.isTarget) {
+                                            metricGroups[metric].push({
+                                                year: dataset.year,
+                                                value: element.raw,
+                                                datasetIndex: element.datasetIndex
+                                            });
+                                        }
                                     }
                                 });
 
-                                const monthIndex = context.tooltip.dataPoints[0].dataIndex;
-                                const displayMonth = monthNames[monthIndex];
-                                let tooltipContent = `<div class="month-title">${displayMonth}</div>`;
-
                                 Object.keys(metricGroups).forEach(metric => {
                                     const points = metricGroups[metric];
-                                    if (points.length < 1) return; // Should be at least one point
+                                    if (points.length < 1) return;
 
                                     tooltipContent += `<div class="metric-title">${parameterDisplayMap[metric]}</div>`;
 
-                                    // Display actual values for each year
-                                    points.forEach(point => {
-                                        if (point.value !== null) {
+                                    if (currentChartView === 'continuous') {
+                                        // Simple value display for continuous mode
+                                        let actualValue = null;
+                                        points.forEach(point => {
+                                            if (!point.isTarget && point.value !== null) {
+                                                actualValue = point.value;
+                                            }
+                                        });
+
+                                        if (actualValue !== null) {
                                             tooltipContent += `<div class="year-value">
-                                                <span>${point.year}:</span>
-                                                <span>${point.value.toFixed(2)}</span>
+                                                <span>Value:</span>
+                                                <span>${actualValue.toFixed(2)}</span>
                                             </div>`;
                                         }
-                                    });
 
-                                    // Get target value for this metric and selected CCC
-                                    const targetValue = targetDataMap[selectedCCC]?.[metric];
-                                    if (targetValue !== undefined && targetValue !== null) {
-                                        tooltipContent += `<div class="year-value">
-                                            <span>Target:</span>
-                                            <span>${targetValue.toFixed(2)}</span>
-                                        </div>`;
+                                        // Get target value
+                                        const targetValue = targetDataMap[selectedCCC]?.[metric];
+                                        if (targetValue !== undefined && targetValue !== null && actualValue !== null) {
+                                            tooltipContent += `<div class="year-value">
+                                                <span>Target:</span>
+                                                <span>${targetValue.toFixed(2)}</span>
+                                            </div>`;
 
-                                        // Compare each actual value against the target
+                                            const difference = actualValue - targetValue;
+                                            const percentChange = (targetValue !== 0) ? (difference / Math.abs(targetValue)) * 100 : 0;
+
+                                            let cssClass = "neutral";
+                                            if (parametersGoodWhenIncreasing.includes(metric)) {
+                                                cssClass = difference > 0 ? 'negative' : difference < 0 ? 'positive' : 'neutral';
+                                            } else if (parametersGoodWhenDecreasing.includes(metric)) {
+                                                cssClass = difference < 0 ? 'negative' : difference > 0 ? 'positive' : 'neutral';
+                                            }
+                                            const symbol = difference > 0 ? '↑' : difference < 0 ? '↓' : '→';
+
+                                            tooltipContent += `<div class="diff-value ${cssClass}">
+                                                <span>vs Target:</span>
+                                                <span>${difference.toFixed(2)} ${symbol} (${percentChange.toFixed(1)}%)</span>
+                                            </div>`;
+                                        }
+                                        
+                                    } else {
+                                        // Original YoY tooltips
                                         points.forEach(point => {
                                             if (point.value !== null) {
-                                                const difference = point.value - targetValue;
-                                                const percentChange = (targetValue !== 0) ? (difference / Math.abs(targetValue)) * 100 : 0;
-
-                                                let cssClass = "";
-                                                if (parametersGoodWhenIncreasing.includes(metric)) {
-                                                    cssClass = difference > 0 ? 'negative' : difference < 0 ? 'positive' : 'neutral';
-                                                } else if (parametersGoodWhenDecreasing.includes(metric)) { // Added this condition
-                                                    cssClass = difference < 0 ? 'negative' : difference > 0 ? 'positive' : 'neutral';
-                                                } else {
-                                                    cssClass = 'neutral'; // Default if not in either good-when-increasing/decreasing
-                                                }
-                                                const symbol = difference > 0 ? '↑' : difference < 0 ? '↓' : '→';
-
-                                                tooltipContent += `<div class="diff-value ${cssClass}">
-                                                    <span>${point.year} vs Target:</span>
-                                                    <span>${difference.toFixed(2)} ${symbol} (${percentChange.toFixed(1)}%)</span>
+                                                tooltipContent += `<div class="year-value">
+                                                    <span>${point.year}:</span>
+                                                    <span>${point.value.toFixed(2)}</span>
                                                 </div>`;
                                             }
                                         });
-                                    }
 
-                                    // Add year-on-year comparison (existing logic)
-                                    for (let i = 0; i < points.length - 1; i++) {
-                                        for (let j = i + 1; j < points.length; j++) {
-                                            const pointA = points[i];
-                                            const pointB = points[j];
-                                            if (pointA.value !== null && pointB.value !== null) {
-                                                const difference = pointB.value - pointA.value;
-                                                const percentChange = (pointA.value !== 0) ? (difference / Math.abs(pointA.value)) * 100 : 0;
+                                        const targetValue = targetDataMap[selectedCCC]?.[metric];
+                                        if (targetValue !== undefined && targetValue !== null) {
+                                            tooltipContent += `<div class="year-value">
+                                                <span>Target:</span>
+                                                <span>${targetValue.toFixed(2)}</span>
+                                            </div>`;
 
-                                                const cssClass = difference > 0 ? 'increase' : difference < 0 ? 'decrease' : 'neutral';
-                                                const symbol = difference > 0 ? '↑' : difference < 0 ? '↓' : '→';
+                                            points.forEach(point => {
+                                                if (point.value !== null) {
+                                                    const difference = point.value - targetValue;
+                                                    const percentChange = (targetValue !== 0) ? (difference / Math.abs(targetValue)) * 100 : 0;
 
-                                                tooltipContent += `<div class="diff-value ${cssClass}">
-                                                    <span>${pointB.year} - ${pointA.year}:</span>
-                                                    <span>${difference.toFixed(2)} ${symbol} (${percentChange.toFixed(1)}%)</span>
-                                                </div>`;
+                                                    let cssClass = "neutral";
+                                                    if (parametersGoodWhenIncreasing.includes(metric)) {
+                                                        cssClass = difference > 0 ? 'negative' : difference < 0 ? 'positive' : 'neutral';
+                                                    } else if (parametersGoodWhenDecreasing.includes(metric)) {
+                                                        cssClass = difference < 0 ? 'negative' : difference > 0 ? 'positive' : 'neutral';
+                                                    }
+                                                    const symbol = difference > 0 ? '↑' : difference < 0 ? '↓' : '→';
+
+                                                    tooltipContent += `<div class="diff-value ${cssClass}">
+                                                        <span>${point.year} vs Target:</span>
+                                                        <span>${difference.toFixed(2)} ${symbol} (${percentChange.toFixed(1)}%)</span>
+                                                    </div>`;
+                                                }
+                                            });
+                                        }
+
+                                        for (let i = 0; i < points.length - 1; i++) {
+                                            for (let j = i + 1; j < points.length; j++) {
+                                                const pointA = points[i];
+                                                const pointB = points[j];
+                                                if (pointA.value !== null && pointB.value !== null) {
+                                                    const difference = pointB.value - pointA.value;
+                                                    const percentChange = (pointA.value !== 0) ? (difference / Math.abs(pointA.value)) * 100 : 0;
+
+                                                    const cssClass = difference > 0 ? 'increase' : difference < 0 ? 'decrease' : 'neutral';
+                                                    const symbol = difference > 0 ? '↑' : difference < 0 ? '↓' : '→';
+
+                                                    tooltipContent += `<div class="diff-value ${cssClass}">
+                                                        <span>${pointB.year} - ${pointA.year}:</span>
+                                                        <span>${difference.toFixed(2)} ${symbol} (${percentChange.toFixed(1)}%)</span>
+                                                    </div>`;
+                                                }
                                             }
                                         }
                                     }
@@ -1619,13 +1983,13 @@
                         x: {
                             title: { display: false },
                             grid: { display: true, color: 'rgba(0, 0, 0, 0.05)' },
-                            ticks: { font: { size: window.innerWidth <= 768 ? 10 : 12 } }
+                            ticks: { font: { size: document.body.classList.contains('chart-max-view') ? 13 : (window.innerWidth <= 768 ? 10 : 12) } }
                         },
                         y: {
                             title: { display: false },
                             suggestedMax: 1.03,
                             grid: { display: true, color: 'rgba(0, 0, 0, 0.05)' },
-                            ticks: { font: { size: window.innerWidth <= 768 ? 10 : 12 } }
+                            ticks: { font: { size: document.body.classList.contains('chart-max-view') ? 13 : (window.innerWidth <= 768 ? 10 : 12) } }
                         }
                     }
                 },
@@ -2276,7 +2640,29 @@
             // Specific logic for each main tab
             if (tabId === 'chartTab') {
                 document.getElementById('dataTableWrapper').style.display = 'block'; // Show data table by default
-                updateChart(); // Ensure chart is updated when tab is active
+                
+                if (!chartTabOpenedOnce) {
+                    // Check AT&C and T&D Loss, uncheck others for the first chart view load
+                    document.querySelectorAll("#parameterCheckboxes input[type='checkbox']").forEach(cb => {
+                        if (cb.value === "CUM. AT&C LOSS" || cb.value === "CUM. DIST. LOSS") {
+                            cb.checked = true;
+                        } else {
+                            cb.checked = false;
+                        }
+                    });
+                    
+                    // Set default view to continuous on first load
+                    currentChartView = 'continuous';
+                    document.getElementById('toggleContinuous').classList.add('active');
+                    document.getElementById('toggleYoY').classList.remove('active');
+                    
+                    chartTabOpenedOnce = true;
+                }
+
+                // Defer updateChart to next tick so display: block takes effect and Chart.js can calculate dimensions
+                setTimeout(() => {
+                    updateChart();
+                }, 10);
             } else if (tabId === 'comparisonTab') {
                 // Enforce single parameter selection for comparison tab
                 const parameterCheckboxes = document.querySelectorAll("#parameterCheckboxes input[type='checkbox']");
