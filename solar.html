@@ -415,6 +415,12 @@
             text-align: left;
             font-size: 14px;
         }
+        
+        /* Disable border-collapse for sticky headers to work perfectly */
+        .detail-table {
+            border-collapse: separate;
+            border-spacing: 0;
+        }
 
         .data-table th,
         .data-table td {
@@ -430,6 +436,24 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
             font-size: 12px;
+        }
+
+        .detail-table th {
+            position: sticky;
+            top: -1px; /* Overcomes gap caused by padding/borders */
+            z-index: 2;
+            background: #111827;
+            /* Re-apply border since collapse is disabled */
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .detail-table thead th::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            border-bottom: 2px solid var(--accent-orange);
         }
 
         .data-table tbody tr {
@@ -506,16 +530,41 @@
             color: var(--accent-red);
         }
 
-        /* Shimmer loading */
+        /* Shimmer loading animation */
+        @keyframes shimmerEffect {
+            0% { background-position: -400px 0; }
+            100% { background-position: 400px 0; }
+        }
+
         .shimmer {
             display: inline-block;
             height: 1em;
             position: relative;
             overflow: hidden;
-            background-color: rgba(255, 255, 255, 0.05);
+            background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+            background-size: 800px 100%;
+            animation: shimmerEffect 1.5s infinite linear;
             border-radius: 4px;
             min-width: 60px;
+            color: transparent !important;
         }
+
+        .skeleton-row td {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .skeleton-bar {
+            display: inline-block;
+            height: 14px;
+            border-radius: 4px;
+            background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+            background-size: 800px 100%;
+            animation: shimmerEffect 1.5s infinite linear;
+        }
+
+        .skeleton-bar.w-wide { width: 120px; }
+        .skeleton-bar.w-num { width: 50px; margin-left: auto; }
 
         @media (max-width: 768px) {
             body {
@@ -592,19 +641,32 @@
             max-width: 1100px;
             max-height: 85vh;
             border-radius: 24px;
-            padding: 32px;
-            overflow-y: auto;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
             position: relative;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         }
 
         .modal-header {
+            flex-shrink: 0;
+            padding: 24px 32px 16px;
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            margin-bottom: 24px;
             border-bottom: 1px solid var(--border-color);
-            padding-bottom: 16px;
+        }
+
+        .modal-table-scroll {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .modal-table-scroll .detail-table {
+            margin: 0 32px 32px;
         }
 
         .modal-title-group h2 {
@@ -702,7 +764,10 @@
         </div>
 
         <div class="tabs-container" id="tabsTarget">
-            <!-- Tabs injected via JS -->
+            <!-- Skeleton tab placeholders -->
+            <button class="tab-btn shimmer" style="width:130px; pointer-events:none;">&nbsp;</button>
+            <button class="tab-btn shimmer" style="width:100px; pointer-events:none;">&nbsp;</button>
+            <button class="tab-btn shimmer" style="width:90px; pointer-events:none;">&nbsp;</button>
         </div>
 
         <!-- Filter Section -->
@@ -770,7 +835,11 @@
                             <th class="col-num sortable" onclick="handleSort('region', 4, event)">Issues</th>
                         </tr>
                     </thead>
-                    <tbody></tbody>
+                    <tbody>
+                        <tr class="skeleton-row"><td><span class="skeleton-bar w-wide"></span></td><td class="col-num"><span class="skeleton-bar w-num"></span></td><td class="col-num"><span class="skeleton-bar w-num"></span></td><td class="col-num"><span class="skeleton-bar w-num"></span></td><td class="col-num"><span class="skeleton-bar w-num"></span></td></tr>
+                        <tr class="skeleton-row"><td><span class="skeleton-bar w-wide"></span></td><td class="col-num"><span class="skeleton-bar w-num"></span></td><td class="col-num"><span class="skeleton-bar w-num"></span></td><td class="col-num"><span class="skeleton-bar w-num"></span></td><td class="col-num"><span class="skeleton-bar w-num"></span></td></tr>
+                        <tr class="skeleton-row"><td><span class="skeleton-bar w-wide"></span></td><td class="col-num"><span class="skeleton-bar w-num"></span></td><td class="col-num"><span class="skeleton-bar w-num"></span></td><td class="col-num"><span class="skeleton-bar w-num"></span></td><td class="col-num"><span class="skeleton-bar w-num"></span></td></tr>
+                    </tbody>
                 </table>
             </div>
         </div>
@@ -821,23 +890,29 @@
                     <h2 id="modalTitle">Application Details</h2>
                     <div class="modal-subtitle" id="modalSubtitle">Viewing record list</div>
                 </div>
-                <button class="close-modal" onclick="closeModal()"><i class="fas fa-times"></i></button>
+                <div style="display: flex; gap: 12px; align-items: center;">
+                    <button class="tab-btn" style="padding: 8px 16px; display: flex; align-items: center; gap: 8px;" onclick="downloadDetailCSV()">
+                        <i class="fas fa-download"></i> CSV
+                    </button>
+                    <button class="close-modal" onclick="closeModal()"><i class="fas fa-times"></i></button>
+                </div>
             </div>
-            <div class="table-responsive">
-                <table class="data-table detail-table" id="detailTable">
-                    <thead>
-                        <tr>
-                            <th class="sortable" onclick="handleSort('detail', 0, event)">CON_ID</th>
-                            <th class="sortable" onclick="handleSort('detail', 1, event)">Name</th>
-                            <th class="sortable" onclick="handleSort('detail', 2, event)">Scheme</th>
-                            <th class="sortable" onclick="handleSort('detail', 3, event)">Class</th>
-                            <th class="col-num sortable" onclick="handleSort('detail', 4, event)">Curr Load</th>
-                            <th class="col-num sortable" onclick="handleSort('detail', 5, event)">Applied Load</th>
-                            <th class="sortable" onclick="handleSort('detail', 6, event)">Pending Since</th>
-                        </tr>
-                    </thead>
-                    <tbody id="detailBody"></tbody>
-                </table>
+            <div class="modal-table-scroll">
+                    <table class="data-table detail-table" id="detailTable">
+                        <thead>
+                            <tr>
+                                <th class="sortable" onclick="handleSort('detail', 0, event)">CON_ID</th>
+                                <th class="sortable" onclick="handleSort('detail', 1, event)">Name</th>
+                                <th class="sortable" onclick="handleSort('detail', 2, event)">CCC</th>
+                                <th class="sortable" onclick="handleSort('detail', 3, event)">Scheme</th>
+                                <th class="sortable" onclick="handleSort('detail', 4, event)">Class</th>
+                                <th class="col-num sortable" onclick="handleSort('detail', 5, event)">Curr Load</th>
+                                <th class="col-num sortable" onclick="handleSort('detail', 6, event)">Applied Load</th>
+                                <th class="sortable" onclick="handleSort('detail', 7, event)">Pending Since</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detailBody"></tbody>
+                    </table>
             </div>
         </div>
     </div>
@@ -855,10 +930,11 @@
             region: { col: 1, dir: 'desc' }, // Sort by Total desc by default
             division: { col: 1, dir: 'desc' },
             ccc: { col: 2, dir: 'desc' },
-            detail: { col: 5, dir: 'desc' } // Default to Applied Load descending
+            detail: { col: 6, dir: 'desc' } // Default to Applied Load descending
         };
 
         let lastDetailParams = null; // Store for re-rendering on sort
+        let currentModalData = []; // Store current modal data for CSV export
 
         // --- Mapping Helpers ---
         function getRegionFromCCC(cccCode) {
@@ -1153,15 +1229,18 @@
 
             // --- Sorting logic for detail table ---
             const state = sortState.detail;
-            const keys = ['CON_ID', 'Name', 'REMARKS', 'CLASS', 'CURR_LOAD', 'LOAD_APPL', 'CREATION_DATE'];
-            const numericCols = [4, 5]; // Curr Load, Applied Load
+            const keys = ['CON_ID', 'Name', 'CCC', 'REMARKS', 'CLASS', 'CURR_LOAD', 'LOAD_APPL', 'CREATION_DATE'];
+            const numericCols = [5, 6]; // Curr Load, Applied Load
 
             data.sort((a, b) => {
                 let valA, valB;
                 if (state.col === 1) { // Name
                     valA = `${a["FNAME"] || ''} ${a["LNAME"] || ''}`.trim();
                     valB = `${b["FNAME"] || ''} ${b["LNAME"] || ''}`.trim();
-                } else if (state.col === 6) { // Pending Since (Creation Date)
+                } else if (state.col === 2) { // CCC
+                    valA = getCccName(a);
+                    valB = getCccName(b);
+                } else if (state.col === 7) { // Pending Since (Creation Date)
                     const dateA = parseCustomDate(a["CREATION_DATE"]);
                     const dateB = parseCustomDate(b["CREATION_DATE"]);
                     valA = dateA ? dateA.getTime() : 0;
@@ -1175,7 +1254,7 @@
                     valA = parseFloat(valA) || 0;
                     valB = parseFloat(valB) || 0;
                     return state.dir === 'asc' ? valA - valB : valB - valA;
-                } else if (state.col === 6) {
+                } else if (state.col === 7) {
                     return state.dir === 'asc' ? valA - valB : valB - valA;
                 } else {
                     return state.dir === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
@@ -1183,6 +1262,8 @@
             });
 
             let html = '';
+            currentModalData = data; // Save for CSV export
+            
             data.forEach(r => {
                 const name = `${r["FNAME"] || ''} ${r["LNAME"] || ''}`.trim() || "N/A";
                 const scheme = normalizeRemark(r["REMARKS"]);
@@ -1204,6 +1285,7 @@
                 html += `<tr class="${rowClass}">
                     <td>${r["CON_ID"] || 'N/A'}</td>
                     <td><strong>${name}</strong></td>
+                    <td style="font-size:12px; color:var(--text-secondary)">${getCccName(r)}</td>
                     <td><span class="scheme-badge ${isAloshree ? 'scheme-aloshree' : ''}">${scheme}</span></td>
                     <td>${r["CLASS"] || '-'}</td>
                     <td class="col-num">${r["CURR_LOAD"] || '0'}</td>
@@ -1212,7 +1294,7 @@
                 </tr>`;
             });
 
-            document.getElementById('detailBody').innerHTML = html || '<tr><td colspan="7" style="text-align:center; padding:40px;">No applications found.</td></tr>';
+            document.getElementById('detailBody').innerHTML = html || '<tr><td colspan="8" style="text-align:center; padding:40px;">No applications found.</td></tr>';
             const modal = document.getElementById('detailModal');
             modal.style.display = 'flex';
             setTimeout(() => modal.classList.add('active'), 10);
