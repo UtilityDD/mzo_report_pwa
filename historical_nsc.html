@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Historical NSC Analysis | Malda Zone</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        :root {
+            --bg-dark: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.7);
+            --accent-blue: #3b82f6;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            color: #f8fafc;
+            background-image: 
+                radial-gradient(at 0% 0%, hsla(253, 16%, 7%, 1) 0, transparent 50%),
+                radial-gradient(at 50% 0%, hsla(225, 39%, 30%, 0.1) 0, transparent 50%);
+            min-height: 100vh;
+        }
+
+        .glass-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 1rem;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        .tab-btn.active {
+            background-color: var(--accent-blue);
+            color: white;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+
+        select option {
+            background-color: #1e293b;
+            color: white;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 450px;
+            width: 100%;
+        }
+
+        .view-tab.active {
+            color: var(--accent-blue);
+            border-bottom: 2px solid var(--accent-blue);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        th {
+            background: rgba(255, 255, 255, 0.03);
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            color: #94a3b8;
+            padding: 1.25rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        th:hover {
+            color: white;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        th.active-sort {
+            color: var(--accent-blue);
+            border-bottom-color: var(--accent-blue);
+        }
+
+        .year-checkbox {
+            appearance: none;
+            width: 1.25rem;
+            height: 1.25rem;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 0.375rem;
+            background: rgba(15, 23, 42, 0.5);
+            cursor: pointer;
+            position: relative;
+            transition: all 0.2s;
+        }
+
+        .year-checkbox:checked {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+
+        .year-checkbox:checked::after {
+            content: '\f00c';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            color: white;
+            font-size: 0.75rem;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .year-pill {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.375rem 0.75rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 0.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        .year-pill:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .year-pill.active {
+            background: rgba(59, 130, 246, 0.15);
+            border-color: var(--accent-blue);
+        }
+
+        td {
+            padding: 1.25rem 1rem;
+            font-size: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            color: #f1f5f9;
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .avg-pill {
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--accent-blue);
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 custom-scrollbar">
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-white/10 pb-6">
+            <div>
+                <h1 class="text-3xl font-bold tracking-tight mb-1 flex items-center gap-3">
+                    <span class="w-1.5 h-8 bg-blue-500 rounded-full"></span>
+                    Historical NSC Analysis
+                </h1>
+                <p id="page-subtitle" class="text-slate-400 text-sm font-medium">Monitoring Monthly New Service Connection Trends across Malda Zone</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="location.reload()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-semibold transition-all">
+                    <i class="fas fa-sync-alt mr-2"></i> Refresh Data
+                </button>
+            </div>
+        </header>
+
+        <!-- Filters Section -->
+        <div class="glass-card p-6 mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
+                <div class="lg:col-span-2">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Time Period</label>
+                    <div class="flex p-1.5 bg-slate-900/50 rounded-xl border border-white/5 gap-1">
+                        <button onclick="setPeriod('weekly')" id="btn-weekly" class="tab-btn flex-1 py-2.5 rounded-lg text-xs font-bold transition-all tracking-wide">WEEKLY</button>
+                        <button onclick="setPeriod('monthly')" id="btn-monthly" class="tab-btn active flex-1 py-2.5 rounded-lg text-xs font-bold transition-all tracking-wide">MONTHLY</button>
+                        <button onclick="setPeriod('quarterly')" id="btn-quarterly" class="tab-btn flex-1 py-2.5 rounded-lg text-xs font-bold transition-all tracking-wide">QUARTERLY</button>
+                        <button onclick="setPeriod('yearly')" id="btn-yearly" class="tab-btn flex-1 py-2.5 rounded-lg text-xs font-bold transition-all tracking-wide">YEARLY</button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Region</label>
+                    <select id="filterRegion" onchange="handleRegionChange()" class="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none cursor-pointer">
+                        <option value="ALL">All Regions</option>
+                        <option value="Malda">Malda Region</option>
+                        <option value="UD">UD Region</option>
+                        <option value="DD">DD Region</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Division</label>
+                    <select id="filterDivision" onchange="handleDivisionChange()" class="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none cursor-pointer">
+                        <option value="ALL">All Divisions</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">CCC</label>
+                    <select id="filterCCC" onchange="updateCharts()" class="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none cursor-pointer">
+                        <option value="ALL">All CCCs</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Additional Filters Row -->
+            <div class="pt-6 border-t border-white/5 flex flex-col lg:flex-row items-start lg:items-center gap-8">
+                <div class="flex flex-col md:flex-row items-start md:items-center gap-4">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Analysis Years:</span>
+                    <div id="year-filters" class="flex flex-wrap gap-2">
+                        <!-- Dynamic year checkboxes here -->
+                    </div>
+                </div>
+                <div class="hidden lg:block w-px h-8 bg-white/10"></div>
+                <div class="flex flex-col md:flex-row items-start md:items-center gap-4">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Class:</span>
+                    <div class="flex flex-wrap gap-2">
+                        <label class="year-pill active" id="class-D">
+                            <input type="checkbox" checked onchange="toggleClass('D')" class="year-checkbox">
+                            <span class="text-xs font-bold px-2">D</span>
+                        </label>
+                        <label class="year-pill active" id="class-C">
+                            <input type="checkbox" checked onchange="toggleClass('C')" class="year-checkbox">
+                            <span class="text-xs font-bold px-2">C</span>
+                        </label>
+                        <label class="year-pill active" id="class-I">
+                            <input type="checkbox" checked onchange="toggleClass('I')" class="year-checkbox">
+                            <span class="text-xs font-bold px-2">I</span>
+                        </label>
+                        <label class="year-pill active" id="class-A">
+                            <input type="checkbox" checked onchange="toggleClass('A')" class="year-checkbox">
+                            <span class="text-xs font-bold px-2">A</span>
+                        </label>
+                        <label class="year-pill active" id="class-O">
+                            <input type="checkbox" checked onchange="toggleClass('O')" class="year-checkbox">
+                            <span class="text-xs font-bold px-2">O</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPI Summary row -->
+        <div id="kpi-row" class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+            <!-- Dynamic KPI cards here -->
+        </div>
+
+        <!-- Chart/Table Section -->
+        <div class="glass-card p-6">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                <div class="flex items-center gap-6">
+                    <button onclick="switchView('visual')" id="tab-visual" class="view-tab active text-sm font-bold pb-2 transition-all cursor-pointer">
+                        <i class="fas fa-chart-line mr-2"></i>VISUAL TREND
+                    </button>
+                    <button onclick="switchView('table')" id="tab-table" class="view-tab text-slate-500 text-sm font-bold pb-2 transition-all cursor-pointer">
+                        <i class="fas fa-table mr-2"></i>DATA INSIGHTS
+                    </button>
+                </div>
+                <div id="legend-container" class="flex items-center gap-4">
+                    <div class="flex items-center gap-2 text-xs font-medium text-slate-400">
+                        <span class="w-3 h-3 bg-blue-500 rounded-sm"></span> Domestic
+                        <span class="w-3 h-3 bg-teal-500 rounded-sm"></span> Comm.
+                        <span class="w-3 h-3 bg-amber-500 rounded-sm"></span> Ind.
+                        <span class="w-3 h-3 bg-emerald-500 rounded-sm"></span> Agri.
+                    </div>
+                </div>
+            </div>
+            
+            <div id="loading" class="flex flex-col items-center justify-center p-20 hidden">
+                <div class="w-12 h-12 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-4"></div>
+                <p class="text-slate-400 font-medium animate-pulse">Processing Historical Data...</p>
+            </div>
+
+            <div id="visual-content" class="chart-container">
+                <canvas id="historicalChart"></canvas>
+            </div>
+
+            <div id="table-content" class="hidden overflow-x-auto custom-scrollbar">
+                <div class="flex items-center gap-4 mb-4 p-3 bg-slate-900/30 rounded-xl border border-white/5">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Group By:</span>
+                    <div class="flex gap-2">
+                        <button onclick="setGrouping('region')" id="group-region" class="px-3 py-1.5 rounded-lg text-[10px] font-bold border border-white/10 hover:bg-slate-700/50 transition-all">REGION</button>
+                        <button onclick="setGrouping('division')" id="group-division" class="px-3 py-1.5 rounded-lg text-[10px] font-bold border border-white/10 hover:bg-slate-700/50 transition-all">DIVISION</button>
+                        <button onclick="setGrouping('CCC CODE')" id="group-ccc" class="px-3 py-1.5 rounded-lg text-[10px] font-bold border border-white/10 hover:bg-slate-700/50 transition-all">CCC</button>
+                    </div>
+                </div>
+                <table id="insightTable">
+                    <thead>
+                        <tr id="tableHeader">
+                            <!-- Headers injected here -->
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <!-- Rows injected here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT1VYUaMC92oZPb3f452Q2b5WJf3Zhm02JdVq2Hsykt-_ipAcIIYaFdgYm4qZdZ8heGcrDon5eQA7nk/pub?gid=2021450441&single=true&output=csv";
+        const COSTCENTER_URL = "data/costcenter.json";
+        
+        let allData = [];
+        let filteredData = [];
+        let costCenterMap = {};
+        let chart = null;
+        let currentPeriod = 'monthly'; // weekly, monthly, quarterly, yearly
+        let currentView = 'visual'; // visual, table
+        let tableGrouping = null; // 'region', 'division', 'CCC CODE'
+        let sortConfig = { key: 'total', direction: 'desc' };
+        let selectedYears = [];
+        let selectedClasses = ['D', 'C', 'I', 'A', 'O'];
+        
+        const DIVISION_MAP = {
+            "6611": "MALDA", "6612": "CHANCHAL", "6613": "GAZOLE",
+            "6621": "RAIGANJ", "6622": "ISLAMPUR",
+            "6631": "BALURGHAT", "6632": "BUNIADPUR"
+        };
+
+        const CLASS_COLORS = {
+            'D': '#3b82f6', // blue
+            'C': '#14b8a6', // teal
+            'I': '#f59e0b', // amber
+            'A': '#10b981', // emerald
+            'O': '#64748b'  // slate
+        };
+
+        const CLASS_LABELS = {
+            'D': 'Domestic',
+            'C': 'Commercial',
+            'I': 'Industrial',
+            'A': 'Agriculture',
+            'O': 'Other'
+        };
+
+        function getRegionFromCCC(cccCode) {
+            const prefix = String(cccCode || '').substring(0, 3);
+            if (prefix === '661') return 'Malda';
+            if (prefix === '662') return 'UD';
+            if (prefix === '663') return 'DD';
+            return null;
+        }
+
+        function getDivisionFromCCC(cccCode) {
+            const prefix = String(cccCode || '').substring(0, 4);
+            return DIVISION_MAP[prefix] || null;
+        }
+
+        async function init() {
+            showLoading(true);
+            try {
+                // Fetch Cost Center Mapping
+                const ccResponse = await fetch(COSTCENTER_URL);
+                if (ccResponse.ok) {
+                    const ccData = await ccResponse.json();
+                    ccData.forEach(item => {
+                        const rawCode = item["Cost Cen_Code"];
+                        if (rawCode && rawCode.startsWith("C3")) {
+                            const codeStr = rawCode.substring(2, 9);
+                            const code = parseInt(codeStr);
+                            // Prioritize codes starting with C366 (canonical for this zone)
+                            if (!costCenterMap[code] || rawCode.startsWith("C366")) {
+                                costCenterMap[code] = item["Unit Name"];
+                            }
+                        }
+                    });
+                }
+
+                const response = await fetch(CSV_URL);
+                const csvText = await response.text();
+                
+                Papa.parse(csvText, {
+                    header: true,
+                    dynamicTyping: true,
+                    skipEmptyLines: true,
+                    complete: (results) => {
+                        allData = results.data.map(item => ({
+                            ...item,
+                            region: getRegionFromCCC(item['CCC CODE']),
+                            division: getDivisionFromCCC(item['CCC CODE']),
+                            date: moment(item['METER_INSTALL_DATE'], 'M/D/YY H:mm')
+                        })).filter(item => item.date.isValid());
+                        
+                        setupYearFilters();
+                        setupDivisionFilter();
+                        handleRegionChange(); 
+                        showLoading(false);
+                    }
+                });
+            } catch (error) {
+                console.error("Data loading failed:", error);
+                alert("Failed to load historical data. Please check connection.");
+            }
+        }
+
+        function showLoading(show) {
+            const loading = document.getElementById('loading');
+            const visual = document.getElementById('visual-content');
+            const table = document.getElementById('table-content');
+            
+            if (show) {
+                loading.classList.remove('hidden');
+                visual.classList.add('hidden');
+                table.classList.add('hidden');
+            } else {
+                loading.classList.add('hidden');
+                switchView(currentView);
+            }
+        }
+
+        function switchView(view) {
+            currentView = view;
+            const visual = document.getElementById('visual-content');
+            const table = document.getElementById('table-content');
+            const tabVisual = document.getElementById('tab-visual');
+            const tabTable = document.getElementById('tab-table');
+            const legend = document.getElementById('legend-container');
+
+            if (view === 'visual') {
+                visual.classList.remove('hidden');
+                table.classList.add('hidden');
+                tabVisual.classList.add('active');
+                tabVisual.classList.remove('text-slate-500');
+                tabTable.classList.remove('active');
+                tabTable.classList.add('text-slate-500');
+                legend.classList.remove('hidden');
+            } else {
+                visual.classList.add('hidden');
+                table.classList.remove('hidden');
+                tabVisual.classList.remove('active');
+                tabVisual.classList.add('text-slate-500');
+                tabTable.classList.add('active');
+                tabTable.classList.remove('text-slate-500');
+                legend.classList.add('hidden');
+                renderTable();
+            }
+        }
+
+        function setupYearFilters() {
+            const years = _.uniq(allData.map(d => d.date.year())).sort().reverse();
+            selectedYears = [...years]; // Select all by default
+            
+            const container = document.getElementById('year-filters');
+            container.innerHTML = years.map(year => `
+                <label class="year-pill active" id="pill-${year}">
+                    <input type="checkbox" checked onchange="toggleYear(${year})" class="year-checkbox">
+                    <span class="text-xs font-bold">${year}</span>
+                </label>
+            `).join('');
+        }
+
+        function toggleYear(year) {
+            const pill = document.getElementById(`pill-${year}`);
+            if (selectedYears.includes(year)) {
+                selectedYears = selectedYears.filter(y => y !== year);
+                pill.classList.remove('active');
+            } else {
+                selectedYears.push(year);
+                pill.classList.add('active');
+            }
+            updateCharts();
+        }
+
+        function toggleClass(cls) {
+            const pill = document.getElementById(`class-${cls}`);
+            if (selectedClasses.includes(cls)) {
+                selectedClasses = selectedClasses.filter(c => c !== cls);
+                pill.classList.remove('active');
+            } else {
+                selectedClasses.push(cls);
+                pill.classList.add('active');
+            }
+            updateCharts();
+        }
+
+        function handleRegionChange() {
+            const region = document.getElementById('filterRegion').value;
+            const divSelect = document.getElementById('filterDivision');
+            divSelect.innerHTML = '<option value="ALL">All Divisions</option>';
+            
+            const divisions = region === 'ALL' 
+                ? Object.values(DIVISION_MAP) 
+                : Object.entries(DIVISION_MAP)
+                    .filter(([code]) => getRegionFromCCC(code) === region)
+                    .map(([_, name]) => name);
+
+            _.uniq(divisions).sort().forEach(div => {
+                divSelect.innerHTML += `<option value="${div}">${div}</option>`;
+            });
+
+            handleDivisionChange();
+        }
+
+        function handleDivisionChange() {
+            const region = document.getElementById('filterRegion').value;
+            const division = document.getElementById('filterDivision').value;
+            const cccSelect = document.getElementById('filterCCC');
+            cccSelect.innerHTML = '<option value="ALL">All CCCs</option>';
+
+            let items = allData;
+            if (region !== 'ALL') items = items.filter(d => d.region === region);
+            if (division !== 'ALL') items = items.filter(d => d.division === division);
+
+            const cccs = _.uniq(items.map(d => d['CCC CODE'])).sort();
+            cccs.forEach(code => {
+                const name = costCenterMap[code] || `CCC ${code}`;
+                cccSelect.innerHTML += `<option value="${code}">${name}</option>`;
+            });
+
+            updateCharts();
+        }
+
+        function setupDivisionFilter() {
+            // Already handled in handleRegionChange
+        }
+
+        function setPeriod(p) {
+            currentPeriod = p;
+            ['weekly', 'monthly', 'quarterly', 'yearly'].forEach(id => {
+                document.getElementById('btn-' + id).classList.remove('active');
+            });
+            document.getElementById('btn-' + p).classList.add('active');
+            
+            // Update page subtitle
+            const periodLabel = p.charAt(0).toUpperCase() + p.slice(1);
+            document.getElementById('page-subtitle').textContent = `Monitoring ${periodLabel} New Service Connection Trends across Malda Zone`;
+            
+            updateCharts();
+        }
+
+        function updateCharts() {
+            const region = document.getElementById('filterRegion').value;
+            const division = document.getElementById('filterDivision').value;
+            const ccc = document.getElementById('filterCCC').value;
+
+            filteredData = allData.filter(d => selectedYears.includes(d.date.year()));
+            
+            if (region !== 'ALL') filteredData = filteredData.filter(d => d.region === region);
+            if (division !== 'ALL') filteredData = filteredData.filter(d => d.division === division);
+            if (ccc !== 'ALL') filteredData = filteredData.filter(d => d['CCC CODE'] === parseInt(ccc));
+
+            updateKPIs();
+            renderChart();
+            if (currentView === 'table') renderTable();
+        }
+
+        function updateKPIs() {
+            const totals = {
+                'Total': _.sumBy(filteredData, d => {
+                    return selectedClasses.reduce((acc, cls) => acc + (d[cls] || 0), 0);
+                }),
+                'Domestic': selectedClasses.includes('D') ? _.sumBy(filteredData, 'D') : 0,
+                'Commercial': selectedClasses.includes('C') ? _.sumBy(filteredData, 'C') : 0,
+                'Industrial': selectedClasses.includes('I') ? _.sumBy(filteredData, 'I') : 0,
+                'Agri': selectedClasses.includes('A') ? _.sumBy(filteredData, 'A') : 0
+            };
+
+            const periodCount = getUniquePeriodCount(filteredData, currentPeriod);
+            const periodLabel = {
+                'weekly': '/week',
+                'monthly': '/month',
+                'quarterly': '/Qtr',
+                'yearly': '/Year'
+            }[currentPeriod];
+
+            const kpiRow = document.getElementById('kpi-row');
+            kpiRow.innerHTML = Object.entries(totals).map(([label, val]) => {
+                const avg = periodCount > 0 ? Math.round(val / periodCount) : 0;
+                return `
+                    <div class="glass-card p-4 border-l-4 ${getColorClass(label)}">
+                        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">${label}</p>
+                        <p class="text-xl font-bold text-white">${val.toLocaleString()}</p>
+                        <p class="text-[11px] text-slate-400 mt-1 font-medium italic opacity-80 decoration-slate-500/30 font-mono">
+                            (${avg.toLocaleString()}${periodLabel})
+                        </p>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function getUniquePeriodCount(data, period) {
+            if (!data || data.length === 0) return 0;
+            const formatStr = {
+                'weekly': 'YYYY-[W]WW',
+                'monthly': 'MMM YYYY',
+                'quarterly': 'YYYY-[Q]Q',
+                'yearly': 'YYYY'
+            }[period];
+            return _.uniqBy(data, d => d.date.format(formatStr)).length;
+        }
+
+        function getColorClass(label) {
+            if (label === 'Total') return 'border-white/20';
+            if (label === 'Domestic') return 'border-blue-500';
+            if (label === 'Commercial') return 'border-teal-500';
+            if (label === 'Industrial') return 'border-amber-500';
+            if (label === 'Agri') return 'border-emerald-500';
+            return 'border-slate-500';
+        }
+
+        function renderChart() {
+            const grouped = aggregateData(filteredData, currentPeriod);
+            const labels = grouped.map(g => g.label);
+            const datasets = ['D', 'C', 'I', 'A', 'O']
+                .filter(cls => selectedClasses.includes(cls))
+                .map(cls => ({
+                    label: CLASS_LABELS[cls],
+                    data: grouped.map(g => g[cls] || 0),
+                    borderColor: CLASS_COLORS[cls],
+                    backgroundColor: CLASS_COLORS[cls] + '20', // Add transparency
+                    pointBackgroundColor: CLASS_COLORS[cls],
+                    borderWidth: 2,
+                    tension: 0.4,
+                    fill: true
+                }));
+
+            if (chart) chart.destroy();
+
+            const ctx = document.getElementById('historicalChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index',
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                            titleFont: { size: 14, weight: 'bold' },
+                            bodyFont: { size: 13 },
+                            padding: 12,
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            borderWidth: 1,
+                            usePointStyle: true,
+                            callbacks: {
+                                label: function(context) {
+                                    return ` ${context.dataset.label}: ${context.raw.toLocaleString()}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#94a3b8', font: { size: 11 } }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#94a3b8', font: { size: 11 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        function setGrouping(level) {
+            tableGrouping = level;
+            renderTable();
+        }
+
+        function sortTable(key) {
+            if (sortConfig.key === key) {
+                sortConfig.direction = sortConfig.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortConfig.key = key;
+                sortConfig.direction = 'desc';
+            }
+            renderTable();
+        }
+
+        function renderTable() {
+            const region = document.getElementById('filterRegion').value;
+            const division = document.getElementById('filterDivision').value;
+            const ccc = document.getElementById('filterCCC').value;
+
+            // Determine Grouping Level
+            let groupKey = tableGrouping;
+            let groupLabel = 'Region';
+            
+            if (!groupKey) {
+                groupKey = 'region';
+                if (region !== 'ALL') {
+                    groupKey = 'division';
+                    groupLabel = 'Division';
+                }
+                if (division !== 'ALL') {
+                    groupKey = 'CCC CODE';
+                    groupLabel = 'CCC';
+                }
+            } else {
+                groupLabel = groupKey === 'region' ? 'Region' : (groupKey === 'division' ? 'Division' : 'CCC');
+            }
+
+            // Update Grouping button styles
+            ['region', 'division', 'CCC CODE'].forEach(lvl => {
+                const btnId = lvl === 'CCC CODE' ? 'group-ccc' : 'group-' + lvl;
+                const btn = document.getElementById(btnId);
+                if (btn) {
+                    if (groupKey === lvl) {
+                        btn.classList.add('bg-blue-600', 'text-white', 'border-blue-500');
+                        btn.classList.remove('border-white/10');
+                    } else {
+                        btn.classList.remove('bg-blue-600', 'text-white', 'border-blue-500');
+                        btn.classList.add('border-white/10');
+                    }
+                }
+            });
+
+            const grouped = _.groupBy(filteredData, groupKey);
+            const rows = Object.entries(grouped).map(([key, items]) => {
+                const total = _.sumBy(items, d => {
+                    return selectedClasses.reduce((acc, cls) => acc + (d[cls] || 0), 0);
+                });
+                const wCount = getUniquePeriodCount(items, 'weekly');
+                const mCount = getUniquePeriodCount(items, 'monthly');
+                const qCount = getUniquePeriodCount(items, 'quarterly');
+                const yCount = getUniquePeriodCount(items, 'yearly');
+
+                let displayName = key;
+                if (groupKey === 'CCC CODE') {
+                    displayName = costCenterMap[key] || `CCC ${key}`;
+                }
+
+                return {
+                    name: displayName,
+                    total,
+                    wAvg: wCount > 0 ? total / wCount : total,
+                    mAvg: mCount > 0 ? total / mCount : total,
+                    qAvg: qCount > 0 ? total / qCount : total,
+                    yAvg: yCount > 0 ? total / yCount : total
+                };
+            });
+
+            // Apply Sorting
+            const sortedRows = _.orderBy(rows, [sortConfig.key], [sortConfig.direction]);
+
+            const getSortIcon = (key) => {
+                if (sortConfig.key !== key) return '<i class="fas fa-sort ml-1 opacity-20"></i>';
+                return sortConfig.direction === 'asc' 
+                    ? '<i class="fas fa-sort-up ml-1 text-blue-500"></i>' 
+                    : '<i class="fas fa-sort-down ml-1 text-blue-500"></i>';
+            };
+
+            // Update Header
+            document.getElementById('tableHeader').innerHTML = `
+                <th class="w-16">#</th>
+                <th onclick="sortTable('name')" class="${sortConfig.key === 'name' ? 'active-sort' : ''}">${groupLabel} ${getSortIcon('name')}</th>
+                <th onclick="sortTable('total')" class="text-right ${sortConfig.key === 'total' ? 'active-sort' : ''}">Total Connections ${getSortIcon('total')}</th>
+                <th onclick="sortTable('wAvg')" class="text-right ${sortConfig.key === 'wAvg' ? 'active-sort' : ''}">Avg Weekly ${getSortIcon('wAvg')}</th>
+                <th onclick="sortTable('mAvg')" class="text-right ${sortConfig.key === 'mAvg' ? 'active-sort' : ''}">Avg Monthly ${getSortIcon('mAvg')}</th>
+                <th onclick="sortTable('qAvg')" class="text-right ${sortConfig.key === 'qAvg' ? 'active-sort' : ''}">Avg Quarterly ${getSortIcon('qAvg')}</th>
+                <th onclick="sortTable('yAvg')" class="text-right ${sortConfig.key === 'yAvg' ? 'active-sort' : ''}">Avg Yearly ${getSortIcon('yAvg')}</th>
+            `;
+
+            // Update Body
+            let bodyHtml = sortedRows.map((r, idx) => `
+                <tr class="hover:bg-white/5 transition-colors">
+                    <td class="text-slate-500 font-mono text-sm py-4">${idx + 1}</td>
+                    <td class="font-bold text-blue-400 py-4">${r.name}</td>
+                    <td class="text-right font-mono font-bold py-4">${r.total.toLocaleString()}</td>
+                    <td class="text-right py-4"><span class="avg-pill">${Math.round(r.wAvg).toLocaleString()}</span></td>
+                    <td class="text-right py-4"><span class="avg-pill bg-teal-500/10 text-teal-400">${Math.round(r.mAvg).toLocaleString()}</span></td>
+                    <td class="text-right py-4"><span class="avg-pill bg-amber-500/10 text-amber-400">${Math.round(r.qAvg).toLocaleString()}</span></td>
+                    <td class="text-right py-4"><span class="avg-pill bg-purple-500/10 text-purple-400">${Math.round(r.yAvg).toLocaleString()}</span></td>
+                </tr>
+            `).join('');
+
+            // Add Grand Total Row
+            const gTotal = _.sumBy(rows, 'total');
+            const wCount = getUniquePeriodCount(filteredData, 'weekly');
+            const mCount = getUniquePeriodCount(filteredData, 'monthly');
+            const qCount = getUniquePeriodCount(filteredData, 'quarterly');
+            const yCount = getUniquePeriodCount(filteredData, 'yearly');
+
+            const gWAvg = wCount > 0 ? gTotal / wCount : gTotal;
+            const gMAvg = mCount > 0 ? gTotal / mCount : gTotal;
+            const gQAvg = qCount > 0 ? gTotal / qCount : gTotal;
+            const gYAvg = yCount > 0 ? gTotal / yCount : gTotal;
+
+            bodyHtml += `
+                <tr class="bg-blue-500/10 border-t-2 border-blue-500/30 sticky bottom-0">
+                    <td class="text-blue-400 font-bold py-4">Σ</td>
+                    <td class="font-bold text-blue-400 py-4 uppercase tracking-wider">Grand Total</td>
+                    <td class="text-right font-mono font-bold py-4 text-blue-400 text-lg">${gTotal.toLocaleString()}</td>
+                    <td class="text-right py-4"><span class="avg-pill bg-blue-500/20 border border-blue-500/30">${Math.round(gWAvg).toLocaleString()}</span></td>
+                    <td class="text-right py-4"><span class="avg-pill bg-teal-500/20 border border-teal-500/30 text-teal-400">${Math.round(gMAvg).toLocaleString()}</span></td>
+                    <td class="text-right py-4"><span class="avg-pill bg-amber-500/20 border border-amber-500/30 text-amber-400">${Math.round(gQAvg).toLocaleString()}</span></td>
+                    <td class="text-right py-4"><span class="avg-pill bg-purple-500/20 border border-purple-500/30 text-purple-400">${Math.round(gYAvg).toLocaleString()}</span></td>
+                </tr>
+            `;
+
+            document.getElementById('tableBody').innerHTML = bodyHtml;
+        }
+
+        function aggregateData(data, period) {
+            const formatStr = {
+                'weekly': 'YYYY-[W]WW',
+                'monthly': 'MMM YYYY',
+                'quarterly': 'YYYY-[Q]Q',
+                'yearly': 'YYYY'
+            }[period];
+
+            const grouped = _.groupBy(data, d => d.date.format(formatStr));
+            
+            // Sort keys correctly
+            const sortedKeys = Object.keys(grouped).sort((a, b) => {
+                if (period === 'monthly') return moment(a, 'MMM YYYY') - moment(b, 'MMM YYYY');
+                if (period === 'yearly') return parseInt(a) - parseInt(b);
+                return a.localeCompare(b);
+            });
+
+            return sortedKeys.map(key => {
+                const items = grouped[key];
+                return {
+                    label: key,
+                    D: _.sumBy(items, 'D') || 0,
+                    C: _.sumBy(items, 'C') || 0,
+                    I: _.sumBy(items, 'I') || 0,
+                    A: _.sumBy(items, 'A') || 0,
+                    O: _.sumBy(items, 'O') || 0
+                };
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>
