@@ -603,9 +603,13 @@
         <header class="header">
             <h1>Executive Performance Summary</h1>
             <div style="display: flex; gap: 12px; align-items: center;">
-                <button class="region-toggle-btn" id="divisionToggle" onclick="openDivisionModal()">
+                <button class="region-toggle-btn" id="divisionToggle" onclick="openDivisionModal('division')">
                     <i class="fas fa-sitemap"></i>
                     <span id="divisionBtnText">View by Division</span>
+                </button>
+                <button class="region-toggle-btn" id="cccToggle" onclick="openDivisionModal('ccc')">
+                    <i class="fas fa-building"></i>
+                    <span id="cccBtnText">View by CCC</span>
                 </button>
                 <button class="region-toggle-btn" id="regionToggle" onclick="toggleRegionMode()">
                     <i class="fas fa-globe-asia"></i>
@@ -923,17 +927,11 @@
                 <h2>Select Division</h2>
                 <button class="close-btn" onclick="closeDivisionModal()"><i class="fas fa-times"></i></button>
             </div>
-            <div class="modal-body">
-                <button class="division-btn" onclick="selectDivision('MALDA')">Malda</button>
-                <button class="division-btn" onclick="selectDivision('CHANCHAL')">Chanchal</button>
-                <button class="division-btn" onclick="selectDivision('GAZOLE')">Gazole</button>
-                <button class="division-btn" onclick="selectDivision('RAIGANJ')">Raiganj</button>
-                <button class="division-btn" onclick="selectDivision('ISLAMPUR')">Islampur</button>
-                <button class="division-btn" onclick="selectDivision('BALURGHAT')">Balurghat</button>
-                <button class="division-btn" onclick="selectDivision('BUNIADPUR')">Buniadpur</button>
+            <div class="modal-body" id="modalBody">
+                <!-- Buttons will be injected here -->
             </div>
             <div class="modal-footer" id="modalFooterReset">
-                <button class="reset-btn" onclick="resetDivisionView()">Reset to Total View</button>
+                <button class="reset-btn" onclick="resetView()">Reset to Total View</button>
             </div>
         </div>
     </div>
@@ -1061,13 +1059,50 @@
         }
 
         // Global State
-        let currentViewMode = 'total'; // 'total', 'region', 'division'
+        let currentViewMode = 'total'; // 'total', 'region', 'division', 'ccc'
         let selectedDivision = null;
+        let selectedCCC = null;
+        let selectedCCCName = null;
+        let cccModalMode = 'division'; // 'division' or 'ccc'
         let globalRawData = {};
+        let costCenterMap = [];
 
-        function openDivisionModal() {
+        // Mapping for Loss CSV names which are sometimes abbreviated or different
+        const LOSS_NAME_MAP = {
+            "HARISHCHANDRAPUR": "H.C. PUR",
+            "KUMARGANJ": "KUMARGUNJ",
+            "KUSMANDI": "KUSHMUNDI",
+            "GAJOL": "GAZOLE",
+            "GANGARAMPUR": "GANGARAMPUR",
+            "BAISHNABNAGAR": "BAISNABNAGAR",
+            "KARANDIGHI": "KARANDEGHI",
+            "MOKDUMPUR": "MOKDAMPUR",
+            "MANIKCHAK": "MATHURAPUR"
+        };
+
+        function openDivisionModal(mode = 'division', forceDivisionSelect = false) {
+            cccModalMode = mode;
+            
+            // UX Improvement: If a division is already selected and we want to select a CCC,
+            // directly show the CCC list for that division.
+            if (mode === 'ccc' && selectedDivision && !forceDivisionSelect) {
+                document.getElementById('divisionModal').classList.add('active');
+                showCCCList(selectedDivision);
+                return;
+            }
+
+            const modalTitle = document.querySelector('#divisionModal h2');
+            modalTitle.textContent = 'Select Division';
+            
+            const modalBody = document.getElementById('modalBody');
+            const divisions = ['MALDA', 'CHANCHAL', 'GAZOLE', 'RAIGANJ', 'ISLAMPUR', 'BALURGHAT', 'BUNIADPUR'];
+            
+            modalBody.innerHTML = divisions.map(div => 
+                `<button class="division-btn" onclick="selectDivision('${div}')">${div.charAt(0) + div.slice(1).toLowerCase()}</button>`
+            ).join('');
+
             document.getElementById('divisionModal').classList.add('active');
-            document.getElementById('modalFooterReset').style.display = selectedDivision ? 'block' : 'none';
+            document.getElementById('modalFooterReset').style.display = (selectedDivision || selectedCCC) ? 'block' : 'none';
         }
 
         function closeDivisionModal(e) {
@@ -1077,25 +1112,102 @@
         }
 
         function selectDivision(divName) {
+            if (cccModalMode === 'ccc') {
+                showCCCList(divName);
+                return;
+            }
+
             selectedDivision = divName;
+            selectedCCC = null;
+            selectedCCCName = null;
             currentViewMode = 'division';
-            document.body.classList.remove('region-mode');
-            document.getElementById('regionToggle').classList.remove('active');
-            document.getElementById('regionToggle').querySelector('span').textContent = 'View by Region';
-
-            document.getElementById('divisionToggle').classList.add('active');
-            document.getElementById('divisionToggle').querySelector('span').textContent = divName;
-            document.querySelector('.header h1').innerHTML = `Executive Performance <span style="color:var(--accent-blue)">(${divName})</span>`;
-
+            
+            updateUIAfterSelection('division', divName);
             closeDivisionModal();
             renderDashboardData();
         }
 
-        function resetDivisionView() {
-            selectedDivision = null;
-            currentViewMode = 'total';
+        function showCCCList(divName) {
+            const modalTitle = document.querySelector('#divisionModal h2');
+            modalTitle.innerHTML = `
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <button class="back-btn" onclick="openDivisionModal('ccc', true)" style="background:none; border:none; color:var(--accent-blue); cursor:pointer; font-size:18px;">
+                        <i class="fas fa-arrow-left"></i>
+                    </button>
+                    Select CCC (${divName})
+                </div>
+            `;
+            
+            const modalBody = document.getElementById('modalBody');
+            // Ensure footer reset stays visible if needed
+            document.getElementById('modalFooterReset').style.display = (selectedDivision || selectedCCC) ? 'block' : 'none';
+            
+            // Filter CCCs from costCenterMap based on division
+            const filteredCCCs = costCenterMap.filter(item => {
+                const div = item["Division Name"] || "";
+                return div.toUpperCase().includes(divName.toUpperCase());
+            }).filter(item => item["Unit Name"].includes("CCC"));
+
+            if (filteredCCCs.length === 0) {
+                modalBody.innerHTML = '<div style="grid-column: 1/-1; padding: 20px; text-align: center; color: var(--text-secondary);">No CCCs found for this division.</div>';
+            } else {
+                modalBody.innerHTML = filteredCCCs.sort((a,b) => a["Unit Name"].localeCompare(b["Unit Name"])).map(item => {
+                    const cccCode = item["Cost Cen_Code"].substring(2, 9); // Extract 7 digits (e.g., 6613102)
+                    return `<button class="division-btn" onclick="selectCCC('${cccCode}', '${item["Unit Name"]}', '${divName}')">
+                        ${item["Unit Name"]}
+                    </button>`;
+                }).join('');
+            }
+        }
+
+        function selectCCC(cccCode, cccName, divName) {
+            selectedCCC = cccCode;
+            selectedCCCName = cccName;
+            if (divName) selectedDivision = divName; // Keep division for context
+            currentViewMode = 'ccc';
+            
+            updateUIAfterSelection('ccc', cccName);
+            closeDivisionModal();
+            renderDashboardData();
+        }
+
+        function updateUIAfterSelection(type, name) {
+            // Reset all toggle buttons
+            document.body.classList.remove('region-mode');
+            document.getElementById('regionToggle').classList.remove('active');
+            document.getElementById('regionToggle').querySelector('span').textContent = 'View by Region';
+            
             document.getElementById('divisionToggle').classList.remove('active');
             document.getElementById('divisionToggle').querySelector('span').textContent = 'View by Division';
+            
+            document.getElementById('cccToggle').classList.remove('active');
+            document.getElementById('cccToggle').querySelector('span').textContent = 'View by CCC';
+
+            if (type === 'division') {
+                document.getElementById('divisionToggle').classList.add('active');
+                document.getElementById('divisionToggle').querySelector('span').textContent = name;
+            } else if (type === 'ccc') {
+                document.getElementById('cccToggle').classList.add('active');
+                document.getElementById('cccToggle').querySelector('span').textContent = name;
+            }
+
+            document.querySelector('.header h1').innerHTML = `Executive Performance <span style="color:var(--accent-blue)">(${name})</span>`;
+        }
+
+        function resetView() {
+            selectedDivision = null;
+            selectedCCC = null;
+            selectedCCCName = null;
+            currentViewMode = 'total';
+            
+            document.getElementById('divisionToggle').classList.remove('active');
+            document.getElementById('divisionToggle').querySelector('span').textContent = 'View by Division';
+            document.getElementById('cccToggle').classList.remove('active');
+            document.getElementById('cccToggle').querySelector('span').textContent = 'View by CCC';
+            document.getElementById('regionToggle').classList.remove('active');
+            document.getElementById('regionToggle').querySelector('span').textContent = 'View by Region';
+            document.body.classList.remove('region-mode');
+            
             document.querySelector('.header h1').innerHTML = `Executive Performance Summary`;
 
             closeDivisionModal();
@@ -1103,8 +1215,8 @@
         }
 
         function toggleRegionMode() {
-            if (currentViewMode === 'division') {
-                resetDivisionView();
+            if (currentViewMode === 'division' || currentViewMode === 'ccc') {
+                resetView();
             }
 
             document.body.classList.toggle('region-mode');
@@ -1115,7 +1227,7 @@
             btn.classList.toggle('active', isActive);
             btn.querySelector('span').textContent = isActive ? 'Hide Regions' : 'View by Region';
 
-            if (!isActive && !selectedDivision) {
+            if (!isActive && !selectedDivision && !selectedCCC) {
                 document.querySelector('.header h1').innerHTML = `Executive Performance Summary`;
             } else if (isActive) {
                 document.querySelector('.header h1').innerHTML = `Executive Performance <span style="color:var(--accent-blue)">(Regional Breakdown)</span>`;
@@ -1157,7 +1269,7 @@
             }
 
             // Concurrent data loading with DataHub prioritization
-            const [nscData, advancesData, remData, weeklyData, defectiveData, cmoData, safetyData, loadExtData, solarData, lossData] = await Promise.all([
+            const [nscData, advancesData, remData, weeklyData, defectiveData, cmoData, safetyData, loadExtData, solarData, lossData, costCenterData] = await Promise.all([
                 loadDataSource('CACHE_NSC', 'NSC Data', 'csv', 'data/nsc.json', fetchJsonData),
                 loadDataSource('CACHE_CAPEX', 'CAPEX Details', 'json', 'data/capexall.json', fetchJsonData),
                 loadDataSource('CACHE_REM', 'REM Data', 'json', 'data/rem.json', fetchJsonData),
@@ -1167,7 +1279,8 @@
                 loadDataSource('CACHE_SAFETY', 'Safety Inspection', 'json', SAFETY_JSON_URL, fetchJsonData),
                 loadDataSource('CACHE_LOAD_EXT', 'Load Extension', 'csv', LOAD_EXT_CSV_URL, fetchCsvData),
                 loadDataSource('CACHE_SOLAR', 'Solar Data', 'csv', SOLAR_CSV_URL, fetchCsvData),
-                loadDataSource('CACHE_LOSS', 'Loss Report', 'csv', null, fetchCsvData)
+                loadDataSource('CACHE_LOSS', 'Loss Report', 'csv', null, fetchCsvData),
+                loadDataSource('CACHE_COSTCENTER', 'Cost Center Map', 'json', 'data/costcenter.json', fetchJsonData)
             ]);
 
             // Store in global object for re-rendering
@@ -1176,6 +1289,50 @@
                 defective: defectiveData, cmo: cmoData, safety: safetyData, loadExt: loadExtData,
                 solar: solarData, loss: lossData
             };
+            
+            // Deduplicate and Normalize costCenterMap:
+            // 1. Prioritize C366... codes (which are the canonical 66... prefix)
+            // 2. Normalize names to handle spelling variants (e.g., KUSHMANDI/KUSMANDI)
+            // 3. Re-assign Division based on prefix ground truth to fix Cross-Division errors
+            if (costCenterData) {
+                const dedupedMap = new Map();
+                const synonyms = {
+                    "KUSHMANDI CCC": "KUSMANDI CCC",
+                    "KUSMUNDI CCC": "KUSMANDI CCC",
+                    "GAJOL CCC": "GAZOLE CCC"
+                };
+
+                costCenterData.forEach(item => {
+                    let name = (item["Unit Name"] || "").toUpperCase().trim();
+                    // Apply synonym normalization
+                    if (synonyms[name]) name = synonyms[name];
+
+                    const code = item["Cost Cen_Code"] || "";
+                    const isCanonical = code.startsWith("C366");
+                    
+                    if (!dedupedMap.has(name) || isCanonical) {
+                        // Create a clone to avoid mutating original source if needed, 
+                        // and strictly re-assign division based on code prefix
+                        const cccCode7 = code.substring(2, 9);
+                        const correctDiv = getDivisionFromCCC(cccCode7);
+                        if (correctDiv) {
+                            // Ensure the display name is also normalized
+                            const newItem = {
+                                ...item,
+                                "Unit Name": name,
+                                "Division Name": correctDiv.charAt(0) + correctDiv.slice(1).toLowerCase() + " Division"
+                            };
+                            dedupedMap.set(name, newItem);
+                        } else {
+                            // Fallback for non-CCC entries (offices, etc.) - keep as is or skip
+                            dedupedMap.set(name, item);
+                        }
+                    }
+                });
+                costCenterMap = Array.from(dedupedMap.values());
+            } else {
+                costCenterMap = [];
+            }
 
             renderDashboardData();
         }
@@ -1188,6 +1345,9 @@
                 let nscData = rawNsc;
                 if (currentViewMode === 'division' && selectedDivision) {
                     nscData = _.filter(nscData, item => getDivisionFromCCC(item.CCC_CODE) === selectedDivision);
+                } else if (currentViewMode === 'ccc' && selectedCCC) {
+                    // Match full CCC_CODE for NSC (7 digits)
+                    nscData = _.filter(nscData, item => String(item.CCC_CODE) === selectedCCC);
                 }
 
                 const totalPending = nscData.length;
@@ -1218,6 +1378,14 @@
                     advancesData = _.filter(advancesData, item => {
                         const plant = String(item['Plant'] || '').substring(0, 4);
                         return getDivisionFromCCC(plant) === selectedDivision;
+                    });
+                } else if (currentViewMode === 'ccc' && selectedCCC) {
+                    advancesData = _.filter(advancesData, item => {
+                        const costCenter = String(item['Cost Centre'] || item['Cost Cen_Code'] || '');
+                        const plant = String(item['Plant'] || '');
+                        const projectId = String(item['Project ID'] || '');
+                        // Match full 7-digit code in Cost Centre (often has C3 prefix) or Project ID (often has /CCCCODE/)
+                        return costCenter.includes(selectedCCC) || projectId.includes(selectedCCC) || plant === selectedCCC;
                     });
                 }
 
@@ -1265,6 +1433,9 @@
                 let loadExtData = rawLoadExt;
                 if (currentViewMode === 'division' && selectedDivision) {
                     loadExtData = _.filter(loadExtData, item => getDivisionFromCCC(item['CCC CODE']) === selectedDivision);
+                } else if (currentViewMode === 'ccc' && selectedCCC) {
+                    // Load Ext uses 7-digit CCC codes.
+                    loadExtData = _.filter(loadExtData, item => String(item['CCC CODE']) === selectedCCC);
                 }
 
                 const totalPendingLoadExt = loadExtData.length;
@@ -1297,6 +1468,9 @@
 
                 if (currentViewMode === 'division' && selectedDivision) {
                     solarData = _.filter(solarData, item => getDivisionFromCCC(item['CCC CODE']) === selectedDivision);
+                } else if (currentViewMode === 'ccc' && selectedCCC) {
+                    // Solar case - check if CCC CODE in sheet is 7 digits
+                    solarData = _.filter(solarData, item => String(item['CCC CODE']) === selectedCCC);
                 }
 
                 const totalAloshree = solarData.length;
@@ -1350,6 +1524,12 @@
                         if (!div && item["CCC Code"]) div = getDivisionFromCCC(item["CCC Code"]);
                         return div === selectedDivision;
                     });
+                } else if (currentViewMode === 'ccc' && selectedCCC) {
+                    latestRemData = _.filter(latestRemData, item => {
+                        let code = item["CCC Code"];
+                        // REM data - Match against full selectedCCC (7 digits)
+                        return String(code) === selectedCCC;
+                    });
                 }
 
                 const totalLakhs = _.sumBy(latestRemData, item => parseFloat(item["Total-Amount in Lakhs"] || 0));
@@ -1392,6 +1572,12 @@
                         const hasHeaders = "CCC_CODE" in row;
                         const ccc = hasHeaders ? row.CCC_CODE : Object.values(row)[1];
                         return getDivisionFromCCC(ccc) === selectedDivision;
+                    });
+                } else if (currentViewMode === 'ccc' && selectedCCC) {
+                    defectiveData = _.filter(defectiveData, row => {
+                        const hasHeaders = "CCC_CODE" in row;
+                        const ccc = hasHeaders ? row.CCC_CODE : Object.values(row)[1];
+                        return String(ccc) === selectedCCC;
                     });
                 }
 
@@ -1460,6 +1646,11 @@
                         const rowValues = Object.values(row).join(' ').toUpperCase();
                         return rowValues.includes(selectedDivision);
                     });
+                } else if (currentViewMode === 'ccc' && selectedCCCName) {
+                    filteredCmo = _.filter(filteredCmo, row => {
+                        const rowValues = Object.values(row).join(' ').toUpperCase();
+                        return rowValues.includes(selectedCCCName.toUpperCase());
+                    });
                 }
 
                 const cmoPending = filteredCmo.filter(item => (item["Pending With"] || "").trim() !== "Disposed / pending with HQ").length;
@@ -1487,9 +1678,16 @@
                 if (currentViewMode === 'division' && selectedDivision) {
                     safetyData = _.filter(safetyData, item => {
                         const office = item['Office'] || '';
-                        const m = office.match(/\((\d{4})/); // Match 4 digit CCC
-                        if (m) return getDivisionFromCCC(m[1]) === selectedDivision;
-                        return false;
+                        const m = office.match(/\((\d+)\)/); // Match any digits in parentheses
+                        return m && getDivisionFromCCC(m[1].substring(0, 4)) === selectedDivision;
+                    });
+                } else if (currentViewMode === 'ccc' && selectedCCC) {
+                    safetyData = _.filter(safetyData, item => {
+                        const office = (item['Office'] || '').toUpperCase();
+                        const m = office.match(/\((\d+)\)/);
+                        // Match full 7-digit code in parentheses or the CCC name itself
+                        return (m && m[1] === selectedCCC) || 
+                               (selectedCCCName && office.includes(selectedCCCName.toUpperCase()));
                     });
                 }
 
@@ -1590,6 +1788,35 @@
 
                     atcContainer.innerHTML = html(selectedDivision, atc);
                     tdContainer.innerHTML = html(selectedDivision, td);
+                } else if (currentViewMode === 'ccc' && selectedCCC) {
+                    // Normalize the selected CCC name for mapping
+                    let searchName = selectedCCCName.replace(/ CCC$/i, '').trim().toUpperCase();
+                    
+                    // Check if we have a manual mapping for this CCC
+                    for (let key in LOSS_NAME_MAP) {
+                        if (searchName.includes(key)) {
+                            searchName = LOSS_NAME_MAP[key];
+                            break;
+                        }
+                    }
+
+                    const cccData = latestLossData.filter(r => {
+                        if (!r.CCC) return false;
+                        const rowCCC = r.CCC.toUpperCase();
+                        return rowCCC === searchName || rowCCC.includes(searchName) || searchName.includes(rowCCC);
+                    });
+                    
+                    const atc = getAvgLoss(cccData, 'CUM. AT&C LOSS');
+                    const td = getAvgLoss(cccData, 'CUM. DIST. LOSS');
+
+                    const html = (label, val) => `
+                        <div class="loss-pill">
+                            <span class="pill-label">CCC</span>
+                            <span class="pill-value">${val.toFixed(2)}%</span>
+                        </div>`;
+
+                    atcContainer.innerHTML = html(selectedCCCName, atc);
+                    tdContainer.innerHTML = html(selectedCCCName, td);
                 } else {
                     // Region-wise
                     const regions = { 'Malda': 'MALDA REGION', 'UD': 'U/DINAJPUR REGION', 'DD': 'D/DINAJPUR REGION' };
