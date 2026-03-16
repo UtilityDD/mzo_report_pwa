@@ -533,12 +533,156 @@
         grid-template-columns: 1fr;
       }
     }
+    /* Trophy Icon & Animation */
+    .trophy-container {
+      cursor: pointer;
+      position: relative;
+      transition: transform 0.3s ease;
+      perspective: 1000px;
+    }
+
+    .trophy-container:hover {
+      transform: scale(1.1);
+    }
+
+    .trophy-icon {
+      font-size: 24px;
+      color: #fbbf24; /* Gold */
+      animation: trophy-reveal 2s infinite ease-in-out;
+      filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.4));
+    }
+
+    @keyframes trophy-reveal {
+      0% { transform: rotateY(0deg); }
+      100% { transform: rotateY(360deg); }
+    }
+
+    /* Leaderboard Modal Specifics */
+    .leaderboard-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+
+    .leaderboard-table th {
+      background: #f8fafc;
+      text-align: left;
+      padding: 12px;
+      font-size: 12px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      border-bottom: 2px solid var(--border-color);
+    }
+
+    .leaderboard-table td {
+      padding: 14px 12px;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 14px;
+    }
+
+    .leaderboard-rank {
+      font-weight: 700;
+      width: 40px;
+      color: var(--primary);
+    }
+
+    .leaderboard-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .badge-overall { background: #fef3c7; color: #92400e; }
+    .badge-region { background: #dcfce7; color: #166534; }
+    .badge-division { background: #dbeafe; color: #1e40af; }
+
+    .leaderboard-section-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--primary-dark);
+      margin: 24px 0 12px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .leaderboard-section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border-color);
+    }
+
+    /* Tab Styles */
+    .tabs-nav {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--border-color);
+      scrollbar-width: thin;
+    }
+
+    .tabs-nav::-webkit-scrollbar {
+      height: 4px;
+    }
+
+    .tabs-nav::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 4px;
+    }
+
+    .tab-btn {
+      padding: 6px 14px;
+      border-radius: 20px 20px 0 0;
+      background: #f1f5f9;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--border-color);
+      border-bottom: none;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+
+    .tab-btn.active {
+      background: #fff;
+      color: var(--primary);
+      border-color: var(--primary);
+      box-shadow: 0 4px 0 #fff; /* Cover the border underneath */
+      z-index: 1;
+    }
+
+    .tab-content {
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
   </style>
 </head>
 
 <body>
   <header class="header">
-    <h1>Safety Inspection Dashboard</h1>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <h1>Safety Inspection Dashboard</h1>
+      <div class="trophy-container" onclick="showLeaderboard()" title="View Inspection Leaderboard">
+        <i class="fas fa-trophy trophy-icon"></i>
+      </div>
+    </div>
     <div class="report-period" id="reportPeriodText">Report Period</div>
     <div id="dropdownFiltersContainer" style="display: flex; gap: 12px; align-items: center;">
       <select id="regionFilter">
@@ -635,8 +779,7 @@
     </div>
   </div>
 
-  </div>
-  </div>
+
 
   <div id="pendingModal" class="modal">
     <div class="modal-content">
@@ -659,6 +802,23 @@
       <div class="modal-body">
         <div id="pendingList" class="pending-list">
           <!-- Pending items will be injected here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="leaderboardModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-header-left">
+          <i class="fas fa-medal text-yellow-400 mr-2"></i>
+          <h3>Inspection Achievements</h3>
+        </div>
+        <span class="close-modal" id="closeLeaderboard">&times;</span>
+      </div>
+      <div class="modal-body">
+        <div id="leaderboardContainer">
+          <!-- Leaderboard content will be injected here -->
         </div>
       </div>
     </div>
@@ -1752,6 +1912,154 @@
 
       const encodedMessage = encodeURIComponent(message);
       window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
+    }
+
+    function showLeaderboard() {
+      const modal = document.getElementById('leaderboardModal');
+      const container = document.getElementById('leaderboardContainer');
+      const closeBtn = document.getElementById('closeLeaderboard');
+
+      // Aggregate data
+      const overallStats = {};
+      const regionStats = {};
+      const divisionStats = {};
+
+      inspectionData.forEach(item => {
+        const name = item.inspectionBy;
+        // Clean office name: remove leading digits and spaces
+        const rawOffice = item.office || 'Unknown';
+        const office = rawOffice.replace(/^\d+\s+/, '');
+        
+        if (!name || name === 'N/A') return;
+
+        const key = `${name}|${office}`;
+        
+        // Overall
+        overallStats[key] = (overallStats[key] || 0) + 1;
+
+        // By Region
+        if (item.regionalOffice) {
+          const region = item.regionalOffice.replace(/^\d+\s+/, '');
+          if (!regionStats[region]) regionStats[region] = {};
+          regionStats[region][key] = (regionStats[region][key] || 0) + 1;
+        }
+
+        // By Division
+        if (item.division) {
+          const division = item.division.replace(/^\d+\s+/, '');
+          if (!divisionStats[division]) divisionStats[division] = {};
+          divisionStats[division][key] = (divisionStats[division][key] || 0) + 1;
+        }
+      });
+
+      const getTop = (statsObj) => {
+        return Object.entries(statsObj)
+          .map(([key, count]) => {
+            const [name, office] = key.split('|');
+            return { name, office, count };
+          })
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 3);
+      };
+
+      let html = '';
+
+      // Overall Section
+      const topOverall = getTop(overallStats);
+      html += `<div class="leaderboard-section-title"><i class="fas fa-globe"></i> Overall Highest</div>`;
+      html += renderLeaderboardTable(topOverall, 'badge-overall');
+
+      // Region Section
+      html += `<div class="leaderboard-section-title"><i class="fas fa-map-marker-alt"></i> Region-wise Highest</div>`;
+      html += renderTabbedLeaderboard(regionStats, 'region-tab', 'badge-region');
+
+      // Division Section
+      html += `<div class="leaderboard-section-title"><i class="fas fa-sitemap"></i> Division-wise Highest</div>`;
+      html += renderTabbedLeaderboard(divisionStats, 'division-tab', 'badge-division');
+
+      container.innerHTML = html;
+      modal.style.display = 'block';
+
+      closeBtn.onclick = () => modal.style.display = 'none';
+      window.onclick = (event) => {
+        if (event.target == modal) modal.style.display = 'none';
+      };
+    }
+
+    function renderTabbedLeaderboard(groupedStats, prefix, badgeClass) {
+      const units = Object.keys(groupedStats).sort();
+      if (units.length === 0) return '<p class="text-xs text-slate-400 p-2">No data recorded.</p>';
+
+      let navHtml = `<div class="tabs-nav">`;
+      let contentHtml = '';
+
+      units.forEach((unit, idx) => {
+        const isActive = idx === 0 ? 'active' : '';
+        const tabId = `${prefix}-${idx}`;
+        navHtml += `<div class="tab-btn ${isActive}" onclick="switchLeaderboardTab(event, '${tabId}')">${unit}</div>`;
+        
+        const top3 = Object.entries(groupedStats[unit])
+          .map(([key, count]) => {
+            const [name, office] = key.split('|');
+            return { name, office, count };
+          })
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 3);
+
+        contentHtml += `
+          <div id="${tabId}" class="tab-content ${isActive}">
+            ${renderLeaderboardTable(top3, badgeClass)}
+          </div>
+        `;
+      });
+
+      navHtml += `</div>`;
+      return navHtml + contentHtml;
+    }
+
+    function switchLeaderboardTab(event, tabId) {
+      const nav = event.target.parentElement;
+      const section = nav.parentElement;
+      
+      // Update buttons in this nav only
+      nav.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+      
+      // Update content in this section only
+      const prefix = tabId.split('-')[0];
+      section.querySelectorAll('.tab-content').forEach(content => {
+        if (content.id.startsWith(prefix)) {
+          content.classList.remove('active');
+        }
+      });
+      document.getElementById(tabId).classList.add('active');
+    }
+
+    function renderLeaderboardTable(data, badgeClass) {
+      if (data.length === 0) return '<p class="text-xs text-slate-400 p-2">No achievements recorded yet.</p>';
+      
+      return `
+        <table class="leaderboard-table">
+          <thead>
+            <tr>
+              <th class="w-12">Rank</th>
+              <th>Inspector</th>
+              <th>Office</th>
+              <th class="text-right">Inspections</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.map((item, idx) => `
+              <tr>
+                <td class="leaderboard-rank">#${idx + 1}</td>
+                <td class="font-bold text-slate-700">${item.name}</td>
+                <td class="text-xs text-slate-500">${item.office}</td>
+                <td class="text-right font-bold text-blue-600">${item.count}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
     }
   </script>
 </body>
