@@ -1,0 +1,1558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>Meter Utilization Dashboard | MZO</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-light: #60a5fa;
+      --primary-dark: #1e40af;
+      --bg-color: #f8fafc;
+      --card-bg: rgba(255, 255, 255, 0.9);
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --border-color: #e2e8f0;
+      --radius: 16px;
+      --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+      --glass: rgba(255, 255, 255, 0.7);
+      --glass-border: rgba(255, 255, 255, 0.5);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: #f1f5f9;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.05) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.05) 0px, transparent 50%);
+      color: var(--text-main);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+      padding-top: 100px;
+    }
+
+    /* Header */
+    .header {
+      background: var(--glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--glass-border);
+      padding: 16px 32px;
+      position: fixed;
+      top: 0;
+      width: 100%;
+      z-index: 1000;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .header-left h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--primary-dark);
+      letter-spacing: -0.5px;
+    }
+
+    .sync-status {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .sync-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+    }
+
+    .filters {
+      display: flex;
+      gap: 12px;
+    }
+
+    select {
+      padding: 8px 16px;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      background: white;
+      font-family: inherit;
+      font-size: 14px;
+      color: var(--text-main);
+      cursor: pointer;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    /* Search Bar Styles */
+    .search-box {
+      display: flex;
+      align-items: center;
+      background: white;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 4px 12px;
+      width: 280px;
+      transition: all 0.2s;
+    }
+
+    .search-box:focus-within {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+      width: 320px;
+    }
+
+    .search-box input {
+      border: none;
+      background: none;
+      outline: none;
+      padding: 6px 8px;
+      font-size: 14px;
+      width: 100%;
+      font-family: inherit;
+    }
+
+    .search-box i {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    /* Download Button Styles */
+    .download-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 10px;
+      background: white;
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .download-btn:hover {
+      background: #f8fafc;
+      border-color: var(--primary);
+      color: var(--primary);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    .download-btn i {
+      font-size: 14px;
+    }
+
+    /* Status Modal Specifics */
+    .status-result {
+      text-align: center;
+      padding: 20px 0;
+    }
+
+    .status-badge-large {
+      display: inline-block;
+      padding: 8px 16px;
+      border-radius: 24px;
+      font-weight: 700;
+      font-size: 16px;
+      margin-bottom: 24px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      text-align: left;
+      background: #f8fafc;
+      padding: 24px;
+      border-radius: 16px;
+    }
+
+    .detail-item label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .detail-item span {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    /* KPI Grid */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 20px;
+      margin-bottom: 32px;
+    }
+
+    .kpi-card {
+      background: var(--card-bg);
+      padding: 24px;
+      border-radius: var(--radius);
+      border: 1px solid var(--glass-border);
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s;
+    }
+
+    .kpi-card:hover {
+      transform: translateY(-4px);
+    }
+
+    .kpi-card::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 100px;
+      height: 100px;
+      background: linear-gradient(135deg, transparent 50%, rgba(37, 99, 235, 0.03) 50%);
+      border-radius: 0 0 0 100%;
+    }
+
+    .kpi-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .kpi-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .kpi-trend {
+      font-size: 12px;
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .trend-up { color: var(--success); }
+    .trend-neutral { color: var(--text-muted); }
+
+    /* Main Table Section */
+    .table-section {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      border: 1px solid var(--glass-border);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .table-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .table-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .utilization-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .utilization-table th {
+      background: #f8fafc;
+      padding: 12px 24px;
+      text-align: left;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .utilization-table td {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 14px;
+    }
+
+    .sortable {
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    .sortable:hover {
+      background: #f1f5f9 !important;
+      color: var(--primary) !important;
+    }
+
+    .sort-icon {
+      margin-left: 6px;
+      font-size: 10px;
+      opacity: 0.3;
+    }
+
+    .sortable.active-sort .sort-icon {
+      opacity: 1;
+      color: var(--primary);
+    }
+
+    .utilization-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .utilization-table tr:hover {
+      background: rgba(37, 99, 235, 0.02);
+    }
+
+    .office-name {
+      font-weight: 600;
+      color: var(--primary-dark);
+    }
+
+    .badge {
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .badge-nsc { background: #dcfce7; color: #166534; }
+    .badge-rep { background: #dbeafe; color: #1e40af; }
+    .badge-hand { background: #fef3c7; color: #92400e; }
+
+    .progress-bar-container {
+      width: 100px;
+      height: 6px;
+      background: #e2e8f0;
+      border-radius: 3px;
+      overflow: hidden;
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    /* Tab Navigation Styles */
+    .tab-nav {
+      display: flex;
+      gap: 24px;
+      padding: 0 24px;
+      background: #f8fafc;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .tab-link {
+      padding: 16px 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      position: relative;
+      transition: all 0.2s;
+      border: none;
+      background: none;
+      outline: none;
+    }
+
+    .tab-link:hover {
+      color: var(--primary);
+    }
+
+    .tab-link.active {
+      color: var(--primary);
+    }
+
+    .tab-link.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: var(--primary);
+    }
+
+    /* Loading Overlay */
+    #loadingOverlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.9);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 2000;
+      backdrop-filter: blur(8px);
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid var(--primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 16px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Detail Modal Styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(15, 23, 42, 0.4);
+      backdrop-filter: blur(8px);
+      z-index: 3000;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      padding: 40px;
+    }
+
+    @media (max-width: 1024px) {
+      .header {
+        padding: 16px 24px;
+      }
+      .search-box {
+        width: 220px;
+      }
+      .search-box:focus-within {
+        width: 260px;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .header {
+        position: relative;
+        flex-direction: column;
+        padding: 16px;
+        gap: 16px;
+        height: auto;
+      }
+      
+      .header-left {
+        width: 100%;
+        justify-content: space-between;
+      }
+
+      .header-left h1 {
+        font-size: 18px;
+      }
+
+      .filters {
+        width: 100%;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .search-box {
+        width: 100% !important;
+      }
+
+      select {
+        width: 100%;
+      }
+
+      .container {
+        padding: 16px;
+        padding-top: 20px;
+      }
+
+      .kpi-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+
+      .kpi-card {
+        padding: 20px;
+      }
+
+      .kpi-value {
+        font-size: 28px;
+      }
+
+      .table-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 16px;
+      }
+
+      .tab-nav {
+        gap: 16px;
+        overflow-x: auto;
+        white-space: nowrap;
+        padding: 0 16px;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .tab-nav::-webkit-scrollbar {
+        display: none;
+      }
+
+      .utilization-table th, .utilization-table td {
+        padding: 12px 16px;
+        font-size: 13px;
+      }
+
+      .modal-overlay {
+        padding: 0;
+      }
+
+      .modal-content {
+        max-height: 100vh;
+        height: 100vh;
+        border-radius: 0;
+      }
+
+      .modal-header {
+        padding: 16px 20px;
+      }
+
+      .details-table-container {
+        padding: 0 16px 16px 16px;
+      }
+
+      .detail-grid {
+        grid-template-columns: 1fr;
+        padding: 16px;
+      }
+    }
+
+    @media (max-width: 480px) {
+        .header-left h1 {
+            font-size: 16px;
+        }
+        .sync-status {
+            font-size: 10px;
+        }
+    }
+
+    .modal-content {
+      background: white;
+      width: 100%;
+      max-width: 1100px;
+      max-height: 90vh;
+      border-radius: 24px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      overflow: hidden;
+    }
+
+    .modal-header {
+      padding: 24px 32px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #f8fafc;
+    }
+
+    .modal-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .close-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--text-muted);
+      transition: all 0.2s;
+    }
+
+    .close-btn:hover {
+      background: #fee2e2;
+      color: var(--danger);
+    }
+
+    .search-container {
+      padding: 16px 32px;
+      background: white;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    #detailSearchInput {
+      width: 100%;
+      padding: 12px 20px;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      font-family: inherit;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    #detailSearchInput:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+    }
+
+    .details-table-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 32px 32px 32px;
+    }
+
+    .details-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .details-table th {
+      position: sticky;
+      top: 0;
+      background: white;
+      padding: 16px 12px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 2px solid var(--border-color);
+      z-index: 10;
+    }
+
+    .details-table td {
+      padding: 14px 12px;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 13px;
+    }
+
+    .details-table tr:hover {
+      background: #f8fafc;
+    }
+
+    .clickable-row {
+      cursor: pointer;
+    }
+
+    .clickable-row:hover .office-name {
+      text-decoration: underline;
+    }
+
+    @media (max-width: 768px) {
+      .header {
+        flex-direction: column;
+        gap: 12px;
+        padding: 12px;
+        position: relative;
+      }
+      .container { padding-top: 20px; }
+      .kpi-grid { grid-template-columns: 1fr; }
+      .modal-overlay { padding: 10px; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <p style="font-weight: 600; color: var(--text-muted);">Analyzing Meter Data...</p>
+</div>
+
+<header class="header">
+  <div class="header-left">
+    <h1>Meter Utilization Portal</h1>
+    <div class="sync-status">
+      <div class="sync-indicator"></div>
+      <span id="syncText">Malda Zone Real-time</span>
+    </div>
+  </div>
+  <div class="filters">
+    <div class="search-box">
+      <i class="fas fa-search"></i>
+      <input type="text" id="universalSearch" placeholder="Search Meter Status..." onkeydown="if(event.key==='Enter') searchMeterStatus()">
+    </div>
+    <select id="regionFilter">
+      <option value="all">All Regions</option>
+    </select>
+    <select id="divisionFilter" disabled>
+      <option value="all">All Divisions</option>
+    </select>
+  </div>
+</header>
+
+<div class="container">
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">Total Meters Issued</div>
+      <div class="kpi-value" id="totalIssued">-</div>
+      <div class="kpi-trend trend-neutral">
+        <i class="fas fa-info-circle"></i> From ERP Core
+      </div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Total Utilized</div>
+      <div class="kpi-value" id="totalUtilized">-</div>
+      <div class="kpi-trend trend-up">
+        <i class="fas fa-check-circle"></i> <span id="utilPercent">0%</span> Active Connection
+      </div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Meter-in-Hand</div>
+      <div class="kpi-value" id="meterInHand" style="color: var(--warning);">-</div>
+      <div class="kpi-trend">
+        <i class="fas fa-warehouse"></i> Available at CCC
+      </div>
+    </div>
+  </div>
+
+  <div class="kpi-grid" style="grid-template-columns: repeat(2, 1fr);">
+    <div class="kpi-card" style="padding: 16px 24px;">
+      <div class="kpi-label">Utilized for NSC</div>
+      <div class="kpi-value" id="utilizedNSC" style="font-size: 24px;">-</div>
+    </div>
+    <div class="kpi-card" style="padding: 16px 24px;">
+      <div class="kpi-label">Utilized for Replacement</div>
+      <div class="kpi-value" id="utilizedReplacement" style="font-size: 24px;">-</div>
+    </div>
+  </div>
+
+  <div class="table-section">
+    <div class="tab-nav">
+       <button onclick="changeTableLevel('region')" id="btnLvlRegion" class="tab-link active">Region Wise</button>
+       <button onclick="changeTableLevel('division')" id="btnLvlDivision" class="tab-link">Division Wise</button>
+       <button onclick="changeTableLevel('ccc')" id="btnLvlCCC" class="tab-link">CCC Wise</button>
+    </div>
+    <div class="table-header">
+      <div class="table-title" id="tableLevelTitle">Regional Utilization Overview</div>
+      <button class="download-btn" onclick="exportSummary()" title="Download CSV">
+        <i class="fas fa-file-csv"></i> Download
+      </button>
+    </div>
+    <div style="overflow-x: auto;">
+      <table class="utilization-table">
+        <thead>
+          <tr id="tableHead">
+            <th>Region</th>
+            <th class="text-right">Issued</th>
+            <th class="text-right">Utilized (NSC)</th>
+            <th class="text-right">Utilized (Rep)</th>
+            <th class="text-right">In Hand</th>
+            <th class="text-right">Utilization %</th>
+          </tr>
+        </thead>
+        <tbody id="utilizationBody">
+          <!-- Rows injected here -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="detailModal" class="modal-overlay">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">Unutilized Meter Details</div>
+      <div style="display: flex; gap: 12px; align-items: center;">
+        <button class="download-btn" onclick="exportDetails()" title="Download CSV">
+          <i class="fas fa-file-csv"></i> Export Results
+        </button>
+        <div class="close-btn" onclick="closeModal()">
+          <i class="fas fa-times"></i>
+        </div>
+      </div>
+    </div>
+    <div class="search-container">
+      <input type="text" id="detailSearchInput" placeholder="Search by Meter Number..." oninput="filterDetails()">
+    </div>
+    <div class="details-table-container">
+      <table class="details-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Meter Number</th>
+            <th>Received On</th>
+            <th>CCC Unit</th>
+            <th>Meter Make</th>
+            <th>Phase</th>
+          </tr>
+        </thead>
+        <tbody id="detailsBody">
+          <!-- Rows -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="statusModal" class="modal-overlay">
+  <div class="modal-content" style="max-width: 550px;">
+    <div class="modal-header">
+      <div class="modal-title">Meter Search Result</div>
+      <div style="display: flex; gap: 12px; align-items: center;">
+        <button class="download-btn" onclick="exportSearchResult()" title="Download CSV">
+          <i class="fas fa-file-csv"></i> Download Info
+        </button>
+        <div class="close-btn" onclick="closeStatusModal()">
+          <i class="fas fa-times"></i>
+        </div>
+      </div>
+    </div>
+    <div class="details-table-container" style="padding: 32px;">
+      <div id="statusResultContent" class="status-result">
+        <!-- Results -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Configuration
+  const GID_ERP = '1335293243';
+  const GID_MASTER = '1053803476';
+  const GID_CRM = '1638328510';
+  const GID_ISU = '329630218';
+  const BASE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?output=csv';
+
+  // Hierarchy Mapping String
+  const officeMappingStr = `CODE	OFFICE NAME
+6610000	MALDA REGION
+1111111	MALDA DIV.
+6611000	MALDA DIVISIOIN
+6611101	MANIKCHAK CCC
+6611102	GOLAPGANJ CCC
+6611103	BAISHNABNAGAR CCC
+6611104	KALIACHAK CCC
+6611105	MOTHABARI CCC
+6611106	SUJAPUR CCC
+6611107	RATHBARI CCC
+6611108	FULBARI CCC
+6611109	MOKDUMPUR CCC
+2222222	CHANCHAL DIV.
+6612000	CHANCHAL DIVISION
+6612101	BHALUKA CCC
+6612102	SAMSI CCC
+6612103	PARANPUR CCC
+6612104	CHANCHAL CCC
+6612105	MALATIPUR CCC
+6612106	HARISHCHANDRAPUR CCC
+6612107	KUSHIDA CCC
+3333333	GAZOLE DIV.
+6613000	GAZOLE DIVISION
+6613101	GAZOL CCC
+6613102	AIHO. CCC
+6613103	PANDUA CCC
+6613104	BAMONGOLA CCC
+6613105	OLD MALDA CCC
+6620000	UTTAR DINAJPUR REGION
+4444444	RAIGANJ  DIV.
+6621000	RAIGANJ  DIVISION
+6621101	ITAHAR CCC
+6621102	HEMTABAD CCC
+6621103	KALIYAGANJ CCC
+6621104	RAIGANJ CCC
+6621105	BIRNAGAR CCC
+6621106	KARANDIGHI CCC
+5555555	ISLAMPUR DIV.
+6622000	ISLAMPUR DIVISION
+6622101	ISLAMPUR CCC
+6622102	CHOPRA CCC
+6622103	DALKHOLA CCC
+6622104	GOALPOKHER CCC
+6622105	KANKI CCC
+6630000	DAKSHIN DINAJPUR REGION
+6666666	BALURGHAT DIV.
+6631000	BALURGHAT DIVISION
+6631101	BALURGHAT CCC
+6631102	TAPAN CCC
+6631103	KUMARGANJ CCC
+6631104	HILI CCC
+6631105	PATIRAM CCC
+7777777	BUNIADPUR DIV.
+6632000	BUNIADPUR DIVISION
+6632101	BUNIADPUR CCC
+6632102	KUSMANDI CCC
+6632103	HARIRAMPUR CCC
+6632104	GANGARAMPUR CCC`;
+
+  // Global State
+  let allERP = [];
+  let masterSet = new Set();
+  let replacementSet = new Set();
+  let currentTableLevel = 'region';
+  let officeDetails = {}; 
+  let hierarchy = {};
+  let sortColumn = 'issued';
+  let sortDirection = 'desc';
+  let masterLookup = {}; // meter -> { conId, instNo }
+  let replacementLookup = {}; // meter -> { conId }
+
+  async function init() {
+    try {
+      showLoading(true);
+      buildHierarchy(officeMappingStr);
+      populateFilters();
+
+      const [erpData, masterData, crmData, isuData] = await Promise.all([
+        fetchCSV(BASE_URL + "&gid=" + GID_ERP),
+        fetchCSV(BASE_URL + "&gid=" + GID_MASTER),
+        fetchCSV(BASE_URL + "&gid=" + GID_CRM),
+        fetchCSV(BASE_URL + "&gid=" + GID_ISU)
+      ]);
+
+      processData({ erpData, masterData, crmData, isuData });
+      updateUI();
+      
+      showLoading(false);
+    } catch (err) {
+      console.error(err);
+      alert("Error loading data. Check connection.");
+    }
+  }
+
+  function buildHierarchy(mappingText) {
+    const lines = mappingText.trim().split('\n').slice(1);
+    const parsed = lines.map(line => {
+      const parts = line.split('\t');
+      return { code: parts[0].trim(), name: parts[1].trim() };
+    });
+
+    parsed.forEach(item => {
+      const type = item.name.endsWith(' REGION') ? 'region' : 
+                   (item.name.endsWith('DIV.') || (item.name.endsWith('DIVISION') && !item.name.includes('REGION'))) ? 'division' :
+                   item.name.endsWith('CCC') ? 'ccc' : 'unknown';
+      
+      officeDetails[item.code] = { 
+        name: item.name.replace(' DIV.', ' DIVISION').replace('GAZOL CCC', 'GAZOLE CCC'), 
+        type, 
+        code: item.code,
+        region: '',
+        division: ''
+      };
+    });
+
+    // Link CCC to Divisions and Regions
+    Object.values(officeDetails).forEach(off => {
+      if (off.type === 'ccc') {
+        // Map CCC to Division based on prefix logic from safety_inspection.html
+        let divCode = null;
+        if (off.code.startsWith('66111')) divCode = '1111111';
+        else if (off.code.startsWith('66121')) divCode = '2222222';
+        else if (off.code.startsWith('66131')) divCode = '3333333';
+        else if (off.code.startsWith('66211')) divCode = '4444444';
+        else if (off.code.startsWith('66221')) divCode = '5555555';
+        else if (off.code.startsWith('66311')) divCode = '6666666';
+        else if (off.code.startsWith('66321')) divCode = '7777777';
+
+        if (divCode) {
+          off.division = officeDetails[divCode].name;
+          // Map Division to Region
+          if (divCode === '1111111' || divCode === '2222222' || divCode === '3333333') off.region = 'MALDA REGION';
+          else if (divCode === '4444444' || divCode === '5555555') off.region = 'UTTAR DINAJPUR REGION';
+          else off.region = 'DAKSHIN DINAJPUR REGION';
+        }
+      }
+    });
+
+    // Also populate Region/Division props for Division offices themselves for filtering
+    Object.values(officeDetails).forEach(off => {
+        if (off.type === 'division') {
+            if (off.code === '1111111' || off.code === '2222222' || off.code === '3333333') off.region = 'MALDA REGION';
+            else if (off.code === '4444444' || off.code === '5555555') off.region = 'UTTAR DINAJPUR REGION';
+            else off.region = 'DAKSHIN DINAJPUR REGION';
+        }
+    });
+  }
+
+  function populateFilters() {
+    const regFilter = document.getElementById('regionFilter');
+    const regions = ['MALDA REGION', 'UTTAR DINAJPUR REGION', 'DAKSHIN DINAJPUR REGION'];
+    regions.forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r;
+      opt.textContent = r;
+      regFilter.appendChild(opt);
+    });
+
+    regFilter.onchange = (e) => {
+        const divFilter = document.getElementById('divisionFilter');
+        divFilter.innerHTML = '<option value="all">All Divisions</option>';
+        divFilter.disabled = (e.target.value === 'all');
+        
+        if (e.target.value !== 'all') {
+            const divs = [...new Set(Object.values(officeDetails).filter(o => o.type === 'division' && o.region === e.target.value).map(o => o.name))];
+            divs.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d;
+                opt.textContent = d;
+                divFilter.appendChild(opt);
+            });
+        }
+        updateUI();
+    };
+
+    document.getElementById('divisionFilter').onchange = updateUI;
+  }
+
+  function fetchCSV(url) {
+    return new Promise((resolve, reject) => {
+      Papa.parse(url, {
+        download: true,
+        header: true,
+        skipEmptyLines: true,
+        complete: (res) => resolve(res.data),
+        error: (err) => reject(err)
+      });
+    });
+  }
+
+  function processData({ erpData, masterData, crmData, isuData }) {
+    masterLookup = {};
+    masterData.forEach(d => {
+      const m = String(d.METER_NO || d.METER_NUMBER || "").trim();
+      if (m) masterLookup[m] = { 
+        conId: d.CON_ID || d.CONS_ID || "", 
+        instNo: d.INST_NO || d.INSTALLATION || "" 
+      };
+    });
+
+    replacementLookup = {};
+    crmData.forEach(d => {
+      const m = String(d.METER_NUMBER || d.METER_NO || "").trim();
+      if (m) replacementLookup[m] = { conId: d.CON_ID || d.CONS_ID || "" };
+    });
+    isuData.forEach(d => {
+      const oldM = String(d.METER_NO || "").trim();
+      const newM = String(d.REPLACED_BY || "").trim();
+      const conId = d.CON_ID || d.CONS_ID || "";
+      if (oldM) replacementLookup[oldM] = { conId };
+      if (newM) replacementLookup[newM] = { conId };
+    });
+
+    masterSet = new Set(Object.keys(masterLookup));
+    replacementSet = new Set(Object.keys(replacementLookup));
+
+    allERP = erpData.map(d => {
+      const meter = String(d['Serial Number'] || "").trim();
+      const rawCC = String(d['Cost Center'] || "").trim();
+      const cccCode = rawCC.replace('C3', '').substring(0, 7);
+      
+      const offInfo = officeDetails[cccCode] || { name: cccCode, region: 'UNKNOWN', division: 'UNKNOWN' };
+
+      let status = 'meter-in-hand';
+      if (replacementSet.has(meter)) {
+        status = 'utilized-replacement';
+      } else if (masterSet.has(meter)) {
+        status = 'utilized-nsc';
+      }
+
+      return {
+        meter,
+        cccCode,
+        cccName: offInfo.name,
+        region: offInfo.region,
+        division: offInfo.division,
+        status,
+        make: d['Meter Make'] || 'Unknown',
+        phase: d['Phase'] || 'Unknown',
+        entryDate: d['Entry Date'] || 'Unknown'
+      };
+    });
+  }
+
+  function updateUI() {
+    const regionVal = document.getElementById('regionFilter').value;
+    const divisionVal = document.getElementById('divisionFilter').value;
+
+    const filtered = allERP.filter(d => {
+      if (regionVal !== 'all' && d.region !== regionVal) return false;
+      if (divisionVal !== 'all' && d.division !== divisionVal) return false;
+      return true;
+    });
+
+    const stats = {
+      total: filtered.length,
+      nsc: filtered.filter(d => d.status === 'utilized-nsc').length,
+      rep: filtered.filter(d => d.status === 'utilized-replacement').length,
+      hand: filtered.filter(d => d.status === 'meter-in-hand').length
+    };
+
+    document.getElementById('totalIssued').textContent = stats.total.toLocaleString();
+    document.getElementById('utilizedNSC').textContent = stats.nsc.toLocaleString();
+    document.getElementById('utilizedReplacement').textContent = stats.rep.toLocaleString();
+    document.getElementById('totalUtilized').textContent = (stats.nsc + stats.rep).toLocaleString();
+    document.getElementById('meterInHand').textContent = stats.hand.toLocaleString();
+    
+    const percent = stats.total > 0 ? Math.round(((stats.nsc + stats.rep) / stats.total) * 100) : 0;
+    document.getElementById('utilPercent').textContent = percent + '%';
+
+    renderTable(filtered);
+  }
+
+  function handleSort(col) {
+    if (sortColumn === col) {
+      sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      sortColumn = col;
+      sortDirection = 'desc';
+    }
+    updateUI();
+  }
+
+  function renderTable(data) {
+    const tbody = document.getElementById('utilizationBody');
+    const head = document.getElementById('tableHead');
+    tbody.innerHTML = '';
+
+    const groupsMap = {};
+    data.forEach(d => {
+      const key = d[currentTableLevel === 'ccc' ? 'cccName' : currentTableLevel] || 'Unknown';
+      if (!groupsMap[key]) groupsMap[key] = { name: key, issued: 0, nsc: 0, rep: 0, hand: 0, minDate: null };
+      groupsMap[key].issued++;
+      if (d.status === 'utilized-nsc') groupsMap[key].nsc++;
+      else if (d.status === 'utilized-replacement') groupsMap[key].rep++;
+      else groupsMap[key].hand++;
+
+      const dateObj = parseDate(d.entryDate);
+      if (dateObj && (!groupsMap[key].minDate || dateObj < groupsMap[key].minDate)) {
+        groupsMap[key].minDate = dateObj;
+      }
+    });
+
+    // Prepare table data with calculated util, percent and avgUtil
+    const today = new Date();
+    const tableData = Object.values(groupsMap).map(g => {
+        const util = g.nsc + g.rep;
+        let months = 1;
+        if (g.minDate) {
+            months = (today.getFullYear() - g.minDate.getFullYear()) * 12 + (today.getMonth() - g.minDate.getMonth());
+            if (months <= 0) months = 1;
+        }
+        return {
+            ...g,
+            util,
+            avgUtil: parseFloat((util / months).toFixed(1)),
+            percent: g.issued > 0 ? Math.round((util / g.issued) * 100) : 0
+        };
+    });
+
+    // Sort data
+    tableData.sort((a, b) => {
+        let valA = a[sortColumn];
+        let valB = b[sortColumn];
+        if (typeof valA === 'string') {
+            return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        }
+        return sortDirection === 'asc' ? valA - valB : valB - valA;
+    });
+
+    const getSortIcon = (col) => {
+        if (sortColumn !== col) return '<i class="fas fa-sort sort-icon"></i>';
+        return sortDirection === 'asc' ? '<i class="fas fa-sort-up sort-icon"></i>' : '<i class="fas fa-sort-down sort-icon"></i>';
+    };
+
+    const getSortClass = (col) => sortColumn === col ? 'active-sort' : '';
+    const label = currentTableLevel === 'ccc' ? 'CCC Unit' : currentTableLevel.charAt(0).toUpperCase() + currentTableLevel.slice(1);
+
+    head.innerHTML = `
+      <th style="width: 50px;">#</th>
+      <th class="sortable ${getSortClass('name')}" onclick="handleSort('name')">${label} ${getSortIcon('name')}</th>
+      <th class="sortable ${getSortClass('issued')}" onclick="handleSort('issued')" style="text-align: right">Issued ${getSortIcon('issued')}</th>
+      <th class="sortable ${getSortClass('nsc')}" onclick="handleSort('nsc')" style="text-align: right">NSC Util ${getSortIcon('nsc')}</th>
+      <th class="sortable ${getSortClass('rep')}" onclick="handleSort('rep')" style="text-align: right">Rep Util ${getSortIcon('rep')}</th>
+      <th class="sortable ${getSortClass('avgUtil')}" onclick="handleSort('avgUtil')" style="text-align: right">AVG. UTIL ${getSortIcon('avgUtil')}</th>
+      <th class="sortable ${getSortClass('hand')}" onclick="handleSort('hand')" style="text-align: right">In Hand ${getSortIcon('hand')}</th>
+      <th class="sortable ${getSortClass('percent')}" onclick="handleSort('percent')" style="text-align: right">Util % ${getSortIcon('percent')}</th>
+    `;
+
+    tableData.forEach((s, idx) => {
+      const tr = document.createElement('tr');
+      tr.className = 'clickable-row';
+      tr.onclick = () => openDetails(s.name, currentTableLevel);
+      tr.innerHTML = `
+        <td style="color: var(--text-muted); font-size: 11px; font-weight: 500;">${idx + 1}</td>
+        <td class="office-name">${s.name}</td>
+        <td style="text-align: right">${s.issued.toLocaleString()}</td>
+        <td style="text-align: right">${s.nsc.toLocaleString()}</td>
+        <td style="text-align: right">${s.rep.toLocaleString()}</td>
+        <td style="text-align: right; font-weight: 600; color: var(--primary);">${s.avgUtil.toLocaleString()} <span style="font-size: 10px; color: var(--text-muted);">/mo</span></td>
+        <td style="text-align: right; color: var(--danger); font-weight: 600;">${s.hand.toLocaleString()}</td>
+        <td style="text-align: right">
+          <div class="progress-bar-container">
+            <div class="progress-bar" style="width: ${s.percent}%; background: ${s.percent > 75 ? 'var(--success)' : s.percent > 40 ? 'var(--primary)' : 'var(--warning)'}"></div>
+          </div>
+          <span style="font-weight: 700;">${s.percent}%</span>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function changeTableLevel(lvl) {
+    currentTableLevel = lvl;
+    
+    // Update active class on tabs
+    document.querySelectorAll('.tab-link').forEach(link => {
+        link.classList.remove('active');
+    });
+    
+    const btnId = 'btnLvl' + lvl.charAt(0).toUpperCase() + (lvl === 'ccc' ? 'CCC' : lvl.slice(1));
+    const btn = document.getElementById(btnId);
+    if (btn) btn.classList.add('active');
+
+    document.getElementById('tableLevelTitle').textContent = (lvl === 'ccc' ? 'CCC Unit' : lvl.charAt(0).toUpperCase() + lvl.slice(1)) + " Utilization Overview";
+    updateUI();
+  }
+
+  function showLoading(show) {
+    document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none';
+  }
+
+  function parseDate(str) {
+    if (!str || str === 'Unknown') return null;
+    const parts = str.split(/[./-]/);
+    if (parts.length === 3) {
+        return new Date(parts[2], parts[1] - 1, parts[0]);
+    }
+    return new Date(str);
+  }
+
+  function formatAge(days) {
+    if (days < 0) return 'Unknown';
+    if (days === 0) return 'Today';
+    
+    let m = Math.floor(days / 30);
+    let rem = days % 30;
+    let w = Math.floor(rem / 7);
+    let d = rem % 7;
+
+    let parts = [];
+    if (m > 0) parts.push(m + 'm');
+    if (w > 0) parts.push(w + 'w');
+    if (d > 0 || parts.length === 0) parts.push(d + 'd');
+    
+    return parts.join(' ');
+  }
+
+  // Detail View Functions
+  let currentDetailList = [];
+
+  function openDetails(name, level) {
+    const modal = document.getElementById('detailModal');
+    const title = document.getElementById('modalTitle');
+    const input = document.getElementById('detailSearchInput');
+    
+    input.value = '';
+    title.textContent = `Unutilized Meters: ${name}`;
+    
+    currentDetailList = allERP.filter(d => {
+      if (d.status !== 'meter-in-hand') return false;
+      const val = d[level === 'ccc' ? 'cccName' : level];
+      return val === name;
+    });
+
+    // Calculate age for each meter
+    const today = new Date();
+    currentDetailList.forEach(m => {
+        const d = parseDate(m.entryDate);
+        m._ageDays = d ? Math.floor((today - d) / (1000 * 60 * 60 * 24)) : -1;
+        m._ageStr = formatAge(m._ageDays);
+    });
+
+    // Sort by age (highest first) by default
+    currentDetailList.sort((a, b) => b._ageDays - a._ageDays);
+
+    renderDetails(currentDetailList);
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden'; 
+  }
+
+  function renderDetails(data) {
+    const tbody = document.getElementById('detailsBody');
+    const head = document.querySelector('.details-table thead tr');
+    tbody.innerHTML = '';
+
+    // Update Header to include the new column
+    head.innerHTML = `
+        <th>#</th>
+        <th>Meter Number</th>
+        <th>Received On</th>
+        <th>Unutilized since</th>
+        <th>CCC Unit</th>
+        <th>Meter Make</th>
+        <th>Phase</th>
+    `;
+
+    data.forEach((m, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="color: var(--text-muted); font-size: 11px;">${idx + 1}</td>
+        <td style="font-weight: 700; color: var(--primary-dark); font-family: monospace; letter-spacing: 0.5px;">${m.meter}</td>
+        <td>${m.receivedOn || m.entryDate}</td>
+        <td style="font-weight: 600; color: ${m._ageDays > 90 ? 'var(--danger)' : m._ageDays > 30 ? 'var(--warning)' : 'var(--text-main)'}">${m._ageStr}</td>
+        <td style="font-weight: 500;">${m.cccName}</td>
+        <td>${m.make}</td>
+        <td><span class="badge badge-hand">${m.phase}</span></td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    if (data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--text-muted);">No unutilized meters found for this selection.</td></tr>';
+    }
+  }
+
+  function filterDetails() {
+    const query = document.getElementById('detailSearchInput').value.toLowerCase();
+    const filtered = currentDetailList.filter(m => m.meter.toLowerCase().includes(query));
+    renderDetails(filtered);
+  }
+
+  function closeModal() {
+    document.getElementById('detailModal').style.display = 'none';
+    document.body.style.overflow = 'auto';
+  }
+
+  function searchMeterStatus() {
+    const query = document.getElementById('universalSearch').value.trim().toUpperCase();
+    if (!query) return;
+
+    const meter = allERP.find(m => m.meter.toUpperCase() === query);
+    const content = document.getElementById('statusResultContent');
+    const modal = document.getElementById('statusModal');
+
+    if (meter) {
+      const statusLabel = meter.status === 'utilized-nsc' ? 'Utilized (NSC)' : 
+                          meter.status === 'utilized-replacement' ? 'Utilized (Replacement)' : 'Meter-in-Hand';
+      const statusClass = meter.status === 'utilized-nsc' ? 'badge-nsc' : 
+                          meter.status === 'utilized-replacement' ? 'badge-rep' : 'badge-hand';
+
+      let consumerInfo = '';
+      if (meter.status === 'utilized-nsc') {
+        const details = masterLookup[meter.meter] || {};
+        consumerInfo = `
+          <div class="detail-item"><label>Consumer ID</label><span>${details.conId || 'N/A'}</span></div>
+          <div class="detail-item"><label>Installation No.</label><span>${details.instNo || 'N/A'}</span></div>
+        `;
+      } else if (meter.status === 'utilized-replacement') {
+        const details = replacementLookup[meter.meter] || {};
+        consumerInfo = `
+          <div class="detail-item" style="grid-column: span 2;"><label>Consumer ID</label><span>${details.conId || 'N/A'}</span></div>
+        `;
+      }
+
+      content.innerHTML = `
+        <div class="status-badge-large ${statusClass}">${statusLabel}</div>
+        <div class="detail-grid">
+          <div class="detail-item"><label>Meter Number</label><span>${meter.meter}</span></div>
+          <div class="detail-item"><label>Received On</label><span>${meter.entryDate}</span></div>
+          ${consumerInfo}
+          <div class="detail-item"><label>Region</label><span>${meter.region}</span></div>
+          <div class="detail-item"><label>Division</label><span>${meter.division}</span></div>
+          <div class="detail-item" style="grid-column: span 2;"><label>CCC Unit</label><span>${meter.cccName}</span></div>
+          <div class="detail-item"><label>Make</label><span>${meter.make}</span></div>
+          <div class="detail-item"><label>Phase</label><span>${meter.phase}</span></div>
+        </div>
+        <div style="margin-top: 24px; font-size: 11px; color: var(--text-muted);">
+          <i class="fas fa-info-circle"></i> This meter is tracked in Malda Zone's ERP database.
+        </div>
+      `;
+    } else {
+      content.innerHTML = `
+        <div style="padding: 40px; color: var(--text-muted); text-align: center;">
+          <i class="fas fa-search-minus" style="font-size: 48px; margin-bottom: 16px; opacity: 0.5;"></i>
+          <p style="font-size: 16px; font-weight: 600; color: var(--text-main);">Meter Not Found</p>
+          <p style="font-size: 13px; margin-top: 8px;">The serial number <b>"${query}"</b> is not present in the current ERP base list or utilization records.</p>
+        </div>
+      `;
+    }
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeStatusModal() {
+    document.getElementById('statusModal').style.display = 'none';
+    document.body.style.overflow = 'auto';
+  }
+
+  // Close modal on escape key
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeModal();
+        closeStatusModal();
+    }
+  });
+
+  // Export Functions
+  function downloadCSV(csv, filename) {
+    const csvFile = new Blob([csv], { type: "text/csv" });
+    const downloadLink = document.createElement("a");
+    downloadLink.download = filename;
+    downloadLink.href = window.URL.createObjectURL(csvFile);
+    downloadLink.style.display = "none";
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+  }
+
+  function exportSummary() {
+    // We need the data currently rendered in the summary table
+    // Re-calculating to ensure we get exactly what's shown (including filters)
+    const filtered = allERP.filter(d => {
+        const regionVal = document.getElementById('regionFilter').value;
+        const divisionVal = document.getElementById('divisionFilter').value;
+        if (regionVal !== 'all' && d.region !== regionVal) return false;
+        if (divisionVal !== 'all' && d.division !== divisionVal) return false;
+        return true;
+    });
+
+    const groupsMap = {};
+    filtered.forEach(d => {
+      const key = d[currentTableLevel === 'ccc' ? 'cccName' : currentTableLevel] || 'Unknown';
+      if (!groupsMap[key]) groupsMap[key] = { name: key, issued: 0, nsc: 0, rep: 0, hand: 0, minDate: null };
+      groupsMap[key].issued++;
+      if (d.status === 'utilized-nsc') groupsMap[key].nsc++;
+      else if (d.status === 'utilized-replacement') groupsMap[key].rep++;
+      else groupsMap[key].hand++;
+
+      const dateObj = parseDate(d.entryDate);
+      if (dateObj && (!groupsMap[key].minDate || dateObj < groupsMap[key].minDate)) {
+        groupsMap[key].minDate = dateObj;
+      }
+    });
+
+    const today = new Date();
+    const rows = Object.values(groupsMap).map(g => {
+        const util = g.nsc + g.rep;
+        let months = 1;
+        if (g.minDate) {
+            months = (today.getFullYear() - g.minDate.getFullYear()) * 12 + (today.getMonth() - g.minDate.getMonth());
+            if (months <= 0) months = 1;
+        }
+        return {
+            Name: g.name,
+            Issued: g.issued,
+            Utilized_NSC: g.nsc,
+            Utilized_Rep: g.rep,
+            Avg_Monthly_Util: (util / months).toFixed(1),
+            In_Hand: g.hand,
+            Utilization_Percent: (g.issued > 0 ? (util / g.issued * 100).toFixed(1) : 0) + "%"
+        };
+    });
+
+    const header = Object.keys(rows[0]).join(",");
+    const csv = [header, ...rows.map(row => Object.values(row).join(","))].join("\n");
+    downloadCSV(csv, `meter_utilization_${currentTableLevel}_${new Date().toISOString().split('T')[0]}.csv`);
+  }
+
+  function exportDetails() {
+    if (!currentDetailList || currentDetailList.length === 0) return;
+    
+    const rows = currentDetailList.map((m, idx) => ({
+      Sl_No: idx + 1,
+      Meter_Number: m.meter,
+      Received_On: m.entryDate,
+      Unutilized_Since: m._ageStr,
+      CCC_Unit: m.cccName,
+      Make: m.make,
+      Phase: m.phase
+    }));
+
+    const header = Object.keys(rows[0]).join(",");
+    const csv = [header, ...rows.map(row => Object.values(row).join(","))].join("\n");
+    const officeName = document.getElementById('modalTitle').textContent.split(': ')[1] || 'Details';
+    downloadCSV(csv, `unutilized_meters_${officeName.replace(/\s+/g, '_')}.csv`);
+  }
+
+  function exportSearchResult() {
+    const query = document.getElementById('universalSearch').value.trim().toUpperCase();
+    const meter = allERP.find(m => m.meter.toUpperCase() === query);
+    if (!meter) return;
+
+    let details = masterLookup[meter.meter] || replacementLookup[meter.meter] || {};
+    const row = {
+        Meter_Number: meter.meter,
+        Status: meter.status,
+        Consumer_ID: details.conId || 'N/A',
+        Installation_No: details.instNo || 'N/A',
+        Region: meter.region,
+        Division: meter.division,
+        CCC_Unit: meter.cccName,
+        Make: meter.make,
+        Phase: meter.phase,
+        Received_On: meter.entryDate
+    };
+
+    const header = Object.keys(row).join(",");
+    const csv = [header, Object.values(row).join(",")].join("\n");
+    downloadCSV(csv, `meter_info_${meter.meter}.csv`);
+  }
+
+  init();
+</script>
+
+</body>
+</html>
