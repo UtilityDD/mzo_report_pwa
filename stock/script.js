@@ -11,6 +11,25 @@ const lowStockAlertBtn = document.getElementById('low-stock-alert-btn');
 let allData = [];
 let currentSortColumn = null;
 let currentSortDirection = 'asc';
+let currentStoreTab = 'total'; // 'total', 'old', 'new'
+
+const PLANT_MAP = {
+    '3342': 'Malda (D) Division',
+    '6611': 'Malda (D) Division',
+    '3461': 'Balurghat (D) Division',
+    '6631': 'Balurghat (D) Division',
+    '3462': 'Buniadpur (D) Division',
+    '6632': 'Buniadpur (D) Division',
+    '3343': 'Chanchal (D) Division',
+    '6612': 'Chanchal (D) Division',
+    '6613': 'Gazole (D) Division',
+    '3434': 'Islampur (D) Division',
+    '6622': 'Islampur (D) Division',
+    '6621': 'Raiganj (D) Division',
+    '3432': 'Raiganj (D) Division',
+    '6600': 'Malda (D) Zone',
+    '7201': 'Malda (D) Zone'
+};
 
 function formatDate(dateString) {
     const date = new Date(dateString);
@@ -52,7 +71,13 @@ function applyFilters() {
     }
 
     if (selectedStore) {
-        filteredData = filteredData.filter(item => item.Store === selectedStore);
+        filteredData = filteredData.filter(item => item.StoreName === selectedStore);
+    }
+
+    if (currentStoreTab === 'old') {
+        filteredData = filteredData.filter(item => item.StoreType === 'old');
+    } else if (currentStoreTab === 'new') {
+        filteredData = filteredData.filter(item => item.StoreType === 'new');
     }
 
     if (selectedGroup) {
@@ -63,33 +88,71 @@ function applyFilters() {
         filteredData = filteredData.filter(item => item['Material Description'] === selectedDescription);
     }
 
+    // Update KPI cards with filtered data
+    populateKpiCards(filteredData);
+    
     populateTable(filteredData);
 }
 
 function populateFilters(data) {
-    const stores = [...new Set(data.map(item => item.Store))].sort();
+    const prevStore = storeFilter.value;
+    const prevGroup = materialGroupFilter.value;
+    const prevDesc = materialDescriptionFilter.value;
+
+    const storeSel = storeFilter;
+    while (storeSel.options.length > 1) storeSel.remove(1);
+
+    // Get data relevant to current tab to find unique store names
+    const currentTabData = data.filter(item => {
+        if (currentStoreTab === 'old') return item.StoreType === 'old';
+        if (currentStoreTab === 'new') return item.StoreType === 'new';
+        return true;
+    });
+
+    const stores = [...new Set(currentTabData.map(item => item.StoreName))].sort();
     stores.forEach(store => {
         const option = document.createElement('option');
         option.value = store;
         option.textContent = store;
-        storeFilter.appendChild(option);
+        storeSel.appendChild(option);
     });
+    
+    // Restore store if possible (Handles persistence across tabs seamlessly as all use Names)
+    if (Array.from(storeSel.options).some(opt => opt.value === prevStore)) {
+        storeSel.value = prevStore;
+    } else if (PLANT_MAP[prevStore]) {
+        // Transition Case: If the previous value was a specific Code (from earlier version), map it to Name
+        const nameFromCode = PLANT_MAP[prevStore];
+        if (Array.from(storeSel.options).some(opt => opt.value === nameFromCode)) {
+            storeSel.value = nameFromCode;
+        }
+    }
 
-    const materialGroups = [...new Set(data.map(item => item['Material Group']))];
+    const groupSel = materialGroupFilter;
+    while (groupSel.options.length > 1) groupSel.remove(1);
+    const materialGroups = [...new Set(data.map(item => item['Material Group']))].sort();
     materialGroups.forEach(group => {
         const option = document.createElement('option');
         option.value = group;
         option.textContent = group;
-        materialGroupFilter.appendChild(option);
+        groupSel.appendChild(option);
     });
+    if (Array.from(groupSel.options).some(opt => opt.value === prevGroup)) {
+        groupSel.value = prevGroup;
+    }
 
-    const materialDescriptions = [...new Set(data.map(item => item['Material Description']))];
+    const descSel = materialDescriptionFilter;
+    while (descSel.options.length > 1) descSel.remove(1);
+    const materialDescriptions = [...new Set(data.map(item => item['Material Description']))].sort();
     materialDescriptions.forEach(desc => {
         const option = document.createElement('option');
         option.value = desc;
         option.textContent = desc;
-        materialDescriptionFilter.appendChild(option);
+        descSel.appendChild(option);
     });
+    if (Array.from(descSel.options).some(opt => opt.value === prevDesc)) {
+        descSel.value = prevDesc;
+    }
 }
 
 function updateDescriptionFilter() {
@@ -128,6 +191,25 @@ function updateDescriptionFilter() {
         opt.textContent = desc;
         option.appendChild(opt);
     });
+}
+
+function changeStoreTab(tab) {
+    currentStoreTab = tab;
+    
+    // Update tab UI
+    document.querySelectorAll('.tab-link').forEach(btn => btn.classList.remove('active'));
+    if (tab === 'total') document.getElementById('btnTabTotal').classList.add('active');
+    if (tab === 'new') document.getElementById('btnTabNew').classList.add('active');
+    if (tab === 'old') document.getElementById('btnTabOld').classList.add('active');
+
+    // Update table header for 1st column
+    const ths = document.querySelectorAll('#data-table th');
+    if (ths.length > 0) {
+        ths[0].textContent = tab === 'total' ? 'Store Name' : 'Store Code';
+    }
+
+    populateFilters(allData);
+    applyFilters();
 }
 
 function updateGroupFilter() {
@@ -170,6 +252,7 @@ function updateGroupFilter() {
 
 function populateKpiCards(data) {
     const kpiContainer = document.getElementById('kpi-container');
+    kpiContainer.innerHTML = ''; // Clear previous cards
     const materialGroupsForKpi = ['POLE', 'HBEAM', 'TRANSFORM', 'SMART_MET', 'CONDUCTOR'];
 
     materialGroupsForKpi.forEach(groupName => {
@@ -243,10 +326,10 @@ function showBreakdownModal(groupName) {
     // Group and sum data (similar to main table logic)
     const storeData = {};
     groupData.forEach(item => {
-        const key = `${item.Store}|${item['Material']}|${item['Material Description']}`;
+        const key = `${item.StoreName}|${item['Material']}|${item['Material Description']}`;
         if (!storeData[key]) {
             storeData[key] = {
-                store: item.Store,
+                store: item.StoreName,
                 materialCode: item['Material'],
                 material: item['Material Description'],
                 stock: 0,
@@ -256,7 +339,15 @@ function showBreakdownModal(groupName) {
         storeData[key].stock += parseStockNumber(item.Unrestricted);
     });
 
-    const sortedData = Object.values(storeData).sort((a, b) => a.store.localeCompare(b.store) || a.material.localeCompare(b.material));
+    const sortedData = Object.values(storeData).sort((a, b) => {
+        const aIsZone = String(a.store).toLowerCase().includes('zone');
+        const bIsZone = String(b.store).toLowerCase().includes('zone');
+
+        if (aIsZone && !bIsZone) return -1;
+        if (!aIsZone && bIsZone) return 1;
+
+        return a.store.localeCompare(b.store) || a.material.localeCompare(b.material);
+    });
 
     // Populate modal table with store-wise subtotals
     let currentStore = null;
@@ -286,6 +377,9 @@ function showBreakdownModal(groupName) {
 
         // Add the regular item row
         const row = modalTableBody.insertRow();
+        if (item.store.toLowerCase().includes('zone')) {
+            row.className = 'zonal-row';
+        }
         row.innerHTML = `
             <td>${item.store}</td>
             <td>${item.materialCode}</td>
@@ -320,10 +414,10 @@ function showLowStockModal() {
     // First, aggregate all stock data
     const aggregatedStock = {};
     allData.forEach(item => {
-        const key = `${item.Store}|${item['Material']}|${item['Material Description']}`;
+        const key = `${item.StoreName}|${item['Material']}|${item['Material Description']}`;
         if (!aggregatedStock[key]) {
             aggregatedStock[key] = {
-                store: item.Store,
+                store: item.StoreName,
                 material: item['Material Description'],
                 stock: 0,
                 group: item['Material Group'] // Keep track of the group
@@ -365,12 +459,23 @@ function showLowStockModal() {
             return acc;
         }, {});
 
-        modalSubtitle.textContent = 'Showing items based on group-specific low stock rules.';
+        // Create a card for each store, sorted with Zone at the top
+        const sortedStores = Object.keys(itemsByStore).sort((a, b) => {
+            const aIsZone = String(a).toLowerCase().includes('zone');
+            const bIsZone = String(b).toLowerCase().includes('zone');
 
-        // Create a card for each store
-        for (const store in itemsByStore) {
+            if (aIsZone && !bIsZone) return -1;
+            if (!aIsZone && bIsZone) return 1;
+
+            return a.localeCompare(b);
+        });
+
+        sortedStores.forEach(store => {
             const storeCard = document.createElement('div');
             storeCard.className = 'low-stock-store-card';
+            if (store.toLowerCase().includes('zone')) {
+                storeCard.classList.add('zonal-row');
+            }
 
             let itemsHTML = itemsByStore[store]
                 .map(item => `<div class="low-stock-item"><span>${item.material}</span><strong>${item.stock}</strong></div>`)
@@ -381,7 +486,7 @@ function showLowStockModal() {
                 ${itemsHTML}
             `;
             contentContainer.appendChild(storeCard);
-        }
+        });
     }
 
     modal.style.display = 'block';
@@ -458,26 +563,31 @@ async function initDashboard() {
     }
 }
 
-function fetchFromNetwork() {
-    Papa.parse(DATA_URL, {
-        download: true,
-        header: true,
-        complete: function (results) {
-            handleResults(results.data);
-        },
-        error: function (error) {
-            console.error('Error loading data from network:', error);
-            // Hide loader and show error if needed
-            document.querySelector('.loader-cell').innerHTML = '<div class="no-data-message">Failed to load data from network.</div>';
+function handleResults(data) {
+    // Handle potential parsing errors or empty rows from Google Sheets
+    allData = data.map(item => {
+        const plant = String(item.Plant || "").trim();
+        let storeName = PLANT_MAP[plant] || item.Store || item['Name 1'] || 'Unknown';
+        
+        let type = 'unknown';
+        if (plant.startsWith('3')) type = 'old';
+        if (plant.startsWith('6')) type = 'new';
+
+        return {
+            ...item,
+            StoreName: storeName,
+            StoreType: type,
+            Plant: plant
+        };
+    }).filter(item => item.StoreName && item['Material Group']);
+
+    // Separate Malda and Zone if they are clubbed
+    allData.forEach(item => {
+        if (item.StoreName === 'Malda & Zone') {
+            if (item.Plant === '6611') item.StoreName = 'Malda';
+            else if (item.Plant === '7201') item.StoreName = 'Zone';
         }
     });
-}
-
-function handleResults(data) {
-    allData = data;
-
-    // Handle potential parsing errors or empty rows from Google Sheets
-    allData = allData.filter(item => item.Store && item['Material Group']);
 
     const latestDate = allData.reduce((max, item) => item.Date > max ? item.Date : max, '');
     chartHeader.textContent = `Stock of Major Materials (${formatDate(latestDate)})`;
@@ -557,6 +667,21 @@ function handleResults(data) {
     downloadBtn.addEventListener('click', downloadTableAsCSV);
 }
 
+function fetchFromNetwork() {
+    Papa.parse(DATA_URL, {
+        download: true,
+        header: true,
+        complete: function (results) {
+            handleResults(results.data);
+        },
+        error: function (error) {
+            console.error('Error loading data from network:', error);
+            // Hide loader and show error if needed
+            document.querySelector('.loader-cell').innerHTML = '<div class="no-data-message">Failed to load data from network.</div>';
+        }
+    });
+}
+
 initDashboard();
 
 function downloadTableAsCSV() {
@@ -612,10 +737,11 @@ function populateTable(data) {
     // Group data by store and material description
     const storeData = {};
     data.forEach(item => {
-        const key = `${item.Store}|${item['Material']}|${item['Material Description']}`;
+        const displayStore = currentStoreTab === 'total' ? item.StoreName : `${item.Plant} (${item.StoreName})`;
+        const key = `${displayStore}|${item['Material']}|${item['Material Description']}`;
         if (!storeData[key]) {
             storeData[key] = {
-                store: item.Store,
+                store: displayStore,
                 materialCode: item['Material'],
                 material: item['Material Description'],
                 stock: 0,
@@ -625,9 +751,15 @@ function populateTable(data) {
         storeData[key].stock += parseStockNumber(item.Unrestricted);
     });
 
-    // Sort by store name and material
+    // Sort by store name and material, but prioritize "Zone"
     let sortedData = Object.values(storeData)
         .sort((a, b) => {
+            const aIsZone = String(a.store).toLowerCase().includes('zone');
+            const bIsZone = String(b.store).toLowerCase().includes('zone');
+
+            if (aIsZone && !bIsZone) return -1;
+            if (!aIsZone && bIsZone) return 1;
+
             if (a.store !== b.store) {
                 return a.store.localeCompare(b.store);
             }
@@ -656,6 +788,9 @@ function populateTable(data) {
         }
 
         const row = document.createElement('tr');
+        if (item.store.toLowerCase().includes('zone')) {
+            row.className = 'zonal-row';
+        }
 
         // Highlight search term if it exists
         const materialCodeHTML = searchTerm ? String(item.materialCode).replace(regex, match => `<mark class="highlight">${match}</mark>`) : item.materialCode;
@@ -707,8 +842,14 @@ function populateTable(data) {
 function sortData(data, column, direction) {
     const sorted = [...data];
     sorted.sort((a, b) => {
-        let aVal, bVal;
+        const aIsZone = String(a.store).toLowerCase().includes('zone');
+        const bIsZone = String(b.store).toLowerCase().includes('zone');
 
+        // Always keep Zone at the top
+        if (aIsZone && !bIsZone) return -1;
+        if (!aIsZone && bIsZone) return 1;
+
+        let aVal, bVal;
         switch (column) {
             case 0:
                 aVal = a.store;
@@ -736,11 +877,11 @@ function sortData(data, column, direction) {
 
         // Handle numeric or string-based material codes
         if (column === 1) {
-            return direction === 'asc' ? String(aVal).localeCompare(String(bVal), undefined, { numeric: true }) : String(bVal).localeCompare(String(aVal), undefined, { numeric: true });
+            const res = String(aVal).localeCompare(String(bVal), undefined, { numeric: true });
+            return direction === 'asc' ? res : -res;
         } else if (typeof aVal === 'string') {
-            aVal = aVal.toLowerCase();
-            bVal = bVal.toLowerCase();
-            return direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+            const res = aVal.toLowerCase().localeCompare(bVal.toLowerCase());
+            return direction === 'asc' ? res : -res;
         } else {
             return direction === 'asc' ? aVal - bVal : bVal - aVal;
         }
