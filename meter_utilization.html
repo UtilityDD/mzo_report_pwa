@@ -426,6 +426,38 @@
       background: var(--primary);
     }
 
+    /* Phase Tabs Specific Styles */
+    .phase-tabs {
+      background: white;
+      padding: 12px 24px;
+      display: flex;
+      gap: 12px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .phase-pill {
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: #f1f5f9;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .phase-pill:hover {
+      background: #e2e8f0;
+    }
+
+    .phase-pill.active {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+    }
+
     /* Loading Overlay */
     #loadingOverlay {
       position: fixed;
@@ -787,6 +819,11 @@
        <button onclick="changeTableLevel('division')" id="btnLvlDivision" class="tab-link">Division Wise</button>
        <button onclick="changeTableLevel('ccc')" id="btnLvlCCC" class="tab-link">CCC Wise</button>
     </div>
+    <div class="phase-tabs">
+       <button onclick="changePhase('all')" id="btnPhaseAll" class="phase-pill active">Total Overview</button>
+       <button onclick="changePhase('1')" id="btnPhase1" class="phase-pill">1-Phase Meters</button>
+       <button onclick="changePhase('3')" id="btnPhase3" class="phase-pill">3-Phase Meters</button>
+    </div>
     <div class="table-header">
       <div class="table-title" id="tableLevelTitle">Regional Utilization Overview</div>
       <button class="download-btn" onclick="exportSummary()" title="Download CSV">
@@ -944,6 +981,7 @@
   let masterSet = new Set();
   let replacementSet = new Set();
   let currentTableLevel = 'region';
+  let currentPhaseFilter = 'all'; // 'all', '1', '3'
   let officeDetails = {}; 
   let hierarchy = {};
   let sortColumn = 'issued';
@@ -1110,6 +1148,11 @@
         status = 'utilized-nsc';
       }
 
+      // Normalize Phase
+      let phase = String(d['Phase'] || "").trim();
+      if (phase === "1") phase = "1PH";
+      if (phase === "3") phase = "3PH";
+
       return {
         meter,
         cccCode,
@@ -1118,7 +1161,7 @@
         division: offInfo.division,
         status,
         make: d['Meter Make'] || 'Unknown',
-        phase: d['Phase'] || 'Unknown',
+        phase: phase || 'Unknown',
         entryDate: d['Entry Date'] || 'Unknown'
       };
     });
@@ -1131,6 +1174,10 @@
     const filtered = allERP.filter(d => {
       if (regionVal !== 'all' && d.region !== regionVal) return false;
       if (divisionVal !== 'all' && d.division !== divisionVal) return false;
+      if (currentPhaseFilter !== 'all') {
+         const p = currentPhaseFilter === '1' ? '1PH' : '3PH';
+         if (d.phase !== p) return false;
+      }
       return true;
     });
 
@@ -1265,6 +1312,23 @@
     if (btn) btn.classList.add('active');
 
     document.getElementById('tableLevelTitle').textContent = (lvl === 'ccc' ? 'CCC Unit' : lvl.charAt(0).toUpperCase() + lvl.slice(1)) + " Utilization Overview";
+    updateUI();
+  }
+
+  function changePhase(phase) {
+    currentPhaseFilter = phase;
+    
+    // Update labels in UI
+    const labels = { 'all': 'Total Overview', '1': '1-Phase Meters', '3': '3-Phase Meters' };
+    
+    // Update pills active state
+    document.querySelectorAll('.phase-pill').forEach(pill => {
+      pill.classList.remove('active');
+    });
+    
+    const targetId = phase === 'all' ? 'btnPhaseAll' : (phase === '1' ? 'btnPhase1' : 'btnPhase3');
+    document.getElementById(targetId).classList.add('active');
+    
     updateUI();
   }
 
@@ -1466,6 +1530,10 @@
         const divisionVal = document.getElementById('divisionFilter').value;
         if (regionVal !== 'all' && d.region !== regionVal) return false;
         if (divisionVal !== 'all' && d.division !== divisionVal) return false;
+        if (currentPhaseFilter !== 'all') {
+            const p = currentPhaseFilter === '1' ? '1PH' : '3PH';
+            if (d.phase !== p) return false;
+        }
         return true;
     });
 
@@ -1505,7 +1573,8 @@
 
     const header = Object.keys(rows[0]).join(",");
     const csv = [header, ...rows.map(row => Object.values(row).join(","))].join("\n");
-    downloadCSV(csv, `meter_utilization_${currentTableLevel}_${new Date().toISOString().split('T')[0]}.csv`);
+    const phaseLabel = currentPhaseFilter === 'all' ? 'Total' : (currentPhaseFilter === '1' ? '1Ph' : '3Ph');
+    downloadCSV(csv, `meter_utilization_${currentTableLevel}_${phaseLabel}_${new Date().toISOString().split('T')[0]}.csv`);
   }
 
   function exportDetails() {
