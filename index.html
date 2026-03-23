@@ -8,6 +8,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet" />
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
   <script src="mzo_data_hub.js"></script>
 
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&display=swap"
@@ -311,6 +313,61 @@
       /* Remove top padding, keep side/bottom */
       width: 100%;
       max-width: 100vw;
+    }
+
+    /* Loss Chart Card Styles */
+    .loss-chart-card {
+      padding: 15px !important;
+      margin-bottom: 25px !important;
+      display: flex !important;
+      flex-direction: column !important;
+      height: 320px !important; /* Equivalent to roughly 3 rows of KPI buttons */
+      position: relative !important;
+      overflow: hidden !important;
+    }
+
+    .loss-chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      z-index: 10;
+    }
+
+    .loss-chart-header h3 {
+      font-size: 16px;
+      color: var(--text-primary);
+      margin: 0;
+      display: flex;
+      align-items: center;
+    }
+
+    .loss-chart-controls {
+      display: flex;
+      gap: 10px;
+    }
+
+    .loss-chart-controls select {
+      background: var(--bg-med);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .loss-chart-container {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      width: 100%;
+    }
+
+    @media (max-width: 768px) {
+      .loss-chart-card {
+        display: none !important;
+      }
     }
 
     .report-card {
@@ -1933,6 +1990,19 @@
 
           <div class="content">
             <div class="report-grid" style="grid-template-columns: 1fr;">
+              <!-- Executive Loss Chart Card (Desktop only) -->
+              <div class="report-card loss-chart-card">
+                <div class="loss-chart-header">
+                  <h3><i class="fas fa-chart-line" style="margin-right: 8px; color: #3498db;"></i>Loss Performance Trend</h3>
+                  <div class="loss-chart-controls">
+                    <select id="executiveOfficeFilter"></select>
+                  </div>
+                </div>
+                <div class="loss-chart-container">
+                  <canvas id="homepageLossChart"></canvas>
+                </div>
+              </div>
+
               <div class="report-card">
                 <div class="card-header">
                   <div class="card-header-left">
@@ -2811,11 +2881,36 @@
 
   <script>
     window.addEventListener("DOMContentLoaded", () => {
+      console.log("DOM Content Loaded - Initializing...");
       // Start card animations
       startCardAnimation();
+      
+      // Initialize Loss Chart
+      if (typeof initExecutiveChart === 'function') {
+        console.log("Calling initExecutiveChart...");
+        initExecutiveChart();
+      }
+
+      // Check if sync is needed (first time load or first time today)
+      if (typeof window.mzoDataHub !== 'undefined' && typeof window.mzoDataHub.isFirstSyncOfDay === 'function') {
+        if (window.mzoDataHub.isFirstSyncOfDay() || (typeof isSyncNeeded === 'function' && isSyncNeeded())) {
+          console.log("Initial sync required. Starting performSync...");
+          performSync();
+        } else {
+          console.log("Sync not required today.");
+          const syncHint = document.getElementById('syncHint');
+          if (syncHint) {
+            syncHint.classList.add('show');
+            setTimeout(() => syncHint.classList.remove('show'), 5000);
+          }
+        }
+      } else if (typeof isSyncNeeded === 'function' && isSyncNeeded()) {
+        performSync();
+      }
 
       function startCardAnimation() {
         const cards = document.querySelectorAll('.report-card');
+        console.log(`Found ${cards.length} report cards to animate.`);
         cards.forEach((card, index) => {
           card.style.animationDelay = `${index * 75}ms`;
           card.classList.add('start-animation');
@@ -2863,6 +2958,11 @@
           window.mzoDataHub.markSyncComplete();
         }
 
+        // Refresh executive chart now that data is available
+        if (typeof initExecutiveChart === 'function') {
+          initExecutiveChart();
+        }
+
         setTimeout(() => {
           syncOverlay.style.opacity = '0';
           setTimeout(() => {
@@ -2880,26 +2980,270 @@
       }
     }
 
-    // Check if sync is needed (first time load or first time today)
-    document.addEventListener('DOMContentLoaded', function () {
-      if (typeof window.mzoDataHub !== 'undefined' && typeof window.mzoDataHub.isFirstSyncOfDay === 'function') {
-        if (window.mzoDataHub.isFirstSyncOfDay() || isSyncNeeded()) {
-          performSync();
-        } else {
-          // It is not the first sync of the day, show visual hint
-          const syncHint = document.getElementById('syncHint');
-          if (syncHint) {
-            syncHint.classList.add('show');
-            // Auto-hide the hint after 5 seconds
-            setTimeout(() => {
-              syncHint.classList.remove('show');
-            }, 5000);
-          }
+    // --- Executive Loss Chart Logic ---
+    let homepageChart;
+    const hierarchyData = {
+        "MALDA REGION": {
+            divisions: ["South Malda Div Total", "North Malda Div Total", "Gazole Div Total", "Chanchal Div Total", "Malda Div Total"],
+            cccs: {
+                "South Malda Div Total": ["RATHBARI", "FULBARI", "MOKDAMPUR", "OLD MALDA", "KALIACHAK", "SUJAPUR", "AIHO", "MOTHABARI", "MATHURAPUR", "BAISNABNAGAR", "GOLAPGANJ"],
+                "North Malda Div Total": ["SAMSI", "PARANPUR", "GAZOLE", "CHANCHAL", "H.C. PUR", "BHALUKA", "BAMANGOLA", "MALATIPUR", "KUSHIDA", "PANDUA"],
+                "Gazole Div Total": ["OLD MALDA", "AIHO", "GAZOLE", "BAMANGOLA", "PANDUA"],
+                "Chanchal Div Total": ["SAMSI", "PARANPUR", "CHANCHAL", "H.C. PUR", "BHALUKA", "MALATIPUR", "KUSHIDA"],
+                "Malda Div Total": ["RATHBARI", "FULBARI", "MOKDAMPUR", "KALIACHAK", "SUJAPUR", "MOTHABARI", "MATHURAPUR", "BAISNABNAGAR", "GOLAPGANJ"]
+            }
+        },
+        "U/DINAJPUR REGION": {
+            divisions: ["Raiganj Div Total", "Islampur Div Total"],
+            cccs: {
+                "Raiganj Div Total": ["RAIGANJ", "KALIAGANJ", "HEMTABAD", "BIRNAGAR", "ITAHAR", "KARANDEGHI"],
+                "Islampur Div Total": ["DALKHOLA", "KANKI", "GOALPOKHAR", "ISLAMPUR", "CHOPRA"]
+            }
+        },
+        "D/DINAJPUR REGION": {
+            divisions: ["Balurghat Div Total", "Buniadpur Div Total"],
+            cccs: {
+                "Balurghat Div Total": ["BALURGHAT", "HILI", "KUMARGUNJ", "TAPAN", "PATIRAM"],
+                "Buniadpur Div Total": ["BUNIADPUR", "HARIRAMPUR", "GANGARAMPUR", "KUSHMUNDI"]
+            }
         }
-      } else if (typeof isSyncNeeded === 'function' && isSyncNeeded()) {
-        performSync();
+    };
+    const lossParams = ["CUM. INPUT (MU)", "CUM. DEMAND(MU)", "CUM. COLLEC. (MU)", "CUM. AT&C LOSS", "CUM. DIST. LOSS", "COLL. EFF."];
+    const lossParamMap = { "CUM. AT&C LOSS": "AT&C Loss" };
+
+    async function initExecutiveChart(retryCount = 0) {
+      console.log(`initExecutiveChart: Attempt ${retryCount + 1}...`);
+      if (window.innerWidth <= 768) {
+        console.log("initExecutiveChart: Mobile view detected, skipping.");
+        return;
       }
-    });
+
+      const csvData = await window.mzoDataHub.get('CACHE_LOSS');
+      if (!csvData) {
+        if (retryCount < 5) {
+          console.log("initExecutiveChart: Data not ready, retrying in 2 seconds...");
+          setTimeout(() => initExecutiveChart(retryCount + 1), 2000);
+        } else {
+          console.error("initExecutiveChart: Failed to load data after 5 attempts.");
+        }
+        return;
+      }
+
+      // Ensure the card is visible (override any stuck animation)
+      const card = document.querySelector('.loss-chart-card');
+      if (card) {
+        card.style.opacity = '1';
+        card.style.transform = 'translateY(0)';
+      }
+
+      console.log("initExecutiveChart: Data ready, parsing...");
+      Papa.parse(csvData, {
+        header: true,
+        complete: function(results) {
+          console.log("initExecutiveChart: CSV Parse complete. Rows:", results.data.length);
+          const rawData = results.data.filter(row => row.CCC && row.YEAR && row.MONTH);
+          console.log("initExecutiveChart: Filtered valid rows:", rawData.length);
+          
+          if (rawData.length === 0) {
+             console.error("initExecutiveChart: No valid rows found after filtering.");
+             return;
+          }
+
+          populateExecutiveFilter(rawData);
+          updateHomepageChart(rawData);
+          
+          const filterElem = document.getElementById('executiveOfficeFilter');
+          if (filterElem) {
+            filterElem.addEventListener('change', () => updateHomepageChart(rawData));
+          }
+        },
+        error: function(err) {
+          console.error("initExecutiveChart: PapaParse error", err);
+        }
+      });
+    }
+
+    function populateExecutiveFilter(data) {
+      const filter = document.getElementById('executiveOfficeFilter');
+      let html = '<option value="MALDA ZONE" selected>MALDA ZONE</option>';
+      
+      Object.keys(hierarchyData).forEach(region => {
+        html += `<option value="${region}">-- ${region}</option>`;
+        
+        hierarchyData[region].divisions.forEach(div => {
+          html += `<option value="${div}">&nbsp;&nbsp;-- ${div}</option>`;
+          
+          const cccs = (hierarchyData[region].cccs && hierarchyData[region].cccs[div]) || [];
+          cccs.forEach(ccc => {
+            html += `<option value="${ccc}">&nbsp;&nbsp;&nbsp;&nbsp;-- ${ccc}</option>`;
+          });
+        });
+      });
+      
+      const mappedUnits = new Set(['MALDA ZONE']);
+      Object.keys(hierarchyData).forEach(r => {
+        mappedUnits.add(r);
+        hierarchyData[r].divisions.forEach(d => {
+          mappedUnits.add(d);
+          (hierarchyData[r].cccs[d] || []).forEach(c => mappedUnits.add(c));
+        });
+      });
+
+      const allUnitsInData = new Set(data.map(r => r.CCC && r.CCC.trim()).filter(Boolean));
+      const unmappedUnits = [...allUnitsInData].filter(u => !mappedUnits.has(u)).sort();
+
+      if (unmappedUnits.length > 0) {
+        html += `<option value="" disabled>-- UNMAPPED / OTHER --</option>`;
+        unmappedUnits.forEach(u => {
+          html += `<option value="${u}">-- ${u}</option>`;
+        });
+      }
+      
+      filter.innerHTML = html;
+    }
+
+    function updateHomepageChart(data) {
+      const office = document.getElementById('executiveOfficeFilter').value;
+      const metrics = ["CUM. AT&C LOSS", "CUM. DIST. LOSS"];
+      const monthNames = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
+      
+      const fiscalYears = data.map(r => {
+        const yr = parseInt(r.YEAR);
+        const mo = parseInt(r.MONTH);
+        return (mo >= 4) ? yr : yr - 1;
+      }).filter(y => !isNaN(y));
+      
+      const latestFiscalYear = Math.max(...fiscalYears);
+      console.log(`updateHomepageChart: Office='${office}', Latest Fiscal Year=${latestFiscalYear}`);
+      
+      // We want to start from Mar '25
+      const expandedMonthNames = ["Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
+      // Wait, there's two Mar now? No, the last one is next year.
+      // Sequence: Mar(25), Apr(25), ..., Mar(26)
+      
+      const labels = [];
+      const chartValues = {
+        "CUM. AT&C LOSS": [],
+        "CUM. DIST. LOSS": []
+      };
+      
+      expandedMonthNames.forEach((m, idx) => {
+        // Special mapping for the expanded sequence
+        let fiscalIdx, yr;
+        if (idx === 0) { // Prepended March
+          fiscalIdx = 3;
+          yr = latestFiscalYear; // If latestFiscalYear is 2025 (Apr'25), then Mar'25 is in the same year entry 2025
+        } else {
+          fiscalIdx = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3][idx - 1];
+          yr = (fiscalIdx >= 4) ? latestFiscalYear : latestFiscalYear + 1;
+        }
+        
+        labels.push(`${m} '${yr.toString().slice(-2)}`);
+        
+        metrics.forEach(metric => {
+          const entry = data.find(r => r.CCC && r.CCC.trim() === office && parseInt(r.MONTH) === fiscalIdx && parseInt(r.YEAR) === yr);
+          chartValues[metric].push(entry ? parseFloat(entry[metric]) : null);
+        });
+      });
+
+      console.log("updateHomepageChart: Values extracted:", chartValues);
+
+      // Simple trim leading/trailing nulls based on AT&C loss (primary metric)
+      const masterValues = chartValues["CUM. AT&C LOSS"];
+      let start = 0, end = masterValues.length - 1;
+      while(start < masterValues.length && masterValues[start] === null) start++;
+      while(end >= 0 && masterValues[end] === null) end--;
+      
+      if (start > end) {
+        console.warn("updateHomepageChart: No data found for the selected range.");
+        if (homepageChart) homepageChart.destroy();
+        return;
+      }
+
+      const trimmedLabels = labels.slice(start, end + 1);
+      const trimmedATC = chartValues["CUM. AT&C LOSS"].slice(start, end + 1);
+      const trimmedTD = chartValues["CUM. DIST. LOSS"].slice(start, end + 1);
+
+      const ctxElem = document.getElementById('homepageLossChart');
+      if (!ctxElem) {
+        console.error("updateHomepageChart: Canvas element #homepageLossChart not found!");
+        return;
+      }
+
+      if (homepageChart) homepageChart.destroy();
+
+      const datalabelsPlugin = (typeof ChartDataLabels !== 'undefined') ? ChartDataLabels : (typeof window.ChartDataLabels !== 'undefined' ? window.ChartDataLabels : null);
+      if (!datalabelsPlugin) console.warn("updateHomepageChart: ChartDataLabels plugin not found!");
+
+      console.log("updateHomepageChart: Creating Dual-Line Chart.");
+      try {
+        homepageChart = new Chart(ctxElem.getContext('2d'), {
+          type: 'line',
+          data: {
+            labels: trimmedLabels,
+            datasets: [
+              {
+                label: 'AT&C Loss %',
+                data: trimmedATC,
+                borderColor: '#e74c3c',
+                backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                fill: true,
+                tension: 0.4,
+                pointRadius: 4,
+                borderWidth: 3
+              },
+              {
+                label: 'T&D Loss %',
+                data: trimmedTD,
+                borderColor: '#9b59b6',
+                backgroundColor: 'rgba(155, 89, 182, 0.1)',
+                fill: true,
+                tension: 0.4,
+                pointRadius: 4,
+                borderWidth: 3
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { 
+                display: true, 
+                position: 'top',
+                labels: { color: '#9ca3af', boxWidth: 12, font: { size: 10 } }
+              },
+              datalabels: {
+                display: true,
+                align: 'top',
+                anchor: 'end',
+                formatter: (v) => (v !== null && v !== undefined) ? v.toFixed(1) : '',
+                font: { weight: 'bold', size: 9 },
+                color: (context) => context.dataset.borderColor
+              }
+            },
+            scales: {
+              y: { 
+                beginAtZero: false,
+                grid: { color: 'rgba(255,255,255,0.05)' }, 
+                ticks: { color: '#9ca3af', font: { size: 10 } } 
+              },
+              x: { 
+                grid: { display : false }, 
+                ticks: { color: '#9ca3af', font: { size: 10 } } 
+              }
+            }
+          },
+          plugins: datalabelsPlugin ? [datalabelsPlugin] : []
+        });
+        console.log("updateHomepageChart: Chart created successfully.");
+      } catch (err) {
+        console.error("updateHomepageChart: Error creating Chart.js instance:", err);
+      }
+    }
+
+    // Check if sync is needed (first time load or first time today)
+    // Consolidating all DOMContentLoaded logic into the first listener above
   </script>
 
 </body>

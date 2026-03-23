@@ -618,6 +618,12 @@
         }
 
         /* Expandable table (now for indentation only) */
+        .zone-row {
+            font-weight: 700;
+            background-color: #eaf2f8;
+            cursor: pointer;
+        }
+
         .region-row {
             font-weight: 600;
             background-color: #f0f7ff;
@@ -1037,7 +1043,10 @@
             </div>
 
             <div class="comparison-sub-tabs">
-                <button class="comparison-sub-tab-button" onclick="showComparisonSubTab('region')">Region</button>
+                <button class="comparison-sub-tab-button" onclick="showComparisonSubTab('zone')">Zone</button>
+                <button class="comparison-sub-tab-button" onclick="showComparisonSubTab('region')">
+                    Region <span id="regionFilterIcon" class="filter-clear-icon">✖</span>
+                </button>
                 <button class="comparison-sub-tab-button" onclick="showComparisonSubTab('division')">
                     Division <span id="divisionFilterIcon" class="filter-clear-icon">✖</span>
                 </button>
@@ -1101,7 +1110,7 @@
         let chartData = {}; // Stores data for the chart, used for hover comparison
         let tooltipTimeout = null;
         let currentActiveTab = 'chartTab'; // Track the currently active main tab
-        let currentComparisonSubTab = 'division'; // Track the currently active comparison sub-tab - Changed to 'division'
+        let currentComparisonSubTab = 'zone'; // Track the currently active comparison sub-tab - Changed to 'zone'
         let currentSortColumn = null; // 'difference' or 'percentDiff'
         let currentSortOrder = 'none'; // 'asc', 'desc', 'none'
         let expandedRowOptions = null; // To keep track of the currently expanded options row (either region or division)
@@ -1109,6 +1118,7 @@
         let chartTabOpenedOnce = false; // Flag to track if chart tab has been opened
 
         // Global variables for filtering comparison table rows
+        let currentZoneFilter = null; // New zone filter
         let currentRegionFilter = null;
         let currentDivisionFilter = null;
 
@@ -1334,9 +1344,9 @@
                 generateYearCheckboxes();
                 generateParameterCheckboxes();
                 initializeComparisonFilters(); // Initialize comparison dropdowns
-                showTab('comparisonTab'); // Show comparison tab by default
+                showTab('chartTab'); // Show chart tab by default
                 document.getElementById('compareLastMarch').checked = true; // Select "vs. Last March"
-                showComparisonSubTab('division'); // Show division view by default in comparison tab
+                showComparisonSubTab('zone'); // Show zone view by default in comparison tab
                 updateChart(); // Initial chart load for chart tab. Call after everything is set up.
                 hideLoader(); // Hide loader after all initial data and UI is rendered
             } catch (error) {
@@ -1362,8 +1372,8 @@
 
             const sortedUnits = [...allUniqueUnits].filter(unit => unit && unit !== "").sort((a, b) => a.localeCompare(b));
 
-            cccFilter.innerHTML = `<option value="" disabled selected>--Select Office--</option>` +
-                sortedUnits.map(ccc => `<option value="${ccc}">${ccc}</option>`).join('');
+            cccFilter.innerHTML = `<option value="" disabled>--Select Office--</option>` +
+                sortedUnits.map(ccc => `<option value="${ccc}" ${ccc === 'MALDA ZONE' ? 'selected' : ''}>${ccc}</option>`).join('');
 
             cccFilter.addEventListener("change", () => {
                 if (currentActiveTab === 'chartTab') {
@@ -1725,6 +1735,31 @@
                 });
             }
 
+            // Trim leading and trailing empty periods for best chart view
+            let firstNonEmptyIndex = -1;
+            let lastNonEmptyIndex = -1;
+
+            for (let i = 0; i < labels.length; i++) {
+                let hasData = false;
+                for (const dataset of datasets) {
+                    if (!dataset.isTarget && dataset.data[i] !== null && dataset.data[i] !== undefined) {
+                        hasData = true;
+                        break;
+                    }
+                }
+                if (hasData) {
+                    if (firstNonEmptyIndex === -1) firstNonEmptyIndex = i;
+                    lastNonEmptyIndex = i; // Will continuously update to finding the last one
+                }
+            }
+
+            if (firstNonEmptyIndex !== -1 && lastNonEmptyIndex !== -1) {
+                labels = labels.slice(firstNonEmptyIndex, lastNonEmptyIndex + 1);
+                datasets.forEach(dataset => {
+                    dataset.data = dataset.data.slice(firstNonEmptyIndex, lastNonEmptyIndex + 1);
+                });
+            }
+
             renderChart(labels, datasets);
             updateDataTable();
         }
@@ -1828,15 +1863,7 @@
 
                                 const metricGroups = {};
                                 const monthIndex = context.tooltip.dataPoints[0].dataIndex;
-                                let displayMonth = "";
-
-                                if (currentChartView === 'continuous') {
-                                    // In continuous mode, the label IS the month+year
-                                    displayMonth = context.chart.data.labels[monthIndex];
-                                } else {
-                                    // In YoY mode, the label is just the month
-                                    displayMonth = monthNames[monthIndex];
-                                }
+                                const displayMonth = context.chart.data.labels[monthIndex];
 
                                 let tooltipContent = `<div class="month-title">${displayMonth}</div>`;
 
@@ -2245,9 +2272,20 @@
             let processedEntries = [];
 
             // Logic based on active comparison sub-tab and filters to populate processedEntries
-            if (currentComparisonSubTab === 'region') {
-                // If we are explicitly on the region tab, clear any filters
+            if (currentComparisonSubTab === 'zone') {
+                // If we are explicitly on the zone tab, clear lower filters
                 currentRegionFilter = null;
+                currentDivisionFilter = null;
+                const zoneName = "MALDA ZONE"; // Matching the name exactly as expected in the CSV 'CCC' column.
+                const zoneEntry = processHierarchyLevel(
+                    rawData.filter(row => row.CCC === zoneName && parseInt(row.MONTH) === actualMonth1 && parseInt(row.YEAR) === actualYear1),
+                    rawData.filter(row => row.CCC === zoneName && parseInt(row.MONTH) === actualMonth2 && parseInt(row.YEAR) === actualYear2),
+                    selectedParameter,
+                    zoneName
+                );
+                if (zoneEntry) processedEntries.push(zoneEntry);
+            } else if (currentComparisonSubTab === 'region') {
+                // If we are explicitly on the region tab, clear lower filters
                 currentDivisionFilter = null;
                 const regions = Object.keys(hierarchyData).sort();
                 regions.forEach(regionName => {
@@ -2398,6 +2436,41 @@
             }
         }
 
+        function toggleZoneExpand(rowElement, zoneName) {
+            const isExpanded = rowElement.classList.contains('expanded');
+
+            // Collapse any currently expanded row if it's not the one being clicked again
+            if (expandedRowOptions && expandedRowOptions !== rowElement) {
+                collapseAllOptions();
+            }
+
+            if (isExpanded) {
+                // Collapse the current row
+                rowElement.classList.remove('expanded');
+                const nextSibling = rowElement.nextElementSibling;
+                if (nextSibling && nextSibling.classList.contains('options-row')) {
+                    nextSibling.remove();
+                }
+                expandedRowOptions = null;
+            } else {
+                // Expand the current row
+                rowElement.classList.add('expanded');
+                expandedRowOptions = rowElement;
+
+                const newRow = document.createElement('tr');
+                newRow.classList.add('options-row');
+                newRow.innerHTML = `
+                    <td colspan="8">
+                        <div class="option-buttons">
+                            <button onclick="showComparisonSubTab('region', '${zoneName}', 'zone')">View Regions</button>
+                            <button onclick="drillDownToChart('${zoneName}')">View Chart</button>
+                        </div>
+                    </td>
+                `;
+                rowElement.after(newRow);
+            }
+        }
+
         function toggleRegionExpand(rowElement, regionName) {
             const isExpanded = rowElement.classList.contains('expanded');
 
@@ -2471,10 +2544,12 @@
 
 
         function generateHierarchyRow(entry, rowClass, level, serialNumber, hidePercentColumn = false) {
-            const indent = level * 30; // 0px for region, 30px for division, 60px for CCC
+            const indent = level * 30; // 0px for zone, 30px for region, 60px for division, 90px for CCC
             let onClickHandler = '';
 
-            if (rowClass === 'region-row') {
+            if (rowClass === 'zone-row') {
+                onClickHandler = `onclick="toggleZoneExpand(this, '${entry.name}')"`;
+            } else if (rowClass === 'region-row') {
                 // For region rows, the click handler is on the row itself to toggle options
                 onClickHandler = `onclick="toggleRegionExpand(this, '${entry.name}')"`;
             } else if (rowClass === 'division-row') {
@@ -2571,15 +2646,18 @@
                     // Determine the correct row class based on the entry's name and hierarchy
                     let rowClass = '';
                     let level = 0;
-                    if (Object.keys(hierarchyData).includes(entry.name)) {
-                        rowClass = 'region-row';
+                    if (entry.name === "MALDA ZONE") {
+                        rowClass = 'zone-row';
                         level = 0;
+                    } else if (Object.keys(hierarchyData).includes(entry.name)) {
+                        rowClass = 'region-row';
+                        level = 1;
                     } else if (Object.values(hierarchyData).some(reg => reg.divisions.includes(entry.name))) {
                         rowClass = 'division-row';
-                        level = 1;
+                        level = 2;
                     } else {
                         rowClass = 'ccc-row';
-                        level = 2;
+                        level = 3;
                     }
                     tbodyHtml += generateHierarchyRow(entry, rowClass, level, index + 1, hidePercentColumn); // Pass index + 1 as serial number
                 });
@@ -2717,13 +2795,19 @@
 
             // Set filters based on the clicked unit or clear them if fromClearIcon or direct tab click
             if (fromClearIcon) {
-                if (filterUnitType === 'region') {
+                if (filterUnitType === 'zone') {
+                    currentZoneFilter = null;
+                } else if (filterUnitType === 'region') {
                     currentRegionFilter = null;
                 } else if (filterUnitType === 'division') {
                     currentDivisionFilter = null;
                 }
             } else if (filterUnitName) { // A specific unit was passed for filtering
-                if (filterUnitType === 'region') {
+                if (filterUnitType === 'zone') {
+                    currentZoneFilter = filterUnitName;
+                    currentRegionFilter = null;
+                    currentDivisionFilter = null;
+                } else if (filterUnitType === 'region') {
                     currentRegionFilter = filterUnitName;
                     currentDivisionFilter = null; // Clear division filter if coming from region
                 } else if (filterUnitType === 'division') {
@@ -2731,6 +2815,7 @@
                     currentRegionFilter = null; // Clear region filter if coming from division
                 }
             } else { // Direct tab click (no filterUnitName)
+                currentZoneFilter = null;
                 currentRegionFilter = null;
                 currentDivisionFilter = null;
             }
@@ -2742,7 +2827,12 @@
         // New function to clear filters
         function clearFilter(filterType, event) {
             event.stopPropagation(); // Prevent the tab button's own click handler from firing
-            if (filterType === 'region') {
+            if (filterType === 'zone') {
+                currentZoneFilter = null;
+                currentRegionFilter = null;
+                currentDivisionFilter = null;
+                showComparisonSubTab(currentComparisonSubTab, null, null, true);
+            } else if (filterType === 'region') {
                 currentRegionFilter = null;
                 currentDivisionFilter = null; // Clearing region also clears division
                 showComparisonSubTab(currentComparisonSubTab, null, null, true); // Go back to current sub-tab without region/division filter
@@ -2754,8 +2844,18 @@
 
         // Function to update the display of filter clear icons
         function updateFilterIconsDisplay() {
+            const regionIcon = document.getElementById('regionFilterIcon');
             const divisionIcon = document.getElementById('divisionFilterIcon');
             const cccIcon = document.getElementById('cccFilterIcon'); // Corrected ID reference
+
+            // Logic for Region tab filter icon
+            if (currentComparisonSubTab === 'region' && currentZoneFilter) {
+                if (regionIcon) regionIcon.style.display = 'flex';
+                if (regionIcon) regionIcon.onclick = (event) => clearFilter('zone', event);
+            } else {
+                if (regionIcon) regionIcon.style.display = 'none';
+                if (regionIcon) regionIcon.onclick = null;
+            }
 
             // Logic for Division tab filter icon
             // Show icon if current sub-tab is division AND a region filter is active
@@ -2775,6 +2875,9 @@
                 } else if (currentRegionFilter) { // If CCC tab is active and filtered by region
                     cccIcon.style.display = 'flex';
                     cccIcon.onclick = (event) => clearFilter('region', event); // Clear region filter
+                } else if (currentZoneFilter) {
+                    cccIcon.style.display = 'flex';
+                    cccIcon.onclick = (event) => clearFilter('zone', event); // Clear zone filter
                 } else {
                     cccIcon.style.display = 'none';
                     cccIcon.onclick = null;
