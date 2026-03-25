@@ -164,12 +164,19 @@ function updateDescriptionFilter() {
     const selectedGroup = materialGroupFilter.value;
     const option = materialDescriptionFilter;
 
-    // Get descriptions for selected store and group
+    // Get descriptions for selected store and group, respecting current tab
     let descriptions = [];
     let filteredItems = allData;
 
+    // Filter by Tab
+    if (currentStoreTab === 'old') {
+        filteredItems = filteredItems.filter(item => item.StoreType === 'old');
+    } else if (currentStoreTab === 'new') {
+        filteredItems = filteredItems.filter(item => item.StoreType === 'new');
+    }
+
     if (selectedStore) {
-        filteredItems = filteredItems.filter(item => item.Store === selectedStore);
+        filteredItems = filteredItems.filter(item => item.StoreName === selectedStore);
     }
     if (selectedGroup) {
         filteredItems = filteredItems.filter(item => item['Material Group'] === selectedGroup);
@@ -220,18 +227,22 @@ function updateGroupFilter() {
     const selectedStore = storeFilter.value;
     const option = materialGroupFilter;
 
-    // Get groups for selected store
+    // Get groups for selected store, respecting current tab
     let groups = [];
-    if (selectedStore) {
-        groups = [...new Set(
-            allData
-                .filter(item => item.Store === selectedStore) // Keep filtering by store if one is selected
-                .map(item => item['Material Group'])
-        )].sort();
-    } else {
-        // If no store is selected, do not clear the groups.
-        return;
+    let filteredItems = allData;
+
+    // Filter by Tab
+    if (currentStoreTab === 'old') {
+        filteredItems = filteredItems.filter(item => item.StoreType === 'old');
+    } else if (currentStoreTab === 'new') {
+        filteredItems = filteredItems.filter(item => item.StoreType === 'new');
     }
+
+    if (selectedStore) {
+        filteredItems = filteredItems.filter(item => item.StoreName === selectedStore);
+    }
+
+    groups = [...new Set(filteredItems.map(item => item['Material Group']))].sort();
 
     // Clear options except placeholder
     while (option.options.length > 1) {
