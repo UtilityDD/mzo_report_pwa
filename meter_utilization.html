@@ -735,6 +735,33 @@
       text-decoration: underline;
     }
 
+    .smart-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+      padding: 2px 8px;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    .smart-toggle:hover {
+      background: rgba(37, 99, 235, 0.05);
+    }
+    .smart-toggle input {
+      width: 15px;
+      height: 15px;
+      cursor: pointer;
+      accent-color: var(--primary);
+    }
+    .toggle-text {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
     @media (max-width: 768px) {
       .header {
         flex-direction: column;
@@ -780,7 +807,13 @@
 <div class="container">
   <div class="kpi-grid">
     <div class="kpi-card">
-      <div class="kpi-label">Total Meters Issued</div>
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+        <div class="kpi-label" style="margin-bottom: 0;">Total Meters Issued</div>
+        <label class="smart-toggle">
+          <input type="checkbox" onchange="toggleSmartOnly(this)">
+          <span class="toggle-text">Smart Only</span>
+        </label>
+      </div>
       <div class="kpi-value" id="totalIssued">-</div>
       <div class="kpi-trend trend-neutral">
         <i class="fas fa-info-circle"></i> From ERP Core
@@ -988,6 +1021,7 @@
   let sortDirection = 'desc';
   let masterLookup = {}; // meter -> { conId, instNo }
   let replacementLookup = {}; // meter -> { conId }
+  let smartOnly = false;
 
   async function init() {
     try {
@@ -1153,6 +1187,10 @@
       if (phase === "1") phase = "1PH";
       if (phase === "3") phase = "3PH";
 
+      // Smart Meter Identification
+      const category = String(d['Meter Category'] || "").trim();
+      const isSmart = category.toUpperCase().includes("SMART METER");
+
       return {
         meter,
         cccCode,
@@ -1162,7 +1200,8 @@
         status,
         make: d['Meter Make'] || 'Unknown',
         phase: phase || 'Unknown',
-        entryDate: d['Entry Date'] || 'Unknown'
+        entryDate: d['Entry Date'] || 'Unknown',
+        isSmart: isSmart
       };
     });
   }
@@ -1174,6 +1213,7 @@
     const filtered = allERP.filter(d => {
       if (regionVal !== 'all' && d.region !== regionVal) return false;
       if (divisionVal !== 'all' && d.division !== divisionVal) return false;
+      if (smartOnly && !d.isSmart) return false;
       if (currentPhaseFilter !== 'all') {
          const p = currentPhaseFilter === '1' ? '1PH' : '3PH';
          if (d.phase !== p) return false;
@@ -1332,6 +1372,11 @@
     updateUI();
   }
 
+  function toggleSmartOnly(el) {
+    smartOnly = el.checked;
+    updateUI();
+  }
+
   function showLoading(show) {
     document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none';
   }
@@ -1371,10 +1416,21 @@
     const input = document.getElementById('detailSearchInput');
     
     input.value = '';
-    title.textContent = `Unutilized Meters: ${name}`;
+    const phaseLabel = currentPhaseFilter === 'all' ? '' : (currentPhaseFilter === '1' ? '1-Phase ' : '3-Phase ');
+    title.textContent = `${phaseLabel}Unutilized Meters: ${name}`;
     
     currentDetailList = allERP.filter(d => {
       if (d.status !== 'meter-in-hand') return false;
+      
+      // Smart Only Filter
+      if (smartOnly && !d.isSmart) return false;
+
+      // Phase Filter
+      if (currentPhaseFilter !== 'all') {
+         const p = currentPhaseFilter === '1' ? '1PH' : '3PH';
+         if (d.phase !== p) return false;
+      }
+
       const val = d[level === 'ccc' ? 'cccName' : level];
       return val === name;
     });
@@ -1530,6 +1586,7 @@
         const divisionVal = document.getElementById('divisionFilter').value;
         if (regionVal !== 'all' && d.region !== regionVal) return false;
         if (divisionVal !== 'all' && d.division !== divisionVal) return false;
+        if (smartOnly && !d.isSmart) return false;
         if (currentPhaseFilter !== 'all') {
             const p = currentPhaseFilter === '1' ? '1PH' : '3PH';
             if (d.phase !== p) return false;
