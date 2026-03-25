@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="mzo_data_hub.js"></script>
   <style>
     :root {
       --primary: #2563eb;
@@ -1033,12 +1034,32 @@
       buildHierarchy(officeMappingStr);
       populateFilters();
 
-      const [erpData, masterData, crmData, isuData] = await Promise.all([
-        fetchCSV(BASE_URL + "&gid=" + GID_ERP),
-        fetchCSV(BASE_URL + "&gid=" + GID_MASTER),
-        fetchCSV(BASE_URL + "&gid=" + GID_CRM),
-        fetchCSV(BASE_URL + "&gid=" + GID_ISU)
-      ]);
+      let erpData, masterData, crmData, isuData;
+
+      if (window.mzoDataHub && (await mzoDataHub.isCached('CACHE_METER_ERP'))) {
+        console.log("Loading meter data from Data Hub cache...");
+        [erpData, masterData, crmData, isuData] = await Promise.all([
+          mzoDataHub.get('CACHE_METER_ERP'),
+          mzoDataHub.get('CACHE_METER_MASTER'),
+          mzoDataHub.get('CACHE_METER_CRM'),
+          mzoDataHub.get('CACHE_METER_ISU')
+        ]);
+        
+        // Papa.parse the CSV strings from cache
+        erpData = Papa.parse(erpData, { header: true, skipEmptyLines: true }).data;
+        masterData = Papa.parse(masterData, { header: true, skipEmptyLines: true }).data;
+        crmData = Papa.parse(crmData, { header: true, skipEmptyLines: true }).data;
+        isuData = Papa.parse(isuData, { header: true, skipEmptyLines: true }).data;
+      } else {
+        console.log("Fetching meter data from network...");
+        const results = await Promise.all([
+          fetchCSV(BASE_URL + "&gid=" + GID_ERP),
+          fetchCSV(BASE_URL + "&gid=" + GID_MASTER),
+          fetchCSV(BASE_URL + "&gid=" + GID_CRM),
+          fetchCSV(BASE_URL + "&gid=" + GID_ISU)
+        ]);
+        [erpData, masterData, crmData, isuData] = results;
+      }
 
       processData({ erpData, masterData, crmData, isuData });
       updateUI();
