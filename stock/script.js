@@ -12,6 +12,7 @@ let allData = [];
 let currentSortColumn = null;
 let currentSortDirection = 'asc';
 let currentStoreTab = 'total'; // 'total', 'old', 'new'
+let currentFilteredData = []; 
 
 const PLANT_MAP = {
     '3342': 'Malda (D) Division',
@@ -92,6 +93,9 @@ function applyFilters() {
     populateKpiCards(filteredData);
     
     populateTable(filteredData);
+    
+    // Store globally for modals to use
+    currentFilteredData = filteredData;
 }
 
 function populateFilters(data) {
@@ -306,8 +310,8 @@ function showBreakdownModal(groupName) {
     modalTitle.textContent = `${modalHeaderTitle} Stock Details`;
     modalTableBody.innerHTML = '';
 
-    // Filter data for the selected group
-    let groupData = allData.filter(item => item['Material Group'] === groupName);
+    // Filter data for the selected group from current filtered set
+    let groupData = currentFilteredData.filter(item => item['Material Group'] === groupName);
 
     // Apply the same special condition for the TRANSFORM modal breakdown
     if (groupName === 'TRANSFORM') {
@@ -411,9 +415,9 @@ function showLowStockModal() {
     const modalSubtitle = document.querySelector('#low-stock-modal .modal-subtitle');
     contentContainer.innerHTML = ''; // Clear previous content
 
-    // First, aggregate all stock data
+    // First, aggregate stock data from current filtered set
     const aggregatedStock = {};
-    allData.forEach(item => {
+    currentFilteredData.forEach(item => {
         const key = `${item.StoreName}|${item['Material']}|${item['Material Description']}`;
         if (!aggregatedStock[key]) {
             aggregatedStock[key] = {
@@ -592,7 +596,8 @@ function handleResults(data) {
     const latestDate = allData.reduce((max, item) => item.Date > max ? item.Date : max, '');
     chartHeader.textContent = `Stock of Major Materials (${formatDate(latestDate)})`;
 
-    // Populate the new KPI cards
+    // Populate the new KPI cards and initial filtered data
+    currentFilteredData = [...allData];
     populateKpiCards(allData);
 
     // Start placeholder animation
