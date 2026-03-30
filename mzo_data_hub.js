@@ -38,6 +38,8 @@ class DataHub {
     constructor() {
         this.db = null;
         this.initPromise = this._initDB();
+        this.syncStatus = {}; // Tracks: 'idle', 'syncing', 'done', 'error'
+        this.syncPromises = {}; // Tracks active fetch promises for individual datasets
     }
 
     _initDB() {
@@ -79,6 +81,13 @@ class DataHub {
     // Get data from cache
     async get(key) {
         await this.initPromise;
+        
+        // If this specific key is currently syncing, wait for it to complete
+        // before returning the data. This provides a seamless "wait" experience.
+        if (this.syncStatus[key] === 'syncing' && this.syncPromises[key]) {
+            await this.syncPromises[key];
+        }
+
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([STORE_NAME], 'readonly');
             const store = transaction.objectStore(STORE_NAME);
@@ -120,53 +129,126 @@ class DataHub {
         localStorage.setItem('mzo_last_sync_date', today);
         localStorage.setItem('mzoDataSynced', 'true'); // Keep old flag for compatibility if needed
     }
+
+    // --- Modern Hybrid Sync Extensions ---
+
+    getSyncStatus(key) {
+        return this.syncStatus[key] || 'idle';
+    }
+
+    async waitForDataset(key) {
+        // If already done, return immediately
+        if (this.syncStatus[key] === 'done') return true;
+        
+        // If currently syncing, wait for the existing promise
+        if (this.syncPromises[key]) {
+            return this.syncPromises[key];
+        }
+
+        // Otherwise, if it's idle or error, try to fetch it now (individual retry logic)
+        return this.retryDataset(key);
+    }
+
+    async retryDataset(key) {
+        const dataset = DATASETS.find(d => d.key === key);
+        if (!dataset) return false;
+
+        this.syncStatus[key] = 'syncing';
+        this.syncPromises[key] = (async () => {
+            try {
+                const response = await fetch(dataset.url);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                let data;
+                if (dataset.type === 'json') data = await response.json();
+                else data = await response.text();
+
+                await this.set(dataset.key, data);
+                this.syncStatus[key] = 'done';
+                return true;
+            } catch (err) {
+                console.error(`Retry failed for ${key}:`, err);
+                this.syncStatus[key] = 'error';
+                return false;
+            } finally {
+                delete this.syncPromises[key];
+            }
+        })();
+
+        return this.syncPromises[key];
+    }
 }
 
 const mzoDataHub = new DataHub();
 window.mzoDataHub = mzoDataHub;
 
 // Main function to sync all datasets
+// Main function to sync all datasets in parallel batches
 async function syncAllData(progressCallback) {
     let completed = 0;
     const total = DATASETS.length;
+    const BATCH_SIZE = 6; // Balance speed and rate limits
 
     try {
-        // Clear old cache before syncing
-        await mzoDataHub.clear();
+        // Initialize sync status for all
+        DATASETS.forEach(d => {
+            if (mzoDataHub.syncStatus[d.key] !== 'done') {
+                mzoDataHub.syncStatus[d.key] = 'pending';
+            }
+        });
 
-        // Instead of Promise.all, do them sequentially or with controlled concurrency
-        // to give better progress feedback and avoid overwhelming mobile connections.
-        for (const dataset of DATASETS) {
+        // Use a simple queue for parallel execution with limited concurrency
+        const queue = [...DATASETS];
+        const workers = [];
+
+        const updateProgress = (label) => {
             if (progressCallback) {
-                progressCallback(completed, total, `Downloading ${dataset.label}...`);
+                progressCallback(completed, total, label);
             }
+        };
 
-            const response = await fetch(dataset.url);
-            if (!response.ok) throw new Error(`Failed to fetch ${dataset.url}`);
+        const executeWorker = async () => {
+            while (queue.length > 0) {
+                const dataset = queue.shift();
+                if (!dataset) break;
 
-            let data;
-            if (dataset.type === 'json') {
-                data = await response.json();
-            } else if (dataset.type === 'csv') {
-                data = await response.text();
+                // Skip if already done today (unless force refresh is added later)
+                if (mzoDataHub.syncStatus[dataset.key] === 'done') {
+                    completed++;
+                    continue;
+                }
+
+                updateProgress(`Updating ${dataset.label}...`);
+                const success = await mzoDataHub.retryDataset(dataset.key);
+                if (success) completed++;
+                
+                updateProgress(success ? `Loaded ${dataset.label}` : `Failed ${dataset.label}`);
             }
+        };
 
-            await mzoDataHub.set(dataset.key, data);
-            completed++;
+        // Start initial workers
+        for (let i = 0; i < Math.min(BATCH_SIZE, queue.length); i++) {
+            workers.push(executeWorker());
         }
 
+        await Promise.all(workers);
+
+        const allDone = Object.values(mzoDataHub.syncStatus).every(s => s === 'done');
+        
         if (progressCallback) {
-            progressCallback(completed, total, "Sync Complete!");
+            progressCallback(completed, total, allDone ? "Sync Complete!" : "Sync finished with some errors.");
         }
 
-        // Store flag indicating we have synced data
-        localStorage.setItem('mzoDataSynced', 'true');
-        return true;
+        if (allDone) {
+            localStorage.setItem('mzoDataSynced', 'true');
+        }
+        
+        return allDone;
 
     } catch (error) {
         console.error("Error during data sync:", error);
         if (progressCallback) {
-            progressCallback(completed, total, "Sync Failed. Please try again.");
+            progressCallback(completed, total, "Sync encountered a critical error.");
         }
         return false;
     }
