@@ -279,35 +279,37 @@
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
 
-        /* Loading Spinner */
-        #loadingOverlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(255, 255, 255, 0.8);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
+        /* Sync Status Badge */
+        .sync-badge {
+            display: inline-flex;
             align-items: center;
-            z-index: 1000;
+            gap: 0.5rem;
+            padding: 0.4rem 0.8rem;
+            border-radius: 2rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: #f8fafc;
+            color: var(--secondary);
+            border: 1px solid var(--border);
+            transition: all 0.3s ease;
         }
 
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid var(--primary);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+        .sync-badge.syncing {
+            background: #eff6ff;
+            color: #2563eb;
+            border-color: #bfdbfe;
         }
 
-        @keyframes spin {
-            0% {
-                transform: rotate(0deg);
-            }
+        .sync-badge.success {
+            background: #f0fdf4;
+            color: #16a34a;
+            border-color: #bbf7d0;
+        }
 
-            100% {
-                transform: rotate(360deg);
-            }
+        .sync-badge.error {
+            background: #fef2f2;
+            color: #dc2626;
+            border-color: #fecaca;
         }
 
         /* Responsive Cards for Mobile */
@@ -356,14 +358,12 @@
 </head>
 
 <body>
-    <div id="loadingOverlay">
-        <div class="spinner"></div>
-        <p class="mt-4 font-semibold text-slate-600">Processing Audit Records...</p>
-    </div>
-
-    <div class="page-header">
-        <div class="page-title">
+    <div class="page-header" style="margin-top: 1rem;">
+        <div class="page-title" style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
             <h1>Inspection Archive</h1>
+            <div id="syncStatus" class="sync-badge">
+                <i class="fas fa-sync fa-spin"></i> Checking...
+            </div>
         </div>
         <a href="index.html" class="btn-home">
             <i class="fas fa-home"></i> Back to Inspection
@@ -443,15 +443,48 @@
         };
 
         let reportData = [];
+        const CACHE_KEY = 'upkeeping_archive_data';
 
         async function init() {
+            // 1. Try Loading from Cache Instantly
+            const cachedData = localStorage.getItem(CACHE_KEY);
+            if (cachedData) {
+                try {
+                    const parsedData = JSON.parse(cachedData);
+                    if (parsedData && parsedData.length > 0) {
+                        reportData = parsedData;
+                        processAndRenderData(reportData);
+                    }
+                } catch (e) {
+                    console.warn('Invalid cache data', e);
+                }
+            }
+
+            // 2. Attach static event listeners
+            document.getElementById('searchInput').addEventListener('input', applyFilters);
+            document.getElementById('groupSelect').addEventListener('change', applyFilters);
+
+            // 3. Initiate Background Sync
+            fetchFreshData();
+        }
+
+        function processAndRenderData(data) {
+            applyFilters();
+        }
+
+        async function fetchFreshData() {
+            const syncStatus = document.getElementById('syncStatus');
+            syncStatus.className = 'sync-badge syncing';
+            syncStatus.innerHTML = '<i class="fas fa-sync fa-spin"></i> Syncing...';
+
             try {
                 const response = await fetch(CSV_URL);
+                if (!response.ok) throw new Error('Network response was not ok');
                 const csvText = await response.text();
-                reportData = parseCsv(csvText);
+                const rawData = parseCsv(csvText);
 
-                // Add Division to data
-                reportData.forEach(row => {
+                // Add Division mapping
+                rawData.forEach(row => {
                     row.Division = 'Other';
                     for (const [div, sss] of Object.entries(DIVISION_MAP)) {
                         if (sss.includes(row.Substation)) {
@@ -462,16 +495,30 @@
                 });
 
                 // Sort by date descending
-                reportData.sort((a, b) => new Date(b.Date) - new Date(a.Date));
+                rawData.sort((a, b) => new Date(b.Date) - new Date(a.Date));
 
-                applyFilters();
+                // Save to cache
+                localStorage.setItem(CACHE_KEY, JSON.stringify(rawData));
 
-                document.getElementById('searchInput').addEventListener('input', applyFilters);
-                document.getElementById('groupSelect').addEventListener('change', applyFilters);
-                document.getElementById('loadingOverlay').style.display = 'none';
+                // Update app state and re-render visually without blocking
+                reportData = rawData;
+                processAndRenderData(reportData);
+
+                syncStatus.className = 'sync-badge success';
+                syncStatus.innerHTML = '<i class="fas fa-check-circle"></i> Up to date';
+                
+                setTimeout(() => {
+                    syncStatus.innerHTML = `<i class="fas fa-clock"></i> Updated just now`;
+                }, 4000);
+
             } catch (error) {
-                console.error('Sync error:', error);
-                alert('Cloud database offline.');
+                console.error('Background sync failed:', error);
+                syncStatus.className = 'sync-badge error';
+                syncStatus.innerHTML = '<i class="fas fa-exclamation-circle"></i> Offline mode';
+
+                if (reportData.length === 0) {
+                    alert("You are offline and have no cached data. Please connect to the internet.");
+                }
             }
         }
 
