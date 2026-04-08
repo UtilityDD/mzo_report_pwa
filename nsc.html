@@ -1238,6 +1238,17 @@
       </div>
     </div>
 
+    <!-- Smart Search -->
+    <div class="row g-2 mb-2">
+      <div class="col-12">
+        <div class="input-group input-group-sm">
+          <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
+          <input type="text" id="smartSearch" class="form-control border-start-0 ps-0"
+            placeholder="Search Application No, Name or Phone..." style="font-size: 0.85rem; height: 38px;">
+        </div>
+      </div>
+    </div>
+
     <!-- Filters Row -->
     <div class="row g-2" style="margin-bottom: 0.6rem;">
       <div class="col-6 col-md-3">
@@ -1766,6 +1777,51 @@
         document.getElementById('poleFilter').addEventListener('change', applyFilters);
         document.getElementById('delayRangeFilter').addEventListener('change', applyFilters);
         document.getElementById('delayRange2Filter').addEventListener('change', applyFilters);
+        document.getElementById('smartSearch').addEventListener('input', (e) => {
+          applyFilters(e);
+        });
+
+        // --- Search Placeholder Typing Animation ---
+        const searchInput = document.getElementById('smartSearch');
+        const hints = [
+          "Search Application No...",
+          "Search Applicant Name...",
+          "Search Phone Number...",
+          "e.g. 500123456...",
+          "e.g. Biswajit Mondal...",
+          "e.g. 9876543210..."
+        ];
+        let hintIndex = 0;
+        let charIndex = 0;
+        let isDeleting = false;
+        let typeSpeed = 100;
+
+        function typeHint() {
+          const currentHint = hints[hintIndex];
+          
+          if (isDeleting) {
+            searchInput.placeholder = currentHint.substring(0, charIndex--);
+            typeSpeed = 50;
+          } else {
+            searchInput.placeholder = currentHint.substring(0, charIndex++);
+            typeSpeed = 100;
+          }
+
+          if (!isDeleting && charIndex === currentHint.length + 1) {
+            isDeleting = true;
+            typeSpeed = 2000; // Pause at end
+          } else if (isDeleting && charIndex === 0) {
+            isDeleting = false;
+            hintIndex = (hintIndex + 1) % hints.length;
+            typeSpeed = 500; // Pause before next hint
+          }
+
+          setTimeout(typeHint, typeSpeed);
+        }
+        
+        // Start typing animation
+        typeHint();
+        // ------------------------------------------
 
         applyFilters();
         showUrgentModal(rawData);
@@ -2044,6 +2100,17 @@
       return true;
     }
 
+    function matchesSearch(d) {
+      const searchInput = document.getElementById('smartSearch');
+      if (!searchInput) return true;
+      const query = searchInput.value.toLowerCase().trim();
+      if (!query) return true;
+
+      return (d.APPL_NO && d.APPL_NO.toLowerCase().includes(query)) ||
+        (d.NAME && d.NAME.toLowerCase().includes(query)) ||
+        (d.PHONE_NO && d.PHONE_NO.toLowerCase().includes(query));
+    }
+
     function matchesNonSliderFilters(d) {
       const region = document.getElementById('regionSelect').value;
       const divn = document.getElementById('divnSelect').value;
@@ -2062,7 +2129,8 @@
           (poleType === "Non-Pole" && (!d.NO_OF_POLES || d.NO_OF_POLES.trim() === "" || d.NO_OF_POLES === "0"))) &&
         (delayRange === "" || d.DelayRange === delayRange) &&
         (delayRange2 === "" || isInDelayRange2(d, delayRange2)) &&
-        (isWithinDateRange(d));
+        (isWithinDateRange(d)) &&
+        (matchesSearch(d));
     }
 
     function matchesBaseFilters(d) {
