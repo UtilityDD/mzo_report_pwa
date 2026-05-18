@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport" />
+    <title>Per Capita Demand Analysis</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2"></script>
+    <script src="mzo_data_hub.js"></script>
+
+    <style>
+        :root {
+            --bg-dark: #131b2e;
+            --bg-light-neu: #e0e5ec;
+            --neu-dark-shadow: 9px 9px 16px #0b101b, -9px -9px 16px #1b2641;
+            --neu-dark-inset: inset 6px 6px 10px 0 rgba(0, 0, 0, 0.3), inset -6px -6px 10px 0 rgba(255, 255, 255, 0.05);
+            --text-primary: #f9fafb;
+            --text-secondary: #9ca3af;
+            --accent-primary: #4f46e5;
+            --accent-secondary: #7c3aed;
+            --danger: #f43f5e;
+            --success: #10b981;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-secondary);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .title-group h1 { color: var(--text-primary); font-size: 24px; margin-bottom: 4px; }
+        .title-group p { font-size: 14px; }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: var(--bg-dark);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: var(--neu-dark-shadow);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .card-label { font-size: 13px; font-weight: 500; margin-bottom: 8px; }
+        .card-value { font-size: 28px; font-weight: 700; color: var(--text-primary); }
+        .card-sub { font-size: 12px; margin-top: 4px; }
+
+        .filters {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        select {
+            background: var(--bg-dark);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+            padding: 10px 15px;
+            border-radius: 12px;
+            outline: none;
+            box-shadow: var(--neu-dark-inset);
+            cursor: pointer;
+            width: 100%;
+        }
+
+        /* Tabs Styling */
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 20px;
+            padding: 5px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 15px;
+            box-shadow: var(--neu-dark-inset);
+            overflow-x: auto;
+            white-space: nowrap;
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+
+        .tabs::-webkit-scrollbar { display: none; } /* Chrome, Safari, Opera */
+
+        .tab {
+            padding: 10px 15px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            transition: all 0.3s;
+            flex: 1;
+            text-align: center;
+            min-width: fit-content;
+        }
+
+        .tab.active {
+            background: var(--accent-primary);
+            color: white;
+            box-shadow: 0 4px 15px rgba(79, 70, 229, 0.3);
+        }
+
+        .tab:hover:not(.active) {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+        }
+
+        /* Class Buttons */
+        .class-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .class-btn {
+            background: var(--bg-dark);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-secondary);
+            padding: 8px 16px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s;
+            box-shadow: var(--neu-dark-inset);
+        }
+
+        .class-btn.active {
+            background: var(--accent-primary);
+            color: white;
+            border-color: var(--accent-primary);
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+        }
+
+        .class-btn:hover:not(.active) {
+            border-color: rgba(255, 255, 255, 0.3);
+            color: var(--text-primary);
+        }
+
+        .chart-section { margin-bottom: 30px; }
+        .chart-container { height: 400px; width: 100%; position: relative; }
+
+        .table-section { overflow-x: auto; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: transparent;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: var(--neu-dark-shadow);
+        }
+
+        th {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+            text-align: left;
+            padding: 15px;
+            font-size: 13px;
+            font-weight: 600;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+        }
+
+        th:hover { background: rgba(255, 255, 255, 0.1); }
+
+        th.sort-asc::after { content: ' \2191'; position: absolute; right: 8px; }
+        th.sort-desc::after { content: ' \2193'; position: absolute; right: 8px; }
+
+        td {
+            padding: 15px;
+            font-size: 13px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+        .loader-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(19, 27, 46, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            transition: opacity 0.3s;
+        }
+
+        .loader {
+            width: 48px;
+            height: 48px;
+            border: 5px solid #FFF;
+            border-bottom-color: var(--accent-primary);
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+
+        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .analysis-table tr {
+            background: rgba(255, 255, 255, 0.02);
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .analysis-table tr:hover {
+            background: rgba(255, 255, 255, 0.05);
+            transform: scale(1.005);
+        }
+
+        .analysis-table td {
+            padding: 12px 10px;
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        @media (max-width: 768px) {
+            .summary-grid { grid-template-columns: 1fr; margin-top: 20px; }
+            .filters { grid-template-columns: 1fr; }
+            .chart-container { height: 300px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="loader" class="loader-overlay"><span class="loader"></span></div>
+
+    <div class="container">
+        <header style="margin-bottom: 20px;">
+            <div class="title-group">
+                <h1>Per Capita Demand Analysis</h1>
+                <p id="dateRange">Loading analysis engine...</p>
+            </div>
+            <button onclick="openInsightsModal()" class="class-btn" style="background: var(--accent-secondary); color: white; border: none; box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3); padding: 8px 16px; font-size: 13px;">
+                <i class="fas fa-brain"></i> Analysis
+            </button>
+        </header>
+
+        <div id="insightsModal" class="loader-overlay" style="display: none; background: rgba(10, 15, 28, 0.95);">
+            <div class="card" style="width: 90%; max-width: 600px; border-left: 5px solid var(--accent-secondary);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="color: var(--text-primary); font-size: 18px;">Concentration Analysis (Pareto Insight)</h3>
+                    <button onclick="closeInsightsModal()" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 20px;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div id="insightsText" style="line-height: 1.8; font-size: 15px; color: var(--text-primary);">
+                    Calculating distribution metrics...
+                </div>
+                <div style="margin-top: 25px; text-align: right;">
+                    <button onclick="closeInsightsModal()" class="class-btn" style="background: var(--bg-dark); color: var(--text-secondary); border: 1px solid var(--border-color);">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="summary-grid">
+            <div class="card">
+                <div class="card-label">TOTAL CONSUMERS</div>
+                <div id="statTotalConsumers" class="card-value">0</div>
+                <div id="statConsumersSub" class="card-sub">Active in selected area</div>
+            </div>
+            <div class="card">
+                <div class="card-label">AVG. MONTHLY DEMAND</div>
+                <div id="statAvgDemand" class="card-value">0 <span style="font-size: 14px; font-weight: normal;">Units</span></div>
+                <div class="card-sub">Per Consumer Per Month</div>
+            </div>
+            <div class="card">
+                <div class="card-label">PEAK CONSUMPTION AREA</div>
+                <div id="statPeakArea" class="card-value">N/A</div>
+                <div id="statPeakVal" class="card-sub">Highest per-capita demand</div>
+            </div>
+        </div>
+
+        <div class="filters card">
+            <select id="filterRegion"><option value="all">All Regions</option></select>
+            <select id="filterDivision"><option value="all">All Divisions</option></select>
+            <select id="filterCCC"><option value="all">All CCCs</option></select>
+        </div>
+
+        <div id="classFilterContainer" class="class-filters">
+            <!-- Buttons will be injected here -->
+        </div>
+
+        <div class="tabs">
+            <div class="tab" data-view="overview">Monthly</div>
+            <div class="tab" data-view="region">Region</div>
+            <div class="tab active" data-view="division">Division</div>
+            <div class="tab" data-view="ccc">CCC</div>
+        </div>
+
+        <div class="chart-section card">
+            <div class="chart-container">
+                <canvas id="mainChart"></canvas>
+            </div>
+        </div>
+
+        <div class="table-section card">
+            <table id="dataTable">
+                <thead id="tableHead">
+                    <!-- Dynamic Headers -->
+                </thead>
+                <tbody id="tableBody">
+                    <!-- Dynamic Body -->
+                </tbody>
+            </table>
+        </div>
+
+        <div id="weaknessSection" class="card" style="margin-top: 30px; border-left: 5px solid var(--danger);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <div>
+                    <h3 style="color: var(--text-primary); font-size: 18px;">
+                        <i class="fas fa-exclamation-circle" style="margin-right: 8px; color: var(--danger);"></i>
+                        Low Consumption Segment Analysis
+                    </h3>
+                    <p style="font-size: 12px; margin-top: 4px; color: var(--text-secondary);">Click on any segment to drill down into the weakest consumers.</p>
+                </div>
+            </div>
+            <div id="weaknessTableWrapper" style="overflow-x: auto;">
+                <table class="analysis-table" style="width: 100%; border-collapse: separate; border-spacing: 0 8px;">
+                    <thead>
+                        <tr style="text-align: left; font-size: 12px; color: var(--text-secondary);">
+                            <th style="padding: 10px;">Performance Segment</th>
+                            <th style="padding: 10px;">Consumer Count</th>
+                            <th style="padding: 10px;">Avg. Units</th>
+                            <th style="padding: 10px; text-align: right;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="analysisTableBody">
+                        <!-- Segments will be injected here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Drill-down Modal -->
+    <div id="drillModal" class="loader-overlay" style="display: none; background: rgba(10, 15, 28, 0.95);">
+        <div class="card" style="width: 90%; max-width: 800px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column; position: relative;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <div>
+                    <h3 id="modalTitle" style="color: var(--text-primary);">Weakest Links</h3>
+                    <p style="font-size: 12px; color: var(--text-secondary);">Top consumers pulling the average down.</p>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button id="downloadBtn" class="class-btn" style="padding: 6px 12px; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                        <i class="fas fa-file-csv"></i> Download
+                    </button>
+                    <button onclick="closeModal()" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 20px;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div id="modalLoader" style="display: none; justify-content: center; align-items: center; padding: 40px;">
+                <span class="loader"></span>
+            </div>
+
+            <div id="modalTableWrapper" style="overflow-y: auto; flex: 1;">
+                <table style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th>ZCA (Consumer)</th>
+                            <th>Name</th>
+                            <th>Class</th>
+                            <th>Avg. Units</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="modalTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const mapping = [
+            {
+                "regionName": "MALDA REGION", "regionCode": "6610000", "divisions": [
+                    {
+                        "divisionName": "MALDA DIVISION", "divisionCode": "6611000", "cccs": [
+                            { "cccName": "MANIKCHAK", "cccCode": "6611101" }, { "cccName": "GOLAPGANJ", "cccCode": "6611102" },
+                            { "cccName": "BAISHNABNAGAR", "cccCode": "6611103" }, { "cccName": "KALIACHAK", "cccCode": "6611104" },
+                            { "cccName": "MOTHABARI", "cccCode": "6611105" }, { "cccName": "SUJAPUR", "cccCode": "6611106" },
+                            { "cccName": "RATHBARI", "cccCode": "6611107" }, { "cccName": "FULBARI", "cccCode": "6611108" },
+                            { "cccName": "MOKDUMPUR", "cccCode": "6611109" }
+                        ]
+                    },
+                    {
+                        "divisionName": "CHANCHAL DIVISION", "divisionCode": "6612000", "cccs": [
+                            { "cccName": "BHALUKA", "cccCode": "6612101" },
+                            { "cccName": "SAMSI", "cccCode": "6612102" },
+                            { "cccName": "PARANPUR", "cccCode": "6612103" }, { "cccName": "CHANCHAL", "cccCode": "6612104" },
+                            { "cccName": "MALATIPUR", "cccCode": "6612105" }, { "cccName": "HARISHCHANDRAPUR", "cccCode": "6612106" },
+                            { "cccName": "KUSHIDA", "cccCode": "6612107" }
+                        ]
+                    },
+                    {
+                        "divisionName": "GAZOLE DIVISION", "divisionCode": "6613000", "cccs": [
+                            { "cccName": "GAZOL", "cccCode": "6613101" }, { "cccName": "AIHO", "cccCode": "6613102" },
+                            { "cccName": "PANDUA", "cccCode": "6613103" }, { "cccName": "BAMONGOLA", "cccCode": "6613104" },
+                            { "cccName": "OLD MALDA", "cccCode": "6613105" }
+                        ]
+                    }
+                ]
+            },
+            {
+                "regionName": "UTTAR DINAJPUR REGION", "regionCode": "6620000", "divisions": [
+                    {
+                        "divisionName": "RAIGANJ DIVISION", "divisionCode": "6621000", "cccs": [
+                            { "cccName": "ITAHAR", "cccCode": "6621101" }, { "cccName": "HEMTABAD", "cccCode": "6621102" },
+                            { "cccName": "KALIYAGANJ", "cccCode": "6621103" }, { "cccName": "RAIGANJ", "cccCode": "6621104" },
+                            { "cccName": "BIRNAGAR", "cccCode": "6621105" }, { "cccName": "KARANDIGHI", "cccCode": "6621106" }
+                        ]
+                    },
+                    {
+                        "divisionName": "ISLAMPUR DIVISION", "divisionCode": "6622000", "cccs": [
+                            { "cccName": "ISLAMPUR", "cccCode": "6622101" }, { "cccName": "CHOPRA", "cccCode": "6622102" },
+                            { "cccName": "DALKHOLA", "cccCode": "6622103" }, { "cccName": "GOALPOKHER", "cccCode": "6622104" },
+                            { "cccName": "KANKI", "cccCode": "6622105" }
+                        ]
+                    }
+                ]
+            },
+            {
+                "regionName": "DAKSHIN DINAJPUR REGION", "regionCode": "6630000", "divisions": [
+                    {
+                        "divisionName": "BALURGHAT DIVISION", "divisionCode": "6631000", "cccs": [
+                            { "cccName": "BALURGHAT", "cccCode": "6631101" }, { "cccName": "TAPAN", "cccCode": "6631102" },
+                            { "cccName": "KUMARGANJ", "cccCode": "6631103" }, { "cccName": "HILI", "cccCode": "6631104" },
+                            { "cccName": "PATIRAM", "cccCode": "6631105" }
+                        ]
+                    },
+                    {
+                        "divisionName": "BUNIADPUR DIVISION", "divisionCode": "6632000", "cccs": [
+                            { "cccName": "BUNIADPUR", "cccCode": "6632101" }, { "cccName": "KUSMANDI", "cccCode": "6632102" },
+                            { "cccName": "HARIRAMPUR", "cccCode": "6632103" }, { "cccName": "GANGARAMPUR", "cccCode": "6632104" }
+                        ]
+                    }
+                ]
+            }
+        ];
+
+        let rawData = [];
+        let currentChart = null;
+        let activeView = 'division';
+        let activeClass = 'all';
+        let tableSort = { column: 0, order: 'desc' }; // Default sort by Consumers/Month
+        
+        let lastFilteredData = [];
+        let lastMonthsCount = 1;
+
+        // Lookup maps
+        const cccToDiv = {};
+        const cccToReg = {};
+        const cccToName = {};
+
+        mapping.forEach(r => {
+            r.divisions.forEach(d => {
+                d.cccs.forEach(c => {
+                    cccToDiv[c.cccCode] = d.divisionName;
+                    cccToReg[c.cccCode] = r.regionName;
+                    cccToName[c.cccCode] = c.cccName;
+                });
+            });
+        });
+
+        async function init() {
+            try {
+                // Register plugins if available
+                if (typeof ChartDataLabels !== 'undefined') {
+                    Chart.register(ChartDataLabels);
+                }
+                if (typeof chartjsPluginAnnotation !== 'undefined') {
+                    Chart.register(chartjsPluginAnnotation);
+                }
+                const csvPath = 'data/PerCapitaDemand.csv';
+                Papa.parse(csvPath, {
+                    download: true,
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: (results) => {
+                        rawData = results.data.filter(d => d.ZDUE_DATE && /^\d{6}/.test(d.ZDUE_DATE));
+                        
+                        // Set Date Range in Header
+                        const dates = [...new Set(rawData.map(d => d.ZDUE_DATE.substring(0, 6)))].sort();
+                        if (dates.length > 0) {
+                            const formatMonth = (str) => {
+                                const y = str.substring(0, 4);
+                                const m = parseInt(str.substring(4, 6));
+                                return `${m}/${y}`;
+                            };
+                            document.getElementById('dateRange').innerText = `Based on consumption from ${formatMonth(dates[0])} to ${formatMonth(dates[dates.length-1])}`;
+                        }
+
+                        populateFilters();
+                        populateClassButtons();
+                        updateDashboard();
+                        document.getElementById('loader').style.opacity = '0';
+                        setTimeout(() => document.getElementById('loader').style.display = 'none', 300);
+                    }
+                });
+
+                // Tab switching
+                document.querySelectorAll('.tab').forEach(t => {
+                    t.onclick = () => {
+                        document.querySelector('.tab.active').classList.remove('active');
+                        t.classList.add('active');
+                        activeView = t.dataset.view;
+                        updateDashboard();
+                    };
+                });
+            } catch (error) {
+                console.error("Initialization error:", error);
+                document.getElementById('dateRange').innerText = 'Error loading data range.';
+            }
+        }
+
+        function populateClassButtons() {
+            const classes = [...new Set(rawData.map(d => d.BASE_CLASS))]
+                .filter(c => c && c !== 'BASE_CLASS' && c.trim() !== '')
+                .sort();
+            const container = document.getElementById('classFilterContainer');
+            container.innerHTML = '';
+
+            // Add "All" button
+            const allBtn = document.createElement('div');
+            allBtn.className = 'class-btn active';
+            allBtn.innerText = 'All Classes';
+            allBtn.onclick = () => selectClass('all', allBtn);
+            container.appendChild(allBtn);
+
+            classes.forEach(cls => {
+                const btn = document.createElement('div');
+                btn.className = 'class-btn';
+                btn.innerText = cls;
+                btn.onclick = () => selectClass(cls, btn);
+                container.appendChild(btn);
+            });
+        }
+
+        function selectClass(cls, btn) {
+            document.querySelectorAll('.class-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            activeClass = cls;
+            updateDashboard();
+        }
+
+        function populateFilters() {
+            const regions = [...new Set(mapping.map(m => m.regionName))];
+            
+            const regSel = document.getElementById('filterRegion');
+            regions.forEach(r => regSel.add(new Option(r, r)));
+
+            regSel.onchange = () => { updateDivisionFilter(); updateDashboard(); };
+            document.getElementById('filterDivision').onchange = () => { updateCCCFilter(); updateDashboard(); };
+            document.getElementById('filterCCC').onchange = updateDashboard;
+        }
+
+        function updateDivisionFilter() {
+            const reg = document.getElementById('filterRegion').value;
+            const divSel = document.getElementById('filterDivision');
+            divSel.innerHTML = '<option value="all">All Divisions</option>';
+            document.getElementById('filterCCC').innerHTML = '<option value="all">All CCCs</option>';
+
+            if (reg !== 'all') {
+                const regData = mapping.find(m => m.regionName === reg);
+                regData.divisions.forEach(d => divSel.add(new Option(d.divisionName, d.divisionName)));
+            }
+        }
+
+        function updateCCCFilter() {
+            const reg = document.getElementById('filterRegion').value;
+            const div = document.getElementById('filterDivision').value;
+            const cccSel = document.getElementById('filterCCC');
+            cccSel.innerHTML = '<option value="all">All CCCs</option>';
+
+            if (div !== 'all') {
+                const regData = mapping.find(m => m.regionName === reg);
+                const divData = regData.divisions.find(d => d.divisionName === div);
+                divData.cccs.forEach(c => cccSel.add(new Option(c.cccName, c.cccCode)));
+            }
+        }
+
+        function updateDashboard() {
+            const filters = {
+                region: document.getElementById('filterRegion').value,
+                division: document.getElementById('filterDivision').value,
+                ccc: document.getElementById('filterCCC').value,
+                baseClass: activeClass
+            };
+
+            const filtered = rawData.filter(d => {
+                const ccc = d.CCC_CODE;
+                // Filter out records without valid mapping or marked as Unknown
+                if (!ccc || !cccToReg[ccc] || !cccToDiv[ccc] || !cccToName[ccc]) return false;
+                if (cccToName[ccc].toLowerCase().includes('unknown') || cccToReg[ccc].toLowerCase().includes('unknown')) return false;
+
+                if (filters.region !== 'all' && cccToReg[ccc] !== filters.region) return false;
+                if (filters.division !== 'all' && cccToDiv[ccc] !== filters.division) return false;
+                if (filters.ccc !== 'all' && ccc !== filters.ccc) return false;
+                if (filters.baseClass !== 'all' && d.BASE_CLASS !== filters.baseClass) return false;
+                return true;
+            });
+
+            // Global stats
+            const totalConsumers = new Set(filtered.map(d => d.ZCA)).size;
+            const totalUnits = filtered.reduce((acc, r) => acc + (parseFloat(r.ZUNIT) || 0), 0);
+            const totalAmount = filtered.reduce((acc, r) => acc + (parseFloat(r.ZDEMAND_AMT) || 0), 0);
+            const monthsCount = new Set(filtered.map(d => d.ZDUE_DATE.substring(0, 6))).size || 1;
+            const avgPerCapita = totalConsumers > 0 ? (totalUnits / monthsCount / totalConsumers) : 0;
+
+            lastFilteredData = filtered;
+            lastMonthsCount = monthsCount;
+
+            document.getElementById('statTotalConsumers').innerText = totalConsumers.toLocaleString();
+            document.getElementById('statAvgDemand').innerHTML = `${avgPerCapita.toFixed(1)} <span style="font-size: 14px; font-weight: normal;">Units</span>`;
+
+            // Calculate Peak Area (always based on CCC within selected filters)
+            const cccStats = {};
+            filtered.forEach(r => {
+                const ccc = r.CCC_CODE;
+                if (!cccStats[ccc]) cccStats[ccc] = { units: 0, consumers: new Set() };
+                cccStats[ccc].units += parseFloat(r.ZUNIT) || 0;
+                cccStats[ccc].consumers.add(r.ZCA);
+            });
+
+            let peakArea = 'N/A';
+            let peakVal = 0;
+            Object.keys(cccStats).forEach(ccc => {
+                const pc = cccStats[ccc].units / (cccStats[ccc].consumers.size || 1) / monthsCount;
+                if (pc > peakVal) {
+                    peakVal = pc;
+                    peakArea = cccToName[ccc] || ccc;
+                }
+            });
+            
+            document.getElementById('statPeakArea').innerText = peakArea.replace(/\s*CCC\s*/i, '').trim();
+            document.getElementById('statPeakVal').innerText = `${peakVal.toFixed(1)} Units per consumer`;
+
+            // Aggregation for the view
+            let aggregatedData = {};
+            let chartLabels = [];
+            let chartData = [];
+            let tableRows = [];
+            let tableHeaders = [];
+
+            if (activeView === 'overview') {
+                // Group by month
+                const monthly = {};
+                filtered.forEach(r => {
+                    const m = r.ZDUE_DATE.substring(0, 6);
+                    if (!monthly[m]) monthly[m] = { units: 0, amount: 0, consumers: new Set() };
+                    monthly[m].units += parseFloat(r.ZUNIT) || 0;
+                    monthly[m].amount += parseFloat(r.ZDEMAND_AMT) || 0;
+                    monthly[m].consumers.add(r.ZCA);
+                });
+                
+                chartLabels = Object.keys(monthly).sort();
+                chartData = chartLabels.map(m => monthly[m].units / monthly[m].consumers.size);
+                tableHeaders = ['SL', 'Month', 'Consumers', 'Per Capita Unit', 'Per Capita Amount'];
+                tableRows = chartLabels.reverse().map(m => ({
+                    col1: formatMonth(m),
+                    col2: monthly[m].consumers.size.toLocaleString(),
+                    col3: (monthly[m].units / monthly[m].consumers.size).toFixed(1),
+                    col4: (monthly[m].amount / monthly[m].consumers.size).toFixed(2),
+                    rawVal: (monthly[m].units / monthly[m].consumers.size)
+                }));
+                renderChart(chartLabels.map(formatMonthShort), chartData, 'line', 'Units per Consumer');
+            } else {
+                // Group by Region, Division or CCC
+                const groupKey = activeView === 'region' ? (r => cccToReg[r.CCC_CODE]) :
+                                 (activeView === 'division' ? (r => cccToDiv[r.CCC_CODE]) : (r => cccToName[r.CCC_CODE]));
+                
+                const groupMap = {};
+                filtered.forEach(r => {
+                    let key = groupKey(r) || 'Unknown';
+                    // Strip "REGION" and "DIVISION" for compact view
+                    key = key.replace(/\s*REGION\s*/i, '').replace(/\s*DIVISION\s*/i, '').trim();
+                    
+                    if (!groupMap[key]) groupMap[key] = { units: 0, amount: 0, consumers: new Set() };
+                    groupMap[key].units += parseFloat(r.ZUNIT) || 0;
+                    groupMap[key].amount += parseFloat(r.ZDEMAND_AMT) || 0;
+                    groupMap[key].consumers.add(r.ZCA);
+                });
+
+                chartLabels = Object.keys(groupMap).sort((a,b) => (groupMap[b].units/groupMap[b].consumers.size) - (groupMap[a].units/groupMap[a].consumers.size));
+                chartData = chartLabels.map(l => groupMap[l].units / monthsCount / groupMap[l].consumers.size);
+                
+                tableHeaders = ['SL', activeView.charAt(0).toUpperCase() + activeView.slice(1), 'Consumers', 'Per Capita Unit', 'Per Capita Amount'];
+                tableRows = chartLabels.map(l => ({
+                    col1: l,
+                    col2: groupMap[l].consumers.size.toLocaleString(),
+                    col3: (groupMap[l].units / monthsCount / groupMap[l].consumers.size).toFixed(1),
+                    col4: (groupMap[l].amount / monthsCount / groupMap[l].consumers.size).toFixed(2),
+                    rawVal: (groupMap[l].units / monthsCount / groupMap[l].consumers.size)
+                }));
+
+                renderChart(chartLabels, chartData, 'bar', 'Units per Consumer');
+            }
+
+            renderTable(tableHeaders, tableRows);
+            renderWeaknessAnalysis(tableRows, monthsCount, filtered);
+            calculateConcentrationAnalysis(filtered, monthsCount);
+        }
+
+        function openInsightsModal() {
+            document.getElementById('insightsModal').style.display = 'flex';
+        }
+
+        function closeInsightsModal() {
+            document.getElementById('insightsModal').style.display = 'none';
+        }
+
+        function renderWeaknessAnalysis(rows, months, filteredData) {
+            const body = document.getElementById('analysisTableBody');
+            body.innerHTML = '';
+
+            if (filteredData.length === 0) {
+                document.getElementById('weaknessSection').style.display = 'none';
+                return;
+            }
+            document.getElementById('weaknessSection').style.display = 'block';
+
+            // Group by Consumer (ZCA)
+            const consumerMap = {};
+            let totalUnits = 0;
+            filteredData.forEach(r => {
+                if (!consumerMap[r.ZCA]) consumerMap[r.ZCA] = { name: r.NAME, units: 0, class: r.BASE_CLASS };
+                const u = parseFloat(r.ZUNIT) || 0;
+                consumerMap[r.ZCA].units += u;
+                totalUnits += u;
+            });
+
+            const consumers = Object.keys(consumerMap)
+                .map(zca => ({
+                    zca,
+                    name: consumerMap[zca].name,
+                    class: consumerMap[zca].class,
+                    avg: consumerMap[zca].units / months
+                }))
+                .sort((a, b) => a.avg - b.avg);
+
+            const totalCount = consumers.length;
+            const overallAvg = totalUnits / months / totalCount;
+
+            const segments = [
+                { label: 'Zero / Suspicious', filter: c => c.avg < 5, color: '#f43f5e' },
+                { label: 'Lowest 5%', filter: (c, i) => i < totalCount * 0.05, color: '#fb7185' },
+                { label: 'Lowest 10%', filter: (c, i) => i < totalCount * 0.1, color: '#fda4af' },
+                { label: 'Lowest 30%', filter: (c, i) => i < totalCount * 0.3, color: '#fecdd3' },
+                { label: 'Below Average', filter: c => c.avg < overallAvg, color: '#94a3b8' }
+            ];
+
+            segments.forEach(seg => {
+                const filtered = consumers.filter(seg.filter);
+                const avg = filtered.length > 0 ? (filtered.reduce((a, b) => a + b.avg, 0) / filtered.length) : 0;
+                
+                const tr = document.createElement('tr');
+                tr.onclick = () => showSegmentDetail(seg.label, filtered);
+                tr.innerHTML = `
+                    <td style="font-weight: 600;"><i class="fas fa-circle" style="color: ${seg.color}; font-size: 8px; margin-right: 10px; vertical-align: middle;"></i>${seg.label}</td>
+                    <td style="font-weight: bold;">${filtered.length.toLocaleString()}</td>
+                    <td>${avg.toFixed(1)} Units</td>
+                    <td style="text-align: right; color: var(--accent-secondary);"><i class="fas fa-chevron-right"></i></td>
+                `;
+                body.appendChild(tr);
+            });
+        }
+
+        function showSegmentDetail(title, data) {
+            const modal = document.getElementById('drillModal');
+            const loader = document.getElementById('modalLoader');
+            const wrapper = document.getElementById('modalTableWrapper');
+            const body = document.getElementById('modalTableBody');
+            const downloadBtn = document.getElementById('downloadBtn');
+
+            modal.style.display = 'flex';
+            loader.style.display = 'flex';
+            wrapper.style.display = 'none';
+
+            setTimeout(() => {
+                document.getElementById('modalTitle').innerText = `${title} (${data.length.toLocaleString()} Consumers)`;
+                const displayData = data.slice(0, 200); // Show top 200
+
+                body.innerHTML = displayData.map(c => `
+                    <tr>
+                        <td>${c.zca}</td>
+                        <td style="font-size: 11px;">${c.name}</td>
+                        <td style="font-size: 11px; text-align: center;">${c.class}</td>
+                        <td style="color: var(--danger); font-weight: bold;">${c.avg.toFixed(1)}</td>
+                        <td style="font-size: 11px;">${c.avg < 5 ? 'Suspicious' : 'Low Active'}</td>
+                    </tr>
+                `).join('');
+
+                downloadBtn.onclick = () => downloadCSV(title, data);
+                
+                loader.style.display = 'none';
+                wrapper.style.display = 'block';
+            }, 300);
+        }
+
+        function downloadCSV(title, data) {
+            let csv = 'Consumer ID,Name,Class,Avg Monthly Units,Status\n';
+            data.forEach(c => {
+                const status = c.avg < 5 ? 'Suspicious' : 'Low Active';
+                csv += `"${c.zca}","${c.name}","${c.class}",${c.avg.toFixed(2)},${status}\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('hidden', '');
+            a.setAttribute('href', url);
+            a.setAttribute('download', `${title.replace(/\s+/g, '_')}_Consumers.csv`);
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        function closeModal() {
+            document.getElementById('drillModal').style.display = 'none';
+        }
+
+        function calculateConcentrationAnalysis(filteredData, months) {
+            const insightText = document.getElementById('insightsText');
+            
+            // Group by Consumer (ZCA)
+            const consumerMap = {};
+            let totalUnits = 0;
+            filteredData.forEach(r => {
+                if (!consumerMap[r.ZCA]) consumerMap[r.ZCA] = 0;
+                const u = parseFloat(r.ZUNIT) || 0;
+                consumerMap[r.ZCA] += u;
+                totalUnits += u;
+            });
+
+            const consumers = Object.keys(consumerMap)
+                .map(zca => consumerMap[zca] / months) // Monthly avg
+                .sort((a, b) => a - b); // Sort ascending (weakest first)
+
+            const totalCount = consumers.length;
+            if (totalCount === 0) return;
+
+            const overallAvg = totalUnits / months / totalCount;
+
+            // Focus on the "Critical Tail" (Bottom 20%)
+            const tailCount = Math.floor(totalCount * 0.2);
+            const tailSum = consumers.slice(0, tailCount).reduce((a, b) => a + b, 0);
+            const tailAvg = tailCount > 0 ? (tailSum / tailCount) : 0;
+            const tailGap = overallAvg > 0 ? (((overallAvg - tailAvg) / overallAvg) * 100).toFixed(0) : 0;
+
+            // Near-zero consumers (e.g., < 5 units)
+            const suspiciousCount = consumers.filter(v => v < 5).length;
+            const suspiciousPercent = (suspiciousCount / totalCount * 100).toFixed(1);
+
+            insightText.innerHTML = `
+                <div style="margin-bottom: 10px;">
+                    <span style="color: var(--accent-secondary); font-weight: bold;">Critical Block Analysis:</span> 
+                    A core group of <span style="color: var(--text-primary); font-weight: bold;">${tailCount.toLocaleString()} consumers</span> (Bottom 20%) is consuming an average of only <span style="color: var(--danger); font-weight: bold;">${tailAvg.toFixed(1)} units</span>, 
+                    which is <span style="color: var(--danger); font-weight: bold;">${tailGap}% lower</span> than your overall average of ${overallAvg.toFixed(1)} units.
+                </div>
+                <div>
+                    <i class="fas fa-search" style="margin-right: 5px; color: var(--accent-secondary);"></i>
+                    Within your entire selection, <span style="color: var(--text-primary); font-weight: bold;">${suspiciousCount.toLocaleString()} consumers</span> (${suspiciousPercent}%) 
+                    show <span style="color: var(--danger); font-weight: bold;">near-zero activity</span> (< 5 units) and are the primary consumers for immediate field verification.
+                </div>
+            `;
+        }
+
+        function renderChart(labels, data, type, label) {
+            const ctx = document.getElementById('mainChart').getContext('2d');
+            if (currentChart) currentChart.destroy();
+
+            const avgValue = data.length > 0 ? (data.reduce((a, b) => a + b, 0) / data.length) : 0;
+
+            currentChart = new Chart(ctx, {
+                type: type,
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        borderColor: '#4f46e5',
+                        backgroundColor: type === 'bar' ? 'rgba(79, 70, 229, 0.6)' : 'rgba(79, 70, 229, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.4,
+                        fill: true,
+                        borderRadius: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { 
+                        legend: { display: false },
+                        tooltip: { backgroundColor: '#1e293b', padding: 12 },
+                        datalabels: {
+                            anchor: 'end',
+                            align: 'top',
+                            color: '#f9fafb',
+                            font: { weight: 'bold', size: 10 },
+                            rotation: -90,
+                            offset: 5,
+                            formatter: (value) => value.toFixed(1)
+                        },
+                        annotation: {
+                            annotations: {
+                                line1: {
+                                    type: 'line',
+                                    yMin: avgValue,
+                                    yMax: avgValue,
+                                    borderColor: 'rgba(244, 63, 94, 0.8)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        display: true,
+                                        content: 'Avg: ' + avgValue.toFixed(1),
+                                        position: 'end',
+                                        backgroundColor: 'rgba(244, 63, 94, 0.8)',
+                                        font: { size: 10 }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: { 
+                            beginAtZero: true, 
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' }, 
+                            ticks: { color: '#9ca3af' },
+                            suggestedMax: Math.max(...data, avgValue) * 1.3 // Extra space for vertical labels
+                        },
+                        x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                    }
+                }
+            });
+        }
+
+        function renderTable(headers, rows) {
+            const head = document.getElementById('tableHead');
+            const body = document.getElementById('tableBody');
+            
+            // Apply current sort
+            const sortedRows = [...rows].sort((a, b) => {
+                let v1, v2;
+                // Map column index to property
+                const getVal = (r, col) => {
+                    if (col === 0) return 0; // SL is calculated
+                    if (col === 1) return r.col1;
+                    if (col === 2) return parseFloat(r.col2.replace(/,/g, '')) || 0;
+                    if (col === 3) return parseFloat(r.col3) || 0;
+                    if (col === 4) return parseFloat(r.col4) || 0;
+                    return 0;
+                };
+
+                v1 = getVal(a, tableSort.column);
+                v2 = getVal(b, tableSort.column);
+
+                if (v1 < v2) return tableSort.order === 'asc' ? -1 : 1;
+                if (v1 > v2) return tableSort.order === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            // Calculate average for highlighting (based on sorted rows to be consistent)
+            const avgVal = rows.length > 0 ? (rows.reduce((acc, r) => acc + r.rawVal, 0) / rows.length) : 0;
+
+            head.innerHTML = `<tr>${headers.map((h, i) => {
+                let cls = '';
+                if (tableSort.column === i) cls = tableSort.order === 'asc' ? 'sort-asc' : 'sort-desc';
+                return `<th class="${cls}" onclick="handleSort(${i})">${h}</th>`;
+            }).join('')}</tr>`;
+
+            body.innerHTML = sortedRows.map((r, index) => {
+                const isBelowAvg = r.rawVal < avgVal;
+                const highlightStyle = isBelowAvg ? 'background: rgba(244, 63, 94, 0.08);' : '';
+                const warningIcon = isBelowAvg ? '<i class="fas fa-arrow-down" style="color: var(--danger); font-size: 10px; margin-right: 4px;"></i>' : '';
+
+                return `
+                    <tr style="${highlightStyle}">
+                        <td>${index + 1}</td>
+                        <td>${r.col1}</td>
+                        <td>${r.col2}</td>
+                        <td style="color: ${isBelowAvg ? 'var(--danger)' : 'var(--accent-primary)'}; font-weight: 600;">
+                            ${warningIcon}${r.col3}
+                        </td>
+                        <td style="font-weight: 600; color: var(--text-primary);">₹${r.col4}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        let lastTableData = { headers: [], rows: [] };
+        const originalRenderTable = renderTable;
+        renderTable = (h, r) => {
+            lastTableData = { headers: h, rows: r };
+            originalRenderTable(h, r);
+        };
+
+        function handleSort(colIndex) {
+            if (colIndex === 0) return; // Don't sort by SL
+            if (tableSort.column === colIndex) {
+                tableSort.order = tableSort.order === 'asc' ? 'desc' : 'asc';
+            } else {
+                tableSort.column = colIndex;
+                tableSort.order = 'asc';
+            }
+            originalRenderTable(lastTableData.headers, lastTableData.rows);
+        }
+
+        function formatMonth(m) {
+            const year = m.substring(0, 4);
+            const month = m.substring(4, 6);
+            const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            return `${names[parseInt(month)-1]} ${year}`;
+        }
+
+        function formatMonthShort(m) {
+            const year = m.substring(2, 4);
+            const month = m.substring(4, 6);
+            const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            return `${names[parseInt(month)-1]} '${year}`;
+        }
+
+        init();
+    </script>
+</body>
+</html>
