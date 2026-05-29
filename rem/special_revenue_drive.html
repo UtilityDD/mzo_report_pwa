@@ -1,0 +1,1877 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Special Revenue Drive</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #e2e8f0;
+            padding: 10px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: #1e293b;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+        }
+        .header {
+            padding: 10px 14px;
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            border-bottom: 1px solid #334155;
+        }
+        .title-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+        h1 { font-size: 1.02rem; font-weight: 700; line-height: 1.25; }
+        .subtitle { color: #94a3b8; font-size: 0.74rem; margin-top: 2px; }
+        .meta { color: #cbd5e1; font-size: 0.78rem; }
+
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(9, 1fr);
+            gap: 10px;
+            padding: 14px;
+            background: #0f172a;
+        }
+        .kpi-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 9px 8px;
+            min-height: 80px;
+        }
+        .kpi-card.clickable {
+            cursor: pointer;
+            transition: border-color 0.15s ease, transform 0.15s ease;
+        }
+        .kpi-card.clickable:hover {
+            border-color: #3b82f6;
+            transform: translateY(-1px);
+        }
+        .kpi-label { font-size: 0.66rem; color: #94a3b8; text-transform: uppercase; letter-spacing: .35px; }
+        .kpi-value { font-size: 0.98rem; margin-top: 5px; font-weight: 700; color: #f8fafc; line-height: 1.1; }
+        .kpi-note { font-size: 0.67rem; color: #94a3b8; margin-top: 2px; line-height: 1.1; }
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        .data-loading .kpi-value,
+        .data-loading .kpi-note {
+            color: transparent !important;
+            border-radius: 6px;
+            background: linear-gradient(90deg, #1f2937 25%, #334155 50%, #1f2937 75%);
+            background-size: 220% 100%;
+            animation: shimmer 1.2s infinite linear;
+        }
+        .data-loading .kpi-card.clickable {
+            pointer-events: none;
+            opacity: 0.75;
+        }
+
+        .filters {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr 1fr 1fr 0.85fr 1fr;
+            gap: 10px;
+            padding: 12px 14px;
+            background: #1e293b;
+            border-bottom: 1px solid #334155;
+        }
+        input, select {
+            width: 100%;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 7px 9px;
+            font-family: inherit;
+            font-size: 0.8rem;
+        }
+
+        .chart-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+            padding: 14px;
+        }
+        .panel {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 9px;
+        }
+        .panel h2 { font-size: 0.82rem; margin-bottom: 6px; color: #cbd5e1; }
+        .canvas-wrap { height: 220px; position: relative; }
+        .chart-skeleton {
+            display: none;
+            position: absolute;
+            inset: 0;
+            border-radius: 10px;
+            background: linear-gradient(90deg, #1f2937 25%, #334155 50%, #1f2937 75%);
+            background-size: 220% 100%;
+            animation: shimmer 1.2s infinite linear;
+            z-index: 2;
+        }
+        .data-loading .chart-skeleton {
+            display: block;
+        }
+        .data-loading .canvas-wrap canvas {
+            opacity: 0.25;
+        }
+
+        .compact-table-wrap {
+            padding: 0 10px 10px;
+            display: grid;
+            gap: 8px;
+        }
+        .compact-panel {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .compact-table,
+        #dataTable {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 880px;
+        }
+        .compact-table th,
+        .compact-table td,
+        #dataTable th,
+        #dataTable td {
+            padding: 4px 5px;
+            border-bottom: 1px solid rgba(51, 65, 85, 0.55);
+            font-size: 0.68rem;
+            line-height: 1.15;
+            white-space: nowrap;
+        }
+        .compact-table th,
+        #dataTable th {
+            position: sticky;
+            top: 0;
+            background: #0b1220;
+            color: #93c5fd;
+            text-transform: uppercase;
+            letter-spacing: .25px;
+            font-size: 0.62rem;
+            z-index: 1;
+        }
+        .compact-table td:nth-child(2),
+        #dataTable td:nth-child(2) {
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .sortable {
+            cursor: pointer;
+            user-select: none;
+        }
+        .sort-indicator {
+            opacity: 0.7;
+            margin-left: 4px;
+            font-size: 0.65rem;
+        }
+        .compact-caption {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px 8px;
+            padding: 6px 8px;
+            font-size: 0.68rem;
+            color: #93c5fd;
+            border-bottom: 1px solid #334155;
+            background: #0b1220;
+            line-height: 1.2;
+        }
+        .btn-class-view {
+            margin-left: auto;
+            border: 1px solid #475569;
+            background: #1e293b;
+            color: #cbd5e1;
+            border-radius: 6px;
+            padding: 3px 8px;
+            font-size: 0.64rem;
+            font-family: inherit;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .btn-class-view:hover {
+            border-color: #3b82f6;
+            color: #bfdbfe;
+        }
+        .btn-class-view.active {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.2);
+            color: #dbeafe;
+        }
+        .compact-table.all-class-view th.class-col,
+        .compact-table.all-class-view td.class-col {
+            display: none;
+        }
+        .slab-title {
+            color: #f8fafc;
+            font-weight: 700;
+            margin-right: 8px;
+        }
+        .btn-view {
+            border: 1px solid #3b82f6;
+            background: rgba(59, 130, 246, 0.15);
+            color: #bfdbfe;
+            border-radius: 6px;
+            padding: 3px 8px;
+            font-size: 0.68rem;
+            cursor: pointer;
+        }
+        .btn-view:hover {
+            background: rgba(59, 130, 246, 0.25);
+        }
+        .btn-view:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+        .search-wrap {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .search-wrap input {
+            flex: 1;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(2, 6, 23, 0.75);
+            z-index: 10000;
+            padding: 12px;
+            overflow: auto;
+            align-items: flex-start;
+            justify-content: center;
+        }
+        .modal.show {
+            display: flex;
+        }
+        #consumerListModal { z-index: 10000; }
+        #kpiBreakupModal { z-index: 10000; }
+        #consumerDetailModal { z-index: 10050; }
+        .modal-content {
+            width: 100%;
+            max-width: 340px;
+            margin: 12px auto;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            overflow: visible;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 12px;
+            border-bottom: 1px solid #334155;
+            background: #111827;
+        }
+        .modal-title { font-size: 0.9rem; color: #e2e8f0; font-weight: 700; }
+        .modal-close {
+            border: none;
+            background: transparent;
+            color: #cbd5e1;
+            font-size: 1.1rem;
+            cursor: pointer;
+        }
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 180px 1fr;
+            gap: 8px 10px;
+            padding: 12px;
+        }
+        .d-label { color: #93c5fd; font-size: 0.76rem; font-weight: 600; }
+        .d-value { color: #e2e8f0; font-size: 0.77rem; word-break: break-word; }
+        .breakup-table-wrap { padding: 8px 10px 10px; }
+        .breakup-table {
+            width: 100%;
+            min-width: 0 !important;
+            border-collapse: collapse;
+            font-size: 0.72rem;
+            table-layout: fixed;
+        }
+        .breakup-table .col-class { width: 18%; }
+        .breakup-table .col-num { width: 22%; }
+        .breakup-table .col-osd { width: 30%; }
+        .breakup-table .col-rec-osd { width: 30%; }
+        .breakup-table th,
+        .breakup-table td {
+            padding: 5px 6px;
+            border-bottom: 1px solid #334155;
+            line-height: 1.15;
+        }
+        .breakup-table th {
+            color: #93c5fd;
+            text-transform: uppercase;
+            font-size: 0.66rem;
+            letter-spacing: 0.3px;
+            background: #0b1220;
+        }
+        .breakup-table td { color: #e2e8f0; }
+        .breakup-total td {
+            font-weight: 700;
+            color: #f8fafc;
+            background: rgba(59, 130, 246, 0.08);
+        }
+        .row-total td {
+            font-weight: 700;
+            color: #f8fafc;
+            background: rgba(59, 130, 246, 0.08);
+            border-top: 1px solid #475569;
+        }
+
+        .table-wrap {
+            padding: 0 14px 14px;
+        }
+        .skeleton-cell {
+            color: transparent !important;
+            border-radius: 4px;
+            background: linear-gradient(90deg, #1f2937 25%, #334155 50%, #1f2937 75%);
+            background-size: 220% 100%;
+            animation: shimmer 1.2s infinite linear;
+        }
+        .tab-header {
+            display: flex;
+            gap: 6px;
+            padding: 0 10px 8px;
+        }
+        .slab-tab-header {
+            padding-top: 0;
+            padding-bottom: 6px;
+        }
+        .tab-btn {
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: #cbd5e1;
+            border-radius: 6px;
+            padding: 5px 9px;
+            font-size: 0.72rem;
+            cursor: pointer;
+            flex: 1;
+            text-align: center;
+        }
+        .tab-btn.active {
+            background: #1d4ed8;
+            border-color: #1d4ed8;
+            color: #ffffff;
+        }
+        .table-panel {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            overflow: auto;
+            max-height: 52vh;
+            -webkit-overflow-scrolling: touch;
+        }
+        .num { text-align: right; font-variant-numeric: tabular-nums; }
+        .status-badge {
+            display: inline-block;
+            padding: 2px 7px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            border: 1px solid transparent;
+        }
+        .status-recovered { color: #34d399; background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.35); }
+        .status-disconnected { color: #fb7185; background: rgba(244,63,94,0.14); border-color: rgba(244,63,94,0.35); }
+        .status-followup { color: #fbbf24; background: rgba(245,158,11,0.16); border-color: rgba(245,158,11,0.35); }
+        .status-remarked { color: #60a5fa; background: rgba(59,130,246,0.14); border-color: rgba(59,130,246,0.35); }
+        .status-noaction { color: #cbd5e1; background: rgba(148,163,184,0.12); border-color: rgba(148,163,184,0.35); }
+
+        .action-list-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 0 14px 12px;
+        }
+        .action-list-btn {
+            flex: 1;
+            min-width: 140px;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 0.74rem;
+            font-family: inherit;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+        .action-list-btn:hover { filter: brightness(1.12); }
+        .action-list-btn.recovered { border-color: rgba(16,185,129,0.45); color: #6ee7b7; }
+        .action-list-btn.disconnected { border-color: rgba(244,63,94,0.45); color: #fda4af; }
+        .action-list-btn.remarked { border-color: rgba(59,130,246,0.45); color: #93c5fd; }
+        .action-list-btn.noaction { border-color: rgba(148,163,184,0.45); color: #cbd5e1; }
+
+        .modal-fullscreen { padding: 0; align-items: stretch; }
+        .modal-fullscreen .modal-content {
+            max-width: none;
+            width: 100%;
+            height: 100vh;
+            margin: 0;
+            border-radius: 0;
+            border: none;
+            display: flex;
+            flex-direction: column;
+        }
+        .consumer-list-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            padding: 8px 12px;
+            border-bottom: 1px solid #334155;
+            background: #0b1220;
+        }
+        .consumer-list-toolbar input {
+            flex: 1;
+            min-width: 160px;
+            max-width: 360px;
+        }
+        .consumer-list-meta {
+            font-size: 0.72rem;
+            color: #94a3b8;
+            white-space: nowrap;
+        }
+        .consumer-list-table-wrap {
+            flex: 1;
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+            padding: 0 10px 10px;
+        }
+        .consumer-list-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 720px;
+        }
+        .consumer-list-table th,
+        .consumer-list-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid rgba(51, 65, 85, 0.55);
+            font-size: 0.72rem;
+            line-height: 1.2;
+            text-align: left;
+            vertical-align: top;
+        }
+        .consumer-list-table th {
+            position: sticky;
+            top: 0;
+            background: #0b1220;
+            color: #93c5fd;
+            text-transform: uppercase;
+            font-size: 0.64rem;
+            z-index: 1;
+            cursor: pointer;
+            user-select: none;
+        }
+        .consumer-list-table tr.row-clickable { cursor: pointer; }
+        .consumer-list-table tr.row-clickable:hover td { background: rgba(59, 130, 246, 0.08); }
+        .consumer-list-table .remarks-col {
+            max-width: 180px;
+            white-space: normal;
+            word-break: break-word;
+        }
+        .count-link {
+            border: none;
+            background: transparent;
+            color: #93c5fd;
+            text-decoration: underline;
+            cursor: pointer;
+            font: inherit;
+            padding: 0;
+        }
+        .count-link:hover { color: #dbeafe; }
+        .count-link:disabled, .count-link.count-zero {
+            color: #64748b;
+            text-decoration: none;
+            cursor: default;
+        }
+
+        .loading, .error {
+            padding: 24px;
+            text-align: center;
+            font-weight: 500;
+        }
+        .loading { color: #94a3b8; }
+        .error { color: #fda4af; }
+
+        @media (max-width: 1100px) {
+            .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+            .chart-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 700px) {
+            body { padding: 2px; }
+            .container { border-radius: 10px; }
+            .header { padding: 8px 10px; }
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 8px; }
+            .kpi-card { padding: 7px 6px; min-height: 68px; border-radius: 8px; }
+            .kpi-label { font-size: 0.58rem; }
+            .kpi-value { font-size: 0.86rem; margin-top: 3px; }
+            .kpi-note { font-size: 0.58rem; }
+            .filters { grid-template-columns: 1fr; gap: 6px; padding: 8px 10px; }
+            input, select { padding: 6px 8px; font-size: 0.74rem; border-radius: 6px; }
+            .btn-view { font-size: 0.64rem; padding: 6px 8px; width: 100%; }
+            h1 { font-size: 0.88rem; }
+            .meta { font-size: 0.64rem; }
+            .chart-grid { padding: 8px 10px; gap: 8px; }
+            .panel { padding: 7px; border-radius: 8px; }
+            .panel h2 { font-size: 0.74rem; margin-bottom: 4px; }
+            .canvas-wrap { height: 170px; }
+            .compact-table-wrap { padding: 0 8px 8px; gap: 6px; }
+            .compact-panel { border-radius: 8px; }
+            .compact-caption { padding: 5px 7px; font-size: 0.62rem; }
+            .compact-table,
+            #dataTable { min-width: 520px; }
+            .compact-table th,
+            .compact-table td,
+            #dataTable th,
+            #dataTable td {
+                padding: 3px 4px;
+                font-size: 0.6rem;
+            }
+            .compact-table th,
+            #dataTable th { font-size: 0.56rem; letter-spacing: 0; }
+            .compact-table td:nth-child(2),
+            #dataTable td:nth-child(2) { max-width: 72px; }
+            .sort-indicator { font-size: 0.55rem; margin-left: 2px; }
+            .tab-header { padding: 0 8px 6px; gap: 4px; }
+            .tab-btn { padding: 4px 6px; font-size: 0.66rem; border-radius: 5px; }
+            .detail-grid { grid-template-columns: 1fr; padding: 8px; gap: 4px; }
+            .search-wrap { flex-direction: column; align-items: stretch; gap: 6px; }
+            .modal { padding: 8px; }
+            .modal-content { max-width: min(100%, 300px); margin: 8px auto; border-radius: 8px; }
+            .modal-header { padding: 8px 10px; }
+            .modal-title { font-size: 0.82rem; }
+            .breakup-table-wrap { padding: 6px 8px 8px; }
+            .breakup-table th,
+            .breakup-table td { padding: 4px 5px; font-size: 0.64rem; }
+            .breakup-table th { font-size: 0.58rem; }
+            .action-list-bar { padding: 0 8px 8px; gap: 6px; }
+            .action-list-btn { min-width: calc(50% - 4px); font-size: 0.68rem; padding: 7px 8px; }
+            .consumer-list-table { min-width: 560px; }
+            .consumer-list-table th,
+            .consumer-list-table td { padding: 4px 5px; font-size: 0.64rem; }
+            .consumer-list-table .col-hide-sm { display: none; }
+            /* Hide low-priority slab columns on mobile */
+            .compact-table th:nth-child(7),
+            .compact-table td:nth-child(7),
+            .compact-table th:nth-child(10),
+            .compact-table td:nth-child(10),
+            .compact-table th:nth-child(11),
+            .compact-table td:nth-child(11) { display: none; }
+            /* Hide low-priority summary columns on mobile */
+            #dataTable th:nth-child(5),
+            #dataTable td:nth-child(5),
+            #dataTable th:nth-child(9),
+            #dataTable td:nth-child(9) { display: none; }
+        }
+        @media (max-width: 420px) {
+            .kpi-grid { grid-template-columns: 1fr 1fr; gap: 5px; }
+            .compact-table,
+            #dataTable { min-width: 400px; }
+            .compact-table th,
+            .compact-table td,
+            #dataTable th,
+            #dataTable td {
+                padding: 2px 3px;
+                font-size: 0.56rem;
+            }
+            .compact-table th:nth-child(1),
+            .compact-table td:nth-child(1) { display: none; }
+            #dataTable th:nth-child(1),
+            #dataTable td:nth-child(1) { display: none; }
+        }
+    </style>
+</head>
+
+<body class="data-loading">
+    <div class="container">
+        <div class="header">
+            <div class="title-row">
+                <div>
+                    <h1>Special Revenue Drive</h1>
+                </div>
+                <div class="meta" id="lastUpdated">Last Updated: Loading...</div>
+            </div>
+        </div>
+
+        <div class="kpi-grid">
+            <div class="kpi-card clickable" data-kpi="totalCases"><div class="kpi-label">Total Cases</div><div class="kpi-value" id="kTotalCases">-</div></div>
+            <div class="kpi-card clickable" data-kpi="totalOsd"><div class="kpi-label">Total OSD</div><div class="kpi-value" id="kTotalOsd">-</div></div>
+            <div class="kpi-card clickable" data-kpi="recovered"><div class="kpi-label">Recovered Cases</div><div class="kpi-value" id="kRecoveredCases">-</div><div class="kpi-note" id="kRecoveredAmount">-</div></div>
+            <div class="kpi-card clickable" data-kpi="disconnected"><div class="kpi-label">Disconnected Cases</div><div class="kpi-value" id="kDisconnectedCases">-</div><div class="kpi-note" id="kDisconnectedOsd">-</div></div>
+            <div class="kpi-card clickable" data-kpi="noAction"><div class="kpi-label">Pending No Action</div><div class="kpi-value" id="kNoActionCases">-</div><div class="kpi-note" id="kNoActionOsd">-</div></div>
+            <div class="kpi-card"><div class="kpi-label">Action Coverage</div><div class="kpi-value" id="kCoverage">-</div></div>
+            <div class="kpi-card clickable" data-kpi="slab20k"><div class="kpi-label">OSD &gt; 20K</div><div class="kpi-value" id="kSlab20kCount">-</div><div class="kpi-note" id="kSlab20kOsd">-</div></div>
+            <div class="kpi-card clickable" data-kpi="slab10to20"><div class="kpi-label">OSD 10K - 20K</div><div class="kpi-value" id="kSlab10to20Count">-</div><div class="kpi-note" id="kSlab10to20Osd">-</div></div>
+            <div class="kpi-card clickable" data-kpi="slab5to10"><div class="kpi-label">OSD 5K - 10K</div><div class="kpi-value" id="kSlab5to10Count">-</div><div class="kpi-note" id="kSlab5to10Osd">-</div></div>
+        </div>
+
+        <div class="filters">
+            <div class="search-wrap">
+                <input type="text" id="searchInput" placeholder="Search by CON_ID, Name, CCC, Division...">
+                <button class="btn-view" id="viewDetailsBtn" onclick="openConsumerDetailFromSearch()" disabled>View Details</button>
+            </div>
+            <select id="regionFilter"><option value="">All Regions</option></select>
+            <select id="divisionFilter"><option value="">All Divisions</option></select>
+            <select id="cccFilter"><option value="">All CCC</option></select>
+            <select id="classFilter">
+                <option value="">All Base Class</option>
+                <option value="C">Commercial (C)</option>
+                <option value="I">Industrial (I)</option>
+            </select>
+            <select id="statusFilter">
+                <option value="">All Action Status</option>
+                <option value="Recovered">Recovered</option>
+                <option value="Disconnected">Disconnected</option>
+                <option value="Remarked">Remarked</option>
+                <option value="No Action">No Action</option>
+            </select>
+        </div>
+
+        <div class="chart-grid">
+            <div class="panel">
+                <h2>Action Status</h2>
+                <div class="canvas-wrap">
+                    <div class="chart-skeleton"></div>
+                    <canvas id="statusChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="action-list-bar">
+            <button type="button" class="action-list-btn recovered" onclick="openConsumerList('Recovered')">View Recovered</button>
+            <button type="button" class="action-list-btn disconnected" onclick="openConsumerList('Disconnected')">View Disconnected</button>
+            <button type="button" class="action-list-btn remarked" onclick="openConsumerList('Remarked')">View Remarked</button>
+            <button type="button" class="action-list-btn noaction" onclick="openConsumerList('No Action')">View No Action</button>
+        </div>
+
+        <div class="tab-header office-tab-header">
+            <button class="tab-btn active" data-tab="Region" onclick="setActiveTab('Region')">Region</button>
+            <button class="tab-btn" data-tab="Division" onclick="setActiveTab('Division')">Division</button>
+            <button class="tab-btn" data-tab="CCC" onclick="setActiveTab('CCC')">CCC</button>
+        </div>
+
+        <div class="tab-header slab-tab-header">
+            <button class="tab-btn active" data-slab-filter="all" onclick="setActiveSlabFilter('all')">All</button>
+            <button class="tab-btn" data-slab-filter="slab20k" onclick="setActiveSlabFilter('slab20k')">&gt;20K</button>
+            <button class="tab-btn" data-slab-filter="slab10to20" onclick="setActiveSlabFilter('slab10to20')">10K-20K</button>
+            <button class="tab-btn" data-slab-filter="slab5to10" onclick="setActiveSlabFilter('slab5to10')">5K-10K</button>
+        </div>
+
+        <div class="compact-table-wrap">
+            <div class="compact-panel slab-panel" data-slab-filter="slab20k">
+                <div class="compact-caption">
+                    <span class="slab-title">OSD &gt; 20K</span>
+                    <span id="slab1OfficeLabel">Office</span><span id="slab1ModeText"> + BASE_CLASS wise</span>
+                    <button type="button" class="btn-class-view" id="slab1ClassViewBtn" onclick="toggleSlabClassView('slab1')">All Class</button>
+                </div>
+                <table class="compact-table" id="slabTable1">
+                    <thead>
+                        <tr>
+                            <th>Sl</th>
+                            <th id="compactOfficeHeader1" class="sortable" onclick="setSort('slab1','office')">Office<span class="sort-indicator" id="sort-slab1-office"></span></th>
+                            <th class="sortable class-col" onclick="setSort('slab1','baseClass')">Cls<span class="sort-indicator" id="sort-slab1-baseClass"></span></th>
+                            <th class="sortable" onclick="setSort('slab1','cases')">No.<span class="sort-indicator" id="sort-slab1-cases"></span></th>
+                            <th class="sortable" onclick="setSort('slab1','osd')">OSD<span class="sort-indicator" id="sort-slab1-osd"></span></th>
+                            <th class="sortable" onclick="setSort('slab1','recCnt')">Rec No.<span class="sort-indicator" id="sort-slab1-recCnt"></span></th>
+                            <th class="sortable" onclick="setSort('slab1','recAmt')">Rec Amt<span class="sort-indicator" id="sort-slab1-recAmt"></span></th>
+                            <th class="sortable" onclick="setSort('slab1','recOsd')">Rec OSD<span class="sort-indicator" id="sort-slab1-recOsd"></span></th>
+                            <th class="sortable" onclick="setSort('slab1','discCnt')">Disc No.<span class="sort-indicator" id="sort-slab1-discCnt"></span></th>
+                            <th class="sortable" onclick="setSort('slab1','discOsd')">Disc OSD<span class="sort-indicator" id="sort-slab1-discOsd"></span></th>
+                            <th class="sortable" onclick="setSort('slab1','noActionCnt')">NA No.<span class="sort-indicator" id="sort-slab1-noActionCnt"></span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="compactSummaryBody1"></tbody>
+                </table>
+            </div>
+            <div class="compact-panel slab-panel" data-slab-filter="slab10to20">
+                <div class="compact-caption">
+                    <span class="slab-title">OSD 10K - 20K</span>
+                    <span id="slab2OfficeLabel">Office</span><span id="slab2ModeText"> + BASE_CLASS wise</span>
+                    <button type="button" class="btn-class-view" id="slab2ClassViewBtn" onclick="toggleSlabClassView('slab2')">All Class</button>
+                </div>
+                <table class="compact-table" id="slabTable2">
+                    <thead>
+                        <tr>
+                            <th>Sl</th>
+                            <th id="compactOfficeHeader2" class="sortable" onclick="setSort('slab2','office')">Office<span class="sort-indicator" id="sort-slab2-office"></span></th>
+                            <th class="sortable class-col" onclick="setSort('slab2','baseClass')">Cls<span class="sort-indicator" id="sort-slab2-baseClass"></span></th>
+                            <th class="sortable" onclick="setSort('slab2','cases')">No.<span class="sort-indicator" id="sort-slab2-cases"></span></th>
+                            <th class="sortable" onclick="setSort('slab2','osd')">OSD<span class="sort-indicator" id="sort-slab2-osd"></span></th>
+                            <th class="sortable" onclick="setSort('slab2','recCnt')">Rec No.<span class="sort-indicator" id="sort-slab2-recCnt"></span></th>
+                            <th class="sortable" onclick="setSort('slab2','recAmt')">Rec Amt<span class="sort-indicator" id="sort-slab2-recAmt"></span></th>
+                            <th class="sortable" onclick="setSort('slab2','recOsd')">Rec OSD<span class="sort-indicator" id="sort-slab2-recOsd"></span></th>
+                            <th class="sortable" onclick="setSort('slab2','discCnt')">Disc No.<span class="sort-indicator" id="sort-slab2-discCnt"></span></th>
+                            <th class="sortable" onclick="setSort('slab2','discOsd')">Disc OSD<span class="sort-indicator" id="sort-slab2-discOsd"></span></th>
+                            <th class="sortable" onclick="setSort('slab2','noActionCnt')">NA No.<span class="sort-indicator" id="sort-slab2-noActionCnt"></span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="compactSummaryBody2"></tbody>
+                </table>
+            </div>
+            <div class="compact-panel slab-panel" data-slab-filter="slab5to10">
+                <div class="compact-caption">
+                    <span class="slab-title">OSD 5K - 10K</span>
+                    <span id="slab3OfficeLabel">Office</span><span id="slab3ModeText"> + BASE_CLASS wise</span>
+                    <button type="button" class="btn-class-view" id="slab3ClassViewBtn" onclick="toggleSlabClassView('slab3')">All Class</button>
+                </div>
+                <table class="compact-table" id="slabTable3">
+                    <thead>
+                        <tr>
+                            <th>Sl</th>
+                            <th id="compactOfficeHeader3" class="sortable" onclick="setSort('slab3','office')">Office<span class="sort-indicator" id="sort-slab3-office"></span></th>
+                            <th class="sortable class-col" onclick="setSort('slab3','baseClass')">Cls<span class="sort-indicator" id="sort-slab3-baseClass"></span></th>
+                            <th class="sortable" onclick="setSort('slab3','cases')">No.<span class="sort-indicator" id="sort-slab3-cases"></span></th>
+                            <th class="sortable" onclick="setSort('slab3','osd')">OSD<span class="sort-indicator" id="sort-slab3-osd"></span></th>
+                            <th class="sortable" onclick="setSort('slab3','recCnt')">Rec No.<span class="sort-indicator" id="sort-slab3-recCnt"></span></th>
+                            <th class="sortable" onclick="setSort('slab3','recAmt')">Rec Amt<span class="sort-indicator" id="sort-slab3-recAmt"></span></th>
+                            <th class="sortable" onclick="setSort('slab3','recOsd')">Rec OSD<span class="sort-indicator" id="sort-slab3-recOsd"></span></th>
+                            <th class="sortable" onclick="setSort('slab3','discCnt')">Disc No.<span class="sort-indicator" id="sort-slab3-discCnt"></span></th>
+                            <th class="sortable" onclick="setSort('slab3','discOsd')">Disc OSD<span class="sort-indicator" id="sort-slab3-discOsd"></span></th>
+                            <th class="sortable" onclick="setSort('slab3','noActionCnt')">NA No.<span class="sort-indicator" id="sort-slab3-noActionCnt"></span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="compactSummaryBody3"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="compact-table-wrap" style="padding-top:0;">
+            <div class="compact-panel">
+                <div class="compact-caption"><span class="slab-title">Total OSD Summary</span><span id="groupHeader">Region</span> wise</div>
+                <table class="compact-table" id="dataTable">
+                    <thead>
+                        <tr>
+                            <th>Sl</th>
+                            <th class="sortable" onclick="setSort('summary','key')">Office<span class="sort-indicator" id="sort-summary-key"></span></th>
+                            <th class="sortable" onclick="setSort('summary','cases')">Cases<span class="sort-indicator" id="sort-summary-cases"></span></th>
+                            <th class="sortable" onclick="setSort('summary','totalOsd')">Total OSD<span class="sort-indicator" id="sort-summary-totalOsd"></span></th>
+                            <th class="sortable" onclick="setSort('summary','recoveredAmount')">Rec Amt<span class="sort-indicator" id="sort-summary-recoveredAmount"></span></th>
+                            <th class="sortable" onclick="setSort('summary','recoveredCases')">Rec No.<span class="sort-indicator" id="sort-summary-recoveredCases"></span></th>
+                            <th class="sortable" onclick="setSort('summary','recoveredOsd')">Rec OSD<span class="sort-indicator" id="sort-summary-recoveredOsd"></span></th>
+                            <th class="sortable" onclick="setSort('summary','noActionCases')">NA No.<span class="sort-indicator" id="sort-summary-noActionCases"></span></th>
+                            <th class="sortable" onclick="setSort('summary','noActionOsd')">NA OSD<span class="sort-indicator" id="sort-summary-noActionOsd"></span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+            <div id="errorMessage" class="error" style="display:none;"></div>
+        </div>
+    </div>
+
+    <div class="modal" id="consumerDetailModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">Consumer Important Details</div>
+                <button class="modal-close" onclick="closeConsumerDetail()">&times;</button>
+            </div>
+            <div class="detail-grid" id="consumerDetailGrid"></div>
+        </div>
+    </div>
+    <div class="modal modal-fullscreen" id="consumerListModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title" id="consumerListTitle">Consumers</div>
+                <button type="button" class="modal-close" onclick="closeConsumerList()" aria-label="Close">&times;</button>
+            </div>
+            <div class="consumer-list-toolbar">
+                <input type="search" id="consumerListSearch" placeholder="Search CON_ID, name, office, mobile...">
+                <span class="consumer-list-meta" id="consumerListMeta">0 consumers</span>
+            </div>
+            <div class="consumer-list-table-wrap">
+                <table class="consumer-list-table">
+                    <thead id="consumerListHead"></thead>
+                    <tbody id="consumerListBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="modal" id="kpiBreakupModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title" id="kpiBreakupTitle">Class-wise Breakup</div>
+                <button class="modal-close" onclick="closeKpiBreakup()">&times;</button>
+            </div>
+            <div class="breakup-table-wrap">
+                <table class="breakup-table">
+                    <thead>
+                        <tr>
+                            <th class="col-class">Class</th>
+                            <th class="col-num num">No.</th>
+                            <th class="col-osd num">OSD</th>
+                            <th class="col-rec-osd num">Rec OSD</th>
+                        </tr>
+                    </thead>
+                    <tbody id="kpiBreakupBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSPpydOF7Q2tO9-xGxVtosdD-ZlgmSS0ElvP86n9nhrw2RTjKseoSNEOGFJgCbTY5szq7j9q37x4bwf/pub?gid=940941997&single=true&output=csv";
+        const OSD_FIELD = "OSD excluding locked OSD(Rs)";
+
+        let allRows = [];
+        let filteredRows = [];
+        let statusChart = null;
+        let activeSummaryTab = "Region";
+        let activeSlabFilter = "all";
+        const slabViewMode = { slab1: "class", slab2: "class", slab3: "class" };
+        const SLAB_VIEW_UI = {
+            slab1: { modeTextId: "slab1ModeText", btnId: "slab1ClassViewBtn", tableId: "slabTable1" },
+            slab2: { modeTextId: "slab2ModeText", btnId: "slab2ClassViewBtn", tableId: "slabTable2" },
+            slab3: { modeTextId: "slab3ModeText", btnId: "slab3ClassViewBtn", tableId: "slabTable3" }
+        };
+        let selectedConsumerMatch = null;
+        let dataReady = false;
+        const KPI_CONFIG = {
+            totalCases: { title: "Total Cases", filter: rows => rows },
+            totalOsd: { title: "Total OSD", filter: rows => rows },
+            recovered: { title: "Recovered Cases", filter: rows => rows.filter(r => r._actionStatus === "Recovered") },
+            disconnected: { title: "Disconnected Cases", filter: rows => rows.filter(r => r._actionStatus === "Disconnected") },
+            noAction: { title: "Pending No Action", filter: rows => rows.filter(r => r._actionStatus === "No Action") },
+            slab20k: { title: "OSD > 20K", filter: rows => rows.filter(r => r._osd > 20000) },
+            slab10to20: { title: "OSD 10K - 20K", filter: rows => rows.filter(r => r._osd >= 10000 && r._osd <= 20000) },
+            slab5to10: { title: "OSD 5K - 10K", filter: rows => rows.filter(r => r._osd >= 5000 && r._osd < 10000) }
+        };
+        const tableSortState = {
+            slab1: { column: "osd", direction: "desc" },
+            slab2: { column: "osd", direction: "desc" },
+            slab3: { column: "osd", direction: "desc" },
+            summary: { column: "totalOsd", direction: "desc" }
+        };
+        const KPI_LIST_MAP = {
+            recovered: "Recovered",
+            disconnected: "Disconnected",
+            noAction: "No Action"
+        };
+        const CONSUMER_LIST_BASE_COLS = [
+            { key: "CON_ID", label: "CON_ID", class: "", sortVal: r => String(r.CON_ID || ""), get: r => r.CON_ID || "-" },
+            { key: "NAME", label: "Name", class: "", sortVal: r => String(r.NAME || ""), get: r => r.NAME || "-" },
+            { key: "Region", label: "Region", class: "col-hide-sm", sortVal: r => r.Region || "", get: r => r.Region || "-" },
+            { key: "Division", label: "Division", class: "col-hide-sm", sortVal: r => r.Division || "", get: r => r.Division || "-" },
+            { key: "CCC", label: "CCC", class: "col-hide-sm", sortVal: r => r.CCC || "", get: r => r.CCC || "-" },
+            { key: "BASE_CLASS", label: "Cls", class: "", sortVal: r => r.BASE_CLASS || "", get: r => r.BASE_CLASS || "-" },
+            { key: "_osd", label: "OSD", class: "num", sortVal: r => r._osd || 0, get: r => fmtAmountShort(r._osd) },
+            { key: "REG_MOB_NO", label: "Mobile", class: "col-hide-sm", sortVal: r => r.REG_MOB_NO || "", get: r => r.REG_MOB_NO || "-" }
+        ];
+        const CONSUMER_LIST_CONFIG = {
+            Recovered: {
+                title: "Recovered Consumers",
+                extraCols: [
+                    { key: "_recovered", label: "Rec Amt", class: "num", sortVal: r => r._recovered || 0, get: r => fmtAmountShort(r._recovered) },
+                    { key: "Last date of Recovery", label: "Recovery Date", class: "col-hide-sm", sortVal: r => r["Last date of Recovery"] || "", get: r => fmtDate(r["Last date of Recovery"]) }
+                ]
+            },
+            Disconnected: {
+                title: "Disconnected Consumers",
+                extraCols: [
+                    { key: "Date of Disconnection", label: "Disc Date", class: "", sortVal: r => r["Date of Disconnection"] || "", get: r => fmtDate(r["Date of Disconnection"]) }
+                ]
+            },
+            Remarked: {
+                title: "Remarked Consumers",
+                extraCols: [
+                    { key: "Remarks", label: "Remarks", class: "remarks-col", sortVal: r => r.Remarks || "", get: r => (r.Remarks || "-") }
+                ]
+            },
+            "No Action": {
+                title: "No Action Consumers",
+                extraCols: []
+            }
+        };
+        let consumerListState = {
+            status: "",
+            search: "",
+            scope: null,
+            sort: { column: "_osd", direction: "desc" }
+        };
+
+        function parseAmount(value) {
+            if (value === null || value === undefined) return 0;
+            const clean = String(value).replace(/,/g, "").replace(/[^\d.-]/g, "").trim();
+            const n = parseFloat(clean);
+            return Number.isFinite(n) ? n : 0;
+        }
+
+        function fmtAmount(v) {
+            return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(v || 0);
+        }
+
+        function fmtAmountShort(v) {
+            const n = Number(v) || 0;
+            const abs = Math.abs(n);
+            if (abs >= 10000000) return (n / 10000000).toFixed(2) + " Cr";
+            if (abs >= 100000) return (n / 100000).toFixed(2) + " Lakh";
+            if (abs >= 1000) return (n / 1000).toFixed(2) + " K";
+            return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(n);
+        }
+
+        function fmtDate(value) {
+            if (!value) return "-";
+            const d = new Date(value);
+            if (Number.isNaN(d.getTime())) return String(value);
+            return d.toLocaleDateString("en-GB");
+        }
+
+        function classifyAction(row) {
+            const recoveredAmt = parseAmount(row["Recovered Amount"]);
+            const disconnectionDate = String(row["Date of Disconnection"] || "").trim();
+            const remarks = String(row["Remarks"] || "").trim();
+
+            if (recoveredAmt > 0) return "Recovered";
+            if (disconnectionDate) return "Disconnected";
+            if (remarks) return "Remarked";
+            return "No Action";
+        }
+
+        function pickField(row, candidates) {
+            for (const key of candidates) {
+                if (row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== "") {
+                    return String(row[key]).trim();
+                }
+            }
+            return "";
+        }
+
+        function statusClass(status) {
+            if (status === "Recovered") return "status-recovered";
+            if (status === "Disconnected") return "status-disconnected";
+            if (status === "Remarked") return "status-remarked";
+            return "status-noaction";
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;");
+        }
+
+        function formatCountLink(count, status, office, baseClass, slabRange) {
+            const n = Number(count) || 0;
+            if (n <= 0) return `<span class="count-link count-zero">${n.toLocaleString("en-IN")}</span>`;
+            const payload = escapeHtml(JSON.stringify({
+                office: office || "",
+                baseClass: baseClass || "",
+                slabMin: slabRange ? slabRange.min : null,
+                slabMax: slabRange && slabRange.max === Infinity ? "Infinity" : (slabRange ? slabRange.max : null)
+            }));
+            return `<button type="button" class="count-link" data-status="${escapeHtml(status)}" data-scope="${payload}">${n.toLocaleString("en-IN")}</button>`;
+        }
+
+        function getConsumerListColumns(status) {
+            const cfg = CONSUMER_LIST_CONFIG[status];
+            if (!cfg) return CONSUMER_LIST_BASE_COLS;
+            return CONSUMER_LIST_BASE_COLS.concat(cfg.extraCols);
+        }
+
+        function getConsumerListRows() {
+            applyFilters();
+            let rows = filteredRows.filter(r => r._actionStatus === consumerListState.status);
+            const scope = consumerListState.scope;
+            if (scope && scope.office) {
+                const tab = activeSummaryTab;
+                rows = rows.filter(r => {
+                    const off = String(r[tab] || "Unknown").trim() || "Unknown";
+                    if (off !== scope.office) return false;
+                    if (scope.baseClass) {
+                        const bc = String(r.BASE_CLASS || "-").trim() || "-";
+                        if (bc !== scope.baseClass) return false;
+                    }
+                    if (scope.slabMin != null) {
+                        const osd = r._osd || 0;
+                        const slabMax = scope.slabMax === "Infinity" || scope.slabMax === Infinity ? Infinity : scope.slabMax;
+                        if (slabMax === Infinity) {
+                            if (!(osd > scope.slabMin)) return false;
+                        } else if (!(osd >= scope.slabMin && osd < slabMax)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+            }
+            const q = consumerListState.search.trim().toLowerCase();
+            if (q) {
+                rows = rows.filter(r => {
+                    const hay = [
+                        r.CON_ID, r.NAME, r.Region, r.Division, r.CCC,
+                        r.BASE_CLASS, r.REG_MOB_NO, r.Remarks, r.ADDRESS
+                    ].join(" ").toLowerCase();
+                    return hay.includes(q);
+                });
+            }
+            const cols = getConsumerListColumns(consumerListState.status);
+            const sortCol = cols.find(c => c.key === consumerListState.sort.column) || cols.find(c => c.key === "_osd");
+            const sortKey = sortCol ? sortCol.key : "_osd";
+            const dir = consumerListState.sort.direction === "asc" ? 1 : -1;
+            return rows.sort((a, b) => {
+                const av = sortCol.sortVal(a);
+                const bv = sortCol.sortVal(b);
+                if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+                return String(av).localeCompare(String(bv), undefined, { sensitivity: "base", numeric: true }) * dir;
+            });
+        }
+
+        function renderConsumerListTable() {
+            const status = consumerListState.status;
+            const cfg = CONSUMER_LIST_CONFIG[status];
+            const head = document.getElementById("consumerListHead");
+            const body = document.getElementById("consumerListBody");
+            const meta = document.getElementById("consumerListMeta");
+            if (!head || !body || !cfg) return;
+
+            const cols = getConsumerListColumns(status);
+            const rows = getConsumerListRows();
+            const scopeNote = consumerListState.scope && consumerListState.scope.office
+                ? ` · ${consumerListState.scope.office}${consumerListState.scope.baseClass ? " / " + consumerListState.scope.baseClass : ""}`
+                : "";
+
+            head.innerHTML = `<tr>
+                <th>Sl</th>
+                ${cols.map(c => {
+                    const active = consumerListState.sort.column === c.key;
+                    const arrow = active ? (consumerListState.sort.direction === "asc" ? " ▲" : " ▼") : "";
+                    return `<th class="${c.class || ""}" data-sort-col="${escapeHtml(c.key)}">${c.label}${arrow}</th>`;
+                }).join("")}
+            </tr>`;
+
+            head.querySelectorAll("th[data-sort-col]").forEach(th => {
+                th.addEventListener("click", () => {
+                    const col = th.dataset.sortCol;
+                    if (consumerListState.sort.column === col) {
+                        consumerListState.sort.direction = consumerListState.sort.direction === "asc" ? "desc" : "asc";
+                    } else {
+                        consumerListState.sort.column = col;
+                        consumerListState.sort.direction = "asc";
+                    }
+                    renderConsumerListTable();
+                });
+            });
+
+            if (!rows.length) {
+                body.innerHTML = `<tr><td colspan="${cols.length + 1}" style="text-align:center;color:#94a3b8;padding:16px;">No consumers found for current filters.</td></tr>`;
+            } else {
+                body.innerHTML = rows.map((r, idx) => `
+                    <tr class="row-clickable" data-row-idx="${idx}">
+                        <td class="num">${idx + 1}</td>
+                        ${cols.map(c => `<td class="${c.class || ""}">${escapeHtml(c.get(r))}</td>`).join("")}
+                    </tr>
+                `).join("");
+                body.querySelectorAll("tr.row-clickable").forEach(tr => {
+                    tr.addEventListener("click", () => {
+                        const row = rows[Number(tr.dataset.rowIdx)];
+                        if (row) openConsumerDetail(row);
+                    });
+                });
+            }
+
+            const totalOsd = rows.reduce((s, r) => s + (r._osd || 0), 0);
+            meta.textContent = `${rows.length.toLocaleString("en-IN")} consumer${rows.length === 1 ? "" : "s"} · OSD ${fmtAmountShort(totalOsd)}${scopeNote}`;
+        }
+
+        function openConsumerList(status, scope) {
+            if (!CONSUMER_LIST_CONFIG[status]) return;
+            if (!dataReady) return;
+            consumerListState.status = status;
+            consumerListState.scope = scope || null;
+            consumerListState.search = "";
+            consumerListState.sort = { column: "_osd", direction: "desc" };
+            const searchEl = document.getElementById("consumerListSearch");
+            if (searchEl) searchEl.value = "";
+            document.getElementById("consumerListTitle").textContent = CONSUMER_LIST_CONFIG[status].title;
+            renderConsumerListTable();
+            document.getElementById("consumerListModal").classList.add("show");
+            document.body.style.overflow = "hidden";
+        }
+
+        function closeConsumerList() {
+            document.getElementById("consumerListModal").classList.remove("show");
+            document.body.style.overflow = "";
+        }
+
+        function setKpi(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        }
+
+        function normClass(value) {
+            const v = String(value || "").trim().toUpperCase();
+            if (!v || v === "-") return "O";
+            if (v === "C" || v.startsWith("COM") || v.includes("COMMERCIAL")) return "C";
+            if (v === "I" || v.startsWith("IND") || v.includes("INDUSTRIAL")) return "I";
+            if (v.charAt(0) === "C") return "C";
+            if (v.charAt(0) === "I") return "I";
+            return "O";
+        }
+
+        function classBreakupMap(rows) {
+            const m = { C: { count: 0, osd: 0, recOsd: 0 }, I: { count: 0, osd: 0, recOsd: 0 } };
+            rows.forEach(r => {
+                const k = normClass(r.BASE_CLASS);
+                if (k !== "C" && k !== "I") return;
+                m[k].count += 1;
+                m[k].osd += r._osd || 0;
+                if (r._actionStatus === "Recovered") m[k].recOsd += r._osd || 0;
+            });
+            return m;
+        }
+
+        function setSort(tableKey, column) {
+            const state = tableSortState[tableKey];
+            if (!state) return;
+            if (state.column === column) {
+                state.direction = state.direction === "asc" ? "desc" : "asc";
+            } else {
+                state.column = column;
+                state.direction = "asc";
+            }
+            refreshUi();
+        }
+
+        function applySort(arr, tableKey) {
+            const state = tableSortState[tableKey];
+            if (!state) return arr;
+            const { column, direction } = state;
+            const multiplier = direction === "asc" ? 1 : -1;
+            return arr.sort((a, b) => {
+                const av = a[column];
+                const bv = b[column];
+                if (typeof av === "number" && typeof bv === "number") {
+                    return (av - bv) * multiplier;
+                }
+                return String(av).localeCompare(String(bv), undefined, { sensitivity: "base", numeric: true }) * multiplier;
+            });
+        }
+
+        function updateSortIndicators() {
+            document.querySelectorAll(".sort-indicator").forEach(el => { el.textContent = ""; });
+            Object.entries(tableSortState).forEach(([tableKey, state]) => {
+                const id = `sort-${tableKey}-${state.column}`;
+                const el = document.getElementById(id);
+                if (el) el.textContent = state.direction === "asc" ? "▲" : "▼";
+            });
+        }
+
+        function renderLoadingSkeleton() {
+            const makeRows = (tbodyId, cols, rowCount = 5) => {
+                const tbody = document.getElementById(tbodyId);
+                if (!tbody) return;
+                tbody.innerHTML = "";
+                for (let i = 0; i < rowCount; i++) {
+                    const tr = document.createElement("tr");
+                    let html = "";
+                    for (let j = 0; j < cols; j++) {
+                        html += `<td class="skeleton-cell">loading</td>`;
+                    }
+                    tr.innerHTML = html;
+                    tbody.appendChild(tr);
+                }
+            };
+            makeRows("compactSummaryBody1", 11, 4);
+            makeRows("compactSummaryBody2", 11, 4);
+            makeRows("compactSummaryBody3", 11, 4);
+            makeRows("tableBody", 9, 5);
+        }
+
+        function updateFilters() {
+            const regions = [...new Set(allRows.map(r => (r.Region || "").trim()).filter(Boolean))].sort();
+            const sel = document.getElementById("regionFilter");
+            sel.innerHTML = '<option value="">All Regions</option>';
+            regions.forEach(r => {
+                const op = document.createElement("option");
+                op.value = r;
+                op.textContent = r;
+                sel.appendChild(op);
+            });
+            updateDivisionFilter();
+        }
+
+        function updateDivisionFilter() {
+            const selectedRegion = document.getElementById("regionFilter").value;
+            const divisionSel = document.getElementById("divisionFilter");
+            const selectedDivision = divisionSel.value;
+            const divisions = [...new Set(allRows
+                .filter(r => !selectedRegion || (r.Region || "") === selectedRegion)
+                .map(r => (r.Division || "").trim())
+                .filter(Boolean))].sort();
+
+            divisionSel.innerHTML = '<option value="">All Divisions</option>';
+            divisions.forEach(d => {
+                const op = document.createElement("option");
+                op.value = d;
+                op.textContent = d;
+                divisionSel.appendChild(op);
+            });
+            if (selectedDivision && divisions.includes(selectedDivision)) {
+                divisionSel.value = selectedDivision;
+            }
+            updateCccFilter();
+        }
+
+        function updateCccFilter() {
+            const selectedRegion = document.getElementById("regionFilter").value;
+            const selectedDivision = document.getElementById("divisionFilter").value;
+            const cccSel = document.getElementById("cccFilter");
+            const selectedCcc = cccSel.value;
+
+            const cccs = [...new Set(allRows
+                .filter(r => (!selectedRegion || (r.Region || "") === selectedRegion) &&
+                             (!selectedDivision || (r.Division || "") === selectedDivision))
+                .map(r => (r.CCC || "").trim())
+                .filter(Boolean))].sort();
+
+            cccSel.innerHTML = '<option value="">All CCC</option>';
+            cccs.forEach(c => {
+                const op = document.createElement("option");
+                op.value = c;
+                op.textContent = c;
+                cccSel.appendChild(op);
+            });
+            if (selectedCcc && cccs.includes(selectedCcc)) {
+                cccSel.value = selectedCcc;
+            }
+        }
+
+        function applyFilters() {
+            const search = document.getElementById("searchInput").value.trim().toLowerCase();
+            const region = document.getElementById("regionFilter").value;
+            const division = document.getElementById("divisionFilter").value;
+            const ccc = document.getElementById("cccFilter").value;
+            const baseClass = document.getElementById("classFilter").value;
+            const status = document.getElementById("statusFilter").value;
+
+            filteredRows = allRows.filter(r => {
+                if (region && (r.Region || "") !== region) return false;
+                if (division && (r.Division || "") !== division) return false;
+                if (ccc && (r.CCC || "") !== ccc) return false;
+                if (baseClass && normClass(r.BASE_CLASS) !== baseClass) return false;
+                if (status && r._actionStatus !== status) return false;
+                if (!search) return true;
+
+                const hay = [
+                    r.Region,
+                    r.Division,
+                    r.CCC,
+                    r.CON_ID,
+                    r.NAME,
+                    r.Remarks
+                ].join(" ").toLowerCase();
+
+                return hay.includes(search);
+            });
+        }
+
+        function updateKpis(rows) {
+            const totalCases = rows.length;
+            const totalOsd = rows.reduce((s, r) => s + (r._osd || 0), 0);
+            const recoveredRows = rows.filter(r => r._actionStatus === "Recovered");
+            const recoveredAmount = recoveredRows.reduce((s, r) => s + (r._recovered || 0), 0);
+            const disconnectedRows = rows.filter(r => r._actionStatus === "Disconnected");
+            const disconnectedCases = disconnectedRows.length;
+            const disconnectedOsd = disconnectedRows.reduce((s, r) => s + (r._osd || 0), 0);
+            const noActionRows = rows.filter(r => r._actionStatus === "No Action");
+            const noActionCases = noActionRows.length;
+            const noActionOsd = noActionRows.reduce((s, r) => s + (r._osd || 0), 0);
+            const actionCoverage = totalCases > 0 ? ((totalCases - noActionCases) * 100) / totalCases : 0;
+            const slab20k = rows.filter(r => r._osd > 20000);
+            const slab10to20 = rows.filter(r => r._osd >= 10000 && r._osd <= 20000);
+            const slab5to10 = rows.filter(r => r._osd >= 5000 && r._osd < 10000);
+
+            setKpi("kTotalCases", totalCases.toLocaleString("en-IN"));
+            setKpi("kTotalOsd", fmtAmountShort(totalOsd));
+            setKpi("kRecoveredCases", recoveredRows.length.toLocaleString("en-IN"));
+            setKpi("kRecoveredAmount", fmtAmountShort(recoveredAmount));
+            setKpi("kDisconnectedCases", disconnectedCases.toLocaleString("en-IN"));
+            setKpi("kDisconnectedOsd", fmtAmountShort(disconnectedOsd));
+            setKpi("kNoActionCases", noActionCases.toLocaleString("en-IN"));
+            setKpi("kNoActionOsd", fmtAmountShort(noActionOsd));
+            setKpi("kCoverage", actionCoverage.toFixed(1) + "%");
+            setKpi("kSlab20kCount", slab20k.length.toLocaleString("en-IN"));
+            setKpi("kSlab20kOsd", fmtAmountShort(slab20k.reduce((s, r) => s + r._osd, 0)));
+            setKpi("kSlab10to20Count", slab10to20.length.toLocaleString("en-IN"));
+            setKpi("kSlab10to20Osd", fmtAmountShort(slab10to20.reduce((s, r) => s + r._osd, 0)));
+            setKpi("kSlab5to10Count", slab5to10.length.toLocaleString("en-IN"));
+            setKpi("kSlab5to10Osd", fmtAmountShort(slab5to10.reduce((s, r) => s + r._osd, 0)));
+        }
+
+        function renderBreakupRows(tbody, map) {
+            const c = map.C || { count: 0, osd: 0, recOsd: 0 };
+            const i = map.I || { count: 0, osd: 0, recOsd: 0 };
+            const totalCount = c.count + i.count;
+            const totalOsd = c.osd + i.osd;
+            const totalRecOsd = c.recOsd + i.recOsd;
+            const rows = [
+                { label: "C", count: c.count, osd: c.osd, recOsd: c.recOsd, total: false },
+                { label: "I", count: i.count, osd: i.osd, recOsd: i.recOsd, total: false },
+                { label: "Total", count: totalCount, osd: totalOsd, recOsd: totalRecOsd, total: true }
+            ];
+            tbody.innerHTML = "";
+            rows.forEach(row => {
+                const tr = document.createElement("tr");
+                if (row.total) tr.className = "breakup-total";
+                const tdClass = document.createElement("td");
+                tdClass.textContent = row.label;
+                const tdCount = document.createElement("td");
+                tdCount.className = "num";
+                tdCount.textContent = row.count.toLocaleString("en-IN");
+                const tdOsd = document.createElement("td");
+                tdOsd.className = "num";
+                tdOsd.textContent = fmtAmountShort(row.osd);
+                const tdRecOsd = document.createElement("td");
+                tdRecOsd.className = "num";
+                tdRecOsd.textContent = fmtAmountShort(row.recOsd);
+                tr.append(tdClass, tdCount, tdOsd, tdRecOsd);
+                tbody.appendChild(tr);
+            });
+        }
+
+        function openKpiBreakup(key) {
+            const modal = document.getElementById("kpiBreakupModal");
+            const tbody = document.getElementById("kpiBreakupBody");
+            const titleEl = document.getElementById("kpiBreakupTitle");
+            if (!modal || !tbody || !titleEl) return;
+
+            modal.classList.add("show");
+
+            if (!dataReady || !allRows.length) {
+                titleEl.textContent = "Loading data...";
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#94a3b8;">Please wait for data to load.</td></tr>';
+                return;
+            }
+
+            const cfg = KPI_CONFIG[key];
+            if (!cfg) return;
+
+            applyFilters();
+            const subset = cfg.filter(filteredRows);
+            const map = classBreakupMap(subset);
+
+            titleEl.textContent = cfg.title + " - Class Breakup";
+            renderBreakupRows(tbody, map);
+        }
+
+        function closeKpiBreakup() {
+            document.getElementById("kpiBreakupModal").classList.remove("show");
+        }
+
+        function closeConsumerDetail() {
+            document.getElementById("consumerDetailModal").classList.remove("show");
+        }
+
+        function destroyCharts() {
+            if (statusChart) statusChart.destroy();
+        }
+
+        function drawCharts(rows) {
+            destroyCharts();
+
+            const statusOrder = ["Recovered", "Disconnected", "Remarked", "No Action"];
+            const statusCounts = statusOrder.map(s => rows.filter(r => r._actionStatus === s).length);
+
+            statusChart = new Chart(document.getElementById("statusChart"), {
+                type: "doughnut",
+                data: {
+                    labels: statusOrder,
+                    datasets: [{
+                        data: statusCounts,
+                        backgroundColor: ["#10b981", "#f43f5e", "#3b82f6", "#64748b"],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: "#cbd5e1", boxWidth: 12 } } }
+                }
+            });
+        }
+
+        function appendSlabTotalRow(tbody, totals, byClass) {
+            const tr = document.createElement("tr");
+            tr.className = "row-total";
+            const classCell = byClass ? "<td></td>" : "";
+            tr.innerHTML = `
+                <td></td>
+                <td>Total</td>
+                ${classCell}
+                <td class="num">${totals.cases.toLocaleString("en-IN")}</td>
+                <td class="num">${fmtAmountShort(totals.osd)}</td>
+                <td class="num">${totals.recCnt.toLocaleString("en-IN")}</td>
+                <td class="num">${fmtAmountShort(totals.recAmt)}</td>
+                <td class="num">${fmtAmountShort(totals.recOsd)}</td>
+                <td class="num">${totals.discCnt.toLocaleString("en-IN")}</td>
+                <td class="num">${fmtAmountShort(totals.discOsd)}</td>
+                <td class="num">${totals.noActionCnt.toLocaleString("en-IN")}</td>
+            `;
+            tbody.appendChild(tr);
+        }
+
+        function appendSummaryTotalRow(tbody, totals) {
+            const tr = document.createElement("tr");
+            tr.className = "row-total";
+            tr.innerHTML = `
+                <td></td>
+                <td>Total</td>
+                <td class="num">${totals.cases.toLocaleString("en-IN")}</td>
+                <td class="num">${fmtAmountShort(totals.totalOsd)}</td>
+                <td class="num">${fmtAmountShort(totals.recoveredAmount)}</td>
+                <td class="num">${totals.recoveredCases.toLocaleString("en-IN")}</td>
+                <td class="num">${fmtAmountShort(totals.recoveredOsd)}</td>
+                <td class="num">${totals.noActionCases.toLocaleString("en-IN")}</td>
+                <td class="num">${fmtAmountShort(totals.noActionOsd)}</td>
+            `;
+            tbody.appendChild(tr);
+        }
+
+        function emptySlabTotals() {
+            return { cases: 0, osd: 0, recCnt: 0, recAmt: 0, recOsd: 0, discCnt: 0, discOsd: 0, noActionCnt: 0 };
+        }
+
+        function sumSlabRows(rows) {
+            return rows.reduce((t, g) => {
+                t.cases += g.cases;
+                t.osd += g.osd;
+                t.recCnt += g.recCnt;
+                t.recAmt += g.recAmt;
+                t.recOsd += g.recOsd;
+                t.discCnt += g.discCnt;
+                t.discOsd += g.discOsd;
+                t.noActionCnt += g.noActionCnt;
+                return t;
+            }, emptySlabTotals());
+        }
+
+        function updateSlabViewControls(tableKey) {
+            const ui = SLAB_VIEW_UI[tableKey];
+            if (!ui) return;
+            const byClass = slabViewMode[tableKey] === "class";
+            const modeEl = document.getElementById(ui.modeTextId);
+            const btnEl = document.getElementById(ui.btnId);
+            const tableEl = document.getElementById(ui.tableId);
+            if (modeEl) modeEl.textContent = byClass ? " + BASE_CLASS wise" : " wise";
+            if (btnEl) {
+                btnEl.textContent = byClass ? "All Class" : "By Class";
+                btnEl.classList.toggle("active", !byClass);
+            }
+            if (tableEl) tableEl.classList.toggle("all-class-view", !byClass);
+        }
+
+        function toggleSlabClassView(tableKey) {
+            if (!slabViewMode[tableKey]) return;
+            slabViewMode[tableKey] = slabViewMode[tableKey] === "class" ? "all" : "class";
+            refreshUi();
+        }
+
+        function applySlabPanelVisibility() {
+            document.querySelectorAll(".slab-panel").forEach(panel => {
+                const slab = panel.dataset.slabFilter;
+                const show = activeSlabFilter === "all" || activeSlabFilter === slab;
+                panel.style.display = show ? "" : "none";
+            });
+            document.querySelectorAll(".slab-tab-header .tab-btn").forEach(btn => {
+                btn.classList.toggle("active", btn.dataset.slabFilter === activeSlabFilter);
+            });
+        }
+
+        function setActiveSlabFilter(filter) {
+            activeSlabFilter = filter;
+            applySlabPanelVisibility();
+        }
+
+        function renderCompactOfficeSummary(rows) {
+            const slabConfigs = [
+                { min: 20000, max: Infinity, bodyId: "compactSummaryBody1", headerId: "compactOfficeHeader1", labelId: "slab1OfficeLabel", tableKey: "slab1" },
+                { min: 10000, max: 20000, bodyId: "compactSummaryBody2", headerId: "compactOfficeHeader2", labelId: "slab2OfficeLabel", tableKey: "slab2" },
+                { min: 5000, max: 10000, bodyId: "compactSummaryBody3", headerId: "compactOfficeHeader3", labelId: "slab3OfficeLabel", tableKey: "slab3" }
+            ];
+
+            slabConfigs.forEach(cfg => {
+                const byClass = slabViewMode[cfg.tableKey] === "class";
+                updateSlabViewControls(cfg.tableKey);
+                document.getElementById(cfg.headerId).textContent = activeSummaryTab;
+                document.getElementById(cfg.labelId).textContent = activeSummaryTab;
+                const tbody = document.getElementById(cfg.bodyId);
+                tbody.innerHTML = "";
+                const colCount = byClass ? 11 : 10;
+
+                const grouped = {};
+                rows.forEach(r => {
+                    const osd = r._osd || 0;
+                    const inSlab = cfg.max === Infinity ? osd > cfg.min : (osd >= cfg.min && osd < cfg.max);
+                    if (!inSlab) return;
+
+                    const office = String(r[activeSummaryTab] || "Unknown").trim() || "Unknown";
+                    const baseClass = String(r.BASE_CLASS || "-").trim() || "-";
+                    const key = byClass ? office + "||" + baseClass : office;
+
+                    if (!grouped[key]) {
+                        grouped[key] = {
+                            office,
+                            baseClass,
+                            cases: 0,
+                            osd: 0,
+                            recCnt: 0,
+                            recAmt: 0,
+                            recOsd: 0,
+                            discCnt: 0,
+                            discOsd: 0,
+                            noActionCnt: 0
+                        };
+                    }
+
+                    const g = grouped[key];
+                    g.cases += 1;
+                    g.osd += osd;
+                    if (r._actionStatus === "Recovered") {
+                        g.recCnt += 1;
+                        g.recAmt += r._recovered || 0;
+                        g.recOsd += osd;
+                    }
+                    if (r._actionStatus === "Disconnected") {
+                        g.discCnt += 1;
+                        g.discOsd += osd;
+                    }
+                    if (r._actionStatus === "No Action") {
+                        g.noActionCnt += 1;
+                    }
+                });
+
+                const arr = applySort(Object.values(grouped), cfg.tableKey);
+                arr.forEach((g, idx) => {
+                    const tr = document.createElement("tr");
+                    const classCell = byClass
+                        ? `<td class="class-col">${g.baseClass}</td>`
+                        : "";
+                    tr.innerHTML = `
+                        <td class="num">${idx + 1}</td>
+                        <td>${g.office}</td>
+                        ${classCell}
+                        <td class="num">${g.cases.toLocaleString("en-IN")}</td>
+                        <td class="num">${fmtAmountShort(g.osd)}</td>
+                        <td class="num">${formatCountLink(g.recCnt, "Recovered", g.office, byClass ? g.baseClass : "", { min: cfg.min, max: cfg.max })}</td>
+                        <td class="num">${fmtAmountShort(g.recAmt)}</td>
+                        <td class="num">${fmtAmountShort(g.recOsd)}</td>
+                        <td class="num">${formatCountLink(g.discCnt, "Disconnected", g.office, byClass ? g.baseClass : "", { min: cfg.min, max: cfg.max })}</td>
+                        <td class="num">${fmtAmountShort(g.discOsd)}</td>
+                        <td class="num">${formatCountLink(g.noActionCnt, "No Action", g.office, byClass ? g.baseClass : "", { min: cfg.min, max: cfg.max })}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                if (arr.length) {
+                    appendSlabTotalRow(tbody, sumSlabRows(arr), byClass);
+                } else {
+                    const tr = document.createElement("tr");
+                    tr.innerHTML = `<td colspan="${colCount}" style="text-align:center;color:#94a3b8;">No data in this slab for current filters.</td>`;
+                    tbody.appendChild(tr);
+                }
+            });
+        }
+
+        function renderTable(rows) {
+            const tbody = document.getElementById("tableBody");
+            tbody.innerHTML = "";
+            document.getElementById("groupHeader").textContent = activeSummaryTab;
+
+            const map = {};
+            rows.forEach(r => {
+                const key = String(r[activeSummaryTab] || "Unknown").trim() || "Unknown";
+                if (!map[key]) {
+                    map[key] = {
+                        key,
+                        cases: 0,
+                        totalOsd: 0,
+                        recoveredAmount: 0,
+                        recoveredCases: 0,
+                        recoveredOsd: 0,
+                        noActionCases: 0,
+                        noActionOsd: 0
+                    };
+                }
+                map[key].cases += 1;
+                map[key].totalOsd += r._osd || 0;
+                map[key].recoveredAmount += r._recovered || 0;
+                if (r._actionStatus === "Recovered") {
+                    map[key].recoveredCases += 1;
+                    map[key].recoveredOsd += r._osd || 0;
+                }
+                if (r._actionStatus === "No Action") {
+                    map[key].noActionCases += 1;
+                    map[key].noActionOsd += r._osd || 0;
+                }
+            });
+
+            const summaryRows = applySort(Object.values(map), "summary");
+            summaryRows.forEach((r, idx) => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td>${idx + 1}</td>
+                    <td>${r.key}</td>
+                    <td class="num">${r.cases.toLocaleString("en-IN")}</td>
+                    <td class="num">${fmtAmountShort(r.totalOsd)}</td>
+                    <td class="num">${fmtAmountShort(r.recoveredAmount)}</td>
+                    <td class="num">${r.recoveredCases.toLocaleString("en-IN")}</td>
+                    <td class="num">${fmtAmountShort(r.recoveredOsd)}</td>
+                    <td class="num">${r.noActionCases.toLocaleString("en-IN")}</td>
+                    <td class="num">${fmtAmountShort(r.noActionOsd)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            if (summaryRows.length) {
+                const totals = summaryRows.reduce((t, r) => {
+                    t.cases += r.cases;
+                    t.totalOsd += r.totalOsd;
+                    t.recoveredAmount += r.recoveredAmount;
+                    t.recoveredCases += r.recoveredCases;
+                    t.recoveredOsd += r.recoveredOsd;
+                    t.noActionCases += r.noActionCases;
+                    t.noActionOsd += r.noActionOsd;
+                    return t;
+                }, {
+                    cases: 0,
+                    totalOsd: 0,
+                    recoveredAmount: 0,
+                    recoveredCases: 0,
+                    recoveredOsd: 0,
+                    noActionCases: 0,
+                    noActionOsd: 0
+                });
+                appendSummaryTotalRow(tbody, totals);
+            }
+        }
+
+        function updateConsumerSearchAction(rows) {
+            const btn = document.getElementById("viewDetailsBtn");
+            const searchRaw = document.getElementById("searchInput").value.trim();
+            const search = searchRaw.toLowerCase();
+            selectedConsumerMatch = null;
+            btn.disabled = true;
+            btn.title = "Enter a valid CON_ID";
+
+            if (!search) {
+                return;
+            }
+
+            const looksLikeConId = /^\d{4,}$/.test(search) || search.includes("con");
+            if (!looksLikeConId) {
+                return;
+            }
+
+            const searchDigits = (searchRaw.match(/\d+/g) || []).join("");
+            if (!searchDigits) {
+                return;
+            }
+
+            const conMatches = rows.filter(r => {
+                const conId = String(r.CON_ID || "").trim();
+                return conId.length > 0;
+            });
+
+            // 1) Exact CON_ID match (preferred)
+            const exact = conMatches.filter(r => String(r.CON_ID).trim() === searchDigits);
+            if (exact.length === 1) {
+                selectedConsumerMatch = exact[0];
+                btn.disabled = false;
+                btn.title = "Open exact CON_ID details";
+                return;
+            }
+
+            // 2) Unique prefix match for reasonably long input
+            if (searchDigits.length >= 6) {
+                const prefix = conMatches.filter(r => String(r.CON_ID).trim().startsWith(searchDigits));
+                if (prefix.length === 1) {
+                    selectedConsumerMatch = prefix[0];
+                    btn.disabled = false;
+                    btn.title = "Open unique prefix CON_ID details";
+                    return;
+                }
+            }
+
+            // 3) Ambiguous / too broad input => keep disabled
+            btn.title = "No unique CON_ID match. Type full/unique CON_ID.";
+        }
+
+        function openConsumerDetail(data) {
+            if (!data) return;
+            const detailFields = [
+                ["CON_ID", data.CON_ID],
+                ["Name", data.NAME],
+                ["Region", data.Region],
+                ["Division", data.Division],
+                ["CCC", data.CCC],
+                ["Base Class", data.BASE_CLASS],
+                ["OSD Excl Locked", fmtAmountShort(data._osd)],
+                ["Recovered Amount", fmtAmountShort(data._recovered)],
+                ["Date of Disconnection", data["Date of Disconnection"] || "-"],
+                ["Last Date of Recovery", data["Last date of Recovery"] || "-"],
+                ["Remarks", data.Remarks || "-"],
+                ["Address", data.ADDRESS || "-"],
+                ["Mobile", data.REG_MOB_NO || "-"],
+                ["Action Status", data._actionStatus || "-"]
+            ];
+
+            const grid = document.getElementById("consumerDetailGrid");
+            grid.innerHTML = detailFields.map(([k, v]) =>
+                `<div class="d-label">${k}</div><div class="d-value">${v || "-"}</div>`
+            ).join("");
+            document.getElementById("consumerDetailModal").classList.add("show");
+        }
+
+        function openConsumerDetailFromSearch() {
+            openConsumerDetail(selectedConsumerMatch);
+        }
+
+        function setActiveTab(tabName) {
+            activeSummaryTab = tabName;
+            document.querySelectorAll(".office-tab-header .tab-btn").forEach(btn => {
+                btn.classList.toggle("active", btn.dataset.tab === tabName);
+            });
+            refreshUi();
+        }
+
+        function refreshUi() {
+            applyFilters();
+            updateKpis(filteredRows);
+            drawCharts(filteredRows);
+            updateConsumerSearchAction(filteredRows);
+            renderCompactOfficeSummary(filteredRows);
+            renderTable(filteredRows);
+            updateSortIndicators();
+            applySlabPanelVisibility();
+        }
+
+        async function loadData() {
+            const error = document.getElementById("errorMessage");
+            const bodyEl = document.body;
+            renderLoadingSkeleton();
+
+            try {
+                const res = await fetch(DATA_URL);
+                if (!res.ok) throw new Error("Failed to fetch source CSV");
+                const csvText = await res.text();
+
+                const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+                const rows = parsed.data || [];
+
+                allRows = rows.map(r => {
+                    const actionStatus = classifyAction(r);
+                    const normalizedRegion = pickField(r, ["Region", "REGION", "Region "]);
+                    const normalizedDivision = pickField(r, ["Division", "Division ", "DIVISION"]);
+                    const normalizedCcc = pickField(r, ["CCC", "CCC ", "C C C"]);
+                    return {
+                        ...r,
+                        Region: normalizedRegion,
+                        Division: normalizedDivision,
+                        CCC: normalizedCcc,
+                        BASE_CLASS: pickField(r, ["BASE_CLASS", "BASE CLASS", "BASE_CLASS "]) || "-",
+                        _osd: parseAmount(r[OSD_FIELD]),
+                        _recovered: parseAmount(r["Recovered Amount"]),
+                        _actionStatus: actionStatus
+                    };
+                }).filter(r => r.CON_ID || r.NAME || r[OSD_FIELD]);
+
+                updateFilters();
+                dataReady = true;
+                refreshUi();
+
+                const now = new Date();
+                document.getElementById("lastUpdated").textContent = "Last Updated: " + now.toLocaleDateString("en-IN");
+
+                error.style.display = "none";
+                bodyEl.classList.remove("data-loading");
+            } catch (e) {
+                error.style.display = "block";
+                error.textContent = "Error loading data: " + e.message;
+                bodyEl.classList.remove("data-loading");
+            }
+        }
+
+        document.getElementById("searchInput").addEventListener("input", refreshUi);
+        document.getElementById("regionFilter").addEventListener("change", () => {
+            updateDivisionFilter();
+            refreshUi();
+        });
+        document.getElementById("divisionFilter").addEventListener("change", () => {
+            updateCccFilter();
+            refreshUi();
+        });
+        document.getElementById("cccFilter").addEventListener("change", refreshUi);
+        document.getElementById("classFilter").addEventListener("change", refreshUi);
+        document.getElementById("statusFilter").addEventListener("change", refreshUi);
+
+        document.querySelectorAll(".kpi-card.clickable[data-kpi]").forEach(card => {
+            card.addEventListener("click", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const key = card.dataset.kpi;
+                const listStatus = KPI_LIST_MAP[key];
+                if (listStatus) openConsumerList(listStatus);
+                else openKpiBreakup(key);
+            });
+        });
+
+        document.getElementById("consumerListSearch").addEventListener("input", (e) => {
+            consumerListState.search = e.target.value;
+            renderConsumerListTable();
+        });
+
+        document.getElementById("consumerListModal").addEventListener("click", (e) => {
+            if (e.target.id === "consumerListModal") closeConsumerList();
+        });
+
+        document.addEventListener("click", (e) => {
+            const btn = e.target.closest(".count-link[data-status]");
+            if (!btn || !btn.dataset.scope) return;
+            e.preventDefault();
+            e.stopPropagation();
+            try {
+                const scope = JSON.parse(btn.dataset.scope);
+                openConsumerList(btn.dataset.status, scope);
+            } catch (_) { /* ignore */ }
+        });
+
+        document.getElementById("kpiBreakupModal").addEventListener("click", (e) => {
+            if (e.target.id === "kpiBreakupModal") closeKpiBreakup();
+        });
+        document.getElementById("consumerDetailModal").addEventListener("click", (e) => {
+            if (e.target.id === "consumerDetailModal") closeConsumerDetail();
+        });
+
+        window.openKpiBreakup = openKpiBreakup;
+        window.closeKpiBreakup = closeKpiBreakup;
+        window.openConsumerDetailFromSearch = openConsumerDetailFromSearch;
+        window.openConsumerDetail = openConsumerDetail;
+        window.openConsumerList = openConsumerList;
+        window.closeConsumerList = closeConsumerList;
+        window.closeConsumerDetail = closeConsumerDetail;
+        window.setActiveTab = setActiveTab;
+        window.setActiveSlabFilter = setActiveSlabFilter;
+        window.setSort = setSort;
+        window.toggleSlabClassView = toggleSlabClassView;
+
+        loadData();
+    </script>
+</body>
+
+</html>
