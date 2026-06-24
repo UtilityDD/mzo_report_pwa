@@ -343,7 +343,6 @@
             <div class="dashboard-title">
                 <h1>Disconnection Activity Tracker</h1>
                 <div class="dashboard-subtitle">
-                    <span class="badge bg-secondary-subtle text-secondary me-2"><i class="bi bi-diagram-3-fill"></i> CCC &rarr; Division &rarr; Region Hierarchy</span>
                     <span id="dataTimestamp" class="small">Loading source data...</span>
                 </div>
             </div>
@@ -359,7 +358,7 @@
         <!-- Filter and Search Bar -->
         <div class="filter-bar">
             <div class="row g-3 align-items-end">
-                <div class="col-12 col-md-3">
+                <div class="col-12 col-md-4">
                     <label for="searchBar" class="form-label small fw-medium">Search Consumers</label>
                     <div class="input-group input-group-sm">
                         <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -367,27 +366,18 @@
                     </div>
                 </div>
                 
-                <div class="col-12 col-sm-6 col-md-2">
+                <div class="col-12 col-sm-6 col-md-3">
                     <label for="classFilter" class="form-label small fw-medium">Classification</label>
                     <select id="classFilter" class="form-select form-select-sm">
                         <option value="all">All Classifications</option>
                     </select>
                 </div>
 
-                <div class="col-12 col-sm-6 col-md-2">
+                <div class="col-12 col-sm-6 col-md-3">
                     <label for="tariffFilter" class="form-label small fw-medium">Tariff Class</label>
                     <select id="tariffFilter" class="form-select form-select-sm">
                         <option value="all">All Tariffs</option>
                     </select>
-                </div>
-
-                <div class="col-12 col-sm-6 col-md-3">
-                    <label class="form-label small fw-medium">Activity Date Range</label>
-                    <div class="d-flex gap-2">
-                        <input type="date" id="dateStart" class="form-control form-control-sm" placeholder="Start Date">
-                        <span class="align-self-center small text-secondary">to</span>
-                        <input type="date" id="dateEnd" class="form-control form-control-sm" placeholder="End Date">
-                    </div>
                 </div>
 
                 <div class="col-12 col-sm-6 col-md-2 text-end">
@@ -736,8 +726,6 @@
             });
             document.getElementById('classFilter').addEventListener('change', () => { tablePage = 1; updateDashboard(); });
             document.getElementById('tariffFilter').addEventListener('change', () => { tablePage = 1; updateDashboard(); });
-            document.getElementById('dateStart').addEventListener('change', () => { tablePage = 1; updateDashboard(); });
-            document.getElementById('dateEnd').addEventListener('change', () => { tablePage = 1; updateDashboard(); });
             
             document.getElementById('clearFiltersBtn').addEventListener('click', clearFilters);
 
@@ -754,8 +742,6 @@
             document.getElementById('searchBar').value = '';
             document.getElementById('classFilter').value = 'all';
             document.getElementById('tariffFilter').value = 'all';
-            document.getElementById('dateStart').value = '';
-            document.getElementById('dateEnd').value = '';
             currentStatusFilter = 'all';
             
             // Reset active card highlight
@@ -781,8 +767,6 @@
                     const response = await fetch(sourceUrl);
                     if (!response.ok) throw new Error(`Fetch HTTP Status ${response.status}`);
                     csvText = await response.text();
-                } else {
-                    document.getElementById('dataTimestamp').textContent = `Sync date: ${localStorage.getItem('mzo_last_sync_date') || 'Today'}`;
                 }
 
                 if (csvText) {
@@ -807,7 +791,6 @@
                     const csvText = await window.mzoDataHub.get('CACHE_DISCONNECTION');
                     if (csvText) {
                         parseCSV(csvText);
-                        document.getElementById('dataTimestamp').textContent = `Sync date: ${new Date().toDateString()}`;
                     }
                 } else {
                     const sourceUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv';
@@ -815,7 +798,6 @@
                     if (!response.ok) throw new Error(`HTTP Status ${response.status}`);
                     const csvText = await response.text();
                     parseCSV(csvText);
-                    document.getElementById('dataTimestamp').textContent = `Loaded now: ${new Date().toLocaleTimeString()}`;
                 }
             } catch (err) {
                 console.error("Force sync failed:", err);
@@ -845,6 +827,7 @@
             enrichedConsumers = [];
             const uniqueClasses = new Set();
             const uniqueTariffs = new Set();
+            let maxDate = null;
 
             rawConsumers.forEach((row, idx) => {
                 const cccCode = (row['CCC_CODE'] || '').trim();
@@ -884,6 +867,9 @@
                         dateObj = new Date(year, month, day);
                         if (!isNaN(dateObj.getTime())) {
                             isoDateStr = dateObj.toISOString().split('T')[0];
+                            if (!maxDate || dateObj > maxDate) {
+                                maxDate = dateObj;
+                            }
                         } else {
                             hasDate = false;
                         }
@@ -943,6 +929,16 @@
             populateFilterOptions('classFilter', Array.from(uniqueClasses).sort());
             populateFilterOptions('tariffFilter', Array.from(uniqueTariffs).sort());
 
+            // Update Report Date
+            if (maxDate) {
+                const dd = String(maxDate.getDate()).padStart(2, '0');
+                const mm = String(maxDate.getMonth() + 1).padStart(2, '0');
+                const yyyy = maxDate.getFullYear();
+                document.getElementById('dataTimestamp').textContent = `Report Date: ${dd}/${mm}/${yyyy}`;
+            } else {
+                document.getElementById('dataTimestamp').textContent = `Report Date: ${localStorage.getItem('mzo_last_sync_date') || 'Today'}`;
+            }
+
             // Render UI
             updateDashboard();
         }
@@ -974,8 +970,6 @@
             const searchVal = document.getElementById('searchBar').value.toLowerCase().trim();
             const classVal = document.getElementById('classFilter').value;
             const tariffVal = document.getElementById('tariffFilter').value;
-            const dateStartVal = document.getElementById('dateStart').value;
-            const dateEndVal = document.getElementById('dateEnd').value;
 
             return enrichedConsumers.filter(c => {
                 // Hierarchical drill down filter
@@ -1005,10 +999,6 @@
                 // Tariff dropdown
                 if (tariffVal !== 'all' && c.tariffClass !== tariffVal) return false;
 
-                // Date ranges
-                if (dateStartVal && (!c.isoDateStr || c.isoDateStr < dateStartVal)) return false;
-                if (dateEndVal && (!c.isoDateStr || c.isoDateStr > dateEndVal)) return false;
-
                 return true;
             });
         }
@@ -1033,9 +1023,7 @@
             const searchVal = document.getElementById('searchBar').value.trim();
             const classVal = document.getElementById('classFilter').value;
             const tariffVal = document.getElementById('tariffFilter').value;
-            const dateStartVal = document.getElementById('dateStart').value;
-            const dateEndVal = document.getElementById('dateEnd').value;
-            const hasFilters = searchVal !== '' || classVal !== 'all' || tariffVal !== 'all' || dateStartVal !== '' || dateEndVal !== '' || currentStatusFilter !== 'all';
+            const hasFilters = searchVal !== '' || classVal !== 'all' || tariffVal !== 'all' || currentStatusFilter !== 'all';
             
             const clearBtn = document.getElementById('clearFiltersBtn');
             if (clearBtn) {
