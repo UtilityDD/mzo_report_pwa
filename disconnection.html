@@ -1,0 +1,1875 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disconnection Activity Follow-Up Tracker</title>
+    <!-- CSS Dependencies -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet" />
+    
+    <!-- JS Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+    <script src="mzo_data_hub.js"></script>
+
+    <style>
+        :root {
+            --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+            --elevation-2: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
+            --bg-body: #e9ecef;
+            --bg-card: #ffffff;
+            --text-primary: #212529;
+            --text-secondary: #6c757d;
+            --border-color: #dee2e6;
+            --header-bg: #1e3a8a;
+            --header-text: #ffffff;
+            
+            /* Status Colors */
+            --color-fully-paid: #10b981;
+            --color-partially-paid: #06b6d4;
+            --color-disconnected: #f43f5e;
+            --color-no-action: #f59e0b;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-primary);
+            transition: background-color 0.3s, color 0.3s;
+            font-size: 0.9rem;
+        }
+
+        @media (min-width: 992px) {
+            .custom-container {
+                max-width: 960px;
+                margin-left: auto;
+                margin-right: auto;
+            }
+        }
+
+        /* Neumorphic/Elevated Cards */
+        .card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: var(--elevation-1);
+            transition: transform 0.2s, box-shadow 0.2s, background-color 0.3s, border-color 0.3s;
+        }
+
+        .card:hover {
+            box-shadow: var(--elevation-2);
+        }
+
+        .dashboard-header {
+            background: var(--header-bg);
+            color: var(--header-text);
+            padding: 1rem 1.5rem;
+            margin-bottom: 1.25rem;
+            border-radius: 12px;
+            box-shadow: var(--elevation-2);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .dashboard-title h1 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .dashboard-subtitle {
+            font-size: 0.8rem;
+            opacity: 0.9;
+        }
+
+        /* Stats Cards styling */
+        .stats-card {
+            cursor: pointer;
+            border-left: 5px solid transparent;
+            padding: 1rem;
+        }
+
+        .stats-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .stats-card.active-filter {
+            background-color: rgba(79, 70, 229, 0.08);
+            border-color: #4f46e5;
+        }
+
+        .stats-card.fully-paid { border-left-color: var(--color-fully-paid); }
+        .stats-card.partially-paid { border-left-color: var(--color-partially-paid); }
+        .stats-card.disconnected { border-left-color: var(--color-disconnected); }
+        .stats-card.no-action { border-left-color: var(--color-no-action); }
+
+        .stats-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+        }
+
+        .stats-value {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin: 0.25rem 0;
+        }
+
+        .stats-desc {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        /* Breadcrumbs navigation */
+        .breadcrumb-container {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            margin-bottom: 1rem;
+            box-shadow: var(--elevation-1);
+            display: flex;
+            align-items: center;
+            font-size: 0.85rem;
+        }
+
+        .breadcrumb-item {
+            color: #4f46e5;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .breadcrumb-item:hover {
+            text-decoration: underline;
+        }
+
+        .breadcrumb-item.active {
+            color: var(--text-primary);
+            cursor: default;
+            font-weight: 400;
+        }
+
+        .breadcrumb-item.active:hover {
+            text-decoration: none;
+        }
+
+        /* Tables */
+        .table-responsive {
+            background-color: var(--bg-card);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            padding: 0.5rem;
+            box-shadow: var(--elevation-1);
+        }
+
+        .table {
+            color: var(--text-primary);
+            border-collapse: separate;
+            border-spacing: 0;
+            margin: 0;
+        }
+
+        .table th {
+            border-bottom: 2px solid var(--border-color);
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            padding: 0.75rem;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .table th:hover {
+            color: var(--text-primary);
+        }
+
+        .table td {
+            border-bottom: 1px solid var(--border-color);
+            padding: 0.75rem;
+            vertical-align: middle;
+        }
+
+        .table tbody tr {
+            transition: background-color 0.15s;
+        }
+
+        .table-hover tbody tr:hover {
+            background-color: rgba(79, 70, 229, 0.04);
+            cursor: pointer;
+        }
+
+        /* Badges */
+        .badge-status {
+            padding: 0.35em 0.65em;
+            border-radius: 30px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .badge-fully-paid {
+            background-color: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+        }
+
+        .badge-partially-paid {
+            background-color: rgba(6, 182, 212, 0.15);
+            color: #06b6d4;
+        }
+
+        .badge-disconnected {
+            background-color: rgba(244, 63, 94, 0.15);
+            color: #f43f5e;
+        }
+
+        .badge-no-action {
+            background-color: rgba(245, 158, 11, 0.15);
+            color: #f59e0b;
+        }
+
+        /* Charts Container */
+        .chart-container {
+            min-height: 280px;
+            position: relative;
+        }
+
+        /* Filter Row bar */
+        .filter-bar {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1.25rem;
+            box-shadow: var(--elevation-1);
+        }
+
+        /* Loader Overlay */
+        #loaderOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(15, 23, 42, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            color: white;
+            transition: opacity 0.3s;
+        }
+
+        #loaderOverlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        /* Floating Info or Details modal styling */
+        .modal-content {
+            background-color: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+        }
+
+        /* Custom scrollbar for table container */
+        .table-responsive::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .table-responsive::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .table-responsive::-webkit-scrollbar-thumb {
+            background-color: var(--border-color);
+            border-radius: 3px;
+        }
+
+        /* Sort icons */
+        .sort-icon {
+            font-size: 0.75rem;
+            margin-left: 0.25rem;
+            opacity: 0.5;
+        }
+
+        .sort-icon.active {
+            opacity: 1;
+            color: #4f46e5;
+        }
+
+        .pagination-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1rem;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Loading overlay -->
+    <div id="loaderOverlay">
+        <div class="spinner-border text-light" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <h5 id="loaderMessage" class="fw-medium">Downloading activity data...</h5>
+    </div>
+
+    <div class="custom-container container-fluid py-3 px-md-4">
+        <!-- Top Header Bar -->
+        <div class="dashboard-header">
+            <div class="dashboard-title">
+                <h1>Disconnection Activity Tracker</h1>
+                <div class="dashboard-subtitle">
+                    <span class="badge bg-secondary-subtle text-secondary me-2"><i class="bi bi-diagram-3-fill"></i> CCC &rarr; Division &rarr; Region Hierarchy</span>
+                    <span id="dataTimestamp" class="small">Loading source data...</span>
+                </div>
+            </div>
+            
+            <div class="d-flex align-items-center gap-3">
+                <!-- Hard Refresh Button -->
+                <button id="refreshBtn" class="btn btn-outline-light btn-sm d-flex align-items-center gap-1" title="Force refresh data from Google Sheet">
+                    <i class="bi bi-arrow-clockwise"></i> Sync
+                </button>
+            </div>
+        </div>
+
+        <!-- Filter and Search Bar -->
+        <div class="filter-bar">
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-md-3">
+                    <label for="searchBar" class="form-label small fw-medium">Search Consumers</label>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" id="searchBar" class="form-control" placeholder="Search ID, Name, Address...">
+                    </div>
+                </div>
+                
+                <div class="col-12 col-sm-6 col-md-2">
+                    <label for="classFilter" class="form-label small fw-medium">Classification</label>
+                    <select id="classFilter" class="form-select form-select-sm">
+                        <option value="all">All Classifications</option>
+                    </select>
+                </div>
+
+                <div class="col-12 col-sm-6 col-md-2">
+                    <label for="tariffFilter" class="form-label small fw-medium">Tariff Class</label>
+                    <select id="tariffFilter" class="form-select form-select-sm">
+                        <option value="all">All Tariffs</option>
+                    </select>
+                </div>
+
+                <div class="col-12 col-sm-6 col-md-3">
+                    <label class="form-label small fw-medium">Activity Date Range</label>
+                    <div class="d-flex gap-2">
+                        <input type="date" id="dateStart" class="form-control form-control-sm" placeholder="Start Date">
+                        <span class="align-self-center small text-secondary">to</span>
+                        <input type="date" id="dateEnd" class="form-control form-control-sm" placeholder="End Date">
+                    </div>
+                </div>
+
+                <div class="col-12 col-sm-6 col-md-2 text-end">
+                    <button id="clearFiltersBtn" class="btn btn-outline-secondary btn-sm py-1 px-3 d-inline-flex align-items-center justify-content-center" title="Reset Filters" style="height: 31px; width: 40px;">
+                        <i class="bi bi-x-circle" style="font-size: 1rem;"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPI Cards Grid -->
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-sm-6 col-md-3 col-lg-2">
+                <div class="card p-3 stats-card border-start border-5 border-primary" onclick="filterByStatus('all')" id="kpi-total">
+                    <div class="stats-title text-primary">Total Target</div>
+                    <div class="stats-value" id="val-total-count">0</div>
+                    <div class="stats-desc" id="val-total-amount">₹0.00 OSD</div>
+                </div>
+            </div>
+            <div class="col-6 col-sm-6 col-md-3 col-lg-2">
+                <div class="card p-3 stats-card fully-paid" onclick="filterByStatus('Fully Paid')" id="kpi-fully">
+                    <div class="stats-title" style="color: var(--color-fully-paid);">Fully Paid</div>
+                    <div class="stats-value" id="val-fully-count">0</div>
+                    <div class="stats-desc" id="val-fully-amount">₹0.00 paid</div>
+                </div>
+            </div>
+            <div class="col-6 col-sm-6 col-md-3 col-lg-2">
+                <div class="card p-3 stats-card partially-paid" onclick="filterByStatus('Partially Paid')" id="kpi-partially">
+                    <div class="stats-title" style="color: var(--color-partially-paid);">Partially Paid</div>
+                    <div class="stats-value" id="val-partial-count">0</div>
+                    <div class="stats-desc" id="val-partial-amount">₹0.00 paid</div>
+                </div>
+            </div>
+            <div class="col-6 col-sm-6 col-md-3 col-lg-2">
+                <div class="card p-3 stats-card disconnected" onclick="filterByStatus('Disconnected')" id="kpi-discon">
+                    <div class="stats-title" style="color: var(--color-disconnected);">Disconnected</div>
+                    <div class="stats-value" id="val-discon-count">0</div>
+                    <div class="stats-desc" id="val-discon-amount">₹0.00 OSD</div>
+                </div>
+            </div>
+            <div class="col-6 col-sm-6 col-md-3 col-lg-2">
+                <div class="card p-3 stats-card no-action" onclick="filterByStatus('No Action Taken')" id="kpi-noaction">
+                    <div class="stats-title" style="color: var(--color-no-action);">No Action Taken</div>
+                    <div class="stats-value" id="val-noaction-count">0</div>
+                    <div class="stats-desc" id="val-noaction-amount">₹0.00 OSD</div>
+                </div>
+            </div>
+            <div class="col-6 col-sm-6 col-md-3 col-lg-2">
+                <div class="card p-3 h-100 bg-body-tertiary border-0 d-flex flex-column justify-content-center text-center">
+                    <div class="stats-title text-secondary">Follow-Up Coverage</div>
+                    <div class="stats-value text-indigo fw-bold mt-1" id="val-coverage-pct">0%</div>
+                    <div class="stats-desc text-secondary" id="val-coverage-details">0 of 0 consumers</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="row g-3 mb-4">
+            <div class="col-12 col-lg-4">
+                <div class="card p-3 h-100">
+                    <h6 class="card-title fw-bold mb-3"><i class="bi bi-pie-chart-fill text-muted me-2"></i>Status Distribution</h6>
+                    <div class="chart-container d-flex align-items-center justify-content-center">
+                        <canvas id="statusChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-md-6 col-lg-4">
+                <div class="card p-3 h-100">
+                    <h6 class="card-title fw-bold mb-3"><i class="bi bi-bar-chart-steps text-muted me-2"></i>Hierarchy Performance</h6>
+                    <div class="chart-container">
+                        <canvas id="hierarchyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-md-6 col-lg-4">
+                <div class="card p-3 h-100">
+                    <h6 class="card-title fw-bold mb-3"><i class="bi bi-graph-up text-muted me-2"></i>Daily Follow-Up Trend</h6>
+                    <div class="chart-container">
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Breadcrumbs Navigation -->
+        <div class="breadcrumb-container d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center flex-wrap" id="breadcrumbs">
+                <!-- Dynamically generated breadcrumbs -->
+            </div>
+            <div>
+                <button id="exportCsvBtn" class="btn btn-outline-success btn-sm py-1 d-flex align-items-center gap-1 fw-medium">
+                    <i class="bi bi-file-earmark-spreadsheet"></i> Export CSV
+                </button>
+            </div>
+        </div>
+
+        <!-- Hierarchy & Consumer Data Table -->
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="dashboardTable">
+                <thead>
+                    <tr id="tableHeaders">
+                        <!-- Dynamically populated -->
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <!-- Dynamically populated -->
+                </tbody>
+            </table>
+            
+            <!-- Table Pagination Controls -->
+            <div class="pagination-container px-2" id="paginationControls">
+                <div id="paginationInfo">Showing 0 to 0 of 0 items</div>
+                <nav aria-label="Table navigation">
+                    <ul class="pagination pagination-sm m-0" id="paginationList">
+                        <!-- Dynamically populated -->
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+
+    <!-- Consumer Detail Modal -->
+    <div class="modal fade" id="consumerDetailModal" tabindex="-1" aria-labelledby="consumerDetailModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-bottom-0 pb-1">
+                    <h5 class="modal-title fw-bold" id="consumerDetailModalLabel">Consumer Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pt-1" id="consumerModalBody">
+                    <!-- Details filled dynamically -->
+                </div>
+                <div class="modal-footer border-top-0 pt-0">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal details template JS helper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Organization hierarchy mapping
+        const regionDivisionCccMapping = [
+            {
+                "regionName": "MALDA REGION", "regionCode": "6610000", "divisions": [
+                    {
+                        "divisionName": "MALDA DIVISION", "divisionCode": "6611000", "cccs": [
+                            { "cccName": "MANIKCHAK CCC", "cccCode": "6611101" }, { "cccName": "GOLAPGANJ CCC", "cccCode": "6611102" },
+                            { "cccName": "BAISHNABNAGAR CCC", "cccCode": "6611103" }, { "cccName": "KALIACHAK CCC", "cccCode": "6611104" },
+                            { "cccName": "MOTHABARI CCC", "cccCode": "6611105" }, { "cccName": "SUJAPUR CCC", "cccCode": "6611106" },
+                            { "cccName": "RATHBARI CCC", "cccCode": "6611107" }, { "cccName": "FULBARI CCC", "cccCode": "6611108" },
+                            { "cccName": "MOKDUMPUR CCC", "cccCode": "6611109" }
+                        ]
+                    },
+                    {
+                        "divisionName": "CHANCHAL DIVISION", "divisionCode": "6612000", "cccs": [
+                            { "cccName": "BHALUKA CCC", "cccCode": "6612101" },
+                            { "cccName": "SAMSI CCC", "cccCode": "6612102" },
+                            { "cccName": "PARANPUR CCC", "cccCode": "6612103" }, { "cccName": "CHANCHAL CCC", "cccCode": "6612104" },
+                            { "cccName": "MALATIPUR CCC", "cccCode": "6612105" }, { "cccName": "HARISHCHANDRAPUR CCC", "cccCode": "6612106" },
+                            { "cccName": "KUSHIDA CCC", "cccCode": "6612107" }
+                        ]
+                    },
+                    {
+                        "divisionName": "GAZOLE DIVISION", "divisionCode": "6613000", "cccs": [
+                            { "cccName": "GAZOL CCC", "cccCode": "6613101" }, { "cccName": "AIHO. CCC", "cccCode": "6613102" },
+                            { "cccName": "PANDUA CCC", "cccCode": "6613103" }, { "cccName": "BAMONGOLA CCC", "cccCode": "6613104" },
+                            { "cccName": "OLD MALDA CCC", "cccCode": "6613105" }
+                        ]
+                    }
+                ], "bulkCcc": { "divisionName": "Bulk", "ccc": { "cccName": "MALDA REGION BULK", "cccCode": "6610000" } }
+            },
+            {
+                "regionName": "UTTAR DINAJPUR REGION", "regionCode": "6620000", "divisions": [
+                    {
+                        "divisionName": "RAIGANJ DIVISION", "divisionCode": "6621000", "cccs": [
+                            { "cccName": "ITAHAR CCC", "cccCode": "6621101" }, { "cccName": "HEMTABAD CCC", "cccCode": "6621102" },
+                            { "cccName": "KALIYAGANJ CCC", "cccCode": "6621103" }, { "cccName": "RAIGANJ CCC", "cccCode": "6621104" },
+                            { "cccName": "BIRNAGAR CCC", "cccCode": "6621105" }, { "cccName": "KARANDIGHI CCC", "cccCode": "6621106" }
+                        ]
+                    },
+                    {
+                        "divisionName": "ISLAMPUR DIVISION", "divisionCode": "6622000", "cccs": [
+                            { "cccName": "ISLAMPUR CCC", "cccCode": "6622101" }, { "cccName": "CHOPRA CCC", "cccCode": "6622102" },
+                            { "cccName": "DALKHOLA CCC", "cccCode": "6622103" }, { "cccName": "GOALPOKHER CCC", "cccCode": "6622104" },
+                            { "cccName": "KANKI CCC", "cccCode": "6622105" }
+                        ]
+                    }
+                ], "bulkCcc": { "divisionName": "Bulk", "ccc": { "cccName": "U/D REGION BULK", "cccCode": "6620000" } }
+            },
+            {
+                "regionName": "DAKSHIN DINAJPUR REGION", "regionCode": "6630000", "divisions": [
+                    {
+                        "divisionName": "BALURGHAT DIVISION", "divisionCode": "6631000", "cccs": [
+                            { "cccName": "BALURGHAT CCC", "cccCode": "6631101" }, { "cccName": "TAPAN CCC", "cccCode": "6631102" },
+                            { "cccName": "KUMARGANJ CCC", "cccCode": "6631103" }, { "cccName": "HILI CCC", "cccCode": "6631104" },
+                            { "cccName": "PATIRAM CCC", "cccCode": "6631105" }
+                        ]
+                    },
+                    {
+                        "divisionName": "BUNIADPUR DIVISION", "divisionCode": "6632000", "cccs": [
+                            { "cccName": "BUNIADPUR CCC", "cccCode": "6632101" }, { "cccName": "KUSMANDI CCC", "cccCode": "6632102" },
+                            { "cccName": "HARIRAMPUR CCC", "cccCode": "6632103" }, { "cccName": "GANGARAMPUR CCC", "cccCode": "6632104" }
+                        ]
+                    }
+                ], "bulkCcc": { "divisionName": "Bulk", "ccc": { "cccName": "D/D REGION BULK", "cccCode": "6630000" } }
+            }
+        ];
+
+        // Abbreviate names for mapping logic
+        const cccMap = {};
+        regionDivisionCccMapping.forEach(region => {
+            const rName = region.regionName.replace(/ REGION$/i, '').trim();
+            region.divisions.forEach(div => {
+                const dName = div.divisionName.replace(/ DIVISION| DIVISIOIN$/i, '').trim();
+                div.cccs.forEach(c => {
+                    const cName = c.cccName.replace(/ CCC$/i, '').trim();
+                    cccMap[c.cccCode] = {
+                        cccName: cName,
+                        divisionName: dName,
+                        regionName: rName
+                    };
+                });
+            });
+            if (region.bulkCcc) {
+                const c = region.bulkCcc.ccc;
+                const cName = c.cccName.trim();
+                cccMap[c.cccCode] = {
+                    cccName: cName,
+                    divisionName: 'Bulk',
+                    regionName: rName
+                };
+            }
+        });
+
+        // Global State variables
+        let rawConsumers = [];
+        let enrichedConsumers = [];
+        let currentHierarchyPath = { region: null, division: null, ccc: null }; // Breadcrumb drilldown state
+        let currentStatusFilter = 'all'; // status filter (fully paid, partially paid, disconnected, no action)
+        let activeSort = { column: 'outstandingOSD', direction: 'desc' };
+        let tablePage = 1;
+        const pageSize = 15;
+
+        // Chart.js instances
+        let statusChartInstance = null;
+        let hierarchyChartInstance = null;
+        let trendChartInstance = null;
+
+        // Init flat UI controls
+        document.addEventListener('DOMContentLoaded', () => {
+            bindEvents();
+            loadData();
+        });
+
+        function rebuildCharts() {
+            renderCharts();
+        }
+
+        // Event bindings
+        function bindEvents() {
+            document.getElementById('refreshBtn').addEventListener('click', forceSync);
+            
+            // Filters
+            document.getElementById('searchBar').addEventListener('input', (e) => { 
+                tablePage = 1; 
+                updateDashboard(); 
+                const query = e.target.value.trim();
+                if (query) {
+                    const exactMatch = enrichedConsumers.find(c => c.id === query);
+                    if (exactMatch) {
+                        showConsumerDetailModal(exactMatch);
+                    }
+                }
+            });
+            document.getElementById('classFilter').addEventListener('change', () => { tablePage = 1; updateDashboard(); });
+            document.getElementById('tariffFilter').addEventListener('change', () => { tablePage = 1; updateDashboard(); });
+            document.getElementById('dateStart').addEventListener('change', () => { tablePage = 1; updateDashboard(); });
+            document.getElementById('dateEnd').addEventListener('change', () => { tablePage = 1; updateDashboard(); });
+            
+            document.getElementById('clearFiltersBtn').addEventListener('click', clearFilters);
+            document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
+        }
+
+        function clearFilters() {
+            document.getElementById('searchBar').value = '';
+            document.getElementById('classFilter').value = 'all';
+            document.getElementById('tariffFilter').value = 'all';
+            document.getElementById('dateStart').value = '';
+            document.getElementById('dateEnd').value = '';
+            currentStatusFilter = 'all';
+            
+            // Reset active card highlight
+            document.querySelectorAll('.stats-card').forEach(c => c.classList.remove('active-filter'));
+            document.getElementById('kpi-total').classList.remove('active-filter');
+            
+            tablePage = 1;
+            updateDashboard();
+        }
+
+        // Fetch data
+        async function loadData() {
+            showLoader("Loading tracked data...");
+            try {
+                let csvText = null;
+                if (typeof window.mzoDataHub !== 'undefined') {
+                    csvText = await window.mzoDataHub.get('CACHE_DISCONNECTION');
+                }
+
+                if (!csvText) {
+                    console.log("No cache found, downloading directly from source Google Sheets...");
+                    const sourceUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv';
+                    const response = await fetch(sourceUrl);
+                    if (!response.ok) throw new Error(`Fetch HTTP Status ${response.status}`);
+                    csvText = await response.text();
+                } else {
+                    document.getElementById('dataTimestamp').textContent = `Sync date: ${localStorage.getItem('mzo_last_sync_date') || 'Today'}`;
+                }
+
+                if (csvText) {
+                    parseCSV(csvText);
+                } else {
+                    throw new Error("Unable to retrieve CSV data.");
+                }
+            } catch (err) {
+                console.error("Failed to load dashboard data:", err);
+                alert("Failed to load CSV data. Using mock simulation for preview/presentation.");
+                loadMockData();
+            } finally {
+                hideLoader();
+            }
+        }
+
+        async function forceSync() {
+            showLoader("Downloading latest updates from Google Sheets...");
+            try {
+                if (typeof window.mzoDataHub !== 'undefined') {
+                    await window.mzoDataHub.retryDataset('CACHE_DISCONNECTION');
+                    const csvText = await window.mzoDataHub.get('CACHE_DISCONNECTION');
+                    if (csvText) {
+                        parseCSV(csvText);
+                        document.getElementById('dataTimestamp').textContent = `Sync date: ${new Date().toDateString()}`;
+                    }
+                } else {
+                    const sourceUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv';
+                    const response = await fetch(sourceUrl + '&t=' + Date.now());
+                    if (!response.ok) throw new Error(`HTTP Status ${response.status}`);
+                    const csvText = await response.text();
+                    parseCSV(csvText);
+                    document.getElementById('dataTimestamp').textContent = `Loaded now: ${new Date().toLocaleTimeString()}`;
+                }
+            } catch (err) {
+                console.error("Force sync failed:", err);
+                alert("Synchronization failed: " + err.message);
+            } finally {
+                hideLoader();
+            }
+        }
+
+        // CSV parsing and status calculations
+        function parseCSV(csvContent) {
+            Papa.parse(csvContent, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function (results) {
+                    rawConsumers = results.data;
+                    processAndEnrichData();
+                },
+                error: function (err) {
+                    console.error("PapaParse failed:", err);
+                    alert("Error parsing CSV: " + err.message);
+                }
+            });
+        }
+
+        function processAndEnrichData() {
+            enrichedConsumers = [];
+            const uniqueClasses = new Set();
+            const uniqueTariffs = new Set();
+
+            rawConsumers.forEach((row, idx) => {
+                const cccCode = (row['CCC_CODE'] || '').trim();
+                const matchedOrg = cccMap[cccCode];
+                
+                let regionName = 'UNKNOWN REGION';
+                let divisionName = 'UNKNOWN DIVISION';
+                let cccName = (row['UNIT_NAME'] || 'UNKNOWN CCC').replace(/ CCC$/i, '').trim();
+
+                if (matchedOrg) {
+                    regionName = matchedOrg.regionName;
+                    divisionName = matchedOrg.divisionName;
+                    cccName = matchedOrg.cccName;
+                } else if (cccCode) {
+                    // Fallback heuristics if code not explicitly found in standard circle list
+                    if (cccCode.startsWith('661')) regionName = 'MALDA';
+                    else if (cccCode.startsWith('662')) regionName = 'UTTAR DINAJPUR';
+                    else if (cccCode.startsWith('663')) regionName = 'DAKSHIN DINAJPUR';
+                }
+
+                // Parse amounts
+                const outstandingOSD = parseFloat((row['NOTOSD_UPD'] || '0').replace(/,/g, '')) || 0;
+                const finalPaidAmount = parseFloat((row['FINAL PAID AMOUNT'] || '0').replace(/,/g, '')) || 0;
+
+                // Parse dates (dd.mm.yyyy)
+                const dateStr = (row['PAID/DISCON DATE'] || '').trim();
+                let hasDate = (dateStr !== '' && dateStr.toLowerCase() !== '#n/a' && dateStr !== '0');
+                
+                let dateObj = null;
+                let isoDateStr = '';
+                if (hasDate) {
+                    const dateParts = dateStr.split('.');
+                    if (dateParts.length === 3) {
+                        const day = parseInt(dateParts[0]);
+                        const month = parseInt(dateParts[1]) - 1; // 0-indexed
+                        const year = parseInt(dateParts[2]);
+                        dateObj = new Date(year, month, day);
+                        if (!isNaN(dateObj.getTime())) {
+                            isoDateStr = dateObj.toISOString().split('T')[0];
+                        } else {
+                            hasDate = false;
+                        }
+                    } else {
+                        hasDate = false;
+                    }
+                }
+
+                // Check final paid amount presence
+                const paidAmtStr = (row['FINAL PAID AMOUNT'] || '').trim();
+                const hasPaidAmount = (paidAmtStr !== '' && paidAmtStr.toLowerCase() !== '#n/a' && paidAmtStr !== '0');
+
+                // Core logic as specified in instructions
+                let status = 'No Action Taken';
+                if (!hasDate) {
+                    status = 'No Action Taken';
+                } else {
+                    if (!hasPaidAmount) {
+                        status = 'Disconnected';
+                    } else {
+                        if (finalPaidAmount >= outstandingOSD) {
+                            status = 'Fully Paid';
+                        } else {
+                            status = 'Partially Paid';
+                        }
+                    }
+                }
+
+                // Class list filters
+                const cl = (row['CLASS_DESC'] || '').trim();
+                if (cl) uniqueClasses.add(cl);
+
+                const tf = (row['TARIFF CLASS'] || '').trim();
+                if (tf) uniqueTariffs.add(tf);
+
+                enrichedConsumers.push({
+                    id: (row['CON_ID'] || `synthetic-${idx}`).trim(),
+                    name: (row['NAME'] || '').trim(),
+                    address: (row['ADDRESS'] || '').trim(),
+                    cccCode: cccCode,
+                    cccName: cccName,
+                    divisionName: divisionName,
+                    regionName: regionName,
+                    outstandingOSD: outstandingOSD,
+                    finalPaidAmount: finalPaidAmount,
+                    dateStr: hasDate ? dateStr : '',
+                    dateObj: dateObj,
+                    isoDateStr: isoDateStr,
+                    remarks: (row['REMARKS'] || '').trim(),
+                    status: status,
+                    classDesc: cl,
+                    tariffClass: tf
+                });
+            });
+
+            // Populate class and tariff selectors
+            populateFilterOptions('classFilter', Array.from(uniqueClasses).sort());
+            populateFilterOptions('tariffFilter', Array.from(uniqueTariffs).sort());
+
+            // Render UI
+            updateDashboard();
+        }
+
+        function populateFilterOptions(selectId, items) {
+            const selectEl = document.getElementById(selectId);
+            const currentValue = selectEl.value;
+            
+            // Keep "All" option
+            selectEl.innerHTML = `<option value="all">All ${selectId === 'classFilter' ? 'Classifications' : 'Tariff Classes'}</option>`;
+            
+            items.forEach(item => {
+                if (item) {
+                    const opt = document.createElement('option');
+                    opt.value = item;
+                    opt.textContent = item;
+                    selectEl.appendChild(opt);
+                }
+            });
+
+            // Retain previous value if it is still valid
+            if (items.includes(currentValue)) {
+                selectEl.value = currentValue;
+            }
+        }
+
+        // Apply filters, searches, breadcrumb states
+        function getFilteredData() {
+            const searchVal = document.getElementById('searchBar').value.toLowerCase().trim();
+            const classVal = document.getElementById('classFilter').value;
+            const tariffVal = document.getElementById('tariffFilter').value;
+            const dateStartVal = document.getElementById('dateStart').value;
+            const dateEndVal = document.getElementById('dateEnd').value;
+
+            return enrichedConsumers.filter(c => {
+                // Hierarchical drill down filter
+                if (currentHierarchyPath.region && c.regionName !== currentHierarchyPath.region) return false;
+                if (currentHierarchyPath.division && c.divisionName !== currentHierarchyPath.division) return false;
+                if (currentHierarchyPath.ccc && c.cccName !== currentHierarchyPath.ccc) return false;
+
+                // Status Filter
+                if (currentStatusFilter !== 'all' && c.status !== currentStatusFilter) return false;
+
+                // Text search
+                if (searchVal) {
+                    const matchesSearch = 
+                        c.id.toLowerCase().includes(searchVal) ||
+                        c.name.toLowerCase().includes(searchVal) ||
+                        c.address.toLowerCase().includes(searchVal) ||
+                        c.cccName.toLowerCase().includes(searchVal) ||
+                        c.divisionName.toLowerCase().includes(searchVal) ||
+                        c.regionName.toLowerCase().includes(searchVal) ||
+                        c.remarks.toLowerCase().includes(searchVal);
+                    if (!matchesSearch) return false;
+                }
+
+                // Classification dropdown
+                if (classVal !== 'all' && c.classDesc !== classVal) return false;
+
+                // Tariff dropdown
+                if (tariffVal !== 'all' && c.tariffClass !== tariffVal) return false;
+
+                // Date ranges
+                if (dateStartVal && (!c.isoDateStr || c.isoDateStr < dateStartVal)) return false;
+                if (dateEndVal && (!c.isoDateStr || c.isoDateStr > dateEndVal)) return false;
+
+                return true;
+            });
+        }
+
+        // Update dashboard metrics, charts and active view
+        function updateDashboard() {
+            const filtered = getFilteredData();
+
+            // Compute KPIs on current filtered dataset
+            computeKPIs(filtered);
+
+            // Re-draw diagrams
+            renderCharts();
+
+            // Re-render breadcrumbs
+            renderBreadcrumbs();
+
+            // Render current Table View (Hierarchy vs Consumer level)
+            renderTableView(filtered);
+
+            // Highlight reset button if filters are active
+            const searchVal = document.getElementById('searchBar').value.trim();
+            const classVal = document.getElementById('classFilter').value;
+            const tariffVal = document.getElementById('tariffFilter').value;
+            const dateStartVal = document.getElementById('dateStart').value;
+            const dateEndVal = document.getElementById('dateEnd').value;
+            const hasFilters = searchVal !== '' || classVal !== 'all' || tariffVal !== 'all' || dateStartVal !== '' || dateEndVal !== '' || currentStatusFilter !== 'all';
+            
+            const clearBtn = document.getElementById('clearFiltersBtn');
+            if (clearBtn) {
+                if (hasFilters) {
+                    clearBtn.classList.remove('btn-outline-secondary');
+                    clearBtn.classList.add('btn-danger', 'text-white');
+                } else {
+                    clearBtn.classList.remove('btn-danger', 'text-white');
+                    clearBtn.classList.add('btn-outline-secondary');
+                }
+            }
+        }
+
+        // KPI calculator
+        function computeKPIs(data) {
+            let totalOSD = 0;
+            let fullyCount = 0;
+            let fullyAmt = 0;
+            let partialCount = 0;
+            let partialAmt = 0;
+            let disconCount = 0;
+            let disconOSD = 0;
+            let noactionCount = 0;
+            let noactionOSD = 0;
+
+            data.forEach(c => {
+                totalOSD += c.outstandingOSD;
+                
+                if (c.status === 'Fully Paid') {
+                    fullyCount++;
+                    fullyAmt += c.finalPaidAmount;
+                } else if (c.status === 'Partially Paid') {
+                    partialCount++;
+                    partialAmt += c.finalPaidAmount;
+                } else if (c.status === 'Disconnected') {
+                    disconCount++;
+                    disconOSD += c.outstandingOSD;
+                } else if (c.status === 'No Action Taken') {
+                    noactionCount++;
+                    noactionOSD += c.outstandingOSD;
+                }
+            });
+
+            // Bind values to UI elements
+            document.getElementById('val-total-count').textContent = formatNumber(data.length);
+            document.getElementById('val-total-amount').textContent = `₹${formatCurrency(totalOSD)}`;
+
+            document.getElementById('val-fully-count').textContent = formatNumber(fullyCount);
+            document.getElementById('val-fully-amount').textContent = `₹${formatCurrency(fullyAmt)}`;
+
+            document.getElementById('val-partial-count').textContent = formatNumber(partialCount);
+            document.getElementById('val-partial-amount').textContent = `₹${formatCurrency(partialAmt)}`;
+
+            document.getElementById('val-discon-count').textContent = formatNumber(disconCount);
+            document.getElementById('val-discon-amount').textContent = `₹${formatCurrency(disconOSD)} OSD`;
+
+            document.getElementById('val-noaction-count').textContent = formatNumber(noactionCount);
+            document.getElementById('val-noaction-amount').textContent = `₹${formatCurrency(noactionOSD)} OSD`;
+
+            // Action coverage rate
+            const actionTaken = fullyCount + partialCount + disconCount;
+            const rate = data.length > 0 ? (actionTaken / data.length) * 100 : 0;
+            document.getElementById('val-coverage-pct').textContent = `${rate.toFixed(1)}%`;
+            document.getElementById('val-coverage-details').textContent = `${formatNumber(actionTaken)} of ${formatNumber(data.length)}`;
+        }
+
+        // Status filter card click trigger
+        function filterByStatus(status) {
+            currentStatusFilter = status;
+            
+            // Highlight selected card
+            document.querySelectorAll('.stats-card').forEach(c => c.classList.remove('active-filter'));
+            document.getElementById('kpi-total').classList.remove('active-filter');
+
+            if (status === 'all') {
+                document.getElementById('kpi-total').classList.add('active-filter');
+            } else if (status === 'Fully Paid') {
+                document.getElementById('kpi-fully').classList.add('active-filter');
+            } else if (status === 'Partially Paid') {
+                document.getElementById('kpi-partially').classList.add('active-filter');
+            } else if (status === 'Disconnected') {
+                document.getElementById('kpi-discon').classList.add('active-filter');
+            } else if (status === 'No Action Taken') {
+                document.getElementById('kpi-noaction').classList.add('active-filter');
+            }
+
+            tablePage = 1;
+            updateDashboard();
+        }
+
+        // Render Breadcrumbs
+        function renderBreadcrumbs() {
+            const breadcrumbEl = document.getElementById('breadcrumbs');
+            breadcrumbEl.innerHTML = '';
+
+            const rootItem = createBreadcrumbItem("Zone (All)", !currentHierarchyPath.region, () => {
+                currentHierarchyPath = { region: null, division: null, ccc: null };
+                tablePage = 1;
+                updateDashboard();
+            });
+            breadcrumbEl.appendChild(rootItem);
+
+            if (currentHierarchyPath.region) {
+                breadcrumbEl.appendChild(createDivider());
+                const regionItem = createBreadcrumbItem(currentHierarchyPath.region, !currentHierarchyPath.division, () => {
+                    currentHierarchyPath.division = null;
+                    currentHierarchyPath.ccc = null;
+                    tablePage = 1;
+                    updateDashboard();
+                });
+                breadcrumbEl.appendChild(regionItem);
+            }
+
+            if (currentHierarchyPath.division) {
+                breadcrumbEl.appendChild(createDivider());
+                const divItem = createBreadcrumbItem(currentHierarchyPath.division, !currentHierarchyPath.ccc, () => {
+                    currentHierarchyPath.ccc = null;
+                    tablePage = 1;
+                    updateDashboard();
+                });
+                breadcrumbEl.appendChild(divItem);
+            }
+
+            if (currentHierarchyPath.ccc) {
+                breadcrumbEl.appendChild(createDivider());
+                const cccItem = createBreadcrumbItem(currentHierarchyPath.ccc, true, null);
+                breadcrumbEl.appendChild(cccItem);
+            }
+        }
+
+        function createBreadcrumbItem(name, isActive, clickHandler) {
+            const span = document.createElement('span');
+            span.className = isActive ? "breadcrumb-item active" : "breadcrumb-item";
+            span.textContent = name;
+            if (!isActive && clickHandler) {
+                span.addEventListener('click', clickHandler);
+            }
+            return span;
+        }
+
+        function createDivider() {
+            const span = document.createElement('span');
+            span.className = "mx-2 text-muted";
+            span.innerHTML = "&gt;";
+            return span;
+        }
+
+        // Dynamic Table construction (Drilldown vs Consumer detail)
+        function renderTableView(filteredConsumers) {
+            const headerRow = document.getElementById('tableHeaders');
+            const bodyRow = document.getElementById('tableBody');
+            
+            // Hide pagination unless at Consumer level
+            const pagControls = document.getElementById('paginationControls');
+            pagControls.classList.add('d-none');
+
+            // Scenario 1: Region-wise Overview (Root Level)
+            if (!currentHierarchyPath.region) {
+                renderGroupedTable(headerRow, bodyRow, filteredConsumers, 'regionName', 'Region');
+            } 
+            // Scenario 2: Division-wise Overview (Region selected)
+            else if (currentHierarchyPath.region && !currentHierarchyPath.division) {
+                renderGroupedTable(headerRow, bodyRow, filteredConsumers, 'divisionName', 'Division');
+            } 
+            // Scenario 3: CCC-wise Overview (Division selected)
+            else if (currentHierarchyPath.division && !currentHierarchyPath.ccc) {
+                renderGroupedTable(headerRow, bodyRow, filteredConsumers, 'cccName', 'Customer Care Center (CCC)');
+            } 
+            // Scenario 4: Consumer-wise List (CCC selected)
+            else {
+                pagControls.classList.remove('d-none');
+                renderConsumerTable(headerRow, bodyRow, filteredConsumers);
+            }
+        }
+
+        // Group columns inside table
+        function renderGroupedTable(headerEl, bodyEl, consumers, groupKey, groupLabel) {
+            // Sort grouped summaries
+            const groupedSummaries = {};
+            consumers.forEach(c => {
+                const grp = c[groupKey] || 'UNKNOWN';
+                if (!groupedSummaries[grp]) {
+                    groupedSummaries[grp] = {
+                        name: grp,
+                        totalConsumers: 0,
+                        outstandingOSD: 0,
+                        fullyPaidCount: 0,
+                        fullyPaidAmount: 0,
+                        partiallyPaidCount: 0,
+                        partiallyPaidAmount: 0,
+                        disconnectedCount: 0,
+                        disconnectedOSD: 0,
+                        noActionCount: 0,
+                        noActionOSD: 0
+                    };
+                }
+
+                const s = groupedSummaries[grp];
+                s.totalConsumers++;
+                s.outstandingOSD += c.outstandingOSD;
+                
+                if (c.status === 'Fully Paid') {
+                    s.fullyPaidCount++;
+                    s.fullyPaidAmount += c.finalPaidAmount;
+                } else if (c.status === 'Partially Paid') {
+                    s.partiallyPaidCount++;
+                    s.partiallyPaidAmount += c.finalPaidAmount;
+                } else if (c.status === 'Disconnected') {
+                    s.disconnectedCount++;
+                    s.disconnectedOSD += c.outstandingOSD;
+                } else if (c.status === 'No Action Taken') {
+                    s.noActionCount++;
+                    s.noActionOSD += c.outstandingOSD;
+                }
+            });
+
+            // Sort logic
+            const dataArr = Object.values(groupedSummaries);
+            dataArr.sort((a, b) => {
+                let valA = a[activeSort.column] !== undefined ? a[activeSort.column] : a.name;
+                let valB = b[activeSort.column] !== undefined ? b[activeSort.column] : b.name;
+
+                if (typeof valA === 'string') {
+                    return activeSort.direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                } else {
+                    return activeSort.direction === 'asc' ? valA - valB : valB - valA;
+                }
+            });
+
+            // Render Header
+            headerEl.innerHTML = `
+                <th onclick="toggleSort('name')">${groupLabel} ${getSortIcon('name')}</th>
+                <th class="text-end" onclick="toggleSort('totalConsumers')">Consumers ${getSortIcon('totalConsumers')}</th>
+                <th class="text-end" onclick="toggleSort('outstandingOSD')">Outstanding OSD ${getSortIcon('outstandingOSD')}</th>
+                <th class="text-end text-success" onclick="toggleSort('fullyPaidCount')">Fully Paid ${getSortIcon('fullyPaidCount')}</th>
+                <th class="text-end text-cyan" onclick="toggleSort('partiallyPaidCount')">Partially Paid ${getSortIcon('partiallyPaidCount')}</th>
+                <th class="text-end text-danger" onclick="toggleSort('disconnectedCount')">Disconnected ${getSortIcon('disconnectedCount')}</th>
+                <th class="text-end text-warning" onclick="toggleSort('noActionCount')">No Action ${getSortIcon('noActionCount')}</th>
+                <th class="text-end" onclick="toggleSort('actionRate')">Coverage %</th>
+            `;
+
+            // Render Body
+            bodyEl.innerHTML = '';
+            if (dataArr.length === 0) {
+                bodyEl.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-secondary">No rows matching current filters found.</td></tr>`;
+                return;
+            }
+
+            dataArr.forEach(row => {
+                const actionCount = row.fullyPaidCount + row.partiallyPaidCount + row.disconnectedCount;
+                const coverage = row.totalConsumers > 0 ? (actionCount / row.totalConsumers) * 100 : 0;
+                
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="fw-medium text-primary"><i class="bi bi-folder-fill me-2"></i>${row.name}</td>
+                    <td class="text-end fw-medium">${formatNumber(row.totalConsumers)}</td>
+                    <td class="text-end fw-semibold">₹${formatCurrency(row.outstandingOSD)}</td>
+                    <td class="text-end text-success">${formatNumber(row.fullyPaidCount)} <span class="small text-secondary">(${(row.fullyPaidCount > 0 ? (row.fullyPaidCount / row.totalConsumers) * 100 : 0).toFixed(1)}%)</span></td>
+                    <td class="text-end text-cyan">${formatNumber(row.partiallyPaidCount)} <span class="small text-secondary">(${(row.partiallyPaidCount > 0 ? (row.partiallyPaidCount / row.totalConsumers) * 100 : 0).toFixed(1)}%)</span></td>
+                    <td class="text-end text-danger">${formatNumber(row.disconnectedCount)} <span class="small text-secondary">(${(row.disconnectedCount > 0 ? (row.disconnectedCount / row.totalConsumers) * 100 : 0).toFixed(1)}%)</span></td>
+                    <td class="text-end text-warning">${formatNumber(row.noActionCount)} <span class="small text-secondary">(${(row.noActionCount > 0 ? (row.noActionCount / row.totalConsumers) * 100 : 0).toFixed(1)}%)</span></td>
+                    <td class="text-end fw-medium">
+                        <div class="d-flex align-items-center justify-content-end gap-2">
+                            <span>${coverage.toFixed(1)}%</span>
+                            <div class="progress" style="width: 50px; height: 6px;">
+                                <div class="progress-bar bg-indigo" role="progressbar" style="width: ${coverage}%" aria-valuenow="${coverage}" aria-valuemin="0" aria-valuemax="100"></div>
+                            </div>
+                        </div>
+                    </td>
+                `;
+
+                // Handle row clicks to drill down
+                tr.addEventListener('click', () => {
+                    if (!currentHierarchyPath.region) {
+                        currentHierarchyPath.region = row.name;
+                    } else if (!currentHierarchyPath.division) {
+                        currentHierarchyPath.division = row.name;
+                    } else if (!currentHierarchyPath.ccc) {
+                        currentHierarchyPath.ccc = row.name;
+                    }
+                    tablePage = 1;
+                    updateDashboard();
+                });
+                bodyEl.appendChild(tr);
+            });
+        }
+
+        // Detail consumer lists (Level 4)
+        function renderConsumerTable(headerEl, bodyEl, consumers) {
+            // Apply sorting to consumers
+            const sortedConsumers = [...consumers];
+            sortedConsumers.sort((a, b) => {
+                let valA = a[activeSort.column];
+                let valB = b[activeSort.column];
+
+                if (valA === undefined) valA = '';
+                if (valB === undefined) valB = '';
+
+                if (typeof valA === 'string') {
+                    return activeSort.direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                } else {
+                    return activeSort.direction === 'asc' ? valA - valB : valB - valA;
+                }
+            });
+
+            // Headers
+            headerEl.innerHTML = `
+                <th onclick="toggleSort('id')">Consumer ID ${getSortIcon('id')}</th>
+                <th onclick="toggleSort('name')">Name ${getSortIcon('name')}</th>
+                <th onclick="toggleSort('classDesc')">Class ${getSortIcon('classDesc')}</th>
+                <th onclick="toggleSort('tariffClass')">Tariff ${getSortIcon('tariffClass')}</th>
+                <th class="text-end" onclick="toggleSort('outstandingOSD')">Outstanding OSD ${getSortIcon('outstandingOSD')}</th>
+                <th class="text-end" onclick="toggleSort('finalPaidAmount')">Paid Amount ${getSortIcon('finalPaidAmount')}</th>
+                <th onclick="toggleSort('dateStr')">Paid/Discon Date ${getSortIcon('dateStr')}</th>
+                <th class="text-center">Status</th>
+            `;
+
+            // Pagination calculation
+            const totalCount = sortedConsumers.length;
+            const totalPages = Math.ceil(totalCount / pageSize);
+            if (tablePage > totalPages) tablePage = Math.max(1, totalPages);
+
+            const startIndex = (tablePage - 1) * pageSize;
+            const endIndex = Math.min(startIndex + pageSize, totalCount);
+
+            // Populate pagination info
+            document.getElementById('paginationInfo').textContent = totalCount > 0 
+                ? `Showing ${startIndex + 1} to ${endIndex} of ${formatNumber(totalCount)} consumers`
+                : `Showing 0 to 0 of 0 consumers`;
+
+            // Draw Body
+            bodyEl.innerHTML = '';
+            if (totalCount === 0) {
+                bodyEl.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-secondary">No consumers found. Change filters or search terms.</td></tr>`;
+                renderPagination(1, 1);
+                return;
+            }
+
+            const pageItems = sortedConsumers.slice(startIndex, endIndex);
+            pageItems.forEach(c => {
+                let badgeClass = 'badge-no-action';
+                let iconClass = 'bi-clock-history';
+                if (c.status === 'Fully Paid') {
+                    badgeClass = 'badge-fully-paid';
+                    iconClass = 'bi-check-circle-fill';
+                } else if (c.status === 'Partially Paid') {
+                    badgeClass = 'badge-partially-paid';
+                    iconClass = 'bi-dash-circle-fill';
+                } else if (c.status === 'Disconnected') {
+                    badgeClass = 'badge-disconnected';
+                    iconClass = 'bi-x-circle-fill';
+                }
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="fw-semibold text-indigo font-monospace">${c.id}</td>
+                    <td class="fw-medium">${c.name}</td>
+                    <td><span class="small text-secondary">${c.classDesc}</span></td>
+                    <td><span class="small text-secondary font-monospace">${c.tariffClass}</span></td>
+                    <td class="text-end fw-semibold">₹${formatCurrency(c.outstandingOSD)}</td>
+                    <td class="text-end text-success fw-semibold">${c.finalPaidAmount > 0 ? '₹' + formatCurrency(c.finalPaidAmount) : '-'}</td>
+                    <td class="font-monospace small">${c.dateStr || '-'}</td>
+                    <td class="text-center">
+                        <span class="badge-status ${badgeClass}">
+                            <i class="bi ${iconClass}"></i> ${c.status}
+                        </span>
+                    </td>
+                `;
+
+                // Single Consumer Detail Modal on row click
+                tr.addEventListener('click', () => {
+                    showConsumerDetailModal(c);
+                });
+
+                bodyEl.appendChild(tr);
+            });
+
+            renderPagination(tablePage, totalPages);
+        }
+
+        // Draw pagination list links
+        function renderPagination(currentPage, totalPages) {
+            const listEl = document.getElementById('paginationList');
+            listEl.innerHTML = '';
+
+            if (totalPages <= 1) return;
+
+            // Previous button
+            const prevLi = document.createElement('li');
+            prevLi.className = `page-item ${currentPage === 1 ? 'disabled' : ''}`;
+            prevLi.innerHTML = `<a class="page-link" href="#" aria-label="Previous"><span aria-hidden="true">&laquo;</span></a>`;
+            prevLi.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (currentPage > 1) { tablePage--; updateDashboard(); }
+            });
+            listEl.appendChild(prevLi);
+
+            // Page numbers (Limit to max 5 items visible around current page)
+            let startPage = Math.max(1, currentPage - 2);
+            let endPage = Math.min(totalPages, startPage + 4);
+            if (endPage - startPage < 4) {
+                startPage = Math.max(1, endPage - 4);
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                const li = document.createElement('li');
+                li.className = `page-item ${currentPage === i ? 'active' : ''}`;
+                li.innerHTML = `<a class="page-link" href="#">${i}</a>`;
+                li.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    tablePage = i;
+                    updateDashboard();
+                });
+                listEl.appendChild(li);
+            }
+
+            // Next button
+            const nextLi = document.createElement('li');
+            nextLi.className = `page-item ${currentPage === totalPages ? 'disabled' : ''}`;
+            nextLi.innerHTML = `<a class="page-link" href="#" aria-label="Next"><span aria-hidden="true">&raquo;</span></a>`;
+            nextLi.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (currentPage < totalPages) { tablePage++; updateDashboard(); }
+            });
+            listEl.appendChild(nextLi);
+        }
+
+        // Show single consumer detail in Modal dialog
+        function showConsumerDetailModal(c) {
+            const body = document.getElementById('consumerModalBody');
+            body.innerHTML = `
+                <div class="row g-2 mb-3 mt-1">
+                    <div class="col-6">
+                        <div class="text-secondary small">Consumer ID</div>
+                        <div class="fw-bold font-monospace text-primary text-break" style="font-size:1.05rem;">${c.id}</div>
+                    </div>
+                    <div class="col-6 text-end">
+                        <div class="text-secondary small">Status</div>
+                        <span class="badge-status mt-1 ${c.status === 'Fully Paid' ? 'badge-fully-paid' : c.status === 'Partially Paid' ? 'badge-partially-paid' : c.status === 'Disconnected' ? 'badge-disconnected' : 'badge-no-action'}">
+                            ${c.status}
+                        </span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="text-secondary small">Consumer Name</div>
+                    <div class="fw-bold text-primary" style="font-size:0.95rem;">${c.name}</div>
+                </div>
+                <div class="mb-3">
+                    <div class="text-secondary small">Address</div>
+                    <div class="text-primary small">${c.address || 'Not Available'}</div>
+                </div>
+                <hr class="my-2" style="border-color:var(--border-color)">
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <div class="text-secondary small">Geographic Path</div>
+                        <div class="fw-semibold text-primary text-wrap" style="font-size:0.8rem;">
+                            ${c.regionName} &gt; ${c.divisionName} &gt; ${c.cccName}
+                        </div>
+                    </div>
+                    <div class="col-6 text-end">
+                        <div class="text-secondary small">CCC Code</div>
+                        <div class="fw-semibold text-primary font-monospace">${c.cccCode || '-'}</div>
+                    </div>
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-4">
+                        <div class="text-secondary small">Outstanding OSD</div>
+                        <div class="fw-bold text-danger">₹${formatCurrency(c.outstandingOSD, true)}</div>
+                    </div>
+                    <div class="col-4 text-center">
+                        <div class="text-secondary small">Final Paid</div>
+                        <div class="fw-bold text-success">${c.finalPaidAmount > 0 ? '₹' + formatCurrency(c.finalPaidAmount, true) : '₹0.00'}</div>
+                    </div>
+                    <div class="col-4 text-end">
+                        <div class="text-secondary small font-monospace">Tariff/Class</div>
+                        <div class="fw-semibold text-primary small font-monospace">${c.tariffClass} / ${c.classDesc}</div>
+                    </div>
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <div class="text-secondary small">Paid/Discon Date</div>
+                        <div class="fw-bold text-primary font-monospace">${c.dateStr || 'No Date Data'}</div>
+                    </div>
+                    <div class="col-6 text-end">
+                        <div class="text-secondary small">Remarks</div>
+                        <div class="fw-semibold text-primary text-wrap small">${c.remarks || '-'}</div>
+                    </div>
+                </div>
+            `;
+            const modal = new bootstrap.Modal(document.getElementById('consumerDetailModal'));
+            modal.show();
+        }
+
+        // Sorting toggling handler
+        function toggleSort(col) {
+            if (activeSort.column === col) {
+                activeSort.direction = activeSort.direction === 'desc' ? 'asc' : 'desc';
+            } else {
+                activeSort.column = col;
+                activeSort.direction = 'desc';
+            }
+            updateDashboard();
+        }
+
+        // Return icon based on state
+        function getSortIcon(col) {
+            if (activeSort.column === col) {
+                return activeSort.direction === 'desc' 
+                    ? `<i class="bi bi-sort-down sort-icon active"></i>` 
+                    : `<i class="bi bi-sort-up sort-icon active"></i>`;
+            }
+            return `<i class="bi bi-chevron-expand sort-icon"></i>`;
+        }
+
+        // Render chart visualizations
+        function renderCharts() {
+            // Pick up styling according to the current theme
+            const isDarkTheme = document.body.classList.contains('dark');
+            const fontColor = isDarkTheme ? '#94a3b8' : '#64748b';
+            const gridColor = isDarkTheme ? '#334155' : '#e2e8f0';
+
+            const filteredData = getFilteredData();
+
+            // Status counts for Donut chart
+            let fully = 0, partial = 0, discon = 0, noaction = 0;
+            filteredData.forEach(c => {
+                if (c.status === 'Fully Paid') fully++;
+                else if (c.status === 'Partially Paid') partial++;
+                else if (c.status === 'Disconnected') discon++;
+                else if (c.status === 'No Action Taken') noaction++;
+            });
+
+            // 1. Status Donut Chart
+            if (statusChartInstance) statusChartInstance.destroy();
+            const ctxStatus = document.getElementById('statusChart').getContext('2d');
+            
+            // Empty data check
+            if (filteredData.length === 0) {
+                statusChartInstance = null;
+                ctxStatus.clearRect(0, 0, 300, 300);
+                return;
+            }
+
+            statusChartInstance = new Chart(ctxStatus, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Fully Paid', 'Partially Paid', 'Disconnected', 'No Action Taken'],
+                    datasets: [{
+                        data: [fully, partial, discon, noaction],
+                        backgroundColor: ['#10b981', '#06b6d4', '#f43f5e', '#f59e0b'],
+                        borderWidth: isDarkTheme ? 2 : 1,
+                        borderColor: isDarkTheme ? '#1e293b' : '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: fontColor, boxWidth: 12, font: { size: 10 } }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const val = context.raw || 0;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
+                                    return ` ${context.label}: ${formatNumber(val)} (${pct}%)`;
+                                }
+                            }
+                        }
+                    },
+                    onClick: (evt, elements) => {
+                        if (elements.length > 0) {
+                            const firstElement = elements[0];
+                            const statusIndex = firstElement.index;
+                            const statuses = ['Fully Paid', 'Partially Paid', 'Disconnected', 'No Action Taken'];
+                            filterByStatus(statuses[statusIndex]);
+                        }
+                    }
+                }
+            });
+
+            // 2. Stacked Bar Chart for sub-hierarchy performance
+            if (hierarchyChartInstance) hierarchyChartInstance.destroy();
+            const ctxHierarchy = document.getElementById('hierarchyChart').getContext('2d');
+
+            // Find group elements based on drill-down state
+            let summaryKey = 'regionName';
+            let summaryTitle = 'Regions';
+            if (currentHierarchyPath.region) {
+                summaryKey = 'divisionName';
+                summaryTitle = 'Divisions';
+            }
+            if (currentHierarchyPath.division) {
+                summaryKey = 'cccName';
+                summaryTitle = 'CCCs';
+            }
+
+            const groups = {};
+            filteredData.forEach(c => {
+                const name = c[summaryKey] || 'Other';
+                if (!groups[name]) groups[name] = { fully: 0, partial: 0, discon: 0, noaction: 0 };
+                
+                if (c.status === 'Fully Paid') groups[name].fully++;
+                else if (c.status === 'Partially Paid') groups[name].partial++;
+                else if (c.status === 'Disconnected') groups[name].discon++;
+                else if (c.status === 'No Action Taken') groups[name].noaction++;
+            });
+
+            const labels = Object.keys(groups).slice(0, 10); // Show top 10 items for readability
+            const dFully = [], dPartial = [], dDiscon = [], dNoAction = [];
+            labels.forEach(lbl => {
+                dFully.push(groups[lbl].fully);
+                dPartial.push(groups[lbl].partial);
+                dDiscon.push(groups[lbl].discon);
+                dNoAction.push(groups[lbl].noaction);
+            });
+
+            hierarchyChartInstance = new Chart(ctxHierarchy, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: 'Fully Paid', data: dFully, backgroundColor: '#10b981', stack: 'Stack0' },
+                        { label: 'Partially Paid', data: dPartial, backgroundColor: '#06b6d4', stack: 'Stack0' },
+                        { label: 'Disconnected', data: dDiscon, backgroundColor: '#f43f5e', stack: 'Stack0' },
+                        { label: 'No Action', data: dNoAction, backgroundColor: '#f59e0b', stack: 'Stack0' }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        title: {
+                            display: true,
+                            text: summaryTitle === 'Regions' ? 'By Regions' : `By ${summaryTitle} (Top 10)`,
+                            color: fontColor,
+                            font: { size: 11, weight: 'bold' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            stacked: true,
+                            grid: { display: false },
+                            ticks: { color: fontColor, font: { size: 9 }, maxRotation: 45, minRotation: 0 }
+                        },
+                        y: {
+                            stacked: true,
+                            grid: { color: gridColor },
+                            ticks: { color: fontColor, font: { size: 9 } }
+                        }
+                    }
+                }
+            });
+
+            // 3. Line Chart for Daily Trend of Activity
+            if (trendChartInstance) trendChartInstance.destroy();
+            const ctxTrend = document.getElementById('trendChart').getContext('2d');
+
+            const datesMap = {};
+            filteredData.forEach(c => {
+                if (c.status === 'No Action Taken' || !c.isoDateStr) return; // Skip if no date data
+
+                const d = c.isoDateStr;
+                if (!datesMap[d]) datesMap[d] = { paid: 0, discon: 0 };
+                
+                if (c.status === 'Fully Paid' || c.status === 'Partially Paid') {
+                    datesMap[d].paid++;
+                } else if (c.status === 'Disconnected') {
+                    datesMap[d].discon++;
+                }
+            });
+
+            const sortedDates = Object.keys(datesMap).sort();
+            const trendPaid = [];
+            const trendDiscon = [];
+            sortedDates.forEach(dt => {
+                trendPaid.push(datesMap[dt].paid);
+                trendDiscon.push(datesMap[dt].discon);
+            });
+
+            // Format dates (e.g. 20-Jun)
+            const formattedDates = sortedDates.map(dt => {
+                const p = dt.split('-');
+                if (p.length === 3) {
+                    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                    return `${p[2]}-${months[parseInt(p[1]) - 1]}`;
+                }
+                return dt;
+            });
+
+            trendChartInstance = new Chart(ctxTrend, {
+                type: 'line',
+                data: {
+                    labels: formattedDates.slice(-15), // Show last 15 days of activities
+                    datasets: [
+                        {
+                            label: 'Payments',
+                            data: trendPaid.slice(-15),
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            fill: true,
+                            tension: 0.3,
+                            borderWidth: 2,
+                            pointRadius: 3
+                        },
+                        {
+                            label: 'Disconnections',
+                            data: trendDiscon.slice(-15),
+                            borderColor: '#f43f5e',
+                            backgroundColor: 'rgba(244, 63, 94, 0.1)',
+                            fill: true,
+                            tension: 0.3,
+                            borderWidth: 2,
+                            pointRadius: 3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: fontColor, boxWidth: 10, font: { size: 9 } }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: fontColor, font: { size: 9 } }
+                        },
+                        y: {
+                            grid: { color: gridColor },
+                            ticks: { color: fontColor, font: { size: 9 }, stepSize: 1 }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Export Filtered Table View to CSV
+        function exportCSV() {
+            const filtered = getFilteredData();
+            if (filtered.length === 0) {
+                alert("No data available to export.");
+                return;
+            }
+
+            let csvRows = [];
+            
+            // Header columns
+            const headers = ['Consumer ID', 'Name', 'Address', 'Region', 'Division', 'CCC Code', 'CCC Name', 'Class Desc', 'Tariff Class', 'Outstanding OSD', 'Paid Amount', 'PAID/DISCON DATE', 'Status', 'Remarks'];
+            csvRows.push(headers.map(h => `"${h}"`).join(','));
+
+            filtered.forEach(c => {
+                const values = [
+                    c.id,
+                    c.name,
+                    c.address,
+                    c.regionName,
+                    c.divisionName,
+                    c.cccCode,
+                    c.cccName,
+                    c.classDesc,
+                    c.tariffClass,
+                    c.outstandingOSD,
+                    c.finalPaidAmount,
+                    c.dateStr,
+                    c.status,
+                    c.remarks
+                ];
+                csvRows.push(values.map(v => {
+                    const str = (v === undefined || v === null) ? '' : String(v);
+                    return `"${str.replace(/"/g, '""')}"`;
+                }).join(','));
+            });
+
+            const csvContent = csvRows.join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            
+            // Create descriptive name based on current drilldown
+            let filename = "disconnection_activity_all.csv";
+            if (currentHierarchyPath.ccc) {
+                filename = `disconnection_${currentHierarchyPath.ccc}_ccc.csv`;
+            } else if (currentHierarchyPath.division) {
+                filename = `disconnection_${currentHierarchyPath.division}_division.csv`;
+            } else if (currentHierarchyPath.region) {
+                filename = `disconnection_${currentHierarchyPath.region}_region.csv`;
+            }
+
+            link.setAttribute("download", filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // UI loading state helpers
+        function showLoader(message) {
+            const overlay = document.getElementById('loaderOverlay');
+            const msgEl = document.getElementById('loaderMessage');
+            if (msgEl) msgEl.textContent = message || "Loading...";
+            if (overlay) overlay.classList.remove('hidden');
+        }
+
+        function hideLoader() {
+            const overlay = document.getElementById('loaderOverlay');
+            if (overlay) overlay.classList.add('hidden');
+        }
+
+        // Formatting utilities
+        function formatNumber(num) {
+            return num.toLocaleString('en-IN');
+        }
+
+        function formatCurrency(amount, forceExact = false) {
+            if (!forceExact) {
+                if (amount >= 10000000) { // 1 Crore = 10,000,000
+                    return (amount / 10000000).toLocaleString('en-IN', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    }) + ' Cr';
+                } else if (amount >= 100000) { // 1 Lakh = 100,000
+                    return (amount / 100000).toLocaleString('en-IN', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    }) + ' Lakh';
+                }
+            }
+            return amount.toLocaleString('en-IN', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        // Fallback simulation generator
+        function loadMockData() {
+            const mockNames = ['RAMESH KUMAR', 'AMIT CHATTERJEE', 'SULTAN ALAM', 'REKHA DEVI', 'JAYANTA SAHA', 'SADIKUL ISLAM', 'MADHAV SINGHA', 'ASHA BIBI', 'PRADIP PAL', 'MAMATA SHARMA', 'BIJOY GHOSH', 'MOHAMMAD ALI', 'TAPAS CHAKRABORTY', 'CHANDNI PERWEEN', 'ALOKE DEY'];
+            const mockClasses = ['COMMERCIAL', 'DOMESTIC', 'INDUSTRIAL', 'AGRICULTURAL'];
+            const mockTariffs = ['A(DM)', 'A(CM)', 'B(ID)', 'C(AG)'];
+            const mockAddresses = ['VILL-MATHURAPUR, MALDA', 'BAISHNABNAGAR MARKET, MALDA', 'HEMTABAD BUS STAND, RAIGANJ', 'BALURGHAT STATION ROAD', 'GANGARAMPUR NEW COLONY', 'ISLAMPUR COURT AREA', 'CHANCHAL SADAR'];
+            const mockCCCs = [
+                { code: '6611101', name: 'MANIKCHAK CCC', division: 'MALDA', region: 'MALDA' },
+                { code: '6611102', name: 'GOLAPGANJ CCC', division: 'MALDA', region: 'MALDA' },
+                { code: '6612104', name: 'CHANCHAL CCC', division: 'CHANCHAL', region: 'MALDA' },
+                { code: '6613101', name: 'GAZOL CCC', division: 'GAZOLE', region: 'MALDA' },
+                { code: '6621104', name: 'RAIGANJ CCC', division: 'RAIGANJ', region: 'UTTAR DINAJPUR' },
+                { code: '6622101', name: 'ISLAMPUR CCC', division: 'ISLAMPUR', region: 'UTTAR DINAJPUR' },
+                { code: '6631101', name: 'BALURGHAT CCC', division: 'BALURGHAT', region: 'DAKSHIN DINAJPUR' },
+                { code: '6632101', name: 'BUNIADPUR CCC', division: 'BUNIADPUR', region: 'DAKSHIN DINAJPUR' }
+            ];
+
+            const result = [];
+            for (let i = 0; i < 180; i++) {
+                const ccc = mockCCCs[Math.floor(Math.random() * mockCCCs.length)];
+                const outstandingOSD = Math.round(15000 + Math.random() * 85000 * 100) / 100;
+                
+                // 30% No action, 35% Disconnected, 35% Paid (Fully/Partially)
+                const rand = Math.random();
+                let dateStr = '';
+                let finalPaidAmount = '';
+                
+                if (rand > 0.3) {
+                    // Action taken, assign a date (last 10 days)
+                    const dateOffset = Math.floor(Math.random() * 10);
+                    const actionDate = new Date();
+                    actionDate.setDate(actionDate.getDate() - dateOffset);
+                    const day = String(actionDate.getDate()).padStart(2, '0');
+                    const month = String(actionDate.getMonth() + 1).padStart(2, '0');
+                    const year = actionDate.getFullYear();
+                    dateStr = `${day}.${month}.${year}`;
+
+                    if (rand > 0.65) {
+                        // Paid
+                        if (Math.random() > 0.4) {
+                            // Fully Paid
+                            finalPaidAmount = String(outstandingOSD + (Math.random() > 0.8 ? 500 : 0));
+                        } else {
+                            // Partially Paid
+                            finalPaidAmount = String(Math.round(outstandingOSD * 0.4 * 100) / 100);
+                        }
+                    }
+                }
+
+                result.push({
+                    'CCC_CODE': ccc.code,
+                    'UNIT_NAME': ccc.name,
+                    'CON_ID': String(301500000 + i),
+                    'NAME': mockNames[Math.floor(Math.random() * mockNames.length)] + ' ' + (i + 1),
+                    'ADDRESS': mockAddresses[Math.floor(Math.random() * mockAddresses.length)],
+                    'CLASS_DESC': mockClasses[Math.floor(Math.random() * mockClasses.length)],
+                    'TARIFF CLASS': mockTariffs[Math.floor(Math.random() * mockTariffs.length)],
+                    'NOTOSD_UPD': String(outstandingOSD),
+                    'PAID/DISCON DATE': dateStr || '#N/A',
+                    'FINAL PAID AMOUNT': finalPaidAmount || '#N/A',
+                    'REMARKS': Math.random() > 0.8 ? 'Special Follow Up Needed' : ''
+                });
+            }
+
+            rawConsumers = result;
+            processAndEnrichData();
+        }
+    </script>
+</body>
+
+</html>
