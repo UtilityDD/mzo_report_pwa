@@ -3222,64 +3222,62 @@
     function updateHomepageChart(data) {
       const office = document.getElementById('executiveOfficeFilter').value;
       const metrics = ["CUM. AT&C LOSS", "CUM. DIST. LOSS"];
-      const monthNames = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
       
-      const fiscalYears = data.map(r => {
-        const yr = parseInt(r.YEAR);
-        const mo = parseInt(r.MONTH);
-        return (mo >= 4) ? yr : yr - 1;
-      }).filter(y => !isNaN(y));
-      
-      const latestFiscalYear = Math.max(...fiscalYears);
-      console.log(`updateHomepageChart: Office='${office}', Latest Fiscal Year=${latestFiscalYear}`);
-      
-      // We want to start from Mar '25
-      const expandedMonthNames = ["Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
-      // Wait, there's two Mar now? No, the last one is next year.
-      // Sequence: Mar(25), Apr(25), ..., Mar(26)
-      
+      // Filter valid rows for selected office (or overall if office rows empty)
+      let officeRows = data.filter(r => r.CCC && r.CCC.trim() === office && !isNaN(parseInt(r.YEAR)) && !isNaN(parseInt(r.MONTH)));
+      if (officeRows.length === 0) {
+        officeRows = data.filter(r => !isNaN(parseInt(r.YEAR)) && !isNaN(parseInt(r.MONTH)));
+      }
+
+      if (officeRows.length === 0) {
+        console.warn("updateHomepageChart: No valid rows found.");
+        if (homepageChart) homepageChart.destroy();
+        return;
+      }
+
+      // Determine latest (YEAR, MONTH)
+      let maxYear = 0, maxMonth = 0;
+      officeRows.forEach(r => {
+        const y = parseInt(r.YEAR);
+        const m = parseInt(r.MONTH);
+        if (y > maxYear || (y === maxYear && m > maxMonth)) {
+          maxYear = y;
+          maxMonth = m;
+        }
+      });
+
+      // Generate the sequence for the last 12 consecutive months
+      const last12Months = [];
+      for (let i = 11; i >= 0; i--) {
+        let m = maxMonth - i;
+        let y = maxYear;
+        while (m <= 0) {
+          m += 12;
+          y -= 1;
+        }
+        last12Months.push({ year: y, month: m });
+      }
+
       const labels = [];
       const chartValues = {
         "CUM. AT&C LOSS": [],
         "CUM. DIST. LOSS": []
       };
-      
-      expandedMonthNames.forEach((m, idx) => {
-        // Special mapping for the expanded sequence
-        let fiscalIdx, yr;
-        if (idx === 0) { // Prepended March
-          fiscalIdx = 3;
-          yr = latestFiscalYear; // If latestFiscalYear is 2025 (Apr'25), then Mar'25 is in the same year entry 2025
-        } else {
-          fiscalIdx = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3][idx - 1];
-          yr = (fiscalIdx >= 4) ? latestFiscalYear : latestFiscalYear + 1;
-        }
-        
-        labels.push(`${m} '${yr.toString().slice(-2)}`);
-        
+
+      last12Months.forEach(item => {
+        const mName = monthNames[item.month - 1];
+        labels.push(`${mName} '${item.year.toString().slice(-2)}`);
+
         metrics.forEach(metric => {
-          const entry = data.find(r => r.CCC && r.CCC.trim() === office && parseInt(r.MONTH) === fiscalIdx && parseInt(r.YEAR) === yr);
-          chartValues[metric].push(entry ? parseFloat(entry[metric]) : null);
+          const entry = data.find(r => r.CCC && r.CCC.trim() === office && parseInt(r.MONTH) === item.month && parseInt(r.YEAR) === item.year);
+          chartValues[metric].push(entry && entry[metric] !== undefined && entry[metric] !== null && entry[metric] !== '' ? parseFloat(entry[metric]) : null);
         });
       });
 
-      console.log("updateHomepageChart: Values extracted:", chartValues);
-
-      // Simple trim leading/trailing nulls based on AT&C loss (primary metric)
-      const masterValues = chartValues["CUM. AT&C LOSS"];
-      let start = 0, end = masterValues.length - 1;
-      while(start < masterValues.length && masterValues[start] === null) start++;
-      while(end >= 0 && masterValues[end] === null) end--;
-      
-      if (start > end) {
-        console.warn("updateHomepageChart: No data found for the selected range.");
-        if (homepageChart) homepageChart.destroy();
-        return;
-      }
-
-      const trimmedLabels = labels.slice(start, end + 1);
-      const trimmedATC = chartValues["CUM. AT&C LOSS"].slice(start, end + 1);
-      const trimmedTD = chartValues["CUM. DIST. LOSS"].slice(start, end + 1);
+      const trimmedLabels = labels;
+      const trimmedATC = chartValues["CUM. AT&C LOSS"];
+      const trimmedTD = chartValues["CUM. DIST. LOSS"];
 
       const ctxElem = document.getElementById('homepageLossChart');
       if (!ctxElem) {
