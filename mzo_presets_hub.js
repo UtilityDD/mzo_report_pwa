@@ -107,112 +107,130 @@
          * Helper to apply saved preferences to DOM elements on a given page.
          * Automatically matches common element ID patterns and varied naming across different HTML pages.
          */
-        applyToPage: function() {
-            const globalPref = this.getGlobalJurisdiction();
-            if (!globalPref) return false;
+        applyToPage: function(opts = {}) {
+            if (this._isApplying) return false;
+            this._isApplying = true;
 
-            let applied = false;
+            try {
+                const globalPref = this.getGlobalJurisdiction();
+                if (!globalPref) return false;
 
-            function isMatch(savedName, optionValue) {
-                if (!savedName || !optionValue || savedName === 'all' || optionValue === 'all') return false;
-                const s = savedName.toLowerCase().replace(/region|division|div|total/g, '').trim();
-                const o = optionValue.toLowerCase().replace(/region|division|div|total/g, '').trim();
-                if (!s || !o) return false;
-                
-                if (s.includes('uttar') || s.includes('u/dinajpur')) {
-                    return o.includes('uttar') || o.includes('u/dinajpur') || o.includes('u_dinajpur');
-                }
-                if (s.includes('dakshin') || s.includes('d/dinajpur')) {
-                    return o.includes('dakshin') || o.includes('d/dinajpur') || o.includes('d_dinajpur');
-                }
-                return s.includes(o) || o.includes(s);
-            }
+                const shouldTrigger = (opts.triggerChange !== false);
+                let applied = false;
 
-            // 1. Check for standard Region select IDs
-            const regionIDs = ['regionFilter', 'regionSelect', 'locationFilter'];
-            let regionEl = null;
-            for (let id of regionIDs) {
-                const el = document.getElementById(id);
-                if (el) { regionEl = el; break; }
-            }
-
-            if (regionEl && globalPref.region && globalPref.region !== 'all') {
-                for (let opt of regionEl.options) {
-                    if (isMatch(globalPref.region, opt.value)) {
-                        regionEl.value = opt.value;
-                        regionEl.dispatchEvent(new Event('change'));
-                        applied = true;
-                        break;
+                function isMatch(savedName, optionValue) {
+                    if (!savedName || !optionValue || savedName === 'all' || optionValue === 'all') return false;
+                    const s = savedName.toLowerCase().replace(/region|division|div|total/g, '').trim();
+                    const o = optionValue.toLowerCase().replace(/region|division|div|total/g, '').trim();
+                    if (!s || !o) return false;
+                    
+                    if (s.includes('uttar') || s.includes('u/dinajpur')) {
+                        return o.includes('uttar') || o.includes('u/dinajpur') || o.includes('u_dinajpur');
                     }
-                }
-            }
-
-            // 2. Check for standard Division select IDs
-            const divisionIDs = ['divisionFilter', 'divisionSelect', 'divnSelect'];
-            let divisionEl = null;
-            for (let id of divisionIDs) {
-                const el = document.getElementById(id);
-                if (el) { divisionEl = el; break; }
-            }
-
-            if (divisionEl && globalPref.division && globalPref.division !== 'all') {
-                for (let opt of divisionEl.options) {
-                    if (isMatch(globalPref.division, opt.value)) {
-                        divisionEl.value = opt.value;
-                        divisionEl.dispatchEvent(new Event('change'));
-                        applied = true;
-                        break;
+                    if (s.includes('dakshin') || s.includes('d/dinajpur')) {
+                        return o.includes('dakshin') || o.includes('d/dinajpur') || o.includes('d_dinajpur');
                     }
+                    return s.includes(o) || o.includes(s);
                 }
-            }
 
-            // 3. Check for standard CCC / Unit select IDs
-            const cccIDs = ['cccFilter', 'cccSelect', 'unitFilter', 'suppSelect'];
-            let cccEl = null;
-            for (let id of cccIDs) {
-                const el = document.getElementById(id);
-                if (el) { cccEl = el; break; }
-            }
-
-            if (cccEl && globalPref.ccc && globalPref.ccc !== 'all') {
-                for (let opt of cccEl.options) {
-                    if (isMatch(globalPref.ccc, opt.value)) {
-                        cccEl.value = opt.value;
-                        cccEl.dispatchEvent(new Event('change'));
-                        applied = true;
-                        break;
-                    }
+                // 1. Check for standard Region select IDs
+                const regionIDs = ['regionFilter', 'regionSelect', 'locationFilter'];
+                let regionEl = null;
+                for (let id of regionIDs) {
+                    const el = document.getElementById(id);
+                    if (el) { regionEl = el; break; }
                 }
-            }
 
-            // 4. Check for unified single office filter (like on index.html #executiveOfficeFilter)
-            const execEl = document.getElementById('executiveOfficeFilter');
-            if (execEl) {
-                let matched = false;
-                if (globalPref.division && globalPref.division !== 'all') {
-                    for (let opt of execEl.options) {
-                        if (isMatch(globalPref.division, opt.value)) {
-                            execEl.value = opt.value;
-                            execEl.dispatchEvent(new Event('change'));
-                            applied = true;
-                            matched = true;
-                            break;
-                        }
-                    }
-                }
-                if (!matched && globalPref.region && globalPref.region !== 'all') {
-                    for (let opt of execEl.options) {
+                if (regionEl && globalPref.region && globalPref.region !== 'all') {
+                    for (let opt of regionEl.options) {
                         if (isMatch(globalPref.region, opt.value)) {
-                            execEl.value = opt.value;
-                            execEl.dispatchEvent(new Event('change'));
-                            applied = true;
+                            if (regionEl.value !== opt.value) {
+                                regionEl.value = opt.value;
+                                if (shouldTrigger) regionEl.dispatchEvent(new Event('change'));
+                                applied = true;
+                            }
                             break;
                         }
                     }
                 }
-            }
 
-            return applied;
+                // 2. Check for standard Division select IDs
+                const divisionIDs = ['divisionFilter', 'divisionSelect', 'divnSelect'];
+                let divisionEl = null;
+                for (let id of divisionIDs) {
+                    const el = document.getElementById(id);
+                    if (el) { divisionEl = el; break; }
+                }
+
+                if (divisionEl && globalPref.division && globalPref.division !== 'all') {
+                    for (let opt of divisionEl.options) {
+                        if (isMatch(globalPref.division, opt.value)) {
+                            if (divisionEl.value !== opt.value) {
+                                divisionEl.value = opt.value;
+                                if (shouldTrigger) divisionEl.dispatchEvent(new Event('change'));
+                                applied = true;
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                // 3. Check for standard CCC / Unit select IDs
+                const cccIDs = ['cccFilter', 'cccSelect', 'unitFilter', 'suppSelect'];
+                let cccEl = null;
+                for (let id of cccIDs) {
+                    const el = document.getElementById(id);
+                    if (el) { cccEl = el; break; }
+                }
+
+                if (cccEl && globalPref.ccc && globalPref.ccc !== 'all') {
+                    for (let opt of cccEl.options) {
+                        if (isMatch(globalPref.ccc, opt.value)) {
+                            if (cccEl.value !== opt.value) {
+                                cccEl.value = opt.value;
+                                if (shouldTrigger) cccEl.dispatchEvent(new Event('change'));
+                                applied = true;
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                // 4. Check for unified single office filter (like on index.html #executiveOfficeFilter)
+                const execEl = document.getElementById('executiveOfficeFilter');
+                if (execEl) {
+                    let matched = false;
+                    if (globalPref.division && globalPref.division !== 'all') {
+                        for (let opt of execEl.options) {
+                            if (isMatch(globalPref.division, opt.value)) {
+                                if (execEl.value !== opt.value) {
+                                    execEl.value = opt.value;
+                                    if (shouldTrigger) execEl.dispatchEvent(new Event('change'));
+                                    applied = true;
+                                }
+                                matched = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!matched && globalPref.region && globalPref.region !== 'all') {
+                        for (let opt of execEl.options) {
+                            if (isMatch(globalPref.region, opt.value)) {
+                                if (execEl.value !== opt.value) {
+                                    execEl.value = opt.value;
+                                    if (shouldTrigger) execEl.dispatchEvent(new Event('change'));
+                                    applied = true;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                return applied;
+            } finally {
+                this._isApplying = false;
+            }
         },
 
         /**
