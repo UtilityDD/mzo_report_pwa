@@ -234,7 +234,7 @@
         },
 
         /**
-         * Render interactive Setup Modal Dialog dynamically
+         * Render interactive Setup Modal Dialog dynamically (Self-contained, no external JS framework needed)
          */
         showSetupModal: function(callback) {
             let modalEl = document.getElementById('mzoPresetModal');
@@ -243,63 +243,64 @@
             const globalPref = this.getGlobalJurisdiction() || {};
 
             const html = `
-            <div class="modal fade" id="mzoPresetModal" tabindex="-1" aria-hidden="true" style="z-index:10050;">
-                <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content border-0 shadow-lg" style="border-radius:16px;">
-                        <div class="modal-header bg-primary text-white py-3 px-4" style="border-top-left-radius:16px; border-top-right-radius:16px;">
-                            <h5 class="modal-title fw-bold fs-6"><i class="bi bi-gear-fill me-2"></i>Set My Office Jurisdiction Preferences</h5>
-                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            <div id="mzoPresetModal" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.6); z-index:100050; display:flex; align-items:center; justify-content:center; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+                <div style="background:#ffffff; width:90%; max-width:440px; border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,0.3); overflow:hidden;">
+                    <div style="background:#1d4ed8; color:#ffffff; padding:16px 20px; display:flex; align-items:center; justify-content:space-between;">
+                        <h3 style="margin:0; font-size:15px; font-weight:700; display:flex; align-items:center; gap:8px; color:#ffffff;"><i class="fas fa-cog"></i> Office Preferences</h3>
+                        <button type="button" id="mzoModalCloseBtn" style="background:none; border:none; color:#ffffff; font-size:22px; cursor:pointer; line-height:1;">&times;</button>
+                    </div>
+                    <div style="padding:20px; color:#1e293b;">
+                        <p style="margin:0 0 16px 0; font-size:13px; color:#64748b; line-height:1.4;">Save your managing jurisdiction below. Dashboards will automatically pre-filter to your jurisdiction every time you open the app.</p>
+                        
+                        <div style="margin-bottom:14px;">
+                            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:#334155;">Managing Region</label>
+                            <select id="mzoModalRegion" style="width:100%; padding:8px 10px; font-size:13px; border:1px solid #cbd5e1; border-radius:8px; outline:none; background:#ffffff; color:#0f172a;">
+                                <option value="all">All Regions</option>
+                                <option value="MALDA REGION">MALDA REGION</option>
+                                <option value="UTTAR DINAJPUR REGION">UTTAR DINAJPUR REGION</option>
+                                <option value="DAKSHIN DINAJPUR REGION">DAKSHIN DINAJPUR REGION</option>
+                            </select>
                         </div>
-                        <div class="modal-body p-4">
-                            <p class="text-secondary small mb-3">Save your managing jurisdiction below. This will automatically pre-filter your dashboards every time you open the app, even when CSV data updates daily.</p>
-                            
-                            <div class="mb-3">
-                                <label class="form-label small fw-semibold">Managing Region</label>
-                                <select id="mzoModalRegion" class="form-select form-select-sm">
-                                    <option value="all">All Regions</option>
-                                    <option value="MALDA REGION">MALDA REGION</option>
-                                    <option value="UTTAR DINAJPUR REGION">UTTAR DINAJPUR REGION</option>
-                                    <option value="DAKSHIN DINAJPUR REGION">DAKSHIN DINAJPUR REGION</option>
-                                </select>
-                            </div>
 
-                            <div class="mb-3">
-                                <label class="form-label small fw-semibold">Managing Division</label>
-                                <select id="mzoModalDivision" class="form-select form-select-sm">
-                                    <option value="all">All Divisions</option>
-                                    <option value="MALDA DIVISION">MALDA DIVISION</option>
-                                    <option value="CHANCHAL DIVISION">CHANCHAL DIVISION</option>
-                                    <option value="GAZOLE DIVISION">GAZOLE DIVISION</option>
-                                    <option value="RAIGANJ DIVISION">RAIGANJ DIVISION</option>
-                                    <option value="ISLAMPUR DIVISION">ISLAMPUR DIVISION</option>
-                                    <option value="BALURGHAT DIVISION">BALURGHAT DIVISION</option>
-                                    <option value="BUNIADPUR DIVISION">BUNIADPUR DIVISION</option>
-                                </select>
-                            </div>
+                        <div style="margin-bottom:16px;">
+                            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:#334155;">Managing Division</label>
+                            <select id="mzoModalDivision" style="width:100%; padding:8px 10px; font-size:13px; border:1px solid #cbd5e1; border-radius:8px; outline:none; background:#ffffff; color:#0f172a;">
+                                <option value="all">All Divisions</option>
+                                <option value="MALDA DIVISION">MALDA DIVISION</option>
+                                <option value="CHANCHAL DIVISION">CHANCHAL DIVISION</option>
+                                <option value="GAZOLE DIVISION">GAZOLE DIVISION</option>
+                                <option value="RAIGANJ DIVISION">RAIGANJ DIVISION</option>
+                                <option value="ISLAMPUR DIVISION">ISLAMPUR DIVISION</option>
+                                <option value="BALURGHAT DIVISION">BALURGHAT DIVISION</option>
+                                <option value="BUNIADPUR DIVISION">BUNIADPUR DIVISION</option>
+                            </select>
+                        </div>
 
-                            <div class="form-check form-switch mt-4">
-                                <input class="form-check-input" type="checkbox" id="mzoModalSetGlobal" checked>
-                                <label class="form-check-label small fw-medium" for="mzoModalSetGlobal">Set as my default preference for ALL report dashboards</label>
-                            </div>
+                        <div style="display:flex; align-items:center; gap:8px; margin-top:16px;">
+                            <input type="checkbox" id="mzoModalSetGlobal" checked style="width:16px; height:16px; cursor:pointer;">
+                            <label for="mzoModalSetGlobal" style="font-size:12px; font-weight:500; color:#334155; cursor:pointer;">Set as default preference for ALL dashboards</label>
                         </div>
-                        <div class="modal-footer bg-light py-2 px-4" style="border-bottom-left-radius:16px; border-bottom-right-radius:16px;">
-                            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                            <button type="button" id="mzoModalSaveBtn" class="btn btn-primary btn-sm px-3 fw-medium">Save Preference</button>
-                        </div>
+                    </div>
+                    <div style="background:#f8fafc; padding:12px 20px; display:flex; align-items:center; justify-content:flex-end; gap:10px; border-top:1px solid #e2e8f0;">
+                        <button type="button" id="mzoModalCancelBtn" style="background:#ffffff; border:1px solid #cbd5e1; color:#475569; padding:6px 14px; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer;">Cancel</button>
+                        <button type="button" id="mzoModalSaveBtn" style="background:#1d4ed8; border:none; color:#ffffff; padding:6px 18px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;">Save Preference</button>
                     </div>
                 </div>
             </div>`;
 
             document.body.insertAdjacentHTML('beforeend', html);
 
+            const modalTarget = document.getElementById('mzoPresetModal');
             const regEl = document.getElementById('mzoModalRegion');
             const divEl = document.getElementById('mzoModalDivision');
 
             if (globalPref.region) regEl.value = globalPref.region;
             if (globalPref.division) divEl.value = globalPref.division;
 
-            const modalInstance = new bootstrap.Modal(document.getElementById('mzoPresetModal'));
-            modalInstance.show();
+            const closeModal = () => { if (modalTarget) modalTarget.remove(); };
+
+            document.getElementById('mzoModalCloseBtn').addEventListener('click', closeModal);
+            document.getElementById('mzoModalCancelBtn').addEventListener('click', closeModal);
 
             document.getElementById('mzoModalSaveBtn').addEventListener('click', () => {
                 const selectedRegion = regEl.value;
@@ -310,7 +311,7 @@
                     MzoPresetsHub.setGlobalJurisdiction(selectedRegion, selectedDivision, 'all');
                 }
                 
-                modalInstance.hide();
+                closeModal();
                 if (typeof callback === 'function') callback({ region: selectedRegion, division: selectedDivision });
             });
         }
