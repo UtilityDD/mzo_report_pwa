@@ -105,13 +105,28 @@
 
         /**
          * Helper to apply saved preferences to DOM elements on a given page.
-         * Automatically matches common element ID patterns across different HTML pages.
+         * Automatically matches common element ID patterns and varied naming across different HTML pages.
          */
         applyToPage: function() {
             const globalPref = this.getGlobalJurisdiction();
             if (!globalPref) return false;
 
             let applied = false;
+
+            function isMatch(savedName, optionValue) {
+                if (!savedName || !optionValue || savedName === 'all' || optionValue === 'all') return false;
+                const s = savedName.toLowerCase().replace(/region|division|div|total/g, '').trim();
+                const o = optionValue.toLowerCase().replace(/region|division|div|total/g, '').trim();
+                if (!s || !o) return false;
+                
+                if (s.includes('uttar') || s.includes('u/dinajpur')) {
+                    return o.includes('uttar') || o.includes('u/dinajpur') || o.includes('u_dinajpur');
+                }
+                if (s.includes('dakshin') || s.includes('d/dinajpur')) {
+                    return o.includes('dakshin') || o.includes('d/dinajpur') || o.includes('d_dinajpur');
+                }
+                return s.includes(o) || o.includes(s);
+            }
 
             // 1. Check for standard Region select IDs
             const regionIDs = ['regionFilter', 'regionSelect', 'locationFilter'];
@@ -123,8 +138,7 @@
 
             if (regionEl && globalPref.region && globalPref.region !== 'all') {
                 for (let opt of regionEl.options) {
-                    if (opt.value.toLowerCase().includes(globalPref.region.toLowerCase()) || 
-                        globalPref.region.toLowerCase().includes(opt.value.toLowerCase())) {
+                    if (isMatch(globalPref.region, opt.value)) {
                         regionEl.value = opt.value;
                         regionEl.dispatchEvent(new Event('change'));
                         applied = true;
@@ -143,8 +157,7 @@
 
             if (divisionEl && globalPref.division && globalPref.division !== 'all') {
                 for (let opt of divisionEl.options) {
-                    if (opt.value.toLowerCase().includes(globalPref.division.toLowerCase()) || 
-                        globalPref.division.toLowerCase().includes(opt.value.toLowerCase())) {
+                    if (isMatch(globalPref.division, opt.value)) {
                         divisionEl.value = opt.value;
                         divisionEl.dispatchEvent(new Event('change'));
                         applied = true;
@@ -163,8 +176,7 @@
 
             if (cccEl && globalPref.ccc && globalPref.ccc !== 'all') {
                 for (let opt of cccEl.options) {
-                    if (opt.value.toLowerCase().includes(globalPref.ccc.toLowerCase()) || 
-                        globalPref.ccc.toLowerCase().includes(opt.value.toLowerCase())) {
+                    if (isMatch(globalPref.ccc, opt.value)) {
                         cccEl.value = opt.value;
                         cccEl.dispatchEvent(new Event('change'));
                         applied = true;
@@ -175,13 +187,27 @@
 
             // 4. Check for unified single office filter (like on index.html #executiveOfficeFilter)
             const execEl = document.getElementById('executiveOfficeFilter');
-            if (execEl && globalPref.division && globalPref.division !== 'all') {
-                for (let opt of execEl.options) {
-                    if (opt.value.toLowerCase().includes(globalPref.division.toLowerCase())) {
-                        execEl.value = opt.value;
-                        execEl.dispatchEvent(new Event('change'));
-                        applied = true;
-                        break;
+            if (execEl) {
+                let matched = false;
+                if (globalPref.division && globalPref.division !== 'all') {
+                    for (let opt of execEl.options) {
+                        if (isMatch(globalPref.division, opt.value)) {
+                            execEl.value = opt.value;
+                            execEl.dispatchEvent(new Event('change'));
+                            applied = true;
+                            matched = true;
+                            break;
+                        }
+                    }
+                }
+                if (!matched && globalPref.region && globalPref.region !== 'all') {
+                    for (let opt of execEl.options) {
+                        if (isMatch(globalPref.region, opt.value)) {
+                            execEl.value = opt.value;
+                            execEl.dispatchEvent(new Event('change'));
+                            applied = true;
+                            break;
+                        }
                     }
                 }
             }
