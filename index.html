@@ -3285,10 +3285,67 @@
         return;
       }
 
-      if (homepageChart) homepageChart.destroy();
+      if (homepageChart) {
+        homepageChart.destroy();
+        if (window.homepageChartAnimFrame) {
+          cancelAnimationFrame(window.homepageChartAnimFrame);
+          window.homepageChartAnimFrame = null;
+        }
+      }
 
       const datalabelsPlugin = (typeof ChartDataLabels !== 'undefined') ? ChartDataLabels : (typeof window.ChartDataLabels !== 'undefined' ? window.ChartDataLabels : null);
       if (!datalabelsPlugin) console.warn("updateHomepageChart: ChartDataLabels plugin not found!");
+
+      const blinkingHighlightPlugin = {
+        id: 'blinkingHighlight',
+        afterDraw: (chart) => {
+          const ctx = chart.ctx;
+          const timestamp = Date.now();
+          const pulse = (Math.sin(timestamp / 250) + 1) / 2;
+          const extraRadius = pulse * 6;
+          const alpha = 0.2 + pulse * 0.6;
+
+          chart.data.datasets.forEach((dataset, datasetIndex) => {
+            const meta = chart.getDatasetMeta(datasetIndex);
+            if (!meta || meta.hidden) return;
+
+            meta.data.forEach((point, index) => {
+              const item = last13Months[index];
+              if (!item) return;
+
+              const isCurrent = (index === last13Months.length - 1);
+              const isPrevYear = (index === 0);
+              const isMarch = (item.month === 3);
+
+              if (isCurrent || isPrevYear || isMarch) {
+                const { x, y } = point.getProps(['x', 'y'], true);
+                if (x !== undefined && y !== undefined && !isNaN(x) && !isNaN(y)) {
+                  ctx.save();
+                  const color = dataset.borderColor || '#e74c3c';
+
+                  // Outer glowing pulsing ring
+                  ctx.beginPath();
+                  ctx.arc(x, y, 6 + extraRadius, 0, 2 * Math.PI);
+                  ctx.fillStyle = color.startsWith('#e74c3c') 
+                    ? `rgba(231, 76, 60, ${alpha * 0.5})` 
+                    : `rgba(155, 89, 182, ${alpha * 0.5})`;
+                  ctx.fill();
+
+                  // Bright core dot
+                  ctx.beginPath();
+                  ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                  ctx.fillStyle = color;
+                  ctx.shadowColor = color;
+                  ctx.shadowBlur = 10 * pulse;
+                  ctx.fill();
+                  
+                  ctx.restore();
+                }
+              }
+            });
+          });
+        }
+      };
 
       console.log("updateHomepageChart: Creating Dual-Line Chart.");
       try {
@@ -3304,7 +3361,20 @@
                 backgroundColor: 'rgba(231, 76, 60, 0.1)',
                 fill: true,
                 tension: 0.4,
-                pointRadius: 4,
+                pointRadius: (ctx) => {
+                  const idx = ctx.dataIndex;
+                  const item = last13Months[idx];
+                  if (!item) return 4;
+                  if (idx === last13Months.length - 1 || idx === 0 || item.month === 3) return 6;
+                  return 4;
+                },
+                pointHoverRadius: (ctx) => {
+                  const idx = ctx.dataIndex;
+                  const item = last13Months[idx];
+                  if (!item) return 6;
+                  if (idx === last13Months.length - 1 || idx === 0 || item.month === 3) return 9;
+                  return 6;
+                },
                 borderWidth: 3
               },
               {
@@ -3314,7 +3384,20 @@
                 backgroundColor: 'rgba(155, 89, 182, 0.1)',
                 fill: true,
                 tension: 0.4,
-                pointRadius: 4,
+                pointRadius: (ctx) => {
+                  const idx = ctx.dataIndex;
+                  const item = last13Months[idx];
+                  if (!item) return 4;
+                  if (idx === last13Months.length - 1 || idx === 0 || item.month === 3) return 6;
+                  return 4;
+                },
+                pointHoverRadius: (ctx) => {
+                  const idx = ctx.dataIndex;
+                  const item = last13Months[idx];
+                  if (!item) return 6;
+                  if (idx === last13Months.length - 1 || idx === 0 || item.month === 3) return 9;
+                  return 6;
+                },
                 borderWidth: 3
               }
             ]
@@ -3361,8 +3444,20 @@
               }
             }
           },
-          plugins: datalabelsPlugin ? [datalabelsPlugin] : []
+          plugins: [
+            ...(datalabelsPlugin ? [datalabelsPlugin] : []),
+            blinkingHighlightPlugin
+          ]
         });
+        
+        function animateHomepageChart() {
+          if (homepageChart && homepageChart.ctx) {
+            homepageChart.draw();
+            window.homepageChartAnimFrame = requestAnimationFrame(animateHomepageChart);
+          }
+        }
+        window.homepageChartAnimFrame = requestAnimationFrame(animateHomepageChart);
+
         console.log("updateHomepageChart: Chart created successfully.");
       } catch (err) {
         console.error("updateHomepageChart: Error creating Chart.js instance:", err);
