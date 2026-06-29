@@ -46,7 +46,7 @@
 
         @media (min-width: 992px) {
             .custom-container {
-                max-width: 960px;
+                max-width: 1400px;
                 margin-left: auto;
                 margin-right: auto;
             }
@@ -357,8 +357,8 @@
 
         <!-- Filter and Search Bar -->
         <div class="filter-bar">
-            <div class="row g-3 align-items-end">
-                <div class="col-12 col-md-4">
+            <div class="row g-2 align-items-end">
+                <div class="col-12 col-md-3">
                     <label for="searchBar" class="form-label small fw-medium">Search Consumers</label>
                     <div class="input-group input-group-sm">
                         <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -366,22 +366,29 @@
                     </div>
                 </div>
                 
-                <div class="col-12 col-sm-6 col-md-3">
-                    <label for="classFilter" class="form-label small fw-medium">Classification</label>
+                <div class="col-6 col-md-2 col-lg-2">
+                    <label for="regionFilter" class="form-label small fw-medium">Region</label>
+                    <select id="regionFilter" class="form-select form-select-sm">
+                        <option value="all">All Regions</option>
+                    </select>
+                </div>
+
+                <div class="col-6 col-md-3 col-lg-3">
+                    <label for="divisionFilter" class="form-label small fw-medium">Division</label>
+                    <select id="divisionFilter" class="form-select form-select-sm">
+                        <option value="all">All Divisions</option>
+                    </select>
+                </div>
+
+                <div class="col-9 col-md-3 col-lg-3">
+                    <label for="classFilter" class="form-label small fw-medium">Class</label>
                     <select id="classFilter" class="form-select form-select-sm">
-                        <option value="all">All Classifications</option>
+                        <option value="all">All Classes</option>
                     </select>
                 </div>
 
-                <div class="col-12 col-sm-6 col-md-3">
-                    <label for="tariffFilter" class="form-label small fw-medium">Tariff Class</label>
-                    <select id="tariffFilter" class="form-select form-select-sm">
-                        <option value="all">All Tariffs</option>
-                    </select>
-                </div>
-
-                <div class="col-12 col-sm-6 col-md-2 text-end">
-                    <button id="clearFiltersBtn" class="btn btn-outline-secondary btn-sm py-1 px-3 d-inline-flex align-items-center justify-content-center" title="Reset Filters" style="height: 31px; width: 40px;">
+                <div class="col-3 col-md-1 col-lg-1 text-end">
+                    <button id="clearFiltersBtn" class="btn btn-outline-secondary btn-sm py-1 px-2 d-inline-flex align-items-center justify-content-center w-100" title="Reset Filters" style="height: 31px;">
                         <i class="bi bi-x-circle" style="font-size: 1rem;"></i>
                     </button>
                 </div>
@@ -426,9 +433,9 @@
                 </div>
             </div>
             <div class="col-6 col-sm-6 col-md-3 col-lg-2">
-                <div class="card p-3 h-100 bg-body-tertiary border-0 d-flex flex-column justify-content-center text-center">
+                <div class="card p-3 stats-card bg-body-tertiary border-start border-5 border-secondary" id="kpi-coverage">
                     <div class="stats-title text-secondary">Follow-Up Coverage</div>
-                    <div class="stats-value text-indigo fw-bold mt-1" id="val-coverage-pct">0%</div>
+                    <div class="stats-value text-indigo fw-bold" id="val-coverage-pct">0%</div>
                     <div class="stats-desc text-secondary" id="val-coverage-details">0 of 0 consumers</div>
                 </div>
             </div>
@@ -665,10 +672,20 @@
         let tablePage = 1;
         const pageSize = 15;
 
+        // Chart.js plugin registration
+        if (typeof ChartDataLabels !== 'undefined') {
+            Chart.register(ChartDataLabels);
+        }
+
         // Chart.js instances
         let statusChartInstance = null;
         let hierarchyChartInstance = null;
         let trendChartInstance = null;
+
+        window.addEventListener('resize', () => {
+            if (statusChartInstance) statusChartInstance.update();
+            if (hierarchyChartInstance) hierarchyChartInstance.update();
+        });
 
         // Init flat UI controls
         document.addEventListener('DOMContentLoaded', () => {
@@ -724,8 +741,9 @@
                     }
                 }
             });
+            document.getElementById('regionFilter').addEventListener('change', () => { tablePage = 1; updateDashboard(); });
+            document.getElementById('divisionFilter').addEventListener('change', () => { tablePage = 1; updateDashboard(); });
             document.getElementById('classFilter').addEventListener('change', () => { tablePage = 1; updateDashboard(); });
-            document.getElementById('tariffFilter').addEventListener('change', () => { tablePage = 1; updateDashboard(); });
             
             document.getElementById('clearFiltersBtn').addEventListener('click', clearFilters);
 
@@ -740,8 +758,9 @@
 
         function clearFilters() {
             document.getElementById('searchBar').value = '';
+            if (document.getElementById('regionFilter')) document.getElementById('regionFilter').value = 'all';
+            if (document.getElementById('divisionFilter')) document.getElementById('divisionFilter').value = 'all';
             document.getElementById('classFilter').value = 'all';
-            document.getElementById('tariffFilter').value = 'all';
             currentStatusFilter = 'all';
             
             // Reset active card highlight
@@ -826,7 +845,8 @@
         function processAndEnrichData() {
             enrichedConsumers = [];
             const uniqueClasses = new Set();
-            const uniqueTariffs = new Set();
+            const uniqueRegions = new Set();
+            const uniqueDivisions = new Set();
             let maxDate = null;
 
             rawConsumers.forEach((row, idx) => {
@@ -898,12 +918,12 @@
                     }
                 }
 
-                // Class list filters
+                // Region, Division, and Class list filters
+                if (regionName) uniqueRegions.add(regionName);
+                if (divisionName) uniqueDivisions.add(divisionName);
                 const cl = (row['CLASS_DESC'] || '').trim();
                 if (cl) uniqueClasses.add(cl);
-
                 const tf = (row['TARIFF CLASS'] || '').trim();
-                if (tf) uniqueTariffs.add(tf);
 
                 enrichedConsumers.push({
                     id: (row['CON_ID'] || `synthetic-${idx}`).trim(),
@@ -925,9 +945,10 @@
                 });
             });
 
-            // Populate class and tariff selectors
+            // Populate filter selectors
+            populateFilterOptions('regionFilter', Array.from(uniqueRegions).sort());
+            populateFilterOptions('divisionFilter', Array.from(uniqueDivisions).sort());
             populateFilterOptions('classFilter', Array.from(uniqueClasses).sort());
-            populateFilterOptions('tariffFilter', Array.from(uniqueTariffs).sort());
 
             // Update Report Date
             if (maxDate) {
@@ -945,10 +966,15 @@
 
         function populateFilterOptions(selectId, items) {
             const selectEl = document.getElementById(selectId);
+            if (!selectEl) return;
             const currentValue = selectEl.value;
             
+            let labelText = 'Classes';
+            if (selectId === 'regionFilter') labelText = 'Regions';
+            else if (selectId === 'divisionFilter') labelText = 'Divisions';
+
             // Keep "All" option
-            selectEl.innerHTML = `<option value="all">All ${selectId === 'classFilter' ? 'Classifications' : 'Tariff Classes'}</option>`;
+            selectEl.innerHTML = `<option value="all">All ${labelText}</option>`;
             
             items.forEach(item => {
                 if (item) {
@@ -968,14 +994,21 @@
         // Apply filters, searches, breadcrumb states
         function getFilteredData() {
             const searchVal = document.getElementById('searchBar').value.toLowerCase().trim();
+            const regionVal = document.getElementById('regionFilter') ? document.getElementById('regionFilter').value : 'all';
+            const divisionVal = document.getElementById('divisionFilter') ? document.getElementById('divisionFilter').value : 'all';
             const classVal = document.getElementById('classFilter').value;
-            const tariffVal = document.getElementById('tariffFilter').value;
 
             return enrichedConsumers.filter(c => {
                 // Hierarchical drill down filter
                 if (currentHierarchyPath.region && c.regionName !== currentHierarchyPath.region) return false;
                 if (currentHierarchyPath.division && c.divisionName !== currentHierarchyPath.division) return false;
                 if (currentHierarchyPath.ccc && c.cccName !== currentHierarchyPath.ccc) return false;
+
+                // Region filter dropdown
+                if (regionVal !== 'all' && c.regionName !== regionVal) return false;
+
+                // Division filter dropdown
+                if (divisionVal !== 'all' && c.divisionName !== divisionVal) return false;
 
                 // Status Filter
                 if (currentStatusFilter !== 'all' && c.status !== currentStatusFilter) return false;
@@ -995,9 +1028,6 @@
 
                 // Classification dropdown
                 if (classVal !== 'all' && c.classDesc !== classVal) return false;
-
-                // Tariff dropdown
-                if (tariffVal !== 'all' && c.tariffClass !== tariffVal) return false;
 
                 return true;
             });
@@ -1021,9 +1051,10 @@
 
             // Highlight reset button if filters are active
             const searchVal = document.getElementById('searchBar').value.trim();
+            const regionVal = document.getElementById('regionFilter') ? document.getElementById('regionFilter').value : 'all';
+            const divisionVal = document.getElementById('divisionFilter') ? document.getElementById('divisionFilter').value : 'all';
             const classVal = document.getElementById('classFilter').value;
-            const tariffVal = document.getElementById('tariffFilter').value;
-            const hasFilters = searchVal !== '' || classVal !== 'all' || tariffVal !== 'all' || currentStatusFilter !== 'all';
+            const hasFilters = searchVal !== '' || regionVal !== 'all' || divisionVal !== 'all' || classVal !== 'all' || currentStatusFilter !== 'all';
             
             const clearBtn = document.getElementById('clearFiltersBtn');
             if (clearBtn) {
@@ -1615,6 +1646,24 @@
                             position: 'bottom',
                             labels: { color: fontColor, boxWidth: 12, font: { size: 10 } }
                         },
+                        datalabels: {
+                            display: function(context) {
+                                const val = context.dataset.data[context.dataIndex] || 0;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                if (total === 0 || val === 0) return false;
+                                const pct = (val / total) * 100;
+                                return window.innerWidth < 768 ? pct >= 5 : pct >= 1;
+                            },
+                            color: '#ffffff',
+                            font: function() {
+                                return { weight: 'bold', size: window.innerWidth < 576 ? 9 : 11 };
+                            },
+                            formatter: function(value, context) {
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const pct = total > 0 ? ((value / total) * 100).toFixed(window.innerWidth < 576 ? 0 : 1) : 0;
+                                return `${pct}%`;
+                            }
+                        },
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
@@ -1694,6 +1743,38 @@
                             text: summaryTitle === 'Regions' ? 'By Regions' : `By ${summaryTitle} (Top 10)`,
                             color: fontColor,
                             font: { size: 11, weight: 'bold' }
+                        },
+                        datalabels: {
+                            display: function(context) {
+                                const val = context.dataset.data[context.dataIndex] || 0;
+                                if (val === 0) return false;
+                                const datasets = context.chart.data.datasets;
+                                let total = 0;
+                                for (let i = 0; i < datasets.length; i++) {
+                                    if (context.chart.isDatasetVisible(i)) {
+                                        const dsValue = datasets[i].data[context.dataIndex];
+                                        if (typeof dsValue === 'number') total += dsValue;
+                                    }
+                                }
+                                if (total === 0) return false;
+                                const pct = (val / total) * 100;
+                                return window.innerWidth < 768 ? pct >= 8 : pct >= 5;
+                            },
+                            color: '#ffffff',
+                            font: { weight: 'bold', size: 9 },
+                            formatter: function(value, context) {
+                                const datasets = context.chart.data.datasets;
+                                let total = 0;
+                                for (let i = 0; i < datasets.length; i++) {
+                                    if (context.chart.isDatasetVisible(i)) {
+                                        const dsValue = datasets[i].data[context.dataIndex];
+                                        if (typeof dsValue === 'number') total += dsValue;
+                                    }
+                                }
+                                if (total === 0 || value === 0) return '';
+                                const pct = (value / total) * 100;
+                                return `${pct.toFixed(0)}%`;
+                            }
                         }
                     },
                     scales: {
@@ -1781,7 +1862,8 @@
                         legend: {
                             position: 'bottom',
                             labels: { color: fontColor, boxWidth: 10, font: { size: 9 } }
-                        }
+                        },
+                        datalabels: { display: false }
                     },
                     scales: {
                         x: {
