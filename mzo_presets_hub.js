@@ -120,8 +120,8 @@
 
                 function isMatch(savedName, optionValue) {
                     if (!savedName || !optionValue || savedName === 'all' || optionValue === 'all') return false;
-                    const s = savedName.toLowerCase().replace(/region|division|div|total/g, '').trim();
-                    const o = optionValue.toLowerCase().replace(/region|division|div|total/g, '').trim();
+                    const s = String(savedName).toLowerCase().replace(/region|division|div|total/g, '').trim();
+                    const o = String(optionValue).toLowerCase().replace(/region|division|div|total/g, '').trim();
                     if (!s || !o) return false;
                     
                     if (s.includes('uttar') || s.includes('u/dinajpur')) {
@@ -133,8 +133,16 @@
                     return s.includes(o) || o.includes(s);
                 }
 
+                function findElement(ids) {
+                    for (let id of ids) {
+                        const el = document.getElementById(id);
+                        if (el) return el;
+                    }
+                    return null;
+                }
+
                 // 1. Check for standard Region select IDs
-                const regionIDs = ['regionFilter', 'regionSelect', 'locationFilter'];
+                const regionIDs = ['regionFilter', 'regionSelect', 'locationFilter', 'region', 'region-filter'];
                 let regionEl = null;
                 for (let id of regionIDs) {
                     const el = document.getElementById(id);
@@ -155,7 +163,7 @@
                 }
 
                 // 2. Check for standard Division select IDs
-                const divisionIDs = ['divisionFilter', 'divisionSelect', 'divnSelect'];
+                const divisionIDs = ['divisionFilter', 'divisionSelect', 'divnSelect', 'division', 'division-filter'];
                 let divisionEl = null;
                 for (let id of divisionIDs) {
                     const el = document.getElementById(id);
@@ -176,7 +184,7 @@
                 }
 
                 // 3. Check for standard CCC / Unit select IDs
-                const cccIDs = ['cccFilter', 'cccSelect', 'unitFilter', 'suppSelect'];
+                const cccIDs = ['cccFilter', 'cccSelect', 'unitFilter', 'suppSelect', 'support', 'ccc-filter'];
                 let cccEl = null;
                 for (let id of cccIDs) {
                     const el = document.getElementById(id);
@@ -196,11 +204,25 @@
                     }
                 }
 
-                // 4. Check for unified single office filter (like on index.html #executiveOfficeFilter)
-                const execEl = document.getElementById('executiveOfficeFilter');
+                // 4. Check for unified single office filter (like on index.html #executiveOfficeFilter or loss.html #cccFilter)
+                const hasMultipleOfficeFilters = !!(findElement(regionIDs) || findElement(divisionIDs));
+                const execEl = document.getElementById('executiveOfficeFilter') || (!hasMultipleOfficeFilters ? findElement(cccIDs) : null);
                 if (execEl) {
                     let matched = false;
-                    if (globalPref.division && globalPref.division !== 'all') {
+                    if (globalPref.ccc && globalPref.ccc !== 'all') {
+                        for (let opt of execEl.options) {
+                            if (isMatch(globalPref.ccc, opt.value)) {
+                                if (execEl.value !== opt.value) {
+                                    execEl.value = opt.value;
+                                    if (shouldTrigger) execEl.dispatchEvent(new Event('change'));
+                                    applied = true;
+                                }
+                                matched = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!matched && globalPref.division && globalPref.division !== 'all') {
                         for (let opt of execEl.options) {
                             if (isMatch(globalPref.division, opt.value)) {
                                 if (execEl.value !== opt.value) {
@@ -236,11 +258,28 @@
         /**
          * Render interactive Setup Modal Dialog dynamically (Self-contained, no external JS framework needed)
          */
-        showSetupModal: function(callback) {
+        showSetupModal: function(opts, callback) {
+            if (typeof opts === 'function') {
+                callback = opts;
+                opts = {};
+            }
+            opts = opts || {};
+
             let modalEl = document.getElementById('mzoPresetModal');
             if (modalEl) modalEl.remove();
 
             const globalPref = this.getGlobalJurisdiction() || {};
+            const showCCC = !!opts.showCCC;
+            const cccList = opts.cccList || [];
+
+            const cccHtml = showCCC ? `
+                        <div id="mzoModalCccContainer" style="margin-bottom:16px;">
+                            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:#334155;">Managing CCC</label>
+                            <select id="mzoModalCCC" style="width:100%; padding:8px 10px; font-size:13px; border:1px solid #cbd5e1; border-radius:8px; outline:none; background:#ffffff; color:#0f172a;">
+                                <option value="all">All CCCs</option>
+                            </select>
+                        </div>
+            ` : '';
 
             const html = `
             <div id="mzoPresetModal" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.6); z-index:100050; display:flex; align-items:center; justify-content:center; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
@@ -276,6 +315,8 @@
                             </select>
                         </div>
 
+                        ${cccHtml}
+
                         <div style="display:flex; align-items:center; gap:8px; margin-top:16px;">
                             <input type="checkbox" id="mzoModalSetGlobal" checked style="width:16px; height:16px; cursor:pointer;">
                             <label for="mzoModalSetGlobal" style="font-size:12px; font-weight:500; color:#334155; cursor:pointer;">Set as default preference for ALL dashboards</label>
@@ -293,9 +334,66 @@
             const modalTarget = document.getElementById('mzoPresetModal');
             const regEl = document.getElementById('mzoModalRegion');
             const divEl = document.getElementById('mzoModalDivision');
+            const cccEl = document.getElementById('mzoModalCCC');
 
             if (globalPref.region) regEl.value = globalPref.region;
             if (globalPref.division) divEl.value = globalPref.division;
+
+            function updateModalCCCs() {
+                if (!cccEl) return;
+                const selectedReg = regEl.value;
+                const selectedDiv = divEl.value;
+
+                function matchesRegion(prefReg, cccReg) {
+                    if (!prefReg || prefReg === 'all') return true;
+                    if (!cccReg) return false;
+                    const r = prefReg.toLowerCase().replace(/region/g, '').trim();
+                    const c = String(cccReg).toLowerCase().replace(/region/g, '').trim();
+                    if (r === 'ud' || r.includes('uttar') || r.includes('u/dinajpur')) {
+                        return c === 'ud' || c.includes('uttar') || c.includes('u/dinajpur') || c.includes('u_dinajpur');
+                    }
+                    if (r === 'dd' || r.includes('dakshin') || r.includes('d/dinajpur')) {
+                        return c === 'dd' || c.includes('dakshin') || c.includes('d/dinajpur') || c.includes('d_dinajpur');
+                    }
+                    return r.includes(c) || c.includes(r);
+                }
+
+                function matchesDivision(prefDiv, cccDiv) {
+                    if (!prefDiv || prefDiv === 'all') return true;
+                    if (!cccDiv) return false;
+                    const d = prefDiv.toLowerCase().replace(/division|div/g, '').trim();
+                    const c = String(cccDiv).toLowerCase().replace(/division|div/g, '').trim();
+                    return d.includes(c) || c.includes(d);
+                }
+
+                const filteredCCCs = cccList.filter(item => {
+                    return matchesRegion(selectedReg, item.region) && matchesDivision(selectedDiv, item.division);
+                });
+
+                const prevVal = cccEl.value || String(globalPref.ccc || 'all');
+                cccEl.innerHTML = '<option value="all">All CCCs</option>';
+                filteredCCCs.forEach(item => {
+                    const opt = document.createElement('option');
+                    opt.value = item.code;
+                    opt.textContent = item.name;
+                    cccEl.appendChild(opt);
+                });
+
+                if (Array.from(cccEl.options).some(o => o.value == prevVal)) {
+                    cccEl.value = prevVal;
+                } else {
+                    cccEl.value = 'all';
+                }
+            }
+
+            if (showCCC && cccEl) {
+                updateModalCCCs();
+                if (globalPref.ccc) {
+                    cccEl.value = globalPref.ccc;
+                }
+                regEl.addEventListener('change', updateModalCCCs);
+                divEl.addEventListener('change', updateModalCCCs);
+            }
 
             const closeModal = () => { if (modalTarget) modalTarget.remove(); };
 
@@ -305,14 +403,15 @@
             document.getElementById('mzoModalSaveBtn').addEventListener('click', () => {
                 const selectedRegion = regEl.value;
                 const selectedDivision = divEl.value;
+                const selectedCCC = showCCC && cccEl ? cccEl.value : 'all';
                 const isGlobal = document.getElementById('mzoModalSetGlobal').checked;
 
                 if (isGlobal) {
-                    MzoPresetsHub.setGlobalJurisdiction(selectedRegion, selectedDivision, 'all');
+                    MzoPresetsHub.setGlobalJurisdiction(selectedRegion, selectedDivision, selectedCCC);
                 }
                 
                 closeModal();
-                if (typeof callback === 'function') callback({ region: selectedRegion, division: selectedDivision });
+                if (typeof callback === 'function') callback({ region: selectedRegion, division: selectedDivision, ccc: selectedCCC });
             });
         }
     };

@@ -8,6 +8,8 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="mzo_data_hub.js"></script>
+  <script src="mzo_presets_hub.js"></script>
 
   <style>
     :root {
@@ -350,6 +352,9 @@
         <select id="dateFilter" class="form-select form-select-sm" aria-label="Date filter">
           <option value="">All Dates</option>
         </select>
+        <button id="officePrefBtn" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1 ms-md-2 mt-2 mt-md-0" style="font-size: 0.75rem; height: 31px;" title="Set My Office Preferences">
+          <i class="fas fa-cog"></i> Office Prefs
+        </button>
       </div>
     </div>
 
@@ -1469,27 +1474,79 @@
 
     const jsonUrl = "data/rem.json"; // Adjust path if needed
 
-    fetch(jsonUrl)
-      .then(res => {
-        if (!res.ok) throw new Error("Failed to fetch JSON");
-        return res.json();
-      })
-      .then(data => {
+    async function loadData() {
+      try {
+        let data;
+        if (typeof mzoDataHub !== 'undefined') {
+          const cachedData = await mzoDataHub.get('CACHE_REM');
+          if (cachedData) {
+            console.log("Successfully fetched REM data from DataHub.");
+            data = cachedData;
+          }
+        }
+        if (!data) {
+          console.log("Fetching REM data from network...");
+          const res = await fetch(jsonUrl);
+          if (!res.ok) throw new Error("Failed to fetch JSON");
+          data = await res.json();
+        }
+        
         const loadingElement = document.getElementById('loadingIndicator');
         if (loadingElement) loadingElement.remove();
 
         rawData = data;
+        
+        // Populate initial options
         populateFilters(rawData);
+
+        // Setup preference button listener
+        const prefBtn = document.getElementById('officePrefBtn');
+        if (prefBtn) {
+          prefBtn.addEventListener('click', () => {
+            if (window.mzoPresetsHub) {
+              const cccList = [];
+              const seen = new Set();
+              rawData.forEach(d => {
+                const cccName = d["CCC name"];
+                if (cccName && !seen.has(cccName)) {
+                  seen.add(cccName);
+                  cccList.push({
+                    code: cccName,
+                    name: cccName,
+                    region: d["Region Name"],
+                    division: d["Division"]
+                  });
+                }
+              });
+              window.mzoPresetsHub.showSetupModal({
+                showCCC: true,
+                cccList: cccList
+              }, () => {
+                window.mzoPresetsHub.applyToPage();
+              });
+            }
+          });
+        }
+
+        // Apply office preferences on load
+        if (window.mzoPresetsHub) {
+          window.mzoPresetsHub.applyToPage();
+        }
+
         render();
 
         const overlay = document.getElementById('loadingOverlay');
         if (overlay) overlay.remove();
-      })
-      .catch(error => {
+      } catch (error) {
         console.error("Error loading JSON:", error);
-        document.getElementById('loadingIndicator').innerHTML = 
-          `<div class="alert alert-danger">Failed to load data.<br>${error.message}</div>`;
-      });
+        const loadingElement = document.getElementById('loadingIndicator');
+        if (loadingElement) {
+          loadingElement.innerHTML = `<div class="alert alert-danger">Failed to load data.<br>${error.message}</div>`;
+        }
+      }
+    }
+
+    loadData();
 
 
     // Auto-collapse summary card on mobile - this is now less relevant with new summary structure

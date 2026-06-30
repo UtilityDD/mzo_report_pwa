@@ -11,6 +11,7 @@
     <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="mzo_presets_hub.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         
@@ -184,6 +185,9 @@
                 <p id="page-subtitle" class="text-slate-400 text-sm font-medium">Monitoring Monthly New Service Connection Trends across Malda Zone</p>
             </div>
             <div class="flex gap-2">
+                <button id="officePrefBtn" class="px-4 py-2 bg-slate-850 hover:bg-slate-800 border border-white/10 rounded-lg text-sm font-semibold transition-all flex items-center gap-2">
+                    <i class="fas fa-cog"></i> Office Prefs
+                </button>
                 <button onclick="location.reload()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-semibold transition-all">
                     <i class="fas fa-sync-alt mr-2"></i> Refresh Data
                 </button>
@@ -204,7 +208,7 @@
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Region</label>
-                    <select id="filterRegion" onchange="handleRegionChange()" class="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none cursor-pointer">
+                    <select id="regionFilter" onchange="handleRegionChange()" class="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none cursor-pointer">
                         <option value="ALL">All Regions</option>
                         <option value="Malda">Malda Region</option>
                         <option value="UD">UD Region</option>
@@ -213,13 +217,13 @@
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Division</label>
-                    <select id="filterDivision" onchange="handleDivisionChange()" class="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none cursor-pointer">
+                    <select id="divisionFilter" onchange="handleDivisionChange()" class="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none cursor-pointer">
                         <option value="ALL">All Divisions</option>
                     </select>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">CCC</label>
-                    <select id="filterCCC" onchange="updateCharts()" class="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none cursor-pointer">
+                    <select id="cccFilter" onchange="updateCharts()" class="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none cursor-pointer">
                         <option value="ALL">All CCCs</option>
                     </select>
                 </div>
@@ -373,6 +377,28 @@
 
         async function init() {
             showLoading(true);
+            
+            // Setup preference button listener
+            const prefBtn = document.getElementById('officePrefBtn');
+            if (prefBtn) {
+                prefBtn.addEventListener('click', () => {
+                    if (window.mzoPresetsHub) {
+                        const cccList = Object.entries(costCenterMap).map(([code, name]) => ({
+                            code: code,
+                            name: name,
+                            region: getRegionFromCCC(code),
+                            division: getDivisionFromCCC(code)
+                        }));
+                        window.mzoPresetsHub.showSetupModal({
+                            showCCC: true,
+                            cccList: cccList
+                        }, () => {
+                            window.mzoPresetsHub.applyToPage();
+                        });
+                    }
+                });
+            }
+
             try {
                 // Fetch Cost Center Mapping
                 const ccResponse = await fetch(COSTCENTER_URL);
@@ -413,6 +439,12 @@
                         setupYearFilters();
                         setupDivisionFilter();
                         handleRegionChange(); 
+                        
+                        // Apply office preferences on load
+                        if (window.mzoPresetsHub) {
+                            window.mzoPresetsHub.applyToPage();
+                        }
+
                         setPeriod(currentPeriod);
                         showLoading(false);
                     }
@@ -504,8 +536,8 @@
         }
 
         function handleRegionChange() {
-            const region = document.getElementById('filterRegion').value;
-            const divSelect = document.getElementById('filterDivision');
+            const region = document.getElementById('regionFilter').value;
+            const divSelect = document.getElementById('divisionFilter');
             divSelect.innerHTML = '<option value="ALL">All Divisions</option>';
             
             const divisions = region === 'ALL' 
@@ -522,9 +554,9 @@
         }
 
         function handleDivisionChange() {
-            const region = document.getElementById('filterRegion').value;
-            const division = document.getElementById('filterDivision').value;
-            const cccSelect = document.getElementById('filterCCC');
+            const region = document.getElementById('regionFilter').value;
+            const division = document.getElementById('divisionFilter').value;
+            const cccSelect = document.getElementById('cccFilter');
             cccSelect.innerHTML = '<option value="ALL">All CCCs</option>';
 
             let items = allData;
@@ -561,9 +593,9 @@
         }
 
         function updateCharts() {
-            const region = document.getElementById('filterRegion').value;
-            const division = document.getElementById('filterDivision').value;
-            const ccc = document.getElementById('filterCCC').value;
+            const region = document.getElementById('regionFilter').value;
+            const division = document.getElementById('divisionFilter').value;
+            const ccc = document.getElementById('cccFilter').value;
 
             filteredData = allData.filter(d => selectedYears.includes(d.date.year()));
             
@@ -707,9 +739,9 @@
         }
 
         function renderTable() {
-            const region = document.getElementById('filterRegion').value;
-            const division = document.getElementById('filterDivision').value;
-            const ccc = document.getElementById('filterCCC').value;
+            const region = document.getElementById('regionFilter').value;
+            const division = document.getElementById('divisionFilter').value;
+            const ccc = document.getElementById('cccFilter').value;
 
             // Determine Grouping Level
             let groupKey = tableGrouping;
