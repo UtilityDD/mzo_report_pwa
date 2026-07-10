@@ -1,4 +1,5 @@
 const DATA_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSE7jMusI5YFc4fcuHMyWpbqGp1fIcWBNRYh6yieCY8yUyjOgC1ZRWB7flXE0DAVEbHUfG-KlzWCZyf/pub?gid=202809558&single=true&output=csv';
+const METADATA_URL = 'https://docs.google.com/spreadsheets/d/1wDvPuAxNfdO9QzUaIUubg2JnkFM5ZleFNXQdi8s5uh0/export?format=csv&gid=696716331';
 
 const searchInput = document.getElementById('search-input');
 const chartHeader = document.getElementById('chart-header');
@@ -7,8 +8,11 @@ const materialGroupFilter = document.getElementById('material-group-filter');
 const materialDescriptionFilter = document.getElementById('material-description-filter');
 const downloadBtn = document.getElementById('download-btn');
 const lowStockAlertBtn = document.getElementById('low-stock-alert-btn');
+const categoryCentralCheckbox = document.getElementById('category-central-checkbox');
+const categoryLocalCheckbox = document.getElementById('category-local-checkbox');
 
 let allData = [];
+let materialMetadata = {};
 let currentSortColumn = null;
 let currentSortDirection = 'asc';
 let currentStoreTab = 'total'; // 'total', 'old', 'new'
@@ -63,6 +67,15 @@ function applyFilters() {
     const selectedStore = storeFilter.value;
     const selectedGroup = materialGroupFilter.value;
     const selectedDescription = materialDescriptionFilter.value;
+
+    const showCentral = categoryCentralCheckbox ? categoryCentralCheckbox.checked : true;
+    const showLocal = categoryLocalCheckbox ? categoryLocalCheckbox.checked : true;
+
+    filteredData = filteredData.filter(item => {
+        if (item.Category === 'CENTRAL') return showCentral;
+        if (item.Category === 'LOCAL') return showLocal;
+        return true;
+    });
 
     if (searchTerm) {
         filteredData = filteredData.filter(item =>
@@ -553,12 +566,67 @@ function animatePlaceholder() {
     type();
 }
 
+function parseMetadata(csvData) {
+    if (!csvData) return;
+    const results = Papa.parse(csvData, {
+        header: true,
+        skipEmptyLines: true
+    });
+    results.data.forEach(row => {
+        const matCode = String(row['Mat Code'] || '').trim();
+        if (matCode) {
+            materialMetadata[matCode] = {
+                category: String(row['Category'] || '').trim().toUpperCase(),
+                desc: row['Mat Desc'],
+                uom: row['UOM'],
+                price: parseFloat(String(row['Material Price'] || '').replace(/,/g, '')) || 0
+            };
+        }
+    });
+}
+
+function fetchMetadataFromNetwork() {
+    return new Promise((resolve, reject) => {
+        Papa.parse(METADATA_URL, {
+            download: true,
+            header: true,
+            complete: function (results) {
+                results.data.forEach(row => {
+                    const matCode = String(row['Mat Code'] || '').trim();
+                    if (matCode) {
+                        materialMetadata[matCode] = {
+                            category: String(row['Category'] || '').trim().toUpperCase(),
+                            desc: row['Mat Desc'],
+                            uom: row['UOM'],
+                            price: parseFloat(String(row['Material Price'] || '').replace(/,/g, '')) || 0
+                        };
+                    }
+                });
+                resolve();
+            },
+            error: function (error) {
+                console.error('Error loading metadata from network:', error);
+                reject(error);
+            }
+        });
+    });
+}
+
 // Initialize
 async function initDashboard() {
     try {
-        let cachedData;
+        let cachedData, cachedMetadata;
         if (typeof mzoDataHub !== 'undefined') {
             cachedData = await mzoDataHub.get('CACHE_STOCK');
+            cachedMetadata = await mzoDataHub.get('CACHE_STOCK_METADATA');
+        }
+
+        if (cachedMetadata) {
+            console.log("Successfully fetched Stock Metadata from DataHub.");
+            parseMetadata(cachedMetadata);
+        } else {
+            console.log("Downloading Stock Metadata from network...");
+            await fetchMetadataFromNetwork().catch(console.error);
         }
 
         if (cachedData) {
@@ -574,6 +642,9 @@ async function initDashboard() {
         }
     } catch (e) {
         console.error("DataHub fetch failed, falling back to network.", e);
+        if (Object.keys(materialMetadata).length === 0) {
+            await fetchMetadataFromNetwork().catch(console.error);
+        }
         fetchFromNetwork();
     }
 }
@@ -588,11 +659,16 @@ function handleResults(data) {
         if (plant.startsWith('3')) type = 'old';
         if (plant.startsWith('6')) type = 'new';
 
+        const matCode = String(item.Material || '').trim();
+        const meta = materialMetadata[matCode] || {};
+        const category = String(meta.category || 'UNKNOWN').toUpperCase();
+
         return {
             ...item,
             StoreName: storeName,
             StoreType: type,
-            Plant: plant
+            Plant: plant,
+            Category: category
         };
     }).filter(item => item.StoreName && item['Material Group']);
 
@@ -627,6 +703,8 @@ function handleResults(data) {
     });
     materialDescriptionFilter.addEventListener('change', applyFilters);
     searchInput.addEventListener('input', applyFilters);
+    if (categoryCentralCheckbox) categoryCentralCheckbox.addEventListener('change', applyFilters);
+    if (categoryLocalCheckbox) categoryLocalCheckbox.addEventListener('change', applyFilters);
     lowStockAlertBtn.addEventListener('click', showLowStockModal);
 
     // Modal close functionality
