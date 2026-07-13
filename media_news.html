@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Power Sector News Reader</title>
+  <!-- Google Fonts & FontAwesome -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <style>
+    /* ──────────────────────────────────────
+       Base Styles & Variables
+    ────────────────────────────────────── */
+    :root {
+      --bg-dark: #0f172a;
+      --bg-light: #f1f5f9;
+      --card-bg-dark: rgba(30, 41, 59, 0.7);
+      --card-bg-light: rgba(255, 255, 255, 0.85);
+      --border-dark: rgba(255, 255, 255, 0.06);
+      --border-light: rgba(0, 0, 0, 0.06);
+      --text-primary-dark: #f8fafc;
+      --text-primary-light: #0f172a;
+      --text-secondary-dark: #94a3b8;
+      --text-secondary-light: #475569;
+      --accent: #0284c7;
+      --accent-hover: #0369a1;
+      --shadow-dark: 0 4px 20px rgba(0, 0, 0, 0.3);
+      --shadow-light: 0 4px 20px rgba(0, 0, 0, 0.05);
+    }
+
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: 'Inter', sans-serif;
+      transition: background-color 0.3s, color 0.3s;
+      box-sizing: border-box;
+      min-height: 100vh;
+    }
+
+    /* Dark Mode Defaults */
+    body.dark-theme {
+      background-color: var(--bg-dark);
+      color: var(--text-primary-dark);
+    }
+
+    /* Light Mode */
+    body.light-theme {
+      background-color: var(--bg-light);
+      color: var(--text-primary-light);
+    }
+
+    /* Hide scrollbars but allow scrolling */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.3);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(148, 163, 184, 0.5);
+    }
+
+    /* ──────────────────────────────────────
+       Header & Navigation Tabs
+    ────────────────────────────────────── */
+    .news-header {
+      margin-bottom: 20px;
+    }
+
+    .tabs-container {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--border-dark);
+      margin-bottom: 16px;
+    }
+
+    body.light-theme .tabs-container {
+      border-bottom-color: var(--border-light);
+    }
+
+    .tab-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary-dark);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s ease;
+    }
+
+    body.light-theme .tab-btn {
+      color: var(--text-secondary-light);
+    }
+
+    .tab-btn:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-primary-dark);
+    }
+
+    body.light-theme .tab-btn:hover {
+      background: rgba(0, 0, 0, 0.03);
+      color: var(--text-primary-light);
+    }
+
+    .tab-btn.active {
+      color: #fff;
+      background: var(--accent);
+    }
+
+    body.light-theme .tab-btn.active {
+      color: #fff;
+      background: var(--accent);
+    }
+
+    /* ──────────────────────────────────────
+       News Grid & Cards
+    ────────────────────────────────────── */
+    .news-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      opacity: 1;
+      transition: opacity 0.25s ease;
+    }
+
+    .news-grid.loading {
+      opacity: 0.5;
+    }
+
+    /* Premium Clean Card */
+    .news-card {
+      border-radius: 12px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.25s ease;
+      box-sizing: border-box;
+    }
+
+    body.dark-theme .news-card {
+      background: var(--card-bg-dark);
+      border: 1px solid var(--border-dark);
+      box-shadow: var(--shadow-dark);
+    }
+
+    body.light-theme .news-card {
+      background: var(--card-bg-light);
+      border: 1px solid var(--border-light);
+      box-shadow: var(--shadow-light);
+    }
+
+    .news-card:hover {
+      transform: translateY(-2px);
+    }
+
+    body.dark-theme .news-card:hover {
+      border-color: rgba(2, 132, 199, 0.3);
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    body.light-theme .news-card:hover {
+      border-color: rgba(2, 132, 199, 0.2);
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Badge & Info Header */
+    .card-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .source-badge {
+      padding: 3px 8px;
+      background: rgba(2, 132, 199, 0.1);
+      color: #38bdf8;
+      border-radius: 4px;
+      max-width: 60%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    body.light-theme .source-badge {
+      background: rgba(2, 132, 199, 0.08);
+      color: #0284c7;
+    }
+
+    .pub-date {
+      color: var(--text-secondary-dark);
+    }
+
+    body.light-theme .pub-date {
+      color: var(--text-secondary-light);
+    }
+
+    /* Text Content */
+    .card-body {
+      margin-bottom: 12px;
+      flex-grow: 1;
+    }
+
+    .news-title {
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.4;
+      margin: 0 0 6px 0;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    body.dark-theme .news-title {
+      color: var(--text-primary-dark);
+    }
+
+    body.light-theme .news-title {
+      color: var(--text-primary-light);
+    }
+
+    .news-desc {
+      font-size: 12px;
+      line-height: 1.4;
+      margin: 0;
+      color: var(--text-secondary-dark);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    body.light-theme .news-desc {
+      color: var(--text-secondary-light);
+    }
+
+    /* Actions */
+    .card-footer {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .read-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .read-link:hover {
+      color: var(--accent-hover);
+    }
+
+    /* ──────────────────────────────────────
+       Placeholders & Loading Spinners
+    ────────────────────────────────────── */
+    .status-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+      text-align: center;
+    }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid rgba(148, 163, 184, 0.1);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 12px;
+    }
+
+    @keyframes spin {
+      100% { transform: rotate(360deg); }
+    }
+
+    .status-text {
+      font-size: 13px;
+      color: var(--text-secondary-dark);
+    }
+
+    body.light-theme .status-text {
+      color: var(--text-secondary-light);
+    }
+
+    .retry-btn {
+      margin-top: 12px;
+      padding: 6px 14px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 12px;
+      transition: background 0.2s;
+    }
+
+    .retry-btn:hover {
+      background: var(--accent-hover);
+    }
+
+    /* ──────────────────────────────────────
+       Responsive Layouts
+    ────────────────────────────────────── */
+    @media (max-width: 1024px) {
+      .news-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 10px;
+      }
+      .news-header {
+        margin-bottom: 12px;
+      }
+      .tabs-container {
+        margin-bottom: 12px;
+      }
+      .tab-btn {
+        padding: 8px 12px;
+        font-size: 12px;
+      }
+      .news-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+      .news-card {
+        padding: 12px;
+      }
+    }
+  </style>
+</head>
+<body class="dark-theme">
+
+  <div class="news-header">
+    <div class="tabs-container">
+      <button class="tab-btn active" id="tab-english" onclick="switchFeed('english')">
+        <i class="fas fa-bolt"></i> Power Sector
+      </button>
+      <button class="tab-btn" id="tab-bangla" onclick="switchFeed('bangla')">
+        <i class="fas fa-file-lines"></i> বিদ্যুৎ সংবাদ
+      </button>
+      <button class="tab-btn" id="tab-districts" onclick="switchFeed('districts')">
+        <i class="fas fa-location-dot"></i> District News
+      </button>
+    </div>
+  </div>
+
+  <!-- News Display Area -->
+  <div id="statusArea" class="status-container" style="display: none;"></div>
+  <div id="newsGrid" class="news-grid"></div>
+
+  <script>
+    // ──────────────────────────────────────
+    //   Feeds Definitions & Query Setup
+    // ──────────────────────────────────────
+    const FEEDS = {
+      english: {
+        // WBSEDCL, West Bengal power sector, general electricity news
+        query: 'electricity OR "power sector" OR WBSEDCL OR "power outage" "West Bengal"',
+        lang: 'en-IN',
+        ceid: 'IN:en'
+      },
+      bangla: {
+        // Bengali electricity news
+        query: 'বিদ্যুৎ OR "পশ্চিমবঙ্গ বিদ্যুৎ" OR "WBSEDCL"',
+        lang: 'bn-IN',
+        ceid: 'IN:bn'
+      },
+      districts: {
+        // Focus on electricity in Malda, Uttar Dinajpur, Dakshin Dinajpur
+        query: '(electricity OR power OR WBSEDCL) (Malda OR "Dinajpur" OR Raiganj OR Balurghat)',
+        lang: 'en-IN',
+        ceid: 'IN:en'
+      }
+    };
+
+    let currentFeed = 'english';
+
+    // ──────────────────────────────────────
+    //   Theme Synchronization with Parent
+    // ──────────────────────────────────────
+    function syncTheme() {
+      try {
+        if (window.parent && window.parent.document.body) {
+          const isLight = window.parent.document.body.classList.contains('light-theme');
+          if (isLight) {
+            document.body.classList.add('light-theme');
+            document.body.classList.remove('dark-theme');
+          } else {
+            document.body.classList.add('dark-theme');
+            document.body.classList.remove('light-theme');
+          }
+        }
+      } catch (e) {
+        console.warn("Unable to sync parent theme. Keeping default theme.");
+      }
+    }
+
+    // Polling every second to catch theme updates instantly
+    setInterval(syncTheme, 1000);
+    syncTheme();
+
+    // ──────────────────────────────────────
+    //   Feed Switching & Query Parsing
+    // ──────────────────────────────────────
+    function parseQueryParam() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const feedParam = urlParams.get('feed');
+      if (feedParam && FEEDS[feedParam]) {
+        return feedParam;
+      }
+      return 'english';
+    }
+
+    function switchFeed(feedKey) {
+      if (!FEEDS[feedKey]) return;
+      currentFeed = feedKey;
+
+      // Update active tabs styling
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = document.getElementById(`tab-${feedKey}`);
+      if (activeBtn) activeBtn.classList.add('active');
+
+      // Load feed items
+      loadFeed(feedKey);
+    }
+
+    // ──────────────────────────────────────
+    //   Fetch API and Data Parsing
+    // ──────────────────────────────────────
+    function loadFeed(feedKey) {
+      const grid = document.getElementById('newsGrid');
+      const statusArea = document.getElementById('statusArea');
+      
+      grid.innerHTML = '';
+      grid.classList.add('loading');
+      statusArea.style.display = 'flex';
+      statusArea.innerHTML = '<div class="spinner"></div><div class="status-text">Fetching latest news...</div>';
+
+      const feed = FEEDS[feedKey];
+      const encodedQuery = encodeURIComponent(feed.query);
+      
+      // Google News RSS feed URL
+      const googleNewsRssUrl = `https://news.google.com/rss/search?q=${encodedQuery}&hl=${feed.lang}&gl=IN&ceid=${feed.ceid}`;
+      
+      // rss2json API Proxy URL (Free tool with CORS enabled)
+      const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(googleNewsRssUrl)}`;
+
+      const cacheKey = `mzo_news_${feedKey}`;
+      const cached = localStorage.getItem(cacheKey);
+
+      // Load cached items immediately if they exist to keep layout instant
+      if (cached) {
+        try {
+          const cachedData = JSON.parse(cached);
+          renderNews(cachedData);
+          grid.classList.remove('loading');
+          statusArea.style.display = 'none';
+        } catch (e) {
+          console.error("Cached news parsing failed", e);
+        }
+      }
+
+      fetch(proxyUrl)
+        .then(res => {
+          if (!res.ok) throw new Error("Network response error");
+          return res.json();
+        })
+        .then(resData => {
+          if (resData.status === 'ok' && resData.items && resData.items.length > 0) {
+            localStorage.setItem(cacheKey, JSON.stringify(resData.items));
+            renderNews(resData.items);
+            grid.classList.remove('loading');
+            statusArea.style.display = 'none';
+          } else {
+            throw new Error("No news articles found in feed");
+          }
+        })
+        .catch(err => {
+          console.error("News load error:", err);
+          if (grid.innerHTML === '') {
+            statusArea.style.display = 'flex';
+            statusArea.innerHTML = `
+              <div class="status-text">🛑 Failed to fetch news. Check your connection.</div>
+              <button class="retry-btn" onclick="loadFeed('${feedKey}')">🔄 Retry</button>
+            `;
+          }
+        });
+    }
+
+    function renderNews(items) {
+      const grid = document.getElementById('newsGrid');
+      grid.innerHTML = '';
+
+      items.forEach(item => {
+        const parsed = parseArticle(item);
+        
+        const card = document.createElement('div');
+        card.className = 'news-card';
+        card.innerHTML = `
+          <div>
+            <div class="card-meta">
+              <span class="source-badge" title="${escapeHtml(parsed.source)}">${escapeHtml(parsed.source)}</span>
+              <span class="pub-date">${escapeHtml(parsed.date)}</span>
+            </div>
+            <div class="card-body">
+              <h3 class="news-title" title="${escapeHtml(parsed.title)}">${escapeHtml(parsed.title)}</h3>
+              <p class="news-desc">${escapeHtml(parsed.description)}</p>
+            </div>
+          </div>
+          <div class="card-footer">
+            <a href="${escapeHtml(parsed.link)}" target="_blank" rel="noopener noreferrer" class="read-link">
+              Read Article <i class="fas fa-arrow-up-right-from-square"></i>
+            </a>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function parseArticle(item) {
+      let title = item.title || "";
+      let source = "Google News";
+      
+      // Google News RSS titles end with " - Source Name"
+      const lastHyphenIndex = title.lastIndexOf(" - ");
+      if (lastHyphenIndex !== -1) {
+        source = title.substring(lastHyphenIndex + 3).trim();
+        title = title.substring(0, lastHyphenIndex).trim();
+      }
+      
+      // Formatted Date
+      let dateStr = item.pubDate || "";
+      if (dateStr) {
+        try {
+          const dt = new Date(dateStr);
+          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          dateStr = `${dt.getDate()} ${months[dt.getMonth()]} ${dt.getFullYear()}`;
+        } catch(e) {
+          console.warn("Date parsing error", e);
+        }
+      }
+      
+      return {
+        title: title,
+        source: source,
+        date: dateStr,
+        link: item.link,
+        description: cleanDescription(item.description || "")
+      };
+    }
+
+    function cleanDescription(desc) {
+      if (!desc) return '';
+      // Strip HTML tags from description
+      const temp = document.createElement("div");
+      temp.innerHTML = desc;
+      let text = temp.textContent || temp.innerText || "";
+      
+      // Cut off news preview
+      if (text.length > 140) {
+        text = text.substring(0, 137) + "...";
+      }
+      return text;
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // ──────────────────────────────────────
+    //   Initialize Feed on Load
+    // ──────────────────────────────────────
+    window.addEventListener('DOMContentLoaded', () => {
+      const feedToLoad = parseQueryParam();
+      switchFeed(feedToLoad);
+    });
+  </script>
+</body>
+</html>
