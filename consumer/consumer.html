@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />  <title>Consumer Summary Report</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     :root{
       --bg-start:#fafbff;
@@ -98,6 +99,10 @@
     }
     
     /* --- Filter Styles (Horizontal) --- */
+    .filter-mobile-header {
+      display: none !important;
+    }
+
     .filter-bar{
       background:var(--card);
       padding:16px 20px;
@@ -820,11 +825,151 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+
+    /* Mobile Responsive Optimizations */
+    @media (max-width: 1024px) {
+      .pie-row {
+        grid-template-columns: 1fr;
+      }
+
+      .app {
+        grid-template-columns: 1fr;
+        padding: 12px;
+        gap: 16px;
+      }
+
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: -340px;
+        width: 300px;
+        height: 100vh;
+        z-index: 1000;
+        transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        overflow-y: auto;
+        border-radius: 0;
+        border: none;
+        border-right: 1px solid var(--border);
+        box-shadow: var(--shadow-xl);
+      }
+
+      .sidebar.open {
+        left: 0;
+      }
+
+      .sidebar-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(15, 23, 42, 0.6);
+        z-index: 999;
+        display: none;
+        backdrop-filter: blur(4px);
+      }
+
+      .sidebar-overlay.visible {
+        display: block;
+      }
+
+      .toggle-sidebar-btn {
+        display: inline-flex !important;
+        align-items: center;
+        gap: 8px;
+        background: var(--accent-gradient);
+        color: white;
+        border: 1px solid var(--border-accent);
+        border-radius: 8px;
+        padding: 8px 14px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 13px;
+        box-shadow: var(--shadow-sm);
+        transition: all 0.2s ease;
+      }
+      
+      .toggle-sidebar-btn:hover {
+        background: var(--accent-hover);
+        transform: translateY(-1px);
+      }
+
+      .close-sidebar-btn {
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        background: var(--border-light);
+        border: 1px solid var(--border);
+        font-size: 14px;
+        color: var(--text-secondary);
+        cursor: pointer;
+        padding: 8px;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        transition: all 0.2s ease;
+      }
+      
+      .close-sidebar-btn:hover {
+        background: var(--border);
+        color: var(--text-primary);
+      }
+
+      /* Collapsible filters styles on mobile */
+      .filter-mobile-header {
+        display: flex !important;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+        padding: 4px 0;
+        font-weight: 600;
+        font-size: 13px;
+        color: var(--text-primary);
+        user-select: none;
+      }
+      
+      .filters {
+        display: none; /* Hidden by default on mobile */
+        flex-wrap: wrap;
+        overflow-x: visible;
+        padding-bottom: 0;
+        gap: 12px;
+        margin-top: 12px;
+        border-top: 1px solid var(--border-light);
+        padding-top: 12px;
+      }
+
+      .filter-bar.expanded .filters {
+        display: flex;
+      }
+      
+      .filter-bar.expanded #filterChevron {
+        transform: rotate(180deg);
+      }
+
+      .filter-group {
+        flex: 1 1 calc(50% - 6px);
+        min-width: 130px;
+      }
+
+      .button-group {
+        width: 100%;
+        justify-content: flex-end;
+        margin-top: 4px;
+      }
+    }
   </style>
 </head>
 <body>
+  <div id="sidebarOverlay" class="sidebar-overlay"></div>
   <div class="app">
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
+      <button id="closeSidebarBtn" class="close-sidebar-btn" style="display: none;" aria-label="Close sidebar">
+        <i class="fas fa-times"></i>
+      </button>
       <h1>Custom Report Fields</h1>
       <div class="subtitle">Select the fields below to add or remove columns from the table.</div>
       <div id="availableFieldsList" class="field-list-wrap">
@@ -833,11 +978,20 @@
     </aside>
 
     <main class="main">
-      <div>
-        <h1 id="pageTitle">Consumer Summary Report</h1>
-        <p class="subtitle">An interactive dashboard for analyzing consumer data across regions, divisions, and CCCs.</p>
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+        <div>
+          <h1 id="pageTitle">Consumer Summary Report</h1>
+          <p class="subtitle">An interactive dashboard for analyzing consumer data across regions, divisions, and CCCs.</p>
+        </div>
+        <button id="toggleSidebarBtn" class="toggle-sidebar-btn" style="display: none;" aria-label="Select Columns">
+          <i class="fas fa-columns"></i> Columns Selector
+        </button>
       </div>
-      <div class="filter-bar">
+      <div class="filter-bar" id="filterBar">
+        <div class="filter-mobile-header" id="filterMobileHeader" style="display: none;">
+          <span><i class="fas fa-filter"></i> Filter Options</span>
+          <i class="fas fa-chevron-down" id="filterChevron" style="transition: transform 0.3s ease;"></i>
+        </div>
         <div class="filters">
           <div class="filter-group">
             <label>Region</label>
@@ -2130,6 +2284,37 @@
         document.body.appendChild(a); 
         a.click(); 
         a.remove();
+      }
+
+      // Mobile Sidebar Drawer Toggle Events
+      const toggleSidebarBtn = document.getElementById('toggleSidebarBtn');
+      const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+      const sidebarOverlay = document.getElementById('sidebarOverlay');
+      const sidebar = document.getElementById('sidebar');
+
+      if (toggleSidebarBtn && sidebar) {
+        toggleSidebarBtn.addEventListener('click', () => {
+          sidebar.classList.add('open');
+          if (sidebarOverlay) sidebarOverlay.classList.add('visible');
+        });
+      }
+
+      const closeSidebar = () => {
+        if (sidebar) sidebar.classList.remove('open');
+        if (sidebarOverlay) sidebarOverlay.classList.remove('visible');
+      };
+
+      if (closeSidebarBtn) closeSidebarBtn.addEventListener('click', closeSidebar);
+      if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
+
+      // Mobile Filter Panel Toggle
+      const filterMobileHeader = document.getElementById('filterMobileHeader');
+      const filterBar = document.getElementById('filterBar');
+
+      if (filterMobileHeader && filterBar) {
+        filterMobileHeader.addEventListener('click', () => {
+          filterBar.classList.toggle('expanded');
+        });
       }
 
       // Event listeners
