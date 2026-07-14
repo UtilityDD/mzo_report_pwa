@@ -293,5 +293,41 @@
         } else {
             adjustIframeLayout();
         }
+
+        // Intercept local HTML link clicks inside the iframe to navigate properly in the parent PWA
+        document.addEventListener('click', (e) => {
+            const anchor = e.target.closest('a');
+            if (anchor && anchor.getAttribute('href')) {
+                const href = anchor.getAttribute('href');
+                
+                // Match local relative HTML page links (e.g. "loss.html", "nsc.html")
+                // ignoring external links, target="_blank", mailto/tel protocols, and hashes.
+                if (href && 
+                    href.includes('.html') && 
+                    !href.startsWith('http') && 
+                    !href.startsWith('//') && 
+                    !href.startsWith('#') &&
+                    anchor.getAttribute('target') !== '_blank') {
+                    
+                    e.preventDefault();
+                    
+                    // Route to parent window's PWA navigation controller
+                    if (window.parent && typeof window.parent.openPage === 'function') {
+                        // Infer page title from link text
+                        const title = anchor.querySelector('.kpi-title')?.textContent.trim() || 
+                                      anchor.querySelector('.app-label')?.textContent.trim() || 
+                                      anchor.textContent.trim() || 
+                                      "Dashboard";
+                        // Find dataset key if present
+                        const dataset = anchor.getAttribute('data-dataset') || null;
+                        
+                        window.parent.openPage(href, title, dataset);
+                    } else {
+                        // Standalone fallback
+                        window.location.href = href;
+                    }
+                }
+            }
+        });
     }
 })();
