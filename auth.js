@@ -265,4 +265,27 @@
     } else {
         injectLogoutButton();
     }
+
+    // Optimize layout spacing when loaded inside an iframe (removes double margins)
+    if (window.self !== window.top) {
+        const adjustIframeLayout = () => {
+            document.body.style.paddingTop = '0px';
+            document.body.style.marginTop = '0px';
+            
+            // Adjust common container wrappers if present
+            const container = document.querySelector('.dashboard-container') || 
+                              document.querySelector('.app-container') ||
+                              document.querySelector('.container-fluid');
+            if (container) {
+                container.style.marginTop = '0px';
+                container.style.paddingTop = '0px';
+            }
+        };
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', adjustIframeLayout);
+        } else {
+            adjustIframeLayout();
+        }
+    }
 })();
