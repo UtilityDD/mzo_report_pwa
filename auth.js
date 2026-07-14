@@ -190,6 +190,12 @@
     function injectLogoutButton() {
         if (localStorage.getItem('mzo_authenticated') !== 'true') return;
 
+        // Only inject logout button on the main index.html page (top level, not in iframe)
+        const path = window.location.pathname.toLowerCase();
+        const isIndexPage = path.endsWith('/index.html') || path.endsWith('/') || path === '';
+        const isTopLevel = (window.self === window.top);
+        if (!isIndexPage || !isTopLevel) return;
+
         // Prevent duplicate injection
         if (document.querySelector('.logout-btn') || document.querySelector('.logout-float-btn')) return;
 
