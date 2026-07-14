@@ -5,7 +5,10 @@
     // Verify authentication state (essential for offline routing and online validity check)
     if (navigator.onLine) {
         // Online: verify the session cookie with the server first
-        fetch('/api/session-check', { headers: { 'Accept': 'application/json' } })
+        fetch('/api/session-check', { 
+            headers: { 'Accept': 'application/json' },
+            credentials: 'same-origin'
+        })
             .then(res => {
                 if (res.ok) {
                     // Session is valid! Ensure flags are set
@@ -172,7 +175,10 @@
         if (!confirmed) return;
         
         try {
-            const res = await fetch('/api/logout', { method: 'POST' });
+            const res = await fetch('/api/logout', { 
+                method: 'POST',
+                credentials: 'same-origin'
+            });
             if (res.ok) {
                 console.log("[Auth] Successfully logged out via API");
             }
