@@ -297,8 +297,12 @@ app.post('/api/logout', (req, res) => {
     return res.status(200).json({ status: 'success', message: 'Logged out successfully.' });
 });
 
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-    console.log('Open your browser and navigate to http://localhost:3000 to use the estimator.');
-    console.log('Navigate to http://localhost:3000/admin.html to manage structures.');
-});
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log(`Server is running on http://localhost:${PORT}`);
+        console.log('Open your browser and navigate to http://localhost:3000 to use the estimator.');
+        console.log('Navigate to http://localhost:3000/admin.html to manage structures.');
+    });
+}
+
+module.exports = app;
