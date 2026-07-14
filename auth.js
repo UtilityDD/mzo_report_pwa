@@ -2,21 +2,37 @@
 (function() {
     'use strict';
 
-    // Verify authentication state in localStorage (essential for offline routing)
-    if (localStorage.getItem('mzo_authenticated') !== 'true') {
-        // Double check cookie with server first, in case cookie expired
+    // Verify authentication state (essential for offline routing and online validity check)
+    if (navigator.onLine) {
+        // Online: verify the session cookie with the server first
         fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
             .then(res => {
-                if (!res.ok) {
+                if (res.ok) {
+                    // Session is valid! Ensure flags are set
+                    localStorage.setItem('mzo_authenticated', 'true');
+                    res.json().then(data => {
+                        if (data.profile) {
+                            localStorage.setItem('mzo_user_profile', JSON.stringify(data.profile));
+                        }
+                    });
+                } else {
+                    // Session is invalid on the server! Clear storage and redirect
                     localStorage.removeItem('mzo_authenticated');
                     localStorage.removeItem('mzo_user_profile');
                     window.location.href = '/login.html';
                 }
             })
             .catch(() => {
-                // If offline and flag is not set, force redirect
-                window.location.href = '/login.html';
+                // Network error, fallback to offline check
+                if (localStorage.getItem('mzo_authenticated') !== 'true') {
+                    window.location.href = '/login.html';
+                }
             });
+    } else {
+        // Offline: rely strictly on localStorage flags
+        if (localStorage.getItem('mzo_authenticated') !== 'true') {
+            window.location.href = '/login.html';
+        }
     }
 
     // Custom clean confirmation modal
