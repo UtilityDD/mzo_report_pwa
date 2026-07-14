@@ -5,7 +5,7 @@
     // Verify authentication state (essential for offline routing and online validity check)
     if (navigator.onLine) {
         // Online: verify the session cookie with the server first
-        fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        fetch('/api/session-check', { headers: { 'Accept': 'application/json' } })
             .then(res => {
                 if (res.ok) {
                     // Session is valid! Ensure flags are set

@@ -282,6 +282,11 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
+// API endpoint to verify session status
+app.get('/api/session-check', (req, res) => {
+    return res.status(200).json({ status: 'success', profile: req.user });
+});
+
 // API endpoint for User Logout
 app.post('/api/logout', (req, res) => {
     const cookieHeader = req.headers.cookie || '';
