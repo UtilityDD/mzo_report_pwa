@@ -272,7 +272,7 @@
         injectLogoutButton();
     }
 
-    // Optimize layout spacing when loaded inside an iframe (removes double margins)
+    // Optimize layout spacing and inject back button when loaded inside an iframe (removes double margins/headers)
     if (window.self !== window.top) {
         const adjustIframeLayout = () => {
             document.body.style.paddingTop = '0px';
@@ -285,6 +285,65 @@
             if (container) {
                 container.style.marginTop = '0px';
                 container.style.paddingTop = '0px';
+            }
+
+            // Find and inject back button into sub-dashboard header
+            const header = document.querySelector('.header-compact') || 
+                           document.querySelector('.header') || 
+                           document.querySelector('.header-content') ||
+                           document.querySelector('.header-sticky') ||
+                           document.querySelector('.dashboard-header') ||
+                           document.querySelector('.title-container') ||
+                           document.querySelector('.dashboard-container > div:first-child');
+                           
+            if (header) {
+                // Prevent duplicate back button
+                if (header.querySelector('.pwa-back-btn')) return;
+
+                const backBtn = document.createElement('button');
+                backBtn.className = 'pwa-back-btn';
+                backBtn.title = 'Back to Home';
+                // Inline SVG vector back arrow - independent of FontAwesome loads
+                backBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display: block;"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>';
+                
+                // Style the back button
+                backBtn.style.background = 'transparent';
+                backBtn.style.border = 'none';
+                backBtn.style.color = 'inherit';
+                backBtn.style.cursor = 'pointer';
+                backBtn.style.marginRight = '12px';
+                backBtn.style.display = 'inline-flex';
+                backBtn.style.alignItems = 'center';
+                backBtn.style.justifyContent = 'center';
+                backBtn.style.padding = '8px';
+                backBtn.style.borderRadius = '50%';
+                backBtn.style.transition = 'background 0.2s';
+                
+                backBtn.addEventListener('mouseenter', () => {
+                    backBtn.style.background = 'rgba(255, 255, 255, 0.1)';
+                });
+                backBtn.addEventListener('mouseleave', () => {
+                    backBtn.style.background = 'transparent';
+                });
+
+                backBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    if (window.parent && typeof window.parent.goBack === 'function') {
+                        window.parent.goBack();
+                    } else {
+                        window.history.back();
+                    }
+                });
+
+                // Prepends to the header
+                header.insertBefore(backBtn, header.firstChild);
+
+                // Align header content if it's block-styled
+                const computedStyle = window.getComputedStyle(header);
+                if (computedStyle.display === 'block') {
+                    header.style.display = 'flex';
+                    header.style.alignItems = 'center';
+                }
             }
         };
 
