@@ -2441,6 +2441,126 @@
     body.light-theme #syncProgressMini {
       background: rgba(0, 0, 0, 0.05);
     }
+
+    /* PWA Install Banner Styles */
+    .pwa-banner {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(150%);
+      width: 90%;
+      max-width: 450px;
+      background: rgba(30, 41, 59, 0.95);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      z-index: 100000;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      font-family: 'Inter', -apple-system, sans-serif;
+    }
+    
+    .pwa-banner.active {
+      transform: translateX(-50%) translateY(0);
+    }
+    
+    .pwa-banner.hidden {
+      display: none !important;
+    }
+    
+    body.light-theme .pwa-banner {
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    }
+    
+    .pwa-banner-content {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .pwa-banner-icon {
+      font-size: 24px;
+      color: #3b82f6;
+      background: rgba(59, 130, 246, 0.1);
+      padding: 10px;
+      border-radius: 12px;
+    }
+    
+    .pwa-banner-text h4 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: #f9fafb;
+    }
+    
+    body.light-theme .pwa-banner-text h4 {
+      color: #0f172a;
+    }
+    
+    .pwa-banner-text p {
+      margin: 4px 0 0 0;
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.4;
+    }
+    
+    body.light-theme .pwa-banner-text p {
+      color: #475569;
+    }
+    
+    .pwa-banner-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    
+    .btn-pwa-primary {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    
+    .btn-pwa-primary:hover {
+      background: #2563eb;
+    }
+    
+    .btn-pwa-secondary {
+      background: transparent;
+      color: #94a3b8;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    body.light-theme .btn-pwa-secondary {
+      color: #475569;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+    }
+    
+    .btn-pwa-secondary:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+    
+    body.light-theme .btn-pwa-secondary:hover {
+      background: rgba(0, 0, 0, 0.05);
+    }
   </style>
 
 </head>
@@ -4294,6 +4414,82 @@
 
     // Check if sync is needed (first time load or first time today)
     // Consolidating all DOMContentLoaded logic into the first listener above
+  </script>
+
+  <!-- PWA Install Banner -->
+  <div id="pwa-install-banner" class="pwa-banner hidden">
+    <div class="pwa-banner-content">
+      <i class="fas fa-mobile-alt pwa-banner-icon"></i>
+      <div class="pwa-banner-text">
+        <h4>Install MZO Dashboard</h4>
+        <p>Access the dashboard instantly from your home screen and use it offline.</p>
+      </div>
+    </div>
+    <div class="pwa-banner-actions">
+      <button id="pwa-dismiss-btn" class="btn-pwa-secondary">Dismiss</button>
+      <button id="pwa-install-btn" class="btn-pwa-primary">Install</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      let deferredPrompt = null;
+      
+      window.addEventListener('beforeinstallprompt', (e) => {
+        // Prevent Chrome from automatically showing the prompt
+        e.preventDefault();
+        // Stash the event so it can be triggered later.
+        deferredPrompt = e;
+        
+        // Check if the user has dismissed this banner in the current session
+        if (sessionStorage.getItem('pwa_banner_dismissed') === 'true') {
+          return;
+        }
+        
+        // Only show if the app is not already running as standalone (installed)
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+        if (!isStandalone) {
+          const banner = document.getElementById('pwa-install-banner');
+          if (banner) {
+            banner.classList.remove('hidden');
+            // Subtle delay to trigger sliding animation smoothly
+            setTimeout(() => {
+              banner.classList.add('active');
+            }, 100);
+          }
+        }
+      });
+      
+      document.getElementById('pwa-install-btn')?.addEventListener('click', async () => {
+        if (deferredPrompt) {
+          // Show the install prompt
+          deferredPrompt.prompt();
+          // Wait for the user to respond to the prompt
+          const { outcome } = await deferredPrompt.userChoice;
+          console.log(`User response to the install prompt: ${outcome}`);
+          // We've used the prompt, and can't use it again
+          deferredPrompt = null;
+        }
+        hidePwaBanner();
+      });
+      
+      document.getElementById('pwa-dismiss-btn')?.addEventListener('click', () => {
+        // Save dismissed flag in sessionStorage so we don't prompt them again during this session
+        sessionStorage.setItem('pwa_banner_dismissed', 'true');
+        hidePwaBanner();
+      });
+      
+      function hidePwaBanner() {
+        const banner = document.getElementById('pwa-install-banner');
+        if (banner) {
+          banner.classList.remove('active');
+          // Wait for animation transition to complete before hiding display
+          setTimeout(() => {
+            banner.classList.add('hidden');
+          }, 400);
+        }
+      }
+    })();
   </script>
 
 </body>
