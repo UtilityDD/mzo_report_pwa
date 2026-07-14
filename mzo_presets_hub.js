@@ -3,6 +3,30 @@
  * Manages Global Jurisdiction & Page-Specific Filter Presets in localStorage.
  * Supports automated setup modals and dynamic multi-dashboard synchronization.
  */
+// Dynamic Authentication Protection & Loading
+(function() {
+    if (localStorage.getItem('mzo_authenticated') !== 'true') {
+        // Immediately hide document elements to prevent unauthenticated flash
+        document.documentElement.style.display = 'none';
+    }
+    
+    // Resolve relative path to auth.js based on presets hub script source
+    const scriptTag = document.querySelector('script[src*="mzo_presets_hub.js"]');
+    let path = 'auth.js';
+    if (scriptTag) {
+        const srcAttr = scriptTag.getAttribute('src');
+        const index = srcAttr.indexOf('mzo_presets_hub.js');
+        if (index > -1) {
+            path = srcAttr.substring(0, index) + 'auth.js';
+        }
+    }
+    
+    // Load auth.js dynamically
+    const script = document.createElement('script');
+    script.src = path;
+    document.head.appendChild(script);
+})();
+
 (function(window) {
     'use strict';
 
@@ -418,3 +442,13 @@
 
     window.mzoPresetsHub = MzoPresetsHub;
 })(window);
+
+// Register PWA Service Worker
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+            .then(reg => console.log('Service Worker registered successfully! Scope:', reg.scope))
+            .catch(err => console.error('Service Worker registration failed:', err));
+    });
+}
+
