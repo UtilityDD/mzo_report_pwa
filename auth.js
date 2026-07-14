@@ -204,7 +204,6 @@
             logoutBtn.style.justifyContent = 'center';
             logoutBtn.style.marginLeft = '4px';
             logoutBtn.style.transition = 'all 0.2s ease';
-            logoutBtn.style.boxShadow = 'var(--neu-dark-shadow)';
             logoutBtn.style.outline = 'none';
 
             logoutBtn.addEventListener('mouseenter', () => {
