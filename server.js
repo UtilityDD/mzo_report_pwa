@@ -5,8 +5,131 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware to parse JSON bodies and serve static files
+const https = require('https');
+
+// Middleware to parse JSON bodies
 app.use(express.json());
+
+// --- Authentication Session Storage & Helpers ---
+const sessions = new Map(); // token -> user profile
+const LOGIN_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1GtWgPMm-WeDNfebubp5ac76waeZGESA2bQ8JkEpHlZ4/export?format=csv&gid=0';
+
+let cachedUsers = null;
+let lastCacheTime = 0;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes cache
+
+function parseCookies(cookieHeader) {
+    const list = {};
+    if (!cookieHeader) return list;
+    cookieHeader.split(';').forEach(cookie => {
+        const parts = cookie.split('=');
+        list[parts.shift().trim()] = decodeURI(parts.join('='));
+    });
+    return list;
+}
+
+function fetchSheet(url) {
+    if (typeof fetch === 'function') {
+        return fetch(url).then(res => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.text();
+        });
+    }
+    
+    return new Promise((resolve, reject) => {
+        https.get(url, (res) => {
+            if (res.statusCode !== 200) {
+                reject(new Error(`Failed to fetch sheet: HTTP ${res.statusCode}`));
+                return;
+            }
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => resolve(data));
+        }).on('error', err => reject(err));
+    });
+}
+
+async function getLoginCredentials() {
+    const now = Date.now();
+    if (cachedUsers && (now - lastCacheTime < CACHE_DURATION)) {
+        return cachedUsers;
+    }
+
+    try {
+        const csvText = await fetchSheet(LOGIN_SHEET_URL);
+        
+        // Parse CSV text
+        const lines = csvText.trim().split('\n');
+        if (lines.length < 2) return [];
+        
+        const headers = lines[0].split(',').map(h => h.trim());
+        const users = [];
+        
+        for (let i = 1; i < lines.length; i++) {
+            const values = parseCSVLine(lines[i]);
+            if (values.length >= 2) {
+                const user = {};
+                for (let j = 0; j < headers.length; j++) {
+                    user[headers[j]] = values[j] ? values[j].trim() : '';
+                }
+                users.push(user);
+            }
+        }
+        
+        cachedUsers = users;
+        lastCacheTime = now;
+        console.log(`[Auth] Loaded ${users.length} user credentials from Google Sheets`);
+        return users;
+    } catch (err) {
+        console.error("[Auth] Error loading credentials sheet:", err.message);
+        return cachedUsers || []; // Return stale cache if load fails
+    }
+}
+
+// Authentication middleware
+function requireAuth(req, res, next) {
+    const pathName = req.path;
+    
+    // Whitelist static assets, login page, and login API
+    if (
+        pathName === '/login.html' || 
+        pathName === '/api/login' || 
+        pathName.startsWith('/icons/') || 
+        pathName.startsWith('/assets/') || 
+        pathName.endsWith('.css') || 
+        pathName.endsWith('.js') || 
+        pathName.endsWith('.png') || 
+        pathName.endsWith('.json') ||
+        pathName.endsWith('.ico')
+    ) {
+        return next();
+    }
+    
+    // Read and verify session cookies
+    const cookieHeader = req.headers.cookie || '';
+    const cookies = parseCookies(cookieHeader);
+    const token = cookies.mzo_session;
+    
+    if (token && sessions.has(token)) {
+        const session = sessions.get(token);
+        if (Date.now() < session.expiry) {
+            req.user = session.profile;
+            return next();
+        } else {
+            sessions.delete(token);
+        }
+    }
+    
+    // Redirect to login page if unauthenticated
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    } else {
+        return res.redirect('/login.html');
+    }
+}
+
+// Enable authentication check before serving static files
+app.use(requireAuth);
 app.use(express.static(__dirname));
 
 // --- File Paths ---
@@ -110,6 +233,68 @@ app.post('/api/structures/update', (req, res) => {
         console.error("Error writing structure file:", error.message);
         res.status(500).json({ message: 'An error occurred while saving data.', details: error.message });
     }
+});
+
+// API endpoint for User Login
+app.post('/api/login', async (req, res) => {
+    const { username, pin } = req.body;
+
+    if (!username || !pin) {
+        return res.status(400).json({ status: 'error', message: 'Username and PIN are required.' });
+    }
+
+    try {
+        const users = await getLoginCredentials();
+        
+        // Look up user (case-insensitive username)
+        const matchedUser = users.find(u => 
+            u.Username && u.Username.toLowerCase() === username.trim().toLowerCase() && 
+            u.PIN && u.PIN === pin.trim()
+        );
+
+        if (matchedUser) {
+            // Generate a secure session token
+            const token = require('crypto').randomBytes(16).toString('hex');
+            
+            // Exclude the PIN from user profile sent to the client
+            const { PIN, ...clientProfile } = matchedUser;
+            
+            // Save session (valid for 24 hours)
+            sessions.set(token, {
+                profile: clientProfile,
+                expiry: Date.now() + 24 * 60 * 60 * 1000
+            });
+            
+            // Set session cookie
+            res.setHeader('Set-Cookie', `mzo_session=${token}; Path=/; HttpOnly; Max-Age=${24 * 60 * 60}; SameSite=Lax`);
+            console.log(`[Auth] User logged in: ${matchedUser.Username} (${matchedUser.Name || 'No Name'})`);
+            
+            return res.status(200).json({
+                status: 'success',
+                profile: clientProfile
+            });
+        } else {
+            return res.status(401).json({ status: 'error', message: 'Invalid Username or PIN.' });
+        }
+    } catch (err) {
+        console.error("[Auth] Login error:", err.message);
+        return res.status(500).json({ status: 'error', message: 'Internal Server Error during validation.' });
+    }
+});
+
+// API endpoint for User Logout
+app.post('/api/logout', (req, res) => {
+    const cookieHeader = req.headers.cookie || '';
+    const cookies = parseCookies(cookieHeader);
+    const token = cookies.mzo_session;
+    
+    if (token) {
+        sessions.delete(token);
+    }
+    
+    // Invalidate session cookie
+    res.setHeader('Set-Cookie', 'mzo_session=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax');
+    return res.status(200).json({ status: 'success', message: 'Logged out successfully.' });
 });
 
 app.listen(PORT, () => {
