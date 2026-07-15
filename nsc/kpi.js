@@ -52,7 +52,33 @@ function processData() {
     filteredData = [...allData];
     updateMaxTodayDate(allData);
     initializeFilters();
-    updateDashboard(allData);
+    
+    // Setup preference button listener
+    const prefBtn = document.getElementById('officePrefBtn');
+    if (prefBtn) {
+        prefBtn.addEventListener('click', () => {
+            if (window.mzoPresetsHub) {
+                const cccList = Array.from(new Set(allData.map(d => d.CCC_CODE))).filter(Boolean).map(code => {
+                    const item = allData.find(d => d.CCC_CODE === code);
+                    return {
+                        code: code,
+                        name: item ? item.SUPP_OFF : `CCC ${code}`,
+                        region: item ? item.REGION : null,
+                        division: item ? item.DIVN_NAME : null
+                    };
+                });
+                window.mzoPresetsHub.showSetupModal({
+                    showCCC: true,
+                    cccList: cccList
+                }, () => {
+                    // Re-filter the page based on the new preference
+                    applyFilters();
+                });
+            }
+        });
+    }
+
+    applyFilters();
 }
 
 // Initialize class and delay filters
@@ -115,8 +141,44 @@ function setupEventListeners() {
     // Event listeners for other filters can be added here if needed in the future.
 }
 function applyFilters() {
+    let pref = null;
+    if (window.mzoPresetsHub) {
+        pref = window.mzoPresetsHub.getGlobalJurisdiction();
+    }
+
     filteredData = allData.filter(item => {
-        return selectedClasses.has(item.CONN_CLASS);
+        const classMatch = selectedClasses.has(item.CONN_CLASS);
+        if (!classMatch) return false;
+
+        if (pref) {
+            // Filter by region
+            if (pref.region && pref.region !== 'all') {
+                const r = String(pref.region).toLowerCase().replace(/region/g, '').trim();
+                const itemReg = String(item.REGION).toLowerCase().replace(/region/g, '').trim();
+                if (r === 'ud' || r.includes('uttar') || r.includes('u/dinajpur')) {
+                    const match = itemReg === 'ud' || itemReg.includes('uttar') || itemReg.includes('u/dinajpur') || itemReg.includes('u_dinajpur');
+                    if (!match) return false;
+                } else if (r === 'dd' || r.includes('dakshin') || r.includes('d/dinajpur')) {
+                    const match = itemReg === 'dd' || itemReg.includes('dakshin') || itemReg.includes('d/dinajpur') || itemReg.includes('d_dinajpur');
+                    if (!match) return false;
+                } else {
+                    if (!itemReg.includes(r) && !r.includes(itemReg)) return false;
+                }
+            }
+            
+            // Filter by division
+            if (pref.division && pref.division !== 'all') {
+                const d = String(pref.division).toLowerCase().replace(/division|div/g, '').trim();
+                const itemDiv = String(item.DIVN_NAME).toLowerCase().replace(/division|div/g, '').trim();
+                if (!itemDiv.includes(d) && !d.includes(itemDiv)) return false;
+            }
+            
+            // Filter by ccc
+            if (pref.ccc && pref.ccc !== 'all') {
+                if (String(item.CCC_CODE) !== String(pref.ccc)) return false;
+            }
+        }
+        return true;
     });
     updateDashboard(filteredData);
 }
