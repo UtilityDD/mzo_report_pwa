@@ -145,9 +145,9 @@ function updateAverageDelayCards(data) {
         return card;
     };
 
-    container.appendChild(createCard('Avg Delay in Quotation', avgQtnDelay, 'Qtn'));
-    container.appendChild(createCard('Avg Delay in WO', avgWODelay, 'WO'));
-    container.appendChild(createCard('Avg Delay in Connection', avgSCDelay, 'Conn'));
+    container.appendChild(createCard('Quotation Delay', avgQtnDelay, 'Qtn'));
+    container.appendChild(createCard('WO Delay', avgWODelay, 'WO'));
+    container.appendChild(createCard('Conn Delay', avgSCDelay, 'Conn'));
 }
 
 // Update all KPI summary tables
@@ -216,9 +216,9 @@ function populateKpiTable(dataMap, tableId, useCCCName = false, delayType = null
         } else {
             row.innerHTML = `
                 <td data-label="${nameHeader}">${r.name}</td>
-                <td data-label="Avg Quotation Delay">${r.Qtn.toFixed(1)} days <span class="rank-number">(${getRank(r.Qtn, sortedQtn)})</span></td>
-                <td data-label="Avg WO Delay">${r.WO.toFixed(1)} days <span class="rank-number">(${getRank(r.WO, sortedWO)})</span></td>
-                <td data-label="Avg Connection Delay">${r.Conn.toFixed(1)} days <span class="rank-number">(${getRank(r.Conn, sortedConn)})</span></td>`;
+                <td data-label="Qtn Delay">${r.Qtn.toFixed(1)} days <span class="rank-number">(${getRank(r.Qtn, sortedQtn)})</span></td>
+                <td data-label="WO Delay">${r.WO.toFixed(1)} days <span class="rank-number">(${getRank(r.WO, sortedWO)})</span></td>
+                <td data-label="Conn Delay">${r.Conn.toFixed(1)} days <span class="rank-number">(${getRank(r.Conn, sortedConn)})</span></td>`;
         }
     });
 
@@ -330,9 +330,9 @@ function addTableHeaders(tableId, nameHeader, delayType = null) {
         ? `<th data-sort="name">${nameHeader} <span class="sort-icon"></span></th>
            <th data-sort="${delayType}">Average Delay <span class="sort-icon"></span></th>`
         : `<th data-sort="name">${nameHeader} <span class="sort-icon"></span></th>
-           <th data-sort="Qtn">Avg Quotation Delay <span class="sort-icon"></span></th>
-           <th data-sort="WO">Avg WO Delay <span class="sort-icon"></span></th>
-           <th data-sort="Conn">Avg Connection Delay <span class="sort-icon"></span></th>`;
+           <th data-sort="Qtn">Qtn Delay <span class="sort-icon"></span></th>
+           <th data-sort="WO">WO Delay <span class="sort-icon"></span></th>
+           <th data-sort="Conn">Conn Delay <span class="sort-icon"></span></th>`;
     if (!table.querySelector('tbody')) {
         table.createTBody();
     }
