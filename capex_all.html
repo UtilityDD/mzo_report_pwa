@@ -1212,10 +1212,28 @@
                 if (await mzoDataHub.isCached('CACHE_CAPEX')) {
                     console.log("DataHub: Loading CAPEX Details from cache.");
                     rawData = await mzoDataHub.get('CACHE_CAPEX');
+                    if (typeof rawData === 'string') {
+                        const parsed = Papa.parse(rawData.trim(), {
+                            header: true,
+                            skipEmptyLines: true
+                        });
+                        rawData = parsed.data;
+                    }
                 } else {
                     console.log("DataHub: CAPEX Details cache miss, fetching from network.");
-                    const mainResponse = await fetch(mainDataUrl);
-                    rawData = await mainResponse.json();
+                    try {
+                        const mainResponse = await fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vQI2neSVbvMR4fF910Q0AWUcq02leP-sob8q4f9goT46hgLutCpxCjSL6y6X3s2vYBJRNN7WrFCjE0R/pub?gid=439685010&single=true&output=csv');
+                        const text = await mainResponse.text();
+                        const parsed = Papa.parse(text.trim(), {
+                            header: true,
+                            skipEmptyLines: true
+                        });
+                        rawData = parsed.data;
+                    } catch (netErr) {
+                        console.error("Network fetch failed, falling back to local capexall.json:", netErr);
+                        const mainResponse = await fetch(mainDataUrl);
+                        rawData = await mainResponse.json();
+                    }
                 }
 
                 allData = cleanData(rawData, costCenterMap);
