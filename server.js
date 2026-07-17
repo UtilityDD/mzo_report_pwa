@@ -50,6 +50,39 @@ function fetchSheet(url) {
 let globalCachedUsers = null;
 let globalCachedLogs = null;
 
+// Paste your Google Apps Script Web App URL here to persist logs on Vercel
+const LOGS_APPS_SCRIPT_URL = process.env.LOGS_APPS_SCRIPT_URL || '';
+
+async function sendLogToGoogle(entry) {
+    if (!LOGS_APPS_SCRIPT_URL) return;
+    try {
+        if (typeof fetch === 'function') {
+            await fetch(LOGS_APPS_SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(entry)
+            });
+        }
+    } catch (err) {
+        console.error("[Activity Log] Failed to send log to Google Sheets:", err.message);
+    }
+}
+
+async function fetchLogsFromGoogle() {
+    if (!LOGS_APPS_SCRIPT_URL) return [];
+    try {
+        if (typeof fetch === 'function') {
+            const res = await fetch(LOGS_APPS_SCRIPT_URL);
+            if (res.ok) {
+                return await res.json();
+            }
+        }
+    } catch (err) {
+        console.error("[Activity Log] Failed to fetch logs from Google Sheets:", err.message);
+    }
+    return [];
+}
+
 async function initializeLocalUsers() {
     try {
         console.log(`[Auth] Initializing local users from Google Sheets...`);
@@ -138,6 +171,9 @@ function logActivity(activity) {
         if (globalCachedLogs.length > 5000) {
             globalCachedLogs = globalCachedLogs.slice(0, 5000);
         }
+        
+        // Push asynchronously to Google Sheets Web App
+        sendLogToGoogle(entry);
         
         try {
             const dataDir = path.dirname(LOGS_FILE);
@@ -536,8 +572,21 @@ app.post('/api/admin/users/delete', requireAdmin, async (req, res) => {
 });
 
 // 5. GET logs
-app.get('/api/admin/logs', requireAdmin, (req, res) => {
+app.get('/api/admin/logs', requireAdmin, async (req, res) => {
     try {
+        if (LOGS_APPS_SCRIPT_URL) {
+            const logs = await fetchLogsFromGoogle();
+            if (logs && logs.length > 0) {
+                globalCachedLogs = logs.map(l => ({
+                    timestamp: l.timestamp,
+                    username: l.username,
+                    name: l.name,
+                    type: l.type,
+                    details: l.details
+                }));
+            }
+        }
+        
         if (globalCachedLogs === null) {
             if (fs.existsSync(LOGS_FILE)) {
                 try {
