@@ -60,7 +60,10 @@ async function sendLogToGoogle(entry) {
             await fetch(LOGS_APPS_SCRIPT_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(entry)
+                body: JSON.stringify({
+                    action: 'log_activity',
+                    log: entry
+                })
             });
         }
     } catch (err) {
@@ -72,9 +75,12 @@ async function fetchLogsFromGoogle() {
     if (!LOGS_APPS_SCRIPT_URL) return [];
     try {
         if (typeof fetch === 'function') {
-            const res = await fetch(LOGS_APPS_SCRIPT_URL);
+            const urlObj = new URL(LOGS_APPS_SCRIPT_URL);
+            urlObj.searchParams.set('action', 'get_logs');
+            const res = await fetch(urlObj.toString());
             if (res.ok) {
-                return await res.json();
+                const data = await res.json();
+                return data.data || [];
             }
         }
     } catch (err) {
