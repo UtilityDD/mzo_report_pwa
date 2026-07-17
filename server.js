@@ -151,7 +151,7 @@ async function getLoginCredentials() {
     }
 }
 
-function logActivity(activity) {
+async function logActivity(activity) {
     try {
         const entry = {
             timestamp: new Date().toISOString(),
@@ -178,8 +178,8 @@ function logActivity(activity) {
             globalCachedLogs = globalCachedLogs.slice(0, 5000);
         }
         
-        // Push asynchronously to Google Sheets Web App
-        sendLogToGoogle(entry);
+        // Await push to prevent Vercel serverless function freezing before completion
+        await sendLogToGoogle(entry);
         
         try {
             const dataDir = path.dirname(LOGS_FILE);
@@ -196,7 +196,7 @@ function logActivity(activity) {
 }
 
 // Authentication middleware
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
     const pathName = req.path;
     
     // Whitelist static assets, login page, and login API
@@ -236,7 +236,7 @@ function requireAuth(req, res, next) {
                         const isAssetOrApi = pathName.startsWith('/api/') || pathName.startsWith('/icons/') || pathName.startsWith('/assets/') || ext === '.css' || ext === '.js' || ext === '.png' || ext === '.json' || ext === '.ico';
                         
                         if (isHtml && !isAssetOrApi && pathName !== '/login.html' && pathName !== '/admin_users.html') {
-                            logActivity({
+                            await logActivity({
                                 username: req.user.Username,
                                 name: req.user.Name || 'No Name',
                                 type: 'page_visit',
@@ -403,7 +403,7 @@ app.post('/api/login', async (req, res) => {
             console.log(`[Auth] User logged in: ${matchedUser.Username} (${matchedUser.Name || 'No Name'})`);
             
             // Log login event
-            logActivity({
+            await logActivity({
                 username: matchedUser.Username,
                 name: matchedUser.Name || 'No Name',
                 type: 'login',
@@ -494,7 +494,7 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
         globalCachedUsers = users;
         fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
         
-        logActivity({
+        await logActivity({
             username: req.user.Username,
             name: req.user.Name,
             type: 'user_management',
@@ -532,7 +532,7 @@ app.post('/api/admin/users/update', requireAdmin, async (req, res) => {
         globalCachedUsers = users;
         fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
         
-        logActivity({
+        await logActivity({
             username: req.user.Username,
             name: req.user.Name,
             type: 'user_management',
@@ -564,7 +564,7 @@ app.post('/api/admin/users/delete', requireAdmin, async (req, res) => {
         globalCachedUsers = filteredUsers;
         fs.writeFileSync(USERS_FILE, JSON.stringify(filteredUsers, null, 2), 'utf-8');
         
-        logActivity({
+        await logActivity({
             username: req.user.Username,
             name: req.user.Name,
             type: 'user_management',
