@@ -628,7 +628,7 @@ app.post('/api/admin/edit-sheet-row', requireAdmin, async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'Missing required parameters.' });
         }
         
-        const targetSpreadsheetId = spreadsheetId || process.env.POWER_MAP_SPREADSHEET_ID || '1wDvPuAxNfdO9QzUaIUubg2JnkFM5ZleFNXQdi8s5uh0';
+        const targetSpreadsheetId = spreadsheetId || process.env.POWER_MAP_SPREADSHEET_ID || '1nBLLL3zc3OjuJ6umq3uQVmjXCPhlVATYhQX1BlfqS2w';
         
         const payload = {
             action: 'edit_sheet_row',
