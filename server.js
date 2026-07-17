@@ -51,7 +51,7 @@ let globalCachedUsers = null;
 let globalCachedLogs = null;
 
 // Paste your Google Apps Script Web App URL here to persist logs on Vercel
-const LOGS_APPS_SCRIPT_URL = process.env.LOGS_APPS_SCRIPT_URL || '';
+const LOGS_APPS_SCRIPT_URL = process.env.LOGS_APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbzfjrui7C6d-9zcT6w6nXS5RqplAMyx9Ul3zx8EsVS0g8xKdJHgpWvFebT6-tjCR8T3/exec';
 
 async function sendLogToGoogle(entry) {
     if (!LOGS_APPS_SCRIPT_URL) return;
