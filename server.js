@@ -48,6 +48,7 @@ function fetchSheet(url) {
 }
 
 let globalCachedUsers = null;
+let globalCachedLogs = null;
 
 async function initializeLocalUsers() {
     try {
@@ -121,27 +122,32 @@ function logActivity(activity) {
             details: activity.details
         };
         
-        let logs = [];
-        if (fs.existsSync(LOGS_FILE)) {
-            const fileContent = fs.readFileSync(LOGS_FILE, 'utf-8');
-            try {
-                logs = JSON.parse(fileContent);
-            } catch (e) {
-                logs = [];
+        if (globalCachedLogs === null) {
+            if (fs.existsSync(LOGS_FILE)) {
+                try {
+                    globalCachedLogs = JSON.parse(fs.readFileSync(LOGS_FILE, 'utf-8'));
+                } catch (e) {
+                    globalCachedLogs = [];
+                }
+            } else {
+                globalCachedLogs = [];
             }
         }
         
-        logs.unshift(entry);
-        if (logs.length > 5000) {
-            logs = logs.slice(0, 5000);
+        globalCachedLogs.unshift(entry);
+        if (globalCachedLogs.length > 5000) {
+            globalCachedLogs = globalCachedLogs.slice(0, 5000);
         }
         
-        const dataDir = path.dirname(LOGS_FILE);
-        if (!fs.existsSync(dataDir)) {
-            fs.mkdirSync(dataDir, { recursive: true });
+        try {
+            const dataDir = path.dirname(LOGS_FILE);
+            if (!fs.existsSync(dataDir)) {
+                fs.mkdirSync(dataDir, { recursive: true });
+            }
+            fs.writeFileSync(LOGS_FILE, JSON.stringify(globalCachedLogs, null, 2), 'utf-8');
+        } catch (writeErr) {
+            // Fail silently on read-only serverless filesystems
         }
-        
-        fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), 'utf-8');
     } catch (err) {
         console.error("[Activity Log] Error saving log:", err.message);
     }
@@ -531,11 +537,18 @@ app.post('/api/admin/users/delete', requireAdmin, async (req, res) => {
 // 5. GET logs
 app.get('/api/admin/logs', requireAdmin, (req, res) => {
     try {
-        let logs = [];
-        if (fs.existsSync(LOGS_FILE)) {
-            logs = JSON.parse(fs.readFileSync(LOGS_FILE, 'utf-8'));
+        if (globalCachedLogs === null) {
+            if (fs.existsSync(LOGS_FILE)) {
+                try {
+                    globalCachedLogs = JSON.parse(fs.readFileSync(LOGS_FILE, 'utf-8'));
+                } catch (e) {
+                    globalCachedLogs = [];
+                }
+            } else {
+                globalCachedLogs = [];
+            }
         }
-        res.json({ status: 'success', logs });
+        res.json({ status: 'success', logs: globalCachedLogs });
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
     }
