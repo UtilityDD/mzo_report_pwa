@@ -681,8 +681,16 @@ app.get('/api/power-map/data', async (req, res) => {
             "LegendColour", "Remarks", "ConductorSize", "PeakLoad"
         ];
         
+        // Filter out empty rows or invalid entries to prevent Leaflet LatLng crashes
+        const validSubstations = substations.filter(row => 
+            row.Substation && 
+            row.Substation.trim().length > 0 && 
+            row.LATITUDE && 
+            row.LONGITUDE
+        );
+
         const csvRows = [columns.join(',')];
-        substations.forEach(row => {
+        validSubstations.forEach(row => {
             const values = columns.map(col => {
                 const val = row[col];
                 const cleanVal = val !== undefined && val !== null ? String(val).replace(/"/g, '""') : '';
