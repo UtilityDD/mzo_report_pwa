@@ -90,8 +90,13 @@ async function querySupabase(apiPath, options = {}) {
         throw new Error(`Supabase REST API returned HTTP ${response.status}: ${errText}`);
     }
     
-    if (response.status === 204) return null;
-    return response.json();
+    const text = await response.text();
+    if (!text || text.trim().length === 0) return null;
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        return text;
+    }
 }
 
 const LOGS_APPS_SCRIPT_URL = process.env.LOGS_APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycby3lVmwORT3j9J2IKjjYebMVzOknRXjo85VmqIQOlBRGGmEi5eFYGMg90HJpFxlz0mM/exec';
