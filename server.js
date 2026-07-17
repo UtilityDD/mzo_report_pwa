@@ -622,7 +622,7 @@ app.post('/api/admin/sync', requireAdmin, async (req, res) => {
 // 6.5. Edit sheet row (Power Map Admin Edit)
 app.post('/api/admin/edit-sheet-row', requireAdmin, async (req, res) => {
     try {
-        const { spreadsheetId, sheetName, rowKeyColumn, rowKeyValue, columnName, newValue } = req.body;
+        const { spreadsheetId, sheetName, rowKeyColumn, rowKeyValue, columnName, newValue, connectionTarget } = req.body;
         
         if (!rowKeyColumn || !rowKeyValue || !columnName) {
             return res.status(400).json({ status: 'error', message: 'Missing required parameters.' });
@@ -637,7 +637,8 @@ app.post('/api/admin/edit-sheet-row', requireAdmin, async (req, res) => {
             rowKeyColumn,
             rowKeyValue,
             columnName,
-            newValue
+            newValue,
+            connectionTarget
         };
         
         console.log(`[Admin Edit] Sending edit request to Apps Script:`, payload);
