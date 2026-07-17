@@ -50,8 +50,7 @@ function fetchSheet(url) {
 let globalCachedUsers = null;
 let globalCachedLogs = null;
 
-// Paste your Google Apps Script Web App URL here to persist logs on Vercel
-const LOGS_APPS_SCRIPT_URL = process.env.LOGS_APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbzfjrui7C6d-9zcT6w6nXS5RqplAMyx9Ul3zx8EsVS0g8xKdJHgpWvFebT6-tjCR8T3/exec';
+const LOGS_APPS_SCRIPT_URL = process.env.LOGS_APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycby3lVmwORT3j9J2IKjjYebMVzOknRXjo85VmqIQOlBRGGmEi5eFYGMg90HJpFxlz0mM/exec';
 
 async function sendLogToGoogle(entry) {
     if (!LOGS_APPS_SCRIPT_URL) return;
@@ -617,6 +616,55 @@ app.post('/api/admin/sync', requireAdmin, async (req, res) => {
         res.json({ status: 'success', message: 'Successfully synced and updated local user database from Google Sheets.' });
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// 6.5. Edit sheet row (Power Map Admin Edit)
+app.post('/api/admin/edit-sheet-row', requireAdmin, async (req, res) => {
+    try {
+        const { spreadsheetId, sheetName, rowKeyColumn, rowKeyValue, columnName, newValue } = req.body;
+        
+        if (!rowKeyColumn || !rowKeyValue || !columnName) {
+            return res.status(400).json({ status: 'error', message: 'Missing required parameters.' });
+        }
+        
+        const targetSpreadsheetId = spreadsheetId || process.env.POWER_MAP_SPREADSHEET_ID || '1wDvPuAxNfdO9QzUaIUubg2JnkFM5ZleFNXQdi8s5uh0';
+        
+        const payload = {
+            action: 'edit_sheet_row',
+            spreadsheetId: targetSpreadsheetId,
+            sheetName: sheetName || '',
+            rowKeyColumn,
+            rowKeyValue,
+            columnName,
+            newValue
+        };
+        
+        console.log(`[Admin Edit] Sending edit request to Apps Script:`, payload);
+        
+        if (typeof fetch === 'function') {
+            const response = await fetch(LOGS_APPS_SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Apps Script returned HTTP ${response.status}`);
+            }
+            
+            const result = await response.json();
+            if (result.status === 'success') {
+                return res.json({ status: 'success', message: 'Spreadsheet updated successfully.' });
+            } else {
+                return res.status(500).json({ status: 'error', message: result.message || 'Apps Script edit failed.' });
+            }
+        } else {
+            throw new Error("fetch is not supported on this Node environment");
+        }
+    } catch (err) {
+        console.error("[Admin Edit] Error editing sheet row:", err.message);
+        return res.status(500).json({ status: 'error', message: err.message });
     }
 });
 
