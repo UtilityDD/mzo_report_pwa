@@ -50,6 +50,50 @@ function fetchSheet(url) {
 let globalCachedUsers = null;
 let globalCachedLogs = null;
 
+// Supabase Configuration
+let SUPABASE_URL = process.env.SUPABASE_URL;
+let SUPABASE_KEY = process.env.SUPABASE_KEY;
+
+const supabaseConfigPath = path.join(__dirname, 'data', 'supabase_config.json');
+if (fs.existsSync(supabaseConfigPath)) {
+    try {
+        const config = JSON.parse(fs.readFileSync(supabaseConfigPath, 'utf8'));
+        if (config.supabaseUrl) SUPABASE_URL = config.supabaseUrl;
+        if (config.supabaseKey) SUPABASE_KEY = config.supabaseKey;
+        console.log("[Supabase] Loaded credentials from data/supabase_config.json");
+    } catch (e) {
+        console.error("[Supabase] Failed to parse data/supabase_config.json:", e.message);
+    }
+}
+
+// Zero-dependency Supabase REST Query Helper
+async function querySupabase(apiPath, options = {}) {
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+        throw new Error("Supabase credentials not configured. Please verify data/supabase_config.json.");
+    }
+    const url = `${SUPABASE_URL}/rest/v1/${apiPath}`;
+    const headers = {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        ...options.headers
+    };
+    
+    const response = await fetch(url, {
+        method: options.method || 'GET',
+        headers,
+        body: options.body ? JSON.stringify(options.body) : undefined
+    });
+    
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Supabase REST API returned HTTP ${response.status}: ${errText}`);
+    }
+    
+    if (response.status === 204) return null;
+    return response.json();
+}
+
 const LOGS_APPS_SCRIPT_URL = process.env.LOGS_APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycby3lVmwORT3j9J2IKjjYebMVzOknRXjo85VmqIQOlBRGGmEi5eFYGMg90HJpFxlz0mM/exec';
 
 async function sendLogToGoogle(entry) {
@@ -619,148 +663,182 @@ app.post('/api/admin/sync', requireAdmin, async (req, res) => {
     }
 });
 
-// 6.5. Edit sheet row (Power Map Admin Edit)
+// 6.45. Expose endpoint to return substations CSV from Supabase
+app.get('/api/power-map/data', async (req, res) => {
+    try {
+        const substations = await querySupabase('substations?select=*');
+        
+        // Convert to CSV
+        if (!substations || substations.length === 0) {
+            return res.send('');
+        }
+        
+        // Casing and spacing matching Google Sheet column names
+        const columns = [
+            "Substation", "LATITUDE", "LONGITUDE", "MVA", "Para-2", "Para-3", 
+            "Connected to", "RL", "ConductorSize", "PeakLoad", "LineStyle", "Comment", 
+            "Symbol", "SymbolSize"
+        ];
+        
+        const csvRows = [columns.join(',')];
+        substations.forEach(row => {
+            const values = columns.map(col => {
+                const val = row[col];
+                const cleanVal = val !== undefined && val !== null ? String(val).replace(/"/g, '""') : '';
+                return `"${cleanVal}"`;
+            });
+            csvRows.push(values.join(','));
+        });
+        
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename=substations.csv');
+        return res.send(csvRows.join('\n'));
+    } catch (err) {
+        console.error("[Power Map Data] Error querying Supabase:", err.message);
+        return res.status(500).send("Error fetching substations from database: " + err.message);
+    }
+});
+
+// 6.5. Edit sheet row (Power Map Admin Edit - Supabase Table version)
 app.post('/api/admin/edit-sheet-row', requireAdmin, async (req, res) => {
     try {
-        const { spreadsheetId, sheetName, rowKeyColumn, rowKeyValue, columnName, newValue, connectionTarget } = req.body;
+        const { rowKeyColumn, rowKeyValue, columnName, newValue, connectionTarget } = req.body;
         
         if (!rowKeyColumn || !rowKeyValue || !columnName) {
             return res.status(400).json({ status: 'error', message: 'Missing required parameters.' });
         }
-        
-        const targetSpreadsheetId = spreadsheetId || process.env.POWER_MAP_SPREADSHEET_ID || '1nBLLL3zc3OjuJ6umq3uQVmjXCPhlVATYhQX1BlfqS2w';
-        
-        const payload = {
-            action: 'edit_sheet_row',
-            spreadsheetId: targetSpreadsheetId,
-            sheetName: sheetName || '',
-            rowKeyColumn,
-            rowKeyValue,
-            columnName,
-            newValue,
-            connectionTarget
-        };
-        
-        console.log(`[Admin Edit] Sending edit request to Apps Script:`, payload);
-        
-        if (typeof fetch === 'function') {
-            const response = await fetch(LOGS_APPS_SCRIPT_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Apps Script returned HTTP ${response.status}`);
+
+        let finalValue = newValue;
+
+        // Handle colon-separated connection modifications
+        if (connectionTarget) {
+            // Fetch the existing record to retrieve its connections arrays
+            const records = await querySupabase(`substations?Substation=eq.${encodeURIComponent(rowKeyValue)}&select=*`);
+            if (!records || records.length === 0) {
+                return res.status(404).json({ status: 'error', message: `Substation '${rowKeyValue}' not found.` });
             }
+            const record = records[0];
             
-            const result = await response.json();
-            if (result.status === 'success') {
-                return res.json({ status: 'success', message: 'Spreadsheet updated successfully.' });
-            } else {
-                return res.status(500).json({ status: 'error', message: result.message || 'Apps Script edit failed.' });
+            const connStr = record["Connected to"] || '';
+            const conns = connStr.split(':').map(s => s.trim().toLowerCase());
+            
+            const targetIdx = conns.indexOf(connectionTarget.trim().toLowerCase());
+            if (targetIdx === -1) {
+                return res.status(400).json({ status: 'error', message: `Connection target '${connectionTarget}' not found.` });
             }
-        } else {
-            throw new Error("fetch is not supported on this Node environment");
+
+            const currentValStr = record[columnName] || '';
+            const vals = currentValStr.split(':').map(s => s.trim());
+            while (vals.length < conns.length) {
+                vals.push("");
+            }
+            vals[targetIdx] = newValue;
+            finalValue = vals.join(" : ");
         }
+
+        // Patch the column value in Supabase
+        const patchBody = {};
+        patchBody[columnName] = finalValue;
+        
+        await querySupabase(`substations?Substation=eq.${encodeURIComponent(rowKeyValue)}`, {
+            method: 'PATCH',
+            body: patchBody
+        });
+
+        return res.json({ status: 'success', message: 'Database row updated successfully.' });
     } catch (err) {
-        console.error("[Admin Edit] Error editing sheet row:", err.message);
+        console.error("[Admin Edit] Error updating Supabase row:", err.message);
         return res.status(500).json({ status: 'error', message: err.message });
     }
 });
 
-// 6.6. Append sheet row (Power Map Admin Add Substation)
+// 6.6. Append sheet row (Power Map Admin Add Substation - Supabase version)
 app.post('/api/admin/append-sheet-row', requireAdmin, async (req, res) => {
     try {
-        const { spreadsheetId, sheetName, rowData } = req.body;
+        const { rowData } = req.body;
         
         if (!rowData) {
             return res.status(400).json({ status: 'error', message: 'Missing rowData.' });
         }
         
-        const targetSpreadsheetId = spreadsheetId || process.env.POWER_MAP_SPREADSHEET_ID || '1nBLLL3zc3OjuJ6umq3uQVmjXCPhlVATYhQX1BlfqS2w';
-        
+        // Build payload matching exact columns in Supabase
         const payload = {
-            action: 'append_sheet_row',
-            spreadsheetId: targetSpreadsheetId,
-            sheetName: sheetName || '',
-            rowData
+            "Substation": rowData.Substation || '',
+            "LATITUDE": rowData.LATITUDE || '',
+            "LONGITUDE": rowData.LONGITUDE || '',
+            "MVA": rowData.MVA || '',
+            "Para-2": rowData["Para-2"] || '',
+            "Para-3": rowData["Para-3"] || '',
+            "Connected to": rowData["Connected to"] || '',
+            "RL": rowData.RL || '',
+            "ConductorSize": rowData.ConductorSize || '',
+            "PeakLoad": rowData.PeakLoad || '',
+            "LineStyle": rowData.LineStyle || 'solid',
+            "Comment": rowData.Comment || 'black',
+            "Symbol": rowData.Symbol || '⚡',
+            "SymbolSize": parseInt(rowData.SymbolSize || '18', 10)
         };
+
+        console.log(`[Admin Add Substation] Appending row to Supabase:`, payload);
         
-        console.log(`[Admin Add Substation] Sending append request to Apps Script:`, payload);
+        await querySupabase('substations', {
+            method: 'POST',
+            body: payload
+        });
         
-        if (typeof fetch === 'function') {
-            const response = await fetch(LOGS_APPS_SCRIPT_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Apps Script returned HTTP ${response.status}`);
-            }
-            
-            const result = await response.json();
-            if (result.status === 'success') {
-                return res.json({ status: 'success', message: 'Row appended successfully.' });
-            } else {
-                return res.status(500).json({ status: 'error', message: result.message || 'Apps Script append failed.' });
-            }
-        } else {
-            throw new Error("fetch is not supported on this Node environment");
-        }
+        return res.json({ status: 'success', message: 'Substation appended successfully.' });
     } catch (err) {
-        console.error("[Admin Add Substation] Error appending sheet row:", err.message);
+        console.error("[Admin Add Substation] Error appending to Supabase:", err.message);
         return res.status(500).json({ status: 'error', message: err.message });
     }
 });
 
-// 6.7. Add connection (Power Map Admin Add Connection)
+// 6.7. Add connection (Power Map Admin Add Connection - Supabase version)
 app.post('/api/admin/add-connection', requireAdmin, async (req, res) => {
     try {
-        const { spreadsheetId, sheetName, sourceSubstation, targetSubstation, rl, conductorSize, peakLoad } = req.body;
+        const { sourceSubstation, targetSubstation, rl, conductorSize, peakLoad } = req.body;
         
         if (!sourceSubstation || !targetSubstation) {
             return res.status(400).json({ status: 'error', message: 'Missing sourceSubstation or targetSubstation.' });
         }
         
-        const targetSpreadsheetId = spreadsheetId || process.env.POWER_MAP_SPREADSHEET_ID || '1nBLLL3zc3OjuJ6umq3uQVmjXCPhlVATYhQX1BlfqS2w';
-        
-        const payload = {
-            action: 'add_connection',
-            spreadsheetId: targetSpreadsheetId,
-            sheetName: sheetName || '',
-            sourceSubstation,
-            targetSubstation,
-            rl: rl || '',
-            conductorSize: conductorSize || '',
-            peakLoad: peakLoad || ''
-        };
-        
-        console.log(`[Admin Add Connection] Sending connection request to Apps Script:`, payload);
-        
-        if (typeof fetch === 'function') {
-            const response = await fetch(LOGS_APPS_SCRIPT_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Apps Script returned HTTP ${response.status}`);
-            }
-            
-            const result = await response.json();
-            if (result.status === 'success') {
-                return res.json({ status: 'success', message: 'Connection added successfully.' });
-            } else {
-                return res.status(500).json({ status: 'error', message: result.message || 'Apps Script add connection failed.' });
-            }
-        } else {
-            throw new Error("fetch is not supported on this Node environment");
+        // Fetch the source record to retrieve its connections arrays
+        const records = await querySupabase(`substations?Substation=eq.${encodeURIComponent(sourceSubstation)}&select=*`);
+        if (!records || records.length === 0) {
+            return res.status(404).json({ status: 'error', message: `Source Substation '${sourceSubstation}' not found.` });
         }
+        const record = records[0];
+
+        const currentConns = (record["Connected to"] || '').toString().trim();
+        const nextConns = currentConns ? currentConns + " : " + targetSubstation : targetSubstation;
+
+        const currentRl = (record["RL"] || '').toString().trim();
+        const nextRl = currentRl ? currentRl + " : " + (rl || "") : (rl || "");
+
+        const currentCond = (record["ConductorSize"] || '').toString().trim();
+        const nextCond = currentCond ? currentCond + " : " + (conductorSize || "") : (conductorSize || "");
+
+        const currentLoad = (record["PeakLoad"] || '').toString().trim();
+        const nextLoad = currentLoad ? currentLoad + " : " + (peakLoad || "") : (peakLoad || "");
+
+        // Patch connection details back to Supabase
+        const patchBody = {
+            "Connected to": nextConns,
+            "RL": nextRl,
+            "ConductorSize": nextCond,
+            "PeakLoad": nextLoad
+        };
+
+        console.log(`[Admin Add Connection] Updating feeder connection in Supabase:`, patchBody);
+        
+        await querySupabase(`substations?Substation=eq.${encodeURIComponent(sourceSubstation)}`, {
+            method: 'PATCH',
+            body: patchBody
+        });
+
+        return res.json({ status: 'success', message: 'Connection added successfully.' });
     } catch (err) {
-        console.error("[Admin Add Connection] Error adding connection:", err.message);
+        console.error("[Admin Add Connection] Error adding connection to Supabase:", err.message);
         return res.status(500).json({ status: 'error', message: err.message });
     }
 });
