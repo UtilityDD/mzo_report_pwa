@@ -673,11 +673,12 @@ app.get('/api/power-map/data', async (req, res) => {
             return res.send('');
         }
         
-        // Casing and spacing matching Google Sheet column names
+        // Casing and spacing matching Google Sheet column names exactly (all 22 columns)
         const columns = [
-            "Substation", "LATITUDE", "LONGITUDE", "MVA", "Para-2", "Para-3", 
-            "Connected to", "RL", "ConductorSize", "PeakLoad", "LineStyle", "Comment", 
-            "Symbol", "SymbolSize"
+            "Region", "Division", "Substation", "MVA", "LATITUDE", "LONGITUDE", 
+            "Connected to", "Colour", "RL", "LineStyle", "Para-1", "Para-2", "Para-3", 
+            "Comment", "Symbol", "SymbolSize", "LegendText", "LegendSymbol", 
+            "LegendColour", "Remarks", "ConductorSize", "PeakLoad"
         ];
         
         const csvRows = [columns.join(',')];
@@ -761,22 +762,30 @@ app.post('/api/admin/append-sheet-row', requireAdmin, async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'Missing rowData.' });
         }
         
-        // Build payload matching exact columns in Supabase
+        // Build payload matching exact columns in Supabase (all 22 columns)
         const payload = {
             "Substation": rowData.Substation || '',
+            "Region": rowData.Region || '',
+            "Division": rowData.Division || '',
+            "MVA": rowData.MVA || '',
             "LATITUDE": rowData.LATITUDE || '',
             "LONGITUDE": rowData.LONGITUDE || '',
-            "MVA": rowData.MVA || '',
+            "Connected to": rowData["Connected to"] || '',
+            "Colour": rowData.Colour || '',
+            "RL": rowData.RL || '',
+            "LineStyle": rowData.LineStyle || 'solid',
+            "Para-1": rowData["Para-1"] || '',
             "Para-2": rowData["Para-2"] || '',
             "Para-3": rowData["Para-3"] || '',
-            "Connected to": rowData["Connected to"] || '',
-            "RL": rowData.RL || '',
-            "ConductorSize": rowData.ConductorSize || '',
-            "PeakLoad": rowData.PeakLoad || '',
-            "LineStyle": rowData.LineStyle || 'solid',
             "Comment": rowData.Comment || 'black',
             "Symbol": rowData.Symbol || '⚡',
-            "SymbolSize": parseInt(rowData.SymbolSize || '18', 10)
+            "SymbolSize": rowData.SymbolSize ? parseInt(rowData.SymbolSize, 10) : 18,
+            "LegendText": rowData.LegendText || '',
+            "LegendSymbol": rowData.LegendSymbol || '',
+            "LegendColour": rowData.LegendColour || '',
+            "Remarks": rowData.Remarks || '',
+            "ConductorSize": rowData.ConductorSize || '',
+            "PeakLoad": rowData.PeakLoad || ''
         };
 
         console.log(`[Admin Add Substation] Appending row to Supabase:`, payload);
