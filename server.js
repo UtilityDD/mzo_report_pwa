@@ -865,6 +865,121 @@ app.post('/api/admin/add-connection', requireAdmin, async (req, res) => {
     }
 });
 
+// 6.8. Delete substation (Power Map Admin Delete Substation - Supabase version)
+app.post('/api/admin/delete-substation', requireAdmin, async (req, res) => {
+    try {
+        const { substation } = req.body;
+        
+        if (!substation) {
+            return res.status(400).json({ status: 'error', message: 'Missing substation name.' });
+        }
+        
+        console.log(`[Admin Delete Substation] Deleting substation: ${substation}`);
+        
+        // 1. Delete the substation record
+        await querySupabase(`substations?Substation=eq.${encodeURIComponent(substation)}`, {
+            method: 'DELETE'
+        });
+        
+        // 2. Clean up references in other substations' connections
+        const allRecords = await querySupabase('substations?select=*');
+        for (const record of allRecords) {
+            const connStr = record["Connected to"] || '';
+            if (connStr) {
+                const conns = connStr.split(':').map(s => s.trim());
+                const lowerConns = conns.map(s => s.toLowerCase());
+                const targetIdx = lowerConns.indexOf(substation.toLowerCase().trim());
+                
+                if (targetIdx !== -1) {
+                    conns.splice(targetIdx, 1);
+                    
+                    const rls = (record["RL"] || '').split(':').map(s => s.trim());
+                    rls.splice(targetIdx, 1);
+                    
+                    const conds = (record["ConductorSize"] || '').split(':').map(s => s.trim());
+                    conds.splice(targetIdx, 1);
+                    
+                    const loads = (record["PeakLoad"] || '').split(':').map(s => s.trim());
+                    loads.splice(targetIdx, 1);
+                    
+                    const patchBody = {
+                        "Connected to": conns.join(" : "),
+                        "RL": rls.join(" : "),
+                        "ConductorSize": conds.join(" : "),
+                        "PeakLoad": loads.join(" : ")
+                    };
+                    
+                    await querySupabase(`substations?Substation=eq.${encodeURIComponent(record.Substation)}`, {
+                        method: 'PATCH',
+                        body: patchBody
+                    });
+                }
+            }
+        }
+        
+        return res.json({ status: 'success', message: 'Substation and all associated line connections deleted successfully.' });
+    } catch (err) {
+        console.error("[Admin Delete Substation] Error deleting substation:", err.message);
+        return res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// 6.9. Delete feeder connection (Power Map Admin Delete Connection - Supabase version)
+app.post('/api/admin/delete-connection', requireAdmin, async (req, res) => {
+    try {
+        const { source, target } = req.body;
+        
+        if (!source || !target) {
+            return res.status(400).json({ status: 'error', message: 'Missing source or target substation.' });
+        }
+        
+        console.log(`[Admin Delete Connection] Deleting connection from ${source} to ${target}`);
+        
+        const records = await querySupabase(`substations?Substation=eq.${encodeURIComponent(source)}&select=*`);
+        if (!records || records.length === 0) {
+            return res.status(404).json({ status: 'error', message: `Source substation '${source}' not found.` });
+        }
+        const record = records[0];
+        
+        const connStr = record["Connected to"] || '';
+        const conns = connStr.split(':').map(s => s.trim());
+        const lowerConns = conns.map(s => s.toLowerCase());
+        const targetIdx = lowerConns.indexOf(target.toLowerCase().trim());
+        
+        if (targetIdx === -1) {
+            return res.status(400).json({ status: 'error', message: `Feeder connection to '${target}' not found.` });
+        }
+        
+        conns.splice(targetIdx, 1);
+        
+        const rls = (record["RL"] || '').split(':').map(s => s.trim());
+        rls.splice(targetIdx, 1);
+        
+        const conds = (record["ConductorSize"] || '').split(':').map(s => s.trim());
+        conds.splice(targetIdx, 1);
+        
+        const loads = (record["PeakLoad"] || '').split(':').map(s => s.trim());
+        loads.splice(targetIdx, 1);
+        
+        const patchBody = {
+            "Connected to": conns.join(" : "),
+            "RL": rls.join(" : "),
+            "ConductorSize": conds.join(" : "),
+            "PeakLoad": loads.join(" : ")
+        };
+        
+        await querySupabase(`substations?Substation=eq.${encodeURIComponent(source)}`, {
+            method: 'PATCH',
+            body: patchBody
+        });
+        
+        return res.json({ status: 'success', message: 'Feeder line connection deleted successfully.' });
+    } catch (err) {
+        console.error("[Admin Delete Connection] Error deleting connection:", err.message);
+        return res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
 // 7. GET local users list formatted as CSV (mirroring Google Sheets format for backwards compatibility)
 app.get('/api/users-csv', async (req, res) => {
     try {
