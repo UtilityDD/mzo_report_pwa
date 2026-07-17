@@ -49,30 +49,50 @@ class DataHub {
 
     _initDB() {
         return new Promise((resolve, reject) => {
-            const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-            request.onerror = (event) => {
-                console.error("IndexedDB error:", event.target.error);
-                reject(event.target.error);
-            };
-
-            request.onsuccess = (event) => {
-                this.db = event.target.result;
-                resolve(this.db);
-            };
-
-            request.onupgradeneeded = (event) => {
-                const db = event.target.result;
-                if (!db.objectStoreNames.contains(STORE_NAME)) {
-                    db.createObjectStore(STORE_NAME);
+            try {
+                if (typeof indexedDB === 'undefined') {
+                    console.warn("IndexedDB not supported. Falling back to memory storage.");
+                    this.useMemoryFallback = true;
+                    this.memoryCache = {};
+                    resolve();
+                    return;
                 }
-            };
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+                request.onerror = (event) => {
+                    console.warn("IndexedDB blocked (possibly incognito). Falling back to memory storage:", event.target.error);
+                    this.useMemoryFallback = true;
+                    this.memoryCache = {};
+                    resolve();
+                };
+
+                request.onsuccess = (event) => {
+                    this.db = event.target.result;
+                    resolve(this.db);
+                };
+
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME);
+                    }
+                };
+            } catch (err) {
+                console.warn("Error opening IndexedDB. Falling back to memory storage:", err.message);
+                this.useMemoryFallback = true;
+                this.memoryCache = {};
+                resolve();
+            }
         });
     }
 
     // Save data to cache
     async set(key, data) {
         await this.initPromise;
+        if (this.useMemoryFallback) {
+            this.memoryCache[key] = data;
+            return;
+        }
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
@@ -86,6 +106,9 @@ class DataHub {
     // Get data from cache
     async get(key) {
         await this.initPromise;
+        if (this.useMemoryFallback) {
+            return this.memoryCache[key];
+        }
         
         // If this specific key is currently syncing, wait for it to complete
         // before returning the data. This provides a seamless "wait" experience.
@@ -106,6 +129,10 @@ class DataHub {
     // Clear all cached data
     async clear() {
         await this.initPromise;
+        if (this.useMemoryFallback) {
+            this.memoryCache = {};
+            return;
+        }
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
@@ -124,15 +151,21 @@ class DataHub {
 
     // Daily Sync Logic
     isFirstSyncOfDay() {
-        const today = new Date().toDateString();
-        const lastSyncDate = localStorage.getItem('mzo_last_sync_date');
-        return lastSyncDate !== today;
+        try {
+            const today = new Date().toDateString();
+            const lastSyncDate = localStorage.getItem('mzo_last_sync_date');
+            return lastSyncDate !== today;
+        } catch (e) {
+            return true;
+        }
     }
 
     markSyncComplete() {
-        const today = new Date().toDateString();
-        localStorage.setItem('mzo_last_sync_date', today);
-        localStorage.setItem('mzoDataSynced', 'true'); // Keep old flag for compatibility if needed
+        try {
+            const today = new Date().toDateString();
+            localStorage.setItem('mzo_last_sync_date', today);
+            localStorage.setItem('mzoDataSynced', 'true'); // Keep old flag for compatibility if needed
+        } catch (e) {}
     }
 
     // --- Modern Hybrid Sync Extensions ---
@@ -245,7 +278,9 @@ async function syncAllData(progressCallback) {
         }
 
         if (allDone) {
-            localStorage.setItem('mzoDataSynced', 'true');
+            try {
+                localStorage.setItem('mzoDataSynced', 'true');
+            } catch (e) {}
         }
         
         return allDone;
@@ -261,5 +296,9 @@ async function syncAllData(progressCallback) {
 
 // Function checking if sync is needed
 function isSyncNeeded() {
-    return localStorage.getItem('mzoDataSynced') !== 'true';
+    try {
+        return localStorage.getItem('mzoDataSynced') !== 'true';
+    } catch (e) {
+        return true;
+    }
 }
