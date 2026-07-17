@@ -11,7 +11,7 @@ const https = require('https');
 app.use(express.json());
 
 // --- Authentication Session Storage & Helpers ---
-const sessions = new Map(); // token -> user profile
+const JWT_SECRET = process.env.JWT_SECRET || 'mzo-portal-super-secret-key-123456';
 const LOGIN_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1GtWgPMm-WeDNfebubp5ac76waeZGESA2bQ8JkEpHlZ4/export?format=csv&gid=0';
 const USERS_FILE = path.join(__dirname, 'data', 'users.json');
 const LOGS_FILE = path.join(__dirname, 'data', 'activity_log.json');
@@ -177,28 +177,37 @@ function requireAuth(req, res, next) {
     const cookies = parseCookies(cookieHeader);
     const token = cookies.mzo_session;
     
-    if (token && sessions.has(token)) {
-        const session = sessions.get(token);
-        if (Date.now() < session.expiry) {
-            req.user = session.profile;
-            
-            // Log page visits (intercept requests for HTML pages, excluding APIs and assets)
-            const ext = path.extname(pathName).toLowerCase();
-            const isHtml = ext === '.html' || pathName === '/' || pathName === '';
-            const isAssetOrApi = pathName.startsWith('/api/') || pathName.startsWith('/icons/') || pathName.startsWith('/assets/') || ext === '.css' || ext === '.js' || ext === '.png' || ext === '.json' || ext === '.ico';
-            
-            if (isHtml && !isAssetOrApi && pathName !== '/login.html' && pathName !== '/admin_users.html') {
-                logActivity({
-                    username: req.user.Username,
-                    name: req.user.Name || 'No Name',
-                    type: 'page_visit',
-                    details: `Visited page: ${pathName === '/' ? '/index.html' : pathName}`
-                });
+    if (token) {
+        try {
+            const parts = token.split('.');
+            if (parts.length === 2) {
+                const [payloadStr, signature] = parts;
+                const expectedSignature = require('crypto').createHmac('sha256', JWT_SECRET).update(payloadStr).digest('base64');
+                if (signature === expectedSignature) {
+                    const session = JSON.parse(Buffer.from(payloadStr, 'base64').toString('utf-8'));
+                    if (Date.now() < session.expiry) {
+                        req.user = session.profile;
+                        
+                        // Log page visits (intercept requests for HTML pages, excluding APIs and assets)
+                        const ext = path.extname(pathName).toLowerCase();
+                        const isHtml = ext === '.html' || pathName === '/' || pathName === '';
+                        const isAssetOrApi = pathName.startsWith('/api/') || pathName.startsWith('/icons/') || pathName.startsWith('/assets/') || ext === '.css' || ext === '.js' || ext === '.png' || ext === '.json' || ext === '.ico';
+                        
+                        if (isHtml && !isAssetOrApi && pathName !== '/login.html' && pathName !== '/admin_users.html') {
+                            logActivity({
+                                username: req.user.Username,
+                                name: req.user.Name || 'No Name',
+                                type: 'page_visit',
+                                details: `Visited page: ${pathName === '/' ? '/index.html' : pathName}`
+                            });
+                        }
+                        
+                        return next();
+                    }
+                }
             }
-            
-            return next();
-        } else {
-            sessions.delete(token);
+        } catch (err) {
+            console.error("[Auth] Session cookie verification failed:", err.message);
         }
     }
     
@@ -335,17 +344,17 @@ app.post('/api/login', async (req, res) => {
         );
 
         if (matchedUser) {
-            // Generate a secure session token
-            const token = require('crypto').randomBytes(16).toString('hex');
-            
             // Exclude the PIN from user profile sent to the client
             const { PIN, ...clientProfile } = matchedUser;
             
-            // Save session (valid for 24 hours)
-            sessions.set(token, {
+            // Generate a stateless signed session token
+            const payload = {
                 profile: clientProfile,
                 expiry: Date.now() + 24 * 60 * 60 * 1000
-            });
+            };
+            const payloadStr = Buffer.from(JSON.stringify(payload)).toString('base64');
+            const signature = require('crypto').createHmac('sha256', JWT_SECRET).update(payloadStr).digest('base64');
+            const token = `${payloadStr}.${signature}`;
             
             // Set session cookie
             res.setHeader('Set-Cookie', `mzo_session=${token}; Path=/; HttpOnly; Max-Age=${24 * 60 * 60}; SameSite=Lax`);
@@ -379,14 +388,6 @@ app.get('/api/session-check', (req, res) => {
 
 // API endpoint for User Logout
 app.post('/api/logout', (req, res) => {
-    const cookieHeader = req.headers.cookie || '';
-    const cookies = parseCookies(cookieHeader);
-    const token = cookies.mzo_session;
-    
-    if (token) {
-        sessions.delete(token);
-    }
-    
     // Invalidate session cookie
     res.setHeader('Set-Cookie', 'mzo_session=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax');
     return res.status(200).json({ status: 'success', message: 'Logged out successfully.' });
