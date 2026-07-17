@@ -698,8 +698,11 @@ app.get('/api/power-map/data', async (req, res) => {
         validSubstations.forEach(row => {
             const values = columns.map(col => {
                 const val = row[col];
-                const cleanVal = val !== undefined && val !== null ? String(val).replace(/"/g, '""') : '';
-                return `"${cleanVal}"`;
+                let cleanVal = val !== undefined && val !== null ? String(val) : '';
+                if (cleanVal.includes(',') || cleanVal.includes('"') || cleanVal.includes('\n')) {
+                    cleanVal = `"${cleanVal.replace(/"/g, '""')}"`;
+                }
+                return cleanVal;
             });
             csvRows.push(values.join(','));
         });
