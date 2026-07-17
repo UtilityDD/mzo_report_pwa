@@ -13,10 +13,8 @@ app.use(express.json());
 // --- Authentication Session Storage & Helpers ---
 const sessions = new Map(); // token -> user profile
 const LOGIN_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1GtWgPMm-WeDNfebubp5ac76waeZGESA2bQ8JkEpHlZ4/export?format=csv&gid=0';
-
-let cachedUsers = null;
-let lastCacheTime = 0;
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes cache
+const USERS_FILE = path.join(__dirname, 'data', 'users.json');
+const LOGS_FILE = path.join(__dirname, 'data', 'activity_log.json');
 
 function parseCookies(cookieHeader) {
     const list = {};
@@ -49,18 +47,12 @@ function fetchSheet(url) {
     });
 }
 
-async function getLoginCredentials() {
-    const now = Date.now();
-    if (cachedUsers && (now - lastCacheTime < CACHE_DURATION)) {
-        return cachedUsers;
-    }
-
+async function initializeLocalUsers() {
     try {
+        console.log(`[Auth] Initializing local users from Google Sheets...`);
         const csvText = await fetchSheet(LOGIN_SHEET_URL);
-        
-        // Parse CSV text
         const lines = csvText.trim().split('\n');
-        if (lines.length < 2) return [];
+        if (lines.length < 2) return;
         
         const headers = lines[0].split(',').map(h => h.trim());
         const users = [];
@@ -76,13 +68,64 @@ async function getLoginCredentials() {
             }
         }
         
-        cachedUsers = users;
-        lastCacheTime = now;
-        console.log(`[Auth] Loaded ${users.length} user credentials from Google Sheets`);
-        return users;
+        const dataDir = path.join(__dirname, 'data');
+        if (!fs.existsSync(dataDir)) {
+            fs.mkdirSync(dataDir, { recursive: true });
+        }
+        
+        fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+        console.log(`[Auth] Local users file initialized with ${users.length} users.`);
     } catch (err) {
-        console.error("[Auth] Error loading credentials sheet:", err.message);
-        return cachedUsers || []; // Return stale cache if load fails
+        console.error("[Auth] Failed to initialize local users:", err.message);
+    }
+}
+
+async function getLoginCredentials() {
+    try {
+        if (!fs.existsSync(USERS_FILE)) {
+            await initializeLocalUsers();
+        }
+        const data = fs.readFileSync(USERS_FILE, 'utf-8');
+        return JSON.parse(data);
+    } catch (err) {
+        console.error("[Auth] Error reading local users file:", err.message);
+        return [];
+    }
+}
+
+function logActivity(activity) {
+    try {
+        const entry = {
+            timestamp: new Date().toISOString(),
+            username: activity.username,
+            name: activity.name,
+            type: activity.type,
+            details: activity.details
+        };
+        
+        let logs = [];
+        if (fs.existsSync(LOGS_FILE)) {
+            const fileContent = fs.readFileSync(LOGS_FILE, 'utf-8');
+            try {
+                logs = JSON.parse(fileContent);
+            } catch (e) {
+                logs = [];
+            }
+        }
+        
+        logs.unshift(entry);
+        if (logs.length > 5000) {
+            logs = logs.slice(0, 5000);
+        }
+        
+        const dataDir = path.dirname(LOGS_FILE);
+        if (!fs.existsSync(dataDir)) {
+            fs.mkdirSync(dataDir, { recursive: true });
+        }
+        
+        fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), 'utf-8');
+    } catch (err) {
+        console.error("[Activity Log] Error saving log:", err.message);
     }
 }
 
@@ -114,6 +157,21 @@ function requireAuth(req, res, next) {
         const session = sessions.get(token);
         if (Date.now() < session.expiry) {
             req.user = session.profile;
+            
+            // Log page visits (intercept requests for HTML pages, excluding APIs and assets)
+            const ext = path.extname(pathName).toLowerCase();
+            const isHtml = ext === '.html' || pathName === '/' || pathName === '';
+            const isAssetOrApi = pathName.startsWith('/api/') || pathName.startsWith('/icons/') || pathName.startsWith('/assets/') || ext === '.css' || ext === '.js' || ext === '.png' || ext === '.json' || ext === '.ico';
+            
+            if (isHtml && !isAssetOrApi && pathName !== '/login.html' && pathName !== '/admin_users.html') {
+                logActivity({
+                    username: req.user.Username,
+                    name: req.user.Name || 'No Name',
+                    type: 'page_visit',
+                    details: `Visited page: ${pathName === '/' ? '/index.html' : pathName}`
+                });
+            }
+            
             return next();
         } else {
             sessions.delete(token);
@@ -269,6 +327,14 @@ app.post('/api/login', async (req, res) => {
             res.setHeader('Set-Cookie', `mzo_session=${token}; Path=/; HttpOnly; Max-Age=${24 * 60 * 60}; SameSite=Lax`);
             console.log(`[Auth] User logged in: ${matchedUser.Username} (${matchedUser.Name || 'No Name'})`);
             
+            // Log login event
+            logActivity({
+                username: matchedUser.Username,
+                name: matchedUser.Name || 'No Name',
+                type: 'login',
+                details: `Logged in from IP: ${req.ip || req.headers['x-forwarded-for'] || 'unknown'}`
+            });
+            
             return res.status(200).json({
                 status: 'success',
                 profile: clientProfile
@@ -300,6 +366,198 @@ app.post('/api/logout', (req, res) => {
     // Invalidate session cookie
     res.setHeader('Set-Cookie', 'mzo_session=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax');
     return res.status(200).json({ status: 'success', message: 'Logged out successfully.' });
+});
+
+// --- Admin User Management & Logging Endpoints ---
+
+function requireAdmin(req, res, next) {
+    if (!req.user || req.user.role !== 'admin') {
+        if (req.xhr || req.headers.accept?.includes('application/json')) {
+            return res.status(403).json({ status: 'error', message: 'Forbidden: Admin access required.' });
+        } else {
+            return res.redirect('/index.html');
+        }
+    }
+    next();
+}
+
+// 1. GET all users
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
+    try {
+        const users = await getLoginCredentials();
+        res.json({ status: 'success', users });
+    } catch (err) {
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// 2. CREATE a user
+app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
+    try {
+        const { Username, PIN, Name, role, ...otherFields } = req.body;
+        
+        if (!Username || !PIN) {
+            return res.status(400).json({ status: 'error', message: 'Username and PIN are required.' });
+        }
+        
+        const users = await getLoginCredentials();
+        const exists = users.some(u => u.Username && u.Username.toLowerCase() === Username.trim().toLowerCase());
+        if (exists) {
+            return res.status(400).json({ status: 'error', message: 'Username already exists.' });
+        }
+        
+        const newUser = {
+            Username: Username.trim(),
+            PIN: PIN.trim(),
+            LastLogin: '',
+            Name: Name ? Name.trim() : '',
+            role: role ? role.trim() : '',
+            'dtr-autho': '',
+            'ss-autho': '',
+            'dd-autho': '',
+            'nsc-autho': '',
+            zone_code: '',
+            region_code: '',
+            division_code: '',
+            ccc_code: '',
+            ...otherFields
+        };
+        
+        users.push(newUser);
+        fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+        
+        logActivity({
+            username: req.user.Username,
+            name: req.user.Name,
+            type: 'user_management',
+            details: `Created user account: ${Username}`
+        });
+        
+        res.json({ status: 'success', message: 'User created successfully.', user: newUser });
+    } catch (err) {
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// 3. UPDATE a user
+app.post('/api/admin/users/update', requireAdmin, async (req, res) => {
+    try {
+        const updatedUser = req.body;
+        const { Username } = updatedUser;
+        
+        if (!Username) {
+            return res.status(400).json({ status: 'error', message: 'Username is required.' });
+        }
+        
+        const users = await getLoginCredentials();
+        const idx = users.findIndex(u => u.Username && u.Username.toLowerCase() === Username.trim().toLowerCase());
+        if (idx === -1) {
+            return res.status(404).json({ status: 'error', message: 'User not found.' });
+        }
+        
+        users[idx] = {
+            ...users[idx],
+            ...updatedUser,
+            Username: users[idx].Username // Username cannot be changed
+        };
+        
+        fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+        
+        logActivity({
+            username: req.user.Username,
+            name: req.user.Name,
+            type: 'user_management',
+            details: `Updated user account: ${Username}`
+        });
+        
+        res.json({ status: 'success', message: 'User updated successfully.', user: users[idx] });
+    } catch (err) {
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// 4. DELETE a user
+app.post('/api/admin/users/delete', requireAdmin, async (req, res) => {
+    try {
+        const { Username } = req.body;
+        
+        if (!Username) {
+            return res.status(400).json({ status: 'error', message: 'Username is required.' });
+        }
+        
+        const users = await getLoginCredentials();
+        const filteredUsers = users.filter(u => !u.Username || u.Username.toLowerCase() !== Username.trim().toLowerCase());
+        
+        if (filteredUsers.length === users.length) {
+            return res.status(404).json({ status: 'error', message: 'User not found.' });
+        }
+        
+        fs.writeFileSync(USERS_FILE, JSON.stringify(filteredUsers, null, 2), 'utf-8');
+        
+        logActivity({
+            username: req.user.Username,
+            name: req.user.Name,
+            type: 'user_management',
+            details: `Deleted user account: ${Username}`
+        });
+        
+        res.json({ status: 'success', message: 'User deleted successfully.' });
+    } catch (err) {
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// 5. GET logs
+app.get('/api/admin/logs', requireAdmin, (req, res) => {
+    try {
+        let logs = [];
+        if (fs.existsSync(LOGS_FILE)) {
+            logs = JSON.parse(fs.readFileSync(LOGS_FILE, 'utf-8'));
+        }
+        res.json({ status: 'success', logs });
+    } catch (err) {
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// 6. Force sync from Google Sheet
+app.post('/api/admin/sync', requireAdmin, async (req, res) => {
+    try {
+        await initializeLocalUsers();
+        res.json({ status: 'success', message: 'Successfully synced and updated local user database from Google Sheets.' });
+    } catch (err) {
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// 7. GET local users list formatted as CSV (mirroring Google Sheets format for backwards compatibility)
+app.get('/api/users-csv', async (req, res) => {
+    try {
+        const users = await getLoginCredentials();
+        if (users.length === 0) {
+            return res.send('');
+        }
+        
+        const headers = Object.keys(users[0]);
+        const csvLines = [headers.join(',')];
+        
+        users.forEach(u => {
+            const row = headers.map(header => {
+                const val = String(u[header] || '');
+                if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+                    return `"${val.replace(/"/g, '""')}"`;
+                }
+                return val;
+            });
+            csvLines.push(row.join(','));
+        });
+        
+        res.setHeader('Content-Type', 'text/csv');
+        res.send(csvLines.join('\n'));
+    } catch (err) {
+        console.error("[Users CSV] Error generating CSV:", err.message);
+        res.status(500).send('Error generating user CSV.');
+    }
 });
 
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
