@@ -47,12 +47,14 @@ function fetchSheet(url) {
     });
 }
 
+let globalCachedUsers = null;
+
 async function initializeLocalUsers() {
     try {
         console.log(`[Auth] Initializing local users from Google Sheets...`);
         const csvText = await fetchSheet(LOGIN_SHEET_URL);
         const lines = csvText.trim().split('\n');
-        if (lines.length < 2) return;
+        if (lines.length < 2) return [];
         
         const headers = lines[0].split(',').map(h => h.trim());
         const users = [];
@@ -68,27 +70,43 @@ async function initializeLocalUsers() {
             }
         }
         
-        const dataDir = path.join(__dirname, 'data');
-        if (!fs.existsSync(dataDir)) {
-            fs.mkdirSync(dataDir, { recursive: true });
-        }
+        // Cache in memory first to guarantee operation on serverless runtimes
+        globalCachedUsers = users;
         
-        fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
-        console.log(`[Auth] Local users file initialized with ${users.length} users.`);
+        try {
+            const dataDir = path.join(__dirname, 'data');
+            if (!fs.existsSync(dataDir)) {
+                fs.mkdirSync(dataDir, { recursive: true });
+            }
+            fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+            console.log(`[Auth] Local users file initialized with ${users.length} users.`);
+        } catch (writeErr) {
+            console.warn("[Auth] Failed to write local users file (read-only filesystem fallback):", writeErr.message);
+        }
+        return users;
     } catch (err) {
         console.error("[Auth] Failed to initialize local users:", err.message);
+        return [];
     }
 }
 
 async function getLoginCredentials() {
     try {
-        if (!fs.existsSync(USERS_FILE)) {
-            await initializeLocalUsers();
+        if (fs.existsSync(USERS_FILE)) {
+            const data = fs.readFileSync(USERS_FILE, 'utf-8');
+            const users = JSON.parse(data);
+            globalCachedUsers = users;
+            return users;
         }
-        const data = fs.readFileSync(USERS_FILE, 'utf-8');
-        return JSON.parse(data);
+        
+        if (globalCachedUsers) {
+            return globalCachedUsers;
+        }
+        
+        return await initializeLocalUsers();
     } catch (err) {
         console.error("[Auth] Error reading local users file:", err.message);
+        if (globalCachedUsers) return globalCachedUsers;
         return [];
     }
 }
@@ -424,6 +442,7 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
         };
         
         users.push(newUser);
+        globalCachedUsers = users;
         fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
         
         logActivity({
@@ -461,6 +480,7 @@ app.post('/api/admin/users/update', requireAdmin, async (req, res) => {
             Username: users[idx].Username // Username cannot be changed
         };
         
+        globalCachedUsers = users;
         fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
         
         logActivity({
@@ -492,6 +512,7 @@ app.post('/api/admin/users/delete', requireAdmin, async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'User not found.' });
         }
         
+        globalCachedUsers = filteredUsers;
         fs.writeFileSync(USERS_FILE, JSON.stringify(filteredUsers, null, 2), 'utf-8');
         
         logActivity({
