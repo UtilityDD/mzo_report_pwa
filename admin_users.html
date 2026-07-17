@@ -915,6 +915,7 @@
       <div class="tabs-header">
         <button class="tab-btn active" onclick="switchTab('usersTab')">User Accounts</button>
         <button class="tab-btn" onclick="switchTab('logsTab')">User Activity Logs</button>
+        <button class="tab-btn" onclick="switchTab('uniqueVisitorsTab')">Active Visitors (Today)</button>
       </div>
 
       <!-- Users Tab Content -->
@@ -985,6 +986,42 @@
             <i class="fas fa-circle-notch fa-spin" style="font-size: 24px; margin-bottom: 12px; display: block; color: var(--primary);"></i>
             Loading activity logs...
           </div>
+        </div>
+      </div>
+
+      <!-- Unique Visitors Tab Content -->
+      <div id="uniqueVisitorsTab" class="tab-content">
+        <div class="actions-bar">
+          <div class="search-wrapper">
+            <i class="fas fa-search"></i>
+            <input type="text" id="visitorSearch" class="search-input" placeholder="Search active visitors..." oninput="filterVisitors()" />
+          </div>
+          <div class="filter-group">
+            <button class="btn btn-secondary" onclick="exportVisitors()"><i class="fas fa-file-export"></i> Export CSV</button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Full Name</th>
+                <th>System Role</th>
+                <th>Last Active Time</th>
+                <th>Logins Today</th>
+                <th>Page Visits Today</th>
+                <th>Last Action</th>
+              </tr>
+            </thead>
+            <tbody id="visitorsTableBody">
+              <tr>
+                <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 40px;">
+                  No active visitors tracked today.
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -1178,12 +1215,13 @@
     async function loadUsers() {
       try {
         const response = await fetch('/api/admin/users');
-        if (!response.ok) throw new Error('Failed to retrieve user accounts.');
+        if (!response.ok) throw new Error('Failed to retrieve users list.');
         const data = await response.json();
         if (data.status === 'success') {
           usersData = data.users || [];
           renderUsers();
           updateKPIs();
+          updateVisitorsTable();
         } else {
           showToast(data.message || 'Error fetching users.', 'error');
         }
@@ -1202,6 +1240,7 @@
           logsData = data.logs || [];
           renderLogs();
           updateKPIs();
+          updateVisitorsTable();
         }
       } catch (err) {
         console.error(err);
@@ -1557,6 +1596,140 @@
       link.click();
       document.body.removeChild(link);
       showToast('Activity logs exported as CSV.', 'success');
+    }
+
+    let visitorsData = [];
+
+    // Aggregate unique visitors stats from today's activity logs
+    function updateVisitorsTable() {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const todayLogs = logsData.filter(log => log.timestamp && log.timestamp.startsWith(todayStr));
+      
+      const visitorMap = new Map();
+      
+      todayLogs.forEach(log => {
+        const username = log.username ? log.username.trim().toLowerCase() : '';
+        if (!username) return;
+        
+        if (!visitorMap.has(username)) {
+          const user = usersData.find(u => u.Username && u.Username.toLowerCase() === username);
+          visitorMap.set(username, {
+            username: log.username,
+            name: user ? user.Name : (log.name || 'Unknown User'),
+            role: user ? (user.role || 'User') : 'User',
+            lastActive: log.timestamp,
+            loginsCount: 0,
+            visitsCount: 0,
+            lastAction: log.details || ''
+          });
+        }
+        
+        const visitor = visitorMap.get(username);
+        
+        if (log.type === 'login') visitor.loginsCount++;
+        if (log.type === 'page_visit') visitor.visitsCount++;
+        
+        if (new Date(log.timestamp) > new Date(visitor.lastActive)) {
+          visitor.lastActive = log.timestamp;
+          visitor.lastAction = log.details || '';
+        }
+      });
+      
+      visitorsData = Array.from(visitorMap.values());
+      renderVisitors();
+    }
+
+    // Render Unique Visitors table rows
+    function renderVisitors(filteredVisitors = visitorsData) {
+      const tbody = document.getElementById('visitorsTableBody');
+      if (!tbody) return;
+      
+      if (filteredVisitors.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 40px;">
+              <i class="fas fa-user-clock" style="font-size: 20px; margin-bottom: 8px; display: block;"></i>
+              No active visitors tracked today.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+      
+      tbody.innerHTML = filteredVisitors.map(v => {
+        const roleBadge = v.role === 'admin' ? '<span class="badge badge-admin">Admin</span>' : '<span class="badge badge-user">User</span>';
+        
+        // Format last active time nicely
+        let timeStr = 'unknown';
+        try {
+          const dateObj = new Date(v.lastActive);
+          timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        } catch (e) {}
+        
+        return `
+          <tr>
+            <td data-label="Username"><strong>${v.username}</strong></td>
+            <td data-label="Name">${v.name}</td>
+            <td data-label="Role">${roleBadge}</td>
+            <td data-label="Last Active">${timeStr}</td>
+            <td data-label="Logins Today" style="text-align: center;">${v.loginsCount}</td>
+            <td data-label="Visits Today" style="text-align: center;">${v.visitsCount}</td>
+            <td data-label="Last Action" style="font-size: 11px; color: var(--text-muted); max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${v.lastAction}">
+              ${v.lastAction}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // Filter unique visitors based on search
+    function filterVisitors() {
+      const query = document.getElementById('visitorSearch').value.toLowerCase().trim();
+      if (!query) {
+        renderVisitors(visitorsData);
+        return;
+      }
+      
+      const filtered = visitorsData.filter(v => 
+        (v.username && v.username.toLowerCase().includes(query)) ||
+        (v.name && v.name.toLowerCase().includes(query)) ||
+        (v.role && v.role.toLowerCase().includes(query)) ||
+        (v.lastAction && v.lastAction.toLowerCase().includes(query))
+      );
+      renderVisitors(filtered);
+    }
+
+    // Export unique visitor data as CSV
+    function exportVisitors() {
+      if (visitorsData.length === 0) {
+        showToast('No active visitor logs to export.', 'warning');
+        return;
+      }
+
+      const headers = ['Username', 'Full Name', 'Role', 'Last Active Time', 'Logins Today', 'Page Visits Today', 'Last Action'];
+      const csvContent = [
+        headers.join(','),
+        ...visitorsData.map(v => [
+          `"${v.username}"`,
+          `"${v.name}"`,
+          `"${v.role}"`,
+          `"${v.lastActive}"`,
+          v.loginsCount,
+          v.visitsCount,
+          `"${v.lastAction.replace(/"/g, '""')}"`
+        ].join(','))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `unique_visitors_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast('Visitors logs exported as CSV.', 'success');
     }
   </script>
 
