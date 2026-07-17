@@ -669,6 +669,102 @@ app.post('/api/admin/edit-sheet-row', requireAdmin, async (req, res) => {
     }
 });
 
+// 6.6. Append sheet row (Power Map Admin Add Substation)
+app.post('/api/admin/append-sheet-row', requireAdmin, async (req, res) => {
+    try {
+        const { spreadsheetId, sheetName, rowData } = req.body;
+        
+        if (!rowData) {
+            return res.status(400).json({ status: 'error', message: 'Missing rowData.' });
+        }
+        
+        const targetSpreadsheetId = spreadsheetId || process.env.POWER_MAP_SPREADSHEET_ID || '1nBLLL3zc3OjuJ6umq3uQVmjXCPhlVATYhQX1BlfqS2w';
+        
+        const payload = {
+            action: 'append_sheet_row',
+            spreadsheetId: targetSpreadsheetId,
+            sheetName: sheetName || '',
+            rowData
+        };
+        
+        console.log(`[Admin Add Substation] Sending append request to Apps Script:`, payload);
+        
+        if (typeof fetch === 'function') {
+            const response = await fetch(LOGS_APPS_SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Apps Script returned HTTP ${response.status}`);
+            }
+            
+            const result = await response.json();
+            if (result.status === 'success') {
+                return res.json({ status: 'success', message: 'Row appended successfully.' });
+            } else {
+                return res.status(500).json({ status: 'error', message: result.message || 'Apps Script append failed.' });
+            }
+        } else {
+            throw new Error("fetch is not supported on this Node environment");
+        }
+    } catch (err) {
+        console.error("[Admin Add Substation] Error appending sheet row:", err.message);
+        return res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// 6.7. Add connection (Power Map Admin Add Connection)
+app.post('/api/admin/add-connection', requireAdmin, async (req, res) => {
+    try {
+        const { spreadsheetId, sheetName, sourceSubstation, targetSubstation, rl, conductorSize, peakLoad } = req.body;
+        
+        if (!sourceSubstation || !targetSubstation) {
+            return res.status(400).json({ status: 'error', message: 'Missing sourceSubstation or targetSubstation.' });
+        }
+        
+        const targetSpreadsheetId = spreadsheetId || process.env.POWER_MAP_SPREADSHEET_ID || '1nBLLL3zc3OjuJ6umq3uQVmjXCPhlVATYhQX1BlfqS2w';
+        
+        const payload = {
+            action: 'add_connection',
+            spreadsheetId: targetSpreadsheetId,
+            sheetName: sheetName || '',
+            sourceSubstation,
+            targetSubstation,
+            rl: rl || '',
+            conductorSize: conductorSize || '',
+            peakLoad: peakLoad || ''
+        };
+        
+        console.log(`[Admin Add Connection] Sending connection request to Apps Script:`, payload);
+        
+        if (typeof fetch === 'function') {
+            const response = await fetch(LOGS_APPS_SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Apps Script returned HTTP ${response.status}`);
+            }
+            
+            const result = await response.json();
+            if (result.status === 'success') {
+                return res.json({ status: 'success', message: 'Connection added successfully.' });
+            } else {
+                return res.status(500).json({ status: 'error', message: result.message || 'Apps Script add connection failed.' });
+            }
+        } else {
+            throw new Error("fetch is not supported on this Node environment");
+        }
+    } catch (err) {
+        console.error("[Admin Add Connection] Error adding connection:", err.message);
+        return res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
 // 7. GET local users list formatted as CSV (mirroring Google Sheets format for backwards compatibility)
 app.get('/api/users-csv', async (req, res) => {
     try {
