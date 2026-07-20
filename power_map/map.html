@@ -1,4 +1,4 @@
-뿯붿뿯붿뿯붿뿯붿뿯붿뿯붿뿯붿뿯붿뿯붿뿯붿뿯붿뿯붿뿯붿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -1013,7 +1013,7 @@
                 <p id="print-metadata" style="margin: 5px 0 0 0; font-size: 14px; color: #64748b;"></p>
             </div>
             <div style="text-align: right;">
-                <span style="font-size: 20px; font-weight: 900; color: #2563eb;">뿯⚽ POWER MAP PRO</span>
+                <span style="font-size: 20px; font-weight: 900; color: #2563eb;">⚡ POWER MAP PRO</span>
             </div>
         </div>
     </div>
@@ -1481,7 +1481,7 @@
 
             // OpenStreetMap fallback tile layer
             const openStreetMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '뿯½ OpenStreetMap contributors'
+                attribution: '© OpenStreetMap contributors'
             });
 
             // "No map" option - a blank tile layer
@@ -1546,7 +1546,14 @@
                         Copy
                     </button>`;
                 
-                if (isAdmin) {
+                let canCreate = isAdmin;
+                if (!canCreate) {
+                    try {
+                        const profile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}');
+                        canCreate = (profile.role === 'admin' || profile.division_code || profile.region_code);
+                    } catch (err) {}
+                }
+                if (canCreate) {
                     btnHtml += `
                     <button onclick="openAddSubstationModal(${lat}, ${lng})" 
                         style="margin-top: 5px; font-size: 10px; padding: 3px 6px; cursor: pointer; background: #4f46e5; color: white; border: none; border-radius: 3px; margin-left: 5px;">
@@ -1590,18 +1597,26 @@
             });
         }
 
-        // Convert DMS coordinates to decimal
+        // Convert DMS coordinates to decimal (also accepts plain decimal numbers)
         function dmsToDecimal(dms) {
-            if (!dms || typeof dms !== 'string') return NaN;
+            if (dms === null || dms === undefined || dms === '') return NaN;
+            if (typeof dms === 'number') return dms;
 
-            let parts = dms.match(/[NSWE]?\d+뿯½\d+\.\d+'/g);
+            const str = String(dms).trim();
+            if (!str) return NaN;
+
+            // Plain decimal (e.g. 25.000433)
+            if (/^[+-]?\d+(\.\d+)?$/.test(str)) return parseFloat(str);
+
+            // DMS like N25°00.026' — accept ° or any non-digit separator between deg and min
+            let parts = str.match(/[NSWE]?\d+[^\d\w.']+\d+\.\d+'/gi);
             if (!parts) return NaN;
 
             let degrees = parseFloat(parts[0].match(/\d+/)[0]);
             let minutes = parseFloat(parts[0].match(/\d+\.\d+/g)[0]);
             let decimal = degrees + minutes / 60;
 
-            if (dms.includes('S') || dms.includes('W')) decimal *= -1;
+            if (/[SW]/i.test(str)) decimal *= -1;
             return decimal;
         }
 
@@ -1615,7 +1630,7 @@
             // Format minutes to 3 decimal places
             const formattedMinutes = minutes.toFixed(3);
 
-            return `${hemisphere}${degrees}뿯½${formattedMinutes}'`;
+            return `${hemisphere}${degrees}°${formattedMinutes}'`;
         }
 
         // Fetch and parse CSV data
@@ -2427,9 +2442,10 @@
         function plotMapData(data) {
             substationMap = {}; // Reset substationMap on each plot
             let isAdmin = false;
+            let userProfile = {};
             try {
-                const profile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}');
-                isAdmin = (profile.role === 'admin');
+                userProfile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}');
+                isAdmin = (userProfile.role === 'admin');
             } catch (e) {}
             let connectionMap = {};
             let markersAdded = 0;
@@ -2447,8 +2463,17 @@
                     let markerColor = (entry.Comment && ["black", "white", "red", "blue", "green", "yellow", "purple", "orange"].includes(entry.Comment.trim().toLowerCase()))
                         ? entry.Comment.trim().toLowerCase()
                         : "black";
+                        
+                    let canEdit = isAdmin;
+                    if (!canEdit) {
+                        const userDiv = (userProfile.division_code || '').trim().toLowerCase();
+                        const userReg = (userProfile.region_code || '').trim().toLowerCase();
+                        const recordDiv = (entry.Division || '').trim().toLowerCase();
+                        const recordReg = (entry.Region || '').trim().toLowerCase();
+                        canEdit = (userDiv && recordDiv === userDiv) || (userReg && recordReg === userReg);
+                    }
 
-                    let symbol = entry.Symbol ? entry.Symbol.trim() : "뿯⚽";
+                    let symbol = entry.Symbol ? entry.Symbol.trim() : "⚡";
                     let fontSize = entry.SymbolSize && !isNaN(entry.SymbolSize) ? parseInt(entry.SymbolSize) : 18;
                     let size = fontSize * 1.2;
                     let iconSize = [size, size];
@@ -2491,7 +2516,7 @@
                     let para2Html = `${entry['Para-2'] || 'N/A'}`;
                     let para3Html = `${entry['Para-3'] || 'N/A'}`;
 
-                    if (isAdmin) {
+                    if (canEdit) {
                         const editStyle = 'cursor: pointer; color: #4f46e5; margin-left: 6px; font-size: 11px;';
                         capacityHtml += ` <i class="fas fa-pen edit-sub-field" style="${editStyle}" data-substation="${escapeHtml(entry.Substation)}" data-column="MVA" data-value="${escapeHtml(entry['MVA'] || '')}"></i>`;
                         para2Html += ` <i class="fas fa-pen edit-sub-field" style="${editStyle}" data-substation="${escapeHtml(entry.Substation)}" data-column="Para-2" data-value="${escapeHtml(entry['Para-2'] || '')}"></i>`;
@@ -2500,6 +2525,23 @@
 
                     // Create Google Street View URL and popup content
                     const streetViewUrl = `https://www.google.com/maps?q=&layer=c&cbll=${lat},${lng}&cbp=12,0,0,0,0`;
+                    
+                    // Format pending suggestions list for this substation
+                    let suggestionsHtml = '';
+                    const myCorrections = (window.pendingCorrections || []).filter(c => c.type === 'edit_substation' && c.substation.toLowerCase() === entry.Substation.toLowerCase());
+                    if (myCorrections.length > 0) {
+                        suggestionsHtml += `<div style="margin-top: 8px; border-top: 1px dashed #d97706; padding-top: 6px; color: #d97706;">`;
+                        suggestionsHtml += `<b>Pending Suggested Edits:</b><br>`;
+                        myCorrections.forEach(corr => {
+                            if (corr.connection_target) {
+                                suggestionsHtml += `• Line to ${corr.connection_target} ${corr.column_name}: <del>${entry[corr.column_name] || 'N/A'}</del> → <b>${corr.proposed_value}</b><br>`;
+                            } else {
+                                suggestionsHtml += `• ${corr.column_name}: <del>${entry[corr.column_name] || 'N/A'}</del> → <b>${corr.proposed_value}</b><br>`;
+                            }
+                        });
+                        suggestionsHtml += `<small style="display:block; margin-top:2px; color:#b45309; font-size:10px;"><i class="fas fa-clock"></i> Waiting for Admin approval</small></div>`;
+                    }
+
                     const popupContent = `
                     <div style="font-family: Arial, sans-serif; font-size: 12px; min-width: 170px;" class="substation-popup-body">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px solid #ddd; padding-bottom: 4px;">
@@ -2511,7 +2553,8 @@
                             <div><b>Para-2:</b> <span>${para2Html}</span></div>
                             <div><b>Para-3:</b> <span>${para3Html}</span></div>
                         </div>
-                        ${isAdmin ? `
+                        ${suggestionsHtml}
+                        ${canEdit ? `
                         <div style="margin-top: 8px; border-top: 1px dashed #ddd; padding-top: 6px; text-align: center;">
                             <a href="#" onclick="openAddConnectionModal('${escapeHtml(entry.Substation)}'); return false;" style="color: #4f46e5; text-decoration: none; font-weight: 600; font-size: 11px;"><i class="fas fa-link"></i> Connect to another SS</a>
                         </div>
@@ -2581,7 +2624,15 @@
                                     let conductorHtml = `${info.conductor || 'N/A'}`;
                                     let loadHtml = `${info.load || 'N/A'}`;
                                     
-                                    if (isAdmin) {
+                                    let canEditConn = isAdmin;
+                                    if (!canEditConn) {
+                                        const userDiv = (userProfile.division_code || '').trim().toLowerCase();
+                                        const userReg = (userProfile.region_code || '').trim().toLowerCase();
+                                        const recordDiv = (entry.Division || '').trim().toLowerCase();
+                                        const recordReg = (entry.Region || '').trim().toLowerCase();
+                                        canEditConn = (userDiv && recordDiv === userDiv) || (userReg && recordReg === userReg);
+                                    }
+                                    if (canEditConn) {
                                         const editStyle = 'cursor: pointer; color: #4f46e5; margin-left: 6px; font-size: 11px;';
                                         conductorHtml += ` <i class="fas fa-pen edit-conn-field" style="${editStyle}" data-source="${escapeHtml(info.source)}" data-target="${escapeHtml(info.target)}" data-column="ConductorSize" data-value="${escapeHtml(info.conductor || '')}"></i>`;
                                         loadHtml += ` <i class="fas fa-pen edit-conn-field" style="${editStyle}" data-source="${escapeHtml(info.source)}" data-target="${escapeHtml(info.target)}" data-column="PeakLoad" data-value="${escapeHtml(info.load || '')}"></i>`;
@@ -2649,6 +2700,87 @@
                         }
                     });
                 }
+            });
+
+            // Plot proposed substations (add_substation corrections) in warning style
+            const proposedAdds = (window.pendingCorrections || []).filter(c => c.type === 'add_substation');
+            proposedAdds.forEach(corr => {
+                try {
+                    const rowData = JSON.parse(corr.proposed_value);
+                    let lat = dmsToDecimal(rowData.LATITUDE);
+                    let lng = dmsToDecimal(rowData.LONGITUDE);
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        let size = 20;
+                        let marker = L.marker([lat, lng], {
+                            icon: L.divIcon({
+                                className: "custom-symbol pending-symbol",
+                                html: `<div style="
+                                    width: ${size}px; 
+                                    height: ${size}px; 
+                                    display: flex; 
+                                    align-items: center; 
+                                    justify-content: center; 
+                                    border-radius: 50%; 
+                                    font-size: 16px; 
+                                    font-weight: bold; 
+                                    background-color: rgba(251, 191, 36, 0.2);
+                                    border: 2px dashed #d97706;
+                                    color: #d97706;
+                                    text-align: center;">
+                                    ⚡
+                                </div>`,
+                                iconSize: [size, size],
+                                iconAnchor: [size / 2, size / 2],
+                            })
+                        }).addTo(map);
+                        
+                        let popupContent = `
+                        <div style="font-family: Arial, sans-serif; font-size: 12px; text-align: left; min-width: 200px;">
+                            <span style="background-color: #fef3c7; color: #d97706; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px;">PROPOSED SUBSTATION</span><br>
+                            <b style="font-size: 14px; color: #d97706; display: block; margin-top: 4px;">${rowData.Substation} (Pending)</b>
+                            <b>MVA:</b> ${rowData.MVA || 'N/A'}<br>
+                            <b>Division:</b> ${rowData.Division || 'N/A'}<br>
+                            <b>Region:</b> ${rowData.Region || 'N/A'}<br>
+                            <span style="font-size: 11px; color: #b45309; display: block; margin-top: 5px; border-top: 1px dashed #fcd34d; padding-top: 4px;"><i class="fas fa-clock"></i> Proposed by: ${corr.suggested_by_name || corr.suggested_by}</span>
+                        </div>`;
+                        marker.bindPopup(popupContent);
+                        allMarkers.push(marker);
+                        substationMap[rowData.Substation.trim()] = { lat, lng, marker };
+                    }
+                } catch(e) { console.error("Proposed addition render failed:", e); }
+            });
+
+            // Plot proposed feeder connections (add_connection corrections) in dashed orange
+            const proposedConns = (window.pendingCorrections || []).filter(c => c.type === 'add_connection');
+            proposedConns.forEach(corr => {
+                try {
+                    const connDetails = JSON.parse(corr.proposed_value);
+                    const fromMarker = substationMap[corr.substation.trim()];
+                    const toMarker = substationMap[corr.connection_target.trim()];
+                    if (fromMarker && toMarker) {
+                        const fromLatLng = fromMarker.getLatLng();
+                        const toLatLng = toMarker.getLatLng();
+                        
+                        const proposedLine = L.polyline([fromLatLng, toLatLng], {
+                            color: '#d97706',
+                            dashArray: '5,10',
+                            weight: 3,
+                            opacity: 0.8
+                        }).addTo(map);
+                        
+                        const popupContent = `
+                        <div style="font-family: Arial, sans-serif; font-size: 12px; text-align: left; min-width: 180px;">
+                            <span style="background-color: #fef3c7; color: #d97706; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px;">PROPOSED FEEDER CONNECTION</span><br>
+                            <b style="display:block; margin-top: 4px;">From:</b> ${corr.substation}<br>
+                            <b>To:</b> ${corr.connection_target}<br>
+                            <b>Conductor:</b> ${connDetails.conductorSize || 'N/A'}<br>
+                            <b>Peak Load:</b> ${connDetails.peakLoad || 'N/A'}<br>
+                            <span style="font-size: 11px; color: #b45309; display: block; margin-top: 5px; border-top: 1px dashed #fcd34d; padding-top: 4px;"><i class="fas fa-clock"></i> Proposed by: ${corr.suggested_by_name || corr.suggested_by}</span>
+                        </div>`;
+                        proposedLine.bindPopup(popupContent);
+                        allConnectionLines.push(proposedLine);
+                    }
+                } catch(e) { console.error("Proposed connection line render failed:", e); }
             });
 
             // Store connection counts globally
@@ -2884,11 +3016,14 @@
                 showStatus("Creating filter options...", 0, 70); // 70% progress
                 createFilterOptions(allData);
 
-                // Plot initial data
+                // Plot initial data & load pending corrections
                 plotMapData(allData); // Progress updated inside this function
-
+                
                 // Plot taps data after substations are mapped
                 plotTaps(allTapsData, substationMap);
+                
+                // Fetch and overlay pending suggested corrections
+                await reloadMapAndSuggestions();
                 // Summary card removed, no need to update stats
 
                 // Update legend 
@@ -3380,6 +3515,12 @@
                     
                     const resData = await response.json();
                     if (response.ok && resData.status === 'success') {
+                        if (resData.isSuggestion) {
+                            map.closePopup();
+                            openCustomAlertModal('Suggestion Submitted', 'Feeder update submitted as suggested correction. Pending Admin approval.');
+                            await reloadMapAndSuggestions();
+                            return;
+                        }
                         // Update in-memory data state
                         const entry = allData.find(d => d.Substation.trim().toLowerCase() === source.trim().toLowerCase());
                         if (entry) {
@@ -3437,6 +3578,12 @@
                     
                     const resData = await response.json();
                     if (response.ok && resData.status === 'success') {
+                        if (resData.isSuggestion) {
+                            map.closePopup();
+                            openCustomAlertModal('Suggestion Submitted', 'Substation update submitted as suggested correction. Pending Admin approval.');
+                            await reloadMapAndSuggestions();
+                            return;
+                        }
                         // Update in-memory data state
                         const entry = allData.find(d => d.Substation.trim().toLowerCase() === substation.trim().toLowerCase());
                         if (entry) {
@@ -3462,16 +3609,35 @@
             window.showColorGuidePopup = function() {
                 const guideHtml = `
                     <div style="text-align: left; line-height: 1.8; font-size: 12px; margin-top: 5px;">
-                        <span style="color: red; font-size: 14px;">붿붿</span> <b>Red</b>: Existing 33/11kV SS<br>
-                        <span style="color: green; font-size: 14px;">붿뿯붿</span> <b>Green</b>: Grid Sub-Station (GSS)<br>
-                        <span style="color: blue; font-size: 14px;">붿붿</span> <b>Blue</b>: Proposed 33/11kV SS<br>
-                        <span style="font-size: 14px;">뿯⚽</span> <b>Black</b>: Default
+                        <span style="color: red; font-size: 14px;">🔴</span> <b>Red</b>: Existing 33/11kV SS<br>
+                        <span style="color: green; font-size: 14px;">🟢</span> <b>Green</b>: Grid Sub-Station (GSS)<br>
+                        <span style="color: blue; font-size: 14px;">🔵</span> <b>Blue</b>: Proposed 33/11kV SS<br>
+                        <span style="font-size: 14px;">⚫</span> <b>Black</b>: Default
                     </div>
                 `;
                 openCustomAlertModal('Color Code Guide', guideHtml);
             };
 
             // Open/Close Add Substation Modal
+            // Reload and fetch pending corrections
+            window.reloadMapAndSuggestions = async function() {
+                try {
+                    const resp = await fetch('/api/power-map/pending-corrections');
+                    const respJson = await resp.json();
+                    if (respJson.status === 'success') {
+                        window.pendingCorrections = respJson.data;
+                    } else {
+                        window.pendingCorrections = [];
+                    }
+                } catch (e) {
+                    console.error("Failed to load pending corrections:", e);
+                    window.pendingCorrections = [];
+                }
+                // Re-plot map and connections
+                plotMapData(allData);
+                plotTaps(allTapsData, substationMap);
+            };
+
             window.openAddSubstationModal = function(lat, lng) {
                 const modal = document.getElementById('custom-add-ss-modal');
                 const latInput = document.getElementById('addSsLat');
@@ -3479,6 +3645,29 @@
                 
                 latInput.value = lat.toFixed(5);
                 lngInput.value = lng.toFixed(5);
+                
+                // Locks division field mapping for selective users
+                try {
+                    const profile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}');
+                    const select = document.getElementById('addSsDivision');
+                    if (profile.role !== 'admin' && profile.division_code) {
+                        const userDiv = profile.division_code.trim();
+                        for (let option of select.options) {
+                            if (option.value.toLowerCase() === userDiv.toLowerCase()) {
+                                select.value = option.value;
+                                option.disabled = false;
+                            } else {
+                                option.disabled = true;
+                            }
+                        }
+                    } else {
+                        for (let option of select.options) {
+                            option.disabled = false;
+                        }
+                    }
+                } catch (e) {
+                    console.error("Failed jurisdiction check in openAddSubstationModal:", e);
+                }
                 
                 modal.classList.add('show');
                 setTimeout(() => document.getElementById('addSsName').focus(), 100);
@@ -3495,7 +3684,7 @@
                 const absDecimal = Math.abs(decimal);
                 const degrees = Math.floor(absDecimal);
                 const minutes = (absDecimal - degrees) * 60;
-                return `${hemisphere}${degrees}뿯½${minutes.toFixed(3)}'`;
+                return `${hemisphere}${degrees}°${minutes.toFixed(3)}'`;
             }
 
             // Submit New Substation Form
@@ -3528,7 +3717,7 @@
                     "PeakLoad": "",
                     "LineStyle": "solid",
                     "Comment": color,
-                    "Symbol": "뿯⚽",
+                    "Symbol": "⚡",
                     "SymbolSize": "18"
                 };
                 
@@ -3547,6 +3736,13 @@
                     
                     const resData = await response.json();
                     if (response.ok && resData.status === 'success') {
+                        if (resData.isSuggestion) {
+                            closeAddSubstationModal();
+                            showStatus("Substation creation submitted for Admin approval", 3000, 100);
+                            openCustomAlertModal('Suggestion Submitted', 'Your substation creation proposal has been submitted to the Super Admin for approval.');
+                            await reloadMapAndSuggestions();
+                            return;
+                        }
                         // Append to local array instantly
                         allData.push({
                             Substation: name,
@@ -3561,7 +3757,7 @@
                             PeakLoad: '',
                             LineStyle: 'solid',
                             Comment: color,
-                            Symbol: '뿯⚽',
+                            Symbol: '⚡',
                             SymbolSize: '18'
                         });
                         
@@ -3636,6 +3832,13 @@
                     
                     const resData = await response.json();
                     if (response.ok && resData.status === 'success') {
+                        if (resData.isSuggestion) {
+                            closeAddConnectionModal();
+                            map.closePopup();
+                            openCustomAlertModal('Suggestion Submitted', 'Feeder connection submitted as suggested correction. Pending Admin approval.');
+                            await reloadMapAndSuggestions();
+                            return;
+                        }
                         // Update in-memory state
                         const entry = allData.find(d => d.Substation.trim().toLowerCase() === source.trim().toLowerCase());
                         if (entry) {

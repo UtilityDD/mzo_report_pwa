@@ -717,12 +717,51 @@ app.get('/api/power-map/data', async (req, res) => {
 });
 
 // 6.5. Edit sheet row (Power Map Admin Edit - Supabase Table version)
-app.post('/api/admin/edit-sheet-row', requireAdmin, async (req, res) => {
+app.post('/api/admin/edit-sheet-row', async (req, res) => {
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     try {
         const { rowKeyColumn, rowKeyValue, columnName, newValue, connectionTarget } = req.body;
         
         if (!rowKeyColumn || !rowKeyValue || !columnName) {
             return res.status(400).json({ status: 'error', message: 'Missing required parameters.' });
+        }
+
+        // Check permission if not super admin
+        if (req.user.role !== 'admin') {
+            const records = await querySupabase(`substations?Substation=eq.${encodeURIComponent(rowKeyValue)}&select=*`);
+            if (!records || records.length === 0) {
+                return res.status(404).json({ status: 'error', message: 'Substation not found.' });
+            }
+            const record = records[0];
+            
+            const userDiv = (req.user.division_code || '').trim().toLowerCase();
+            const userReg = (req.user.region_code || '').trim().toLowerCase();
+            const recordDiv = (record.Division || '').trim().toLowerCase();
+            const recordReg = (record.Region || '').trim().toLowerCase();
+            
+            const hasAccess = (userDiv && recordDiv === userDiv) || (userReg && recordReg === userReg);
+            if (!hasAccess) {
+                return res.status(403).json({ status: 'error', message: 'Forbidden: You do not have edit permission for this jurisdiction.' });
+            }
+            
+            // Route to suggestions
+            const suggestion = {
+                type: 'edit_substation',
+                substation: rowKeyValue,
+                column_name: columnName,
+                connection_target: connectionTarget || null,
+                proposed_value: newValue,
+                suggested_by: req.user.Username,
+                suggested_by_name: req.user.Name || req.user.Username,
+                status: 'pending'
+            };
+            
+            await querySupabase('suggested_corrections', {
+                method: 'POST',
+                body: suggestion
+            });
+            
+            return res.json({ status: 'success', isSuggestion: true, message: 'Edit submitted as suggested correction. Pending Admin approval.' });
         }
 
         let finalValue = newValue;
@@ -770,12 +809,42 @@ app.post('/api/admin/edit-sheet-row', requireAdmin, async (req, res) => {
 });
 
 // 6.6. Append sheet row (Power Map Admin Add Substation - Supabase version)
-app.post('/api/admin/append-sheet-row', requireAdmin, async (req, res) => {
+app.post('/api/admin/append-sheet-row', async (req, res) => {
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     try {
         const { rowData } = req.body;
         
         if (!rowData) {
             return res.status(400).json({ status: 'error', message: 'Missing rowData.' });
+        }
+
+        // Check permission if not super admin
+        if (req.user.role !== 'admin') {
+            const userDiv = (req.user.division_code || '').trim().toLowerCase();
+            const userReg = (req.user.region_code || '').trim().toLowerCase();
+            const targetDiv = (rowData.Division || '').trim().toLowerCase();
+            const targetReg = (rowData.Region || '').trim().toLowerCase();
+            
+            const hasAccess = (userDiv && targetDiv === userDiv) || (userReg && targetReg === userReg);
+            if (!hasAccess) {
+                return res.status(403).json({ status: 'error', message: 'Forbidden: You cannot create a substation outside your jurisdiction.' });
+            }
+            
+            const suggestion = {
+                type: 'add_substation',
+                substation: rowData.Substation,
+                proposed_value: JSON.stringify(rowData),
+                suggested_by: req.user.Username,
+                suggested_by_name: req.user.Name || req.user.Username,
+                status: 'pending'
+            };
+            
+            await querySupabase('suggested_corrections', {
+                method: 'POST',
+                body: suggestion
+            });
+            
+            return res.json({ status: 'success', isSuggestion: true, message: 'Substation creation submitted for Admin approval.' });
         }
         
         // Build payload matching exact columns in Supabase (all 22 columns)
@@ -819,12 +888,50 @@ app.post('/api/admin/append-sheet-row', requireAdmin, async (req, res) => {
 });
 
 // 6.7. Add connection (Power Map Admin Add Connection - Supabase version)
-app.post('/api/admin/add-connection', requireAdmin, async (req, res) => {
+app.post('/api/admin/add-connection', async (req, res) => {
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     try {
         const { sourceSubstation, targetSubstation, rl, conductorSize, peakLoad } = req.body;
         
         if (!sourceSubstation || !targetSubstation) {
             return res.status(400).json({ status: 'error', message: 'Missing sourceSubstation or targetSubstation.' });
+        }
+
+        // Check permission if not super admin
+        if (req.user.role !== 'admin') {
+            const records = await querySupabase(`substations?Substation=eq.${encodeURIComponent(sourceSubstation)}&select=*`);
+            if (!records || records.length === 0) {
+                return res.status(404).json({ status: 'error', message: 'Source Substation not found.' });
+            }
+            const record = records[0];
+            
+            const userDiv = (req.user.division_code || '').trim().toLowerCase();
+            const userReg = (req.user.region_code || '').trim().toLowerCase();
+            const recordDiv = (record.Division || '').trim().toLowerCase();
+            const recordReg = (record.Region || '').trim().toLowerCase();
+            
+            const hasAccess = (userDiv && recordDiv === userDiv) || (userReg && recordReg === userReg);
+            if (!hasAccess) {
+                return res.status(403).json({ status: 'error', message: 'Forbidden: You do not have connection edit permissions for this jurisdiction.' });
+            }
+            
+            const connDetails = { rl, conductorSize, peakLoad };
+            const suggestion = {
+                type: 'add_connection',
+                substation: sourceSubstation,
+                connection_target: targetSubstation,
+                proposed_value: JSON.stringify(connDetails),
+                suggested_by: req.user.Username,
+                suggested_by_name: req.user.Name || req.user.Username,
+                status: 'pending'
+            };
+            
+            await querySupabase('suggested_corrections', {
+                method: 'POST',
+                body: suggestion
+            });
+            
+            return res.json({ status: 'success', isSuggestion: true, message: 'Feeder connection submitted for Admin approval.' });
         }
         
         // Fetch the source record to retrieve its connections arrays
@@ -864,6 +971,174 @@ app.post('/api/admin/add-connection', requireAdmin, async (req, res) => {
         return res.json({ status: 'success', message: 'Connection added successfully.' });
     } catch (err) {
         console.error("[Admin Add Connection] Error adding connection to Supabase:", err.message);
+        return res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// 6.47. Expose public list of pending corrections
+app.get('/api/power-map/pending-corrections', async (req, res) => {
+    try {
+        const corrections = await querySupabase("suggested_corrections?status=eq.pending&select=*");
+        return res.json({ status: 'success', data: corrections || [] });
+    } catch (err) {
+        console.error("[Pending Corrections] Error fetching:", err.message);
+        return res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// 6.48. Expose list of pending corrections for Admin
+app.get('/api/admin/pending-corrections', requireAdmin, async (req, res) => {
+    try {
+        const corrections = await querySupabase("suggested_corrections?status=eq.pending&select=*");
+        return res.json({ status: 'success', data: corrections || [] });
+    } catch (err) {
+        console.error("[Admin Pending Corrections] Error fetching:", err.message);
+        return res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// 6.49. Approve a suggested correction
+app.post('/api/admin/approve-correction', requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.body;
+        if (!id) {
+            return res.status(400).json({ status: 'error', message: 'Missing suggestion ID.' });
+        }
+        
+        // Fetch the correction details
+        const corrections = await querySupabase(`suggested_corrections?id=eq.${id}&select=*`);
+        if (!corrections || corrections.length === 0) {
+            return res.status(404).json({ status: 'error', message: 'Suggested correction not found.' });
+        }
+        const proposal = corrections[0];
+        
+        console.log(`[Admin Approve] Processing proposal ID: ${id}, type: ${proposal.type}`);
+        
+        if (proposal.type === 'edit_substation') {
+            // Apply edit to substations
+            let finalValue = proposal.proposed_value;
+            
+            if (proposal.connection_target) {
+                // Connection cell list edit (colon-separated)
+                const records = await querySupabase(`substations?Substation=eq.${encodeURIComponent(proposal.substation)}&select=*`);
+                if (!records || records.length === 0) throw new Error(`Target Substation '${proposal.substation}' not found.`);
+                const record = records[0];
+                
+                const connStr = record["Connected to"] || '';
+                const conns = connStr.split(':').map(s => s.trim().toLowerCase());
+                const targetIdx = conns.indexOf(proposal.connection_target.trim().toLowerCase());
+                if (targetIdx === -1) throw new Error(`Connection target '${proposal.connection_target}' not found.`);
+                
+                const currentValStr = record[proposal.column_name] || '';
+                const vals = currentValStr.split(':').map(s => s.trim());
+                while (vals.length < conns.length) {
+                    vals.push("");
+                }
+                vals[targetIdx] = proposal.proposed_value;
+                finalValue = vals.join(" : ");
+            }
+            
+            const patchBody = {};
+            patchBody[proposal.column_name] = finalValue;
+            
+            await querySupabase(`substations?Substation=eq.${encodeURIComponent(proposal.substation)}`, {
+                method: 'PATCH',
+                body: patchBody
+            });
+            
+        } else if (proposal.type === 'add_substation') {
+            // Parse rowData from proposed_value
+            const rowData = JSON.parse(proposal.proposed_value);
+            
+            await querySupabase('substations', {
+                method: 'POST',
+                body: rowData
+            });
+            
+        } else if (proposal.type === 'add_connection') {
+            // Parse connection fields
+            const connDetails = JSON.parse(proposal.proposed_value);
+            
+            const records = await querySupabase(`substations?Substation=eq.${encodeURIComponent(proposal.substation)}&select=*`);
+            if (!records || records.length === 0) throw new Error(`Source Substation '${proposal.substation}' not found.`);
+            const record = records[0];
+            
+            const currentConns = (record["Connected to"] || '').toString().trim();
+            const nextConns = currentConns ? currentConns + " : " + proposal.connection_target : proposal.connection_target;
+
+            const currentRl = (record["RL"] || '').toString().trim();
+            const nextRl = currentRl ? currentRl + " : " + (connDetails.rl || "") : (connDetails.rl || "");
+
+            const currentCond = (record["ConductorSize"] || '').toString().trim();
+            const nextCond = currentCond ? currentCond + " : " + (connDetails.conductorSize || "") : (connDetails.conductorSize || "");
+
+            const currentLoad = (record["PeakLoad"] || '').toString().trim();
+            const nextLoad = currentLoad ? currentLoad + " : " + (connDetails.peakLoad || "") : (connDetails.peakLoad || "");
+
+            const patchBody = {
+                "Connected to": nextConns,
+                "RL": nextRl,
+                "ConductorSize": nextCond,
+                "PeakLoad": nextLoad
+            };
+            
+            await querySupabase(`substations?Substation=eq.${encodeURIComponent(proposal.substation)}`, {
+                method: 'PATCH',
+                body: patchBody
+            });
+        }
+        
+        // Delete the suggestion or mark as approved
+        await querySupabase(`suggested_corrections?id=eq.${id}`, {
+            method: 'DELETE'
+        });
+        
+        // Log activity
+        await logActivity({
+            username: req.user.Username,
+            name: req.user.Name || 'Super Admin',
+            type: 'approve_correction',
+            details: `Approved proposed change by ${proposal.suggested_by_name} for ${proposal.substation}`
+        });
+        
+        return res.json({ status: 'success', message: 'Proposed correction approved successfully.' });
+    } catch (err) {
+        console.error("[Admin Approve] Error processing approval:", err.message);
+        return res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// 6.50. Reject a suggested correction
+app.post('/api/admin/reject-correction', requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.body;
+        if (!id) {
+            return res.status(400).json({ status: 'error', message: 'Missing suggestion ID.' });
+        }
+        
+        // Fetch suggestion to log it before deletion
+        const corrections = await querySupabase(`suggested_corrections?id=eq.${id}&select=*`);
+        if (!corrections || corrections.length === 0) {
+            return res.status(404).json({ status: 'error', message: 'Suggested correction not found.' });
+        }
+        const proposal = corrections[0];
+        
+        // Delete the suggestion
+        await querySupabase(`suggested_corrections?id=eq.${id}`, {
+            method: 'DELETE'
+        });
+        
+        // Log activity
+        await logActivity({
+            username: req.user.Username,
+            name: req.user.Name || 'Super Admin',
+            type: 'reject_correction',
+            details: `Rejected proposed change by ${proposal.suggested_by_name} for ${proposal.substation}`
+        });
+        
+        return res.json({ status: 'success', message: 'Proposed correction rejected successfully.' });
+    } catch (err) {
+        console.error("[Admin Reject] Error processing rejection:", err.message);
         return res.status(500).json({ status: 'error', message: err.message });
     }
 });
