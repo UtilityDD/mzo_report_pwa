@@ -894,6 +894,32 @@
     body.dark-theme .power-map-card select, body.dark-theme .power-map-card input {
       border: 1px solid rgba(255,255,255,0.1);
     }
+
+    .ss-auth-multi-list {
+      max-height: 180px;
+      overflow-y: auto;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 8px;
+      background: var(--input-bg);
+    }
+    .ss-auth-multi-list label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 2px;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--text-main);
+    }
+    .ss-auth-multi-list label:hover {
+      background: rgba(79, 70, 229, 0.08);
+      border-radius: 4px;
+    }
+    .ss-auth-multi-list input[type="checkbox"] {
+      width: auto;
+      margin: 0;
+    }
 </style>
 </head>
 <body>
@@ -1239,7 +1265,7 @@
             To allow this user to suggest changes for specific regions/divisions:
             <ul style="margin: 4px 0 0 15px; padding: 0; list-style-type: disc;">
               <li>Ensure <b>System Role</b> is set to <b>"User"</b> (Super admins edit directly; standard users go through the Suggested Corrections flow).</li>
-              <li>Ensure <b>SS Authorization (Inspect)</b> is set to <b>"Yes (Authorized Signature)"</b>.</li>
+              <li>Set <b>SS Authorization</b> to <b>All</b>, <b>Single</b>, or <b>Multiple</b> and pick the relevant SS name(s).</li>
               <li>Under <b>Jurisdiction Mapping</b>, map their <b>Division Code</b> (e.g. <code>Malda</code> or <code>Raiganj</code>) and/or <b>Region Code</b> (e.g. <code>Malda</code>). This limits their edit tools and coordinate creations to that area.</li>
             </ul>
           </div>
@@ -1247,7 +1273,11 @@
           <div class="form-row">
             <div class="form-group">
               <label for="usernameInput">Username / User ID *</label>
-              <input type="text" id="usernameInput" required placeholder="e.g. 90012156" />
+              <input type="text" id="usernameInput" list="existingUsernames" required placeholder="e.g. 90012156" autocomplete="off" oninput="onUsernameEntry()" onchange="onUsernameEntry()" />
+              <datalist id="existingUsernames"></datalist>
+              <small id="existingUserHint" style="display:none; margin-top:6px; color:#4f46e5; font-size:11px;">
+                <i class="fas fa-user-check"></i> Existing user found — details filled. Save will update this account.
+              </small>
             </div>
             <div class="form-group">
               <label for="pinInput">PIN Code *</label>
@@ -1270,27 +1300,49 @@
 
           <div class="form-section-title">Module Authorizations</div>
           <div class="form-row">
-            <div class="form-group">
-              <label for="ssAuthInput">SS Authorization (Inspect)</label>
-              <select id="ssAuthInput">
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <label for="ssAuthModeInput">SS Authorization</label>
+              <select id="ssAuthModeInput" onchange="onSsAuthModeChange()">
                 <option value="">No</option>
-                <option value="Y">Yes (Authorized Signature)</option>
+                <option value="all">All</option>
+                <option value="single">Single</option>
+                <option value="multiple">Multiple</option>
               </select>
-            </div>
-            <div class="form-group">
-              <label for="dtrAuthInput">DTR Prefix Codes</label>
-              <input type="text" id="dtrAuthInput" placeholder="e.g. 7G,HN,all" />
+              <input type="hidden" id="ssAuthInput" value="" />
+
+              <div id="ssAuthSingleWrap" style="display:none; margin-top:10px;">
+                <label for="ssAuthSingleSelect">Select SS Name</label>
+                <select id="ssAuthSingleSelect" onchange="syncSsAuthValue()">
+                  <option value="">Loading substations...</option>
+                </select>
+              </div>
+
+              <div id="ssAuthMultipleWrap" style="display:none; margin-top:10px;">
+                <label>Select SS Names (multiple)</label>
+                <input type="text" id="ssAuthMultiFilter" placeholder="Filter SS names..." oninput="filterSsAuthCheckboxes()" style="margin-bottom:8px;" />
+                <div id="ssAuthMultiList" class="ss-auth-multi-list"></div>
+                <small style="display:block; margin-top:6px; color:var(--text-muted); font-size:11px;">
+                  Selected: <span id="ssAuthMultiCount">0</span>
+                </small>
+              </div>
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
+              <label for="dtrAuthInput">DTR Prefix Codes</label>
+              <input type="text" id="dtrAuthInput" placeholder="e.g. 7G,HN,all" />
+            </div>
+            <div class="form-group">
               <label for="ddAuthInput">DD Authorization</label>
               <input type="text" id="ddAuthInput" placeholder="e.g. all" />
             </div>
+          </div>
+          <div class="form-row">
             <div class="form-group">
               <label for="nscAuthInput">NSC Authorization</label>
               <input type="text" id="nscAuthInput" placeholder="e.g. 6611108" />
             </div>
+            <div class="form-group"></div>
           </div>
 
           <div class="form-section-title">Jurisdiction Mapping</div>
@@ -1351,6 +1403,8 @@
     let usersData = [];
     let logsData = [];
     let deleteTargetUsername = '';
+    let powerMapSubstationNames = [];
+    let visitorsData = [];
 
     // Check if the user is authenticated and is an admin
     document.addEventListener('DOMContentLoaded', () => {
@@ -1387,6 +1441,7 @@
 
       loadUsers();
       loadLogs();
+      loadSubstationsForDropdowns();
     });
 
     // Toast notifications
@@ -1433,6 +1488,7 @@
         if (data.status === 'success') {
           usersData = data.users || [];
           renderUsers();
+          refreshUsernameDatalist();
           updateKPIs();
           updateVisitorsTable();
         } else {
@@ -1495,14 +1551,14 @@
 
       tbody.innerHTML = filteredUsers.map(user => {
         const roleBadge = user.role === 'admin' ? '<span class="badge badge-admin">Admin</span>' : '<span class="badge badge-user">User</span>';
-        const ssAuth = user['ss-autho'] === 'Y' ? '<i class="fas fa-check" style="color: var(--success);"></i>' : '<span style="color: var(--text-muted); font-size:12px;">No</span>';
+        const ssAuth = formatSsAuthDisplay(user['ss-autho']);
         
         return `
           <tr>
             <td data-label="Username"><strong>${user.Username}</strong></td>
             <td data-label="Name">${user.Name || '<span style="color: var(--text-muted); font-style:italic;">No Name</span>'}</td>
             <td data-label="Role">${roleBadge}</td>
-            <td data-label="SS Auth">${ssAuth}</td>
+            <td data-label="SS Auth" title="${(user['ss-autho'] || '').replace(/"/g, '&quot;')}">${ssAuth}</td>
             <td data-label="DTR Auth">${user['dtr-autho'] || '-'}</td>
             <td data-label="DD Auth">${user['dd-autho'] || '-'}</td>
             <td data-label="NSC Auth">${user['nsc-autho'] || '-'}</td>
@@ -1617,14 +1673,249 @@
       renderLogs(filtered);
     }
 
+    function formatSsAuthDisplay(raw) {
+      const val = (raw || '').trim();
+      if (!val) return '<span style="color: var(--text-muted); font-size:12px;">No</span>';
+      if (/^(Y|all)$/i.test(val)) {
+        return '<span class="badge badge-user" style="background:rgba(16,185,129,0.15);color:#059669;">All</span>';
+      }
+      const parts = val.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+      if (parts.length === 1) {
+        return `<span style="font-size:12px;" title="${parts[0]}">${parts[0]}</span>`;
+      }
+      return `<span style="font-size:12px;" title="${parts.join(', ')}">${parts.length} SS</span>`;
+    }
+
+    function parseSsAuthNames(raw) {
+      return String(raw || '')
+        .split(/[,;]/)
+        .map(s => s.trim())
+        .filter(Boolean);
+    }
+
+    function onSsAuthModeChange() {
+      const mode = document.getElementById('ssAuthModeInput').value;
+      document.getElementById('ssAuthSingleWrap').style.display = mode === 'single' ? 'block' : 'none';
+      document.getElementById('ssAuthMultipleWrap').style.display = mode === 'multiple' ? 'block' : 'none';
+      if (mode === 'single' || mode === 'multiple') {
+        ensureSsAuthListsReady();
+      }
+      syncSsAuthValue();
+    }
+
+    function syncSsAuthValue() {
+      const mode = document.getElementById('ssAuthModeInput').value;
+      let value = '';
+      if (mode === 'all') {
+        value = 'Y'; // keep Inspect compatibility (ss-autho === 'Y')
+      } else if (mode === 'single') {
+        value = (document.getElementById('ssAuthSingleSelect').value || '').trim();
+      } else if (mode === 'multiple') {
+        const checked = Array.from(document.querySelectorAll('#ssAuthMultiList input[type="checkbox"]:checked'))
+          .map(cb => cb.value.trim())
+          .filter(Boolean);
+        value = checked.join(',');
+        const countEl = document.getElementById('ssAuthMultiCount');
+        if (countEl) countEl.textContent = String(checked.length);
+      }
+      document.getElementById('ssAuthInput').value = value;
+      return value;
+    }
+
+    function setSsAuthUIFromValue(raw) {
+      const val = (raw || '').trim();
+      const modeEl = document.getElementById('ssAuthModeInput');
+      const singleEl = document.getElementById('ssAuthSingleSelect');
+
+      if (!val) {
+        modeEl.value = '';
+      } else if (/^(Y|all)$/i.test(val)) {
+        modeEl.value = 'all';
+      } else {
+        const names = parseSsAuthNames(val);
+        if (names.length > 1) {
+          modeEl.value = 'multiple';
+        } else {
+          modeEl.value = 'single';
+        }
+      }
+
+      onSsAuthModeChange();
+      populateSsAuthSelectors();
+
+      if (modeEl.value === 'single') {
+        const name = parseSsAuthNames(val)[0] || '';
+        if (name && singleEl && ![...singleEl.options].some(o => o.value === name)) {
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = name;
+          singleEl.appendChild(opt);
+        }
+        if (singleEl) singleEl.value = name;
+      } else if (modeEl.value === 'multiple') {
+        const selected = new Set(parseSsAuthNames(val).map(n => n.toLowerCase()));
+        document.querySelectorAll('#ssAuthMultiList input[type="checkbox"]').forEach(cb => {
+          cb.checked = selected.has(cb.value.toLowerCase());
+        });
+      }
+
+      syncSsAuthValue();
+    }
+
+    function populateSsAuthSelectors() {
+      const names = powerMapSubstationNames;
+      const singleEl = document.getElementById('ssAuthSingleSelect');
+      const multiEl = document.getElementById('ssAuthMultiList');
+      if (!singleEl || !multiEl) return;
+
+      const currentSingle = singleEl.value;
+      singleEl.innerHTML = `<option value="">Select substation...</option>` +
+        names.map(n => `<option value="${n.replace(/"/g, '&quot;')}">${n}</option>`).join('');
+      if (currentSingle) singleEl.value = currentSingle;
+
+      const checked = new Set(
+        Array.from(multiEl.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value)
+      );
+      multiEl.innerHTML = names.map(n => {
+        const safe = n.replace(/"/g, '&quot;');
+        const isChecked = checked.has(n) ? 'checked' : '';
+        return `<label data-name="${safe.toLowerCase()}"><input type="checkbox" value="${safe}" ${isChecked} onchange="syncSsAuthValue()" /> ${n}</label>`;
+      }).join('') || '<div style="color:var(--text-muted);font-size:12px;padding:8px;">No substations loaded.</div>';
+      syncSsAuthValue();
+    }
+
+    function filterSsAuthCheckboxes() {
+      const q = (document.getElementById('ssAuthMultiFilter').value || '').trim().toLowerCase();
+      document.querySelectorAll('#ssAuthMultiList label').forEach(label => {
+        const name = label.getAttribute('data-name') || '';
+        label.style.display = !q || name.includes(q) ? 'flex' : 'none';
+      });
+    }
+
+    let ssAuthLoadPromise = null;
+    async function ensureSsAuthListsReady() {
+      if (powerMapSubstationNames.length) {
+        populateSsAuthSelectors();
+        return;
+      }
+      await loadSubstationsForDropdowns();
+    }
+
+    async function loadSubstationsForDropdowns() {
+      if (ssAuthLoadPromise) return ssAuthLoadPromise;
+      ssAuthLoadPromise = (async () => {
+        try {
+          const response = await fetch('/api/power-map/data');
+          if (!response.ok) throw new Error('Failed to load substations');
+          const csvText = await response.text();
+          const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+          const names = [...new Set(
+            (parsed.data || [])
+              .map(r => (r.Substation || '').trim())
+              .filter(Boolean)
+          )].sort((a, b) => a.localeCompare(b));
+          powerMapSubstationNames = names;
+
+          // Power Map connection dropdowns (if present)
+          ['connSource', 'connTarget'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const prev = el.value;
+            el.innerHTML = `<option value="">Select substation...</option>` +
+              names.map(n => `<option value="${n.replace(/"/g, '&quot;')}">${n}</option>`).join('');
+            if (prev) el.value = prev;
+          });
+
+          populateSsAuthSelectors();
+        } catch (err) {
+          console.error(err);
+          showToast('Could not load substation list for SS Authorization.', 'error');
+        } finally {
+          ssAuthLoadPromise = null;
+        }
+      })();
+      return ssAuthLoadPromise;
+    }
+
+    function refreshUsernameDatalist() {
+      const list = document.getElementById('existingUsernames');
+      if (!list) return;
+      list.innerHTML = (usersData || []).map(u => {
+        const id = String(u.Username || '').trim();
+        if (!id) return '';
+        const label = u.Name ? `${id} — ${u.Name}` : id;
+        return `<option value="${id}">${label}</option>`;
+      }).join('');
+    }
+
+    function fillUserFormFields(user, { lockUsername = false } = {}) {
+      document.getElementById('usernameInput').value = user.Username || '';
+      document.getElementById('usernameInput').disabled = !!lockUsername;
+      document.getElementById('pinInput').value = user.PIN || '';
+      document.getElementById('nameInput').value = user.Name || '';
+      document.getElementById('roleInput').value = user.role || '';
+      setSsAuthUIFromValue(user['ss-autho'] || '');
+      document.getElementById('dtrAuthInput').value = user['dtr-autho'] || '';
+      document.getElementById('ddAuthInput').value = user['dd-autho'] || '';
+      document.getElementById('nscAuthInput').value = user['nsc-autho'] || '';
+      document.getElementById('zoneCodeInput').value = user.zone_code || '';
+      document.getElementById('regionCodeInput').value = user.region_code || '';
+      document.getElementById('divisionCodeInput').value = user.division_code || '';
+      document.getElementById('cccCodeInput').value = user.ccc_code || '';
+    }
+
+    function setExistingUserHint(show) {
+      const hint = document.getElementById('existingUserHint');
+      if (hint) hint.style.display = show ? 'block' : 'none';
+    }
+
+    // When typing a username, auto-fill if that user already exists
+    function onUsernameEntry() {
+      const usernameEl = document.getElementById('usernameInput');
+      if (usernameEl.disabled) return;
+
+      const typed = usernameEl.value.trim();
+      if (!typed) {
+        setExistingUserHint(false);
+        document.getElementById('formMode').value = 'create';
+        document.getElementById('modalTitle').textContent = 'Add New User';
+        return;
+      }
+
+      const existing = (usersData || []).find(u =>
+        String(u.Username || '').trim().toLowerCase() === typed.toLowerCase()
+      );
+
+      if (existing) {
+        document.getElementById('formMode').value = 'update';
+        document.getElementById('modalTitle').textContent = `Edit User: ${existing.Username}`;
+        ensureSsAuthListsReady().then(() => {
+          fillUserFormFields(existing, { lockUsername: false });
+          usernameEl.value = existing.Username;
+        });
+        setExistingUserHint(true);
+      } else if (document.getElementById('formMode').value === 'update') {
+        document.getElementById('formMode').value = 'create';
+        document.getElementById('modalTitle').textContent = 'Add New User';
+        setExistingUserHint(false);
+      } else {
+        setExistingUserHint(false);
+      }
+    }
+
     // Open Modal for adding a user
     function openAddUserModal() {
       document.getElementById('formMode').value = 'create';
       document.getElementById('modalTitle').textContent = 'Add New User';
       document.getElementById('userForm').reset();
       document.getElementById('usernameInput').disabled = false;
+      setExistingUserHint(false);
+      refreshUsernameDatalist();
+      setSsAuthUIFromValue('');
+      ensureSsAuthListsReady();
       
       document.getElementById('userModal').classList.add('active');
+      setTimeout(() => document.getElementById('usernameInput').focus(), 50);
     }
 
     // Open Modal for editing user
@@ -1634,20 +1925,11 @@
 
       document.getElementById('formMode').value = 'update';
       document.getElementById('modalTitle').textContent = `Edit User: ${username}`;
-      
-      document.getElementById('usernameInput').value = user.Username;
-      document.getElementById('usernameInput').disabled = true; // Username is the primary key
-      document.getElementById('pinInput').value = user.PIN || '';
-      document.getElementById('nameInput').value = user.Name || '';
-      document.getElementById('roleInput').value = user.role || '';
-      document.getElementById('ssAuthInput').value = user['ss-autho'] || '';
-      document.getElementById('dtrAuthInput').value = user['dtr-autho'] || '';
-      document.getElementById('ddAuthInput').value = user['dd-autho'] || '';
-      document.getElementById('nscAuthInput').value = user['nsc-autho'] || '';
-      document.getElementById('zoneCodeInput').value = user.zone_code || '';
-      document.getElementById('regionCodeInput').value = user.region_code || '';
-      document.getElementById('divisionCodeInput').value = user.division_code || '';
-      document.getElementById('cccCodeInput').value = user.ccc_code || '';
+      ensureSsAuthListsReady().then(() => {
+        fillUserFormFields(user, { lockUsername: true });
+      });
+      setExistingUserHint(false);
+      refreshUsernameDatalist();
 
       document.getElementById('userModal').classList.add('active');
     }
@@ -1687,12 +1969,19 @@
         return;
       }
 
+      const ssAuthValue = syncSsAuthValue();
+      const ssMode = document.getElementById('ssAuthModeInput').value;
+      if ((ssMode === 'single' || ssMode === 'multiple') && !ssAuthValue) {
+        showToast('Please select at least one SS name for SS Authorization.', 'error');
+        return;
+      }
+
       const userData = {
         Username: username,
         PIN: pin,
         Name: document.getElementById('nameInput').value.trim(),
         role: document.getElementById('roleInput').value,
-        'ss-autho': document.getElementById('ssAuthInput').value,
+        'ss-autho': ssAuthValue,
         'dtr-autho': document.getElementById('dtrAuthInput').value.trim(),
         'dd-autho': document.getElementById('ddAuthInput').value.trim(),
         'nsc-autho': document.getElementById('nscAuthInput').value.trim(),
@@ -1810,8 +2099,6 @@
       document.body.removeChild(link);
       showToast('Activity logs exported as CSV.', 'success');
     }
-
-    let visitorsData = [];
 
     // Aggregate unique visitors stats from today's activity logs
     function updateVisitorsTable() {
