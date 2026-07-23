@@ -50,9 +50,14 @@ function fetchSheet(url) {
 let globalCachedUsers = null;
 let globalCachedLogs = null;
 
-// Supabase Configuration
-let SUPABASE_URL = process.env.SUPABASE_URL;
-let SUPABASE_KEY = process.env.SUPABASE_KEY;
+// Supabase Configuration (env → local file → public anon fallback used elsewhere in this repo)
+let SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+let SUPABASE_KEY = process.env.SUPABASE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+
+// Same project anon key already shipped in client pages (e.g. dd/upcomingDD2.html).
+// Needed because /data is gitignored and often missing on Vercel unless env vars are set.
+const SUPABASE_FALLBACK_URL = 'https://unsmtschmcvftfqwabaq.supabase.co';
+const SUPABASE_FALLBACK_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVuc210c2NobWN2ZnRmcXdhYmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM1NzA1MTYsImV4cCI6MjA2OTE0NjUxNn0.X3_q0FyEjam4ct03sjiqINz0_Hfu0AlWgRcymA3us9o';
 
 const supabaseConfigPath = path.join(__dirname, 'data', 'supabase_config.json');
 if (fs.existsSync(supabaseConfigPath)) {
@@ -66,16 +71,27 @@ if (fs.existsSync(supabaseConfigPath)) {
     }
 }
 
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+    SUPABASE_URL = SUPABASE_URL || SUPABASE_FALLBACK_URL;
+    SUPABASE_KEY = SUPABASE_KEY || SUPABASE_FALLBACK_ANON_KEY;
+    console.log("[Supabase] Using built-in anon fallback credentials for Power Map API");
+} else {
+    console.log("[Supabase] Credentials ready for host:", (() => {
+        try { return new URL(SUPABASE_URL).host; } catch (_) { return 'invalid-url'; }
+    })());
+}
+
 // Zero-dependency Supabase REST Query Helper
 async function querySupabase(apiPath, options = {}) {
     if (!SUPABASE_URL || !SUPABASE_KEY) {
-        throw new Error("Supabase credentials not configured. Please verify data/supabase_config.json.");
+        throw new Error("Supabase credentials not configured. Set SUPABASE_URL and SUPABASE_KEY env vars.");
     }
     const url = `${SUPABASE_URL}/rest/v1/${apiPath}`;
     const headers = {
         'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${SUPABASE_KEY}`,
         'Content-Type': 'application/json',
+        'Prefer': options.prefer || 'return=representation',
         ...options.headers
     };
     
@@ -671,11 +687,13 @@ app.post('/api/admin/sync', requireAdmin, async (req, res) => {
 // 6.45. Expose endpoint to return substations CSV from Supabase
 app.get('/api/power-map/data', async (req, res) => {
     try {
-        const substations = await querySupabase('substations?select=*');
+        // Explicit high limit so PostgREST never silently truncates the network
+        const substations = await querySupabase('substations?select=*&limit=5000');
         
         // Convert to CSV
         if (!substations || substations.length === 0) {
-            return res.send('');
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            return res.status(200).send('Region,Division,Substation,MVA,LATITUDE,LONGITUDE\n');
         }
         
         // Casing and spacing matching Google Sheet column names exactly (all 22 columns)
@@ -689,7 +707,7 @@ app.get('/api/power-map/data', async (req, res) => {
         // Filter out empty rows or invalid entries to prevent Leaflet LatLng crashes
         const validSubstations = substations.filter(row => 
             row.Substation && 
-            row.Substation.trim().length > 0 && 
+            String(row.Substation).trim().length > 0 && 
             row.LATITUDE && 
             row.LONGITUDE
         );
@@ -707,12 +725,16 @@ app.get('/api/power-map/data', async (req, res) => {
             csvRows.push(values.join(','));
         });
         
-        res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', 'attachment; filename=substations.csv');
-        return res.send(csvRows.join('\n'));
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(200).send(csvRows.join('\n'));
     } catch (err) {
         console.error("[Power Map Data] Error querying Supabase:", err.message);
-        return res.status(500).send("Error fetching substations from database: " + err.message);
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        return res.status(500).json({
+            status: 'error',
+            message: 'Error fetching substations from database: ' + err.message
+        });
     }
 });
 
