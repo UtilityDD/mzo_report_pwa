@@ -14,6 +14,9 @@ app.use(express.json());
 const JWT_SECRET = process.env.JWT_SECRET || 'mzo-portal-super-secret-key-123456';
 const LOGIN_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1GtWgPMm-WeDNfebubp5ac76waeZGESA2bQ8JkEpHlZ4/export?format=csv&gid=0';
 const POWER_MAP_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT8hYE6YBbfVQDJhgB3cIWqrrGrjMQAQ22mcmCJTOa995gCH-xBAfsAPpBvNYS1KlYIFMRHM59iGB7K/pub?output=csv';
+// Distinct table names (do not use generic "substations" — may clash with other projects/tables)
+const POWER_MAP_TABLE = 'mzo_power_substations';
+const POWER_MAP_CORRECTIONS_TABLE = 'mzo_power_corrections';
 const USERS_FILE = path.join(__dirname, 'data', 'users.json');
 const LOGS_FILE = path.join(__dirname, 'data', 'activity_log.json');
 
@@ -756,7 +759,7 @@ app.get('/api/power-map/data', async (req, res) => {
         let substations = null;
         let supabaseError = null;
         try {
-            substations = await querySupabase('substations?select=*&limit=5000');
+            substations = await querySupabase(POWER_MAP_TABLE + '?select=*&limit=5000');
         } catch (sbErr) {
             supabaseError = sbErr;
             console.warn('[Power Map Data] Supabase unavailable:', sbErr.message);
@@ -823,7 +826,7 @@ app.post('/api/admin/edit-sheet-row', async (req, res) => {
 
         // Check permission if not super admin
         if (req.user.role !== 'admin') {
-            const records = await querySupabase(`substations?Substation=eq.${encodeURIComponent(rowKeyValue)}&select=*`);
+            const records = await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(rowKeyValue)}&select=*`);
             if (!records || records.length === 0) {
                 return res.status(404).json({ status: 'error', message: 'Substation not found.' });
             }
@@ -851,7 +854,7 @@ app.post('/api/admin/edit-sheet-row', async (req, res) => {
                 status: 'pending'
             };
             
-            await querySupabase('suggested_corrections', {
+            await querySupabase(POWER_MAP_CORRECTIONS_TABLE, {
                 method: 'POST',
                 body: suggestion
             });
@@ -864,7 +867,7 @@ app.post('/api/admin/edit-sheet-row', async (req, res) => {
         // Handle colon-separated connection modifications
         if (connectionTarget) {
             // Fetch the existing record to retrieve its connections arrays
-            const records = await querySupabase(`substations?Substation=eq.${encodeURIComponent(rowKeyValue)}&select=*`);
+            const records = await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(rowKeyValue)}&select=*`);
             if (!records || records.length === 0) {
                 return res.status(404).json({ status: 'error', message: `Substation '${rowKeyValue}' not found.` });
             }
@@ -891,7 +894,7 @@ app.post('/api/admin/edit-sheet-row', async (req, res) => {
         const patchBody = {};
         patchBody[columnName] = finalValue;
         
-        await querySupabase(`substations?Substation=eq.${encodeURIComponent(rowKeyValue)}`, {
+        await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(rowKeyValue)}`, {
             method: 'PATCH',
             body: patchBody
         });
@@ -934,7 +937,7 @@ app.post('/api/admin/append-sheet-row', async (req, res) => {
                 status: 'pending'
             };
             
-            await querySupabase('suggested_corrections', {
+            await querySupabase(POWER_MAP_CORRECTIONS_TABLE, {
                 method: 'POST',
                 body: suggestion
             });
@@ -970,7 +973,7 @@ app.post('/api/admin/append-sheet-row', async (req, res) => {
 
         console.log(`[Admin Add Substation] Appending row to Supabase:`, payload);
         
-        await querySupabase('substations', {
+        await querySupabase(POWER_MAP_TABLE, {
             method: 'POST',
             body: payload
         });
@@ -994,7 +997,7 @@ app.post('/api/admin/add-connection', async (req, res) => {
 
         // Check permission if not super admin
         if (req.user.role !== 'admin') {
-            const records = await querySupabase(`substations?Substation=eq.${encodeURIComponent(sourceSubstation)}&select=*`);
+            const records = await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(sourceSubstation)}&select=*`);
             if (!records || records.length === 0) {
                 return res.status(404).json({ status: 'error', message: 'Source Substation not found.' });
             }
@@ -1021,7 +1024,7 @@ app.post('/api/admin/add-connection', async (req, res) => {
                 status: 'pending'
             };
             
-            await querySupabase('suggested_corrections', {
+            await querySupabase(POWER_MAP_CORRECTIONS_TABLE, {
                 method: 'POST',
                 body: suggestion
             });
@@ -1030,7 +1033,7 @@ app.post('/api/admin/add-connection', async (req, res) => {
         }
         
         // Fetch the source record to retrieve its connections arrays
-        const records = await querySupabase(`substations?Substation=eq.${encodeURIComponent(sourceSubstation)}&select=*`);
+        const records = await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(sourceSubstation)}&select=*`);
         if (!records || records.length === 0) {
             return res.status(404).json({ status: 'error', message: `Source Substation '${sourceSubstation}' not found.` });
         }
@@ -1058,7 +1061,7 @@ app.post('/api/admin/add-connection', async (req, res) => {
 
         console.log(`[Admin Add Connection] Updating feeder connection in Supabase:`, patchBody);
         
-        await querySupabase(`substations?Substation=eq.${encodeURIComponent(sourceSubstation)}`, {
+        await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(sourceSubstation)}`, {
             method: 'PATCH',
             body: patchBody
         });
@@ -1073,7 +1076,7 @@ app.post('/api/admin/add-connection', async (req, res) => {
 // 6.47. Expose public list of pending corrections
 app.get('/api/power-map/pending-corrections', async (req, res) => {
     try {
-        const corrections = await querySupabase("suggested_corrections?status=eq.pending&select=*");
+        const corrections = await querySupabase(POWER_MAP_CORRECTIONS_TABLE + "?status=eq.pending&select=*");
         return res.json({ status: 'success', data: corrections || [] });
     } catch (err) {
         console.error("[Pending Corrections] Error fetching:", err.message);
@@ -1084,7 +1087,7 @@ app.get('/api/power-map/pending-corrections', async (req, res) => {
 // 6.48. Expose list of pending corrections for Admin
 app.get('/api/admin/pending-corrections', requireAdmin, async (req, res) => {
     try {
-        const corrections = await querySupabase("suggested_corrections?status=eq.pending&select=*");
+        const corrections = await querySupabase(POWER_MAP_CORRECTIONS_TABLE + "?status=eq.pending&select=*");
         return res.json({ status: 'success', data: corrections || [] });
     } catch (err) {
         console.error("[Admin Pending Corrections] Error fetching:", err.message);
@@ -1101,7 +1104,7 @@ app.post('/api/admin/approve-correction', requireAdmin, async (req, res) => {
         }
         
         // Fetch the correction details
-        const corrections = await querySupabase(`suggested_corrections?id=eq.${id}&select=*`);
+        const corrections = await querySupabase(`${POWER_MAP_CORRECTIONS_TABLE}?id=eq.${id}&select=*`);
         if (!corrections || corrections.length === 0) {
             return res.status(404).json({ status: 'error', message: 'Suggested correction not found.' });
         }
@@ -1115,7 +1118,7 @@ app.post('/api/admin/approve-correction', requireAdmin, async (req, res) => {
             
             if (proposal.connection_target) {
                 // Connection cell list edit (colon-separated)
-                const records = await querySupabase(`substations?Substation=eq.${encodeURIComponent(proposal.substation)}&select=*`);
+                const records = await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(proposal.substation)}&select=*`);
                 if (!records || records.length === 0) throw new Error(`Target Substation '${proposal.substation}' not found.`);
                 const record = records[0];
                 
@@ -1136,7 +1139,7 @@ app.post('/api/admin/approve-correction', requireAdmin, async (req, res) => {
             const patchBody = {};
             patchBody[proposal.column_name] = finalValue;
             
-            await querySupabase(`substations?Substation=eq.${encodeURIComponent(proposal.substation)}`, {
+            await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(proposal.substation)}`, {
                 method: 'PATCH',
                 body: patchBody
             });
@@ -1145,7 +1148,7 @@ app.post('/api/admin/approve-correction', requireAdmin, async (req, res) => {
             // Parse rowData from proposed_value
             const rowData = JSON.parse(proposal.proposed_value);
             
-            await querySupabase('substations', {
+            await querySupabase(POWER_MAP_TABLE, {
                 method: 'POST',
                 body: rowData
             });
@@ -1154,7 +1157,7 @@ app.post('/api/admin/approve-correction', requireAdmin, async (req, res) => {
             // Parse connection fields
             const connDetails = JSON.parse(proposal.proposed_value);
             
-            const records = await querySupabase(`substations?Substation=eq.${encodeURIComponent(proposal.substation)}&select=*`);
+            const records = await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(proposal.substation)}&select=*`);
             if (!records || records.length === 0) throw new Error(`Source Substation '${proposal.substation}' not found.`);
             const record = records[0];
             
@@ -1177,14 +1180,14 @@ app.post('/api/admin/approve-correction', requireAdmin, async (req, res) => {
                 "PeakLoad": nextLoad
             };
             
-            await querySupabase(`substations?Substation=eq.${encodeURIComponent(proposal.substation)}`, {
+            await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(proposal.substation)}`, {
                 method: 'PATCH',
                 body: patchBody
             });
         }
         
         // Delete the suggestion or mark as approved
-        await querySupabase(`suggested_corrections?id=eq.${id}`, {
+        await querySupabase(`${POWER_MAP_CORRECTIONS_TABLE}?id=eq.${id}`, {
             method: 'DELETE'
         });
         
@@ -1212,14 +1215,14 @@ app.post('/api/admin/reject-correction', requireAdmin, async (req, res) => {
         }
         
         // Fetch suggestion to log it before deletion
-        const corrections = await querySupabase(`suggested_corrections?id=eq.${id}&select=*`);
+        const corrections = await querySupabase(`${POWER_MAP_CORRECTIONS_TABLE}?id=eq.${id}&select=*`);
         if (!corrections || corrections.length === 0) {
             return res.status(404).json({ status: 'error', message: 'Suggested correction not found.' });
         }
         const proposal = corrections[0];
         
         // Delete the suggestion
-        await querySupabase(`suggested_corrections?id=eq.${id}`, {
+        await querySupabase(`${POWER_MAP_CORRECTIONS_TABLE}?id=eq.${id}`, {
             method: 'DELETE'
         });
         
@@ -1250,12 +1253,12 @@ app.post('/api/admin/delete-substation', requireAdmin, async (req, res) => {
         console.log(`[Admin Delete Substation] Deleting substation: ${substation}`);
         
         // 1. Delete the substation record
-        await querySupabase(`substations?Substation=eq.${encodeURIComponent(substation)}`, {
+        await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(substation)}`, {
             method: 'DELETE'
         });
         
         // 2. Clean up references in other substations' connections
-        const allRecords = await querySupabase('substations?select=*');
+        const allRecords = await querySupabase(POWER_MAP_TABLE + '?select=*');
         for (const record of allRecords) {
             const connStr = record["Connected to"] || '';
             if (connStr) {
@@ -1282,7 +1285,7 @@ app.post('/api/admin/delete-substation', requireAdmin, async (req, res) => {
                         "PeakLoad": loads.join(" : ")
                     };
                     
-                    await querySupabase(`substations?Substation=eq.${encodeURIComponent(record.Substation)}`, {
+                    await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(record.Substation)}`, {
                         method: 'PATCH',
                         body: patchBody
                     });
@@ -1308,7 +1311,7 @@ app.post('/api/admin/delete-connection', requireAdmin, async (req, res) => {
         
         console.log(`[Admin Delete Connection] Deleting connection from ${source} to ${target}`);
         
-        const records = await querySupabase(`substations?Substation=eq.${encodeURIComponent(source)}&select=*`);
+        const records = await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(source)}&select=*`);
         if (!records || records.length === 0) {
             return res.status(404).json({ status: 'error', message: `Source substation '${source}' not found.` });
         }
@@ -1341,7 +1344,7 @@ app.post('/api/admin/delete-connection', requireAdmin, async (req, res) => {
             "PeakLoad": loads.join(" : ")
         };
         
-        await querySupabase(`substations?Substation=eq.${encodeURIComponent(source)}`, {
+        await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(source)}`, {
             method: 'PATCH',
             body: patchBody
         });
