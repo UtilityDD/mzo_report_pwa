@@ -294,10 +294,29 @@
       border-top-color: #d00000;
     }
 
-    /* Hide connector on mobile where the table is inline */
+    /* Hide connector on mobile; detail opens full-width below cards */
     @media (max-width: 768px) {
       .kpi-card-active::after {
         display: none;
+      }
+
+      #detailCollapse {
+        width: 100%;
+        max-width: 100%;
+      }
+
+      #detailCollapse .kpi-details-container {
+        margin-top: 0.5rem;
+        width: 100%;
+        max-width: 100%;
+        border-radius: var(--spacing-sm);
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      /* Per-card inline shells are unused; keep them out of layout */
+      .row.row-cols-lg-7 > [class*="col"] > .card > .collapse {
+        display: none !important;
       }
     }
 
@@ -1678,7 +1697,7 @@
 
 
 
-    <!-- Shared collapse for desktop view -->
+    <!-- Shared full-width KPI detail panel (mobile + desktop) -->
     <div class="collapse" id="detailCollapse">
       <div class="kpi-details-container" id="detailTableContainer"></div>
     </div>
@@ -3051,81 +3070,67 @@
         }
       });
 
-      if (isMobile) {
-        const collapseId = cardId.replace('Card', 'Collapse');
-        const tableContainerId = cardId.replace('Card', 'TableContainer');
-        const collapseElement = document.getElementById(collapseId);
-        const tableContainer = document.getElementById(tableContainerId);
-        const bsCollapse = bootstrap.Collapse.getOrCreateInstance(collapseElement);
+      // Close any leftover per-card collapses (legacy mobile inline panels)
+      const legacyKpiCollapses = [
+        'totalPendingCollapse', 'nonPoleCollapse', 'poleCollapse',
+        'initiallyWithheldCollapse', 'industrialPendingCollapse',
+        'procedureBCollapse', 'commercial3phCollapse'
+      ];
+      legacyKpiCollapses.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const inst = bootstrap.Collapse.getInstance(el);
+        if (inst) inst.hide();
+        else el.classList.remove('show');
+      });
 
-        const isCurrentlyOpen = collapseElement.classList.contains('show');
-        const activeCardElement = document.querySelector('.kpi-card-active');
+      // Shared full-width detail panel (mobile + desktop)
+      const collapseElement = document.getElementById('detailCollapse');
+      const tableContainer = document.getElementById('detailTableContainer');
+      const bsCollapse = bootstrap.Collapse.getOrCreateInstance(collapseElement);
 
-        // If another card is open, close it first
-        if (activeCardElement && activeCardElement.id !== cardId) {
-          const otherCollapseId = activeCardElement.id.replace('Card', 'Collapse');
-          const otherCollapseEl = document.getElementById(otherCollapseId);
-          if (otherCollapseEl) {
-            bootstrap.Collapse.getInstance(otherCollapseEl)?.hide();
+      const isCurrentlyOpen = collapseElement.classList.contains('show');
+      const isSameCard = tableContainer.dataset.activeCard === cardId;
+
+      if (isCurrentlyOpen && isSameCard) {
+        const cardToDeactivate = document.getElementById(cardId);
+
+        collapseElement.addEventListener('hidden.bs.collapse', function handler() {
+          if (cardToDeactivate) {
+            cardToDeactivate.classList.remove('kpi-card-active', 'connector-visible');
           }
-          activeCardElement.classList.remove('kpi-card-active');
-        }
+          collapseElement.removeEventListener('hidden.bs.collapse', handler);
+        });
 
-        // Toggle the current card
-        if (!isCurrentlyOpen) {
-          document.getElementById(cardId).classList.add('kpi-card-active');
-        }
-        fillTable(tableContainer, groupBy, filterFn, title);
-        bsCollapse.toggle();
-
+        bsCollapse.hide();
+        document.documentElement.style.setProperty('--kpi-active-color', 'transparent');
+        document.getElementById(cardId).classList.remove('connector-visible');
+        kpiViewData = null;
+        kpiViewLabel = '';
+        updateKpiBadge();
+        drawTables();
       } else {
-        // Desktop behavior: shared table at bottom
-        const collapseElement = document.getElementById('detailCollapse');
-        const tableContainer = document.getElementById('detailTableContainer');
-        const bsCollapse = bootstrap.Collapse.getOrCreateInstance(collapseElement);
-
-        const isCurrentlyOpen = collapseElement.classList.contains('show');
-        const isSameCard = tableContainer.dataset.activeCard === cardId;
-
-        if (isCurrentlyOpen && isSameCard) {
-          // If it's open and we click the same card, collapse it.
-          const cardToDeactivate = document.getElementById(cardId);
-
-          // Listen for when the collapse is fully hidden
-          collapseElement.addEventListener('hidden.bs.collapse', function handler() {
-            if (cardToDeactivate) {
-              cardToDeactivate.classList.remove('kpi-card-active');
-            }
-            // Clean up the listener
-            collapseElement.removeEventListener('hidden.bs.collapse', handler);
-          });
-
-          bsCollapse.hide();
-          document.documentElement.style.setProperty('--kpi-active-color', 'transparent');
-          document.getElementById(cardId).classList.remove('connector-visible');
-          // Clear KPI filter from Detailed Analysis
-          kpiViewData = null;
-          kpiViewLabel = '';
-          updateKpiBadge();
-          drawTables();
-        } else {
-          // Otherwise, fill the table with the new data and show it.
-          // This will either open the collapse or update the content if already open.
+        if (!isMobile) {
           document.getElementById(cardId).classList.add('connector-visible');
+        }
 
-          // Set the active color variable for the border
-          const detailsContainer = document.querySelector('.kpi-details-container');
-          detailsContainer.style.borderTopColor = activeColor;
+        const detailsContainer = document.querySelector('.kpi-details-container');
+        if (detailsContainer) detailsContainer.style.borderTopColor = activeColor;
 
-          fillTable(tableContainer, groupBy, filterFn, title);
-          tableContainer.dataset.activeCard = cardId; // Mark which card is active
-          document.getElementById(cardId).classList.add('kpi-card-active');
-          bsCollapse.show();
-          // Set KPI filter for Detailed Analysis
-          kpiViewData = filteredData.filter(filterFn);
-          kpiViewLabel = title.replace(/ \(.*\)$/, '');
-          updateKpiBadge();
-          drawTables();
+        fillTable(tableContainer, groupBy, filterFn, title);
+        tableContainer.dataset.activeCard = cardId;
+        document.getElementById(cardId).classList.add('kpi-card-active');
+        bsCollapse.show();
+        kpiViewData = filteredData.filter(filterFn);
+        kpiViewLabel = title.replace(/ \(.*\)$/, '');
+        updateKpiBadge();
+        drawTables();
+
+        // On mobile, scroll the full-width panel into view after it opens
+        if (isMobile) {
+          setTimeout(() => {
+            collapseElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }, 200);
         }
       }
     }
