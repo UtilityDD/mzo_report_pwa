@@ -13,6 +13,7 @@ app.use(express.json());
 // --- Authentication Session Storage & Helpers ---
 const JWT_SECRET = process.env.JWT_SECRET || 'mzo-portal-super-secret-key-123456';
 const LOGIN_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1GtWgPMm-WeDNfebubp5ac76waeZGESA2bQ8JkEpHlZ4/export?format=csv&gid=0';
+const POWER_MAP_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT8hYE6YBbfVQDJhgB3cIWqrrGrjMQAQ22mcmCJTOa995gCH-xBAfsAPpBvNYS1KlYIFMRHM59iGB7K/pub?output=csv';
 const USERS_FILE = path.join(__dirname, 'data', 'users.json');
 const LOGS_FILE = path.join(__dirname, 'data', 'activity_log.json');
 
@@ -49,6 +50,8 @@ function fetchSheet(url) {
 
 let globalCachedUsers = null;
 let globalCachedLogs = null;
+let usersCacheLoadedAt = 0;
+const USERS_CACHE_TTL_MS = 2 * 60 * 1000; // short TTL for admin/list reads
 
 // Supabase Configuration (env → local file → public anon fallback used elsewhere in this repo)
 let SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -91,12 +94,16 @@ async function querySupabase(apiPath, options = {}) {
         'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${SUPABASE_KEY}`,
         'Content-Type': 'application/json',
-        'Prefer': options.prefer || 'return=representation',
         ...options.headers
     };
+    // Prefer only for mutating requests (POST/PATCH/DELETE)
+    const method = (options.method || 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') {
+        headers['Prefer'] = options.prefer || 'return=representation';
+    }
     
     const response = await fetch(url, {
-        method: options.method || 'GET',
+        method,
         headers,
         body: options.body ? JSON.stringify(options.body) : undefined
     });
@@ -170,12 +177,15 @@ async function initializeLocalUsers() {
                 for (let j = 0; j < headers.length; j++) {
                     user[headers[j]] = values[j] ? values[j].trim() : '';
                 }
+                // Normalize PIN to string; blank PINs cannot authenticate
+                if (user.PIN != null) user.PIN = String(user.PIN).trim();
                 users.push(user);
             }
         }
         
         // Cache in memory first to guarantee operation on serverless runtimes
         globalCachedUsers = users;
+        usersCacheLoadedAt = Date.now();
         
         try {
             const dataDir = path.join(__dirname, 'data');
@@ -194,25 +204,68 @@ async function initializeLocalUsers() {
     }
 }
 
-async function getLoginCredentials() {
+function readUsersFromLocalFile() {
+    if (!fs.existsSync(USERS_FILE)) return null;
     try {
-        if (fs.existsSync(USERS_FILE)) {
-            const data = fs.readFileSync(USERS_FILE, 'utf-8');
-            const users = JSON.parse(data);
-            globalCachedUsers = users;
-            return users;
-        }
-        
-        if (globalCachedUsers) {
-            return globalCachedUsers;
-        }
-        
-        return await initializeLocalUsers();
+        const data = fs.readFileSync(USERS_FILE, 'utf-8');
+        const users = JSON.parse(data);
+        if (!Array.isArray(users)) return null;
+        return users;
     } catch (err) {
         console.error("[Auth] Error reading local users file:", err.message);
-        if (globalCachedUsers) return globalCachedUsers;
-        return [];
+        return null;
     }
+}
+
+/**
+ * Login credentials source of truth is the Google Sheet.
+ * forceRefresh=true (used by /api/login) always re-pulls the sheet so PIN
+ * changes apply immediately and stale data/users.json cannot keep old PINs alive.
+ */
+async function getLoginCredentials(options = {}) {
+    const forceRefresh = !!(options && options.forceRefresh);
+    const now = Date.now();
+    const cacheFresh = Array.isArray(globalCachedUsers)
+        && globalCachedUsers.length > 0
+        && (now - usersCacheLoadedAt) < USERS_CACHE_TTL_MS;
+
+    if (!forceRefresh && cacheFresh) {
+        return globalCachedUsers;
+    }
+
+    // Live sheet first (authoritative for PIN / access changes)
+    const fromSheet = await initializeLocalUsers();
+    if (fromSheet && fromSheet.length > 0) {
+        return fromSheet;
+    }
+
+    // Fallback only if sheet is unreachable
+    const fromFile = readUsersFromLocalFile();
+    if (fromFile && fromFile.length > 0) {
+        console.warn('[Auth] Using local users.json fallback — Google Sheet sync failed.');
+        globalCachedUsers = fromFile;
+        usersCacheLoadedAt = Date.now();
+        return fromFile;
+    }
+
+    if (globalCachedUsers && globalCachedUsers.length > 0) {
+        return globalCachedUsers;
+    }
+
+    return [];
+}
+
+function matchLoginUser(users, username, pin) {
+    const userKey = String(username || '').trim().toLowerCase();
+    const pinKey = String(pin || '').trim();
+    if (!userKey || !pinKey) return null;
+
+    return (users || []).find(u => {
+        if (!u || !u.Username) return false;
+        const storedPin = String(u.PIN || '').trim();
+        if (!storedPin) return false; // users with blank PIN cannot log in
+        return String(u.Username).trim().toLowerCase() === userKey && storedPin === pinKey;
+    }) || null;
 }
 
 async function logActivity(activity) {
@@ -267,6 +320,9 @@ async function requireAuth(req, res, next) {
     if (
         pathName === '/login.html' || 
         pathName === '/api/login' || 
+        pathName === '/sw.js' ||
+        pathName === '/manifest.json' ||
+        pathName === '/offline.html' ||
         pathName.startsWith('/icons/') || 
         pathName.startsWith('/assets/') || 
         pathName.endsWith('.css') || 
@@ -317,12 +373,15 @@ async function requireAuth(req, res, next) {
         }
     }
     
-    // Redirect to login page if unauthenticated
-    if (req.xhr || req.headers.accept?.includes('application/json')) {
+    // Redirect / return 401 if unauthenticated
+    // API routes must never get an HTML login redirect (breaks CSV/JSON clients like Power Map)
+    if (pathName.startsWith('/api/')) {
         return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    } else {
-        return res.redirect('/login.html');
     }
+    if (req.xhr || (req.headers.accept && req.headers.accept.includes('application/json'))) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+    return res.redirect('/login.html');
 }
 
 // Enable authentication check before serving static files
@@ -436,18 +495,15 @@ app.post('/api/structures/update', (req, res) => {
 app.post('/api/login', async (req, res) => {
     const { username, pin } = req.body;
 
-    if (!username || !pin) {
+    if (!username || !pin || !String(pin).trim()) {
         return res.status(400).json({ status: 'error', message: 'Username and PIN are required.' });
     }
 
     try {
-        const users = await getLoginCredentials();
-        
-        // Look up user (case-insensitive username)
-        const matchedUser = users.find(u => 
-            u.Username && u.Username.toLowerCase() === username.trim().toLowerCase() && 
-            u.PIN && u.PIN === pin.trim()
-        );
+        // Always re-fetch Google Sheet so PIN changes apply immediately
+        // (do not trust stale data/users.json or in-memory cache for auth)
+        const users = await getLoginCredentials({ forceRefresh: true });
+        const matchedUser = matchLoginUser(users, username, pin);
 
         if (matchedUser) {
             // Exclude the PIN from user profile sent to the client
@@ -556,6 +612,7 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
         
         users.push(newUser);
         globalCachedUsers = users;
+        usersCacheLoadedAt = Date.now();
         fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
         
         await logActivity({
@@ -594,6 +651,7 @@ app.post('/api/admin/users/update', requireAdmin, async (req, res) => {
         };
         
         globalCachedUsers = users;
+        usersCacheLoadedAt = Date.now();
         fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
         
         await logActivity({
@@ -626,6 +684,7 @@ app.post('/api/admin/users/delete', requireAdmin, async (req, res) => {
         }
         
         globalCachedUsers = filteredUsers;
+        usersCacheLoadedAt = Date.now();
         fs.writeFileSync(USERS_FILE, JSON.stringify(filteredUsers, null, 2), 'utf-8');
         
         await logActivity({
@@ -678,62 +737,76 @@ app.get('/api/admin/logs', requireAdmin, async (req, res) => {
 app.post('/api/admin/sync', requireAdmin, async (req, res) => {
     try {
         await initializeLocalUsers();
-        res.json({ status: 'success', message: 'Successfully synced and updated local user database from Google Sheets.' });
+        res.json({ status: 'success', message: 'Successfully synced local users from Google Sheets. Login always uses the live sheet PIN.' });
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
     }
 });
 
-// 6.45. Expose endpoint to return substations CSV from Supabase
+// 6.45. Expose endpoint to return substations CSV from Supabase (Google Sheet fallback)
 app.get('/api/power-map/data', async (req, res) => {
-    try {
-        // Explicit high limit so PostgREST never silently truncates the network
-        const substations = await querySupabase('substations?select=*&limit=5000');
-        
-        // Convert to CSV
-        if (!substations || substations.length === 0) {
-            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-            return res.status(200).send('Region,Division,Substation,MVA,LATITUDE,LONGITUDE\n');
-        }
-        
-        // Casing and spacing matching Google Sheet column names exactly (all 22 columns)
-        const columns = [
-            "Region", "Division", "Substation", "MVA", "LATITUDE", "LONGITUDE", 
-            "Connected to", "Colour", "RL", "LineStyle", "Para-1", "Para-2", "Para-3", 
-            "Comment", "Symbol", "SymbolSize", "LegendText", "LegendSymbol", 
-            "LegendColour", "Remarks", "ConductorSize", "PeakLoad"
-        ];
-        
-        // Filter out empty rows or invalid entries to prevent Leaflet LatLng crashes
-        const validSubstations = substations.filter(row => 
-            row.Substation && 
-            String(row.Substation).trim().length > 0 && 
-            row.LATITUDE && 
-            row.LONGITUDE
-        );
-
-        const csvRows = [columns.join(',')];
-        validSubstations.forEach(row => {
-            const values = columns.map(col => {
-                const val = row[col];
-                let cleanVal = val !== undefined && val !== null ? String(val) : '';
-                if (cleanVal.includes(',') || cleanVal.includes('"') || cleanVal.includes('\n')) {
-                    cleanVal = `"${cleanVal.replace(/"/g, '""')}"`;
-                }
-                return cleanVal;
-            });
-            csvRows.push(values.join(','));
-        });
-        
+    const sendCsv = (csvBody) => {
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
         res.setHeader('Cache-Control', 'no-store');
-        return res.status(200).send(csvRows.join('\n'));
+        return res.status(200).send(csvBody);
+    };
+
+    try {
+        // Prefer Supabase when the table exists and has rows
+        let substations = null;
+        let supabaseError = null;
+        try {
+            substations = await querySupabase('substations?select=*&limit=5000');
+        } catch (sbErr) {
+            supabaseError = sbErr;
+            console.warn('[Power Map Data] Supabase unavailable:', sbErr.message);
+        }
+
+        if (Array.isArray(substations) && substations.length > 0) {
+            const columns = [
+                "Region", "Division", "Substation", "MVA", "LATITUDE", "LONGITUDE",
+                "Connected to", "Colour", "RL", "LineStyle", "Para-1", "Para-2", "Para-3",
+                "Comment", "Symbol", "SymbolSize", "LegendText", "LegendSymbol",
+                "LegendColour", "Remarks", "ConductorSize", "PeakLoad"
+            ];
+
+            const validSubstations = substations.filter(row =>
+                row.Substation &&
+                String(row.Substation).trim().length > 0 &&
+                row.LATITUDE &&
+                row.LONGITUDE
+            );
+
+            const csvRows = [columns.join(',')];
+            validSubstations.forEach(row => {
+                const values = columns.map(col => {
+                    const val = row[col];
+                    let cleanVal = val !== undefined && val !== null ? String(val) : '';
+                    if (cleanVal.includes(',') || cleanVal.includes('"') || cleanVal.includes('\n')) {
+                        cleanVal = `"${cleanVal.replace(/"/g, '""')}"`;
+                    }
+                    return cleanVal;
+                });
+                csvRows.push(values.join(','));
+            });
+
+            return sendCsv(csvRows.join('\n'));
+        }
+
+        // Fallback: published Google Sheet (used when Supabase table is missing/empty)
+        console.warn('[Power Map Data] Falling back to Google Sheet CSV'
+            + (supabaseError ? ` (reason: ${supabaseError.message})` : ' (empty Supabase result)'));
+        const csvText = await fetchSheet(POWER_MAP_SHEET_CSV_URL);
+        if (!csvText || !String(csvText).trim()) {
+            return sendCsv('Region,Division,Substation,MVA,LATITUDE,LONGITUDE\n');
+        }
+        return sendCsv(csvText);
     } catch (err) {
-        console.error("[Power Map Data] Error querying Supabase:", err.message);
+        console.error("[Power Map Data] Error fetching network data:", err.message);
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         return res.status(500).json({
             status: 'error',
-            message: 'Error fetching substations from database: ' + err.message
+            message: 'Error fetching substations: ' + err.message
         });
     }
 });

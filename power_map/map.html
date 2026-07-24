@@ -3325,8 +3325,18 @@ out geom;`;
         async function fetchCSV(url) {
             try {
                 showStatus("Fetching substation data...", 0, 10); // 10% progress
-                const response = await fetch(url, { cache: 'no-store' });
+                const response = await fetch(url, {
+                    cache: 'no-store',
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'text/csv, application/json;q=0.9, */*;q=0.8' }
+                });
                 const rawText = await response.text();
+
+                if (response.status === 401) {
+                    showStatus("Session expired — redirecting to login…", 2500, 0);
+                    setTimeout(() => { window.location.href = '/login.html'; }, 600);
+                    throw new Error('Unauthorized — please sign in again');
+                }
 
                 if (!response.ok) {
                     let detail = `HTTP ${response.status}`;
@@ -3343,8 +3353,13 @@ out geom;`;
                     showStatus("Error: No network data returned", 5000, 40);
                     return [];
                 }
+                // Login HTML / JSON error mistaken as CSV
                 if (trimmed.startsWith('{') || trimmed.startsWith('<')) {
                     console.error("Power Map API returned non-CSV payload:", trimmed.slice(0, 200));
+                    if (trimmed.includes('login') || trimmed.includes('MZO Portal')) {
+                        showStatus("Not signed in — redirecting to login…", 2500, 0);
+                        setTimeout(() => { window.location.href = '/login.html'; }, 600);
+                    }
                     throw new Error("Power Map API returned an error instead of CSV data");
                 }
 
@@ -3353,7 +3368,7 @@ out geom;`;
                 return new Promise((resolve) => {
                     Papa.parse(trimmed, {
                         header: true,
-                        dynamicTyping: true,
+                        dynamicTyping: false,
                         skipEmptyLines: true,
                         complete: (results) => {
                             if (results.data && results.data.length > 0) {
