@@ -1,5 +1,5 @@
 // sw.js - Service Worker for MZO Reports PWA
-const CACHE_NAME = 'mzo-reports-cache-v17';
+const CACHE_NAME = 'mzo-reports-cache-v18';
 
 // Assets to precache during installation
 const PRECACHE_ASSETS = [
@@ -13,6 +13,7 @@ const PRECACHE_ASSETS = [
   'manifest.json',
   'tailwind_dist.css',
   'mzo_presets_hub.js',
+  'mzo_docket_briefing.js',
   'mzo_data_hub.js',
   'auth.js',
   'home-button.js'
