@@ -2555,7 +2555,7 @@
     }
     .open-choice-options button {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       gap: 12px;
       text-align: left;
       width: 100%;
@@ -2576,24 +2576,13 @@
       background: rgba(99, 102, 241, 0.12);
     }
     .open-choice-options button i {
-      margin-top: 2px;
       color: #818cf8;
       width: 18px;
       text-align: center;
     }
     .open-choice-options strong {
-      display: block;
       font-size: 14px;
-      margin-bottom: 2px;
-    }
-    .open-choice-options span {
-      display: block;
-      font-size: 12px;
-      color: #94a3b8;
-      line-height: 1.35;
-    }
-    body.light-theme .open-choice-options span {
-      color: #64748b;
+      font-weight: 600;
     }
     .open-choice-footer {
       padding: 8px 18px 16px;
@@ -3672,20 +3661,40 @@
       });
     }
 
+    function openInNewAppWindow(page, title, datasetKey) {
+      const target = new URL('index.html', window.location.href);
+      target.searchParams.set('open', page);
+      if (title) target.searchParams.set('title', title);
+      if (datasetKey) target.searchParams.set('dataset', datasetKey);
+      target.searchParams.set('inapp', '1');
+
+      const width = Math.min(1280, Math.max(980, window.screen.availWidth - 80));
+      const height = Math.min(900, Math.max(700, window.screen.availHeight - 80));
+      const left = Math.max(0, Math.round((window.screen.availWidth - width) / 2));
+      const top = Math.max(0, Math.round((window.screen.availHeight - height) / 2));
+      const features = `popup=yes,noopener,noreferrer,width=${width},height=${height},left=${left},top=${top}`;
+
+      const win = window.open(target.toString(), '_blank', features);
+      if (!win) {
+        // Popup blocked — fall back to same-tab navigation in this app
+        window.location.href = target.toString();
+      }
+    }
+
     async function openPage(page, title, datasetKey, opts) {
       opts = opts || {};
       const iframe = document.getElementById("subPageFrame");
       const errorDiv = document.getElementById("iframeError");
       const loader = document.getElementById("iframeLoader");
 
-      if (isDesktopView()) {
+      if (isDesktopView() && !opts.forceSame) {
         let mode = opts.forceAsk ? null : getDesktopOpenPreference();
         if (!mode) {
           mode = await askDesktopOpenChoice();
           if (!mode) return; // cancelled
         }
         if (mode === 'new') {
-          window.open(page, '_blank');
+          openInNewAppWindow(page, title, datasetKey);
           return;
         }
         // mode === 'same' → continue into in-app iframe
@@ -3754,7 +3763,7 @@
         showIframeStatus(`🔄 Retrying data for ${pageTitle}...`);
         const success = await window.mzoDataHub.retryDataset(key);
         if (success) {
-            openPage(page, pageTitle, key); // Reload
+            openPage(page, pageTitle, key, { forceSame: true }); // Reload in this window
         } else {
             showIframeDataError(key, pageTitle);
         }
@@ -3776,6 +3785,25 @@
     }
     window.openPage = openPage;
     window.clearDesktopOpenPreference = clearDesktopOpenPreference;
+
+    function consumeDeepLinkOpen() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const page = params.get('open');
+        if (!page) return;
+        const title = params.get('title') || 'Details';
+        const dataset = params.get('dataset') || null;
+        // Clean URL so refresh/back stays tidy
+        const cleanUrl = window.location.pathname + window.location.hash;
+        window.history.replaceState({}, document.title, cleanUrl);
+        // Open inside this app window (skip desktop choice)
+        setTimeout(() => {
+          openPage(page, title, dataset, { forceSame: true });
+        }, 50);
+      } catch (e) {
+        console.warn('Deep link open failed', e);
+      }
+    }
 
     function showIframeError(message) {
         const errorDiv = document.getElementById("iframeError");
@@ -3829,6 +3857,9 @@
     // Event listeners - wait for DOM to load
     document.addEventListener('DOMContentLoaded', function () {
       console.log("DOM loaded"); // Debug log
+
+      // Open deep-linked report inside this app window (from "New app window")
+      consumeDeepLinkOpen();
 
       // --- Refactored Event Listeners ---
       document.getElementById('themeToggleBtn')?.addEventListener('click', toggleTheme);
@@ -4895,34 +4926,27 @@
   <div id="openChoiceModal" class="open-choice-overlay" role="dialog" aria-modal="true" aria-labelledby="openChoiceTitle">
     <div class="open-choice-card">
       <header>
-        <h3 id="openChoiceTitle">Open page where?</h3>
+        <h3 id="openChoiceTitle">Open in</h3>
         <button type="button" id="openChoiceCloseBtn" aria-label="Cancel">&times;</button>
       </header>
       <div class="open-choice-body">
-        <p id="openChoiceSubtitle">Choose how desktop links should open.</p>
         <div class="open-choice-options">
           <button type="button" id="openChoiceSameBtn">
             <i class="fas fa-window-maximize"></i>
-            <div>
-              <strong>This app</strong>
-              <span>Open inside MZO Reports (current window)</span>
-            </div>
+            <strong>This window</strong>
           </button>
           <button type="button" id="openChoiceNewBtn">
-            <i class="fas fa-external-link-alt"></i>
-            <div>
-              <strong>New browser tab</strong>
-              <span>Open in a separate browser tab</span>
-            </div>
+            <i class="fas fa-clone"></i>
+            <strong>New window</strong>
           </button>
         </div>
       </div>
       <div class="open-choice-footer">
         <label for="openChoiceRemember">
           <input type="checkbox" id="openChoiceRemember" checked>
-          Remember my choice
+          Remember
         </label>
-        <button type="button" id="openChoiceClearBtn" class="open-choice-reset" style="display:none;">Clear saved choice</button>
+        <button type="button" id="openChoiceClearBtn" class="open-choice-reset" style="display:none;">Clear</button>
       </div>
     </div>
   </div>
