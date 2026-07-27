@@ -2484,6 +2484,152 @@
       display: none !important;
     }
 
+    /* Desktop open-target choice */
+    .open-choice-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100070;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(6px);
+    }
+    .open-choice-overlay.active {
+      display: flex;
+    }
+    .open-choice-card {
+      width: 100%;
+      max-width: 420px;
+      background: #1e293b;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+      overflow: hidden;
+      color: #e2e8f0;
+    }
+    body.light-theme .open-choice-card {
+      background: #ffffff;
+      border-color: #e2e8f0;
+      color: #0f172a;
+      box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18);
+    }
+    .open-choice-card header {
+      padding: 16px 18px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .open-choice-card header h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .open-choice-card header button {
+      background: transparent;
+      border: none;
+      color: inherit;
+      font-size: 22px;
+      line-height: 1;
+      cursor: pointer;
+      opacity: 0.7;
+    }
+    .open-choice-body {
+      padding: 16px 18px 8px;
+    }
+    .open-choice-body p {
+      margin: 0 0 14px;
+      font-size: 13px;
+      color: #94a3b8;
+      line-height: 1.45;
+    }
+    body.light-theme .open-choice-body p {
+      color: #64748b;
+    }
+    .open-choice-options {
+      display: grid;
+      gap: 10px;
+    }
+    .open-choice-options button {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      text-align: left;
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      background: rgba(15, 23, 42, 0.35);
+      color: inherit;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    body.light-theme .open-choice-options button {
+      background: #f8fafc;
+      border-color: #e2e8f0;
+    }
+    .open-choice-options button:hover {
+      border-color: #6366f1;
+      background: rgba(99, 102, 241, 0.12);
+    }
+    .open-choice-options button i {
+      margin-top: 2px;
+      color: #818cf8;
+      width: 18px;
+      text-align: center;
+    }
+    .open-choice-options strong {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 2px;
+    }
+    .open-choice-options span {
+      display: block;
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.35;
+    }
+    body.light-theme .open-choice-options span {
+      color: #64748b;
+    }
+    .open-choice-footer {
+      padding: 8px 18px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .open-choice-footer label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #94a3b8;
+      cursor: pointer;
+      user-select: none;
+    }
+    body.light-theme .open-choice-footer label {
+      color: #475569;
+    }
+    .open-choice-footer label input {
+      width: 15px;
+      height: 15px;
+      cursor: pointer;
+    }
+    .open-choice-reset {
+      background: none;
+      border: none;
+      color: #818cf8;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 0;
+      text-decoration: underline;
+    }
+
     .pwa-modal {
       width: 100%;
       max-width: 400px;
@@ -3434,16 +3580,115 @@
 
 
     // Android-style navigation
-    async function openPage(page, title, datasetKey) {
+    const DESKTOP_OPEN_KEY = 'mzo_desktop_open_target'; // 'same' | 'new'
+    const desktopBreakpoint = 768;
+
+    function isDesktopView() {
+      return window.innerWidth >= desktopBreakpoint;
+    }
+
+    function getDesktopOpenPreference() {
+      try {
+        const v = localStorage.getItem(DESKTOP_OPEN_KEY);
+        return v === 'same' || v === 'new' ? v : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function setDesktopOpenPreference(mode) {
+      try {
+        if (mode === 'same' || mode === 'new') {
+          localStorage.setItem(DESKTOP_OPEN_KEY, mode);
+        }
+      } catch (e) {}
+    }
+
+    function clearDesktopOpenPreference() {
+      try {
+        localStorage.removeItem(DESKTOP_OPEN_KEY);
+      } catch (e) {}
+    }
+
+    function askDesktopOpenChoice() {
+      return new Promise((resolve) => {
+        const modal = document.getElementById('openChoiceModal');
+        const rememberChk = document.getElementById('openChoiceRemember');
+        const clearBtn = document.getElementById('openChoiceClearBtn');
+        const saved = getDesktopOpenPreference();
+
+        if (!modal) {
+          resolve('same');
+          return;
+        }
+
+        if (rememberChk) rememberChk.checked = true;
+        if (clearBtn) clearBtn.style.display = saved ? 'inline' : 'none';
+
+        const finish = (mode) => {
+          cleanup();
+          if (mode) {
+            if (rememberChk && rememberChk.checked) {
+              setDesktopOpenPreference(mode);
+            } else {
+              clearDesktopOpenPreference();
+            }
+          }
+          resolve(mode);
+        };
+
+        const onSame = () => finish('same');
+        const onNew = () => finish('new');
+        const onClose = () => finish(null);
+        const onClear = () => {
+          clearDesktopOpenPreference();
+          if (clearBtn) clearBtn.style.display = 'none';
+        };
+        const onOverlay = (e) => {
+          if (e.target === modal) finish(null);
+        };
+        const onKey = (e) => {
+          if (e.key === 'Escape') finish(null);
+        };
+
+        function cleanup() {
+          modal.classList.remove('active');
+          document.getElementById('openChoiceSameBtn')?.removeEventListener('click', onSame);
+          document.getElementById('openChoiceNewBtn')?.removeEventListener('click', onNew);
+          document.getElementById('openChoiceCloseBtn')?.removeEventListener('click', onClose);
+          document.getElementById('openChoiceClearBtn')?.removeEventListener('click', onClear);
+          modal.removeEventListener('click', onOverlay);
+          document.removeEventListener('keydown', onKey);
+        }
+
+        document.getElementById('openChoiceSameBtn')?.addEventListener('click', onSame);
+        document.getElementById('openChoiceNewBtn')?.addEventListener('click', onNew);
+        document.getElementById('openChoiceCloseBtn')?.addEventListener('click', onClose);
+        document.getElementById('openChoiceClearBtn')?.addEventListener('click', onClear);
+        modal.addEventListener('click', onOverlay);
+        document.addEventListener('keydown', onKey);
+
+        modal.classList.add('active');
+      });
+    }
+
+    async function openPage(page, title, datasetKey, opts) {
+      opts = opts || {};
       const iframe = document.getElementById("subPageFrame");
       const errorDiv = document.getElementById("iframeError");
       const loader = document.getElementById("iframeLoader");
-      const desktopBreakpoint = 768;
 
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-      if (window.innerWidth >= desktopBreakpoint && !isStandalone) {
-        window.open(page, '_blank');
-        return;
+      if (isDesktopView()) {
+        let mode = opts.forceAsk ? null : getDesktopOpenPreference();
+        if (!mode) {
+          mode = await askDesktopOpenChoice();
+          if (!mode) return; // cancelled
+        }
+        if (mode === 'new') {
+          window.open(page, '_blank');
+          return;
+        }
+        // mode === 'same' → continue into in-app iframe
       }
 
       if (loader) loader.classList.add('active');
@@ -3530,6 +3775,7 @@
       };
     }
     window.openPage = openPage;
+    window.clearDesktopOpenPreference = clearDesktopOpenPreference;
 
     function showIframeError(message) {
         const errorDiv = document.getElementById("iframeError");
@@ -3592,8 +3838,10 @@
 
       // Action buttons (Docket, Summary)
       document.querySelectorAll('.action-btn-container .btn').forEach(btn => {
-        btn.addEventListener('click', function () {
-          openPage(this.dataset.page, this.dataset.title, this.dataset.dataset);
+        btn.addEventListener('click', function (e) {
+          openPage(this.dataset.page, this.dataset.title, this.dataset.dataset, {
+            forceAsk: e.shiftKey
+          });
         });
       });
 
@@ -3608,7 +3856,7 @@
           const title = this.querySelector('.app-label')?.textContent.trim() || 'Details';
           const dataset = this.getAttribute('data-dataset');
           if (page) {
-            openPage(page, title, dataset);
+            openPage(page, title, dataset, { forceAsk: e.shiftKey });
           }
         });
       });
@@ -4642,6 +4890,42 @@
     // Check if sync is needed (first time load or first time today)
     // Consolidating all DOMContentLoaded logic into the first listener above
   </script>
+
+  <!-- Desktop: choose same app vs new tab -->
+  <div id="openChoiceModal" class="open-choice-overlay" role="dialog" aria-modal="true" aria-labelledby="openChoiceTitle">
+    <div class="open-choice-card">
+      <header>
+        <h3 id="openChoiceTitle">Open page where?</h3>
+        <button type="button" id="openChoiceCloseBtn" aria-label="Cancel">&times;</button>
+      </header>
+      <div class="open-choice-body">
+        <p id="openChoiceSubtitle">Choose how desktop links should open.</p>
+        <div class="open-choice-options">
+          <button type="button" id="openChoiceSameBtn">
+            <i class="fas fa-window-maximize"></i>
+            <div>
+              <strong>This app</strong>
+              <span>Open inside MZO Reports (current window)</span>
+            </div>
+          </button>
+          <button type="button" id="openChoiceNewBtn">
+            <i class="fas fa-external-link-alt"></i>
+            <div>
+              <strong>New browser tab</strong>
+              <span>Open in a separate browser tab</span>
+            </div>
+          </button>
+        </div>
+      </div>
+      <div class="open-choice-footer">
+        <label for="openChoiceRemember">
+          <input type="checkbox" id="openChoiceRemember" checked>
+          Remember my choice
+        </label>
+        <button type="button" id="openChoiceClearBtn" class="open-choice-reset" style="display:none;">Clear saved choice</button>
+      </div>
+    </div>
+  </div>
 
   <!-- PWA Install Modal — shown on every browser visit when not installed -->
   <div id="pwa-install-modal" class="pwa-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="pwa-install-title">
