@@ -3672,12 +3672,16 @@
       const height = Math.min(900, Math.max(700, window.screen.availHeight - 80));
       const left = Math.max(0, Math.round((window.screen.availWidth - width) / 2));
       const top = Math.max(0, Math.round((window.screen.availHeight - height) / 2));
-      const features = `popup=yes,noopener,noreferrer,width=${width},height=${height},left=${left},top=${top}`;
+      // Do not include noopener in features — it makes window.open() return null
+      // even when the popup succeeds, which wrongly triggered same-window navigation.
+      const features = `popup=yes,width=${width},height=${height},left=${left},top=${top}`;
 
       const win = window.open(target.toString(), '_blank', features);
-      if (!win) {
-        // Popup blocked — fall back to same-tab navigation in this app
-        window.location.href = target.toString();
+      if (win) {
+        try { win.opener = null; } catch (e) {}
+        try { win.focus(); } catch (e) {}
+      } else {
+        console.warn('Popup blocked: could not open new app window');
       }
     }
 
