@@ -12,11 +12,14 @@ app.use(express.json());
 
 // --- Authentication Session Storage & Helpers ---
 const JWT_SECRET = process.env.JWT_SECRET || 'mzo-portal-super-secret-key-123456';
-const LOGIN_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1GtWgPMm-WeDNfebubp5ac76waeZGESA2bQ8JkEpHlZ4/export?format=csv&gid=0';
 const POWER_MAP_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT8hYE6YBbfVQDJhgB3cIWqrrGrjMQAQ22mcmCJTOa995gCH-xBAfsAPpBvNYS1KlYIFMRHM59iGB7K/pub?output=csv';
 // Distinct table names (do not use generic "substations" — may clash with other projects/tables)
 const POWER_MAP_TABLE = 'mzo_power_substations';
 const POWER_MAP_CORRECTIONS_TABLE = 'mzo_power_corrections';
+// Portal login + activity logs live in mzo_insight (not Google Sheet)
+const PORTAL_USERS_SCHEMA = 'mzo_insight';
+const PORTAL_USERS_TABLE = 'portal_users';
+const ACTIVITY_LOGS_TABLE = 'activity_logs';
 const USERS_FILE = path.join(__dirname, 'data', 'users.json');
 const LOGS_FILE = path.join(__dirname, 'data', 'activity_log.json');
 
@@ -92,17 +95,20 @@ async function querySupabase(apiPath, options = {}) {
     if (!SUPABASE_URL || !SUPABASE_KEY) {
         throw new Error("Supabase credentials not configured. Set SUPABASE_URL and SUPABASE_KEY env vars.");
     }
+    const schema = options.schema || 'public';
     const url = `${SUPABASE_URL}/rest/v1/${apiPath}`;
     const headers = {
         'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${SUPABASE_KEY}`,
         'Content-Type': 'application/json',
+        'Accept-Profile': schema,
         ...options.headers
     };
     // Prefer only for mutating requests (POST/PATCH/DELETE)
     const method = (options.method || 'GET').toUpperCase();
     if (method !== 'GET' && method !== 'HEAD') {
         headers['Prefer'] = options.prefer || 'return=representation';
+        headers['Content-Profile'] = schema;
     }
     
     const response = await fetch(url, {
@@ -125,84 +131,147 @@ async function querySupabase(apiPath, options = {}) {
     }
 }
 
-const LOGS_APPS_SCRIPT_URL = process.env.LOGS_APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycby3lVmwORT3j9J2IKjjYebMVzOknRXjo85VmqIQOlBRGGmEi5eFYGMg90HJpFxlz0mM/exec';
-
-async function sendLogToGoogle(entry) {
-    if (!LOGS_APPS_SCRIPT_URL) return;
-    try {
-        if (typeof fetch === 'function') {
-            await fetch(LOGS_APPS_SCRIPT_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'log_activity',
-                    log: entry
-                })
-            });
-        }
-    } catch (err) {
-        console.error("[Activity Log] Failed to send log to Google Sheets:", err.message);
-    }
+/** Map DB row → legacy client profile shape (Username, PIN, dtr-autho, …) */
+function portalUserToClient(row) {
+    if (!row) return null;
+    return {
+        Username: row.username || '',
+        PIN: row.pin != null ? String(row.pin) : '',
+        Name: row.name || '',
+        role: row.role || '',
+        LastLogin: row.last_login || '',
+        'dtr-autho': row.dtr_autho || '',
+        'ss-autho': row.ss_autho || '',
+        'dd-autho': row.dd_autho || '',
+        'nsc-autho': row.nsc_autho || '',
+        zone_code: row.zone_code || '',
+        region_code: row.region_code || '',
+        division_code: row.division_code || '',
+        ccc_code: row.ccc_code || ''
+    };
 }
 
-async function fetchLogsFromGoogle() {
-    if (!LOGS_APPS_SCRIPT_URL) return [];
+/** Map legacy / admin payload → DB columns */
+function clientUserToPortal(user) {
+    const username = String(user.Username || user.username || '').trim();
+    return {
+        username,
+        pin: String(user.PIN != null ? user.PIN : (user.pin || '')).trim(),
+        name: String(user.Name != null ? user.Name : (user.name || '')).trim(),
+        role: String(user.role || '').trim(),
+        last_login: String(user.LastLogin != null ? user.LastLogin : (user.last_login || '')).trim(),
+        dtr_autho: String(user['dtr-autho'] != null ? user['dtr-autho'] : (user.dtr_autho || '')).trim(),
+        ss_autho: String(user['ss-autho'] != null ? user['ss-autho'] : (user.ss_autho || '')).trim(),
+        dd_autho: String(user['dd-autho'] != null ? user['dd-autho'] : (user.dd_autho || '')).trim(),
+        nsc_autho: String(user['nsc-autho'] != null ? user['nsc-autho'] : (user.nsc_autho || '')).trim(),
+        zone_code: String(user.zone_code || '').trim(),
+        region_code: String(user.region_code || '').trim(),
+        division_code: String(user.division_code || '').trim(),
+        ccc_code: String(user.ccc_code || '').trim(),
+        updated_at: new Date().toISOString()
+    };
+}
+
+async function fetchPortalUsersFromSupabase() {
+    const rows = await querySupabase(`${PORTAL_USERS_TABLE}?select=*&order=username.asc`, {
+        schema: PORTAL_USERS_SCHEMA
+    });
+    if (!Array.isArray(rows)) return [];
+    return rows.map(portalUserToClient);
+}
+
+async function insertActivityLogToSupabase(entry) {
+    await querySupabase(ACTIVITY_LOGS_TABLE, {
+        schema: PORTAL_USERS_SCHEMA,
+        method: 'POST',
+        body: {
+            timestamp: entry.timestamp,
+            username: entry.username || '',
+            name: entry.name || '',
+            type: entry.type || '',
+            details: entry.details || ''
+        },
+        prefer: 'return=minimal'
+    });
+}
+
+async function fetchActivityLogsFromSupabase(limit = 2000) {
+    const safeLimit = Math.min(Math.max(Number(limit) || 2000, 1), 5000);
+    const rows = await querySupabase(
+        `${ACTIVITY_LOGS_TABLE}?select=timestamp,username,name,type,details&order=timestamp.desc&limit=${safeLimit}`,
+        { schema: PORTAL_USERS_SCHEMA }
+    );
+    if (!Array.isArray(rows)) return [];
+    return rows.map((l) => ({
+        timestamp: l.timestamp,
+        username: l.username || '',
+        name: l.name || '',
+        type: l.type || '',
+        details: l.details || ''
+    }));
+}
+
+async function logActivity(activity) {
     try {
-        if (typeof fetch === 'function') {
-            const urlObj = new URL(LOGS_APPS_SCRIPT_URL);
-            urlObj.searchParams.set('action', 'get_logs');
-            const res = await fetch(urlObj.toString());
-            if (res.ok) {
-                const data = await res.json();
-                return data.data || [];
+        const entry = {
+            timestamp: new Date().toISOString(),
+            username: activity.username,
+            name: activity.name,
+            type: activity.type,
+            details: activity.details
+        };
+
+        // Source of truth: Supabase mzo_insight.activity_logs
+        try {
+            await insertActivityLogToSupabase(entry);
+        } catch (sbErr) {
+            console.error('[Activity Log] Supabase write failed:', sbErr.message);
+        }
+
+        if (globalCachedLogs === null) {
+            globalCachedLogs = [];
+        }
+        globalCachedLogs.unshift(entry);
+        if (globalCachedLogs.length > 5000) {
+            globalCachedLogs = globalCachedLogs.slice(0, 5000);
+        }
+
+        // Best-effort local cache (ignored on read-only serverless FS)
+        try {
+            const dataDir = path.dirname(LOGS_FILE);
+            if (!fs.existsSync(dataDir)) {
+                fs.mkdirSync(dataDir, { recursive: true });
             }
+            fs.writeFileSync(LOGS_FILE, JSON.stringify(globalCachedLogs, null, 2), 'utf-8');
+        } catch (writeErr) {
+            // Fail silently on read-only serverless filesystems
         }
     } catch (err) {
-        console.error("[Activity Log] Failed to fetch logs from Google Sheets:", err.message);
+        console.error('[Activity Log] Error saving log:', err.message);
     }
-    return [];
 }
 
 async function initializeLocalUsers() {
     try {
-        console.log(`[Auth] Initializing local users from Google Sheets...`);
-        const csvText = await fetchSheet(LOGIN_SHEET_URL);
-        const lines = csvText.trim().split('\n');
-        if (lines.length < 2) return [];
-        
-        const headers = lines[0].split(',').map(h => h.trim());
-        const users = [];
-        
-        for (let i = 1; i < lines.length; i++) {
-            const values = parseCSVLine(lines[i]);
-            if (values.length >= 2) {
-                const user = {};
-                for (let j = 0; j < headers.length; j++) {
-                    user[headers[j]] = values[j] ? values[j].trim() : '';
-                }
-                // Normalize PIN to string; blank PINs cannot authenticate
-                if (user.PIN != null) user.PIN = String(user.PIN).trim();
-                users.push(user);
-            }
-        }
-        
-        // Cache in memory first to guarantee operation on serverless runtimes
+        console.log(`[Auth] Loading portal users from ${PORTAL_USERS_SCHEMA}.${PORTAL_USERS_TABLE}…`);
+        const users = await fetchPortalUsersFromSupabase();
+
         globalCachedUsers = users;
         usersCacheLoadedAt = Date.now();
-        
+
         try {
             const dataDir = path.join(__dirname, 'data');
             if (!fs.existsSync(dataDir)) {
                 fs.mkdirSync(dataDir, { recursive: true });
             }
             fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
-            console.log(`[Auth] Local users file initialized with ${users.length} users.`);
+            console.log(`[Auth] Cached ${users.length} portal users locally.`);
         } catch (writeErr) {
             console.warn("[Auth] Failed to write local users file (read-only filesystem fallback):", writeErr.message);
         }
         return users;
     } catch (err) {
-        console.error("[Auth] Failed to initialize local users:", err.message);
+        console.error("[Auth] Failed to load portal users from Supabase:", err.message);
         return [];
     }
 }
@@ -221,9 +290,8 @@ function readUsersFromLocalFile() {
 }
 
 /**
- * Login credentials source of truth is the Google Sheet.
- * forceRefresh=true (used by /api/login) always re-pulls the sheet so PIN
- * changes apply immediately and stale data/users.json cannot keep old PINs alive.
+ * Login credentials source of truth is mzo_insight.portal_users (Supabase).
+ * forceRefresh=true (used by /api/login) always re-queries so PIN changes apply immediately.
  */
 async function getLoginCredentials(options = {}) {
     const forceRefresh = !!(options && options.forceRefresh);
@@ -236,16 +304,15 @@ async function getLoginCredentials(options = {}) {
         return globalCachedUsers;
     }
 
-    // Live sheet first (authoritative for PIN / access changes)
-    const fromSheet = await initializeLocalUsers();
-    if (fromSheet && fromSheet.length > 0) {
-        return fromSheet;
+    const fromSupabase = await initializeLocalUsers();
+    if (fromSupabase && fromSupabase.length > 0) {
+        return fromSupabase;
     }
 
-    // Fallback only if sheet is unreachable
+    // Fallback only if Supabase is unreachable
     const fromFile = readUsersFromLocalFile();
     if (fromFile && fromFile.length > 0) {
-        console.warn('[Auth] Using local users.json fallback — Google Sheet sync failed.');
+        console.warn('[Auth] Using local users.json fallback — Supabase portal_users unavailable.');
         globalCachedUsers = fromFile;
         usersCacheLoadedAt = Date.now();
         return fromFile;
@@ -269,50 +336,6 @@ function matchLoginUser(users, username, pin) {
         if (!storedPin) return false; // users with blank PIN cannot log in
         return String(u.Username).trim().toLowerCase() === userKey && storedPin === pinKey;
     }) || null;
-}
-
-async function logActivity(activity) {
-    try {
-        const entry = {
-            timestamp: new Date().toISOString(),
-            username: activity.username,
-            name: activity.name,
-            type: activity.type,
-            details: activity.details
-        };
-        
-        if (globalCachedLogs === null) {
-            if (fs.existsSync(LOGS_FILE)) {
-                try {
-                    globalCachedLogs = JSON.parse(fs.readFileSync(LOGS_FILE, 'utf-8'));
-                } catch (e) {
-                    globalCachedLogs = [];
-                }
-            } else {
-                globalCachedLogs = [];
-            }
-        }
-        
-        globalCachedLogs.unshift(entry);
-        if (globalCachedLogs.length > 5000) {
-            globalCachedLogs = globalCachedLogs.slice(0, 5000);
-        }
-        
-        // Await push to prevent Vercel serverless function freezing before completion
-        await sendLogToGoogle(entry);
-        
-        try {
-            const dataDir = path.dirname(LOGS_FILE);
-            if (!fs.existsSync(dataDir)) {
-                fs.mkdirSync(dataDir, { recursive: true });
-            }
-            fs.writeFileSync(LOGS_FILE, JSON.stringify(globalCachedLogs, null, 2), 'utf-8');
-        } catch (writeErr) {
-            // Fail silently on read-only serverless filesystems
-        }
-    } catch (err) {
-        console.error("[Activity Log] Error saving log:", err.message);
-    }
 }
 
 // Authentication middleware
@@ -503,7 +526,7 @@ app.post('/api/login', async (req, res) => {
     }
 
     try {
-        // Always re-fetch Google Sheet so PIN changes apply immediately
+        // Always re-query Supabase so PIN changes apply immediately
         // (do not trust stale data/users.json or in-memory cache for auth)
         const users = await getLoginCredentials({ forceRefresh: true });
         const matchedUser = matchLoginUser(users, username, pin);
@@ -590,7 +613,7 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'Username and PIN are required.' });
         }
         
-        const users = await getLoginCredentials();
+        const users = await getLoginCredentials({ forceRefresh: true });
         const exists = users.some(u => u.Username && u.Username.toLowerCase() === Username.trim().toLowerCase());
         if (exists) {
             return res.status(400).json({ status: 'error', message: 'Username already exists.' });
@@ -612,11 +635,18 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
             ccc_code: '',
             ...otherFields
         };
+
+        const dbRow = clientUserToPortal(newUser);
+        const inserted = await querySupabase(PORTAL_USERS_TABLE, {
+            schema: PORTAL_USERS_SCHEMA,
+            method: 'POST',
+            body: dbRow
+        });
+        const saved = Array.isArray(inserted) && inserted[0]
+            ? portalUserToClient(inserted[0])
+            : newUser;
         
-        users.push(newUser);
-        globalCachedUsers = users;
-        usersCacheLoadedAt = Date.now();
-        fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+        await initializeLocalUsers();
         
         await logActivity({
             username: req.user.Username,
@@ -625,7 +655,7 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
             details: `Created user account: ${Username}`
         });
         
-        res.json({ status: 'success', message: 'User created successfully.', user: newUser });
+        res.json({ status: 'success', message: 'User created successfully.', user: saved });
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
     }
@@ -641,21 +671,30 @@ app.post('/api/admin/users/update', requireAdmin, async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'Username is required.' });
         }
         
-        const users = await getLoginCredentials();
+        const users = await getLoginCredentials({ forceRefresh: true });
         const idx = users.findIndex(u => u.Username && u.Username.toLowerCase() === Username.trim().toLowerCase());
         if (idx === -1) {
             return res.status(404).json({ status: 'error', message: 'User not found.' });
         }
         
-        users[idx] = {
+        const merged = {
             ...users[idx],
             ...updatedUser,
             Username: users[idx].Username // Username cannot be changed
         };
+
+        const dbRow = clientUserToPortal(merged);
+        delete dbRow.username; // do not patch username
+        await querySupabase(
+            `${PORTAL_USERS_TABLE}?username=eq.${encodeURIComponent(users[idx].Username)}`,
+            {
+                schema: PORTAL_USERS_SCHEMA,
+                method: 'PATCH',
+                body: dbRow
+            }
+        );
         
-        globalCachedUsers = users;
-        usersCacheLoadedAt = Date.now();
-        fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+        await initializeLocalUsers();
         
         await logActivity({
             username: req.user.Username,
@@ -664,7 +703,7 @@ app.post('/api/admin/users/update', requireAdmin, async (req, res) => {
             details: `Updated user account: ${Username}`
         });
         
-        res.json({ status: 'success', message: 'User updated successfully.', user: users[idx] });
+        res.json({ status: 'success', message: 'User updated successfully.', user: merged });
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
     }
@@ -679,16 +718,23 @@ app.post('/api/admin/users/delete', requireAdmin, async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'Username is required.' });
         }
         
-        const users = await getLoginCredentials();
-        const filteredUsers = users.filter(u => !u.Username || u.Username.toLowerCase() !== Username.trim().toLowerCase());
+        const users = await getLoginCredentials({ forceRefresh: true });
+        const target = users.find(u => u.Username && u.Username.toLowerCase() === Username.trim().toLowerCase());
         
-        if (filteredUsers.length === users.length) {
+        if (!target) {
             return res.status(404).json({ status: 'error', message: 'User not found.' });
         }
+
+        await querySupabase(
+            `${PORTAL_USERS_TABLE}?username=eq.${encodeURIComponent(target.Username)}`,
+            {
+                schema: PORTAL_USERS_SCHEMA,
+                method: 'DELETE',
+                prefer: 'return=minimal'
+            }
+        );
         
-        globalCachedUsers = filteredUsers;
-        usersCacheLoadedAt = Date.now();
-        fs.writeFileSync(USERS_FILE, JSON.stringify(filteredUsers, null, 2), 'utf-8');
+        await initializeLocalUsers();
         
         await logActivity({
             username: req.user.Username,
@@ -703,22 +749,17 @@ app.post('/api/admin/users/delete', requireAdmin, async (req, res) => {
     }
 });
 
-// 5. GET logs
+// 5. GET logs (Supabase mzo_insight.activity_logs)
 app.get('/api/admin/logs', requireAdmin, async (req, res) => {
     try {
-        if (LOGS_APPS_SCRIPT_URL) {
-            const logs = await fetchLogsFromGoogle();
-            if (logs && logs.length > 0) {
-                globalCachedLogs = logs.map(l => ({
-                    timestamp: l.timestamp,
-                    username: l.username,
-                    name: l.name,
-                    type: l.type,
-                    details: l.details
-                }));
-            }
+        try {
+            const logs = await fetchActivityLogsFromSupabase(2000);
+            globalCachedLogs = logs;
+            return res.json({ status: 'success', logs });
+        } catch (sbErr) {
+            console.warn('[Activity Log] Supabase read failed, trying local cache:', sbErr.message);
         }
-        
+
         if (globalCachedLogs === null) {
             if (fs.existsSync(LOGS_FILE)) {
                 try {
@@ -730,17 +771,21 @@ app.get('/api/admin/logs', requireAdmin, async (req, res) => {
                 globalCachedLogs = [];
             }
         }
-        res.json({ status: 'success', logs: globalCachedLogs });
+        res.json({ status: 'success', logs: globalCachedLogs || [] });
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
     }
 });
 
-// 6. Force sync from Google Sheet
+// 6. Refresh users cache from Supabase (legacy path name kept for admin UI)
 app.post('/api/admin/sync', requireAdmin, async (req, res) => {
     try {
-        await initializeLocalUsers();
-        res.json({ status: 'success', message: 'Successfully synced local users from Google Sheets. Login always uses the live sheet PIN.' });
+        const users = await initializeLocalUsers();
+        res.json({
+            status: 'success',
+            message: `Synced ${users.length} users from ${PORTAL_USERS_SCHEMA}.${PORTAL_USERS_TABLE}. Login uses Supabase as source of truth.`,
+            count: users.length
+        });
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
     }

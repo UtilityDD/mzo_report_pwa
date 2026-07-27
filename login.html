@@ -864,6 +864,9 @@
           // Store authentication states for PWA offline usability
           localStorage.setItem('mzo_authenticated', 'true');
           localStorage.setItem('mzo_user_profile', JSON.stringify(data.profile));
+          document.getElementById('loginInstallBtn')?.classList.add('hidden');
+          document.getElementById('pwa-install-modal')?.classList.add('hidden');
+          document.getElementById('pwa-install-modal')?.classList.remove('active');
           
           // Save credentials if checked, otherwise clear them
           if (rememberMeCheckbox.checked) {
@@ -896,6 +899,13 @@
 
     // Check if already authenticated on load
     if (localStorage.getItem('mzo_authenticated') === 'true') {
+      const cardInstallBtn = document.getElementById('loginInstallBtn');
+      const pwaModal = document.getElementById('pwa-install-modal');
+      if (cardInstallBtn) cardInstallBtn.classList.add('hidden');
+      if (pwaModal) {
+        pwaModal.classList.remove('active');
+        pwaModal.classList.add('hidden');
+      }
       showAuthTransition();
       setAuthCopy('Welcome back', 'Restoring your session');
       setAuthProgress(55);
@@ -925,6 +935,24 @@
       const stepsTitle = document.getElementById('pwa-steps-title');
       const descEl = document.getElementById('pwa-install-desc');
       const shortcutWarn = document.getElementById('pwa-shortcut-warn');
+
+      function isLoggedIn() {
+        return localStorage.getItem('mzo_authenticated') === 'true';
+      }
+
+      function hideInstallUi() {
+        if (cardInstallBtn) cardInstallBtn.classList.add('hidden');
+        if (modal) {
+          modal.classList.remove('active');
+          modal.classList.add('hidden');
+        }
+      }
+
+      // Already signed in → never show install CTA / modal on the login page
+      if (isLoggedIn()) {
+        hideInstallUi();
+        return;
+      }
 
       function isStandaloneApp() {
         return window.matchMedia('(display-mode: standalone)').matches
@@ -959,7 +987,7 @@
       }
 
       function showReadyModal() {
-        if (!modal || isStandaloneApp()) return;
+        if (!modal || isStandaloneApp() || isLoggedIn()) return;
         if (descEl) {
           descEl.innerHTML = 'Tap <b>Install app</b> to install MZO now — no login needed. You can sign in after.';
         }
@@ -985,6 +1013,10 @@
         if (e && e.preventDefault) e.preventDefault();
         deferredPrompt = e;
         promptWaiters.splice(0).forEach(fn => fn(e));
+        if (isLoggedIn()) {
+          hideInstallUi();
+          return;
+        }
         setInstallLabels('Install app', false);
         showReadyModal();
       }
@@ -1091,11 +1123,9 @@
       });
 
       if (isStandaloneApp()) {
-        if (cardInstallBtn) cardInstallBtn.classList.add('hidden');
+        hideInstallUi();
         return;
       }
-
-      if (localStorage.getItem('mzo_authenticated') === 'true') return;
 
       setInstallLabels('Install app', false);
 
@@ -1112,6 +1142,10 @@
       } else {
         // Wait briefly for Chrome to expose install; then show modal with Install app
         waitForPrompt(4500).then(ev => {
+          if (isLoggedIn()) {
+            hideInstallUi();
+            return;
+          }
           if (ev) showReadyModal();
           else if (!isIos()) {
             // Still show modal with Install app that will retry/wait on click
