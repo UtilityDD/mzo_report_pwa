@@ -1,5 +1,5 @@
 // sw.js - Service Worker for MZO Reports PWA
-const CACHE_NAME = 'mzo-reports-cache-v22';
+const CACHE_NAME = 'mzo-reports-cache-v23';
 
 // Assets to precache during installation
 const PRECACHE_ASSETS = [

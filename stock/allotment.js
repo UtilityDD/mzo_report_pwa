@@ -36,6 +36,10 @@
     }
 
     function canUseAllotment() {
+        // Local testing: always allow on localhost
+        const host = String(location.hostname || '').toLowerCase();
+        if (host === 'localhost' || host === '127.0.0.1') return true;
+
         const profile = getPortalProfile();
         const user = String(profile.Username || profile.username || '')
             .trim()
@@ -45,7 +49,6 @@
             .toLowerCase();
         if (!user && !name) return false;
         if (ALLOT_ALLOWED_USERS.includes(user)) return true;
-        // Allow Name match for Aritra if username differs slightly
         return ALLOT_ALLOWED_USERS.some((u) => name === u || name.startsWith(u + ' ') || name.includes(' ' + u + ' '));
     }
 
@@ -84,7 +87,7 @@
         const confirmBtn = document.getElementById('allot-confirm-btn');
         const addRowBtn = document.getElementById('allot-add-row-btn');
         const remarks = document.getElementById('allot-global-remarks');
-        const panel = document.querySelector('.allot-panel');
+        const panel = document.querySelector('#allotment-overlay .allot-panel');
         const locked = isSaved || isUploading;
 
         if (previewBtn) previewBtn.disabled = locked;
@@ -825,60 +828,77 @@
         }
     }
 
-    let overlayGuardUntil = 0;
+    let ignoreBackdropClose = false;
 
-    function setOverlayOpen(overlayEl, open) {
-        if (!overlayEl) return;
-        overlayEl.classList.toggle('active', !!open);
-        overlayEl.setAttribute('aria-hidden', open ? 'false' : 'true');
-        // Inline style beats stale cached CSS that may miss .active rules
-        overlayEl.style.display = open ? 'flex' : 'none';
-        if (open) {
-            overlayGuardUntil = Date.now() + 500;
-            // Keep modal above iframe chrome / sticky headers
-            overlayEl.style.zIndex = '2147483000';
-            if (overlayEl.parentElement !== document.body) {
-                document.body.appendChild(overlayEl);
-            }
+    function openPanel(ev) {
+        if (ev && typeof ev.preventDefault === 'function') {
+            ev.preventDefault();
+            ev.stopPropagation();
         }
-    }
-
-    function openPanel() {
         if (window.MzoAllotmentAccess && !window.MzoAllotmentAccess.canUseAllotment()) {
             showAlertModal('Allotment is restricted to authorised users only.');
-            return;
+            return false;
         }
-        // Open even if stock is still loading — rows will populate when data arrives
-        const finishOpen = () => {
-            if (isSaved) resetForm();
-            isSaved = false;
-            isUploading = false;
-            allotmentNo = 'DRAFT';
-            if (!lines.length) lines = [newBlankRow()];
-            setOverlayOpen(document.getElementById('allotment-overlay'), true);
-            try {
-                renderLines();
-            } catch (err) {
-                console.error('[allotment] renderLines failed:', err);
-            }
-            showStatus(
-                getData().length
-                    ? ''
-                    : 'Stock data is still loading — wait a moment before searching materials.',
-                getData().length ? '' : 'info'
-            );
-            document.getElementById('allot-preview-section').hidden = true;
-            updateFlowControls();
-        };
 
-        // Defer so the opening click cannot hit the new fullscreen backdrop and instantly close
-        window.setTimeout(finishOpen, 0);
+        const overlay = document.getElementById('allotment-overlay');
+        if (!overlay) {
+            console.error('[allotment] #allotment-overlay not found in DOM');
+            return false;
+        }
+
+        if (isSaved) {
+            lines = [newBlankRow()];
+            allotmentNo = 'DRAFT';
+            isSaved = false;
+            const remarks = document.getElementById('allot-global-remarks');
+            if (remarks) {
+                remarks.value = '';
+                remarks.disabled = false;
+            }
+        }
+        isUploading = false;
+        allotmentNo = 'DRAFT';
+        if (!lines.length) lines = [newBlankRow()];
+
+        // Ignore backdrop dismiss from the same click that opens the panel
+        ignoreBackdropClose = true;
+        window.setTimeout(() => {
+            ignoreBackdropClose = false;
+        }, 400);
+
+        overlay.classList.add('active');
+        overlay.setAttribute('aria-hidden', 'false');
+        overlay.style.display = 'flex';
+        overlay.style.zIndex = '2147483000';
+        document.body.appendChild(overlay);
+
+        try {
+            renderLines();
+        } catch (err) {
+            console.error('[allotment] renderLines failed:', err);
+        }
+
+        const previewSection = document.getElementById('allot-preview-section');
+        if (previewSection) previewSection.hidden = true;
+
+        if (getData().length) {
+            showStatus('');
+        } else {
+            showStatus('Stock data is still loading — wait a moment before searching materials.', 'info');
+        }
+        updateFlowControls();
+        return true;
     }
 
     function closePanel() {
-        if (Date.now() < overlayGuardUntil) return;
+        if (ignoreBackdropClose) return;
         closeAllRowSearches();
-        setOverlayOpen(document.getElementById('allotment-overlay'), false);
+        const overlay = document.getElementById('allotment-overlay');
+        if (overlay) {
+            overlay.classList.remove('active');
+            overlay.setAttribute('aria-hidden', 'true');
+            overlay.style.display = 'none';
+        }
         if (isSaved) resetForm();
     }
 
@@ -903,13 +923,17 @@
         bound = true;
         if (window.MzoAllotmentAccess) window.MzoAllotmentAccess.applyAllotmentVisibility();
 
-        document.getElementById('allot-material-btn')?.addEventListener('click', (e) => {
-            e.preventDefault();
+        document.getElementById('allot-material-btn')?.addEventListener('click', openPanel);
+        document.getElementById('allot-close-btn')?.addEventListener('click', (e) => {
             e.stopPropagation();
-            openPanel();
+            ignoreBackdropClose = false;
+            closePanel();
         });
-        document.getElementById('allot-close-btn')?.addEventListener('click', closePanel);
-        document.getElementById('allot-cancel-btn')?.addEventListener('click', closePanel);
+        document.getElementById('allot-cancel-btn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            ignoreBackdropClose = false;
+            closePanel();
+        });
         document.getElementById('allot-preview-btn')?.addEventListener('click', () => {
             if (isSaved || isUploading) return;
             showPreview();
@@ -928,7 +952,7 @@
 
         document.getElementById('allotment-overlay')?.addEventListener('click', (e) => {
             if (e.target.id !== 'allotment-overlay') return;
-            if (Date.now() < overlayGuardUntil) return;
+            if (ignoreBackdropClose) return;
             closePanel();
         });
 
