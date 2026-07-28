@@ -60,6 +60,8 @@ function parseStockNumber(value) {
     }
     return 0;
 }
+window.parseStockNumber = parseStockNumber;
+window.PLANT_MAP = PLANT_MAP;
 
 function applyFilters() {
     let filteredData = [...allData];
@@ -692,6 +694,18 @@ function handleResults(data) {
 
     populateFilters(allData);
     populateTable(allData);
+
+    // Expose for allotment module
+    window.allData = allData;
+    window.parseStockNumber = parseStockNumber;
+    window.PLANT_MAP = PLANT_MAP;
+
+    if (window.MzoStockAllotment && typeof window.MzoStockAllotment.init === 'function') {
+        window.MzoStockAllotment.init();
+    }
+    if (window.MzoAllotmentView && typeof window.MzoAllotmentView.init === 'function') {
+        window.MzoAllotmentView.init();
+    }
 
     storeFilter.addEventListener('change', function () {
         updateGroupFilter();
