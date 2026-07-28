@@ -154,6 +154,11 @@
             sharedResultsEl.hidden = true;
             document.body.appendChild(sharedResultsEl);
         }
+        // Keep above the allotment overlay (z-index 2147483000)
+        sharedResultsEl.style.zIndex = '2147483646';
+        if (sharedResultsEl.parentElement !== document.body) {
+            document.body.appendChild(sharedResultsEl);
+        }
         return sharedResultsEl;
     }
 
@@ -467,6 +472,8 @@
         const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
         const spaceBelow = window.innerHeight - rect.bottom - 12;
         const maxH = Math.min(220, Math.max(120, spaceBelow));
+        resultsBox.style.position = 'fixed';
+        resultsBox.style.zIndex = '2147483646';
         resultsBox.style.left = `${left}px`;
         resultsBox.style.width = `${width}px`;
         if (spaceBelow < 140 && rect.top > 160) {
@@ -485,6 +492,7 @@
         if (box) {
             box.hidden = true;
             box.innerHTML = '';
+            box.style.display = 'none';
         }
         document.querySelectorAll('.allot-mat-cell-wrap.is-open').forEach((el) => {
             el.classList.remove('is-open');
@@ -500,7 +508,8 @@
             closeAllRowSearches();
             return;
         }
-        const hits = uniqueMaterials()
+        const materials = uniqueMaterials();
+        const hits = materials
             .filter((m) => norm(m.code).includes(q) || norm(m.description).includes(q))
             .slice(0, 20);
 
@@ -510,14 +519,23 @@
         wrap?.classList.add('is-open');
         activeSearch = { line, searchInp, resultsBox, wrap };
 
+        resultsBox.hidden = false;
+        resultsBox.style.display = 'block';
+        resultsBox.style.zIndex = '2147483646';
+
+        if (!materials.length) {
+            resultsBox.innerHTML =
+                '<div class="allot-search-item"><span>Stock data not loaded yet. Close and reopen after the table loads.</span></div>';
+            positionSearchResults(searchInp, resultsBox);
+            return;
+        }
+
         if (!hits.length) {
-            resultsBox.hidden = false;
             resultsBox.innerHTML = '<div class="allot-search-item"><span>No match</span></div>';
             positionSearchResults(searchInp, resultsBox);
             return;
         }
 
-        resultsBox.hidden = false;
         resultsBox.innerHTML = hits
             .map(
                 (m) =>
