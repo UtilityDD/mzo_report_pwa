@@ -12,6 +12,10 @@
     <div class="container" style="align-self: start;">
         <div class="main-header-container">
             <h1 id="chart-header">Stock of materials</h1>
+            <div class="allot-btn-group" id="allot-btn-group" hidden>
+                <button type="button" id="allot-material-btn" class="allot-btn" title="Material Allotment">Allot Material</button>
+                <button type="button" id="allot-view-btn" class="allot-btn allot-btn-view" title="View &amp; search allotment orders">View Allotments</button>
+            </div>
             <button id="low-stock-alert-btn" class="alert-btn" title="View Critically Low Stock Items">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                     <path
@@ -114,9 +118,156 @@
         </div>
     </div>
 
+    <!-- Material Allotment Panel -->
+    <div id="allotment-overlay" class="allot-overlay" aria-hidden="true">
+        <div class="allot-panel" role="dialog" aria-labelledby="allot-panel-title">
+            <div class="allot-panel-header">
+                <h2 id="allot-panel-title">Material Allotment</h2>
+                <button type="button" id="allot-close-btn" class="allot-close" aria-label="Close">&times;</button>
+            </div>
+
+            <div class="allot-panel-body">
+                <p class="allot-hint">Add a row for each movement. Choose <b>From</b> → <b>To</b>, search material, enter qty, then <b>Preview</b> and <b>Confirm &amp; Upload</b> to issue the allotment number. PDF is available only after Confirm.</p>
+
+                <section class="allot-section">
+                    <div class="allot-lines-wrap">
+                        <table class="allot-lines-table allot-pro-table" id="allot-lines-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:20%">From</th>
+                                    <th style="width:20%">To</th>
+                                    <th style="width:26%">Material</th>
+                                    <th style="width:10%" id="allot-th-from-stock">From stock</th>
+                                    <th style="width:10%" id="allot-th-to-stock">To stock</th>
+                                    <th style="width:8%">Qty</th>
+                                    <th style="width:4%">Unit</th>
+                                    <th style="width:2%"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="allot-lines-body"></tbody>
+                        </table>
+                    </div>
+                    <button type="button" id="allot-add-row-btn" class="allot-add-row-btn">+ Add row</button>
+                </section>
+
+                <section class="allot-section">
+                    <label class="allot-label" for="allot-global-remarks">Remarks / PO / purpose</label>
+                    <textarea id="allot-global-remarks" rows="2" placeholder="Optional — e.g. Against PO 123 / emergency diversion"></textarea>
+                </section>
+
+                <div id="allot-status" class="allot-status" hidden></div>
+
+                <section class="allot-section allot-preview-section" id="allot-preview-section" hidden>
+                    <label class="allot-label">Letter preview</label>
+                    <div id="allot-letter-preview" class="allot-letter-preview"></div>
+                </section>
+            </div>
+
+            <div class="allot-panel-footer">
+                <button type="button" id="allot-cancel-btn" class="allot-btn-secondary">Cancel</button>
+                <button type="button" id="allot-preview-btn" class="allot-btn-secondary">Preview</button>
+                <button type="button" id="allot-pdf-btn" class="allot-btn-secondary" hidden title="Available after Confirm &amp; Upload">PDF</button>
+                <button type="button" id="allot-confirm-btn" class="allot-btn-primary">Confirm &amp; Upload</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- No-stock alert -->
+    <div id="allot-alert-modal" class="allot-alert-overlay" hidden>
+        <div class="allot-alert-card" role="alertdialog" aria-labelledby="allot-alert-title">
+            <h3 id="allot-alert-title">Cannot allot</h3>
+            <p id="allot-alert-message">No stock at source.</p>
+            <button type="button" id="allot-alert-ok" class="allot-btn-primary">OK</button>
+        </div>
+    </div>
+
+    <!-- View / search allotments -->
+    <div id="allot-view-overlay" class="allot-overlay" aria-hidden="true">
+        <div class="allot-panel allot-view-panel" role="dialog" aria-labelledby="allot-view-title">
+            <div class="allot-panel-header">
+                <h2 id="allot-view-title">Allotment Orders</h2>
+                <button type="button" id="allot-view-close-btn" class="allot-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="allot-panel-body">
+                <section class="allot-section allot-view-filters">
+                    <div class="allot-view-filter-grid">
+                        <label class="allot-field">
+                            <span class="allot-label">Search</span>
+                            <input type="search" id="allot-view-q" placeholder="Allotment no / remarks / created by…">
+                        </label>
+                        <label class="allot-field">
+                            <span class="allot-label">Material</span>
+                            <input type="search" id="allot-view-material" placeholder="Code or description">
+                        </label>
+                        <label class="allot-field">
+                            <span class="allot-label">Division (To)</span>
+                            <select id="allot-view-division">
+                                <option value="">All divisions</option>
+                            </select>
+                        </label>
+                        <label class="allot-field">
+                            <span class="allot-label">From date</span>
+                            <input type="date" id="allot-view-from">
+                        </label>
+                        <label class="allot-field">
+                            <span class="allot-label">To date</span>
+                            <input type="date" id="allot-view-to">
+                        </label>
+                        <div class="allot-view-filter-actions">
+                            <button type="button" id="allot-view-clear-btn" class="allot-btn-secondary">Clear</button>
+                            <button type="button" id="allot-view-refresh-btn" class="allot-btn-secondary">Refresh</button>
+                        </div>
+                    </div>
+                </section>
+
+                <div class="allot-view-kpis">
+                    <div class="allot-view-kpi"><span class="allot-view-kpi-val" id="allot-view-kpi-orders">0</span><span class="allot-view-kpi-lbl">Orders</span></div>
+                    <div class="allot-view-kpi"><span class="allot-view-kpi-val" id="allot-view-kpi-lines">0</span><span class="allot-view-kpi-lbl">Lines</span></div>
+                    <div class="allot-view-kpi"><span class="allot-view-kpi-val" id="allot-view-kpi-qty">0</span><span class="allot-view-kpi-lbl">Total qty</span></div>
+                </div>
+
+                <div id="allot-view-status" class="allot-status" hidden></div>
+
+                <div class="allot-view-tabs" role="tablist">
+                    <button type="button" class="allot-view-tab active" data-tab="orders">Orders</button>
+                    <button type="button" class="allot-view-tab" data-tab="material">Material-wise</button>
+                    <button type="button" class="allot-view-tab" data-tab="division">Division-wise</button>
+                    <button type="button" class="allot-view-tab" data-tab="date">Date-wise</button>
+                </div>
+
+                <div class="allot-view-pane" data-pane="orders">
+                    <div id="allot-view-orders"></div>
+                    <section class="allot-section" id="allot-view-detail" hidden>
+                        <div class="allot-view-detail-head">
+                            <label class="allot-label">Order: <span id="allot-view-detail-title"></span></label>
+                            <button type="button" id="allot-view-pdf-btn" class="allot-btn-secondary">PDF</button>
+                        </div>
+                        <div id="allot-view-letter" class="allot-letter-preview"></div>
+                    </section>
+                </div>
+                <div class="allot-view-pane" data-pane="material" hidden>
+                    <div id="allot-view-material-sum"></div>
+                </div>
+                <div class="allot-view-pane" data-pane="division" hidden>
+                    <div id="allot-view-division-sum"></div>
+                </div>
+                <div class="allot-view-pane" data-pane="date" hidden>
+                    <div id="allot-view-date-sum"></div>
+                </div>
+            </div>
+            <div class="allot-panel-footer">
+                <button type="button" id="allot-view-done-btn" class="allot-btn-primary">Close</button>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.0/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="../mzo_data_hub.js"></script>
     <script src="script.js"></script>
+    <script src="allotment.js"></script>
+    <script src="allotment_view.js"></script>
 </body>
 
 </html>

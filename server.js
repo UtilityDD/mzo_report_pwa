@@ -1431,6 +1431,124 @@ app.get('/api/users-csv', async (req, res) => {
     }
 });
 
+// Material Allotment → Google Apps Script (Allotments ledger tab)
+function stockAllotmentScriptUrl_() {
+    return (
+        process.env.STOCK_ALLOTMENT_SCRIPT_URL ||
+        'https://script.google.com/macros/s/AKfycbxHxa_srh1nfhDTEf1eiXeRj-u2wr7qWiki1m5QIJ7FtWsaVRBVI7kDk37jeSE7ETOz/exec'
+    );
+}
+
+function canAccessStockAllotment_(user) {
+    const allowed = ['zm', 'aritra', 'dm1'];
+    const username = String((user && (user.Username || user.username)) || '')
+        .trim()
+        .toLowerCase();
+    const name = String((user && (user.Name || user.name)) || '')
+        .trim()
+        .toLowerCase();
+    if (allowed.includes(username)) return true;
+    return allowed.some((u) => name === u || name.startsWith(u + ' ') || name.includes(' ' + u + ' '));
+}
+
+function requireStockAllotmentAccess_(req, res) {
+    if (!req.user) {
+        res.status(401).json({ status: 'error', error: 'Please log in to use stock allotment.' });
+        return false;
+    }
+    if (!canAccessStockAllotment_(req.user)) {
+        res.status(403).json({
+            status: 'error',
+            error: 'Stock allotment is restricted to authorised users (zm, Aritra, dm1).'
+        });
+        return false;
+    }
+    return true;
+}
+
+async function proxyStockAllotment_(payload, res) {
+    const scriptUrl = stockAllotmentScriptUrl_();
+    if (!scriptUrl) {
+        return res.status(503).json({
+            status: 'error',
+            error: 'STOCK_ALLOTMENT_SCRIPT_URL is not configured on the server.'
+        });
+    }
+
+    const upstream = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        redirect: 'follow'
+    });
+
+    const text = await upstream.text();
+    let data;
+    try {
+        data = JSON.parse(text);
+    } catch (e) {
+        const looksGone =
+            upstream.status === 404 ||
+            /page not found/i.test(text) ||
+            /<!DOCTYPE html>/i.test(text);
+        console.error('[stock/allotment] Non-JSON Apps Script response:', text.slice(0, 400));
+        return res.status(502).json({
+            status: 'error',
+            error: looksGone
+                ? 'Allotment Apps Script URL is invalid or undeployed (Google returned Page not found). Paste latest allotment_code.gs, Deploy → Manage deployments → New version, then put the new /exec URL in STOCK_ALLOTMENT_SCRIPT_URL or server.js.'
+                : 'Apps Script returned an unexpected response. Check deployment access.'
+        });
+    }
+
+    if (!upstream.ok || data.error || data.status === 'error') {
+        return res.status(upstream.ok ? 400 : 502).json({
+            status: 'error',
+            error: data.error || data.message || 'Allotment request failed'
+        });
+    }
+
+    return res.json(data);
+}
+
+app.get('/api/stock/allotment', async (req, res) => {
+    try {
+        if (!requireStockAllotmentAccess_(req, res)) return;
+        const action = req.query.action || 'listAllotments';
+        const payload = { action, ...req.query };
+        return await proxyStockAllotment_(payload, res);
+    } catch (err) {
+        console.error('[stock/allotment] GET Error:', err.message);
+        return res.status(500).json({ status: 'error', error: err.message });
+    }
+});
+
+app.post('/api/stock/allotment', async (req, res) => {
+    try {
+        if (!requireStockAllotmentAccess_(req, res)) return;
+        const payload = req.body || {};
+        const action = payload.action || '';
+
+        if (action === 'createAllotment') {
+            if (!Array.isArray(payload.rows) || payload.rows.length === 0) {
+                return res.status(400).json({ status: 'error', error: 'No allotment rows provided' });
+            }
+            if (!payload.createdBy && req.user) {
+                payload.createdBy = req.user.Name || req.user.Username || req.user.username || '';
+            }
+            return await proxyStockAllotment_(payload, res);
+        }
+
+        if (action === 'listAllotments' || action === 'getAllotment') {
+            return await proxyStockAllotment_(payload, res);
+        }
+
+        return res.status(400).json({ status: 'error', error: 'Invalid action' });
+    } catch (err) {
+        console.error('[stock/allotment] Error:', err.message);
+        return res.status(500).json({ status: 'error', error: err.message });
+    }
+});
+
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
     app.listen(PORT, () => {
         console.log(`Server is running on http://localhost:${PORT}`);
