@@ -572,17 +572,27 @@
 
     function openPanel() {
         if (window.MzoAllotmentAccess && !window.MzoAllotmentAccess.canUseAllotment()) {
-            alert('Allotment viewing is restricted to authorised users only.');
+            showStatus('Allotment viewing is restricted to authorised users only.', 'error');
             return;
         }
-        document.getElementById('allot-view-overlay')?.classList.add('active');
-        document.getElementById('allot-view-overlay')?.setAttribute('aria-hidden', 'false');
+        const overlay = document.getElementById('allot-view-overlay');
+        if (overlay) {
+            overlay.classList.add('active');
+            overlay.setAttribute('aria-hidden', 'false');
+            overlay.style.display = 'flex';
+            overlay.style.zIndex = '2147483000';
+            if (overlay.parentElement !== document.body) document.body.appendChild(overlay);
+        }
         loadRows();
     }
 
     function closePanel() {
-        document.getElementById('allot-view-overlay')?.classList.remove('active');
-        document.getElementById('allot-view-overlay')?.setAttribute('aria-hidden', 'true');
+        const overlay = document.getElementById('allot-view-overlay');
+        if (overlay) {
+            overlay.classList.remove('active');
+            overlay.setAttribute('aria-hidden', 'true');
+            overlay.style.display = 'none';
+        }
     }
 
     function bind() {

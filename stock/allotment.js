@@ -52,10 +52,21 @@
     function applyAllotmentVisibility() {
         const group = document.getElementById('allot-btn-group');
         const allowed = canUseAllotment();
-        if (group) group.hidden = !allowed;
+        if (group) {
+            group.hidden = !allowed;
+            group.style.display = allowed ? 'flex' : 'none';
+        }
         if (!allowed) {
-            document.getElementById('allotment-overlay')?.classList.remove('active');
-            document.getElementById('allot-view-overlay')?.classList.remove('active');
+            const allotOverlay = document.getElementById('allotment-overlay');
+            const viewOverlay = document.getElementById('allot-view-overlay');
+            if (allotOverlay) {
+                allotOverlay.classList.remove('active');
+                allotOverlay.style.display = 'none';
+            }
+            if (viewOverlay) {
+                viewOverlay.classList.remove('active');
+                viewOverlay.style.display = 'none';
+            }
         }
         return allowed;
     }
@@ -208,6 +219,9 @@
         if (modal) {
             modal.hidden = false;
             modal.classList.add('active');
+            modal.style.display = 'flex';
+            modal.style.zIndex = '2147483001';
+            if (modal.parentElement !== document.body) document.body.appendChild(modal);
         }
     }
 
@@ -216,6 +230,7 @@
         if (modal) {
             modal.classList.remove('active');
             modal.hidden = true;
+            modal.style.display = 'none';
         }
     }
 
@@ -810,13 +825,40 @@
         }
     }
 
+    function setOverlayOpen(overlayEl, open) {
+        if (!overlayEl) return;
+        overlayEl.classList.toggle('active', !!open);
+        overlayEl.setAttribute('aria-hidden', open ? 'false' : 'true');
+        // Inline style beats stale cached CSS that may miss .active rules
+        overlayEl.style.display = open ? 'flex' : 'none';
+        if (open) {
+            // Keep modal above iframe chrome / sticky headers
+            overlayEl.style.zIndex = '2147483000';
+            if (overlayEl.parentElement !== document.body) {
+                document.body.appendChild(overlayEl);
+            }
+        }
+    }
+
     function openPanel() {
         if (window.MzoAllotmentAccess && !window.MzoAllotmentAccess.canUseAllotment()) {
-            alert('Allotment is restricted to authorised users only.');
+            showAlertModal('Allotment is restricted to authorised users only.');
             return;
         }
         if (!getData().length) {
-            alert('Stock data is still loading. Please wait.');
+            showAlertModal('Stock data is still loading. Please wait a moment, then try again.');
+            // Retry briefly in case click happened before DataHub finished
+            let tries = 0;
+            const timer = setInterval(() => {
+                tries += 1;
+                if (getData().length) {
+                    clearInterval(timer);
+                    hideAlertModal();
+                    openPanel();
+                } else if (tries >= 20) {
+                    clearInterval(timer);
+                }
+            }, 400);
             return;
         }
         if (isSaved) resetForm();
@@ -824,8 +866,7 @@
         isUploading = false;
         allotmentNo = 'DRAFT';
         if (!lines.length) lines = [newBlankRow()];
-        document.getElementById('allotment-overlay')?.classList.add('active');
-        document.getElementById('allotment-overlay')?.setAttribute('aria-hidden', 'false');
+        setOverlayOpen(document.getElementById('allotment-overlay'), true);
         renderLines();
         showStatus('');
         document.getElementById('allot-preview-section').hidden = true;
@@ -834,8 +875,7 @@
 
     function closePanel() {
         closeAllRowSearches();
-        document.getElementById('allotment-overlay')?.classList.remove('active');
-        document.getElementById('allotment-overlay')?.setAttribute('aria-hidden', 'true');
+        setOverlayOpen(document.getElementById('allotment-overlay'), false);
         if (isSaved) resetForm();
     }
 
