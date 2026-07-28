@@ -27,6 +27,15 @@
 
     const ALLOT_ALLOWED_USERS = ['zm', 'aritra', 'dm1'];
 
+    let bound = false;
+    let isSaved = false;
+    let isUploading = false;
+    let allotmentNo = 'DRAFT';
+    let lines = [];
+    let sharedResultsEl = null;
+    let activeSearch = null;
+    let searchTimers = {};
+
     function getPortalProfile() {
         try {
             return JSON.parse(localStorage.getItem('mzo_user_profile') || '{}') || {};
