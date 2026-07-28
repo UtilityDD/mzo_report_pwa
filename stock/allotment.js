@@ -64,11 +64,11 @@
             const viewOverlay = document.getElementById('allot-view-overlay');
             if (allotOverlay) {
                 allotOverlay.classList.remove('active');
-                allotOverlay.style.display = 'none';
+                allotOverlay.style.removeProperty('display');
             }
             if (viewOverlay) {
                 viewOverlay.classList.remove('active');
-                viewOverlay.style.display = 'none';
+                viewOverlay.style.removeProperty('display');
             }
         }
         return allowed;
@@ -840,19 +840,31 @@
             return;
         }
 
-        // Clear leftover inline styles from earlier debugging attempts
-        overlay.style.cssText = '';
-
         if (isSaved) resetForm();
         isSaved = false;
         isUploading = false;
         allotmentNo = 'DRAFT';
         if (!lines.length) lines = [newBlankRow()];
 
+        // Ensure overlay is a direct body child above page content / iframe stacking
+        document.body.appendChild(overlay);
         overlay.classList.add('active');
         overlay.setAttribute('aria-hidden', 'false');
-        renderLines();
-        showStatus(getData().length ? '' : 'Stock data is still loading — wait a moment before searching materials.', getData().length ? '' : 'info');
+        overlay.style.setProperty('display', 'flex', 'important');
+        overlay.style.setProperty('position', 'fixed', 'important');
+        overlay.style.setProperty('inset', '0', 'important');
+        overlay.style.setProperty('z-index', '2147483000', 'important');
+        overlay.style.setProperty('background', 'rgba(15,23,42,0.55)', 'important');
+
+        try {
+            renderLines();
+        } catch (err) {
+            console.error('[allotment] renderLines failed:', err);
+        }
+        showStatus(
+            getData().length ? '' : 'Stock data is still loading — wait a moment before searching materials.',
+            getData().length ? '' : 'info'
+        );
         const previewSection = document.getElementById('allot-preview-section');
         if (previewSection) previewSection.hidden = true;
         updateFlowControls();
@@ -864,9 +876,12 @@
         if (overlay) {
             overlay.classList.remove('active');
             overlay.setAttribute('aria-hidden', 'true');
-            overlay.style.cssText = '';
+            overlay.style.removeProperty('display');
+            overlay.style.removeProperty('position');
+            overlay.style.removeProperty('inset');
+            overlay.style.removeProperty('z-index');
+            overlay.style.removeProperty('background');
         }
-        document.body.classList.remove('allot-modal-open');
         if (isSaved) resetForm();
     }
 

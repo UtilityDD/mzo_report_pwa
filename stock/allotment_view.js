@@ -577,9 +577,14 @@
         }
         const overlay = document.getElementById('allot-view-overlay');
         if (!overlay) return;
-        overlay.style.cssText = '';
+        document.body.appendChild(overlay);
         overlay.classList.add('active');
         overlay.setAttribute('aria-hidden', 'false');
+        overlay.style.setProperty('display', 'flex', 'important');
+        overlay.style.setProperty('position', 'fixed', 'important');
+        overlay.style.setProperty('inset', '0', 'important');
+        overlay.style.setProperty('z-index', '2147483000', 'important');
+        overlay.style.setProperty('background', 'rgba(15,23,42,0.55)', 'important');
         loadRows();
     }
 
@@ -588,7 +593,11 @@
         if (overlay) {
             overlay.classList.remove('active');
             overlay.setAttribute('aria-hidden', 'true');
-            overlay.style.cssText = '';
+            overlay.style.removeProperty('display');
+            overlay.style.removeProperty('position');
+            overlay.style.removeProperty('inset');
+            overlay.style.removeProperty('z-index');
+            overlay.style.removeProperty('background');
         }
     }
 
