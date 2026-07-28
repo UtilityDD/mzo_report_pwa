@@ -828,62 +828,34 @@
         }
     }
 
-    function openPanel(ev) {
-        if (ev && typeof ev.preventDefault === 'function') {
-            ev.preventDefault();
-            ev.stopPropagation();
-        }
+    function openPanel() {
         if (window.MzoAllotmentAccess && !window.MzoAllotmentAccess.canUseAllotment()) {
             showAlertModal('Allotment is restricted to authorised users only.');
-            return false;
+            return;
         }
 
         const overlay = document.getElementById('allotment-overlay');
         if (!overlay) {
-            console.error('[allotment] #allotment-overlay not found in DOM');
-            showAlertModal('Allotment panel markup is missing. Hard-refresh the page (Ctrl+F5).');
-            return false;
+            console.error('[allotment] #allotment-overlay missing');
+            return;
         }
 
-        if (isSaved) {
-            lines = [newBlankRow()];
-            allotmentNo = 'DRAFT';
-            isSaved = false;
-            const remarks = document.getElementById('allot-global-remarks');
-            if (remarks) {
-                remarks.value = '';
-                remarks.disabled = false;
-            }
-        }
+        // Clear leftover inline styles from earlier debugging attempts
+        overlay.style.cssText = '';
+
+        if (isSaved) resetForm();
+        isSaved = false;
         isUploading = false;
         allotmentNo = 'DRAFT';
         if (!lines.length) lines = [newBlankRow()];
 
-        // Mount on body and force visible — do not close on backdrop click
-        document.body.appendChild(overlay);
-        document.body.classList.add('allot-modal-open');
         overlay.classList.add('active');
-        overlay.removeAttribute('hidden');
         overlay.setAttribute('aria-hidden', 'false');
-        overlay.style.cssText =
-            'display:flex!important;position:fixed!important;inset:0!important;z-index:2147483000!important;background:rgba(15,23,42,.55);';
-
-        try {
-            renderLines();
-        } catch (err) {
-            console.error('[allotment] renderLines failed:', err);
-        }
-
+        renderLines();
+        showStatus(getData().length ? '' : 'Stock data is still loading — wait a moment before searching materials.', getData().length ? '' : 'info');
         const previewSection = document.getElementById('allot-preview-section');
         if (previewSection) previewSection.hidden = true;
-
-        if (getData().length) {
-            showStatus('');
-        } else {
-            showStatus('Stock data is still loading — wait a moment before searching materials.', 'info');
-        }
         updateFlowControls();
-        return true;
     }
 
     function closePanel() {
@@ -892,8 +864,7 @@
         if (overlay) {
             overlay.classList.remove('active');
             overlay.setAttribute('aria-hidden', 'true');
-            overlay.style.display = 'none';
-            overlay.style.cssText = 'display:none';
+            overlay.style.cssText = '';
         }
         document.body.classList.remove('allot-modal-open');
         if (isSaved) resetForm();
@@ -920,15 +891,13 @@
         bound = true;
         if (window.MzoAllotmentAccess) window.MzoAllotmentAccess.applyAllotmentVisibility();
 
-        document.getElementById('allot-material-btn')?.addEventListener('click', openPanel);
-        document.getElementById('allot-close-btn')?.addEventListener('click', (e) => {
+        document.getElementById('allot-material-btn')?.addEventListener('click', (e) => {
+            e.preventDefault();
             e.stopPropagation();
-            closePanel();
+            openPanel();
         });
-        document.getElementById('allot-cancel-btn')?.addEventListener('click', (e) => {
-            e.stopPropagation();
-            closePanel();
-        });
+        document.getElementById('allot-close-btn')?.addEventListener('click', closePanel);
+        document.getElementById('allot-cancel-btn')?.addEventListener('click', closePanel);
         document.getElementById('allot-preview-btn')?.addEventListener('click', () => {
             if (isSaved || isUploading) return;
             showPreview();
@@ -944,7 +913,8 @@
         document.getElementById('allot-alert-modal')?.addEventListener('click', (e) => {
             if (e.target.id === 'allot-alert-modal') hideAlertModal();
         });
-        // Backdrop click does NOT close create panel (was dismissing instantly on left-side button)
+
+        // Do not close create panel on backdrop click (conflicts with left-side Allot Material button)
 
         document.addEventListener('click', (e) => {
             if (e.target.closest('.allot-mat-cell-wrap') || e.target.closest('.allot-row-search-results')) return;
@@ -955,7 +925,11 @@
             if (!activeSearch || activeSearch.resultsBox.hidden) return;
             positionSearchResults(activeSearch.searchInp, activeSearch.resultsBox);
         };
-        document.querySelector('.allot-panel-body')?.addEventListener('scroll', repositionOpenSearch, { passive: true });
+        document.querySelector('#allotment-overlay .allot-panel-body')?.addEventListener(
+            'scroll',
+            repositionOpenSearch,
+            { passive: true }
+        );
         window.addEventListener('resize', repositionOpenSearch);
         window.addEventListener('scroll', repositionOpenSearch, true);
     }
