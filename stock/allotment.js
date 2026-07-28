@@ -825,6 +825,8 @@
         }
     }
 
+    let overlayGuardUntil = 0;
+
     function setOverlayOpen(overlayEl, open) {
         if (!overlayEl) return;
         overlayEl.classList.toggle('active', !!open);
@@ -832,6 +834,7 @@
         // Inline style beats stale cached CSS that may miss .active rules
         overlayEl.style.display = open ? 'flex' : 'none';
         if (open) {
+            overlayGuardUntil = Date.now() + 500;
             // Keep modal above iframe chrome / sticky headers
             overlayEl.style.zIndex = '2147483000';
             if (overlayEl.parentElement !== document.body) {
@@ -845,35 +848,35 @@
             showAlertModal('Allotment is restricted to authorised users only.');
             return;
         }
-        if (!getData().length) {
-            showAlertModal('Stock data is still loading. Please wait a moment, then try again.');
-            // Retry briefly in case click happened before DataHub finished
-            let tries = 0;
-            const timer = setInterval(() => {
-                tries += 1;
-                if (getData().length) {
-                    clearInterval(timer);
-                    hideAlertModal();
-                    openPanel();
-                } else if (tries >= 20) {
-                    clearInterval(timer);
-                }
-            }, 400);
-            return;
-        }
-        if (isSaved) resetForm();
-        isSaved = false;
-        isUploading = false;
-        allotmentNo = 'DRAFT';
-        if (!lines.length) lines = [newBlankRow()];
-        setOverlayOpen(document.getElementById('allotment-overlay'), true);
-        renderLines();
-        showStatus('');
-        document.getElementById('allot-preview-section').hidden = true;
-        updateFlowControls();
+        // Open even if stock is still loading — rows will populate when data arrives
+        const finishOpen = () => {
+            if (isSaved) resetForm();
+            isSaved = false;
+            isUploading = false;
+            allotmentNo = 'DRAFT';
+            if (!lines.length) lines = [newBlankRow()];
+            setOverlayOpen(document.getElementById('allotment-overlay'), true);
+            try {
+                renderLines();
+            } catch (err) {
+                console.error('[allotment] renderLines failed:', err);
+            }
+            showStatus(
+                getData().length
+                    ? ''
+                    : 'Stock data is still loading — wait a moment before searching materials.',
+                getData().length ? '' : 'info'
+            );
+            document.getElementById('allot-preview-section').hidden = true;
+            updateFlowControls();
+        };
+
+        // Defer so the opening click cannot hit the new fullscreen backdrop and instantly close
+        window.setTimeout(finishOpen, 0);
     }
 
     function closePanel() {
+        if (Date.now() < overlayGuardUntil) return;
         closeAllRowSearches();
         setOverlayOpen(document.getElementById('allotment-overlay'), false);
         if (isSaved) resetForm();
@@ -900,7 +903,11 @@
         bound = true;
         if (window.MzoAllotmentAccess) window.MzoAllotmentAccess.applyAllotmentVisibility();
 
-        document.getElementById('allot-material-btn')?.addEventListener('click', openPanel);
+        document.getElementById('allot-material-btn')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openPanel();
+        });
         document.getElementById('allot-close-btn')?.addEventListener('click', closePanel);
         document.getElementById('allot-cancel-btn')?.addEventListener('click', closePanel);
         document.getElementById('allot-preview-btn')?.addEventListener('click', () => {
@@ -920,7 +927,9 @@
         });
 
         document.getElementById('allotment-overlay')?.addEventListener('click', (e) => {
-            if (e.target.id === 'allotment-overlay') closePanel();
+            if (e.target.id !== 'allotment-overlay') return;
+            if (Date.now() < overlayGuardUntil) return;
+            closePanel();
         });
 
         document.addEventListener('click', (e) => {
