@@ -828,8 +828,6 @@
         }
     }
 
-    let ignoreBackdropClose = false;
-
     function openPanel(ev) {
         if (ev && typeof ev.preventDefault === 'function') {
             ev.preventDefault();
@@ -843,6 +841,7 @@
         const overlay = document.getElementById('allotment-overlay');
         if (!overlay) {
             console.error('[allotment] #allotment-overlay not found in DOM');
+            showAlertModal('Allotment panel markup is missing. Hard-refresh the page (Ctrl+F5).');
             return false;
         }
 
@@ -860,17 +859,14 @@
         allotmentNo = 'DRAFT';
         if (!lines.length) lines = [newBlankRow()];
 
-        // Ignore backdrop dismiss from the same click that opens the panel
-        ignoreBackdropClose = true;
-        window.setTimeout(() => {
-            ignoreBackdropClose = false;
-        }, 400);
-
-        overlay.classList.add('active');
-        overlay.setAttribute('aria-hidden', 'false');
-        overlay.style.display = 'flex';
-        overlay.style.zIndex = '2147483000';
+        // Mount on body and force visible — do not close on backdrop click
         document.body.appendChild(overlay);
+        document.body.classList.add('allot-modal-open');
+        overlay.classList.add('active');
+        overlay.removeAttribute('hidden');
+        overlay.setAttribute('aria-hidden', 'false');
+        overlay.style.cssText =
+            'display:flex!important;position:fixed!important;inset:0!important;z-index:2147483000!important;background:rgba(15,23,42,.55);';
 
         try {
             renderLines();
@@ -891,14 +887,15 @@
     }
 
     function closePanel() {
-        if (ignoreBackdropClose) return;
         closeAllRowSearches();
         const overlay = document.getElementById('allotment-overlay');
         if (overlay) {
             overlay.classList.remove('active');
             overlay.setAttribute('aria-hidden', 'true');
             overlay.style.display = 'none';
+            overlay.style.cssText = 'display:none';
         }
+        document.body.classList.remove('allot-modal-open');
         if (isSaved) resetForm();
     }
 
@@ -926,12 +923,10 @@
         document.getElementById('allot-material-btn')?.addEventListener('click', openPanel);
         document.getElementById('allot-close-btn')?.addEventListener('click', (e) => {
             e.stopPropagation();
-            ignoreBackdropClose = false;
             closePanel();
         });
         document.getElementById('allot-cancel-btn')?.addEventListener('click', (e) => {
             e.stopPropagation();
-            ignoreBackdropClose = false;
             closePanel();
         });
         document.getElementById('allot-preview-btn')?.addEventListener('click', () => {
@@ -949,12 +944,7 @@
         document.getElementById('allot-alert-modal')?.addEventListener('click', (e) => {
             if (e.target.id === 'allot-alert-modal') hideAlertModal();
         });
-
-        document.getElementById('allotment-overlay')?.addEventListener('click', (e) => {
-            if (e.target.id !== 'allotment-overlay') return;
-            if (ignoreBackdropClose) return;
-            closePanel();
-        });
+        // Backdrop click does NOT close create panel (was dismissing instantly on left-side button)
 
         document.addEventListener('click', (e) => {
             if (e.target.closest('.allot-mat-cell-wrap') || e.target.closest('.allot-row-search-results')) return;
