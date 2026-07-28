@@ -575,28 +575,20 @@
             showStatus('Allotment viewing is restricted to authorised users only.', 'error');
             return;
         }
-        const finishOpen = () => {
-            const overlay = document.getElementById('allot-view-overlay');
-            if (overlay) {
-                overlay.dataset.guardUntil = String(Date.now() + 500);
-                overlay.classList.add('active');
-                overlay.setAttribute('aria-hidden', 'false');
-                overlay.style.display = 'flex';
-                overlay.style.zIndex = '2147483000';
-                if (overlay.parentElement !== document.body) document.body.appendChild(overlay);
-            }
-            loadRows();
-        };
-        window.setTimeout(finishOpen, 0);
+        const overlay = document.getElementById('allot-view-overlay');
+        if (!overlay) return;
+        overlay.style.cssText = '';
+        overlay.classList.add('active');
+        overlay.setAttribute('aria-hidden', 'false');
+        loadRows();
     }
 
     function closePanel() {
         const overlay = document.getElementById('allot-view-overlay');
-        if (overlay && Date.now() < Number(overlay.dataset.guardUntil || 0)) return;
         if (overlay) {
             overlay.classList.remove('active');
             overlay.setAttribute('aria-hidden', 'true');
-            overlay.style.display = 'none';
+            overlay.style.cssText = '';
         }
     }
 
@@ -614,13 +606,7 @@
         document.getElementById('allot-view-done-btn')?.addEventListener('click', closePanel);
         document.getElementById('allot-view-refresh-btn')?.addEventListener('click', loadRows);
         document.getElementById('allot-view-pdf-btn')?.addEventListener('click', downloadDetailPdf);
-
-        document.getElementById('allot-view-overlay')?.addEventListener('click', (e) => {
-            if (e.target.id !== 'allot-view-overlay') return;
-            const overlay = e.currentTarget;
-            if (Date.now() < Number(overlay.dataset.guardUntil || 0)) return;
-            closePanel();
-        });
+        // No backdrop-dismiss on view either while debugging create panel conflict
 
         ['allot-view-q', 'allot-view-material', 'allot-view-from', 'allot-view-to', 'allot-view-division'].forEach(
             (id) => {
