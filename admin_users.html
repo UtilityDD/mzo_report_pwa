@@ -1011,13 +1011,14 @@
                 <th>DD Auth</th>
                 <th>NSC Auth</th>
                 <th>SI Auth</th>
+                <th>Sheets</th>
                 <th>Details</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="usersTableBody">
               <tr>
-                <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 40px;">
+                <td colspan="11" style="text-align: center; color: var(--text-muted); padding: 40px;">
                   <i class="fas fa-circle-notch fa-spin" style="font-size: 24px; margin-bottom: 12px; display: block; color: var(--primary);"></i>
                   Loading users database...
                 </td>
@@ -1376,6 +1377,21 @@
             </div>
           </div>
 
+          <div class="form-section-title">Important Data Sheets</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="sheetsAuthInput">Sheets Manage Access</label>
+              <select id="sheetsAuthInput">
+                <option value="">No (view only)</option>
+                <option value="edit">Can manage unbilled months</option>
+              </select>
+              <small style="display:block; margin-top:6px; color:var(--text-muted); font-size:11px;">
+                Allows this user to add/edit/remove months under Unbilled upto date. Admins always have access.
+              </small>
+            </div>
+            <div class="form-group"></div>
+          </div>
+
           <div class="form-section-title">Jurisdiction Mapping</div>
           <div class="form-row">
             <div class="form-group">
@@ -1571,7 +1587,7 @@
       if (filteredUsers.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 40px;">
+            <td colspan="11" style="text-align: center; color: var(--text-muted); padding: 40px;">
               <i class="fas fa-search" style="font-size: 20px; margin-bottom: 8px; display: block;"></i>
               No user accounts match the search query.
             </td>
@@ -1595,6 +1611,7 @@
             <td data-label="DD Auth">${user['dd-autho'] || '-'}</td>
             <td data-label="NSC Auth">${user['nsc-autho'] || '-'}</td>
             <td data-label="SI Auth" title="${((user['si-divisions'] || '') || (user['si-autho'] || 'view')).replace(/"/g, '&quot;')}">${siAuth}</td>
+            <td data-label="Sheets">${formatSheetsAuthDisplay(user['sheets-autho'])}</td>
             <td data-label="Mapping" style="font-size: 11px; color: var(--text-muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="Division: ${user.division_code || '-'}, CCC: ${user.ccc_code || '-'}">
               ${user.division_code ? `Div: ${user.division_code}` : ''} ${user.ccc_code ? `CCC: ${user.ccc_code}` : ''}
             </td>
@@ -1666,7 +1683,8 @@
         (u['dd-autho'] && u['dd-autho'].toLowerCase().includes(q)) ||
         (u['nsc-autho'] && u['nsc-autho'].toLowerCase().includes(q)) ||
         (u['si-autho'] && u['si-autho'].toLowerCase().includes(q)) ||
-        (u['si-divisions'] && u['si-divisions'].toLowerCase().includes(q))
+        (u['si-divisions'] && u['si-divisions'].toLowerCase().includes(q)) ||
+        (u['sheets-autho'] && u['sheets-autho'].toLowerCase().includes(q))
       );
       renderUsers(filtered);
     }
@@ -1737,6 +1755,14 @@
         return `<span class="badge badge-user" style="background:rgba(37,99,235,0.15);color:#2563eb;" title="${title.replace(/"/g, '&quot;')}">Edit · ${parts.length}</span>`;
       }
       return '<span style="font-size:12px;color:var(--text-muted);">View</span>';
+    }
+
+    function formatSheetsAuthDisplay(raw) {
+      const mode = String(raw || '').trim().toLowerCase();
+      if (mode === 'edit' || mode === 'y' || mode === 'all') {
+        return '<span class="badge badge-user" style="background:rgba(16,185,129,0.15);color:#059669;">Manage</span>';
+      }
+      return '<span style="font-size:12px;color:var(--text-muted);">No</span>';
     }
 
     function parseSiDivisionNames(raw) {
@@ -1998,6 +2024,11 @@
       document.getElementById('ddAuthInput').value = user['dd-autho'] || '';
       document.getElementById('nscAuthInput').value = user['nsc-autho'] || '';
       setSiAuthUIFromValue(user['si-autho'] || '', user['si-divisions'] || '');
+      const sheetsEl = document.getElementById('sheetsAuthInput');
+      if (sheetsEl) {
+        const sheetsVal = String(user['sheets-autho'] || '').trim().toLowerCase();
+        sheetsEl.value = (sheetsVal === 'edit' || sheetsVal === 'y' || sheetsVal === 'all') ? 'edit' : '';
+      }
       document.getElementById('zoneCodeInput').value = user.zone_code || '';
       document.getElementById('regionCodeInput').value = user.region_code || '';
       document.getElementById('divisionCodeInput').value = user.division_code || '';
@@ -2053,6 +2084,8 @@
       refreshUsernameDatalist();
       setSsAuthUIFromValue('');
       setSiAuthUIFromValue('', '');
+      const sheetsEl = document.getElementById('sheetsAuthInput');
+      if (sheetsEl) sheetsEl.value = '';
       ensureSsAuthListsReady();
       
       document.getElementById('userModal').classList.add('active');
@@ -2134,6 +2167,7 @@
         'nsc-autho': document.getElementById('nscAuthInput').value.trim(),
         'si-autho': siAuth.mode,
         'si-divisions': siAuth.divisions,
+        'sheets-autho': document.getElementById('sheetsAuthInput').value.trim(),
         zone_code: document.getElementById('zoneCodeInput').value.trim(),
         region_code: document.getElementById('regionCodeInput').value.trim(),
         division_code: document.getElementById('divisionCodeInput').value.trim(),
