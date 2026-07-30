@@ -3,7 +3,10 @@
 --
 -- MOVES ONLY:
 --   public."prioritySI" (or prioritysi) → mzo_insight
---   public.user_access                  → mzo_insight
+--
+-- LEGACY (optional): public.user_access was the old SI PIN login table.
+--   Prefer dropping it with drop_si_user_access.sql after portal SI auth.
+--   This script still moves it if present (for old environments).
 --
 -- DOES NOT TOUCH Power Map or other public tables
 --   (mzo_power_substations, mzo_power_corrections, upcomingdd, user_auth, etc.)
@@ -31,12 +34,13 @@ BEGIN
     RAISE EXCEPTION 'Table public.prioritySI / prioritysi not found';
   END IF;
 
+  -- Legacy SI PIN table (optional — may already be dropped)
   IF to_regclass('mzo_insight.user_access') IS NOT NULL THEN
     RAISE NOTICE 'user_access already in mzo_insight — skip';
   ELSIF to_regclass('public.user_access') IS NOT NULL THEN
     EXECUTE 'ALTER TABLE public.user_access SET SCHEMA mzo_insight';
   ELSE
-    RAISE EXCEPTION 'Table public.user_access not found';
+    RAISE NOTICE 'user_access not found — skip (expected if already dropped)';
   END IF;
 END $$;
 
@@ -54,7 +58,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA mzo_insight
 COMMIT;
 
 -- ========== Verification (safe read-only) ==========
--- Expect: prioritySI / prioritysi, user_access under mzo_insight
+-- Expect: prioritySI / prioritysi under mzo_insight (user_access only if not dropped)
 SELECT table_schema, table_name
 FROM information_schema.tables
 WHERE table_schema = 'mzo_insight'

@@ -34,6 +34,37 @@
         .notification.success { background-color: #d4edda; color: #155724; }
         .notification.error { background-color: #f8d7da; color: #721c24; }
         .loader { text-align: center; padding: 3rem; }
+        .section-card { border: 1px solid var(--medium-gray); border-radius: 8px; background: #fdfdfd; margin-bottom: 1.5rem; overflow: hidden; }
+        .section-header { background: var(--light-gray); padding: 0.9rem 1.5rem; font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 1rem; border-bottom: 1px solid var(--medium-gray); }
+        .section-body { padding: 1rem 1.5rem 1.5rem; }
+        .toolbar-inline { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+        .search-input { min-width: 240px; padding: 0.75rem; font-size: 0.95rem; border: 1px solid var(--medium-gray); border-radius: 4px; }
+        .table-wrap { overflow-x: auto; border: 1px solid var(--medium-gray); border-radius: 8px; }
+        .user-table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+        .user-table th, .user-table td { padding: 0.8rem 0.9rem; border-bottom: 1px solid var(--medium-gray); text-align: left; vertical-align: top; }
+        .user-table th { background: var(--light-gray); font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; }
+        .user-table .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+        .muted { color: #666; font-size: 0.9rem; }
+        .badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; }
+        .badge-admin { background: #dbeafe; color: #1d4ed8; }
+        .badge-user { background: #e5e7eb; color: #374151; }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: center; justify-content: center; padding: 1rem; z-index: 1000; }
+        .modal-overlay.active { display: flex; }
+        .modal-card { width: min(780px, 100%); max-height: 90vh; overflow-y: auto; background: var(--white); border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.18); }
+        .modal-header { padding: 1rem 1.5rem; border-bottom: 1px solid var(--medium-gray); display: flex; justify-content: space-between; align-items: center; }
+        .modal-body { padding: 1.25rem 1.5rem; display: grid; gap: 1rem; }
+        .modal-footer { padding: 1rem 1.5rem; border-top: 1px solid var(--medium-gray); display: flex; justify-content: flex-end; gap: 0.75rem; }
+        .form-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 1rem; }
+        .form-grid .span-2 { grid-column: 1 / -1; }
+        .btn-secondary { background-color: #6b7280; color: var(--white); }
+        .btn-secondary:hover { background-color: #4b5563; }
+        @media (max-width: 768px) {
+            body { padding: 1rem; }
+            .main-content { padding: 1rem; }
+            .toolbar, .section-header, .toolbar-inline { flex-direction: column; align-items: stretch; }
+            .search-input { min-width: 0; width: 100%; }
+            .form-grid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -46,6 +77,36 @@
     <div id="notification" class="notification"></div>
 
     <div class="main-content">
+        <div class="section-card">
+            <div class="section-header">
+                <span>User Management</span>
+                <div class="toolbar-inline">
+                    <input type="text" id="userSearch" class="search-input" placeholder="Search users..." oninput="filterUsers()">
+                    <button class="btn btn-secondary" onclick="refreshUsers()">Refresh Users</button>
+                    <button class="btn btn-primary" onclick="openUserModal()">Add New User</button>
+                </div>
+            </div>
+            <div class="section-body">
+                <div class="table-wrap">
+                    <table class="user-table">
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Name</th>
+                                <th>Role</th>
+                                <th>SS Auth</th>
+                                <th>Division / CCC</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <tr><td colspan="6" class="muted">Loading users...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <div id="loader" class="loader">
             <p>Loading structures...</p>
         </div>
@@ -60,12 +121,93 @@
     </div>
 </div>
 
+<div id="userModal" class="modal-overlay" onclick="closeModalOnOverlay(event)">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h2 id="userModalTitle">Add New User</h2>
+            <button class="btn btn-danger" type="button" onclick="closeUserModal()">Close</button>
+        </div>
+        <form id="userForm" onsubmit="saveUser(event)">
+            <input type="hidden" id="userFormMode" value="create">
+            <input type="hidden" id="originalUsername">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="usernameInput">Username *</label>
+                        <input type="text" id="usernameInput" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="pinInput">PIN *</label>
+                        <input type="text" id="pinInput" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="nameInput">Full Name</label>
+                        <input type="text" id="nameInput">
+                    </div>
+                    <div class="form-group">
+                        <label for="roleInput">Role</label>
+                        <input type="text" id="roleInput" placeholder="admin or blank for user">
+                    </div>
+                    <div class="form-group span-2">
+                        <label for="ssAuthInput">SS Authorization</label>
+                        <input type="text" id="ssAuthInput" placeholder="Y, all, or comma-separated SS names">
+                    </div>
+                    <div class="form-group">
+                        <label for="dtrAuthInput">DTR Auth</label>
+                        <input type="text" id="dtrAuthInput">
+                    </div>
+                    <div class="form-group">
+                        <label for="ddAuthInput">DD Auth</label>
+                        <input type="text" id="ddAuthInput">
+                    </div>
+                    <div class="form-group">
+                        <label for="nscAuthInput">NSC Auth</label>
+                        <input type="text" id="nscAuthInput">
+                    </div>
+                    <div class="form-group">
+                        <label for="siAuthInput">SI Auth</label>
+                        <input type="text" id="siAuthInput" placeholder="view or edit">
+                    </div>
+                    <div class="form-group span-2">
+                        <label for="siDivisionsInput">SI Divisions</label>
+                        <input type="text" id="siDivisionsInput" placeholder="ALL or Malda,Chanchal,Gazole">
+                    </div>
+                    <div class="form-group">
+                        <label for="zoneCodeInput">Zone Code</label>
+                        <input type="text" id="zoneCodeInput">
+                    </div>
+                    <div class="form-group">
+                        <label for="regionCodeInput">Region Code</label>
+                        <input type="text" id="regionCodeInput">
+                    </div>
+                    <div class="form-group">
+                        <label for="divisionCodeInput">Division Code</label>
+                        <input type="text" id="divisionCodeInput">
+                    </div>
+                    <div class="form-group">
+                        <label for="cccCodeInput">CCC Code</label>
+                        <input type="text" id="cccCodeInput">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" type="button" onclick="closeUserModal()">Cancel</button>
+                <button class="btn btn-primary" type="submit">Save User</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
     const API_URL_GET = '/api/structures'; // Read structures from CSV via API
     const API_URL_UPDATE = '/api/structures/update'; // Update endpoint (saves to CSV)
     let structureData = [];
+    let usersData = [];
 
-    document.addEventListener('DOMContentLoaded', loadStructures);
+    document.addEventListener('DOMContentLoaded', () => {
+        loadStructures();
+        loadUsers();
+    });
 
     async function loadStructures() {
         showLoader(true);
@@ -196,6 +338,195 @@
         }
     }
 
+    async function loadUsers() {
+        try {
+            const response = await fetch('/api/admin/users');
+            const result = await response.json();
+            if (!response.ok || result.status !== 'success') {
+                throw new Error(result.message || 'Failed to load users.');
+            }
+            usersData = result.users || [];
+            renderUsers(usersData);
+        } catch (error) {
+            renderUsers([]);
+            showNotification(`Users load failed: ${error.message}`, 'error');
+        }
+    }
+
+    function renderUsers(list) {
+        const tbody = document.getElementById('usersTableBody');
+        if (!tbody) return;
+        if (!list.length) {
+            tbody.innerHTML = `<tr><td colspan="6" class="muted">No users found.</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = list.map(user => {
+            const username = escapeHtml(user.Username || '');
+            const name = escapeHtml(user.Name || '');
+            const roleBadge = (user.role || '').trim().toLowerCase() === 'admin'
+                ? '<span class="badge badge-admin">Admin</span>'
+                : '<span class="badge badge-user">User</span>';
+            const ssAuth = escapeHtml(user['ss-autho'] || '-');
+            const mapping = [user.division_code, user.ccc_code].filter(Boolean).map(escapeHtml).join(' / ') || '-';
+            return `
+                <tr>
+                    <td><strong>${username}</strong></td>
+                    <td>${name || '<span class="muted">No name</span>'}</td>
+                    <td>${roleBadge}</td>
+                    <td>${ssAuth}</td>
+                    <td>${mapping}</td>
+                    <td>
+                        <div class="actions">
+                            <button class="btn btn-primary" type="button" onclick="openUserModal('${jsQuote(user.Username || '')}')">Edit</button>
+                            <button class="btn btn-danger" type="button" onclick="deleteUser('${jsQuote(user.Username || '')}')">Delete</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function filterUsers() {
+        const query = (document.getElementById('userSearch')?.value || '').trim().toLowerCase();
+        if (!query) {
+            renderUsers(usersData);
+            return;
+        }
+        const filtered = usersData.filter(user =>
+            [
+                user.Username,
+                user.Name,
+                user.role,
+                user['ss-autho'],
+                user['dtr-autho'],
+                user['dd-autho'],
+                user['nsc-autho'],
+                user.division_code,
+                user.ccc_code
+            ].some(value => String(value || '').toLowerCase().includes(query))
+        );
+        renderUsers(filtered);
+    }
+
+    function openUserModal(username = '') {
+        const form = document.getElementById('userForm');
+        form.reset();
+        document.getElementById('userFormMode').value = username ? 'update' : 'create';
+        document.getElementById('originalUsername').value = username || '';
+        document.getElementById('userModalTitle').textContent = username ? `Edit User: ${username}` : 'Add New User';
+        document.getElementById('usernameInput').disabled = !!username;
+
+        if (username) {
+            const user = usersData.find(u => String(u.Username || '') === username);
+            if (!user) {
+                showNotification('User not found.', 'error');
+                return;
+            }
+            document.getElementById('usernameInput').value = user.Username || '';
+            document.getElementById('pinInput').value = user.PIN || '';
+            document.getElementById('nameInput').value = user.Name || '';
+            document.getElementById('roleInput').value = user.role || '';
+            document.getElementById('ssAuthInput').value = user['ss-autho'] || '';
+            document.getElementById('dtrAuthInput').value = user['dtr-autho'] || '';
+            document.getElementById('ddAuthInput').value = user['dd-autho'] || '';
+            document.getElementById('nscAuthInput').value = user['nsc-autho'] || '';
+            document.getElementById('siAuthInput').value = user['si-autho'] || 'view';
+            document.getElementById('siDivisionsInput').value = user['si-divisions'] || '';
+            document.getElementById('zoneCodeInput').value = user.zone_code || '';
+            document.getElementById('regionCodeInput').value = user.region_code || '';
+            document.getElementById('divisionCodeInput').value = user.division_code || '';
+            document.getElementById('cccCodeInput').value = user.ccc_code || '';
+        }
+
+        document.getElementById('userModal').classList.add('active');
+    }
+
+    function closeUserModal() {
+        document.getElementById('userModal').classList.remove('active');
+    }
+
+    async function saveUser(event) {
+        event.preventDefault();
+        const mode = document.getElementById('userFormMode').value;
+        const username = document.getElementById('usernameInput').value.trim();
+        const pin = document.getElementById('pinInput').value.trim();
+        if (!username || !pin) {
+            showNotification('Username and PIN are required.', 'error');
+            return;
+        }
+
+        const payload = {
+            Username: username,
+            PIN: pin,
+            Name: document.getElementById('nameInput').value.trim(),
+            role: document.getElementById('roleInput').value.trim(),
+            'ss-autho': document.getElementById('ssAuthInput').value.trim(),
+            'dtr-autho': document.getElementById('dtrAuthInput').value.trim(),
+            'dd-autho': document.getElementById('ddAuthInput').value.trim(),
+            'nsc-autho': document.getElementById('nscAuthInput').value.trim(),
+            'si-autho': document.getElementById('siAuthInput').value.trim() || 'view',
+            'si-divisions': document.getElementById('siDivisionsInput').value.trim(),
+            zone_code: document.getElementById('zoneCodeInput').value.trim(),
+            region_code: document.getElementById('regionCodeInput').value.trim(),
+            division_code: document.getElementById('divisionCodeInput').value.trim(),
+            ccc_code: document.getElementById('cccCodeInput').value.trim()
+        };
+
+        try {
+            const response = await fetch(
+                mode === 'create' ? '/api/admin/users/create' : '/api/admin/users/update',
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }
+            );
+            const result = await response.json();
+            if (!response.ok || result.status !== 'success') {
+                throw new Error(result.message || 'Failed to save user.');
+            }
+            closeUserModal();
+            await loadUsers();
+            showNotification(result.message || 'User saved successfully.', 'success');
+        } catch (error) {
+            showNotification(error.message, 'error');
+        }
+    }
+
+    async function deleteUser(username) {
+        if (!username) return;
+        if (!confirm(`Delete user '${username}'? This cannot be undone.`)) return;
+        try {
+            const response = await fetch('/api/admin/users/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ Username: username })
+            });
+            const result = await response.json();
+            if (!response.ok || result.status !== 'success') {
+                throw new Error(result.message || 'Failed to delete user.');
+            }
+            await loadUsers();
+            showNotification(result.message || 'User deleted successfully.', 'success');
+        } catch (error) {
+            showNotification(error.message, 'error');
+        }
+    }
+
+    async function refreshUsers() {
+        try {
+            const response = await fetch('/api/admin/sync', { method: 'POST' });
+            const result = await response.json();
+            if (!response.ok || result.status !== 'success') {
+                throw new Error(result.message || 'Failed to refresh users.');
+            }
+            await loadUsers();
+            showNotification(result.message || 'Users refreshed.', 'success');
+        } catch (error) {
+            showNotification(error.message, 'error');
+        }
+    }
+
     async function saveAllChanges() {
         if (!collectDataFromUI()) {
             return; // Stop if data collection failed (e.g., invalid JSON)
@@ -322,6 +653,25 @@
         setTimeout(() => {
             notification.style.display = 'none';
         }, 5000);
+    }
+
+    function closeModalOnOverlay(event) {
+        if (event.target.classList.contains('modal-overlay')) {
+            event.target.classList.remove('active');
+        }
+    }
+
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function jsQuote(value) {
+        return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     }
 
 </script>

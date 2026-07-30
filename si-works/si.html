@@ -1030,18 +1030,11 @@
 
 <body>
 
-  <!-- Login Container (initially visible) -->
+  <!-- Session gate (portal login) -->
   <div id="loginContainer" class="login-container">
     <div class="glass-card login-card text-center">
       <h2 class="fw-bold mb-3" style="color: var(--primary-color);">Priority SI Works</h2>
-      <p class="text-muted mb-4">Enter your PIN to access the dashboard.</p>
-      <form id="loginForm">
-        <div class="form-floating mb-3">
-          <input type="password" class="form-control" id="pinInput" placeholder="PIN" required>
-          <label for="pinInput">PIN</label>
-        </div>
-        <button type="submit" class="btn btn-primary w-100 rounded-pill mt-2">Log In</button>
-      </form>
+      <p class="text-muted mb-2">Checking portal session…</p>
       <p id="loginError" class="text-danger mt-3" style="display: none;"></p>
     </div>
   </div>
@@ -1262,6 +1255,7 @@
 
   <!-- Bootstrap JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="../auth.js"></script>
 
   <script type="module">
 
@@ -1272,8 +1266,48 @@
     const SUPABASE_URL = "https://unsmtschmcvftfqwabaq.supabase.co";
     const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVuc210c2NobWN2ZnRmcXdhYmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM1NzA1MTYsImV4cCI6MjA2OTE0NjUxNn0.X3_q0FyEjam4ct03sjiqINz0_Hfu0AlWgRcymA3us9o";
     const TABLE_NAME = "prioritySI";
-    const USER_ACCESS_TABLE = "user_access"; // SI access (schema mzo_insight)
     const DB_SCHEMA = "mzo_insight";
+
+    /** Build SI permission object from portal profile (mzo_user_profile). */
+    function buildSiUserFromPortal(profile) {
+      const p = profile || {};
+      const role = String(p.role || '').trim().toLowerCase();
+      const siAutho = String(p['si-autho'] != null ? p['si-autho'] : (p.si_autho || '')).trim().toLowerCase();
+      const rawDivs = String(p['si-divisions'] != null ? p['si-divisions'] : (p.si_divisions || '')).trim();
+      const isAdmin = role === 'admin';
+      const canEdit = isAdmin || siAutho === 'edit' || siAutho === 'y' || siAutho === 'all';
+      const divList = rawDivs
+        ? rawDivs.split(/[,;]/).map((s) => s.trim()).filter(Boolean)
+        : [];
+      const wantsAll = isAdmin || /^(all|y)$/i.test(rawDivs);
+
+      // Viewers browse everything; editors are scoped to selected divisions (or ALL).
+      if (!canEdit) {
+        return {
+          Username: p.Username || '',
+          Name: p.Name || '',
+          can_edit: false,
+          can_view_all: true,
+          divisions: []
+        };
+      }
+
+      return {
+        Username: p.Username || '',
+        Name: p.Name || '',
+        can_edit: true,
+        can_view_all: wantsAll,
+        divisions: wantsAll ? [] : divList
+      };
+    }
+
+    function getPortalProfile() {
+      try {
+        return JSON.parse(localStorage.getItem('mzo_user_profile') || '{}') || {};
+      } catch (_) {
+        return {};
+      }
+    }
 
     // UPDATED: Added 'Status' to the visible columns
     const TABLE_COLUMNS = [
@@ -1364,10 +1398,8 @@
     const showingEnd = document.getElementById('showingEnd');
     const showingTotal = document.getElementById('showingTotal');
     const loadingOverlay = document.getElementById('loadingOverlay');
-    // Login elements
+    // Session gate UI
     const loginContainer = document.getElementById('loginContainer');
-    const loginForm = document.getElementById('loginForm');
-    const pinInput = document.getElementById('pinInput');
     const loginError = document.getElementById('loginError');
     // App elements
     const appContainer = document.getElementById('appContainer');
@@ -1499,39 +1531,48 @@
       messageModal.show();
     }
 
-    // ---- AUTHENTICATION FUNCTIONS ----
-    async function handleLogin(pin) {
-      showLoading();
-      loginError.style.display = 'none';
+    // ---- AUTHENTICATION (portal session) ----
+    async function resolvePortalSession() {
+      // Prefer fresh profile from server when online
       try {
-        const { data, error } = await client
-          .from(USER_ACCESS_TABLE)
-          .select('*')
-          .eq('pin', pin)
-          .single();
-
-        if (error || !data) {
-          loginError.textContent = 'Invalid PIN. Please try again.';
-          loginError.style.display = 'block';
-          hideLoading();
-          return;
+        const res = await fetch('/api/session-check', {
+          headers: { Accept: 'application/json' },
+          credentials: 'same-origin'
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.profile) {
+            localStorage.setItem('mzo_authenticated', 'true');
+            localStorage.setItem('mzo_user_profile', JSON.stringify(data.profile));
+            return data.profile;
+          }
+        } else if (res.status === 401 || res.status === 403) {
+          localStorage.removeItem('mzo_authenticated');
+          localStorage.removeItem('mzo_user_profile');
+          return null;
         }
-
-        currentUser = data;
-        localStorage.setItem('userPin', pin); // Store PIN for session
-        initializeApp();
-      } catch (err) {
-        console.error('Login error:', err);
-        loginError.textContent = 'An unexpected error occurred during login.';
-        loginError.style.display = 'block';
-        hideLoading();
+      } catch (_) {
+        // fall through to localStorage
       }
+
+      if (localStorage.getItem('mzo_authenticated') === 'true') {
+        return getPortalProfile();
+      }
+      return null;
     }
 
     async function handleLogout() {
       currentUser = null;
-      localStorage.removeItem('userPin');
-      location.reload(); // Simple way to reset the app state
+      if (typeof window.mzoLogout === 'function') {
+        window.mzoLogout();
+        return;
+      }
+      try {
+        await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
+      } catch (_) { /* ignore */ }
+      localStorage.removeItem('mzo_authenticated');
+      localStorage.removeItem('mzo_user_profile');
+      window.location.href = '/login.html';
     }
 
     // ---- MAIN APP LOGIC ----
@@ -3166,11 +3207,6 @@
     }
 
     // ---- EVENT LISTENERS ----
-    loginForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      await handleLogin(pinInput.value);
-    });
-
     btnLogout.addEventListener('click', handleLogout);
 
     btnAdd.addEventListener('click', newRecord);
@@ -3413,34 +3449,24 @@
     }
 
     document.addEventListener('DOMContentLoaded', async () => {
-      // Show loading screen immediately
       showLoading();
+      loginError.style.display = 'none';
 
-      // Check for existing session
-      const storedPin = localStorage.getItem('userPin');
-      if (storedPin) {
-        const { data, error } = await client
-          .from(USER_ACCESS_TABLE)
-          .select('*')
-          .eq('pin', storedPin)
-          .single();
-
-        if (data && !error) {
-          currentUser = data;
-          initializeApp();
-        } else {
-          // If stored PIN is invalid, clear it and show login screen
-          localStorage.removeItem('userPin');
-          loginContainer.style.display = 'flex';
-          appContainer.style.display = 'none';
-          hideLoading();
-        }
-      } else {
-        // No stored PIN, show login screen
+      const profile = await resolvePortalSession();
+      if (!profile || !profile.Username) {
         loginContainer.style.display = 'flex';
         appContainer.style.display = 'none';
         hideLoading();
+        loginError.textContent = 'Please sign in to the MZO portal first.';
+        loginError.style.display = 'block';
+        setTimeout(() => {
+          window.location.href = '/login.html';
+        }, 800);
+        return;
       }
+
+      currentUser = buildSiUserFromPortal(profile);
+      initializeApp();
     });
   </script>
 

@@ -2,7 +2,7 @@
 -- Run in Supabase Dashboard → SQL Editor → Run
 -- Then optional: npm run migrate:activity-logs
 --
--- Does NOT touch Power Map, prioritySI, user_access, or portal_users data.
+-- Does NOT touch Power Map, prioritySI, or portal_users data.
 
 CREATE SCHEMA IF NOT EXISTS mzo_insight;
 

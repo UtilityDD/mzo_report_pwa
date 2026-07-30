@@ -1010,13 +1010,14 @@
                 <th>DTR Auth</th>
                 <th>DD Auth</th>
                 <th>NSC Auth</th>
+                <th>SI Auth</th>
                 <th>Details</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="usersTableBody">
               <tr>
-                <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 40px;">
+                <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 40px;">
                   <i class="fas fa-circle-notch fa-spin" style="font-size: 24px; margin-bottom: 12px; display: block; color: var(--primary);"></i>
                   Loading users database...
                 </td>
@@ -1345,6 +1346,36 @@
             <div class="form-group"></div>
           </div>
 
+          <div class="form-section-title">Priority SI Works</div>
+          <div class="form-row">
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <label for="siAuthModeInput">SI Access</label>
+              <select id="siAuthModeInput" onchange="onSiAuthModeChange()">
+                <option value="view">View only (default)</option>
+                <option value="edit">Edit</option>
+              </select>
+              <input type="hidden" id="siAuthInput" value="view" />
+              <input type="hidden" id="siDivisionsInput" value="" />
+              <small style="display:block; margin-top:6px; color:var(--text-muted); font-size:11px;">
+                Viewers can open SI Works and browse all records. Editors can add/edit/delete only for selected divisions.
+              </small>
+
+              <div id="siDivisionsWrap" style="display:none; margin-top:12px;">
+                <label style="display:flex; align-items:center; gap:8px; margin-bottom:8px; cursor:pointer;">
+                  <input type="checkbox" id="siDivisionsAll" onchange="onSiDivisionsAllChange()" style="width:auto; margin:0;" />
+                  <span>All divisions</span>
+                </label>
+                <div id="siDivisionsListWrap">
+                  <label>Select divisions (multiple allowed)</label>
+                  <div id="siDivisionsMultiList" class="ss-auth-multi-list"></div>
+                  <small style="display:block; margin-top:6px; color:var(--text-muted); font-size:11px;">
+                    Selected: <span id="siDivisionsCount">0</span>
+                  </small>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="form-section-title">Jurisdiction Mapping</div>
           <div class="form-row">
             <div class="form-group">
@@ -1540,7 +1571,7 @@
       if (filteredUsers.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 40px;">
+            <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 40px;">
               <i class="fas fa-search" style="font-size: 20px; margin-bottom: 8px; display: block;"></i>
               No user accounts match the search query.
             </td>
@@ -1552,6 +1583,7 @@
       tbody.innerHTML = filteredUsers.map(user => {
         const roleBadge = user.role === 'admin' ? '<span class="badge badge-admin">Admin</span>' : '<span class="badge badge-user">User</span>';
         const ssAuth = formatSsAuthDisplay(user['ss-autho']);
+        const siAuth = formatSiAuthDisplay(user['si-autho'], user['si-divisions']);
         
         return `
           <tr>
@@ -1562,6 +1594,7 @@
             <td data-label="DTR Auth">${user['dtr-autho'] || '-'}</td>
             <td data-label="DD Auth">${user['dd-autho'] || '-'}</td>
             <td data-label="NSC Auth">${user['nsc-autho'] || '-'}</td>
+            <td data-label="SI Auth" title="${((user['si-divisions'] || '') || (user['si-autho'] || 'view')).replace(/"/g, '&quot;')}">${siAuth}</td>
             <td data-label="Mapping" style="font-size: 11px; color: var(--text-muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="Division: ${user.division_code || '-'}, CCC: ${user.ccc_code || '-'}">
               ${user.division_code ? `Div: ${user.division_code}` : ''} ${user.ccc_code ? `CCC: ${user.ccc_code}` : ''}
             </td>
@@ -1631,7 +1664,9 @@
         (u.role && u.role.toLowerCase().includes(q)) ||
         (u['dtr-autho'] && u['dtr-autho'].toLowerCase().includes(q)) ||
         (u['dd-autho'] && u['dd-autho'].toLowerCase().includes(q)) ||
-        (u['nsc-autho'] && u['nsc-autho'].toLowerCase().includes(q))
+        (u['nsc-autho'] && u['nsc-autho'].toLowerCase().includes(q)) ||
+        (u['si-autho'] && u['si-autho'].toLowerCase().includes(q)) ||
+        (u['si-divisions'] && u['si-divisions'].toLowerCase().includes(q))
       );
       renderUsers(filtered);
     }
@@ -1684,6 +1719,110 @@
         return `<span style="font-size:12px;" title="${parts[0]}">${parts[0]}</span>`;
       }
       return `<span style="font-size:12px;" title="${parts.join(', ')}">${parts.length} SS</span>`;
+    }
+
+    const SI_DIVISION_OPTIONS = [
+      'Balurghat', 'Buniadpur', 'Islampur', 'Raiganj', 'Chanchal', 'Gazole', 'Malda'
+    ];
+
+    function formatSiAuthDisplay(siAutho, siDivisions) {
+      const mode = String(siAutho || '').trim().toLowerCase();
+      const divs = String(siDivisions || '').trim();
+      if (mode === 'edit' || mode === 'y' || mode === 'all') {
+        if (!divs || /^(all|y)$/i.test(divs)) {
+          return '<span class="badge badge-user" style="background:rgba(37,99,235,0.15);color:#2563eb;">Edit · All</span>';
+        }
+        const parts = divs.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+        const title = parts.join(', ');
+        return `<span class="badge badge-user" style="background:rgba(37,99,235,0.15);color:#2563eb;" title="${title.replace(/"/g, '&quot;')}">Edit · ${parts.length}</span>`;
+      }
+      return '<span style="font-size:12px;color:var(--text-muted);">View</span>';
+    }
+
+    function parseSiDivisionNames(raw) {
+      return String(raw || '')
+        .split(/[,;]/)
+        .map(s => s.trim())
+        .filter(Boolean);
+    }
+
+    function populateSiDivisionCheckboxes() {
+      const multiEl = document.getElementById('siDivisionsMultiList');
+      if (!multiEl) return;
+      const checked = new Set(
+        Array.from(multiEl.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value)
+      );
+      multiEl.innerHTML = SI_DIVISION_OPTIONS.map(n => {
+        const safe = n.replace(/"/g, '&quot;');
+        const isChecked = checked.has(n) ? 'checked' : '';
+        return `<label data-name="${safe.toLowerCase()}"><input type="checkbox" value="${safe}" ${isChecked} onchange="syncSiAuthValue()" /> ${n}</label>`;
+      }).join('');
+      syncSiAuthValue();
+    }
+
+    function onSiAuthModeChange() {
+      const mode = document.getElementById('siAuthModeInput').value;
+      const wrap = document.getElementById('siDivisionsWrap');
+      if (wrap) wrap.style.display = mode === 'edit' ? 'block' : 'none';
+      if (mode === 'edit') populateSiDivisionCheckboxes();
+      syncSiAuthValue();
+    }
+
+    function onSiDivisionsAllChange() {
+      const allChecked = document.getElementById('siDivisionsAll').checked;
+      const listWrap = document.getElementById('siDivisionsListWrap');
+      if (listWrap) listWrap.style.display = allChecked ? 'none' : 'block';
+      if (allChecked) {
+        document.querySelectorAll('#siDivisionsMultiList input[type="checkbox"]').forEach(cb => {
+          cb.checked = false;
+        });
+      }
+      syncSiAuthValue();
+    }
+
+    function syncSiAuthValue() {
+      const mode = document.getElementById('siAuthModeInput').value || 'view';
+      let divisions = '';
+      if (mode === 'edit') {
+        if (document.getElementById('siDivisionsAll').checked) {
+          divisions = 'ALL';
+        } else {
+          const checked = Array.from(document.querySelectorAll('#siDivisionsMultiList input[type="checkbox"]:checked'))
+            .map(cb => cb.value.trim())
+            .filter(Boolean);
+          divisions = checked.join(',');
+          const countEl = document.getElementById('siDivisionsCount');
+          if (countEl) countEl.textContent = String(checked.length);
+        }
+      }
+      document.getElementById('siAuthInput').value = mode;
+      document.getElementById('siDivisionsInput').value = divisions;
+      return { mode, divisions };
+    }
+
+    function setSiAuthUIFromValue(siAutho, siDivisions) {
+      const modeEl = document.getElementById('siAuthModeInput');
+      const rawMode = String(siAutho || '').trim().toLowerCase();
+      const rawDivs = String(siDivisions || '').trim();
+      const isEdit = rawMode === 'edit' || rawMode === 'y' || rawMode === 'all';
+      modeEl.value = isEdit ? 'edit' : 'view';
+
+      populateSiDivisionCheckboxes();
+
+      const allEl = document.getElementById('siDivisionsAll');
+      if (isEdit && (!rawDivs || /^(all|y)$/i.test(rawDivs))) {
+        if (allEl) allEl.checked = true;
+      } else {
+        if (allEl) allEl.checked = false;
+        const selected = new Set(parseSiDivisionNames(rawDivs).map(n => n.toLowerCase()));
+        document.querySelectorAll('#siDivisionsMultiList input[type="checkbox"]').forEach(cb => {
+          cb.checked = selected.has(cb.value.toLowerCase());
+        });
+      }
+
+      onSiAuthModeChange();
+      onSiDivisionsAllChange();
+      syncSiAuthValue();
     }
 
     function parseSsAuthNames(raw) {
@@ -1858,6 +1997,7 @@
       document.getElementById('dtrAuthInput').value = user['dtr-autho'] || '';
       document.getElementById('ddAuthInput').value = user['dd-autho'] || '';
       document.getElementById('nscAuthInput').value = user['nsc-autho'] || '';
+      setSiAuthUIFromValue(user['si-autho'] || '', user['si-divisions'] || '');
       document.getElementById('zoneCodeInput').value = user.zone_code || '';
       document.getElementById('regionCodeInput').value = user.region_code || '';
       document.getElementById('divisionCodeInput').value = user.division_code || '';
@@ -1912,6 +2052,7 @@
       setExistingUserHint(false);
       refreshUsernameDatalist();
       setSsAuthUIFromValue('');
+      setSiAuthUIFromValue('', '');
       ensureSsAuthListsReady();
       
       document.getElementById('userModal').classList.add('active');
@@ -1976,6 +2117,12 @@
         return;
       }
 
+      const siAuth = syncSiAuthValue();
+      if (siAuth.mode === 'edit' && !siAuth.divisions) {
+        showToast('Select at least one SI division, or choose All divisions.', 'error');
+        return;
+      }
+
       const userData = {
         Username: username,
         PIN: pin,
@@ -1985,6 +2132,8 @@
         'dtr-autho': document.getElementById('dtrAuthInput').value.trim(),
         'dd-autho': document.getElementById('ddAuthInput').value.trim(),
         'nsc-autho': document.getElementById('nscAuthInput').value.trim(),
+        'si-autho': siAuth.mode,
+        'si-divisions': siAuth.divisions,
         zone_code: document.getElementById('zoneCodeInput').value.trim(),
         region_code: document.getElementById('regionCodeInput').value.trim(),
         division_code: document.getElementById('divisionCodeInput').value.trim(),

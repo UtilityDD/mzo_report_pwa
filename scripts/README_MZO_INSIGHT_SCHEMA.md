@@ -1,24 +1,21 @@
 # Move Priority SI → schema `mzo_insight`
 
-Separates Priority SI tables from Power Map tables in the same Supabase project.
+Separates Priority SI data tables from Power Map tables in the same Supabase project.
 
-## What moves
+## What lives in `mzo_insight`
 
-| Table | From | To |
-|-------|------|----|
-| `prioritySI` | `public` | `mzo_insight` |
-| `user_access` | `public` | `mzo_insight` |
+| Table | Notes |
+|-------|--------|
+| `prioritySI` | SI works data |
+| `portal_users` | Portal login + module auths (including SI `si_autho` / `si_divisions`) |
+| `activity_logs` | Portal activity |
 
-**Untouched:** `mzo_power_substations`, `mzo_power_corrections`, and all other `public` tables.
+**Removed:** legacy SI PIN table `user_access` — drop with [`drop_si_user_access.sql`](drop_si_user_access.sql) after portal SI auth is live.
 
-## Steps
+**Untouched:** `mzo_power_substations`, `mzo_power_corrections`, and other `public` tables.
 
-1. **SQL Editor** — open Supabase Dashboard → SQL Editor → paste and run  
-   [`create_mzo_insight_schema.sql`](create_mzo_insight_schema.sql)  
-   Check the verification queries at the bottom.
+## Steps (original schema move)
 
-2. **Expose schema** — Project Settings → API → **Exposed schemas**  
-   Add `mzo_insight` (keep `public`). Save.
-
-3. **App** — `si-works/si.html` already uses `db: { schema: 'mzo_insight' }`.  
-   Deploy / hard-refresh, then smoke-test Priority SI Works and Power Map.
+1. **SQL Editor** — run [`create_mzo_insight_schema.sql`](create_mzo_insight_schema.sql) if SI tables are still in `public`.
+2. **Expose schema** — Project Settings → API → **Exposed schemas** → include `mzo_insight`.
+3. **App** — `si-works/si.html` uses `db: { schema: 'mzo_insight' }` and portal session auth.

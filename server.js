@@ -144,6 +144,8 @@ function portalUserToClient(row) {
         'ss-autho': row.ss_autho || '',
         'dd-autho': row.dd_autho || '',
         'nsc-autho': row.nsc_autho || '',
+        'si-autho': row.si_autho || '',
+        'si-divisions': row.si_divisions || '',
         zone_code: row.zone_code || '',
         region_code: row.region_code || '',
         division_code: row.division_code || '',
@@ -164,6 +166,8 @@ function clientUserToPortal(user) {
         ss_autho: String(user['ss-autho'] != null ? user['ss-autho'] : (user.ss_autho || '')).trim(),
         dd_autho: String(user['dd-autho'] != null ? user['dd-autho'] : (user.dd_autho || '')).trim(),
         nsc_autho: String(user['nsc-autho'] != null ? user['nsc-autho'] : (user.nsc_autho || '')).trim(),
+        si_autho: String(user['si-autho'] != null ? user['si-autho'] : (user.si_autho || '')).trim(),
+        si_divisions: String(user['si-divisions'] != null ? user['si-divisions'] : (user.si_divisions || '')).trim(),
         zone_code: String(user.zone_code || '').trim(),
         region_code: String(user.region_code || '').trim(),
         division_code: String(user.division_code || '').trim(),
@@ -569,8 +573,22 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// API endpoint to verify session status
-app.get('/api/session-check', (req, res) => {
+// API endpoint to verify session status (refresh profile from portal_users when possible)
+app.get('/api/session-check', async (req, res) => {
+    if (!req.user || !req.user.Username) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+    try {
+        const users = await getLoginCredentials({ forceRefresh: true });
+        const key = String(req.user.Username).trim().toLowerCase();
+        const fresh = users.find((u) => u.Username && String(u.Username).trim().toLowerCase() === key);
+        if (fresh) {
+            const { PIN, ...clientProfile } = fresh;
+            return res.status(200).json({ status: 'success', profile: clientProfile });
+        }
+    } catch (err) {
+        console.warn('[Auth] session-check profile refresh failed:', err.message);
+    }
     return res.status(200).json({ status: 'success', profile: req.user });
 });
 
@@ -629,6 +647,8 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
             'ss-autho': '',
             'dd-autho': '',
             'nsc-autho': '',
+            'si-autho': '',
+            'si-divisions': '',
             zone_code: '',
             region_code: '',
             division_code: '',
