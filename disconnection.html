@@ -947,8 +947,31 @@
         }
 
         // CSV parsing and status calculations
+        // Google Sheet export sometimes prepends a blank comma-row before the real header.
+        function normalizeDisconnectionCsv(csvContent) {
+            const text = String(csvContent || '').replace(/^\uFEFF/, '');
+            const lines = text.split(/\r?\n/);
+            const headerIdx = lines.findIndex((line) => {
+                const upper = line.toUpperCase();
+                return upper.includes('CCC_CODE') && (upper.includes('NOTOSD') || upper.includes('CON_ID'));
+            });
+            if (headerIdx <= 0) return text;
+            return lines.slice(headerIdx).join('\n');
+        }
+
+        function parseAmountField(...candidates) {
+            for (const raw of candidates) {
+                if (raw == null) continue;
+                const s = String(raw).trim().replace(/,/g, '');
+                if (!s || /^#?n\/?a$/i.test(s)) continue;
+                const n = parseFloat(s);
+                if (!Number.isNaN(n)) return n;
+            }
+            return 0;
+        }
+
         function parseCSV(csvContent) {
-            Papa.parse(csvContent, {
+            Papa.parse(normalizeDisconnectionCsv(csvContent), {
                 header: true,
                 skipEmptyLines: true,
                 complete: function (results) {
@@ -988,9 +1011,9 @@
                     else if (cccCode.startsWith('663')) regionName = 'DAKSHIN DINAJPUR';
                 }
 
-                // Parse amounts
-                const outstandingOSD = parseFloat((row['NOTOSD'] || row['NOTOSD_UPD'] || '0').replace(/,/g, '')) || 0;
-                const finalPaidAmount = parseFloat((row['FINAL PAID AMOUNT'] || '0').replace(/,/g, '')) || 0;
+                // Parse amounts (sheet uses NOTOSD; some exports use NOTOSD_UPD)
+                const outstandingOSD = parseAmountField(row['NOTOSD'], row['NOTOSD_UPD']);
+                const finalPaidAmount = parseAmountField(row['FINAL PAID AMOUNT']);
 
                 // Parse dates (dd.mm.yyyy)
                 const dateStr = (row['PAID/DISCON DATE'] || '').trim();
