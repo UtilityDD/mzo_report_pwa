@@ -19,4 +19,6 @@ Replaces the Google Sheet as the **source of truth** for MZO portal Username/PIN
 
 - Admin UI (`admin_users.html`) keeps working; create/update/delete persist to `portal_users`.
 - Google Sheet is no longer used for live login after deploy.
-- Power Map tables and SI `prioritySI` / `user_access` are untouched.
+- Power Map tables and SI `prioritySI` data are untouched.
+- Priority SI Works auth uses portal fields `si_autho` / `si_divisions` (run `alter_portal_users_si_auth.sql` if the table already exists).
+- Legacy SI PIN table can be removed with `drop_si_user_access.sql`.

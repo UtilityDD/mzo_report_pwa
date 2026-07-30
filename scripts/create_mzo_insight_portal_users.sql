@@ -2,7 +2,7 @@
 -- Run in Supabase Dashboard → SQL Editor → Run
 -- Then: npm run migrate:portal-users
 --
--- Does NOT touch Power Map tables or prioritySI / user_access.
+-- Does NOT touch Power Map tables or prioritySI.
 
 CREATE SCHEMA IF NOT EXISTS mzo_insight;
 
@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS mzo_insight.portal_users (
   ss_autho text DEFAULT '',
   dd_autho text DEFAULT '',
   nsc_autho text DEFAULT '',
+  si_autho text DEFAULT '',
+  si_divisions text DEFAULT '',
   zone_code text DEFAULT '',
   region_code text DEFAULT '',
   division_code text DEFAULT '',
