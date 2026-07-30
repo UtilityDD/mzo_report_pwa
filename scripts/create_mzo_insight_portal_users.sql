@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS mzo_insight.portal_users (
   nsc_autho text DEFAULT '',
   si_autho text DEFAULT '',
   si_divisions text DEFAULT '',
+  sheets_autho text DEFAULT '',
   zone_code text DEFAULT '',
   region_code text DEFAULT '',
   division_code text DEFAULT '',

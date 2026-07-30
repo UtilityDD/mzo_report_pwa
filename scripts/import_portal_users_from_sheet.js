@@ -88,6 +88,7 @@ function sheetRowToDb(headers, values) {
     nsc_autho: (raw['nsc-autho'] || raw.nsc_autho || '').trim(),
     si_autho: (raw['si-autho'] || raw.si_autho || '').trim(),
     si_divisions: (raw['si-divisions'] || raw.si_divisions || '').trim(),
+    sheets_autho: (raw['sheets-autho'] || raw.sheets_autho || '').trim(),
     zone_code: (raw.zone_code || '').trim(),
     region_code: (raw.region_code || '').trim(),
     division_code: (raw.division_code || '').trim(),

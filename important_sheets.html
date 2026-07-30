@@ -198,6 +198,94 @@
             border-radius: 6px;
         }
 
+        .manage-months-btn {
+            border: 1px solid #d1d5db;
+            background: #fff;
+            color: #374151;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .manage-months-btn:hover { background: #f3f4f6; }
+
+        .unbilled-manage-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.45);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            z-index: 9999;
+        }
+        .unbilled-manage-overlay.active { display: flex; }
+        .unbilled-manage-card {
+            width: min(560px, 100%);
+            max-height: 90vh;
+            overflow: auto;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+        }
+        .unbilled-manage-header, .unbilled-manage-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 16px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .unbilled-manage-footer { border-bottom: none; border-top: 1px solid #e5e7eb; }
+        .unbilled-manage-body { padding: 14px 16px; display: grid; gap: 12px; }
+        .unbilled-form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .unbilled-form-grid .span-2 { grid-column: 1 / -1; }
+        .unbilled-form-grid label {
+            display: block;
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 4px;
+        }
+        .unbilled-form-grid input {
+            width: 100%;
+            box-sizing: border-box;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            padding: 8px 10px;
+            font-size: 14px;
+        }
+        .unbilled-manage-list { display: grid; gap: 8px; }
+        .unbilled-manage-item {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            align-items: center;
+        }
+        .unbilled-manage-item .meta { font-size: 12px; color: #6b7280; word-break: break-all; }
+        .btn-mini {
+            border: none;
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 12px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .btn-mini.primary { background: #2563eb; color: #fff; }
+        .btn-mini.secondary { background: #e5e7eb; color: #374151; }
+        .btn-mini.danger { background: #fee2e2; color: #b91c1c; }
+        @media (max-width: 500px) {
+            .unbilled-form-grid { grid-template-columns: 1fr; }
+            .unbilled-form-grid .span-2 { grid-column: auto; }
+        }
+
         /* Responsive Styles */
         @media (max-width: 500px) {
             body {
@@ -275,15 +363,20 @@
         <div class="links-grid">
             <!-- Tree Structure for Unbilled -->
             <div class="tree-group">
-                <div class="link-card tree-header" onclick="toggleTree(this)">
+                <div class="link-card tree-header active" onclick="toggleTree(this)">
                     <div style="display: flex; align-items: center; gap: 12px;">
                         <i class="fas fa-file-invoice-dollar"></i>
                         <span>Unbilled upto date</span>
                     </div>
-                    <i class="fas fa-chevron-down chevron-icon"></i>
+                    <div style="display: flex; align-items: center; gap: 8px;" onclick="event.stopPropagation()">
+                        <button type="button" id="manageUnbilledBtn" class="manage-months-btn" style="display:none;"
+                            onclick="openUnbilledManagePanel()">
+                            <i class="fas fa-cog"></i> Manage
+                        </button>
+                        <i class="fas fa-chevron-down chevron-icon" onclick="toggleTree(this.closest('.tree-header'))"></i>
+                    </div>
                 </div>
-                <div class="tree-content" id="unbilled-months"></div>
-
+                <div class="tree-content" id="unbilled-months" style="display: block;"></div>
             </div>
 
             <div class="link-card" id="three-months-unbilled-card">
@@ -461,91 +554,117 @@
         </div>
     </div>
 
+    <div id="unbilledManageOverlay" class="unbilled-manage-overlay" onclick="closeUnbilledManageOnOverlay(event)">
+        <div class="unbilled-manage-card">
+            <div class="unbilled-manage-header">
+                <strong>Manage Unbilled Months</strong>
+                <button type="button" class="btn-mini secondary" onclick="closeUnbilledManagePanel()">Close</button>
+            </div>
+            <div class="unbilled-manage-body">
+                <form id="unbilledMonthForm" onsubmit="saveUnbilledMonth(event)">
+                    <input type="hidden" id="unbilledEditId" value="" />
+                    <div class="unbilled-form-grid">
+                        <div class="span-2">
+                            <label for="unbilledLabel">Month label *</label>
+                            <input id="unbilledLabel" required placeholder="e.g. Sep-2026" />
+                        </div>
+                        <div class="span-2">
+                            <label for="unbilledSheetId">Google Sheet ID *</label>
+                            <input id="unbilledSheetId" required placeholder="1SazJY-ohGvhTji5zN-..." />
+                        </div>
+                        <div>
+                            <label for="unbilledGid">Tab GID</label>
+                            <input id="unbilledGid" placeholder="0" />
+                        </div>
+                        <div>
+                            <label for="unbilledSort">Sort order</label>
+                            <input id="unbilledSort" type="number" placeholder="auto" />
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: flex-end;">
+                        <button type="button" class="btn-mini secondary" onclick="resetUnbilledForm()">Clear</button>
+                        <button type="submit" class="btn-mini primary" id="unbilledSaveBtn">Add month</button>
+                    </div>
+                </form>
+                <div id="unbilledManageList" class="unbilled-manage-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="auth.js"></script>
     <script>
-        function toggleTree(element) {
-            element.classList.toggle('active');
-            const content = element.nextElementSibling;
-            if (element.classList.contains('active')) {
-                content.style.display = 'block';
-            } else {
-                content.style.display = 'none';
-            }
+        function toggleTree(header) {
+            if (!header) return;
+            header.classList.toggle('active');
+            const content = header.nextElementSibling;
+            if (!content) return;
+            content.style.display = header.classList.contains('active') ? 'block' : 'none';
         }
 
         function shareOnWhatsApp(event, url, name) {
             event.stopPropagation();
             const message = `${name}: ${url}`;
-            const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
-            window.open(whatsappUrl, '_blank');
+            window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`, '_blank');
         }
-        document.addEventListener('DOMContentLoaded', async () => {
 
-            // Reusable cell fetcher
-            async function fetchCellValue(sheetId, range, targetId) {
-                const url =
-                    `https://docs.google.com/spreadsheets/d/${sheetId}` +
-                    `/export?format=csv&range=${range}`;
+        const FALLBACK_UNBILLED_MONTHS = [
+            { id: 1, label: "Jan-2026", sheetId: "1ujR9e1olZKeu1uIgzSsIl2XXK-fN6YWI-1Z_E6xyOTs", gid: "979760067", sortOrder: 1, active: true },
+            { id: 2, label: "Feb-2026", sheetId: "1cYIV5Uk5Wa0CPkFMPFdeIUwJ3262o6tNJTbxTe7Lelk", gid: "827560931", sortOrder: 2, active: true },
+            { id: 3, label: "Mar-2026", sheetId: "1iRAE1fXfCbkb7mtRIjYIGYdbMLUga-bmhlHgKm1ZorE", gid: "0", sortOrder: 3, active: true },
+            { id: 4, label: "Apr-2026", sheetId: "1u3x_XJ_re_MJvkDbGmcE4iwweRk5xe89Qib2p9JxAGc", gid: "801371725", sortOrder: 4, active: true },
+            { id: 5, label: "May-2026", sheetId: "1c9I7Ng3OCqMik4jyRqO7WZn6ysdVXAFsm93va1Z1PFk", gid: "0", sortOrder: 5, active: true },
+            { id: 6, label: "Jun-2026", sheetId: "1rgHVfi2Z-8lKPCBl6byXCHfJ_QVCbQcB-7awggyDa1M", gid: "0", sortOrder: 6, active: true },
+            { id: 7, label: "Jul-2026", sheetId: "1Pw1mSp8x7b5DxgjQMu8WfVfX2dY0UkF836p4YXva1ko", gid: "1573581583", sortOrder: 7, active: true },
+            { id: 8, label: "Aug-2026", sheetId: "1SazJY-ohGvhTji5zN-mfrCTbaEUvfvGGKh6XWlRn76s", gid: "903839015", sortOrder: 8, active: true }
+        ];
 
-                try {
-                    const res = await fetch(url);
-                    const text = await res.text();
-                    const value = text.replace(/"/g, '').trim();
+        let unbilledMonths = [];
+        let isSheetsAdmin = false;
 
-                    document.getElementById(targetId).textContent =
-                        value || 'N/A';
-                } catch (err) {
-                    console.error(`Fetch failed for ${range}:`, err);
-                    document.getElementById(targetId).textContent = 'N/A';
-                }
-            }
+        function canManageImportantSheets(profile) {
+            const p = profile || {};
+            if (String(p.role || '').toLowerCase() === 'admin') return true;
+            const flag = String(p['sheets-autho'] != null ? p['sheets-autho'] : (p.sheets_autho || ''))
+                .trim()
+                .toLowerCase();
+            return flag === 'edit' || flag === 'y' || flag === 'all';
+        }
 
-            // 3 Months Unbilled → Q60
-            fetchCellValue(
-                '1g_YAYXocaaEDh42WpgT5jqzEwWMgwtvfrXP2J3Jh8lw',
-                'Q60',
-                'q60-value'
-            );
-
-            // 1st Bill Not Generated → J57
-            fetchCellValue(
-                '1gPNCdyhoGNZy5i6FFp2HBIHs4-4FelNWGWThmC8PeQE',
-                'J57',
-                'j57-value'
-            );
-
-            // Smart Meter: Non-Push Case -> G63
+        function getPortalProfile() {
             try {
-                const smSheetId = '18z-dWyTbw9jsrJtQ67UUL2TbT-QUgi_Q';
-                const smRange = 'G63';
-                const smUrl = `https://docs.google.com/spreadsheets/d/${smSheetId}/export?format=csv&range=${smRange}`;
-                const smRes = await fetch(smUrl);
-                const smText = await smRes.text();
-                const smValue = smText.replace(/"/g, '').trim();
-                const smEl = document.getElementById('non-push-value');
-                if (smEl) {
-                    smEl.textContent = smValue;
-                    smEl.classList.add('highlight-value');
-                }
-            } catch (err) {
-                console.error('Smart Meter fetch failed', err);
+                return JSON.parse(localStorage.getItem('mzo_user_profile') || '{}') || {};
+            } catch (_) {
+                return {};
             }
+        }
 
-            // REM Less Unit Billed -> I56 and M56
-            fetchCellValue('1It8j3Ic8mjoVf7ejljj1VrN7LEEnqg-9A8n7BY3UrQM', 'I56', 'less-unit-10');
-            fetchCellValue('1It8j3Ic8mjoVf7ejljj1VrN7LEEnqg-9A8n7BY3UrQM', 'M56', 'less-unit-0');
+        async function refreshProfileFromSession() {
+            try {
+                const res = await fetch('/api/session-check', {
+                    headers: { Accept: 'application/json' },
+                    credentials: 'same-origin'
+                });
+                if (!res.ok) return getPortalProfile();
+                const data = await res.json();
+                if (data.profile) {
+                    localStorage.setItem('mzo_authenticated', 'true');
+                    localStorage.setItem('mzo_user_profile', JSON.stringify(data.profile));
+                    return data.profile;
+                }
+            } catch (_) { /* ignore */ }
+            return getPortalProfile();
+        }
 
-        });
+        function monthKey(month) {
+            if (month.id != null) return `m${month.id}`;
+            return String(month.label || 'month').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        }
 
         async function fetchCell(sheetId, range, elementId, prefix) {
             if (!sheetId || sheetId === "#") return;
-
             const el = document.getElementById(elementId);
             if (!el) return;
-
-            const url =
-                `https://docs.google.com/spreadsheets/d/${sheetId}` +
-                `/export?format=csv&range=${range}`;
-
+            const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&range=${range}`;
             try {
                 const res = await fetch(url);
                 const text = await res.text();
@@ -556,233 +675,256 @@
             }
         }
 
-        document.addEventListener("DOMContentLoaded", () => {
+        function escapeAttr(s) {
+            return String(s || '')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/</g, '&lt;');
+        }
 
-            const months = {
-                jan: "1ujR9e1olZKeu1uIgzSsIl2XXK-fN6YWI-1Z_E6xyOTs",
-                feb: "1cYIV5Uk5Wa0CPkFMPFdeIUwJ3262o6tNJTbxTe7Lelk",
-                mar: "1iRAE1fXfCbkb7mtRIjYIGYdbMLUga-bmhlHgKm1ZorE",
-                apr: "1u3x_XJ_re_MJvkDbGmcE4iwweRk5xe89Qib2p9JxAGc",
-                may: "1c9I7Ng3OCqMik4jyRqO7WZn6ysdVXAFsm93va1Z1PFk",
-                jun: "1rgHVfi2Z-8lKPCBl6byXCHfJ_QVCbQcB-7awggyDa1M",
-                jul: "#",
-                aug: "#",
-                sep: "#",
-                oct: "#",
-                nov: "#",
-                dec: "#"
-            };
-
-
-            for (const [key, sheetId] of Object.entries(months)) {
-                fetchCell(sheetId, "D57", `${key}-q`, "Q");
-                fetchCell(sheetId, "E57", `${key}-m`, "M");
-            }
-            renderUnbilledMonths();
-
-        });
-
-        const unbilledMonths = [
-            {
-                key: "jan",
-                label: "Jan-2026",
-                sheetId: "1ujR9e1olZKeu1uIgzSsIl2XXK-fN6YWI-1Z_E6xyOTs",
-                gid: "979760067"
-            },
-            {
-                key: "feb",
-                label: "Feb-2026",
-                sheetId: "1cYIV5Uk5Wa0CPkFMPFdeIUwJ3262o6tNJTbxTe7Lelk",
-                gid: "827560931"
-            },
-            {
-                key: "mar",
-                label: "Mar-2026",
-                sheetId: "1iRAE1fXfCbkb7mtRIjYIGYdbMLUga-bmhlHgKm1ZorE",
-                gid: ""
-            },
-            {
-                key: "apr",
-                label: "Apr-2026",
-                sheetId: "1u3x_XJ_re_MJvkDbGmcE4iwweRk5xe89Qib2p9JxAGc",
-                gid: "801371725"
-            },
-            {
-                key: "may",
-                label: "May-2026",
-                sheetId: "1c9I7Ng3OCqMik4jyRqO7WZn6ysdVXAFsm93va1Z1PFk",
-                gid: "0"
-            },
-            {
-                key: "jun",
-                label: "Jun-2026",
-                sheetId: "1rgHVfi2Z-8lKPCBl6byXCHfJ_QVCbQcB-7awggyDa1M",
-                gid: "0"
-            },
-            {
-                key: "jul",
-                label: "Jul-2026",
-                sheetId: "1Pw1mSp8x7b5DxgjQMu8WfVfX2dY0UkF836p4YXva1ko",
-                gid: "1573581583"
-            },
-            {
-                key: "aug",
-                label: "Aug-2026",
-                sheetId: "#",
-                gid: ""
-            },
-            {
-                key: "sep",
-                label: "Sep-2026",
-                sheetId: "#",
-                gid: ""
-            },
-            {
-                key: "oct",
-                label: "Oct-2026",
-                sheetId: "#",
-                gid: ""
-            },
-            {
-                key: "nov",
-                label: "Nov-2026",
-                sheetId: "#",
-                gid: ""
-            },
-            {
-                key: "dec",
-                label: "Dec-2026",
-                sheetId: "#",
-                gid: ""
-            }
-        ];
         function renderUnbilledMonths() {
             const container = document.getElementById("unbilled-months");
             if (!container) return;
-
             container.innerHTML = "";
 
-            unbilledMonths.forEach(month => {
-                const hasSheet = month.sheetId && month.sheetId !== "#";
+            const months = (unbilledMonths || []).filter((month) => {
+                const sheetId = month.sheetId || month.sheet_id;
+                return sheetId && sheetId !== "#";
+            });
 
-                // 🔴 NEW: skip months without real link
-                if (!hasSheet) return;
+            if (!months.length) {
+                container.innerHTML = '<div class="child-link disabled"><span>No unbilled months configured yet.</span></div>';
+                return;
+            }
 
-                const viewLink =
-                    `https://docs.google.com/spreadsheets/d/${month.sheetId}/edit?gid=${month.gid}`;
-
-                const downloadLink =
-                    `https://docs.google.com/spreadsheets/d/${month.sheetId}/export?format=xlsx`;
+            months.forEach(month => {
+                const sheetId = month.sheetId || month.sheet_id;
+                const gid = month.gid != null && String(month.gid).trim() !== '' ? String(month.gid) : '0';
+                const key = monthKey(month);
+                const viewLink = `https://docs.google.com/spreadsheets/d/${sheetId}/edit?gid=${gid}#gid=${gid}`;
+                const downloadLink = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=xlsx`;
+                const label = escapeAttr(month.label);
+                const safeView = escapeAttr(viewLink);
 
                 const row = document.createElement("div");
                 row.className = "child-link";
-
                 row.innerHTML = `
-    <a href="${viewLink}" target="_blank">
+    <a href="${safeView}" target="_blank" rel="noopener noreferrer">
       <span>
-        ${month.label}
-        <span id="${month.key}-q" class="alert-badge">Q:—</span>
-        <span id="${month.key}-m" class="alert-badge">M:—</span>
+        ${label}
+        <span id="${key}-q" class="alert-badge">Q:—</span>
+        <span id="${key}-m" class="alert-badge">M:—</span>
       </span>
     </a>
-
     <div>
-      <button class="whatsapp-button"
-        onclick="shareOnWhatsApp(
-          event,
-          '${viewLink}',
-          '${month.label} Unbilled'
-        )">
+      <button type="button" class="whatsapp-button" data-url="${safeView}" data-label="${label} Unbilled">
         <i class="fab fa-whatsapp"></i>
       </button>
-
-      <a href="${downloadLink}" class="download-button">
+      <a href="${escapeAttr(downloadLink)}" class="download-button">
         <i class="fas fa-download"></i>
       </a>
-    </div>
-  `;
-
+    </div>`;
+                row.querySelector('.whatsapp-button')?.addEventListener('click', (e) => {
+                    const btn = e.currentTarget;
+                    shareOnWhatsApp(e, btn.getAttribute('data-url'), btn.getAttribute('data-label'));
+                });
                 container.appendChild(row);
-
-                // Fetch values
-                fetchCell(month.sheetId, "D57", `${month.key}-q`, "Q");
-                fetchCell(month.sheetId, "E57", `${month.key}-m`, "M");
+                fetchCell(sheetId, "D57", `${key}-q`, "Q");
+                fetchCell(sheetId, "E57", `${key}-m`, "M");
             });
-
         }
 
+        async function loadUnbilledMonths() {
+            try {
+                const res = await fetch('/api/important-sheets/unbilled', {
+                    headers: { Accept: 'application/json' },
+                    credentials: 'same-origin'
+                });
+                const data = await res.json();
+                if (!res.ok || data.status !== 'success') {
+                    throw new Error(data.message || 'Failed to load months');
+                }
+                unbilledMonths = Array.isArray(data.months) ? data.months : [];
+                // Empty catalog (table missing seed) → keep known months visible
+                if (!unbilledMonths.length) {
+                    console.warn('[unbilled] API returned no months; using fallback list');
+                    unbilledMonths = FALLBACK_UNBILLED_MONTHS.slice();
+                }
+            } catch (err) {
+                console.warn('[unbilled] API load failed, using fallback:', err.message);
+                unbilledMonths = FALLBACK_UNBILLED_MONTHS.slice();
+            }
+            renderUnbilledMonths();
+            // Keep the Unbilled group open so months are visible immediately
+            const header = document.querySelector('#unbilled-months')?.previousElementSibling;
+            const content = document.getElementById('unbilled-months');
+            if (header && content) {
+                header.classList.add('active');
+                content.style.display = 'block';
+            }
+            if (isSheetsAdmin) renderUnbilledManageList();
+        }
+
+        function openUnbilledManagePanel() {
+            document.getElementById('unbilledManageOverlay').classList.add('active');
+            renderUnbilledManageList();
+        }
+
+        function closeUnbilledManagePanel() {
+            document.getElementById('unbilledManageOverlay').classList.remove('active');
+            resetUnbilledForm();
+        }
+
+        function closeUnbilledManageOnOverlay(e) {
+            if (e.target.id === 'unbilledManageOverlay') closeUnbilledManagePanel();
+        }
+
+        function resetUnbilledForm() {
+            document.getElementById('unbilledEditId').value = '';
+            document.getElementById('unbilledLabel').value = '';
+            document.getElementById('unbilledSheetId').value = '';
+            document.getElementById('unbilledGid').value = '';
+            document.getElementById('unbilledSort').value = '';
+            document.getElementById('unbilledSaveBtn').textContent = 'Add month';
+        }
+
+        function editUnbilledMonth(id) {
+            const month = unbilledMonths.find(m => Number(m.id) === Number(id));
+            if (!month) return;
+            document.getElementById('unbilledEditId').value = String(month.id);
+            document.getElementById('unbilledLabel').value = month.label || '';
+            document.getElementById('unbilledSheetId').value = month.sheetId || '';
+            document.getElementById('unbilledGid').value = month.gid || '0';
+            document.getElementById('unbilledSort').value = month.sortOrder != null ? month.sortOrder : '';
+            document.getElementById('unbilledSaveBtn').textContent = 'Update month';
+        }
+
+        function renderUnbilledManageList() {
+            const list = document.getElementById('unbilledManageList');
+            if (!list) return;
+            if (!unbilledMonths.length) {
+                list.innerHTML = '<div class="meta">No months configured yet.</div>';
+                return;
+            }
+            list.innerHTML = unbilledMonths.map(m => `
+                <div class="unbilled-manage-item">
+                    <div>
+                        <strong>${escapeAttr(m.label)}</strong>
+                        <div class="meta">GID ${escapeAttr(m.gid || '0')} · order ${m.sortOrder ?? '-'}<br>${escapeAttr(m.sheetId)}</div>
+                    </div>
+                    <div style="display:flex; gap:6px; flex-shrink:0;">
+                        <button type="button" class="btn-mini secondary" data-edit="${m.id}">Edit</button>
+                        <button type="button" class="btn-mini danger" data-del="${m.id}">Remove</button>
+                    </div>
+                </div>
+            `).join('');
+            list.querySelectorAll('[data-edit]').forEach(btn => {
+                btn.addEventListener('click', () => editUnbilledMonth(btn.getAttribute('data-edit')));
+            });
+            list.querySelectorAll('[data-del]').forEach(btn => {
+                btn.addEventListener('click', () => deleteUnbilledMonth(btn.getAttribute('data-del')));
+            });
+        }
+
+        async function saveUnbilledMonth(e) {
+            e.preventDefault();
+            const id = document.getElementById('unbilledEditId').value.trim();
+            const sortRaw = document.getElementById('unbilledSort').value.trim();
+            const payload = {
+                label: document.getElementById('unbilledLabel').value.trim(),
+                sheetId: document.getElementById('unbilledSheetId').value.trim(),
+                gid: document.getElementById('unbilledGid').value.trim() || '0',
+                sortOrder: sortRaw ? Number(sortRaw) : undefined,
+                active: true
+            };
+            if (!payload.label || !payload.sheetId) {
+                alert('Label and Sheet ID are required.');
+                return;
+            }
+            const btn = document.getElementById('unbilledSaveBtn');
+            btn.disabled = true;
+            try {
+                const res = await fetch(id ? `/api/important-sheets/unbilled/${id}` : '/api/important-sheets/unbilled', {
+                    method: id ? 'PATCH' : 'POST',
+                    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!res.ok || data.status !== 'success') {
+                    throw new Error(data.message || 'Save failed');
+                }
+                resetUnbilledForm();
+                await loadUnbilledMonths();
+            } catch (err) {
+                alert(err.message || 'Save failed');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function deleteUnbilledMonth(id) {
+            if (!confirm('Remove this unbilled month from the list?')) return;
+            try {
+                const res = await fetch(`/api/important-sheets/unbilled/${id}`, {
+                    method: 'DELETE',
+                    headers: { Accept: 'application/json' },
+                    credentials: 'same-origin'
+                });
+                const data = await res.json();
+                if (!res.ok || data.status !== 'success') {
+                    throw new Error(data.message || 'Delete failed');
+                }
+                if (String(document.getElementById('unbilledEditId').value) === String(id)) {
+                    resetUnbilledForm();
+                }
+                await loadUnbilledMonths();
+            } catch (err) {
+                alert(err.message || 'Delete failed');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const profile = await refreshProfileFromSession();
+            isSheetsAdmin = canManageImportantSheets(profile);
+            const manageBtn = document.getElementById('manageUnbilledBtn');
+            if (manageBtn && isSheetsAdmin) manageBtn.style.display = 'inline-flex';
+
+            async function fetchCellValue(sheetId, range, targetId) {
+                const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&range=${range}`;
+                try {
+                    const res = await fetch(url);
+                    const text = await res.text();
+                    const el = document.getElementById(targetId);
+                    if (el) el.textContent = text.replace(/"/g, '').trim() || 'N/A';
+                } catch (err) {
+                    const el = document.getElementById(targetId);
+                    if (el) el.textContent = 'N/A';
+                }
+            }
+
+            fetchCellValue('1g_YAYXocaaEDh42WpgT5jqzEwWMgwtvfrXP2J3Jh8lw', 'Q60', 'q60-value');
+            fetchCellValue('1gPNCdyhoGNZy5i6FFp2HBIHs4-4FelNWGWThmC8PeQE', 'J57', 'j57-value');
+            fetchCellValue('1It8j3Ic8mjoVf7ejljj1VrN7LEEnqg-9A8n7BY3UrQM', 'I56', 'less-unit-10');
+            fetchCellValue('1It8j3Ic8mjoVf7ejljj1VrN7LEEnqg-9A8n7BY3UrQM', 'M56', 'less-unit-0');
+
+            try {
+                const smUrl = 'https://docs.google.com/spreadsheets/d/18z-dWyTbw9jsrJtQ67UUL2TbT-QUgi_Q/export?format=csv&range=G63';
+                const smRes = await fetch(smUrl);
+                const smText = await smRes.text();
+                const smEl = document.getElementById('non-push-value');
+                if (smEl) {
+                    smEl.textContent = smText.replace(/"/g, '').trim();
+                    smEl.classList.add('highlight-value');
+                }
+            } catch (err) { /* ignore */ }
+
+            await loadUnbilledMonths();
+        });
     </script>
 
-
-    <!--
-========================================================================
-📌 FUTURE UPDATE GUIDELINES — UNBILLED MONTHS CONFIGURATION
-========================================================================
-
-This page dynamically renders monthly "Unbilled upto date" entries
-from the `unbilledMonths` JavaScript array.
-
------------------------------------------------------------------------
-HOW TO ADD / UPDATE A MONTH (STEP-BY-STEP)
------------------------------------------------------------------------
-
-1️⃣ Locate the configuration block in JavaScript:
-
-    const unbilledMonths = [
-      {
-        key: "jan",
-        label: "Jan-2026",
-        sheetId: "SHEET_ID_HERE",
-        gid: "SHEET_TAB_GID"
-      },
-      ...
-    ];
-
-2️⃣ To ACTIVATE a month:
-   - Replace sheetId "#" with the real Google Sheet ID
-   - Set the correct `gid` (tab ID) if required
-
-   Example:
-   ------------------------------------------------
-   {
-     key: "feb",
-     label: "Feb-2026",
-     sheetId: "1abcDEFghiJKLmnoPQRstuVWxyz",
-     gid: "123456789"
-   }
-   ------------------------------------------------
-
-3️⃣ To HIDE a month:
-   - Set sheetId to "#"
-   - The month will NOT appear in the UI
-
-4️⃣ IMPORTANT RULES:
-   - `key` must be unique (used for element IDs)
-   - Sheet MUST be "Published to web"
-   - Cells D57 (Q) and E57 (M) must contain data
-   - Do NOT manually add month HTML — it is auto-generated
-
-5️⃣ DATA SOURCE PER MONTH:
-   - Q value → Cell D57
-   - M value → Cell E57
-
-6️⃣ FEATURES AUTOMATICALLY ENABLED FOR ACTIVE MONTHS:
-   ✔ Month name display
-   ✔ Q & M live values
-   ✔ WhatsApp share button
-   ✔ XLSX download button
-   ✔ Click-to-open Google Sheet
-
------------------------------------------------------------------------
-⚠️ DO NOT EDIT HTML MONTH ROWS MANUALLY
-All month rows are rendered dynamically via JavaScript.
------------------------------------------------------------------------
-
-Last updated: (update this comment when logic changes)
-========================================================================
--->
-
-
+    <!-- Unbilled months: mzo_insight.important_unbilled_months (scripts/create_important_unbilled_months.sql) -->
 
 </body>
 

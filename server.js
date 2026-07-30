@@ -146,6 +146,7 @@ function portalUserToClient(row) {
         'nsc-autho': row.nsc_autho || '',
         'si-autho': row.si_autho || '',
         'si-divisions': row.si_divisions || '',
+        'sheets-autho': row.sheets_autho || '',
         zone_code: row.zone_code || '',
         region_code: row.region_code || '',
         division_code: row.division_code || '',
@@ -168,6 +169,7 @@ function clientUserToPortal(user) {
         nsc_autho: String(user['nsc-autho'] != null ? user['nsc-autho'] : (user.nsc_autho || '')).trim(),
         si_autho: String(user['si-autho'] != null ? user['si-autho'] : (user.si_autho || '')).trim(),
         si_divisions: String(user['si-divisions'] != null ? user['si-divisions'] : (user.si_divisions || '')).trim(),
+        sheets_autho: String(user['sheets-autho'] != null ? user['sheets-autho'] : (user.sheets_autho || '')).trim(),
         zone_code: String(user.zone_code || '').trim(),
         region_code: String(user.region_code || '').trim(),
         division_code: String(user.division_code || '').trim(),
@@ -612,6 +614,176 @@ function requireAdmin(req, res, next) {
     next();
 }
 
+function canManageImportantSheets(user) {
+    if (!user) return false;
+    if (String(user.role || '').toLowerCase() === 'admin') return true;
+    const flag = String(user['sheets-autho'] != null ? user['sheets-autho'] : (user.sheets_autho || ''))
+        .trim()
+        .toLowerCase();
+    return flag === 'edit' || flag === 'y' || flag === 'all';
+}
+
+function requireSheetsEditor(req, res, next) {
+    if (!canManageImportantSheets(req.user)) {
+        return res.status(403).json({
+            status: 'error',
+            message: 'Forbidden: Important Sheets manage access required.'
+        });
+    }
+    next();
+}
+
+const UNBILLED_MONTHS_TABLE = 'important_unbilled_months';
+
+function mapUnbilledMonthRow(row) {
+    if (!row) return null;
+    return {
+        id: row.id,
+        label: row.label || '',
+        sheetId: row.sheet_id || '',
+        gid: row.gid != null && String(row.gid).trim() !== '' ? String(row.gid) : '0',
+        sortOrder: Number(row.sort_order) || 0,
+        active: row.active !== false
+    };
+}
+
+function normalizeUnbilledPayload(body, { requireSort = false } = {}) {
+    const label = String(body.label || '').trim();
+    const sheetId = String(body.sheetId || body.sheet_id || '').trim();
+    let gid = String(body.gid != null ? body.gid : '0').trim();
+    if (!gid) gid = '0';
+    const hasSort = body.sortOrder != null || body.sort_order != null;
+    const sortOrder = Number(body.sortOrder != null ? body.sortOrder : body.sort_order);
+    const active = body.active === false || body.active === 'false' ? false : true;
+    const out = {
+        label,
+        sheet_id: sheetId,
+        gid,
+        active,
+        updated_at: new Date().toISOString()
+    };
+    if (hasSort && Number.isFinite(sortOrder)) {
+        out.sort_order = sortOrder;
+    } else if (requireSort) {
+        out.sort_order = 0;
+    }
+    return out;
+}
+
+// List unbilled months (any logged-in portal user)
+app.get('/api/important-sheets/unbilled', async (req, res) => {
+    try {
+        const includeAll = String(req.query.all || '') === '1' && canManageImportantSheets(req.user);
+        let path = `${UNBILLED_MONTHS_TABLE}?select=*&order=sort_order.asc,id.asc`;
+        if (!includeAll) path += '&active=eq.true';
+        const rows = await querySupabase(path, { schema: PORTAL_USERS_SCHEMA });
+        const months = (Array.isArray(rows) ? rows : []).map(mapUnbilledMonthRow);
+        res.json({ status: 'success', months });
+    } catch (err) {
+        console.error('[important-sheets] list failed:', err.message);
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// Create unbilled month (admin only)
+app.post('/api/important-sheets/unbilled', requireSheetsEditor, async (req, res) => {
+    try {
+        const payload = normalizeUnbilledPayload(req.body || {}, { requireSort: true });
+        if (!payload.label || !payload.sheet_id || payload.sheet_id === '#') {
+            return res.status(400).json({ status: 'error', message: 'Label and Sheet ID are required.' });
+        }
+        if (!payload.sort_order) {
+            const existing = await querySupabase(
+                `${UNBILLED_MONTHS_TABLE}?select=sort_order&order=sort_order.desc&limit=1`,
+                { schema: PORTAL_USERS_SCHEMA }
+            );
+            const maxSort = Array.isArray(existing) && existing[0] ? Number(existing[0].sort_order) || 0 : 0;
+            payload.sort_order = maxSort + 1;
+        }
+        const inserted = await querySupabase(UNBILLED_MONTHS_TABLE, {
+            schema: PORTAL_USERS_SCHEMA,
+            method: 'POST',
+            body: payload
+        });
+        const row = Array.isArray(inserted) ? inserted[0] : inserted;
+        await logActivity({
+            username: req.user.Username,
+            name: req.user.Name,
+            type: 'user_management',
+            details: `Added unbilled month: ${payload.label}`
+        });
+        res.json({ status: 'success', month: mapUnbilledMonthRow(row) });
+    } catch (err) {
+        console.error('[important-sheets] create failed:', err.message);
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// Update unbilled month (admin only)
+app.patch('/api/important-sheets/unbilled/:id', requireSheetsEditor, async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id) || id <= 0) {
+            return res.status(400).json({ status: 'error', message: 'Invalid month id.' });
+        }
+        const payload = normalizeUnbilledPayload({ ...(req.body || {}), active: req.body?.active });
+        if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'active')) {
+            payload.active = !(req.body.active === false || req.body.active === 'false');
+        }
+        if (!payload.label || !payload.sheet_id || payload.sheet_id === '#') {
+            return res.status(400).json({ status: 'error', message: 'Label and Sheet ID are required.' });
+        }
+        if (payload.sort_order == null) {
+            // keep existing sort_order if client omitted it
+            delete payload.sort_order;
+        }
+        const updated = await querySupabase(
+            `${UNBILLED_MONTHS_TABLE}?id=eq.${id}`,
+            {
+                schema: PORTAL_USERS_SCHEMA,
+                method: 'PATCH',
+                body: payload
+            }
+        );
+        const row = Array.isArray(updated) ? updated[0] : updated;
+        await logActivity({
+            username: req.user.Username,
+            name: req.user.Name,
+            type: 'user_management',
+            details: `Updated unbilled month #${id}: ${payload.label}`
+        });
+        res.json({ status: 'success', month: mapUnbilledMonthRow(row) });
+    } catch (err) {
+        console.error('[important-sheets] update failed:', err.message);
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// Delete unbilled month (admin only)
+app.delete('/api/important-sheets/unbilled/:id', requireSheetsEditor, async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id) || id <= 0) {
+            return res.status(400).json({ status: 'error', message: 'Invalid month id.' });
+        }
+        await querySupabase(`${UNBILLED_MONTHS_TABLE}?id=eq.${id}`, {
+            schema: PORTAL_USERS_SCHEMA,
+            method: 'DELETE',
+            prefer: 'return=minimal'
+        });
+        await logActivity({
+            username: req.user.Username,
+            name: req.user.Name,
+            type: 'user_management',
+            details: `Deleted unbilled month #${id}`
+        });
+        res.json({ status: 'success' });
+    } catch (err) {
+        console.error('[important-sheets] delete failed:', err.message);
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
 // 1. GET all users
 app.get('/api/admin/users', requireAdmin, async (req, res) => {
     try {
@@ -649,6 +821,7 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
             'nsc-autho': '',
             'si-autho': '',
             'si-divisions': '',
+            'sheets-autho': '',
             zone_code: '',
             region_code: '',
             division_code: '',
