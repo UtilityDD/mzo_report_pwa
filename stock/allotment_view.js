@@ -9,6 +9,8 @@
     let filteredRows = [];
     let activeTab = 'orders';
     let selectedNo = '';
+    let clientListCache = { at: 0, rows: null };
+    const CLIENT_LIST_TTL_MS = 45 * 1000;
 
     function escapeHtml(s) {
         return String(s ?? '')
@@ -120,12 +122,16 @@
         });
     }
 
-    function summaryMaterial(rows) {
+    /** Pivot: one row per Division × Material (qty never mixed across items). */
+    function summaryDivisionMaterialPivot(rows, sortBy) {
         const map = new Map();
         rows.forEach((r) => {
+            const division = String(r.Division || '—');
             const code = String(r.MaterialCode || '—');
-            if (!map.has(code)) {
-                map.set(code, {
+            const key = division + '\0' + code;
+            if (!map.has(key)) {
+                map.set(key, {
+                    division,
                     code,
                     description: r.MaterialDescription || '',
                     unit: r.Unit || '',
@@ -134,44 +140,74 @@
                     orders: new Set()
                 });
             }
-            const m = map.get(code);
-            m.qty += Number(r.AllottedQty) || 0;
-            m.lines += 1;
-            m.orders.add(String(r.AllotmentNo || ''));
-            if (!m.description && r.MaterialDescription) m.description = r.MaterialDescription;
-            if (!m.unit && r.Unit) m.unit = r.Unit;
+            const row = map.get(key);
+            row.qty += Number(r.AllottedQty) || 0;
+            row.lines += 1;
+            row.orders.add(String(r.AllotmentNo || ''));
+            if (!row.description && r.MaterialDescription) row.description = r.MaterialDescription;
+            if (!row.unit && r.Unit) row.unit = r.Unit;
         });
-        return [...map.values()]
-            .map((m) => ({ ...m, orderCount: m.orders.size }))
-            .sort((a, b) => b.qty - a.qty || a.code.localeCompare(b.code));
+        const list = [...map.values()].map((r) => ({ ...r, orderCount: r.orders.size }));
+        if (sortBy === 'material') {
+            list.sort(
+                (a, b) =>
+                    a.code.localeCompare(b.code) ||
+                    a.division.localeCompare(b.division) ||
+                    b.qty - a.qty
+            );
+        } else {
+            list.sort(
+                (a, b) =>
+                    a.division.localeCompare(b.division) ||
+                    a.code.localeCompare(b.code) ||
+                    b.qty - a.qty
+            );
+        }
+        return list;
     }
 
-    function summaryDivision(rows) {
-        const map = new Map();
-        rows.forEach((r) => {
-            const div = String(r.Division || '—');
-            if (!map.has(div)) {
-                map.set(div, {
-                    division: div,
-                    qty: 0,
-                    lines: 0,
-                    orders: new Set(),
-                    materials: new Set()
-                });
-            }
-            const d = map.get(div);
-            d.qty += Number(r.AllottedQty) || 0;
-            d.lines += 1;
-            d.orders.add(String(r.AllotmentNo || ''));
-            if (r.MaterialCode) d.materials.add(String(r.MaterialCode));
+    function formatLoadClock(ts) {
+        const d = ts instanceof Date ? ts : new Date(ts);
+        if (!isFinite(d.getTime())) return '—';
+        return d.toLocaleString(undefined, {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true
         });
-        return [...map.values()]
-            .map((d) => ({
-                ...d,
-                orderCount: d.orders.size,
-                materialCount: d.materials.size
-            }))
-            .sort((a, b) => b.qty - a.qty || a.division.localeCompare(b.division));
+    }
+
+    function setRefreshBusy(busy) {
+        const btn = document.getElementById('allot-view-refresh-btn');
+        if (!btn) return;
+        btn.disabled = !!busy;
+        btn.setAttribute('aria-busy', busy ? 'true' : 'false');
+        btn.textContent = busy ? 'Refreshing…' : 'Refresh now';
+    }
+
+    function updateLoadTag(opts) {
+        const el = document.getElementById('allot-view-load-tag');
+        if (!el) return;
+        const at = opts && opts.at != null ? opts.at : clientListCache.at;
+        const count = opts && opts.count != null ? opts.count : allRows.length;
+        const cached = !!(opts && opts.cached);
+        const loading = !!(opts && opts.loading);
+        if (loading) {
+            el.innerHTML = '<strong>Loading…</strong> <span class="allot-view-load-muted">Fetching allotment lines</span>';
+            return;
+        }
+        if (!at) {
+            el.textContent = 'Not loaded yet';
+            return;
+        }
+        const src = cached ? ' · cached' : '';
+        el.innerHTML =
+            `<strong>${count}</strong> line${count === 1 ? '' : 's'} · ` +
+            `Updated <strong>${escapeHtml(formatLoadClock(at))}</strong>` +
+            `<span class="allot-view-load-muted">${escapeHtml(src)}</span>`;
     }
 
     function summaryDate(rows) {
@@ -331,74 +367,67 @@
         detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    function renderMaterialSummary() {
-        const host = document.getElementById('allot-view-material-sum');
+    function renderPivotTable(host, rows, primary) {
         if (!host) return;
-        const rows = summaryMaterial(filteredRows);
         if (!rows.length) {
             host.innerHTML = '<p class="allot-view-empty">No data.</p>';
             return;
         }
+        const colA =
+            primary === 'material'
+                ? { label: 'Material Code' }
+                : { label: 'Division (To)' };
+        const colB =
+            primary === 'material'
+                ? { label: 'Division (To)' }
+                : { label: 'Material Code' };
+
         host.innerHTML = `<table class="allot-view-table">
             <thead>
                 <tr>
-                    <th>Material Code</th>
+                    <th>${colA.label}</th>
+                    <th>${colB.label}</th>
                     <th>Description</th>
                     <th>Unit</th>
-                    <th>Total Qty</th>
+                    <th>Qty</th>
                     <th>Lines</th>
                     <th>Orders</th>
                 </tr>
             </thead>
             <tbody>
                 ${rows
-                    .map(
-                        (r) => `<tr>
-                    <td><strong>${escapeHtml(r.code)}</strong></td>
+                    .map((r) => {
+                        const divCell = escapeHtml(shortName(r.division));
+                        const codeCell = escapeHtml(r.code);
+                        const primaryCell =
+                            primary === 'material'
+                                ? `<strong>${codeCell}</strong>`
+                                : `<strong>${divCell}</strong>`;
+                        const secondaryCell =
+                            primary === 'material' ? divCell : codeCell;
+                        return `<tr>
+                    <td>${primaryCell}</td>
+                    <td>${secondaryCell}</td>
                     <td>${escapeHtml(r.description)}</td>
                     <td>${escapeHtml(r.unit)}</td>
                     <td>${formatQty(r.qty)}</td>
                     <td>${r.lines}</td>
                     <td>${r.orderCount}</td>
-                </tr>`
-                    )
+                </tr>`;
+                    })
                     .join('')}
             </tbody>
         </table>`;
     }
 
+    function renderMaterialSummary() {
+        const host = document.getElementById('allot-view-material-sum');
+        renderPivotTable(host, summaryDivisionMaterialPivot(filteredRows, 'material'), 'material');
+    }
+
     function renderDivisionSummary() {
         const host = document.getElementById('allot-view-division-sum');
-        if (!host) return;
-        const rows = summaryDivision(filteredRows);
-        if (!rows.length) {
-            host.innerHTML = '<p class="allot-view-empty">No data.</p>';
-            return;
-        }
-        host.innerHTML = `<table class="allot-view-table">
-            <thead>
-                <tr>
-                    <th>Division (To)</th>
-                    <th>Total Qty</th>
-                    <th>Materials</th>
-                    <th>Lines</th>
-                    <th>Orders</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${rows
-                    .map(
-                        (r) => `<tr>
-                    <td><strong>${escapeHtml(r.division)}</strong></td>
-                    <td>${formatQty(r.qty)}</td>
-                    <td>${r.materialCount}</td>
-                    <td>${r.lines}</td>
-                    <td>${r.orderCount}</td>
-                </tr>`
-                    )
-                    .join('')}
-            </tbody>
-        </table>`;
+        renderPivotTable(host, summaryDivisionMaterialPivot(filteredRows, 'division'), 'division');
     }
 
     function renderDateSummary() {
@@ -437,12 +466,14 @@
         const orders = groupOrders(filteredRows);
         const elOrders = document.getElementById('allot-view-kpi-orders');
         const elLines = document.getElementById('allot-view-kpi-lines');
-        const elQty = document.getElementById('allot-view-kpi-qty');
+        const elItems = document.getElementById('allot-view-kpi-items');
         if (elOrders) elOrders.textContent = String(orders.length);
         if (elLines) elLines.textContent = String(filteredRows.length);
-        if (elQty) {
-            const qty = filteredRows.reduce((s, r) => s + (Number(r.AllottedQty) || 0), 0);
-            elQty.textContent = formatQty(qty);
+        if (elItems) {
+            const items = new Set(
+                filteredRows.map((r) => String(r.MaterialCode || '').trim()).filter(Boolean)
+            );
+            elItems.textContent = String(items.size);
         }
     }
 
@@ -477,14 +508,33 @@
         if (current && divs.includes(current)) sel.value = current;
     }
 
-    async function loadRows() {
-        showStatus('Loading allotments…', 'info');
+    async function loadRows(opts) {
+        const force = !!(opts && opts.force) || !!window.__allotViewNeedsRefresh;
+        const now = Date.now();
+        if (
+            !force &&
+            clientListCache.rows &&
+            now - clientListCache.at < CLIENT_LIST_TTL_MS
+        ) {
+            allRows = clientListCache.rows;
+            fillDivisionFilter(allRows);
+            selectedNo = '';
+            document.getElementById('allot-view-detail').hidden = true;
+            renderAll();
+            updateLoadTag({ at: clientListCache.at, count: allRows.length, cached: true });
+            showStatus('');
+            return;
+        }
+
+        showStatus('');
+        setRefreshBusy(true);
+        updateLoadTag({ loading: true });
         try {
             const res = await fetch('/api/stock/allotment', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'same-origin',
-                body: JSON.stringify({ action: 'listAllotments' })
+                body: JSON.stringify({ action: 'listAllotments', force })
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || data.error || data.status === 'error') {
@@ -499,12 +549,15 @@
                 throw new Error(msg);
             }
             allRows = Array.isArray(data.rows) ? data.rows : [];
+            clientListCache = { at: Date.now(), rows: allRows };
+            window.__allotViewNeedsRefresh = false;
             fillDivisionFilter(allRows);
             selectedNo = '';
             document.getElementById('allot-view-detail').hidden = true;
             renderAll();
+            updateLoadTag({ at: clientListCache.at, count: allRows.length, cached: false });
             showStatus(
-                allRows.length ? `Loaded ${allRows.length} line(s) from the allotment ledger.` : 'No allotments saved yet.',
+                allRows.length ? '' : 'No allotments saved yet.',
                 allRows.length ? 'ok' : 'info'
             );
         } catch (err) {
@@ -512,12 +565,15 @@
             allRows = [];
             filteredRows = [];
             renderAll();
+            updateLoadTag({ at: 0 });
             const tip = /Invalid action|listAllotments/i.test(err.message || '')
                 ? ' Redeploy Apps Script with the latest allotment_code.gs (New version).'
                 : /404|API not found/i.test(err.message || '')
                   ? ' Restart/redeploy the Node server so /api/stock/allotment is available.'
                   : ' If this persists, redeploy Apps Script with the latest allotment_code.gs.';
             showStatus((err.message || 'Failed to load allotments.') + tip, 'error');
+        } finally {
+            setRefreshBusy(false);
         }
     }
 
@@ -532,11 +588,11 @@
         showStatus('Preparing PDF…', 'info');
         letter.classList.add('allot-letter-capture');
         const prevW = letter.style.width;
-        letter.style.width = '720px';
+        letter.style.width = '640px';
         try {
             await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
             const canvas = await window.html2canvas(letter, {
-                scale: 2,
+                scale: 2.5,
                 backgroundColor: '#ffffff',
                 useCORS: true,
                 logging: false
@@ -545,7 +601,7 @@
             const doc = new jspdf.jsPDF({ unit: 'pt', format: 'a4' });
             const pageW = doc.internal.pageSize.getWidth();
             const pageH = doc.internal.pageSize.getHeight();
-            const margin = 36;
+            const margin = 28;
             const contentW = pageW - margin * 2;
             const imgH = (canvas.height * contentW) / canvas.width;
             const pageContentH = pageH - margin * 2;
@@ -578,6 +634,7 @@
         const overlay = document.getElementById('allot-view-overlay');
         if (!overlay) return;
         document.body.appendChild(overlay);
+        if (window.MzoAllotPanelDrag) window.MzoAllotPanelDrag.reset(overlay);
         overlay.classList.add('active');
         overlay.setAttribute('aria-hidden', 'false');
         overlay.style.setProperty('display', 'flex', 'important');
@@ -585,7 +642,8 @@
         overlay.style.setProperty('inset', '0', 'important');
         overlay.style.setProperty('z-index', '2147483000', 'important');
         overlay.style.setProperty('background', 'rgba(15,23,42,0.55)', 'important');
-        loadRows();
+        if (window.MzoAllotPanelDrag) window.MzoAllotPanelDrag.enable(overlay);
+        loadRows({ force: !!window.__allotViewNeedsRefresh });
     }
 
     function closePanel() {
@@ -613,7 +671,7 @@
         });
         document.getElementById('allot-view-close-btn')?.addEventListener('click', closePanel);
         document.getElementById('allot-view-done-btn')?.addEventListener('click', closePanel);
-        document.getElementById('allot-view-refresh-btn')?.addEventListener('click', loadRows);
+        document.getElementById('allot-view-refresh-btn')?.addEventListener('click', () => loadRows({ force: true }));
         document.getElementById('allot-view-pdf-btn')?.addEventListener('click', downloadDetailPdf);
         // No backdrop-dismiss on view either while debugging create panel conflict
 

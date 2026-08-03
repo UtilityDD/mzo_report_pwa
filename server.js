@@ -1659,6 +1659,165 @@ function requireStockAllotmentAccess_(req, res) {
     return true;
 }
 
+/** In-memory list cache — avoids Apps Script cold-start on every View open */
+let allotListCache_ = { at: 0, rows: null, source: '' };
+const ALLOT_LIST_TTL_MS = 60 * 1000;
+
+function invalidateAllotListCache_() {
+    allotListCache_ = { at: 0, rows: null, source: '' };
+}
+
+function parseCsvLine_(line) {
+    const out = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (inQuotes) {
+            if (ch === '"') {
+                if (line[i + 1] === '"') {
+                    cur += '"';
+                    i++;
+                } else {
+                    inQuotes = false;
+                }
+            } else {
+                cur += ch;
+            }
+        } else if (ch === '"') {
+            inQuotes = true;
+        } else if (ch === ',') {
+            out.push(cur);
+            cur = '';
+        } else {
+            cur += ch;
+        }
+    }
+    out.push(cur);
+    return out;
+}
+
+function parseAllotmentCsv_(text) {
+    const raw = String(text || '').replace(/^\uFEFF/, '').trim();
+    if (!raw || raw.startsWith('<')) return null;
+    const lines = raw.split(/\r?\n/).filter((l) => l.trim() !== '');
+    if (lines.length < 1) return [];
+    const headers = parseCsvLine_(lines[0]).map((h) => String(h || '').trim());
+    if (!headers.includes('AllotmentNo')) return null;
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+        const cols = parseCsvLine_(lines[i]);
+        const obj = {};
+        headers.forEach((h, idx) => {
+            obj[h] = cols[idx] != null ? cols[idx] : '';
+        });
+        if (!obj.AllotmentNo) continue;
+        ['AllottedQty', 'PresentStockDiv', 'SourceStockAtAllot', 'ZoneStockAtAllot'].forEach((k) => {
+            if (obj[k] === '' || obj[k] == null) return;
+            const n = Number(String(obj[k]).replace(/,/g, ''));
+            if (!Number.isNaN(n)) obj[k] = n;
+        });
+        rows.push(obj);
+    }
+    rows.sort((a, b) => {
+        const da = String(a.Date || '');
+        const db = String(b.Date || '');
+        if (da !== db) return db.localeCompare(da);
+        return String(b.AllotmentNo || '').localeCompare(String(a.AllotmentNo || ''));
+    });
+    return rows;
+}
+
+function filterAllotmentRowsLocal_(rows, payload) {
+    const q = String(payload.q || payload.query || '').toLowerCase().trim();
+    const allotmentNo = String(payload.allotmentNo || payload.AllotmentNo || '').toLowerCase().trim();
+    const material = String(payload.material || payload.MaterialCode || '').toLowerCase().trim();
+    const division = String(payload.division || payload.Division || '').toLowerCase().trim();
+    const fromStore = String(payload.fromStore || payload.FromStore || '').toLowerCase().trim();
+    const dateFrom = String(payload.dateFrom || payload.from || '').trim();
+    const dateTo = String(payload.dateTo || payload.to || '').trim();
+
+    return (rows || []).filter((r) => {
+        const no = String(r.AllotmentNo || '').toLowerCase();
+        const code = String(r.MaterialCode || '').toLowerCase();
+        const desc = String(r.MaterialDescription || '').toLowerCase();
+        const div = String(r.Division || '').toLowerCase();
+        const from = String(r.FromStore || '').toLowerCase();
+        const date = String(r.Date || '').slice(0, 10);
+        const remarks = String(r.Remarks || '').toLowerCase();
+        const createdBy = String(r.CreatedBy || '').toLowerCase();
+
+        if (allotmentNo && !no.includes(allotmentNo)) return false;
+        if (material && !code.includes(material) && !desc.includes(material)) return false;
+        if (division && !div.includes(division)) return false;
+        if (fromStore && !from.includes(fromStore)) return false;
+        if (dateFrom && date && date < dateFrom) return false;
+        if (dateTo && date && date > dateTo) return false;
+        if (q) {
+            const blob = [no, code, desc, div, from, remarks, createdBy, date].join(' ');
+            if (!blob.includes(q)) return false;
+        }
+        return true;
+    });
+}
+
+async function fetchAllotmentCsvText_() {
+    const directUrl = process.env.STOCK_ALLOTMENTS_CSV_URL || '';
+    if (directUrl) {
+        const res = await fetch(directUrl, { redirect: 'follow' });
+        if (!res.ok) throw new Error(`CSV HTTP ${res.status}`);
+        return await res.text();
+    }
+    const scriptUrl = stockAllotmentScriptUrl_();
+    const sep = scriptUrl.includes('?') ? '&' : '?';
+    const res = await fetch(`${scriptUrl}${sep}format=csv`, { redirect: 'follow' });
+    if (!res.ok) throw new Error(`Apps Script CSV HTTP ${res.status}`);
+    return await res.text();
+}
+
+async function loadAllotmentRowsCached_(force = false) {
+    const now = Date.now();
+    if (!force && allotListCache_.rows && now - allotListCache_.at < ALLOT_LIST_TTL_MS) {
+        return { rows: allotListCache_.rows, source: allotListCache_.source || 'cache' };
+    }
+
+    try {
+        const text = await fetchAllotmentCsvText_();
+        const rows = parseAllotmentCsv_(text);
+        if (rows) {
+            allotListCache_ = {
+                at: now,
+                rows,
+                source: process.env.STOCK_ALLOTMENTS_CSV_URL ? 'csv' : 'apps-script-csv'
+            };
+            return { rows, source: allotListCache_.source };
+        }
+    } catch (err) {
+        console.warn('[stock/allotment] CSV list failed, falling back to JSON:', err.message);
+    }
+
+    const scriptUrl = stockAllotmentScriptUrl_();
+    const upstream = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'listAllotments' }),
+        redirect: 'follow'
+    });
+    const text = await upstream.text();
+    let data;
+    try {
+        data = JSON.parse(text);
+    } catch (e) {
+        throw new Error('Apps Script returned non-JSON while listing allotments.');
+    }
+    if (!upstream.ok || data.error || data.status === 'error') {
+        throw new Error(data.error || data.message || 'Failed to list allotments');
+    }
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    allotListCache_ = { at: now, rows, source: 'apps-script-json' };
+    return { rows, source: 'apps-script-json' };
+}
+
 async function proxyStockAllotment_(payload, res) {
     const scriptUrl = stockAllotmentScriptUrl_();
     if (!scriptUrl) {
@@ -1668,14 +1827,38 @@ async function proxyStockAllotment_(payload, res) {
         });
     }
 
-    const upstream = await fetch(scriptUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        redirect: 'follow'
-    });
+    const action = payload.action || '';
+    const controller = new AbortController();
+    const timeoutMs = action === 'createAllotment' ? 55000 : 35000;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-    const text = await upstream.text();
+    let upstream;
+    let text;
+    try {
+        upstream = await fetch(scriptUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            redirect: 'follow',
+            signal: controller.signal
+        });
+        text = await upstream.text();
+    } catch (err) {
+        clearTimeout(timer);
+        if (action === 'createAllotment') {
+            invalidateAllotListCache_();
+            return res.status(504).json({
+                status: 'error',
+                maybeSucceeded: true,
+                error:
+                    'Upload timed out or network failed after submit. Open View Allotments before retrying — the row may already be saved.'
+            });
+        }
+        throw err;
+    } finally {
+        clearTimeout(timer);
+    }
+
     let data;
     try {
         data = JSON.parse(text);
@@ -1685,6 +1868,16 @@ async function proxyStockAllotment_(payload, res) {
             /page not found/i.test(text) ||
             /<!DOCTYPE html>/i.test(text);
         console.error('[stock/allotment] Non-JSON Apps Script response:', text.slice(0, 400));
+        if (action === 'createAllotment') {
+            invalidateAllotListCache_();
+            return res.status(502).json({
+                status: 'error',
+                maybeSucceeded: true,
+                error: looksGone
+                    ? 'Apps Script URL looks undeployed, but the write may still have completed. Check View Allotments before retrying.'
+                    : 'Apps Script returned an unexpected response after upload. Check View Allotments before retrying — it may already be saved.'
+            });
+        }
         return res.status(502).json({
             status: 'error',
             error: looksGone
@@ -1700,6 +1893,10 @@ async function proxyStockAllotment_(payload, res) {
         });
     }
 
+    if (action === 'createAllotment') {
+        invalidateAllotListCache_();
+    }
+
     return res.json(data);
 }
 
@@ -1707,6 +1904,17 @@ app.get('/api/stock/allotment', async (req, res) => {
     try {
         if (!requireStockAllotmentAccess_(req, res)) return;
         const action = req.query.action || 'listAllotments';
+        if (action === 'listAllotments') {
+            const force = String(req.query.force || '') === '1' || String(req.query.refresh || '') === '1';
+            const loaded = await loadAllotmentRowsCached_(force);
+            const rows = filterAllotmentRowsLocal_(loaded.rows, req.query);
+            return res.json({
+                status: 'success',
+                rows,
+                count: rows.length,
+                source: loaded.source
+            });
+        }
         const payload = { action, ...req.query };
         return await proxyStockAllotment_(payload, res);
     } catch (err) {
@@ -1731,8 +1939,36 @@ app.post('/api/stock/allotment', async (req, res) => {
             return await proxyStockAllotment_(payload, res);
         }
 
-        if (action === 'listAllotments' || action === 'getAllotment') {
-            return await proxyStockAllotment_(payload, res);
+        if (action === 'listAllotments') {
+            const force = !!(payload.force || payload.refresh);
+            const loaded = await loadAllotmentRowsCached_(force);
+            const rows = filterAllotmentRowsLocal_(loaded.rows, payload);
+            return res.json({
+                status: 'success',
+                rows,
+                count: rows.length,
+                source: loaded.source
+            });
+        }
+
+        if (action === 'getAllotment') {
+            const force = !!(payload.force || payload.refresh);
+            const loaded = await loadAllotmentRowsCached_(force);
+            const no = String(payload.allotmentNo || payload.AllotmentNo || '').trim();
+            if (!no) {
+                return res.status(400).json({ status: 'error', error: 'allotmentNo is required' });
+            }
+            const rows = loaded.rows.filter((r) => String(r.AllotmentNo || '') === no);
+            if (!rows.length) {
+                return res.status(404).json({ status: 'error', error: `Allotment not found: ${no}` });
+            }
+            return res.json({
+                status: 'success',
+                allotmentNo: no,
+                rows,
+                count: rows.length,
+                source: loaded.source
+            });
         }
 
         return res.status(400).json({ status: 'error', error: 'Invalid action' });
