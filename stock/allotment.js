@@ -5,6 +5,76 @@
 (function (window) {
     'use strict';
 
+    /** Drag allotment panels by their header (create + view). */
+    function enableAllotPanelDrag(overlay) {
+        if (!overlay) return;
+        const panel = overlay.querySelector('.allot-panel');
+        const header = panel && panel.querySelector('.allot-panel-header');
+        if (!panel || !header || header.dataset.dragBound === '1') return;
+        header.dataset.dragBound = '1';
+        header.classList.add('allot-panel-draggable');
+
+        let dragging = false;
+        let startX = 0;
+        let startY = 0;
+        let origL = 0;
+        let origT = 0;
+
+        header.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            if (e.target.closest('button, a, input, select, textarea, .allot-close')) return;
+            const rect = panel.getBoundingClientRect();
+            panel.style.position = 'absolute';
+            panel.style.margin = '0';
+            panel.style.left = `${rect.left}px`;
+            panel.style.top = `${rect.top}px`;
+            panel.style.width = `${rect.width}px`;
+            panel.style.maxWidth = 'none';
+            dragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            origL = rect.left;
+            origT = rect.top;
+            try {
+                header.setPointerCapture(e.pointerId);
+            } catch (_) { /* ignore */ }
+            e.preventDefault();
+        });
+
+        header.addEventListener('pointermove', (e) => {
+            if (!dragging) return;
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            const pw = panel.offsetWidth;
+            const ph = panel.offsetHeight;
+            let left = origL + dx;
+            let top = origT + dy;
+            left = Math.min(Math.max(8, left), window.innerWidth - Math.min(pw, window.innerWidth) - 8);
+            top = Math.min(Math.max(8, top), window.innerHeight - Math.min(80, ph) - 8);
+            panel.style.left = `${left}px`;
+            panel.style.top = `${top}px`;
+        });
+
+        const endDrag = () => {
+            dragging = false;
+        };
+        header.addEventListener('pointerup', endDrag);
+        header.addEventListener('pointercancel', endDrag);
+    }
+
+    function resetAllotPanelPosition(overlay) {
+        const panel = overlay && overlay.querySelector('.allot-panel');
+        if (!panel) return;
+        panel.style.position = '';
+        panel.style.margin = '';
+        panel.style.left = '';
+        panel.style.top = '';
+        panel.style.width = '';
+        panel.style.maxWidth = '';
+    }
+
+    window.MzoAllotPanelDrag = { enable: enableAllotPanelDrag, reset: resetAllotPanelPosition };
+
     const ZONE = {
         name: 'Malda (D) Zone',
         short: 'Zone',
@@ -229,10 +299,20 @@
         return Array.from(map.values());
     }
 
-    function showAlertModal(message) {
+    function showAlertModal(message, title) {
         const modal = document.getElementById('allot-alert-modal');
         const msg = document.getElementById('allot-alert-message');
-        if (msg) msg.textContent = message;
+        const titleEl = document.getElementById('allot-alert-title');
+        const isWait = title === 'Please wait';
+        if (titleEl) {
+            titleEl.textContent = title || 'Cannot allot';
+            titleEl.style.color = isWait ? '#92400e' : '';
+        }
+        if (msg) {
+            msg.textContent = message;
+            msg.style.whiteSpace = 'pre-line';
+            msg.style.textAlign = isWait ? 'left' : '';
+        }
         if (modal) {
             modal.hidden = false;
             modal.classList.add('active');
@@ -727,15 +807,15 @@
             boxShadow: el.style.boxShadow
         };
         el.classList.add('allot-letter-capture');
-        el.style.width = '720px';
-        el.style.maxWidth = '720px';
+        el.style.width = '640px';
+        el.style.maxWidth = '640px';
         el.style.boxShadow = 'none';
 
         try {
             // Allow layout to settle at capture width
             await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
             const canvas = await window.html2canvas(el, {
-                scale: 2,
+                scale: 2.5,
                 backgroundColor: '#ffffff',
                 useCORS: true,
                 logging: false,
@@ -747,7 +827,7 @@
             const doc = new jspdf.jsPDF({ unit: 'pt', format: 'a4' });
             const pageW = doc.internal.pageSize.getWidth();
             const pageH = doc.internal.pageSize.getHeight();
-            const margin = 36;
+            const margin = 28;
             const contentW = pageW - margin * 2;
             const imgH = (canvas.height * contentW) / canvas.width;
             const pageContentH = pageH - margin * 2;
@@ -827,7 +907,10 @@
 
         isUploading = true;
         updateFlowControls();
-        showStatus('Uploading…', 'info');
+        showStatus(
+            'Please wait…\nSaving allotment. Do not click Confirm again or close this window.',
+            'info'
+        );
 
         try {
             const res = await fetch('/api/stock/allotment', {
@@ -838,6 +921,18 @@
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || data.error || data.status === 'error') {
+                if (data.maybeSucceeded) {
+                    isUploading = false;
+                    updateFlowControls();
+                    const waitMsg =
+                        'Please wait — and check View Allotments first.\n\n' +
+                        'The save may have completed even though the reply timed out. ' +
+                        'Open View Allotments and look for your number before clicking Confirm again. ' +
+                        'Retrying Confirm can issue a duplicate allotment.';
+                    showStatus(waitMsg, 'warn');
+                    showAlertModal(waitMsg, 'Please wait');
+                    return;
+                }
                 throw new Error(data.error || data.message || `Upload failed (${res.status})`);
             }
             allotmentNo = data.allotmentNo || data.AllotmentNo || allotmentNo;
@@ -846,12 +941,33 @@
             updateFlowControls();
             showPreview();
             showStatus(`Saved as ${allotmentNo}. PDF is ready — Confirm is locked to protect the sequence.`, 'ok');
-            await downloadPdf();
+            try {
+                window.__allotViewNeedsRefresh = true;
+                await downloadPdf();
+            } catch (pdfErr) {
+                console.warn('[allotment] PDF after save failed:', pdfErr);
+                showStatus(
+                    `Saved as ${allotmentNo}. PDF failed — use the PDF button. Do not Confirm again.`,
+                    'ok'
+                );
+            }
         } catch (err) {
             console.error(err);
             isUploading = false;
             updateFlowControls();
-            showStatus(err.message || 'Upload failed.', 'error');
+            const msg = String(err && err.message ? err.message : err || '');
+            const looksLikeTimeout =
+                /timeout|timed out|network|failed to fetch|abort/i.test(msg);
+            if (looksLikeTimeout) {
+                const waitMsg =
+                    'Please wait — and check View Allotments first.\n\n' +
+                    'The connection timed out, but the allotment may already be saved. ' +
+                    'Open View Allotments and confirm your entry before clicking Confirm again.';
+                showStatus(waitMsg, 'warn');
+                showAlertModal(waitMsg, 'Please wait');
+            } else {
+                showStatus(msg || 'Upload failed.', 'error');
+            }
         }
     }
 
@@ -875,6 +991,7 @@
 
         // Ensure overlay is a direct body child above page content / iframe stacking
         document.body.appendChild(overlay);
+        if (window.MzoAllotPanelDrag) window.MzoAllotPanelDrag.reset(overlay);
         overlay.classList.add('active');
         overlay.setAttribute('aria-hidden', 'false');
         overlay.style.setProperty('display', 'flex', 'important');
@@ -882,6 +999,7 @@
         overlay.style.setProperty('inset', '0', 'important');
         overlay.style.setProperty('z-index', '2147483000', 'important');
         overlay.style.setProperty('background', 'rgba(15,23,42,0.55)', 'important');
+        if (window.MzoAllotPanelDrag) window.MzoAllotPanelDrag.enable(overlay);
 
         try {
             renderLines();

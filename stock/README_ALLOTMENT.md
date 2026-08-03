@@ -34,16 +34,26 @@ Requires Apps Script redeployed with `listAllotments` / `getAllotment` actions.
 4. **Deploy → New deployment → Web app** (or update existing deployment to a **New version**).
 5. Opening the `/exec` URL should return `{"status":"ok","service":"stock-allotment"}`.
 
-## Server
+## Speed / reliability notes
 
-Default script URL is set in `server.js`. Optional override:
+- **View list** prefers CSV (`GET` Apps Script `?format=csv`, or optional `STOCK_ALLOTMENTS_CSV_URL`) and caches in Node for ~60s.
+- **Create** uses one batch sheet write; client treats PDF failures separately from a successful save.
+- If upload times out with a non-JSON response, the API returns `maybeSucceeded: true` — check View Allotments before retrying.
+- After code changes to `allotment_code.gs`: **Deploy → Manage deployments → New version**.
 
-```bash
-STOCK_ALLOTMENT_SCRIPT_URL=https://script.google.com/macros/s/XXXX/exec
-```
+Optional fastest path (no Apps Script cold start for reads):
+
+1. Publish the **Allotments** tab to the web as CSV, or use  
+   `https://docs.google.com/spreadsheets/d/<SHEET_ID>/export?format=csv&gid=<ALLOTMENTS_GID>`
+2. Set env: `STOCK_ALLOTMENTS_CSV_URL=<that url>`
 
 Portal:
 
 - `POST /api/stock/allotment` — `createAllotment` | `listAllotments` | `getAllotment`
 - `GET /api/stock/allotment?action=listAllotments` — list / filter
+
+```bash
+STOCK_ALLOTMENT_SCRIPT_URL=https://script.google.com/macros/s/XXXX/exec
+STOCK_ALLOTMENTS_CSV_URL=https://docs.google.com/spreadsheets/d/XXXX/export?format=csv&gid=YYYY
+```
 

@@ -208,6 +208,7 @@ function createAllotment(payload) {
   var createdAt = new Date().toISOString();
   var dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Kolkata', 'yyyy-MM-dd');
   var meta = headerIndexMap_(sheet);
+  var matrix = [];
 
   rows.forEach(function (r) {
     var rowArr = [];
@@ -232,8 +233,12 @@ function createAllotment(payload) {
     put('Remarks', r.Remarks || '');
     put('CreatedBy', createdBy);
     put('CreatedAt', createdAt);
-    sheet.appendRow(rowArr);
+    matrix.push(rowArr);
   });
+
+  // One batch write (much faster than appendRow per line)
+  var startRow = sheet.getLastRow() + 1;
+  sheet.getRange(startRow, 1, matrix.length, meta.width).setValues(matrix);
 
   return {
     status: 'success',
@@ -276,20 +281,48 @@ function getAllotment(payload) {
   };
 }
 
+function csvEscape_(v) {
+  var s = v == null ? '' : String(v);
+  if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function allotmentsToCsv_() {
+  var rows = readAllotmentRows_();
+  var lines = [HEADERS.join(',')];
+  rows.forEach(function (r) {
+    lines.push(HEADERS.map(function (h) { return csvEscape_(r[h]); }).join(','));
+  });
+  return lines.join('\n');
+}
+
 function jsonOut_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
 function doGet(e) {
   try {
-    var action = (e && e.parameter && e.parameter.action) || '';
+    var params = (e && e.parameter) || {};
+    var action = params.action || '';
+    if (params.format === 'csv' || action === 'exportCsv') {
+      return ContentService
+        .createTextOutput(allotmentsToCsv_())
+        .setMimeType(ContentService.MimeType.CSV);
+    }
     if (action === 'listAllotments') {
-      return jsonOut_(listAllotments(e.parameter || {}));
+      return jsonOut_(listAllotments(params));
     }
     if (action === 'getAllotment') {
-      return jsonOut_(getAllotment(e.parameter || {}));
+      return jsonOut_(getAllotment(params));
     }
-    return jsonOut_({ status: 'ok', service: 'stock-allotment' });
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var allot = ss.getSheetByName(ALLOTMENTS_SHEET);
+    return jsonOut_({
+      status: 'ok',
+      service: 'stock-allotment',
+      spreadsheetId: ss.getId(),
+      allotmentsSheetId: allot ? allot.getSheetId() : null
+    });
   } catch (err) {
     return jsonOut_({ error: err.message, status: 'error' });
   }
