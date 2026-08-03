@@ -131,31 +131,45 @@
         return ALLOT_ALLOWED_USERS.some((u) => name === u || name.startsWith(u + ' ') || name.includes(' ' + u + ' '));
     }
 
+    /** View Allotments is available to every portal user. */
+    function canViewAllotment() {
+        return true;
+    }
+
     function applyAllotmentVisibility() {
         const group = document.getElementById('allot-btn-group');
-        const allowed = canUseAllotment();
+        const materialBtn = document.getElementById('allot-material-btn');
+        const viewBtn = document.getElementById('allot-view-btn');
+        const canCreate = canUseAllotment();
+
         if (group) {
-            group.hidden = !allowed;
-            group.style.display = allowed ? 'flex' : 'none';
+            group.hidden = false;
+            group.style.display = 'flex';
         }
-        if (!allowed) {
+        if (viewBtn) {
+            viewBtn.hidden = false;
+            viewBtn.style.removeProperty('display');
+        }
+        if (materialBtn) {
+            materialBtn.hidden = !canCreate;
+            materialBtn.style.display = canCreate ? '' : 'none';
+        }
+
+        // Only close the create panel for users who cannot allot
+        if (!canCreate) {
             const allotOverlay = document.getElementById('allotment-overlay');
-            const viewOverlay = document.getElementById('allot-view-overlay');
             if (allotOverlay) {
                 allotOverlay.classList.remove('active');
                 allotOverlay.style.removeProperty('display');
             }
-            if (viewOverlay) {
-                viewOverlay.classList.remove('active');
-                viewOverlay.style.removeProperty('display');
-            }
         }
-        return allowed;
+        return canCreate;
     }
 
     window.MzoAllotmentAccess = {
         allowedUsers: ALLOT_ALLOWED_USERS,
         canUseAllotment,
+        canViewAllotment,
         applyAllotmentVisibility,
         getPortalProfile
     };

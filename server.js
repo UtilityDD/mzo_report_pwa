@@ -1644,15 +1644,20 @@ function canAccessStockAllotment_(user) {
     return allowed.some((u) => name === u || name.startsWith(u + ' ') || name.includes(' ' + u + ' '));
 }
 
-function requireStockAllotmentAccess_(req, res) {
+function requireStockAllotmentLogin_(req, res) {
     if (!req.user) {
-        res.status(401).json({ status: 'error', error: 'Please log in to use stock allotment.' });
+        res.status(401).json({ status: 'error', error: 'Please log in to view stock allotments.' });
         return false;
     }
+    return true;
+}
+
+function requireStockAllotmentAccess_(req, res) {
+    if (!requireStockAllotmentLogin_(req, res)) return false;
     if (!canAccessStockAllotment_(req.user)) {
         res.status(403).json({
             status: 'error',
-            error: 'Stock allotment is restricted to authorised users (zm, Aritra, dm1).'
+            error: 'Creating allotments is restricted to authorised users (zm, Aritra, dm1).'
         });
         return false;
     }
@@ -1902,7 +1907,7 @@ async function proxyStockAllotment_(payload, res) {
 
 app.get('/api/stock/allotment', async (req, res) => {
     try {
-        if (!requireStockAllotmentAccess_(req, res)) return;
+        if (!requireStockAllotmentLogin_(req, res)) return;
         const action = req.query.action || 'listAllotments';
         if (action === 'listAllotments') {
             const force = String(req.query.force || '') === '1' || String(req.query.refresh || '') === '1';
@@ -1925,9 +1930,14 @@ app.get('/api/stock/allotment', async (req, res) => {
 
 app.post('/api/stock/allotment', async (req, res) => {
     try {
-        if (!requireStockAllotmentAccess_(req, res)) return;
         const payload = req.body || {};
-        const action = payload.action || '';
+        const action = payload.action || 'createAllotment';
+        // Create stays restricted; list/get available to all logged-in users
+        if (action === 'createAllotment') {
+            if (!requireStockAllotmentAccess_(req, res)) return;
+        } else if (!requireStockAllotmentLogin_(req, res)) {
+            return;
+        }
 
         if (action === 'createAllotment') {
             if (!Array.isArray(payload.rows) || payload.rows.length === 0) {
