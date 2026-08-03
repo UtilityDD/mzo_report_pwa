@@ -747,11 +747,16 @@
         return `
             <div class="letter-sheet">
             <header class="letter-pad">
-                <div class="letter-pad-org">West Bengal State Electricity Distribution Company Limited</div>
-                <div class="letter-pad-sub">(A Govt. of W.B. Enterprise)</div>
-                <div class="letter-pad-office">Zonal Office, Malda</div>
-                <div class="letter-pad-addr">Administrative Building, 2nd Floor, Rabindra Avenue, Malda, WB-732101</div>
-                <div class="letter-pad-contact">Ph: 03522-255035, e-mail: zm.malda@wbsedcl.in</div>
+                <div class="letter-pad-row">
+                    <img class="letter-pad-logo" src="/icons/logo.png" alt="WBSEDCL" width="72" height="90" />
+                    <div class="letter-pad-text">
+                        <div class="letter-pad-org">West Bengal State Electricity Distribution Company Limited</div>
+                        <div class="letter-pad-sub">(A Govt. of W.B. Enterprise)</div>
+                        <div class="letter-pad-office">Zonal Office, Malda</div>
+                        <div class="letter-pad-addr">Administrative Building, 2nd Floor, Rabindra Avenue, Malda, WB-732101</div>
+                        <div class="letter-pad-contact">Ph: 03522-255035, e-mail: zm.malda@wbsedcl.in</div>
+                    </div>
+                </div>
             </header>
             <div class="letter-meta">
                 <div><strong>Allotment No:</strong> ${escapeHtml(number)}</div>
@@ -826,12 +831,26 @@
         el.style.boxShadow = 'none';
 
         try {
+            // Wait for letterhead logo (and any other images) before capture
+            const imgs = Array.from(el.querySelectorAll('img'));
+            await Promise.all(
+                imgs.map(
+                    (img) =>
+                        img.complete
+                            ? Promise.resolve()
+                            : new Promise((resolve) => {
+                                  img.onload = () => resolve();
+                                  img.onerror = () => resolve();
+                              })
+                )
+            );
             // Allow layout to settle at capture width
             await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
             const canvas = await window.html2canvas(el, {
                 scale: 2.5,
                 backgroundColor: '#ffffff',
                 useCORS: true,
+                allowTaint: true,
                 logging: false,
                 scrollX: 0,
                 scrollY: 0
