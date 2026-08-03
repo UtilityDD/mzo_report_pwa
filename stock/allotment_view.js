@@ -627,10 +627,6 @@
     }
 
     function openPanel() {
-        if (window.MzoAllotmentAccess && !window.MzoAllotmentAccess.canUseAllotment()) {
-            showStatus('Allotment viewing is restricted to authorised users only.', 'error');
-            return;
-        }
         const overlay = document.getElementById('allot-view-overlay');
         if (!overlay) return;
         document.body.appendChild(overlay);

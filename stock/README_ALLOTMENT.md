@@ -15,7 +15,9 @@ Supports:
 
 ## Access
 
-**Allot Material** and **View Allotments** are shown only for portal usernames **`zm`**, **`aritra`**, and **`dm1`** (case-insensitive). The API also enforces this server-side.
+**View Allotments** is available to **all logged-in portal users**.
+
+**Allot Material** (create) remains restricted to portal usernames **`zm`**, **`aritra`**, and **`dm1`** (case-insensitive). The API enforces create access server-side; list/get only require login.
 
 Use **View Allotments** on the Stock page to:
 
