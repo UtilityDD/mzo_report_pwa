@@ -371,7 +371,7 @@
       margin-bottom: 25px !important;
       display: flex !important;
       flex-direction: column !important;
-      height: 320px !important; /* Equivalent to roughly 3 rows of KPI buttons */
+      height: 380px !important; /* room for comparison strip + chart */
       position: relative !important;
       overflow: hidden !important;
     }
@@ -425,6 +425,104 @@
       position: relative;
       min-height: 0;
       width: 100%;
+    }
+
+    .loss-chart-diff {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 0 0 8px;
+      z-index: 10;
+      align-items: center;
+    }
+    .loss-chart-diff-note {
+      flex: 1 1 100%;
+      margin: 0;
+      font-size: 11px;
+      color: #94a3b8;
+      line-height: 1.3;
+    }
+    body.light-theme .loss-chart-diff-note {
+      color: #64748b;
+    }
+    .loss-chart-diff-note strong {
+      color: inherit;
+      font-weight: 700;
+    }
+    .loss-chart-diff-row {
+      flex: 1 1 220px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 10px;
+      padding: 7px 10px;
+      border-radius: 10px;
+      background: rgba(148, 163, 184, 0.1);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      min-width: 0;
+    }
+    body.light-theme .loss-chart-diff-row {
+      background: rgba(15, 23, 42, 0.04);
+      border-color: rgba(15, 23, 42, 0.08);
+    }
+    .loss-chart-diff-metric {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+    body.light-theme .loss-chart-diff-metric {
+      color: var(--mobile-text-primary);
+    }
+    .loss-chart-diff-metric.atc { color: #e74c3c; }
+    .loss-chart-diff-metric.td { color: #9b59b6; }
+    .loss-chart-diff-now {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+    body.light-theme .loss-chart-diff-now {
+      color: var(--mobile-text-primary);
+    }
+    .loss-chart-diff-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.2;
+      white-space: nowrap;
+      border: 1px solid transparent;
+    }
+    .loss-chart-diff-chip .chip-label {
+      opacity: 0.8;
+      font-weight: 600;
+    }
+    .loss-chart-diff-chip.better {
+      background: rgba(16, 185, 129, 0.16);
+      color: #059669;
+      border-color: rgba(16, 185, 129, 0.35);
+    }
+    .loss-chart-diff-chip.worse {
+      background: rgba(239, 68, 68, 0.14);
+      color: #dc2626;
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+    .loss-chart-diff-chip.neutral {
+      background: rgba(148, 163, 184, 0.16);
+      color: #64748b;
+      border-color: rgba(148, 163, 184, 0.28);
+    }
+    body.light-theme .loss-chart-diff-chip.better {
+      color: #047857;
+    }
+    body.light-theme .loss-chart-diff-chip.worse {
+      color: #b91c1c;
     }
 
     .chart-loader {
@@ -3140,6 +3238,7 @@
                     <button id="indexPrefConfigBtn" class="btn-pref" title="Set My Office Preferences" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: inherit; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; display: inline-flex; align-items: center; gap: 5px;"><i class="fas fa-cog"></i> Prefs</button>
                   </div>
                 </div>
+                <div class="loss-chart-diff" id="homepageLossDiff" aria-live="polite"></div>
                 <div class="loss-chart-container">
                   <div id="homepageLossChartLoader" class="chart-loader">
                     <div class="spinner"></div>
@@ -4969,6 +5068,92 @@
       filter.innerHTML = html;
     }
 
+    function formatLossPct(v) {
+      if (v === null || v === undefined || !isFinite(Number(v))) return '—';
+      return `${Number(v).toFixed(1)}%`;
+    }
+
+    function formatLossDeltaPp(delta) {
+      if (delta === null || delta === undefined || !isFinite(Number(delta))) {
+        return { text: '—', kind: 'neutral' };
+      }
+      const n = Number(delta);
+      const abs = Math.abs(n).toFixed(1);
+      if (Math.abs(n) < 0.05) return { text: '0.0 pp', kind: 'neutral' };
+      // For loss %, lower is better
+      if (n < 0) return { text: `−${abs} pp`, kind: 'better' };
+      return { text: `+${abs} pp`, kind: 'worse' };
+    }
+
+    function seriesPointAt(values, last13Months, year, month) {
+      const idx = last13Months.findIndex((item) => item.year === year && item.month === month);
+      if (idx < 0) return null;
+      const v = values[idx];
+      if (v === null || v === undefined || !isFinite(Number(v))) return null;
+      return { index: idx, value: Number(v), year, month };
+    }
+
+    function findMarchBaseline(values, last13Months, maxYear, maxMonth) {
+      // Prefer March of the same calendar year when current month is after March;
+      // otherwise use previous March in the 13-month window.
+      const preferredYear = maxMonth > 3 ? maxYear : maxYear - 1;
+      let hit = seriesPointAt(values, last13Months, preferredYear, 3);
+      if (hit) return hit;
+      for (let i = last13Months.length - 1; i >= 0; i--) {
+        const item = last13Months[i];
+        if (item.month !== 3) continue;
+        if (item.year === maxYear && item.month === maxMonth) continue;
+        const v = values[i];
+        if (v === null || v === undefined || !isFinite(Number(v))) continue;
+        return { index: i, value: Number(v), year: item.year, month: 3 };
+      }
+      return null;
+    }
+
+    function buildLossDiffChip(label, currentVal, baseVal) {
+      if (currentVal === null || currentVal === undefined || !isFinite(Number(currentVal)) ||
+          baseVal === null || baseVal === undefined || !isFinite(Number(baseVal))) {
+        return `<span class="loss-chart-diff-chip neutral"><span class="chip-label">${label}</span> —</span>`;
+      }
+      const delta = Number(currentVal) - Number(baseVal);
+      const fmt = formatLossDeltaPp(delta);
+      return `<span class="loss-chart-diff-chip ${fmt.kind}"><span class="chip-label">${label}</span> ${fmt.text}</span>`;
+    }
+
+    function renderHomepageLossDiffs(ctx) {
+      const host = document.getElementById('homepageLossDiff');
+      if (!host) return;
+      const { monthNames, maxYear, maxMonth, last13Months, atc, td } = ctx;
+      const curLabel = `${monthNames[maxMonth - 1]} '${String(maxYear).slice(-2)}`;
+      const curAtc = seriesPointAt(atc, last13Months, maxYear, maxMonth);
+      const curTd = seriesPointAt(td, last13Months, maxYear, maxMonth);
+      const lyAtc = seriesPointAt(atc, last13Months, maxYear - 1, maxMonth);
+      const lyTd = seriesPointAt(td, last13Months, maxYear - 1, maxMonth);
+      const marAtc = findMarchBaseline(atc, last13Months, maxYear, maxMonth);
+      const marTd = findMarchBaseline(td, last13Months, maxYear, maxMonth);
+      const marYear =
+        (marAtc && marAtc.year) ||
+        (marTd && marTd.year) ||
+        (maxMonth > 3 ? maxYear : maxYear - 1);
+      const marLabel = `vs Mar '${String(marYear).slice(-2)}`;
+
+      const row = (metricClass, metricName, cur, ly, mar) => {
+        const now = cur ? formatLossPct(cur.value) : '—';
+        return `<div class="loss-chart-diff-row">
+          <span class="loss-chart-diff-metric ${metricClass}">${metricName}</span>
+          <span class="loss-chart-diff-now">${now}</span>
+          ${buildLossDiffChip('vs LY', cur && cur.value, ly && ly.value)}
+          ${buildLossDiffChip(marLabel, cur && cur.value, mar && mar.value)}
+        </div>`;
+      };
+
+      host.innerHTML =
+        row('atc', 'AT&C', curAtc, lyAtc, marAtc) +
+        row('td', 'T&D', curTd, lyTd, marTd) +
+        `<p class="loss-chart-diff-note"><strong>pp</strong> = percentage points (difference between two % values)</p>`;
+      host.dataset.curLabel = curLabel;
+    }
+
     function updateHomepageChart(data) {
       const office = document.getElementById('executiveOfficeFilter').value;
       const metrics = ["CUM. AT&C LOSS", "CUM. DIST. LOSS"];
@@ -4983,6 +5168,8 @@
       if (officeRows.length === 0) {
         console.warn("updateHomepageChart: No valid rows found.");
         if (homepageChart) homepageChart.destroy();
+        const diffHost = document.getElementById('homepageLossDiff');
+        if (diffHost) diffHost.innerHTML = '';
         const loader = document.getElementById('homepageLossChartLoader');
         if (loader) {
           loader.querySelector('span').textContent = 'No trend data available.';
@@ -5035,6 +5222,15 @@
       const trimmedATC = chartValues["CUM. AT&C LOSS"];
       const trimmedTD = chartValues["CUM. DIST. LOSS"];
 
+      renderHomepageLossDiffs({
+        monthNames,
+        maxYear,
+        maxMonth,
+        last13Months,
+        atc: trimmedATC,
+        td: trimmedTD
+      });
+
       const ctxElem = document.getElementById('homepageLossChart');
       if (!ctxElem) {
         console.error("updateHomepageChart: Canvas element #homepageLossChart not found!");
@@ -5068,9 +5264,11 @@
               const item = last13Months[index];
               if (!item) return;
 
-              const isCurrent = (index === last13Months.length - 1);
-              const isPrevYear = (index === 0);
-              const isMarch = (item.month === 3);
+              const isCurrent = item.year === maxYear && item.month === maxMonth;
+              const isPrevYear = item.year === maxYear - 1 && item.month === maxMonth;
+              const isMarch =
+                item.month === 3 &&
+                item.year === (maxMonth > 3 ? maxYear : maxYear - 1);
 
               if (isCurrent || isPrevYear || isMarch) {
                 const { x, y } = point.getProps(['x', 'y'], true);
