@@ -144,6 +144,7 @@ function portalUserToClient(row) {
         'ss-autho': row.ss_autho || '',
         'dd-autho': row.dd_autho || '',
         'nsc-autho': row.nsc_autho || '',
+        'nsc-upload-autho': row.nsc_upload_autho || '',
         'si-autho': row.si_autho || '',
         'si-divisions': row.si_divisions || '',
         'sheets-autho': row.sheets_autho || '',
@@ -167,6 +168,9 @@ function clientUserToPortal(user) {
         ss_autho: String(user['ss-autho'] != null ? user['ss-autho'] : (user.ss_autho || '')).trim(),
         dd_autho: String(user['dd-autho'] != null ? user['dd-autho'] : (user.dd_autho || '')).trim(),
         nsc_autho: String(user['nsc-autho'] != null ? user['nsc-autho'] : (user.nsc_autho || '')).trim(),
+        nsc_upload_autho: String(
+            user['nsc-upload-autho'] != null ? user['nsc-upload-autho'] : (user.nsc_upload_autho || '')
+        ).trim(),
         si_autho: String(user['si-autho'] != null ? user['si-autho'] : (user.si_autho || '')).trim(),
         si_divisions: String(user['si-divisions'] != null ? user['si-divisions'] : (user.si_divisions || '')).trim(),
         sheets_autho: String(user['sheets-autho'] != null ? user['sheets-autho'] : (user.sheets_autho || '')).trim(),
@@ -819,6 +823,7 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
             'ss-autho': '',
             'dd-autho': '',
             'nsc-autho': '',
+            'nsc-upload-autho': '',
             'si-autho': '',
             'si-divisions': '',
             'sheets-autho': '',
@@ -1988,11 +1993,372 @@ app.post('/api/stock/allotment', async (req, res) => {
     }
 });
 
+// --- NSC raw upload → Supabase + local CACHE_NSC dataset (dm1 only) ---
+const multer = require('multer');
+const {
+    processNscWorkbook,
+    dashboardRowToDb,
+    dbRowsToCsv,
+    DB_KEYS
+} = require('./lib/nsc_pipeline');
+
+const NSC_DATA_DIR = path.join(__dirname, 'data');
+const NSC_CSV_FILE = path.join(NSC_DATA_DIR, 'nsc.csv');
+const NSC_META_FILE = path.join(NSC_DATA_DIR, 'nsc_meta.json');
+const NSC_SCHEMA = PORTAL_USERS_SCHEMA; // mzo_insight
+const NSC_PENDING_TABLE = 'nsc_pending';
+const NSC_META_TABLE = 'nsc_upload_meta';
+const NSC_SHEET_FALLBACK_URL =
+    'https://docs.google.com/spreadsheets/d/e/2PACX-1vRsUU2viBvYhSgR0RFwmZ1H8LkYCats9roQVCKvQeoU7dzg6ryR6IWZex9FT9tksp_DEM23ZgQ28Iyo/pub?output=csv';
+const NSC_INSERT_BATCH = 400;
+
+const nscUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 60 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const name = String(file.originalname || '').toLowerCase();
+        if (/\.(xlsx|xlsb|xls|csv)$/i.test(name)) return cb(null, true);
+        cb(new Error('Only Excel (.xlsx/.xlsb/.xls) or CSV files are allowed.'));
+    }
+});
+
+function canUploadNsc_(user) {
+    if (!user) return false;
+    const flag = String(
+        user['nsc-upload-autho'] != null ? user['nsc-upload-autho'] : (user.nsc_upload_autho || '')
+    )
+        .trim()
+        .toLowerCase();
+    if (['y', 'yes', '1', 'true', 'upload'].includes(flag)) return true;
+    // Temporary fallback until admin grants via portal (after SQL alter)
+    const username = String((user.Username || user.username) || '')
+        .trim()
+        .toLowerCase();
+    return username === 'dm1';
+}
+
+async function resolveNscUploadUser_(req) {
+    if (!req.user || !req.user.Username) return null;
+    try {
+        const users = await getLoginCredentials({ forceRefresh: true });
+        const key = String(req.user.Username).trim().toLowerCase();
+        const fresh = users.find((u) => u.Username && String(u.Username).trim().toLowerCase() === key);
+        if (fresh) return fresh;
+    } catch (e) {
+        console.warn('[NSC auth] profile refresh failed:', e.message);
+    }
+    return req.user;
+}
+
+function ensureDataDir_() {
+    if (!fs.existsSync(NSC_DATA_DIR)) {
+        fs.mkdirSync(NSC_DATA_DIR, { recursive: true });
+    }
+}
+
+function readLocalNscMeta_() {
+    try {
+        if (!fs.existsSync(NSC_META_FILE)) return null;
+        return JSON.parse(fs.readFileSync(NSC_META_FILE, 'utf8'));
+    } catch (e) {
+        return null;
+    }
+}
+
+function writeLocalNscBackup_(csv, meta) {
+    ensureDataDir_();
+    fs.writeFileSync(NSC_CSV_FILE, csv, 'utf8');
+    fs.writeFileSync(NSC_META_FILE, JSON.stringify(meta, null, 2), 'utf8');
+}
+
+function metaFromDbRow_(row) {
+    if (!row) return null;
+    return {
+        uploadedAt: row.uploaded_at,
+        uploadedBy: row.uploaded_by,
+        originalName: row.original_name,
+        sheetName: row.sheet_name,
+        publishedRows: row.published_rows,
+        withheldRows: row.withheld_rows,
+        reportDate: row.report_date || (row.stats && row.stats.today) || '',
+        stats: row.stats || { today: row.report_date },
+        supabaseUploadId: row.id,
+        source: 'supabase'
+    };
+}
+
+async function fetchActiveNscMetaFromSupabase_() {
+    const rows = await querySupabase(
+        `${NSC_META_TABLE}?is_active=eq.true&select=*&order=id.desc&limit=1`,
+        { schema: NSC_SCHEMA }
+    );
+    if (!Array.isArray(rows) || !rows.length) return null;
+    return rows[0];
+}
+
+async function fetchNscCsvFromSupabase_() {
+    const active = await fetchActiveNscMetaFromSupabase_();
+    if (!active) return null;
+
+    const selectCols = ['upload_id', ...DB_KEYS].join(',');
+    const pageSize = 1000;
+    let from = 0;
+    const all = [];
+
+    while (true) {
+        const batch = await querySupabase(
+            `${NSC_PENDING_TABLE}?upload_id=eq.${active.id}&select=${selectCols}&order=id.asc&limit=${pageSize}&offset=${from}`,
+            { schema: NSC_SCHEMA }
+        );
+        if (!Array.isArray(batch) || batch.length === 0) break;
+        all.push(...batch);
+        if (batch.length < pageSize) break;
+        from += pageSize;
+        if (from > 200000) break;
+    }
+
+    if (!all.length) return { csv: null, meta: metaFromDbRow_(active), rowCount: 0 };
+    return {
+        csv: dbRowsToCsv(all),
+        meta: metaFromDbRow_(active),
+        rowCount: all.length
+    };
+}
+
+async function publishNscToSupabase_(publishedRows, metaInput) {
+    // Mark previous uploads inactive
+    try {
+        await querySupabase(`${NSC_META_TABLE}?is_active=eq.true`, {
+            schema: NSC_SCHEMA,
+            method: 'PATCH',
+            body: { is_active: false },
+            prefer: 'return=minimal'
+        });
+    } catch (e) {
+        // First run / empty table is fine
+        if (!/HTTP 404|PGRST/i.test(e.message) && !/does not exist|42P01/i.test(e.message)) {
+            console.warn('[NSC Supabase] deactivate previous:', e.message);
+        }
+    }
+
+    const insertedMeta = await querySupabase(NSC_META_TABLE, {
+        schema: NSC_SCHEMA,
+        method: 'POST',
+        body: {
+            uploaded_by: metaInput.uploadedBy || '',
+            original_name: metaInput.originalName || '',
+            sheet_name: metaInput.sheetName || '',
+            published_rows: publishedRows.length,
+            withheld_rows: metaInput.withheldRows || 0,
+            report_date: (metaInput.stats && metaInput.stats.today) || '',
+            stats: metaInput.stats || {},
+            is_active: true
+        },
+        prefer: 'return=representation'
+    });
+
+    const metaRow = Array.isArray(insertedMeta) ? insertedMeta[0] : insertedMeta;
+    if (!metaRow || metaRow.id == null) {
+        throw new Error('Supabase did not return nsc_upload_meta id.');
+    }
+    const uploadId = metaRow.id;
+
+    // Remove any leftover rows for safety (old uploads without cascade cleanup)
+    try {
+        await querySupabase(`${NSC_PENDING_TABLE}?id=gte.0`, {
+            schema: NSC_SCHEMA,
+            method: 'DELETE',
+            prefer: 'return=minimal'
+        });
+    } catch (e) {
+        console.warn('[NSC Supabase] clear pending:', e.message);
+    }
+
+    for (let i = 0; i < publishedRows.length; i += NSC_INSERT_BATCH) {
+        const chunk = publishedRows.slice(i, i + NSC_INSERT_BATCH).map((r) => dashboardRowToDb(r, uploadId));
+        await querySupabase(NSC_PENDING_TABLE, {
+            schema: NSC_SCHEMA,
+            method: 'POST',
+            body: chunk,
+            prefer: 'return=minimal'
+        });
+    }
+
+    return metaFromDbRow_(metaRow);
+}
+
+app.get('/api/nsc/meta', async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+
+    const user = await resolveNscUploadUser_(req);
+
+    let source = 'google_sheet_fallback';
+    let meta = readLocalNscMeta_();
+    const hasLocal = fs.existsSync(NSC_CSV_FILE);
+
+    try {
+        const sbMeta = await fetchActiveNscMetaFromSupabase_();
+        if (sbMeta) {
+            meta = metaFromDbRow_(sbMeta);
+            source = 'supabase';
+        } else if (hasLocal) {
+            source = 'local';
+        }
+    } catch (e) {
+        console.warn('[NSC meta] Supabase unavailable:', e.message);
+        if (hasLocal) source = 'local';
+    }
+
+    return res.json({
+        status: 'success',
+        canUpload: canUploadNsc_(user),
+        isAdmin: String((user && user.role) || '').trim().toLowerCase() === 'admin',
+        hasLocalDataset: hasLocal,
+        meta,
+        source,
+        setupHint:
+            source === 'google_sheet_fallback'
+                ? 'Run scripts/create_mzo_insight_nsc_pending.sql in Supabase SQL Editor, then upload once.'
+                : null
+    });
+});
+
+app.get('/api/nsc/dataset', async (req, res) => {
+    try {
+        // 1) Supabase active snapshot
+        try {
+            const fromSb = await fetchNscCsvFromSupabase_();
+            if (fromSb && fromSb.csv) {
+                res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+                res.setHeader('Cache-Control', 'no-store');
+                res.setHeader('X-NSC-Source', 'supabase');
+                return res.send(fromSb.csv);
+            }
+        } catch (e) {
+            console.warn('[NSC dataset] Supabase read failed:', e.message);
+        }
+
+        // 2) Local backup
+        if (fs.existsSync(NSC_CSV_FILE)) {
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-store');
+            res.setHeader('X-NSC-Source', 'local');
+            return res.send(fs.readFileSync(NSC_CSV_FILE, 'utf8'));
+        }
+
+        // 3) Legacy Google Sheet
+        const csv = await fetchSheet(NSC_SHEET_FALLBACK_URL);
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-NSC-Source', 'google_sheet_fallback');
+        return res.send(csv);
+    } catch (err) {
+        console.error('[NSC dataset] Error:', err.message);
+        return res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+app.post('/api/nsc/upload', (req, res) => {
+    nscUpload.single('file')(req, res, async (err) => {
+        if (err) {
+            return res.status(400).json({ status: 'error', message: err.message });
+        }
+        try {
+            if (!req.user) {
+                return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+            }
+            const uploadUser = await resolveNscUploadUser_(req);
+            if (!canUploadNsc_(uploadUser)) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: 'NSC raw upload is not authorised for this user. Ask an admin to enable NSC Upload in User Management.'
+                });
+            }
+            if (!req.file || !req.file.buffer) {
+                return res.status(400).json({ status: 'error', message: 'No file uploaded.' });
+            }
+
+            const reportDateRaw = String((req.body && req.body.reportDate) || '').trim();
+            if (!reportDateRaw) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Report date is required. This becomes “Updated on” on the NSC dashboard.'
+                });
+            }
+
+            const originalName = req.file.originalname || 'nsc_upload.xlsx';
+            const result = processNscWorkbook(req.file.buffer, originalName, {
+                reportDate: reportDateRaw
+            });
+            if (!result.published.length) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'No Working/Accepted rows found after processing.',
+                    stats: result.stats
+                });
+            }
+
+            const baseMeta = {
+                uploadedAt: new Date().toISOString(),
+                uploadedBy: uploadUser.Username || uploadUser.username || req.user.Username || 'user',
+                originalName,
+                sheetName: result.sheetName,
+                stats: result.stats,
+                publishedRows: result.published.length,
+                withheldRows: result.withheld.length,
+                reportDate: result.reportDateUsed || (result.stats && result.stats.today) || reportDateRaw
+            };
+
+            // Always keep local backup for offline / fast local reads
+            writeLocalNscBackup_(result.csv, baseMeta);
+
+            let supabaseMeta = null;
+            let supabaseError = null;
+            try {
+                supabaseMeta = await publishNscToSupabase_(result.published, baseMeta);
+                baseMeta.supabaseUploadId = supabaseMeta && supabaseMeta.supabaseUploadId;
+                baseMeta.source = 'supabase';
+                writeLocalNscBackup_(result.csv, baseMeta);
+            } catch (e) {
+                supabaseError = e.message;
+                console.error('[NSC upload] Supabase publish failed:', e.message);
+                baseMeta.source = 'local';
+                baseMeta.supabaseError = supabaseError;
+                writeLocalNscBackup_(result.csv, baseMeta);
+            }
+
+            console.log(
+                `[NSC upload] ${baseMeta.uploadedBy} published ${baseMeta.publishedRows} rows` +
+                    ` from ${originalName} (supabase=${supabaseMeta ? 'ok' : 'failed'})`
+            );
+
+            const message = supabaseMeta
+                ? `Published ${baseMeta.publishedRows} NSC rows to Supabase. Refresh NSC dashboard to load.`
+                : `Saved ${baseMeta.publishedRows} rows locally, but Supabase publish failed. ` +
+                  `Run scripts/create_mzo_insight_nsc_pending.sql if tables are missing. (${supabaseError})`;
+
+            return res.json({
+                status: 'success',
+                message,
+                meta: baseMeta,
+                supabase: supabaseMeta ? 'ok' : 'failed',
+                supabaseError
+            });
+        } catch (e) {
+            console.error('[NSC upload] Error:', e.message);
+            return res.status(500).json({ status: 'error', message: e.message });
+        }
+    });
+});
+
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
     app.listen(PORT, () => {
         console.log(`Server is running on http://localhost:${PORT}`);
         console.log('Open your browser and navigate to http://localhost:3000 to use the estimator.');
         console.log('Navigate to http://localhost:3000/admin.html to manage structures.');
+        console.log('NSC upload (dm1): http://localhost:3000/nsc/upload.html');
     });
 }
 

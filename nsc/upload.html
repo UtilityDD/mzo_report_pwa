@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NSC Raw Upload</title>
+  <style>
+    :root {
+      --bg: #f3f5f8;
+      --card: #ffffff;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --brand: #0b5cab;
+      --ok: #166534;
+      --bad: #991b1b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: linear-gradient(180deg, #e8eef6 0%, var(--bg) 40%);
+      color: var(--ink);
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    }
+    h1 { margin: 0 0 0.35rem; font-size: 1.35rem; }
+    .muted { color: var(--muted); font-size: 0.92rem; line-height: 1.45; }
+    .guide {
+      margin: 1rem 0;
+      padding: 0.95rem 1rem;
+      background: #f0f7ff;
+      border: 1px solid #dbeafe;
+      border-radius: 8px;
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+    .guide ol { margin: 0.4rem 0 0 1.2rem; padding: 0; }
+    .guide li { margin: 0.25rem 0; }
+    .meta {
+      margin: 1rem 0;
+      padding: 0.85rem 1rem;
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 0.9rem;
+      display: none;
+    }
+    .meta.show { display: block; }
+    .meta strong { display: inline-block; min-width: 9rem; }
+    .row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin-top: 1rem; }
+    input[type="file"], input[type="date"] { width: 100%; max-width: 320px; }
+    button, .link-btn {
+      border: none;
+      border-radius: 8px;
+      padding: 0.7rem 1.1rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .primary { background: var(--brand); color: #fff; }
+    .primary:disabled { opacity: 0.55; cursor: not-allowed; }
+    .ghost { background: #e5e7eb; color: #111827; }
+    .msg { margin-top: 1rem; padding: 0.85rem 1rem; border-radius: 8px; display: none; white-space: pre-wrap; }
+    .msg.ok { display: block; background: #dcfce7; color: var(--ok); }
+    .msg.err { display: block; background: #fee2e2; color: var(--bad); }
+    .locked { opacity: 0.7; }
+    .admin-only { display: none; }
+    .admin-only.show { display: block; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" id="panel">
+      <h1>NSC Raw Excel Upload</h1>
+
+      <div class="guide" id="guideBox">
+        <strong>How to upload</strong>
+        <ol>
+          <li>Select the <strong>data / report date</strong> (as-on date of the Excel). This becomes <strong>Updated on</strong> on the Pending NSC dashboard.</li>
+          <li>Choose the raw Malda Zone pending NSC file (<code>.xlsb</code>, <code>.xlsx</code>, or <code>.csv</code>).</li>
+          <li>Click <strong>Upload &amp; Publish</strong> and wait (large files may take up to a minute).</li>
+          <li>Open the NSC dashboard and refresh if needed to see the new data.</li>
+        </ol>
+        <p class="muted" style="margin:0.6rem 0 0;">Only <strong>Working</strong> and <strong>Accepted</strong> applications are published. Withheld rows are skipped automatically.</p>
+      </div>
+
+      <div class="admin-only" id="adminIntro">
+        <p class="muted">
+          Admin view: cleaned rows publish to Supabase (with local backup). Dashboards read via DataHub cache.
+          Grant upload rights under Admin → User Management → <strong>NSC Raw Upload</strong>.
+        </p>
+        <p class="muted" id="adminSetupHint" style="display:none;"></p>
+      </div>
+
+      <div class="meta" id="metaBox"></div>
+
+      <div id="uploadBlock" class="locked">
+        <label class="muted" for="reportDateInput"><strong>Data / report date</strong> (shown as “Updated on”)</label>
+        <div class="row">
+          <input id="reportDateInput" type="date" disabled required />
+        </div>
+        <p class="muted" style="margin-top:0.35rem;">Use the as-on date of this Excel dump. Delay days are calculated from this date.</p>
+
+        <label class="muted" for="fileInput"><strong>Choose raw file</strong></label>
+        <div class="row">
+          <input id="fileInput" type="file" accept=".xlsx,.xlsb,.xls,.csv" disabled />
+        </div>
+        <div class="row">
+          <button class="primary" id="uploadBtn" disabled>Upload &amp; Publish</button>
+          <a class="link-btn ghost" href="/nsc.html">Open NSC Dashboard</a>
+          <a class="link-btn ghost" href="/index.html">Home</a>
+        </div>
+      </div>
+
+      <div id="msg" class="msg"></div>
+    </div>
+  </div>
+
+  <script>
+    const metaBox = document.getElementById('metaBox');
+    const msg = document.getElementById('msg');
+    const fileInput = document.getElementById('fileInput');
+    const reportDateInput = document.getElementById('reportDateInput');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const uploadBlock = document.getElementById('uploadBlock');
+    const adminIntro = document.getElementById('adminIntro');
+    const adminSetupHint = document.getElementById('adminSetupHint');
+
+    let isAdminViewer = false;
+
+    function toIsoDate(d) {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function guessDateFromFileName(name) {
+      const m = String(name || '').match(/(\d{2})[-_.](\d{2})[-_.](\d{4})/);
+      if (!m) return null;
+      return `${m[3]}-${m[2]}-${m[1]}`;
+    }
+
+    reportDateInput.value = toIsoDate(new Date());
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      const guessed = guessDateFromFileName(file.name);
+      if (guessed) reportDateInput.value = guessed;
+    });
+
+    function showMsg(text, ok) {
+      msg.className = 'msg ' + (ok ? 'ok' : 'err');
+      msg.textContent = text;
+    }
+
+    function renderAdminMeta(data) {
+      const m = data.meta;
+      metaBox.classList.add('show');
+      adminIntro.classList.add('show');
+      if (data.setupHint) {
+        adminSetupHint.style.display = 'block';
+        adminSetupHint.innerHTML = `<strong>Setup:</strong> ${data.setupHint}`;
+      } else {
+        adminSetupHint.style.display = 'none';
+      }
+
+      if (!m) {
+        metaBox.innerHTML = `<div>Source: <strong>${data.source}</strong> (no upload yet — fallback may apply)</div>
+          <div>Can upload: <strong>${data.canUpload ? 'Yes' : 'No'}</strong></div>
+          <div>Is admin: <strong>${data.isAdmin ? 'Yes' : 'No'}</strong></div>`;
+        return;
+      }
+      const s = m.stats || {};
+      metaBox.innerHTML = `
+        <div><strong>Last upload</strong> ${m.uploadedAt || '-'} by ${m.uploadedBy || '-'}</div>
+        <div><strong>File</strong> ${m.originalName || '-'}</div>
+        <div><strong>Sheet</strong> ${m.sheetName || '-'}</div>
+        <div><strong>Published</strong> ${m.publishedRows ?? s.publishedRows ?? '-'} rows (Working/Accepted)</div>
+        <div><strong>Withheld in file</strong> ${m.withheldRows ?? s.withheldRows ?? '-'} (not published to NSC yet)</div>
+        <div><strong>Report date (Updated on)</strong> ${m.reportDate || s.today || '-'}</div>
+        <div><strong>Active source</strong> ${data.source}</div>
+      `;
+    }
+
+    function hideAdminDetails() {
+      metaBox.classList.remove('show');
+      metaBox.innerHTML = '';
+      adminIntro.classList.remove('show');
+      adminSetupHint.style.display = 'none';
+    }
+
+    async function loadMeta() {
+      try {
+        const res = await fetch('/api/nsc/meta', { credentials: 'same-origin' });
+        if (res.status === 401) {
+          window.location.href = '/login.html';
+          return;
+        }
+        const data = await res.json();
+        isAdminViewer = !!data.isAdmin;
+
+        if (isAdminViewer) {
+          renderAdminMeta(data);
+        } else {
+          hideAdminDetails();
+        }
+
+        if (data.canUpload) {
+          uploadBlock.classList.remove('locked');
+          fileInput.disabled = false;
+          reportDateInput.disabled = false;
+          uploadBtn.disabled = false;
+        } else {
+          showMsg('You are not authorised to upload NSC data. Ask an admin to enable NSC Raw Upload for your account.', false);
+        }
+      } catch (e) {
+        showMsg('Failed to load upload page: ' + e.message, false);
+      }
+    }
+
+    uploadBtn.addEventListener('click', async () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) {
+        showMsg('Choose a file first.', false);
+        return;
+      }
+      const reportDate = (reportDateInput.value || '').trim();
+      if (!reportDate) {
+        showMsg('Select the data / report date (Updated on).', false);
+        return;
+      }
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = 'Processing…';
+      showMsg('Uploading — please wait. Large files may take up to a minute…', true);
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('reportDate', reportDate);
+        const res = await fetch('/api/nsc/upload', {
+          method: 'POST',
+          body: fd,
+          credentials: 'same-origin'
+        });
+        const data = await res.json();
+        if (!res.ok || data.status !== 'success') {
+          throw new Error(data.message || ('Upload failed (' + res.status + ')'));
+        }
+        const s = (data.meta && data.meta.stats) || {};
+        const reportLabel = data.meta.reportDate || s.today || reportDate;
+        const published = data.meta.publishedRows || s.publishedRows || '-';
+
+        if (isAdminViewer) {
+          showMsg(
+            data.message +
+            '\nReport date (Updated on): ' + reportLabel +
+            '\nRaw: ' + (s.rawRows || '-') +
+            ' → Published: ' + published +
+            ' | Withheld skipped: ' + (data.meta.withheldRows || '-') +
+            '\nSupabase: ' + (data.supabase || '-'),
+            data.supabase === 'ok'
+          );
+        } else {
+          showMsg(
+            'Upload successful.\n' +
+            'Published ' + published + ' applications.\n' +
+            'Updated on: ' + reportLabel + '\n' +
+            'Open the NSC dashboard to view the latest data.',
+            true
+          );
+        }
+        await loadMeta();
+        try {
+          localStorage.removeItem('mzo_last_sync_date');
+          localStorage.removeItem('mzoDataSynced');
+        } catch (_) {}
+      } catch (e) {
+        showMsg(e.message || String(e), false);
+      } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = 'Upload & Publish';
+      }
+    });
+
+    loadMeta();
+  </script>
+</body>
+</html>
