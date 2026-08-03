@@ -1308,7 +1308,9 @@
 
     // UPDATED: Added 'Status' to the visible columns
     const TABLE_COLUMNS = [
-      'id', 'Priority', 'Division', 'Scheme Head', 'Name of Scheme', 'TAA No.', 'Status', 'Target Date', 'updated_at'
+      'id', 'Priority', 'Division', 'Scheme Head', 'Name of Scheme', 'TAA No.',
+      'TAA Value (Rs.)', 'Billed Value till date (Rs.)',
+      'Status', 'Target Date', 'updated_at'
     ];
 
 
@@ -1319,6 +1321,7 @@
       'Proposed Parameter (Capacity/RL/Size)',
       'Loading (%) / Peak Load (A)',
       'Major Material Requirement', 'TAA No.', 'TAA Date',
+      'TAA Value (Rs.)', 'Billed Value till date (Rs.)',
       'Priority', 'eOffice ref.', 'Presently with', 'Detail Work Status',
       'Target Date', 'Status'
     ];
@@ -1331,6 +1334,8 @@
       'Scheme Head': 'Scheme Head',
       'Name of Scheme': 'Scheme Name',
       'TAA No.': 'TAA No.',
+      'TAA Value (Rs.)': 'TAA Value',
+      'Billed Value till date (Rs.)': 'Billed Value',
       'Detail Work Status': 'Work Status',
       'Status': 'Overall Status',
       'Target Date': 'Target',
@@ -1475,6 +1480,43 @@
       const [year, month, day] = dateString.split('-');
       return `${day}/${month}/${year.slice(-2)}`;
     }
+
+    const MONEY_COLUMNS = ['TAA Value (Rs.)', 'Billed Value till date (Rs.)'];
+
+    function parseMoneyRs(value) {
+      if (value === null || value === undefined || value === '') return null;
+      const n = Number(String(value).replace(/,/g, '').trim());
+      return Number.isFinite(n) ? n : null;
+    }
+
+    /** Compact Indian money: ₹x.xx Lakh / ₹x.xx Cr (input is Rupees). */
+    function formatRsCompact(value) {
+      const n = parseMoneyRs(value);
+      if (n === null) return '—';
+      const sign = n < 0 ? '−' : '';
+      const abs = Math.abs(n);
+      if (abs >= 1e7) {
+        const cr = abs / 1e7;
+        return `${sign}₹${cr.toFixed(cr >= 10 ? 2 : 2)} Cr`;
+      }
+      if (abs >= 1e5) {
+        const lakh = abs / 1e5;
+        return `${sign}₹${lakh.toFixed(2)} Lakh`;
+      }
+      if (abs >= 1e3) {
+        return `${sign}₹${(abs / 1e3).toFixed(2)} Th`;
+      }
+      return `${sign}₹${Math.round(abs).toLocaleString('en-IN')}`;
+    }
+
+    function formatRsDetail(value) {
+      const n = parseMoneyRs(value);
+      if (n === null) return null;
+      const compact = formatRsCompact(n);
+      const exact = `₹${Math.abs(n).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+      return `${compact} <span style="color:var(--text-muted); font-weight:500; font-size:11px;">(${n < 0 ? '−' : ''}${exact})</span>`;
+    }
+
     function formatDateTime(dateTimeString) {
       if (!dateTimeString) return '';
       const date = new Date(dateTimeString);
@@ -1603,6 +1645,16 @@
                 </select>`;
         } else if (c.includes('Date')) {
           fieldHtml = `<input type="date" class="form-control" id="field_${escapeId(c)}" ${requiredAttr}>`;
+        } else if (MONEY_COLUMNS.includes(c)) {
+          const hintId = `hint_${escapeId(c)}`;
+          fieldHtml = `
+            <div class="input-group">
+              <span class="input-group-text">₹</span>
+              <input type="number" class="form-control money-rs-input" id="field_${escapeId(c)}"
+                inputmode="decimal" step="any" min="0" placeholder="Amount in Rupees" ${requiredAttr}
+                data-hint-id="${hintId}">
+            </div>
+            <div class="form-text money-rs-hint" id="${hintId}">Enter value in Rs. Preview: —</div>`;
         } else if (c === 'Detail Work Status') {
           fieldHtml = `<textarea class="form-control" id="field_${escapeId(c)}" rows="7" style="resize: vertical; min-height: 140px;" ${requiredAttr}></textarea>`;
         } else if (c === 'Major Material Requirement') {
@@ -1654,6 +1706,14 @@
           ]
         },
         {
+          title: 'Cost',
+          icon: 'bi-cash-coin',
+          fields: [
+            { name: 'TAA Value (Rs.)', col: 'col-md-6' },
+            { name: 'Billed Value till date (Rs.)', col: 'col-md-6' }
+          ]
+        },
+        {
           title: 'Current Progress',
           icon: 'bi-activity',
           fields: [
@@ -1679,6 +1739,19 @@
       });
 
       formFields.innerHTML = formHtml;
+
+      formFields.querySelectorAll('.money-rs-input').forEach((input) => {
+        const syncHint = () => {
+          const hint = document.getElementById(input.getAttribute('data-hint-id'));
+          if (!hint) return;
+          const compact = formatRsCompact(input.value);
+          hint.textContent = input.value === '' || input.value == null
+            ? 'Enter value in Rs. Preview: —'
+            : `Preview: ${compact}`;
+        };
+        input.addEventListener('input', syncHint);
+        syncHint();
+      });
     }
 
 
@@ -1690,6 +1763,8 @@
       const columnWidths = {
         'Name of Scheme': 'auto',
         'TAA No.': '8%',
+        'TAA Value (Rs.)': '9%',
+        'Billed Value till date (Rs.)': '9%',
         'Status': '12%', // New column width
         'Actions': '5%'
       };
@@ -1775,6 +1850,61 @@
           </div>
         </div>
 
+        <!-- Cost -->
+        <div style="background:#fff; border:1px solid var(--border-color); border-radius:12px; padding:1rem; margin-bottom:0.75rem;">
+          <div style="font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:#b45309; font-weight:700; margin-bottom:0.75rem; display:flex; align-items:center; justify-content:space-between; gap:6px; border-bottom:1px solid #f1f5f9; padding-bottom:0.5rem;">
+            <span><i class="bi bi-cash-coin"></i> Cost</span>
+            <span style="font-size:10px; font-weight:600; color:var(--text-muted); text-transform:none; letter-spacing:0;">Values in ₹ (shown as Lakh / Cr)</span>
+          </div>
+          ${currentUser && currentUser.can_edit ? `
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:0.85rem 1rem; align-items:end;">
+            <div>
+              <label for="detailCostTaa" style="font-size:9px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); font-weight:700; display:block; margin-bottom:4px;">TAA Value (Rs.)</label>
+              <div class="input-group input-group-sm">
+                <span class="input-group-text">₹</span>
+                <input type="number" class="form-control" id="detailCostTaa" inputmode="decimal" step="any" min="0"
+                  value="${parseMoneyRs(record['TAA Value (Rs.)']) ?? ''}" placeholder="Amount in Rupees">
+              </div>
+              <div class="form-text" id="detailCostTaaHint" style="font-size:11px;">Preview: ${formatRsCompact(record['TAA Value (Rs.)'])}</div>
+            </div>
+            <div>
+              <label for="detailCostBilled" style="font-size:9px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); font-weight:700; display:block; margin-bottom:4px;">Billed Value till date (Rs.)</label>
+              <div class="input-group input-group-sm">
+                <span class="input-group-text">₹</span>
+                <input type="number" class="form-control" id="detailCostBilled" inputmode="decimal" step="any" min="0"
+                  value="${parseMoneyRs(record['Billed Value till date (Rs.)']) ?? ''}" placeholder="Amount in Rupees">
+              </div>
+              <div class="form-text" id="detailCostBilledHint" style="font-size:11px;">Preview: ${formatRsCompact(record['Billed Value till date (Rs.)'])}</div>
+            </div>
+            <div style="display:flex; align-items:center;">
+              <button type="button" class="btn btn-sm btn-primary rounded-pill px-3" id="detailCostSaveBtn">
+                <i class="bi bi-save"></i> Save cost
+              </button>
+            </div>
+          </div>
+          <div id="detailCostStatus" style="font-size:11px; margin-top:8px; color:var(--text-muted);"></div>
+          ` : `
+          <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:0.75rem 1rem;">
+            <div style="display:flex; flex-direction:column; gap:2px;">
+              <span style="font-size:9px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); font-weight:700;"><i class="bi bi-cash-stack"></i> TAA Value</span>
+              <span style="font-size:13px; color:var(--text-main); font-weight:600; line-height:1.4;">${
+                parseMoneyRs(record['TAA Value (Rs.)']) !== null
+                  ? formatRsDetail(record['TAA Value (Rs.)'])
+                  : '<span style="color:var(--text-muted); font-weight:500;">Not entered</span>'
+              }</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:2px;">
+              <span style="font-size:9px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); font-weight:700;"><i class="bi bi-receipt"></i> Billed Value till date</span>
+              <span style="font-size:13px; color:var(--text-main); font-weight:600; line-height:1.4;">${
+                parseMoneyRs(record['Billed Value till date (Rs.)']) !== null
+                  ? formatRsDetail(record['Billed Value till date (Rs.)'])
+                  : '<span style="color:var(--text-muted); font-weight:500;">Not entered</span>'
+              }</span>
+            </div>
+          </div>
+          `}
+        </div>
+
         <!-- Section 2: Technical Parameters -->
         <div style="background:#fff; border:1px solid var(--border-color); border-radius:12px; padding:1rem; margin-bottom:0.75rem;">
           <div style="font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:#6d28d9; font-weight:700; margin-bottom:0.75rem; display:flex; align-items:center; gap:6px; border-bottom:1px solid #f1f5f9; padding-bottom:0.5rem;">
@@ -1803,6 +1933,85 @@
           '<p style="font-size:12px; color:var(--text-muted); margin:0;">No detail status recorded.</p>'}
         </div>
       `;
+    }
+
+    function bindDetailCostEditors(recordId) {
+      const taaInput = document.getElementById('detailCostTaa');
+      const billedInput = document.getElementById('detailCostBilled');
+      const saveBtn = document.getElementById('detailCostSaveBtn');
+      const statusEl = document.getElementById('detailCostStatus');
+      if (!taaInput || !billedInput || !saveBtn) return;
+
+      const wireHint = (input, hintId) => {
+        const hint = document.getElementById(hintId);
+        const sync = () => {
+          if (!hint) return;
+          hint.textContent = input.value === '' || input.value == null
+            ? 'Preview: —'
+            : `Preview: ${formatRsCompact(input.value)}`;
+        };
+        input.addEventListener('input', sync);
+        sync();
+      };
+      wireHint(taaInput, 'detailCostTaaHint');
+      wireHint(billedInput, 'detailCostBilledHint');
+
+      saveBtn.addEventListener('click', async () => {
+        if (!currentUser?.can_edit) {
+          showMessage('You do not have permission to edit cost data.', 'error');
+          return;
+        }
+        const record = allRecords.find((r) => r.id == recordId);
+        if (!record) return;
+        if (!currentUser.can_view_all && record.Division && !currentUser.divisions.includes(record.Division)) {
+          showMessage('You are not authorized to edit cost for this division.', 'error');
+          return;
+        }
+
+        const payload = {
+          'TAA Value (Rs.)': parseMoneyRs(taaInput.value),
+          'Billed Value till date (Rs.)': parseMoneyRs(billedInput.value)
+        };
+
+        saveBtn.disabled = true;
+        if (statusEl) statusEl.textContent = 'Saving cost…';
+        try {
+          const { data, error } = await client
+            .from(TABLE_NAME)
+            .update(payload)
+            .eq('id', recordId)
+            .select();
+          if (error) throw error;
+          if (data && data[0]) {
+            const idx = allRecords.findIndex((r) => r.id == recordId);
+            if (idx > -1) allRecords[idx] = { ...allRecords[idx], ...data[0] };
+          } else {
+            const idx = allRecords.findIndex((r) => r.id == recordId);
+            if (idx > -1) {
+              allRecords[idx]['TAA Value (Rs.)'] = payload['TAA Value (Rs.)'];
+              allRecords[idx]['Billed Value till date (Rs.)'] = payload['Billed Value till date (Rs.)'];
+            }
+          }
+          if (statusEl) {
+            statusEl.style.color = '#059669';
+            statusEl.textContent = 'Cost saved.';
+          }
+          filterAndRenderTable();
+        } catch (err) {
+          console.error(err);
+          if (statusEl) {
+            statusEl.style.color = '#dc2626';
+            statusEl.textContent = err.message || 'Failed to save cost.';
+          }
+          showMessage(
+            (err && err.message ? err.message : 'Failed to save cost.') +
+              ' If columns are missing, run scripts/alter_prioritysi_money_fields.sql in Supabase.',
+            'error'
+          );
+        } finally {
+          saveBtn.disabled = false;
+        }
+      });
     }
 
 
@@ -1839,6 +2048,14 @@
             td.innerHTML = `<span class="badge ${getPriorityBadge(record[c])}">${record[c] || ''}</span>`;
           } else if (c === 'Name of Scheme') {
             td.innerHTML = `<div style="font-weight:500;">${record[c] || ''}</div>`;
+          } else if (MONEY_COLUMNS.includes(c)) {
+            const compact = formatRsCompact(record[c]);
+            td.style.whiteSpace = 'nowrap';
+            td.style.fontWeight = '600';
+            td.style.fontSize = '12px';
+            td.innerHTML = compact === '—'
+              ? `<span style="color:#cbd5e1;">—</span>`
+              : `<span title="${parseMoneyRs(record[c]) != null ? ('₹' + Math.abs(parseMoneyRs(record[c])).toLocaleString('en-IN')) : ''}">${compact}</span>`;
           } else {
             td.textContent = record[c] || '';
             if (c.includes('Date')) {
@@ -2918,6 +3135,9 @@
       document.getElementById('recordForm').reset();
       recordId.value = '';
       btnDelete.style.display = 'none';
+      document.querySelectorAll('#editModal .money-rs-input').forEach((el) => {
+        el.dispatchEvent(new Event('input'));
+      });
       editModal.show();
     }
 
@@ -2944,7 +3164,8 @@
         if (c !== 'id') {
           const field = document.getElementById(`field_${escapeId(c)}`);
           if (field) {
-            field.value = data[c] || '';
+            field.value = data[c] != null && data[c] !== '' ? data[c] : '';
+            if (MONEY_COLUMNS.includes(c)) field.dispatchEvent(new Event('input'));
           }
         }
       }
@@ -2961,7 +3182,11 @@
         if (c !== 'id') {
           const field = document.getElementById(`field_${escapeId(c)}`);
           if (field) {
-            record[c] = field.value || null;
+            if (MONEY_COLUMNS.includes(c)) {
+              record[c] = parseMoneyRs(field.value);
+            } else {
+              record[c] = field.value || null;
+            }
           }
         }
       }
@@ -3094,6 +3319,10 @@
         const rowData = columnsForPdf.map(col => {
           if (col.includes('Date')) return formatDate(record[col]);
           if (col === 'Status') return record[col] || 'Not yet updated';
+          if (MONEY_COLUMNS.includes(col)) {
+            const compact = formatRsCompact(record[col]);
+            return compact === '—' ? '' : compact;
+          }
           return record[col] || '';
         });
         // Prepend the serial number (index + 1) to the row data
@@ -3369,6 +3598,7 @@
       const schemeName = record['Name of Scheme'] || 'Scheme Details';
       document.getElementById('detailModalLabel').textContent = schemeName;
       document.getElementById('detailModalBody').innerHTML = buildDetailContent(record);
+      bindDetailCostEditors(recordId);
 
       // Populate last updated in header
       const updatedEl = document.getElementById('detailModalUpdated');
