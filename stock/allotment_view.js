@@ -234,11 +234,16 @@
 
     function letterPadHtml() {
         return `<header class="letter-pad">
-            <div class="letter-pad-org">West Bengal State Electricity Distribution Company Limited</div>
-            <div class="letter-pad-sub">(A Govt. of W.B. Enterprise)</div>
-            <div class="letter-pad-office">Zonal Office, Malda</div>
-            <div class="letter-pad-addr">Administrative Building, 2nd Floor, Rabindra Avenue, Malda, WB-732101</div>
-            <div class="letter-pad-contact">Ph: 03522-255035, e-mail: zm.malda@wbsedcl.in</div>
+            <div class="letter-pad-row">
+                <img class="letter-pad-logo" src="/icons/logo.png" alt="WBSEDCL" width="72" height="90" />
+                <div class="letter-pad-text">
+                    <div class="letter-pad-org">West Bengal State Electricity Distribution Company Limited</div>
+                    <div class="letter-pad-sub">(A Govt. of W.B. Enterprise)</div>
+                    <div class="letter-pad-office">Zonal Office, Malda</div>
+                    <div class="letter-pad-addr">Administrative Building, 2nd Floor, Rabindra Avenue, Malda, WB-732101</div>
+                    <div class="letter-pad-contact">Ph: 03522-255035, e-mail: zm.malda@wbsedcl.in</div>
+                </div>
+            </div>
         </header>`;
     }
 
@@ -590,11 +595,24 @@
         const prevW = letter.style.width;
         letter.style.width = '640px';
         try {
+            const imgs = Array.from(letter.querySelectorAll('img'));
+            await Promise.all(
+                imgs.map(
+                    (img) =>
+                        img.complete
+                            ? Promise.resolve()
+                            : new Promise((resolve) => {
+                                  img.onload = () => resolve();
+                                  img.onerror = () => resolve();
+                              })
+                )
+            );
             await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
             const canvas = await window.html2canvas(letter, {
                 scale: 2.5,
                 backgroundColor: '#ffffff',
                 useCORS: true,
+                allowTaint: true,
                 logging: false
             });
             const imgData = canvas.toDataURL('image/png');
