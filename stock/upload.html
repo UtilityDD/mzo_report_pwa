@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stock Raw Upload</title>
+  <style>
+    :root {
+      --bg: #f3f5f8; --card: #fff; --ink: #1f2937; --muted: #6b7280;
+      --line: #e5e7eb; --brand: #0b5cab; --ok: #166534; --bad: #991b1b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: "Segoe UI", system-ui, sans-serif;
+      background: linear-gradient(180deg, #e8eef6 0%, var(--bg) 40%);
+      color: var(--ink); min-height: 100vh; padding: 1.5rem;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; }
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 1.25rem 1.5rem; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    }
+    h1 { margin: 0 0 0.35rem; font-size: 1.35rem; }
+    .muted { color: var(--muted); font-size: 0.92rem; line-height: 1.45; }
+    .guide {
+      margin: 1rem 0; padding: 0.95rem 1rem; background: #f0f7ff;
+      border: 1px solid #dbeafe; border-radius: 8px; font-size: 0.92rem; line-height: 1.5;
+    }
+    .guide ol { margin: 0.4rem 0 0 1.2rem; padding: 0; }
+    .meta {
+      margin: 1rem 0; padding: 0.85rem 1rem; background: #f8fafc;
+      border: 1px solid var(--line); border-radius: 8px; font-size: 0.9rem; display: none;
+    }
+    .meta.show { display: block; }
+    .meta strong { display: inline-block; min-width: 9rem; }
+    .row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin-top: 1rem; }
+    input[type="file"], input[type="date"] { width: 100%; max-width: 320px; }
+    button, .link-btn {
+      border: none; border-radius: 8px; padding: 0.7rem 1.1rem; font-weight: 600;
+      cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem;
+    }
+    .primary { background: var(--brand); color: #fff; }
+    .primary:disabled { opacity: 0.55; cursor: not-allowed; }
+    .ghost { background: #e5e7eb; color: #111827; }
+    .msg { margin-top: 1rem; padding: 0.85rem 1rem; border-radius: 8px; display: none; white-space: pre-wrap; }
+    .msg.ok { display: block; background: #dcfce7; color: var(--ok); }
+    .msg.err { display: block; background: #fee2e2; color: var(--bad); }
+    .locked { opacity: 0.7; }
+    .admin-only { display: none; }
+    .admin-only.show { display: block; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Stock Raw Excel Upload</h1>
+      <div class="guide">
+        <strong>How to upload</strong>
+        <ol>
+          <li>Select the <strong>data / report date</strong> (as-on date). This is shown on the Stock dashboard header.</li>
+          <li>Choose the SAP stock dump file (<code>.xlsx</code>, <code>.xlsb</code>, or <code>.csv</code>).</li>
+          <li>Click <strong>Upload &amp; Publish</strong> and wait for large files.</li>
+          <li>Open Stock and refresh if needed. Allot Material uses this same live stock.</li>
+        </ol>
+      </div>
+      <div class="admin-only" id="adminIntro">
+        <p class="muted">Admin: publishes to Supabase <code>stock_snapshot</code> (+ local backup). Sheet remains fallback until removed.</p>
+        <p class="muted" id="adminSetupHint" style="display:none;"></p>
+      </div>
+      <div class="meta" id="metaBox"></div>
+      <div id="uploadBlock" class="locked">
+        <label class="muted" for="reportDateInput"><strong>Data / report date</strong></label>
+        <div class="row"><input id="reportDateInput" type="date" disabled required /></div>
+        <label class="muted" for="fileInput"><strong>Choose raw file</strong></label>
+        <div class="row"><input id="fileInput" type="file" accept=".xlsx,.xlsb,.xls,.csv" disabled /></div>
+        <div class="row">
+          <button class="primary" id="uploadBtn" disabled>Upload &amp; Publish</button>
+          <a class="link-btn ghost" href="/stock/index.html">Open Stock</a>
+          <a class="link-btn ghost" href="/index.html">Home</a>
+        </div>
+      </div>
+      <div id="msg" class="msg"></div>
+    </div>
+  </div>
+  <script>
+    const metaBox = document.getElementById('metaBox');
+    const msg = document.getElementById('msg');
+    const fileInput = document.getElementById('fileInput');
+    const reportDateInput = document.getElementById('reportDateInput');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const uploadBlock = document.getElementById('uploadBlock');
+    const adminIntro = document.getElementById('adminIntro');
+    const adminSetupHint = document.getElementById('adminSetupHint');
+    let isAdminViewer = false;
+
+    function toIsoDate(d) {
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+    function guessDateFromFileName(name) {
+      const m = String(name||'').match(/(\d{2})[-_.](\d{2})[-_.](\d{4})/);
+      return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+    }
+    reportDateInput.value = toIsoDate(new Date());
+    fileInput.addEventListener('change', () => {
+      const f = fileInput.files && fileInput.files[0];
+      if (!f) return;
+      const g = guessDateFromFileName(f.name);
+      if (g) reportDateInput.value = g;
+    });
+    function showMsg(text, ok) {
+      msg.className = 'msg ' + (ok ? 'ok' : 'err');
+      msg.textContent = text;
+    }
+    function renderAdminMeta(data) {
+      metaBox.classList.add('show');
+      adminIntro.classList.add('show');
+      if (data.setupHint) {
+        adminSetupHint.style.display = 'block';
+        adminSetupHint.innerHTML = '<strong>Setup:</strong> ' + data.setupHint;
+      } else adminSetupHint.style.display = 'none';
+      const m = data.meta;
+      if (!m) {
+        metaBox.innerHTML = `<div>Source: <strong>${data.source}</strong></div><div>Can upload: <strong>${data.canUpload?'Yes':'No'}</strong></div>`;
+        return;
+      }
+      const s = m.stats || {};
+      metaBox.innerHTML = `
+        <div><strong>Last upload</strong> ${m.uploadedAt||'-'} by ${m.uploadedBy||'-'}</div>
+        <div><strong>File</strong> ${m.originalName||'-'}</div>
+        <div><strong>Published</strong> ${m.publishedRows??s.publishedRows??'-'} rows</div>
+        <div><strong>Report date</strong> ${m.reportDate||s.today||'-'}</div>
+        <div><strong>Active source</strong> ${data.source}</div>`;
+    }
+    async function loadMeta() {
+      const res = await fetch('/api/stock/meta', { credentials: 'same-origin' });
+      if (res.status === 401) { location.href = '/login.html'; return; }
+      const data = await res.json();
+      isAdminViewer = !!data.isAdmin;
+      if (isAdminViewer) renderAdminMeta(data);
+      else { metaBox.classList.remove('show'); adminIntro.classList.remove('show'); }
+      if (data.canUpload) {
+        uploadBlock.classList.remove('locked');
+        fileInput.disabled = false;
+        reportDateInput.disabled = false;
+        uploadBtn.disabled = false;
+      } else {
+        showMsg('You are not authorised to upload stock data. Ask an admin to enable Stock Upload.', false);
+      }
+    }
+    uploadBtn.addEventListener('click', async () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return showMsg('Choose a file first.', false);
+      const reportDate = (reportDateInput.value||'').trim();
+      if (!reportDate) return showMsg('Select the data / report date.', false);
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = 'Processing…';
+      showMsg('Uploading — please wait…', true);
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('reportDate', reportDate);
+        const res = await fetch('/api/stock/upload', { method: 'POST', body: fd, credentials: 'same-origin' });
+        const data = await res.json();
+        if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Upload failed');
+        const s = (data.meta && data.meta.stats) || {};
+        const published = data.meta.publishedRows || '-';
+        const rd = data.meta.reportDate || reportDate;
+        if (isAdminViewer) {
+          showMsg(data.message + '\nReport date: ' + rd + '\nPublished: ' + published + '\nSupabase: ' + (data.supabase||'-'), data.supabase==='ok');
+        } else {
+          showMsg('Upload successful.\nPublished ' + published + ' stock rows.\nAs-of date: ' + rd + '\nOpen Stock to view.', true);
+        }
+        try { localStorage.removeItem('mzo_last_sync_date'); localStorage.removeItem('mzoDataSynced'); } catch(_){}
+        await loadMeta();
+      } catch (e) {
+        showMsg(e.message || String(e), false);
+      } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = 'Upload & Publish';
+      }
+    });
+    loadMeta().catch(e => showMsg(e.message, false));
+  </script>
+</body>
+</html>

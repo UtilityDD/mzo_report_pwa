@@ -118,17 +118,19 @@
         // Local testing: always allow on localhost
         const host = String(location.hostname || '').toLowerCase();
         if (host === 'localhost' || host === '127.0.0.1') return true;
-
         const profile = getPortalProfile();
-        const user = String(profile.Username || profile.username || '')
-            .trim()
-            .toLowerCase();
-        const name = String(profile.Name || profile.name || '')
-            .trim()
-            .toLowerCase();
-        if (!user && !name) return false;
-        if (ALLOT_ALLOWED_USERS.includes(user)) return true;
-        return ALLOT_ALLOWED_USERS.some((u) => name === u || name.startsWith(u + ' ') || name.includes(' ' + u + ' '));
+        const flag = String(profile['stock-allot-autho'] || profile.stock_allot_autho || '').trim().toLowerCase();
+        if (['y', 'yes', '1', 'true', 'allot', 'upload'].includes(flag)) return true;
+        const username = String(profile.Username || profile.username || '').trim().toLowerCase();
+        return ALLOT_ALLOWED_USERS.includes(username);
+    }
+
+    function canUploadStock() {
+        const profile = getPortalProfile();
+        const flag = String(profile['stock-upload-autho'] || profile.stock_upload_autho || '').trim().toLowerCase();
+        if (['y', 'yes', '1', 'true', 'upload'].includes(flag)) return true;
+        const username = String(profile.Username || profile.username || '').trim().toLowerCase();
+        return username === 'dm1';
     }
 
     /** View Allotments is available to every portal user. */
@@ -140,11 +142,15 @@
         const group = document.getElementById('allot-btn-group');
         const materialBtn = document.getElementById('allot-material-btn');
         const viewBtn = document.getElementById('allot-view-btn');
+        const uploadLink = document.getElementById('stock-upload-link');
         const canCreate = canUseAllotment();
 
         if (group) {
             group.hidden = false;
             group.style.display = 'flex';
+        }
+        if (uploadLink) {
+            uploadLink.style.display = canUploadStock() ? 'inline-flex' : 'none';
         }
         if (viewBtn) {
             viewBtn.hidden = false;
