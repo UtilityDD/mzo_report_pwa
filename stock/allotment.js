@@ -217,7 +217,7 @@
             } else {
                 confirmBtn.disabled = false;
                 confirmBtn.textContent = 'Confirm & Upload';
-                confirmBtn.title = 'Issues the next allotment number and saves to the sheet';
+                confirmBtn.title = 'Issues the next allotment number and saves the order';
             }
         }
 
@@ -942,7 +942,7 @@
             showStatus('Please log in to the portal before uploading.', 'error');
             return;
         }
-        if (!window.confirm('Upload this allotment to the stock sheet? This will issue the next allotment number.')) return;
+        if (!window.confirm('Save this allotment and issue the next allotment number?')) return;
 
         isUploading = true;
         updateFlowControls();
