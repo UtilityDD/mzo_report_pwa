@@ -2410,7 +2410,11 @@ app.get('/api/nsc/meta', async (req, res) => {
         hasLocalDataset: hasLocal,
         meta,
         version: meta
-            ? `${meta.reportDate || ''}|${meta.uploadedAt || ''}|${meta.publishedRows ?? ''}`
+            ? String(
+                meta.supabaseUploadId != null && meta.supabaseUploadId !== ''
+                  ? meta.supabaseUploadId
+                  : `${meta.reportDate || ''}|${meta.uploadedAt || ''}|${meta.publishedRows ?? ''}`
+              )
             : null,
         source,
         setupHint:
