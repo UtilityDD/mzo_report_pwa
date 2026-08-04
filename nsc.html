@@ -1253,6 +1253,10 @@
           style="font-size: 0.72rem; padding: 3px 8px;" title="Reload NSC data from server">
           <i class="fas fa-sync-alt"></i> Refresh
         </button>
+        <button type="button" id="nscTopDelayedBtn" class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-1"
+          style="font-size: 0.72rem; padding: 3px 8px;" title="View top 10 most delayed cases">
+          <i class="fas fa-hourglass-half"></i> Top delayed
+        </button>
       </div>
       <div class="d-flex align-items-center gap-1 gap-sm-2">
         <span id="maxDateSpan" style="font-size: 0.75rem; color: #ffe600;"></span>
@@ -2046,7 +2050,7 @@
         }
 
         applyFilters();
-        showUrgentModal(rawData);
+        scheduleUrgentModal(rawData);
 
         // Register filter event listeners (only once after data is loaded)
         document.getElementById('regionSelect').addEventListener('change', applyFilters);
@@ -2155,8 +2159,37 @@
 
 
 
-    function showUrgentModal(data) {
-      const sorted = data
+    let urgentModalDataCache = null;
+    let urgentModalTimer = null;
+
+    function scheduleUrgentModal(data) {
+      urgentModalDataCache = data;
+      if (urgentModalTimer) {
+        clearTimeout(urgentModalTimer);
+        urgentModalTimer = null;
+      }
+
+      // Don't interrupt page load — wait until the dashboard has settled
+      urgentModalTimer = setTimeout(() => {
+        urgentModalTimer = null;
+        showUrgentModal(data, { auto: true });
+      }, 8000);
+    }
+
+    function showUrgentModal(data, opts) {
+      const auto = !!(opts && opts.auto);
+      const source = data || urgentModalDataCache;
+      if (!source || !source.length) return;
+
+      // Auto-open at most once per day; manual "Top delayed" always works
+      if (auto) {
+        try {
+          const todayKey = new Date().toDateString();
+          if (localStorage.getItem('mzo_nsc_urgent_seen_day') === todayKey) return;
+        } catch (_) {}
+      }
+
+      const sorted = source
         .filter(d => !isNaN(parseFloat(d.DelayInSC)))
         .sort((a, b) => parseFloat(b.DelayInSC) - parseFloat(a.DelayInSC))
         .slice(0, 10);
@@ -2209,7 +2242,21 @@
       container.innerHTML = tableHtml;
 
       const modalEl = document.getElementById("urgentModal");
-      const urgentModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+      const urgentModal = bootstrap.Modal.getOrCreateInstance(modalEl, {
+        backdrop: true,
+        keyboard: true,
+        focus: true
+      });
+
+      if (auto) {
+        modalEl.addEventListener('hidden.bs.modal', function markSeenOnce() {
+          try {
+            localStorage.setItem('mzo_nsc_urgent_seen_day', new Date().toDateString());
+          } catch (_) {}
+          modalEl.removeEventListener('hidden.bs.modal', markSeenOnce);
+        });
+      }
+
       urgentModal.show();
     }
 
@@ -4194,7 +4241,7 @@
             title="Download as Image">
             <i class="fas fa-camera me-2"></i>Download
           </button>
-          <button type="button" class="btn btn-danger" data-bs-dismiss="modal">Take Urgent Action!</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
         </div>
       </div>
     </div>
@@ -4214,6 +4261,17 @@
           instance.hide();
         }
       });
+
+      const topDelayedBtn = document.getElementById('nscTopDelayedBtn');
+      if (topDelayedBtn) {
+        topDelayedBtn.addEventListener('click', () => {
+          if (urgentModalTimer) {
+            clearTimeout(urgentModalTimer);
+            urgentModalTimer = null;
+          }
+          showUrgentModal(urgentModalDataCache || (typeof rawData !== 'undefined' ? rawData : null), { auto: false });
+        });
+      }
     });
 
 
