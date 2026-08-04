@@ -14,7 +14,7 @@ Ensure schema `mzo_insight` is exposed in API settings.
 - Flow: raw SAP Excel → clean → `stock_snapshot` + local `data/stock.csv`
 - Workbook layout:
   - **Sheet1** — SAP stock rows (Material + Material Group required)
-  - **Cat** — `Mat Code` + `Category` (`Local` / `Central`); joined onto each published row
+  - **Local/Central** is hardcoded by material code in `lib/stock_material_category.js` (+ `stock/stock_material_category.js`); regenerate with `node scripts/generate_stock_material_category.js` if the master list changes
 - If `stock_snapshot` already exists without category, also run [`alter_stock_snapshot_add_category.sql`](alter_stock_snapshot_add_category.sql)
 - Dashboards: `/api/stock/dataset` → DataHub `CACHE_STOCK` (Sheet fallback until removed)
 - Filename: any name; optional `DD-MM-YYYY` in name only pre-fills the report date

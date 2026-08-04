@@ -663,9 +663,13 @@ function handleResults(data) {
 
         const matCode = String(item.Material || '').trim();
         const meta = materialMetadata[matCode] || {};
-        // Prefer Category baked in from upload Cat sheet; fall back to Google metadata
-        const fromRow = String(item.Category || '').trim().toUpperCase();
-        const category = (fromRow || String(meta.category || 'UNKNOWN')).toUpperCase();
+        // Fixed hardcoded map first; then row Category; then legacy Google metadata
+        let category = '';
+        if (typeof lookupStockCategory === 'function') {
+            category = lookupStockCategory(matCode) || '';
+        }
+        if (!category) category = String(item.Category || '').trim().toUpperCase();
+        if (!category) category = String(meta.category || 'UNKNOWN').toUpperCase();
 
         return {
             ...item,
