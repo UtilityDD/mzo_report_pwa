@@ -1,0 +1,25 @@
+# Stock dump + allotments → Supabase
+
+## One-time SQL (Supabase SQL Editor)
+
+1. [`create_mzo_insight_stock_snapshot.sql`](create_mzo_insight_stock_snapshot.sql)
+2. [`create_mzo_insight_stock_allotments.sql`](create_mzo_insight_stock_allotments.sql)
+3. [`alter_portal_users_stock_auth.sql`](alter_portal_users_stock_auth.sql)
+
+Ensure schema `mzo_insight` is exposed in API settings.
+
+## Stock dashboard dump
+
+- Upload: `/stock/upload.html` (users with **Stock Raw Upload = Yes**)
+- Flow: raw SAP Excel → clean → `stock_snapshot` + local `data/stock.csv`
+- Dashboards: `/api/stock/dataset` → DataHub `CACHE_STOCK` (Sheet fallback until removed)
+
+## Allot Material / View Allotments
+
+- **Create** → Supabase `stock_allotments` (Apps Script fallback if Supabase create fails)
+- **View** → prefers Supabase; if empty, falls back to Sheet/Apps Script CSV
+- Auth create: **Stock Allot Create = Yes** (legacy usernames zm / aritra / dm1 still work)
+
+## Admin UI
+
+User Management → Stock Raw Upload / Stock Allot Create.

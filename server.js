@@ -7,8 +7,9 @@ const PORT = process.env.PORT || 3000;
 
 const https = require('https');
 
-// Middleware to parse JSON bodies
-app.use(express.json());
+// Middleware to parse JSON bodies (raised for NSC/stock publish payloads on Vercel)
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // --- Authentication Session Storage & Helpers ---
 const JWT_SECRET = process.env.JWT_SECRET || 'mzo-portal-super-secret-key-123456';
@@ -145,6 +146,8 @@ function portalUserToClient(row) {
         'dd-autho': row.dd_autho || '',
         'nsc-autho': row.nsc_autho || '',
         'nsc-upload-autho': row.nsc_upload_autho || '',
+        'stock-upload-autho': row.stock_upload_autho || '',
+        'stock-allot-autho': row.stock_allot_autho || '',
         'si-autho': row.si_autho || '',
         'si-divisions': row.si_divisions || '',
         'sheets-autho': row.sheets_autho || '',
@@ -170,6 +173,12 @@ function clientUserToPortal(user) {
         nsc_autho: String(user['nsc-autho'] != null ? user['nsc-autho'] : (user.nsc_autho || '')).trim(),
         nsc_upload_autho: String(
             user['nsc-upload-autho'] != null ? user['nsc-upload-autho'] : (user.nsc_upload_autho || '')
+        ).trim(),
+        stock_upload_autho: String(
+            user['stock-upload-autho'] != null ? user['stock-upload-autho'] : (user.stock_upload_autho || '')
+        ).trim(),
+        stock_allot_autho: String(
+            user['stock-allot-autho'] != null ? user['stock-allot-autho'] : (user.stock_allot_autho || '')
         ).trim(),
         si_autho: String(user['si-autho'] != null ? user['si-autho'] : (user.si_autho || '')).trim(),
         si_divisions: String(user['si-divisions'] != null ? user['si-divisions'] : (user.si_divisions || '')).trim(),
@@ -824,6 +833,8 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
             'dd-autho': '',
             'nsc-autho': '',
             'nsc-upload-autho': '',
+            'stock-upload-autho': '',
+            'stock-allot-autho': '',
             'si-autho': '',
             'si-divisions': '',
             'sheets-autho': '',
@@ -1637,16 +1648,39 @@ function stockAllotmentScriptUrl_() {
     );
 }
 
+function flagAuthoYes_(raw) {
+    const flag = String(raw || '').trim().toLowerCase();
+    return ['y', 'yes', '1', 'true', 'upload', 'allot'].includes(flag);
+}
+
 function canAccessStockAllotment_(user) {
+    if (!user) return false;
+    if (flagAuthoYes_(user['stock-allot-autho'] != null ? user['stock-allot-autho'] : user.stock_allot_autho)) {
+        return true;
+    }
+    // Legacy allowlist (until admin grants stock-allot-autho)
     const allowed = ['zm', 'aritra', 'dm1'];
-    const username = String((user && (user.Username || user.username)) || '')
+    const username = String((user.Username || user.username) || '')
         .trim()
         .toLowerCase();
-    const name = String((user && (user.Name || user.name)) || '')
+    const name = String((user.Name || user.name) || '')
         .trim()
         .toLowerCase();
     if (allowed.includes(username)) return true;
     return allowed.some((u) => name === u || name.startsWith(u + ' ') || name.includes(' ' + u + ' '));
+}
+
+async function resolveStockUser_(req) {
+    if (!req.user || !req.user.Username) return req.user || null;
+    try {
+        const users = await getLoginCredentials({ forceRefresh: true });
+        const key = String(req.user.Username).trim().toLowerCase();
+        const fresh = users.find((u) => u.Username && String(u.Username).trim().toLowerCase() === key);
+        if (fresh) return fresh;
+    } catch (e) {
+        console.warn('[stock auth] profile refresh failed:', e.message);
+    }
+    return req.user;
 }
 
 function requireStockAllotmentLogin_(req, res) {
@@ -1657,15 +1691,17 @@ function requireStockAllotmentLogin_(req, res) {
     return true;
 }
 
-function requireStockAllotmentAccess_(req, res) {
+async function requireStockAllotmentAccess_(req, res) {
     if (!requireStockAllotmentLogin_(req, res)) return false;
-    if (!canAccessStockAllotment_(req.user)) {
+    const user = await resolveStockUser_(req);
+    if (!canAccessStockAllotment_(user)) {
         res.status(403).json({
             status: 'error',
-            error: 'Creating allotments is restricted to authorised users (zm, Aritra, dm1).'
+            error: 'Creating allotments is restricted. Ask an admin to enable Stock Allot in User Management.'
         });
         return false;
     }
+    req.user = { ...req.user, ...user };
     return true;
 }
 
@@ -1785,10 +1821,146 @@ async function fetchAllotmentCsvText_() {
     return await res.text();
 }
 
+function allotDbToClient_(row) {
+    return {
+        AllotmentNo: row.allotment_no || '',
+        Date: row.date || '',
+        MovementType: row.movement_type || '',
+        FromStore: row.from_store || '',
+        FromPlantCode: row.from_plant_code || '',
+        Division: row.division || '',
+        PlantCode: row.plant_code || '',
+        MaterialCode: row.material_code || '',
+        MaterialDescription: row.material_description || '',
+        Unit: row.unit || '',
+        PresentStockDiv: row.present_stock_div,
+        SourceStockAtAllot: row.source_stock_at_allot,
+        ZoneStockAtAllot: row.zone_stock_at_allot,
+        AllottedQty: row.allotted_qty,
+        Remarks: row.remarks || '',
+        CreatedBy: row.created_by || '',
+        CreatedAt: row.created_at || ''
+    };
+}
+
+function allotClientToDb_(row, allotmentNo, createdBy, createdAtIso) {
+    const num = (v) => {
+        if (v === '' || v == null) return null;
+        const n = Number(String(v).replace(/,/g, ''));
+        return Number.isNaN(n) ? null : n;
+    };
+    return {
+        allotment_no: allotmentNo,
+        date: String(row.Date || row.date || '').slice(0, 10),
+        movement_type: String(row.MovementType || row.movementType || ''),
+        from_store: String(row.FromStore || row.fromStore || ''),
+        from_plant_code: String(row.FromPlantCode || row.fromPlantCode || ''),
+        division: String(row.Division || row.division || ''),
+        plant_code: String(row.PlantCode || row.plantCode || ''),
+        material_code: String(row.MaterialCode || row.materialCode || ''),
+        material_description: String(row.MaterialDescription || row.materialDescription || ''),
+        unit: String(row.Unit || row.unit || ''),
+        present_stock_div: num(row.PresentStockDiv != null ? row.PresentStockDiv : row.presentStockDiv),
+        source_stock_at_allot: num(row.SourceStockAtAllot != null ? row.SourceStockAtAllot : row.sourceStockAtAllot),
+        zone_stock_at_allot: num(row.ZoneStockAtAllot != null ? row.ZoneStockAtAllot : row.zoneStockAtAllot),
+        allotted_qty: num(row.AllottedQty != null ? row.AllottedQty : row.allottedQty),
+        remarks: String(row.Remarks || row.remarks || ''),
+        created_by: createdBy || '',
+        created_at: createdAtIso || new Date().toISOString()
+    };
+}
+
+async function nextAllotmentNoSupabase_() {
+    const year = new Date().getFullYear();
+    let rows = await querySupabase(`stock_allot_seq?year=eq.${year}&select=*`, {
+        schema: PORTAL_USERS_SCHEMA
+    });
+    let seq = 1;
+    if (Array.isArray(rows) && rows[0]) {
+        seq = Number(rows[0].next_seq) || 1;
+        await querySupabase(`stock_allot_seq?year=eq.${year}`, {
+            schema: PORTAL_USERS_SCHEMA,
+            method: 'PATCH',
+            body: { next_seq: seq + 1 },
+            prefer: 'return=minimal'
+        });
+    } else {
+        await querySupabase('stock_allot_seq', {
+            schema: PORTAL_USERS_SCHEMA,
+            method: 'POST',
+            body: { year, next_seq: 2 },
+            prefer: 'return=minimal'
+        });
+    }
+    const padded = String(seq).padStart(4, '0');
+    return `MZO/ALT/${year}/${padded}`;
+}
+
+async function fetchAllotmentsFromSupabase_() {
+    const pageSize = 1000;
+    let from = 0;
+    const all = [];
+    while (true) {
+        const batch = await querySupabase(
+            `stock_allotments?select=*&order=date.desc,allotment_no.desc&limit=${pageSize}&offset=${from}`,
+            { schema: PORTAL_USERS_SCHEMA }
+        );
+        if (!Array.isArray(batch) || !batch.length) break;
+        all.push(...batch.map(allotDbToClient_));
+        if (batch.length < pageSize) break;
+        from += pageSize;
+        if (from > 200000) break;
+    }
+    return all;
+}
+
+async function createAllotmentInSupabase_(payload) {
+    const createdBy = String(payload.createdBy || '').trim();
+    const allotmentNo = await nextAllotmentNoSupabase_();
+    const createdAt = new Date().toISOString();
+    const rows = (payload.rows || []).map((r) => allotClientToDb_(r, allotmentNo, createdBy, createdAt));
+    const BATCH = 200;
+    for (let i = 0; i < rows.length; i += BATCH) {
+        await querySupabase('stock_allotments', {
+            schema: PORTAL_USERS_SCHEMA,
+            method: 'POST',
+            body: rows.slice(i, i + BATCH),
+            prefer: 'return=minimal'
+        });
+    }
+    return {
+        status: 'success',
+        allotmentNo,
+        inserted: rows.length,
+        source: 'supabase'
+    };
+}
+
 async function loadAllotmentRowsCached_(force = false) {
     const now = Date.now();
     if (!force && allotListCache_.rows && now - allotListCache_.at < ALLOT_LIST_TTL_MS) {
         return { rows: allotListCache_.rows, source: allotListCache_.source || 'cache' };
+    }
+
+    // 1) Supabase primary
+    try {
+        const rows = await fetchAllotmentsFromSupabase_();
+        if (rows && rows.length) {
+            allotListCache_ = { at: now, rows, source: 'supabase' };
+            return { rows, source: 'supabase' };
+        }
+        // empty supabase is still valid if table exists
+        if (Array.isArray(rows)) {
+            allotListCache_ = { at: now, rows: rows || [], source: 'supabase' };
+            // fall through to sheet only if empty and we want migration continuity
+            if (rows.length === 0) {
+                /* try legacy below */
+            } else {
+                return { rows, source: 'supabase' };
+            }
+        }
+    } catch (err) {
+        console.warn('[stock/allotment] Supabase list failed:', err.message);
     }
 
     try {
@@ -1939,7 +2111,7 @@ app.post('/api/stock/allotment', async (req, res) => {
         const action = payload.action || 'createAllotment';
         // Create stays restricted; list/get available to all logged-in users
         if (action === 'createAllotment') {
-            if (!requireStockAllotmentAccess_(req, res)) return;
+            if (!(await requireStockAllotmentAccess_(req, res))) return;
         } else if (!requireStockAllotmentLogin_(req, res)) {
             return;
         }
@@ -1951,7 +2123,14 @@ app.post('/api/stock/allotment', async (req, res) => {
             if (!payload.createdBy && req.user) {
                 payload.createdBy = req.user.Name || req.user.Username || req.user.username || '';
             }
-            return await proxyStockAllotment_(payload, res);
+            try {
+                const created = await createAllotmentInSupabase_(payload);
+                invalidateAllotListCache_();
+                return res.json(created);
+            } catch (e) {
+                console.warn('[stock/allotment] Supabase create failed, trying Apps Script:', e.message);
+                return await proxyStockAllotment_(payload, res);
+            }
         }
 
         if (action === 'listAllotments') {
@@ -1997,6 +2176,8 @@ app.post('/api/stock/allotment', async (req, res) => {
 const multer = require('multer');
 const {
     processNscWorkbook,
+    publishedFromCsv,
+    toCsv: nscToCsv,
     dashboardRowToDb,
     dbRowsToCsv,
     DB_KEYS
@@ -2353,12 +2534,399 @@ app.post('/api/nsc/upload', (req, res) => {
     });
 });
 
+/**
+ * Browser-cleaned NSC publish (Vercel-safe).
+ * Raw Excel stays in the browser; only Working/Accepted CSV is posted (~2 MB).
+ * Multipart /api/nsc/upload still works on localhost for large files.
+ */
+app.post('/api/nsc/publish', (req, res) => {
+    nscUpload.single('csv')(req, res, async (err) => {
+        if (err) {
+            return res.status(400).json({ status: 'error', message: err.message });
+        }
+        try {
+            if (!req.user) {
+                return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+            }
+            const uploadUser = await resolveNscUploadUser_(req);
+            if (!canUploadNsc_(uploadUser)) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: 'NSC raw upload is not authorised for this user. Ask an admin to enable NSC Upload in User Management.'
+                });
+            }
+
+            const body = req.body || {};
+            let csv = '';
+            if (req.file && req.file.buffer) {
+                csv = req.file.buffer.toString('utf8').trim();
+            } else {
+                csv = String(body.csv || '').trim();
+            }
+            const reportDateRaw = String(body.reportDate || '').trim();
+            const originalName = String(body.originalName || 'nsc_client.csv').trim() || 'nsc_client.csv';
+            const sheetName = String(body.sheetName || '').trim();
+            const withheldRows = Number(body.withheldRows) || 0;
+            let clientStats = {};
+            try {
+                clientStats = body.stats ? JSON.parse(String(body.stats)) : {};
+            } catch (_) {
+                clientStats = {};
+            }
+            if (!clientStats || typeof clientStats !== 'object') clientStats = {};
+
+            if (!csv) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Missing cleaned CSV. Process the Excel in the browser first.'
+                });
+            }
+            if (!reportDateRaw) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Report date is required. This becomes “Updated on” on the NSC dashboard.'
+                });
+            }
+
+            const published = publishedFromCsv(csv);
+            if (!published.length) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Cleaned CSV has no data rows.'
+                });
+            }
+
+            const csvOut = nscToCsv(published);
+            const reportLabel = String(clientStats.today || body.reportDateUsed || reportDateRaw).trim();
+            const stats = {
+                rawRows: Number(clientStats.rawRows) || published.length + withheldRows,
+                publishedRows: published.length,
+                withheldRows,
+                statusCounts: clientStats.statusCounts || {},
+                regionCounts: clientStats.regionCounts || {},
+                today: reportLabel
+            };
+
+            const baseMeta = {
+                uploadedAt: new Date().toISOString(),
+                uploadedBy: uploadUser.Username || uploadUser.username || req.user.Username || 'user',
+                originalName,
+                sheetName,
+                stats,
+                publishedRows: published.length,
+                withheldRows,
+                reportDate: reportLabel,
+                publishMode: 'browser'
+            };
+
+            writeLocalNscBackup_(csvOut, baseMeta);
+
+            let supabaseMeta = null;
+            let supabaseError = null;
+            try {
+                supabaseMeta = await publishNscToSupabase_(published, baseMeta);
+                baseMeta.supabaseUploadId = supabaseMeta && supabaseMeta.supabaseUploadId;
+                baseMeta.source = 'supabase';
+                writeLocalNscBackup_(csvOut, baseMeta);
+            } catch (e) {
+                supabaseError = e.message;
+                console.error('[NSC publish] Supabase publish failed:', e.message);
+                baseMeta.source = 'local';
+                baseMeta.supabaseError = supabaseError;
+                writeLocalNscBackup_(csvOut, baseMeta);
+            }
+
+            console.log(
+                `[NSC publish] ${baseMeta.uploadedBy} published ${baseMeta.publishedRows} rows` +
+                    ` from ${originalName} (supabase=${supabaseMeta ? 'ok' : 'failed'})`
+            );
+
+            const message = supabaseMeta
+                ? `Published ${baseMeta.publishedRows} NSC rows to Supabase. Refresh NSC dashboard to load.`
+                : `Saved ${baseMeta.publishedRows} rows locally, but Supabase publish failed. ` +
+                  `Run scripts/create_mzo_insight_nsc_pending.sql if tables are missing. (${supabaseError})`;
+
+            return res.json({
+                status: 'success',
+                message,
+                meta: baseMeta,
+                supabase: supabaseMeta ? 'ok' : 'failed',
+                supabaseError
+            });
+        } catch (e) {
+            console.error('[NSC publish] Error:', e.message);
+            return res.status(500).json({ status: 'error', message: e.message });
+        }
+    });
+});
+
+// --- Stock dump upload → Supabase + local CACHE_STOCK ---
+const {
+    processStockWorkbook,
+    dashboardRowToDb: stockRowToDb,
+    dbRowsToCsv: stockDbRowsToCsv,
+    DB_KEYS: STOCK_DB_KEYS
+} = require('./lib/stock_pipeline');
+
+const STOCK_CSV_FILE = path.join(NSC_DATA_DIR, 'stock.csv');
+const STOCK_META_FILE = path.join(NSC_DATA_DIR, 'stock_meta.json');
+const STOCK_SHEET_FALLBACK_URL =
+    'https://docs.google.com/spreadsheets/d/e/2PACX-1vSE7jMusI5YFc4fcuHMyWpbqGp1fIcWBNRYh6yieCY8yUyjOgC1ZRWB7flXE0DAVEbHUfG-KlzWCZyf/pub?gid=202809558&single=true&output=csv';
+const STOCK_INSERT_BATCH = 400;
+
+function canUploadStock_(user) {
+    if (!user) return false;
+    if (flagAuthoYes_(user['stock-upload-autho'] != null ? user['stock-upload-autho'] : user.stock_upload_autho)) {
+        return true;
+    }
+    const username = String((user.Username || user.username) || '').trim().toLowerCase();
+    return username === 'dm1';
+}
+
+function readLocalStockMeta_() {
+    try {
+        if (!fs.existsSync(STOCK_META_FILE)) return null;
+        return JSON.parse(fs.readFileSync(STOCK_META_FILE, 'utf8'));
+    } catch (e) {
+        return null;
+    }
+}
+
+function writeLocalStockBackup_(csv, meta) {
+    ensureDataDir_();
+    fs.writeFileSync(STOCK_CSV_FILE, csv, 'utf8');
+    fs.writeFileSync(STOCK_META_FILE, JSON.stringify(meta, null, 2), 'utf8');
+}
+
+function stockMetaFromDb_(row) {
+    if (!row) return null;
+    return {
+        uploadedAt: row.uploaded_at,
+        uploadedBy: row.uploaded_by,
+        originalName: row.original_name,
+        sheetName: row.sheet_name,
+        publishedRows: row.published_rows,
+        reportDate: row.report_date || '',
+        stats: row.stats || { today: row.report_date },
+        supabaseUploadId: row.id,
+        source: 'supabase'
+    };
+}
+
+async function fetchActiveStockMeta_() {
+    const rows = await querySupabase(
+        `stock_upload_meta?is_active=eq.true&select=*&order=id.desc&limit=1`,
+        { schema: PORTAL_USERS_SCHEMA }
+    );
+    return Array.isArray(rows) && rows[0] ? rows[0] : null;
+}
+
+async function fetchStockCsvFromSupabase_() {
+    const active = await fetchActiveStockMeta_();
+    if (!active) return null;
+    const selectCols = ['upload_id', ...STOCK_DB_KEYS].join(',');
+    const pageSize = 1000;
+    let from = 0;
+    const all = [];
+    while (true) {
+        const batch = await querySupabase(
+            `stock_snapshot?upload_id=eq.${active.id}&select=${selectCols}&order=id.asc&limit=${pageSize}&offset=${from}`,
+            { schema: PORTAL_USERS_SCHEMA }
+        );
+        if (!Array.isArray(batch) || !batch.length) break;
+        all.push(...batch);
+        if (batch.length < pageSize) break;
+        from += pageSize;
+        if (from > 500000) break;
+    }
+    if (!all.length) return { csv: null, meta: stockMetaFromDb_(active) };
+    return { csv: stockDbRowsToCsv(all), meta: stockMetaFromDb_(active) };
+}
+
+async function publishStockToSupabase_(publishedRows, metaInput) {
+    try {
+        await querySupabase(`stock_upload_meta?is_active=eq.true`, {
+            schema: PORTAL_USERS_SCHEMA,
+            method: 'PATCH',
+            body: { is_active: false },
+            prefer: 'return=minimal'
+        });
+    } catch (e) {
+        console.warn('[Stock Supabase] deactivate previous:', e.message);
+    }
+
+    const insertedMeta = await querySupabase('stock_upload_meta', {
+        schema: PORTAL_USERS_SCHEMA,
+        method: 'POST',
+        body: {
+            uploaded_by: metaInput.uploadedBy || '',
+            original_name: metaInput.originalName || '',
+            sheet_name: metaInput.sheetName || '',
+            published_rows: publishedRows.length,
+            report_date: metaInput.reportDate || (metaInput.stats && metaInput.stats.today) || '',
+            stats: metaInput.stats || {},
+            is_active: true
+        },
+        prefer: 'return=representation'
+    });
+    const metaRow = Array.isArray(insertedMeta) ? insertedMeta[0] : insertedMeta;
+    if (!metaRow || metaRow.id == null) throw new Error('Supabase did not return stock_upload_meta id.');
+    const uploadId = metaRow.id;
+
+    try {
+        await querySupabase(`stock_snapshot?id=gte.0`, {
+            schema: PORTAL_USERS_SCHEMA,
+            method: 'DELETE',
+            prefer: 'return=minimal'
+        });
+    } catch (e) {
+        console.warn('[Stock Supabase] clear snapshot:', e.message);
+    }
+
+    for (let i = 0; i < publishedRows.length; i += STOCK_INSERT_BATCH) {
+        const chunk = publishedRows.slice(i, i + STOCK_INSERT_BATCH).map((r) => stockRowToDb(r, uploadId));
+        await querySupabase('stock_snapshot', {
+            schema: PORTAL_USERS_SCHEMA,
+            method: 'POST',
+            body: chunk,
+            prefer: 'return=minimal'
+        });
+    }
+    return stockMetaFromDb_(metaRow);
+}
+
+app.get('/api/stock/meta', async (req, res) => {
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    const user = await resolveStockUser_(req);
+    let source = 'google_sheet_fallback';
+    let meta = readLocalStockMeta_();
+    const hasLocal = fs.existsSync(STOCK_CSV_FILE);
+    try {
+        const sb = await fetchActiveStockMeta_();
+        if (sb) {
+            meta = stockMetaFromDb_(sb);
+            source = 'supabase';
+        } else if (hasLocal) source = 'local';
+    } catch (e) {
+        if (hasLocal) source = 'local';
+    }
+    return res.json({
+        status: 'success',
+        canUpload: canUploadStock_(user),
+        isAdmin: String((user && user.role) || '').trim().toLowerCase() === 'admin',
+        hasLocalDataset: hasLocal,
+        meta,
+        source,
+        setupHint:
+            source === 'google_sheet_fallback'
+                ? 'Run scripts/create_mzo_insight_stock_snapshot.sql then upload once.'
+                : null
+    });
+});
+
+app.get('/api/stock/dataset', async (req, res) => {
+    try {
+        try {
+            const fromSb = await fetchStockCsvFromSupabase_();
+            if (fromSb && fromSb.csv) {
+                res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+                res.setHeader('Cache-Control', 'no-store');
+                res.setHeader('X-Stock-Source', 'supabase');
+                return res.send(fromSb.csv);
+            }
+        } catch (e) {
+            console.warn('[Stock dataset] Supabase read failed:', e.message);
+        }
+        if (fs.existsSync(STOCK_CSV_FILE)) {
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-store');
+            res.setHeader('X-Stock-Source', 'local');
+            return res.send(fs.readFileSync(STOCK_CSV_FILE, 'utf8'));
+        }
+        const csv = await fetchSheet(STOCK_SHEET_FALLBACK_URL);
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Stock-Source', 'google_sheet_fallback');
+        return res.send(csv);
+    } catch (err) {
+        console.error('[Stock dataset] Error:', err.message);
+        return res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+app.post('/api/stock/upload', (req, res) => {
+    nscUpload.single('file')(req, res, async (err) => {
+        if (err) return res.status(400).json({ status: 'error', message: err.message });
+        try {
+            if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+            const uploadUser = await resolveStockUser_(req);
+            if (!canUploadStock_(uploadUser)) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: 'Stock upload is not authorised. Ask an admin to enable Stock Upload in User Management.'
+                });
+            }
+            if (!req.file || !req.file.buffer) {
+                return res.status(400).json({ status: 'error', message: 'No file uploaded.' });
+            }
+            const reportDateRaw = String((req.body && req.body.reportDate) || '').trim();
+            if (!reportDateRaw) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Report date is required (shown as stock as-of date).'
+                });
+            }
+            const originalName = req.file.originalname || 'stock_upload.xlsx';
+            const result = processStockWorkbook(req.file.buffer, originalName, { reportDate: reportDateRaw });
+            const baseMeta = {
+                uploadedAt: new Date().toISOString(),
+                uploadedBy: uploadUser.Username || uploadUser.username || 'user',
+                originalName,
+                sheetName: result.sheetName,
+                stats: result.stats,
+                publishedRows: result.published.length,
+                reportDate: result.reportDateUsed || reportDateRaw
+            };
+            writeLocalStockBackup_(result.csv, baseMeta);
+
+            let supabaseMeta = null;
+            let supabaseError = null;
+            try {
+                supabaseMeta = await publishStockToSupabase_(result.published, baseMeta);
+                baseMeta.supabaseUploadId = supabaseMeta && supabaseMeta.supabaseUploadId;
+                baseMeta.source = 'supabase';
+                writeLocalStockBackup_(result.csv, baseMeta);
+            } catch (e) {
+                supabaseError = e.message;
+                console.error('[Stock upload] Supabase publish failed:', e.message);
+                baseMeta.source = 'local';
+                baseMeta.supabaseError = supabaseError;
+                writeLocalStockBackup_(result.csv, baseMeta);
+            }
+
+            return res.json({
+                status: 'success',
+                message: supabaseMeta
+                    ? `Published ${baseMeta.publishedRows} stock rows to Supabase.`
+                    : `Saved ${baseMeta.publishedRows} rows locally; Supabase failed (${supabaseError}). Run create_mzo_insight_stock_snapshot.sql.`,
+                meta: baseMeta,
+                supabase: supabaseMeta ? 'ok' : 'failed',
+                supabaseError
+            });
+        } catch (e) {
+            console.error('[Stock upload] Error:', e.message);
+            return res.status(500).json({ status: 'error', message: e.message });
+        }
+    });
+});
+
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
     app.listen(PORT, () => {
         console.log(`Server is running on http://localhost:${PORT}`);
         console.log('Open your browser and navigate to http://localhost:3000 to use the estimator.');
         console.log('Navigate to http://localhost:3000/admin.html to manage structures.');
-        console.log('NSC upload (dm1): http://localhost:3000/nsc/upload.html');
+        console.log('NSC upload: http://localhost:3000/nsc/upload.html');
+        console.log('Stock upload: http://localhost:3000/stock/upload.html');
     });
 }
 

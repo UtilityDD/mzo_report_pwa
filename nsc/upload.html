@@ -90,7 +90,7 @@
         <ol>
           <li>Select the <strong>data / report date</strong> (as-on date of the Excel). This becomes <strong>Updated on</strong> on the Pending NSC dashboard.</li>
           <li>Choose the raw Malda Zone pending NSC file (<code>.xlsb</code>, <code>.xlsx</code>, or <code>.csv</code>).</li>
-          <li>Click <strong>Upload &amp; Publish</strong> and wait (large files may take up to a minute).</li>
+          <li>Click <strong>Upload &amp; Publish</strong>. The file is cleaned in your browser first (large files stay under the live-server size limit), then only Working/Accepted rows are published.</li>
           <li>Open the NSC dashboard and refresh if needed to see the new data.</li>
         </ol>
         <p class="muted" style="margin:0.6rem 0 0;">Only <strong>Working</strong> and <strong>Accepted</strong> applications are published. Withheld rows are skipped automatically.</p>
@@ -128,6 +128,8 @@
     </div>
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="/nsc/nsc_client_pipeline.js"></script>
   <script>
     const metaBox = document.getElementById('metaBox');
     const msg = document.getElementById('msg');
@@ -165,6 +167,26 @@
     function showMsg(text, ok) {
       msg.className = 'msg ' + (ok ? 'ok' : 'err');
       msg.textContent = text;
+    }
+
+    async function readJsonSafe(res) {
+      const text = await res.text();
+      if (!text) return {};
+      try {
+        return JSON.parse(text);
+      } catch (_) {
+        const trimmed = text.trim();
+        if (/request entity too large/i.test(trimmed)) {
+          throw new Error(
+            'Upload rejected: cleaned data is still too large for the live server (~4.5 MB limit). ' +
+            'Try again or contact admin.'
+          );
+        }
+        throw new Error(
+          'Server returned a non-JSON response (' + res.status + '): ' +
+          trimmed.slice(0, 160)
+        );
+      }
     }
 
     function renderAdminMeta(data) {
@@ -243,33 +265,64 @@
         showMsg('Select the data / report date (Updated on).', false);
         return;
       }
+      if (!window.NSCClientPipeline || typeof NSCClientPipeline.processNscArrayBuffer !== 'function') {
+        showMsg('Upload scripts failed to load. Refresh the page and try again.', false);
+        return;
+      }
+
       uploadBtn.disabled = true;
-      uploadBtn.textContent = 'Processing…';
-      showMsg('Uploading — please wait. Large files may take up to a minute…', true);
+      uploadBtn.textContent = 'Cleaning in browser…';
+      showMsg('Reading Excel in your browser (raw file is not sent to the server)…', true);
+
       try {
+        const buffer = await file.arrayBuffer();
+        const result = NSCClientPipeline.processNscArrayBuffer(buffer, reportDate, file.name);
+        const csvBytes = new TextEncoder().encode(result.csv).length;
+        const maxLive = 4.2 * 1024 * 1024;
+        if (csvBytes > maxLive) {
+          throw new Error(
+            'Cleaned data is ' + (csvBytes / (1024 * 1024)).toFixed(1) +
+            ' MB, which may exceed the live server limit (~4.5 MB). Contact admin.'
+          );
+        }
+
+        uploadBtn.textContent = 'Publishing…';
+        showMsg(
+          'Publishing ' + result.published.length + ' Working/Accepted rows' +
+          ' (skipped ' + result.withheld.length + ' withheld)…',
+          true
+        );
+
         const fd = new FormData();
-        fd.append('file', file);
+        fd.append('csv', new Blob([result.csv], { type: 'text/csv' }), 'nsc_cleaned.csv');
         fd.append('reportDate', reportDate);
-        const res = await fetch('/api/nsc/upload', {
+        fd.append('reportDateUsed', result.reportDateUsed || '');
+        fd.append('originalName', file.name);
+        fd.append('sheetName', result.sheetName || '');
+        fd.append('withheldRows', String(result.withheld.length));
+        fd.append('stats', JSON.stringify(result.stats || {}));
+
+        const res = await fetch('/api/nsc/publish', {
           method: 'POST',
           body: fd,
           credentials: 'same-origin'
         });
-        const data = await res.json();
+        const data = await readJsonSafe(res);
         if (!res.ok || data.status !== 'success') {
-          throw new Error(data.message || ('Upload failed (' + res.status + ')'));
+          throw new Error(data.message || ('Publish failed (' + res.status + ')'));
         }
+
         const s = (data.meta && data.meta.stats) || {};
         const reportLabel = data.meta.reportDate || s.today || reportDate;
-        const published = data.meta.publishedRows || s.publishedRows || '-';
+        const published = data.meta.publishedRows || s.publishedRows || result.published.length;
 
         if (isAdminViewer) {
           showMsg(
             data.message +
             '\nReport date (Updated on): ' + reportLabel +
-            '\nRaw: ' + (s.rawRows || '-') +
+            '\nRaw: ' + (s.rawRows || result.stats.rawRows || '-') +
             ' → Published: ' + published +
-            ' | Withheld skipped: ' + (data.meta.withheldRows || '-') +
+            ' | Withheld skipped: ' + (data.meta.withheldRows || result.withheld.length) +
             '\nSupabase: ' + (data.supabase || '-'),
             data.supabase === 'ok'
           );
