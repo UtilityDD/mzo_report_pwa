@@ -1942,25 +1942,15 @@ async function loadAllotmentRowsCached_(force = false) {
         return { rows: allotListCache_.rows, source: allotListCache_.source || 'cache' };
     }
 
-    // 1) Supabase primary
+    // 1) Supabase is source of truth once reachable (even if empty — do not fall back to Excel)
     try {
         const rows = await fetchAllotmentsFromSupabase_();
-        if (rows && rows.length) {
+        if (Array.isArray(rows)) {
             allotListCache_ = { at: now, rows, source: 'supabase' };
             return { rows, source: 'supabase' };
         }
-        // empty supabase is still valid if table exists
-        if (Array.isArray(rows)) {
-            allotListCache_ = { at: now, rows: rows || [], source: 'supabase' };
-            // fall through to sheet only if empty and we want migration continuity
-            if (rows.length === 0) {
-                /* try legacy below */
-            } else {
-                return { rows, source: 'supabase' };
-            }
-        }
     } catch (err) {
-        console.warn('[stock/allotment] Supabase list failed:', err.message);
+        console.warn('[stock/allotment] Supabase list failed, trying legacy sheet:', err.message);
     }
 
     try {
@@ -2128,8 +2118,20 @@ app.post('/api/stock/allotment', async (req, res) => {
                 invalidateAllotListCache_();
                 return res.json(created);
             } catch (e) {
-                console.warn('[stock/allotment] Supabase create failed, trying Apps Script:', e.message);
-                return await proxyStockAllotment_(payload, res);
+                const missing =
+                    /does not exist|42P01|PGRST205|Could not find the table/i.test(e.message || '');
+                if (missing) {
+                    console.warn('[stock/allotment] Supabase tables missing, trying Apps Script:', e.message);
+                    return await proxyStockAllotment_(payload, res);
+                }
+                console.error('[stock/allotment] Supabase create failed:', e.message);
+                return res.status(500).json({
+                    status: 'error',
+                    error:
+                        'Could not save allotment to Supabase. ' +
+                        (e.message || 'Unknown error') +
+                        ' Run scripts/create_mzo_insight_stock_allotments.sql if needed.'
+                });
             }
         }
 
