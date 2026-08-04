@@ -2274,9 +2274,9 @@ app.post('/api/stock/allotment', async (req, res) => {
                 return res.status(500).json({
                     status: 'error',
                     error:
-                        'Could not save allotment to Supabase. ' +
+                        'Could not save allotment. ' +
                         (e.message || 'Unknown error') +
-                        ' Run scripts/create_mzo_insight_stock_allotments.sql if needed.'
+                        ' Ask an admin to verify stock allotment tables are set up.'
                 });
             }
         }
