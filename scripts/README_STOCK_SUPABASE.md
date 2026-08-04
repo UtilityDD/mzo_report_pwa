@@ -19,6 +19,7 @@ Ensure schema `mzo_insight` is exposed in API settings.
 - Dashboards: `/api/stock/dataset` → DataHub `CACHE_STOCK` (Sheet fallback until removed)
 - Filename: any name; optional `DD-MM-YYYY` in name only pre-fills the report date
 - Size: app accepts up to ~60 MB locally; **Vercel live ~4.5 MB** until browser-publish is added (same as early NSC)
+- **One-time Sheet → DB import:** run `node scripts/generate_stock_snapshot_import_sql.js`, then execute `scripts/import_stock_snapshot.sql` in Supabase SQL Editor
 
 ## Allot Material / View Allotments
 
