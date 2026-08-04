@@ -2409,6 +2409,9 @@ app.get('/api/nsc/meta', async (req, res) => {
         isAdmin: String((user && user.role) || '').trim().toLowerCase() === 'admin',
         hasLocalDataset: hasLocal,
         meta,
+        version: meta
+            ? `${meta.reportDate || ''}|${meta.uploadedAt || ''}|${meta.publishedRows ?? ''}`
+            : null,
         source,
         setupHint:
             source === 'google_sheet_fallback'
@@ -2426,6 +2429,13 @@ app.get('/api/nsc/dataset', async (req, res) => {
                 res.setHeader('Content-Type', 'text/csv; charset=utf-8');
                 res.setHeader('Cache-Control', 'no-store');
                 res.setHeader('X-NSC-Source', 'supabase');
+                if (fromSb.meta) {
+                    if (fromSb.meta.reportDate) res.setHeader('X-NSC-Report-Date', String(fromSb.meta.reportDate));
+                    if (fromSb.meta.uploadedAt) res.setHeader('X-NSC-Uploaded-At', String(fromSb.meta.uploadedAt));
+                    if (fromSb.meta.publishedRows != null) {
+                        res.setHeader('X-NSC-Published-Rows', String(fromSb.meta.publishedRows));
+                    }
+                }
                 return res.send(fromSb.csv);
             }
         } catch (e) {

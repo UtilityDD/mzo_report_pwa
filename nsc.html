@@ -1293,10 +1293,14 @@
         <h2 class="mb-0"><i class="fas fa-tachometer-alt me-2"></i> Pending NSC</h2>
         <div id="reportDateSpan" style="font-size: 0.75rem; color: #ffffff;">Updated on: <span
             id="reportDate">Loading...</span></div>
+        <button type="button" id="nscRefreshDataBtn" class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-1"
+          style="font-size: 0.72rem; padding: 3px 8px;" title="Reload NSC data from server">
+          <i class="fas fa-sync-alt"></i> Refresh
+        </button>
       </div>
       <div class="d-flex align-items-center gap-1 gap-sm-2">
         <span id="maxDateSpan" style="font-size: 0.75rem; color: #ffe600;"></span>
-        <a id="nscUploadLink" href="nsc/upload.html" class="btn btn-outline-warning btn-sm d-none align-items-center gap-1" style="font-size: 0.72rem; padding: 4px 8px;" title="Upload raw NSC Excel (dm1)">
+        <a id="nscUploadLink" href="nsc/upload.html" class="btn btn-outline-warning btn-sm d-none align-items-center gap-1" style="font-size: 0.72rem; padding: 4px 8px;" title="Upload raw NSC Excel">
           <i class="fas fa-file-upload"></i> Upload
         </a>
         <button id="nscPrefConfigBtn" class="btn btn-outline-light btn-sm d-flex align-items-center gap-1" style="font-size: 0.72rem; padding: 4px 8px;" title="Office Preferences">
@@ -1308,7 +1312,48 @@
       </div>
     </div>
 
+    <div id="nscUpdateBanner" class="nsc-update-banner d-none" role="status">
+      <div class="nsc-update-banner__text">
+        <i class="fas fa-bell"></i>
+        <span id="nscUpdateMsg">New NSC data is available.</span>
+      </div>
+      <div class="nsc-update-banner__actions">
+        <button type="button" id="nscUpdateBtn" class="btn btn-sm btn-warning fw-semibold">Load latest</button>
+        <button type="button" id="nscUpdateDismiss" class="btn btn-sm btn-outline-light" title="Dismiss">Dismiss</button>
+      </div>
+    </div>
+
       <style>
+      .nsc-update-banner {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.65rem;
+        margin: -0.35rem 0 0.85rem;
+        padding: 0.65rem 0.9rem;
+        border-radius: 8px;
+        background: linear-gradient(90deg, #92400e 0%, #b45309 55%, #a16207 100%);
+        color: #fffbeb;
+        border: 1px solid rgba(255, 251, 235, 0.25);
+        box-shadow: 0 6px 18px rgba(146, 64, 14, 0.25);
+      }
+      .nsc-update-banner.d-none { display: none !important; }
+      .nsc-update-banner__text {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        font-size: 0.88rem;
+        font-weight: 500;
+      }
+      .nsc-update-banner__actions {
+        display: flex;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+      }
+      #nscRefreshDataBtn.is-spinning i { animation: nsc-spin 0.8s linear infinite; }
+      @keyframes nsc-spin { to { transform: rotate(360deg); } }
+
       /* Filter Chips Styling */
       .filter-chips-container {
         display: flex;
@@ -4532,21 +4577,172 @@ REASON: ${c.SCN_WITHELD_REASON || 'None'}
     }
 
     // Show upload entry for authorised users (nsc-upload-autho)
-    document.addEventListener('DOMContentLoaded', () => {
-      try {
-        const profile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}');
-        const flag = String(profile['nsc-upload-autho'] || profile.nsc_upload_autho || '').trim().toLowerCase();
-        const username = String(profile.Username || profile.username || '').trim().toLowerCase();
-        const allowed = ['y', 'yes', '1', 'true', 'upload'].includes(flag) || username === 'dm1';
-        if (allowed) {
-          const link = document.getElementById('nscUploadLink');
-          if (link) {
-            link.classList.remove('d-none');
-            link.classList.add('d-inline-flex');
-          }
+    // + detect mid-day NSC uploads without requiring Ctrl+F5
+    (function nscLiveUpdateUi() {
+      const SEEN_KEY = 'mzo_nsc_seen_version';
+      const PENDING_KEY = 'mzo_nsc_pending_refresh';
+      const DISMISS_KEY = 'mzo_nsc_dismissed_version';
+
+      const banner = document.getElementById('nscUpdateBanner');
+      const msgEl = document.getElementById('nscUpdateMsg');
+      const updateBtn = document.getElementById('nscUpdateBtn');
+      const dismissBtn = document.getElementById('nscUpdateDismiss');
+      const refreshBtn = document.getElementById('nscRefreshDataBtn');
+
+      function normalizeDateLabel(v) {
+        const s = String(v || '').trim();
+        if (!s) return '';
+        const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+        const dmy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+        if (dmy) return `${dmy[1].padStart(2, '0')}/${dmy[2].padStart(2, '0')}/${dmy[3]}`;
+        return s;
+      }
+
+      function showBanner(text) {
+        if (!banner) return;
+        if (msgEl) msgEl.textContent = text || 'New NSC data is available.';
+        banner.classList.remove('d-none');
+      }
+
+      function hideBanner() {
+        if (banner) banner.classList.add('d-none');
+      }
+
+      async function loadLatestNsc(opts) {
+        const silentPending = !!(opts && opts.fromPending);
+        if (refreshBtn) {
+          refreshBtn.disabled = true;
+          refreshBtn.classList.add('is-spinning');
         }
-      } catch (_) {}
-    });
+        if (updateBtn) updateBtn.disabled = true;
+        try {
+          if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.refresh === 'function') {
+            await mzoDataHub.refresh('CACHE_NSC');
+          } else if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.retryDataset === 'function') {
+            if (typeof mzoDataHub.delete === 'function') await mzoDataHub.delete('CACHE_NSC');
+            await mzoDataHub.retryDataset('CACHE_NSC');
+          }
+          try { localStorage.removeItem(PENDING_KEY); } catch (_) {}
+          try { localStorage.removeItem(DISMISS_KEY); } catch (_) {}
+          // Full reload resets filters/charts cleanly after IndexedDB refresh
+          window.location.reload();
+        } catch (e) {
+          if (!silentPending) {
+            alert('Failed to refresh NSC data: ' + (e.message || e));
+          }
+          if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.classList.remove('is-spinning');
+          }
+          if (updateBtn) updateBtn.disabled = false;
+        }
+      }
+
+      async function checkForNscUpdate() {
+        try {
+          const res = await fetch('/api/nsc/meta', { credentials: 'same-origin' });
+          if (res.status === 401 || !res.ok) return;
+          const data = await res.json();
+          if (!data || !data.version || !data.meta) return;
+
+          const shownRaw = String(document.getElementById('reportDate')?.textContent || '').trim();
+          if (!shownRaw || /^loading/i.test(shownRaw)) return;
+
+          const serverVersion = String(data.version);
+          const seen = localStorage.getItem(SEEN_KEY) || '';
+          const dismissed = localStorage.getItem(DISMISS_KEY) || '';
+          const shown = normalizeDateLabel(shownRaw);
+          const serverReport = normalizeDateLabel(data.meta.reportDate || (data.meta.stats && data.meta.stats.today));
+
+          // Cache already matches server — remember version, no banner
+          if (shown && serverReport && shown === serverReport) {
+            localStorage.setItem(SEEN_KEY, serverVersion);
+            hideBanner();
+            return;
+          }
+
+          if (seen === serverVersion) {
+            hideBanner();
+            return;
+          }
+
+          if (dismissed === serverVersion) return;
+
+          const when = serverReport || data.meta.reportDate || 'new dump';
+          const rows = data.meta.publishedRows != null ? ` (${data.meta.publishedRows} apps)` : '';
+          showBanner(`New NSC update available — Updated on ${when}${rows}. Load it without Ctrl+F5.`);
+        } catch (e) {
+          console.warn('[NSC update check]', e.message || e);
+        }
+      }
+
+      function markSeenFromCurrent() {
+        // Best-effort: after load, sync seen version if meta matches displayed date
+        checkForNscUpdate();
+      }
+
+      document.addEventListener('DOMContentLoaded', () => {
+        try {
+          const profile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}');
+          const flag = String(profile['nsc-upload-autho'] || profile.nsc_upload_autho || '').trim().toLowerCase();
+          const username = String(profile.Username || profile.username || '').trim().toLowerCase();
+          const allowed = ['y', 'yes', '1', 'true', 'upload'].includes(flag) || username === 'dm1';
+          if (allowed) {
+            const link = document.getElementById('nscUploadLink');
+            if (link) {
+              link.classList.remove('d-none');
+              link.classList.add('d-inline-flex');
+            }
+          }
+        } catch (_) {}
+
+        // After an upload on this device, auto-refresh once
+        try {
+          if (localStorage.getItem(PENDING_KEY) === '1') {
+            loadLatestNsc({ fromPending: true });
+            return;
+          }
+        } catch (_) {}
+
+        if (refreshBtn) {
+          refreshBtn.addEventListener('click', () => loadLatestNsc());
+        }
+        if (updateBtn) {
+          updateBtn.addEventListener('click', () => loadLatestNsc());
+        }
+        if (dismissBtn) {
+          dismissBtn.addEventListener('click', async () => {
+            try {
+              const res = await fetch('/api/nsc/meta', { credentials: 'same-origin' });
+              if (res.ok) {
+                const data = await res.json();
+                if (data.version) localStorage.setItem(DISMISS_KEY, data.version);
+              }
+            } catch (_) {}
+            hideBanner();
+          });
+        }
+
+        // Check after dashboard has painted report date
+        setTimeout(markSeenFromCurrent, 2500);
+        setInterval(checkForNscUpdate, 90 * 1000);
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') checkForNscUpdate();
+        });
+        window.addEventListener('focus', () => checkForNscUpdate());
+
+        try {
+          const ch = new BroadcastChannel('mzo-nsc');
+          ch.onmessage = (ev) => {
+            if (ev && ev.data && ev.data.type === 'nsc-uploaded') {
+              const when = ev.data.reportDate ? ` (Updated on ${ev.data.reportDate})` : '';
+              showBanner(`New NSC data was just published${when}. Load latest to update this page.`);
+            }
+          };
+        } catch (_) {}
+      });
+    })();
   </script>
 
 </body>

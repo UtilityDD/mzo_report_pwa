@@ -127,6 +127,30 @@ class DataHub {
         });
     }
 
+    // Remove one dataset from IndexedDB / memory cache
+    async delete(key) {
+        await this.initPromise;
+        this.syncStatus[key] = 'idle';
+        delete this.syncPromises[key];
+        if (this.useMemoryFallback) {
+            delete this.memoryCache[key];
+            return;
+        }
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.delete(key);
+            request.onsuccess = () => resolve();
+            request.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    // Force re-download of one dataset (used when NSC/stock dumps are updated mid-day)
+    async refresh(key) {
+        await this.delete(key);
+        return this.retryDataset(key);
+    }
+
     // Clear all cached data
     async clear() {
         await this.initPromise;
