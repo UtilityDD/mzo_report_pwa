@@ -17,6 +17,8 @@ Ensure schema `mzo_insight` is exposed in API settings.
   - **Local/Central** is hardcoded by material code in `lib/stock_material_category.js` (+ `stock/stock_material_category.js`); regenerate with `node scripts/generate_stock_material_category.js` if the master list changes
 - If `stock_snapshot` already exists without category, also run [`alter_stock_snapshot_add_category.sql`](alter_stock_snapshot_add_category.sql)
 - Dashboards: `/api/stock/dataset` → DataHub `CACHE_STOCK` (Sheet fallback until removed)
+- **One-time Sheet → DB migrate:** `node scripts/migrate_stock_sheet_to_supabase.js`
+  - also writes `scripts/import_stock_snapshot.sql` for manual SQL Editor import
 - Filename: any name; optional `DD-MM-YYYY` in name only pre-fills the report date
 - Size: app accepts up to ~60 MB locally; **Vercel live ~4.5 MB** until browser-publish is added (same as early NSC)
 - **One-time Sheet → DB import:** run `node scripts/generate_stock_snapshot_import_sql.js`, then execute `scripts/import_stock_snapshot.sql` in Supabase SQL Editor
