@@ -195,6 +195,7 @@
         const count = opts && opts.count != null ? opts.count : allRows.length;
         const cached = !!(opts && opts.cached);
         const loading = !!(opts && opts.loading);
+        const source = (opts && opts.source) || clientListCache.source || '';
         if (loading) {
             el.innerHTML = '<strong>Loading…</strong> <span class="allot-view-load-muted">Fetching allotment lines</span>';
             return;
@@ -203,11 +204,18 @@
             el.textContent = 'Not loaded yet';
             return;
         }
-        const src = cached ? ' · cached' : '';
+        const srcLabel =
+            source === 'supabase'
+                ? ' · Supabase'
+                : source === 'csv' || source === 'apps-script-csv' || source === 'apps-script-json'
+                  ? ' · Sheet (legacy)'
+                  : cached
+                    ? ' · cached'
+                    : '';
         el.innerHTML =
             `<strong>${count}</strong> line${count === 1 ? '' : 's'} · ` +
             `Updated <strong>${escapeHtml(formatLoadClock(at))}</strong>` +
-            `<span class="allot-view-load-muted">${escapeHtml(src)}</span>`;
+            `<span class="allot-view-load-muted">${escapeHtml(srcLabel)}</span>`;
     }
 
     function summaryDate(rows) {
@@ -526,7 +534,7 @@
             selectedNo = '';
             document.getElementById('allot-view-detail').hidden = true;
             renderAll();
-            updateLoadTag({ at: clientListCache.at, count: allRows.length, cached: true });
+            updateLoadTag({ at: clientListCache.at, count: allRows.length, cached: true, source: clientListCache.source });
             showStatus('');
             return;
         }
@@ -554,17 +562,26 @@
                 throw new Error(msg);
             }
             allRows = Array.isArray(data.rows) ? data.rows : [];
-            clientListCache = { at: Date.now(), rows: allRows };
+            clientListCache = { at: Date.now(), rows: allRows, source: data.source || '' };
             window.__allotViewNeedsRefresh = false;
             fillDivisionFilter(allRows);
             selectedNo = '';
             document.getElementById('allot-view-detail').hidden = true;
             renderAll();
-            updateLoadTag({ at: clientListCache.at, count: allRows.length, cached: false });
-            showStatus(
-                allRows.length ? '' : 'No allotments saved yet.',
-                allRows.length ? 'ok' : 'info'
-            );
+            updateLoadTag({
+                at: clientListCache.at,
+                count: allRows.length,
+                cached: false,
+                source: clientListCache.source
+            });
+            if (!allRows.length && data.source === 'supabase') {
+                showStatus(
+                    'No allotments in Supabase yet. New Confirm & Upload orders will appear here. Old Sheet orders are not auto-imported.',
+                    'info'
+                );
+            } else {
+                showStatus(allRows.length ? '' : 'No allotments saved yet.', allRows.length ? 'ok' : 'info');
+            }
         } catch (err) {
             console.error(err);
             allRows = [];
@@ -575,7 +592,7 @@
                 ? ' Redeploy Apps Script with the latest allotment_code.gs (New version).'
                 : /404|API not found/i.test(err.message || '')
                   ? ' Restart/redeploy the Node server so /api/stock/allotment is available.'
-                  : ' If this persists, redeploy Apps Script with the latest allotment_code.gs.';
+                  : '';
             showStatus((err.message || 'Failed to load allotments.') + tip, 'error');
         } finally {
             setRefreshBusy(false);
