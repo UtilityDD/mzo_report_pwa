@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS mzo_insight.stock_snapshot (
   stock_in_transit text,
   transit_and_transfer text,
   store text,
+  category text,
   date text
 );
 
