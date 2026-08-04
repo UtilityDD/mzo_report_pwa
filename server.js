@@ -2246,10 +2246,21 @@ function readLocalNscMeta_() {
     }
 }
 
+/** Local CSV backup for localhost only — Vercel /var/task is read-only (EROFS). */
 function writeLocalNscBackup_(csv, meta) {
-    ensureDataDir_();
-    fs.writeFileSync(NSC_CSV_FILE, csv, 'utf8');
-    fs.writeFileSync(NSC_META_FILE, JSON.stringify(meta, null, 2), 'utf8');
+    try {
+        ensureDataDir_();
+        fs.writeFileSync(NSC_CSV_FILE, csv, 'utf8');
+        fs.writeFileSync(NSC_META_FILE, JSON.stringify(meta, null, 2), 'utf8');
+        return true;
+    } catch (e) {
+        if (e && (e.code === 'EROFS' || e.code === 'EACCES' || /read-only/i.test(e.message))) {
+            console.warn('[NSC] Skipping local backup (read-only FS):', e.message);
+            return false;
+        }
+        console.warn('[NSC] Local backup failed:', e.message);
+        return false;
+    }
 }
 
 function metaFromDbRow_(row) {
@@ -2692,10 +2703,21 @@ function readLocalStockMeta_() {
     }
 }
 
+/** Local CSV backup for localhost only — Vercel /var/task is read-only (EROFS). */
 function writeLocalStockBackup_(csv, meta) {
-    ensureDataDir_();
-    fs.writeFileSync(STOCK_CSV_FILE, csv, 'utf8');
-    fs.writeFileSync(STOCK_META_FILE, JSON.stringify(meta, null, 2), 'utf8');
+    try {
+        ensureDataDir_();
+        fs.writeFileSync(STOCK_CSV_FILE, csv, 'utf8');
+        fs.writeFileSync(STOCK_META_FILE, JSON.stringify(meta, null, 2), 'utf8');
+        return true;
+    } catch (e) {
+        if (e && (e.code === 'EROFS' || e.code === 'EACCES' || /read-only/i.test(e.message))) {
+            console.warn('[Stock] Skipping local backup (read-only FS):', e.message);
+            return false;
+        }
+        console.warn('[Stock] Local backup failed:', e.message);
+        return false;
+    }
 }
 
 function stockMetaFromDb_(row) {
