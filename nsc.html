@@ -4599,14 +4599,37 @@ REASON: ${c.SCN_WITHELD_REASON || 'None'}
         return s;
       }
 
+      function bannerText(reportDate) {
+        const when = normalizeDateLabel(reportDate) || String(reportDate || '').trim();
+        return when
+          ? `New NSC update available — Updated on ${when}.`
+          : 'New NSC update available.';
+      }
+
       function showBanner(text) {
         if (!banner) return;
-        if (msgEl) msgEl.textContent = text || 'New NSC data is available.';
+        if (msgEl) msgEl.textContent = text || 'New NSC update available.';
         banner.classList.remove('d-none');
       }
 
       function hideBanner() {
         if (banner) banner.classList.add('d-none');
+      }
+
+      async function fetchNscMeta() {
+        const res = await fetch('/api/nsc/meta', { credentials: 'same-origin' });
+        if (res.status === 401 || !res.ok) return null;
+        const data = await res.json();
+        if (!data || data.status === 'error') return null;
+        return data;
+      }
+
+      function markVersionSeen(version) {
+        if (!version) return;
+        try {
+          localStorage.setItem(SEEN_KEY, String(version));
+          localStorage.removeItem(DISMISS_KEY);
+        } catch (_) {}
       }
 
       async function loadLatestNsc(opts) {
@@ -4617,6 +4640,13 @@ REASON: ${c.SCN_WITHELD_REASON || 'None'}
         }
         if (updateBtn) updateBtn.disabled = true;
         try {
+          // Mark current server version as seen BEFORE reload so the banner
+          // does not reappear after a successful refresh.
+          try {
+            const metaData = await fetchNscMeta();
+            if (metaData && metaData.version) markVersionSeen(metaData.version);
+          } catch (_) {}
+
           if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.refresh === 'function') {
             await mzoDataHub.refresh('CACHE_NSC');
           } else if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.retryDataset === 'function') {
@@ -4624,8 +4654,7 @@ REASON: ${c.SCN_WITHELD_REASON || 'None'}
             await mzoDataHub.retryDataset('CACHE_NSC');
           }
           try { localStorage.removeItem(PENDING_KEY); } catch (_) {}
-          try { localStorage.removeItem(DISMISS_KEY); } catch (_) {}
-          // Full reload resets filters/charts cleanly after IndexedDB refresh
+          hideBanner();
           window.location.reload();
         } catch (e) {
           if (!silentPending) {
@@ -4641,45 +4670,37 @@ REASON: ${c.SCN_WITHELD_REASON || 'None'}
 
       async function checkForNscUpdate() {
         try {
-          const res = await fetch('/api/nsc/meta', { credentials: 'same-origin' });
-          if (res.status === 401 || !res.ok) return;
-          const data = await res.json();
+          const data = await fetchNscMeta();
           if (!data || !data.version || !data.meta) return;
-
-          const shownRaw = String(document.getElementById('reportDate')?.textContent || '').trim();
-          if (!shownRaw || /^loading/i.test(shownRaw)) return;
 
           const serverVersion = String(data.version);
           const seen = localStorage.getItem(SEEN_KEY) || '';
           const dismissed = localStorage.getItem(DISMISS_KEY) || '';
+          const serverReport = normalizeDateLabel(
+            data.meta.reportDate || (data.meta.stats && data.meta.stats.today) || ''
+          );
+
+          // Already refreshed (or dismissed) this exact publish — stay quiet
+          if (seen === serverVersion || dismissed === serverVersion) {
+            hideBanner();
+            return;
+          }
+
+          const shownRaw = String(document.getElementById('reportDate')?.textContent || '').trim();
+          if (!shownRaw || /^loading/i.test(shownRaw)) return;
           const shown = normalizeDateLabel(shownRaw);
-          const serverReport = normalizeDateLabel(data.meta.reportDate || (data.meta.stats && data.meta.stats.today));
 
-          // Cache already matches server — remember version, no banner
+          // On-screen data already matches this publish — acknowledge quietly
           if (shown && serverReport && shown === serverReport) {
-            localStorage.setItem(SEEN_KEY, serverVersion);
+            markVersionSeen(serverVersion);
             hideBanner();
             return;
           }
 
-          if (seen === serverVersion) {
-            hideBanner();
-            return;
-          }
-
-          if (dismissed === serverVersion) return;
-
-          const when = serverReport || data.meta.reportDate || 'new dump';
-          const rows = data.meta.publishedRows != null ? ` (${data.meta.publishedRows} apps)` : '';
-          showBanner(`New NSC update available — Updated on ${when}${rows}. Load it without Ctrl+F5.`);
+          showBanner(bannerText(serverReport || data.meta.reportDate));
         } catch (e) {
           console.warn('[NSC update check]', e.message || e);
         }
-      }
-
-      function markSeenFromCurrent() {
-        // Best-effort: after load, sync seen version if meta matches displayed date
-        checkForNscUpdate();
       }
 
       document.addEventListener('DOMContentLoaded', () => {
@@ -4714,18 +4735,18 @@ REASON: ${c.SCN_WITHELD_REASON || 'None'}
         if (dismissBtn) {
           dismissBtn.addEventListener('click', async () => {
             try {
-              const res = await fetch('/api/nsc/meta', { credentials: 'same-origin' });
-              if (res.ok) {
-                const data = await res.json();
-                if (data.version) localStorage.setItem(DISMISS_KEY, data.version);
+              const data = await fetchNscMeta();
+              if (data && data.version) {
+                localStorage.setItem(DISMISS_KEY, String(data.version));
+                // Treat dismiss as "seen" so polling does not bring it back
+                markVersionSeen(data.version);
               }
             } catch (_) {}
             hideBanner();
           });
         }
 
-        // Check after dashboard has painted report date
-        setTimeout(markSeenFromCurrent, 2500);
+        setTimeout(checkForNscUpdate, 2500);
         setInterval(checkForNscUpdate, 90 * 1000);
         document.addEventListener('visibilitychange', () => {
           if (document.visibilityState === 'visible') checkForNscUpdate();
@@ -4736,8 +4757,10 @@ REASON: ${c.SCN_WITHELD_REASON || 'None'}
           const ch = new BroadcastChannel('mzo-nsc');
           ch.onmessage = (ev) => {
             if (ev && ev.data && ev.data.type === 'nsc-uploaded') {
-              const when = ev.data.reportDate ? ` (Updated on ${ev.data.reportDate})` : '';
-              showBanner(`New NSC data was just published${when}. Load latest to update this page.`);
+              const seen = localStorage.getItem(SEEN_KEY) || '';
+              // Ignore if this tab already refreshed to latest
+              if (ev.data.version && seen === String(ev.data.version)) return;
+              showBanner(bannerText(ev.data.reportDate));
             }
           };
         } catch (_) {}
