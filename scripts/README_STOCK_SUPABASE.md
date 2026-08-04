@@ -12,7 +12,13 @@ Ensure schema `mzo_insight` is exposed in API settings.
 
 - Upload: `/stock/upload.html` (users with **Stock Raw Upload = Yes**)
 - Flow: raw SAP Excel → clean → `stock_snapshot` + local `data/stock.csv`
+- Workbook layout:
+  - **Sheet1** — SAP stock rows (Material + Material Group required)
+  - **Cat** — `Mat Code` + `Category` (`Local` / `Central`); joined onto each published row
+- If `stock_snapshot` already exists without category, also run [`alter_stock_snapshot_add_category.sql`](alter_stock_snapshot_add_category.sql)
 - Dashboards: `/api/stock/dataset` → DataHub `CACHE_STOCK` (Sheet fallback until removed)
+- Filename: any name; optional `DD-MM-YYYY` in name only pre-fills the report date
+- Size: app accepts up to ~60 MB locally; **Vercel live ~4.5 MB** until browser-publish is added (same as early NSC)
 
 ## Allot Material / View Allotments
 

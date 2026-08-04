@@ -663,7 +663,9 @@ function handleResults(data) {
 
         const matCode = String(item.Material || '').trim();
         const meta = materialMetadata[matCode] || {};
-        const category = String(meta.category || 'UNKNOWN').toUpperCase();
+        // Prefer Category baked in from upload Cat sheet; fall back to Google metadata
+        const fromRow = String(item.Category || '').trim().toUpperCase();
+        const category = (fromRow || String(meta.category || 'UNKNOWN')).toUpperCase();
 
         return {
             ...item,
