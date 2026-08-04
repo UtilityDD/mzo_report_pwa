@@ -24,7 +24,9 @@ Ensure schema `mzo_insight` is exposed in API settings.
 
 - **Create** → Supabase `stock_allotments` (Apps Script fallback if Supabase create fails)
 - **View** → Supabase `stock_allotments` (Sheet only if Supabase unreachable)
-- **Migrate:** open View Allotments → **Migrate from Sheet** (stock-allot users). Idempotent — skips allotment numbers already in Supabase and advances `stock_allot_seq`.
+- **Migrate (UI):** View Allotments → **Migrate from Sheet**
+- **Migrate (SQL):** run generated [`import_stock_allotments.sql`](import_stock_allotments.sql) in Supabase SQL Editor  
+  Regenerate anytime: `node scripts/generate_allotment_import_sql.js`
 - Auth create: **Stock Allot Create = Yes** (legacy usernames zm / aritra / dm1 still work)
 
 ## Admin UI
