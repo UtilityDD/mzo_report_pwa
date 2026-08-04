@@ -703,6 +703,45 @@
         document.getElementById('allot-view-close-btn')?.addEventListener('click', closePanel);
         document.getElementById('allot-view-done-btn')?.addEventListener('click', closePanel);
         document.getElementById('allot-view-refresh-btn')?.addEventListener('click', () => loadRows({ force: true }));
+        document.getElementById('allot-view-migrate-btn')?.addEventListener('click', async () => {
+            if (
+                !window.confirm(
+                    'Import existing Sheet allotments into Supabase?\n\n' +
+                        'Safe to run more than once — numbers already in Supabase are skipped.\n' +
+                        'This may take up to a minute.'
+                )
+            ) {
+                return;
+            }
+            const btn = document.getElementById('allot-view-migrate-btn');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Migrating…';
+            }
+            showStatus('Migrating allotments from Sheet → Supabase…', 'info');
+            try {
+                const res = await fetch('/api/stock/allotment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ action: 'migrateFromSheet' })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || data.status === 'error' || data.error) {
+                    throw new Error(data.error || data.message || `Migrate failed (${res.status})`);
+                }
+                showStatus(data.message || `Imported ${data.imported || 0} line(s).`, 'ok');
+                await loadRows({ force: true });
+            } catch (err) {
+                console.error(err);
+                showStatus(err.message || 'Migration failed.', 'error');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = 'Migrate from Sheet';
+                }
+            }
+        });
         document.getElementById('allot-view-pdf-btn')?.addEventListener('click', downloadDetailPdf);
         // No backdrop-dismiss on view either while debugging create panel conflict
 
