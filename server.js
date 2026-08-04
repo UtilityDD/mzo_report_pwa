@@ -1936,6 +1936,152 @@ async function createAllotmentInSupabase_(payload) {
     };
 }
 
+async function fetchLegacyAllotmentRowsOnly_() {
+    try {
+        const text = await fetchAllotmentCsvText_();
+        const rows = parseAllotmentCsv_(text);
+        if (Array.isArray(rows) && rows.length) {
+            return {
+                rows,
+                source: process.env.STOCK_ALLOTMENTS_CSV_URL ? 'csv' : 'apps-script-csv'
+            };
+        }
+    } catch (err) {
+        console.warn('[stock/allotment] Legacy CSV fetch failed:', err.message);
+    }
+
+    const scriptUrl = stockAllotmentScriptUrl_();
+    const upstream = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'listAllotments' }),
+        redirect: 'follow'
+    });
+    const text = await upstream.text();
+    let data;
+    try {
+        data = JSON.parse(text);
+    } catch (e) {
+        throw new Error('Legacy Apps Script returned non-JSON while listing allotments for migration.');
+    }
+    if (!upstream.ok || data.error || data.status === 'error') {
+        throw new Error(data.error || data.message || 'Failed to list legacy allotments');
+    }
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    return { rows, source: 'apps-script-json' };
+}
+
+function parseAllotmentSeqFromNo_(allotmentNo) {
+    const m = String(allotmentNo || '').match(/MZO\/ALT\/(\d{4})\/(\d+)/i);
+    if (!m) return null;
+    return { year: parseInt(m[1], 10), seq: parseInt(m[2], 10) };
+}
+
+async function syncAllotmentSeqFromRows_(rows) {
+    const maxByYear = {};
+    (rows || []).forEach((r) => {
+        const parsed = parseAllotmentSeqFromNo_(r.allotment_no || r.AllotmentNo);
+        if (!parsed) return;
+        maxByYear[parsed.year] = Math.max(maxByYear[parsed.year] || 0, parsed.seq);
+    });
+    for (const [yearStr, maxSeq] of Object.entries(maxByYear)) {
+        const year = Number(yearStr);
+        const next = maxSeq + 1;
+        const existing = await querySupabase(`stock_allot_seq?year=eq.${year}&select=*`, {
+            schema: PORTAL_USERS_SCHEMA
+        });
+        if (Array.isArray(existing) && existing[0]) {
+            const cur = Number(existing[0].next_seq) || 1;
+            if (next > cur) {
+                await querySupabase(`stock_allot_seq?year=eq.${year}`, {
+                    schema: PORTAL_USERS_SCHEMA,
+                    method: 'PATCH',
+                    body: { next_seq: next },
+                    prefer: 'return=minimal'
+                });
+            }
+        } else {
+            await querySupabase('stock_allot_seq', {
+                schema: PORTAL_USERS_SCHEMA,
+                method: 'POST',
+                body: { year, next_seq: next },
+                prefer: 'return=minimal'
+            });
+        }
+    }
+    return maxByYear;
+}
+
+/**
+ * One-time / idempotent import of Sheet/Apps Script allotments into Supabase.
+ * Skips allotment numbers that already exist in stock_allotments.
+ */
+async function migrateAllotmentsFromLegacy_() {
+    const legacy = await fetchLegacyAllotmentRowsOnly_();
+    const legacyRows = legacy.rows || [];
+    if (!legacyRows.length) {
+        return {
+            status: 'success',
+            imported: 0,
+            skippedExisting: 0,
+            legacyTotal: 0,
+            legacySource: legacy.source,
+            message: 'No legacy allotment rows found to migrate.'
+        };
+    }
+
+    const existing = await fetchAllotmentsFromSupabase_();
+    const existingNos = new Set(
+        (existing || []).map((r) => String(r.AllotmentNo || '').trim()).filter(Boolean)
+    );
+
+    const toInsert = [];
+    let skippedExisting = 0;
+    for (const r of legacyRows) {
+        const no = String(r.AllotmentNo || '').trim();
+        if (!no) continue;
+        if (existingNos.has(no)) {
+            skippedExisting += 1;
+            continue;
+        }
+        const createdBy = String(r.CreatedBy || 'sheet-migration').trim() || 'sheet-migration';
+        let createdAt = String(r.CreatedAt || '').trim();
+        if (!createdAt || Number.isNaN(Date.parse(createdAt))) {
+            createdAt = new Date().toISOString();
+        } else {
+            createdAt = new Date(createdAt).toISOString();
+        }
+        toInsert.push(allotClientToDb_(r, no, createdBy, createdAt));
+    }
+
+    const BATCH = 200;
+    for (let i = 0; i < toInsert.length; i += BATCH) {
+        await querySupabase('stock_allotments', {
+            schema: PORTAL_USERS_SCHEMA,
+            method: 'POST',
+            body: toInsert.slice(i, i + BATCH),
+            prefer: 'return=minimal'
+        });
+    }
+
+    // Keep sequence ahead of both existing + newly imported numbers
+    const seqMap = await syncAllotmentSeqFromRows_([...(existing || []), ...toInsert]);
+    invalidateAllotListCache_();
+
+    return {
+        status: 'success',
+        imported: toInsert.length,
+        skippedExisting,
+        legacyTotal: legacyRows.length,
+        legacySource: legacy.source,
+        seqByYear: seqMap,
+        message:
+            toInsert.length > 0
+                ? `Imported ${toInsert.length} line(s) from ${legacy.source}. Skipped ${skippedExisting} already in Supabase.`
+                : `Nothing new to import. ${skippedExisting} legacy line(s) already exist in Supabase.`
+    };
+}
+
 async function loadAllotmentRowsCached_(force = false) {
     const now = Date.now();
     if (!force && allotListCache_.rows && now - allotListCache_.at < ALLOT_LIST_TTL_MS) {
@@ -2145,6 +2291,20 @@ app.post('/api/stock/allotment', async (req, res) => {
                 count: rows.length,
                 source: loaded.source
             });
+        }
+
+        if (action === 'migrateFromSheet') {
+            if (!(await requireStockAllotmentAccess_(req, res))) return;
+            try {
+                const result = await migrateAllotmentsFromLegacy_();
+                return res.json(result);
+            } catch (e) {
+                console.error('[stock/allotment] migrate failed:', e.message);
+                return res.status(500).json({
+                    status: 'error',
+                    error: e.message || 'Migration failed'
+                });
+            }
         }
 
         if (action === 'getAllotment') {

@@ -23,7 +23,8 @@ Ensure schema `mzo_insight` is exposed in API settings.
 ## Allot Material / View Allotments
 
 - **Create** → Supabase `stock_allotments` (Apps Script fallback if Supabase create fails)
-- **View** → prefers Supabase; if empty, falls back to Sheet/Apps Script CSV
+- **View** → Supabase `stock_allotments` (Sheet only if Supabase unreachable)
+- **Migrate:** open View Allotments → **Migrate from Sheet** (stock-allot users). Idempotent — skips allotment numbers already in Supabase and advances `stock_allot_seq`.
 - Auth create: **Stock Allot Create = Yes** (legacy usernames zm / aritra / dm1 still work)
 
 ## Admin UI
