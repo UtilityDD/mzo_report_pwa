@@ -219,12 +219,24 @@ class DataHub {
         this.syncStatus[key] = 'syncing';
         this.syncPromises[key] = (async () => {
             try {
-                const response = await fetch(dataset.url);
+                const response = await fetch(dataset.url, {
+                    cache: 'no-store',
+                    credentials: 'same-origin'
+                });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 
                 let data;
                 if (dataset.type === 'json') data = await response.json();
                 else data = await response.text();
+
+                // Sanity: CSV datasets should have more than a header line
+                if (dataset.type === 'csv' && typeof data === 'string') {
+                    const lines = data.split(/\r?\n/).filter((l) => l.trim().length);
+                    if (lines.length < 2) {
+                        throw new Error(`Empty or invalid CSV for ${key} (${lines.length} lines)`);
+                    }
+                    console.log(`[DataHub] ${key} fetched ${lines.length - 1} data rows`);
+                }
 
                 await this.set(dataset.key, data);
                 this.syncStatus[key] = 'done';

@@ -4612,12 +4612,32 @@ REASON: ${c.SCN_WITHELD_REASON || 'None'}
             if (metaData && metaData.version) markVersionSeen(metaData.version);
           } catch (_) {}
 
+          // Drop any stale Cache Storage entries (old Google Sheet CSVs, old hubs)
+          try {
+            if ('caches' in window) {
+              const keys = await caches.keys();
+              await Promise.all(keys.map((k) => caches.delete(k)));
+            }
+          } catch (_) {}
+
           if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.refresh === 'function') {
             await mzoDataHub.refresh('CACHE_NSC');
           } else if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.retryDataset === 'function') {
             if (typeof mzoDataHub.delete === 'function') await mzoDataHub.delete('CACHE_NSC');
             await mzoDataHub.retryDataset('CACHE_NSC');
           }
+
+          // Verify refreshed payload size before reload
+          try {
+            const fresh = await mzoDataHub.get('CACHE_NSC');
+            const text = typeof fresh === 'string' ? fresh : '';
+            const n = text.split(/\r?\n/).filter((l) => l.trim().length).length - 1;
+            console.log('[NSC] Refreshed CACHE_NSC rows:', n);
+            if (n > 0 && n < 4000) {
+              console.warn('[NSC] Row count looks low vs expected ~5459. Source may be stale.');
+            }
+          } catch (_) {}
+
           try { localStorage.removeItem(PENDING_KEY); } catch (_) {}
           hideBanner();
           window.location.reload();
