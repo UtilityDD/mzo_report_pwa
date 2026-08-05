@@ -1985,28 +1985,40 @@
       try {
         showLoading(true);
 
+        // Drop older NSC IDB snapshots so a stale 3376-row cache cannot linger
+        try {
+          if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.delete === 'function') {
+            await mzoDataHub.delete('CACHE_NSC');
+            await mzoDataHub.delete('CACHE_NSC_v2');
+          }
+        } catch (_) {}
+
         let data;
         if (typeof mzoDataHub !== 'undefined') {
-          data = await mzoDataHub.get('CACHE_NSC_v2');
+          data = await mzoDataHub.get('CACHE_NSC_v3');
         }
 
         if (!data) {
           console.log("Downloading NSC Data from network...");
-          const res = await fetch(dataUrl);
-          const text = await res.text();
-          const parsed = Papa.parse(text.trim(), {
+          if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.refresh === 'function') {
+            await mzoDataHub.refresh('CACHE_NSC_v3');
+            data = await mzoDataHub.get('CACHE_NSC_v3');
+          }
+          if (!data) {
+            const res = await fetch(dataUrl, { cache: 'no-store', credentials: 'same-origin' });
+            const text = await res.text();
+            if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.set === 'function') {
+              await mzoDataHub.set('CACHE_NSC_v3', text);
+            }
+            data = text;
+          }
+        }
+        if (typeof data === 'string') {
+          const parsed = Papa.parse(data.trim(), {
             header: true,
             skipEmptyLines: true
           });
           data = parsed.data;
-        } else {
-          if (typeof data === 'string') {
-            const parsed = Papa.parse(data.trim(), {
-              header: true,
-              skipEmptyLines: true
-            });
-            data = parsed.data;
-          }
         }
 
         if (!data || !Array.isArray(data)) {
@@ -2026,7 +2038,7 @@
               if (expected > 0 && rawData.length > 0 && rawData.length < expected * 0.95) {
                 window.__nscRowReconcileTried = true;
                 console.warn(`[NSC] Cached rows ${rawData.length} < server ${expected}; refreshing…`);
-                await mzoDataHub.refresh('CACHE_NSC_v2');
+                await mzoDataHub.refresh('CACHE_NSC_v3');
                 window.location.reload();
                 return;
               }
@@ -2048,7 +2060,7 @@
         if (allDates.length) {
           const minD = new Date(Math.min(...allDates));
           const maxD = new Date(Math.max(...allDates));
-          const toISO = (d) => d.toISOString().split('T')[0];
+          const toISO = toLocalISODate;
 
           const startInput = document.getElementById('startDateInput');
           const endInput = document.getElementById('endDateInput');
@@ -2171,7 +2183,7 @@
           }
         });
         document.getElementById('resetDateBtn').addEventListener('click', () => {
-          const toISO = (d) => d.toISOString().split('T')[0];
+          const toISO = toLocalISODate;
           const allDates = rawData.map(d => parseDate(d.COLL_DATE)).filter(d => d.getTime() > 0);
           if (!allDates.length) return;
           const minD = new Date(Math.min(...allDates));
@@ -2313,9 +2325,26 @@
 
 
     function parseDate(dateStr) {
-      if (!dateStr || !dateStr.includes('/')) return new Date(0);
-      const [dd, mm, yyyy] = dateStr.split('/');
-      return new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd));
+      if (!dateStr) return new Date(0);
+      const s = String(dateStr).trim();
+      if (!s.includes('/')) return new Date(0);
+      const parts = s.split('/');
+      if (parts.length < 3) return new Date(0);
+      let dd = parseInt(parts[0], 10);
+      let mm = parseInt(parts[1], 10);
+      let yyyy = parseInt(parts[2], 10);
+      if (!isFinite(dd) || !isFinite(mm) || !isFinite(yyyy)) return new Date(0);
+      // Excel/sheet often emits 2-digit years (e.g. 3/8/26)
+      if (yyyy < 100) yyyy += 2000;
+      return new Date(yyyy, mm - 1, dd);
+    }
+
+    function toLocalISODate(d) {
+      if (!d || !(d instanceof Date) || isNaN(d.getTime())) return '';
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
     }
 
     function formatDuration(days) {
@@ -2371,7 +2400,7 @@
     }
 
     function updateDateRangeFromSlider() {
-      const toISODate = (d) => d.toISOString().split('T')[0];
+      const toISODate = toLocalISODate;
 
       // Get records matching dropdowns and current slider range
       const matchingRecords = rawData.filter(d => {
@@ -4631,10 +4660,10 @@ REASON: ${c.SCN_WITHELD_REASON || 'None'}
           } catch (_) {}
 
           if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.refresh === 'function') {
-            await mzoDataHub.refresh('CACHE_NSC_v2');
+            await mzoDataHub.refresh('CACHE_NSC_v3');
           } else if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.retryDataset === 'function') {
-            if (typeof mzoDataHub.delete === 'function') await mzoDataHub.delete('CACHE_NSC_v2');
-            await mzoDataHub.retryDataset('CACHE_NSC_v2');
+            if (typeof mzoDataHub.delete === 'function') await mzoDataHub.delete('CACHE_NSC_v3');
+            await mzoDataHub.retryDataset('CACHE_NSC_v3');
           }
           try { localStorage.removeItem(PENDING_KEY); } catch (_) {}
           hideBanner();
