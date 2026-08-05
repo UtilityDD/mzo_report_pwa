@@ -9,8 +9,8 @@ const STORE_NAME = 'datasets';
 const DATASETS = [
     { key: 'CACHE_SAFETY', label: 'Safety Inspection', url: 'data/safety_inspection.json', type: 'json' },
     { key: 'CACHE_DOCKET', label: 'Docket Calls', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTT56PULgjKw_-wu8lmMWNE6SC1KBDyAKxeHaMloZJWUQ9HQsJoqosYF33DrQK3NX9Bvfn0mjfx-dkP/pub?gid=1059428699&single=true&output=csv', type: 'csv' },
-    // Prefers uploaded dataset via /api/nsc/dataset (Supabase); key bumped to invalidate stale IDB
-    { key: 'CACHE_NSC_v2', label: 'NSC Data', url: '/api/nsc/dataset', type: 'csv' },
+    // Prefers uploaded dataset via /api/nsc/dataset (Supabase); key bumped when old IDB snapshots go stale
+    { key: 'CACHE_NSC_v3', label: 'NSC Data', url: '/api/nsc/dataset', type: 'csv' },
     { key: 'CACHE_LOAD_EXT', label: 'Load Extension', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQP_B-Zl5XhnYkmJiDXKB7B8ksrRRezuLrRqTzEPz4lEw_yDcpGOTnmm0oI8dW9apwuHg9yGqaAqjDS/pub?gid=0&single=true&output=csv', type: 'csv' },
     { key: 'CACHE_COLLECTION', label: 'Collection Report', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ2S20QZ57pQpdawzKFHAIqD_OpCNmbmMbYlttluLVA0JZpVK405pS0-2ZIqm-X9jAA8ZB1XwF2serr/pub?gid=1977250749&single=true&output=csv', type: 'csv' },
     { key: 'CACHE_LOSS', label: 'Loss Report', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSYyqn0urGdbqXarhELRbSCeRvgUCSHID_1Z4E_kptBTR5u69R0HHX0Jk23n6KseriNct2q9XwXu04E/pub?output=csv', type: 'csv' },
@@ -219,12 +219,36 @@ class DataHub {
         this.syncStatus[key] = 'syncing';
         this.syncPromises[key] = (async () => {
             try {
-                const response = await fetch(dataset.url);
+                const response = await fetch(dataset.url, {
+                    cache: 'no-store',
+                    credentials: 'same-origin'
+                });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                
+
                 let data;
                 if (dataset.type === 'json') data = await response.json();
                 else data = await response.text();
+
+                // NSC: refuse to cache a truncated CSV (stale sheet / partial response)
+                if (dataset.key.startsWith('CACHE_NSC') && typeof data === 'string') {
+                    const lines = data.split(/\r?\n/).filter((l) => l.trim().length);
+                    const rowCount = Math.max(0, lines.length - 1);
+                    const expected = Number(
+                        response.headers.get('X-NSC-Published-Rows') ||
+                        response.headers.get('X-NSC-Row-Count') ||
+                        0
+                    );
+                    console.log(
+                        `[DataHub] ${dataset.key} rows=${rowCount}` +
+                        (expected ? ` expected=${expected}` : '') +
+                        ` source=${response.headers.get('X-NSC-Source') || '?'}`
+                    );
+                    if (expected > 0 && rowCount < expected * 0.95) {
+                        throw new Error(
+                            `NSC incomplete: got ${rowCount} rows, server has ${expected}`
+                        );
+                    }
+                }
 
                 await this.set(dataset.key, data);
                 this.syncStatus[key] = 'done';
