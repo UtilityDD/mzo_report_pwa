@@ -2450,9 +2450,27 @@ async function fetchActiveNscMetaFromSupabase_() {
     return rows[0];
 }
 
+/** In-memory CSV cache for serverless warm invokes (avoids re-paging Supabase every hit) */
+let nscDatasetMemCache_ = { uploadId: null, csv: null, meta: null, rowCount: 0, at: 0 };
+const NSC_DATASET_MEM_TTL_MS = 5 * 60 * 1000;
+
 async function fetchNscCsvFromSupabase_() {
     const active = await fetchActiveNscMetaFromSupabase_();
     if (!active) return null;
+
+    const expected = Number(active.published_rows) || 0;
+    if (
+        nscDatasetMemCache_.uploadId === active.id &&
+        nscDatasetMemCache_.csv &&
+        Date.now() - nscDatasetMemCache_.at < NSC_DATASET_MEM_TTL_MS &&
+        (!expected || nscDatasetMemCache_.rowCount === expected)
+    ) {
+        return {
+            csv: nscDatasetMemCache_.csv,
+            meta: nscDatasetMemCache_.meta,
+            rowCount: nscDatasetMemCache_.rowCount
+        };
+    }
 
     const selectCols = ['upload_id', ...DB_KEYS].join(',');
     const pageSize = 1000;
@@ -2472,11 +2490,23 @@ async function fetchNscCsvFromSupabase_() {
     }
 
     if (!all.length) return { csv: null, meta: metaFromDbRow_(active), rowCount: 0 };
-    return {
-        csv: dbRowsToCsv(all),
-        meta: metaFromDbRow_(active),
-        rowCount: all.length
+
+    if (expected && all.length !== expected) {
+        console.warn(
+            `[NSC dataset] Row mismatch vs meta: fetched=${all.length} published_rows=${expected}`
+        );
+    }
+
+    const csv = dbRowsToCsv(all);
+    const meta = metaFromDbRow_(active);
+    nscDatasetMemCache_ = {
+        uploadId: active.id,
+        csv,
+        meta,
+        rowCount: all.length,
+        at: Date.now()
     };
+    return { csv, meta, rowCount: all.length };
 }
 
 async function publishNscToSupabase_(publishedRows, metaInput) {
@@ -2538,7 +2568,12 @@ async function publishNscToSupabase_(publishedRows, metaInput) {
         });
     }
 
+    invalidateNscDatasetMemCache_();
     return metaFromDbRow_(metaRow);
+}
+
+function invalidateNscDatasetMemCache_() {
+    nscDatasetMemCache_ = { uploadId: null, csv: null, meta: null, rowCount: 0, at: 0 };
 }
 
 app.get('/api/nsc/meta', async (req, res) => {
@@ -2595,6 +2630,7 @@ app.get('/api/nsc/dataset', async (req, res) => {
                 res.setHeader('Content-Type', 'text/csv; charset=utf-8');
                 res.setHeader('Cache-Control', 'no-store');
                 res.setHeader('X-NSC-Source', 'supabase');
+                res.setHeader('X-NSC-Row-Count', String(fromSb.rowCount || 0));
                 if (fromSb.meta) {
                     if (fromSb.meta.reportDate) res.setHeader('X-NSC-Report-Date', String(fromSb.meta.reportDate));
                     if (fromSb.meta.uploadedAt) res.setHeader('X-NSC-Uploaded-At', String(fromSb.meta.uploadedAt));
