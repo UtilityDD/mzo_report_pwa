@@ -617,6 +617,16 @@ function fetchMetadataFromNetwork() {
 // Initialize
 async function initDashboard() {
     try {
+        // After upload on this device, force a fresh stock dataset once
+        try {
+            if (localStorage.getItem('mzo_stock_pending_refresh') === '1') {
+                localStorage.removeItem('mzo_stock_pending_refresh');
+                if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.refresh === 'function') {
+                    await mzoDataHub.refresh('CACHE_STOCK');
+                }
+            }
+        } catch (_) {}
+
         let cachedData, cachedMetadata;
         if (typeof mzoDataHub !== 'undefined') {
             cachedData = await mzoDataHub.get('CACHE_STOCK');
