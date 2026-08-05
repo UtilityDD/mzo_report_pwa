@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NSC Raw Upload</title>
+  <title>NSC Upload</title>
   <style>
     :root {
       --bg: #f3f5f8;
@@ -83,23 +83,23 @@
 <body>
   <div class="wrap">
     <div class="card" id="panel">
-      <h1>NSC Raw Excel Upload</h1>
+      <h1>NSC Upload</h1>
 
       <div class="guide" id="guideBox">
         <strong>How to upload</strong>
         <ol>
-          <li>Select the <strong>data / report date</strong> (as-on date of the Excel). This becomes <strong>Updated on</strong> on the Pending NSC dashboard.</li>
-          <li>Choose the raw Malda Zone pending NSC file (<code>.xlsb</code>, <code>.xlsx</code>, or <code>.csv</code>).</li>
-          <li>Click <strong>Upload &amp; Publish</strong>. The file is cleaned in your browser first (large files stay under the live-server size limit), then only Working/Accepted rows are published.</li>
-          <li>Open the NSC dashboard and refresh if needed to see the new data.</li>
+          <li>Select the <strong>data date</strong> (as-on date of this NSC file).</li>
+          <li>Choose the pending NSC Excel file.</li>
+          <li>Click <strong>Upload &amp; Publish</strong> and wait until it finishes.</li>
+          <li>Open the NSC dashboard to see the updated list.</li>
         </ol>
         <p class="muted" style="margin:0.6rem 0 0;">Only <strong>Working</strong> and <strong>Accepted</strong> applications are published. Withheld rows are skipped automatically.</p>
       </div>
 
       <div class="admin-only" id="adminIntro">
         <p class="muted">
-          Admin view: cleaned rows publish to Supabase (with local backup). Dashboards read via DataHub cache.
-          Grant upload rights under Admin → User Management → <strong>NSC Raw Upload</strong>.
+          Admin: cleaned Working/Accepted rows publish to the live NSC store (local backup when available).
+          Dashboards read via DataHub cache. Grant rights under Admin → User Management → <strong>NSC Raw Upload</strong>.
         </p>
         <p class="muted" id="adminSetupHint" style="display:none;"></p>
       </div>
@@ -107,13 +107,13 @@
       <div class="meta" id="metaBox"></div>
 
       <div id="uploadBlock" class="locked">
-        <label class="muted" for="reportDateInput"><strong>Data / report date</strong> (shown as “Updated on”)</label>
+        <label class="muted" for="reportDateInput"><strong>Data date</strong></label>
         <div class="row">
           <input id="reportDateInput" type="date" disabled required />
         </div>
-        <p class="muted" style="margin-top:0.35rem;">Use the as-on date of this Excel dump. Delay days are calculated from this date.</p>
+        <p class="muted" style="margin-top:0.35rem;">Use the as-on date of this Excel. It appears as “Updated on” on the dashboard.</p>
 
-        <label class="muted" for="fileInput"><strong>Choose raw file</strong></label>
+        <label class="muted" for="fileInput"><strong>Choose NSC Excel</strong></label>
         <div class="row">
           <input id="fileInput" type="file" accept=".xlsx,.xlsb,.xls,.csv" disabled />
         </div>
@@ -177,15 +177,9 @@
       } catch (_) {
         const trimmed = text.trim();
         if (/request entity too large/i.test(trimmed)) {
-          throw new Error(
-            'Upload rejected: cleaned data is still too large for the live server (~4.5 MB limit). ' +
-            'Try again or contact admin.'
-          );
+          throw new Error('File is too large to publish. Contact an admin.');
         }
-        throw new Error(
-          'Server returned a non-JSON response (' + res.status + '): ' +
-          trimmed.slice(0, 160)
-        );
+        throw new Error('Upload failed. Please try again or contact an admin.');
       }
     }
 
@@ -247,7 +241,7 @@
           reportDateInput.disabled = false;
           uploadBtn.disabled = false;
         } else {
-          showMsg('You are not authorised to upload NSC data. Ask an admin to enable NSC Raw Upload for your account.', false);
+          showMsg('You are not authorised to upload NSC. Please ask an admin.', false);
         }
       } catch (e) {
         showMsg('Failed to load upload page: ' + e.message, false);
@@ -262,7 +256,7 @@
       }
       const reportDate = (reportDateInput.value || '').trim();
       if (!reportDate) {
-        showMsg('Select the data / report date (Updated on).', false);
+        showMsg('Select the data date.', false);
         return;
       }
       if (!window.NSCClientPipeline || typeof NSCClientPipeline.processNscArrayBuffer !== 'function') {
@@ -271,8 +265,8 @@
       }
 
       uploadBtn.disabled = true;
-      uploadBtn.textContent = 'Cleaning in browser…';
-      showMsg('Reading Excel in your browser (raw file is not sent to the server)…', true);
+      uploadBtn.textContent = 'Preparing…';
+      showMsg('Preparing your file — please wait…', true);
 
       try {
         const buffer = await file.arrayBuffer();
@@ -281,15 +275,19 @@
         const maxLive = 4.2 * 1024 * 1024;
         if (csvBytes > maxLive) {
           throw new Error(
-            'Cleaned data is ' + (csvBytes / (1024 * 1024)).toFixed(1) +
-            ' MB, which may exceed the live server limit (~4.5 MB). Contact admin.'
+            isAdminViewer
+              ? ('Cleaned data is ' + (csvBytes / (1024 * 1024)).toFixed(1) +
+                 ' MB (live limit ~4.5 MB). Contact admin / reduce file size.')
+              : 'This file is too large to publish. Contact an admin.'
           );
         }
 
         uploadBtn.textContent = 'Publishing…';
         showMsg(
-          'Publishing ' + result.published.length + ' Working/Accepted rows' +
-          ' (skipped ' + result.withheld.length + ' withheld)…',
+          isAdminViewer
+            ? ('Publishing ' + result.published.length + ' Working/Accepted rows' +
+               ' (skipped ' + result.withheld.length + ' withheld)…')
+            : 'Publishing NSC data — please wait…',
           true
         );
 
