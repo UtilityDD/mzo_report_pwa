@@ -1987,7 +1987,7 @@
 
         let data;
         if (typeof mzoDataHub !== 'undefined') {
-          data = await mzoDataHub.get('CACHE_NSC');
+          data = await mzoDataHub.get('CACHE_NSC_v2');
         }
 
         if (!data) {
@@ -2015,6 +2015,24 @@
 
         rawData = data;
         filteredData = [...rawData];
+
+        // If server has a newer/fuller publish than IndexedDB, refresh once (no Cache Storage wipe)
+        try {
+          if (!window.__nscRowReconcileTried && typeof mzoDataHub !== 'undefined') {
+            const metaRes = await fetch('/api/nsc/meta', { credentials: 'same-origin' });
+            if (metaRes.ok) {
+              const metaJson = await metaRes.json();
+              const expected = Number(metaJson && metaJson.meta && metaJson.meta.publishedRows) || 0;
+              if (expected > 0 && rawData.length > 0 && rawData.length < expected * 0.95) {
+                window.__nscRowReconcileTried = true;
+                console.warn(`[NSC] Cached rows ${rawData.length} < server ${expected}; refreshing…`);
+                await mzoDataHub.refresh('CACHE_NSC_v2');
+                window.location.reload();
+                return;
+              }
+            }
+          }
+        } catch (_) {}
 
         // Initialize bounds and filters
         const allSCValues = rawData.map(d => parseFloat(d.DelayInSC)).filter(v => !isNaN(v));
@@ -4612,32 +4630,12 @@ REASON: ${c.SCN_WITHELD_REASON || 'None'}
             if (metaData && metaData.version) markVersionSeen(metaData.version);
           } catch (_) {}
 
-          // Drop any stale Cache Storage entries (old Google Sheet CSVs, old hubs)
-          try {
-            if ('caches' in window) {
-              const keys = await caches.keys();
-              await Promise.all(keys.map((k) => caches.delete(k)));
-            }
-          } catch (_) {}
-
           if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.refresh === 'function') {
-            await mzoDataHub.refresh('CACHE_NSC');
+            await mzoDataHub.refresh('CACHE_NSC_v2');
           } else if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.retryDataset === 'function') {
-            if (typeof mzoDataHub.delete === 'function') await mzoDataHub.delete('CACHE_NSC');
-            await mzoDataHub.retryDataset('CACHE_NSC');
+            if (typeof mzoDataHub.delete === 'function') await mzoDataHub.delete('CACHE_NSC_v2');
+            await mzoDataHub.retryDataset('CACHE_NSC_v2');
           }
-
-          // Verify refreshed payload size before reload
-          try {
-            const fresh = await mzoDataHub.get('CACHE_NSC');
-            const text = typeof fresh === 'string' ? fresh : '';
-            const n = text.split(/\r?\n/).filter((l) => l.trim().length).length - 1;
-            console.log('[NSC] Refreshed CACHE_NSC rows:', n);
-            if (n > 0 && n < 4000) {
-              console.warn('[NSC] Row count looks low vs expected ~5459. Source may be stale.');
-            }
-          } catch (_) {}
-
           try { localStorage.removeItem(PENDING_KEY); } catch (_) {}
           hideBanner();
           window.location.reload();
