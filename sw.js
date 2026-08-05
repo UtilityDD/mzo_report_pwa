@@ -1,6 +1,6 @@
 // sw.js - Service Worker for MZO Reports PWA
-// v32: Division filter seed-first populate + cache bust
-const CACHE_NAME = 'mzo-reports-cache-v32';
+// v33: stop Region-filter hang (no rebuild loop) + Division options seed
+const CACHE_NAME = 'mzo-reports-cache-v33';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -58,7 +58,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('[Service Worker] Pre-caching application shell v32');
+        console.log('[Service Worker] Pre-caching application shell v33');
         return cache.addAll(PRECACHE_ASSETS);
       })
       .then(() => self.skipWaiting())
