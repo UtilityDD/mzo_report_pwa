@@ -14,10 +14,11 @@
     const scriptTag = document.querySelector('script[src*="mzo_presets_hub.js"]');
     let path = 'auth.js';
     if (scriptTag) {
-        const srcAttr = scriptTag.getAttribute('src');
-        const index = srcAttr.indexOf('mzo_presets_hub.js');
+        const srcAttr = scriptTag.getAttribute('src') || '';
+        const cleanSrc = srcAttr.split('?')[0];
+        const index = cleanSrc.indexOf('mzo_presets_hub.js');
         if (index > -1) {
-            path = srcAttr.substring(0, index) + 'auth.js';
+            path = cleanSrc.substring(0, index) + 'auth.js';
         }
     }
     
