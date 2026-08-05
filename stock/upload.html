@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Stock Raw Upload</title>
+  <title>Stock Upload</title>
   <style>
     :root {
       --bg: #f3f5f8; --card: #fff; --ink: #1f2937; --muted: #6b7280;
@@ -27,6 +27,7 @@
       border: 1px solid #dbeafe; border-radius: 8px; font-size: 0.92rem; line-height: 1.5;
     }
     .guide ol { margin: 0.4rem 0 0 1.2rem; padding: 0; }
+    .guide li { margin: 0.25rem 0; }
     .meta {
       margin: 1rem 0; padding: 0.85rem 1rem; background: #f8fafc;
       border: 1px solid var(--line); border-radius: 8px; font-size: 0.9rem; display: none;
@@ -53,27 +54,34 @@
 <body>
   <div class="wrap">
     <div class="card">
-      <h1>Stock Raw Excel Upload</h1>
-      <div class="guide">
+      <h1>Stock Upload</h1>
+
+      <div class="guide" id="guideBox">
         <strong>How to upload</strong>
         <ol>
-          <li>Select the <strong>data / report date</strong> (as-on date). This is shown on the Stock dashboard header.</li>
-          <li>Choose the SAP stock Excel (<code>.xlsx</code> / <code>.xlsb</code> / <code>.csv</code>). Use <strong>Sheet1</strong> (<code>Material</code> + <code>Material Group</code> required).</li>
-          <li>Local / Central is applied automatically from the fixed material map.</li>
-          <li>Click <strong>Upload &amp; Publish</strong>. The file is cleaned in your browser first, then only cleaned rows are published.</li>
-          <li>Open Stock and use Refresh if the old dump is still cached.</li>
+          <li>Select the <strong>data date</strong> (as-on date of this stock dump).</li>
+          <li>Choose the SAP stock Excel file.</li>
+          <li>Click <strong>Upload &amp; Publish</strong> and wait until it finishes.</li>
+          <li>Open Stock to see the updated figures.</li>
         </ol>
-        <p class="muted" style="margin:0.6rem 0 0;">Only users with <strong>Stock Raw Upload = Yes</strong> (Admin → User Management) can publish.</p>
       </div>
+
       <div class="admin-only" id="adminIntro">
-        <p class="muted">Admin: last publish details and setup hints appear here.</p>
+        <p class="muted">
+          Admin: cleaned Sheet1 rows publish to the live stock store. Local/Central comes from the fixed material map.
+          Grant rights under Admin → User Management → <strong>Stock Raw Upload</strong>.
+        </p>
         <p class="muted" id="adminSetupHint" style="display:none;"></p>
       </div>
+
       <div class="meta" id="metaBox"></div>
+
       <div id="uploadBlock" class="locked">
-        <label class="muted" for="reportDateInput"><strong>Data / report date</strong></label>
+        <label class="muted" for="reportDateInput"><strong>Data date</strong></label>
         <div class="row"><input id="reportDateInput" type="date" disabled required /></div>
-        <label class="muted" for="fileInput"><strong>Choose raw file</strong></label>
+        <p class="muted" style="margin-top:0.35rem;">Use the as-on date of this Excel dump.</p>
+
+        <label class="muted" for="fileInput"><strong>Choose stock Excel</strong></label>
         <div class="row"><input id="fileInput" type="file" accept=".xlsx,.xlsb,.xls,.csv" disabled /></div>
         <div class="row">
           <button class="primary" id="uploadBtn" disabled>Upload &amp; Publish</button>
@@ -81,6 +89,7 @@
           <a class="link-btn ghost" href="/index.html">Home</a>
         </div>
       </div>
+
       <div id="msg" class="msg"></div>
     </div>
   </div>
@@ -124,9 +133,9 @@
       catch (_) {
         const trimmed = text.trim();
         if (/request entity too large/i.test(trimmed)) {
-          throw new Error('Upload rejected: cleaned data still too large for the live server (~4.5 MB).');
+          throw new Error('File is too large to publish. Contact an admin.');
         }
-        throw new Error('Server returned a non-JSON response (' + res.status + '): ' + trimmed.slice(0, 160));
+        throw new Error('Upload failed. Please try again or contact an admin.');
       }
     }
     function renderAdminMeta(data) {
@@ -135,18 +144,32 @@
       if (data.setupHint) {
         adminSetupHint.style.display = 'block';
         adminSetupHint.innerHTML = '<strong>Setup:</strong> ' + data.setupHint;
-      } else adminSetupHint.style.display = 'none';
+      } else {
+        adminSetupHint.style.display = 'none';
+      }
       const m = data.meta;
       if (!m) {
-        metaBox.innerHTML = `<div>Can upload: <strong>${data.canUpload?'Yes':'No'}</strong></div>`;
+        metaBox.innerHTML =
+          `<div>Source: <strong>${data.source || '-'}</strong></div>` +
+          `<div>Can upload: <strong>${data.canUpload ? 'Yes' : 'No'}</strong></div>` +
+          `<div>Is admin: <strong>${data.isAdmin ? 'Yes' : 'No'}</strong></div>`;
         return;
       }
       const s = m.stats || {};
       metaBox.innerHTML = `
-        <div><strong>Last upload</strong> ${m.uploadedAt||'-'} by ${m.uploadedBy||'-'}</div>
-        <div><strong>File</strong> ${m.originalName||'-'}</div>
-        <div><strong>Published</strong> ${m.publishedRows??s.publishedRows??'-'} rows</div>
-        <div><strong>Report date</strong> ${m.reportDate||s.today||'-'}</div>`;
+        <div><strong>Last upload</strong> ${m.uploadedAt || '-'} by ${m.uploadedBy || '-'}</div>
+        <div><strong>File</strong> ${m.originalName || '-'}</div>
+        <div><strong>Sheet</strong> ${m.sheetName || '-'}</div>
+        <div><strong>Published</strong> ${m.publishedRows ?? s.publishedRows ?? '-'} rows</div>
+        <div><strong>With category</strong> ${s.rowsWithCategory ?? '-'}</div>
+        <div><strong>Report date</strong> ${m.reportDate || s.today || '-'}</div>
+        <div><strong>Active source</strong> ${data.source || '-'}</div>`;
+    }
+    function hideAdminDetails() {
+      metaBox.classList.remove('show');
+      metaBox.innerHTML = '';
+      adminIntro.classList.remove('show');
+      adminSetupHint.style.display = 'none';
     }
     async function loadMeta() {
       const res = await fetch('/api/stock/meta', { credentials: 'same-origin' });
@@ -154,38 +177,38 @@
       const data = await res.json();
       isAdminViewer = !!data.isAdmin;
       if (isAdminViewer) renderAdminMeta(data);
-      else { metaBox.classList.remove('show'); adminIntro.classList.remove('show'); }
+      else hideAdminDetails();
       if (data.canUpload) {
         uploadBlock.classList.remove('locked');
         fileInput.disabled = false;
         reportDateInput.disabled = false;
         uploadBtn.disabled = false;
       } else {
-        showMsg('You are not authorised to upload stock data. Ask an admin to enable Stock Raw Upload for your account.', false);
+        showMsg('You are not authorised to upload stock. Please ask an admin.', false);
       }
     }
     uploadBtn.addEventListener('click', async () => {
       const file = fileInput.files && fileInput.files[0];
       if (!file) return showMsg('Choose a file first.', false);
-      const reportDate = (reportDateInput.value||'').trim();
-      if (!reportDate) return showMsg('Select the data / report date.', false);
+      const reportDate = (reportDateInput.value || '').trim();
+      if (!reportDate) return showMsg('Select the data date.', false);
       if (!window.StockClientPipeline || typeof StockClientPipeline.processStockArrayBuffer !== 'function') {
-        return showMsg('Upload scripts failed to load. Refresh the page and try again.', false);
+        return showMsg('Page scripts failed to load. Refresh and try again.', false);
       }
 
       uploadBtn.disabled = true;
-      uploadBtn.textContent = 'Cleaning in browser…';
-      showMsg('Reading Excel in your browser (raw file is not sent to the server)…', true);
+      uploadBtn.textContent = 'Preparing…';
+      showMsg('Preparing your file — please wait…', true);
       try {
         const buffer = await file.arrayBuffer();
         const result = StockClientPipeline.processStockArrayBuffer(buffer, reportDate, file.name);
         const csvBytes = new TextEncoder().encode(result.csv).length;
         if (csvBytes > 4.2 * 1024 * 1024) {
-          throw new Error('Cleaned data is too large for the live server (~4.5 MB). Contact admin.');
+          throw new Error('This file is too large to publish. Contact an admin.');
         }
 
         uploadBtn.textContent = 'Publishing…';
-        showMsg('Publishing ' + result.published.length + ' stock rows…', true);
+        showMsg('Publishing stock data — please wait…', true);
 
         const fd = new FormData();
         fd.append('csv', new Blob([result.csv], { type: 'text/csv' }), 'stock_cleaned.csv');
@@ -202,16 +225,33 @@
         });
         const data = await readJsonSafe(res);
         if (!res.ok || data.status !== 'success') {
-          throw new Error(data.message || ('Publish failed (' + res.status + ')'));
+          throw new Error(data.message || 'Upload failed. Please try again.');
         }
 
         const published = (data.meta && data.meta.publishedRows) || result.published.length;
         const rd = (data.meta && data.meta.reportDate) || reportDate;
-        showMsg(
-          'Upload successful.\nPublished ' + published + ' stock rows.\nAs-of date: ' + rd +
-          '\nOpen Stock and refresh if needed.',
-          data.supabase === 'ok'
-        );
+        const ok = data.supabase === 'ok';
+
+        if (isAdminViewer) {
+          const s = (data.meta && data.meta.stats) || result.stats || {};
+          showMsg(
+            (ok ? 'Publish successful.' : 'Saved, but live publish had an issue.') +
+            '\nReport date: ' + rd +
+            '\nRaw: ' + (s.rawRows || '-') + ' → Published: ' + published +
+            '\nWith category: ' + (s.rowsWithCategory || '-') +
+            '\nSource: ' + ((data.meta && data.meta.source) || data.supabase || '-'),
+            ok
+          );
+        } else {
+          showMsg(
+            'Upload successful.\n' +
+            'Published ' + published + ' items.\n' +
+            'As-on date: ' + rd + '\n' +
+            'Open Stock to view the latest data.',
+            true
+          );
+        }
+
         try {
           localStorage.removeItem('mzo_last_sync_date');
           localStorage.removeItem('mzoDataSynced');
