@@ -58,14 +58,15 @@
         <strong>How to upload</strong>
         <ol>
           <li>Select the <strong>data / report date</strong> (as-on date). This is shown on the Stock dashboard header.</li>
-          <li>Choose the SAP stock Excel (<code>.xlsx</code> / <code>.xlsb</code> / <code>.csv</code>). Use <strong>Sheet1</strong> for stock rows (<code>Material</code> + <code>Material Group</code> required).</li>
-          <li>Local / Central category is <strong>fixed in the app</strong> by material code (not in the Excel).</li>
-          <li>Click <strong>Upload &amp; Publish</strong> and wait for large files.</li>
-          <li>Open Stock and refresh if needed.</li>
+          <li>Choose the SAP stock Excel (<code>.xlsx</code> / <code>.xlsb</code> / <code>.csv</code>). Use <strong>Sheet1</strong> (<code>Material</code> + <code>Material Group</code> required).</li>
+          <li>Local / Central is applied automatically from the fixed material map.</li>
+          <li>Click <strong>Upload &amp; Publish</strong>. The file is cleaned in your browser first, then only cleaned rows are published.</li>
+          <li>Open Stock and use Refresh if the old dump is still cached.</li>
         </ol>
+        <p class="muted" style="margin:0.6rem 0 0;">Only users with <strong>Stock Raw Upload = Yes</strong> (Admin → User Management) can publish.</p>
       </div>
       <div class="admin-only" id="adminIntro">
-        <p class="muted">Admin: publishes cleaned stock to the live dashboard store (+ local backup on localhost). Sheet remains fallback until removed.</p>
+        <p class="muted">Admin: last publish details and setup hints appear here.</p>
         <p class="muted" id="adminSetupHint" style="display:none;"></p>
       </div>
       <div class="meta" id="metaBox"></div>
@@ -83,6 +84,10 @@
       <div id="msg" class="msg"></div>
     </div>
   </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="/stock/stock_material_category.js"></script>
+  <script src="/stock/stock_client_pipeline.js"></script>
   <script>
     const metaBox = document.getElementById('metaBox');
     const msg = document.getElementById('msg');
@@ -112,6 +117,18 @@
       msg.className = 'msg ' + (ok ? 'ok' : 'err');
       msg.textContent = text;
     }
+    async function readJsonSafe(res) {
+      const text = await res.text();
+      if (!text) return {};
+      try { return JSON.parse(text); }
+      catch (_) {
+        const trimmed = text.trim();
+        if (/request entity too large/i.test(trimmed)) {
+          throw new Error('Upload rejected: cleaned data still too large for the live server (~4.5 MB).');
+        }
+        throw new Error('Server returned a non-JSON response (' + res.status + '): ' + trimmed.slice(0, 160));
+      }
+    }
     function renderAdminMeta(data) {
       metaBox.classList.add('show');
       adminIntro.classList.add('show');
@@ -121,7 +138,7 @@
       } else adminSetupHint.style.display = 'none';
       const m = data.meta;
       if (!m) {
-        metaBox.innerHTML = `<div>Source: <strong>${data.source}</strong></div><div>Can upload: <strong>${data.canUpload?'Yes':'No'}</strong></div>`;
+        metaBox.innerHTML = `<div>Can upload: <strong>${data.canUpload?'Yes':'No'}</strong></div>`;
         return;
       }
       const s = m.stats || {};
@@ -129,8 +146,7 @@
         <div><strong>Last upload</strong> ${m.uploadedAt||'-'} by ${m.uploadedBy||'-'}</div>
         <div><strong>File</strong> ${m.originalName||'-'}</div>
         <div><strong>Published</strong> ${m.publishedRows??s.publishedRows??'-'} rows</div>
-        <div><strong>Report date</strong> ${m.reportDate||s.today||'-'}</div>
-        <div><strong>Active source</strong> ${data.source}</div>`;
+        <div><strong>Report date</strong> ${m.reportDate||s.today||'-'}</div>`;
     }
     async function loadMeta() {
       const res = await fetch('/api/stock/meta', { credentials: 'same-origin' });
@@ -145,7 +161,7 @@
         reportDateInput.disabled = false;
         uploadBtn.disabled = false;
       } else {
-        showMsg('You are not authorised to upload stock data. Ask an admin to enable Stock Upload.', false);
+        showMsg('You are not authorised to upload stock data. Ask an admin to enable Stock Raw Upload for your account.', false);
       }
     }
     uploadBtn.addEventListener('click', async () => {
@@ -153,29 +169,57 @@
       if (!file) return showMsg('Choose a file first.', false);
       const reportDate = (reportDateInput.value||'').trim();
       if (!reportDate) return showMsg('Select the data / report date.', false);
+      if (!window.StockClientPipeline || typeof StockClientPipeline.processStockArrayBuffer !== 'function') {
+        return showMsg('Upload scripts failed to load. Refresh the page and try again.', false);
+      }
+
       uploadBtn.disabled = true;
-      uploadBtn.textContent = 'Processing…';
-      showMsg('Uploading — please wait…', true);
+      uploadBtn.textContent = 'Cleaning in browser…';
+      showMsg('Reading Excel in your browser (raw file is not sent to the server)…', true);
       try {
-        const fd = new FormData();
-        fd.append('file', file);
-        fd.append('reportDate', reportDate);
-        const res = await fetch('/api/stock/upload', { method: 'POST', body: fd, credentials: 'same-origin' });
-        const data = await res.json();
-        if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Upload failed');
-        const s = (data.meta && data.meta.stats) || {};
-        const published = data.meta.publishedRows || '-';
-        const rd = data.meta.reportDate || reportDate;
-        if (isAdminViewer) {
-          showMsg(
-            'Upload successful.\nReport date: ' + rd + '\nPublished: ' + published +
-            (data.supabase === 'ok' ? '' : '\nNote: live publish had an issue — check server logs.'),
-            data.supabase === 'ok'
-          );
-        } else {
-          showMsg('Upload successful.\nPublished ' + published + ' stock rows.\nAs-of date: ' + rd + '\nOpen Stock to view.', true);
+        const buffer = await file.arrayBuffer();
+        const result = StockClientPipeline.processStockArrayBuffer(buffer, reportDate, file.name);
+        const csvBytes = new TextEncoder().encode(result.csv).length;
+        if (csvBytes > 4.2 * 1024 * 1024) {
+          throw new Error('Cleaned data is too large for the live server (~4.5 MB). Contact admin.');
         }
-        try { localStorage.removeItem('mzo_last_sync_date'); localStorage.removeItem('mzoDataSynced'); } catch(_){}
+
+        uploadBtn.textContent = 'Publishing…';
+        showMsg('Publishing ' + result.published.length + ' stock rows…', true);
+
+        const fd = new FormData();
+        fd.append('csv', new Blob([result.csv], { type: 'text/csv' }), 'stock_cleaned.csv');
+        fd.append('reportDate', reportDate);
+        fd.append('reportDateUsed', result.reportDateUsed || '');
+        fd.append('originalName', file.name);
+        fd.append('sheetName', result.sheetName || 'Sheet1');
+        fd.append('stats', JSON.stringify(result.stats || {}));
+
+        const res = await fetch('/api/stock/publish', {
+          method: 'POST',
+          body: fd,
+          credentials: 'same-origin'
+        });
+        const data = await readJsonSafe(res);
+        if (!res.ok || data.status !== 'success') {
+          throw new Error(data.message || ('Publish failed (' + res.status + ')'));
+        }
+
+        const published = (data.meta && data.meta.publishedRows) || result.published.length;
+        const rd = (data.meta && data.meta.reportDate) || reportDate;
+        showMsg(
+          'Upload successful.\nPublished ' + published + ' stock rows.\nAs-of date: ' + rd +
+          '\nOpen Stock and refresh if needed.',
+          data.supabase === 'ok'
+        );
+        try {
+          localStorage.removeItem('mzo_last_sync_date');
+          localStorage.removeItem('mzoDataSynced');
+          localStorage.setItem('mzo_stock_pending_refresh', '1');
+        } catch (_) {}
+        if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.refresh === 'function') {
+          try { await mzoDataHub.refresh('CACHE_STOCK'); } catch (_) {}
+        }
         await loadMeta();
       } catch (e) {
         showMsg(e.message || String(e), false);

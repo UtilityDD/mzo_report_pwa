@@ -2850,6 +2850,8 @@ app.post('/api/nsc/publish', (req, res) => {
 // --- Stock dump upload → Supabase + local CACHE_STOCK ---
 const {
     processStockWorkbook,
+    publishedFromCsv: stockPublishedFromCsv,
+    toCsv: stockToCsv,
     dashboardRowToDb: stockRowToDb,
     dbRowsToCsv: stockDbRowsToCsv,
     DB_KEYS: STOCK_DB_KEYS
@@ -2863,6 +2865,7 @@ const STOCK_INSERT_BATCH = 400;
 
 function canUploadStock_(user) {
     if (!user) return false;
+    if (String(user.role || '').trim().toLowerCase() === 'admin') return true;
     if (flagAuthoYes_(user['stock-upload-autho'] != null ? user['stock-upload-autho'] : user.stock_upload_autho)) {
         return true;
     }
@@ -3105,14 +3108,125 @@ app.post('/api/stock/upload', (req, res) => {
             return res.json({
                 status: 'success',
                 message: supabaseMeta
-                    ? `Published ${baseMeta.publishedRows} stock rows to Supabase.`
-                    : `Saved ${baseMeta.publishedRows} rows locally; Supabase failed (${supabaseError}). Run create_mzo_insight_stock_snapshot.sql.`,
+                    ? `Published ${baseMeta.publishedRows} stock rows.`
+                    : `Saved ${baseMeta.publishedRows} rows locally, but live publish failed (${supabaseError}).`,
                 meta: baseMeta,
                 supabase: supabaseMeta ? 'ok' : 'failed',
                 supabaseError
             });
         } catch (e) {
             console.error('[Stock upload] Error:', e.message);
+            return res.status(500).json({ status: 'error', message: e.message });
+        }
+    });
+});
+
+/**
+ * Browser-cleaned stock publish (Vercel-safe).
+ * Authorized users process Excel in the browser; only cleaned CSV is posted.
+ */
+app.post('/api/stock/publish', (req, res) => {
+    nscUpload.single('csv')(req, res, async (err) => {
+        if (err) return res.status(400).json({ status: 'error', message: err.message });
+        try {
+            if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+            const uploadUser = await resolveStockUser_(req);
+            if (!canUploadStock_(uploadUser)) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: 'Stock upload is not authorised. Ask an admin to enable Stock Raw Upload in User Management.'
+                });
+            }
+
+            const body = req.body || {};
+            let csv = '';
+            if (req.file && req.file.buffer) {
+                csv = req.file.buffer.toString('utf8').trim();
+            } else {
+                csv = String(body.csv || '').trim();
+            }
+            const reportDateRaw = String(body.reportDate || '').trim();
+            const originalName = String(body.originalName || 'stock_client.csv').trim() || 'stock_client.csv';
+            const sheetName = String(body.sheetName || 'Sheet1').trim() || 'Sheet1';
+            let clientStats = {};
+            try {
+                clientStats = body.stats ? JSON.parse(String(body.stats)) : {};
+            } catch (_) {
+                clientStats = {};
+            }
+            if (!clientStats || typeof clientStats !== 'object') clientStats = {};
+
+            if (!csv) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Missing cleaned CSV. Process the Excel in the browser first.'
+                });
+            }
+            if (!reportDateRaw) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Report date is required (shown as stock as-of date).'
+                });
+            }
+
+            const published = stockPublishedFromCsv(csv);
+            if (!published.length) {
+                return res.status(400).json({ status: 'error', message: 'Cleaned CSV has no data rows.' });
+            }
+
+            const csvOut = stockToCsv(published);
+            const reportLabel = String(clientStats.today || body.reportDateUsed || reportDateRaw).trim();
+            const stats = {
+                rawRows: Number(clientStats.rawRows) || published.length,
+                publishedRows: published.length,
+                skippedRows: Number(clientStats.skippedRows) || 0,
+                rowsWithCategory: Number(clientStats.rowsWithCategory) || 0,
+                today: reportLabel
+            };
+            const baseMeta = {
+                uploadedAt: new Date().toISOString(),
+                uploadedBy: uploadUser.Username || uploadUser.username || req.user.Username || 'user',
+                originalName,
+                sheetName,
+                stats,
+                publishedRows: published.length,
+                reportDate: reportLabel,
+                publishMode: 'browser'
+            };
+
+            writeLocalStockBackup_(csvOut, baseMeta);
+
+            let supabaseMeta = null;
+            let supabaseError = null;
+            try {
+                supabaseMeta = await publishStockToSupabase_(published, baseMeta);
+                baseMeta.supabaseUploadId = supabaseMeta && supabaseMeta.supabaseUploadId;
+                baseMeta.source = 'supabase';
+                writeLocalStockBackup_(csvOut, baseMeta);
+            } catch (e) {
+                supabaseError = e.message;
+                console.error('[Stock publish] publish failed:', e.message);
+                baseMeta.source = 'local';
+                baseMeta.supabaseError = supabaseError;
+                writeLocalStockBackup_(csvOut, baseMeta);
+            }
+
+            console.log(
+                `[Stock publish] ${baseMeta.uploadedBy} published ${baseMeta.publishedRows} rows` +
+                    ` from ${originalName} (ok=${!!supabaseMeta})`
+            );
+
+            return res.json({
+                status: 'success',
+                message: supabaseMeta
+                    ? `Published ${baseMeta.publishedRows} stock rows.`
+                    : `Saved ${baseMeta.publishedRows} rows locally, but live publish failed (${supabaseError}).`,
+                meta: baseMeta,
+                supabase: supabaseMeta ? 'ok' : 'failed',
+                supabaseError
+            });
+        } catch (e) {
+            console.error('[Stock publish] Error:', e.message);
             return res.status(500).json({ status: 'error', message: e.message });
         }
     });

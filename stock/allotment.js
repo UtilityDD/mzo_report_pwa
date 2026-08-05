@@ -129,6 +129,8 @@
         const profile = getPortalProfile();
         const flag = String(profile['stock-upload-autho'] || profile.stock_upload_autho || '').trim().toLowerCase();
         if (['y', 'yes', '1', 'true', 'upload'].includes(flag)) return true;
+        const role = String(profile.role || '').trim().toLowerCase();
+        if (role === 'admin') return true;
         const username = String(profile.Username || profile.username || '').trim().toLowerCase();
         return username === 'dm1';
     }
@@ -138,19 +140,34 @@
         return true;
     }
 
+    async function refreshPortalProfile() {
+        try {
+            const res = await fetch('/api/session-check', { credentials: 'same-origin' });
+            if (!res.ok) return getPortalProfile();
+            const data = await res.json();
+            if (data && data.profile) {
+                localStorage.setItem('mzo_user_profile', JSON.stringify(data.profile));
+                return data.profile;
+            }
+        } catch (_) {}
+        return getPortalProfile();
+    }
+
     function applyAllotmentVisibility() {
         const group = document.getElementById('allot-btn-group');
         const materialBtn = document.getElementById('allot-material-btn');
         const viewBtn = document.getElementById('allot-view-btn');
         const uploadLink = document.getElementById('stock-upload-link');
         const canCreate = canUseAllotment();
+        const canUpload = canUploadStock();
 
         if (group) {
             group.hidden = false;
             group.style.display = 'flex';
         }
         if (uploadLink) {
-            uploadLink.style.display = canUploadStock() ? 'inline-flex' : 'none';
+            uploadLink.style.display = canUpload ? 'inline-flex' : 'none';
+            uploadLink.classList.toggle('is-hidden', !canUpload);
         }
         if (viewBtn) {
             viewBtn.hidden = false;
@@ -175,8 +192,10 @@
     window.MzoAllotmentAccess = {
         allowedUsers: ALLOT_ALLOWED_USERS,
         canUseAllotment,
+        canUploadStock,
         canViewAllotment,
         applyAllotmentVisibility,
+        refreshPortalProfile,
         getPortalProfile
     };
 
@@ -1135,7 +1154,13 @@
 
     function init() {
         bind();
-        if (window.MzoAllotmentAccess) window.MzoAllotmentAccess.applyAllotmentVisibility();
+        const apply = () => {
+            if (window.MzoAllotmentAccess) window.MzoAllotmentAccess.applyAllotmentVisibility();
+        };
+        apply();
+        if (window.MzoAllotmentAccess && typeof window.MzoAllotmentAccess.refreshPortalProfile === 'function') {
+            window.MzoAllotmentAccess.refreshPortalProfile().then(apply).catch(apply);
+        }
         if (!lines.length) lines = [newBlankRow()];
         updateFlowControls();
     }
