@@ -2108,29 +2108,40 @@
         applyFilters();
         scheduleUrgentModal(rawData);
 
-        // Register filter event listeners (only once after data is loaded)
-        document.getElementById('regionSelect').addEventListener('change', applyFilters);
-        document.getElementById('divnSelect').addEventListener('change', applyFilters);
-        document.getElementById('suppSelect').addEventListener('change', applyFilters);
-        document.getElementById('classSelect').addEventListener('change', applyFilters);
-        document.getElementById('poleFilter').addEventListener('change', applyFilters);
-        document.getElementById('delayRangeFilter').addEventListener('change', applyFilters);
+        // Register filter event listeners on every mirrored control (inline + drawer)
+        [
+          'regionSelect',
+          'divnSelect',
+          'suppSelect',
+          'classSelect',
+          'poleFilter',
+          'delayRangeFilter',
+          'delayRange2Filter'
+        ].forEach((id) => {
+          allById(id).forEach((el) => {
+            el.addEventListener('change', onFilterChange);
+          });
+        });
         document.getElementById('smartSearch').addEventListener('input', applyFilters);
 
         const clearAllFilters = () => {
-          document.getElementById('regionSelect').value = '';
-          document.getElementById('divnSelect').value = '';
-          document.getElementById('suppSelect').value = '';
-          document.getElementById('classSelect').value = '';
-          document.getElementById('poleFilter').value = '';
-          document.getElementById('delayRangeFilter').value = '';
-          document.getElementById('delayRange2Filter').value = '';
-          
-          const radioAll = document.querySelector('input[name="classFilter"][value="all"]');
-          if (radioAll) radioAll.checked = true;
-          
+          [
+            'regionSelect',
+            'divnSelect',
+            'suppSelect',
+            'classSelect',
+            'poleFilter',
+            'delayRangeFilter',
+            'delayRange2Filter'
+          ].forEach((id) => setFilterValue(id, ''));
+
+          document.querySelectorAll('input[name="classFilter"][value="all"]').forEach((radio) => {
+            radio.checked = true;
+          });
+
           // Trigger change on regionSelect which will cascade applyFilters
-          document.getElementById('regionSelect').dispatchEvent(new Event('change'));
+          const regionEl = allById('regionSelect')[0];
+          if (regionEl) regionEl.dispatchEvent(new Event('change'));
         };
 
         document.getElementById('clearAllFiltersBtn')?.addEventListener('click', clearAllFilters);
@@ -2404,13 +2415,13 @@
 
       // Get records matching dropdowns and current slider range
       const matchingRecords = rawData.filter(d => {
-        const region = document.getElementById('regionSelect').value;
-        const divn = document.getElementById('divnSelect').value;
-        const supp = document.getElementById('suppSelect').value;
-        const classVal = document.getElementById('classSelect').value;
-        const poleType = document.getElementById('poleFilter').value;
-        const delayRange = document.getElementById('delayRangeFilter').value;
-        const delayRange2 = document.getElementById('delayRange2Filter').value;
+        const region = getFilterValue('regionSelect');
+        const divn = getFilterValue('divnSelect');
+        const supp = getFilterValue('suppSelect');
+        const classVal = getFilterValue('classSelect');
+        const poleType = getFilterValue('poleFilter');
+        const delayRange = getFilterValue('delayRangeFilter');
+        const delayRange2 = getFilterValue('delayRange2Filter');
 
         const delay = parseFloat(d.DelayInSC);
         if (isNaN(delay) || delay < delaySCMin || delay > delaySCMax) return false;
@@ -2447,13 +2458,13 @@
 
       // Get records matching dropdowns and current date range
       const matchingRecords = rawData.filter(d => {
-        const region = document.getElementById('regionSelect').value;
-        const divn = document.getElementById('divnSelect').value;
-        const supp = document.getElementById('suppSelect').value;
-        const classVal = document.getElementById('classSelect').value;
-        const poleType = document.getElementById('poleFilter').value;
-        const delayRange = document.getElementById('delayRangeFilter').value;
-        const delayRange2 = document.getElementById('delayRange2Filter').value;
+        const region = getFilterValue('regionSelect');
+        const divn = getFilterValue('divnSelect');
+        const supp = getFilterValue('suppSelect');
+        const classVal = getFilterValue('classSelect');
+        const poleType = getFilterValue('poleFilter');
+        const delayRange = getFilterValue('delayRangeFilter');
+        const delayRange2 = getFilterValue('delayRange2Filter');
 
         if (!isWithinDateRange(d)) return false;
 
@@ -2543,13 +2554,13 @@
     }
 
     function matchesNonSliderFilters(d) {
-      const region = document.getElementById('regionSelect').value;
-      const divn = document.getElementById('divnSelect').value;
-      const supp = document.getElementById('suppSelect').value;
-      const classVal = document.getElementById('classSelect').value;
-      const poleType = document.getElementById('poleFilter').value;
-      const delayRange = document.getElementById('delayRangeFilter').value;
-      const delayRange2 = document.getElementById('delayRange2Filter').value;
+      const region = getFilterValue('regionSelect');
+      const divn = getFilterValue('divnSelect');
+      const supp = getFilterValue('suppSelect');
+      const classVal = getFilterValue('classSelect');
+      const poleType = getFilterValue('poleFilter');
+      const delayRange = getFilterValue('delayRangeFilter');
+      const delayRange2 = getFilterValue('delayRange2Filter');
 
       return (region === "" || d.REGION === region) &&
         (divn === "" || d.DIVN_NAME === divn) &&
@@ -2587,47 +2598,93 @@
     }
 
 
+    // Duplicate filter IDs exist (inline + drawer). Always touch every match.
+    function allById(id) {
+      return Array.from(document.querySelectorAll('[id="' + id + '"]'));
+    }
+    function getFilterValue(id) {
+      const els = allById(id);
+      for (let i = 0; i < els.length; i++) {
+        if (els[i] && String(els[i].value || '') !== '') return els[i].value;
+      }
+      return els[0] ? els[0].value : '';
+    }
+    function setFilterValue(id, value) {
+      allById(id).forEach((el) => {
+        el.value = value;
+      });
+    }
+    function fillFilterSelect(id, placeholder, values, selected) {
+      allById(id).forEach((select) => {
+        const prev = selected != null ? selected : select.value;
+        select.innerHTML = '<option value="">' + placeholder + '</option>';
+        values.forEach((v) => {
+          const opt = document.createElement('option');
+          opt.value = v;
+          opt.textContent = v;
+          if (v === prev) opt.selected = true;
+          select.appendChild(opt);
+        });
+      });
+    }
+    function syncFilterMirrors(sourceEl) {
+      if (!sourceEl || !sourceEl.id) return;
+      allById(sourceEl.id).forEach((el) => {
+        if (el !== sourceEl) el.value = sourceEl.value;
+      });
+    }
+    function onFilterChange(e) {
+      syncFilterMirrors(e && e.target);
+      applyFilters(e);
+    }
+
     // Populate filter dropdowns with unique values
     function populateFilters() {
-      const region = document.getElementById('regionSelect').value;
-      const divn = document.getElementById('divnSelect').value;
+      let region = getFilterValue('regionSelect');
+      let divn = getFilterValue('divnSelect');
+      let supp = getFilterValue('suppSelect');
+      let classVal = getFilterValue('classSelect');
 
       // Unique helper
       const unique = (arr, key) => {
         return [...new Set(arr.map(x => x[key]).filter(Boolean).map(v => v.trim()))].sort();
       };
 
-      // First populate Region normally from rawData
+      // Regions first (needed before office-preset matching)
       const regions = unique(rawData, 'REGION');
-      const regionSelect = document.getElementById('regionSelect');
-      const previousRegion = regionSelect.value;
-      regionSelect.innerHTML = `<option value="">Select Region</option>`;
-      regions.forEach(r => {
-        const opt = document.createElement('option');
-        opt.value = r;
-        opt.textContent = r;
-        if (r === previousRegion) opt.selected = true;
-        regionSelect.appendChild(opt);
-      });
+      fillFilterSelect('regionSelect', 'Select Region', regions, region);
 
-      // Populate Division based on selected Region
+      // Apply saved office preferences onto region/division before cascading lists
+      if (window.mzoPresetsHub) {
+        window.mzoPresetsHub.applyToPage({ triggerChange: false });
+        region = getFilterValue('regionSelect');
+        divn = getFilterValue('divnSelect');
+        supp = getFilterValue('suppSelect');
+      }
+
+      // Division based on selected Region
       let divns = rawData;
       if (region) {
         divns = rawData.filter(d => d.REGION === region);
       }
       const divisions = unique(divns, 'DIVN_NAME');
-      const divnSelect = document.getElementById('divnSelect');
-      const previousDivn = divnSelect.value;
-      divnSelect.innerHTML = `<option value="">Select Division</option>`;
-      divisions.forEach(d => {
-        const opt = document.createElement('option');
-        opt.value = d;
-        opt.textContent = d;
-        if (d === previousDivn) opt.selected = true;
-        divnSelect.appendChild(opt);
-      });
+      fillFilterSelect('divnSelect', 'Select Division', divisions, divn);
+      // Keep selection only if still valid
+      if (divn && !divisions.includes(divn)) {
+        setFilterValue('divnSelect', '');
+        divn = '';
+      } else {
+        setFilterValue('divnSelect', getFilterValue('divnSelect'));
+      }
 
-      // Populate Office based on selected Division
+      // Re-apply preset division now that options exist
+      if (window.mzoPresetsHub) {
+        window.mzoPresetsHub.applyToPage({ triggerChange: false });
+        divn = getFilterValue('divnSelect');
+        supp = getFilterValue('suppSelect');
+      }
+
+      // CCC based on Division / Region
       let supps = rawData;
       if (divn) {
         supps = rawData.filter(d => d.DIVN_NAME === divn);
@@ -2635,34 +2692,23 @@
         supps = rawData.filter(d => d.REGION === region);
       }
       const offices = unique(supps, 'SUPP_OFF');
-      const suppSelect = document.getElementById('suppSelect');
-      const previousSupp = suppSelect.value;
-      suppSelect.innerHTML = `<option value="">Select CCC</option>`;
-      offices.forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s;
-        opt.textContent = s;
-        if (s === previousSupp) opt.selected = true;
-        suppSelect.appendChild(opt);
-      });
+      fillFilterSelect('suppSelect', 'Select CCC', offices, supp);
+      if (supp && !offices.includes(supp)) {
+        setFilterValue('suppSelect', '');
+        supp = '';
+      }
 
-      // Populate Class based on current selection
-      const classes = unique(rawData, 'CONN_CLASS');
-      const classSelect = document.getElementById('classSelect');
-      const previousClass = classSelect.value;
-      classSelect.innerHTML = `<option value="">Select Class</option>`;
-      classes.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c;
-        opt.textContent = c;
-        if (c === previousClass) opt.selected = true;
-        classSelect.appendChild(opt);
-      });
-
-      // Apply saved office preferences
       if (window.mzoPresetsHub) {
         window.mzoPresetsHub.applyToPage({ triggerChange: false });
+        // Mirror any preset values across inline + drawer selects
+        setFilterValue('regionSelect', getFilterValue('regionSelect'));
+        setFilterValue('divnSelect', getFilterValue('divnSelect'));
+        setFilterValue('suppSelect', getFilterValue('suppSelect'));
       }
+
+      // Class
+      const classes = unique(rawData, 'CONN_CLASS');
+      fillFilterSelect('classSelect', 'Select Class', classes, classVal);
 
       // Populate Delay Range
       // Sort Delay Ranges based on DelaySerial
@@ -2686,31 +2732,13 @@
         "More than 1 year"
       ];
 
-      const delay2Select = document.getElementById('delayRange2Filter');
-      const previousDelay2 = delay2Select.value;
-      delay2Select.innerHTML = `<option value="">Select Delay Range-2</option>`;
-      delayRange2Options.forEach(r => {
-        const opt = document.createElement('option');
-        opt.value = r;
-        opt.textContent = r;
-        if (r === previousDelay2) opt.selected = true;
-        delay2Select.appendChild(opt);
-      });
+      fillFilterSelect('delayRange2Filter', 'Select Delay Range-2', delayRange2Options, getFilterValue('delayRange2Filter'));
 
       const delayRangesSorted = Object.entries(delayRangeMap)
         .sort((a, b) => b[1] - a[1])  // reverse order
         .map(entry => entry[0]);
 
-      const delaySelect = document.getElementById('delayRangeFilter');
-      const previousDelay = delaySelect.value;
-      delaySelect.innerHTML = `<option value="">Select Delay Range</option>`;
-      delayRangesSorted.forEach(r => {
-        const opt = document.createElement('option');
-        opt.value = r;
-        opt.textContent = r;
-        if (r === previousDelay) opt.selected = true;
-        delaySelect.appendChild(opt);
-      });
+      fillFilterSelect('delayRangeFilter', 'Select Delay Range', delayRangesSorted, getFilterValue('delayRangeFilter'));
 
 
     }
@@ -2730,14 +2758,13 @@
         'endDateInput'
       ];
       filterIds.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
+        allById(id).forEach((el) => {
           if (el.value) {
             el.classList.add('filter-active');
           } else {
             el.classList.remove('filter-active');
           }
-        }
+        });
       });
 
       // Check if this was triggered by a slider/date interaction
@@ -2747,13 +2774,13 @@
         updateSliderBounds();
       }
 
-      const region = document.getElementById('regionSelect').value;
-      const divn = document.getElementById('divnSelect').value;
-      const supp = document.getElementById('suppSelect').value;
-      const classVal = document.getElementById('classSelect').value;
-      const poleType = document.getElementById('poleFilter').value;
-      const delayRange = document.getElementById('delayRangeFilter').value;
-      const delayRange2 = document.getElementById('delayRange2Filter').value;
+      const region = getFilterValue('regionSelect');
+      const divn = getFilterValue('divnSelect');
+      const supp = getFilterValue('suppSelect');
+      const classVal = getFilterValue('classSelect');
+      const poleType = getFilterValue('poleFilter');
+      const delayRange = getFilterValue('delayRangeFilter');
+      const delayRange2 = getFilterValue('delayRange2Filter');
 
       // 1. Filter the raw data based on selected filters
       const classFilter = document.querySelector('input[name="classFilter"]:checked')?.value || "all";
@@ -2845,13 +2872,15 @@
       
       // Handle select filters
       filters.forEach(f => {
-        const el = document.getElementById(f.id);
-        if (el && el.value !== f.default) {
+        const value = getFilterValue(f.id);
+        if (value !== f.default) {
           activeCount++;
-          const text = el.options[el.selectedIndex].text;
+          const el = allById(f.id)[0];
+          const text = el && el.selectedIndex >= 0 ? el.options[el.selectedIndex].text : value;
           createChip(container, f.id, text, () => {
-            el.value = f.default;
-            el.dispatchEvent(new Event('change'));
+            setFilterValue(f.id, f.default);
+            const first = allById(f.id)[0];
+            if (first) first.dispatchEvent(new Event('change'));
           });
         }
       });
@@ -2923,7 +2952,7 @@
     // Update dashboard with filtered data
     function updateDashboard() {
       // Conditional card visibility based on class filter
-      const classVal = document.getElementById('classSelect').value;
+      const classVal = getFilterValue('classSelect');
       const industrialCol = document.getElementById('industrialCol');
       const commercialCol = document.getElementById('commercialCol');
 
@@ -3781,13 +3810,19 @@
       }, 'Initially Withheld (CCC Wise)');
 
 
-    // Filter change event handler
-    document.getElementById('regionSelect').onchange = applyFilters;
-    document.getElementById('divnSelect').onchange = applyFilters;
-    document.getElementById('suppSelect').onchange = applyFilters;
-    document.getElementById('poleFilter').onchange = applyFilters;
-    document.getElementById('delayRangeFilter').onchange = applyFilters;
-    document.getElementById('delayRange2Filter').onchange = applyFilters;
+    // Filter change event handler (all mirrored selects)
+    [
+      'regionSelect',
+      'divnSelect',
+      'suppSelect',
+      'poleFilter',
+      'delayRangeFilter',
+      'delayRange2Filter'
+    ].forEach((id) => {
+      allById(id).forEach((el) => {
+        el.onchange = onFilterChange;
+      });
+    });
 
 
 
