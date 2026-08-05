@@ -19,8 +19,8 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
-  <script src="mzo_data_hub.js?v=31"></script>
-  <script src="mzo_presets_hub.js?v=31"></script>
+  <script src="mzo_data_hub.js?v=32"></script>
+  <script src="mzo_presets_hub.js?v=32"></script>
   <!-- noUiSlider CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.css">
 
@@ -1962,7 +1962,7 @@
     let endDate = null;
 
     // Visible client build — bump with SW/cache when filter/data loading changes
-    const NSC_APP_BUILD = 'v31-nsc-filters';
+    const NSC_APP_BUILD = 'v32-nsc-divn';
 
     // Prefers uploaded local dataset via API (fallback to Google Sheet inside API)
     const dataUrl = "/api/nsc/dataset";
@@ -2606,27 +2606,39 @@
 
     // Inline + drawer filters (unique IDs, linked by data-filter-key)
     function allById(id) {
-      return Array.from(document.querySelectorAll(
+      const seen = new Set();
+      const out = [];
+      document.querySelectorAll(
         '[id="' + id + '"], [id="' + id + 'Drawer"], [data-filter-key="' + id + '"]'
-      ));
+      ).forEach((el) => {
+        if (!el || seen.has(el)) return;
+        seen.add(el);
+        out.push(el);
+      });
+      return out;
     }
     function rowField(d, keys) {
-      if (!d) return '';
+      if (!d || typeof d !== 'object') return '';
       for (let i = 0; i < keys.length; i++) {
         const v = d[keys[i]];
         if (v != null && String(v).trim() !== '') return String(v).trim();
       }
       const lower = {};
-      Object.keys(d).forEach((k) => {
-        lower[String(k).toLowerCase()] = d[k];
-      });
+      Object.keys(d).forEach((k) => { lower[String(k).toLowerCase()] = d[k]; });
       for (let i = 0; i < keys.length; i++) {
         const v = lower[String(keys[i]).toLowerCase()];
         if (v != null && String(v).trim() !== '') return String(v).trim();
       }
       return '';
     }
-    function regionOf(d) { return rowField(d, ['REGION', 'REG', 'region', 'reg']); }
+    function regionOf(d) {
+      const short = rowField(d, ['REGION', 'region']);
+      if (short) return short;
+      const reg = rowField(d, ['REG', 'reg']);
+      if (!reg) return '';
+      return reg.replace(/\s*REGION\s*$/i, '').replace(/\s+/g, ' ').trim()
+        .toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+    }
     function divnOf(d) { return rowField(d, ['DIVN_NAME', 'divn_name', 'DIVN', 'Division']); }
     function suppOf(d) { return rowField(d, ['SUPP_OFF', 'supp_off', 'CCC', 'ccc']); }
     function classOf(d) { return rowField(d, ['CONN_CLASS', 'conn_class']); }
@@ -2639,15 +2651,23 @@
       return els[0] ? els[0].value : '';
     }
     function setFilterValue(id, value) {
-      allById(id).forEach((el) => {
-        el.value = value;
-      });
+      allById(id).forEach((el) => { el.value = value; });
     }
     function fillFilterSelect(id, placeholder, values, selected) {
-      allById(id).forEach((select) => {
+      const list = Array.isArray(values) ? values.filter((v) => v != null && String(v).trim() !== '') : [];
+      const targets = allById(id);
+      if (!targets.length) {
+        console.warn('[NSC] fillFilterSelect: no elements for', id);
+        return;
+      }
+      targets.forEach((select) => {
         const prev = selected != null ? selected : select.value;
-        select.innerHTML = '<option value="">' + placeholder + '</option>';
-        values.forEach((v) => {
+        select.innerHTML = '';
+        const ph = document.createElement('option');
+        ph.value = '';
+        ph.textContent = placeholder;
+        select.appendChild(ph);
+        list.forEach((v) => {
           const opt = document.createElement('option');
           opt.value = v;
           opt.textContent = v;
@@ -2658,7 +2678,7 @@
     }
     function syncFilterMirrors(sourceEl) {
       if (!sourceEl) return;
-      const key = sourceEl.getAttribute('data-filter-key') || sourceEl.id.replace(/Drawer$/, '');
+      const key = sourceEl.getAttribute('data-filter-key') || String(sourceEl.id || '').replace(/Drawer$/, '');
       if (!key) return;
       allById(key).forEach((el) => {
         if (el !== sourceEl) el.value = sourceEl.value;
@@ -2671,98 +2691,97 @@
 
     // Populate filter dropdowns with unique values
     function populateFilters() {
+      if (!Array.isArray(rawData) || !rawData.length) {
+        console.warn('[NSC] populateFilters skipped: rawData empty');
+        return;
+      }
+
+      const uniqueFrom = (arr, getter) => {
+        return [...new Set(arr.map(getter).filter(Boolean))].sort((a, b) =>
+          String(a).localeCompare(String(b))
+        );
+      };
+
+      const regions = uniqueFrom(rawData, regionOf);
+      const allDivisions = uniqueFrom(rawData, divnOf);
+      const allOffices = uniqueFrom(rawData, suppOf);
+      const classes = uniqueFrom(rawData, classOf);
+
+      // Seed FULL lists first so Division is never blank when data exists
+      fillFilterSelect('regionSelect', 'Select Region', regions, getFilterValue('regionSelect'));
+      fillFilterSelect('divnSelect', 'Select Division', allDivisions, getFilterValue('divnSelect'));
+      fillFilterSelect('suppSelect', 'Select CCC', allOffices, getFilterValue('suppSelect'));
+      fillFilterSelect('classSelect', 'Select Class', classes, getFilterValue('classSelect'));
+
+      try {
+        if (window.mzoPresetsHub) window.mzoPresetsHub.applyToPage({ triggerChange: false });
+      } catch (err) {
+        console.warn('[NSC] preset apply failed:', err);
+      }
+
       let region = getFilterValue('regionSelect');
       let divn = getFilterValue('divnSelect');
       let supp = getFilterValue('suppSelect');
-      let classVal = getFilterValue('classSelect');
 
-      const uniqueFrom = (arr, getter) => {
-        return [...new Set(arr.map(getter).filter(Boolean))].sort();
-      };
-
-      // Regions first (needed before office-preset matching)
-      const regions = uniqueFrom(rawData, regionOf);
-      fillFilterSelect('regionSelect', 'Select Region', regions, region);
-
-      // Apply saved office preferences onto region/division before cascading lists
-      if (window.mzoPresetsHub) {
-        window.mzoPresetsHub.applyToPage({ triggerChange: false });
-        region = getFilterValue('regionSelect');
-        divn = getFilterValue('divnSelect');
-        supp = getFilterValue('suppSelect');
-      }
-
-      // Division based on selected Region (fall back to all if region yields none)
-      let divnRows = rawData;
       if (region) {
-        divnRows = rawData.filter((d) => regionOf(d) === region);
-      }
-      let divisions = uniqueFrom(divnRows, divnOf);
-      if (!divisions.length) {
-        divisions = uniqueFrom(rawData, divnOf);
-        if (region) {
-          console.warn('[NSC] No divisions for region "' + region + '"; showing all divisions');
+        const divnRows = rawData.filter((d) => regionOf(d) === region);
+        let divisions = uniqueFrom(divnRows, divnOf);
+        if (!divisions.length) divisions = allDivisions;
+        fillFilterSelect('divnSelect', 'Select Division', divisions, divn);
+        if (divn && !divisions.includes(divn)) {
+          setFilterValue('divnSelect', '');
+          divn = '';
         }
       }
-      fillFilterSelect('divnSelect', 'Select Division', divisions, divn);
-      if (divn && !divisions.includes(divn)) {
-        setFilterValue('divnSelect', '');
-        divn = '';
-      } else {
-        setFilterValue('divnSelect', getFilterValue('divnSelect'));
+
+      try {
+        if (window.mzoPresetsHub) window.mzoPresetsHub.applyToPage({ triggerChange: false });
+      } catch (err) {
+        console.warn('[NSC] preset re-apply failed:', err);
       }
 
-      // Re-apply preset division now that options exist
-      if (window.mzoPresetsHub) {
-        window.mzoPresetsHub.applyToPage({ triggerChange: false });
-        divn = getFilterValue('divnSelect');
-        supp = getFilterValue('suppSelect');
-      }
+      region = getFilterValue('regionSelect');
+      divn = getFilterValue('divnSelect');
+      supp = getFilterValue('suppSelect');
+      setFilterValue('regionSelect', region);
+      setFilterValue('divnSelect', divn);
+      setFilterValue('suppSelect', supp);
 
-      // CCC based on Division / Region
       let suppRows = rawData;
-      if (divn) {
-        suppRows = rawData.filter((d) => divnOf(d) === divn);
-      } else if (region) {
-        suppRows = rawData.filter((d) => regionOf(d) === region);
-      }
+      if (divn) suppRows = rawData.filter((d) => divnOf(d) === divn);
+      else if (region) suppRows = rawData.filter((d) => regionOf(d) === region);
       let offices = uniqueFrom(suppRows, suppOf);
-      if (!offices.length) offices = uniqueFrom(rawData, suppOf);
+      if (!offices.length) offices = allOffices;
       fillFilterSelect('suppSelect', 'Select CCC', offices, supp);
       if (supp && !offices.includes(supp)) {
         setFilterValue('suppSelect', '');
         supp = '';
       }
 
-      if (window.mzoPresetsHub) {
-        window.mzoPresetsHub.applyToPage({ triggerChange: false });
+      try {
+        if (window.mzoPresetsHub) window.mzoPresetsHub.applyToPage({ triggerChange: false });
         setFilterValue('regionSelect', getFilterValue('regionSelect'));
         setFilterValue('divnSelect', getFilterValue('divnSelect'));
         setFilterValue('suppSelect', getFilterValue('suppSelect'));
+      } catch (err) {
+        console.warn('[NSC] preset final apply failed:', err);
       }
-
-      // Class
-      const classes = uniqueFrom(rawData, classOf);
-      fillFilterSelect('classSelect', 'Select Class', classes, classVal);
 
       console.log(
         '[NSC ' + NSC_APP_BUILD + '] filters regions=' + regions.length +
-        ' divisions=' + divisions.length +
-        ' ccc=' + offices.length +
-        ' rows=' + (rawData && rawData.length)
+        ' divisions=' + allDivisions.length +
+        ' ccc=' + allOffices.length +
+        ' rows=' + rawData.length +
+        ' divnOptions=' + (allById('divnSelect')[0] ? allById('divnSelect')[0].options.length : 0)
       );
 
       // Populate Delay Range
-      // Sort Delay Ranges based on DelaySerial
       const delayRangeMap = {};
       rawData.forEach(d => {
         const range = d.DelayRange;
         const serial = parseInt(d.DelaySerial) || 0;
-        if (range && !delayRangeMap[range]) {
-          delayRangeMap[range] = serial;
-        }
+        if (range && !delayRangeMap[range]) delayRangeMap[range] = serial;
       });
-      // Delay Range-2 Buckets
       const delayRange2Options = [
         "Within 3 days",
         "More than 3 days",
@@ -2773,16 +2792,11 @@
         "More than 6 month",
         "More than 1 year"
       ];
-
       fillFilterSelect('delayRange2Filter', 'Select Delay Range-2', delayRange2Options, getFilterValue('delayRange2Filter'));
-
       const delayRangesSorted = Object.entries(delayRangeMap)
-        .sort((a, b) => b[1] - a[1])  // reverse order
+        .sort((a, b) => b[1] - a[1])
         .map(entry => entry[0]);
-
       fillFilterSelect('delayRangeFilter', 'Select Delay Range', delayRangesSorted, getFilterValue('delayRangeFilter'));
-
-
     }
 
     let applyFiltersTimeout;

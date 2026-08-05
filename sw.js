@@ -1,6 +1,6 @@
 // sw.js - Service Worker for MZO Reports PWA
-// v31: bust stale shells so NSC filter / dataset hub updates reach clients
-const CACHE_NAME = 'mzo-reports-cache-v31';
+// v32: Division filter seed-first populate + cache bust
+const CACHE_NAME = 'mzo-reports-cache-v32';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -58,7 +58,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('[Service Worker] Pre-caching application shell v31');
+        console.log('[Service Worker] Pre-caching application shell v32');
         return cache.addAll(PRECACHE_ASSETS);
       })
       .then(() => self.skipWaiting())
