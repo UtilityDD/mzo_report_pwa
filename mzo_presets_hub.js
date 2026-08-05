@@ -166,7 +166,7 @@
                 }
 
                 // 1. Check for standard Region select IDs
-                const regionIDs = ['regionFilter', 'regionSelect', 'locationFilter', 'region', 'region-filter'];
+                const regionIDs = ['regionFilter', 'regionSelect', 'regionSelectDrawer', 'locationFilter', 'region', 'region-filter'];
                 let regionEl = null;
                 for (let id of regionIDs) {
                     const el = document.getElementById(id);
@@ -174,7 +174,7 @@
                 }
 
                 if (regionEl && globalPref.region && globalPref.region !== 'all') {
-                    const regionEls = document.querySelectorAll('[id="regionFilter"], [id="regionSelect"], [id="locationFilter"], [id="region"], [id="region-filter"]');
+                    const regionEls = document.querySelectorAll('[id="regionFilter"], [id="regionSelect"], [id="regionSelectDrawer"], [id="locationFilter"], [id="region"], [id="region-filter"], [data-filter-key="regionSelect"]');
                     let matchedValue = '';
                     regionEls.forEach((el) => {
                         for (let opt of el.options) {
@@ -196,7 +196,7 @@
                 }
 
                 // 2. Check for standard Division select IDs
-                const divisionIDs = ['divisionFilter', 'divisionSelect', 'divnSelect', 'division', 'division-filter'];
+                const divisionIDs = ['divisionFilter', 'divisionSelect', 'divnSelect', 'divnSelectDrawer', 'division', 'division-filter'];
                 let divisionEl = null;
                 for (let id of divisionIDs) {
                     const el = document.getElementById(id);
@@ -204,7 +204,7 @@
                 }
 
                 if (divisionEl && globalPref.division && globalPref.division !== 'all') {
-                    const divisionEls = document.querySelectorAll('[id="divisionFilter"], [id="divisionSelect"], [id="divnSelect"], [id="division"], [id="division-filter"]');
+                    const divisionEls = document.querySelectorAll('[id="divisionFilter"], [id="divisionSelect"], [id="divnSelect"], [id="divnSelectDrawer"], [id="division"], [id="division-filter"], [data-filter-key="divnSelect"]');
                     let matchedValue = '';
                     divisionEls.forEach((el) => {
                         for (let opt of el.options) {
@@ -226,7 +226,7 @@
                 }
 
                 // 3. Check for standard CCC / Unit select IDs
-                const cccIDs = ['cccFilter', 'cccSelect', 'unitFilter', 'suppSelect', 'support', 'ccc-filter'];
+                const cccIDs = ['cccFilter', 'cccSelect', 'unitFilter', 'suppSelect', 'suppSelectDrawer', 'support', 'ccc-filter'];
                 let cccEl = null;
                 for (let id of cccIDs) {
                     const el = document.getElementById(id);
@@ -234,7 +234,7 @@
                 }
 
                 if (cccEl && globalPref.ccc && globalPref.ccc !== 'all') {
-                    const cccEls = document.querySelectorAll('[id="cccFilter"], [id="cccSelect"], [id="unitFilter"], [id="suppSelect"], [id="support"], [id="ccc-filter"]');
+                    const cccEls = document.querySelectorAll('[id="cccFilter"], [id="cccSelect"], [id="unitFilter"], [id="suppSelect"], [id="suppSelectDrawer"], [id="support"], [id="ccc-filter"], [data-filter-key="suppSelect"]');
                     let matchedValue = '';
                     cccEls.forEach((el) => {
                         for (let opt of el.options) {

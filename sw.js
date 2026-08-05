@@ -1,5 +1,6 @@
 // sw.js - Service Worker for MZO Reports PWA
-const CACHE_NAME = 'mzo-reports-cache-v30';
+// v31: bust stale shells so NSC filter / dataset hub updates reach clients
+const CACHE_NAME = 'mzo-reports-cache-v31';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -40,12 +41,24 @@ function safePut(cache, request, response) {
   });
 }
 
+function isNetworkFirstPath(pathname) {
+  return (
+    pathname === '/nsc.html' ||
+    pathname.startsWith('/nsc/') ||
+    pathname === '/mzo_data_hub.js' ||
+    pathname === '/mzo_presets_hub.js' ||
+    pathname === '/mzo_docket_briefing.js' ||
+    pathname === '/sw.js' ||
+    pathname.startsWith('/api/')
+  );
+}
+
 // Install Event: cache static shell assets
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('[Service Worker] Pre-caching application shell');
+        console.log('[Service Worker] Pre-caching application shell v31');
         return cache.addAll(PRECACHE_ASSETS);
       })
       .then(() => self.skipWaiting())
@@ -84,15 +97,20 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // Bypass service worker for local API endpoints (e.g. structure updates) to ensure freshness
-  if (url.pathname.startsWith('/api/')) {
+  // Always network for API + NSC page/hub scripts (filters/data keys change often)
+  if (isNetworkFirstPath(url.pathname)) {
     event.respondWith(
       fetch(request).catch(() => {
-        // Fallback for API calls if offline
-        return new Response(
-          JSON.stringify({ error: 'Network unavailable. Offline cache cannot retrieve live API data.' }),
-          { headers: { 'Content-Type': 'application/json' }, status: 503 }
-        );
+        if (request.mode === 'navigate') {
+          return caches.match('offline.html');
+        }
+        if (url.pathname.startsWith('/api/')) {
+          return new Response(
+            JSON.stringify({ error: 'Network unavailable. Offline cache cannot retrieve live API data.' }),
+            { headers: { 'Content-Type': 'application/json' }, status: 503 }
+          );
+        }
+        return caches.match(request).then((cached) => cached || Response.error());
       })
     );
     return;
