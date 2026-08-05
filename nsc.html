@@ -19,8 +19,8 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
-  <script src="mzo_data_hub.js"></script>
-  <script src="mzo_presets_hub.js"></script>
+  <script src="mzo_data_hub.js?v=31"></script>
+  <script src="mzo_presets_hub.js?v=31"></script>
   <!-- noUiSlider CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.css">
 
@@ -1274,7 +1274,7 @@
       <div class="d-flex flex-wrap align-items-baseline gap-2">
         <h2 class="mb-0"><i class="fas fa-tachometer-alt me-2"></i> Pending NSC</h2>
         <div id="reportDateSpan" style="font-size: 0.75rem; color: #ffffff;">Updated on: <span
-            id="reportDate">Loading...</span></div>
+            id="reportDate">Loading...</span> <span id="nscBuildTag" style="opacity:0.55;font-size:0.65rem;"></span></div>
         <button type="button" id="nscRefreshDataBtn" class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-1 nsc-hdr-btn"
           style="font-size: 0.72rem; padding: 3px 8px;" title="Reload NSC data from server" aria-label="Refresh data">
           <i class="fas fa-sync-alt" aria-hidden="true"></i><span class="nsc-hdr-btn-label"> Refresh</span>
@@ -1867,31 +1867,31 @@
       <div class="filter-group-card d-flex flex-column gap-3">
         <div>
           <label class="form-label filter-label">Region</label>
-          <select id="regionSelect" class="form-select">
+          <select id="regionSelectDrawer" data-filter-key="regionSelect" class="form-select">
             <option value="">Select Region</option>
           </select>
         </div>
         <div>
           <label class="form-label filter-label">Division</label>
-          <select id="divnSelect" class="form-select">
+          <select id="divnSelectDrawer" data-filter-key="divnSelect" class="form-select">
             <option value="">Select Division</option>
           </select>
         </div>
         <div>
           <label class="form-label filter-label">CCC (Supply Office)</label>
-          <select id="suppSelect" class="form-select">
+          <select id="suppSelectDrawer" data-filter-key="suppSelect" class="form-select">
             <option value="">Select CCC</option>
           </select>
         </div>
         <div>
           <label class="form-label filter-label">Connection Class</label>
-          <select id="classSelect" class="form-select">
+          <select id="classSelectDrawer" data-filter-key="classSelect" class="form-select">
             <option value="">Select Class</option>
           </select>
         </div>
         <div>
           <label class="form-label filter-label">Pole Requirement</label>
-          <select id="poleFilter" class="form-select">
+          <select id="poleFilterDrawer" data-filter-key="poleFilter" class="form-select">
             <option value="">Pole/Non-Pole</option>
             <option value="Pole">Pole</option>
             <option value="Non-Pole">Non-Pole</option>
@@ -1899,13 +1899,13 @@
         </div>
         <div>
           <label class="form-label filter-label">Delay Range 1</label>
-          <select id="delayRangeFilter" class="form-select">
+          <select id="delayRangeFilterDrawer" data-filter-key="delayRangeFilter" class="form-select">
             <option value="">Select Delay Range</option>
           </select>
         </div>
         <div>
           <label class="form-label filter-label">Delay Range 2</label>
-          <select id="delayRange2Filter" class="form-select">
+          <select id="delayRange2FilterDrawer" data-filter-key="delayRange2Filter" class="form-select">
             <option value="">Select Delay Range-2</option>
           </select>
         </div>
@@ -1961,6 +1961,9 @@
     let startDate = null;
     let endDate = null;
 
+    // Visible client build — bump with SW/cache when filter/data loading changes
+    const NSC_APP_BUILD = 'v31-nsc-filters';
+
     // Prefers uploaded local dataset via API (fallback to Google Sheet inside API)
     const dataUrl = "/api/nsc/dataset";
     let rawData = [], filteredData = [];
@@ -1990,25 +1993,26 @@
           if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.delete === 'function') {
             await mzoDataHub.delete('CACHE_NSC');
             await mzoDataHub.delete('CACHE_NSC_v2');
+            await mzoDataHub.delete('CACHE_NSC_v3');
           }
         } catch (_) {}
 
         let data;
         if (typeof mzoDataHub !== 'undefined') {
-          data = await mzoDataHub.get('CACHE_NSC_v3');
+          data = await mzoDataHub.get('CACHE_NSC_v4');
         }
 
         if (!data) {
           console.log("Downloading NSC Data from network...");
           if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.refresh === 'function') {
-            await mzoDataHub.refresh('CACHE_NSC_v3');
-            data = await mzoDataHub.get('CACHE_NSC_v3');
+            await mzoDataHub.refresh('CACHE_NSC_v4');
+            data = await mzoDataHub.get('CACHE_NSC_v4');
           }
           if (!data) {
             const res = await fetch(dataUrl, { cache: 'no-store', credentials: 'same-origin' });
             const text = await res.text();
             if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.set === 'function') {
-              await mzoDataHub.set('CACHE_NSC_v3', text);
+              await mzoDataHub.set('CACHE_NSC_v4', text);
             }
             data = text;
           }
@@ -2038,7 +2042,7 @@
               if (expected > 0 && rawData.length > 0 && rawData.length < expected * 0.95) {
                 window.__nscRowReconcileTried = true;
                 console.warn(`[NSC] Cached rows ${rawData.length} < server ${expected}; refreshing…`);
-                await mzoDataHub.refresh('CACHE_NSC_v3');
+                await mzoDataHub.refresh('CACHE_NSC_v4');
                 window.location.reload();
                 return;
               }
@@ -2104,6 +2108,8 @@
         if (rawData && rawData.length > 1 && rawData[1].TODAY) {
           document.getElementById('reportDate').textContent = rawData[1].TODAY;
         }
+        const buildTag = document.getElementById('nscBuildTag');
+        if (buildTag) buildTag.textContent = '(' + NSC_APP_BUILD + ')';
 
         applyFilters();
         scheduleUrgentModal(rawData);
@@ -2426,10 +2432,10 @@
         const delay = parseFloat(d.DelayInSC);
         if (isNaN(delay) || delay < delaySCMin || delay > delaySCMax) return false;
 
-        return (region === "" || d.REGION === region) &&
-          (divn === "" || d.DIVN_NAME === divn) &&
-          (supp === "" || d.SUPP_OFF === supp) &&
-          (classVal === "" || (d.CONN_CLASS || "").trim().toUpperCase() === classVal) &&
+        return (region === "" || regionOf(d) === region) &&
+          (divn === "" || divnOf(d) === divn) &&
+          (supp === "" || suppOf(d) === supp) &&
+          (classVal === "" || classOf(d).toUpperCase() === classVal) &&
           (poleType === "" ||
             (poleType === "Pole" && d.NO_OF_POLES && d.NO_OF_POLES.trim() !== "" && d.NO_OF_POLES !== "0") ||
             (poleType === "Non-Pole" && (!d.NO_OF_POLES || d.NO_OF_POLES.trim() === "" || d.NO_OF_POLES === "0"))) &&
@@ -2468,10 +2474,10 @@
 
         if (!isWithinDateRange(d)) return false;
 
-        return (region === "" || d.REGION === region) &&
-          (divn === "" || d.DIVN_NAME === divn) &&
-          (supp === "" || d.SUPP_OFF === supp) &&
-          (classVal === "" || (d.CONN_CLASS || "").trim().toUpperCase() === classVal) &&
+        return (region === "" || regionOf(d) === region) &&
+          (divn === "" || divnOf(d) === divn) &&
+          (supp === "" || suppOf(d) === supp) &&
+          (classVal === "" || classOf(d).toUpperCase() === classVal) &&
           (poleType === "" ||
             (poleType === "Pole" && d.NO_OF_POLES && d.NO_OF_POLES.trim() !== "" && d.NO_OF_POLES !== "0") ||
             (poleType === "Non-Pole" && (!d.NO_OF_POLES || d.NO_OF_POLES.trim() === "" || d.NO_OF_POLES === "0"))) &&
@@ -2562,10 +2568,10 @@
       const delayRange = getFilterValue('delayRangeFilter');
       const delayRange2 = getFilterValue('delayRange2Filter');
 
-      return (region === "" || d.REGION === region) &&
-        (divn === "" || d.DIVN_NAME === divn) &&
-        (supp === "" || d.SUPP_OFF === supp) &&
-        (classVal === "" || (d.CONN_CLASS || "").trim().toUpperCase() === classVal) &&
+      return (region === "" || regionOf(d) === region) &&
+        (divn === "" || divnOf(d) === divn) &&
+        (supp === "" || suppOf(d) === supp) &&
+        (classVal === "" || classOf(d).toUpperCase() === classVal) &&
         (poleType === "" ||
           (poleType === "Pole" && d.NO_OF_POLES && d.NO_OF_POLES.trim() !== "" && d.NO_OF_POLES !== "0") ||
           (poleType === "Non-Pole" && (!d.NO_OF_POLES || d.NO_OF_POLES.trim() === "" || d.NO_OF_POLES === "0"))) &&
@@ -2598,10 +2604,33 @@
     }
 
 
-    // Duplicate filter IDs exist (inline + drawer). Always touch every match.
+    // Inline + drawer filters (unique IDs, linked by data-filter-key)
     function allById(id) {
-      return Array.from(document.querySelectorAll('[id="' + id + '"]'));
+      return Array.from(document.querySelectorAll(
+        '[id="' + id + '"], [id="' + id + 'Drawer"], [data-filter-key="' + id + '"]'
+      ));
     }
+    function rowField(d, keys) {
+      if (!d) return '';
+      for (let i = 0; i < keys.length; i++) {
+        const v = d[keys[i]];
+        if (v != null && String(v).trim() !== '') return String(v).trim();
+      }
+      const lower = {};
+      Object.keys(d).forEach((k) => {
+        lower[String(k).toLowerCase()] = d[k];
+      });
+      for (let i = 0; i < keys.length; i++) {
+        const v = lower[String(keys[i]).toLowerCase()];
+        if (v != null && String(v).trim() !== '') return String(v).trim();
+      }
+      return '';
+    }
+    function regionOf(d) { return rowField(d, ['REGION', 'REG', 'region', 'reg']); }
+    function divnOf(d) { return rowField(d, ['DIVN_NAME', 'divn_name', 'DIVN', 'Division']); }
+    function suppOf(d) { return rowField(d, ['SUPP_OFF', 'supp_off', 'CCC', 'ccc']); }
+    function classOf(d) { return rowField(d, ['CONN_CLASS', 'conn_class']); }
+
     function getFilterValue(id) {
       const els = allById(id);
       for (let i = 0; i < els.length; i++) {
@@ -2628,8 +2657,10 @@
       });
     }
     function syncFilterMirrors(sourceEl) {
-      if (!sourceEl || !sourceEl.id) return;
-      allById(sourceEl.id).forEach((el) => {
+      if (!sourceEl) return;
+      const key = sourceEl.getAttribute('data-filter-key') || sourceEl.id.replace(/Drawer$/, '');
+      if (!key) return;
+      allById(key).forEach((el) => {
         if (el !== sourceEl) el.value = sourceEl.value;
       });
     }
@@ -2645,13 +2676,12 @@
       let supp = getFilterValue('suppSelect');
       let classVal = getFilterValue('classSelect');
 
-      // Unique helper
-      const unique = (arr, key) => {
-        return [...new Set(arr.map(x => x[key]).filter(Boolean).map(v => v.trim()))].sort();
+      const uniqueFrom = (arr, getter) => {
+        return [...new Set(arr.map(getter).filter(Boolean))].sort();
       };
 
       // Regions first (needed before office-preset matching)
-      const regions = unique(rawData, 'REGION');
+      const regions = uniqueFrom(rawData, regionOf);
       fillFilterSelect('regionSelect', 'Select Region', regions, region);
 
       // Apply saved office preferences onto region/division before cascading lists
@@ -2662,14 +2692,19 @@
         supp = getFilterValue('suppSelect');
       }
 
-      // Division based on selected Region
-      let divns = rawData;
+      // Division based on selected Region (fall back to all if region yields none)
+      let divnRows = rawData;
       if (region) {
-        divns = rawData.filter(d => d.REGION === region);
+        divnRows = rawData.filter((d) => regionOf(d) === region);
       }
-      const divisions = unique(divns, 'DIVN_NAME');
+      let divisions = uniqueFrom(divnRows, divnOf);
+      if (!divisions.length) {
+        divisions = uniqueFrom(rawData, divnOf);
+        if (region) {
+          console.warn('[NSC] No divisions for region "' + region + '"; showing all divisions');
+        }
+      }
       fillFilterSelect('divnSelect', 'Select Division', divisions, divn);
-      // Keep selection only if still valid
       if (divn && !divisions.includes(divn)) {
         setFilterValue('divnSelect', '');
         divn = '';
@@ -2685,13 +2720,14 @@
       }
 
       // CCC based on Division / Region
-      let supps = rawData;
+      let suppRows = rawData;
       if (divn) {
-        supps = rawData.filter(d => d.DIVN_NAME === divn);
+        suppRows = rawData.filter((d) => divnOf(d) === divn);
       } else if (region) {
-        supps = rawData.filter(d => d.REGION === region);
+        suppRows = rawData.filter((d) => regionOf(d) === region);
       }
-      const offices = unique(supps, 'SUPP_OFF');
+      let offices = uniqueFrom(suppRows, suppOf);
+      if (!offices.length) offices = uniqueFrom(rawData, suppOf);
       fillFilterSelect('suppSelect', 'Select CCC', offices, supp);
       if (supp && !offices.includes(supp)) {
         setFilterValue('suppSelect', '');
@@ -2700,15 +2736,21 @@
 
       if (window.mzoPresetsHub) {
         window.mzoPresetsHub.applyToPage({ triggerChange: false });
-        // Mirror any preset values across inline + drawer selects
         setFilterValue('regionSelect', getFilterValue('regionSelect'));
         setFilterValue('divnSelect', getFilterValue('divnSelect'));
         setFilterValue('suppSelect', getFilterValue('suppSelect'));
       }
 
       // Class
-      const classes = unique(rawData, 'CONN_CLASS');
+      const classes = uniqueFrom(rawData, classOf);
       fillFilterSelect('classSelect', 'Select Class', classes, classVal);
+
+      console.log(
+        '[NSC ' + NSC_APP_BUILD + '] filters regions=' + regions.length +
+        ' divisions=' + divisions.length +
+        ' ccc=' + offices.length +
+        ' rows=' + (rawData && rawData.length)
+      );
 
       // Populate Delay Range
       // Sort Delay Ranges based on DelaySerial
@@ -4695,10 +4737,10 @@ REASON: ${c.SCN_WITHELD_REASON || 'None'}
           } catch (_) {}
 
           if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.refresh === 'function') {
-            await mzoDataHub.refresh('CACHE_NSC_v3');
+            await mzoDataHub.refresh('CACHE_NSC_v4');
           } else if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.retryDataset === 'function') {
-            if (typeof mzoDataHub.delete === 'function') await mzoDataHub.delete('CACHE_NSC_v3');
-            await mzoDataHub.retryDataset('CACHE_NSC_v3');
+            if (typeof mzoDataHub.delete === 'function') await mzoDataHub.delete('CACHE_NSC_v4');
+            await mzoDataHub.retryDataset('CACHE_NSC_v4');
           }
           try { localStorage.removeItem(PENDING_KEY); } catch (_) {}
           hideBanner();
