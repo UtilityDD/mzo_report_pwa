@@ -174,15 +174,24 @@
                 }
 
                 if (regionEl && globalPref.region && globalPref.region !== 'all') {
-                    for (let opt of regionEl.options) {
-                        if (isMatch(globalPref.region, opt.value)) {
-                            if (regionEl.value !== opt.value) {
-                                regionEl.value = opt.value;
-                                if (shouldTrigger) regionEl.dispatchEvent(new Event('change'));
+                    const regionEls = document.querySelectorAll('[id="regionFilter"], [id="regionSelect"], [id="locationFilter"], [id="region"], [id="region-filter"]');
+                    let matchedValue = '';
+                    regionEls.forEach((el) => {
+                        for (let opt of el.options) {
+                            if (isMatch(globalPref.region, opt.value)) {
+                                matchedValue = opt.value;
+                                break;
+                            }
+                        }
+                    });
+                    if (matchedValue) {
+                        regionEls.forEach((el) => {
+                            if (el.value !== matchedValue) {
+                                el.value = matchedValue;
+                                if (shouldTrigger) el.dispatchEvent(new Event('change'));
                                 applied = true;
                             }
-                            break;
-                        }
+                        });
                     }
                 }
 
@@ -195,15 +204,24 @@
                 }
 
                 if (divisionEl && globalPref.division && globalPref.division !== 'all') {
-                    for (let opt of divisionEl.options) {
-                        if (isMatch(globalPref.division, opt.value)) {
-                            if (divisionEl.value !== opt.value) {
-                                divisionEl.value = opt.value;
-                                if (shouldTrigger) divisionEl.dispatchEvent(new Event('change'));
+                    const divisionEls = document.querySelectorAll('[id="divisionFilter"], [id="divisionSelect"], [id="divnSelect"], [id="division"], [id="division-filter"]');
+                    let matchedValue = '';
+                    divisionEls.forEach((el) => {
+                        for (let opt of el.options) {
+                            if (isMatch(globalPref.division, opt.value)) {
+                                matchedValue = opt.value;
+                                break;
+                            }
+                        }
+                    });
+                    if (matchedValue) {
+                        divisionEls.forEach((el) => {
+                            if (el.value !== matchedValue) {
+                                el.value = matchedValue;
+                                if (shouldTrigger) el.dispatchEvent(new Event('change'));
                                 applied = true;
                             }
-                            break;
-                        }
+                        });
                     }
                 }
 
@@ -216,15 +234,24 @@
                 }
 
                 if (cccEl && globalPref.ccc && globalPref.ccc !== 'all') {
-                    for (let opt of cccEl.options) {
-                        if (isMatch(globalPref.ccc, opt.value)) {
-                            if (cccEl.value !== opt.value) {
-                                cccEl.value = opt.value;
-                                if (shouldTrigger) cccEl.dispatchEvent(new Event('change'));
+                    const cccEls = document.querySelectorAll('[id="cccFilter"], [id="cccSelect"], [id="unitFilter"], [id="suppSelect"], [id="support"], [id="ccc-filter"]');
+                    let matchedValue = '';
+                    cccEls.forEach((el) => {
+                        for (let opt of el.options) {
+                            if (isMatch(globalPref.ccc, opt.value)) {
+                                matchedValue = opt.value;
+                                break;
+                            }
+                        }
+                    });
+                    if (matchedValue) {
+                        cccEls.forEach((el) => {
+                            if (el.value !== matchedValue) {
+                                el.value = matchedValue;
+                                if (shouldTrigger) el.dispatchEvent(new Event('change'));
                                 applied = true;
                             }
-                            break;
-                        }
+                        });
                     }
                 }
 
