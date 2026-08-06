@@ -597,7 +597,7 @@
             try {
                 let data;
                 if (typeof mzoDataHub !== 'undefined') {
-                    const cachedData = await mzoDataHub.get('CACHE_WITHHELD');
+                    const cachedData = await mzoDataHub.get('CACHE_WITHHELD_v2');
                     if (cachedData) {
                         console.log("Successfully fetched Withheld data from DataHub.");
                         data = cachedData;
@@ -611,6 +611,9 @@
                         throw new Error(`HTTP error! status: ${response.status}`);
                     }
                     data = await response.json();
+                    if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.set === 'function') {
+                        try { await mzoDataHub.set('CACHE_WITHHELD_v2', data); } catch (_) {}
+                    }
                 }
 
                 rawData = data.map(item => ({ ...item }));
@@ -1169,6 +1172,7 @@
                 'Phone Number',
                 'Connection Class',
                 'Phase',
+                'Payment Date',
                 'Withheld Reason',
                 'Withheld Date',
                 'Region',
@@ -1183,6 +1187,11 @@
                 const formattedDate = date instanceof Date && !isNaN(date.getTime()) 
                     ? date.toLocaleDateString('en-GB') 
                     : (item['SCN_WITHELD_DATE_RAW'] || '-');
+                const payRaw = item['COLL_DATE'] || '';
+                const payParsed = payRaw ? parseDate(payRaw) : null;
+                const payDate = payParsed && !isNaN(payParsed.getTime())
+                    ? payParsed.toLocaleDateString('en-GB')
+                    : (String(payRaw || '').trim() || '-');
 
                 return [
                     item['APPL_NO'] || '-',
@@ -1190,6 +1199,7 @@
                     item['PHONE_NO'] || '-',
                     item['CONN_CLASS'] || '-',
                     item['APPLIED_PHASE'] || '-',
+                    payDate,
                     `"${(item['SCN_WITHELD_REASON'] || '').replace(/"/g, '""')}"`, // Escape quotes
                     formattedDate,
                     item['REGION'] || '-',
@@ -1413,6 +1423,7 @@
                             <th class="px-4 py-2 text-left text-[9px] font-bold text-slate-600 uppercase tracking-widest">Phone</th>
                             <th class="px-4 py-2 text-left text-[9px] font-bold text-slate-500 uppercase tracking-widest">Class</th>
                             <th class="px-4 py-2 text-left text-[9px] font-bold text-slate-500 uppercase tracking-widest">Phase</th>
+                            <th class="px-4 py-2 text-left text-[9px] font-bold text-slate-600 uppercase tracking-widest">Payment Date</th>
                             <th class="px-4 py-2 text-left text-[9px] font-bold text-slate-600 uppercase tracking-widest">Reason</th>
                         </tr>
                     </thead>
@@ -1423,6 +1434,14 @@
             }
 
             chunk.forEach(item => {
+                const payRaw = item['COLL_DATE'] || item['PAYMENT_DATE'] || '';
+                let payDate = '-';
+                if (payRaw instanceof Date && !isNaN(payRaw.getTime())) {
+                    payDate = payRaw.toLocaleDateString('en-GB');
+                } else if (String(payRaw).trim()) {
+                    const parsed = parseDate(payRaw);
+                    payDate = parsed && !isNaN(parsed.getTime()) ? parsed.toLocaleDateString('en-GB') : String(payRaw).trim();
+                }
                 html += `
                 <tr class="hover:bg-slate-50 transition-colors border-b border-slate-50">
                     <td class="px-4 py-3 whitespace-nowrap text-[11px] font-bold text-slate-800">${item['APPL_NO'] || '-'}</td>
@@ -1430,6 +1449,7 @@
                     <td class="px-4 py-3 whitespace-nowrap text-[11px] text-slate-600">${item['PHONE_NO'] || '-'}</td>
                     <td class="px-4 py-3 whitespace-nowrap text-[10px] text-slate-500">${item['CONN_CLASS'] || '-'}</td>
                     <td class="px-4 py-3 whitespace-nowrap text-[10px] text-slate-500">${item['APPLIED_PHASE'] || '-'}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-[11px] text-slate-700 font-medium">${payDate}</td>
                     <td class="px-4 py-3 text-[11px] text-slate-700 italic">${item['SCN_WITHELD_REASON'] || '-'}</td>
                 </tr>
             `;
