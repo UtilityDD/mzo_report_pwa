@@ -404,6 +404,12 @@
         return `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()}`;
     }
 
+    function formatDateIso(d) {
+        const dt = d || new Date();
+        const pad = (x) => String(x).padStart(2, '0');
+        return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+    }
+
     function makeId() {
         return 'R' + Date.now() + Math.random().toString(36).slice(2, 6);
     }
@@ -943,7 +949,8 @@
                 ZoneStockAtAllot: src.stock,
                 AllottedQty: Number(line.qty),
                 Remarks: globalRemarks,
-                MovementType: movementLabel(line.fromName)
+                MovementType: movementLabel(line.fromName),
+                Date: formatDateIso()
             };
         });
 

@@ -1822,9 +1822,16 @@ async function fetchAllotmentCsvText_() {
 }
 
 function allotDbToClient_(row) {
+    const createdAt = row.created_at || '';
+    let date = String(row.date || '').trim();
+    if (!date && createdAt) {
+        date = allotmentCalendarDate_(createdAt);
+    } else {
+        date = normalizeAllotmentDate_(date, createdAt);
+    }
     return {
         AllotmentNo: row.allotment_no || '',
-        Date: row.date || '',
+        Date: date,
         MovementType: row.movement_type || '',
         FromStore: row.from_store || '',
         FromPlantCode: row.from_plant_code || '',
@@ -1839,8 +1846,39 @@ function allotDbToClient_(row) {
         AllottedQty: row.allotted_qty,
         Remarks: row.remarks || '',
         CreatedBy: row.created_by || '',
-        CreatedAt: row.created_at || ''
+        CreatedAt: createdAt
     };
+}
+
+/** Calendar YYYY-MM-DD in Asia/Kolkata (allotment office timezone). */
+function allotmentCalendarDate_(isoOrDate) {
+    const d = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate);
+    if (isNaN(d.getTime())) return '';
+    try {
+        return new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Kolkata',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        }).format(d);
+    } catch (_) {
+        return d.toISOString().slice(0, 10);
+    }
+}
+
+/** Accept YYYY-MM-DD or DD/MM/YYYY; fall back to createdAt / today (IST). */
+function normalizeAllotmentDate_(raw, fallbackIso) {
+    const s = String(raw || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const dmy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (dmy) {
+        return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+    }
+    if (fallbackIso) {
+        const fromCreated = allotmentCalendarDate_(fallbackIso);
+        if (fromCreated) return fromCreated;
+    }
+    return allotmentCalendarDate_(new Date()) || '';
 }
 
 function allotClientToDb_(row, allotmentNo, createdBy, createdAtIso) {
@@ -1849,9 +1887,10 @@ function allotClientToDb_(row, allotmentNo, createdBy, createdAtIso) {
         const n = Number(String(v).replace(/,/g, ''));
         return Number.isNaN(n) ? null : n;
     };
+    const createdAt = createdAtIso || new Date().toISOString();
     return {
         allotment_no: allotmentNo,
-        date: String(row.Date || row.date || '').slice(0, 10),
+        date: normalizeAllotmentDate_(row.Date || row.date, createdAt),
         movement_type: String(row.MovementType || row.movementType || ''),
         from_store: String(row.FromStore || row.fromStore || ''),
         from_plant_code: String(row.FromPlantCode || row.fromPlantCode || ''),
@@ -1866,7 +1905,7 @@ function allotClientToDb_(row, allotmentNo, createdBy, createdAtIso) {
         allotted_qty: num(row.AllottedQty != null ? row.AllottedQty : row.allottedQty),
         remarks: String(row.Remarks || row.remarks || ''),
         created_by: createdBy || '',
-        created_at: createdAtIso || new Date().toISOString()
+        created_at: createdAt
     };
 }
 

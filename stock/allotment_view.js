@@ -98,7 +98,7 @@
             if (!map.has(no)) {
                 map.set(no, {
                     allotmentNo: no,
-                    date: String(r.Date || '').slice(0, 10),
+                    date: String(r.Date || '').slice(0, 10) || String(r.CreatedAt || '').slice(0, 10),
                     remarks: r.Remarks || '',
                     createdBy: r.CreatedBy || '',
                     lines: [],
@@ -114,7 +114,9 @@
             if (r.FromStore) o.fromSet.add(r.FromStore);
             if (!o.remarks && r.Remarks) o.remarks = r.Remarks;
             if (!o.createdBy && r.CreatedBy) o.createdBy = r.CreatedBy;
-            if (!o.date && r.Date) o.date = String(r.Date).slice(0, 10);
+            if (!o.date) {
+                o.date = String(r.Date || '').slice(0, 10) || String(r.CreatedAt || '').slice(0, 10);
+            }
         });
         return [...map.values()].sort((a, b) => {
             if (a.date !== b.date) return String(b.date).localeCompare(String(a.date));

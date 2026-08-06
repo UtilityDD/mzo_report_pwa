@@ -508,7 +508,11 @@ function showLowStockModal() {
             }
 
             let itemsHTML = itemsByStore[store]
-                .map(item => `<div class="low-stock-item"><span>${item.material}</span><strong>${item.stock}</strong></div>`)
+                .map((item) => {
+                    const stock = Number(item.stock);
+                    const stockText = Number.isFinite(stock) ? stock.toFixed(3) : String(item.stock ?? '');
+                    return `<div class="low-stock-item"><span>${item.material}</span><strong>${stockText}</strong></div>`;
+                })
                 .join('');
 
             storeCard.innerHTML = `
