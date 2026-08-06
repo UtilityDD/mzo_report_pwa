@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="tailwind_dist.css">
     <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
     <script src="mzo_data_hub.js"></script>
     <script src="mzo_presets_hub.js"></script>
     <!-- Inter font from Google Fonts -->
@@ -593,29 +594,91 @@
         Chart.defaults.font.family = 'Inter';
 
         // Event Listeners
+        const WITHHELD_CACHE_KEY = 'CACHE_WITHHELD_v3';
+
+        function parseWithheldCsv(csvText) {
+            if (!csvText || typeof csvText !== 'string') return [];
+            if (typeof Papa === 'undefined') {
+                throw new Error('CSV parser failed to load. Refresh the page.');
+            }
+            const parsed = Papa.parse(csvText.trim(), {
+                header: true,
+                skipEmptyLines: true,
+                dynamicTyping: false
+            });
+            if (parsed.errors && parsed.errors.length) {
+                console.warn('[Withheld] CSV parse warnings:', parsed.errors.slice(0, 3));
+            }
+            return Array.isArray(parsed.data) ? parsed.data : [];
+        }
+
+        async function loadWithheldRows() {
+            let forceRefresh = false;
+            try {
+                forceRefresh = localStorage.getItem('mzo_withheld_pending_refresh') === '1';
+            } catch (_) {}
+
+            if (forceRefresh && typeof mzoDataHub !== 'undefined' && mzoDataHub.refresh) {
+                try {
+                    await mzoDataHub.refresh(WITHHELD_CACHE_KEY);
+                    localStorage.removeItem('mzo_withheld_pending_refresh');
+                } catch (_) {}
+            }
+
+            if (typeof mzoDataHub !== 'undefined') {
+                let cached = await mzoDataHub.get(WITHHELD_CACHE_KEY);
+                if (cached && typeof cached === 'string') {
+                    console.log('Successfully fetched Withheld data from DataHub.');
+                    return parseWithheldCsv(cached);
+                }
+                // Legacy JSON cache (v2) — migrate once
+                const legacy = await mzoDataHub.get('CACHE_WITHHELD_v2');
+                if (legacy && Array.isArray(legacy) && legacy.length) {
+                    console.log('Using legacy Withheld JSON cache; will refresh to CSV on next sync.');
+                    return legacy;
+                }
+                if (typeof mzoDataHub.refresh === 'function') {
+                    await mzoDataHub.refresh(WITHHELD_CACHE_KEY);
+                    cached = await mzoDataHub.get(WITHHELD_CACHE_KEY);
+                    if (cached && typeof cached === 'string') {
+                        return parseWithheldCsv(cached);
+                    }
+                }
+            }
+
+            console.log('Downloading Withheld data from network...');
+            const response = await fetch('/api/withheld/dataset', {
+                cache: 'no-store',
+                credentials: 'same-origin'
+            });
+            if (!response.ok) {
+                // Last resort: old static JSON
+                const legacyRes = await fetch('data/withheld.json');
+                if (!legacyRes.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return await legacyRes.json();
+            }
+            const csvText = await response.text();
+            if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.set === 'function') {
+                try { await mzoDataHub.set(WITHHELD_CACHE_KEY, csvText); } catch (_) {}
+            }
+            return parseWithheldCsv(csvText);
+        }
+
         document.addEventListener('DOMContentLoaded', async () => {
             try {
-                let data;
-                if (typeof mzoDataHub !== 'undefined') {
-                    const cachedData = await mzoDataHub.get('CACHE_WITHHELD_v2');
-                    if (cachedData) {
-                        console.log("Successfully fetched Withheld data from DataHub.");
-                        data = cachedData;
-                    }
-                }
+                try {
+                    const ch = new BroadcastChannel('mzo-withheld');
+                    ch.onmessage = (ev) => {
+                        if (ev && ev.data && ev.data.type === 'withheld-uploaded') {
+                            try { localStorage.setItem('mzo_withheld_pending_refresh', '1'); } catch (_) {}
+                            location.reload();
+                        }
+                    };
+                } catch (_) {}
 
-                if (!data) {
-                    console.log("Downloading Withheld data from network...");
-                    const response = await fetch('data/withheld.json');
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    data = await response.json();
-                    if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.set === 'function') {
-                        try { await mzoDataHub.set('CACHE_WITHHELD_v2', data); } catch (_) {}
-                    }
-                }
-
+                const data = await loadWithheldRows();
                 rawData = data.map(item => ({ ...item }));
 
                 rawData.forEach(obj => {
@@ -830,7 +893,7 @@
                 showTab('ccc');
             } catch (error) {
                 console.error('Error fetching data:', error);
-                loadingOverlay.innerHTML = `<div class="p-6 bg-red-800 text-white rounded-lg shadow-xl"><h2 class="text-xl font-bold mb-2">Error</h2><p>${error.message}. Please ensure 'data/withheld.json' is in the correct directory.</p></div>`;
+                loadingOverlay.innerHTML = `<div class="p-6 bg-red-800 text-white rounded-lg shadow-xl"><h2 class="text-xl font-bold mb-2">Error</h2><p>${error.message}. Try refreshing, or ask an authorised user to re-upload NSC (publishes Withheld too).</p></div>`;
             }
         });
 

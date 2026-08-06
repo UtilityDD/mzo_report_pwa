@@ -78,6 +78,48 @@
     .locked { opacity: 0.7; }
     .admin-only { display: none; }
     .admin-only.show { display: block; }
+    .progress-panel {
+      display: none;
+      margin-top: 1rem;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #f8fafc;
+    }
+    .progress-panel.show { display: block; }
+    .progress-panel h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1rem;
+    }
+    .counts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem 1rem;
+      font-size: 0.9rem;
+      margin-bottom: 0.85rem;
+    }
+    .counts .label { color: var(--muted); }
+    .counts .val { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .bar-track {
+      height: 12px;
+      background: #e5e7eb;
+      border-radius: 999px;
+      overflow: hidden;
+      margin: 0.35rem 0 0.75rem;
+    }
+    .bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #0b5cab, #38bdf8);
+      transition: width 0.2s ease;
+    }
+    .step-line {
+      font-size: 0.88rem;
+      color: var(--ink);
+      margin: 0.25rem 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .step-line.done { color: var(--ok); }
   </style>
 </head>
 <body>
@@ -89,17 +131,22 @@
         <strong>How to upload</strong>
         <ol>
           <li>Select the <strong>data date</strong> (as-on date of this NSC file).</li>
-          <li>Choose the pending NSC Excel file.</li>
-          <li>Click <strong>Upload &amp; Publish</strong> and wait until it finishes.</li>
-          <li>Open the NSC dashboard to see the updated list.</li>
+          <li>Choose the pending NSC Excel file (same SAP dump).</li>
+          <li>Click <strong>Upload &amp; Publish</strong> and wait until both datasets finish.</li>
+          <li>Open the <strong>NSC</strong> and <strong>Withheld</strong> dashboards to verify.</li>
         </ol>
-        <p class="muted" style="margin:0.6rem 0 0;">Only <strong>Working</strong> and <strong>Accepted</strong> applications are published. Withheld rows are skipped automatically.</p>
+        <p class="muted" style="margin:0.6rem 0 0;">
+          One file publishes both: <strong>Working/Accepted</strong> → NSC dashboard, and
+          <strong>Withheld</strong> → Withheld dashboard.
+        </p>
       </div>
 
       <div class="admin-only" id="adminIntro">
         <p class="muted">
-          Admin: cleaned Working/Accepted rows publish to the live NSC store (local backup when available).
-          Dashboards read via DataHub cache. Grant rights under Admin → User Management → <strong>NSC Raw Upload</strong>.
+          Admin: cleaned rows publish to Supabase in chunks (live progress below).
+          Grant rights under Admin → User Management → <strong>NSC Raw Upload</strong>.
+          First time: run <code>create_mzo_insight_nsc_pending.sql</code> and
+          <code>create_mzo_insight_nsc_withheld.sql</code> in Supabase.
         </p>
         <p class="muted" id="adminSetupHint" style="display:none;"></p>
       </div>
@@ -111,7 +158,7 @@
         <div class="row">
           <input id="reportDateInput" type="date" disabled required />
         </div>
-        <p class="muted" style="margin-top:0.35rem;">Use the as-on date of this Excel. It appears as “Updated on” on the dashboard.</p>
+        <p class="muted" style="margin-top:0.35rem;">Use the as-on date of this Excel. It appears as “Updated on” on both dashboards.</p>
 
         <label class="muted" for="fileInput"><strong>Choose NSC Excel</strong></label>
         <div class="row">
@@ -119,9 +166,26 @@
         </div>
         <div class="row">
           <button class="primary" id="uploadBtn" disabled>Upload &amp; Publish</button>
-          <a class="link-btn ghost" href="/nsc.html">Open NSC Dashboard</a>
+          <a class="link-btn ghost" href="/nsc.html">Open NSC</a>
+          <a class="link-btn ghost" href="/withheld.html">Open Withheld</a>
           <a class="link-btn ghost" href="/index.html">Home</a>
         </div>
+      </div>
+
+      <div class="progress-panel" id="progressPanel">
+        <h2>Upload progress</h2>
+        <div class="counts">
+          <div><span class="label">Working/Accepted</span><br><span class="val" id="cntPending">—</span></div>
+          <div><span class="label">Withheld</span><br><span class="val" id="cntWithheld">—</span></div>
+          <div><span class="label">Pending uploaded</span><br><span class="val" id="sentPending">0</span></div>
+          <div><span class="label">Withheld uploaded</span><br><span class="val" id="sentWithheld">0</span></div>
+        </div>
+        <div class="muted" id="progressLabel">Waiting…</div>
+        <div class="bar-track"><div class="bar-fill" id="barFill"></div></div>
+        <div class="step-line" id="stepProcess">1. Process Excel</div>
+        <div class="step-line" id="stepPending">2. Upload Working/Accepted</div>
+        <div class="step-line" id="stepWithheld">3. Upload Withheld</div>
+        <div class="step-line" id="stepFinish">4. Activate live datasets</div>
       </div>
 
       <div id="msg" class="msg"></div>
@@ -131,6 +195,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="/nsc/nsc_client_pipeline.js"></script>
   <script>
+    const CHUNK_ROWS = 800;
     const metaBox = document.getElementById('metaBox');
     const msg = document.getElementById('msg');
     const fileInput = document.getElementById('fileInput');
@@ -139,8 +204,18 @@
     const uploadBlock = document.getElementById('uploadBlock');
     const adminIntro = document.getElementById('adminIntro');
     const adminSetupHint = document.getElementById('adminSetupHint');
+    const progressPanel = document.getElementById('progressPanel');
+    const barFill = document.getElementById('barFill');
+    const progressLabel = document.getElementById('progressLabel');
 
     let isAdminViewer = false;
+    let progressState = {
+      pendingTotal: 0,
+      withheldTotal: 0,
+      pendingSent: 0,
+      withheldSent: 0,
+      phase: 'idle'
+    };
 
     function toIsoDate(d) {
       const yyyy = d.getFullYear();
@@ -153,6 +228,10 @@
       const m = String(name || '').match(/(\d{2})[-_.](\d{2})[-_.](\d{4})/);
       if (!m) return null;
       return `${m[3]}-${m[2]}-${m[1]}`;
+    }
+
+    function fmt(n) {
+      return Number(n || 0).toLocaleString('en-IN');
     }
 
     reportDateInput.value = toIsoDate(new Date());
@@ -169,6 +248,42 @@
       msg.textContent = text;
     }
 
+    function setStep(id, text, done) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = text;
+      el.classList.toggle('done', !!done);
+    }
+
+    function updateProgressUi() {
+      const p = progressState;
+      document.getElementById('cntPending').textContent = fmt(p.pendingTotal);
+      document.getElementById('cntWithheld').textContent = fmt(p.withheldTotal);
+      document.getElementById('sentPending').textContent =
+        fmt(p.pendingSent) + ' / ' + fmt(p.pendingTotal);
+      document.getElementById('sentWithheld').textContent =
+        fmt(p.withheldSent) + ' / ' + fmt(p.withheldTotal);
+
+      const total = p.pendingTotal + p.withheldTotal;
+      const sent = p.pendingSent + p.withheldSent;
+      let pct = total > 0 ? Math.round((sent / total) * 100) : 0;
+      if (p.phase === 'process') pct = Math.max(pct, 2);
+      if (p.phase === 'finish') pct = Math.max(pct, 98);
+      if (p.phase === 'done') pct = 100;
+      barFill.style.width = pct + '%';
+
+      if (p.phase === 'process') progressLabel.textContent = 'Processing Excel in browser…';
+      else if (p.phase === 'pending') {
+        progressLabel.textContent =
+          'Uploading Working/Accepted: ' + fmt(p.pendingSent) + ' / ' + fmt(p.pendingTotal);
+      } else if (p.phase === 'withheld') {
+        progressLabel.textContent =
+          'Uploading Withheld: ' + fmt(p.withheldSent) + ' / ' + fmt(p.withheldTotal);
+      } else if (p.phase === 'finish') progressLabel.textContent = 'Activating live datasets…';
+      else if (p.phase === 'done') progressLabel.textContent = 'Complete';
+      else progressLabel.textContent = 'Waiting…';
+    }
+
     async function readJsonSafe(res) {
       const text = await res.text();
       if (!text) return {};
@@ -177,7 +292,7 @@
       } catch (_) {
         const trimmed = text.trim();
         if (/request entity too large/i.test(trimmed)) {
-          throw new Error('File is too large to publish. Contact an admin.');
+          throw new Error('Chunk too large to publish. Contact an admin.');
         }
         throw new Error('Upload failed. Please try again or contact an admin.');
       }
@@ -205,8 +320,8 @@
         <div><strong>Last upload</strong> ${m.uploadedAt || '-'} by ${m.uploadedBy || '-'}</div>
         <div><strong>File</strong> ${m.originalName || '-'}</div>
         <div><strong>Sheet</strong> ${m.sheetName || '-'}</div>
-        <div><strong>Published</strong> ${m.publishedRows ?? s.publishedRows ?? '-'} rows (Working/Accepted)</div>
-        <div><strong>Withheld in file</strong> ${m.withheldRows ?? s.withheldRows ?? '-'} (not published to NSC yet)</div>
+        <div><strong>Working/Accepted</strong> ${m.publishedRows ?? s.publishedRows ?? '-'} → NSC</div>
+        <div><strong>Withheld</strong> ${m.withheldRows ?? s.withheldRows ?? '-'} → Withheld dashboard</div>
         <div><strong>Report date (Updated on)</strong> ${m.reportDate || s.today || '-'}</div>
         <div><strong>Active source</strong> ${data.source}</div>
       `;
@@ -248,6 +363,47 @@
       }
     }
 
+    async function postJson(url, body) {
+      const res = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await readJsonSafe(res);
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || ('Request failed (' + res.status + ')'));
+      }
+      return data;
+    }
+
+    async function postCsvChunk(uploadId, kind, csvText) {
+      const fd = new FormData();
+      fd.append('uploadId', String(uploadId));
+      fd.append('kind', kind);
+      fd.append('csv', new Blob([csvText], { type: 'text/csv' }), kind + '_chunk.csv');
+      const res = await fetch('/api/nsc/publish/chunk', {
+        method: 'POST',
+        body: fd,
+        credentials: 'same-origin'
+      });
+      const data = await readJsonSafe(res);
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || ('Chunk failed (' + res.status + ')'));
+      }
+      return data;
+    }
+
+    async function uploadRowsInChunks(uploadId, kind, rows, onProgress) {
+      for (let i = 0; i < rows.length; i += CHUNK_ROWS) {
+        const slice = rows.slice(i, i + CHUNK_ROWS);
+        const csv = NSCClientPipeline.toCsv(slice);
+        const data = await postCsvChunk(uploadId, kind, csv);
+        const inserted = Number(data.inserted) || slice.length;
+        onProgress(inserted);
+      }
+    }
+
     uploadBtn.addEventListener('click', async () => {
       const file = fileInput.files && fileInput.files[0];
       if (!file) {
@@ -265,81 +421,106 @@
       }
 
       uploadBtn.disabled = true;
-      uploadBtn.textContent = 'Preparing…';
-      showMsg('Preparing your file — please wait…', true);
+      uploadBtn.textContent = 'Working…';
+      progressPanel.classList.add('show');
+      progressState = {
+        pendingTotal: 0,
+        withheldTotal: 0,
+        pendingSent: 0,
+        withheldSent: 0,
+        phase: 'process'
+      };
+      setStep('stepProcess', '1. Process Excel…', false);
+      setStep('stepPending', '2. Upload Working/Accepted', false);
+      setStep('stepWithheld', '3. Upload Withheld', false);
+      setStep('stepFinish', '4. Activate live datasets', false);
+      updateProgressUi();
+      showMsg('Processing Excel — counts will appear below…', true);
 
       try {
         const buffer = await file.arrayBuffer();
         const result = NSCClientPipeline.processNscArrayBuffer(buffer, reportDate, file.name);
-        const csvBytes = new TextEncoder().encode(result.csv).length;
-        const maxLive = 4.2 * 1024 * 1024;
-        if (csvBytes > maxLive) {
-          throw new Error(
-            isAdminViewer
-              ? ('Cleaned data is ' + (csvBytes / (1024 * 1024)).toFixed(1) +
-                 ' MB (live limit ~4.5 MB). Contact admin / reduce file size.')
-              : 'This file is too large to publish. Contact an admin.'
-          );
-        }
 
-        uploadBtn.textContent = 'Publishing…';
-        showMsg(
-          isAdminViewer
-            ? ('Publishing ' + result.published.length + ' Working/Accepted rows' +
-               ' (skipped ' + result.withheld.length + ' withheld)…')
-            : 'Publishing NSC data — please wait…',
+        progressState.pendingTotal = result.published.length;
+        progressState.withheldTotal = result.withheld.length;
+        progressState.phase = 'pending';
+        setStep(
+          'stepProcess',
+          '1. Process Excel — done (raw ' + fmt((result.stats && result.stats.rawRows) || 0) + ')',
+          true
+        );
+        updateProgressUi();
+
+        const begin = await postJson('/api/nsc/publish/begin', {
+          reportDate,
+          reportDateUsed: result.reportDateUsed || '',
+          originalName: file.name,
+          sheetName: result.sheetName || '',
+          publishedRows: result.published.length,
+          withheldRows: result.withheld.length,
+          stats: result.stats || {}
+        });
+        const uploadId = begin.uploadId;
+
+        setStep('stepPending', '2. Upload Working/Accepted…', false);
+        await uploadRowsInChunks(uploadId, 'pending', result.published, (n) => {
+          progressState.pendingSent += n;
+          updateProgressUi();
+        });
+        setStep(
+          'stepPending',
+          '2. Upload Working/Accepted — ' + fmt(progressState.pendingSent) + ' rows',
           true
         );
 
-        const fd = new FormData();
-        fd.append('csv', new Blob([result.csv], { type: 'text/csv' }), 'nsc_cleaned.csv');
-        fd.append('reportDate', reportDate);
-        fd.append('reportDateUsed', result.reportDateUsed || '');
-        fd.append('originalName', file.name);
-        fd.append('sheetName', result.sheetName || '');
-        fd.append('withheldRows', String(result.withheld.length));
-        fd.append('stats', JSON.stringify(result.stats || {}));
-
-        const res = await fetch('/api/nsc/publish', {
-          method: 'POST',
-          body: fd,
-          credentials: 'same-origin'
+        progressState.phase = 'withheld';
+        setStep('stepWithheld', '3. Upload Withheld…', false);
+        updateProgressUi();
+        await uploadRowsInChunks(uploadId, 'withheld', result.withheld, (n) => {
+          progressState.withheldSent += n;
+          updateProgressUi();
         });
-        const data = await readJsonSafe(res);
-        if (!res.ok || data.status !== 'success') {
-          throw new Error(data.message || ('Publish failed (' + res.status + ')'));
-        }
+        setStep(
+          'stepWithheld',
+          '3. Upload Withheld — ' + fmt(progressState.withheldSent) + ' rows',
+          true
+        );
 
-        const s = (data.meta && data.meta.stats) || {};
-        const reportLabel = data.meta.reportDate || s.today || reportDate;
-        const published = data.meta.publishedRows || s.publishedRows || result.published.length;
+        progressState.phase = 'finish';
+        setStep('stepFinish', '4. Activating live datasets…', false);
+        updateProgressUi();
 
-        if (isAdminViewer) {
-          showMsg(
-            data.message +
-            '\nReport date (Updated on): ' + reportLabel +
-            '\nRaw: ' + (s.rawRows || result.stats.rawRows || '-') +
-            ' → Published: ' + published +
-            ' | Withheld skipped: ' + (data.meta.withheldRows || result.withheld.length) +
-            '\nSupabase: ' + (data.supabase || '-'),
-            data.supabase === 'ok'
-          );
-        } else {
-          showMsg(
-            'Upload successful.\n' +
-            'Published ' + published + ' applications.\n' +
-            'Updated on: ' + reportLabel + '\n' +
-            'Open the NSC dashboard to view the latest data.',
-            true
-          );
-        }
+        const done = await postJson('/api/nsc/publish/complete', { uploadId });
+        progressState.phase = 'done';
+        setStep('stepFinish', '4. Activate live datasets — done', true);
+        updateProgressUi();
+
+        const m = done.meta || {};
+        const s = m.stats || {};
+        const reportLabel = m.reportDate || s.today || reportDate;
+        const published = m.publishedRows ?? result.published.length;
+        const withheld = m.withheldRows ?? result.withheld.length;
+
+        showMsg(
+          (done.message || 'Upload successful.') +
+            '\nUpdated on: ' + reportLabel +
+            '\nWorking/Accepted: ' + fmt(published) +
+            '\nWithheld: ' + fmt(withheld),
+          true
+        );
+
         await loadMeta();
         try {
           localStorage.removeItem('mzo_last_sync_date');
           localStorage.removeItem('mzoDataSynced');
           localStorage.setItem('mzo_nsc_pending_refresh', '1');
+          localStorage.setItem('mzo_withheld_pending_refresh', '1');
           localStorage.removeItem('mzo_nsc_seen_version');
           localStorage.removeItem('mzo_nsc_dismissed_version');
+          if (typeof mzoDataHub !== 'undefined' && mzoDataHub.refresh) {
+            mzoDataHub.refresh('CACHE_NSC_v5').catch(() => {});
+            mzoDataHub.refresh('CACHE_WITHHELD_v3').catch(() => {});
+          }
         } catch (_) {}
         try {
           const ch = new BroadcastChannel('mzo-nsc');
@@ -347,12 +528,24 @@
             type: 'nsc-uploaded',
             reportDate: reportLabel,
             publishedRows: published,
+            withheldRows: withheld,
             at: Date.now()
           });
           ch.close();
         } catch (_) {}
+        try {
+          const ch2 = new BroadcastChannel('mzo-withheld');
+          ch2.postMessage({
+            type: 'withheld-uploaded',
+            reportDate: reportLabel,
+            withheldRows: withheld,
+            at: Date.now()
+          });
+          ch2.close();
+        } catch (_) {}
       } catch (e) {
         showMsg(e.message || String(e), false);
+        progressLabel.textContent = 'Failed — see message below';
       } finally {
         uploadBtn.disabled = false;
         uploadBtn.textContent = 'Upload & Publish';

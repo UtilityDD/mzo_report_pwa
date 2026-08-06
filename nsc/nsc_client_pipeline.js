@@ -384,8 +384,8 @@
     }
 
     const result = transformRows(rows, reportDate, officeMap);
-    if (!result.published.length) {
-      throw new Error('No Working/Accepted rows found after processing.');
+    if (!result.published.length && !result.withheld.length) {
+      throw new Error('No Working/Accepted or Withheld rows found after processing.');
     }
     return {
       sheetName,
