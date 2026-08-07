@@ -126,6 +126,69 @@
         return '';
     }
 
+    function hideCancelConfirmModal() {
+        const modal = document.getElementById('allot-cancel-confirm-modal');
+        if (!modal) return;
+        modal.classList.remove('active');
+        modal.hidden = true;
+        modal.style.display = 'none';
+    }
+
+    /** Clean in-app confirm (not window.confirm). Resolves true if user confirms cancel. */
+    function openCancelConfirmModal(allotmentNo, cancelledBy) {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('allot-cancel-confirm-modal');
+            const noEl = document.getElementById('allot-cancel-confirm-no');
+            const byEl = document.getElementById('allot-cancel-confirm-by');
+            const keepBtn = document.getElementById('allot-cancel-confirm-keep');
+            const yesBtn = document.getElementById('allot-cancel-confirm-yes');
+            if (!modal || !keepBtn || !yesBtn) {
+                resolve(false);
+                return;
+            }
+
+            if (noEl) noEl.textContent = String(allotmentNo || '');
+            if (byEl) byEl.textContent = cancelledBy ? `Cancelled by: ${cancelledBy}` : '';
+
+            const finish = (ok) => {
+                keepBtn.removeEventListener('click', onKeep);
+                yesBtn.removeEventListener('click', onYes);
+                modal.removeEventListener('click', onBackdrop);
+                document.removeEventListener('keydown', onKey);
+                hideCancelConfirmModal();
+                resolve(ok);
+            };
+            const onKeep = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                finish(false);
+            };
+            const onYes = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                finish(true);
+            };
+            const onBackdrop = (e) => {
+                if (e.target === modal) finish(false);
+            };
+            const onKey = (e) => {
+                if (e.key === 'Escape') finish(false);
+            };
+
+            keepBtn.addEventListener('click', onKeep);
+            yesBtn.addEventListener('click', onYes);
+            modal.addEventListener('click', onBackdrop);
+            document.addEventListener('keydown', onKey);
+
+            if (modal.parentElement !== document.body) document.body.appendChild(modal);
+            modal.hidden = false;
+            modal.classList.add('active');
+            modal.style.display = 'flex';
+            modal.style.zIndex = '2147483002';
+            yesBtn.focus();
+        });
+    }
+
     function groupOrders(rows) {
         const map = new Map();
         rows.forEach((r) => {
@@ -796,28 +859,37 @@
         }
     }
 
-    async function cancelSelectedAllotment() {
-        if (!selectedNo || !canCancelAllotment()) return;
+    async function cancelSelectedAllotment(ev) {
+        if (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+        }
+        if (!selectedNo) return;
+
+        if (window.MzoAllotmentAccess && typeof window.MzoAllotmentAccess.refreshPortalProfile === 'function') {
+            try {
+                await window.MzoAllotmentAccess.refreshPortalProfile();
+            } catch (_) {}
+        }
+
+        if (!canCancelAllotment()) {
+            showStatus(
+                'You are not authorised to cancel allotments. Ask an admin to enable Stock Allot Cancel.',
+                'error'
+            );
+            updateCancelButton(
+                groupOrders(filteredRows).find((o) => o.allotmentNo === selectedNo) || null
+            );
+            return;
+        }
+
         const orders = groupOrders(filteredRows);
         const order = orders.find((o) => o.allotmentNo === selectedNo);
         if (!order || order.cancelled) return;
 
         const who = getPortalDisplayName() || 'you';
-        const ok1 = window.confirm(
-            `Cancel allotment ${selectedNo}?\n\n` +
-                '• The order will stay in the list (dimmed)\n' +
-                '• PDF / view will show a CANCELLED stamp\n' +
-                '• Qty will be excluded from summaries\n\n' +
-                `Cancelled by: ${who}`
-        );
-        if (!ok1) return;
-
-        const ok2 = window.confirm(
-            `Final confirmation\n\n` +
-                `Cancel ${selectedNo} permanently?\n\n` +
-                'This cannot be reverted. There is no undo.'
-        );
-        if (!ok2) return;
+        const confirmed = await openCancelConfirmModal(selectedNo, who);
+        if (!confirmed) return;
 
         const btn = document.getElementById('allot-view-cancel-btn');
         if (btn) btn.disabled = true;
@@ -855,7 +927,7 @@
         }
     }
 
-    function openPanel() {
+    async function openPanel() {
         const overlay = document.getElementById('allot-view-overlay');
         if (!overlay) return;
         document.body.appendChild(overlay);
@@ -868,6 +940,11 @@
         overlay.style.setProperty('z-index', '2147483000', 'important');
         overlay.style.setProperty('background', 'rgba(15,23,42,0.55)', 'important');
         if (window.MzoAllotPanelDrag) window.MzoAllotPanelDrag.enable(overlay);
+        if (window.MzoAllotmentAccess && typeof window.MzoAllotmentAccess.refreshPortalProfile === 'function') {
+            try {
+                await window.MzoAllotmentAccess.refreshPortalProfile();
+            } catch (_) {}
+        }
         loadRows({ force: !!window.__allotViewNeedsRefresh });
     }
 
