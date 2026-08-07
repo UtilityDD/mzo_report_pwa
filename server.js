@@ -148,6 +148,7 @@ function portalUserToClient(row) {
         'nsc-upload-autho': row.nsc_upload_autho || '',
         'stock-upload-autho': row.stock_upload_autho || '',
         'stock-allot-autho': row.stock_allot_autho || '',
+        'stock-cancel-autho': row.stock_cancel_autho || '',
         'si-autho': row.si_autho || '',
         'si-divisions': row.si_divisions || '',
         'sheets-autho': row.sheets_autho || '',
@@ -179,6 +180,9 @@ function clientUserToPortal(user) {
         ).trim(),
         stock_allot_autho: String(
             user['stock-allot-autho'] != null ? user['stock-allot-autho'] : (user.stock_allot_autho || '')
+        ).trim(),
+        stock_cancel_autho: String(
+            user['stock-cancel-autho'] != null ? user['stock-cancel-autho'] : (user.stock_cancel_autho || '')
         ).trim(),
         si_autho: String(user['si-autho'] != null ? user['si-autho'] : (user.si_autho || '')).trim(),
         si_divisions: String(user['si-divisions'] != null ? user['si-divisions'] : (user.si_divisions || '')).trim(),
@@ -835,6 +839,7 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
             'nsc-upload-autho': '',
             'stock-upload-autho': '',
             'stock-allot-autho': '',
+            'stock-cancel-autho': '',
             'si-autho': '',
             'si-divisions': '',
             'sheets-autho': '',
@@ -1670,6 +1675,14 @@ function canAccessStockAllotment_(user) {
     return allowed.some((u) => name === u || name.startsWith(u + ' ') || name.includes(' ' + u + ' '));
 }
 
+/** Soft-cancel allotments — separate from create (stock_cancel_autho only; no legacy list). */
+function canCancelStockAllotment_(user) {
+    if (!user) return false;
+    return flagAuthoYes_(
+        user['stock-cancel-autho'] != null ? user['stock-cancel-autho'] : user.stock_cancel_autho
+    );
+}
+
 async function resolveStockUser_(req) {
     if (!req.user || !req.user.Username) return req.user || null;
     try {
@@ -1697,7 +1710,21 @@ async function requireStockAllotmentAccess_(req, res) {
     if (!canAccessStockAllotment_(user)) {
         res.status(403).json({
             status: 'error',
-            error: 'Creating allotments is restricted. Ask an admin to enable Stock Allot in User Management.'
+            error: 'Creating allotments is restricted. Ask an admin to enable Stock Allot Create in User Management.'
+        });
+        return false;
+    }
+    req.user = { ...req.user, ...user };
+    return true;
+}
+
+async function requireStockAllotmentCancelAccess_(req, res) {
+    if (!requireStockAllotmentLogin_(req, res)) return false;
+    const user = await resolveStockUser_(req);
+    if (!canCancelStockAllotment_(user)) {
+        res.status(403).json({
+            status: 'error',
+            error: 'Cancelling allotments is restricted. Ask an admin to enable Stock Allot Cancel in User Management.'
         });
         return false;
     }
@@ -1829,6 +1856,8 @@ function allotDbToClient_(row) {
     } else {
         date = normalizeAllotmentDate_(date, createdAt);
     }
+    const statusRaw = String(row.status || 'active').trim().toLowerCase();
+    const status = statusRaw === 'cancelled' ? 'cancelled' : 'active';
     return {
         AllotmentNo: row.allotment_no || '',
         Date: date,
@@ -1846,7 +1875,11 @@ function allotDbToClient_(row) {
         AllottedQty: row.allotted_qty,
         Remarks: row.remarks || '',
         CreatedBy: row.created_by || '',
-        CreatedAt: createdAt
+        CreatedAt: createdAt,
+        Status: status,
+        CancelledAt: row.cancelled_at || '',
+        CancelledBy: row.cancelled_by || '',
+        CancelReason: row.cancel_reason || ''
     };
 }
 
@@ -1905,7 +1938,78 @@ function allotClientToDb_(row, allotmentNo, createdBy, createdAtIso) {
         allotted_qty: num(row.AllottedQty != null ? row.AllottedQty : row.allottedQty),
         remarks: String(row.Remarks || row.remarks || ''),
         created_by: createdBy || '',
-        created_at: createdAt
+        created_at: createdAt,
+        status: 'active',
+        cancelled_at: null,
+        cancelled_by: '',
+        cancel_reason: ''
+    };
+}
+
+function encodeAllotmentNoFilter_(allotmentNo) {
+    return encodeURIComponent(String(allotmentNo || '').trim());
+}
+
+async function cancelAllotmentInSupabase_(allotmentNo, cancelledBy, reason) {
+    const no = String(allotmentNo || '').trim();
+    if (!no) throw new Error('allotmentNo is required');
+
+    const existing = await querySupabase(
+        `stock_allotments?allotment_no=eq.${encodeAllotmentNoFilter_(no)}&select=id,status,cancelled_by,cancelled_at&limit=5`,
+        { schema: PORTAL_USERS_SCHEMA }
+    );
+    if (!Array.isArray(existing) || !existing.length) {
+        throw new Error(`Allotment not found: ${no}`);
+    }
+
+    const already = existing.every(
+        (r) => String(r.status || '').trim().toLowerCase() === 'cancelled'
+    );
+    if (already) {
+        const sample = existing[0] || {};
+        return {
+            status: 'success',
+            allotmentNo: no,
+            alreadyCancelled: true,
+            cancelledBy: sample.cancelled_by || cancelledBy || '',
+            cancelledAt: sample.cancelled_at || ''
+        };
+    }
+
+    const cancelledAt = new Date().toISOString();
+    let patched;
+    try {
+        patched = await querySupabase(
+            `stock_allotments?allotment_no=eq.${encodeAllotmentNoFilter_(no)}`,
+            {
+                schema: PORTAL_USERS_SCHEMA,
+                method: 'PATCH',
+                body: {
+                    status: 'cancelled',
+                    cancelled_at: cancelledAt,
+                    cancelled_by: String(cancelledBy || '').trim(),
+                    cancel_reason: String(reason || '').trim()
+                },
+                prefer: 'return=representation'
+            }
+        );
+    } catch (e) {
+        if (/status|cancelled_at|cancelled_by|cancel_reason|PGRST|42703/i.test(e.message || '')) {
+            throw new Error(
+                'Cancel columns missing. Run scripts/alter_stock_allotments_cancel.sql in Supabase SQL Editor.'
+            );
+        }
+        throw e;
+    }
+
+    const count = Array.isArray(patched) ? patched.length : existing.length;
+    return {
+        status: 'success',
+        allotmentNo: no,
+        alreadyCancelled: false,
+        linesUpdated: count,
+        cancelledBy: String(cancelledBy || '').trim(),
+        cancelledAt
     };
 }
 
@@ -1953,11 +2057,21 @@ async function fetchAllotmentsFromSupabase_() {
     return all;
 }
 
-async function createAllotmentInSupabase_(payload) {
+async function createAllotmentInSupabase_(payload, opts) {
     const createdBy = String(payload.createdBy || '').trim();
     const allotmentNo = await nextAllotmentNoSupabase_();
     const createdAt = new Date().toISOString();
-    const rows = (payload.rows || []).map((r) => allotClientToDb_(r, allotmentNo, createdBy, createdAt));
+    const omitCancel = !!(opts && opts.omitCancelFields);
+    const rows = (payload.rows || []).map((r) => {
+        const row = allotClientToDb_(r, allotmentNo, createdBy, createdAt);
+        if (omitCancel) {
+            delete row.status;
+            delete row.cancelled_at;
+            delete row.cancelled_by;
+            delete row.cancel_reason;
+        }
+        return row;
+    });
     const BATCH = 200;
     for (let i = 0; i < rows.length; i += BATCH) {
         await querySupabase('stock_allotments', {
@@ -2284,9 +2398,11 @@ app.post('/api/stock/allotment', async (req, res) => {
     try {
         const payload = req.body || {};
         const action = payload.action || 'createAllotment';
-        // Create stays restricted; list/get available to all logged-in users
+        // Create / cancel use separate auth flags; list/get for any logged-in user
         if (action === 'createAllotment') {
             if (!(await requireStockAllotmentAccess_(req, res))) return;
+        } else if (action === 'cancelAllotment') {
+            if (!(await requireStockAllotmentCancelAccess_(req, res))) return;
         } else if (!requireStockAllotmentLogin_(req, res)) {
             return;
         }
@@ -2309,6 +2425,17 @@ app.post('/api/stock/allotment', async (req, res) => {
                     console.warn('[stock/allotment] Supabase tables missing, trying Apps Script:', e.message);
                     return await proxyStockAllotment_(payload, res);
                 }
+                // If status columns missing, retry insert without cancel fields
+                if (/status|cancelled_at|cancelled_by|cancel_reason|42703/i.test(e.message || '')) {
+                    console.warn('[stock/allotment] Cancel columns missing on create; inserting without them');
+                    try {
+                        const created = await createAllotmentInSupabase_(payload, { omitCancelFields: true });
+                        invalidateAllotListCache_();
+                        return res.json(created);
+                    } catch (e2) {
+                        console.error('[stock/allotment] Supabase create retry failed:', e2.message);
+                    }
+                }
                 console.error('[stock/allotment] Supabase create failed:', e.message);
                 return res.status(500).json({
                     status: 'error',
@@ -2316,6 +2443,30 @@ app.post('/api/stock/allotment', async (req, res) => {
                         'Could not save allotment. ' +
                         (e.message || 'Unknown error') +
                         ' Ask an admin to verify stock allotment tables are set up.'
+                });
+            }
+        }
+
+        if (action === 'cancelAllotment') {
+            const no = String(payload.allotmentNo || payload.AllotmentNo || '').trim();
+            if (!no) {
+                return res.status(400).json({ status: 'error', error: 'allotmentNo is required' });
+            }
+            const cancelledBy =
+                payload.cancelledBy ||
+                (req.user && (req.user.Name || req.user.Username || req.user.username)) ||
+                '';
+            const reason = String(payload.reason || payload.cancelReason || '').trim();
+            try {
+                const result = await cancelAllotmentInSupabase_(no, cancelledBy, reason);
+                invalidateAllotListCache_();
+                return res.json(result);
+            } catch (e) {
+                console.error('[stock/allotment] cancel failed:', e.message);
+                const code = /not found/i.test(e.message || '') ? 404 : 500;
+                return res.status(code).json({
+                    status: 'error',
+                    error: e.message || 'Cancel failed'
                 });
             }
         }

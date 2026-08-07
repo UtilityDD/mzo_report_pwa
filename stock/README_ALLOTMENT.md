@@ -26,7 +26,23 @@ Use **View Allotments** on the Stock page to:
 - Open an order letter (+ PDF)
 - See **Material-wise**, **Division-wise**, and **Date-wise** summaries
 
-Requires Apps Script redeployed with `listAllotments` / `getAllotment` actions.
+## Soft-cancel
+
+Users with **Stock Allot Cancel** (`stock_cancel_autho`) — separate from Create — can **Cancel** an order from View → order detail.
+
+- Rows are **kept** (not deleted); `status=cancelled` on all lines for that `allotment_no`
+- List shows a dimmed row + **Cancelled** badge
+- Letter / PDF shows a large **CANCELLED by …** stamp
+- KPIs and material/division/date summaries exclude cancelled qty
+- Cannot be reverted (double confirmation in UI; no un-cancel API)
+
+Run once:
+1. [`../scripts/alter_stock_allotments_cancel.sql`](../scripts/alter_stock_allotments_cancel.sql) — cancel columns on allotments
+2. [`../scripts/alter_portal_users_stock_cancel_auth.sql`](../scripts/alter_portal_users_stock_cancel_auth.sql) — `stock_cancel_autho` on users
+
+Grant via Admin → User Management → **Stock Allot Cancel** = Yes.
+
+API: `POST /api/stock/allotment` with `{ action: "cancelAllotment", allotmentNo }`
 
 ## One-time Google Sheet setup
 

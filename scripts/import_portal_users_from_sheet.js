@@ -89,6 +89,7 @@ function sheetRowToDb(headers, values) {
     nsc_upload_autho: (raw['nsc-upload-autho'] || raw.nsc_upload_autho || '').trim(),
     stock_upload_autho: (raw['stock-upload-autho'] || raw.stock_upload_autho || '').trim(),
     stock_allot_autho: (raw['stock-allot-autho'] || raw.stock_allot_autho || '').trim(),
+    stock_cancel_autho: (raw['stock-cancel-autho'] || raw.stock_cancel_autho || '').trim(),
     si_autho: (raw['si-autho'] || raw.si_autho || '').trim(),
     si_divisions: (raw['si-divisions'] || raw.si_divisions || '').trim(),
     sheets_autho: (raw['sheets-autho'] || raw.sheets_autho || '').trim(),
