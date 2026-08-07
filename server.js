@@ -1947,17 +1947,38 @@ function allotClientToDb_(row, allotmentNo, createdBy, createdAtIso) {
 }
 
 function encodeAllotmentNoFilter_(allotmentNo) {
-    return encodeURIComponent(String(allotmentNo || '').trim());
+    const no = String(allotmentNo || '').trim();
+    // PostgREST needs quoted values when the key contains / or other reserved chars
+    // e.g. allotment_no=eq."MZO/ALT/2026/0001"
+    return encodeURIComponent('"' + no.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"');
 }
 
 async function cancelAllotmentInSupabase_(allotmentNo, cancelledBy, reason) {
     const no = String(allotmentNo || '').trim();
     if (!no) throw new Error('allotmentNo is required');
 
-    const existing = await querySupabase(
-        `stock_allotments?allotment_no=eq.${encodeAllotmentNoFilter_(no)}&select=id,status,cancelled_by,cancelled_at&limit=5`,
-        { schema: PORTAL_USERS_SCHEMA }
-    );
+    let existing;
+    try {
+        existing = await querySupabase(
+            `stock_allotments?allotment_no=eq.${encodeAllotmentNoFilter_(no)}&select=id,status,cancelled_by,cancelled_at&limit=20`,
+            { schema: PORTAL_USERS_SCHEMA }
+        );
+    } catch (e) {
+        if (/status|cancelled_at|cancelled_by|cancel_reason|42703|PGRST204/i.test(e.message || '')) {
+            throw new Error(
+                'Cancel columns missing. Run scripts/alter_stock_allotments_cancel.sql in Supabase SQL Editor.'
+            );
+        }
+        // Retry with id-only select in case status cols exist but select list failed differently
+        try {
+            existing = await querySupabase(
+                `stock_allotments?allotment_no=eq.${encodeAllotmentNoFilter_(no)}&select=id&limit=20`,
+                { schema: PORTAL_USERS_SCHEMA }
+            );
+        } catch (e2) {
+            throw e;
+        }
+    }
     if (!Array.isArray(existing) || !existing.length) {
         throw new Error(`Allotment not found: ${no}`);
     }
@@ -1965,7 +1986,7 @@ async function cancelAllotmentInSupabase_(allotmentNo, cancelledBy, reason) {
     const already = existing.every(
         (r) => String(r.status || '').trim().toLowerCase() === 'cancelled'
     );
-    if (already) {
+    if (already && existing[0] && existing[0].status != null) {
         const sample = existing[0] || {};
         return {
             status: 'success',
@@ -2003,6 +2024,9 @@ async function cancelAllotmentInSupabase_(allotmentNo, cancelledBy, reason) {
     }
 
     const count = Array.isArray(patched) ? patched.length : existing.length;
+    if (!count) {
+        throw new Error(`Cancel did not update any lines for ${no}. Check allotment number and try again.`);
+    }
     return {
         status: 'success',
         allotmentNo: no,
