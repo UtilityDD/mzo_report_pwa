@@ -36,6 +36,19 @@ const PLANT_MAP = {
     '7201': 'Malda (D) Zone'
 };
 
+/** Stock MT text; for mapped materials append integer count as "(N no.)". */
+function formatStockDisplay(materialCode, stockMt, opts) {
+    if (window.MzoStockPoleCount && typeof MzoStockPoleCount.formatStockWithNo === 'function') {
+        return MzoStockPoleCount.formatStockWithNo(materialCode, stockMt, opts);
+    }
+    const mt = Number(stockMt);
+    if (!Number.isFinite(mt)) return String(stockMt ?? '');
+    return mt.toLocaleString(undefined, {
+        minimumFractionDigits: opts && opts.minimumFractionDigits != null ? opts.minimumFractionDigits : 0,
+        maximumFractionDigits: opts && opts.maximumFractionDigits != null ? opts.maximumFractionDigits : 3
+    });
+}
+
 function formatDate(dateString) {
     const date = new Date(dateString);
     const day = String(date.getDate()).padStart(2, '0');
@@ -391,7 +404,7 @@ function showBreakdownModal(groupName) {
 
         // If we are entering a new store group (and it's not the very first item)
         if (currentStore !== null && item.store !== currentStore) {
-            // Add the subtotal row for the previous store
+            // Store subtotal is MT only (may mix materials)
             const subtotalRow = modalTableBody.insertRow();
             subtotalRow.className = 'store-subtotal-row';
             subtotalRow.innerHTML = `
@@ -414,7 +427,7 @@ function showBreakdownModal(groupName) {
             <td>${item.store}</td>
             <td>${item.materialCode}</td>
             <td>${item.material}</td>
-            <td style="text-align: right;">${item.stock.toLocaleString(undefined, { maximumFractionDigits: 3 })}</td>
+            <td style="text-align: right;">${formatStockDisplay(item.materialCode, item.stock, { maximumFractionDigits: 3 })}</td>
             <td>${item.unit}</td>
         `;
         storeSubtotal += item.stock; // Add current item's stock to the subtotal
@@ -448,6 +461,7 @@ function showLowStockModal() {
         if (!aggregatedStock[key]) {
             aggregatedStock[key] = {
                 store: item.StoreName,
+                materialCode: item['Material'],
                 material: item['Material Description'],
                 stock: 0,
                 group: item['Material Group'] // Keep track of the group
@@ -509,8 +523,10 @@ function showLowStockModal() {
 
             let itemsHTML = itemsByStore[store]
                 .map((item) => {
-                    const stock = Number(item.stock);
-                    const stockText = Number.isFinite(stock) ? stock.toFixed(3) : String(item.stock ?? '');
+                    const stockText = formatStockDisplay(item.materialCode, item.stock, {
+                        minimumFractionDigits: 3,
+                        maximumFractionDigits: 3
+                    });
                     return `<div class="low-stock-item"><span>${item.material}</span><strong>${stockText}</strong></div>`;
                 })
                 .join('');
@@ -928,7 +944,10 @@ function populateTable(data) {
             <td>${item.store}</td>
             <td>${materialCodeHTML}</td>
             <td>${materialDescHTML}</td>
-            <td style="text-align: right;">${item.stock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3 })}</td>
+            <td style="text-align: right;">${formatStockDisplay(item.materialCode, item.stock, {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 3
+            })}</td>
             <td>${item.unit}</td>
         `;
         tableBody.appendChild(row);
