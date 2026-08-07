@@ -125,6 +125,17 @@
         return ALLOT_ALLOWED_USERS.includes(username);
     }
 
+    /** Soft-cancel — separate flag from create (no legacy username list). */
+    function canCancelAllotment() {
+        const host = String(location.hostname || '').toLowerCase();
+        if (host === 'localhost' || host === '127.0.0.1') return true;
+        const profile = getPortalProfile();
+        const flag = String(profile['stock-cancel-autho'] || profile.stock_cancel_autho || '')
+            .trim()
+            .toLowerCase();
+        return ['y', 'yes', '1', 'true', 'cancel', 'allot'].includes(flag);
+    }
+
     function canUploadStock() {
         const profile = getPortalProfile();
         const flag = String(profile['stock-upload-autho'] || profile.stock_upload_autho || '').trim().toLowerCase();
@@ -192,6 +203,7 @@
     window.MzoAllotmentAccess = {
         allowedUsers: ALLOT_ALLOWED_USERS,
         canUseAllotment,
+        canCancelAllotment,
         canUploadStock,
         canViewAllotment,
         applyAllotmentVisibility,

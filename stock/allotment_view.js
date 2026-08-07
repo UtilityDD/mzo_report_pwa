@@ -90,6 +90,42 @@
         });
     }
 
+    function isCancelledRow(r) {
+        return String(r && (r.Status || r.status) || '')
+            .trim()
+            .toLowerCase() === 'cancelled';
+    }
+
+    function activeRowsOnly(rows) {
+        return (rows || []).filter((r) => !isCancelledRow(r));
+    }
+
+    function formatCancelStampDate(iso) {
+        if (!iso) return '';
+        const d = new Date(iso);
+        if (!isFinite(d.getTime())) return String(iso).slice(0, 10);
+        return d.toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+        });
+    }
+
+    function canCancelAllotment() {
+        if (window.MzoAllotmentAccess && typeof window.MzoAllotmentAccess.canCancelAllotment === 'function') {
+            return !!window.MzoAllotmentAccess.canCancelAllotment();
+        }
+        return false;
+    }
+
+    function getPortalDisplayName() {
+        if (window.MzoAllotmentAccess && typeof window.MzoAllotmentAccess.getPortalProfile === 'function') {
+            const p = window.MzoAllotmentAccess.getPortalProfile() || {};
+            return String(p.Name || p.name || p.Username || p.username || '').trim();
+        }
+        return '';
+    }
+
     function groupOrders(rows) {
         const map = new Map();
         rows.forEach((r) => {
@@ -101,6 +137,10 @@
                     date: String(r.Date || '').slice(0, 10) || String(r.CreatedAt || '').slice(0, 10),
                     remarks: r.Remarks || '',
                     createdBy: r.CreatedBy || '',
+                    cancelled: false,
+                    cancelledBy: '',
+                    cancelledAt: '',
+                    cancelReason: '',
                     lines: [],
                     qtyTotal: 0,
                     toSet: new Set(),
@@ -116,6 +156,12 @@
             if (!o.createdBy && r.CreatedBy) o.createdBy = r.CreatedBy;
             if (!o.date) {
                 o.date = String(r.Date || '').slice(0, 10) || String(r.CreatedAt || '').slice(0, 10);
+            }
+            if (isCancelledRow(r)) {
+                o.cancelled = true;
+                if (r.CancelledBy) o.cancelledBy = r.CancelledBy;
+                if (r.CancelledAt) o.cancelledAt = r.CancelledAt;
+                if (r.CancelReason) o.cancelReason = r.CancelReason;
             }
         });
         return [...map.values()].sort((a, b) => {
@@ -289,7 +335,24 @@
             })
             .join('');
 
-        return `<div class="letter-sheet">
+        const stamp = order.cancelled
+            ? `<div class="letter-cancel-stamp" aria-hidden="true">
+                <div class="letter-cancel-stamp-inner">
+                    <div class="letter-cancel-stamp-title">CANCELLED</div>
+                    <div class="letter-cancel-stamp-by">by ${escapeHtml(order.cancelledBy || '—')}</div>
+                    ${
+                        order.cancelledAt
+                            ? `<div class="letter-cancel-stamp-date">${escapeHtml(
+                                  formatCancelStampDate(order.cancelledAt)
+                              )}</div>`
+                            : ''
+                    }
+                </div>
+            </div>`
+            : '';
+
+        return `<div class="letter-sheet${order.cancelled ? ' is-cancelled' : ''}">
+            ${stamp}
             ${letterPadHtml()}
             <div class="letter-meta">
                 <div><strong>Allotment No:</strong> ${escapeHtml(order.allotmentNo)}</div>
@@ -308,7 +371,31 @@
                 <div>Malda Zone</div>
             </div>
             ${order.createdBy ? `<p class="letter-created">Created by: ${escapeHtml(order.createdBy)}</p>` : ''}
+            ${
+                order.cancelled
+                    ? `<p class="letter-cancelled-note">This allotment was cancelled${
+                          order.cancelledBy ? ` by ${escapeHtml(order.cancelledBy)}` : ''
+                      }${
+                          order.cancelledAt
+                              ? ` on ${escapeHtml(formatCancelStampDate(order.cancelledAt))}`
+                              : ''
+                      }.</p>`
+                    : ''
+            }
         </div>`;
+    }
+
+    function updateCancelButton(order) {
+        const btn = document.getElementById('allot-view-cancel-btn');
+        if (!btn) return;
+        const show = !!(order && !order.cancelled && canCancelAllotment());
+        btn.hidden = !show;
+        btn.disabled = !show;
+        btn.title = show
+            ? 'Cancel this allotment permanently (cannot be reverted)'
+            : order && order.cancelled
+              ? 'Already cancelled — cannot be reverted'
+              : '';
     }
 
     function renderOrders() {
@@ -318,6 +405,7 @@
         if (!orders.length) {
             host.innerHTML = '<p class="allot-view-empty">No allotment orders match the filters.</p>';
             document.getElementById('allot-view-detail').hidden = true;
+            updateCancelButton(null);
             return;
         }
         host.innerHTML = `<table class="allot-view-table">
@@ -337,10 +425,17 @@
                     .map((o) => {
                         const from = [...o.fromSet].map(shortName).join(', ');
                         const to = [...o.toSet].map(shortName).join(', ');
-                        return `<tr data-no="${escapeHtml(o.allotmentNo)}" class="${
-                            selectedNo === o.allotmentNo ? 'is-selected' : ''
-                        }">
-                            <td><strong>${escapeHtml(o.allotmentNo)}</strong></td>
+                        const rowClass = [
+                            selectedNo === o.allotmentNo ? 'is-selected' : '',
+                            o.cancelled ? 'is-cancelled' : ''
+                        ]
+                            .filter(Boolean)
+                            .join(' ');
+                        const noCell = o.cancelled
+                            ? `<strong>${escapeHtml(o.allotmentNo)}</strong> <span class="allot-cancelled-badge">Cancelled</span>`
+                            : `<strong>${escapeHtml(o.allotmentNo)}</strong>`;
+                        return `<tr data-no="${escapeHtml(o.allotmentNo)}" class="${rowClass}">
+                            <td>${noCell}</td>
                             <td>${escapeHtml(o.date)}</td>
                             <td>${escapeHtml(from)}</td>
                             <td>${escapeHtml(to)}</td>
@@ -370,6 +465,7 @@
         detail.hidden = false;
         letter.innerHTML = buildOrderLetterHtml(order);
         document.getElementById('allot-view-detail-title').textContent = no;
+        updateCancelButton(order);
         renderOrders();
         detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
@@ -470,15 +566,23 @@
     }
 
     function updateKpis() {
-        const orders = groupOrders(filteredRows);
+        const active = activeRowsOnly(filteredRows);
+        const orders = groupOrders(active);
+        const cancelledOrders = groupOrders(filteredRows).filter((o) => o.cancelled).length;
         const elOrders = document.getElementById('allot-view-kpi-orders');
         const elLines = document.getElementById('allot-view-kpi-lines');
         const elItems = document.getElementById('allot-view-kpi-items');
-        if (elOrders) elOrders.textContent = String(orders.length);
-        if (elLines) elLines.textContent = String(filteredRows.length);
+        if (elOrders) {
+            elOrders.textContent = String(orders.length);
+            elOrders.title =
+                cancelledOrders > 0
+                    ? `${orders.length} active · ${cancelledOrders} cancelled (excluded from KPI)`
+                    : '';
+        }
+        if (elLines) elLines.textContent = String(active.length);
         if (elItems) {
             const items = new Set(
-                filteredRows.map((r) => String(r.MaterialCode || '').trim()).filter(Boolean)
+                active.map((r) => String(r.MaterialCode || '').trim()).filter(Boolean)
             );
             elItems.textContent = String(items.size);
         }
@@ -488,9 +592,48 @@
         filteredRows = applyLocalFilters(allRows);
         updateKpis();
         renderOrders();
-        renderMaterialSummary();
-        renderDivisionSummary();
-        renderDateSummary();
+        const active = activeRowsOnly(filteredRows);
+        renderPivotTable(
+            document.getElementById('allot-view-material-sum'),
+            summaryDivisionMaterialPivot(active, 'material'),
+            'material'
+        );
+        renderPivotTable(
+            document.getElementById('allot-view-division-sum'),
+            summaryDivisionMaterialPivot(active, 'division'),
+            'division'
+        );
+        // Date summary uses active only
+        const host = document.getElementById('allot-view-date-sum');
+        if (host) {
+            const rows = summaryDate(active);
+            if (!rows.length) {
+                host.innerHTML = '<p class="allot-view-empty">No data.</p>';
+            } else {
+                host.innerHTML = `<table class="allot-view-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Orders</th>
+                    <th>Lines</th>
+                    <th>Total Qty</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rows
+                    .map(
+                        (r) => `<tr>
+                    <td><strong>${escapeHtml(r.date)}</strong></td>
+                    <td>${r.orderCount}</td>
+                    <td>${r.lines}</td>
+                    <td>${formatQty(r.qty)}</td>
+                </tr>`
+                    )
+                    .join('')}
+            </tbody>
+        </table>`;
+            }
+        }
         setTab(activeTab);
     }
 
@@ -641,7 +784,8 @@
                 doc.addImage(imgData, 'PNG', margin, offsetY, contentW, imgH);
                 heightLeft -= pageContentH;
             }
-            doc.save(`Allotment_${String(selectedNo).replace(/[^\w-]+/g, '_')}.pdf`);
+            const suffix = letter.querySelector('.letter-sheet.is-cancelled') ? '_CANCELLED' : '';
+            doc.save(`Allotment_${String(selectedNo).replace(/[^\w-]+/g, '_')}${suffix}.pdf`);
             showStatus(`PDF downloaded for ${selectedNo}.`, 'ok');
         } catch (err) {
             console.error(err);
@@ -649,6 +793,65 @@
         } finally {
             letter.classList.remove('allot-letter-capture');
             letter.style.width = prevW;
+        }
+    }
+
+    async function cancelSelectedAllotment() {
+        if (!selectedNo || !canCancelAllotment()) return;
+        const orders = groupOrders(filteredRows);
+        const order = orders.find((o) => o.allotmentNo === selectedNo);
+        if (!order || order.cancelled) return;
+
+        const who = getPortalDisplayName() || 'you';
+        const ok1 = window.confirm(
+            `Cancel allotment ${selectedNo}?\n\n` +
+                '• The order will stay in the list (dimmed)\n' +
+                '• PDF / view will show a CANCELLED stamp\n' +
+                '• Qty will be excluded from summaries\n\n' +
+                `Cancelled by: ${who}`
+        );
+        if (!ok1) return;
+
+        const ok2 = window.confirm(
+            `Final confirmation\n\n` +
+                `Cancel ${selectedNo} permanently?\n\n` +
+                'This cannot be reverted. There is no undo.'
+        );
+        if (!ok2) return;
+
+        const btn = document.getElementById('allot-view-cancel-btn');
+        if (btn) btn.disabled = true;
+        showStatus('Cancelling allotment…', 'info');
+        try {
+            const res = await fetch('/api/stock/allotment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    action: 'cancelAllotment',
+                    allotmentNo: selectedNo,
+                    cancelledBy: who
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.error || data.status === 'error') {
+                throw new Error(data.error || data.message || `Cancel failed (${res.status})`);
+            }
+            clientListCache = { at: 0, rows: null };
+            window.__allotViewNeedsRefresh = true;
+            const cancelledNo = selectedNo;
+            await loadRows({ force: true });
+            if (cancelledNo) openOrder(cancelledNo);
+            showStatus(
+                data.alreadyCancelled
+                    ? `${cancelledNo} was already cancelled (cannot be reverted).`
+                    : `Cancelled ${cancelledNo}. This cannot be reverted.`,
+                'ok'
+            );
+        } catch (err) {
+            console.error(err);
+            showStatus(err.message || 'Cancel failed.', 'error');
+            updateCancelButton(order);
         }
     }
 
@@ -695,6 +898,7 @@
         document.getElementById('allot-view-done-btn')?.addEventListener('click', closePanel);
         document.getElementById('allot-view-refresh-btn')?.addEventListener('click', () => loadRows({ force: true }));
         document.getElementById('allot-view-pdf-btn')?.addEventListener('click', downloadDetailPdf);
+        document.getElementById('allot-view-cancel-btn')?.addEventListener('click', cancelSelectedAllotment);
         // No backdrop-dismiss on view either while debugging create panel conflict
 
         ['allot-view-q', 'allot-view-material', 'allot-view-from', 'allot-view-to', 'allot-view-division'].forEach(
