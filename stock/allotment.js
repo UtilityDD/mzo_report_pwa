@@ -410,6 +410,13 @@
         return Number(n).toLocaleString('en-IN', { maximumFractionDigits: 3 });
     }
 
+    function formatStockQty(materialCode, n) {
+        if (window.MzoStockPoleCount && typeof MzoStockPoleCount.formatStockWithNo === 'function') {
+            return MzoStockPoleCount.formatStockWithNo(materialCode, n, { maximumFractionDigits: 3 });
+        }
+        return formatQty(n);
+    }
+
     function formatDateDisplay(d) {
         const dt = d || new Date();
         const pad = (x) => String(x).padStart(2, '0');
@@ -520,11 +527,11 @@
                     </td>
                     <td>
                         <span class="allot-stock-store">${escapeHtml(fromLabel)}</span>
-                        <span class="allot-stock-val" data-role="src">${line.code ? formatQty(src.stock) : '—'}</span>
+                        <span class="allot-stock-val" data-role="src">${line.code ? formatStockQty(line.code, src.stock) : '—'}</span>
                     </td>
                     <td>
                         <span class="allot-stock-store">${escapeHtml(toLabel)}</span>
-                        <span class="allot-stock-val" data-role="dst">${line.code ? formatQty(dst.stock) : '—'}</span>
+                        <span class="allot-stock-val" data-role="dst">${line.code ? formatStockQty(line.code, dst.stock) : '—'}</span>
                     </td>
                     <td>
                         <input type="number" min="0" step="any" data-field="qty"
@@ -721,7 +728,7 @@
             if (!(Number(line.qty) > 0)) return `Enter qty for ${line.code}.`;
             const used = sourceUsedElsewhere(line.code, line.fromName, line.id);
             if (Number(line.qty) + used > src.stock + 1e-9) {
-                return `${line.code}: qty exceeds available stock at ${shortName(line.fromName)} (${formatQty(src.stock)}).`;
+                return `${line.code}: qty exceeds available stock at ${shortName(line.fromName)} (${formatStockQty(line.code, src.stock)}).`;
             }
         }
         return null;
@@ -763,7 +770,7 @@
                         return `<tr>
                             <td>${escapeHtml(line.code)}</td>
                             <td>${escapeHtml(line.description)}</td>
-                            <td>${formatQty(dest.stock)}</td>
+                            <td>${formatStockQty(line.code, dest.stock)}</td>
                             <td>${formatQty(Number(line.qty))}</td>
                             <td>${escapeHtml(line.unit || '')}</td>
                         </tr>`;
