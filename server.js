@@ -1675,9 +1675,11 @@ function canAccessStockAllotment_(user) {
     return allowed.some((u) => name === u || name.startsWith(u + ' ') || name.includes(' ' + u + ' '));
 }
 
-/** Soft-cancel allotments — separate from create (stock_cancel_autho only; no legacy list). */
+/** Soft-cancel allotments — separate from create (stock_cancel_autho; admin also allowed). */
 function canCancelStockAllotment_(user) {
     if (!user) return false;
+    const role = String(user.role || '').trim().toLowerCase();
+    if (role === 'admin') return true;
     return flagAuthoYes_(
         user['stock-cancel-autho'] != null ? user['stock-cancel-autho'] : user.stock_cancel_autho
     );
@@ -1947,38 +1949,81 @@ function allotClientToDb_(row, allotmentNo, createdBy, createdAtIso) {
 }
 
 function encodeAllotmentNoFilter_(allotmentNo) {
-    const no = String(allotmentNo || '').trim();
-    // PostgREST needs quoted values when the key contains / or other reserved chars
-    // e.g. allotment_no=eq."MZO/ALT/2026/0001"
-    return encodeURIComponent('"' + no.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"');
+    // Plain URL-encoding works for values with "/".
+    // Quoted eq."MZO/ALT/..." returns no rows on this PostgREST/Supabase setup.
+    return encodeURIComponent(String(allotmentNo || '').trim());
+}
+
+/** Find ledger lines for one allotment_no (handles slash in MZO/ALT/…). */
+async function findAllotmentDbRows_(allotmentNo) {
+    const target = String(allotmentNo || '').trim();
+    if (!target) return [];
+
+    const selectCols = 'id,allotment_no,status,cancelled_by,cancelled_at';
+    const attempts = [
+        // Working form for this project: eq.MZO%2FALT%2F2026%2F0011
+        `stock_allotments?allotment_no=eq.${encodeURIComponent(target)}&select=${selectCols}&limit=500`,
+        // Alternate quoted form (kept as fallback only)
+        `stock_allotments?allotment_no=eq.${encodeURIComponent('"' + target.replace(/"/g, '') + '"')}&select=${selectCols}&limit=500`,
+        // Suffix match as last filter attempt
+        `stock_allotments?allotment_no=like.${encodeURIComponent('*' + target.split('/').pop())}&select=${selectCols}&limit=500`
+    ];
+
+    for (const path of attempts) {
+        try {
+            const rows = await querySupabase(path, { schema: PORTAL_USERS_SCHEMA });
+            if (!Array.isArray(rows) || !rows.length) continue;
+            const exact = rows.filter((r) => String(r.allotment_no || '').trim() === target);
+            if (exact.length) return exact;
+            // like-suffix may over-match; ignore non-exact
+        } catch (e) {
+            if (/status|cancelled_at|cancelled_by|cancel_reason|42703|PGRST204/i.test(e.message || '')) {
+                throw new Error(
+                    'Cancel columns missing. Run scripts/alter_stock_allotments_cancel.sql in Supabase SQL Editor.'
+                );
+            }
+            console.warn('[stock cancel] lookup attempt failed:', e.message);
+        }
+    }
+
+    // Fallback: scan newest rows and match in memory
+    const pageSize = 1000;
+    let offset = 0;
+    const matched = [];
+    for (let page = 0; page < 40; page++) {
+        let batch;
+        try {
+            batch = await querySupabase(
+                `stock_allotments?select=${selectCols}&order=id.desc&limit=${pageSize}&offset=${offset}`,
+                { schema: PORTAL_USERS_SCHEMA }
+            );
+        } catch (e) {
+            if (/status|cancelled_at|cancelled_by|42703|PGRST204/i.test(e.message || '')) {
+                throw new Error(
+                    'Cancel columns missing. Run scripts/alter_stock_allotments_cancel.sql in Supabase SQL Editor.'
+                );
+            }
+            throw e;
+        }
+        if (!Array.isArray(batch) || !batch.length) break;
+        for (const r of batch) {
+            if (String(r.allotment_no || '').trim() === target) matched.push(r);
+        }
+        if (matched.length) break;
+        if (batch.length < pageSize) break;
+        offset += pageSize;
+    }
+    if (!matched.length) {
+        console.warn('[stock cancel] no rows for', target);
+    }
+    return matched;
 }
 
 async function cancelAllotmentInSupabase_(allotmentNo, cancelledBy, reason) {
     const no = String(allotmentNo || '').trim();
     if (!no) throw new Error('allotmentNo is required');
 
-    let existing;
-    try {
-        existing = await querySupabase(
-            `stock_allotments?allotment_no=eq.${encodeAllotmentNoFilter_(no)}&select=id,status,cancelled_by,cancelled_at&limit=20`,
-            { schema: PORTAL_USERS_SCHEMA }
-        );
-    } catch (e) {
-        if (/status|cancelled_at|cancelled_by|cancel_reason|42703|PGRST204/i.test(e.message || '')) {
-            throw new Error(
-                'Cancel columns missing. Run scripts/alter_stock_allotments_cancel.sql in Supabase SQL Editor.'
-            );
-        }
-        // Retry with id-only select in case status cols exist but select list failed differently
-        try {
-            existing = await querySupabase(
-                `stock_allotments?allotment_no=eq.${encodeAllotmentNoFilter_(no)}&select=id&limit=20`,
-                { schema: PORTAL_USERS_SCHEMA }
-            );
-        } catch (e2) {
-            throw e;
-        }
-    }
+    const existing = await findAllotmentDbRows_(no);
     if (!Array.isArray(existing) || !existing.length) {
         throw new Error(`Allotment not found: ${no}`);
     }
@@ -1986,34 +2031,39 @@ async function cancelAllotmentInSupabase_(allotmentNo, cancelledBy, reason) {
     const already = existing.every(
         (r) => String(r.status || '').trim().toLowerCase() === 'cancelled'
     );
-    if (already && existing[0] && existing[0].status != null) {
+    if (already) {
         const sample = existing[0] || {};
         return {
             status: 'success',
             allotmentNo: no,
             alreadyCancelled: true,
             cancelledBy: sample.cancelled_by || cancelledBy || '',
-            cancelledAt: sample.cancelled_at || ''
+            cancelledAt: sample.cancelled_at || '',
+            linesUpdated: existing.length
         };
     }
 
+    const ids = existing.map((r) => r.id).filter((id) => id != null);
+    if (!ids.length) {
+        throw new Error(`Allotment ${no} has no updatable line ids.`);
+    }
+
     const cancelledAt = new Date().toISOString();
+    const body = {
+        status: 'cancelled',
+        cancelled_at: cancelledAt,
+        cancelled_by: String(cancelledBy || '').trim(),
+        cancel_reason: String(reason || '').trim()
+    };
+
     let patched;
     try {
-        patched = await querySupabase(
-            `stock_allotments?allotment_no=eq.${encodeAllotmentNoFilter_(no)}`,
-            {
-                schema: PORTAL_USERS_SCHEMA,
-                method: 'PATCH',
-                body: {
-                    status: 'cancelled',
-                    cancelled_at: cancelledAt,
-                    cancelled_by: String(cancelledBy || '').trim(),
-                    cancel_reason: String(reason || '').trim()
-                },
-                prefer: 'return=representation'
-            }
-        );
+        patched = await querySupabase(`stock_allotments?id=in.(${ids.join(',')})`, {
+            schema: PORTAL_USERS_SCHEMA,
+            method: 'PATCH',
+            body,
+            prefer: 'return=representation'
+        });
     } catch (e) {
         if (/status|cancelled_at|cancelled_by|cancel_reason|PGRST|42703/i.test(e.message || '')) {
             throw new Error(
@@ -2023,9 +2073,9 @@ async function cancelAllotmentInSupabase_(allotmentNo, cancelledBy, reason) {
         throw e;
     }
 
-    const count = Array.isArray(patched) ? patched.length : existing.length;
+    const count = Array.isArray(patched) ? patched.length : ids.length;
     if (!count) {
-        throw new Error(`Cancel did not update any lines for ${no}. Check allotment number and try again.`);
+        throw new Error(`Cancel did not update any lines for ${no}.`);
     }
     return {
         status: 'success',

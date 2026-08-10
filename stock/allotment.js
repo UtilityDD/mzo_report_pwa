@@ -125,15 +125,17 @@
         return ALLOT_ALLOWED_USERS.includes(username);
     }
 
-    /** Soft-cancel — separate flag from create (no legacy username list). */
+    /** Soft-cancel — separate flag from create (admin always allowed). */
     function canCancelAllotment() {
         const host = String(location.hostname || '').toLowerCase();
         if (host === 'localhost' || host === '127.0.0.1') return true;
         const profile = getPortalProfile();
+        const role = String(profile.role || '').trim().toLowerCase();
+        if (role === 'admin') return true;
         const flag = String(profile['stock-cancel-autho'] || profile.stock_cancel_autho || '')
             .trim()
             .toLowerCase();
-        return ['y', 'yes', '1', 'true', 'cancel', 'allot'].includes(flag);
+        return ['y', 'yes', '1', 'true', 'cancel'].includes(flag);
     }
 
     function canUploadStock() {

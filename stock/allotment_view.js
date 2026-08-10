@@ -130,8 +130,13 @@
         const modal = document.getElementById('allot-cancel-confirm-modal');
         if (!modal) return;
         modal.classList.remove('active');
+        modal.setAttribute('hidden', '');
         modal.hidden = true;
-        modal.style.display = 'none';
+        modal.style.removeProperty('display');
+        modal.style.removeProperty('z-index');
+        modal.style.removeProperty('position');
+        modal.style.removeProperty('inset');
+        modal.style.removeProperty('background');
     }
 
     /** Clean in-app confirm (not window.confirm). Resolves true if user confirms cancel. */
@@ -143,14 +148,22 @@
             const keepBtn = document.getElementById('allot-cancel-confirm-keep');
             const yesBtn = document.getElementById('allot-cancel-confirm-yes');
             if (!modal || !keepBtn || !yesBtn) {
+                console.error('[allotment] Cancel confirm modal missing from DOM');
                 resolve(false);
                 return;
             }
 
             if (noEl) noEl.textContent = String(allotmentNo || '');
-            if (byEl) byEl.textContent = cancelledBy ? `Cancelled by: ${cancelledBy}` : '';
+            if (byEl) {
+                byEl.textContent = cancelledBy
+                    ? `This will be recorded as cancelled by ${cancelledBy}.`
+                    : 'This will be recorded against your login.';
+            }
 
+            let settled = false;
             const finish = (ok) => {
+                if (settled) return;
+                settled = true;
                 keepBtn.removeEventListener('click', onKeep);
                 yesBtn.removeEventListener('click', onYes);
                 modal.removeEventListener('click', onBackdrop);
@@ -180,12 +193,21 @@
             modal.addEventListener('click', onBackdrop);
             document.addEventListener('keydown', onKey);
 
-            if (modal.parentElement !== document.body) document.body.appendChild(modal);
+            // Always mount on body above the View Allotments overlay
+            document.body.appendChild(modal);
+            modal.removeAttribute('hidden');
             modal.hidden = false;
             modal.classList.add('active');
-            modal.style.display = 'flex';
-            modal.style.zIndex = '2147483002';
-            yesBtn.focus();
+            modal.style.setProperty('display', 'flex', 'important');
+            modal.style.setProperty('position', 'fixed', 'important');
+            modal.style.setProperty('inset', '0', 'important');
+            modal.style.setProperty('z-index', '2147483646', 'important');
+            modal.style.setProperty('background', 'rgba(15,23,42,0.65)', 'important');
+            modal.style.setProperty('align-items', 'center', 'important');
+            modal.style.setProperty('justify-content', 'center', 'important');
+            try {
+                yesBtn.focus();
+            } catch (_) {}
         });
     }
 
@@ -452,13 +474,21 @@
         const btn = document.getElementById('allot-view-cancel-btn');
         if (!btn) return;
         const show = !!(order && !order.cancelled && canCancelAllotment());
-        btn.hidden = !show;
-        btn.disabled = !show;
+        if (show) {
+            btn.removeAttribute('hidden');
+            btn.hidden = false;
+            btn.disabled = false;
+            btn.style.removeProperty('display');
+        } else {
+            btn.setAttribute('hidden', '');
+            btn.hidden = true;
+            btn.disabled = true;
+        }
         btn.title = show
             ? 'Cancel this allotment permanently (cannot be reverted)'
             : order && order.cancelled
               ? 'Already cancelled — cannot be reverted'
-              : '';
+              : 'Cancel requires Stock Allot Cancel authorisation';
     }
 
     function renderOrders() {
@@ -497,6 +527,15 @@
                         const noCell = o.cancelled
                             ? `<strong>${escapeHtml(o.allotmentNo)}</strong> <span class="allot-cancelled-badge">Cancelled</span>`
                             : `<strong>${escapeHtml(o.allotmentNo)}</strong>`;
+                        const actions = `<button type="button" class="allot-btn-secondary allot-view-open" data-no="${escapeHtml(
+                            o.allotmentNo
+                        )}">View</button>${
+                            !o.cancelled && canCancelAllotment()
+                                ? ` <button type="button" class="allot-btn-danger allot-view-cancel-row" data-no="${escapeHtml(
+                                      o.allotmentNo
+                                  )}">Cancel</button>`
+                                : ''
+                        }`;
                         return `<tr data-no="${escapeHtml(o.allotmentNo)}" class="${rowClass}">
                             <td>${noCell}</td>
                             <td>${escapeHtml(o.date)}</td>
@@ -504,9 +543,7 @@
                             <td>${escapeHtml(to)}</td>
                             <td>${o.lines.length}</td>
                             <td>${formatQty(o.qtyTotal)}</td>
-                            <td><button type="button" class="allot-btn-secondary allot-view-open" data-no="${escapeHtml(
-                                o.allotmentNo
-                            )}">View</button></td>
+                            <td class="allot-view-actions">${actions}</td>
                         </tr>`;
                     })
                     .join('')}
@@ -515,6 +552,16 @@
 
         host.querySelectorAll('.allot-view-open').forEach((btn) => {
             btn.addEventListener('click', () => openOrder(btn.getAttribute('data-no')));
+        });
+        host.querySelectorAll('.allot-view-cancel-row').forEach((btn) => {
+            btn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const no = btn.getAttribute('data-no');
+                if (!no) return;
+                openOrder(no);
+                await cancelSelectedAllotment(e);
+            });
         });
     }
 
