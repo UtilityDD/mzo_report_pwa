@@ -255,48 +255,104 @@
         });
     }
 
-    /** Pivot: one row per Division × Material (qty never mixed across items). */
-    function summaryDivisionMaterialPivot(rows, sortBy) {
+    /** Item rows keyed by material within a group (date / division / material). */
+    function summarizeItemsInGroup(rows) {
         const map = new Map();
         rows.forEach((r) => {
-            const division = String(r.Division || '—');
             const code = String(r.MaterialCode || '—');
-            const key = division + '\0' + code;
-            if (!map.has(key)) {
-                map.set(key, {
-                    division,
+            if (!map.has(code)) {
+                map.set(code, {
                     code,
                     description: r.MaterialDescription || '',
                     unit: r.Unit || '',
                     qty: 0,
                     lines: 0,
-                    orders: new Set()
+                    orders: new Set(),
+                    divisions: new Set()
                 });
             }
-            const row = map.get(key);
+            const row = map.get(code);
             row.qty += Number(r.AllottedQty) || 0;
             row.lines += 1;
             row.orders.add(String(r.AllotmentNo || ''));
+            if (r.Division) row.divisions.add(r.Division);
             if (!row.description && r.MaterialDescription) row.description = r.MaterialDescription;
             if (!row.unit && r.Unit) row.unit = r.Unit;
         });
-        const list = [...map.values()].map((r) => ({ ...r, orderCount: r.orders.size }));
-        if (sortBy === 'material') {
-            list.sort(
-                (a, b) =>
-                    a.code.localeCompare(b.code) ||
-                    a.division.localeCompare(b.division) ||
-                    b.qty - a.qty
-            );
+        return [...map.values()]
+            .map((r) => ({
+                ...r,
+                orderCount: r.orders.size,
+                divisionCount: r.divisions.size
+            }))
+            .sort((a, b) => a.code.localeCompare(b.code) || b.qty - a.qty);
+    }
+
+    /**
+     * Grouped item-wise summaries for Material / Division / Date tabs.
+     * groupBy: 'material' | 'division' | 'date'
+     */
+    function buildItemWiseGroups(rows, groupBy) {
+        const buckets = new Map();
+        (rows || []).forEach((r) => {
+            let key;
+            if (groupBy === 'division') {
+                key = String(r.Division || '—');
+            } else if (groupBy === 'date') {
+                key = String(r.Date || '').slice(0, 10) || '—';
+            } else {
+                key = String(r.MaterialCode || '—');
+            }
+            if (!buckets.has(key)) buckets.set(key, []);
+            buckets.get(key).push(r);
+        });
+
+        const groups = [...buckets.entries()].map(([key, groupRows]) => {
+            const items = summarizeItemsInGroup(groupRows);
+            const qty = items.reduce((s, it) => s + (Number(it.qty) || 0), 0);
+            const lines = items.reduce((s, it) => s + (Number(it.lines) || 0), 0);
+            const orders = new Set();
+            groupRows.forEach((r) => {
+                if (r.AllotmentNo) orders.add(String(r.AllotmentNo));
+            });
+            let title = key;
+            let subtitle = '';
+            let unit = '';
+            if (groupBy === 'material') {
+                const first = items[0] || {};
+                title = key;
+                subtitle = first.description || '';
+                unit = first.unit || '';
+            } else if (groupBy === 'division') {
+                title = shortName(key);
+            }
+            return {
+                key,
+                title,
+                subtitle,
+                unit,
+                items,
+                qty,
+                lines,
+                orderCount: orders.size
+            };
+        });
+
+        if (groupBy === 'date') {
+            groups.sort((a, b) => String(b.key).localeCompare(String(a.key)));
+        } else if (groupBy === 'division') {
+            groups.sort((a, b) => a.title.localeCompare(b.title));
         } else {
-            list.sort(
-                (a, b) =>
-                    a.division.localeCompare(b.division) ||
-                    a.code.localeCompare(b.code) ||
-                    b.qty - a.qty
-            );
+            groups.sort((a, b) => a.key.localeCompare(b.key));
         }
-        return list;
+        return groups;
+    }
+
+    function formatSummaryQty(code, qty) {
+        if (window.MzoStockPoleCount && typeof MzoStockPoleCount.formatStockWithNo === 'function') {
+            return MzoStockPoleCount.formatStockWithNo(code, qty, { maximumFractionDigits: 3 });
+        }
+        return formatQty(qty);
     }
 
     function formatLoadClock(ts) {
@@ -341,28 +397,6 @@
             `<strong>${count}</strong> line${count === 1 ? '' : 's'} · ` +
             `Updated <strong>${escapeHtml(formatLoadClock(at))}</strong>` +
             `<span class="allot-view-load-muted">${escapeHtml(srcLabel)}</span>`;
-    }
-
-    function summaryDate(rows) {
-        const map = new Map();
-        rows.forEach((r) => {
-            const date = String(r.Date || '').slice(0, 10) || '—';
-            if (!map.has(date)) {
-                map.set(date, {
-                    date,
-                    qty: 0,
-                    lines: 0,
-                    orders: new Set()
-                });
-            }
-            const d = map.get(date);
-            d.qty += Number(r.AllottedQty) || 0;
-            d.lines += 1;
-            d.orders.add(String(r.AllotmentNo || ''));
-        });
-        return [...map.values()]
-            .map((d) => ({ ...d, orderCount: d.orders.size }))
-            .sort((a, b) => String(b.date).localeCompare(String(a.date)));
     }
 
     function letterPadHtml() {
@@ -580,99 +614,117 @@
         detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    function renderPivotTable(host, rows, primary) {
-        if (!host) return;
-        if (!rows.length) {
-            host.innerHTML = '<p class="allot-view-empty">No data.</p>';
-            return;
-        }
-        const colA =
-            primary === 'material'
-                ? { label: 'Material Code' }
-                : { label: 'Division (To)' };
-        const colB =
-            primary === 'material'
-                ? { label: 'Division (To)' }
-                : { label: 'Material Code' };
+    function itemRowsHtml(items, opts) {
+        const showDivisions = !!(opts && opts.showDivisions);
+        return items
+            .map((it) => {
+                const qtyLabel = formatSummaryQty(it.code, it.qty);
+                return `<tr>
+                    <td><strong>${escapeHtml(it.code)}</strong></td>
+                    <td>${escapeHtml(it.description || '')}</td>
+                    <td>${escapeHtml(it.unit || '')}</td>
+                    <td class="allot-view-num">${escapeHtml(qtyLabel)}</td>
+                    <td class="allot-view-num">${it.orderCount}</td>
+                    ${
+                        showDivisions
+                            ? `<td class="allot-view-num">${it.divisionCount || 0}</td>`
+                            : ''
+                    }
+                </tr>`;
+            })
+            .join('');
+    }
 
-        host.innerHTML = `<table class="allot-view-table">
+    function itemTableHtml(items, opts) {
+        const showDivisions = !!(opts && opts.showDivisions);
+        return `<table class="allot-view-table allot-view-item-table">
             <thead>
                 <tr>
-                    <th>${colA.label}</th>
-                    <th>${colB.label}</th>
+                    <th>Material</th>
                     <th>Description</th>
                     <th>Unit</th>
                     <th>Qty</th>
-                    <th>Lines</th>
                     <th>Orders</th>
+                    ${showDivisions ? '<th>Divisions</th>' : ''}
                 </tr>
             </thead>
-            <tbody>
-                ${rows
-                    .map((r) => {
-                        const divCell = escapeHtml(shortName(r.division));
-                        const codeCell = escapeHtml(r.code);
-                        const primaryCell =
-                            primary === 'material'
-                                ? `<strong>${codeCell}</strong>`
-                                : `<strong>${divCell}</strong>`;
-                        const secondaryCell =
-                            primary === 'material' ? divCell : codeCell;
-                        return `<tr>
-                    <td>${primaryCell}</td>
-                    <td>${secondaryCell}</td>
-                    <td>${escapeHtml(r.description)}</td>
-                    <td>${escapeHtml(r.unit)}</td>
-                    <td>${formatQty(r.qty)}</td>
-                    <td>${r.lines}</td>
-                    <td>${r.orderCount}</td>
-                </tr>`;
-                    })
-                    .join('')}
-            </tbody>
+            <tbody>${itemRowsHtml(items, opts)}</tbody>
         </table>`;
     }
 
-    function renderMaterialSummary() {
-        const host = document.getElementById('allot-view-material-sum');
-        renderPivotTable(host, summaryDivisionMaterialPivot(filteredRows, 'material'), 'material');
-    }
-
-    function renderDivisionSummary() {
-        const host = document.getElementById('allot-view-division-sum');
-        renderPivotTable(host, summaryDivisionMaterialPivot(filteredRows, 'division'), 'division');
-    }
-
-    function renderDateSummary() {
-        const host = document.getElementById('allot-view-date-sum');
+    /**
+     * Item-wise summary tables for Material / Division / Date tabs.
+     * Orders tab is unchanged. Qty is never mixed across materials in a total row.
+     */
+    function renderItemWiseSummary(host, rows, groupBy) {
         if (!host) return;
-        const rows = summaryDate(filteredRows);
-        if (!rows.length) {
+        const active = activeRowsOnly(rows || []);
+        if (!active.length) {
             host.innerHTML = '<p class="allot-view-empty">No data.</p>';
             return;
         }
-        host.innerHTML = `<table class="allot-view-table">
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Orders</th>
-                    <th>Lines</th>
-                    <th>Total Qty</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${rows
-                    .map(
-                        (r) => `<tr>
-                    <td><strong>${escapeHtml(r.date)}</strong></td>
-                    <td>${r.orderCount}</td>
-                    <td>${r.lines}</td>
-                    <td>${formatQty(r.qty)}</td>
-                </tr>`
-                    )
-                    .join('')}
-            </tbody>
-        </table>`;
+
+        if (groupBy === 'material') {
+            const items = summarizeItemsInGroup(active);
+            host.innerHTML = `<div class="allot-view-sum-block">
+                <div class="allot-view-sum-head">
+                    <div class="allot-view-sum-title">Item-wise total</div>
+                    <div class="allot-view-sum-meta">${items.length} item${items.length === 1 ? '' : 's'}</div>
+                </div>
+                ${itemTableHtml(items, { showDivisions: true })}
+            </div>`;
+            return;
+        }
+
+        const groups = buildItemWiseGroups(active, groupBy);
+        if (!groups.length) {
+            host.innerHTML = '<p class="allot-view-empty">No data.</p>';
+            return;
+        }
+
+        host.innerHTML = groups
+            .map((g) => {
+                const title =
+                    groupBy === 'date'
+                        ? escapeHtml(g.key)
+                        : escapeHtml(g.title || g.key);
+                const metaParts = [
+                    `${g.orderCount} order${g.orderCount === 1 ? '' : 's'}`,
+                    `${g.items.length} item${g.items.length === 1 ? '' : 's'}`
+                ];
+                return `<div class="allot-view-sum-block">
+                    <div class="allot-view-sum-head">
+                        <div class="allot-view-sum-title">${title}</div>
+                        <div class="allot-view-sum-meta">${metaParts.join(' · ')}</div>
+                    </div>
+                    ${itemTableHtml(g.items, { showDivisions: false })}
+                </div>`;
+            })
+            .join('');
+    }
+
+    function renderMaterialSummary() {
+        renderItemWiseSummary(
+            document.getElementById('allot-view-material-sum'),
+            filteredRows,
+            'material'
+        );
+    }
+
+    function renderDivisionSummary() {
+        renderItemWiseSummary(
+            document.getElementById('allot-view-division-sum'),
+            filteredRows,
+            'division'
+        );
+    }
+
+    function renderDateSummary() {
+        renderItemWiseSummary(
+            document.getElementById('allot-view-date-sum'),
+            filteredRows,
+            'date'
+        );
     }
 
     function updateKpis() {
@@ -702,48 +754,9 @@
         filteredRows = applyLocalFilters(allRows);
         updateKpis();
         renderOrders();
-        const active = activeRowsOnly(filteredRows);
-        renderPivotTable(
-            document.getElementById('allot-view-material-sum'),
-            summaryDivisionMaterialPivot(active, 'material'),
-            'material'
-        );
-        renderPivotTable(
-            document.getElementById('allot-view-division-sum'),
-            summaryDivisionMaterialPivot(active, 'division'),
-            'division'
-        );
-        // Date summary uses active only
-        const host = document.getElementById('allot-view-date-sum');
-        if (host) {
-            const rows = summaryDate(active);
-            if (!rows.length) {
-                host.innerHTML = '<p class="allot-view-empty">No data.</p>';
-            } else {
-                host.innerHTML = `<table class="allot-view-table">
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Orders</th>
-                    <th>Lines</th>
-                    <th>Total Qty</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${rows
-                    .map(
-                        (r) => `<tr>
-                    <td><strong>${escapeHtml(r.date)}</strong></td>
-                    <td>${r.orderCount}</td>
-                    <td>${r.lines}</td>
-                    <td>${formatQty(r.qty)}</td>
-                </tr>`
-                    )
-                    .join('')}
-            </tbody>
-        </table>`;
-            }
-        }
+        renderMaterialSummary();
+        renderDivisionSummary();
+        renderDateSummary();
         setTab(activeTab);
     }
 
