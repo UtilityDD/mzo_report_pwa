@@ -3050,9 +3050,14 @@ const {
 
 const STOCK_CSV_FILE = path.join(NSC_DATA_DIR, 'stock.csv');
 const STOCK_META_FILE = path.join(NSC_DATA_DIR, 'stock_meta.json');
+const STOCK_SPREADSHEET_ID = '1wDvPuAxNfdO9QzUaIUubg2JnkFM5ZleFNXQdi8s5uh0';
 const STOCK_SHEET_FALLBACK_URL =
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vSE7jMusI5YFc4fcuHMyWpbqGp1fIcWBNRYh6yieCY8yUyjOgC1ZRWB7flXE0DAVEbHUfG-KlzWCZyf/pub?gid=202809558&single=true&output=csv';
-const STOCK_SHEET_SCRIPT_URL = String(process.env.STOCK_SHEET_SCRIPT_URL || '').trim();
+    `https://docs.google.com/spreadsheets/d/${STOCK_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet1`;
+/** Web app /exec from lib/sheet_mirror_publish.gs (ROLE=stock) on the Stock workbook. */
+const STOCK_SHEET_SCRIPT_URL = String(
+    process.env.STOCK_SHEET_SCRIPT_URL ||
+        'https://script.google.com/macros/s/AKfycbzM3EziyopjZW57OjhPW6cM3Wa2141hteRkKDxYDaoZXZSbLMgqH2fhEFLD_1bwLVJ5/exec'
+).trim();
 const STOCK_INSERT_BATCH = 400;
 
 function canUploadStock_(user) {
