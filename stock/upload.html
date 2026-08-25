@@ -97,6 +97,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="/stock/stock_material_category.js"></script>
   <script src="/stock/stock_client_pipeline.js"></script>
+  <script src="/mzo_data_hub.js"></script>
+  <script src="/lib/sheet_mirror_client.js"></script>
   <script>
     const metaBox = document.getElementById('metaBox');
     const msg = document.getElementById('msg');
@@ -107,6 +109,7 @@
     const adminIntro = document.getElementById('adminIntro');
     const adminSetupHint = document.getElementById('adminSetupHint');
     let isAdminViewer = false;
+    let sheetScriptUrl = '';
 
     function toIsoDate(d) {
       return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -176,6 +179,7 @@
       if (res.status === 401) { location.href = '/login.html'; return; }
       const data = await res.json();
       isAdminViewer = !!data.isAdmin;
+      sheetScriptUrl = String(data.sheetScriptUrl || '').trim();
       if (isAdminViewer) renderAdminMeta(data);
       else hideAdminDetails();
       if (data.canUpload) {
@@ -202,35 +206,63 @@
       try {
         const buffer = await file.arrayBuffer();
         const result = StockClientPipeline.processStockArrayBuffer(buffer, reportDate, file.name);
-        const csvBytes = new TextEncoder().encode(result.csv).length;
-        if (csvBytes > 4.2 * 1024 * 1024) {
-          throw new Error('This file is too large to publish. Contact an admin.');
-        }
+        const stockHeaders = StockClientPipeline.OUTPUT_COLUMNS || [];
 
         uploadBtn.textContent = 'Publishing…';
         showMsg('Publishing stock data — please wait…', true);
 
-        const fd = new FormData();
-        fd.append('csv', new Blob([result.csv], { type: 'text/csv' }), 'stock_cleaned.csv');
-        fd.append('reportDate', reportDate);
-        fd.append('reportDateUsed', result.reportDateUsed || '');
-        fd.append('originalName', file.name);
-        fd.append('sheetName', result.sheetName || 'Sheet1');
-        fd.append('stats', JSON.stringify(result.stats || {}));
-
-        const res = await fetch('/api/stock/publish', {
-          method: 'POST',
-          body: fd,
-          credentials: 'same-origin'
-        });
-        const data = await readJsonSafe(res);
-        if (!res.ok || data.status !== 'success') {
-          throw new Error(data.message || 'Upload failed. Please try again.');
+        let data;
+        if (sheetScriptUrl && window.MzoSheetMirror) {
+          await MzoSheetMirror.publishTab(
+            sheetScriptUrl,
+            'stock',
+            stockHeaders,
+            result.published,
+            function () {}
+          );
+          const fdMeta = new FormData();
+          fdMeta.append('reportDate', reportDate);
+          fdMeta.append('reportDateUsed', result.reportDateUsed || '');
+          fdMeta.append('originalName', file.name);
+          fdMeta.append('sheetName', result.sheetName || 'Sheet1');
+          fdMeta.append('stats', JSON.stringify(result.stats || {}));
+          fdMeta.append('publishedRows', String(result.published.length));
+          fdMeta.append('sheetMirror', '1');
+          const res = await fetch('/api/stock/publish', {
+            method: 'POST',
+            body: fdMeta,
+            credentials: 'same-origin'
+          });
+          data = await readJsonSafe(res);
+          if (!res.ok || data.status !== 'success') {
+            throw new Error(data.message || 'Saved to Google Sheet, but failed to record upload meta.');
+          }
+        } else {
+          const csvBytes = new TextEncoder().encode(result.csv).length;
+          if (csvBytes > 4.2 * 1024 * 1024) {
+            throw new Error('This file is too large to publish through the server. Ask an admin to enable Google Sheet mirror (STOCK_SHEET_SCRIPT_URL).');
+          }
+          const fd = new FormData();
+          fd.append('csv', new Blob([result.csv], { type: 'text/csv' }), 'stock_cleaned.csv');
+          fd.append('reportDate', reportDate);
+          fd.append('reportDateUsed', result.reportDateUsed || '');
+          fd.append('originalName', file.name);
+          fd.append('sheetName', result.sheetName || 'Sheet1');
+          fd.append('stats', JSON.stringify(result.stats || {}));
+          const res = await fetch('/api/stock/publish', {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin'
+          });
+          data = await readJsonSafe(res);
+          if (!res.ok || data.status !== 'success') {
+            throw new Error(data.message || 'Upload failed. Please try again.');
+          }
         }
 
         const published = (data.meta && data.meta.publishedRows) || result.published.length;
         const rd = (data.meta && data.meta.reportDate) || reportDate;
-        const ok = data.supabase === 'ok';
+        const ok = data.status === 'success';
 
         if (isAdminViewer) {
           const s = (data.meta && data.meta.stats) || result.stats || {};
@@ -255,11 +287,11 @@
         try {
           localStorage.removeItem('mzo_last_sync_date');
           localStorage.removeItem('mzoDataSynced');
-          localStorage.setItem('mzo_stock_pending_refresh', '1');
+          if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.seedDataset === 'function') {
+            const ver = (data.meta && (data.meta.supabaseUploadId || data.version)) || String(Date.now());
+            await mzoDataHub.seedDataset('CACHE_STOCK', result.csv, ver);
+          }
         } catch (_) {}
-        if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.refresh === 'function') {
-          try { await mzoDataHub.refresh('CACHE_STOCK'); } catch (_) {}
-        }
         await loadMeta();
       } catch (e) {
         showMsg(e.message || String(e), false);

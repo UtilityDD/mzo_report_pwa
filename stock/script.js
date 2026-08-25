@@ -649,6 +649,9 @@ async function initDashboard() {
 
         let cachedData, cachedMetadata;
         if (typeof mzoDataHub !== 'undefined') {
+            if (!localStorage.getItem('mzo_stock_pending_refresh') && typeof mzoDataHub.retryDataset === 'function') {
+                try { await mzoDataHub.retryDataset('CACHE_STOCK'); } catch (_) {}
+            }
             cachedData = await mzoDataHub.get('CACHE_STOCK');
             cachedMetadata = await mzoDataHub.get('CACHE_STOCK_METADATA');
         }

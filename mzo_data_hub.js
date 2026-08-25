@@ -9,18 +9,19 @@ const STORE_NAME = 'datasets';
 const DATASETS = [
     { key: 'CACHE_SAFETY', label: 'Safety Inspection', url: 'data/safety_inspection.json', type: 'json' },
     { key: 'CACHE_DOCKET', label: 'Docket Calls', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTT56PULgjKw_-wu8lmMWNE6SC1KBDyAKxeHaMloZJWUQ9HQsJoqosYF33DrQK3NX9Bvfn0mjfx-dkP/pub?gid=1059428699&single=true&output=csv', type: 'csv' },
-    // Prefers uploaded dataset via /api/nsc/dataset (Supabase); key bumped with filter fix v31
-    { key: 'CACHE_NSC_v5', label: 'NSC Data', url: '/api/nsc/dataset', type: 'csv' },
+    // originHeavy: skip homepage sync unless meta.csvUrl points at Google (sheet mirror)
+    { key: 'CACHE_NSC_v5', label: 'NSC Data', url: '/api/nsc/dataset', type: 'csv', originHeavy: true, versionUrl: '/api/nsc/meta', csvUrlField: 'csvUrl' },
     { key: 'CACHE_LOAD_EXT', label: 'Load Extension', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQP_B-Zl5XhnYkmJiDXKB7B8ksrRRezuLrRqTzEPz4lEw_yDcpGOTnmm0oI8dW9apwuHg9yGqaAqjDS/pub?gid=0&single=true&output=csv', type: 'csv' },
     { key: 'CACHE_COLLECTION', label: 'Collection Report', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ2S20QZ57pQpdawzKFHAIqD_OpCNmbmMbYlttluLVA0JZpVK405pS0-2ZIqm-X9jAA8ZB1XwF2serr/pub?gid=1977250749&single=true&output=csv', type: 'csv' },
     { key: 'CACHE_LOSS', label: 'Loss Report', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSYyqn0urGdbqXarhELRbSCeRvgUCSHID_1Z4E_kptBTR5u69R0HHX0Jk23n6KseriNct2q9XwXu04E/pub?output=csv', type: 'csv' },
     { key: 'CACHE_LOSS_TARGET', label: 'Loss Targets', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSYyqn0urGdbqXarhELRbSCeRvgUCSHID_1Z4E_kptBTR5u69R0HHX0Jk23n6KseriNct2q9XwXu04E/pub?gid=2042465667&single=true&output=csv', type: 'csv' },
     // Prefers uploaded dataset via /api/withheld/dataset (Supabase); fallback sheet/JSON on server
-    { key: 'CACHE_WITHHELD_v3', label: 'Withheld NSC', url: '/api/withheld/dataset', type: 'csv' },
+    { key: 'CACHE_WITHHELD_v3', label: 'Withheld NSC', url: '/api/withheld/dataset', type: 'csv', originHeavy: true, versionUrl: '/api/nsc/meta', csvUrlField: 'withheldCsvUrl' },
     { key: 'CACHE_WEEKLY', label: 'Weekly Report', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSMuO-ddereEG6J2s2Bmqp-HXo85ky4S4R5Yt-0HdoNHHa5r8xOEK4MJ1Syhyqzjpm2lTI4sT85nR4N/pub?gid=0&single=true&output=csv', type: 'csv' },
     { key: 'CACHE_PENDING_MC', label: 'Pending Master Card', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQmOUW4jxUtEGWhPHaoNBsvpBcGzhHJZRUx_9mxFBp91sfg4yD8WIqIK_xv0vlFs2yP-Ljz09JW1U2c/pub?gid=0&single=true&output=csv', type: 'csv' },
     { key: 'CACHE_CMO', label: 'CMO Grievances', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS7GVh5HflVhouhVfFOEN2RuA1kCBedmD4Q0CJP02K61DAtWuo3P8XIS8CO7ocZQuJ20uCJBa9qsgZ6/pub?gid=1066071765&single=true&output=csv', type: 'csv' },
-    { key: 'CACHE_STOCK', label: 'Stock Data', url: '/api/stock/dataset', type: 'csv' },
+    { key: 'CACHE_STOCK', label: 'Stock Data', url: '/api/stock/dataset', type: 'csv', originHeavy: true, versionUrl: '/api/stock/meta', csvUrlField: 'csvUrl' },
+    { key: 'CACHE_POWER_MAP', label: 'Power Map', url: '/api/power-map/data', type: 'csv', originHeavy: true },
     { key: 'CACHE_STOCK_METADATA', label: 'Stock Metadata', url: 'https://docs.google.com/spreadsheets/d/1wDvPuAxNfdO9QzUaIUubg2JnkFM5ZleFNXQdi8s5uh0/export?format=csv&gid=696716331', type: 'csv' },
     { key: 'CACHE_CAPEX', label: 'CAPEX Details', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQI2neSVbvMR4fF910Q0AWUcq02leP-sob8q4f9goT46hgLutCpxCjSL6y6X3s2vYBJRNN7WrFCjE0R/pub?gid=439685010&single=true&output=csv', type: 'csv' },
     { key: 'CACHE_VENDORS', label: 'Vendor Map', url: 'data/bndp_vendor.json', type: 'json' },
@@ -105,6 +106,61 @@ class DataHub {
         });
     }
 
+    _versionStorageKey(key) {
+        return 'mzo_hub_ver_' + key;
+    }
+
+    _readStoredVersion(key) {
+        try {
+            return localStorage.getItem(this._versionStorageKey(key)) || '';
+        } catch (e) {
+            return '';
+        }
+    }
+
+    _writeStoredVersion(key, ver) {
+        try {
+            const storageKey = this._versionStorageKey(key);
+            if (ver) localStorage.setItem(storageKey, String(ver));
+            else localStorage.removeItem(storageKey);
+        } catch (e) {}
+    }
+
+    // IndexedDB read that must not wait on the in-flight retry (avoids deadlock)
+    async _peek(key) {
+        await this.initPromise;
+        if (this.useMemoryFallback) {
+            return this.memoryCache[key];
+        }
+        if (!this.db) return undefined;
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([STORE_NAME], 'readonly');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.get(key);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async _getDatasetMeta(dataset) {
+        if (!dataset || !dataset.versionUrl) return null;
+        const res = await fetch(dataset.versionUrl, { credentials: 'same-origin' });
+        if (!res.ok) return null;
+        return res.json();
+    }
+
+    async _resolveRemoteVersion(dataset) {
+        const data = await this._getDatasetMeta(dataset);
+        return String((data && data.version) || '').trim();
+    }
+
+    async seedDataset(key, data, version) {
+        await this.set(key, data);
+        if (version) this._writeStoredVersion(key, String(version));
+        this.syncStatus[key] = 'done';
+        return true;
+    }
+
     // Get data from cache
     async get(key) {
         await this.initPromise;
@@ -118,14 +174,7 @@ class DataHub {
             await this.syncPromises[key];
         }
 
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([STORE_NAME], 'readonly');
-            const store = transaction.objectStore(STORE_NAME);
-            const request = store.get(key);
-
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = (e) => reject(e.target.error);
-        });
+        return this._peek(key);
     }
 
     // Remove one dataset from IndexedDB / memory cache
@@ -148,8 +197,9 @@ class DataHub {
 
     // Force re-download of one dataset (used when NSC/stock dumps are updated mid-day)
     async refresh(key) {
+        this._writeStoredVersion(key, '');
         await this.delete(key);
-        return this.retryDataset(key);
+        return this.retryDataset(key, { force: true });
     }
 
     // Clear all cached data
@@ -213,22 +263,70 @@ class DataHub {
         return this.retryDataset(key);
     }
 
-    async retryDataset(key) {
+    async retryDataset(key, opts) {
+        const force = !!(opts && opts.force);
         const dataset = DATASETS.find(d => d.key === key);
         if (!dataset) return false;
 
         this.syncStatus[key] = 'syncing';
         this.syncPromises[key] = (async () => {
             try {
-                const response = await fetch(dataset.url, {
-                    cache: 'no-store',
-                    credentials: 'same-origin'
-                });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                let remoteVer = '';
+                let fetchUrl = dataset.url;
+                let metaJson = null;
+                if (dataset.versionUrl) {
+                    try {
+                        metaJson = await this._getDatasetMeta(dataset);
+                    } catch (e) {}
+                    remoteVer = String((metaJson && metaJson.version) || '').trim();
+                    const field = dataset.csvUrlField || 'csvUrl';
+                    if (metaJson && metaJson[field]) fetchUrl = String(metaJson[field]);
+                    if (!force) {
+                        const peeked = await this._peek(key);
+                        const localVer = this._readStoredVersion(key);
+                        const hasBody = peeked != null && peeked !== '';
+                        if (hasBody && remoteVer && localVer && localVer === remoteVer) {
+                            this.syncStatus[key] = 'done';
+                            return true;
+                        }
+                    }
+                }
+
+                const useConditional = !force && !/docs\.google\.com/i.test(fetchUrl);
+                let allowConditional = useConditional;
+                let response = null;
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    const headers = {};
+                    const localVer = this._readStoredVersion(key);
+                    if (allowConditional && localVer) {
+                        headers['If-None-Match'] = `"${String(localVer).replace(/"/g, '')}"`;
+                    }
+                    response = await fetch(fetchUrl, {
+                        credentials: /\/api\//.test(fetchUrl) ? 'same-origin' : 'omit',
+                        headers
+                    });
+                    if (response.status !== 304) break;
+                    const peeked = await this._peek(key);
+                    if (peeked != null && peeked !== '') {
+                        if (remoteVer) this._writeStoredVersion(key, remoteVer);
+                        this.syncStatus[key] = 'done';
+                        return true;
+                    }
+                    allowConditional = false;
+                }
+                if (!response || !response.ok) {
+                    throw new Error(`HTTP ${response ? response.status : 0}`);
+                }
 
                 let data;
                 if (dataset.type === 'json') data = await response.json();
                 else data = await response.text();
+                const etag = String(response.headers.get('ETag') || '')
+                    .replace(/^W\//i, '')
+                    .replace(/"/g, '')
+                    .trim();
+                if (remoteVer) this._writeStoredVersion(key, remoteVer);
+                else if (etag) this._writeStoredVersion(key, etag);
 
                 // NSC / Withheld: refuse to cache a truncated CSV (stale sheet / partial response)
                 if (dataset.key.startsWith('CACHE_NSC') && typeof data === 'string') {
@@ -237,6 +335,7 @@ class DataHub {
                     const expected = Number(
                         response.headers.get('X-NSC-Published-Rows') ||
                         response.headers.get('X-NSC-Row-Count') ||
+                        (metaJson && metaJson.meta && metaJson.meta.publishedRows) ||
                         0
                     );
                     console.log(
@@ -256,6 +355,7 @@ class DataHub {
                     const expected = Number(
                         response.headers.get('X-Withheld-Rows') ||
                         response.headers.get('X-Withheld-Row-Count') ||
+                        (metaJson && metaJson.meta && metaJson.meta.withheldRows) ||
                         0
                     );
                     console.log(
@@ -293,19 +393,31 @@ window.mzoDataHub = mzoDataHub;
 // Main function to sync all datasets in parallel batches
 async function syncAllData(progressCallback) {
     let completed = 0;
-    const total = DATASETS.length;
+    const syncDatasets = [];
+    for (const d of DATASETS) {
+        if (!d.originHeavy) {
+            syncDatasets.push(d);
+            continue;
+        }
+        try {
+            const meta = await mzoDataHub._getDatasetMeta(d);
+            const field = d.csvUrlField || 'csvUrl';
+            if (meta && meta[field]) syncDatasets.push(d);
+        } catch (e) {}
+    }
+    const total = syncDatasets.length;
     const BATCH_SIZE = 6; // Balance speed and rate limits
 
     try {
-        // Initialize sync status for all
-        DATASETS.forEach(d => {
+        // Initialize sync status for homepage datasets only (skip Vercel-origin dumps)
+        syncDatasets.forEach(d => {
             if (mzoDataHub.syncStatus[d.key] !== 'done') {
                 mzoDataHub.syncStatus[d.key] = 'pending';
             }
         });
 
         // Use a simple queue for parallel execution with limited concurrency
-        const queue = [...DATASETS];
+        const queue = [...syncDatasets];
         const workers = [];
 
         const updateProgress = (label) => {
@@ -340,7 +452,7 @@ async function syncAllData(progressCallback) {
 
         await Promise.all(workers);
 
-        const allDone = Object.values(mzoDataHub.syncStatus).every(s => s === 'done');
+        const allDone = syncDatasets.every((d) => mzoDataHub.syncStatus[d.key] === 'done');
         
         if (progressCallback) {
             progressCallback(completed, total, allDone ? "Sync Complete!" : "Sync finished with some errors.");
