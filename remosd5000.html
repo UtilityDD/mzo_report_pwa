@@ -8,6 +8,7 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
   <script src="mzo_data_hub.js"></script>
   <script src="mzo_presets_hub.js"></script>
 
@@ -1472,23 +1473,36 @@
     document.querySelector('.content-wrapper').insertAdjacentHTML('afterbegin', 
       '<div id="loadingIndicator" class="text-center py-4"><i class="fas fa-spinner fa-spin text-primary fa-2x"></i><p class="mt-2">Loading data...</p></div>');
 
-    const jsonUrl = "data/rem.json"; // Adjust path if needed
+    const REM_CSV_URL = "https://docs.google.com/spreadsheets/d/18y_nHZngDDO13nlluN9qba7AfgDe5dKGGHnXRYUU-b8/gviz/tq?tqx=out:csv";
+
+    function parseRemCsv(textOrUrl, fromDownload) {
+      return new Promise((resolve, reject) => {
+        const config = {
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => resolve(results.data || []),
+          error: (err) => reject(err)
+        };
+        if (fromDownload) Papa.parse(textOrUrl, { ...config, download: true });
+        else Papa.parse(textOrUrl, config);
+      });
+    }
 
     async function loadData() {
       try {
         let data;
         if (typeof mzoDataHub !== 'undefined') {
-          const cachedData = await mzoDataHub.get('CACHE_REM');
+          const cachedData = await mzoDataHub.get('CACHE_REM_v2');
           if (cachedData) {
             console.log("Successfully fetched REM data from DataHub.");
-            data = cachedData;
+            data = typeof cachedData === 'string'
+              ? await parseRemCsv(cachedData, false)
+              : cachedData;
           }
         }
         if (!data) {
-          console.log("Fetching REM data from network...");
-          const res = await fetch(jsonUrl);
-          if (!res.ok) throw new Error("Failed to fetch JSON");
-          data = await res.json();
+          console.log("Fetching REM data from Google Sheet...");
+          data = await parseRemCsv(REM_CSV_URL, true);
         }
         
         const loadingElement = document.getElementById('loadingIndicator');
