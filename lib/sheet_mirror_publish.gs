@@ -3,31 +3,48 @@
  * Browser uploads write here; the PWA homepage syncs the published CSV
  * (same pattern as Loss, Collection, etc.) so Vercel never serves the megabytes.
  *
- * Two NSC files (paste this same file in each, deploy twice):
+ * Deploy once per workbook (same file, set ROLE or rely on ID map below):
  *   nsc_working  → NSC_SHEET_SCRIPT_URL
  *   NSCWH        → NSC_WITHHELD_SHEET_SCRIPT_URL
+ *   Stock dump   → STOCK_SHEET_SCRIPT_URL  (Sheet1 tab)
  *
- * Setup (once per spreadsheet):
+ * Setup:
  * 1. Open that Google Sheet → Extensions → Apps Script → paste this file → Save.
- * 2. ROLE = 'nsc' for both NSC files. ROLE = 'stock' only on the Stock sheet.
+ * 2. ROLE = 'nsc' for NSC files, ROLE = 'stock' for the Stock workbook
+ *    (stock spreadsheet ID is also auto-mapped below).
  * 3. Deploy → New deployment → Web app
  *    Execute as: Me
  *    Who has access: Anyone
  * 4. After code changes: Manage deployments → pencil → New version → Deploy
- *    (same /exec URL). A brand-new deployment gets a new URL.
  * 5. File → Share → Anyone with the link can view (needed for CSV sync).
  */
-var ROLE = 'nsc'; // 'nsc' | 'stock'
+var ROLE = 'stock'; // 'nsc' | 'stock' — set to match this workbook
 
 var NSC_TAB = 'nsc_working';
 var WITHHELD_TAB = 'Sheet1';
-var STOCK_TAB = 'Stock';
+/** Live stock dump tab on 1wDvPuAx… workbook */
+var STOCK_TAB = 'Sheet1';
 
-/** Bound spreadsheet ID → existing tab (avoids creating a new "NSC" / "Withheld" sheet). */
+/** Bound spreadsheet ID → existing dump tab (avoids creating wrong sheet names). */
 var TAB_BY_SPREADSHEET_ID = {
   '1QnmPKSAtwmW-m1-gn4qmZBWanx9_Vwbk63XhwyQBiKU': 'nsc_working',
-  '12nS8GAQ1weIMWoEIeydcdKTKd-XwHNu9W07DKudGuOg': 'Sheet1'
+  '12nS8GAQ1weIMWoEIeydcdKTKd-XwHNu9W07DKudGuOg': 'Sheet1',
+  '1wDvPuAxNfdO9QzUaIUubg2JnkFM5ZleFNXQdi8s5uh0': 'Sheet1'
 };
+
+var ROLE_BY_SPREADSHEET_ID = {
+  '1QnmPKSAtwmW-m1-gn4qmZBWanx9_Vwbk63XhwyQBiKU': 'nsc',
+  '12nS8GAQ1weIMWoEIeydcdKTKd-XwHNu9W07DKudGuOg': 'nsc',
+  '1wDvPuAxNfdO9QzUaIUubg2JnkFM5ZleFNXQdi8s5uh0': 'stock'
+};
+
+function effectiveRole_() {
+  try {
+    var id = SpreadsheetApp.getActiveSpreadsheet().getId();
+    if (ROLE_BY_SPREADSHEET_ID[id]) return ROLE_BY_SPREADSHEET_ID[id];
+  } catch (e) {}
+  return ROLE;
+}
 
 function tabName_(key) {
   var k = String(key || '').toLowerCase();
@@ -42,7 +59,12 @@ function resolveTabName_(ss, key, payload) {
   if (fromPayload) return fromPayload;
   var mapped = TAB_BY_SPREADSHEET_ID[ss.getId()];
   if (mapped) return mapped;
-  return tabName_(key);
+  var k = String(key || '').toLowerCase();
+  if (!k) {
+    var role = effectiveRole_();
+    k = role === 'stock' ? 'stock' : 'nsc';
+  }
+  return tabName_(k);
 }
 
 function sheetFor_(key, payload) {
@@ -74,6 +96,7 @@ function readPayload_(e) {
 
 function doGet(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var role = effectiveRole_();
   if (e && e.parameter && String(e.parameter.meta) === '1') {
     var raw = PropertiesService.getDocumentProperties().getProperty('nscUploadMeta') || '';
     var meta = null;
@@ -83,9 +106,9 @@ function doGet(e) {
   return jsonOut_({
     status: 'ok',
     service: 'sheet-mirror',
-    role: ROLE,
+    role: role,
     spreadsheetId: ss.getId(),
-    tab: resolveTabName_(ss, ROLE === 'stock' ? 'stock' : '', {})
+    tab: resolveTabName_(ss, role === 'stock' ? 'stock' : 'nsc', {})
   });
 }
 
@@ -94,11 +117,12 @@ function doPost(e) {
     var payload = readPayload_(e);
     var action = String((payload && payload.action) || '').toLowerCase();
     var tab = String((payload && payload.tab) || '').toLowerCase();
+    var role = effectiveRole_();
 
-    if (ROLE === 'nsc' && tab === 'stock') {
+    if (role === 'nsc' && tab === 'stock') {
       return jsonOut_({ status: 'error', message: 'This web app is NSC-only. Use STOCK_SHEET_SCRIPT_URL.' });
     }
-    if (ROLE === 'stock' && tab !== 'stock' && action !== 'savemeta' && action !== 'setmeta') {
+    if (role === 'stock' && tab !== 'stock' && action !== 'savemeta' && action !== 'setmeta') {
       return jsonOut_({ status: 'error', message: 'This web app is Stock-only. Use NSC_SHEET_SCRIPT_URL.' });
     }
 
