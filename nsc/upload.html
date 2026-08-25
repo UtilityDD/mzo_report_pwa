@@ -136,17 +136,20 @@
           <li>Open the <strong>NSC</strong> and <strong>Withheld</strong> dashboards to verify.</li>
         </ol>
         <p class="muted" style="margin:0.6rem 0 0;">
-          One file publishes both: <strong>Working/Accepted</strong> → NSC dashboard, and
-          <strong>Withheld</strong> → Withheld dashboard.
+          Same as before: you upload the <strong>raw SAP Excel</strong>. The page processes it
+          (DETAILS sheet, status split, division cleanup, delay columns), then inserts the
+          cleaned rows — Working/Accepted → <strong>nsc_working</strong>, Withheld →
+          <strong>NSCWH Sheet1</strong>. Raw extra SAP columns are not copied.
         </p>
       </div>
+      <p class="muted" id="mirrorBox" style="margin:0.75rem 0 0;"></p>
 
       <div class="admin-only" id="adminIntro">
         <p class="muted">
-          Admin: cleaned rows publish to Supabase in chunks (live progress below).
-          Grant rights under Admin → User Management → <strong>NSC Raw Upload</strong>.
-          First time: run <code>create_mzo_insight_nsc_pending.sql</code> and
-          <code>create_mzo_insight_nsc_withheld.sql</code> in Supabase.
+          Same pipeline as the old Supabase insert: raw file → process → cleaned 45-column
+          rows. Destination is Google Sheets. A small version record is still stored so
+          dashboards show “Updated on”. Grant rights under Admin → User Management →
+          <strong>NSC Raw Upload</strong>.
         </p>
         <p class="muted" id="adminSetupHint" style="display:none;"></p>
       </div>
@@ -194,8 +197,9 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="/nsc/nsc_client_pipeline.js"></script>
+  <script src="/mzo_data_hub.js"></script>
+  <script src="/lib/sheet_mirror_client.js"></script>
   <script>
-    const CHUNK_ROWS = 800;
     const metaBox = document.getElementById('metaBox');
     const msg = document.getElementById('msg');
     const fileInput = document.getElementById('fileInput');
@@ -209,6 +213,8 @@
     const progressLabel = document.getElementById('progressLabel');
 
     let isAdminViewer = false;
+    let sheetScriptUrl = '';
+    let withheldSheetScriptUrl = '';
     let progressState = {
       pendingTotal: 0,
       withheldTotal: 0,
@@ -334,6 +340,40 @@
       adminSetupHint.style.display = 'none';
     }
 
+    async function probeScript(url, expectedTab) {
+      if (!url) return expectedTab + ': not configured';
+      try {
+        const res = await fetch(url, { credentials: 'omit' });
+        const data = await res.json();
+        if (!res.ok || data.status === 'error') {
+          return expectedTab + ': error';
+        }
+        const tab = String(data.tab || '');
+        const id = String(data.spreadsheetId || '');
+        if (tab && tab !== expectedTab) {
+          return expectedTab + ': wrong tab (' + tab + ')';
+        }
+        return expectedTab + ': ready' + (id ? ' (' + id.slice(0, 8) + '…)' : '');
+      } catch (e) {
+        return expectedTab + ': unreachable';
+      }
+    }
+
+    async function updateMirrorStatus() {
+      const el = document.getElementById('mirrorBox');
+      if (!el) return;
+      if (!sheetScriptUrl && !withheldSheetScriptUrl) {
+        el.textContent = 'Google Sheet mirror is off — this upload will go through the server.';
+        return;
+      }
+      el.textContent = 'Checking Google Sheet mirror…';
+      const parts = await Promise.all([
+        probeScript(sheetScriptUrl, 'nsc_working'),
+        probeScript(withheldSheetScriptUrl, 'Sheet1')
+      ]);
+      el.textContent = 'Google Sheet mirror — ' + parts.join(' · ');
+    }
+
     async function loadMeta() {
       try {
         const res = await fetch('/api/nsc/meta', { credentials: 'same-origin' });
@@ -343,6 +383,9 @@
         }
         const data = await res.json();
         isAdminViewer = !!data.isAdmin;
+        sheetScriptUrl = String(data.sheetScriptUrl || '').trim();
+        withheldSheetScriptUrl = String(data.withheldSheetScriptUrl || '').trim();
+        await updateMirrorStatus();
 
         if (isAdminViewer) {
           renderAdminMeta(data);
@@ -375,33 +418,6 @@
         throw new Error(data.message || ('Request failed (' + res.status + ')'));
       }
       return data;
-    }
-
-    async function postCsvChunk(uploadId, kind, csvText) {
-      const fd = new FormData();
-      fd.append('uploadId', String(uploadId));
-      fd.append('kind', kind);
-      fd.append('csv', new Blob([csvText], { type: 'text/csv' }), kind + '_chunk.csv');
-      const res = await fetch('/api/nsc/publish/chunk', {
-        method: 'POST',
-        body: fd,
-        credentials: 'same-origin'
-      });
-      const data = await readJsonSafe(res);
-      if (!res.ok || data.status !== 'success') {
-        throw new Error(data.message || ('Chunk failed (' + res.status + ')'));
-      }
-      return data;
-    }
-
-    async function uploadRowsInChunks(uploadId, kind, rows, onProgress) {
-      for (let i = 0; i < rows.length; i += CHUNK_ROWS) {
-        const slice = rows.slice(i, i + CHUNK_ROWS);
-        const csv = NSCClientPipeline.toCsv(slice);
-        const data = await postCsvChunk(uploadId, kind, csv);
-        const inserted = Number(data.inserted) || slice.length;
-        onProgress(inserted);
-      }
     }
 
     uploadBtn.addEventListener('click', async () => {
@@ -461,36 +477,68 @@
           stats: result.stats || {}
         });
         const uploadId = begin.uploadId;
+        const nscHeaders = (NSCClientPipeline.OUTPUT_COLUMNS || []);
+        const useSheet =
+          !!(window.MzoSheetMirror) && !!sheetScriptUrl && !!withheldSheetScriptUrl;
 
-        setStep('stepPending', '2. Upload Working/Accepted…', false);
-        await uploadRowsInChunks(uploadId, 'pending', result.published, (n) => {
-          progressState.pendingSent += n;
-          updateProgressUi();
-        });
-        setStep(
-          'stepPending',
-          '2. Upload Working/Accepted — ' + fmt(progressState.pendingSent) + ' rows',
-          true
-        );
+        if (useSheet) {
+          setStep('stepPending', '2. Insert processed Working/Accepted into nsc_working…', false);
+          await MzoSheetMirror.publishTab(
+            sheetScriptUrl,
+            'nsc',
+            nscHeaders,
+            result.published,
+            (n) => {
+              progressState.pendingSent += n;
+              updateProgressUi();
+            },
+            'nsc_working'
+          );
+          setStep(
+            'stepPending',
+            '2. Insert Working/Accepted — ' + fmt(progressState.pendingSent) + ' rows',
+            true
+          );
 
-        progressState.phase = 'withheld';
-        setStep('stepWithheld', '3. Upload Withheld…', false);
-        updateProgressUi();
-        await uploadRowsInChunks(uploadId, 'withheld', result.withheld, (n) => {
-          progressState.withheldSent += n;
+          progressState.phase = 'withheld';
           updateProgressUi();
-        });
-        setStep(
-          'stepWithheld',
-          '3. Upload Withheld — ' + fmt(progressState.withheldSent) + ' rows',
-          true
-        );
+          setStep('stepWithheld', '3. Insert processed Withheld into NSCWH…', false);
+          await MzoSheetMirror.publishTab(
+            withheldSheetScriptUrl,
+            'withheld',
+            nscHeaders,
+            result.withheld,
+            (n) => {
+              progressState.withheldSent += n;
+              updateProgressUi();
+            },
+            'Sheet1'
+          );
+          setStep(
+            'stepWithheld',
+            '3. Insert Withheld — ' + fmt(progressState.withheldSent) + ' rows',
+            true
+          );
+        } else {
+          throw new Error(
+            'Google Sheet mirror is not ready for both NSC and Withheld. Check the status line above.'
+          );
+        }
 
         progressState.phase = 'finish';
         setStep('stepFinish', '4. Activating live datasets…', false);
         updateProgressUi();
 
-        const done = await postJson('/api/nsc/publish/complete', { uploadId });
+        const done = await postJson('/api/nsc/publish/complete', {
+          uploadId,
+          reportDate,
+          reportDateUsed: result.reportDateUsed || '',
+          originalName: file.name,
+          sheetName: result.sheetName || '',
+          publishedRows: result.published.length,
+          withheldRows: result.withheld.length,
+          stats: result.stats || {}
+        });
         progressState.phase = 'done';
         setStep('stepFinish', '4. Activate live datasets — done', true);
         updateProgressUi();
@@ -513,13 +561,14 @@
         try {
           localStorage.removeItem('mzo_last_sync_date');
           localStorage.removeItem('mzoDataSynced');
-          localStorage.setItem('mzo_nsc_pending_refresh', '1');
-          localStorage.setItem('mzo_withheld_pending_refresh', '1');
           localStorage.removeItem('mzo_nsc_seen_version');
           localStorage.removeItem('mzo_nsc_dismissed_version');
-          if (typeof mzoDataHub !== 'undefined' && mzoDataHub.refresh) {
-            mzoDataHub.refresh('CACHE_NSC_v5').catch(() => {});
-            mzoDataHub.refresh('CACHE_WITHHELD_v3').catch(() => {});
+          if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.seedDataset === 'function') {
+            const ver = (done.meta && (done.meta.supabaseUploadId || done.version)) || uploadId;
+            const nscCsv = NSCClientPipeline.toCsv(result.published);
+            const withheldCsv = NSCClientPipeline.toCsv(result.withheld);
+            await mzoDataHub.seedDataset('CACHE_NSC_v5', nscCsv, ver);
+            await mzoDataHub.seedDataset('CACHE_WITHHELD_v3', withheldCsv, ver);
           }
         } catch (_) {}
         try {

@@ -1,33 +1,21 @@
-# NSC Pending + Withheld → Supabase (`mzo_insight`)
+# NSC datasets → Google Sheets
 
-Stores cleaned NSC datasets after an authorised user uploads the SAP Excel at `/nsc/upload.html`.
+NSC no longer stores rows in Supabase. Upload at `/nsc/upload.html` processes the raw SAP Excel in the browser and inserts cleaned rows into:
 
-## Tables
+- Working/Accepted → spreadsheet tab `nsc_working`
+- Withheld → NSCWH tab `Sheet1`
 
-| Table | Purpose |
-|-------|---------|
-| `nsc_upload_meta` | Who uploaded, when, row counts, active flag |
-| `nsc_pending` | Working/Accepted rows for the active upload |
-| `nsc_withheld` | Withheld rows for the same active upload |
+A small version record (who / when / row counts) is stored in Apps Script document properties plus optional local `data/nsc_meta.json`.
 
-## Setup
+## Removed tables
 
-1. Supabase → **SQL Editor** → run [`create_mzo_insight_nsc_pending.sql`](create_mzo_insight_nsc_pending.sql)
-2. Same editor → run [`create_mzo_insight_nsc_withheld.sql`](create_mzo_insight_nsc_withheld.sql)
-3. **Settings → API → Exposed schemas** → include `mzo_insight` (if not already)
-4. Restart / redeploy the app
+Run [`drop_mzo_insight_nsc_tables.sql`](drop_mzo_insight_nsc_tables.sql) in the Supabase SQL Editor to drop:
 
-## App flow
+- `mzo_insight.nsc_pending`
+- `mzo_insight.nsc_withheld`
+- `mzo_insight.nsc_upload_meta`
 
-1. Authorised user opens `/nsc/upload.html`, picks data date + Excel
-2. Browser cleans the file (Working/Accepted + Withheld)
-3. Chunked publish with live progress:
-   - `POST /api/nsc/publish/begin`
-   - `POST /api/nsc/publish/chunk` (pending, then withheld)
-   - `POST /api/nsc/publish/complete` (activates snapshot)
-4. Dashboards:
-   - NSC → `/api/nsc/dataset`
-   - Withheld → `/api/withheld/dataset`
+Do **not** drop `nsc_upload_autho` on `portal_users` — that flag still controls who can upload.
 
 ## Access
 
