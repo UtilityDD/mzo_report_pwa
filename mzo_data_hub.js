@@ -26,21 +26,24 @@ const DATASETS = [
     { key: 'CACHE_CAPEX', label: 'CAPEX Details', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQI2neSVbvMR4fF910Q0AWUcq02leP-sob8q4f9goT46hgLutCpxCjSL6y6X3s2vYBJRNN7WrFCjE0R/pub?gid=439685010&single=true&output=csv', type: 'csv' },
     { key: 'CACHE_VENDORS', label: 'Vendor Map', url: 'data/bndp_vendor.json', type: 'json' },
     { key: 'CACHE_COSTCENTER', label: 'Cost Center Map', url: 'data/costcenter.json', type: 'json' },
-    { key: 'CACHE_REM', label: 'REM Data', url: 'data/rem.json', type: 'json' },
+    { key: 'CACHE_REM_v2', label: 'REM Data', url: 'https://docs.google.com/spreadsheets/d/18y_nHZngDDO13nlluN9qba7AfgDe5dKGGHnXRYUU-b8/gviz/tq?tqx=out:csv', type: 'csv' },
     { key: 'CACHE_DEFECTIVE', label: 'Defective Meter', url: 'consumer/defective_meter.csv', type: 'csv' },
     { key: 'CACHE_REM_DEFAULTERS', label: 'REM Ind/Com Defaulters', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOynlOrqc0iXUKYDgqh-tTjIgDA5WidJDcDhYM7MhfKIZzZ7iduFD2LN4fYRXmVvcLCz1X-OJfcmRx/pub?gid=0&single=true&output=tsv', type: 'csv' },
     { key: 'CACHE_REM_AGRI', label: 'REM Agri Defaulters', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRFk-wa_x-dsthFXNsWa9wRxWOQrMD-yEiucvA2FtJIbwnTiGqVs3OT_eXxqyAOBqvGSDRiG-Hr0hK1/pub?gid=0&single=true&output=tsv', type: 'csv' },
     { key: 'CACHE_REM_DOM', label: 'REM Dom Defaulters', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRFk-wa_x-dsthFXNsWa9wRxWOQrMD-yEiucvA2FtJIbwnTiGqVs3OT_eXxqyAOBqvGSDRiG-Hr0hK1/pub?gid=1106133732&single=true&output=tsv', type: 'csv' },
     { key: 'CACHE_SOLAR', label: 'Solar Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR5Vnb9TxymVIcBZsUBWZ-21Frkn77O4IyNus3Zo42qPm09N6MlJ3E0Vh3tHywcMAiy2y0uRm5XfIdk/pub?gid=0&single=true&output=csv', type: 'csv' },
-    { key: 'CACHE_METER_ERP', label: 'Meter ERP Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=1335293243&single=true&output=csv', type: 'csv' },
-    { key: 'CACHE_METER_MASTER', label: 'Meter Master Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=1053803476&single=true&output=csv', type: 'csv' },
-    { key: 'CACHE_METER_CRM', label: 'Meter CRM Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=1638328510&single=true&output=csv', type: 'csv' },
-    { key: 'CACHE_METER_ISU', label: 'Meter ISU Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=329630218&single=true&output=csv', type: 'csv' },
+    // lazySync: multi‑MB sheets — skip daily homepage sync; fetch on page open via waitForDataset/get
+    { key: 'CACHE_METER_ERP', label: 'Meter ERP Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=1335293243&single=true&output=csv', type: 'csv', lazySync: true },
+    { key: 'CACHE_METER_MASTER', label: 'Meter Master Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=1053803476&single=true&output=csv', type: 'csv', lazySync: true },
+    { key: 'CACHE_METER_CRM', label: 'Meter CRM Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=1638328510&single=true&output=csv', type: 'csv', lazySync: true },
+    { key: 'CACHE_METER_ISU', label: 'Meter ISU Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=329630218&single=true&output=csv', type: 'csv', lazySync: true },
     { key: 'CACHE_DISCONNECTION', label: 'Disconnection Tracker', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv', type: 'csv' },
-    { key: 'CACHE_PMSGY_0', label: 'PMSGY Data 0', url: 'https://docs.google.com/spreadsheets/d/1u44ctXxvX4GI3Pm7ZPAoaH7rGn9RkxEWkyK5AyMlxGo/export?format=csv&gid=0', type: 'csv' },
-    { key: 'CACHE_PMSGY_1', label: 'PMSGY Data 1', url: 'https://docs.google.com/spreadsheets/d/1u44ctXxvX4GI3Pm7ZPAoaH7rGn9RkxEWkyK5AyMlxGo/export?format=csv&gid=1665942193', type: 'csv' },
-    { key: 'CACHE_PMSGY_2', label: 'PMSGY Data 2', url: 'https://docs.google.com/spreadsheets/d/1u44ctXxvX4GI3Pm7ZPAoaH7rGn9RkxEWkyK5AyMlxGo/export?format=csv&gid=1873088391', type: 'csv' }
+    { key: 'CACHE_PMSGY_0', label: 'PMSGY Data 0', url: 'https://docs.google.com/spreadsheets/d/1u44ctXxvX4GI3Pm7ZPAoaH7rGn9RkxEWkyK5AyMlxGo/export?format=csv&gid=0', type: 'csv', lazySync: true },
+    { key: 'CACHE_PMSGY_1', label: 'PMSGY Data 1', url: 'https://docs.google.com/spreadsheets/d/1u44ctXxvX4GI3Pm7ZPAoaH7rGn9RkxEWkyK5AyMlxGo/export?format=csv&gid=1665942193', type: 'csv', lazySync: true },
+    { key: 'CACHE_PMSGY_2', label: 'PMSGY Data 2', url: 'https://docs.google.com/spreadsheets/d/1u44ctXxvX4GI3Pm7ZPAoaH7rGn9RkxEWkyK5AyMlxGo/export?format=csv&gid=1873088391', type: 'csv', lazySync: true }
 ];
+
+const FETCH_TIMEOUT_MS = 90000;
 
 class DataHub {
     constructor() {
@@ -301,10 +304,20 @@ class DataHub {
                     if (allowConditional && localVer) {
                         headers['If-None-Match'] = `"${String(localVer).replace(/"/g, '')}"`;
                     }
-                    response = await fetch(fetchUrl, {
-                        credentials: /\/api\//.test(fetchUrl) ? 'same-origin' : 'omit',
-                        headers
-                    });
+                    const timeoutMs = dataset.lazySync ? 180000 : FETCH_TIMEOUT_MS;
+                    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                    const timer = ctrl
+                        ? setTimeout(() => ctrl.abort(), timeoutMs)
+                        : null;
+                    try {
+                        response = await fetch(fetchUrl, {
+                            credentials: /\/api\//.test(fetchUrl) ? 'same-origin' : 'omit',
+                            headers,
+                            signal: ctrl ? ctrl.signal : undefined
+                        });
+                    } finally {
+                        if (timer) clearTimeout(timer);
+                    }
                     if (response.status !== 304) break;
                     const peeked = await this._peek(key);
                     if (peeked != null && peeked !== '') {
@@ -395,6 +408,7 @@ async function syncAllData(progressCallback) {
     let completed = 0;
     const syncDatasets = [];
     for (const d of DATASETS) {
+        if (d.lazySync) continue; // multi‑MB dumps: on-demand only
         if (!d.originHeavy) {
             syncDatasets.push(d);
             continue;
@@ -407,6 +421,7 @@ async function syncAllData(progressCallback) {
     }
     const total = syncDatasets.length;
     const BATCH_SIZE = 6; // Balance speed and rate limits
+    const inFlight = new Set();
 
     try {
         // Initialize sync status for homepage datasets only (skip Vercel-origin dumps)
@@ -421,9 +436,12 @@ async function syncAllData(progressCallback) {
         const workers = [];
 
         const updateProgress = (label) => {
-            if (progressCallback) {
-                progressCallback(completed, total, label);
-            }
+            if (!progressCallback) return;
+            const active = [...inFlight].slice(0, 3).join(', ');
+            const detail = active && !/Complete|finished/i.test(label)
+                ? `${label} · also: ${active}`
+                : label;
+            progressCallback(completed, total, detail);
         };
 
         const executeWorker = async () => {
@@ -437,9 +455,15 @@ async function syncAllData(progressCallback) {
                     continue;
                 }
 
+                inFlight.add(dataset.label);
                 updateProgress(`Updating ${dataset.label}...`);
-                const success = await mzoDataHub.retryDataset(dataset.key);
-                if (success) completed++;
+                let success = false;
+                try {
+                    success = await mzoDataHub.retryDataset(dataset.key);
+                    if (success) completed++;
+                } finally {
+                    inFlight.delete(dataset.label);
+                }
                 
                 updateProgress(success ? `Loaded ${dataset.label}` : `Failed ${dataset.label}`);
             }
