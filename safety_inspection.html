@@ -1021,12 +1021,14 @@
     // Utility functions
     function parseDate(dateStr) {
       if (!dateStr) return null;
-      const parts = dateStr.split('/');
-      if (parts.length === 3) {
-        // Assuming DD/MM/YYYY format
-        return new Date(parts[2], parts[1] - 1, parts[0]);
-      }
-      return new Date(dateStr); // Fallback for other formats
+      const s = String(dateStr).trim();
+      if (!s) return null;
+      const dmySlash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (dmySlash) return new Date(+dmySlash[3], +dmySlash[2] - 1, +dmySlash[1]);
+      const dmyDash = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
+      if (dmyDash) return new Date(+dmyDash[3], +dmyDash[2] - 1, +dmyDash[1]);
+      const parsed = new Date(s);
+      return isNaN(parsed.getTime()) ? null : parsed;
     }
 
     // NEW: Updated cleanOfficeName to also handle 'CODE NAME' format if needed from CSV 'Office' column
@@ -1141,16 +1143,26 @@
       console.log("Dynamically constructed hierarchy:", dynamicOfficeHierarchy); // For debugging
 
 
+      const SAFETY_CSV_URL = 'https://docs.google.com/spreadsheets/d/1A2fjKboWKnw10iaOs1wcXDrdg9jhhDGfzF9OagPjA5s/gviz/tq?tqx=out:csv';
+
+      function parseSafetyRows(data) {
+        if (!data) return [];
+        if (typeof data === 'string') {
+          return Papa.parse(data.trim(), { header: true, skipEmptyLines: true }).data;
+        }
+        return Array.isArray(data) ? data : [];
+      }
+
       try {
-        let jsonData;
+        let jsonData = [];
         if (typeof mzoDataHub !== 'undefined') {
-          jsonData = await mzoDataHub.get('CACHE_SAFETY');
+          jsonData = parseSafetyRows(await mzoDataHub.get('CACHE_SAFETY_v2'));
         }
 
-        if (!jsonData) {
-          console.log("Downloading Safety Inspection data from network...");
-          const response = await fetch('data/safety_inspection.json');
-          jsonData = await response.json();
+        if (!jsonData.length) {
+          console.log("Downloading Safety Inspection data from Google Sheet...");
+          const response = await fetch(SAFETY_CSV_URL);
+          jsonData = parseSafetyRows(await response.text());
         } else {
           console.log("Successfully fetched Safety Inspection from DataHub.");
         }
@@ -1212,7 +1224,7 @@
             inspectionBy: row['Inspection By'] || '',
             enteredOn: parseDate(row['Entered on']),
             updatedOn: parseDate(row['Updated on']),
-            isRectified: row['Rectification done on'] && row['Rectification done on'].trim() !== ''
+            isRectified: row['Rectification done on'] && String(row['Rectification done on']).trim() !== ''
           };
         });
 
