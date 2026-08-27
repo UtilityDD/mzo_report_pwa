@@ -3507,6 +3507,46 @@ app.post('/api/stock/publish', (req, res) => {
     });
 });
 
+const DEFECTIVE_SPREADSHEET_ID = '1dMLSX2bZBqZMPooh7_CrniCjqgy4MijaFW62GKJJldA';
+const DEFECTIVE_SUMMARY_CSV_URL =
+    `https://docs.google.com/spreadsheets/d/${DEFECTIVE_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=summary`;
+const DEFECTIVE_DETAILS_CSV_URL =
+    `https://docs.google.com/spreadsheets/d/${DEFECTIVE_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=details`;
+const DEFECTIVE_SHEET_SCRIPT_URL = String(
+    process.env.DEFECTIVE_SHEET_SCRIPT_URL ||
+        'https://script.google.com/macros/s/AKfycbzULRzoJRMlt_x3nlEo6RLFVzELgwAD5Z7f8JuvqwxBgC6cpc0BF7dynKwBg0hNIkBn/exec'
+).trim();
+
+function canUploadDefective_(user) {
+    if (!user) return false;
+    const role = String(user.role || user.Role || '').trim().toLowerCase();
+    if (role === 'admin') return true;
+    const username = String((user.Username || user.username) || '')
+        .trim()
+        .toLowerCase();
+    return username === 'dm1';
+}
+
+app.get('/api/defective/meta', async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+    const canUpload = canUploadDefective_(req.user);
+    res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
+    return res.json({
+        status: 'success',
+        canUpload,
+        isAdmin: String((req.user.role || req.user.Role || '')).trim().toLowerCase() === 'admin',
+        sheetScriptUrl: canUpload && DEFECTIVE_SHEET_SCRIPT_URL ? DEFECTIVE_SHEET_SCRIPT_URL : '',
+        spreadsheetId: DEFECTIVE_SPREADSHEET_ID,
+        summaryCsvUrl: DEFECTIVE_SUMMARY_CSV_URL,
+        detailsCsvUrl: DEFECTIVE_DETAILS_CSV_URL,
+        setupHint: DEFECTIVE_SHEET_SCRIPT_URL
+            ? null
+            : 'Open the Defective Meter Google Sheet → Extensions → Apps Script → paste lib/defective_meter_publish.gs → Deploy as Web app (Anyone). Paste the /exec URL in the box on this page, or set Vercel env DEFECTIVE_SHEET_SCRIPT_URL.'
+    });
+});
+
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
     app.listen(PORT, () => {
         console.log(`Server is running on http://localhost:${PORT}`);

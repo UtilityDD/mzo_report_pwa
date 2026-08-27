@@ -27,18 +27,38 @@ function updateMaxTodayDate(data) {
     }
 }
 
-// Load data from nsc.json
+async function loadNscDataset() {
+    const urls = [
+        '/api/nsc/dataset',
+        'https://docs.google.com/spreadsheets/d/e/2PACX-1vRsUU2viBvYhSgR0RFwmZ1H8LkYCats9roQVCKvQeoU7dzg6ryR6IWZex9FT9tksp_DEM23ZgQ28Iyo/pub?output=csv'
+    ];
+    for (const url of urls) {
+        try {
+            const response = await fetch(url, { credentials: url.startsWith('/') ? 'same-origin' : 'omit' });
+            if (!response.ok) continue;
+            const text = (await response.text()).trim();
+            if (!text) continue;
+            if (text.startsWith('[')) return JSON.parse(text);
+            if (typeof Papa === 'undefined') continue;
+            const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+            if (parsed && parsed.data && parsed.data.length) return parsed.data;
+        } catch (err) {
+            console.warn('NSC load failed for', url, err);
+        }
+    }
+    return [];
+}
+
 async function loadData() {
     try {
-        const response = await fetch('../data/nsc.json');
-        if (response.ok) {
-            allData = await response.json();
-            processData();
-        } else {
-            console.error('Failed to load nsc.json');
+        allData = await loadNscDataset();
+        if (!allData.length) {
+            console.error('Failed to load NSC dataset');
+            return;
         }
+        processData();
     } catch (error) {
-        console.error('Error fetching nsc.json:', error);
+        console.error('Error fetching NSC dataset:', error);
     }
 }
 

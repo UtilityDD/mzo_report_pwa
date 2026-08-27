@@ -38,21 +38,35 @@ function updateMaxTodayDate(data) {
     }
 }
 
-// Load data from nsc.json or use embedded data
-async function loadData() {
-    try {
-        const response = await fetch('../data/nsc.json');
-        if (response.ok) {
-            allData = await response.json();
-            processData();
-            return;
+async function loadNscDataset() {
+    const urls = [
+        '/api/nsc/dataset',
+        'https://docs.google.com/spreadsheets/d/e/2PACX-1vRsUU2viBvYhSgR0RFwmZ1H8LkYCats9roQVCKvQeoU7dzg6ryR6IWZex9FT9tksp_DEM23ZgQ28Iyo/pub?output=csv'
+    ];
+    for (const url of urls) {
+        try {
+            const response = await fetch(url, { credentials: url.startsWith('/') ? 'same-origin' : 'omit' });
+            if (!response.ok) continue;
+            const text = (await response.text()).trim();
+            if (!text) continue;
+            if (text.startsWith('[')) return JSON.parse(text);
+            if (typeof Papa === 'undefined') continue;
+            const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+            if (parsed && parsed.data && parsed.data.length) return parsed.data;
+        } catch (err) {
+            console.warn('NSC load failed for', url, err);
         }
-    } catch (error) {
-        console.log('Could not load external nsc.json file, using embedded data');
     }
+    return [];
+}
 
-    console.warn("No external data found and no fallback data defined.");
-    allData = []; // Avoid crash
+async function loadData() {
+    allData = await loadNscDataset();
+    if (!allData.length) {
+        console.warn('No NSC dataset found.');
+        return;
+    }
+    processData();
 }
 
 

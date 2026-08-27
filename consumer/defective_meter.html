@@ -535,6 +535,29 @@
             50% { opacity: 0.5; }
         }
         .animate-pulse { animation: pulse 2s infinite; }
+
+        .admin-upload { display: none; margin-bottom: 15px; }
+        .admin-upload.show { display: block; }
+        .header-upload-btn {
+            background: #0b5cab !important;
+            color: #fff !important;
+            border: none;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+            height: 20px;
+            line-height: 18px;
+            font-weight: 700;
+        }
+        .admin-upload .header { align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+        .admin-upload .upload-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .admin-upload input[type="file"] { font-size: 12px; max-width: 280px; }
+        .admin-upload .hint { font-size: 12px; color: #64748b; margin: 0; }
+        .admin-upload .bar-track { height: 8px; background: #e2e8f0; border-radius: 99px; overflow: hidden; margin-top: 8px; }
+        .admin-upload .bar-fill { height: 100%; width: 0; background: #0b5cab; }
+        .admin-upload .msg { display: none; margin-top: 8px; font-size: 12px; }
+        .admin-upload .msg.show { display: block; }
+        .admin-upload .msg.ok { color: #166534; }
+        .admin-upload .msg.err { color: #991b1b; }
     </style>
 </head>
 <body>
@@ -551,6 +574,9 @@
                 <div>
 <div class="d-flex align-items-center gap-2">
   <h1 class="title">Defective Meter Dashboard</h1>
+  <button type="button" id="defective-upload-toggle" class="btn btn-sm header-upload-btn px-2 py-0 ms-2 rounded shadow-sm">
+    UPLOAD CSV
+  </button>
   <button onclick="openModal('suggestion-modal-overlay')" 
     class="btn btn-sm btn-warning fw-bold px-2 py-0 ms-2 rounded shadow-sm" 
     style="font-size: 10px; letter-spacing: 0.5px; height: 20px; line-height: 18px;">
@@ -560,9 +586,31 @@
 
 
                     <p id="report-date" class="subtitle"></p>
+                    <p id="data-scope-note" class="subtitle" style="margin-top:4px;"></p>
                 </div>
                 <!-- This loading indicator is for internal use, global one is preferred -->
                 <div id="loading-indicator" class="loading-spinner hidden"></div> 
+            </div>
+        </div>
+
+        <div id="admin-upload-card" class="card admin-upload">
+            <div class="header" style="border-bottom: none; padding-bottom: 0;">
+                <div>
+                    <h2 class="title" style="font-size: 15px;">Admin upload</h2>
+                    <p class="hint">CSV is processed in this browser. Only summary counts and priority consumer rows go to Google Sheets — not Vercel. <a href="https://docs.google.com/spreadsheets/d/1dMLSX2bZBqZMPooh7_CrniCjqgy4MijaFW62GKJJldA/edit?usp=sharing" target="_blank" rel="noopener">Open sheet</a></p>
+                    <p id="adminSetupHint" class="hint" style="display:none; color:#b45309; margin-top:6px;"></p>
+                </div>
+            </div>
+            <div style="padding: 0 20px 16px;">
+                <div class="upload-row">
+                    <input type="file" id="defectiveFileInput" accept=".csv" />
+                    <button type="button" id="defectiveUploadBtn" class="btn btn-sm btn-primary" disabled>Publish to Sheet</button>
+                </div>
+                <input type="text" id="defectiveScriptUrl" placeholder="Apps Script /exec URL after you deploy defective_meter_publish.gs" style="width:100%; margin-top:8px; font-size:12px; padding:6px 8px;" />
+                <p class="hint" style="margin-top:6px;">Sheet → Extensions → Apps Script → paste <code>lib/defective_meter_publish.gs</code> → Deploy → Web app → Anyone → paste /exec URL here. Share the sheet: Anyone with the link can view.</p>
+                <div class="bar-track"><div id="defectiveBarFill" class="bar-fill"></div></div>
+                <p id="defectiveProgressLabel" class="hint"></p>
+                <p id="defectiveUploadMsg" class="msg"></p>
             </div>
         </div>
 
@@ -713,13 +761,72 @@
         </div>
     </div>
     
+    <script src="/lib/sheet_mirror_client.js"></script>
+    <script src="/lib/defective_meter_pipeline.js"></script>
     <script>
         // Global variables to store data and current state
-        let defectiveMeterData = [];
+        let defectiveMeterData = []; // summary rows (counts), not 281k consumers
+        let detailsRows = [];
+        let detailsLoaded = false;
+        let detailsLoading = null;
+        let sheetMeta = { summaryCsvUrl: '', detailsCsvUrl: '', sheetScriptUrl: '', canUpload: false };
         let filteredData = [];
         let currentActiveTab = 'by-class'; // Default active tab changed to 'by-class'
         let currentSelectedYear = 'All'; // Default selected year for filtering
         let currentKpiFilter = 'total'; // New state: Active KPI filter segment
+
+        function kpiFieldName() {
+            const P = window.MzoDefectivePipeline;
+            return P ? P.kpiField(currentKpiFilter) : 'total';
+        }
+        function countOf(row) {
+            const P = window.MzoDefectivePipeline;
+            return P ? P.num(row, kpiFieldName()) : 0;
+        }
+        function sumKpi(rows) {
+            const P = window.MzoDefectivePipeline;
+            return P ? P.sumField(rows, kpiFieldName()) : rows.length;
+        }
+
+        const DEFECTIVE_SHEET_DEFAULTS = {
+            summaryCsvUrl: 'https://docs.google.com/spreadsheets/d/1dMLSX2bZBqZMPooh7_CrniCjqgy4MijaFW62GKJJldA/gviz/tq?tqx=out:csv&sheet=summary',
+            detailsCsvUrl: 'https://docs.google.com/spreadsheets/d/1dMLSX2bZBqZMPooh7_CrniCjqgy4MijaFW62GKJJldA/gviz/tq?tqx=out:csv&sheet=details',
+            sheetScriptUrl: 'https://script.google.com/macros/s/AKfycbzULRzoJRMlt_x3nlEo6RLFVzELgwAD5Z7f8JuvqwxBgC6cpc0BF7dynKwBg0hNIkBn/exec'
+        };
+
+        async function fetchCsvRows(url) {
+            const res = await fetch(url, { credentials: 'omit' });
+            if (!res.ok) throw new Error('Sheet HTTP ' + res.status);
+            const text = await res.text();
+            if (/accounts\.google\.com|Sign in/i.test(text) && text.length < 5000) {
+                throw new Error('Sheet is not public. Share → Anyone with the link can view.');
+            }
+            const P = window.MzoDefectivePipeline;
+            if (!P) throw new Error('Defective pipeline failed to load.');
+            const parsed = P.parseDump(text);
+            return parsed.rows.filter(function (r) {
+                return Object.keys(r).some(function (k) { return String(r[k] || '').trim(); });
+            });
+        }
+
+        async function ensureDetailsLoaded() {
+            if (detailsLoaded) return detailsRows;
+            if (detailsLoading) return detailsLoading;
+            const url = sheetMeta.detailsCsvUrl || DEFECTIVE_SHEET_DEFAULTS.detailsCsvUrl;
+            detailsLoading = fetchCsvRows(url).then(function (rows) {
+                detailsRows = rows.map(function (r, i) {
+                    r.__idx = i;
+                    return r;
+                });
+                detailsLoaded = true;
+                detailsLoading = null;
+                return detailsRows;
+            }).catch(function (err) {
+                detailsLoading = null;
+                throw err;
+            });
+            return detailsLoading;
+        }
 
         // --- ADDED: Global variables to hold data for modal downloads ---
         let cccModalData = {};
@@ -1015,13 +1122,19 @@ const detailModalBody = document.getElementById('detail-modal-body');
          * @returns {Date|null} A Date object if parsing is successful, otherwise null.
          */
         function parseDate(dateString) {
-            if (!dateString || dateString.length !== 8 || dateString === "00000000") {
-                return null;
+            if (dateString instanceof Date && !isNaN(dateString.getTime())) return dateString;
+            const raw = String(dateString == null ? '' : dateString).trim();
+            if (!raw || raw === '00000000') return null;
+            if (raw.length === 8 && /^\d{8}$/.test(raw)) {
+                const year = parseInt(raw.substring(0, 4), 10);
+                const month = parseInt(raw.substring(4, 6), 10) - 1;
+                const day = parseInt(raw.substring(6, 8), 10);
+                return new Date(year, month, day);
             }
-            const year = parseInt(dateString.substring(0, 4), 10);
-            const month = parseInt(dateString.substring(4, 6), 10) - 1; // Month is 0-indexed
-            const day = parseInt(dateString.substring(6, 8), 10);
-            return new Date(year, month, day);
+            const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (iso) return new Date(+iso[1], +iso[2] - 1, +iso[3]);
+            const d = new Date(raw);
+            return isNaN(d.getTime()) ? null : d;
         }
 
         /**
@@ -1108,9 +1221,7 @@ const detailModalBody = document.getElementById('detail-modal-body');
         function populateClasses() {
             const classes = new Set();
             defectiveMeterData.forEach(item => {
-                if (item.BASE_CLASS) {
-                    classes.add(item.BASE_CLASS);
-                }
+                if (item.BASE_CLASS) classes.add(item.BASE_CLASS);
             });
 
             const sortedClasses = Array.from(classes).sort(); // Sort classes alphabetically
@@ -1145,10 +1256,8 @@ const detailModalBody = document.getElementById('detail-modal-body');
         function populateYearSelect() {
             const years = new Set();
             defectiveMeterData.forEach(item => {
-                const defDate = parseDate(item.FIRST_REPORTED_DEF_DT);
-                if (defDate) {
-                    years.add(defDate.getFullYear());
-                }
+                const y = item.DEFECT_YEAR;
+                if (y !== '' && y != null && String(y).trim() !== '') years.add(String(y));
             });
 
             const sortedYears = Array.from(years).sort((a, b) => b - a); // Sort years in descending order
@@ -1221,8 +1330,7 @@ const detailModalBody = document.getElementById('detail-modal-body');
 
                 // Filter by Year
                 if (selectedYear !== 'All') {
-                    const itemYear = parseDate(item.FIRST_REPORTED_DEF_DT)?.getFullYear();
-                    matchesYear = (itemYear == selectedYear); // Use == for comparison with number
+                    matchesYear = String(item.DEFECT_YEAR) === String(selectedYear);
                 }
 
                 return matchesRegion && matchesDivision && matchesCcc && matchesClass && matchesYear; // Include new filter
@@ -1263,33 +1371,7 @@ const detailModalBody = document.getElementById('detail-modal-body');
          * @returns {Array<Object>} Segmented data.
          */
         function getSegmentedData(sourceData) {
-            const reportAsOnDate = parseDate(defectiveMeterData[0]?.REPORT_AS_ON);
-            
-            return sourceData.filter(item => {
-                if (currentKpiFilter === 'total') return true;
-                if (currentKpiFilter === 'agri') return item.BASE_CLASS === 'A';
-                if (currentKpiFilter === '3phase') return item.PHASE === '3';
-                if (currentKpiFilter === 'industrial') return item.BASE_CLASS === 'I';
-                if (currentKpiFilter === 'smartmeter') return /^(IJ|IL|IT)/.test(item.METER_NO || '');
-                
-                if (currentKpiFilter === 'over10years' || currentKpiFilter === 'over5years') {
-                    const firstReportedDefDate = parseDate(item.FIRST_REPORTED_DEF_DT);
-                    if (firstReportedDefDate && reportAsOnDate) {
-                        const diffYears = (reportAsOnDate - firstReportedDefDate) / (1000 * 60 * 60 * 24 * 365.25);
-                        return currentKpiFilter === 'over10years' ? (diffYears > 10) : (diffYears > 5);
-                    }
-                    return false;
-                }
-
-                const load = parseFloat(item.CONN_LOAD || 0);
-                if (currentKpiFilter === 'loadAbove6') return load > 6;
-                if (currentKpiFilter === 'load3to6') return load >= 3 && load <= 6;
-                if (currentKpiFilter === 'load1to3') return load >= 1 && load < 3;
-                if (currentKpiFilter === 'load05to1') return load >= 0.5 && load < 1;
-                if (currentKpiFilter === 'loadBelow05') return load < 0.5;
-
-                return true;
-            });
+            return sourceData;
         }
 
         // Debounced version of filterData
@@ -1301,76 +1383,31 @@ const detailModalBody = document.getElementById('detail-modal-body');
 function updateDashboard() {
     const reportAsOnDateStr = defectiveMeterData.length > 0 ? defectiveMeterData[0].REPORT_AS_ON : null;
     const reportAsOnDate = parseDate(reportAsOnDateStr);
-    reportDateElement.textContent = `Updated: ${formatDateToDDMMYYYY(reportAsOnDate)}`;
+    const dateLabel = reportAsOnDate ? formatDateToDDMMYYYY(reportAsOnDate) : (reportAsOnDateStr || '—');
+    reportDateElement.textContent = `Updated: ${dateLabel}`;
 
-    // Pass 1: Global metrics (using filteredData which represents Region/Div/Ccc/Year filters)
-    totalMetersCard.textContent = filteredData.length.toLocaleString();
-    totalAgriCard.textContent = filteredData.filter(item => item.BASE_CLASS === 'A').length.toLocaleString();
-
-    let moreThan10YearsCount = 0;
-    let moreThan5YearsCount = 0;
-    let threePhDefectiveCount = 0;
-    let industrialDefectiveCount = 0;
-    let loadAbove6Count = 0;
-    let load3to6Count = 0;
-    let load1to3Count = 0;
-    let load05to1Count = 0;
-    let loadBelow05Count = 0;
-    let smartMeterCount = 0; // Fix: Moved inside and initialized to reset properly
-
-    if (reportAsOnDate) {
-        filteredData.forEach(item => {
-            const load = parseFloat(item.CONN_LOAD || 0);
-            if (load > 6) loadAbove6Count++;
-            else if (load >= 3) load3to6Count++;
-            else if (load >= 1) load1to3Count++;
-            else if (load >= 0.5) load05to1Count++;
-            else loadBelow05Count++;
-
-            const firstReportedDefDate = parseDate(item.FIRST_REPORTED_DEF_DT);
-            if (firstReportedDefDate) {
-                const diffTime = Math.abs(reportAsOnDate.getTime() - firstReportedDefDate.getTime());
-                const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
-                if (diffYears > 10) {
-                    moreThan10YearsCount++;
-                }
-                if (diffYears > 5) {
-                    moreThan5YearsCount++;
-                }
-            }
-
-            if (item.PHASE === '3') {
-                threePhDefectiveCount++;
-            }
-
-            if (item.BASE_CLASS === 'I') {
-                industrialDefectiveCount++;
-            }
-
-            // Smart Meter logic: Meter number starts with IJ, IL, or IT
-            // Note: Currently filtering by Year. If user wants TOTAL Smart Meters regardless of Year,
-            // we should perform a separate pass on total data. 
-            if (/^IJ|^IL|^IT/.test(item.METER_NO || '')) {
-                smartMeterCount++;
-            }
-        });
+    const P = window.MzoDefectivePipeline;
+    const allTotal = P ? P.sumField(defectiveMeterData, 'total') : 0;
+    const note = document.getElementById('data-scope-note');
+    if (note) {
+        note.textContent =
+            'Summary covers ' + allTotal.toLocaleString() +
+            ' meters (all groups). Details lists only priority consumers (~10%: >10 yrs, 3-Ph, Industrial, Smart, Load ≥ 1 kW). Row counts in the two sheet tabs will not match.';
     }
 
-    moreThan10YearsCard.textContent = moreThan10YearsCount.toLocaleString();
-    moreThan5YearsCard.textContent = moreThan5YearsCount.toLocaleString();
-    threePhDefectiveCard.textContent = threePhDefectiveCount.toLocaleString();
-    industrialDefectiveCard.textContent = industrialDefectiveCount.toLocaleString();
-
+    totalMetersCard.textContent = (P ? P.sumField(filteredData, 'total') : 0).toLocaleString();
+    totalAgriCard.textContent = (P ? P.sumField(filteredData, 'agri') : 0).toLocaleString();
+    moreThan10YearsCard.textContent = (P ? P.sumField(filteredData, 'over10') : 0).toLocaleString();
+    moreThan5YearsCard.textContent = (P ? P.sumField(filteredData, 'over5') : 0).toLocaleString();
+    threePhDefectiveCard.textContent = (P ? P.sumField(filteredData, 'ph3') : 0).toLocaleString();
+    industrialDefectiveCard.textContent = (P ? P.sumField(filteredData, 'industrial') : 0).toLocaleString();
     const smartMeterCard = document.getElementById('smart-meter-count');
-    if (smartMeterCard) {
-        smartMeterCard.textContent = smartMeterCount.toLocaleString();
-    }
-
-    document.getElementById('load-above-6').textContent = loadAbove6Count.toLocaleString();
-    document.getElementById('load-3-to-6').textContent = load3to6Count.toLocaleString();
-    document.getElementById('load-1-to-3').textContent = load1to3Count.toLocaleString();
-    document.getElementById('load-0.5-to-1').textContent = load05to1Count.toLocaleString();
-    document.getElementById('load-below-0.5').textContent = loadBelow05Count.toLocaleString();
+    if (smartMeterCard) smartMeterCard.textContent = (P ? P.sumField(filteredData, 'smart') : 0).toLocaleString();
+    document.getElementById('load-above-6').textContent = (P ? P.sumField(filteredData, 'load_gt6') : 0).toLocaleString();
+    document.getElementById('load-3-to-6').textContent = (P ? P.sumField(filteredData, 'load_3_6') : 0).toLocaleString();
+    document.getElementById('load-1-to-3').textContent = (P ? P.sumField(filteredData, 'load_1_3') : 0).toLocaleString();
+    document.getElementById('load-0.5-to-1').textContent = (P ? P.sumField(filteredData, 'load_05_1') : 0).toLocaleString();
+    document.getElementById('load-below-0.5').textContent = (P ? P.sumField(filteredData, 'load_lt_05') : 0).toLocaleString();
 
     // Pass 2: Tabbed tables (using segmentedData based on the active KPI card)
     const segmentedData = getSegmentedData(filteredData);
@@ -1389,22 +1426,16 @@ function updateDashboard() {
             const activeData = sourceData || getSegmentedData(filteredData);
             let content = '';
 
-            // helper to build month short name consistently
-            const monthShort = (date) => date.toLocaleString('en-US', { month: 'short' });
-
-            const totalCount = activeData.length || 0; // total used to calculate percentages
+            const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const totalCount = sumKpi(activeData);
 
             if (tabName === 'age-analysis') {
                 const counts = {};
 
                 if (currentSelectedYear === 'All') {
-                    // Group by year
                     activeData.forEach(item => {
-                        const defDate = parseDate(item.FIRST_REPORTED_DEF_DT);
-                        if (defDate) {
-                            const year = defDate.getFullYear();
-                            counts[year] = (counts[year] || 0) + 1;
-                        }
+                        const year = item.DEFECT_YEAR;
+                        if (year !== '' && year != null) counts[year] = (counts[year] || 0) + countOf(item);
                     });
 
                     const sortedYears = Object.keys(counts).sort((a, b) => b - a);
@@ -1443,10 +1474,10 @@ function updateDashboard() {
                     };
 
                     activeData.forEach(item => {
-                        const defDate = parseDate(item.FIRST_REPORTED_DEF_DT);
-                        if (defDate) {
-                            const month = monthShort(defDate);
-                            counts[month] = (counts[month] || 0) + 1;
+                        const m = Number(item.DEFECT_MONTH);
+                        if (m >= 1 && m <= 12) {
+                            const month = monthNames[m - 1];
+                            counts[month] = (counts[month] || 0) + countOf(item);
                         }
                     });
 
@@ -1485,8 +1516,8 @@ function updateDashboard() {
             } else if (tabName === 'by-region') {
                 const regionCounts = {};
                 activeData.forEach(item => {
-                    const regCode = getRegionCodeByCcc(item.CCC_CODE);
-                    if (regCode) regionCounts[regCode] = (regionCounts[regCode] || 0) + 1;
+                    const regCode = item.REGION_CODE || getRegionCodeByCcc(item.CCC_CODE);
+                    if (regCode) regionCounts[regCode] = (regionCounts[regCode] || 0) + countOf(item);
                 });
 
                 content = `
@@ -1517,8 +1548,8 @@ function updateDashboard() {
             } else if (tabName === 'by-division') {
                 const divCounts = {};
                 activeData.forEach(item => {
-                    const divCode = getDivisionCodeByCcc(item.CCC_CODE);
-                    if (divCode) divCounts[divCode] = (divCounts[divCode] || 0) + 1;
+                    const divCode = item.DIVISION_CODE || getDivisionCodeByCcc(item.CCC_CODE);
+                    if (divCode) divCounts[divCode] = (divCounts[divCode] || 0) + countOf(item);
                 });
 
                 content = `
@@ -1550,7 +1581,7 @@ function updateDashboard() {
                 const cccCounts = {};
                 activeData.forEach(item => {
                     const cccCode = item.CCC_CODE;
-                    cccCounts[cccCode] = (cccCounts[cccCode] || 0) + 1;
+                    cccCounts[cccCode] = (cccCounts[cccCode] || 0) + countOf(item);
                 });
 
                 content = `
@@ -1581,10 +1612,16 @@ function updateDashboard() {
 
             } else if (tabName === 'phase-wise') {
                 const phaseCounts = {};
+                const Pph = window.MzoDefectivePipeline;
                 activeData.forEach(item => {
-                    const phase = item.PHASE || 'N/A';
-                    phaseCounts[phase] = (phaseCounts[phase] || 0) + 1;
+                    phaseCounts['1'] = (phaseCounts['1'] || 0) + (Pph ? Pph.num(item, 'phase_1') : 0);
+                    phaseCounts['3'] = (phaseCounts['3'] || 0) + (Pph ? Pph.num(item, 'phase_3') : 0);
+                    phaseCounts['Other'] = (phaseCounts['Other'] || 0) + (Pph ? Pph.num(item, 'phase_other') : 0);
                 });
+                if (currentKpiFilter === '3phase') {
+                    phaseCounts['1'] = 0;
+                    phaseCounts['Other'] = 0;
+                }
 
                 content = `
                     <div class="table-header">
@@ -1614,8 +1651,8 @@ function updateDashboard() {
             } else if (tabName === 'by-class') { 
                 const classCounts = {};
                 activeData.forEach(item => {
-                    const baseClass = item.BASE_CLASS || 'N/A'; 
-                    classCounts[baseClass] = (classCounts[baseClass] || 0) + 1;
+                    const baseClass = item.BASE_CLASS || 'N/A';
+                    classCounts[baseClass] = (classCounts[baseClass] || 0) + countOf(item);
                 });
 
                 content = `
@@ -1644,22 +1681,14 @@ function updateDashboard() {
 
                 content += `</div>`;
             } else if (tabName === 'by-load') {
+                const Pld = window.MzoDefectivePipeline;
                 const loadCounts = {
-                    'loadAbove6': 0,
-                    'load3to6': 0,
-                    'load1to3': 0,
-                    'load05to1': 0,
-                    'loadBelow05': 0
+                    'loadAbove6': Pld ? Pld.sumField(activeData, 'load_gt6') : 0,
+                    'load3to6': Pld ? Pld.sumField(activeData, 'load_3_6') : 0,
+                    'load1to3': Pld ? Pld.sumField(activeData, 'load_1_3') : 0,
+                    'load05to1': Pld ? Pld.sumField(activeData, 'load_05_1') : 0,
+                    'loadBelow05': Pld ? Pld.sumField(activeData, 'load_lt_05') : 0
                 };
-                
-                activeData.forEach(item => {
-                    const l = parseFloat(item.CONN_LOAD || 0);
-                    if (l > 6) loadCounts.loadAbove6++;
-                    else if (l >= 3) loadCounts.load3to6++;
-                    else if (l >= 1) loadCounts.load1to3++;
-                    else if (l >= 0.5) loadCounts.load05to1++;
-                    else loadCounts.loadBelow05++;
-                });
 
                 const slabs = [
                     { key: 'loadAbove6', label: 'Load > 6KW' },
@@ -1763,77 +1792,33 @@ function updateDashboard() {
          * @param {string} metricType - The type of metric clicked ('total', 'agri', 'over10years', 'over5years', '3phase', 'industrial').
          */
 function renderCccWiseModalContent(metricType) {
-    globalLoadingOverlay.classList.add('visible'); // Show loading overlay immediately
+    globalLoadingOverlay.classList.add('visible');
 
-    let modalTitleText = '';
-    let dataForModal = [];
-
-    if (metricType === 'total') {
-        modalTitleText = 'Total Defective Meters (CCC-wise)';
-        dataForModal = filteredData;
-    } else if (metricType === 'agri') {
-        modalTitleText = 'Agri Meters (CCC-wise)';
-        dataForModal = filteredData.filter(item => item.BASE_CLASS === 'A');
-    } else if (metricType === 'over10years') {
-        modalTitleText = 'Defects >10 Years (CCC-wise)';
-        const reportAsOnDate = parseDate(defectiveMeterData[0].REPORT_AS_ON);
-        dataForModal = filteredData.filter(item => {
-            const firstReportedDefDate = parseDate(item.FIRST_REPORTED_DEF_DT);
-            if (firstReportedDefDate && reportAsOnDate) {
-                const diffTime = Math.abs(reportAsOnDate.getTime() - firstReportedDefDate.getTime());
-                const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
-                return diffYears > 10;
-            }
-            return false;
-        });
-    } else if (metricType === 'over5years') {
-        modalTitleText = 'Defects >5 Years (CCC-wise)';
-        const reportAsOnDate = parseDate(defectiveMeterData[0].REPORT_AS_ON);
-        dataForModal = filteredData.filter(item => {
-            const firstReportedDefDate = parseDate(item.FIRST_REPORTED_DEF_DT);
-            if (firstReportedDefDate && reportAsOnDate) {
-                const diffTime = Math.abs(reportAsOnDate.getTime() - firstReportedDefDate.getTime());
-                const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
-                return diffYears > 5;
-            }
-            return false;
-        });
-    } else if (metricType === '3phase') {
-        modalTitleText = '3-Phase Defective Meters (CCC-wise)';
-        dataForModal = filteredData.filter(item => item.PHASE === '3');
-    } else if (metricType === 'industrial') {
-        modalTitleText = 'Industrial Defective Meters (CCC-wise)';
-        dataForModal = filteredData.filter(item => item.BASE_CLASS === 'I');
-    } else if (metricType === 'smartmeter') {
-        modalTitleText = 'Smart Meters (CCC-wise)';
-        dataForModal = filteredData.filter(item => /^(IJ|IL|IT)/.test(item.METER_NO || ''));
-    } else if (metricType === 'loadAbove6') {
-        modalTitleText = 'Load > 6KW (CCC-wise)';
-        dataForModal = filteredData.filter(item => parseFloat(item.CONN_LOAD || 0) > 6);
-    } else if (metricType === 'load3to6') {
-        modalTitleText = 'Load 3-6KW (CCC-wise)';
-        dataForModal = filteredData.filter(item => {
-            const l = parseFloat(item.CONN_LOAD || 0);
-            return l >= 3 && l <= 6;
-        });
-    } else if (metricType === 'load1to3') {
-        modalTitleText = 'Load 1-3KW (CCC-wise)';
-        dataForModal = filteredData.filter(item => {
-            const l = parseFloat(item.CONN_LOAD || 0);
-            return l >= 1 && l < 3;
-        });
-    } else if (metricType === 'loadBelow1') {
-        modalTitleText = 'Load < 1KW (CCC-wise)';
-        dataForModal = filteredData.filter(item => parseFloat(item.CONN_LOAD || 0) < 1);
-    }
-
+    const P = window.MzoDefectivePipeline;
+    const field = P ? P.kpiField(metricType) : 'total';
+    const labels = {
+        total: 'Total Defective Meters (CCC-wise)',
+        agri: 'Agri Meters (CCC-wise)',
+        over10years: 'Defects >10 Years (CCC-wise)',
+        over5years: 'Defects >5 Years (CCC-wise)',
+        '3phase': '3-Phase Defective Meters (CCC-wise)',
+        industrial: 'Industrial Defective Meters (CCC-wise)',
+        smartmeter: 'Smart Meters (CCC-wise)',
+        loadAbove6: 'Load > 6KW (CCC-wise)',
+        load3to6: 'Load 3-6KW (CCC-wise)',
+        load1to3: 'Load 1-3KW (CCC-wise)',
+        load05to1: 'Load 0.5-1KW (CCC-wise)',
+        loadBelow05: 'Load < 0.5KW (CCC-wise)'
+    };
+    const modalTitleText = labels[metricType] || 'CCC-wise';
 
     const cccCounts = {};
-    dataForModal.forEach(item => {
-        const cccCode = item.CCC_CODE;
-        cccCounts[cccCode] = (cccCounts[cccCode] || 0) + 1;
-            cccModalData = cccCounts; // Store for download
+    filteredData.forEach(item => {
+        const n = P ? P.num(item, field) : 0;
+        if (!n) return;
+        cccCounts[item.CCC_CODE] = (cccCounts[item.CCC_CODE] || 0) + n;
     });
+    cccModalData = cccCounts;
 
     let modalContent = `
         <div class="table-header">
@@ -1883,115 +1868,92 @@ function renderCccWiseModalContent(metricType) {
          * @param {string} originalMetricType - The type of metric that initiated the first modal.
          */
 function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
-    consumerModalData = []; // Clear previous data
-    let consumersInCcc = filteredData.filter(item => item.CCC_CODE === cccCode);
-    const reportAsOnDate = parseDate(defectiveMeterData[0].REPORT_AS_ON);
-
-    if (originalMetricType === 'over10years') {
-        consumersInCcc = consumersInCcc.filter(item => {
-            const firstReportedDefDate = parseDate(item.FIRST_REPORTED_DEF_DT);
-            if (firstReportedDefDate && reportAsOnDate) {
-                const diffYears = (reportAsOnDate - firstReportedDefDate) / (1000 * 60 * 60 * 24 * 365.25);
-                return diffYears > 10;
-            }
-            return false;
-        });
-    } else if (originalMetricType === 'over5years') {
-        consumersInCcc = consumersInCcc.filter(item => {
-            const firstReportedDefDate = parseDate(item.FIRST_REPORTED_DEF_DT);
-            if (firstReportedDefDate && reportAsOnDate) {
-                const diffYears = (reportAsOnDate - firstReportedDefDate) / (1000 * 60 * 60 * 24 * 365.25);
-                return diffYears > 5;
-            }
-            return false;
-        });
-    } else if (originalMetricType === '3phase') {
-        consumersInCcc = consumersInCcc.filter(item => item.PHASE === '3');
-    } else if (originalMetricType === 'agri') {
-        consumersInCcc = consumersInCcc.filter(item => item.BASE_CLASS === 'A');
-    } else if (originalMetricType === 'industrial') {
-        consumersInCcc = consumersInCcc.filter(item => item.BASE_CLASS === 'I');
-    } else if (originalMetricType === 'smartmeter') {
-        consumersInCcc = consumersInCcc.filter(item => /^(IJ|IL|IT)/.test(item.METER_NO || ''));
-    } else if (originalMetricType === 'loadAbove6') {
-        consumersInCcc = consumersInCcc.filter(item => parseFloat(item.CONN_LOAD || 0) > 6);
-    } else if (originalMetricType === 'load3to6') {
-        consumersInCcc = consumersInCcc.filter(item => {
-            const l = parseFloat(item.CONN_LOAD || 0);
-            return l >= 3 && l <= 6;
-        });
-    } else if (originalMetricType === 'load1to3') {
-        consumersInCcc = consumersInCcc.filter(item => {
-            const l = parseFloat(item.CONN_LOAD || 0);
-            return l >= 1 && l < 3;
-        });
-    } else if (originalMetricType === 'loadBelow1') {
-        consumersInCcc = consumersInCcc.filter(item => parseFloat(item.CONN_LOAD || 0) < 1);
-    }
-
-    // Sort by Load if load-related metric, otherwise sort by date
-    const loadMetrics = ['loadAbove6', 'load3to6', 'load1to3', 'loadBelow1'];
-    if (loadMetrics.includes(originalMetricType)) {
-        consumersInCcc.sort((a, b) => {
-            const la = parseFloat(a.CONN_LOAD || 0);
-            const lb = parseFloat(b.CONN_LOAD || 0);
-            return lb - la; // Descending: highest load first
-        });
-    } else {
-        // --- ADDED: sort by FIRST_REPORTED_DEF_DT earliest -> latest; null/invalid dates go to the end ---
-        consumersInCcc.sort((a, b) => {
-            const da = parseDate(a.FIRST_REPORTED_DEF_DT);
-            const db = parseDate(b.FIRST_REPORTED_DEF_DT);
-            if (!da && !db) return 0;
-            if (!da) return 1; // place invalid/null dates after valid ones
-            if (!db) return -1;
-            return da - db; // ascending: earliest (smallest) first
-        });
-    }
-
-    consumerModalData = consumersInCcc; // Store for download
+    consumerModalData = [];
+    const P = window.MzoDefectivePipeline;
+    const flag = P ? P.detailsFlag(originalMetricType) : '';
+    const metric = originalMetricType || currentKpiFilter || 'total';
 
     consumerModalTitle.textContent = `${cccName} – Consumers`;
-
-    let modalContent = `
-        <div class="table-header">
-            <div class="grid-6">
-                <div>Name</div>
-                <div>Meter No</div>
-                <div class="text-right">Reported Date</div>
-                <div class="text-right">MRU</div>
-                <div class="text-right">Class</div>
-                <div class="text-right">Load</div>
-            </div>
-        </div>
-        <div class="table-container">
-    `;
-
-    consumersInCcc.forEach(item => {
-        modalContent += `
-            <div class="table-row consumer-row-modal" data-idx="${item.__idx}">
-                <div class="grid-6">
-                    <div class="truncate">${item.NAME || ''}</div>
-                    <div class="truncate">${item.METER_NO || ''}</div>
-                    <div class="text-right">${formatDateToDDMMYYYY(parseDate(item.FIRST_REPORTED_DEF_DT))}</div>
-                    <div class="text-right">${item.MRU || ''}</div>
-                    <div class="text-right">${item.BASE_CLASS || ''}</div>
-                    <div class="text-right">${item.CONN_LOAD || ''}</div>
-                </div>
-            </div>
-        `;
-    });
-
-    modalContent += `</div>`;
-    consumerModalBody.innerHTML = modalContent;
+    consumerModalBody.innerHTML = '<div class="text-center py-4"><p class="text-secondary">Loading consumer list…</p></div>';
     openModal('consumer-modal-overlay');
 
-    // attach click handlers to consumer rows to open detail modal
-    document.querySelectorAll('.consumer-row-modal').forEach(row => {
-        row.addEventListener('click', function () {
-            const idx = parseInt(this.dataset.idx, 10);
-            if (!Number.isNaN(idx)) renderDetailModal(idx);
+    if (!P || !P.isPriorityMetric(metric)) {
+        consumerModalBody.innerHTML = `
+            <div class="text-center py-4">
+                <p class="font-medium">Consumer names are stored only for priority groups</p>
+                <p class="text-gray-500 opacity-70 mt-1">
+                    Defects &gt;10 years, 3-Ph, Industrial, Smart Meter, and Load ≥ 1 kW.
+                    This group is count-only on the summary tab.
+                </p>
+            </div>`;
+        return;
+    }
+
+    ensureDetailsLoaded().then(function (rows) {
+        let list = rows.filter(function (item) {
+            return String(item.CCC_CODE) === String(cccCode) && Number(item[flag]) === 1;
         });
+        if (classSelect.value) {
+            list = list.filter(function (item) { return item.BASE_CLASS === classSelect.value; });
+        }
+        if (currentSelectedYear !== 'All') {
+            list = list.filter(function (item) {
+                const d = parseDate(item.FIRST_REPORTED_DEF_DT);
+                return d && String(d.getFullYear()) === String(currentSelectedYear);
+            });
+        }
+        const loadMetrics = ['loadAbove6', 'load3to6', 'load1to3'];
+        if (loadMetrics.includes(metric)) {
+            list.sort(function (a, b) { return parseFloat(b.CONN_LOAD || 0) - parseFloat(a.CONN_LOAD || 0); });
+        } else {
+            list.sort(function (a, b) {
+                const da = parseDate(a.FIRST_REPORTED_DEF_DT);
+                const db = parseDate(b.FIRST_REPORTED_DEF_DT);
+                if (!da && !db) return 0;
+                if (!da) return 1;
+                if (!db) return -1;
+                return da - db;
+            });
+        }
+        consumerModalData = list;
+        let html = `
+            <div class="table-header">
+                <div class="grid-6">
+                    <div>Name</div>
+                    <div>Meter No</div>
+                    <div class="text-right">Reported Date</div>
+                    <div class="text-right">MRU</div>
+                    <div class="text-right">Class</div>
+                    <div class="text-right">Load</div>
+                </div>
+            </div>
+            <div class="table-container">`;
+        if (!list.length) {
+            html += '<div class="text-center py-4"><p class="text-secondary">No matching consumers in the details tab.</p></div>';
+        }
+        list.forEach(function (item) {
+            html += `
+                <div class="table-row consumer-row-modal" data-idx="${item.__idx}">
+                    <div class="grid-6">
+                        <div class="truncate">${item.NAME || ''}</div>
+                        <div class="truncate">${item.METER_NO || ''}</div>
+                        <div class="text-right">${formatDateToDDMMYYYY(parseDate(item.FIRST_REPORTED_DEF_DT))}</div>
+                        <div class="text-right">${item.MRU || ''}</div>
+                        <div class="text-right">${item.BASE_CLASS || ''}</div>
+                        <div class="text-right">${item.CONN_LOAD || ''}</div>
+                    </div>
+                </div>`;
+        });
+        html += '</div>';
+        consumerModalBody.innerHTML = html;
+        document.querySelectorAll('.consumer-row-modal').forEach(function (row) {
+            row.addEventListener('click', function () {
+                const idx = parseInt(this.dataset.idx, 10);
+                if (!Number.isNaN(idx)) renderDetailModal(idx);
+            });
+        });
+    }).catch(function (err) {
+        consumerModalBody.innerHTML = `<div class="text-center py-4"><p class="text-red-500">${err.message || err}</p></div>`;
     });
 }
 
@@ -2084,41 +2046,183 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
   return result;
 }
 
+        function setUploadMsg(text, ok) {
+            const el = document.getElementById('defectiveUploadMsg');
+            if (!el) return;
+            el.textContent = text || '';
+            el.className = 'msg show ' + (ok ? 'ok' : 'err');
+        }
+
+        function setUploadBar(pct, label) {
+            const fill = document.getElementById('defectiveBarFill');
+            const lab = document.getElementById('defectiveProgressLabel');
+            if (fill) fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+            if (lab) lab.textContent = label || '';
+        }
+
+        function resolveScriptUrl() {
+            const typed = (document.getElementById('defectiveScriptUrl') && document.getElementById('defectiveScriptUrl').value || '').trim();
+            if (typed) {
+                try { localStorage.setItem('mzo_defective_script_url', typed); } catch (e) {}
+                return typed;
+            }
+            try {
+                return localStorage.getItem('mzo_defective_script_url') ||
+                    sheetMeta.sheetScriptUrl ||
+                    DEFECTIVE_SHEET_DEFAULTS.sheetScriptUrl ||
+                    '';
+            } catch (e) {
+                return sheetMeta.sheetScriptUrl || DEFECTIVE_SHEET_DEFAULTS.sheetScriptUrl || '';
+            }
+        }
+
+        async function publishDefectiveDump(file) {
+            const P = window.MzoDefectivePipeline;
+            const Mirror = window.MzoSheetMirror;
+            if (!P || !Mirror) throw new Error('Upload scripts failed to load.');
+            const scriptUrl = resolveScriptUrl();
+            if (!scriptUrl || !/macro/i.test(scriptUrl)) {
+                throw new Error('Paste the Apps Script /exec URL first (see hint under the file box).');
+            }
+            setUploadBar(4, 'Reading CSV in this browser…');
+            const text = await file.text();
+            setUploadBar(12, 'Building summary + priority details…');
+            const built = P.buildFromCsvText(text);
+            if (!built.summary.length) throw new Error('No rows found. Use the full defective-meter CSV.');
+            const totalRows = built.summary.length + built.details.length;
+            let sent = 0;
+            const onProg = function (n) {
+                sent += n;
+                const pct = 20 + Math.round((sent / Math.max(totalRows, 1)) * 75);
+                setUploadBar(pct, 'Writing Google Sheet… ' + sent.toLocaleString() + ' / ' + totalRows.toLocaleString());
+            };
+            setUploadBar(20, 'Writing summary tab…');
+            await Mirror.publishTab(scriptUrl, 'summary', built.summaryHeaders, built.summary, onProg, 'summary');
+            setUploadBar(55, 'Writing details tab…');
+            await Mirror.publishTab(scriptUrl, 'details', built.detailsHeaders, built.details, onProg, 'details');
+            try {
+                await Mirror.postScript(scriptUrl, {
+                    action: 'savemeta',
+                    meta: {
+                        uploadedAt: new Date().toISOString(),
+                        originalName: file.name,
+                        sourceRows: built.sourceRows,
+                        summaryRows: built.summary.length,
+                        detailsRows: built.details.length,
+                        reportAsOn: built.reportAsOn
+                    }
+                });
+            } catch (metaErr) {
+                console.warn('defective savemeta', metaErr);
+            }
+            detailsLoaded = false;
+            detailsRows = [];
+            return built;
+        }
+
+        async function initAdminUpload() {
+            const card = document.getElementById('admin-upload-card');
+            const btn = document.getElementById('defectiveUploadBtn');
+            const urlInput = document.getElementById('defectiveScriptUrl');
+            const hint = document.getElementById('adminSetupHint');
+            const toggle = document.getElementById('defective-upload-toggle');
+
+            function showUploadPanel() {
+                if (card) {
+                    card.classList.add('show');
+                    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }
+
+            if (toggle) {
+                toggle.addEventListener('click', function () {
+                    showUploadPanel();
+                    const input = document.getElementById('defectiveFileInput');
+                    if (input) input.click();
+                });
+            }
+            if (urlInput && !urlInput.value) urlInput.value = DEFECTIVE_SHEET_DEFAULTS.sheetScriptUrl || '';
+            try {
+                const stored = localStorage.getItem('mzo_defective_script_url') || '';
+                if (urlInput && stored) urlInput.value = stored;
+            } catch (e) {}
+            try {
+                const res = await fetch('/api/defective/meta', { credentials: 'same-origin' });
+                if (res.status !== 401) {
+                    const data = await res.json();
+                    sheetMeta.summaryCsvUrl = data.summaryCsvUrl || sheetMeta.summaryCsvUrl;
+                    sheetMeta.detailsCsvUrl = data.detailsCsvUrl || sheetMeta.detailsCsvUrl;
+                    sheetMeta.sheetScriptUrl = data.sheetScriptUrl || '';
+                    sheetMeta.canUpload = !!data.canUpload;
+                    if (data.sheetScriptUrl && urlInput && !urlInput.value) urlInput.value = data.sheetScriptUrl;
+                    if (btn) btn.disabled = !data.canUpload;
+                    if (data.canUpload) showUploadPanel();
+                    if (data.canUpload && hint && data.setupHint && !resolveScriptUrl()) {
+                        hint.style.display = 'block';
+                        hint.textContent = data.setupHint;
+                    }
+                } else if (toggle) {
+                    toggle.title = 'Log in as admin to publish';
+                }
+            } catch (e) {
+                console.warn('defective meta', e);
+            }
+            if (btn) {
+                btn.addEventListener('click', async function () {
+                    const input = document.getElementById('defectiveFileInput');
+                    const file = input && input.files && input.files[0];
+                    if (!file) {
+                        setUploadMsg('Choose the defective-meter CSV first.', false);
+                        return;
+                    }
+                    btn.disabled = true;
+                    try {
+                        const built = await publishDefectiveDump(file);
+                        setUploadBar(100, 'Done');
+                        setUploadMsg(
+                            'Published ' + built.summary.length.toLocaleString() + ' summary rows and ' +
+                            built.details.length.toLocaleString() + ' priority consumers (from ' +
+                            built.sourceRows.toLocaleString() + ' source rows). Reloading dashboard…',
+                            true
+                        );
+                        await loadSummaryDashboard();
+                    } catch (err) {
+                        setUploadMsg(err.message || String(err), false);
+                    } finally {
+                        btn.disabled = false;
+                    }
+                });
+            }
+        }
+
+        async function loadSummaryDashboard() {
+            const url = sheetMeta.summaryCsvUrl || DEFECTIVE_SHEET_DEFAULTS.summaryCsvUrl;
+            const rows = await fetchCsvRows(url);
+            const looksLikeSummary = rows.some(function (r) { return r.total != null && r.total !== ''; });
+            if (!looksLikeSummary) {
+                throw new Error('Summary tab is empty. Admin: upload the CSV with Publish to Sheet.');
+            }
+            defectiveMeterData = rows;
+            populateRegions();
+            populateClasses();
+            populateYearSelect();
+            filterData();
+        }
+
         // Initialize the dashboard when the DOM is fully loaded
         document.addEventListener('DOMContentLoaded', async () => {
-            globalLoadingOverlay.classList.add('visible'); // Show global loading overlay on initial load
-
+            globalLoadingOverlay.classList.add('visible');
+            await initAdminUpload();
             try {
-                // Load a single CSV file from the project root
-                const response = await fetch('defective_meter.csv');
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch defective_meter.csv (${response.status})`);
-                }
-                const csvText = await response.text();
-
-                // Parse CSV into array of objects. CSV header must match field names used in the script
-                defectiveMeterData = parseCSV(csvText);
-
-                // --- ADDED: keep original index for each row so we can open details later ---
-                defectiveMeterData.forEach((r, i) => { r.__idx = i; });
-
-                // If there are numeric fields stored as strings and you need conversions,
-                // add conversions here (optional). The rest of the code expects keys like:
-                // FIRST_REPORTED_DEF_DT, REPORT_AS_ON, CCC_CODE, BASE_CLASS, PHASE, METER_NO, NAME, CONN_LOAD, etc.
-                
-                populateRegions();
-                populateClasses();
-                populateYearSelect();
-                filterData(); // Initial update
-
+                await loadSummaryDashboard();
             } catch (error) {
                 console.error('Error loading or parsing data:', error);
                 tabContent.innerHTML = `
                     <div class="text-center py-4">
-                        <p class="font-medium text-red-500">Failed to load data</p>
+                        <p class="font-medium text-red-500">Failed to load summary sheet</p>
                         <p class="text-gray-500 opacity-70 mt-1">
-                            Please ensure <code>defective_meter.csv</code> is present and correctly formatted.
-                            Check the browser's developer console (Ctrl+Shift+I) for more technical details.
+                            ${error.message || error}
+                            Share the Google Sheet as Anyone with the link can view, then ask an admin to publish a dump.
                         </p>
                     </div>
                 `;
@@ -2128,14 +2232,12 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
             }
         });
 
-        // --- ADDED: render detail modal for a single row by original index ---
         function renderDetailModal(originalIndex) {
-            const row = defectiveMeterData[originalIndex];
-            detailModalData = row; // Store for download
+            const row = detailsRows[originalIndex];
+            detailModalData = row;
             if (!row) return;
             detailModalTitle.textContent = `${row.NAME || row.METER_NO || 'Record Details'}`;
 
-            // Build key/value list (skip __idx)
             let html = `<div class="table-header"><div class="grid-2"><div>Field</div><div class="text-right">Value</div></div></div><div class="table-container">`;
             Object.entries(row).forEach(([k, v]) => {
                 if (k === '__idx') return;
