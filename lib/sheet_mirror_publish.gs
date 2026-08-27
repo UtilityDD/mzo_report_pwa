@@ -7,18 +7,19 @@
  *   nsc_working  → NSC_SHEET_SCRIPT_URL
  *   NSCWH        → NSC_WITHHELD_SHEET_SCRIPT_URL
  *   Stock dump   → STOCK_SHEET_SCRIPT_URL  (Sheet1 tab)
+ *   Defective    → DEFECTIVE_SHEET_SCRIPT_URL (tabs: summary, details)
  *
  * Setup:
  * 1. Open that Google Sheet → Extensions → Apps Script → paste this file → Save.
- * 2. ROLE = 'nsc' for NSC files, ROLE = 'stock' for the Stock workbook
- *    (stock spreadsheet ID is also auto-mapped below).
+ * 2. ROLE = 'nsc' | 'stock' | 'defective' to match this workbook
+ *    (spreadsheet ID is also auto-mapped below).
  * 3. Deploy → New deployment → Web app
  *    Execute as: Me
  *    Who has access: Anyone
  * 4. After code changes: Manage deployments → pencil → New version → Deploy
  * 5. File → Share → Anyone with the link can view (needed for CSV sync).
  */
-var ROLE = 'stock'; // 'nsc' | 'stock' — set to match this workbook
+var ROLE = 'stock'; // 'nsc' | 'stock' | 'defective' — set to match this workbook
 
 var NSC_TAB = 'nsc_working';
 var WITHHELD_TAB = 'Sheet1';
@@ -35,8 +36,11 @@ var TAB_BY_SPREADSHEET_ID = {
 var ROLE_BY_SPREADSHEET_ID = {
   '1QnmPKSAtwmW-m1-gn4qmZBWanx9_Vwbk63XhwyQBiKU': 'nsc',
   '12nS8GAQ1weIMWoEIeydcdKTKd-XwHNu9W07DKudGuOg': 'nsc',
-  '1wDvPuAxNfdO9QzUaIUubg2JnkFM5ZleFNXQdi8s5uh0': 'stock'
+  '1wDvPuAxNfdO9QzUaIUubg2JnkFM5ZleFNXQdi8s5uh0': 'stock',
+  '1dMLSX2bZBqZMPooh7_CrniCjqgy4MijaFW62GKJJldA': 'defective'
 };
+
+var DEFECTIVE_TABS = { summary: true, details: true };
 
 function effectiveRole_() {
   try {
@@ -124,6 +128,12 @@ function doPost(e) {
     }
     if (role === 'stock' && tab !== 'stock' && action !== 'savemeta' && action !== 'setmeta') {
       return jsonOut_({ status: 'error', message: 'This web app is Stock-only. Use NSC_SHEET_SCRIPT_URL.' });
+    }
+    if (role === 'defective') {
+      var sheetWanted = payload && payload.sheetName ? String(payload.sheetName).trim().toLowerCase() : tab;
+      if (action !== 'savemeta' && action !== 'setmeta' && !DEFECTIVE_TABS[sheetWanted]) {
+        return jsonOut_({ status: 'error', message: 'Defective meter workbook only allows tabs summary and details.' });
+      }
     }
 
     if (action === 'savemeta' || action === 'setmeta') {

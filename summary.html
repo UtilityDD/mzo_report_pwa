@@ -1255,7 +1255,7 @@
         async function initDashboard() {
             // Data URLs for fallbacks
             const WEEKLY_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSMuO-ddereEG6J2s2Bmqp-HXo85ky4S4R5Yt-0HdoNHHa5r8xOEK4MJ1Syhyqzjpm2lTI4sT85nR4N/pub?gid=0&single=true&output=csv";
-            const DEFECTIVE_CSV_URL = "consumer/defective_meter.csv";
+            const DEFECTIVE_CSV_URL = "https://docs.google.com/spreadsheets/d/1dMLSX2bZBqZMPooh7_CrniCjqgy4MijaFW62GKJJldA/gviz/tq?tqx=out:csv&sheet=summary";
             const CMO_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS7GVh5HflVhouhVfFOEN2RuA1kCBedmD4Q0CJP02K61DAtWuo3P8XIS8CO7ocZQuJ20uCJBa9qsgZ6/pub?gid=1066071765&single=true&output=csv";
             const LOAD_EXT_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQP_B-Zl5XhnYkmJiDXKB7B8ksrRRezuLrRqTzEPz4lEw_yDcpGOTnmm0oI8dW9apwuHg9yGqaAqjDS/pub?gid=0&single=true&output=csv";
             const SOLAR_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR5Vnb9TxymVIcBZsUBWZ-21Frkn77O4IyNus3Zo42qPm09N6MlJ3E0Vh3tHywcMAiy2y0uRm5XfIdk/pub?gid=0&single=true&output=csv";
@@ -1288,8 +1288,8 @@
 
             // Concurrent data loading with DataHub prioritization
             const [nscData, advancesData, remData, weeklyData, defectiveData, cmoData, safetyData, loadExtData, solarData, lossData, costCenterData] = await Promise.all([
-                loadDataSource('CACHE_NSC_v4', 'NSC Data', 'csv', 'data/nsc.json', fetchJsonData),
-                loadDataSource('CACHE_CAPEX', 'CAPEX Details', 'csv', 'data/capexall.json', fetchJsonData),
+                loadDataSource('CACHE_NSC_v5', 'NSC Data', 'csv', '/api/nsc/dataset', fetchCsvData),
+                loadDataSource('CACHE_CAPEX', 'CAPEX Details', 'csv', 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQI2neSVbvMR4fF910Q0AWUcq02leP-sob8q4f9goT46hgLutCpxCjSL6y6X3s2vYBJRNN7WrFCjE0R/pub?gid=439685010&single=true&output=csv', fetchCsvData),
                 loadDataSource('CACHE_REM_v2', 'REM Data', 'csv', 'https://docs.google.com/spreadsheets/d/18y_nHZngDDO13nlluN9qba7AfgDe5dKGGHnXRYUU-b8/gviz/tq?tqx=out:csv', fetchCsvData),
                 loadDataSource('CACHE_WEEKLY', 'Weekly Report', 'csv', WEEKLY_CSV_URL, fetchCsvData),
                 loadDataSource('CACHE_DEFECTIVE', 'Defective Meter', 'csv', DEFECTIVE_CSV_URL, fetchCsvData),
@@ -1601,15 +1601,22 @@
 
                 const firstRow = defectiveData[0] || {};
                 const hasHeaders = "CCC_CODE" in firstRow;
+                const isSummary = hasHeaders && ("total" in firstRow);
 
-                let totalDefective = defectiveData.length;
+                let totalDefective = 0;
                 let indCount = 0;
                 let smartCount = 0;
 
                 defectiveData.forEach(row => {
-                    const baseClass = hasHeaders ? row.BASE_CLASS : Object.values(row)[11]; // Assuming index 11 for BASE_CLASS
-                    const meterNo = hasHeaders ? row.METER_NO : Object.values(row)[4]; // Assuming index 4 for METER_NO
-
+                    if (isSummary) {
+                        totalDefective += Number(row.total) || 0;
+                        indCount += Number(row.industrial) || 0;
+                        smartCount += Number(row.smart) || 0;
+                        return;
+                    }
+                    const baseClass = hasHeaders ? row.BASE_CLASS : Object.values(row)[11];
+                    const meterNo = hasHeaders ? row.METER_NO : Object.values(row)[4];
+                    totalDefective++;
                     if (baseClass === 'I') indCount++;
                     if (/^IJ|^IL|^IT/.test(meterNo || '')) smartCount++;
                 });
@@ -1623,7 +1630,13 @@
                 defectiveIndSmartEl.classList.remove('shimmer');
 
                 // Regional Breakdown for Defective
-                const defReg = _.countBy(defectiveData, row => getRegionFromCCC(hasHeaders ? row.CCC_CODE : Object.values(row)[1]));
+                const defReg = { Malda: 0, UD: 0, DD: 0 };
+                defectiveData.forEach(row => {
+                    const ccc = hasHeaders ? row.CCC_CODE : Object.values(row)[1];
+                    const region = getRegionFromCCC(ccc);
+                    const n = isSummary ? (Number(row.total) || 0) : 1;
+                    if (defReg[region] != null) defReg[region] += n;
+                });
                 document.getElementById('defectiveMalda').textContent = (defReg['Malda'] || 0).toLocaleString();
                 document.getElementById('defectiveUD').textContent = (defReg['UD'] || 0).toLocaleString();
                 document.getElementById('defectiveDD').textContent = (defReg['DD'] || 0).toLocaleString();
