@@ -5,7 +5,7 @@
 // v40: drop office prefs UI; pending load extension ticker/modal
 // v41: login scope on solar, JJM, meter utilization, WRIDD
 // v42: WRIDD filter dropdowns show scoped office names
-const CACHE_NAME = 'mzo-reports-cache-v47';
+const CACHE_NAME = 'mzo-reports-cache-v50';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -65,6 +65,8 @@ function isNetworkFirstPath(pathname) {
     pathname === '/wridd.html' ||
     pathname === '/solar.html' ||
     pathname === '/rem/defaulters.html' ||
+    pathname === '/admin_users.html' ||
+    pathname === '/consumer/defective_meter.html' ||
     pathname === '/mzo_data_hub.js' ||
     pathname === '/mzo_presets_hub.js' ||
     pathname === '/mzo_docket_briefing.js' ||

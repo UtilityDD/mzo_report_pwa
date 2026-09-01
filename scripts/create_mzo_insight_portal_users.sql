@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS mzo_insight.portal_users (
   stock_upload_autho text DEFAULT '',
   stock_allot_autho text DEFAULT '',
   stock_cancel_autho text DEFAULT '',
+  defective_upload_autho text DEFAULT '',
   si_autho text DEFAULT '',
   si_divisions text DEFAULT '',
   sheets_autho text DEFAULT '',

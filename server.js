@@ -212,6 +212,7 @@ function portalUserToClient(row) {
         'stock-upload-autho': row.stock_upload_autho || '',
         'stock-allot-autho': row.stock_allot_autho || '',
         'stock-cancel-autho': row.stock_cancel_autho || '',
+        'defective-upload-autho': row.defective_upload_autho || '',
         'si-autho': row.si_autho || '',
         'si-divisions': row.si_divisions || '',
         'sheets-autho': row.sheets_autho || '',
@@ -246,6 +247,9 @@ function clientUserToPortal(user) {
         ).trim(),
         stock_cancel_autho: String(
             user['stock-cancel-autho'] != null ? user['stock-cancel-autho'] : (user.stock_cancel_autho || '')
+        ).trim(),
+        defective_upload_autho: String(
+            user['defective-upload-autho'] != null ? user['defective-upload-autho'] : (user.defective_upload_autho || '')
         ).trim(),
         si_autho: String(user['si-autho'] != null ? user['si-autho'] : (user.si_autho || '')).trim(),
         si_divisions: String(user['si-divisions'] != null ? user['si-divisions'] : (user.si_divisions || '')).trim(),
@@ -1716,6 +1720,11 @@ function stockAllotmentScriptUrl_() {
         process.env.STOCK_ALLOTMENT_SCRIPT_URL ||
         'https://script.google.com/macros/s/AKfycbxHxa_srh1nfhDTEf1eiXeRj-u2wr7qWiki1m5QIJ7FtWsaVRBVI7kDk37jeSE7ETOz/exec'
     );
+}
+
+function isPortalAdmin_(user) {
+    if (!user) return false;
+    return String(user.role || user.Role || '').trim().toLowerCase() === 'admin';
 }
 
 function flagAuthoYes_(raw) {
@@ -3616,24 +3625,47 @@ const DEFECTIVE_SHEET_SCRIPT_URL = String(
 
 function canUploadDefective_(user) {
     if (!user) return false;
-    const role = String(user.role || user.Role || '').trim().toLowerCase();
-    if (role === 'admin') return true;
+    if (isPortalAdmin_(user)) return true;
+    if (flagAuthoYes_(
+        user['defective-upload-autho'] != null ? user['defective-upload-autho'] : user.defective_upload_autho
+    )) {
+        return true;
+    }
     const username = String((user.Username || user.username) || '')
         .trim()
         .toLowerCase();
     return username === 'dm1';
 }
 
+async function resolveDefectiveUser_(req) {
+    const session = req.user || null;
+    try {
+        const users = await getLoginCredentials({ forceRefresh: true });
+        const key = String((session && session.Username) || '').trim().toLowerCase();
+        const fresh = users.find((u) => u.Username && String(u.Username).trim().toLowerCase() === key);
+        if (fresh) {
+            if (!isPortalAdmin_(fresh) && isPortalAdmin_(session)) {
+                fresh.role = session.role || 'admin';
+            }
+            return fresh;
+        }
+    } catch (e) {
+        console.warn('[Defective auth] profile refresh failed:', e.message);
+    }
+    return session;
+}
+
 app.get('/api/defective/meta', async (req, res) => {
     if (!req.user) {
         return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     }
-    const canUpload = canUploadDefective_(req.user);
+    const user = await resolveDefectiveUser_(req);
+    const canUpload = canUploadDefective_(user);
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
     return res.json({
         status: 'success',
         canUpload,
-        isAdmin: String((req.user.role || req.user.Role || '')).trim().toLowerCase() === 'admin',
+        isAdmin: isPortalAdmin_(user),
         sheetScriptUrl: canUpload && DEFECTIVE_SHEET_SCRIPT_URL ? DEFECTIVE_SHEET_SCRIPT_URL : '',
         spreadsheetId: DEFECTIVE_SPREADSHEET_ID,
         summaryCsvUrl: DEFECTIVE_SUMMARY_CSV_URL,
