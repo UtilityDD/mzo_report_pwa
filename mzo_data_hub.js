@@ -32,6 +32,8 @@ const DATASETS = [
     { key: 'CACHE_REM_AGRI', label: 'REM Agri Defaulters', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRFk-wa_x-dsthFXNsWa9wRxWOQrMD-yEiucvA2FtJIbwnTiGqVs3OT_eXxqyAOBqvGSDRiG-Hr0hK1/pub?gid=0&single=true&output=tsv', type: 'csv' },
     { key: 'CACHE_REM_DOM', label: 'REM Dom Defaulters', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRFk-wa_x-dsthFXNsWa9wRxWOQrMD-yEiucvA2FtJIbwnTiGqVs3OT_eXxqyAOBqvGSDRiG-Hr0hK1/pub?gid=1106133732&single=true&output=tsv', type: 'csv' },
     { key: 'CACHE_SOLAR', label: 'Solar Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR5Vnb9TxymVIcBZsUBWZ-21Frkn77O4IyNus3Zo42qPm09N6MlJ3E0Vh3tHywcMAiy2y0uRm5XfIdk/pub?gid=0&single=true&output=csv', type: 'csv' },
+    { key: 'CACHE_JJM', label: 'JJM Connections', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTZfBrOb6Y4kPoF_Lix-MhUxVFy5l7urYoAoI-h-w6EbcTFuZPqIhjWTQ26RYcvYenl51HdpCawEVc7/pub?gid=2138035305&single=true&output=csv', type: 'csv' },
+    { key: 'CACHE_WRIDD', label: 'WRIDD Schemes', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTt6H8YfaFRi1H3KzVHv97nbhlJQ-96cuFh4J0KyVjRSw1I78BYxUek9etiE9xs-7vHYn98uPMc6sFj/pub?gid=0&single=true&output=csv', type: 'csv' },
     // lazySync: multi‑MB sheets — skip daily homepage sync; fetch on page open via waitForDataset/get
     { key: 'CACHE_METER_ERP', label: 'Meter ERP Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=1335293243&single=true&output=csv', type: 'csv', lazySync: true },
     { key: 'CACHE_METER_MASTER', label: 'Meter Master Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=1053803476&single=true&output=csv', type: 'csv', lazySync: true },
@@ -129,6 +131,69 @@ class DataHub {
         } catch (e) {}
     }
 
+    _cleanEtag(raw) {
+        return String(raw || '')
+            .replace(/^W\//i, '')
+            .replace(/"/g, '')
+            .trim();
+    }
+
+    _versionFromHeaders(res) {
+        if (!res) return '';
+        const etag = this._cleanEtag(res.headers.get('ETag'));
+        if (etag) return 'e:' + etag;
+        const lm = String(res.headers.get('Last-Modified') || '').trim();
+        const len = String(res.headers.get('Content-Length') || '').trim();
+        if (lm && len) return 'm:' + lm + '|' + len;
+        if (lm) return 'm:' + lm;
+        const range = String(res.headers.get('Content-Range') || '').trim();
+        const rangeLen = /\/(\d+)\s*$/.exec(range);
+        if (lm && rangeLen) return 'm:' + lm + '|' + rangeLen[1];
+        if (len) return 'l:' + len;
+        if (rangeLen) return 'l:' + rangeLen[1];
+        return '';
+    }
+
+    _fingerprint(data) {
+        const s = typeof data === 'string' ? data : JSON.stringify(data == null ? '' : data);
+        let h = 5381;
+        const step = Math.max(1, Math.floor(s.length / 4096));
+        for (let i = 0; i < s.length; i += step) {
+            h = ((h << 5) + h) + s.charCodeAt(i);
+        }
+        let rows = 0;
+        if (typeof data === 'string') {
+            rows = Math.max(0, s.split(/\r?\n/).filter((l) => l.trim().length).length - 1);
+        } else if (Array.isArray(data)) {
+            rows = data.length;
+        }
+        return 'f:n' + s.length + '|r' + rows + '|h' + ((h >>> 0).toString(16));
+    }
+
+    _hasBody(peeked) {
+        return peeked != null && peeked !== '';
+    }
+
+    _versionsMatch(local, remote) {
+        if (!local || !remote) return false;
+        if (local === remote) return true;
+        const strip = (s) => String(s).replace(/^[evmf]:/, '');
+        return strip(local) === strip(remote);
+    }
+
+    async _probeRemoteVersion(url) {
+        if (!url) return '';
+        const cred = /\/api\//.test(url) ? 'same-origin' : 'omit';
+        try {
+            const head = await fetch(url, { method: 'HEAD', credentials: cred, cache: 'no-store' });
+            if (head.ok) {
+                const ver = this._versionFromHeaders(head);
+                if (ver) return ver;
+            }
+        } catch (e) {}
+        return '';
+    }
+
     // IndexedDB read that must not wait on the in-flight retry (avoids deadlock)
     async _peek(key) {
         await this.initPromise;
@@ -164,19 +229,16 @@ class DataHub {
         return true;
     }
 
-    // Get data from cache
+    // Get data from cache, revalidating via version when this tab has not already confirmed it
     async get(key) {
         await this.initPromise;
-        if (this.useMemoryFallback) {
-            return this.memoryCache[key];
-        }
-        
-        // If this specific key is currently syncing, wait for it to complete
-        // before returning the data. This provides a seamless "wait" experience.
-        if (this.syncStatus[key] === 'syncing' && this.syncPromises[key]) {
+        if (this.syncPromises[key]) {
             await this.syncPromises[key];
+            return this._peek(key);
         }
-
+        if (this.syncStatus[key] !== 'done') {
+            try { await this.retryDataset(key); } catch (_) {}
+        }
         return this._peek(key);
     }
 
@@ -222,10 +284,10 @@ class DataHub {
         });
     }
 
-    // Checks if a dataset is currently cached
+    // Checks if a dataset is currently cached (does not hit the network)
     async isCached(key) {
-        const data = await this.get(key);
-        return data !== undefined && data !== null;
+        const data = await this._peek(key);
+        return data !== undefined && data !== null && data !== '';
     }
 
     // Daily Sync Logic
@@ -270,6 +332,8 @@ class DataHub {
         const force = !!(opts && opts.force);
         const dataset = DATASETS.find(d => d.key === key);
         if (!dataset) return false;
+        if (!force && this.syncPromises[key]) return this.syncPromises[key];
+        if (!force && this.syncStatus[key] === 'done') return true;
 
         this.syncStatus[key] = 'syncing';
         this.syncPromises[key] = (async () => {
@@ -277,6 +341,10 @@ class DataHub {
                 let remoteVer = '';
                 let fetchUrl = dataset.url;
                 let metaJson = null;
+                const peeked = await this._peek(key);
+                const hasBody = this._hasBody(peeked);
+                const localVer = this._readStoredVersion(key);
+
                 if (dataset.versionUrl) {
                     try {
                         metaJson = await this._getDatasetMeta(dataset);
@@ -286,42 +354,48 @@ class DataHub {
                         (metaJson && metaJson.version) ||
                         ''
                     ).trim();
+                    if (remoteVer) remoteVer = 'v:' + remoteVer;
                     const field = dataset.csvUrlField || 'csvUrl';
                     if (metaJson && metaJson[field]) fetchUrl = String(metaJson[field]);
-                    if (!force) {
-                        const peeked = await this._peek(key);
-                        const localVer = this._readStoredVersion(key);
-                        const hasBody = peeked != null && peeked !== '';
-                        let expectedRows = 0;
-                        if (dataset.key.startsWith('CACHE_WITHHELD')) {
-                            expectedRows = Number(
-                                (metaJson && metaJson.meta && metaJson.meta.withheldRows) ||
-                                (metaJson && metaJson.withheldRows) ||
-                                0
-                            );
-                        }
-                        let cachedRows = 0;
-                        if (typeof peeked === 'string') {
-                            cachedRows = Math.max(0, peeked.split(/\r?\n/).filter((l) => l.trim().length).length - 1);
-                        } else if (Array.isArray(peeked)) {
-                            cachedRows = peeked.length;
-                        }
-                        const rowLooksComplete = !expectedRows || cachedRows >= expectedRows * 0.95;
-                        if (hasBody && remoteVer && localVer && localVer === remoteVer && rowLooksComplete) {
-                            this.syncStatus[key] = 'done';
-                            return true;
-                        }
-                    }
+                } else if (!force && hasBody) {
+                    remoteVer = await this._probeRemoteVersion(fetchUrl);
                 }
 
-                const useConditional = !force && !/docs\.google\.com/i.test(fetchUrl);
-                let allowConditional = useConditional;
+                let expectedRows = 0;
+                if (dataset.key.startsWith('CACHE_WITHHELD')) {
+                    expectedRows = Number(
+                        (metaJson && metaJson.meta && metaJson.meta.withheldRows) ||
+                        (metaJson && metaJson.withheldRows) ||
+                        0
+                    );
+                }
+                let cachedRows = 0;
+                if (typeof peeked === 'string') {
+                    cachedRows = Math.max(0, peeked.split(/\r?\n/).filter((l) => l.trim().length).length - 1);
+                } else if (Array.isArray(peeked)) {
+                    cachedRows = peeked.length;
+                }
+                const rowLooksComplete = !expectedRows || cachedRows >= expectedRows * 0.95;
+
+                if (!force && hasBody && remoteVer && localVer && this._versionsMatch(localVer, remoteVer) && rowLooksComplete) {
+                    if (localVer !== remoteVer) this._writeStoredVersion(key, remoteVer);
+                    this.syncStatus[key] = 'done';
+                    return true;
+                }
+
+                let allowConditional = !force && !!localVer;
                 let response = null;
                 for (let attempt = 0; attempt < 2; attempt++) {
                     const headers = {};
-                    const localVer = this._readStoredVersion(key);
-                    if (allowConditional && localVer) {
-                        headers['If-None-Match'] = `"${String(localVer).replace(/"/g, '')}"`;
+                    const stored = this._readStoredVersion(key);
+                    if (allowConditional && stored) {
+                        if (stored.indexOf('m:') === 0) {
+                            const lm = stored.slice(2).split('|')[0];
+                            if (lm) headers['If-Modified-Since'] = lm;
+                        } else if (stored.indexOf('f:') !== 0 && stored.indexOf('l:') !== 0) {
+                            const tag = stored.replace(/^[ev]:/, '').replace(/"/g, '');
+                            if (tag) headers['If-None-Match'] = '"' + tag + '"';
+                        }
                     }
                     const timeoutMs = dataset.lazySync ? 180000 : FETCH_TIMEOUT_MS;
                     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -338,9 +412,10 @@ class DataHub {
                         if (timer) clearTimeout(timer);
                     }
                     if (response.status !== 304) break;
-                    const peeked = await this._peek(key);
-                    if (peeked != null && peeked !== '') {
-                        if (remoteVer) this._writeStoredVersion(key, remoteVer);
+                    const cached = await this._peek(key);
+                    if (this._hasBody(cached)) {
+                        const keep = remoteVer || this._versionFromHeaders(response) || stored;
+                        if (keep) this._writeStoredVersion(key, keep);
                         this.syncStatus[key] = 'done';
                         return true;
                     }
@@ -353,12 +428,8 @@ class DataHub {
                 let data;
                 if (dataset.type === 'json') data = await response.json();
                 else data = await response.text();
-                const etag = String(response.headers.get('ETag') || '')
-                    .replace(/^W\//i, '')
-                    .replace(/"/g, '')
-                    .trim();
-                if (remoteVer) this._writeStoredVersion(key, remoteVer);
-                else if (etag) this._writeStoredVersion(key, etag);
+                const headerVer = this._versionFromHeaders(response);
+                this._writeStoredVersion(key, remoteVer || headerVer || this._fingerprint(data));
 
                 // NSC / Withheld: refuse to cache a truncated CSV (stale sheet / partial response)
                 if (dataset.key.startsWith('CACHE_NSC') && typeof data === 'string') {

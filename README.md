@@ -9,7 +9,7 @@ npm run dev
 
 Open http://localhost:3000 — unauthenticated pages redirect to `/login.html`.
 
-**Developer guide:** [DEVELOPER.md](DEVELOPER.md) (architecture, auth/scope, DataHub, service worker, how to add a page).
+**Developer guide:** [DEVELOPER.md](DEVELOPER.md) — architecture, login scope, DataHub versioning (skip CSV download when the version is unchanged), service worker, how to add a page.
 
 Topic notes:
 
