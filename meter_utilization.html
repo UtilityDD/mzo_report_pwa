@@ -1288,22 +1288,21 @@
 
       let erpData, masterData, crmData, isuData;
 
-      if (window.mzoDataHub && (await mzoDataHub.isCached('CACHE_METER_ERP'))) {
-        console.log("Loading meter data from Data Hub cache...");
+      if (window.mzoDataHub) {
+        await Promise.all([
+          mzoDataHub.waitForDataset('CACHE_METER_ERP'),
+          mzoDataHub.waitForDataset('CACHE_METER_MASTER'),
+          mzoDataHub.waitForDataset('CACHE_METER_CRM'),
+          mzoDataHub.waitForDataset('CACHE_METER_ISU')
+        ]);
         [erpData, masterData, crmData, isuData] = await Promise.all([
           mzoDataHub.get('CACHE_METER_ERP'),
           mzoDataHub.get('CACHE_METER_MASTER'),
           mzoDataHub.get('CACHE_METER_CRM'),
           mzoDataHub.get('CACHE_METER_ISU')
         ]);
-        
-        // Papa.parse the CSV strings from cache
-        erpData = Papa.parse(erpData, { header: true, skipEmptyLines: true }).data;
-        masterData = Papa.parse(masterData, { header: true, skipEmptyLines: true }).data;
-        crmData = Papa.parse(crmData, { header: true, skipEmptyLines: true }).data;
-        isuData = Papa.parse(isuData, { header: true, skipEmptyLines: true }).data;
-      } else {
-        console.log("Fetching meter data from network...");
+      }
+      if (!erpData) {
         const results = await Promise.all([
           fetchCSV(BASE_URL + "&gid=" + GID_ERP),
           fetchCSV(BASE_URL + "&gid=" + GID_MASTER),
@@ -1311,6 +1310,11 @@
           fetchCSV(BASE_URL + "&gid=" + GID_ISU)
         ]);
         [erpData, masterData, crmData, isuData] = results;
+      } else {
+        erpData = Papa.parse(erpData || '', { header: true, skipEmptyLines: true }).data;
+        masterData = Papa.parse(masterData || '', { header: true, skipEmptyLines: true }).data;
+        crmData = Papa.parse(crmData || '', { header: true, skipEmptyLines: true }).data;
+        isuData = Papa.parse(isuData || '', { header: true, skipEmptyLines: true }).data;
       }
 
       processData({ erpData, masterData, crmData, isuData });

@@ -68,24 +68,34 @@ Office codes match `/66[123]\d{4}/` (e.g. `6611108`, `C36611108`). If a dataset�
 
 ## DataHub
 
-Datasets are registered in `mzo_data_hub.js` `DATASETS`.
+Datasets are registered in `mzo_data_hub.js` `DATASETS`. IndexedDB holds the CSV/JSON body. `localStorage` key `mzo_hub_ver_<CACHE_KEY>` holds the version.
 
 ```js
-const rows = await window.mzoDataHub.waitForDataset('CACHE_NSC_v5');
+await window.mzoDataHub.waitForDataset('CACHE_NSC_v5');
+const csv = await window.mzoDataHub.get('CACHE_NSC_v5');
 ```
+
+**Versioned load (required):** `get()` revalidates once per page load with a cheap check — `/api/.../meta` when `versionUrl` is set, otherwise `HEAD` plus `If-None-Match` / `If-Modified-Since`. If the stored version matches and IndexedDB already has a body, **do not download the CSV**. If the version changed, fetch, then store the new body and version.
+
+Version strings are prefixed: `v:` API meta, `e:` ETag, `m:` Last-Modified, `f:` body fingerprint. `refresh(key)` clears the stored version and forces a download (use after an upload).
 
 | Flag | Meaning |
 |------|---------|
-| `originHeavy` | Prefer `/api/...` dump; version from `versionUrl` |
-| `lazySync` | Skip homepage daily sync; load when the page opens |
+| `originHeavy` | Prefer `/api/...` dump; version from `versionUrl` (NSC, Withheld, Stock) |
+| `lazySync` | Skip homepage daily sync; version-check when the page opens (meter dumps, safety, PMSGY) |
+| `versionUrl` / `versionField` | JSON meta for version (Withheld uses `withheldVersion`) |
 
-Bump the **cache key** (`CACHE_FOO_v2`) if the stored shape changes, or users keep stale IndexedDB rows.
+Do **not** `fetch()` or `Papa.parse(url, { download: true })` a Google Sheet from a page if a DataHub key exists. Register the URL in `DATASETS`, then `waitForDataset` + `get`. On the home hub, set `data-dataset="CACHE_…"`.
+
+Hub keys in use: `CACHE_NSC_v5`, `CACHE_WITHHELD_v4`, `CACHE_STOCK`, `CACHE_POWER_MAP`, `CACHE_SOLAR`, `CACHE_JJM`, `CACHE_WRIDD`, `CACHE_METER_*`, plus collection/loss/weekly/docket/REM/capex/etc. in `DATASETS`.
+
+Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large dumps stay out of git (see `.gitignore` / `.vercelignore`).
 
 ---
 
 ## Service worker
 
-`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v46`. **Increment it** whenever HTML/CSS/JS that users already cached must update.
+`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v47`. **Increment it** whenever HTML/CSS/JS that users already cached must update.
 
 Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a stale copy. After deploy, users may still need a hard refresh until `skipWaiting` + `clients.claim` run.
 
@@ -93,13 +103,14 @@ Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a 
 
 ## Adding a report page
 
-1. Create `feature.html` (or `feature/index.html`). Register it on the home hub in `index.html`.
-2. Include `mzo_scope.js?v=N` (bump `N` when `mzo_scope.js` changes). Include `mzo_data_hub.js` if the page needs cached datasets.
-3. After load: `raw = MzoScope.filterRows(raw)` then populate filters; if selects are locked, fill from scoped unique values / `getScope()`, then `lockFilters()`.
-4. Add the path to `sw.js` `isNetworkFirstPath` and bump `CACHE_NAME`.
-5. If the folder is new, add it to `vercel.json` `builds`.
-6. **Mobile:** do not stick a stacked filter block. Keep a **single ~42–48px** sticky bar; put search/filters behind a toggle overlay (`meter_utilization.html` is the pattern). Date strips should stay one scrolling row, not a column of cards.
-7. Verify on a **phone width** (and ~900px tablet). Login-gated pages cannot be checked with anonymous `curl` of the HTML.
+1. Create `feature.html` (or `feature/index.html`). Register it on the home hub in `index.html` with `data-dataset="CACHE_…"` when it uses DataHub.
+2. Include `mzo_data_hub.js` and `mzo_scope.js?v=N` (bump `N` when `mzo_scope.js` changes).
+3. Add the source to `DATASETS` in `mzo_data_hub.js`. Load with `waitForDataset` then `get` — never a raw sheet `fetch` if a hub key exists.
+4. After load: `raw = MzoScope.filterRows(raw)` then populate filters; if selects are locked, fill from scoped unique values / `getScope()`, then `lockFilters()`.
+5. Add the path to `sw.js` `isNetworkFirstPath` and bump `CACHE_NAME`.
+6. If the folder is new, add it to `vercel.json` `builds`.
+7. **Mobile:** do not stick a stacked filter block. Keep a **single ~42–48px** sticky bar; put search/filters behind a toggle overlay (`meter_utilization.html` is the pattern). Date strips should stay one scrolling row, not a column of cards.
+8. Verify on a **phone width** (and ~900px tablet). Login-gated pages cannot be checked with anonymous `curl` of the HTML.
 
 ---
 
@@ -124,6 +135,7 @@ Uploads (NSC, stock) are size-limited on Vercel; prefer chunked publish where it
 When a change affects how the next developer (or agent) should work, update **this file in the same PR/change**:
 
 - New portal, dataset key, API, or auth field
+- DataHub versioning / `waitForDataset` behaviour
 - Scope matching / filter-lock behaviour
 - SW cache or `vercel.json` paths
 - A new UI pattern that other pages should copy (or stop using)

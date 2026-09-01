@@ -6,6 +6,7 @@
   <title>JJM Connection Status</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+  <script src="mzo_data_hub.js"></script>
   <script src="mzo_scope.js?v=5"></script>
   <style>
     * {
@@ -466,23 +467,28 @@
 
     const columnsToShow = Object.keys(columnConfig);
 
-    function fetchData() {
-      Papa.parse('https://docs.google.com/spreadsheets/d/e/2PACX-1vTZfBrOb6Y4kPoF_Lix-MhUxVFy5l7urYoAoI-h-w6EbcTFuZPqIhjWTQ26RYcvYenl51HdpCawEVc7/pub?gid=2138035305&single=true&output=csv', {
-        download: true,
-        header: true,
-        complete: function(results) {
-          fullData = results.data.filter(row => 
-            Object.values(row).some(val => val && val.trim && val.trim() !== '')
-          );
-          if (window.MzoScope) fullData = window.MzoScope.filterRows(fullData);
-          populateFilters();
-          if (window.MzoScope) window.MzoScope.lockFilters();
-          calculateFilteredValues();
-        },
-        error: function(error) {
-          dataContainer.innerHTML = `<div class="error">Error loading data. Please try refreshing the page.</div>`;
+    async function fetchData() {
+      try {
+        let csvText = '';
+        if (window.mzoDataHub) {
+          await mzoDataHub.waitForDataset('CACHE_JJM');
+          csvText = await mzoDataHub.get('CACHE_JJM') || '';
         }
-      });
+        if (!csvText) {
+          const res = await fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vTZfBrOb6Y4kPoF_Lix-MhUxVFy5l7urYoAoI-h-w6EbcTFuZPqIhjWTQ26RYcvYenl51HdpCawEVc7/pub?gid=2138035305&single=true&output=csv');
+          csvText = await res.text();
+        }
+        const results = Papa.parse(String(csvText).trim(), { header: true, skipEmptyLines: true });
+        fullData = results.data.filter(row =>
+          Object.values(row).some(val => val && val.trim && val.trim() !== '')
+        );
+        if (window.MzoScope) fullData = window.MzoScope.filterRows(fullData);
+        populateFilters();
+        if (window.MzoScope) window.MzoScope.lockFilters();
+        calculateFilteredValues();
+      } catch (error) {
+        dataContainer.innerHTML = `<div class="error">Error loading data. Please try refreshing the page.</div>`;
+      }
     }
 
     function populateFilters() {
