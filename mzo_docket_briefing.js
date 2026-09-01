@@ -1,6 +1,6 @@
 /**
  * Post-login briefing: pending docket calls older than 24 hours,
- * filtered by global office preferences (mzoPresetsHub).
+ * filtered by login office scope (MzoScope).
  */
 (function (window) {
     'use strict';
@@ -195,29 +195,19 @@
         return data.filter((d) => PRIORITY_PROB_TYPES.includes(String(d.prob_type || '').trim()));
     }
 
-    function filterByJurisdiction(data, pref) {
-        if (!pref) return data;
-        let filtered = data;
-
-        const regionKey = resolveRegionKey(pref.region);
-        const divisionKey = resolveDivisionKey(regionKey, pref.division);
-        const cccCode = findCccCode(pref.ccc);
-
-        if (regionKey) {
-            const regionCodePrefix = REGION_DATA[regionKey].code.substring(0, 3);
-            filtered = filtered.filter((d) => d.Divn_code && String(d.Divn_code).startsWith(regionCodePrefix));
+    function filterByJurisdiction(data) {
+        if (window.MzoScope && typeof window.MzoScope.filterRows === 'function') {
+            return window.MzoScope.filterRows(data);
         }
+        return data;
+    }
 
-        if (divisionKey && regionKey) {
-            const divisionCodeCsv = REGION_DATA[regionKey].divisions[divisionKey].code.substring(0, 4);
-            filtered = filtered.filter((d) => String(d.Divn_code) === divisionCodeCsv);
+    function getJurisdictionLabel() {
+        if (window.MzoScope && typeof window.MzoScope.getScope === 'function') {
+            const scope = window.MzoScope.getScope();
+            if (scope && scope.label) return scope.label;
         }
-
-        if (cccCode) {
-            filtered = filtered.filter((d) => String(d.ccc_code).trim() === String(cccCode));
-        }
-
-        return filtered;
+        return 'All Offices (MZO)';
     }
 
     function filterOlderThan24(data) {
@@ -228,28 +218,6 @@
             const diffHours = (now - parsedDate) / (1000 * 60 * 60);
             return diffHours >= 24;
         });
-    }
-
-    function hasOfficePrefs(pref) {
-        return !!(
-            pref &&
-            ((pref.region && pref.region !== 'all') ||
-                (pref.division && pref.division !== 'all') ||
-                (pref.ccc && pref.ccc !== 'all'))
-        );
-    }
-
-    function getJurisdictionLabel(pref) {
-        if (!hasOfficePrefs(pref)) return 'All Offices (MZO)';
-        const parts = [];
-        if (pref.ccc && pref.ccc !== 'all') {
-            parts.push(findCccName(pref.ccc) || pref.ccc);
-        } else if (pref.division && pref.division !== 'all') {
-            parts.push(pref.division);
-        } else if (pref.region && pref.region !== 'all') {
-            parts.push(pref.region);
-        }
-        return parts.join(' · ') || 'All Offices (MZO)';
     }
 
     function findCccName(cccValue) {
@@ -341,17 +309,6 @@
         closeModal();
     }
 
-    function openOfficePrefs(onSaved) {
-        closeModal();
-        if (!window.mzoPresetsHub) return;
-        window.mzoPresetsHub.showSetupModal(
-            { showCCC: true, cccList: buildCccList() },
-            () => {
-                if (typeof onSaved === 'function') onSaved();
-            }
-        );
-    }
-
     function openDocketDashboard() {
         closeModal();
         if (typeof window.openPage === 'function') {
@@ -361,17 +318,11 @@
         window.location.href = '/docket.html';
     }
 
-    function showModal(summary, pref, needsPrefs) {
+    function showModal(summary) {
         closeModal();
 
-        const jurisdiction = getJurisdictionLabel(pref);
+        const jurisdiction = getJurisdictionLabel();
         const countColor = summary.total > 0 ? '#dc2626' : '#059669';
-
-        const prefsBanner = needsPrefs
-            ? `<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:#92400e;line-height:1.45;">
-                <i class="fas fa-map-marker-alt"></i> Showing <strong>all offices</strong>. Set your office preferences to focus on your jurisdiction.
-               </div>`
-            : '';
 
         const topHtml = PRIORITY_PROB_TYPES.map((type) => {
             const count = (summary.topTypes.find(([t]) => t === type) || [type, 0])[1];
@@ -394,7 +345,6 @@
                     <div style="font-size:12px;color:#64748b;margin:0 0 14px 0;display:flex;align-items:center;gap:6px;">
                         <i class="fas fa-building"></i> ${escapeHtml(jurisdiction)}
                     </div>
-                    ${prefsBanner}
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px;">
                         <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:14px;text-align:center;">
                             <div style="font-size:11px;font-weight:600;color:#991b1b;text-transform:uppercase;letter-spacing:0.04em;">Total 24H+</div>
@@ -415,9 +365,6 @@
                 </div>
                 <div style="background:#f8fafc;padding:14px 20px;border-top:1px solid #e2e8f0;display:flex;flex-direction:column;gap:10px;flex-shrink:0;">
                     <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;">
-                        <button type="button" id="mzoBriefingPrefsBtn" style="background:#fff;border:1px solid #cbd5e1;color:#334155;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">
-                            <i class="fas fa-cog"></i> Office Preferences
-                        </button>
                         <button type="button" id="mzoBriefingDocketBtn" style="background:#1d4ed8;border:none;color:#fff;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">
                             <i class="fas fa-phone-volume"></i> Open Docket Dashboard
                         </button>
@@ -448,11 +395,6 @@
             const snoozeChk = document.getElementById('mzoBriefingSnoozeChk');
             if (snoozeChk && snoozeChk.checked) snoozeFor6Hours();
             openDocketDashboard();
-        });
-        document.getElementById('mzoBriefingPrefsBtn')?.addEventListener('click', () => {
-            openOfficePrefs(async () => {
-                await tryShow({ force: true });
-            });
         });
 
         document.getElementById('mzoDocketBriefingModal')?.addEventListener('click', (e) => {
@@ -554,11 +496,10 @@
 
         if (!opts.force) showLoadingModal();
 
-        const pref = window.mzoPresetsHub ? window.mzoPresetsHub.getGlobalJurisdiction() : null;
         const rows = await loadDocketRows();
         if (!rows) return false;
 
-        const scoped = filterByJurisdiction(rows, pref);
+        const scoped = filterByJurisdiction(rows);
         const priority = filterPriority(scoped);
         const pending24 = filterOlderThan24(priority);
         const summary = buildSummary(pending24);
@@ -567,7 +508,7 @@
             sessionStorage.removeItem(SESSION_KEY);
         }
 
-        showModal(summary, pref, !hasOfficePrefs(pref));
+        showModal(summary);
         return true;
     }
 
@@ -604,9 +545,7 @@
                     sessionStorage.removeItem(SESSION_KEY);
                     _scheduleRunning = false;
                     showModal(
-                        { total: 0, uniqueConIds: 0, topTypes: [], oldestHours: 0 },
-                        window.mzoPresetsHub ? window.mzoPresetsHub.getGlobalJurisdiction() : null,
-                        true
+                        { total: 0, uniqueConIds: 0, topTypes: [], oldestHours: 0 }
                     );
                     const content = document.querySelector('#mzoDocketBriefingModal [style*="overflow-y"]');
                     if (content) {

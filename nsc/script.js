@@ -62,6 +62,7 @@ async function loadNscDataset() {
 
 async function loadData() {
     allData = await loadNscDataset();
+    if (window.MzoScope) allData = window.MzoScope.filterRows(allData);
     if (!allData.length) {
         console.warn('No NSC dataset found.');
         return;
@@ -90,6 +91,7 @@ function processData() {
     updateMaxTodayDate(allData); // Update "Updated up to" date based on loaded data
     generateAverageDelayCards(); // Call the new function here
     initializeFilters();
+    if (window.MzoScope) window.MzoScope.lockFilters();
     showRegionCards();
     generateKpiSummaryTables(); // ← Add this call just after `generateAverageDelayCards();`
 
@@ -242,6 +244,18 @@ function generateKpiAverageDelayCards() {
     kpiAverageCardsContainer.innerHTML += createCard('Avg Delay in Connection', avgSCDelay);
 }
 
+function applyKpiSummaryVisibility() {
+  const level = currentLevel === 'ccc' || currentLevel === 'dashboard' ? 'ccc'
+    : currentLevel === 'division' ? 'division'
+    : 'region';
+  const regionBlock = document.getElementById('kpiRegionBlock');
+  const divBlock = document.getElementById('kpiDivisionBlock');
+  const cccBlock = document.getElementById('kpiCCCBlock');
+  if (regionBlock) regionBlock.style.display = level === 'region' ? '' : 'none';
+  if (divBlock) divBlock.style.display = (level === 'region' || level === 'division') ? '' : 'none';
+  if (cccBlock) cccBlock.style.display = '';
+}
+
 function generateKpiSummaryTables() {
   const regionMap = {};
   const divisionMap = {};
@@ -270,7 +284,8 @@ function generateKpiSummaryTables() {
   // Populate tables
   populateKpiTable(regionMap, 'kpiRegionTable');
   populateKpiTable(divisionMap, 'kpiDivisionTable');
-  populateKpiTable(cccMap, 'kpiCCCTable', true); // use readable name
+  populateKpiTable(cccMap, 'kpiCCCTable', true);
+  applyKpiSummaryVisibility();
   generateKpiAverageDelayCards();
 }
 
@@ -401,6 +416,7 @@ function setupEventListeners() {
 
 
 document.getElementById('kpiToggleBtn').addEventListener('click', () => {
+    applyKpiSummaryVisibility();
     document.getElementById('kpiModal').style.display = 'block';
 });
 
@@ -531,7 +547,7 @@ function updateKpiTables(filteredData) {
     populateKpiTable(regionMap, 'kpiRegionTable');
     populateKpiTable(divisionMap, 'kpiDivisionTable');
     populateKpiTable(cccMap, 'kpiCCCTable', true);
-    populateKpiTable(cccMap, 'kpiCCCTable', true);
+    applyKpiSummaryVisibility();
 }
 
 

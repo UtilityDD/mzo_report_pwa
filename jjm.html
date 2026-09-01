@@ -6,6 +6,7 @@
   <title>JJM Connection Status</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+  <script src="mzo_scope.js?v=5"></script>
   <style>
     * {
       margin: 0;
@@ -473,8 +474,10 @@
           fullData = results.data.filter(row => 
             Object.values(row).some(val => val && val.trim && val.trim() !== '')
           );
-          populateRegionFilter();
-          calculateTotalValues();
+          if (window.MzoScope) fullData = window.MzoScope.filterRows(fullData);
+          populateFilters();
+          if (window.MzoScope) window.MzoScope.lockFilters();
+          calculateFilteredValues();
         },
         error: function(error) {
           dataContainer.innerHTML = `<div class="error">Error loading data. Please try refreshing the page.</div>`;
@@ -482,52 +485,51 @@
       });
     }
 
-    function populateRegionFilter() {
-      const regions = _.uniq(fullData.map(row => row['REGION NAME']).filter(Boolean));
-      regionFilter.innerHTML = '<option value="">All Regions</option>' + 
+    function populateFilters() {
+      const regions = _.uniq(fullData.map(row => row['REGION NAME']).filter(Boolean)).sort();
+      const keepRegion = regionFilter.value;
+      regionFilter.innerHTML = '<option value="">All Regions</option>' +
         regions.map(region => `<option value="${region}">${region}</option>`).join('');
+      if (keepRegion && regions.indexOf(keepRegion) !== -1) regionFilter.value = keepRegion;
+
+      const regionVal = regionFilter.value;
+      const divisionSource = regionVal ? fullData.filter(row => row['REGION NAME'] === regionVal) : fullData;
+      const divisions = _.uniq(divisionSource.map(row => row['DIVISION']).filter(Boolean)).sort();
+      const keepDiv = divisionFilter.value;
+      divisionFilter.innerHTML = '<option value="">All Divisions</option>' +
+        divisions.map(d => `<option value="${d}">${d}</option>`).join('');
+      divisionFilter.disabled = false;
+      if (keepDiv && divisions.indexOf(keepDiv) !== -1) divisionFilter.value = keepDiv;
+
+      const divisionVal = divisionFilter.value;
+      let cccSource = divisionSource;
+      if (divisionVal) cccSource = divisionSource.filter(row => row['DIVISION'] === divisionVal);
+      const cccs = _.uniq(cccSource.map(row => row['CCC NAME']).filter(Boolean)).sort();
+      const keepCcc = cccFilter.value;
+      cccFilter.innerHTML = '<option value="">All CCCs</option>' +
+        cccs.map(c => `<option value="${c}">${c}</option>`).join('');
+      cccFilter.disabled = false;
+      if (keepCcc && cccs.indexOf(keepCcc) !== -1) cccFilter.value = keepCcc;
     }
 
     regionFilter.addEventListener('change', () => {
-      const selectedRegion = regionFilter.value;
-      divisionFilter.innerHTML = '<option value="">All Divisions</option>';
-      divisionFilter.disabled = true;
-      cccFilter.innerHTML = '<option value="">All CCCs</option>';
-      cccFilter.disabled = true;
-
-      if (selectedRegion) {
-        const divisions = _.uniq(
-          fullData.filter(row => row['REGION NAME'] === selectedRegion)
-                  .map(row => row['DIVISION']).filter(Boolean)
-        );
-        divisionFilter.innerHTML += divisions.map(d => `<option value="${d}">${d}</option>`).join('');
-        divisionFilter.disabled = false;
-        calculateFilteredValues();
-      } else {
-        calculateTotalValues();
-      }
+      if (window.MzoScope && window.MzoScope.isFilterLocked('regionFilter')) return;
+      populateFilters();
+      if (window.MzoScope) window.MzoScope.lockFilters();
+      calculateFilteredValues();
     });
 
     divisionFilter.addEventListener('change', () => {
-      const selectedRegion = regionFilter.value;
-      const selectedDivision = divisionFilter.value;
-      cccFilter.innerHTML = '<option value="">All CCCs</option>';
-      cccFilter.disabled = true;
-
-      if (selectedDivision) {
-        const cccs = _.uniq(
-          fullData.filter(row => row['REGION NAME'] === selectedRegion && row['DIVISION'] === selectedDivision)
-                  .map(row => row['CCC NAME']).filter(Boolean)
-        );
-        cccFilter.innerHTML += cccs.map(c => `<option value="${c}">${c}</option>`).join('');
-        cccFilter.disabled = false;
-        calculateFilteredValues();
-      } else {
-        calculateFilteredValues();
-      }
+      if (window.MzoScope && window.MzoScope.isFilterLocked('divisionFilter')) return;
+      populateFilters();
+      if (window.MzoScope) window.MzoScope.lockFilters();
+      calculateFilteredValues();
     });
 
-    cccFilter.addEventListener('change', calculateFilteredValues);
+    cccFilter.addEventListener('change', () => {
+      if (window.MzoScope && window.MzoScope.isFilterLocked('cccFilter')) return;
+      calculateFilteredValues();
+    });
 
     function calculateFilteredValues() {
       let filtered = fullData;

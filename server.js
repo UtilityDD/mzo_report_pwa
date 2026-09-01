@@ -35,12 +35,25 @@ function bodyEtag_(body) {
     return `"${hex}"`;
 }
 
+function nscReportDateLabel_(meta) {
+    if (!meta) return '';
+    return String(meta.reportDate || (meta.stats && meta.stats.today) || '').trim();
+}
+
 function snapshotVersion_(meta) {
     if (!meta) return '';
+    const today = nscReportDateLabel_(meta);
     if (meta.supabaseUploadId != null && String(meta.supabaseUploadId).trim() !== '') {
-        return String(meta.supabaseUploadId);
+        return `${meta.supabaseUploadId}|${today}`;
     }
-    return `${meta.reportDate || ''}|${meta.uploadedAt || ''}|${meta.publishedRows ?? ''}`;
+    return `${today}|${meta.uploadedAt || ''}|${meta.publishedRows ?? ''}`;
+}
+
+function snapshotWithheldVersion_(meta) {
+    if (!meta) return '';
+    const base = snapshotVersion_(meta);
+    const withheldRows = meta.withheldRows != null ? meta.withheldRows : (meta.stats && meta.stats.withheldRows);
+    return `${base}|w${withheldRows ?? ''}|t${nscReportDateLabel_(meta)}`;
 }
 
 function ifNoneMatchHits_(req, etag) {
@@ -485,6 +498,12 @@ async function requireAuth(req, res, next) {
 
 // Enable authentication check before serving static files
 app.use(requireAuth);
+app.use((req, res, next) => {
+    if (req.path === '/withheld.html' || req.path === '/nsc.html') {
+        res.setHeader('Cache-Control', 'no-store, must-revalidate');
+    }
+    next();
+});
 app.use(express.static(__dirname));
 
 // --- File Paths ---
@@ -2757,6 +2776,72 @@ async function fetchNscSheetMeta_() {
     }
 }
 
+const NSC_TODAY_PEEK_URL_ =
+    `https://docs.google.com/spreadsheets/d/${NSC_WORKING_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=nsc_working&range=A1:AZ2`;
+let nscTodayPeekCache_ = { at: 0, value: '' };
+
+function parseTodayFromPeekCsv_(text) {
+    const raw = String(text || '').replace(/^\uFEFF/, '').trim();
+    if (!raw || raw.charAt(0) === '{' || raw.charAt(0) === '<') return '';
+    const lines = raw.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) return '';
+    const splitCsvLine = (line) => {
+        const out = [];
+        let cur = '';
+        let inQ = false;
+        for (let i = 0; i < line.length; i++) {
+            const ch = line.charAt(i);
+            if (ch === '"') {
+                if (inQ && line.charAt(i + 1) === '"') {
+                    cur += '"';
+                    i++;
+                } else {
+                    inQ = !inQ;
+                }
+            } else if (ch === ',' && !inQ) {
+                out.push(cur.trim());
+                cur = '';
+            } else {
+                cur += ch;
+            }
+        }
+        out.push(cur.trim());
+        return out.map((c) => c.replace(/^"|"$/g, '').trim());
+    };
+    const headers = splitCsvLine(lines[0]);
+    const values = splitCsvLine(lines[1]);
+    const idx = headers.findIndex((h) => String(h).replace(/^\uFEFF/, '').trim().toUpperCase() === 'TODAY');
+    if (idx < 0) return '';
+    return String(values[idx] || '').trim();
+}
+
+async function peekNscTodayFromSheet_() {
+    const now = Date.now();
+    if (nscTodayPeekCache_.value && now - nscTodayPeekCache_.at < 60 * 1000) {
+        return nscTodayPeekCache_.value;
+    }
+    try {
+        const text = await fetchSheet(NSC_TODAY_PEEK_URL_);
+        const today = parseTodayFromPeekCsv_(text);
+        if (today) {
+            nscTodayPeekCache_ = { at: now, value: today };
+            return today;
+        }
+    } catch (e) {
+        console.warn('[NSC meta] TODAY peek failed:', e.message);
+    }
+    return nscTodayPeekCache_.value || '';
+}
+
+function overlayLiveNscToday_(meta, liveToday) {
+    const today = String(liveToday || '').trim();
+    if (!today) return meta;
+    const next = Object.assign({}, meta || {});
+    next.reportDate = today;
+    next.stats = Object.assign({}, next.stats || {}, { today });
+    return next;
+}
+
 async function saveNscSheetMeta_(meta) {
     if (!NSC_SHEET_SCRIPT_URL || !meta) return;
     try {
@@ -2833,12 +2918,22 @@ app.get('/api/nsc/meta', async (req, res) => {
 
     try {
         const sheetMeta = await fetchNscSheetMeta_();
-        if (sheetMeta) {
+        if (sheetMeta && (sheetMeta.reportDate || sheetMeta.uploadedAt || sheetMeta.publishedRows)) {
             meta = sheetMeta;
             source = 'google_sheet';
         }
     } catch (e) {
         console.warn('[NSC meta] Sheet meta unavailable:', e.message);
+    }
+
+    try {
+        const liveToday = await peekNscTodayFromSheet_();
+        if (liveToday) {
+            meta = overlayLiveNscToday_(meta, liveToday);
+            source = 'google_sheet';
+        }
+    } catch (e) {
+        console.warn('[NSC meta] Live TODAY overlay failed:', e.message);
     }
 
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
@@ -2850,6 +2945,7 @@ app.get('/api/nsc/meta', async (req, res) => {
         hasLocalDataset: hasLocal,
         meta,
         version: snapshotVersion_(meta) || null,
+        withheldVersion: snapshotWithheldVersion_(meta) || null,
         sheetScriptUrl: canUpload && NSC_SHEET_SCRIPT_URL ? NSC_SHEET_SCRIPT_URL : '',
         withheldSheetScriptUrl:
             canUpload && NSC_WITHHELD_SHEET_SCRIPT_URL ? NSC_WITHHELD_SHEET_SCRIPT_URL : '',
@@ -3015,7 +3111,8 @@ app.post('/api/nsc/publish/complete', async (req, res) => {
                 baseMeta.withheldRows || 0
             } Withheld rows. Refresh NSC and Withheld dashboards.`,
             meta: baseMeta,
-            version: snapshotVersion_(baseMeta) || String(uploadId)
+            version: snapshotVersion_(baseMeta) || String(uploadId),
+            withheldVersion: snapshotWithheldVersion_(baseMeta) || String(uploadId)
         });
     } catch (e) {
         console.error('[NSC publish/complete] Error:', e.message);

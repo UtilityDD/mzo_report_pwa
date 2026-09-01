@@ -144,16 +144,16 @@
                 let applied = false;
 
                 function isMatch(savedName, optionValue) {
-                    if (!savedName || !optionValue || savedName === 'all' || optionValue === 'all') return false;
+                    if (!savedName || !optionValue) return false;
                     const s = String(savedName).toLowerCase().replace(/region|division|div|total/g, '').trim();
                     const o = String(optionValue).toLowerCase().replace(/region|division|div|total/g, '').trim();
-                    if (!s || !o) return false;
-                    
-                    if (s.includes('uttar') || s.includes('u/dinajpur')) {
-                        return o.includes('uttar') || o.includes('u/dinajpur') || o.includes('u_dinajpur');
+                    if (!s || !o || s === 'all' || o === 'all') return false;
+
+                    if (s.includes('uttar') || s.includes('u/dinajpur') || s === 'ud' || s.includes('raiganj')) {
+                        return o.includes('uttar') || o.includes('u/dinajpur') || o.includes('u_dinajpur') || o.includes('raiganj') || o === 'ud';
                     }
-                    if (s.includes('dakshin') || s.includes('d/dinajpur')) {
-                        return o.includes('dakshin') || o.includes('d/dinajpur') || o.includes('d_dinajpur');
+                    if (s.includes('dakshin') || s.includes('d/dinajpur') || s === 'dd' || s.includes('balurghat')) {
+                        return o.includes('dakshin') || o.includes('d/dinajpur') || o.includes('d_dinajpur') || o.includes('balurghat') || o === 'dd';
                     }
                     return s.includes(o) || o.includes(s);
                 }
@@ -179,7 +179,7 @@
                     let matchedValue = '';
                     regionEls.forEach((el) => {
                         for (let opt of el.options) {
-                            if (isMatch(globalPref.region, opt.value)) {
+                            if (isMatch(globalPref.region, opt.value) || isMatch(globalPref.region, opt.textContent)) {
                                 matchedValue = opt.value;
                                 break;
                             }
@@ -209,7 +209,7 @@
                     let matchedValue = '';
                     divisionEls.forEach((el) => {
                         for (let opt of el.options) {
-                            if (isMatch(globalPref.division, opt.value)) {
+                            if (isMatch(globalPref.division, opt.value) || isMatch(globalPref.division, opt.textContent)) {
                                 matchedValue = opt.value;
                                 break;
                             }
@@ -239,7 +239,7 @@
                     let matchedValue = '';
                     cccEls.forEach((el) => {
                         for (let opt of el.options) {
-                            if (isMatch(globalPref.ccc, opt.value)) {
+                            if (isMatch(globalPref.ccc, opt.value) || isMatch(globalPref.ccc, opt.textContent)) {
                                 matchedValue = opt.value;
                                 break;
                             }
@@ -304,6 +304,11 @@
                 return applied;
             } finally {
                 this._isApplying = false;
+                try {
+                    if (window.MzoScope && typeof window.MzoScope.lockFilters === 'function') {
+                        window.MzoScope.lockFilters();
+                    }
+                } catch (_) {}
             }
         },
 
