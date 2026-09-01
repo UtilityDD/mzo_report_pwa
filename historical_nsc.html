@@ -12,6 +12,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="mzo_presets_hub.js"></script>
+    <script src="mzo_scope.js?v=4"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         
@@ -236,15 +237,6 @@
             border-color: var(--border-color) !important;
         }
 
-        #officePrefBtn {
-            background-color: #ffffff !important;
-            border-color: var(--border-color) !important;
-            color: var(--text-primary) !important;
-        }
-        #officePrefBtn:hover {
-            background-color: #f8f9fa !important;
-        }
-
         /* 📱 Mobile Specific Styles for Android feel & Compact UI */
         @media (max-width: 600px) {
             body {
@@ -378,9 +370,6 @@
                 <p id="page-subtitle" class="hidden"></p>
             </div>
             <div class="flex gap-1.5">
-                <button id="officePrefBtn" class="px-3 py-1.5 bg-slate-850 hover:bg-slate-800 border border-white/10 rounded-lg text-xs font-semibold transition-all flex items-center gap-1">
-                    <i class="fas fa-cog"></i> Prefs
-                </button>
                 <button onclick="location.reload()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs font-semibold transition-all flex items-center gap-1">
                     <i class="fas fa-sync-alt"></i> Refresh
                 </button>
@@ -401,9 +390,6 @@
                 <div>
                     <select id="regionFilter" onchange="handleRegionChange()" class="w-full bg-slate-900/50 border border-white/10 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none cursor-pointer">
                         <option value="ALL">All Regions</option>
-                        <option value="Malda">Malda Region</option>
-                        <option value="UD">UD Region</option>
-                        <option value="DD">DD Region</option>
                     </select>
                 </div>
                 <div>
@@ -528,9 +514,15 @@
         let selectedClasses = ['D', 'C', 'I', 'A', 'O'];
         
         const DIVISION_MAP = {
-            "6611": "MALDA", "6612": "CHANCHAL", "6613": "GAZOLE",
-            "6621": "RAIGANJ", "6622": "ISLAMPUR",
-            "6631": "BALURGHAT", "6632": "BUNIADPUR"
+            "6611": "Malda", "6612": "Chanchal", "6613": "Gazole",
+            "6621": "Raiganj", "6622": "Islampur",
+            "6631": "Balurghat", "6632": "Buniadpur"
+        };
+        const REGION_ORDER = ['Malda', 'Raiganj', 'Balurghat'];
+        const REGION_LABELS = {
+            Malda: 'Malda Region',
+            Raiganj: 'Uttar Dinajpur',
+            Balurghat: 'Dakshin Dinajpur'
         };
 
         const CLASS_COLORS = {
@@ -549,42 +541,65 @@
             'O': 'Other'
         };
 
+        function normalizeCccCode(raw) {
+            const digits = String(raw == null ? '' : raw).replace(/\D/g, '');
+            if (!digits) return '';
+            return digits.length >= 7 ? digits.slice(-7) : digits;
+        }
+
         function getRegionFromCCC(cccCode) {
-            const prefix = String(cccCode || '').substring(0, 3);
+            const prefix = normalizeCccCode(cccCode).substring(0, 3);
             if (prefix === '661') return 'Malda';
-            if (prefix === '662') return 'UD';
-            if (prefix === '663') return 'DD';
-            return null;
+            if (prefix === '662') return 'Raiganj';
+            if (prefix === '663') return 'Balurghat';
+            return '';
         }
 
         function getDivisionFromCCC(cccCode) {
-            const prefix = String(cccCode || '').substring(0, 4);
-            return DIVISION_MAP[prefix] || null;
+            const prefix = normalizeCccCode(cccCode).substring(0, 4);
+            return DIVISION_MAP[prefix] || '';
+        }
+
+        function cccLabel(code) {
+            const key = normalizeCccCode(code);
+            return costCenterMap[key] || costCenterMap[Number(key)] || (key ? `CCC ${key}` : 'Unknown');
+        }
+
+        function parseInstallDate(raw) {
+            if (raw instanceof Date && !isNaN(raw.getTime())) return moment(raw);
+            const s = String(raw == null ? '' : raw).trim();
+            if (!s) return moment.invalid();
+            const strict = moment(s, ['M/D/YY H:mm', 'M/D/YYYY H:mm', 'M/D/YY HH:mm', 'D/M/YY H:mm', 'YYYY-MM-DD'], true);
+            if (strict.isValid()) return strict;
+            return moment(s);
+        }
+
+        function isFilterLocked(id) {
+            const el = document.getElementById(id);
+            if (el && el.getAttribute('data-mzo-scope-locked') === '1') return true;
+            return !!(window.MzoScope && typeof window.MzoScope.isFilterLocked === 'function' && window.MzoScope.isFilterLocked(id));
+        }
+
+        function fillSelect(select, placeholderValue, placeholderLabel, items, selected) {
+            if (!select) return;
+            const want = selected != null ? String(selected) : '';
+            const keep = items.some((it) => String(it.value) === want) ? want : placeholderValue;
+            select.innerHTML = '';
+            const ph = document.createElement('option');
+            ph.value = placeholderValue;
+            ph.textContent = placeholderLabel;
+            select.appendChild(ph);
+            items.forEach((it) => {
+                const opt = document.createElement('option');
+                opt.value = it.value;
+                opt.textContent = it.label;
+                select.appendChild(opt);
+            });
+            select.value = keep;
         }
 
         async function init() {
             showLoading(true);
-            
-            // Setup preference button listener
-            const prefBtn = document.getElementById('officePrefBtn');
-            if (prefBtn) {
-                prefBtn.addEventListener('click', () => {
-                    if (window.mzoPresetsHub) {
-                        const cccList = Object.entries(costCenterMap).map(([code, name]) => ({
-                            code: code,
-                            name: name,
-                            region: getRegionFromCCC(code),
-                            division: getDivisionFromCCC(code)
-                        }));
-                        window.mzoPresetsHub.showSetupModal({
-                            showCCC: true,
-                            cccList: cccList
-                        }, () => {
-                            window.mzoPresetsHub.applyToPage();
-                        });
-                    }
-                });
-            }
 
             try {
                 // Fetch Cost Center Mapping
@@ -594,11 +609,11 @@
                     ccData.forEach(item => {
                         const rawCode = item["Cost Cen_Code"];
                         if (rawCode && rawCode.startsWith("C3")) {
-                            const codeStr = rawCode.substring(2, 9);
-                            const code = parseInt(codeStr);
-                            // Prioritize codes starting with C366 (canonical for this zone)
-                            if (!costCenterMap[code] || rawCode.startsWith("C366")) {
-                                costCenterMap[code] = item["Unit Name"];
+                            const key = normalizeCccCode(rawCode.substring(2));
+                            if (!key) return;
+                            const name = String(item["Unit Name"] || '').replace(/\s+CCC\s*$/i, '').trim() || item["Unit Name"];
+                            if (!costCenterMap[key] || rawCode.startsWith("C366")) {
+                                costCenterMap[key] = name;
                             }
                         }
                     });
@@ -609,29 +624,36 @@
                 
                 Papa.parse(csvText, {
                     header: true,
-                    dynamicTyping: true,
+                    dynamicTyping: false,
                     skipEmptyLines: true,
                     complete: (results) => {
-                        allData = results.data.map(item => ({
-                            ...item,
-                            region: getRegionFromCCC(item['CCC CODE']),
-                            division: getDivisionFromCCC(item['CCC CODE']),
-                            date: moment(item['METER_INSTALL_DATE'], 'M/D/YY H:mm')
-                        })).filter(item => item.date.isValid());
+                        allData = results.data.map(item => {
+                            const cccCode = normalizeCccCode(item['CCC CODE'] || item['CCC_CODE'] || item['CCC Code']);
+                            return {
+                                ...item,
+                                cccCode,
+                                'CCC CODE': cccCode,
+                                region: getRegionFromCCC(cccCode),
+                                division: getDivisionFromCCC(cccCode),
+                                cccName: cccLabel(cccCode),
+                                D: Number(item.D) || 0,
+                                C: Number(item.C) || 0,
+                                I: Number(item.I) || 0,
+                                A: Number(item.A) || 0,
+                                O: Number(item.O) || 0,
+                                date: parseInstallDate(item['METER_INSTALL_DATE'])
+                            };
+                        }).filter(item => item.cccCode && item.date && item.date.isValid());
+                        if (window.MzoScope) allData = window.MzoScope.filterRows(allData);
                         
                         if (allData.length > 0) {
                             minDate = moment.min(allData.map(d => d.date));
                         }
                         
                         setupYearFilters();
-                        setupDivisionFilter();
-                        handleRegionChange(); 
-                        
-                        // Apply office preferences on load
-                        if (window.mzoPresetsHub) {
-                            window.mzoPresetsHub.applyToPage();
-                        }
-
+                        populateRegionFilter();
+                        handleRegionChange();
+                        if (window.MzoScope) window.MzoScope.lockFilters();
                         setPeriod(currentPeriod);
                         showLoading(false);
                     }
@@ -722,21 +744,36 @@
             updateCharts();
         }
 
+        function populateRegionFilter() {
+            const regionSelect = document.getElementById('regionFilter');
+            if (!regionSelect || isFilterLocked('regionFilter')) return;
+            const present = _.uniq(allData.map(d => d.region).filter(Boolean));
+            const regions = REGION_ORDER.filter(r => present.indexOf(r) !== -1);
+            present.forEach(r => { if (regions.indexOf(r) === -1) regions.push(r); });
+            fillSelect(
+                regionSelect,
+                'ALL',
+                'All Regions',
+                regions.map(r => ({ value: r, label: REGION_LABELS[r] || (r + ' Region') })),
+                regionSelect.value
+            );
+        }
+
         function handleRegionChange() {
             const region = document.getElementById('regionFilter').value;
             const divSelect = document.getElementById('divisionFilter');
-            divSelect.innerHTML = '<option value="ALL">All Divisions</option>';
-            
-            const divisions = region === 'ALL' 
-                ? Object.values(DIVISION_MAP) 
-                : Object.entries(DIVISION_MAP)
-                    .filter(([code]) => getRegionFromCCC(code) === region)
-                    .map(([_, name]) => name);
-
-            _.uniq(divisions).sort().forEach(div => {
-                divSelect.innerHTML += `<option value="${div}">${div}</option>`;
-            });
-
+            if (divSelect && !isFilterLocked('divisionFilter')) {
+                let rows = allData;
+                if (region && region !== 'ALL') rows = rows.filter(d => d.region === region);
+                const divisions = _.uniq(rows.map(d => d.division).filter(Boolean)).sort();
+                fillSelect(
+                    divSelect,
+                    'ALL',
+                    'All Divisions',
+                    divisions.map(d => ({ value: d, label: d })),
+                    divSelect.value
+                );
+            }
             handleDivisionChange();
         }
 
@@ -744,18 +781,19 @@
             const region = document.getElementById('regionFilter').value;
             const division = document.getElementById('divisionFilter').value;
             const cccSelect = document.getElementById('cccFilter');
-            cccSelect.innerHTML = '<option value="ALL">All CCCs</option>';
-
-            let items = allData;
-            if (region !== 'ALL') items = items.filter(d => d.region === region);
-            if (division !== 'ALL') items = items.filter(d => d.division === division);
-
-            const cccs = _.uniq(items.map(d => d['CCC CODE'])).sort();
-            cccs.forEach(code => {
-                const name = costCenterMap[code] || `CCC ${code}`;
-                cccSelect.innerHTML += `<option value="${code}">${name}</option>`;
-            });
-
+            if (cccSelect && !isFilterLocked('cccFilter')) {
+                let items = allData;
+                if (region && region !== 'ALL') items = items.filter(d => d.region === region);
+                if (division && division !== 'ALL') items = items.filter(d => d.division === division);
+                const cccs = _.uniq(items.map(d => d.cccCode).filter(Boolean)).sort();
+                fillSelect(
+                    cccSelect,
+                    'ALL',
+                    'All CCCs',
+                    cccs.map(code => ({ value: code, label: cccLabel(code) })),
+                    cccSelect.value
+                );
+            }
             updateCharts();
         }
 
@@ -786,9 +824,12 @@
 
             filteredData = allData.filter(d => selectedYears.includes(d.date.year()));
             
-            if (region !== 'ALL') filteredData = filteredData.filter(d => d.region === region);
-            if (division !== 'ALL') filteredData = filteredData.filter(d => d.division === division);
-            if (ccc !== 'ALL') filteredData = filteredData.filter(d => d['CCC CODE'] === parseInt(ccc));
+            if (region && region !== 'ALL') filteredData = filteredData.filter(d => d.region === region);
+            if (division && division !== 'ALL') filteredData = filteredData.filter(d => d.division === division);
+            if (ccc && ccc !== 'ALL') {
+                const want = normalizeCccCode(ccc);
+                filteredData = filteredData.filter(d => d.cccCode === want);
+            }
 
             updateKPIs();
             renderChart();
@@ -975,7 +1016,7 @@
 
                 let displayName = key;
                 if (groupKey === 'CCC CODE') {
-                    displayName = costCenterMap[key] || `CCC ${key}`;
+                    displayName = cccLabel(key);
                 }
 
                 return {

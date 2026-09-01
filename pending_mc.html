@@ -711,11 +711,6 @@
         <h2 class="mb-0 fs-5"><i class='bx bx-tachometer me-2'></i>Pending MCs</h2>
         <p id="updateDate" class="mb-0 mt-1 opacity-75" style="font-size: 0.75rem;">As on: Initializing data hub...</p>
       </div>
-      <div>
-        <button id="officePrefBtn" class="btn btn-outline-light btn-sm d-flex align-items-center gap-1" style="font-size: 0.72rem; padding: 4px 8px;">
-          <i class='bx bx-cog'></i> Prefs
-        </button>
-      </div>
     </div>
   </div>
 
@@ -834,6 +829,7 @@
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="mzo_data_hub.js"></script>
+  <script src="mzo_scope.js?v=2"></script>
   <script src="mzo_presets_hub.js"></script>
 
   <script>
@@ -897,6 +893,7 @@
       populateSelect('divisionFilter', Array.from(divisionSet).sort(), filters.division);
       populateSelect('cccFilter', Array.from(cccSet).sort(), filters.ccc);
       populateSelect('classFilter', Array.from(classSet).sort(), filters.classSearch);
+      if (window.MzoScope) window.MzoScope.lockFilters();
     }
 
     function populateSelect(id, items, selectedValue) {
@@ -1200,6 +1197,7 @@
     // Handlers
     function handleResults(data) {
       rawData = data.filter(d => d.Region);
+      if (window.MzoScope) rawData = window.MzoScope.filterRows(rawData);
       
       const reportDates = rawData.map(row => parseDate(row['Report Date'])).filter(d => d instanceof Date && !isNaN(d));
       if (reportDates.length > 0) {
@@ -1212,48 +1210,7 @@
 
       loadFilters();
 
-      // Setup preference button listener
-      const prefBtn = document.getElementById('officePrefBtn');
-      if (prefBtn) {
-        prefBtn.addEventListener('click', () => {
-          if (window.mzoPresetsHub) {
-            const cccList = [];
-            const seen = new Set();
-            rawData.forEach(d => {
-              const cccName = d.CCC;
-              if (cccName && !seen.has(cccName)) {
-                seen.add(cccName);
-                cccList.push({
-                  code: cccName,
-                  name: cccName,
-                  region: d.Region,
-                  division: d.Division
-                });
-              }
-            });
-            window.mzoPresetsHub.showSetupModal({
-              showCCC: true,
-              cccList: cccList
-            }, () => {
-              window.mzoPresetsHub.applyToPage();
-              filters.region = document.getElementById('regionFilter').value;
-              filters.division = document.getElementById('divisionFilter').value;
-              filters.ccc = document.getElementById('cccFilter').value;
-              loadFilters();
-              updateDashboard();
-            });
-          }
-        });
-      }
-
-      // Apply office preferences on load
-      if (window.mzoPresetsHub) {
-        window.mzoPresetsHub.applyToPage();
-        filters.region = document.getElementById('regionFilter').value;
-        filters.division = document.getElementById('divisionFilter').value;
-        filters.ccc = document.getElementById('cccFilter').value;
-        loadFilters();
-      }
+      if (window.MzoScope) window.MzoScope.lockFilters();
 
       updateDashboard();
     }
@@ -1440,4 +1397,4 @@
     #consumerModal { z-index: 1060; }
   </style>
 </body>
-</html>
+</html>

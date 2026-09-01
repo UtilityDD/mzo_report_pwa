@@ -20,6 +20,7 @@
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
   <script src="mzo_data_hub.js?v=36"></script>
+  <script src="mzo_scope.js?v=3"></script>
   <script src="mzo_presets_hub.js?v=35"></script>
   <!-- noUiSlider CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.css">
@@ -1289,9 +1290,6 @@
         <a id="nscUploadLink" href="nsc/upload.html" class="btn btn-outline-warning btn-sm d-none align-items-center gap-1 nsc-hdr-btn" style="font-size: 0.72rem; padding: 4px 8px;" title="Upload raw NSC Excel" aria-label="Upload NSC">
           <i class="fas fa-file-upload" aria-hidden="true"></i><span class="nsc-hdr-btn-label"> Upload</span>
         </a>
-        <button id="nscPrefConfigBtn" class="btn btn-outline-light btn-sm d-flex align-items-center gap-1 nsc-hdr-btn" style="font-size: 0.72rem; padding: 4px 8px;" title="Office Preferences" aria-label="Preferences">
-          <i class="fas fa-cog" aria-hidden="true"></i><span class="nsc-hdr-btn-label"> Prefs</span>
-        </button>
       </div>
     </div>
 
@@ -1413,8 +1411,15 @@
         transition: color 0.2s;
       }
       
-      .filter-chip:hover i {
-        color: var(--error);
+      .filter-chip-locked {
+        cursor: default;
+        border-color: rgba(79, 70, 229, 0.35);
+        background: rgba(79, 70, 229, 0.1);
+        color: #3730a3;
+      }
+
+      .filter-chip-locked:hover i {
+        color: inherit;
       }
       
       body.light-theme .filter-chip {
@@ -2204,23 +2209,32 @@
         }
 
         rawData = normalizeNscRows(data);
+        const loadedRowCount = rawData.length;
+        if (window.MzoScope) rawData = window.MzoScope.filterRows(rawData);
         filteredData = rawData.slice();
 
-        // If server has a newer/fuller publish than IndexedDB, refresh once (no Cache Storage wipe)
+        // Compare the full cached file to server publishedRows — not the office-scoped slice.
+        // A CCC-scoped user (e.g. Fulbari) would otherwise look "truncated" and reload forever.
         try {
-          if (!window.__nscRowReconcileTried && typeof mzoDataHub !== 'undefined') {
+          let reconcileTried = false;
+          try { reconcileTried = sessionStorage.getItem('mzo_nsc_reconcile_tried') === '1'; } catch (_) {}
+          if (!window.__nscRowReconcileTried && !reconcileTried && typeof mzoDataHub !== 'undefined') {
             const metaRes = await fetch('/api/nsc/meta', { credentials: 'same-origin' });
             if (metaRes.ok) {
               const metaJson = await metaRes.json();
               const expected = Number(metaJson && metaJson.meta && metaJson.meta.publishedRows) || 0;
-              if (expected > 0 && rawData.length > 0 && rawData.length < expected * 0.95) {
+              if (expected > 0 && loadedRowCount > 0 && loadedRowCount < expected * 0.95) {
                 window.__nscRowReconcileTried = true;
-                console.warn(`[NSC] Cached rows ${rawData.length} < server ${expected}; refreshing…`);
+                try { sessionStorage.setItem('mzo_nsc_reconcile_tried', '1'); } catch (_) {}
+                console.warn(`[NSC] Cached rows ${loadedRowCount} < server ${expected}; refreshing…`);
                 await mzoDataHub.refresh(NSC_CACHE_KEY);
                 window.location.reload();
                 return;
               }
             }
+          }
+          if (loadedRowCount > 0) {
+            try { sessionStorage.removeItem('mzo_nsc_reconcile_tried'); } catch (_) {}
           }
         } catch (_) {}
 
@@ -2317,47 +2331,24 @@
             'poleFilter',
             'delayRangeFilter',
             'delayRange2Filter'
-          ].forEach((id) => setFilterValue(id, ''));
+          ].forEach((id) => {
+            if (!isLoginLockedFilter(id)) setFilterValue(id, '');
+          });
 
           document.querySelectorAll('input[name="classFilter"][value="all"]').forEach((radio) => {
             radio.checked = true;
           });
 
           refreshCascadingFilters('regionSelect');
+          relockLoginFilters();
           applyFilters();
         };
 
-        document.getElementById('clearAllFiltersBtn')?.addEventListener('click', clearAllFilters);
+        document.querySelectorAll('[id="clearAllFiltersBtn"]').forEach((btn) => {
+          btn.addEventListener('click', clearAllFilters);
+        });
         document.getElementById('headerResetBtn')?.addEventListener('click', clearAllFilters);
 
-        const nscPrefBtn = document.getElementById('nscPrefConfigBtn');
-        if (nscPrefBtn) {
-          nscPrefBtn.addEventListener('click', () => {
-            if (window.mzoPresetsHub) {
-              const cccList = [];
-              const seen = new Set();
-              rawData.forEach(d => {
-                const cccName = d.SUPP_OFF;
-                if (cccName && !seen.has(cccName)) {
-                  seen.add(cccName);
-                  cccList.push({
-                    code: cccName,
-                    name: cccName,
-                    region: d.REGION,
-                    division: d.DIVN_NAME
-                  });
-                }
-              });
-              window.mzoPresetsHub.showSetupModal({
-                showCCC: true,
-                cccList: cccList
-              }, () => {
-                window.mzoPresetsHub.applyToPage();
-                if (typeof applyFilters === 'function') applyFilters();
-              });
-            }
-          });
-        }
         document.getElementById('startDateInput').addEventListener('input', (e) => {
           const val = e.target.value;
           if (val) {
@@ -2919,7 +2910,18 @@
       }
       return els[0] ? els[0].value : '';
     }
+    function isLoginLockedFilter(id) {
+      return !!(window.MzoScope && typeof window.MzoScope.isFilterLocked === 'function' &&
+        window.MzoScope.isFilterLocked(id));
+    }
+
+    function relockLoginFilters() {
+      if (window.MzoScope && typeof window.MzoScope.lockFilters === 'function') {
+        window.MzoScope.lockFilters();
+      }
+    }
     function setFilterValue(id, value) {
+      if (isLoginLockedFilter(id)) return;
       ignoreFilterEvents = true;
       try {
         allById(id).forEach((el) => { el.value = value; });
@@ -2980,6 +2982,7 @@
       if (key === 'regionSelect' || key === 'divnSelect' || key === 'suppSelect') {
         refreshCascadingFilters(key);
       }
+      relockLoginFilters();
       applyFilters(e);
     }
 
@@ -3037,13 +3040,8 @@
       );
       fillFilterSelect('delayRangeFilter', 'Select Delay Range', cachedDelayRanges, getFilterValue('delayRangeFilter'));
 
-      try {
-        if (window.mzoPresetsHub) window.mzoPresetsHub.applyToPage({ triggerChange: false });
-      } catch (err) {
-        console.warn('[NSC] preset apply failed:', err);
-      }
-
       refreshCascadingFilters('regionSelect');
+      if (window.MzoScope) window.MzoScope.lockFilters();
       filterListsReady = true;
 
       console.log(
@@ -3112,6 +3110,7 @@
       }
       if (!agencies.length) agencies = cachedAgencies;
       fillFilterSelect('agencySelect', 'Select Agency', agencies, agency);
+      relockLoginFilters();
     }
 
     let applyFiltersTimeout;
@@ -3235,11 +3234,12 @@
           activeCount++;
           const el = allById(f.id)[0];
           const text = el && el.selectedIndex >= 0 ? el.options[el.selectedIndex].text : value;
-          createChip(container, f.id, text, () => {
+          const locked = isLoginLockedFilter(f.id);
+          createChip(container, f.id, text, locked ? null : () => {
             setFilterValue(f.id, f.default);
             const first = allById(f.id)[0];
             if (first) first.dispatchEvent(new Event('change'));
-          });
+          }, locked);
         }
       });
       
@@ -3254,13 +3254,17 @@
       }
     }
     
-    function createChip(container, id, label, onRemove) {
+    function createChip(container, id, label, onRemove, locked) {
       const chip = document.createElement('div');
-      chip.className = 'filter-chip';
-      chip.innerHTML = `${label} <i class="fas fa-times-circle"></i>`;
-      chip.addEventListener('click', (e) => {
-        onRemove();
-      });
+      chip.className = 'filter-chip' + (locked ? ' filter-chip-locked' : '');
+      chip.innerHTML = locked
+        ? `${label}`
+        : `${label} <i class="fas fa-times-circle"></i>`;
+      if (locked) {
+        chip.title = 'Set by your login';
+      } else if (typeof onRemove === 'function') {
+        chip.addEventListener('click', () => onRemove());
+      }
       container.appendChild(chip);
     }
     function refreshOpenKpiTable() {

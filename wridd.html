@@ -18,8 +18,8 @@
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   
-  <!-- MZO Presets Hub -->
-  <script src="mzo_presets_hub.js"></script>
+  <!-- MZO login office scope -->
+  <script src="mzo_scope.js?v=7"></script>
 
   <style>
     :root {
@@ -285,6 +285,21 @@
     .form-select:focus, .form-control:focus {
       border-color: var(--accent-purple);
       box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+    }
+
+    .form-select:disabled, .form-control:disabled,
+    .form-select.mzo-filter-locked {
+      opacity: 1;
+      color: var(--text-primary);
+      background: rgba(15, 23, 42, 0.85);
+      border-color: rgba(148, 163, 184, 0.35);
+      -webkit-text-fill-color: var(--text-primary);
+      pointer-events: none;
+    }
+
+    .form-select option {
+      color: #0f172a;
+      background: #fff;
     }
 
     .search-group {
@@ -691,9 +706,6 @@
         <h1>WRIDD Schemes Dashboard</h1>
       </div>
       <div class="header-right">
-        <button class="btn btn-pref" id="officePrefBtn" title="Set Office Preferences">
-          <i class="fas fa-cog"></i> Prefs
-        </button>
         <button class="btn" id="refreshBtn" title="Reload live data">
           <i class="fas fa-sync-alt"></i> Sync
         </button>
@@ -999,15 +1011,10 @@
       });
 
       rawData = processed;
+      if (window.MzoScope) rawData = window.MzoScope.filterRows(rawData);
       filteredData = [...rawData];
 
-      // Populate filter dropdowns
       populateDropdowns();
-
-      // Apply presets from global preferences if available
-      applyPreferences();
-
-      // Filter and render
       applyFilters();
     }
 
@@ -1017,58 +1024,126 @@
     }
 
     // Populate Filters
-    function populateDropdowns() {
-      const selectedReg = regionSelect.value;
-      const selectedDiv = divnSelect.value;
+    function uniqueBy(arr, key) {
+      return [...new Set(arr.map(x => x[key]).filter(Boolean))].sort();
+    }
 
-      // Helper to get unique sorted values
-      const getUnique = (arr, key) => {
-        return [...new Set(arr.map(x => x[key]).filter(Boolean))].sort();
+    function scopeOfficeLists() {
+      const lists = {
+        regions: uniqueBy(rawData, 'REGION_NORM'),
+        divisions: uniqueBy(rawData, 'DIVISION_NORM'),
+        cccs: uniqueBy(rawData, 'CCC_NORM')
       };
-
-      // 1. Regions (Always from raw data)
-      const regions = getUnique(rawData, 'REGION_NORM');
-      const prevRegVal = regionSelect.value;
-      regionSelect.innerHTML = '<option value="">All Regions</option>';
-      regions.forEach(r => {
-        const opt = document.createElement('option');
-        opt.value = r;
-        opt.textContent = r + ' Region';
-        if (r === prevRegVal) opt.selected = true;
-        regionSelect.appendChild(opt);
-      });
-
-      // 2. Divisions (filtered by Region)
-      let divnData = rawData;
-      if (selectedReg) {
-        divnData = rawData.filter(d => d.REGION_NORM === selectedReg);
+      const scope = window.MzoScope && typeof window.MzoScope.getScope === 'function'
+        ? window.MzoScope.getScope()
+        : null;
+      if (scope && !scope.unscoped) {
+        if (!lists.regions.length && scope.regions) lists.regions = Array.from(scope.regions);
+        if (!lists.divisions.length && scope.divisions) lists.divisions = Array.from(scope.divisions);
+        if (!lists.cccs.length && scope.cccs) lists.cccs = Array.from(scope.cccs);
       }
-      const divisions = getUnique(divnData, 'DIVISION_NORM');
-      const prevDivVal = divnSelect.value;
-      divnSelect.innerHTML = '<option value="">All Divisions</option>';
-      divisions.forEach(d => {
+      return lists;
+    }
+
+    function fillOfficeSelect(selectEl, values, allLabel, labelFn, locked) {
+      selectEl.disabled = false;
+      selectEl.classList.remove('mzo-filter-locked');
+      selectEl.removeAttribute('aria-disabled');
+      selectEl.innerHTML = '';
+
+      let opts = (values || []).filter(Boolean);
+      if (locked && !opts.length && window.MzoScope && typeof window.MzoScope.getScope === 'function') {
+        const scope = window.MzoScope.getScope() || {};
+        if (selectEl.id === 'regionSelect' && scope.regions) opts = Array.from(scope.regions);
+        if (selectEl.id === 'divnSelect' && scope.divisions) opts = Array.from(scope.divisions);
+        if (selectEl.id === 'suppSelect' && scope.cccs) opts = Array.from(scope.cccs);
+      }
+
+      if (!locked) {
+        const allOpt = document.createElement('option');
+        allOpt.value = '';
+        allOpt.textContent = allLabel;
+        selectEl.appendChild(allOpt);
+      }
+
+      opts.forEach((v) => {
         const opt = document.createElement('option');
-        opt.value = d;
-        opt.textContent = d + ' Division';
-        if (d === prevDivVal) opt.selected = true;
-        divnSelect.appendChild(opt);
+        opt.value = v;
+        opt.textContent = labelFn ? labelFn(v) : v;
+        opt.selected = locked && v === opts[0];
+        selectEl.appendChild(opt);
       });
 
-      // 3. CCCs (filtered by Division & Region)
-      let cccData = divnData;
-      if (selectedDiv) {
-        cccData = divnData.filter(d => d.DIVISION_NORM === selectedDiv);
+      if (locked && opts.length) {
+        selectEl.selectedIndex = 0;
+        selectEl.value = opts[0];
+        selectEl.classList.add('mzo-filter-locked');
+        selectEl.setAttribute('aria-disabled', 'true');
+        selectEl.disabled = true;
+      } else if (locked) {
+        const fallback = document.createElement('option');
+        fallback.value = '';
+        fallback.textContent = allLabel;
+        selectEl.appendChild(fallback);
+        selectEl.disabled = true;
       }
-      const cccs = getUnique(cccData, 'CCC_NORM');
-      const prevCccVal = suppSelect.value;
-      suppSelect.innerHTML = '<option value="">All CCCs</option>';
-      cccs.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c;
-        opt.textContent = c;
-        if (c === prevCccVal) opt.selected = true;
-        suppSelect.appendChild(opt);
-      });
+    }
+
+    function populateDropdowns() {
+      const regionLocked = !!(window.MzoScope && window.MzoScope.isFilterLocked('regionSelect'));
+      const divLocked = !!(window.MzoScope && window.MzoScope.isFilterLocked('divnSelect'));
+      const cccLocked = !!(window.MzoScope && window.MzoScope.isFilterLocked('suppSelect'));
+      const lists = scopeOfficeLists();
+
+      const prevReg = regionSelect.value;
+      fillOfficeSelect(
+        regionSelect,
+        lists.regions,
+        'All Regions',
+        (v) => v + ' Region',
+        regionLocked
+      );
+      if (!regionLocked && prevReg && lists.regions.indexOf(prevReg) !== -1) {
+        regionSelect.value = prevReg;
+      }
+
+      let divisionValues = lists.divisions;
+      if (!divLocked && regionSelect.value) {
+        const narrowed = uniqueBy(
+          rawData.filter((d) => d.REGION_NORM === regionSelect.value),
+          'DIVISION_NORM'
+        );
+        if (narrowed.length) divisionValues = narrowed;
+      }
+      const prevDiv = divnSelect.value;
+      fillOfficeSelect(
+        divnSelect,
+        divisionValues,
+        'All Divisions',
+        (v) => v + ' Division',
+        divLocked
+      );
+      if (!divLocked && prevDiv && divisionValues.indexOf(prevDiv) !== -1) {
+        divnSelect.value = prevDiv;
+      }
+
+      let cccValues = lists.cccs;
+      if (!cccLocked && (regionSelect.value || divnSelect.value)) {
+        const narrowed = uniqueBy(
+          rawData.filter((d) => {
+            if (regionSelect.value && d.REGION_NORM !== regionSelect.value) return false;
+            if (divnSelect.value && d.DIVISION_NORM !== divnSelect.value) return false;
+            return true;
+          }),
+          'CCC_NORM'
+        );
+        if (narrowed.length) cccValues = narrowed;
+      }
+      const prevCcc = suppSelect.value;
+      fillOfficeSelect(suppSelect, cccValues, 'All CCCs', null, cccLocked);
+      if (!cccLocked && prevCcc && cccValues.indexOf(prevCcc) !== -1) {
+        suppSelect.value = prevCcc;
+      }
     }
 
     // Apply Filters and re-render
@@ -1412,9 +1487,9 @@
 
       // Reset
       document.getElementById('resetFiltersBtn').addEventListener('click', () => {
-        regionSelect.value = '';
-        divnSelect.value = '';
-        suppSelect.value = '';
+        if (!(window.MzoScope && window.MzoScope.isFilterLocked('regionSelect'))) regionSelect.value = '';
+        if (!(window.MzoScope && window.MzoScope.isFilterLocked('divnSelect'))) divnSelect.value = '';
+        if (!(window.MzoScope && window.MzoScope.isFilterLocked('suppSelect'))) suppSelect.value = '';
         statusSelect.value = '';
         smartSearch.value = '';
         populateDropdowns();
@@ -1425,80 +1500,6 @@
       document.getElementById('refreshBtn').addEventListener('click', () => {
         fetchAndProcessData();
       });
-
-      // Preference modal
-      document.getElementById('officePrefBtn').addEventListener('click', () => {
-        if (window.mzoPresetsHub) {
-          const cccList = [];
-          const seen = new Set();
-          rawData.forEach(d => {
-            const cccName = d.CCC_NORM;
-            if (cccName && !seen.has(cccName)) {
-              seen.add(cccName);
-              cccList.push({
-                code: cccName,
-                name: cccName,
-                region: d.REGION_NORM,
-                division: d.DIVISION_NORM
-              });
-            }
-          });
-
-          window.mzoPresetsHub.showSetupModal({
-            showCCC: true,
-            cccList: cccList
-          }, () => {
-            applyPreferences();
-            applyFilters();
-          });
-        }
-      });
-    }
-
-    // Apply Global Preferences
-    function applyPreferences() {
-      if (window.mzoPresetsHub) {
-        const pref = window.mzoPresetsHub.getGlobalJurisdiction();
-        if (pref) {
-          let matchedReg = '';
-          let matchedDiv = '';
-          let matchedCcc = '';
-
-          if (pref.region && pref.region !== 'all') {
-            if (pref.region.toUpperCase().includes('MALDA')) matchedReg = 'Malda';
-            else if (pref.region.toUpperCase().includes('UTTAR')) matchedReg = 'Uttar Dinajpur';
-            else if (pref.region.toUpperCase().includes('DAKSHIN')) matchedReg = 'Dakshin Dinajpur';
-          }
-          if (pref.division && pref.division !== 'all') {
-            const cleanPrefDiv = pref.division.toUpperCase().replace(/DIVISION|DIV/g, '').trim();
-            for (const r in officialHierarchy) {
-              for (const d in officialHierarchy[r]) {
-                if (d.toUpperCase().replace(/DIVISION|DIV/g, '').trim() === cleanPrefDiv) {
-                  matchedDiv = d;
-                  matchedReg = r; // Division forces region match
-                }
-              }
-            }
-          }
-          if (pref.ccc && pref.ccc !== 'all') {
-            const cleanPrefCcc = cleanOfficeName(pref.ccc);
-            const match = cccMap[cleanPrefCcc] || overrides[cleanPrefCcc];
-            if (match) {
-              matchedCcc = match.ccc;
-              matchedDiv = match.division;
-              matchedReg = match.region;
-            }
-          }
-
-          if (matchedReg) regionSelect.value = matchedReg;
-          populateDropdowns();
-          
-          if (matchedDiv) divnSelect.value = matchedDiv;
-          populateDropdowns();
-
-          if (matchedCcc) suppSelect.value = matchedCcc;
-        }
-      }
     }
   </script>
 </body>

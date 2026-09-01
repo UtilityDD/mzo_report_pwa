@@ -50,15 +50,27 @@ async function loadNscDataset() {
 }
 
 async function loadData() {
+    const subtitle = document.getElementById('todayDateSubtitle');
     try {
+        if (subtitle) subtitle.textContent = 'Loading…';
         allData = await loadNscDataset();
+        if (window.MzoScope) allData = window.MzoScope.filterRows(allData);
         if (!allData.length) {
-            console.error('Failed to load NSC dataset');
+            if (subtitle) subtitle.textContent = 'No data';
+            const cards = document.getElementById('averageDelayCards');
+            if (cards) {
+                cards.innerHTML = '<p style="padding:12px;color:#64748b;">No NSC rows for this login. Publish NSC or check office scope.</p>';
+            }
             return;
         }
         processData();
     } catch (error) {
-        console.error('Error fetching NSC dataset:', error);
+        console.error('Error loading NSC KPI data:', error);
+        if (subtitle) subtitle.textContent = 'Failed to load';
+        const cards = document.getElementById('averageDelayCards');
+        if (cards) {
+            cards.innerHTML = '<p style="padding:12px;color:#b91c1c;">' + (error && error.message ? error.message : 'Failed to load NSC data.') + '</p>';
+        }
     }
 }
 
@@ -72,31 +84,7 @@ function processData() {
     filteredData = [...allData];
     updateMaxTodayDate(allData);
     initializeFilters();
-    
-    // Setup preference button listener
-    const prefBtn = document.getElementById('officePrefBtn');
-    if (prefBtn) {
-        prefBtn.addEventListener('click', () => {
-            if (window.mzoPresetsHub) {
-                const cccList = Array.from(new Set(allData.map(d => d.CCC_CODE))).filter(Boolean).map(code => {
-                    const item = allData.find(d => d.CCC_CODE === code);
-                    return {
-                        code: code,
-                        name: item ? item.SUPP_OFF : `CCC ${code}`,
-                        region: item ? item.REGION : null,
-                        division: item ? item.DIVN_NAME : null
-                    };
-                });
-                window.mzoPresetsHub.showSetupModal({
-                    showCCC: true,
-                    cccList: cccList
-                }, () => {
-                    // Re-filter the page based on the new preference
-                    applyFilters();
-                });
-            }
-        });
-    }
+    if (window.MzoScope) window.MzoScope.lockFilters();
 
     applyFilters();
 }
@@ -161,52 +149,55 @@ function setupEventListeners() {
     // Event listeners for other filters can be added here if needed in the future.
 }
 function applyFilters() {
-    let pref = null;
-    if (window.mzoPresetsHub) {
-        pref = window.mzoPresetsHub.getGlobalJurisdiction();
-    }
-
     filteredData = allData.filter(item => {
-        const classMatch = selectedClasses.has(item.CONN_CLASS);
-        if (!classMatch) return false;
-
-        if (pref) {
-            // Filter by region
-            if (pref.region && pref.region !== 'all') {
-                const r = String(pref.region).toLowerCase().replace(/region/g, '').trim();
-                const itemReg = String(item.REGION).toLowerCase().replace(/region/g, '').trim();
-                if (r === 'ud' || r.includes('uttar') || r.includes('u/dinajpur')) {
-                    const match = itemReg === 'ud' || itemReg.includes('uttar') || itemReg.includes('u/dinajpur') || itemReg.includes('u_dinajpur');
-                    if (!match) return false;
-                } else if (r === 'dd' || r.includes('dakshin') || r.includes('d/dinajpur')) {
-                    const match = itemReg === 'dd' || itemReg.includes('dakshin') || itemReg.includes('d/dinajpur') || itemReg.includes('d_dinajpur');
-                    if (!match) return false;
-                } else {
-                    if (!itemReg.includes(r) && !r.includes(itemReg)) return false;
-                }
-            }
-            
-            // Filter by division
-            if (pref.division && pref.division !== 'all') {
-                const d = String(pref.division).toLowerCase().replace(/division|div/g, '').trim();
-                const itemDiv = String(item.DIVN_NAME).toLowerCase().replace(/division|div/g, '').trim();
-                if (!itemDiv.includes(d) && !d.includes(itemDiv)) return false;
-            }
-            
-            // Filter by ccc
-            if (pref.ccc && pref.ccc !== 'all') {
-                if (String(item.CCC_CODE) !== String(pref.ccc)) return false;
-            }
+        if (selectedClasses.size > 0) {
+            const cls = String(item.CONN_CLASS == null ? '' : item.CONN_CLASS).trim();
+            if (cls && !selectedClasses.has(cls) && !selectedClasses.has(item.CONN_CLASS)) return false;
         }
         return true;
     });
     updateDashboard(filteredData);
 }
 
-// Update all components on the dashboard with new data
 function updateDashboard(data) {
     updateAverageDelayCards(data);
     updateKpiTables(data);
+}
+
+/** Most specific office grain: ccc | division | region */
+function getKpiSummaryLevel() {
+    if (window.MzoScope && typeof window.MzoScope.getScope === 'function') {
+        const scope = window.MzoScope.getScope();
+        if (scope && !scope.unscoped) {
+            if (scope.level === 'ccc' || scope.level === 'codes') return 'ccc';
+            if (scope.level === 'division') return 'division';
+            if (scope.level === 'region') return 'region';
+        }
+    }
+    return 'region';
+}
+
+function applyKpiSummaryVisibility(level) {
+    const showRegion = level === 'region';
+    const showDivision = level === 'region' || level === 'division';
+    const regionBlock = document.getElementById('kpiRegionBlock');
+    const divBlock = document.getElementById('kpiDivisionBlock');
+    const cccBlock = document.getElementById('kpiCCCBlock');
+    if (regionBlock) regionBlock.style.display = showRegion ? '' : 'none';
+    if (divBlock) divBlock.style.display = showDivision ? '' : 'none';
+    if (cccBlock) cccBlock.style.display = '';
+
+    document.querySelectorAll('[data-kpi-tab]').forEach((btn) => {
+        const tab = btn.getAttribute('data-kpi-tab');
+        const show = tab === 'ccc' || (tab === 'division' && showDivision) || (tab === 'region' && showRegion);
+        btn.style.display = show ? '' : 'none';
+    });
+}
+
+function defaultBreakdownTab(level) {
+    if (level === 'ccc') return 'CCCTab';
+    if (level === 'division') return 'DivisionTab';
+    return 'RegionTab';
 }
 
 // Update the average delay cards
@@ -244,11 +235,11 @@ function updateKpiTables(data) {
 
     populateKpiTable(regionMap, 'kpiRegionTable');
     populateKpiTable(divisionMap, 'kpiDivisionTable');
-    // Add headers to modal tables if they don't exist
     addTableHeaders('modalRegionTable', 'Region');
     addTableHeaders('modalDivisionTable', 'Division');
     addTableHeaders('modalCCCTable', 'CCC');
     populateKpiTable(cccMap, 'kpiCCCTable', true);
+    applyKpiSummaryVisibility(getKpiSummaryLevel());
 }
 
 // Populate a single KPI table with data
@@ -366,13 +357,15 @@ function openBreakdownModal(title, delayType) {
     }
 
     // Populate tables
+    const level = getKpiSummaryLevel();
+    applyKpiSummaryVisibility(level);
     populateKpiTable(regionMap, 'modalRegionTable', false, delayType);
     populateKpiTable(divisionMap, 'modalDivisionTable', false, delayType);
     populateKpiTable(cccMap, 'modalCCCTable', true, delayType);
 
-
-    // Ensure the first tab is active
-    openTab({ currentTarget: document.querySelector('.tab-link') }, 'RegionTab');
+    const tabName = defaultBreakdownTab(level);
+    const tabBtn = document.querySelector('.tab-link[data-kpi-tab="' + (level === 'ccc' ? 'ccc' : (level === 'division' ? 'division' : 'region')) + '"]');
+    openTab({ currentTarget: tabBtn || document.querySelector('.tab-link') }, tabName);
 }
 
 function closeBreakdownModal() {

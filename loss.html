@@ -11,6 +11,7 @@
     <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="mzo_data_hub.js"></script>
+    <script src="mzo_scope.js?v=2"></script>
     <script src="mzo_presets_hub.js"></script>
     <!-- Google Fonts - Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -1066,10 +1067,6 @@
                 <select id="regionFilter" style="padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #1e293b; font-size: 13px; font-weight: 500;"></select>
                 <select id="divisionFilter" style="padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #1e293b; font-size: 13px; font-weight: 500;" disabled></select>
                 <select id="cccFilter" style="padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #1e293b; font-size: 13px; font-weight: 500;" disabled></select>
-                
-                <button id="officePrefBtn" style="padding: 6px 12px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; color: #334155; font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Set My Office Preferences">
-                    <i class="fas fa-cog"></i> Prefs
-                </button>
             </div>
 
             <!-- Second Row: Parameters -->
@@ -1440,6 +1437,7 @@
                             header: true,
                             complete: function (results) {
                                 rawData = results.data.filter(row => row.CCC && row.YEAR && row.MONTH);
+                                if (window.MzoScope) rawData = window.MzoScope.filterRows(rawData);
                                 resolve();
                             }
                         };
@@ -1456,6 +1454,7 @@
                             header: true,
                             complete: function (results) {
                                 targetDataRaw = results.data.filter(row => row.CCC); // Filter out rows with missing CCC
+                                if (window.MzoScope) targetDataRaw = window.MzoScope.filterRows(targetDataRaw);
                                 // Populate targetDataMap for quick lookup
                                 targetDataRaw.forEach(row => {
                                     const cccName = row.CCC.trim();
@@ -1479,44 +1478,10 @@
                     })
                 ]);
                 populateCCCFilter();
+                if (window.MzoScope) window.MzoScope.lockFilters();
                 generateYearCheckboxes();
                 generateParameterCheckboxes();
                 initializeComparisonFilters(); // Initialize comparison dropdowns
-
-                // Setup preference button listener
-                const prefBtn = document.getElementById('officePrefBtn');
-                if (prefBtn) {
-                    prefBtn.addEventListener('click', () => {
-                        if (window.mzoPresetsHub) {
-                            const cccList = [];
-                            Object.entries(hierarchyData).forEach(([region, regObj]) => {
-                                Object.entries(regObj.cccs).forEach(([division, cccNames]) => {
-                                    cccNames.forEach(ccc => {
-                                        cccList.push({
-                                            code: ccc,
-                                            name: ccc,
-                                            region: region,
-                                            division: division
-                                        });
-                                    });
-                                });
-                            });
-                            window.mzoPresetsHub.showSetupModal({
-                                showCCC: true,
-                                cccList: cccList
-                            }, () => {
-                                window.mzoPresetsHub.applyToPage();
-                                if (typeof updateChart === 'function') updateChart();
-                                if (typeof updateRegionTable === 'function') updateRegionTable();
-                            });
-                        }
-                    });
-                }
-
-                // Apply office preferences on load
-                if (window.mzoPresetsHub) {
-                    window.mzoPresetsHub.applyToPage();
-                }
 
                 showTab('chartTab'); // Show chart tab by default
                 document.getElementById('compareLastMarch').checked = true; // Select "vs. Last March"

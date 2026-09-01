@@ -1,6 +1,11 @@
 // sw.js - Service Worker for MZO Reports PWA
-// v33: stop Region-filter hang (no rebuild loop) + Division options seed
-const CACHE_NAME = 'mzo-reports-cache-v35';
+// v37: withheld Updated-on uses live NSC TODAY (not stale meta id)
+// v38: historical NSC filters network-first
+// v39: pending load extension filters + network-first
+// v40: drop office prefs UI; pending load extension ticker/modal
+// v41: login scope on solar, JJM, meter utilization, WRIDD
+// v42: WRIDD filter dropdowns show scoped office names
+const CACHE_NAME = 'mzo-reports-cache-v46';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -45,9 +50,25 @@ function isNetworkFirstPath(pathname) {
   return (
     pathname === '/nsc.html' ||
     pathname.startsWith('/nsc/') ||
+    pathname === '/withheld.html' ||
+    pathname === '/historical_nsc.html' ||
+    pathname === '/pending_load_extension.html' ||
+    pathname === '/index.html' ||
+    pathname === '/weekly.html' ||
+    pathname === '/loss.html' ||
+    pathname === '/disconnection.html' ||
+    pathname === '/collection.html' ||
+    pathname === '/pending_mc.html' ||
+    pathname === '/remosd5000.html' ||
+    pathname === '/meter_utilization.html' ||
+    pathname === '/jjm.html' ||
+    pathname === '/wridd.html' ||
+    pathname === '/solar.html' ||
+    pathname === '/rem/defaulters.html' ||
     pathname === '/mzo_data_hub.js' ||
     pathname === '/mzo_presets_hub.js' ||
     pathname === '/mzo_docket_briefing.js' ||
+    pathname === '/mzo_scope.js' ||
     pathname === '/sw.js' ||
     pathname.startsWith('/api/')
   );

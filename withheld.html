@@ -10,7 +10,8 @@
     <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-    <script src="mzo_data_hub.js"></script>
+    <script src="mzo_data_hub.js?v=38"></script>
+    <script src="mzo_scope.js?v=3"></script>
     <script src="mzo_presets_hub.js"></script>
     <!-- Inter font from Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -194,11 +195,7 @@
                         <h1 class="text-sm font-bold text-slate-900 uppercase tracking-tight">Withheld Dashboard</h1>
                         <span id="update-date" class="text-[9px] uppercase tracking-wider text-slate-500 font-semibold">Loading...</span>
                     </div>
-                    <div>
-                        <button id="officePrefBtn" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 transition-all flex items-center gap-1.5" title="Set My Office Preferences">
-                            <i class="fas fa-cog"></i> Office Prefs
-                        </button>
-                    </div>
+                    <div></div>
                 </div>
             </div>
         </header>
@@ -594,7 +591,41 @@
         Chart.defaults.font.family = 'Inter';
 
         // Event Listeners
-        const WITHHELD_CACHE_KEY = 'CACHE_WITHHELD_v3';
+        const WITHHELD_CACHE_KEY = 'CACHE_WITHHELD_v4';
+
+        function pickWithheldField(row, names) {
+            if (!row || typeof row !== 'object') return '';
+            const keys = Object.keys(row);
+            for (let n = 0; n < names.length; n++) {
+                const want = String(names[n]).replace(/^\uFEFF/, '').trim().toLowerCase();
+                for (let i = 0; i < keys.length; i++) {
+                    const k = String(keys[i]).replace(/^\uFEFF/, '').trim();
+                    if (k.toLowerCase() === want && row[keys[i]] != null && String(row[keys[i]]).trim() !== '') {
+                        return String(row[keys[i]]).trim();
+                    }
+                }
+            }
+            return '';
+        }
+
+        function normalizeWithheldRow(row) {
+            const out = Object.assign({}, row);
+            const region = pickWithheldField(row, ['REGION', 'REG', 'Region', 'region']);
+            const divn = pickWithheldField(row, ['DIVN_NAME', 'DIVISION', 'Division', 'DIVN']);
+            const supp = pickWithheldField(row, ['SUPP_OFF', 'CCC', 'Support Office', 'UNIT_NAME', 'Office']);
+            const code = pickWithheldField(row, ['CCC_CODE', 'ccc_code', 'CCC Code']);
+            if (region) out.REGION = region;
+            if (divn) {
+                out.DIVN_NAME = divn;
+                out.DIVISION = divn;
+            }
+            if (supp) {
+                out.SUPP_OFF = supp;
+                out.CCC = supp;
+            }
+            if (code) out.CCC_CODE = code;
+            return out;
+        }
 
         function parseWithheldCsv(csvText) {
             if (!csvText || typeof csvText !== 'string') return [];
@@ -609,7 +640,8 @@
             if (parsed.errors && parsed.errors.length) {
                 console.warn('[Withheld] CSV parse warnings:', parsed.errors.slice(0, 3));
             }
-            return Array.isArray(parsed.data) ? parsed.data : [];
+            const rows = Array.isArray(parsed.data) ? parsed.data : [];
+            return rows.map(normalizeWithheldRow);
         }
 
         async function loadWithheldRows() {
@@ -630,14 +662,28 @@
             if (typeof mzoDataHub !== 'undefined') {
                 let cached = await mzoDataHub.get(WITHHELD_CACHE_KEY);
                 if (cached && typeof cached === 'string') {
+                    const rows = parseWithheldCsv(cached);
+                    const nscToday = await todayFromNscHub();
+                    const whToday = firstTodayRaw(rows);
+                    if (nscToday && (!whToday || !sameAsOnDay(nscToday, whToday)) && typeof mzoDataHub.refresh === 'function') {
+                        try {
+                            await mzoDataHub.refresh(WITHHELD_CACHE_KEY);
+                            const fresh = await mzoDataHub.get(WITHHELD_CACHE_KEY);
+                            if (fresh && typeof fresh === 'string') return parseWithheldCsv(fresh);
+                        } catch (_) {}
+                    }
                     console.log('Successfully fetched Withheld data from DataHub.');
-                    return parseWithheldCsv(cached);
+                    return rows;
                 }
-                // Legacy JSON cache (v2) — migrate once
+                // Legacy JSON cache (v2) — migrate to the live CSV
                 const legacy = await mzoDataHub.get('CACHE_WITHHELD_v2');
                 if (legacy && Array.isArray(legacy) && legacy.length) {
-                    console.log('Using legacy Withheld JSON cache; will refresh to CSV on next sync.');
-                    return legacy;
+                    if (typeof mzoDataHub.refresh === 'function') {
+                        await mzoDataHub.refresh(WITHHELD_CACHE_KEY);
+                        cached = await mzoDataHub.get(WITHHELD_CACHE_KEY);
+                        if (cached && typeof cached === 'string') return parseWithheldCsv(cached);
+                    }
+                    return legacy.map(normalizeWithheldRow);
                 }
                 if (typeof mzoDataHub.retryDataset === 'function') {
                     await mzoDataHub.retryDataset(WITHHELD_CACHE_KEY);
@@ -675,7 +721,8 @@
                 } catch (_) {}
 
                 const data = await loadWithheldRows();
-                rawData = data.map(item => ({ ...item }));
+                const allRows = data.map(item => normalizeWithheldRow(item));
+                rawData = window.MzoScope ? window.MzoScope.filterRows(allRows) : allRows;
 
                 rawData.forEach(obj => {
                     if (obj['SCN_WITHELD_DATE']) {
@@ -683,58 +730,20 @@
                     }
                 });
 
-                const allTodayDates = rawData.map(row => parseDate(row['TODAY'])).filter(date => date);
-                maxTodayDate = allTodayDates.length ? new Date(Math.max(...allTodayDates.map(d => d.getTime()))) : new Date();
+                const asOn = (await resolveAsOnDate(allRows)) || new Date();
+                maxTodayDate = new Date(asOn);
                 maxTodayDate.setHours(23, 59, 59, 999);
-
-                if (maxTodayDate) {
-                    const formatted = maxTodayDate.toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: 'numeric' });
-                    document.getElementById('update-date').textContent = `Updated on ${formatted}`;
-                } else {
-                    document.getElementById('update-date').textContent = `Updated date unavailable`;
-                }
+                document.getElementById('update-date').textContent = `Updated on ${formatAsOnDate(maxTodayDate)}`;
 
                 // Initial population of filters and data
-                populateRegionFilter(); // Populates only the region filter
-                updateDivisionAndCccFilters(); // Populates division and CCC based on current (initially 'All') region
+                populateRegionFilter();
+                updateDivisionAndCccFilters();
                 populateReasonPanel();
+                if (window.MzoScope) window.MzoScope.lockFilters();
 
-                // Setup preference button listener
-                const prefBtn = document.getElementById('officePrefBtn');
-                if (prefBtn) {
-                    prefBtn.addEventListener('click', () => {
-                        if (window.mzoPresetsHub) {
-                            const cccList = [];
-                            const seen = new Set();
-                            rawData.forEach(d => {
-                                const cccName = d.CCC;
-                                if (cccName && !seen.has(cccName)) {
-                                    seen.add(cccName);
-                                    cccList.push({
-                                        code: cccName,
-                                        name: cccName,
-                                        region: d.REGION,
-                                        division: d.DIVISION
-                                    });
-                                }
-                            });
-                            window.mzoPresetsHub.showSetupModal({
-                                showCCC: true,
-                                cccList: cccList
-                            }, () => {
-                                window.mzoPresetsHub.applyToPage();
-                                applyFilters();
-                            });
-                        }
-                    });
-                }
+                if (window.MzoScope) window.MzoScope.lockFilters();
 
-                // Apply office preferences on load
-                if (window.mzoPresetsHub) {
-                    window.mzoPresetsHub.applyToPage();
-                }
-
-                applyFilters(); // Apply all filters to update dashboard stats and charts
+                applyFilters();
 
                 loadingOverlay.classList.add('opacity-0');
                 setTimeout(() => {
@@ -895,13 +904,100 @@
 
         // Helper Functions
         function parseDate(dateStr) {
-            if (!dateStr || typeof dateStr !== 'string') return null;
-            const match = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+            if (dateStr instanceof Date) {
+                return isNaN(dateStr.getTime()) ? null : dateStr;
+            }
+            if (dateStr == null || dateStr === '') return null;
+            const raw = String(dateStr).trim();
+            if (!raw) return null;
+            if (/^\d+(\.\d+)?$/.test(raw)) {
+                const n = Number(raw);
+                if (n > 20000 && n < 80000) {
+                    const utc = Date.UTC(1899, 11, 30) + Math.round(n) * 86400000;
+                    const d = new Date(utc);
+                    return isNaN(d.getTime()) ? null : d;
+                }
+            }
+            const s = raw.replace(/[T ].*$/, '');
+            let match = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/);
             if (match) {
-                const [, dd, mm, yyyy] = match;
-                return new Date(`${yyyy}-${mm}-${dd}T00:00:00`);
+                const dd = parseInt(match[1], 10);
+                const mm = parseInt(match[2], 10);
+                let yyyy = parseInt(match[3], 10);
+                if (yyyy < 100) yyyy += 2000;
+                const d = new Date(yyyy, mm - 1, dd);
+                return isNaN(d.getTime()) ? null : d;
+            }
+            match = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (match) {
+                const d = new Date(`${match[1]}-${match[2]}-${match[3]}T00:00:00`);
+                return isNaN(d.getTime()) ? null : d;
+            }
+            match = raw.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{2}|\d{4})$/);
+            if (match) {
+                let yyyy = match[3];
+                if (yyyy.length === 2) yyyy = '20' + yyyy;
+                const d = new Date(`${match[1]} ${match[2]} ${yyyy}`);
+                return isNaN(d.getTime()) ? null : d;
             }
             return null;
+        }
+
+        function formatAsOnDate(d) {
+            return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        }
+
+        function firstTodayRaw(rows) {
+            for (let i = 0; i < (rows || []).length; i++) {
+                const r = rows[i];
+                if (!r || typeof r !== 'object') continue;
+                const v = r.TODAY || r.Today || r.today;
+                if (v != null && String(v).trim()) return String(v).trim();
+            }
+            return '';
+        }
+
+        async function todayFromNscHub() {
+            try {
+                if (typeof mzoDataHub === 'undefined' || typeof mzoDataHub.get !== 'function') return '';
+                const csv = await mzoDataHub.get('CACHE_NSC_v5');
+                if (typeof csv !== 'string' || !csv) return '';
+                if (typeof Papa === 'undefined') return '';
+                const parsed = Papa.parse(csv, { header: true, preview: 8, skipEmptyLines: true });
+                return firstTodayRaw(parsed.data);
+            } catch (_) {
+                return '';
+            }
+        }
+
+        function sameAsOnDay(a, b) {
+            const da = parseDate(a);
+            const db = parseDate(b);
+            if (da && db) {
+                return da.getFullYear() === db.getFullYear()
+                    && da.getMonth() === db.getMonth()
+                    && da.getDate() === db.getDate();
+            }
+            return String(a || '').trim() === String(b || '').trim();
+        }
+
+        async function resolveAsOnDate(rows) {
+            const candidates = [];
+            candidates.push(parseDate(await todayFromNscHub()));
+            candidates.push(parseDate(firstTodayRaw(rows)));
+            try {
+                const res = await fetch('/api/nsc/meta?ts=' + Date.now(), { credentials: 'same-origin' });
+                if (res.ok) {
+                    const json = await res.json();
+                    const m = (json && json.meta) || {};
+                    const stats = m.stats || {};
+                    candidates.push(parseDate(m.reportDate));
+                    candidates.push(parseDate(stats.today));
+                }
+            } catch (_) {}
+            const ok = candidates.filter((d) => d && !isNaN(d.getTime()));
+            if (!ok.length) return null;
+            return new Date(Math.max.apply(null, ok.map((d) => d.getTime())));
         }
 
         function animateCounter(element, start, end) {
@@ -933,7 +1029,11 @@
          * @param {string[]} items An array of strings to use as options.
          */
         function populateSelect(selectElement, items) {
-            const currentSelection = selectElement.value; // Store the current selection
+            if (selectElement.getAttribute('data-mzo-scope-locked') === '1') {
+                if (window.MzoScope) window.MzoScope.lockFilters();
+                return;
+            }
+            const currentSelection = selectElement.value;
             const firstOption = selectElement.options[0].cloneNode(true);
             selectElement.innerHTML = '';
             selectElement.appendChild(firstOption);
@@ -943,11 +1043,10 @@
                 option.textContent = item;
                 selectElement.appendChild(option);
             });
-            // Restore selection if valid, otherwise it will naturally default to the first option (All X)
             if (items.includes(currentSelection)) {
                 selectElement.value = currentSelection;
             } else {
-                selectElement.value = ''; // Explicitly reset to "All X" if old selection is invalid
+                selectElement.value = '';
             }
         }
 
@@ -996,6 +1095,7 @@
                 }
             });
             populateSelect(supportSelect, [...possibleSupports].sort());
+            if (window.MzoScope) window.MzoScope.lockFilters();
         }
 
         function populateReasonPanel() {

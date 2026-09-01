@@ -20,6 +20,7 @@
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
   <script src="mzo_data_hub.js"></script>
+  <script src="mzo_scope.js?v=4"></script>
   <script src="mzo_presets_hub.js"></script>
   <!-- noUiSlider CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.css">
@@ -1110,71 +1111,8 @@
       </div>
       <div class="d-flex align-items-center gap-2">
         <span id="maxDateSpan" style="font-size: 0.75rem; color: #ffe600;"></span>
-        <button id="officePrefBtn" class="btn btn-outline-light btn-sm d-flex align-items-center gap-1" style="font-size: 0.75rem;" title="Set My Office Preferences">
-          <i class="fas fa-cog"></i> Office Prefs
-        </button>
       </div>
     </div>
-
-    <!-- Performance Ticker/Banner -->
-    <div id="performanceTicker" class="performance-ticker-container mb-3" style="display: none;">
-      <div class="ticker-wrap">
-        <div id="tickerItems" class="ticker-move">
-          <!-- Items will be injected by JS -->
-        </div>
-      </div>
-    </div>
-
-    <style>
-      .performance-ticker-container {
-        height: 32px;
-        overflow: hidden;
-        background-color: transparent;
-        box-shadow: none;
-        padding: 0;
-      }
-
-      .ticker-wrap {
-        height: 100%;
-        position: relative;
-      }
-
-      .ticker-move {
-        /* This will now be a container for a single, fading item */
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        height: 100%;
-      }
-
-      .ticker-item {
-        font-size: 0.8rem;
-        font-weight: 500;
-        white-space: nowrap;
-        animation: fade-in-out 5s ease-in-out;
-      }
-
-      .good-performer {
-        color: var(--success);
-      }
-
-      .bad-performer {
-        color: var(--error);
-      }
-
-      @keyframes fade-in-out {
-
-        0%,
-        100% {
-          opacity: 0;
-        }
-
-        10%,
-        90% {
-          opacity: 1;
-        }
-      }
-    </style>
 
     <!-- Consumer Class Filter -->
     <div class="d-flex flex-wrap flex-row gap-2 align-items-center mb-3" id="classFilterOptions"
@@ -1571,17 +1509,39 @@
     };
 
     // Helper to map CCC CODE to Hierarchy
+    function normalizeCccCode(raw) {
+      const digits = String(raw == null ? '' : raw).replace(/\D/g, '');
+      if (!digits) return '';
+      return digits.length >= 7 ? digits.slice(-7) : digits;
+    }
+
+    const CODE_HIERARCHY = {};
+    Object.keys(regionData).forEach((region) => {
+      const divisions = regionData[region].divisions || {};
+      Object.keys(divisions).forEach((division) => {
+        const cccs = divisions[division].cccs || {};
+        Object.keys(cccs).forEach((cccName) => {
+          CODE_HIERARCHY[String(cccs[cccName])] = { region, division, cccName };
+        });
+      });
+    });
+
     function getHierarchy(cccCode) {
-      for (const [region, regData] of Object.entries(regionData)) {
-        for (const [division, divData] of Object.entries(regData.divisions)) {
-          for (const [cccName, code] of Object.entries(divData.cccs)) {
-            if (code === cccCode) {
-              return { region, division, cccName };
-            }
-          }
+      const key = normalizeCccCode(cccCode);
+      if (key && CODE_HIERARCHY[key]) return CODE_HIERARCHY[key];
+      if (window.MzoScope && typeof window.MzoScope.parentOfCcc === 'function') {
+        const parent = window.MzoScope.parentOfCcc(key || cccCode);
+        if (parent) {
+          return { region: parent.region, division: parent.division, cccName: parent.ccc };
         }
       }
-      return { region: "Other", division: "Other", cccName: cccCode };
+      return { region: '', division: '', cccName: '' };
+    }
+
+    function isOfficeFilterLocked(id) {
+      const el = document.getElementById(id);
+      if (el && el.getAttribute('data-mzo-scope-locked') === '1') return true;
+      return !!(window.MzoScope && typeof window.MzoScope.isFilterLocked === 'function' && window.MzoScope.isFilterLocked(id));
     }
 
     // Data source URL for Load Extension CSV
@@ -1644,7 +1604,12 @@
 
         // Enrich data with hierarchy and normalized fields
         rawData = data.map(d => {
-          const hierarchy = getHierarchy(d['CCC CODE']);
+          const cccCode = normalizeCccCode(d['CCC CODE'] || d.CCC_CODE || d['CCC Code'] || d.ccc_code);
+          let hierarchy = getHierarchy(cccCode);
+          if ((!hierarchy.region || !hierarchy.division) && window.MzoScope && typeof window.MzoScope.parentOfCcc === 'function') {
+            const parent = window.MzoScope.parentOfCcc(cccCode);
+            if (parent) hierarchy = { region: parent.region, division: parent.division, cccName: parent.ccc };
+          }
           const age = parseInt(d.AGE_MONTHS) || 0;
           const delayInSC = age * 30; // Approximation for mapping to NSC logic (days)
 
@@ -1662,6 +1627,7 @@
 
           return {
             ...d,
+            CCC_CODE: cccCode || String(d['CCC CODE'] || '').trim(),
             REGION: hierarchy.region,
             DIVN_NAME: hierarchy.division,
             SUPP_OFF: hierarchy.cccName,
@@ -1677,6 +1643,8 @@
             AGENCY_NAME: d.WO_ASSIGNEE
           };
         });
+
+        if (window.MzoScope) rawData = window.MzoScope.filterRows(rawData);
 
         filteredData = [...rawData];
 
@@ -1804,46 +1772,10 @@
         document.getElementById('delayRangeFilter').addEventListener('change', applyFilters);
         document.getElementById('delayRange2Filter').addEventListener('change', applyFilters);
 
-        // Setup preference button listener
-        const prefBtn = document.getElementById('officePrefBtn');
-        if (prefBtn) {
-          prefBtn.addEventListener('click', () => {
-            if (window.mzoPresetsHub) {
-              const cccList = [];
-              const seen = new Set();
-              rawData.forEach(d => {
-                const cccName = d.SUPP_OFF;
-                if (cccName && !seen.has(cccName)) {
-                  seen.add(cccName);
-                  cccList.push({
-                    code: cccName,
-                    name: cccName,
-                    region: d.REGION,
-                    division: d.DIVN_NAME
-                  });
-                }
-              });
-              window.mzoPresetsHub.showSetupModal({
-                showCCC: true,
-                cccList: cccList
-              }, () => {
-                window.mzoPresetsHub.applyToPage();
-                if (typeof applyFilters === 'function') applyFilters();
-              });
-            }
-          });
-        }
-
         // Populate initial dropdown filter options
         populateFilters();
-
-        // Apply office preferences on load
-        if (window.mzoPresetsHub) {
-          window.mzoPresetsHub.applyToPage();
-        }
-
+        if (window.MzoScope) window.MzoScope.lockFilters();
         applyFilters();
-        showUrgentModal(rawData);
 
         document.querySelectorAll('input[name="classFilter"]').forEach(radio => {
           radio.addEventListener('change', applyFilters);
@@ -2142,9 +2074,9 @@
       const delayRange = document.getElementById('delayRangeFilter').value;
       const delayRange2 = document.getElementById('delayRange2Filter').value;
 
-      return (region === "" || d.REGION === region) &&
-        (divn === "" || d.DIVN_NAME === divn) &&
-        (supp === "" || d.SUPP_OFF === supp) &&
+      return (region === "" || region === "ALL" || d.REGION === region) &&
+        (divn === "" || divn === "ALL" || d.DIVN_NAME === divn) &&
+        (supp === "" || supp === "ALL" || d.SUPP_OFF === supp || normalizeCccCode(d.CCC_CODE) === normalizeCccCode(supp)) &&
         (classVal === "" || (d.CONN_CLASS || "").trim().toUpperCase() === classVal) &&
         (poleType === "" ||
           (poleType === "Pole" && d.NO_OF_POLES && d.NO_OF_POLES.trim() !== "" && d.NO_OF_POLES !== "0") ||
@@ -2158,26 +2090,30 @@
       return matchesNonSliderFilters(d);
     }
     function populateFilters() {
-      const region = document.getElementById('regionSelect').value;
-      const divn = document.getElementById('divnSelect').value;
-
-      // Unique helper
       const unique = (arr, key) => {
-        return [...new Set(arr.map(x => x[key]).filter(Boolean).map(v => v.trim()))].sort();
+        return [...new Set(arr.map(x => x[key]).filter(Boolean).map(v => String(v).trim()))].sort();
       };
 
       // First populate Region normally from rawData
       const regions = unique(rawData, 'REGION');
       const regionSelect = document.getElementById('regionSelect');
-      const previousRegion = regionSelect.value;
-      regionSelect.innerHTML = `<option value="">Select Region</option>`;
-      regions.forEach(r => {
-        const opt = document.createElement('option');
-        opt.value = r;
-        opt.textContent = r;
-        if (r === previousRegion) opt.selected = true;
-        regionSelect.appendChild(opt);
-      });
+      if (regionSelect && !isOfficeFilterLocked('regionSelect')) {
+        const previousRegion = regionSelect.value;
+        regionSelect.innerHTML = `<option value="">Select Region</option>`;
+        regions.forEach(r => {
+          const opt = document.createElement('option');
+          opt.value = r;
+          opt.textContent = r;
+          if (r === previousRegion) opt.selected = true;
+          regionSelect.appendChild(opt);
+        });
+        if (previousRegion && Array.prototype.some.call(regionSelect.options, o => o.value === previousRegion)) {
+          regionSelect.value = previousRegion;
+        }
+      }
+
+      const region = document.getElementById('regionSelect').value;
+      const divn = document.getElementById('divnSelect').value;
 
       // Populate Division based on selected Region
       let divns = rawData;
@@ -2186,34 +2122,46 @@
       }
       const divisions = unique(divns, 'DIVN_NAME');
       const divnSelect = document.getElementById('divnSelect');
-      const previousDivn = divnSelect.value;
-      divnSelect.innerHTML = `<option value="">Select Division</option>`;
-      divisions.forEach(d => {
-        const opt = document.createElement('option');
-        opt.value = d;
-        opt.textContent = d;
-        if (d === previousDivn) opt.selected = true;
-        divnSelect.appendChild(opt);
-      });
+      if (divnSelect && !isOfficeFilterLocked('divnSelect')) {
+        const previousDivn = divnSelect.value;
+        divnSelect.innerHTML = `<option value="">Select Division</option>`;
+        divisions.forEach(d => {
+          const opt = document.createElement('option');
+          opt.value = d;
+          opt.textContent = d;
+          if (d === previousDivn) opt.selected = true;
+          divnSelect.appendChild(opt);
+        });
+        if (previousDivn && Array.prototype.some.call(divnSelect.options, o => o.value === previousDivn)) {
+          divnSelect.value = previousDivn;
+        }
+      }
 
       // Populate Office based on selected Division
       let supps = rawData;
-      if (divn) {
-        supps = rawData.filter(d => d.DIVN_NAME === divn);
-      } else if (region) {
-        supps = rawData.filter(d => d.REGION === region);
+      const selectedDivn = document.getElementById('divnSelect').value;
+      const selectedRegion = document.getElementById('regionSelect').value;
+      if (selectedDivn) {
+        supps = rawData.filter(d => d.DIVN_NAME === selectedDivn);
+      } else if (selectedRegion) {
+        supps = rawData.filter(d => d.REGION === selectedRegion);
       }
       const offices = unique(supps, 'SUPP_OFF');
       const suppSelect = document.getElementById('suppSelect');
-      const previousSupp = suppSelect.value;
-      suppSelect.innerHTML = `<option value="">Select CCC</option>`;
-      offices.forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s;
-        opt.textContent = s;
-        if (s === previousSupp) opt.selected = true;
-        suppSelect.appendChild(opt);
-      });
+      if (suppSelect && !isOfficeFilterLocked('suppSelect')) {
+        const previousSupp = suppSelect.value;
+        suppSelect.innerHTML = `<option value="">Select CCC</option>`;
+        offices.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s;
+          opt.textContent = s;
+          if (s === previousSupp) opt.selected = true;
+          suppSelect.appendChild(opt);
+        });
+        if (previousSupp && Array.prototype.some.call(suppSelect.options, o => o.value === previousSupp)) {
+          suppSelect.value = previousSupp;
+        }
+      }
 
       // Populate Class based on current selection
       const classes = unique(rawData, 'CONN_CLASS');
@@ -2418,129 +2366,6 @@
       document.getElementById('highLoadLoss').textContent = `₹${formatRupee(sumLoss(highLoadData))}`;
       document.getElementById('ageing6mLoss').textContent = `₹${formatRupee(sumLoss(ageing6mData))}`;
       document.getElementById('ageing1yLoss').textContent = `₹${formatRupee(sumLoss(ageing1yData))}`;
-
-      // Update the performance ticker if it exists
-      if (typeof updatePerformanceTicker === 'function') {
-        updatePerformanceTicker();
-      }
-    }
-
-    function findOldestCase(data, classCode) {
-      let oldestCase = null;
-      let maxDelay = -1;
-
-      const filtered = data.filter(d => {
-        const connClass = (d.CONN_CLASS || "").trim().toUpperCase();
-        return connClass === classCode;
-      });
-
-      if (filtered.length === 0) {
-        return null;
-      }
-
-      for (const item of filtered) {
-        const delay = parseFloat(item.DelayInSC);
-        if (!isNaN(delay) && delay > maxDelay) {
-          maxDelay = delay;
-          oldestCase = item;
-        }
-      }
-
-      if (oldestCase) {
-        return {
-          name: oldestCase.NAME || 'N/A',
-          ccc: oldestCase.SUPP_OFF || 'N/A',
-          delay: Math.round(maxDelay)
-        };
-      }
-
-      return null;
-    }
-
-
-    let tickerItemsList = [];
-    let currentTickerIndex = 0;
-    let tickerInterval;
-    function updatePerformanceTicker() {
-      const tickerContainer = document.getElementById('performanceTicker');
-      const tickerItems = document.getElementById('tickerItems');
-
-      const cccCounts = {};
-      filteredData.forEach(d => {
-        const ccc = d.SUPP_OFF;
-        if (ccc && ccc.trim() !== '') {
-          cccCounts[ccc] = (cccCounts[ccc] || 0) + 1;
-        }
-      });
-
-      const sortedCccs = Object.entries(cccCounts).sort((a, b) => a[1] - b[1]);
-
-      if (sortedCccs.length === 0) {
-        tickerContainer.style.display = 'none';
-        return;
-      }
-
-      const bestPerformers = sortedCccs.slice(0, 3);
-      const worstPerformers = sortedCccs.slice(-3).reverse();
-
-      const worstLabels = ['Highest', '2nd Highest', '3rd Highest'];
-      const bestLabels = ['Lowest', '2nd Lowest', '3rd Lowest'];
-
-      let allItems = [];
-
-      // --- New: Add oldest cases by class ---
-      const classesToHighlight = {
-        'DOM': 'D',
-        'COM': 'C',
-        'IND': 'I',
-        'AGRI': 'A'
-      };
-
-      for (const [label, code] of Object.entries(classesToHighlight)) {
-        const oldest = findOldestCase(filteredData, code);
-        if (oldest) {
-          allItems.push(`<div class="ticker-item bad-performer"><i class="fas fa-exclamation-triangle me-2"></i>Oldest
-              ${label}: ${oldest.delay}d - ${oldest.name} (${oldest.ccc})</div>`);
-        }
-      }
-
-
-      // --- Existing: Highest and Lowest pending CCCs ---
-      if (sortedCccs.length >= 4) {
-        worstPerformers.forEach(([name, count], index) => {
-          const label = worstLabels[index] || `${index + 1}th`;
-          allItems.push(`<div class="ticker-item bad-performer"><i class="fas fa-times-circle me-2"></i>${label}
-              Pending: ${name} (${count})</div>`);
-        });
-
-        bestPerformers.forEach(([name, count], index) => {
-          const label = bestLabels[index] || `${index + 1}th`;
-          allItems.push(`<div class="ticker-item good-performer"><i class="fas fa-check-circle me-2"></i>${label}
-              Pending: ${name} (${count})</div>`);
-        });
-      }
-
-      if (allItems.length === 0) {
-        tickerContainer.style.display = 'none';
-        return;
-      }
-
-      tickerItemsList = allItems;
-      currentTickerIndex = 0;
-
-      // Clear any existing interval
-      if (tickerInterval) clearInterval(tickerInterval);
-
-      // Function to display the next item
-      const showNextTickerItem = () => {
-        tickerItems.innerHTML = tickerItemsList[currentTickerIndex];
-        currentTickerIndex = (currentTickerIndex + 1) % tickerItemsList.length;
-      };
-
-      showNextTickerItem(); // Show the first item immediately
-      tickerInterval = setInterval(showNextTickerItem, 5000); // Cycle every 5 seconds
-
-      tickerContainer.style.display = 'block';
     }
 
     function updateKpiBadge() {
