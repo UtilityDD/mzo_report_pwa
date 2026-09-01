@@ -46,6 +46,8 @@
             display: flex;
             justify-content: space-between; /* Distribute items with space between */
             align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
         }
 
         .modal-header .modal-actions {
@@ -539,6 +541,7 @@
         .admin-upload { display: none; margin-bottom: 15px; }
         .admin-upload.show { display: block; }
         .header-upload-btn {
+            display: inline-block;
             background: #0b5cab !important;
             color: #fff !important;
             border: none;
@@ -572,7 +575,7 @@
         <div class="card" style="margin-bottom: 15px;">
             <div class="header">
                 <div>
-<div class="d-flex align-items-center gap-2">
+<div class="d-flex align-items-center gap-2 flex-wrap">
   <h1 class="title">Defective Meter Dashboard</h1>
   <button type="button" id="defective-upload-toggle" class="btn btn-sm header-upload-btn px-2 py-0 ms-2 rounded shadow-sm">
     UPLOAD CSV
@@ -586,7 +589,6 @@
 
 
                     <p id="report-date" class="subtitle"></p>
-                    <p id="data-scope-note" class="subtitle" style="margin-top:4px;"></p>
                 </div>
                 <!-- This loading indicator is for internal use, global one is preferred -->
                 <div id="loading-indicator" class="loading-spinner hidden"></div> 
@@ -594,20 +596,11 @@
         </div>
 
         <div id="admin-upload-card" class="card admin-upload">
-            <div class="header" style="border-bottom: none; padding-bottom: 0;">
-                <div>
-                    <h2 class="title" style="font-size: 15px;">Admin upload</h2>
-                    <p class="hint">CSV is processed in this browser. Only summary counts and priority consumer rows go to Google Sheets — not Vercel. <a href="https://docs.google.com/spreadsheets/d/1dMLSX2bZBqZMPooh7_CrniCjqgy4MijaFW62GKJJldA/edit?usp=sharing" target="_blank" rel="noopener">Open sheet</a></p>
-                    <p id="adminSetupHint" class="hint" style="display:none; color:#b45309; margin-top:6px;"></p>
-                </div>
-            </div>
-            <div style="padding: 0 20px 16px;">
+            <div style="padding: 16px 20px;">
                 <div class="upload-row">
                     <input type="file" id="defectiveFileInput" accept=".csv" />
-                    <button type="button" id="defectiveUploadBtn" class="btn btn-sm btn-primary" disabled>Publish to Sheet</button>
+                    <button type="button" id="defectiveUploadBtn" class="btn btn-sm btn-primary" disabled>Publish</button>
                 </div>
-                <input type="text" id="defectiveScriptUrl" placeholder="Apps Script /exec URL after you deploy defective_meter_publish.gs" style="width:100%; margin-top:8px; font-size:12px; padding:6px 8px;" />
-                <p class="hint" style="margin-top:6px;">Sheet → Extensions → Apps Script → paste <code>lib/defective_meter_publish.gs</code> → Deploy → Web app → Anyone → paste /exec URL here. Share the sheet: Anyone with the link can view.</p>
                 <div class="bar-track"><div id="defectiveBarFill" class="bar-fill"></div></div>
                 <p id="defectiveProgressLabel" class="hint"></p>
                 <p id="defectiveUploadMsg" class="msg"></p>
@@ -799,7 +792,7 @@
             if (!res.ok) throw new Error('Sheet HTTP ' + res.status);
             const text = await res.text();
             if (/accounts\.google\.com|Sign in/i.test(text) && text.length < 5000) {
-                throw new Error('Sheet is not public. Share → Anyone with the link can view.');
+                throw new Error('Sheet is not public.');
             }
             const P = window.MzoDefectivePipeline;
             if (!P) throw new Error('Defective pipeline failed to load.');
@@ -1387,13 +1380,6 @@ function updateDashboard() {
     reportDateElement.textContent = `Updated: ${dateLabel}`;
 
     const P = window.MzoDefectivePipeline;
-    const allTotal = P ? P.sumField(defectiveMeterData, 'total') : 0;
-    const note = document.getElementById('data-scope-note');
-    if (note) {
-        note.textContent =
-            'Summary covers ' + allTotal.toLocaleString() +
-            ' meters (all groups). Details lists only priority consumers (~10%: >10 yrs, 3-Ph, Industrial, Smart, Load ≥ 1 kW). Row counts in the two sheet tabs will not match.';
-    }
 
     totalMetersCard.textContent = (P ? P.sumField(filteredData, 'total') : 0).toLocaleString();
     totalAgriCard.textContent = (P ? P.sumField(filteredData, 'agri') : 0).toLocaleString();
@@ -2061,44 +2047,32 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
         }
 
         function resolveScriptUrl() {
-            const typed = (document.getElementById('defectiveScriptUrl') && document.getElementById('defectiveScriptUrl').value || '').trim();
-            if (typed) {
-                try { localStorage.setItem('mzo_defective_script_url', typed); } catch (e) {}
-                return typed;
-            }
-            try {
-                return localStorage.getItem('mzo_defective_script_url') ||
-                    sheetMeta.sheetScriptUrl ||
-                    DEFECTIVE_SHEET_DEFAULTS.sheetScriptUrl ||
-                    '';
-            } catch (e) {
-                return sheetMeta.sheetScriptUrl || DEFECTIVE_SHEET_DEFAULTS.sheetScriptUrl || '';
-            }
+            return sheetMeta.sheetScriptUrl || DEFECTIVE_SHEET_DEFAULTS.sheetScriptUrl || '';
         }
 
         async function publishDefectiveDump(file) {
             const P = window.MzoDefectivePipeline;
             const Mirror = window.MzoSheetMirror;
-            if (!P || !Mirror) throw new Error('Upload scripts failed to load.');
+            if (!P || !Mirror) throw new Error('Upload failed to load.');
             const scriptUrl = resolveScriptUrl();
             if (!scriptUrl || !/macro/i.test(scriptUrl)) {
-                throw new Error('Paste the Apps Script /exec URL first (see hint under the file box).');
+                throw new Error('Upload is not configured.');
             }
-            setUploadBar(4, 'Reading CSV in this browser…');
+            setUploadBar(4, '');
             const text = await file.text();
-            setUploadBar(12, 'Building summary + priority details…');
+            setUploadBar(12, '');
             const built = P.buildFromCsvText(text);
-            if (!built.summary.length) throw new Error('No rows found. Use the full defective-meter CSV.');
+            if (!built.summary.length) throw new Error('No rows found.');
             const totalRows = built.summary.length + built.details.length;
             let sent = 0;
             const onProg = function (n) {
                 sent += n;
                 const pct = 20 + Math.round((sent / Math.max(totalRows, 1)) * 75);
-                setUploadBar(pct, 'Writing Google Sheet… ' + sent.toLocaleString() + ' / ' + totalRows.toLocaleString());
+                setUploadBar(pct, '');
             };
-            setUploadBar(20, 'Writing summary tab…');
+            setUploadBar(20, '');
             await Mirror.publishTab(scriptUrl, 'summary', built.summaryHeaders, built.summary, onProg, 'summary');
-            setUploadBar(55, 'Writing details tab…');
+            setUploadBar(55, '');
             await Mirror.publishTab(scriptUrl, 'details', built.detailsHeaders, built.details, onProg, 'details');
             try {
                 await Mirror.postScript(scriptUrl, {
@@ -2123,9 +2097,35 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
         async function initAdminUpload() {
             const card = document.getElementById('admin-upload-card');
             const btn = document.getElementById('defectiveUploadBtn');
-            const urlInput = document.getElementById('defectiveScriptUrl');
-            const hint = document.getElementById('adminSetupHint');
             const toggle = document.getElementById('defective-upload-toggle');
+
+            function localProfileAllowsUpload() {
+                try {
+                    const p = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}');
+                    const role = String(p.role || p.Role || '').trim().toLowerCase();
+                    if (role === 'admin') return true;
+                    const flag = String(p['defective-upload-autho'] || p.defective_upload_autho || '').trim().toLowerCase();
+                    if (['y', 'yes', '1', 'true', 'upload'].includes(flag)) return true;
+                    const u = String(p.Username || p.username || '').trim().toLowerCase();
+                    return u === 'dm1';
+                } catch (e) {
+                    return false;
+                }
+            }
+
+            function applyUploadVisibility(allowed) {
+                if (toggle) {
+                    toggle.classList.toggle('is-allowed', !!allowed);
+                    toggle.style.display = allowed ? 'inline-block' : 'none';
+                    toggle.title = allowed ? 'Upload defective-meter CSV' : 'Not authorised to publish';
+                }
+                if (btn) btn.disabled = !allowed;
+                if (allowed) {
+                    if (card) card.classList.add('show');
+                } else if (card) {
+                    card.classList.remove('show');
+                }
+            }
 
             function showUploadPanel() {
                 if (card) {
@@ -2134,6 +2134,22 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
                 }
             }
 
+            if (localProfileAllowsUpload()) applyUploadVisibility(true);
+
+            try {
+                const sess = await fetch('/api/session-check', {
+                    credentials: 'same-origin',
+                    headers: { Accept: 'application/json' }
+                });
+                if (sess.ok) {
+                    const sessData = await sess.json();
+                    if (sessData && sessData.profile) {
+                        localStorage.setItem('mzo_user_profile', JSON.stringify(sessData.profile));
+                        if (localProfileAllowsUpload()) applyUploadVisibility(true);
+                    }
+                }
+            } catch (e) {}
+
             if (toggle) {
                 toggle.addEventListener('click', function () {
                     showUploadPanel();
@@ -2141,50 +2157,38 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
                     if (input) input.click();
                 });
             }
-            if (urlInput && !urlInput.value) urlInput.value = DEFECTIVE_SHEET_DEFAULTS.sheetScriptUrl || '';
-            try {
-                const stored = localStorage.getItem('mzo_defective_script_url') || '';
-                if (urlInput && stored) urlInput.value = stored;
-            } catch (e) {}
             try {
                 const res = await fetch('/api/defective/meta', { credentials: 'same-origin' });
-                if (res.status !== 401) {
+                if (res.ok) {
                     const data = await res.json();
                     sheetMeta.summaryCsvUrl = data.summaryCsvUrl || sheetMeta.summaryCsvUrl;
                     sheetMeta.detailsCsvUrl = data.detailsCsvUrl || sheetMeta.detailsCsvUrl;
                     sheetMeta.sheetScriptUrl = data.sheetScriptUrl || '';
-                    sheetMeta.canUpload = !!data.canUpload;
-                    if (data.sheetScriptUrl && urlInput && !urlInput.value) urlInput.value = data.sheetScriptUrl;
-                    if (btn) btn.disabled = !data.canUpload;
-                    if (data.canUpload) showUploadPanel();
-                    if (data.canUpload && hint && data.setupHint && !resolveScriptUrl()) {
-                        hint.style.display = 'block';
-                        hint.textContent = data.setupHint;
-                    }
-                } else if (toggle) {
-                    toggle.title = 'Log in as admin to publish';
+                    const allowed = !!data.canUpload || localProfileAllowsUpload();
+                    sheetMeta.canUpload = allowed;
+                    applyUploadVisibility(allowed);
+                } else if (res.status === 401) {
+                    applyUploadVisibility(localProfileAllowsUpload());
+                } else if (localProfileAllowsUpload()) {
+                    applyUploadVisibility(true);
                 }
             } catch (e) {
                 console.warn('defective meta', e);
+                applyUploadVisibility(localProfileAllowsUpload());
             }
             if (btn) {
                 btn.addEventListener('click', async function () {
                     const input = document.getElementById('defectiveFileInput');
                     const file = input && input.files && input.files[0];
                     if (!file) {
-                        setUploadMsg('Choose the defective-meter CSV first.', false);
+                        setUploadMsg('Choose a CSV file.', false);
                         return;
                     }
                     btn.disabled = true;
                     try {
-                        const built = await publishDefectiveDump(file);
-                        setUploadBar(100, 'Done');
-                        setUploadMsg(
-                            'Published ' + built.summary.length.toLocaleString() + ' summary rows and ' +
-                            built.details.length.toLocaleString() + ' priority consumers (from ' +
-                            built.sourceRows.toLocaleString() + ' source rows). Reloading dashboard…',
-                            true
-                        );
+                        await publishDefectiveDump(file);
+                        setUploadBar(100, '');
+                        setUploadMsg('Published.', true);
                         await loadSummaryDashboard();
                     } catch (err) {
                         setUploadMsg(err.message || String(err), false);
@@ -2200,7 +2204,7 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
             const rows = await fetchCsvRows(url);
             const looksLikeSummary = rows.some(function (r) { return r.total != null && r.total !== ''; });
             if (!looksLikeSummary) {
-                throw new Error('Summary tab is empty. Admin: upload the CSV with Publish to Sheet.');
+                throw new Error('Summary is empty.');
             }
             defectiveMeterData = rows;
             populateRegions();
@@ -2219,11 +2223,7 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
                 console.error('Error loading or parsing data:', error);
                 tabContent.innerHTML = `
                     <div class="text-center py-4">
-                        <p class="font-medium text-red-500">Failed to load summary sheet</p>
-                        <p class="text-gray-500 opacity-70 mt-1">
-                            ${error.message || error}
-                            Share the Google Sheet as Anyone with the link can view, then ask an admin to publish a dump.
-                        </p>
+                        <p class="font-medium text-red-500">Failed to load</p>
                     </div>
                 `;
             } finally {

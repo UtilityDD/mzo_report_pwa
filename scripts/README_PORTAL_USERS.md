@@ -24,3 +24,4 @@ Replaces the Google Sheet as the **source of truth** for MZO portal Username/PIN
 - Legacy SI PIN table can be removed with `drop_si_user_access.sql`.
 - Important Sheets unbilled months: run `create_important_unbilled_months.sql` (admins manage via page Manage button).
 - Grant non-admin Manage access with `sheets_autho` (run `alter_portal_users_sheets_auth.sql`, set in Admin → Sheets Manage Access).
+- Defective meter CSV upload: run `alter_portal_users_defective_upload_auth.sql`, then Admin → **Def. meter upload**.
