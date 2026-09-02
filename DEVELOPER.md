@@ -95,9 +95,20 @@ Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large d
 
 ## Service worker
 
-`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v50`. **Increment it** whenever HTML/CSS/JS that users already cached must update.
+`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v56`. **Increment it** whenever HTML/CSS/JS that users already cached must update.
 
 Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a stale copy. After deploy, users may still need a hard refresh until `skipWaiting` + `clients.claim` run.
+
+---
+
+## Deploy
+
+There is no webpack/vite build. Local run is `npm run dev`. Production is Vercel: https://mzo-report-pwa.vercel.app
+
+1. Leave one-off `scripts/analyze_*` / `scripts/patch_*` and dataset dumps untracked. Do not commit `.env` or `consumer/*.csv`.
+2. Bump `CACHE_NAME` in `sw.js` when users must receive HTML/JS changes.
+3. Commit product files, then `git push origin main`.
+4. Production deploy: `npx vercel --prod --yes` from the repo root (linked project). Confirm the changed page after deploy.
 
 ---
 
@@ -119,6 +130,7 @@ Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a 
 - Prefer existing page look (Outfit/Inter, cards, KPI grids). Do not introduce a new CSS framework on one page.
 - Sticky chrome must stay thin on mobile; overlays must not grow the sticky box (`position: absolute` / `fixed`, not in-flow).
 - `home-button.js` injects a floating Home control — do not duplicate a second home bar in the header.
+- When a dashboard mixes **counts-only** KPIs and **named-row** KPIs, split them into two labeled bands (Count vs Names). Use one card style. Count-only rows must not open a names modal. Defective Meter is the reference.
 
 ---
 
@@ -138,7 +150,11 @@ Page: `consumer/defective_meter.html` (home hub `data-dataset="CACHE_DEFECTIVE"`
 
 **Admin UI:** User Administration → **Def. meter upload** Yes/No. Persist column `mzo_insight.portal_users.defective_upload_autho` (`scripts/alter_portal_users_defective_upload_auth.sql` if the table already exists, then `NOTIFY pgrst, 'reload schema'`). Mapped in `portalUserToClient` / `clientUserToPortal`.
 
-**Upload UI:** file picker + Publish only. Do **not** add setup copy (summary vs details, “processed in this browser”, Open sheet, Apps Script URL). Pipeline: `lib/defective_meter_pipeline.js` → `lib/defective_meter_publish.gs`. Network-first: `/consumer/defective_meter.html` and `/admin_users.html`.
+**Upload UI:** file picker + Publish only. Do **not** add setup copy (summary vs details, “processed in this browser”, Open sheet, Apps Script URL). Pipeline: `lib/defective_meter_pipeline.js` → `lib/defective_meter_publish.gs`. Network-first: `/consumer/defective_meter.html`, `/lib/defective_meter_pipeline.js`, and `/admin_users.html`.
+
+**KPI UI (two data kinds):** Summary tab is counts for every meter; details tab stores names only for priority groups (`DETAILS_FLAG` / `isPriorityMetric()`). Split the dashboard into two bands with one card style (no mixed Bootstrap tints): **All meters / Count** — Total, Agri, >5 yrs, Load 0.5–1, Load <0.5 — tables only, no consumer modal. **Priority / Names** — >10 yrs, 3-Ph, Industrial, Smart, Load >6 / 3–6 / 1–3 — By CCC or By Load drills to the consumer list. Count-only CCC rows must not open the names modal.
+
+Upload the **consumer dump** (one row per meter), not a summary. The parser accepts comma / tab / pipe / semicolon and maps aliases (`CCC CODE` → `CCC_CODE`, `CONS_ID` → `CON_ID`, …). If office columns do not map, every row collapses into one blank-office total — the pipeline rejects that instead of publishing it. Agri = BASE_CLASS `A` (not Rural `R`). Industrial = `I`. Smart = meter no `IJ`/`IL`/`IT` or type SMART — not `ELECTRONIC`. The last dump stored Rural/Urban as class and `ELECTRIONIC` as meter no, so those KPIs were zero; re-upload after this parser.
 
 Portal user SQL/import notes: `scripts/README_PORTAL_USERS.md`.
 
