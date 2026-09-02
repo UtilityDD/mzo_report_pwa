@@ -108,7 +108,7 @@ There is no webpack/vite build. Local run is `npm run dev`. Production is Vercel
 1. Leave one-off `scripts/analyze_*` / `scripts/patch_*` and dataset dumps untracked. Do not commit `.env` or `consumer/*.csv`.
 2. Bump `CACHE_NAME` in `sw.js` when users must receive HTML/JS changes.
 3. Commit product files, then `git push origin main`.
-4. Production deploy: `npx vercel --prod --yes` from the repo root (linked project). Confirm the changed page after deploy.
+4. Production deploy from the repo root: `npx vercel --prod --yes --scope dipankar-das-projects-1592747b`. Confirm the changed page after deploy. `npx vercel --prod --yes` without `--scope` can return Not authorized.
 
 ---
 
