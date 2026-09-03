@@ -95,7 +95,7 @@ Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large d
 
 ## Service worker
 
-`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v56`. **Increment it** whenever HTML/CSS/JS that users already cached must update.
+`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v72`. **Increment it** whenever HTML/CSS/JS that users already cached must update.
 
 Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a stale copy. After deploy, users may still need a hard refresh until `skipWaiting` + `clients.claim` run.
 

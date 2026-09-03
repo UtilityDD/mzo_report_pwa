@@ -5,6 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Withheld NSC Dashboard</title>
+    <!-- Resource preconnects -->
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
     <!-- Tailwind CSS (Static) -->
     <link rel="stylesheet" href="tailwind_dist.css">
     <!-- Font Awesome for icons -->
@@ -592,6 +598,7 @@
 
         // Event Listeners
         const WITHHELD_CACHE_KEY = 'CACHE_WITHHELD_v4';
+        const WITHHELD_PARSED_CACHE_KEY = 'CACHE_WITHHELD_PARSED_v4';
 
         function pickWithheldField(row, names) {
             if (!row || typeof row !== 'object') return '';
@@ -609,21 +616,27 @@
         }
 
         function normalizeWithheldRow(row) {
+            if (!row || typeof row !== 'object') return {};
             const out = Object.assign({}, row);
-            const region = pickWithheldField(row, ['REGION', 'REG', 'Region', 'region']);
-            const divn = pickWithheldField(row, ['DIVN_NAME', 'DIVISION', 'Division', 'DIVN']);
-            const supp = pickWithheldField(row, ['SUPP_OFF', 'CCC', 'Support Office', 'UNIT_NAME', 'Office']);
-            const code = pickWithheldField(row, ['CCC_CODE', 'ccc_code', 'CCC Code']);
-            if (region) out.REGION = region;
+            const region = row.REGION || row.REG || row.Region || row.region || pickWithheldField(row, ['REGION', 'REG', 'Region', 'region']);
+            const divn = row.DIVN_NAME || row.DIVISION || row.Division || row.DIVN || pickWithheldField(row, ['DIVN_NAME', 'DIVISION', 'Division', 'DIVN']);
+            const supp = row.SUPP_OFF || row.CCC || row.Office || pickWithheldField(row, ['SUPP_OFF', 'CCC', 'Support Office', 'UNIT_NAME', 'Office']);
+            const code = row.CCC_CODE || row.ccc_code || pickWithheldField(row, ['CCC_CODE', 'ccc_code', 'CCC Code']);
+            if (region) out.REGION = String(region).trim();
             if (divn) {
-                out.DIVN_NAME = divn;
-                out.DIVISION = divn;
+                const trimmedDivn = String(divn).trim();
+                out.DIVN_NAME = trimmedDivn;
+                out.DIVISION = trimmedDivn;
             }
             if (supp) {
-                out.SUPP_OFF = supp;
-                out.CCC = supp;
+                const trimmedSupp = String(supp).trim();
+                out.SUPP_OFF = trimmedSupp;
+                out.CCC = trimmedSupp;
             }
-            if (code) out.CCC_CODE = code;
+            if (code) out.CCC_CODE = String(code).trim();
+            if (out.SCN_WITHELD_DATE && !(out.SCN_WITHELD_DATE instanceof Date)) {
+                out.SCN_WITHELD_DATE = parseDate(out.SCN_WITHELD_DATE);
+            }
             return out;
         }
 
@@ -652,6 +665,9 @@
 
             if (forceRefresh && typeof mzoDataHub !== 'undefined' && mzoDataHub.refresh) {
                 try {
+                    if (typeof mzoDataHub.delete === 'function') {
+                        await mzoDataHub.delete(WITHHELD_PARSED_CACHE_KEY);
+                    }
                     await mzoDataHub.refresh(WITHHELD_CACHE_KEY);
                     localStorage.removeItem('mzo_withheld_pending_refresh');
                 } catch (_) {}
@@ -659,53 +675,93 @@
                 try { await mzoDataHub.retryDataset(WITHHELD_CACHE_KEY); } catch (_) {}
             }
 
-            if (typeof mzoDataHub !== 'undefined') {
-                let cached = await mzoDataHub.get(WITHHELD_CACHE_KEY);
-                if (cached && typeof cached === 'string') {
-                    const rows = parseWithheldCsv(cached);
-                    const nscToday = await todayFromNscHub();
-                    const whToday = firstTodayRaw(rows);
-                    if (nscToday && (!whToday || !sameAsOnDay(nscToday, whToday)) && typeof mzoDataHub.refresh === 'function') {
-                        try {
-                            await mzoDataHub.refresh(WITHHELD_CACHE_KEY);
-                            const fresh = await mzoDataHub.get(WITHHELD_CACHE_KEY);
-                            if (fresh && typeof fresh === 'string') return parseWithheldCsv(fresh);
-                        } catch (_) {}
-                    }
-                    console.log('Successfully fetched Withheld data from DataHub.');
-                    return rows;
-                }
-                // Legacy JSON cache (v2) — migrate to the live CSV
-                const legacy = await mzoDataHub.get('CACHE_WITHHELD_v2');
-                if (legacy && Array.isArray(legacy) && legacy.length) {
-                    if (typeof mzoDataHub.refresh === 'function') {
-                        await mzoDataHub.refresh(WITHHELD_CACHE_KEY);
-                        cached = await mzoDataHub.get(WITHHELD_CACHE_KEY);
-                        if (cached && typeof cached === 'string') return parseWithheldCsv(cached);
-                    }
-                    return legacy.map(normalizeWithheldRow);
-                }
-                if (typeof mzoDataHub.retryDataset === 'function') {
-                    await mzoDataHub.retryDataset(WITHHELD_CACHE_KEY);
-                    cached = await mzoDataHub.get(WITHHELD_CACHE_KEY);
-                    if (cached && typeof cached === 'string') {
-                        return parseWithheldCsv(cached);
+            let rawVersion = '';
+            try {
+                rawVersion = localStorage.getItem('mzo_hub_ver_' + WITHHELD_CACHE_KEY) || '';
+            } catch (_) {}
+
+            if (!forceRefresh && typeof mzoDataHub !== 'undefined') {
+                let parsedVersion = '';
+                try {
+                    parsedVersion = localStorage.getItem('mzo_hub_ver_' + WITHHELD_PARSED_CACHE_KEY) || '';
+                } catch (_) {}
+
+                if (rawVersion && parsedVersion && rawVersion === parsedVersion) {
+                    const cachedParsed = await mzoDataHub.get(WITHHELD_PARSED_CACHE_KEY);
+                    if (cachedParsed && Array.isArray(cachedParsed) && cachedParsed.length > 0) {
+                        console.log(`[Withheld] Fast loaded ${cachedParsed.length} pre-parsed rows from IndexedDB cache.`);
+                        return cachedParsed;
                     }
                 }
             }
 
-            console.log('Downloading Withheld data from network...');
-            const response = await fetch('/api/withheld/dataset', {
-                credentials: 'same-origin'
-            });
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+            let rows = [];
+            if (typeof mzoDataHub !== 'undefined') {
+                let cached = await mzoDataHub.get(WITHHELD_CACHE_KEY);
+                if (cached && typeof cached === 'string') {
+                    rows = parseWithheldCsv(cached);
+                    const nscToday = await todayFromNscHub();
+                    const whToday = firstTodayRaw(rows);
+                    if (nscToday && (!whToday || !sameAsOnDay(nscToday, whToday)) && typeof mzoDataHub.refresh === 'function') {
+                        try {
+                            if (typeof mzoDataHub.delete === 'function') {
+                                await mzoDataHub.delete(WITHHELD_PARSED_CACHE_KEY);
+                            }
+                            await mzoDataHub.refresh(WITHHELD_CACHE_KEY);
+                            const fresh = await mzoDataHub.get(WITHHELD_CACHE_KEY);
+                            if (fresh && typeof fresh === 'string') rows = parseWithheldCsv(fresh);
+                        } catch (_) {}
+                    }
+                    console.log('Successfully fetched Withheld data from DataHub.');
+                } else {
+                    const legacy = await mzoDataHub.get('CACHE_WITHHELD_v2');
+                    if (legacy && Array.isArray(legacy) && legacy.length) {
+                        if (typeof mzoDataHub.refresh === 'function') {
+                            if (typeof mzoDataHub.delete === 'function') {
+                                await mzoDataHub.delete(WITHHELD_PARSED_CACHE_KEY);
+                            }
+                            await mzoDataHub.refresh(WITHHELD_CACHE_KEY);
+                            cached = await mzoDataHub.get(WITHHELD_CACHE_KEY);
+                            if (cached && typeof cached === 'string') rows = parseWithheldCsv(cached);
+                        } else {
+                            rows = legacy.map(normalizeWithheldRow);
+                        }
+                    } else if (typeof mzoDataHub.retryDataset === 'function') {
+                        await mzoDataHub.retryDataset(WITHHELD_CACHE_KEY);
+                        cached = await mzoDataHub.get(WITHHELD_CACHE_KEY);
+                        if (cached && typeof cached === 'string') {
+                            rows = parseWithheldCsv(cached);
+                        }
+                    }
+                }
             }
-            const csvText = await response.text();
-            if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.set === 'function') {
-                try { await mzoDataHub.set(WITHHELD_CACHE_KEY, csvText); } catch (_) {}
+
+            if (!rows || !rows.length) {
+                console.log('Downloading Withheld data from network...');
+                const response = await fetch('/api/withheld/dataset', {
+                    credentials: 'same-origin'
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const csvText = await response.text();
+                if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.set === 'function') {
+                    try { await mzoDataHub.set(WITHHELD_CACHE_KEY, csvText); } catch (_) {}
+                }
+                rows = parseWithheldCsv(csvText);
             }
-            return parseWithheldCsv(csvText);
+
+            if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.set === 'function' && rows && rows.length > 0) {
+                try {
+                    const curVer = localStorage.getItem('mzo_hub_ver_' + WITHHELD_CACHE_KEY) || 'v1';
+                    await mzoDataHub.set(WITHHELD_PARSED_CACHE_KEY, rows);
+                    localStorage.setItem('mzo_hub_ver_' + WITHHELD_PARSED_CACHE_KEY, curVer);
+                } catch (e) {
+                    console.warn('[Withheld] Failed to store pre-parsed dataset in IndexedDB:', e);
+                }
+            }
+
+            return rows;
         }
 
         document.addEventListener('DOMContentLoaded', async () => {
@@ -720,15 +776,8 @@
                     };
                 } catch (_) {}
 
-                const data = await loadWithheldRows();
-                const allRows = data.map(item => normalizeWithheldRow(item));
+                const allRows = await loadWithheldRows();
                 rawData = window.MzoScope ? window.MzoScope.filterRows(allRows) : allRows;
-
-                rawData.forEach(obj => {
-                    if (obj['SCN_WITHELD_DATE']) {
-                        obj['SCN_WITHELD_DATE'] = parseDate(obj['SCN_WITHELD_DATE']);
-                    }
-                });
 
                 const asOn = (await resolveAsOnDate(allRows)) || new Date();
                 maxTodayDate = new Date(asOn);
