@@ -131,6 +131,24 @@ class DataHub {
         } catch (e) {}
     }
 
+    _fetchedDayKey(key) {
+        return 'mzo_hub_fetched_' + key;
+    }
+
+    _readFetchedDay(key) {
+        try {
+            return localStorage.getItem(this._fetchedDayKey(key)) || '';
+        } catch (e) {
+            return '';
+        }
+    }
+
+    _writeFetchedDay(key) {
+        try {
+            localStorage.setItem(this._fetchedDayKey(key), new Date().toDateString());
+        } catch (e) {}
+    }
+
     _cleanEtag(raw) {
         return String(raw || '')
             .replace(/^W\//i, '')
@@ -379,6 +397,14 @@ class DataHub {
 
                 if (!force && hasBody && remoteVer && localVer && this._versionsMatch(localVer, remoteVer) && rowLooksComplete) {
                     if (localVer !== remoteVer) this._writeStoredVersion(key, remoteVer);
+                    this._writeFetchedDay(key);
+                    this.syncStatus[key] = 'done';
+                    return true;
+                }
+
+                // Google published CSVs often have no HEAD ETag. Keep today's cache
+                // instead of re-downloading the full sheet on every page open.
+                if (!force && hasBody && !remoteVer && this._readFetchedDay(key) === new Date().toDateString()) {
                     this.syncStatus[key] = 'done';
                     return true;
                 }
@@ -416,6 +442,7 @@ class DataHub {
                     if (this._hasBody(cached)) {
                         const keep = remoteVer || this._versionFromHeaders(response) || stored;
                         if (keep) this._writeStoredVersion(key, keep);
+                        this._writeFetchedDay(key);
                         this.syncStatus[key] = 'done';
                         return true;
                     }
@@ -474,6 +501,7 @@ class DataHub {
                 }
 
                 await this.set(dataset.key, data);
+                this._writeFetchedDay(key);
                 this.syncStatus[key] = 'done';
                 return true;
             } catch (err) {

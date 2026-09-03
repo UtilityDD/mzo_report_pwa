@@ -23,7 +23,7 @@
       divisions: {
         Malda: { prefix: '6611', cccs: ['Manikchak', 'Golapganj', 'Baishnabnagar', 'Kaliachak', 'Mothabari', 'Sujapur', 'Rathbari', 'Fulbari', 'Mokdumpur'] },
         Chanchal: { prefix: '6612', cccs: ['Bhaluka', 'Samsi', 'Paranpur', 'Chanchal', 'Malatipur', 'Harishchandrapur', 'Kushida'] },
-        Gazole: { prefix: '6613', cccs: ['Gazol', 'Aiho', 'Pandua', 'Bamongola', 'Old Malda'] }
+        Gazole: { prefix: '6613', cccs: ['Gazole', 'Gazol', 'Aiho', 'Pandua', 'Bamongola', 'Old Malda'] }
       }
     },
     Raiganj: {
@@ -51,7 +51,7 @@
     '6612101': 'Bhaluka', '6612102': 'Samsi', '6612103': 'Paranpur',
     '6612104': 'Chanchal', '6612105': 'Malatipur', '6612106': 'Harishchandrapur',
     '6612107': 'Kushida',
-    '6613101': 'Gazol', '6613102': 'Aiho', '6613103': 'Pandua',
+    '6613101': 'Gazole', '6613102': 'Aiho', '6613103': 'Pandua',
     '6613104': 'Bamongola', '6613105': 'Old Malda',
     '6621101': 'Itahar', '6621102': 'Hemtabad', '6621103': 'Kaliyaganj',
     '6621104': 'Raiganj', '6621105': 'Birnagar', '6621106': 'Karandighi',
@@ -98,17 +98,14 @@
 
   function pickField(row, keys) {
     if (!row || typeof row !== 'object') return '';
-    for (let i = 0; i < keys.length; i++) {
-      const v = row[keys[i]];
-      if (v != null && String(v).trim() !== '') return String(v).trim();
-    }
-    const wanted = {};
-    for (let i = 0; i < keys.length; i++) wanted[normKey(keys[i])] = true;
-    const rowKeys = Object.keys(row);
-    for (let i = 0; i < rowKeys.length; i++) {
-      if (!wanted[normKey(rowKeys[i])]) continue;
-      const v = row[rowKeys[i]];
-      if (v != null && String(v).trim() !== '') return String(v).trim();
+    const keysInRow = Object.keys(row);
+    for (let n = 0; n < keys.length; n++) {
+      const want = normKey(keys[n]);
+      for (let i = 0; i < keysInRow.length; i++) {
+        if (normKey(keysInRow[i]) === want && row[keysInRow[i]] != null && String(row[keysInRow[i]]).trim() !== '') {
+          return String(row[keysInRow[i]]).trim();
+        }
+      }
     }
     return '';
   }
@@ -171,6 +168,18 @@
   }
 
   function divisionNameOf(raw) {
+    if (!raw) return '';
+    const s = String(raw).trim();
+    if (CODE_TO_DIV[s]) return CODE_TO_DIV[s];
+    if (/^\d{4}$/.test(s)) {
+      const regions = Object.keys(HIERARCHY);
+      for (let r = 0; r < regions.length; r++) {
+        const divs = Object.keys(HIERARCHY[regions[r]].divisions);
+        for (let d = 0; d < divs.length; d++) {
+          if (HIERARCHY[regions[r]].divisions[divs[d]].prefix === s) return divs[d];
+        }
+      }
+    }
     const n = norm(raw);
     if (!n) return '';
     const regions = Object.keys(HIERARCHY);
@@ -186,8 +195,14 @@
   }
 
   function cccNameOf(raw) {
+    if (!raw) return '';
+    const s = String(raw).trim();
+    if (CODE_TO_CCC[s]) return CODE_TO_CCC[s];
     const n = norm(raw);
     if (!n) return '';
+
+    if (n === 'gazole' || n === 'gazol') return 'Gazole';
+
     const regions = Object.keys(HIERARCHY);
     for (let r = 0; r < regions.length; r++) {
       const divs = HIERARCHY[regions[r]].divisions;
@@ -195,14 +210,40 @@
       for (let d = 0; d < dnames.length; d++) {
         const cccs = divs[dnames[d]].cccs;
         for (let c = 0; c < cccs.length; c++) {
-          if (n === norm(cccs[c]) || n.indexOf(norm(cccs[c])) !== -1 || norm(cccs[c]).indexOf(n) !== -1) {
-            return cccs[c];
+          const cnorm = norm(cccs[c]);
+          if (n === cnorm || n.indexOf(cnorm) !== -1 || (n.length >= 4 && cnorm.indexOf(n) !== -1)) {
+            return cccs[c] === 'Gazol' ? 'Gazole' : cccs[c];
           }
         }
       }
     }
-    if (CODE_TO_CCC[String(raw).trim()]) return CODE_TO_CCC[String(raw).trim()];
     return String(raw || '').trim();
+  }
+
+  function foldCcc(name) {
+    return name === 'Gazol' ? 'Gazole' : name;
+  }
+
+  function cccNameInDivision(raw, divisionName) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return '';
+    const division = divisionNameOf(divisionName) || divisionName;
+    const list = listCccs('', division).filter(function (c) { return c !== 'Gazol'; });
+    const n = norm(s);
+    if (!n) return '';
+    for (let i = 0; i < list.length; i++) {
+      if (norm(list[i]) === n) return foldCcc(list[i]);
+    }
+    const prefixed = [];
+    for (let i = 0; i < list.length; i++) {
+      const cn = norm(list[i]);
+      if (cn.indexOf(n) === 0) prefixed.push(foldCcc(list[i]));
+    }
+    const uniq = prefixed.filter(function (c, i, a) { return a.indexOf(c) === i; });
+    if (uniq.length === 1) return uniq[0];
+    const named = cccNameOf(s);
+    if (named && list.some(function (c) { return foldCcc(c) === named; })) return named;
+    return named || s;
   }
 
   function parentOfCcc(cccName) {
@@ -324,7 +365,24 @@
 
     const region = regionNameOf(regionRaw);
     const division = divisionNameOf(divRaw);
-    let ccc = cccRaw ? cccNameOf(cccRaw) : '';
+    // Only treat as CCC-scoped when the value is a real office, not a leftover
+    // placeholder or division name (e.g. ccc_code "Malda" must not become Old Malda).
+    let ccc = '';
+    if (cccRaw) {
+      const n = norm(cccRaw);
+      if (n && !/^(all|y|none|n a|na)$/.test(n)) {
+        if (CODE_TO_CCC[String(cccRaw).trim()]) {
+          ccc = CODE_TO_CCC[String(cccRaw).trim()];
+        } else {
+          const resolved = cccNameOf(cccRaw);
+          const parent = resolved ? parentOfCcc(resolved) : null;
+          const cnorm = parent ? norm(parent.ccc) : '';
+          if (parent && (n === cnorm || n.indexOf(cnorm) !== -1) && (!division || parent.division === division)) {
+            ccc = parent.ccc;
+          }
+        }
+      }
+    }
     if (/^\d{7}$/.test(cccRaw)) {
       into.codes.add(cccRaw);
       const cccFromCode = CODE_TO_CCC[cccRaw];
@@ -332,7 +390,7 @@
       if (cccFromCode && divFromCode) {
         const r = regionOfDivision(divFromCode);
         if (r) addCcc(r, divFromCode, cccFromCode, into);
-        ccc = cccFromCode;
+        if (!division || divFromCode === division) ccc = cccFromCode;
       }
     }
 
@@ -483,8 +541,7 @@
     return seen;
   }
 
-  function optionMatches(optVal, wantedNorms) {
-    const n = norm(optVal);
+  function nameInNorms(n, wantedNorms) {
     if (!n || n === 'all') return false;
     const arr = Array.from(wantedNorms || []);
     for (let i = 0; i < arr.length; i++) {
@@ -493,10 +550,25 @@
     return false;
   }
 
+  function optionMatches(optVal, wantedNorms) {
+    const raw = String(optVal == null ? '' : optVal).trim();
+    if (!raw) return false;
+    if (nameInNorms(norm(raw), wantedNorms)) return true;
+    const fromCode = CODE_TO_CCC[raw] || '';
+    if (fromCode && nameInNorms(norm(fromCode), wantedNorms)) return true;
+    const codes = extractOfficeCodes(raw);
+    for (let i = 0; i < codes.length; i++) {
+      const named = CODE_TO_CCC[codes[i]];
+      if (named && nameInNorms(norm(named), wantedNorms)) return true;
+    }
+    return false;
+  }
+
   function pruneAndLock(els, wantedNorms, lock) {
     if (!els.length) return;
     els.forEach(function (el) {
       if (!el || !el.options) return;
+      const prevVal = String(el.value || '');
       const keep = [];
       for (let i = 0; i < el.options.length; i++) {
         const opt = el.options[i];
@@ -519,15 +591,30 @@
       if (keep.length) {
         el.innerHTML = '';
         keep.forEach(function (opt) { el.appendChild(opt); });
-        if (el.options.length) {
+        if (lock) {
           el.selectedIndex = 0;
-          el.options[0].selected = true;
+          if (el.options[0]) el.options[0].selected = true;
+        } else {
+          let idx = -1;
+          for (let i = 0; i < el.options.length; i++) {
+            if (String(el.options[i].value || '') === prevVal) {
+              idx = i;
+              break;
+            }
+          }
+          if (idx < 0) idx = 0;
+          el.selectedIndex = idx;
+          if (el.options[idx]) el.options[idx].selected = true;
         }
       }
       if (lock) {
         el.classList.add('mzo-filter-locked');
         el.setAttribute('aria-disabled', 'true');
         el.disabled = true;
+      } else {
+        el.classList.remove('mzo-filter-locked');
+        el.removeAttribute('aria-disabled');
+        el.disabled = false;
       }
     });
   }
@@ -679,6 +766,7 @@
     regionNameOf: regionNameOf,
     divisionNameOf: divisionNameOf,
     cccNameOf: cccNameOf,
+    cccNameInDivision: cccNameInDivision,
     parentOfCcc: parentOfCcc
   };
 
