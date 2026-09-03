@@ -98,14 +98,17 @@
 
   function pickField(row, keys) {
     if (!row || typeof row !== 'object') return '';
-    const keysInRow = Object.keys(row);
-    for (let n = 0; n < keys.length; n++) {
-      const want = normKey(keys[n]);
-      for (let i = 0; i < keysInRow.length; i++) {
-        if (normKey(keysInRow[i]) === want && row[keysInRow[i]] != null && String(row[keysInRow[i]]).trim() !== '') {
-          return String(row[keysInRow[i]]).trim();
-        }
-      }
+    for (let i = 0; i < keys.length; i++) {
+      const v = row[keys[i]];
+      if (v != null && String(v).trim() !== '') return String(v).trim();
+    }
+    const wanted = {};
+    for (let i = 0; i < keys.length; i++) wanted[normKey(keys[i])] = true;
+    const rowKeys = Object.keys(row);
+    for (let i = 0; i < rowKeys.length; i++) {
+      if (!wanted[normKey(rowKeys[i])]) continue;
+      const v = row[rowKeys[i]];
+      if (v != null && String(v).trim() !== '') return String(v).trim();
     }
     return '';
   }

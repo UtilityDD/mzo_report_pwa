@@ -25,8 +25,8 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
-  <script src="mzo_data_hub.js?v=36"></script>
-  <script src="mzo_scope.js?v=8"></script>
+  <script src="mzo_data_hub.js?v=40"></script>
+  <script src="mzo_scope.js?v=10"></script>
   <script src="mzo_presets_hub.js?v=35"></script>
   <!-- noUiSlider CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.css">
@@ -2275,14 +2275,19 @@
 
         try {
           if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.delete === 'function') {
-            await mzoDataHub.delete('CACHE_NSC');
-            await mzoDataHub.delete('CACHE_NSC_v2');
-            await mzoDataHub.delete('CACHE_NSC_v3');
-            await mzoDataHub.delete('CACHE_NSC_v4');
-            await mzoDataHub.delete('CACHE_NSC_PARSED');
-            await mzoDataHub.delete('CACHE_NSC_PARSED_v2');
-            await mzoDataHub.delete('CACHE_NSC_PARSED_v3');
-            await mzoDataHub.delete('CACHE_NSC_PARSED_v4');
+            let cleaned = '';
+            try { cleaned = localStorage.getItem('mzo_nsc_legacy_cleared') || ''; } catch (_) {}
+            if (cleaned !== 'v5') {
+              await mzoDataHub.delete('CACHE_NSC');
+              await mzoDataHub.delete('CACHE_NSC_v2');
+              await mzoDataHub.delete('CACHE_NSC_v3');
+              await mzoDataHub.delete('CACHE_NSC_v4');
+              await mzoDataHub.delete('CACHE_NSC_PARSED');
+              await mzoDataHub.delete('CACHE_NSC_PARSED_v2');
+              await mzoDataHub.delete('CACHE_NSC_PARSED_v3');
+              await mzoDataHub.delete('CACHE_NSC_PARSED_v4');
+              try { localStorage.setItem('mzo_nsc_legacy_cleared', 'v5'); } catch (_) {}
+            }
           }
         } catch (_) {}
 
@@ -2299,7 +2304,7 @@
           } catch (_) {}
 
           if (rawVersion && parsedVersion && rawVersion === parsedVersion) {
-            const cachedParsed = await mzoDataHub.get(NSC_PARSED_CACHE_KEY);
+            const cachedParsed = await mzoDataHub._peek(NSC_PARSED_CACHE_KEY);
             if (cachedParsed && Array.isArray(cachedParsed) && cachedParsed.length > 0) {
               rawData = cachedParsed;
               loadedFromParsedCache = true;
@@ -2311,13 +2316,16 @@
         if (!loadedFromParsedCache) {
           let data;
           if (typeof mzoDataHub !== 'undefined') {
-            data = await mzoDataHub.get(NSC_CACHE_KEY);
+            data = await mzoDataHub._peek(NSC_CACHE_KEY);
           }
 
           if (!data) {
             console.log("Downloading NSC Data from network...");
             if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.retryDataset === 'function') {
-              await mzoDataHub.retryDataset(NSC_CACHE_KEY);
+              await mzoDataHub.waitForDataset(NSC_CACHE_KEY);
+              data = await mzoDataHub._peek(NSC_CACHE_KEY);
+            }
+            if (!data && typeof mzoDataHub !== 'undefined') {
               data = await mzoDataHub.get(NSC_CACHE_KEY);
             }
             if (!data) {
@@ -2358,33 +2366,30 @@
         if (window.MzoScope) rawData = window.MzoScope.filterRows(rawData);
         filteredData = rawData.slice();
 
-        // Compare the full cached file to server publishedRows — not the office-scoped slice.
-        // A CCC-scoped user (e.g. Fulbari) would otherwise look "truncated" and reload forever.
-        try {
+        function reconcileNscRowCountInBackground(fullCount) {
+          if (!fullCount || typeof mzoDataHub === 'undefined') return;
           let reconcileTried = false;
           try { reconcileTried = sessionStorage.getItem('mzo_nsc_reconcile_tried') === '1'; } catch (_) {}
-          if (!window.__nscRowReconcileTried && !reconcileTried && typeof mzoDataHub !== 'undefined') {
-            const metaRes = await fetch('/api/nsc/meta', { credentials: 'same-origin' });
-            if (metaRes.ok) {
-              const metaJson = await metaRes.json();
-              const expected = Number(metaJson && metaJson.meta && metaJson.meta.publishedRows) || 0;
-              if (expected > 0 && loadedRowCount > 0 && loadedRowCount < expected * 0.95) {
-                window.__nscRowReconcileTried = true;
-                try { sessionStorage.setItem('mzo_nsc_reconcile_tried', '1'); } catch (_) {}
-                console.warn(`[NSC] Cached rows ${loadedRowCount} < server ${expected}; refreshing…`);
-                if (typeof mzoDataHub.delete === 'function') {
-                  await mzoDataHub.delete(NSC_PARSED_CACHE_KEY);
-                }
-                await mzoDataHub.refresh(NSC_CACHE_KEY);
-                window.location.reload();
-                return;
-              }
+          if (window.__nscRowReconcileTried || reconcileTried) return;
+          fetch('/api/nsc/meta', { credentials: 'same-origin' }).then(function (metaRes) {
+            if (!metaRes.ok) return null;
+            return metaRes.json();
+          }).then(function (metaJson) {
+            if (!metaJson) return;
+            const expected = Number(metaJson && metaJson.meta && metaJson.meta.publishedRows) || 0;
+            if (expected > 0 && fullCount > 0 && fullCount < expected * 0.95) {
+              window.__nscRowReconcileTried = true;
+              try { sessionStorage.setItem('mzo_nsc_reconcile_tried', '1'); } catch (_) {}
+              console.warn('[NSC] Cached rows ' + fullCount + ' < server ' + expected + '; refreshing…');
+              const done = (typeof mzoDataHub.delete === 'function')
+                ? mzoDataHub.delete(NSC_PARSED_CACHE_KEY)
+                : Promise.resolve();
+              return done.then(function () { return mzoDataHub.refresh(NSC_CACHE_KEY); })
+                .then(function () { window.location.reload(); });
             }
-          }
-          if (loadedRowCount > 0) {
             try { sessionStorage.removeItem('mzo_nsc_reconcile_tried'); } catch (_) {}
-          }
-        } catch (_) {}
+          }).catch(function () {});
+        }
 
         // Fast statistics computation (no spread operator call stack overhead)
         const stats = getRawDataStats(rawData);
@@ -2446,6 +2451,19 @@
         applyFilters();
         scheduleUrgentModal(rawData);
         maybeShowReleaseToast();
+
+        if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.waitForDataset === 'function') {
+          mzoDataHub.waitForDataset(NSC_CACHE_KEY).then(function () {
+            let newVer = '';
+            try { newVer = localStorage.getItem('mzo_hub_ver_' + NSC_CACHE_KEY) || ''; } catch (_) {}
+            let parsedVer = '';
+            try { parsedVer = localStorage.getItem('mzo_hub_ver_' + NSC_PARSED_CACHE_KEY) || ''; } catch (_) {}
+            if (newVer && parsedVer && newVer !== parsedVer) {
+              console.log('[NSC] Dataset version changed; reload to pick up fresh rows.');
+            }
+          }).catch(function () {});
+        }
+        reconcileNscRowCountInBackground(loadedRowCount);
 
         // Register filter event listeners on every mirrored control (inline + drawer)
         // Use a single listener path only (no el.onchange duplicate — that caused double-fires / hangs)
@@ -3078,17 +3096,20 @@
     }
     function regionOf(d) {
       if (!d) return '';
-      const r = (d._region != null && d._region !== '') ? d._region : rowField(d, ['REGION', 'region', 'REG']);
+      if (d._region != null && d._region !== '') return d._region;
+      const r = rowField(d, ['REGION', 'region', 'REG']);
       return (window.MzoScope && typeof window.MzoScope.regionNameOf === 'function') ? (window.MzoScope.regionNameOf(r) || r) : r;
     }
     function divnOf(d) {
       if (!d) return '';
-      const div = (d._divn != null && d._divn !== '') ? d._divn : rowField(d, ['DIVN_NAME', 'divn_name', 'DIVN', 'Division']);
+      if (d._divn != null && d._divn !== '') return d._divn;
+      const div = rowField(d, ['DIVN_NAME', 'divn_name', 'DIVN', 'Division']);
       return (window.MzoScope && typeof window.MzoScope.divisionNameOf === 'function') ? (window.MzoScope.divisionNameOf(div) || div) : div;
     }
     function suppOf(d) {
       if (!d) return '';
-      const s = (d._supp != null && d._supp !== '') ? d._supp : rowField(d, ['SUPP_OFF', 'supp_off', 'CCC', 'ccc']);
+      if (d._supp != null && d._supp !== '') return d._supp;
+      const s = rowField(d, ['SUPP_OFF', 'supp_off', 'CCC', 'ccc']);
       return (window.MzoScope && typeof window.MzoScope.cccNameOf === 'function') ? (window.MzoScope.cccNameOf(s) || s) : s;
     }
     function agencyOf(d) {
