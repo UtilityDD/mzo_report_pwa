@@ -87,7 +87,7 @@ Version strings are prefixed: `v:` API meta, `e:` ETag, `m:` Last-Modified, `f:`
 
 Do **not** `fetch()` or `Papa.parse(url, { download: true })` a Google Sheet from a page if a DataHub key exists. Register the URL in `DATASETS`, then `waitForDataset` + `get`. On the home hub, set `data-dataset="CACHE_…"`.
 
-Hub keys in use: `CACHE_NSC_v5`, `CACHE_WITHHELD_v4`, `CACHE_STOCK`, `CACHE_POWER_MAP`, `CACHE_SOLAR`, `CACHE_JJM`, `CACHE_WRIDD`, `CACHE_METER_*`, `CACHE_DEFECTIVE`, plus collection/loss/weekly/docket/REM/capex/etc. in `DATASETS`.
+Hub keys in use: `CACHE_NSC_v5`, `CACHE_WITHHELD_v4`, `CACHE_STOCK`, `CACHE_POWER_MAP`, `CACHE_SOLAR`, `CACHE_JJM`, `CACHE_WRIDD`, `CACHE_METER_*`, `CACHE_DEFECTIVE`, `CACHE_DEFECTIVE_DETAILS`, plus collection/loss/weekly/docket/REM/capex/etc. in `DATASETS`.
 
 Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large dumps stay out of git (see `.gitignore` / `.vercelignore`).
 
@@ -95,7 +95,7 @@ Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large d
 
 ## Service worker
 
-`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v73`. **Increment it** whenever HTML/CSS/JS that users already cached must update.
+`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v84`. **Increment it** whenever HTML/CSS/JS that users already cached must update.
 
 Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a stale copy. After deploy, users may still need a hard refresh until `skipWaiting` + `clients.claim` run.
 
@@ -138,19 +138,19 @@ There is no webpack/vite build. Local run is `npm run dev`. Production is Vercel
 
 Typical prefixes: `/api/login`, `/api/session-check`, `/api/logout`, `/api/admin/*`, `/api/nsc/*`, `/api/stock/*`, `/api/withheld/*`, `/api/power-map/*`, `/api/defective/meta`. Unauthenticated `/api` returns **401 JSON**, not a login HTML redirect.
 
-Uploads (NSC, stock) are size-limited on Vercel; prefer chunked publish where it already exists. Defective-meter CSV is processed **in the browser** and published to Google Sheets via Apps Script (`DEFECTIVE_SHEET_SCRIPT_URL` / default in `server.js`) — not uploaded to Vercel.
+Uploads (NSC, stock, defective meter) process the file **in the browser**, then `MzoSheetMirror.publishTab` posts urlencoded chunks to Apps Script (`ContentService` JSON). Bulk bytes do not go through Vercel. Defective Meter uses the same helper as NSC (`lib/sheet_mirror_client.js`). After Apps Script code changes, deploy a **new version** of the **existing** web app (keep the same `/exec` URL). Do not return HtmlService from `doPost` (that is the `ppConfig` web-page error).
 
 ---
 
 ## Defective Meter
 
-Page: `consumer/defective_meter.html` (home hub `data-dataset="CACHE_DEFECTIVE"`). Summary CSV is DataHub `CACHE_DEFECTIVE`; details CSV is loaded from the same spreadsheet’s `details` tab.
+Page: `consumer/defective_meter.html` (home hub `data-dataset="CACHE_DEFECTIVE"`). Summary is DataHub `CACHE_DEFECTIVE` (Google export CSV); details is `CACHE_DEFECTIVE_DETAILS`. Publish uses `GET /api/defective/meta` → `sheetScriptUrl`, then `MzoSheetMirror.publishTab` to Apps Script (same as NSC). After publish, `mzoDataHub.refresh` both keys.
 
 **Who can upload:** `GET /api/defective/meta` → `canUpload`. True if `role` is `admin` (case-insensitive), or portal flag `defective-upload-autho` / `defective_upload_autho` is Y/yes/1/true/upload, or username `dm1`. Admins always can, even if the flag is blank. The page also shows upload from `/api/session-check` / `mzo_user_profile` so a stale cookie without `role` does not hide the button.
 
 **Admin UI:** User Administration → **Def. meter upload** Yes/No. Persist column `mzo_insight.portal_users.defective_upload_autho` (`scripts/alter_portal_users_defective_upload_auth.sql` if the table already exists, then `NOTIFY pgrst, 'reload schema'`). Mapped in `portalUserToClient` / `clientUserToPortal`.
 
-**Upload UI:** file picker + Publish only. Do **not** add setup copy (summary vs details, “processed in this browser”, Open sheet, Apps Script URL). Pipeline: `lib/defective_meter_pipeline.js` → `lib/defective_meter_publish.gs`. Network-first: `/consumer/defective_meter.html`, `/lib/defective_meter_pipeline.js`, and `/admin_users.html`.
+**Upload UI:** file picker + Publish only. Do **not** add setup copy (summary vs details, “processed in this browser”, Open sheet, Apps Script URL). Pipeline: `lib/defective_meter_pipeline.js` → `lib/defective_meter_publish.gs`. Network-first: `/consumer/defective_meter.html`, `/lib/defective_meter_pipeline.js`, `/lib/sheet_mirror_client.js`, `/mzo_data_hub.js`, and `/admin_users.html`.
 
 **KPI UI (two data kinds):** Summary tab is counts for every meter; details tab stores names only for priority groups (`DETAILS_FLAG` / `isPriorityMetric()`). Split the dashboard into two bands with one card style (no mixed Bootstrap tints): **All meters / Count** — Total, Agri, >5 yrs, Load 0.5–1, Load <0.5 — tables only, no consumer modal. **Priority / Names** — >10 yrs, 3-Ph, Industrial, Smart, Load >6 / 3–6 / 1–3 — By CCC or By Load drills to the consumer list. Count-only CCC rows must not open the names modal.
 

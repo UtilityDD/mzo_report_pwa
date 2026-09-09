@@ -5,8 +5,8 @@
 // v40: drop office prefs UI; pending load extension ticker/modal
 // v41: login scope on solar, JJM, meter utilization, WRIDD
 // v42: WRIDD filter dropdowns show scoped office names
-// v73: NSC paints from IndexedDB before waiting on /api/nsc/meta
-const CACHE_NAME = 'mzo-reports-cache-v73';
+// v84: defective/NSC sheet-mirror retries Failed to fetch; skip duplicate chunks
+const CACHE_NAME = 'mzo-reports-cache-v84';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [

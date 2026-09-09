@@ -584,7 +584,7 @@
     <!-- Global loading overlay, shown while data is being fetched -->
     <div class="loading-overlay" id="global-loading-overlay">
         <div class="loading-spinner"></div>
-        <p>Please wait... Loading data</p>
+        <p id="global-loading-text">Please wait... Loading data</p>
     </div>
 
     <div class="container">
@@ -792,8 +792,9 @@
         </div>
     </div>
     
-    <script src="/lib/sheet_mirror_client.js?v=56"></script>
-    <script src="/lib/defective_meter_pipeline.js?v=56"></script>
+    <script src="/mzo_data_hub.js?v=84"></script>
+    <script src="/lib/sheet_mirror_client.js?v=84"></script>
+    <script src="/lib/defective_meter_pipeline.js?v=84"></script>
     <script>
         // Global variables to store data and current state
         let defectiveMeterData = []; // summary rows (counts), not 281k consumers
@@ -830,15 +831,12 @@
         }
 
         const DEFECTIVE_SHEET_DEFAULTS = {
-            summaryCsvUrl: 'https://docs.google.com/spreadsheets/d/1dMLSX2bZBqZMPooh7_CrniCjqgy4MijaFW62GKJJldA/gviz/tq?tqx=out:csv&sheet=summary',
-            detailsCsvUrl: 'https://docs.google.com/spreadsheets/d/1dMLSX2bZBqZMPooh7_CrniCjqgy4MijaFW62GKJJldA/gviz/tq?tqx=out:csv&sheet=details',
+            summaryCsvUrl: 'https://docs.google.com/spreadsheets/d/1dMLSX2bZBqZMPooh7_CrniCjqgy4MijaFW62GKJJldA/export?format=csv&gid=0',
+            detailsCsvUrl: 'https://docs.google.com/spreadsheets/d/1dMLSX2bZBqZMPooh7_CrniCjqgy4MijaFW62GKJJldA/export?format=csv&gid=1638574999',
             sheetScriptUrl: 'https://script.google.com/macros/s/AKfycbzULRzoJRMlt_x3nlEo6RLFVzELgwAD5Z7f8JuvqwxBgC6cpc0BF7dynKwBg0hNIkBn/exec'
         };
 
-        async function fetchCsvRows(url) {
-            const res = await fetch(url, { credentials: 'omit' });
-            if (!res.ok) throw new Error('Sheet HTTP ' + res.status);
-            const text = await res.text();
+        function rowsFromCsvText(text) {
             if (/accounts\.google\.com|Sign in/i.test(text) && text.length < 5000) {
                 throw new Error('Sheet is not public.');
             }
@@ -850,11 +848,62 @@
             });
         }
 
+        function isSameOriginUrl(url) {
+            if (!url) return false;
+            if (url.charAt(0) === '/') return true;
+            return typeof location !== 'undefined' && url.indexOf(location.origin) === 0;
+        }
+
+        async function fetchCsvRows(url) {
+            let lastErr;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                try {
+                    const res = await fetch(url, {
+                        credentials: isSameOriginUrl(url) ? 'same-origin' : 'omit'
+                    });
+                    if (!res.ok) {
+                        const ct = res.headers.get('content-type') || '';
+                        if (ct.indexOf('json') !== -1) {
+                            const j = await res.json();
+                            throw new Error(j.message || j.error || ('HTTP ' + res.status));
+                        }
+                        throw new Error('Sheet HTTP ' + res.status);
+                    }
+                    return rowsFromCsvText(await res.text());
+                } catch (e) {
+                    lastErr = e;
+                    const msg = String((e && e.message) || e || '');
+                    if (attempt < 2 && /fail(ed)? to fetch|network|load|abort/i.test(msg)) {
+                        await new Promise(function (r) { setTimeout(r, 400 * (attempt + 1)); });
+                        continue;
+                    }
+                    throw e;
+                }
+            }
+            throw lastErr;
+        }
+
+        async function loadCsvRows(hubKey, url) {
+            if (window.mzoDataHub && hubKey) {
+                try {
+                    await mzoDataHub.waitForDataset(hubKey);
+                    const data = await mzoDataHub.get(hubKey);
+                    if (typeof data === 'string' && data.trim()) {
+                        return rowsFromCsvText(data);
+                    }
+                    if (Array.isArray(data) && data.length) return data;
+                } catch (e) {
+                    console.warn('hub', hubKey, e);
+                }
+            }
+            return fetchCsvRows(url);
+        }
+
         async function ensureDetailsLoaded() {
             if (detailsLoaded) return detailsRows;
             if (detailsLoading) return detailsLoading;
             const url = sheetMeta.detailsCsvUrl || DEFECTIVE_SHEET_DEFAULTS.detailsCsvUrl;
-            detailsLoading = fetchCsvRows(url).then(function (rows) {
+            detailsLoading = loadCsvRows('CACHE_DEFECTIVE_DETAILS', url).then(function (rows) {
                 detailsRows = rows.map(function (r, i) {
                     r.__idx = i;
                     return r;
@@ -2072,7 +2121,14 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
             if (lab) lab.textContent = label || '';
         }
 
-        function resolveScriptUrl() {
+        function setLoading(on, text) {
+            const lab = document.getElementById('global-loading-text');
+            if (lab && text) lab.textContent = text;
+            if (on) globalLoadingOverlay.classList.add('visible');
+            else globalLoadingOverlay.classList.remove('visible');
+        }
+
+        function resolvePublishUrl() {
             return sheetMeta.sheetScriptUrl || DEFECTIVE_SHEET_DEFAULTS.sheetScriptUrl || '';
         }
 
@@ -2080,13 +2136,13 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
             const P = window.MzoDefectivePipeline;
             const Mirror = window.MzoSheetMirror;
             if (!P || !Mirror) throw new Error('Upload failed to load.');
-            const scriptUrl = resolveScriptUrl();
+            const scriptUrl = resolvePublishUrl();
             if (!scriptUrl || !/macro/i.test(scriptUrl)) {
-                throw new Error('Upload is not configured.');
+                throw new Error('Google Sheet mirror is not configured.');
             }
-            setUploadBar(4, '');
+            setUploadBar(4, 'Reading file…');
             const text = await file.text();
-            setUploadBar(12, '');
+            setUploadBar(12, 'Preparing rows…');
             const built = P.buildFromCsvText(text);
             if (!built.summary.length) throw new Error('No rows found.');
             const totalRows = built.summary.length + built.details.length;
@@ -2094,11 +2150,11 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
             const onProg = function (n) {
                 sent += n;
                 const pct = 20 + Math.round((sent / Math.max(totalRows, 1)) * 75);
-                setUploadBar(pct, '');
+                setUploadBar(pct, 'Publishing… ' + sent + ' / ' + totalRows);
             };
-            setUploadBar(20, '');
+            setUploadBar(20, 'Publishing summary…');
             await Mirror.publishTab(scriptUrl, 'summary', built.summaryHeaders, built.summary, onProg, 'summary');
-            setUploadBar(55, '');
+            setUploadBar(55, 'Publishing names…');
             await Mirror.publishTab(scriptUrl, 'details', built.detailsHeaders, built.details, onProg, 'details');
             try {
                 await Mirror.postScript(scriptUrl, {
@@ -2117,6 +2173,11 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
             }
             detailsLoaded = false;
             detailsRows = [];
+            detailsLoading = null;
+            if (window.mzoDataHub && typeof mzoDataHub.refresh === 'function') {
+                try { await mzoDataHub.refresh('CACHE_DEFECTIVE'); } catch (e) {}
+                try { await mzoDataHub.refresh('CACHE_DEFECTIVE_DETAILS'); } catch (e) {}
+            }
             return built;
         }
 
@@ -2177,7 +2238,8 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
             } catch (e) {}
 
             if (toggle) {
-                toggle.addEventListener('click', function () {
+                toggle.addEventListener('click', function (ev) {
+                    if (ev && ev.preventDefault) ev.preventDefault();
                     showUploadPanel();
                     const input = document.getElementById('defectiveFileInput');
                     if (input) input.click();
@@ -2189,7 +2251,7 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
                     const data = await res.json();
                     sheetMeta.summaryCsvUrl = data.summaryCsvUrl || sheetMeta.summaryCsvUrl;
                     sheetMeta.detailsCsvUrl = data.detailsCsvUrl || sheetMeta.detailsCsvUrl;
-                    sheetMeta.sheetScriptUrl = data.sheetScriptUrl || '';
+                    sheetMeta.sheetScriptUrl = data.sheetScriptUrl || DEFECTIVE_SHEET_DEFAULTS.sheetScriptUrl;
                     const allowed = !!data.canUpload || localProfileAllowsUpload();
                     sheetMeta.canUpload = allowed;
                     applyUploadVisibility(allowed);
@@ -2203,7 +2265,9 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
                 applyUploadVisibility(localProfileAllowsUpload());
             }
             if (btn) {
-                btn.addEventListener('click', async function () {
+                btn.addEventListener('click', async function (ev) {
+                    if (ev && ev.preventDefault) ev.preventDefault();
+                    if (ev && ev.stopPropagation) ev.stopPropagation();
                     const input = document.getElementById('defectiveFileInput');
                     const file = input && input.files && input.files[0];
                     if (!file) {
@@ -2211,15 +2275,18 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
                         return;
                     }
                     btn.disabled = true;
+                    setLoading(true, 'Please wait… Publishing dump');
                     try {
                         await publishDefectiveDump(file);
-                        setUploadBar(100, '');
+                        setUploadBar(100, 'Published.');
                         setUploadMsg('Published.', true);
+                        setLoading(true, 'Please wait... Loading data');
                         await loadSummaryDashboard();
                     } catch (err) {
                         setUploadMsg(err.message || String(err), false);
                     } finally {
                         btn.disabled = false;
+                        setLoading(false, 'Please wait... Loading data');
                     }
                 });
             }
@@ -2227,7 +2294,7 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
 
         async function loadSummaryDashboard() {
             const url = sheetMeta.summaryCsvUrl || DEFECTIVE_SHEET_DEFAULTS.summaryCsvUrl;
-            const rows = await fetchCsvRows(url);
+            const rows = await loadCsvRows('CACHE_DEFECTIVE', url);
             const looksLikeSummary = rows.some(function (r) { return r.total != null && r.total !== ''; });
             if (!looksLikeSummary) {
                 throw new Error('Summary is empty.');
@@ -2247,9 +2314,10 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
                 await loadSummaryDashboard();
             } catch (error) {
                 console.error('Error loading or parsing data:', error);
+                const msg = (error && error.message) ? error.message : String(error || 'Failed to load');
                 tabContent.innerHTML = `
                     <div class="text-center py-4">
-                        <p class="font-medium text-red-500">Failed to load</p>
+                        <p class="font-medium text-red-500">${msg}</p>
                     </div>
                 `;
             } finally {

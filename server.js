@@ -3614,10 +3614,11 @@ app.post('/api/stock/publish', (req, res) => {
 });
 
 const DEFECTIVE_SPREADSHEET_ID = '1dMLSX2bZBqZMPooh7_CrniCjqgy4MijaFW62GKJJldA';
-const DEFECTIVE_SUMMARY_CSV_URL =
-    `https://docs.google.com/spreadsheets/d/${DEFECTIVE_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=summary`;
-const DEFECTIVE_DETAILS_CSV_URL =
-    `https://docs.google.com/spreadsheets/d/${DEFECTIVE_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=details`;
+const DEFECTIVE_SUMMARY_GID = 0;
+const DEFECTIVE_DETAILS_GID = 1638574999;
+function defectiveExportCsvUrl_(gid) {
+    return `https://docs.google.com/spreadsheets/d/${DEFECTIVE_SPREADSHEET_ID}/export?format=csv&gid=${gid}`;
+}
 const DEFECTIVE_SHEET_SCRIPT_URL = String(
     process.env.DEFECTIVE_SHEET_SCRIPT_URL ||
         'https://script.google.com/macros/s/AKfycbzULRzoJRMlt_x3nlEo6RLFVzELgwAD5Z7f8JuvqwxBgC6cpc0BF7dynKwBg0hNIkBn/exec'
@@ -3661,6 +3662,30 @@ app.get('/api/defective/meta', async (req, res) => {
     }
     const user = await resolveDefectiveUser_(req);
     const canUpload = canUploadDefective_(user);
+    let uploadMeta = null;
+    let summaryGid = DEFECTIVE_SUMMARY_GID;
+    let detailsGid = DEFECTIVE_DETAILS_GID;
+    try {
+        const metaUrl =
+            DEFECTIVE_SHEET_SCRIPT_URL +
+            (DEFECTIVE_SHEET_SCRIPT_URL.includes('?') ? '&' : '?') +
+            'meta=1';
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), 4000) : null;
+        try {
+            const scriptRes = await fetch(metaUrl, ctrl ? { signal: ctrl.signal } : undefined);
+            if (scriptRes.ok) {
+                const parsed = JSON.parse(await scriptRes.text());
+                uploadMeta = (parsed && parsed.meta) || null;
+                if (parsed && parsed.summaryGid != null) summaryGid = Number(parsed.summaryGid) || summaryGid;
+                if (parsed && parsed.detailsGid != null) detailsGid = Number(parsed.detailsGid) || detailsGid;
+            }
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+    } catch (e) {}
+    const version =
+        (uploadMeta && (uploadMeta.uploadedAt || uploadMeta.reportAsOn)) || '';
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
     return res.json({
         status: 'success',
@@ -3668,8 +3693,10 @@ app.get('/api/defective/meta', async (req, res) => {
         isAdmin: isPortalAdmin_(user),
         sheetScriptUrl: canUpload && DEFECTIVE_SHEET_SCRIPT_URL ? DEFECTIVE_SHEET_SCRIPT_URL : '',
         spreadsheetId: DEFECTIVE_SPREADSHEET_ID,
-        summaryCsvUrl: DEFECTIVE_SUMMARY_CSV_URL,
-        detailsCsvUrl: DEFECTIVE_DETAILS_CSV_URL,
+        summaryCsvUrl: defectiveExportCsvUrl_(summaryGid),
+        detailsCsvUrl: defectiveExportCsvUrl_(detailsGid),
+        version: version || null,
+        uploadMeta,
         setupHint: DEFECTIVE_SHEET_SCRIPT_URL
             ? null
             : 'Open the Defective Meter Google Sheet → Extensions → Apps Script → paste lib/defective_meter_publish.gs → Deploy as Web app (Anyone). Paste the /exec URL in the box on this page, or set Vercel env DEFECTIVE_SHEET_SCRIPT_URL.'
