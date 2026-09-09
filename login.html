@@ -14,6 +14,7 @@
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet" />
+  <script src="/mzo_app_update.js?v=87"></script>
   <style>
     *, *::before, *::after {
       box-sizing: border-box;
@@ -720,27 +721,6 @@
     </div>
   </div>
 
-  <div id="pwa-install-modal" class="pwa-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="pwa-install-title">
-    <div class="pwa-modal">
-      <div class="pwa-modal-top">
-        <div class="pwa-modal-icon" aria-hidden="true"><i class="fas fa-mobile-screen-button"></i></div>
-        <div>
-          <h4 id="pwa-install-title">Install MZO App</h4>
-          <p id="pwa-install-desc">Install directly from this page — no login required. Prefer <b>Install app</b>, not a browser shortcut.</p>
-        </div>
-      </div>
-      <div id="pwa-install-steps" class="pwa-modal-steps">
-        <strong id="pwa-steps-title">Recommended</strong>
-        <ol id="pwa-steps-list"></ol>
-        <p id="pwa-shortcut-warn" class="pwa-shortcut-warn" hidden></p>
-      </div>
-      <div class="pwa-modal-actions">
-        <button type="button" id="pwa-dismiss-btn" class="btn-pwa-secondary">Not now</button>
-        <button type="button" id="pwa-install-btn" class="btn-pwa-primary">Install app</button>
-      </div>
-    </div>
-  </div>
-
   <script>
     const loginForm = document.getElementById('loginForm');
     const usernameInput = document.getElementById('username');
@@ -867,8 +847,6 @@
           localStorage.setItem('mzo_user_profile', JSON.stringify(data.profile));
           sessionStorage.setItem('mzo_show_docket_briefing', '1');
           document.getElementById('loginInstallBtn')?.classList.add('hidden');
-          document.getElementById('pwa-install-modal')?.classList.add('hidden');
-          document.getElementById('pwa-install-modal')?.classList.remove('active');
           
           // Save credentials if checked, otherwise clear them
           if (rememberMeCheckbox.checked) {
@@ -902,12 +880,7 @@
     // Check if already authenticated on load
     if (localStorage.getItem('mzo_authenticated') === 'true') {
       const cardInstallBtn = document.getElementById('loginInstallBtn');
-      const pwaModal = document.getElementById('pwa-install-modal');
       if (cardInstallBtn) cardInstallBtn.classList.add('hidden');
-      if (pwaModal) {
-        pwaModal.classList.remove('active');
-        pwaModal.classList.add('hidden');
-      }
       showAuthTransition();
       setAuthCopy('Welcome back', 'Restoring your session');
       setAuthProgress(55);
@@ -925,244 +898,56 @@
     }
     applyTheme(localStorage.getItem('theme') || 'dark');
 
-    // --- PWA install: direct Install app (no login required, never "Got it") ---
+    // Optional one-tap install (no modal). Chrome/Edge native prompt only.
     (function initPwaInstallOnLogin() {
-      let deferredPrompt = null;
-      let promptWaiters = [];
-      const modal = document.getElementById('pwa-install-modal');
-      const installBtn = document.getElementById('pwa-install-btn');
-      const dismissBtn = document.getElementById('pwa-dismiss-btn');
-      const cardInstallBtn = document.getElementById('loginInstallBtn');
-      const cardInstallLabel = document.getElementById('loginInstallBtnLabel');
-      const stepsList = document.getElementById('pwa-steps-list');
-      const stepsTitle = document.getElementById('pwa-steps-title');
-      const descEl = document.getElementById('pwa-install-desc');
-      const shortcutWarn = document.getElementById('pwa-shortcut-warn');
-
+      var deferredPrompt = null;
+      var cardInstallBtn = document.getElementById('loginInstallBtn');
+      var cardInstallLabel = document.getElementById('loginInstallBtnLabel');
       function isLoggedIn() {
         return localStorage.getItem('mzo_authenticated') === 'true';
       }
-
-      function hideInstallUi() {
-        if (cardInstallBtn) cardInstallBtn.classList.add('hidden');
-        if (modal) {
-          modal.classList.remove('active');
-          modal.classList.add('hidden');
-        }
-      }
-
-      // Already signed in → never show install CTA / modal on the login page
-      if (isLoggedIn()) {
-        hideInstallUi();
-        return;
-      }
-
       function isStandaloneApp() {
         return window.matchMedia('(display-mode: standalone)').matches
           || window.matchMedia('(display-mode: fullscreen)').matches
           || window.navigator.standalone === true;
       }
-
-      function isIos() {
-        return /iphone|ipad|ipod/i.test(navigator.userAgent)
-          || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-      }
-
-      function setWarn(msg) {
-        if (!shortcutWarn) return;
-        if (msg) {
-          shortcutWarn.hidden = false;
-          shortcutWarn.innerHTML = msg;
-        } else {
-          shortcutWarn.hidden = true;
-          shortcutWarn.textContent = '';
-        }
-      }
-
-      function setInstallLabels(text, busy) {
-        const label = text || 'Install app';
-        if (installBtn) {
-          installBtn.textContent = label;
-          installBtn.disabled = !!busy;
-        }
-        if (cardInstallLabel) cardInstallLabel.textContent = label;
-        if (cardInstallBtn) cardInstallBtn.disabled = !!busy;
-      }
-
-      function showReadyModal() {
-        if (!modal || isStandaloneApp() || isLoggedIn()) return;
-        if (descEl) {
-          descEl.innerHTML = 'Tap <b>Install app</b> to install MZO now — no login needed. You can sign in after.';
-        }
-        if (stepsTitle) stepsTitle.textContent = 'One-tap install';
-        if (stepsList) {
-          stepsList.innerHTML = '<li>This installs the <b>real app</b> (full screen), not a browser shortcut.</li>';
-        }
-        setWarn('');
-        setInstallLabels('Install app', false);
-        modal.classList.remove('hidden');
-        requestAnimationFrame(() => modal.classList.add('active'));
-      }
-
-      function hideModal() {
-        if (!modal) return;
-        modal.classList.remove('active');
-        setTimeout(() => {
-          if (!modal.classList.contains('active')) modal.classList.add('hidden');
-        }, 300);
-      }
-
-      function storePrompt(e) {
-        if (e && e.preventDefault) e.preventDefault();
-        deferredPrompt = e;
-        promptWaiters.splice(0).forEach(fn => fn(e));
-        if (isLoggedIn()) {
-          hideInstallUi();
-          return;
-        }
-        setInstallLabels('Install app', false);
-        showReadyModal();
-      }
-
-      function waitForPrompt(ms) {
-        if (deferredPrompt) return Promise.resolve(deferredPrompt);
-        return new Promise(resolve => {
-          const timer = setTimeout(() => {
-            const idx = promptWaiters.indexOf(handler);
-            if (idx >= 0) promptWaiters.splice(idx, 1);
-            resolve(null);
-          }, ms);
-          function handler(ev) {
-            clearTimeout(timer);
-            resolve(ev || deferredPrompt);
-          }
-          promptWaiters.push(handler);
-        });
-      }
-
-      async function triggerDirectInstall() {
-        setInstallLabels('Installing…', true);
-        setWarn('');
-
-        // Ensure service worker is ready (required for Chrome install prompt)
-        if ('serviceWorker' in navigator) {
-          try {
-            await navigator.serviceWorker.register('/sw.js');
-            await navigator.serviceWorker.ready;
-          } catch (err) {
-            console.warn('SW ready failed:', err);
-          }
-        }
-
-        let promptEvent = deferredPrompt || await waitForPrompt(6000);
-
-        if (promptEvent) {
-          try {
-            await promptEvent.prompt();
-            await promptEvent.userChoice;
-          } catch (err) {
-            console.warn('Install prompt failed:', err);
-            setWarn('Install was blocked. Try again, or use Chrome menu → <b>Install app</b>.');
-            setInstallLabels('Install app', false);
-            return false;
-          }
-          deferredPrompt = null;
-          hideModal();
-          if (cardInstallBtn) cardInstallBtn.classList.add('hidden');
-          setInstallLabels('Install app', false);
-          return true;
-        }
-
-        // No native install API (common on iOS / some browsers)
-        setInstallLabels('Install app', false);
-        if (isIos()) {
-          setWarn('iPhone/iPad cannot one-tap install from the web. In <b>Safari</b>: Share → <b>Add to Home Screen</b>.');
-          if (!modal.classList.contains('active')) {
-            if (descEl) descEl.textContent = 'iOS needs Safari Add to Home Screen (Apple does not allow a direct Install button).';
-            if (stepsTitle) stepsTitle.textContent = 'Safari only';
-            if (stepsList) {
-              stepsList.innerHTML = '<li>Share → <b>Add to Home Screen</b></li><li>Then open MZO from the Home Screen</li>';
-            }
-            modal.classList.remove('hidden');
-            requestAnimationFrame(() => modal.classList.add('active'));
-          }
-        } else {
-          setWarn('Install prompt not ready yet. Use <b>Chrome</b> / <b>Edge</b>, stay on this page, then tap <b>Install app</b> again. Do not use “Add to Home screen” (that is only a shortcut).');
-          if (!modal.classList.contains('active')) {
-            if (descEl) descEl.innerHTML = 'Tap <b>Install app</b> again in a moment for the direct install dialog.';
-            if (stepsTitle) stepsTitle.textContent = 'Direct install';
-            if (stepsList) {
-              stepsList.innerHTML = '<li>Use Chrome or Edge on Android/desktop</li><li>Tap <b>Install app</b> — never “Add shortcut”</li>';
-            }
-            modal.classList.remove('hidden');
-            requestAnimationFrame(() => modal.classList.add('active'));
-          }
-        }
-        return false;
-      }
-
-      // Capture install capability as early as possible
-      window.addEventListener('beforeinstallprompt', storePrompt);
-
-      window.addEventListener('appinstalled', () => {
-        deferredPrompt = null;
-        hideModal();
+      function hideInstallUi() {
         if (cardInstallBtn) cardInstallBtn.classList.add('hidden');
-      });
-
-      installBtn?.addEventListener('click', (e) => {
-        e.preventDefault();
-        triggerDirectInstall();
-      });
-
-      cardInstallBtn?.addEventListener('click', (e) => {
-        e.preventDefault();
-        triggerDirectInstall();
-      });
-
-      dismissBtn?.addEventListener('click', hideModal);
-      modal?.addEventListener('click', (e) => {
-        if (e.target === modal) hideModal();
-      });
-
-      if (isStandaloneApp()) {
+      }
+      if (isLoggedIn() || isStandaloneApp()) {
         hideInstallUi();
         return;
       }
-
-      setInstallLabels('Install app', false);
-
-      // Register SW immediately, then open modal once install is available
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js')
-          .then(() => navigator.serviceWorker.ready)
-          .catch(() => {});
-      }
-
-      // If prompt already available, show modal with working Install app button
-      if (deferredPrompt) {
-        showReadyModal();
-      } else {
-        // Wait briefly for Chrome to expose install; then show modal with Install app
-        waitForPrompt(4500).then(ev => {
-          if (isLoggedIn()) {
-            hideInstallUi();
-            return;
+      window.addEventListener('beforeinstallprompt', function (e) {
+        if (e && e.preventDefault) e.preventDefault();
+        deferredPrompt = e;
+      });
+      window.addEventListener('appinstalled', function () {
+        deferredPrompt = null;
+        hideInstallUi();
+      });
+      if (cardInstallBtn) {
+        cardInstallBtn.addEventListener('click', async function (e) {
+          if (e && e.preventDefault) e.preventDefault();
+          if (cardInstallLabel) cardInstallLabel.textContent = 'Installing...';
+          if ('serviceWorker' in navigator) {
+            try {
+              await navigator.serviceWorker.register('/sw.js');
+              await navigator.serviceWorker.ready;
+            } catch (err) {}
           }
-          if (ev) showReadyModal();
-          else if (!isIos()) {
-            // Still show modal with Install app that will retry/wait on click
-            if (descEl) descEl.innerHTML = 'Tap <b>Install app</b> to start the direct install. No login required.';
-            if (stepsTitle) stepsTitle.textContent = 'Direct install';
-            if (stepsList) {
-              stepsList.innerHTML = '<li>Tap the blue <b>Install app</b> button</li><li>Confirm in the browser dialog</li>';
-            }
-            setWarn('If nothing happens, open this site in <b>Chrome</b> (not a shortcut browser).');
-            setInstallLabels('Install app', false);
-            modal.classList.remove('hidden');
-            requestAnimationFrame(() => modal.classList.add('active'));
+          if (deferredPrompt) {
+            try {
+              await deferredPrompt.prompt();
+              await deferredPrompt.userChoice;
+            } catch (err) {}
+            deferredPrompt = null;
           }
+          if (cardInstallLabel) cardInstallLabel.textContent = 'Install app';
         });
+      }
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(function () {});
       }
     })();
   </script>

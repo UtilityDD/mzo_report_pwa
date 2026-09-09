@@ -6,7 +6,10 @@
 // v41: login scope on solar, JJM, meter utilization, WRIDD
 // v42: WRIDD filter dropdowns show scoped office names
 // v84: defective/NSC sheet-mirror retries Failed to fetch; skip duplicate chunks
-const CACHE_NAME = 'mzo-reports-cache-v84';
+// v85: home hub Often used favorites group
+// v86: app update banner; reload stale NSC dump; drop install-app modal
+// v87: Sync Data version-checks reports and downloads only if changed
+const CACHE_NAME = 'mzo-reports-cache-v87';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -50,6 +53,7 @@ function safePut(cache, request, response) {
 function isNetworkFirstPath(pathname) {
   return (
     pathname === '/nsc.html' ||
+    pathname === '/login.html' ||
     pathname.startsWith('/nsc/') ||
     pathname === '/withheld.html' ||
     pathname === '/historical_nsc.html' ||
@@ -74,6 +78,8 @@ function isNetworkFirstPath(pathname) {
     pathname === '/mzo_presets_hub.js' ||
     pathname === '/mzo_docket_briefing.js' ||
     pathname === '/mzo_scope.js' ||
+    pathname === '/mzo_app_update.js' ||
+    pathname === '/version.json' ||
     pathname === '/sw.js' ||
     pathname.startsWith('/api/')
   );
@@ -103,7 +109,13 @@ self.addEventListener('activate', (event) => {
           }
         })
       );
-    }).then(() => self.clients.claim())
+    }).then(() => self.clients.claim()).then(() => {
+      return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ type: 'MZO_APP_UPDATED', cache: CACHE_NAME });
+        });
+      });
+    })
   );
 });
 

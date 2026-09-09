@@ -476,11 +476,25 @@
     window.mzoPresetsHub = MzoPresetsHub;
 })(window);
 
-// Register PWA Service Worker
+// Register PWA Service Worker + app version bump check
+(function loadAppUpdate() {
+    if (window.__mzoAppUpdateScript) return;
+    window.__mzoAppUpdateScript = true;
+    var s = document.createElement('script');
+    s.src = '/mzo_app_update.js?v=87';
+    s.async = true;
+    document.head.appendChild(s);
+})();
+
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
-            .then(reg => console.log('Service Worker registered successfully! Scope:', reg.scope))
+            .then(reg => {
+                console.log('Service Worker registered successfully! Scope:', reg.scope);
+                if (reg && typeof reg.update === 'function') {
+                    try { reg.update(); } catch (e) {}
+                }
+            })
             .catch(err => console.error('Service Worker registration failed:', err));
     });
 }

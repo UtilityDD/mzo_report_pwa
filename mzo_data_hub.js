@@ -48,12 +48,35 @@ const DATASETS = [
 
 const FETCH_TIMEOUT_MS = 90000;
 
+/** Parsed/index copies that must die when the raw dump is replaced. */
+const PARSED_COMPANIONS = {
+    CACHE_NSC_v5: ['CACHE_NSC_PARSED_v7', 'CACHE_NSC_PARSED_v5'],
+    CACHE_WITHHELD_v4: ['CACHE_WITHHELD_PARSED_v4'],
+    CACHE_PENDING_MC: ['CACHE_PENDING_MC_PARSED']
+};
+
 class DataHub {
     constructor() {
         this.db = null;
         this.initPromise = this._initDB();
         this.syncStatus = {}; // Tracks: 'idle', 'syncing', 'done', 'error'
         this.syncPromises = {}; // Tracks active fetch promises for individual datasets
+        this.lastSyncStats = { checked: 0, updated: 0, failed: 0, total: 0 };
+    }
+
+    resetVersionChecks() {
+        Object.keys(this.syncStatus).forEach((k) => {
+            this.syncStatus[k] = 'idle';
+        });
+        this.syncPromises = {};
+    }
+
+    async _invalidateCompanions(key) {
+        const extras = PARSED_COMPANIONS[key] || [];
+        for (let i = 0; i < extras.length; i++) {
+            try { await this.delete(extras[i]); } catch (e) {}
+            this._writeStoredVersion(extras[i], '');
+        }
     }
 
     _initDB() {
@@ -187,6 +210,10 @@ class DataHub {
             rows = data.length;
         }
         return 'f:n' + s.length + '|r' + rows + '|h' + ((h >>> 0).toString(16));
+    }
+
+    _isVercelApiUrl(url) {
+        return /\/api\//i.test(String(url || ''));
     }
 
     _hasBody(peeked) {
@@ -334,25 +361,29 @@ class DataHub {
         return this.syncStatus[key] || 'idle';
     }
 
-    async waitForDataset(key) {
-        // If already done, return immediately
-        if (this.syncStatus[key] === 'done') return true;
-        
-        // If currently syncing, wait for the existing promise
-        if (this.syncPromises[key]) {
+    async waitForDataset(key, opts) {
+        const forceCheck = !!(opts && opts.forceCheck);
+        if (!forceCheck && this.syncStatus[key] === 'done') return true;
+        if (!forceCheck && this.syncPromises[key]) {
             return this.syncPromises[key];
         }
-
-        // Otherwise, if it's idle or error, try to fetch it now (individual retry logic)
-        return this.retryDataset(key);
+        return this.retryDataset(key, opts);
     }
 
     async retryDataset(key, opts) {
         const force = !!(opts && opts.force);
+        const forceCheck = !!(opts && (opts.forceCheck || opts.force));
+        const skipVercelBody = !!(opts && opts.skipVercelBody);
         const dataset = DATASETS.find(d => d.key === key);
         if (!dataset) return false;
-        if (!force && this.syncPromises[key]) return this.syncPromises[key];
-        if (!force && this.syncStatus[key] === 'done') return true;
+        if (this.syncPromises[key]) {
+            const prior = await this.syncPromises[key];
+            if (!force && !forceCheck) {
+                if (this.syncStatus[key] === 'done') return prior || 'unchanged';
+                if (this.syncStatus[key] === 'error') return false;
+            }
+        }
+        if (!force && !forceCheck && this.syncStatus[key] === 'done') return 'unchanged';
 
         this.syncStatus[key] = 'syncing';
         this.syncPromises[key] = (async () => {
@@ -376,7 +407,7 @@ class DataHub {
                     if (remoteVer) remoteVer = 'v:' + remoteVer;
                     const field = dataset.csvUrlField || 'csvUrl';
                     if (metaJson && metaJson[field]) fetchUrl = String(metaJson[field]);
-                } else if (!force && hasBody) {
+                } else if (!force && hasBody && !(skipVercelBody && this._isVercelApiUrl(fetchUrl))) {
                     remoteVer = await this._probeRemoteVersion(fetchUrl);
                 }
 
@@ -400,14 +431,23 @@ class DataHub {
                     if (localVer !== remoteVer) this._writeStoredVersion(key, remoteVer);
                     this._writeFetchedDay(key);
                     this.syncStatus[key] = 'done';
-                    return true;
+                    return 'unchanged';
                 }
 
-                // Google published CSVs often have no HEAD ETag. Keep today's cache
-                // instead of re-downloading the full sheet on every page open.
-                if (!force && hasBody && !remoteVer && this._readFetchedDay(key) === new Date().toDateString()) {
+                // Google published CSVs often have no HEAD ETag. On a normal page
+                // open, keep today's copy. Manual Sync (forceCheck) still downloads
+                // and replaces only if the fingerprint changed.
+                if (!force && !forceCheck && hasBody && !remoteVer && this._readFetchedDay(key) === new Date().toDateString()) {
                     this.syncStatus[key] = 'done';
-                    return true;
+                    return 'unchanged';
+                }
+
+                // Homepage Sync must not pull dump bytes through Vercel.
+                // originHeavy datasets keep /api/.../dataset as a fallback URL; use the
+                // Google csvUrl from meta instead. Tiny /api/.../meta JSON is fine.
+                if (skipVercelBody && this._isVercelApiUrl(fetchUrl)) {
+                    this.syncStatus[key] = 'done';
+                    return 'unchanged';
                 }
 
                 let allowConditional = !force && !!localVer;
@@ -445,7 +485,7 @@ class DataHub {
                         if (keep) this._writeStoredVersion(key, keep);
                         this._writeFetchedDay(key);
                         this.syncStatus[key] = 'done';
-                        return true;
+                        return 'unchanged';
                     }
                     allowConditional = false;
                 }
@@ -457,7 +497,20 @@ class DataHub {
                 if (dataset.type === 'json') data = await response.json();
                 else data = await response.text();
                 const headerVer = this._versionFromHeaders(response);
-                this._writeStoredVersion(key, remoteVer || headerVer || this._fingerprint(data));
+                const nextVer = remoteVer || headerVer || this._fingerprint(data);
+                if (!force && hasBody && localVer && this._versionsMatch(localVer, nextVer)) {
+                    this._writeStoredVersion(key, nextVer);
+                    this._writeFetchedDay(key);
+                    this.syncStatus[key] = 'done';
+                    return 'unchanged';
+                }
+                if (!force && hasBody && this._fingerprint(peeked) === this._fingerprint(data)) {
+                    this._writeStoredVersion(key, nextVer);
+                    this._writeFetchedDay(key);
+                    this.syncStatus[key] = 'done';
+                    return 'unchanged';
+                }
+                this._writeStoredVersion(key, nextVer);
 
                 // NSC / Withheld: refuse to cache a truncated CSV (stale sheet / partial response)
                 if (dataset.key.startsWith('CACHE_NSC') && typeof data === 'string') {
@@ -502,9 +555,10 @@ class DataHub {
                 }
 
                 await this.set(dataset.key, data);
+                await this._invalidateCompanions(dataset.key);
                 this._writeFetchedDay(key);
                 this.syncStatus[key] = 'done';
-                return true;
+                return 'updated';
             } catch (err) {
                 console.error(`Retry failed for ${key}:`, err);
                 this.syncStatus[key] = 'error';
@@ -523,44 +577,46 @@ window.mzoDataHub = mzoDataHub;
 
 // Main function to sync all datasets
 // Main function to sync all datasets in parallel batches
-async function syncAllData(progressCallback) {
-    let completed = 0;
+async function syncAllData(progressCallback, opts) {
+    opts = opts || {};
+    const forceCheck = !!opts.forceCheck;
+    const includeLazy = !!opts.includeLazy;
+    if (forceCheck && typeof mzoDataHub.resetVersionChecks === 'function') {
+        mzoDataHub.resetVersionChecks();
+    }
+    let checked = 0;
+    let updated = 0;
+    let failed = 0;
     const syncDatasets = [];
     for (const d of DATASETS) {
-        if (d.lazySync) continue; // multi‑MB dumps: on-demand only
-        if (!d.originHeavy) {
-            syncDatasets.push(d);
-            continue;
-        }
-        try {
-            const meta = await mzoDataHub._getDatasetMeta(d);
-            const field = d.csvUrlField || 'csvUrl';
-            if (meta && meta[field]) syncDatasets.push(d);
-        } catch (e) {}
+        if (!includeLazy && d.lazySync) continue;
+        syncDatasets.push(d);
     }
     const total = syncDatasets.length;
-    const BATCH_SIZE = 6; // Balance speed and rate limits
+    const BATCH_SIZE = 6;
     const inFlight = new Set();
+    mzoDataHub.lastSyncStats = { checked: 0, updated: 0, failed: 0, total };
 
     try {
-        // Initialize sync status for homepage datasets only (skip Vercel-origin dumps)
-        syncDatasets.forEach(d => {
-            if (mzoDataHub.syncStatus[d.key] !== 'done') {
+        syncDatasets.forEach((d) => {
+            if (forceCheck || mzoDataHub.syncStatus[d.key] !== 'done') {
                 mzoDataHub.syncStatus[d.key] = 'pending';
             }
         });
 
-        // Use a simple queue for parallel execution with limited concurrency
         const queue = [...syncDatasets];
         const workers = [];
+
+        const summary = () =>
+            'Checked ' + checked + ' / ' + total + ' · Updated ' + updated;
 
         const updateProgress = (label) => {
             if (!progressCallback) return;
             const active = [...inFlight].slice(0, 3).join(', ');
-            const detail = active && !/Complete|finished/i.test(label)
-                ? `${label} · also: ${active}`
+            const detail = active && !/Complete|finished|Checked/i.test(label)
+                ? label + ' · also: ' + active
                 : label;
-            progressCallback(completed, total, detail);
+            progressCallback(checked, total, detail);
         };
 
         const executeWorker = async () => {
@@ -568,37 +624,55 @@ async function syncAllData(progressCallback) {
                 const dataset = queue.shift();
                 if (!dataset) break;
 
-                // Skip if already done today (unless force refresh is added later)
-                if (mzoDataHub.syncStatus[dataset.key] === 'done') {
-                    completed++;
+                if (!forceCheck && mzoDataHub.syncStatus[dataset.key] === 'done') {
+                    checked++;
+                    updateProgress(summary());
                     continue;
                 }
 
                 inFlight.add(dataset.label);
-                updateProgress(`Updating ${dataset.label}...`);
-                let success = false;
+                updateProgress('Checking ' + dataset.label + '…');
+                let result = false;
                 try {
-                    success = await mzoDataHub.retryDataset(dataset.key);
-                    if (success) completed++;
+                    result = await mzoDataHub.retryDataset(dataset.key, {
+                        forceCheck,
+                        skipVercelBody: true
+                    });
+                    checked++;
+                    if (result === 'updated') updated++;
+                    else if (!result) failed++;
+                } catch (e) {
+                    checked++;
+                    failed++;
                 } finally {
                     inFlight.delete(dataset.label);
                 }
-                
-                updateProgress(success ? `Loaded ${dataset.label}` : `Failed ${dataset.label}`);
+                mzoDataHub.lastSyncStats = { checked, updated, failed, total };
+                updateProgress(
+                    result === 'updated'
+                        ? 'Updated ' + dataset.label + ' · ' + summary()
+                        : result
+                            ? 'Up to date: ' + dataset.label + ' · ' + summary()
+                            : 'Failed ' + dataset.label + ' · ' + summary()
+                );
             }
         };
 
-        // Start initial workers
         for (let i = 0; i < Math.min(BATCH_SIZE, queue.length); i++) {
             workers.push(executeWorker());
         }
 
         await Promise.all(workers);
 
-        const allDone = syncDatasets.every((d) => mzoDataHub.syncStatus[d.key] === 'done');
-        
+        const allDone = failed === 0;
         if (progressCallback) {
-            progressCallback(completed, total, allDone ? "Sync Complete!" : "Sync finished with some errors.");
+            progressCallback(
+                checked,
+                total,
+                allDone
+                    ? (updated ? 'Sync complete · ' + updated + ' updated' : 'Sync complete · all up to date')
+                    : 'Sync finished with ' + failed + ' error(s) · ' + updated + ' updated'
+            );
         }
 
         if (allDone) {
@@ -606,13 +680,13 @@ async function syncAllData(progressCallback) {
                 localStorage.setItem('mzoDataSynced', 'true');
             } catch (e) {}
         }
-        
+
         return allDone;
 
     } catch (error) {
         console.error("Error during data sync:", error);
         if (progressCallback) {
-            progressCallback(completed, total, "Sync encountered a critical error.");
+            progressCallback(checked, total, "Sync encountered a critical error.");
         }
         return false;
     }
@@ -626,3 +700,6 @@ function isSyncNeeded() {
         return true;
     }
 }
+
+window.syncAllData = syncAllData;
+window.isSyncNeeded = isSyncNeeded;

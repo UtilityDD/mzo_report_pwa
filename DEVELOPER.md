@@ -75,14 +75,21 @@ await window.mzoDataHub.waitForDataset('CACHE_NSC_v5');
 const csv = await window.mzoDataHub.get('CACHE_NSC_v5');
 ```
 
-**Versioned load (required):** `get()` revalidates once per page load with a cheap check — `/api/.../meta` when `versionUrl` is set, otherwise `HEAD` plus `If-None-Match` / `If-Modified-Since`. If the stored version matches and IndexedDB already has a body, **do not download the CSV**. If the version changed, fetch, then store the new body and version.
+**Versioned load (required):** `get()` / `waitForDataset` revalidate once per page load with a cheap check — `/api/.../meta` when `versionUrl` is set, otherwise `HEAD` plus `If-None-Match` / `If-Modified-Since`. If the stored version matches and IndexedDB already has a body, **do not download the CSV**. If the version changed, fetch, then store the new body and version. Replacing a raw dump also deletes its parsed companion (`CACHE_NSC_PARSED_v7`, `CACHE_WITHHELD_PARSED_v4`, `CACHE_PENDING_MC_PARSED`).
 
 Version strings are prefixed: `v:` API meta, `e:` ETag, `m:` Last-Modified, `f:` body fingerprint. `refresh(key)` clears the stored version and forces a download (use after an upload).
 
+**Sync Data** (home header refresh) is a version check, not a wipe and not a blind re-download:
+
+- Daily/auto (first visit of the day): `forceCheck` on every non-`lazySync` dataset, including NSC / stock / withheld. Download only if the version or body fingerprint changed.
+- Manual Sync: same check, plus `lazySync` dumps (meter, defective, PMSGY, safety). Overlay shows “Checking versions…” then **Checked N · Updated M**.
+- Opening a report page still skips a same-day Google GET when there is no ETag (`!forceCheck`). Sync still fetches and fingerprints those sheets.
+- Do not skip a dataset because `syncStatus === 'done'` when `forceCheck` is set.
+
 | Flag | Meaning |
 |------|---------|
-| `originHeavy` | Prefer `/api/...` dump; version from `versionUrl` (NSC, Withheld, Stock) |
-| `lazySync` | Skip homepage daily sync; version-check when the page opens (meter dumps, safety, PMSGY) |
+| `originHeavy` | Prefer Google `csvUrl` from `/api/.../meta` (NSC, Withheld, Stock). Included in Sync for version checks. Dump bodies are never downloaded through Vercel. |
+| `lazySync` | Skip daily homepage sync; version-check on page open. Manual Sync still checks these. |
 | `versionUrl` / `versionField` | JSON meta for version (Withheld uses `withheldVersion`) |
 
 Do **not** `fetch()` or `Papa.parse(url, { download: true })` a Google Sheet from a page if a DataHub key exists. Register the URL in `DATASETS`, then `waitForDataset` + `get`. On the home hub, set `data-dataset="CACHE_…"`.
@@ -95,9 +102,9 @@ Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large d
 
 ## Service worker
 
-`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v84`. **Increment it** whenever HTML/CSS/JS that users already cached must update.
+`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v87`. **Increment it** whenever HTML/CSS/JS that users already cached must update. Also bump `version` + `message` in `version.json` (shown as “App updated”). `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`.
 
-Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a stale copy. After deploy, users may still need a hard refresh until `skipWaiting` + `clients.claim` run.
+Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a stale copy (`/version.json`, `/mzo_app_update.js`). After activate, the SW posts `MZO_APP_UPDATED`. NSC still paints from IndexedDB first, then `waitForDataset`; if the dump version changed it **reloads** (do not only `console.log`).
 
 ---
 
@@ -106,7 +113,7 @@ Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a 
 There is no webpack/vite build. Local run is `npm run dev`. Production is Vercel: https://mzo-report-pwa.vercel.app
 
 1. Leave one-off `scripts/analyze_*` / `scripts/patch_*` and dataset dumps untracked. Do not commit `.env` or `consumer/*.csv`.
-2. Bump `CACHE_NAME` in `sw.js` when users must receive HTML/JS changes.
+2. Bump `CACHE_NAME` in `sw.js` and `version` + `message` in `version.json` when users must receive HTML/JS changes.
 3. Commit product files, then `git push origin main`.
 4. Production deploy from the repo root: `npx vercel --prod --yes --scope dipankar-das-projects-1592747b`. Confirm the changed page after deploy. `npx vercel --prod --yes` without `--scope` can return Not authorized.
 
@@ -131,6 +138,7 @@ There is no webpack/vite build. Local run is `npm run dev`. Production is Vercel
 - Sticky chrome must stay thin on mobile; overlays must not grow the sticky box (`position: absolute` / `fixed`, not in-flow).
 - `home-button.js` injects a floating Home control — do not duplicate a second home bar in the header.
 - When a dashboard mixes **counts-only** KPIs and **named-row** KPIs, split them into two labeled bands (Count vs Names). Use one card style. Count-only rows must not open a names modal. Defective Meter is the reference.
+- Home hub (`index.html`): **Often used** (`#favoritesCard`, class `always-open`) sits above New Service Connection and stays expanded on mobile. Each page tile has a star (`.fav-btn`); pins are stored per login in `localStorage` key `mzo_page_favorites_<Username>`. Do not collapse `always-open` groups in `initCollapsibleCards`.
 
 ---
 

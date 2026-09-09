@@ -2,6 +2,14 @@
 (function() {
     'use strict';
 
+    if (!window.__mzoAppUpdateScript) {
+        window.__mzoAppUpdateScript = true;
+        var updateScript = document.createElement('script');
+        updateScript.src = '/mzo_app_update.js?v=87';
+        updateScript.async = true;
+        document.head.appendChild(updateScript);
+    }
+
     // Verify authentication state (essential for offline routing and online validity check)
     if (navigator.onLine) {
         // Online: verify the session cookie with the server first
