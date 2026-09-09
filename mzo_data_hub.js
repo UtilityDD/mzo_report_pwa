@@ -231,7 +231,11 @@ class DataHub {
         if (!url) return '';
         const cred = /\/api\//.test(url) ? 'same-origin' : 'omit';
         try {
-            const head = await fetch(url, { method: 'HEAD', credentials: cred, cache: 'no-store' });
+            const head = await this._fetchWithTimeout(
+                url,
+                { method: 'HEAD', credentials: cred, cache: 'no-store' },
+                8000
+            );
             if (head.ok) {
                 const ver = this._versionFromHeaders(head);
                 if (ver) return ver;
@@ -256,9 +260,26 @@ class DataHub {
         });
     }
 
+    async _fetchWithTimeout(url, options, timeoutMs) {
+        const ms = timeoutMs || FETCH_TIMEOUT_MS;
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), ms) : null;
+        try {
+            return await fetch(url, Object.assign({}, options || {}, {
+                signal: ctrl ? ctrl.signal : (options && options.signal)
+            }));
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+    }
+
     async _getDatasetMeta(dataset) {
         if (!dataset || !dataset.versionUrl) return null;
-        const res = await fetch(dataset.versionUrl, { credentials: 'same-origin' });
+        const res = await this._fetchWithTimeout(
+            dataset.versionUrl,
+            { credentials: 'same-origin', cache: 'no-store' },
+            12000
+        );
         if (!res.ok) return null;
         return res.json();
     }
@@ -407,7 +428,12 @@ class DataHub {
                     if (remoteVer) remoteVer = 'v:' + remoteVer;
                     const field = dataset.csvUrlField || 'csvUrl';
                     if (metaJson && metaJson[field]) fetchUrl = String(metaJson[field]);
-                } else if (!force && hasBody && !(skipVercelBody && this._isVercelApiUrl(fetchUrl))) {
+                } else if (
+                    !force &&
+                    hasBody &&
+                    !(skipVercelBody && dataset.lazySync) &&
+                    !(skipVercelBody && this._isVercelApiUrl(fetchUrl))
+                ) {
                     remoteVer = await this._probeRemoteVersion(fetchUrl);
                 }
 
@@ -450,12 +476,26 @@ class DataHub {
                     return 'unchanged';
                 }
 
+                // Homepage Sync: do not download multi-MB lazy dumps just to fingerprint
+                // them. Google published CSVs usually have no ETag, so a "version check"
+                // would otherwise GET the whole sheet and can hang the overlay.
+                if (skipVercelBody && dataset.lazySync && !force) {
+                    if (hasBody && remoteVer && localVer && this._versionsMatch(localVer, remoteVer) && rowLooksComplete) {
+                        this.syncStatus[key] = 'done';
+                        return 'unchanged';
+                    }
+                    if (!remoteVer || !hasBody) {
+                        this.syncStatus[key] = 'done';
+                        return 'unchanged';
+                    }
+                }
+
                 let allowConditional = !force && !!localVer;
                 let response = null;
                 for (let attempt = 0; attempt < 2; attempt++) {
                     const headers = {};
                     const stored = this._readStoredVersion(key);
-                    if (allowConditional && stored) {
+                    if (allowConditional && stored && !/docs\.google\.com|spreadsheets\.google\.com/i.test(fetchUrl)) {
                         if (stored.indexOf('m:') === 0) {
                             const lm = stored.slice(2).split('|')[0];
                             if (lm) headers['If-Modified-Since'] = lm;
@@ -464,19 +504,20 @@ class DataHub {
                             if (tag) headers['If-None-Match'] = '"' + tag + '"';
                         }
                     }
-                    const timeoutMs = dataset.lazySync ? 180000 : FETCH_TIMEOUT_MS;
-                    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-                    const timer = ctrl
-                        ? setTimeout(() => ctrl.abort(), timeoutMs)
-                        : null;
+                    const timeoutMs = skipVercelBody
+                        ? (dataset.lazySync ? 60000 : 30000)
+                        : (dataset.lazySync ? 180000 : FETCH_TIMEOUT_MS);
                     try {
-                        response = await fetch(fetchUrl, {
+                        response = await this._fetchWithTimeout(fetchUrl, {
                             credentials: /\/api\//.test(fetchUrl) ? 'same-origin' : 'omit',
-                            headers,
-                            signal: ctrl ? ctrl.signal : undefined
-                        });
-                    } finally {
-                        if (timer) clearTimeout(timer);
+                            headers
+                        }, timeoutMs);
+                    } catch (fetchErr) {
+                        if (skipVercelBody && hasBody) {
+                            this.syncStatus[key] = 'done';
+                            return 'unchanged';
+                        }
+                        throw fetchErr;
                     }
                     if (response.status !== 304) break;
                     const cached = await this._peek(key);
@@ -490,6 +531,10 @@ class DataHub {
                     allowConditional = false;
                 }
                 if (!response || !response.ok) {
+                    if (skipVercelBody && hasBody) {
+                        this.syncStatus[key] = 'done';
+                        return 'unchanged';
+                    }
                     throw new Error(`HTTP ${response ? response.status : 0}`);
                 }
 
@@ -561,6 +606,12 @@ class DataHub {
                 return 'updated';
             } catch (err) {
                 console.error(`Retry failed for ${key}:`, err);
+                let cached = false;
+                try { cached = this._hasBody(await this._peek(key)); } catch (e) {}
+                if (skipVercelBody && cached) {
+                    this.syncStatus[key] = 'done';
+                    return 'unchanged';
+                }
                 this.syncStatus[key] = 'error';
                 return false;
             } finally {
@@ -595,7 +646,8 @@ async function syncAllData(progressCallback, opts) {
     const total = syncDatasets.length;
     const BATCH_SIZE = 6;
     const inFlight = new Set();
-    mzoDataHub.lastSyncStats = { checked: 0, updated: 0, failed: 0, total };
+    const failedLabels = [];
+    mzoDataHub.lastSyncStats = { checked: 0, updated: 0, failed: 0, total, failedLabels };
 
     try {
         syncDatasets.forEach((d) => {
@@ -613,8 +665,8 @@ async function syncAllData(progressCallback, opts) {
         const updateProgress = (label) => {
             if (!progressCallback) return;
             const active = [...inFlight].slice(0, 3).join(', ');
-            const detail = active && !/Complete|finished|Checked/i.test(label)
-                ? label + ' · also: ' + active
+            const detail = active
+                ? summary() + ' · still: ' + active
                 : label;
             progressCallback(checked, total, detail);
         };
@@ -640,14 +692,18 @@ async function syncAllData(progressCallback, opts) {
                     });
                     checked++;
                     if (result === 'updated') updated++;
-                    else if (!result) failed++;
+                    else if (!result) {
+                        failed++;
+                        failedLabels.push(dataset.label);
+                    }
                 } catch (e) {
                     checked++;
                     failed++;
+                    failedLabels.push(dataset.label);
                 } finally {
                     inFlight.delete(dataset.label);
                 }
-                mzoDataHub.lastSyncStats = { checked, updated, failed, total };
+                mzoDataHub.lastSyncStats = { checked, updated, failed, total, failedLabels };
                 updateProgress(
                     result === 'updated'
                         ? 'Updated ' + dataset.label + ' · ' + summary()

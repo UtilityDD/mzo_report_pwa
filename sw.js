@@ -9,7 +9,11 @@
 // v85: home hub Often used favorites group
 // v86: app update banner; reload stale NSC dump; drop install-app modal
 // v87: Sync Data version-checks reports and downloads only if changed
-const CACHE_NAME = 'mzo-reports-cache-v87';
+// v88: homepage Sync must not hang on multi-MB Google sheet GETs
+// v89: do not intercept Google Sheet fetches (CORS); keep cached copy if a check fails
+// v90: Meter Utilization treats Div and Division as the same office
+// v91: drop division HQ names from Meter Utilization CCC list
+const CACHE_NAME = 'mzo-reports-cache-v91';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -33,6 +37,15 @@ const CDN_URLS = [
   'https://cdnjs.cloudflare.com',
   'https://cdn.jsdelivr.net'
 ];
+
+function isGoogleSheetRequest(url) {
+  const host = String(url.hostname || '');
+  return (
+    host === 'docs.google.com' ||
+    host === 'spreadsheets.google.com' ||
+    /googleusercontent\.com$/i.test(host)
+  );
+}
 
 function canCacheRequest(request) {
   try {
@@ -134,6 +147,12 @@ self.addEventListener('fetch', (event) => {
   }
 
   const url = new URL(request.url);
+
+  // Leave Google Sheet CSVs to the browser. Intercepting them (even to
+  // pass through) can fail CORS and make homepage Sync report failures.
+  if (isGoogleSheetRequest(url)) {
+    return;
+  }
 
   // Always network for API + NSC page/hub scripts (filters/data keys change often)
   if (isNetworkFirstPath(url.pathname)) {

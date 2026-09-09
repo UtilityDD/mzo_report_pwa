@@ -58,7 +58,7 @@ Unauthenticated HTML requests redirect to `/login.html`. Use a real portal user 
 Canonical names in `mzo_scope.js` `HIERARCHY`:
 
 - Regions: **Malda**, **Raiganj**, **Balurghat**
-- Divisions: Malda, Chanchal, Gazole, Raiganj, Islampur, Balurghat, Buniadpur
+- Divisions: Malda, Chanchal, Gazole, Raiganj, Islampur, Balurghat, Buniadpur. Treat **Div** / **Div.** / **Division** as the same office; UI shows the name without that suffix.
 
 Office codes match `/66[123]\d{4}/` (e.g. `6611108`, `C36611108`). If a dataset’s office columns are missing from `REGION_KEYS` / `DIV_KEYS` / `CCC_KEYS` / `CODE_KEYS`, extend those lists — do not invent a second matcher.
 
@@ -82,14 +82,14 @@ Version strings are prefixed: `v:` API meta, `e:` ETag, `m:` Last-Modified, `f:`
 **Sync Data** (home header refresh) is a version check, not a wipe and not a blind re-download:
 
 - Daily/auto (first visit of the day): `forceCheck` on every non-`lazySync` dataset, including NSC / stock / withheld. Download only if the version or body fingerprint changed.
-- Manual Sync: same check, plus `lazySync` dumps (meter, defective, PMSGY, safety). Overlay shows “Checking versions…” then **Checked N · Updated M**.
-- Opening a report page still skips a same-day Google GET when there is no ETag (`!forceCheck`). Sync still fetches and fingerprints those sheets.
+- Manual Sync: version-check `lazySync` dumps (meter, defective, PMSGY, safety) without downloading the body unless a `versionUrl` says it changed. Overlay shows remaining checks, then **Checked N · Updated M**.
+- Opening a report page still skips a same-day Google GET when there is no ETag (`!forceCheck`). Non-lazy sheets on Sync still fingerprint; lazy dumps wait for the page.
 - Do not skip a dataset because `syncStatus === 'done'` when `forceCheck` is set.
 
 | Flag | Meaning |
 |------|---------|
 | `originHeavy` | Prefer Google `csvUrl` from `/api/.../meta` (NSC, Withheld, Stock). Included in Sync for version checks. Dump bodies are never downloaded through Vercel. |
-| `lazySync` | Skip daily homepage sync; version-check on page open. Manual Sync still checks these. |
+| `lazySync` | Skip daily homepage sync. Manual Sync cheap-checks only (no multi-MB GET). Version-check on page open. |
 | `versionUrl` / `versionField` | JSON meta for version (Withheld uses `withheldVersion`) |
 
 Do **not** `fetch()` or `Papa.parse(url, { download: true })` a Google Sheet from a page if a DataHub key exists. Register the URL in `DATASETS`, then `waitForDataset` + `get`. On the home hub, set `data-dataset="CACHE_…"`.
@@ -102,7 +102,7 @@ Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large d
 
 ## Service worker
 
-`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v87`. **Increment it** whenever HTML/CSS/JS that users already cached must update. Also bump `version` + `message` in `version.json` (shown as “App updated”). `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`.
+`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v91`. **Increment it** whenever HTML/CSS/JS that users already cached must update. Also bump `version` + `message` in `version.json` (shown as “App updated”). `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`.
 
 Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a stale copy (`/version.json`, `/mzo_app_update.js`). After activate, the SW posts `MZO_APP_UPDATED`. NSC still paints from IndexedDB first, then `waitForDataset`; if the dump version changed it **reloads** (do not only `console.log`).
 

@@ -82,7 +82,7 @@
   function norm(v) {
     return String(v == null ? '' : v)
       .toLowerCase()
-      .replace(/region|division|divn|ccc/g, ' ')
+      .replace(/region|division|divn|\bdiv\b|ccc/g, ' ')
       .replace(/[^a-z0-9/]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
