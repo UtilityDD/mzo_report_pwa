@@ -102,7 +102,7 @@ Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large d
 
 ## Service worker
 
-`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v91`. **Increment it** whenever HTML/CSS/JS that users already cached must update. Also bump `version` + `message` in `version.json` (shown as “App updated”). `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`.
+`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v92`. **Increment it** whenever HTML/CSS/JS that users already cached must update. Also bump `version` + `message` in `version.json` (shown as “App updated”). `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`.
 
 Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a stale copy (`/version.json`, `/mzo_app_update.js`). After activate, the SW posts `MZO_APP_UPDATED`. NSC still paints from IndexedDB first, then `waitForDataset`; if the dump version changed it **reloads** (do not only `console.log`).
 
@@ -136,6 +136,7 @@ There is no webpack/vite build. Local run is `npm run dev`. Production is Vercel
 
 - Prefer existing page look (Outfit/Inter, cards, KPI grids). Do not introduce a new CSS framework on one page.
 - Sticky chrome must stay thin on mobile; overlays must not grow the sticky box (`position: absolute` / `fixed`, not in-flow).
+- Clicking a status KPI (e.g. Disconnection Tracker Fully Paid / Disconnected) must filter **charts and table only**. Other KPI totals stay on the broader filter set (office, class, search, breadcrumb) and must not shrink each other.
 - `home-button.js` injects a floating Home control — do not duplicate a second home bar in the header.
 - When a dashboard mixes **counts-only** KPIs and **named-row** KPIs, split them into two labeled bands (Count vs Names). Use one card style. Count-only rows must not open a names modal. Defective Meter is the reference.
 - Home hub (`index.html`): **Often used** (`#favoritesCard`, class `always-open`) sits above New Service Connection and stays expanded on mobile. Each page tile has a star (`.fav-btn`); pins are stored per login in `localStorage` key `mzo_page_favorites_<Username>`. Do not collapse `always-open` groups in `initCollapsibleCards`.

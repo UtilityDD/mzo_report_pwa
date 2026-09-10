@@ -80,24 +80,78 @@
         .dashboard-header {
             background: var(--header-bg);
             color: var(--header-text);
-            padding: 1rem 1.5rem;
+            padding: 0.7rem 1.25rem;
             margin-bottom: 1.25rem;
             border-radius: 12px;
             box-shadow: var(--elevation-2);
             display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 6px;
+        }
+
+        .header-top {
+            display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .dashboard-title {
+            min-width: 0;
+            flex: 1;
         }
 
         .dashboard-title h1 {
-            font-size: 1.3rem;
+            font-size: 1.2rem;
             font-weight: 700;
             margin: 0;
+            line-height: 1.2;
         }
 
         .dashboard-subtitle {
-            font-size: 0.8rem;
+            font-size: 0.78rem;
             opacity: 0.9;
+            margin-top: 3px;
+        }
+
+        .osd-dates {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+            overflow: visible;
+            font-size: 0.72rem;
+            opacity: 0.95;
+        }
+
+        .osd-chip {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 4px;
+            white-space: nowrap;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 6px;
+            padding: 1px 7px;
+            line-height: 1.35;
+        }
+
+        .osd-k {
+            font-size: 0.62rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+            opacity: 0.75;
+        }
+
+        .osd-v {
+            font-variant-numeric: tabular-nums;
+            font-weight: 600;
+        }
+
+        .header-actions {
+            flex-shrink: 0;
         }
 
         /* Stats Cards styling */
@@ -344,13 +398,47 @@
                 padding: 8px !important;
             }
             .dashboard-header {
-                padding: 0.75rem 1rem;
-                flex-direction: column;
-                align-items: flex-start;
+                position: sticky;
+                top: 0;
+                z-index: 30;
+                padding: 6px 10px;
+                margin-bottom: 8px;
+                gap: 4px;
+                border-radius: 10px;
+            }
+            .header-top {
                 gap: 8px;
             }
+            .dashboard-title h1,
             .dashboard-header h1 {
-                font-size: 1.15rem !important;
+                font-size: 0.92rem !important;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 100%;
+            }
+            .title-mid {
+                display: none;
+            }
+            .dashboard-subtitle {
+                font-size: 0.68rem;
+                margin-top: 1px;
+            }
+            .osd-dates {
+                gap: 5px;
+                font-size: 0.68rem;
+            }
+            .osd-chip {
+                padding: 0 5px;
+            }
+            .osd-k {
+                font-size: 0.58rem;
+            }
+            .sync-label {
+                display: none;
+            }
+            #refreshBtn {
+                padding: 4px 8px;
             }
             .filter-bar {
                 padding: 0.75rem;
@@ -441,18 +529,22 @@
     <div class="custom-container container-fluid py-3 px-md-4">
         <!-- Top Header Bar -->
         <div class="dashboard-header">
-            <div class="dashboard-title">
-                <h1>Disconnection Activity Tracker</h1>
-                <div class="dashboard-subtitle">
-                    <span id="dataTimestamp" class="small">Loading source data...</span>
+            <div class="header-top">
+                <div class="dashboard-title">
+                    <h1>Disconnection <span class="title-mid">Activity </span>Tracker</h1>
+                    <div class="dashboard-subtitle">
+                        <span id="dataTimestamp">Loading source data...</span>
+                    </div>
+                </div>
+                <div class="header-actions d-flex align-items-center">
+                    <button id="refreshBtn" class="btn btn-outline-light btn-sm d-flex align-items-center gap-1" title="Force refresh data from Google Sheet">
+                        <i class="bi bi-arrow-clockwise"></i> <span class="sync-label">Sync</span>
+                    </button>
                 </div>
             </div>
-            
-            <div class="d-flex align-items-center gap-2">
-                <!-- Hard Refresh Button -->
-                <button id="refreshBtn" class="btn btn-outline-light btn-sm d-flex align-items-center gap-1" title="Force refresh data from Google Sheet">
-                    <i class="bi bi-arrow-clockwise"></i> Sync
-                </button>
+            <div class="osd-dates" id="osdBaseDates" aria-label="Base OSD dates">
+                <span class="osd-chip"><span class="osd-k">Dom/Com</span> <span class="osd-v" id="osdDomCom">—</span></span>
+                <span class="osd-chip"><span class="osd-k">Ind</span> <span class="osd-v" id="osdInd">—</span></span>
             </div>
         </div>
 
@@ -762,6 +854,7 @@
         // Global State variables
         let rawConsumers = [];
         let enrichedConsumers = [];
+        let osdBaseDates = { domCom: '', ind: '' };
         let currentHierarchyPath = { region: null, division: null, ccc: null }; // Breadcrumb drilldown state
         let currentTabLevel = 'region'; // active table aggregation tab: 'region', 'division', 'ccc', 'consumer'
         let currentStatusFilter = 'all'; // status filter (fully paid, partially paid, disconnected, no action)
@@ -955,7 +1048,71 @@
             return 0;
         }
 
+        function parseCsvRecord(line) {
+            const out = [];
+            let cur = '';
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                const ch = line[i];
+                if (ch === '"') {
+                    if (inQuotes && line[i + 1] === '"') {
+                        cur += '"';
+                        i++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (ch === ',' && !inQuotes) {
+                    out.push(cur);
+                    cur = '';
+                } else {
+                    cur += ch;
+                }
+            }
+            out.push(cur);
+            return out;
+        }
+
+        function formatOsdDate(raw) {
+            const s = String(raw || '').trim();
+            if (!s || /^#?n\/?a$/i.test(s) || s === '0') return '';
+            const m = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+            if (!m) return '';
+            const dd = m[1].padStart(2, '0');
+            const mm = m[2].padStart(2, '0');
+            let yyyy = m[3];
+            if (yyyy.length === 2) yyyy = (parseInt(yyyy, 10) > 50 ? '19' : '20') + yyyy;
+            return `${dd}.${mm}.${yyyy}`;
+        }
+
+        function extractOsdBaseDates(csvContent) {
+            const text = normalizeDisconnectionCsv(csvContent);
+            const lines = text.split(/\r?\n/).filter((l) => l.trim());
+            if (lines.length < 2) return { domCom: '', ind: '' };
+            const headers = parseCsvRecord(lines[0]).map((h) => String(h || '').replace(/\s+/g, ' ').trim());
+            const row2 = parseCsvRecord(lines[1]);
+            let vIdx = headers.findIndex((h) => /^dom(\s|&)*com\s*base date$/i.test(h) || /^dom base date$/i.test(h));
+            let wIdx = headers.findIndex((h) => /^ind/i.test(h) && /base date/i.test(h));
+            if (vIdx < 0) vIdx = 21;
+            if (wIdx < 0) wIdx = 22;
+            let domCom = formatOsdDate(row2[vIdx]) || formatOsdDate(row2[21]);
+            let ind = formatOsdDate(row2[wIdx]) || formatOsdDate(row2[22]);
+            if (!domCom || !ind) {
+                const tail = row2.map(formatOsdDate).filter(Boolean);
+                if (!domCom && tail[0]) domCom = tail[0];
+                if (!ind && tail.length) ind = tail[tail.length - 1];
+            }
+            return { domCom, ind };
+        }
+
+        function renderOsdBaseDates() {
+            const domEl = document.getElementById('osdDomCom');
+            const indEl = document.getElementById('osdInd');
+            if (domEl) domEl.textContent = osdBaseDates.domCom || '—';
+            if (indEl) indEl.textContent = osdBaseDates.ind || '—';
+        }
+
         function parseCSV(csvContent) {
+            osdBaseDates = extractOsdBaseDates(csvContent);
             Papa.parse(normalizeDisconnectionCsv(csvContent), {
                 header: true,
                 skipEmptyLines: true,
@@ -1089,15 +1246,19 @@
             populateFilterOptions('classFilter', Array.from(uniqueClasses).sort());
             if (window.MzoScope) window.MzoScope.lockFilters();
 
-            // Update Report Date
-            if (maxDate) {
-                const dd = String(maxDate.getDate()).padStart(2, '0');
-                const mm = String(maxDate.getMonth() + 1).padStart(2, '0');
-                const yyyy = maxDate.getFullYear();
-                document.getElementById('dataTimestamp').textContent = `Report Date: ${dd}/${mm}/${yyyy}`;
-            } else {
-                document.getElementById('dataTimestamp').textContent = `Report Date: ${localStorage.getItem('mzo_last_sync_date') || 'Today'}`;
+            const stampEl = document.getElementById('dataTimestamp');
+            if (stampEl) {
+                if (maxDate) {
+                    const dd = String(maxDate.getDate()).padStart(2, '0');
+                    const mm = String(maxDate.getMonth() + 1).padStart(2, '0');
+                    const yyyy = maxDate.getFullYear();
+                    stampEl.textContent = `Report Date: ${dd}/${mm}/${yyyy}`;
+                } else {
+                    stampEl.textContent = `Report Date: ${localStorage.getItem('mzo_last_sync_date') || 'Today'}`;
+                }
             }
+
+            renderOsdBaseDates();
 
             // Render UI
             updateDashboard();
@@ -1131,7 +1292,8 @@
         }
 
         // Apply filters, searches, breadcrumb states
-        function getFilteredData() {
+        function getFilteredData(opts) {
+            const skipStatus = !!(opts && opts.skipStatus);
             const searchVal = document.getElementById('searchBar').value.toLowerCase().trim();
             const regionVal = document.getElementById('regionFilter') ? document.getElementById('regionFilter').value : 'all';
             const divisionVal = document.getElementById('divisionFilter') ? document.getElementById('divisionFilter').value : 'all';
@@ -1149,8 +1311,8 @@
                 // Division filter dropdown
                 if (divisionVal !== 'all' && c.divisionName !== divisionVal) return false;
 
-                // Status Filter
-                if (currentStatusFilter !== 'all' && c.status !== currentStatusFilter) return false;
+                // Status filter applies to charts and table only — KPI cards stay on the broader set
+                if (!skipStatus && currentStatusFilter !== 'all' && c.status !== currentStatusFilter) return false;
 
                 // Text search
                 if (searchVal) {
@@ -1176,8 +1338,8 @@
         function updateDashboard() {
             const filtered = getFilteredData();
 
-            // Compute KPIs on current filtered dataset
-            computeKPIs(filtered);
+            // KPI cards ignore status selection so they do not filter each other
+            computeKPIs(getFilteredData({ skipStatus: true }));
 
             // Re-draw diagrams
             renderCharts();
@@ -2182,6 +2344,7 @@
             }
 
             rawConsumers = result;
+            osdBaseDates = { domCom: '01.04.2026', ind: '01.04.2026' };
             processAndEnrichData();
         }
     </script>

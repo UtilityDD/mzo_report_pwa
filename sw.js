@@ -13,7 +13,8 @@
 // v89: do not intercept Google Sheet fetches (CORS); keep cached copy if a check fails
 // v90: Meter Utilization treats Div and Division as the same office
 // v91: drop division HQ names from Meter Utilization CCC list
-const CACHE_NAME = 'mzo-reports-cache-v91';
+// v92: disconnection base OSD dates + KPI status does not shrink other KPIs
+const CACHE_NAME = 'mzo-reports-cache-v92';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
