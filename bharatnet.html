@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <script src="mzo_data_hub.js"></script>
   <script src="mzo_scope.js?v=12"></script>
   <style>
     :root {
@@ -1293,13 +1294,17 @@
       document.head.appendChild(s);
     }
 
+    const BHARATNET_SHEET_CSV =
+      'https://docs.google.com/spreadsheets/d/e/2PACX-1vRCD7M4eBch9ixyQH3N0F0k7Yjlw1zw92JNh_76l2orfROh-PElMo62bXeW0EHI9v-Zg5_0olpiQxmT/pub?gid=0&single=true&output=csv';
+
     async function fetchCsv(url) {
       const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      const timer = ctrl ? setTimeout(() => ctrl.abort(), 8000) : null;
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), 12000) : null;
       try {
         const res = await fetch(url, {
-          credentials: 'same-origin',
+          credentials: 'omit',
           cache: 'no-store',
+          redirect: 'follow',
           signal: ctrl ? ctrl.signal : undefined
         });
         const text = await res.text();
@@ -1323,11 +1328,15 @@
       showError('');
       const failsafe = setTimeout(() => showLoading(false), 6000);
       try {
-        const localCsv = await fetchCsv('/bharatnet.csv');
-        if (localCsv) paintCsv(localCsv);
-        const liveCsv = await fetchCsv('/api/bharatnet/dataset');
-        if (liveCsv) paintCsv(liveCsv);
-        if (!rawData.length) {
+        let csvText = '';
+        if (window.mzoDataHub) {
+          await window.mzoDataHub.waitForDataset('CACHE_BHARATNET');
+          csvText = (await window.mzoDataHub.get('CACHE_BHARATNET')) || '';
+        }
+        if (!looksLikeCsv(csvText)) {
+          csvText = await fetchCsv(BHARATNET_SHEET_CSV);
+        }
+        if (!paintCsv(csvText)) {
           throw new Error('No Bharat Net rows loaded');
         }
         loadChartLib(() => applyFilters());

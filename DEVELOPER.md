@@ -10,8 +10,8 @@ Companion notes (topic-specific): `scripts/README_*.md`, `stock/README_ALLOTMENT
 
 Login-gated **PWA** for Malda Zone (WBSEDCL) operational reports. Most screens are standalone HTML pages with inline CSS/JS, not a SPA framework.
 
-- **Local / Vercel:** Express in `server.js` (auth, APIs, static files).
-- **Data:** Google Sheets CSVs, uploaded dumps, and Supabase (`mzo_insight` + Power Map tables).
+- **Local / Vercel:** Express in `server.js` (login/session/admin, tiny `/api/.../meta` JSON, static HTML/JS). Report CSV/JSON bodies are fetched **in the browser** from Google (DataHub). Do not add new Vercel dataset proxies.
+- **Data:** Google Sheets CSVs (browser → Google via DataHub), uploaded dumps published to Apps Script, and Supabase (`mzo_insight` + Power Map tables).
 - **Client cache:** IndexedDB via `mzo_data_hub.js`; service worker `sw.js`.
 
 ```
@@ -68,6 +68,8 @@ Office codes match `/66[123]\d{4}/` (e.g. `6611108`, `C36611108`). If a dataset�
 
 ## DataHub
 
+**Do not send report data through Vercel.** Register the **Google published CSV** (or other origin URL) in `DATASETS`. The browser fetches it; IndexedDB holds the body. Login/session/admin and tiny `/api/.../meta` JSON are the only Vercel APIs involved in data loading. Do not add `/api/.../dataset` proxies that GET a sheet and return CSV. `originHeavy` dumps (NSC, Withheld, Stock) still have a dataset URL as a last-resort fallback — homepage Sync uses `skipVercelBody` and prefers Google `csvUrl` from meta so dump bytes do not transit Vercel.
+
 Datasets are registered in `mzo_data_hub.js` `DATASETS`. IndexedDB holds the CSV/JSON body. `localStorage` key `mzo_hub_ver_<CACHE_KEY>` holds the version.
 
 ```js
@@ -102,7 +104,7 @@ Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large d
 
 ## Service worker
 
-`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v99`. **Increment it** whenever HTML/CSS/JS that users already cached must update. Also bump `version` + `message` in `version.json` (shown as “App updated”). `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`.
+`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v100`. **Increment it** whenever HTML/CSS/JS that users already cached must update. Also bump `version` + `message` in `version.json` (shown as “App updated”). `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`.
 
 Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a stale copy (`/version.json`, `/mzo_app_update.js`). After activate, the SW posts `MZO_APP_UPDATED`. NSC still paints from IndexedDB first, then `waitForDataset`; if the dump version changed it **reloads** (do not only `console.log`).
 
@@ -112,7 +114,7 @@ Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a 
 
 There is no webpack/vite build. Local run is `npm run dev`. Production is Vercel: https://mzo-report-pwa.vercel.app
 
-1. Leave one-off `scripts/analyze_*` / `scripts/patch_*` and dataset dumps untracked. Do not commit `.env` or `consumer/*.csv`.
+1. Leave one-off `scripts/analyze_*` / `scripts/patch_*` and dataset dumps untracked. Do not commit `.env`, `consumer/*.csv`, or root CSVs such as `bharatnet.csv`.
 2. Bump `CACHE_NAME` in `sw.js` and `version` + `message` in `version.json` when users must receive HTML/JS changes.
 3. Commit product files, then `git push origin main`.
 4. Production deploy from the repo root: `npx vercel --prod --yes --scope dipankar-das-projects-1592747b`. Confirm the changed page after deploy. `npx vercel --prod --yes` without `--scope` can return Not authorized.
@@ -123,7 +125,7 @@ There is no webpack/vite build. Local run is `npm run dev`. Production is Vercel
 
 1. Create `feature.html` (or `feature/index.html`). Register it on the home hub in `index.html` with `data-dataset="CACHE_…"` when it uses DataHub.
 2. Include `mzo_data_hub.js` and `mzo_scope.js?v=N` (bump `N` when `mzo_scope.js` changes).
-3. Add the source to `DATASETS` in `mzo_data_hub.js`. Load with `waitForDataset` then `get` — never a raw sheet `fetch` if a hub key exists.
+3. Add the **Google** (or other origin) URL to `DATASETS` in `mzo_data_hub.js`. Load with `waitForDataset` then `get` — never a raw sheet `fetch` if a hub key exists, and never an `/api/.../dataset` body proxy.
 4. After load: `raw = MzoScope.filterRows(raw)` then populate filters; if selects are locked, fill from scoped unique values / `getScope()`, then `lockFilters()`.
 5. Add the path to `sw.js` `isNetworkFirstPath` and bump `CACHE_NAME`.
 6. If the folder is new, add it to `vercel.json` `builds`.
@@ -145,7 +147,7 @@ There is no webpack/vite build. Local run is `npm run dev`. Production is Vercel
 
 ## APIs (server.js)
 
-Typical prefixes: `/api/login`, `/api/session-check`, `/api/logout`, `/api/admin/*`, `/api/nsc/*`, `/api/stock/*`, `/api/withheld/*`, `/api/power-map/*`, `/api/defective/meta`, `/api/bharatnet/dataset`. Unauthenticated `/api` returns **401 JSON**, not a login HTML redirect.
+Typical prefixes: `/api/login`, `/api/session-check`, `/api/logout`, `/api/admin/*`, `/api/nsc/*`, `/api/stock/*`, `/api/withheld/*`, `/api/power-map/*`, `/api/defective/meta`. Unauthenticated `/api` returns **401 JSON**, not a login HTML redirect. Do **not** add new `/api/.../dataset` routes that pull a Google sheet through Vercel — put the published CSV URL in `DATASETS` instead (see Bharat Net).
 
 Uploads (NSC, stock, defective meter) process the file **in the browser**, then `MzoSheetMirror.publishTab` posts urlencoded chunks to Apps Script (`ContentService` JSON). Bulk bytes do not go through Vercel. Defective Meter uses the same helper as NSC (`lib/sheet_mirror_client.js`). After Apps Script code changes, deploy a **new version** of the **existing** web app (keep the same `/exec` URL). Do not return HtmlService from `doPost` (that is the `ppConfig` web-page error). Google’s `/macros/echo` URL sometimes 404s with that same HTML; the client retries those and does not treat a GET probe (`status: ok`) as a successful `begin`/`chunk`. Do not intercept `script.google.com` in `sw.js`. NSC script to paste is `lib/sheet_mirror_publish.gs` (not the defective-meter file).
 
@@ -153,7 +155,7 @@ Uploads (NSC, stock, defective meter) process the file **in the browser**, then 
 
 ## Bharat Net
 
-Page: `bharatnet.html` (home hub New Service Connection). The tile must **not** use `data-dataset`. The page paints immediately from `/bharatnet.csv`, then refreshes from `/api/bharatnet/dataset` when that responds. Do not `waitForDataset` on this page. Rows have `CCC NAME` / `CCC CODE` only — map Region / Division from `MzoScope`. **Connected** = `METER NUMBER` is non-empty.
+Page: `bharatnet.html` (home hub New Service Connection, `data-dataset="CACHE_BHARATNET"`). DataHub URL is the published Google CSV (`pub?gid=0&single=true&output=csv`). The browser fetches it; do not proxy through Vercel or commit a fallback CSV. After load: `MzoScope.filterRows`. Rows have `CCC NAME` / `CCC CODE` only — map Region / Division from `MzoScope`. **Connected** = `METER NUMBER` is non-empty.
 
 ## Defective Meter
 

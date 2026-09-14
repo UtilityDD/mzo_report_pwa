@@ -21,7 +21,8 @@
 // v97: Bharat Net paints from local CSV if the live API is empty
 // v98: fix Bharat Net syntax error (CCC NAME key)
 // v99: Bharat Net region/division charts with value labels
-const CACHE_NAME = 'mzo-reports-cache-v99';
+// v100: Bharat Net CSV from Google in the browser, not through Vercel
+const CACHE_NAME = 'mzo-reports-cache-v100';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -91,7 +92,6 @@ function isNetworkFirstPath(pathname) {
     pathname === '/jjm.html' ||
     pathname === '/wridd.html' ||
     pathname === '/bharatnet.html' ||
-    pathname === '/bharatnet.csv' ||
     pathname === '/solar.html' ||
     pathname === '/rem/defaulters.html' ||
     pathname === '/admin_users.html' ||

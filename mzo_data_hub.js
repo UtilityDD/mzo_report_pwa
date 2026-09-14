@@ -35,7 +35,7 @@ const DATASETS = [
     { key: 'CACHE_SOLAR', label: 'Solar Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR5Vnb9TxymVIcBZsUBWZ-21Frkn77O4IyNus3Zo42qPm09N6MlJ3E0Vh3tHywcMAiy2y0uRm5XfIdk/pub?gid=0&single=true&output=csv', type: 'csv' },
     { key: 'CACHE_JJM', label: 'JJM Connections', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTZfBrOb6Y4kPoF_Lix-MhUxVFy5l7urYoAoI-h-w6EbcTFuZPqIhjWTQ26RYcvYenl51HdpCawEVc7/pub?gid=2138035305&single=true&output=csv', type: 'csv' },
     { key: 'CACHE_WRIDD', label: 'WRIDD Schemes', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTt6H8YfaFRi1H3KzVHv97nbhlJQ-96cuFh4J0KyVjRSw1I78BYxUek9etiE9xs-7vHYn98uPMc6sFj/pub?gid=0&single=true&output=csv', type: 'csv' },
-    { key: 'CACHE_BHARATNET', label: 'Bharat Net Connections', url: '/api/bharatnet/dataset', type: 'csv', lazySync: true },
+    { key: 'CACHE_BHARATNET', label: 'Bharat Net Connections', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRCD7M4eBch9ixyQH3N0F0k7Yjlw1zw92JNh_76l2orfROh-PElMo62bXeW0EHI9v-Zg5_0olpiQxmT/pub?gid=0&single=true&output=csv', type: 'csv' },
     // lazySync: multi‑MB sheets — skip daily homepage sync; fetch on page open via waitForDataset/get
     { key: 'CACHE_METER_ERP', label: 'Meter ERP Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=1335293243&single=true&output=csv', type: 'csv', lazySync: true },
     { key: 'CACHE_METER_MASTER', label: 'Meter Master Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=1053803476&single=true&output=csv', type: 'csv', lazySync: true },

@@ -3703,68 +3703,6 @@ app.get('/api/defective/meta', async (req, res) => {
     });
 });
 
-const BHARATNET_SHEET_CSV_URL =
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vRCD7M4eBch9ixyQH3N0F0k7Yjlw1zw92JNh_76l2orfROh-PElMo62bXeW0EHI9v-Zg5_0olpiQxmT/pub?output=csv';
-const BHARATNET_LOCAL_CSV = path.join(__dirname, 'bharatnet.csv');
-let bharatNetCache_ = { at: 0, csv: '' };
-
-function readLocalBharatNetCsv_() {
-    try {
-        if (fs.existsSync(BHARATNET_LOCAL_CSV)) {
-            return fs.readFileSync(BHARATNET_LOCAL_CSV, 'utf8');
-        }
-    } catch (e) {}
-    return '';
-}
-
-function fetchBharatNetCsv_(timeoutMs) {
-    const ms = timeoutMs || 8000;
-    if (typeof fetch !== 'function') {
-        return fetchSheet(BHARATNET_SHEET_CSV_URL);
-    }
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), ms);
-    return fetch(BHARATNET_SHEET_CSV_URL, {
-        redirect: 'follow',
-        signal: ctrl.signal,
-        headers: { 'User-Agent': 'MZO-Reports', Accept: 'text/csv,*/*' }
-    }).then((res) => {
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.text();
-    }).finally(() => clearTimeout(timer));
-}
-
-app.get('/api/bharatnet/dataset', async (req, res) => {
-    if (!req.user) {
-        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    }
-    try {
-        const now = Date.now();
-        if (bharatNetCache_.csv && now - bharatNetCache_.at < 60 * 1000) {
-            return sendDatasetCsv_(req, res, bharatNetCache_.csv, {
-                headers: { 'X-BharatNet-Source': 'memory' }
-            });
-        }
-        const csv = await fetchBharatNetCsv_(8000);
-        if (!csv || String(csv).trim().charAt(0) === '<') {
-            throw new Error('Bharat Net sheet did not return CSV');
-        }
-        bharatNetCache_ = { at: Date.now(), csv: String(csv) };
-        return sendDatasetCsv_(req, res, csv, {
-            headers: { 'X-BharatNet-Source': 'google_sheet' }
-        });
-    } catch (err) {
-        console.error('[Bharat Net dataset] Error:', err.message);
-        const fallback = bharatNetCache_.csv || readLocalBharatNetCsv_();
-        if (fallback) {
-            return sendDatasetCsv_(req, res, fallback, {
-                headers: { 'X-BharatNet-Source': 'local-fallback' }
-            });
-        }
-        return res.status(502).json({ status: 'error', message: err.message || 'Failed to load Bharat Net sheet' });
-    }
-});
-
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
     app.listen(PORT, () => {
         console.log(`Server is running on http://localhost:${PORT}`);
