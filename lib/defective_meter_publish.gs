@@ -90,6 +90,10 @@ function doPost(e) {
     var action = String((payload && payload.action) || '').toLowerCase();
     var props = PropertiesService.getDocumentProperties();
 
+    if (action === 'ping') {
+      return jsonOut_({ status: 'success', action: 'ping' });
+    }
+
     if (action === 'savemeta' || action === 'setmeta') {
       var meta = payload.meta || {};
       props.setProperty('defectiveUploadMeta', JSON.stringify(meta));

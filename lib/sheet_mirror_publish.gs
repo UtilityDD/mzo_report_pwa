@@ -136,6 +136,10 @@ function doPost(e) {
       }
     }
 
+    if (action === 'ping') {
+      return jsonOut_({ status: 'success', action: 'ping', role: role });
+    }
+
     if (action === 'savemeta' || action === 'setmeta') {
       var meta = payload.meta || {};
       PropertiesService.getDocumentProperties().setProperty('nscUploadMeta', JSON.stringify(meta));

@@ -14,7 +14,8 @@
 // v90: Meter Utilization treats Div and Division as the same office
 // v91: drop division HQ names from Meter Utilization CCC list
 // v92: disconnection base OSD dates + KPI status does not shrink other KPIs
-const CACHE_NAME = 'mzo-reports-cache-v92';
+// v93: do not intercept Apps Script; retry Google echo HTML 404 on NSC publish
+const CACHE_NAME = 'mzo-reports-cache-v93';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -44,6 +45,7 @@ function isGoogleSheetRequest(url) {
   return (
     host === 'docs.google.com' ||
     host === 'spreadsheets.google.com' ||
+    host === 'script.google.com' ||
     /googleusercontent\.com$/i.test(host)
   );
 }
@@ -88,6 +90,7 @@ function isNetworkFirstPath(pathname) {
     pathname === '/consumer/defective_meter.html' ||
     pathname === '/lib/defective_meter_pipeline.js' ||
     pathname === '/lib/sheet_mirror_client.js' ||
+    pathname === '/stock/upload.html' ||
     pathname === '/mzo_data_hub.js' ||
     pathname === '/mzo_presets_hub.js' ||
     pathname === '/mzo_docket_briefing.js' ||
