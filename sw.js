@@ -15,7 +15,13 @@
 // v91: drop division HQ names from Meter Utilization CCC list
 // v92: disconnection base OSD dates + KPI status does not shrink other KPIs
 // v93: do not intercept Apps Script; retry Google echo HTML 404 on NSC publish
-const CACHE_NAME = 'mzo-reports-cache-v93';
+// v94: Bharat Net connections dashboard under NSC
+// v95: Bharat Net loads via /api/bharatnet/dataset (Google pub CORS redirect)
+// v96: Bharat Net opens without DataHub wait; CSV via /api only
+// v97: Bharat Net paints from local CSV if the live API is empty
+// v98: fix Bharat Net syntax error (CCC NAME key)
+// v99: Bharat Net region/division charts with value labels
+const CACHE_NAME = 'mzo-reports-cache-v99';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -84,6 +90,8 @@ function isNetworkFirstPath(pathname) {
     pathname === '/meter_utilization.html' ||
     pathname === '/jjm.html' ||
     pathname === '/wridd.html' ||
+    pathname === '/bharatnet.html' ||
+    pathname === '/bharatnet.csv' ||
     pathname === '/solar.html' ||
     pathname === '/rem/defaulters.html' ||
     pathname === '/admin_users.html' ||

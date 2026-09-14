@@ -94,7 +94,7 @@ Version strings are prefixed: `v:` API meta, `e:` ETag, `m:` Last-Modified, `f:`
 
 Do **not** `fetch()` or `Papa.parse(url, { download: true })` a Google Sheet from a page if a DataHub key exists. Register the URL in `DATASETS`, then `waitForDataset` + `get`. On the home hub, set `data-dataset="CACHE_…"`.
 
-Hub keys in use: `CACHE_NSC_v5`, `CACHE_WITHHELD_v4`, `CACHE_STOCK`, `CACHE_POWER_MAP`, `CACHE_SOLAR`, `CACHE_JJM`, `CACHE_WRIDD`, `CACHE_METER_*`, `CACHE_DEFECTIVE`, `CACHE_DEFECTIVE_DETAILS`, plus collection/loss/weekly/docket/REM/capex/etc. in `DATASETS`.
+Hub keys in use: `CACHE_NSC_v5`, `CACHE_WITHHELD_v4`, `CACHE_STOCK`, `CACHE_POWER_MAP`, `CACHE_SOLAR`, `CACHE_JJM`, `CACHE_WRIDD`, `CACHE_BHARATNET`, `CACHE_METER_*`, `CACHE_DEFECTIVE`, `CACHE_DEFECTIVE_DETAILS`, plus collection/loss/weekly/docket/REM/capex/etc. in `DATASETS`.
 
 Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large dumps stay out of git (see `.gitignore` / `.vercelignore`).
 
@@ -102,7 +102,7 @@ Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large d
 
 ## Service worker
 
-`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v93`. **Increment it** whenever HTML/CSS/JS that users already cached must update. Also bump `version` + `message` in `version.json` (shown as “App updated”). `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`.
+`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v99`. **Increment it** whenever HTML/CSS/JS that users already cached must update. Also bump `version` + `message` in `version.json` (shown as “App updated”). `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`.
 
 Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a stale copy (`/version.json`, `/mzo_app_update.js`). After activate, the SW posts `MZO_APP_UPDATED`. NSC still paints from IndexedDB first, then `waitForDataset`; if the dump version changed it **reloads** (do not only `console.log`).
 
@@ -145,11 +145,15 @@ There is no webpack/vite build. Local run is `npm run dev`. Production is Vercel
 
 ## APIs (server.js)
 
-Typical prefixes: `/api/login`, `/api/session-check`, `/api/logout`, `/api/admin/*`, `/api/nsc/*`, `/api/stock/*`, `/api/withheld/*`, `/api/power-map/*`, `/api/defective/meta`. Unauthenticated `/api` returns **401 JSON**, not a login HTML redirect.
+Typical prefixes: `/api/login`, `/api/session-check`, `/api/logout`, `/api/admin/*`, `/api/nsc/*`, `/api/stock/*`, `/api/withheld/*`, `/api/power-map/*`, `/api/defective/meta`, `/api/bharatnet/dataset`. Unauthenticated `/api` returns **401 JSON**, not a login HTML redirect.
 
 Uploads (NSC, stock, defective meter) process the file **in the browser**, then `MzoSheetMirror.publishTab` posts urlencoded chunks to Apps Script (`ContentService` JSON). Bulk bytes do not go through Vercel. Defective Meter uses the same helper as NSC (`lib/sheet_mirror_client.js`). After Apps Script code changes, deploy a **new version** of the **existing** web app (keep the same `/exec` URL). Do not return HtmlService from `doPost` (that is the `ppConfig` web-page error). Google’s `/macros/echo` URL sometimes 404s with that same HTML; the client retries those and does not treat a GET probe (`status: ok`) as a successful `begin`/`chunk`. Do not intercept `script.google.com` in `sw.js`. NSC script to paste is `lib/sheet_mirror_publish.gs` (not the defective-meter file).
 
 ---
+
+## Bharat Net
+
+Page: `bharatnet.html` (home hub New Service Connection). The tile must **not** use `data-dataset`. The page paints immediately from `/bharatnet.csv`, then refreshes from `/api/bharatnet/dataset` when that responds. Do not `waitForDataset` on this page. Rows have `CCC NAME` / `CCC CODE` only — map Region / Division from `MzoScope`. **Connected** = `METER NUMBER` is non-empty.
 
 ## Defective Meter
 
