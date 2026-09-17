@@ -22,7 +22,8 @@
 // v98: fix Bharat Net syntax error (CCC NAME key)
 // v99: Bharat Net region/division charts with value labels
 // v100: Bharat Net CSV from Google in the browser, not through Vercel
-const CACHE_NAME = 'mzo-reports-cache-v100';
+// v101: NSC Detailed Analysis drills to consumers; compact consumer modal on mobile
+const CACHE_NAME = 'mzo-reports-cache-v101';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [

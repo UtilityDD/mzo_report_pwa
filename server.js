@@ -3704,12 +3704,20 @@ app.get('/api/defective/meta', async (req, res) => {
 });
 
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
         console.log(`Server is running on http://localhost:${PORT}`);
         console.log('Open your browser and navigate to http://localhost:3000 to use the estimator.');
         console.log('Navigate to http://localhost:3000/admin.html to manage structures.');
         console.log('NSC upload: http://localhost:3000/nsc/upload.html');
         console.log('Stock upload: http://localhost:3000/stock/upload.html');
+    });
+    server.on('error', (err) => {
+        if (err && err.code === 'EADDRINUSE') {
+            console.error(`Port ${PORT} is already in use. The app is likely already running at http://localhost:${PORT}`);
+            console.error('Stop the other Node process, or just open that URL — do not start a second npm run dev.');
+            process.exit(1);
+        }
+        throw err;
     });
 }
 
