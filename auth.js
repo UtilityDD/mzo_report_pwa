@@ -2,22 +2,19 @@
 (function() {
     'use strict';
 
-    try {
-        var host = String(location.hostname || '');
-        if (/(?:^|\.)mzo-report-pwa\.vercel\.app$/i.test(host)) {
-            location.replace(
-                'https://mzo-reports.vercel.app' + location.pathname + location.search + location.hash
-            );
-            return;
-        }
-    } catch (e) {}
-
     if (!window.__mzoAppUpdateScript) {
         window.__mzoAppUpdateScript = true;
         var updateScript = document.createElement('script');
         updateScript.src = '/mzo_app_update.js?v=87';
         updateScript.async = true;
         document.head.appendChild(updateScript);
+    }
+
+    if (!window.__mzoRetiredNotice && !window.__mzoRetiredNoticeScript) {
+        window.__mzoRetiredNoticeScript = true;
+        var noticeScript = document.createElement('script');
+        noticeScript.src = '/mzo_origin_redirect.js';
+        document.head.appendChild(noticeScript);
     }
 
     // Verify authentication state (essential for offline routing and online validity check)
