@@ -23,7 +23,8 @@
 // v99: Bharat Net region/division charts with value labels
 // v100: Bharat Net CSV from Google in the browser, not through Vercel
 // v101: NSC Detailed Analysis drills to consumers; compact consumer modal on mobile
-const CACHE_NAME = 'mzo-reports-cache-v101';
+// v102: retired mzo-report-pwa host redirects to mzo-reports.vercel.app
+const CACHE_NAME = 'mzo-reports-cache-v102';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -104,6 +105,7 @@ function isNetworkFirstPath(pathname) {
     pathname === '/mzo_presets_hub.js' ||
     pathname === '/mzo_docket_briefing.js' ||
     pathname === '/mzo_scope.js' ||
+    pathname === '/mzo_origin_redirect.js' ||
     pathname === '/mzo_app_update.js' ||
     pathname === '/version.json' ||
     pathname === '/sw.js' ||
@@ -160,6 +162,19 @@ self.addEventListener('fetch', (event) => {
   }
 
   const url = new URL(request.url);
+
+  if (
+    request.mode === 'navigate' &&
+    /(?:^|\.)mzo-report-pwa\.vercel\.app$/i.test(self.location.hostname)
+  ) {
+    event.respondWith(
+      Response.redirect(
+        'https://mzo-reports.vercel.app' + url.pathname + url.search + url.hash,
+        302
+      )
+    );
+    return;
+  }
 
   // Leave Google Sheet CSVs to the browser. Intercepting them (even to
   // pass through) can fail CORS and make homepage Sync report failures.

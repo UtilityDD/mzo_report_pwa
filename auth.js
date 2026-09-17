@@ -2,6 +2,16 @@
 (function() {
     'use strict';
 
+    try {
+        var host = String(location.hostname || '');
+        if (/(?:^|\.)mzo-report-pwa\.vercel\.app$/i.test(host)) {
+            location.replace(
+                'https://mzo-reports.vercel.app' + location.pathname + location.search + location.hash
+            );
+            return;
+        }
+    } catch (e) {}
+
     if (!window.__mzoAppUpdateScript) {
         window.__mzoAppUpdateScript = true;
         var updateScript = document.createElement('script');
