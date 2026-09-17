@@ -25,7 +25,8 @@
 // v101: NSC Detailed Analysis drills to consumers; compact consumer modal on mobile
 // v102: retired mzo-report-pwa host redirects to mzo-reports.vercel.app
 // v103: old host shows install link; new origin uses gold MZO icon
-const CACHE_NAME = 'mzo-reports-cache-v103';
+// v104: retired host freezes with install link; login is blocked
+const CACHE_NAME = 'mzo-reports-cache-v104';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [

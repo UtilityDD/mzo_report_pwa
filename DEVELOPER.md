@@ -104,7 +104,7 @@ Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large d
 
 ## Service worker
 
-`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v103`. **Increment it** whenever HTML/CSS/JS that users already cached must update. Also bump `version` + `message` in `version.json` (shown as “App updated”). `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`.
+`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v104`. **Increment it** whenever HTML/CSS/JS that users already cached must update. Also bump `version` + `message` in `version.json` (shown as “App updated”). `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`.
 
 Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a stale copy (`/version.json`, `/mzo_app_update.js`). After activate, the SW posts `MZO_APP_UPDATED`. NSC still paints from IndexedDB first, then `waitForDataset`; if the dump version changed it **reloads** (do not only `console.log`).
 
@@ -129,7 +129,7 @@ git remote add smartlineman https://github.com/smartlinemanapp/mzo-reports.git
 **Production (users and PWA):** https://mzo-reports.vercel.app  
 Vercel project: [smart-linemans-projects/mzo-reports](https://vercel.com/smart-linemans-projects/mzo-reports). Unique hostnames such as `mzo-reports-xxxx.vercel.app` are the same deployment — do not share them and do not delete that deployment.
 
-**Retired:** https://mzo-report-pwa.vercel.app (Dipankar / `mzo-report-pwa`). Do **not** auto-redirect that host. `mzo_origin_redirect.js` (login, home, and via `auth.js` on report pages) shows a banner and **Open new app** link to https://mzo-reports.vercel.app/login.html so users can sign in and tap **Install app**. The new origin uses a **gold MZO icon** (`icons/icon-*-v2.png` + `manifest.json`); the retired host keeps the navy icon (`manifest-legacy.json`, chosen by `mzo_pwa_icons.js`) so both can sit on a home screen. The script is a no-op on the new origin. Do not add a `vercel.json` catch-all redirect. After changing the notice, deploy **once** to the old project (`npx vercel --prod --yes --scope dipankar-das-projects-1592747b`) if it is not Git-connected. Then leave that project idle.
+**Retired:** https://mzo-report-pwa.vercel.app (Dipankar / `mzo-report-pwa`). Do **not** auto-redirect that host and do **not** allow login there. `mzo_origin_redirect.js` (login, home, and via `auth.js` on report pages) freezes the page with the new URL, a **Copy** button, and steps to open https://mzo-reports.vercel.app/login.html in Chrome/Safari and tap **Install app**. The new origin uses a **gold MZO icon** (`icons/icon-*-v2.png` + `manifest.json`); the retired host keeps the navy icon (`manifest-legacy.json`, chosen by `mzo_pwa_icons.js`) so both can sit on a home screen. The freeze is a no-op on the new origin. Do not add a `vercel.json` catch-all redirect. After changing the freeze, deploy **once** to the old project (`npx vercel --prod --yes --scope dipankar-das-projects-1592747b`) if it is not Git-connected. Then leave that project idle.
 
 ---
 
