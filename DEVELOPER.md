@@ -110,14 +110,42 @@ Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a 
 
 ---
 
+## Git remotes and production
+
+Two GitHub remotes, **one** production URL. Keep both GitHub copies on the same `main` commit. Do not deploy to the old Dipankar project.
+
+| Remote | URL | Role |
+|--------|-----|------|
+| `origin` | https://github.com/UtilityDD/mzo_report_pwa.git | Mirror / backup |
+| `smartlineman` | https://github.com/smartlinemanapp/mzo-reports.git | Source for Vercel (Git connected) |
+
+On a new machine:
+
+```
+git remote add origin https://github.com/UtilityDD/mzo_report_pwa.git
+git remote add smartlineman https://github.com/smartlinemanapp/mzo-reports.git
+```
+
+**Production (users and PWA):** https://mzo-reports.vercel.app  
+Vercel project: [smart-linemans-projects/mzo-reports](https://vercel.com/smart-linemans-projects/mzo-reports). Unique hostnames such as `mzo-reports-xxxx.vercel.app` are the same deployment — do not share them and do not delete that deployment.
+
+**Retired:** https://mzo-report-pwa.vercel.app (Dipankar / `mzo-report-pwa`, scope `dipankar-das-projects-1592747b`). Do not `git push` expecting that host to update, and do not run `npx vercel --prod --scope dipankar-das-projects-1592747b`.
+
+---
+
 ## Deploy
 
-There is no webpack/vite build. Local run is `npm run dev`. Production is Vercel: https://mzo-report-pwa.vercel.app
+There is no webpack/vite build. Local run is `npm run dev`. Production is **only** https://mzo-reports.vercel.app
 
 1. Leave one-off `scripts/analyze_*` / `scripts/patch_*` and dataset dumps untracked. Do not commit `.env`, `consumer/*.csv`, or root CSVs such as `bharatnet.csv`.
 2. Bump `CACHE_NAME` in `sw.js` and `version` + `message` in `version.json` when users must receive HTML/JS changes.
-3. Commit product files, then `git push origin main`.
-4. Production deploy from the repo root: `npx vercel --prod --yes --scope dipankar-das-projects-1592747b`. Confirm the changed page after deploy. `npx vercel --prod --yes` without `--scope` can return Not authorized.
+3. Commit product files, then push **both** remotes so GitHub stays in sync:
+   ```
+   git push origin main
+   git push smartlineman main
+   ```
+4. Vercel builds from the **smartlineman** GitHub repo. After the `smartlineman` push, confirm the change on https://mzo-reports.vercel.app (login-gated pages need a real portal user). A unique `mzo-reports-….vercel.app` URL is not the public link.
+5. Manual CLI only if the Git deploy did not run, and only while logged into the **Smart Lineman** Vercel team: `npx vercel --prod --yes --scope smart-linemans-projects`. `npx vercel --prod --yes` without that scope can hit the wrong account or return Not authorized. Env vars (`JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_KEY`, sheet `/exec` URLs) live on the new project; the retired Dipankar project had none (code fallbacks in `server.js`).
 
 ---
 
@@ -183,6 +211,7 @@ When a change affects how the next developer (or agent) should work, update **th
 - DataHub versioning / `waitForDataset` behaviour
 - Scope matching / filter-lock behaviour
 - SW cache or `vercel.json` paths
+- Git remotes, production URL, or Vercel team/project
 - A new UI pattern that other pages should copy (or stop using)
 
 Companion: `scripts/README_PORTAL_USERS.md` (Supabase `portal_users` columns and ALTER scripts). Do not let topic READMEs contradict this guide; link them from here instead of duplicating.

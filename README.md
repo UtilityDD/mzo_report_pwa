@@ -9,6 +9,8 @@ npm run dev
 
 Open http://localhost:3000 — unauthenticated pages redirect to `/login.html`.
 
+**Production:** https://mzo-reports.vercel.app — push `main` to both GitHub remotes; see [DEVELOPER.md](DEVELOPER.md) (Git remotes and Deploy).
+
 **Developer guide:** [DEVELOPER.md](DEVELOPER.md) — architecture, login scope, DataHub versioning (skip CSV download when the version is unchanged), service worker, how to add a page.
 
 Topic notes:
