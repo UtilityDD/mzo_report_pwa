@@ -26,7 +26,9 @@
 // v102: retired mzo-report-pwa host redirects to mzo-reports.vercel.app
 // v103: old host shows install link; new origin uses gold MZO icon
 // v104: retired host freezes with install link; login is blocked
-const CACHE_NAME = 'mzo-reports-cache-v104';
+// v105: stock dump can load from Supabase Storage; do not intercept supabase.co
+// v106: stock upload guidance for authorised users
+const CACHE_NAME = 'mzo-reports-cache-v106';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -63,6 +65,10 @@ function isGoogleSheetRequest(url) {
     host === 'script.google.com' ||
     /googleusercontent\.com$/i.test(host)
   );
+}
+
+function isSupabaseRequest(url) {
+  return /\.supabase\.co$/i.test(String(url.hostname || ''));
 }
 
 function canCacheRequest(request) {
@@ -176,7 +182,7 @@ self.addEventListener('fetch', (event) => {
 
   // Leave Google Sheet CSVs to the browser. Intercepting them (even to
   // pass through) can fail CORS and make homepage Sync report failures.
-  if (isGoogleSheetRequest(url)) {
+  if (isGoogleSheetRequest(url) || isSupabaseRequest(url)) {
     return;
   }
 

@@ -15,6 +15,8 @@ Replaces the Google Sheet as the **source of truth** for MZO portal Username/PIN
 
 3. **Deploy** server changes — `/api/login` and admin user CRUD read/write Supabase only.
 
+To copy live `portal_users` into the **new** insight project without switching production, see [`README_STOCK_SUPABASE.md`](README_STOCK_SUPABASE.md) (`npm run copy:insight`). Leave `insightLive` false until that copy is checked.
+
 ## Notes
 
 - Admin UI (`admin_users.html`) keeps working; create/update/delete persist to `portal_users`.

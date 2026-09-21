@@ -9,7 +9,7 @@ const STORE_NAME = 'datasets';
 const DATASETS = [
     { key: 'CACHE_SAFETY_v2', label: 'Safety Inspection', url: 'https://docs.google.com/spreadsheets/d/1A2fjKboWKnw10iaOs1wcXDrdg9jhhDGfzF9OagPjA5s/gviz/tq?tqx=out:csv', type: 'csv', lazySync: true },
     { key: 'CACHE_DOCKET', label: 'Docket Calls', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTT56PULgjKw_-wu8lmMWNE6SC1KBDyAKxeHaMloZJWUQ9HQsJoqosYF33DrQK3NX9Bvfn0mjfx-dkP/pub?gid=1059428699&single=true&output=csv', type: 'csv' },
-    // originHeavy: skip homepage sync unless meta.csvUrl points at Google (sheet mirror)
+    // originHeavy: skip homepage sync unless meta.csvUrl points at Google or Supabase Storage
     { key: 'CACHE_NSC_v5', label: 'NSC Data', url: '/api/nsc/dataset', type: 'csv', originHeavy: true, versionUrl: '/api/nsc/meta', csvUrlField: 'csvUrl' },
     { key: 'CACHE_LOAD_EXT', label: 'Load Extension', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQP_B-Zl5XhnYkmJiDXKB7B8ksrRRezuLrRqTzEPz4lEw_yDcpGOTnmm0oI8dW9apwuHg9yGqaAqjDS/pub?gid=0&single=true&output=csv', type: 'csv' },
     { key: 'CACHE_COLLECTION', label: 'Collection Report', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ2S20QZ57pQpdawzKFHAIqD_OpCNmbmMbYlttluLVA0JZpVK405pS0-2ZIqm-X9jAA8ZB1XwF2serr/pub?gid=1977250749&single=true&output=csv', type: 'csv' },
@@ -471,7 +471,7 @@ class DataHub {
 
                 // Homepage Sync must not pull dump bytes through Vercel.
                 // originHeavy datasets keep /api/.../dataset as a fallback URL; use the
-                // Google csvUrl from meta instead. Tiny /api/.../meta JSON is fine.
+                // origin csvUrl from meta instead. Tiny /api/.../meta JSON is fine.
                 if (skipVercelBody && this._isVercelApiUrl(fetchUrl)) {
                     this.syncStatus[key] = 'done';
                     return 'unchanged';

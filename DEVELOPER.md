@@ -10,8 +10,8 @@ Companion notes (topic-specific): `scripts/README_*.md`, `stock/README_ALLOTMENT
 
 Login-gated **PWA** for Malda Zone (WBSEDCL) operational reports. Most screens are standalone HTML pages with inline CSS/JS, not a SPA framework.
 
-- **Local / Vercel:** Express in `server.js` (login/session/admin, tiny `/api/.../meta` JSON, static HTML/JS). Report CSV/JSON bodies are fetched **in the browser** from Google (DataHub). Do not add new Vercel dataset proxies.
-- **Data:** Google Sheets CSVs (browser → Google via DataHub), uploaded dumps published to Apps Script, and Supabase (`mzo_insight` + Power Map tables).
+- **Local / Vercel:** Express in `server.js` (login/session/admin, tiny `/api/.../meta` JSON, static HTML/JS). Report CSV/JSON bodies are fetched **in the browser** from Google or Supabase Storage (DataHub). Do not add new Vercel dataset proxies.
+- **Data:** Google Sheets CSVs (browser → Google via DataHub), uploaded dumps published to Apps Script or Supabase Storage, and Supabase (`mzo_insight` + Power Map tables). Stock dump bytes must not transit Vercel.
 - **Client cache:** IndexedDB via `mzo_data_hub.js`; service worker `sw.js`.
 
 ```
@@ -45,6 +45,10 @@ Unauthenticated HTML requests redirect to `/login.html`. Use a real portal user 
 
 **Server:** `requireAuth` in `server.js`. Session cookie `mzo_session` (HMAC, 24h). Login reads **Supabase** `mzo_insight.portal_users` (not a live Google Sheet).
 
+Production stays on the **old** Supabase project (`unsmtschmcvftfqwabaq`) for login until `INSIGHT_LIVE=1`. Power Map always uses that old project. Stock dump + authorized upload use the new project when `STOCK_USE_STORAGE=1` and `INSIGHT_SUPABASE_URL` / `INSIGHT_SUPABASE_KEY` are set. Then DataHub `CACHE_STOCK` uses Storage `csvUrl`; users with **Stock Raw Upload** (or admin) `PUT` the cleaned CSV with a signed URL (bytes do not go through Vercel). Do not set `INSIGHT_LIVE` until `npm run copy:insight` has copied `portal_users` and you are ready to switch login. Copy from `scripts/supabase_config.example.json` into gitignored `data/supabase_config.json`. Never put the service_role key in HTML or git.
+
+Companion: `scripts/README_STOCK_SUPABASE.md`.
+
 **Client profile:** `localStorage.mzo_user_profile` (PIN stripped). Scope fields: `role`, `zone_code`, `region_code`, `division_code`, `ccc_code`, plus module flags (`nsc-autho`, `nsc-upload-autho`, `defective-upload-autho`, `si-autho`, …).
 
 **`window.MzoScope`** (client-only; do not slice large CSVs on Vercel):
@@ -68,7 +72,7 @@ Office codes match `/66[123]\d{4}/` (e.g. `6611108`, `C36611108`). If a dataset�
 
 ## DataHub
 
-**Do not send report data through Vercel.** Register the **Google published CSV** (or other origin URL) in `DATASETS`. The browser fetches it; IndexedDB holds the body. Login/session/admin and tiny `/api/.../meta` JSON are the only Vercel APIs involved in data loading. Do not add `/api/.../dataset` proxies that GET a sheet and return CSV. `originHeavy` dumps (NSC, Withheld, Stock) still have a dataset URL as a last-resort fallback — homepage Sync uses `skipVercelBody` and prefers Google `csvUrl` from meta so dump bytes do not transit Vercel.
+**Do not send report data through Vercel.** Register the **Google published CSV** (or other origin URL) in `DATASETS`. The browser fetches it; IndexedDB holds the body. Login/session/admin and tiny `/api/.../meta` JSON are the only Vercel APIs involved in data loading. Do not add `/api/.../dataset` proxies that GET a sheet and return CSV. `originHeavy` dumps (NSC, Withheld, Stock) still have a dataset URL as a last-resort fallback — homepage Sync uses `skipVercelBody` and prefers origin `csvUrl` from meta so dump bytes do not transit Vercel.
 
 Datasets are registered in `mzo_data_hub.js` `DATASETS`. IndexedDB holds the CSV/JSON body. `localStorage` key `mzo_hub_ver_<CACHE_KEY>` holds the version.
 
@@ -90,7 +94,7 @@ Version strings are prefixed: `v:` API meta, `e:` ETag, `m:` Last-Modified, `f:`
 
 | Flag | Meaning |
 |------|---------|
-| `originHeavy` | Prefer Google `csvUrl` from `/api/.../meta` (NSC, Withheld, Stock). Included in Sync for version checks. Dump bodies are never downloaded through Vercel. |
+| `originHeavy` | Prefer origin `csvUrl` from `/api/.../meta` (NSC, Withheld, Stock). Included in Sync for version checks. Dump bodies are never downloaded through Vercel. Stock `csvUrl` is Google until `STOCK_USE_STORAGE` is on, then Supabase Storage. |
 | `lazySync` | Skip daily homepage sync. Manual Sync cheap-checks only (no multi-MB GET). Version-check on page open. |
 | `versionUrl` / `versionField` | JSON meta for version (Withheld uses `withheldVersion`) |
 
@@ -104,7 +108,7 @@ Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large d
 
 ## Service worker
 
-`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v104`. **Increment it** whenever HTML/CSS/JS that users already cached must update. Also bump `version` + `message` in `version.json` (shown as “App updated”). `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`.
+`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v106`. **Increment it** whenever HTML/CSS/JS that users already cached must update. Also bump `version` + `message` in `version.json` (shown as “App updated”). `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`. Do not intercept `*.supabase.co` in `sw.js` (same as Google Sheet CSVs).
 
 Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a stale copy (`/version.json`, `/mzo_app_update.js`). After activate, the SW posts `MZO_APP_UPDATED`. NSC still paints from IndexedDB first, then `waitForDataset`; if the dump version changed it **reloads** (do not only `console.log`).
 
@@ -145,7 +149,7 @@ There is no webpack/vite build. Local run is `npm run dev`. Production is **only
    git push smartlineman main
    ```
 4. Vercel builds from the **smartlineman** GitHub repo. After the `smartlineman` push, confirm the change on https://mzo-reports.vercel.app (login-gated pages need a real portal user). A unique `mzo-reports-….vercel.app` URL is not the public link.
-5. Manual CLI only if the Git deploy did not run, and only while logged into the **Smart Lineman** Vercel team: `npx vercel --prod --yes --scope smart-linemans-projects`. `npx vercel --prod --yes` without that scope can hit the wrong account or return Not authorized. Env vars (`JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_KEY`, sheet `/exec` URLs) live on the new project; the retired Dipankar project had none (code fallbacks in `server.js`).
+5. Manual CLI only if the Git deploy did not run, and only while logged into the **Smart Lineman** Vercel team: `npx vercel --prod --yes --scope smart-linemans-projects`. `npx vercel --prod --yes` without that scope can hit the wrong account or return Not authorized. Env vars (`JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_KEY`, `INSIGHT_SUPABASE_URL`, `INSIGHT_SUPABASE_KEY` / `SUPABASE_SERVICE_ROLE_KEY`, `STOCK_USE_STORAGE`, sheet `/exec` URLs) live on the Smart Lineman project; the retired Dipankar project had none (code fallbacks in `server.js`). Leave `INSIGHT_*` and `STOCK_USE_STORAGE` unset until the new project SQL + `npm run copy:insight` have succeeded.
 
 ---
 
@@ -214,4 +218,4 @@ When a change affects how the next developer (or agent) should work, update **th
 - Git remotes, production URL, or Vercel team/project
 - A new UI pattern that other pages should copy (or stop using)
 
-Companion: `scripts/README_PORTAL_USERS.md` (Supabase `portal_users` columns and ALTER scripts). Do not let topic READMEs contradict this guide; link them from here instead of duplicating.
+Companion: `scripts/README_PORTAL_USERS.md` (Supabase `portal_users` columns and ALTER scripts) and `scripts/README_STOCK_SUPABASE.md` (new insight project cutover). Do not let topic READMEs contradict this guide; link them from here instead of duplicating.

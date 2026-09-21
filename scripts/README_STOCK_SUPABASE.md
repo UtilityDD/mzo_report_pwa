@@ -1,37 +1,44 @@
 # Stock dump + allotments → Supabase
 
-## One-time SQL (Supabase SQL Editor)
+## Live vs new project
 
-1. [`create_mzo_insight_stock_snapshot.sql`](create_mzo_insight_stock_snapshot.sql)
-2. [`create_mzo_insight_stock_allotments.sql`](create_mzo_insight_stock_allotments.sql)
-3. [`alter_portal_users_stock_auth.sql`](alter_portal_users_stock_auth.sql)
+Present users keep the **old** `portal_users` login until `INSIGHT_LIVE=1`. Stock dump and **authorized upload** go to the new project when `STOCK_USE_STORAGE=1` and `INSIGHT_SUPABASE_URL` / `INSIGHT_SUPABASE_KEY` are set (or local `"stockUseStorage": true`).
 
-Ensure schema `mzo_insight` is exposed in API settings.
+Who can upload: Admin, or User Management → **Stock Raw Upload = Yes** (`stock_upload_autho`). Others see the page locked.
+
+Flow: Excel is cleaned in the browser → signed `PUT` to Storage `stock/snapshot.csv` (not through Vercel) → `/api/stock/publish` records meta only. Dashboard DataHub `CACHE_STOCK` uses that public `csvUrl`.
+
+Power Map stays on the old project either way. Do not set `INSIGHT_LIVE` until you are ready to switch login.
+
+## One-time: empty new project
+
+1. In project `gmasnqebdogtavoudbke`, SQL Editor: [`create_insight_project_gmasnqeb.sql`](create_insight_project_gmasnqeb.sql)
+2. Settings → API → **Exposed schemas** → include `mzo_insight`
+3. Copy [`supabase_config.example.json`](supabase_config.example.json) to `data/supabase_config.json` (gitignored). Fill old + new keys. Keep `"insightLive": false` until login cutover. Set `"stockUseStorage": true` so authorized stock upload uses the new project.
+4. Pause admin user edits, then:
+
+```bash
+npm run copy:insight
+```
+
+That copies `portal_users`, logs, unbilled months, allotments, and `snapshot.csv` (from `data/stock.csv` or the Google sheet). It does not switch production.
+
+5. For **stock upload only**, set Vercel `INSIGHT_SUPABASE_URL`, `INSIGHT_SUPABASE_KEY`, `STOCK_USE_STORAGE=1` (do not set `INSIGHT_LIVE` yet). Deploy. Confirm a Stock Raw Upload user can publish and the Stock page updates. Login still uses the old project.
 
 ## Stock dashboard dump
 
-- Upload: `/stock/upload.html` (users with **Stock Raw Upload = Yes**)
-- Flow: raw SAP Excel → clean → `stock_snapshot` + local `data/stock.csv`
-- Workbook layout:
-  - **Sheet1** — SAP stock rows (Material + Material Group required)
-  - **Local/Central** is hardcoded by material code in `lib/stock_material_category.js` (+ `stock/stock_material_category.js`); regenerate with `node scripts/generate_stock_material_category.js` if the master list changes
-- If `stock_snapshot` already exists without category, also run [`alter_stock_snapshot_add_category.sql`](alter_stock_snapshot_add_category.sql)
-- Dashboards: `/api/stock/dataset` → DataHub `CACHE_STOCK` (Sheet fallback until removed)
-- **One-time Sheet → DB migrate:** `node scripts/migrate_stock_sheet_to_supabase.js`
-  - also writes `scripts/import_stock_snapshot.sql` for manual SQL Editor import
-- Filename: any name; optional `DD-MM-YYYY` in name only pre-fills the report date
-- Size: app accepts up to ~60 MB locally; **Vercel live ~4.5 MB** until browser-publish is added (same as early NSC)
-- **One-time Sheet → DB import:** run `node scripts/generate_stock_snapshot_import_sql.js`, then execute `scripts/import_stock_snapshot.sql` in Supabase SQL Editor
+- Upload: `/stock/upload.html` (users with **Stock Raw Upload = Yes**, or admin)
+- Flow after flip: Excel cleaned in the browser → `PUT` `snapshot.csv` to Supabase Storage (signed URL from `/api/stock/meta`) → tiny `/api/stock/publish` meta only
+- Before flip: same page still publishes to the Google sheet + Apps Script
+- Workbook: **Sheet1** — SAP stock rows (Material + Material Group required)
+- Local/Central is hardcoded in `lib/stock_material_category.js` (+ `stock/stock_material_category.js`)
+- DataHub `CACHE_STOCK` uses `versionUrl: /api/stock/meta` and `csvUrl` (Google or Storage). Dump bytes do not transit Vercel.
 
 ## Allot Material / View Allotments
 
-- **Create** → Supabase `stock_allotments` (Apps Script fallback if Supabase create fails)
-- **View** → Supabase `stock_allotments` (Sheet only if Supabase unreachable)
-- **Migrate:** open View Allotments → **Migrate from Sheet**, **or** run generated SQL:
-  - `node scripts/generate_stock_allotments_import_sql.js` → creates `scripts/import_stock_allotments.sql`
-  - Paste that SQL into Supabase SQL Editor and run
-- Auth create: **Stock Allot Create = Yes** (legacy usernames zm / aritra / dm1 still work)
+- **Create / View / Cancel** → `/api/stock/allotment` → `mzo_insight.stock_allotments` on the **insight** project (old until `INSIGHT_*` is set)
+- Auth: **Stock Allot Create** / **Stock Allot Cancel** in User Management
 
 ## Admin UI
 
-User Management → Stock Raw Upload / Stock Allot Create.
+User Management → Stock Raw Upload / Stock Allot Create / Stock Allot Cancel.

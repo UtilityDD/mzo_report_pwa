@@ -28,6 +28,11 @@
     }
     .guide ol { margin: 0.4rem 0 0 1.2rem; padding: 0; }
     .guide li { margin: 0.25rem 0; }
+    .guide p { margin: 0.35rem 0 0; }
+    .guide .who { margin-top: 0.65rem; }
+    .status-line {
+      margin: 0.85rem 0 0; font-size: 0.9rem; color: var(--muted);
+    }
     .meta {
       margin: 1rem 0; padding: 0.85rem 1rem; background: #f8fafc;
       border: 1px solid var(--line); border-radius: 8px; font-size: 0.9rem; display: none;
@@ -55,21 +60,25 @@
   <div class="wrap">
     <div class="card">
       <h1>Stock Upload</h1>
+      <p class="muted" style="margin:0 0 0.25rem;">Replace the figures everyone sees on the Stock page.</p>
 
       <div class="guide" id="guideBox">
-        <strong>How to upload</strong>
+        <strong>How to publish</strong>
         <ol>
-          <li>Select the <strong>data date</strong> (as-on date of this stock dump).</li>
-          <li>Choose the SAP stock Excel file.</li>
-          <li>Click <strong>Upload &amp; Publish</strong> and wait until it finishes.</li>
-          <li>Open Stock to see the updated figures.</li>
+          <li>Set the <strong>data date</strong> — the as-on date of this SAP extract.</li>
+          <li>Choose the SAP stock Excel. Sheet1 must have <strong>Material</strong> and <strong>Material Group</strong>.</li>
+          <li>Click <strong>Upload &amp; Publish</strong> and wait until it finishes. Do not close the tab.</li>
+          <li>Open <strong>Stock</strong> to confirm the new as-on date and quantities.</li>
         </ol>
+        <p class="who">Only <strong>admin</strong> or users with <strong>Stock upload = Yes</strong> can publish. The file is cleaned in this browser; the live dump is stored for all offices.</p>
       </div>
 
+      <p class="status-line" id="statusLine"></p>
+
       <div class="admin-only" id="adminIntro">
-        <p class="muted">
-          Admin: cleaned Sheet1 rows publish to the live stock store. Local/Central comes from the fixed material map.
-          Grant rights under Admin → User Management → <strong>Stock Raw Upload</strong>.
+        <p class="muted" style="margin:0.75rem 0 0;">
+          Last publish is below. Grant access in User Management → <strong>Stock upload</strong>.
+          Local / Central is taken from the fixed material map, not from the Excel.
         </p>
         <p class="muted" id="adminSetupHint" style="display:none;"></p>
       </div>
@@ -108,8 +117,10 @@
     const uploadBlock = document.getElementById('uploadBlock');
     const adminIntro = document.getElementById('adminIntro');
     const adminSetupHint = document.getElementById('adminSetupHint');
+    const statusLine = document.getElementById('statusLine');
     let isAdminViewer = false;
     let sheetScriptUrl = '';
+    let storageUploadUrl = '';
 
     function toIsoDate(d) {
       return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -141,32 +152,45 @@
         throw new Error('Upload failed. Please try again or contact an admin.');
       }
     }
+    function sourceLabel(source) {
+      const s = String(source || '').toLowerCase();
+      if (s === 'supabase_storage' || s === 'supabase') return 'Live stock store';
+      if (s === 'google_sheet') return 'Google Sheet (legacy)';
+      if (s === 'google_sheet_fallback') return 'Not connected to live store';
+      if (s === 'local') return 'This computer only';
+      return source || 'Unknown';
+    }
+    function formatWhen(iso) {
+      if (!iso) return '-';
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return String(iso);
+      return d.toLocaleString();
+    }
     function renderAdminMeta(data) {
       metaBox.classList.add('show');
       adminIntro.classList.add('show');
-      if (data.setupHint) {
+      const live = sourceLabel(data.source);
+      if (data.source === 'google_sheet_fallback' || data.setupHint) {
         adminSetupHint.style.display = 'block';
-        adminSetupHint.innerHTML = '<strong>Setup:</strong> ' + data.setupHint;
+        adminSetupHint.textContent = 'Live store is not connected yet. Do not treat this publish as the zone-wide dump until it is.';
       } else {
         adminSetupHint.style.display = 'none';
+        adminSetupHint.textContent = '';
       }
       const m = data.meta;
       if (!m) {
         metaBox.innerHTML =
-          `<div>Source: <strong>${data.source || '-'}</strong></div>` +
-          `<div>Can upload: <strong>${data.canUpload ? 'Yes' : 'No'}</strong></div>` +
-          `<div>Is admin: <strong>${data.isAdmin ? 'Yes' : 'No'}</strong></div>`;
+          `<div><strong>Store</strong> ${live}</div>` +
+          `<div><strong>You can publish</strong> ${data.canUpload ? 'Yes' : 'No'}</div>`;
         return;
       }
       const s = m.stats || {};
       metaBox.innerHTML = `
-        <div><strong>Last upload</strong> ${m.uploadedAt || '-'} by ${m.uploadedBy || '-'}</div>
+        <div><strong>Last publish</strong> ${formatWhen(m.uploadedAt)} by ${m.uploadedBy || '-'}</div>
         <div><strong>File</strong> ${m.originalName || '-'}</div>
-        <div><strong>Sheet</strong> ${m.sheetName || '-'}</div>
-        <div><strong>Published</strong> ${m.publishedRows ?? s.publishedRows ?? '-'} rows</div>
-        <div><strong>With category</strong> ${s.rowsWithCategory ?? '-'}</div>
-        <div><strong>Report date</strong> ${m.reportDate || s.today || '-'}</div>
-        <div><strong>Active source</strong> ${data.source || '-'}</div>`;
+        <div><strong>Rows</strong> ${m.publishedRows ?? s.publishedRows ?? '-'}</div>
+        <div><strong>As-on date</strong> ${m.reportDate || s.today || '-'}</div>
+        <div><strong>Store</strong> ${live}</div>`;
     }
     function hideAdminDetails() {
       metaBox.classList.remove('show');
@@ -180,6 +204,7 @@
       const data = await res.json();
       isAdminViewer = !!data.isAdmin;
       sheetScriptUrl = String(data.sheetScriptUrl || '').trim();
+      storageUploadUrl = String(data.uploadUrl || '').trim();
       if (isAdminViewer) renderAdminMeta(data);
       else hideAdminDetails();
       if (data.canUpload) {
@@ -187,8 +212,10 @@
         fileInput.disabled = false;
         reportDateInput.disabled = false;
         uploadBtn.disabled = false;
+        statusLine.textContent = 'You can publish. This replaces the Stock page dump for all users.';
       } else {
-        showMsg('You are not authorised to upload stock. Please ask an admin.', false);
+        statusLine.textContent = '';
+        showMsg('You are not authorised to publish stock. Ask an admin to set Stock upload = Yes in User Management.', false);
       }
     }
     uploadBtn.addEventListener('click', async () => {
@@ -212,7 +239,34 @@
         showMsg('Publishing stock data — please wait…', true);
 
         let data;
-        if (sheetScriptUrl && window.MzoSheetMirror) {
+        if (storageUploadUrl) {
+          const putRes = await fetch(storageUploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'text/csv', 'x-upsert': 'true' },
+            body: result.csv
+          });
+          if (!putRes.ok) {
+            const putText = await putRes.text().catch(() => '');
+            throw new Error(putText || 'Could not save the dump to the live stock store. Try again.');
+          }
+          const fdMeta = new FormData();
+          fdMeta.append('reportDate', reportDate);
+          fdMeta.append('reportDateUsed', result.reportDateUsed || '');
+          fdMeta.append('originalName', file.name);
+          fdMeta.append('sheetName', result.sheetName || 'Sheet1');
+          fdMeta.append('stats', JSON.stringify(result.stats || {}));
+          fdMeta.append('publishedRows', String(result.published.length));
+          fdMeta.append('storagePublished', '1');
+          const res = await fetch('/api/stock/publish', {
+            method: 'POST',
+            body: fdMeta,
+            credentials: 'same-origin'
+          });
+          data = await readJsonSafe(res);
+          if (!res.ok || data.status !== 'success') {
+            throw new Error(data.message || 'Saved the dump, but failed to record upload meta.');
+          }
+        } else if (sheetScriptUrl && window.MzoSheetMirror) {
           await MzoSheetMirror.publishTab(
             sheetScriptUrl,
             'stock',
@@ -264,23 +318,21 @@
         const published = (data.meta && data.meta.publishedRows) || result.published.length;
         const rd = (data.meta && data.meta.reportDate) || reportDate;
         const ok = data.status === 'success';
+        const store = sourceLabel((data.meta && data.meta.source) || data.source || '');
 
         if (isAdminViewer) {
-          const s = (data.meta && data.meta.stats) || result.stats || {};
           showMsg(
-            (ok ? 'Publish successful.' : 'Saved, but live publish had an issue.') +
-            '\nReport date: ' + rd +
-            '\nRaw: ' + (s.rawRows || '-') + ' → Published: ' + published +
-            '\nWith category: ' + (s.rowsWithCategory || '-') +
-            '\nSource: ' + ((data.meta && data.meta.source) || data.supabase || '-'),
+            (ok ? 'Published to the live Stock page.' : 'Saved, but the live dump may not have updated.') +
+            '\nAs-on date: ' + rd +
+            '\nRows: ' + published +
+            '\nStore: ' + store,
             ok
           );
         } else {
           showMsg(
-            'Upload successful.\n' +
-            'Published ' + published + ' items.\n' +
-            'As-on date: ' + rd + '\n' +
-            'Open Stock to view the latest data.',
+            'Published.\n' +
+            published + ' items, as-on ' + rd + '.\n' +
+            'Open Stock to confirm the figures.',
             true
           );
         }

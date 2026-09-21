@@ -123,69 +123,168 @@ let globalCachedLogs = null;
 let usersCacheLoadedAt = 0;
 const USERS_CACHE_TTL_MS = 2 * 60 * 1000; // short TTL for admin/list reads
 
-// Supabase Configuration (env → local file → public anon fallback used elsewhere in this repo)
+// Supabase: Power Map stays on the old project. Insight (login/stock/logs)
+// switches only when INSIGHT_SUPABASE_URL is set or local insightLive=true.
 let SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 let SUPABASE_KEY = process.env.SUPABASE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 
 // Same project anon key already shipped in client pages (e.g. dd/upcomingDD2.html).
-// Needed because /data is gitignored and often missing on Vercel unless env vars are set.
 const SUPABASE_FALLBACK_URL = 'https://unsmtschmcvftfqwabaq.supabase.co';
 const SUPABASE_FALLBACK_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVuc210c2NobWN2ZnRmcXdhYmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM1NzA1MTYsImV4cCI6MjA2OTE0NjUxNn0.X3_q0FyEjam4ct03sjiqINz0_Hfu0AlWgRcymA3us9o';
 
+let fileConfig = {};
 const supabaseConfigPath = path.join(__dirname, 'data', 'supabase_config.json');
 if (fs.existsSync(supabaseConfigPath)) {
     try {
-        const config = JSON.parse(fs.readFileSync(supabaseConfigPath, 'utf8'));
-        if (config.supabaseUrl) SUPABASE_URL = config.supabaseUrl;
-        if (config.supabaseKey) SUPABASE_KEY = config.supabaseKey;
-        console.log("[Supabase] Loaded credentials from data/supabase_config.json");
+        fileConfig = JSON.parse(fs.readFileSync(supabaseConfigPath, 'utf8')) || {};
+        if (fileConfig.supabaseUrl) SUPABASE_URL = fileConfig.supabaseUrl;
+        if (fileConfig.supabaseKey) SUPABASE_KEY = fileConfig.supabaseKey;
+        console.log('[Supabase] Loaded credentials from data/supabase_config.json');
     } catch (e) {
-        console.error("[Supabase] Failed to parse data/supabase_config.json:", e.message);
+        console.error('[Supabase] Failed to parse data/supabase_config.json:', e.message);
     }
 }
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
     SUPABASE_URL = SUPABASE_URL || SUPABASE_FALLBACK_URL;
     SUPABASE_KEY = SUPABASE_KEY || SUPABASE_FALLBACK_ANON_KEY;
-    console.log("[Supabase] Using built-in anon fallback credentials for Power Map API");
+    console.log('[Supabase] Using built-in anon fallback credentials for Power Map API');
 } else {
-    console.log("[Supabase] Credentials ready for host:", (() => {
+    console.log('[Supabase] Credentials ready for host:', (() => {
         try { return new URL(SUPABASE_URL).host; } catch (_) { return 'invalid-url'; }
     })());
 }
 
+let POWERMAP_URL = process.env.POWERMAP_SUPABASE_URL || fileConfig.powermapUrl || SUPABASE_URL || SUPABASE_FALLBACK_URL;
+let POWERMAP_KEY = process.env.POWERMAP_SUPABASE_KEY || fileConfig.powermapKey || SUPABASE_KEY || SUPABASE_FALLBACK_ANON_KEY;
+
+const NEW_INSIGHT_URL = String(
+    process.env.INSIGHT_SUPABASE_URL || fileConfig.insightUrl || ''
+).trim();
+const NEW_INSIGHT_KEY = String(
+    process.env.INSIGHT_SUPABASE_KEY ||
+        process.env.SUPABASE_SERVICE_ROLE_KEY ||
+        fileConfig.insightKey ||
+        fileConfig.insightServiceKey ||
+        ''
+).trim();
+
+const insightLiveFlag = String(
+    process.env.INSIGHT_LIVE || (fileConfig.insightLive ? '1' : '')
+).trim().toLowerCase();
+const insightLive = insightLiveFlag === '1' || insightLiveFlag === 'true' || insightLiveFlag === 'yes';
+
+let INSIGHT_URL = insightLive && NEW_INSIGHT_URL ? NEW_INSIGHT_URL : SUPABASE_URL;
+let INSIGHT_KEY = insightLive && NEW_INSIGHT_KEY ? NEW_INSIGHT_KEY : SUPABASE_KEY;
+
+const stockStorageFlag = String(
+    process.env.STOCK_USE_STORAGE || (fileConfig.stockUseStorage ? '1' : '')
+).trim().toLowerCase();
+const STOCK_USE_STORAGE =
+    stockStorageFlag === '1' || stockStorageFlag === 'true' || stockStorageFlag === 'yes';
+const STOCK_STORAGE_BUCKET = process.env.STOCK_STORAGE_BUCKET || fileConfig.stockBucket || 'stock';
+const STOCK_STORAGE_OBJECT = process.env.STOCK_STORAGE_OBJECT || fileConfig.stockObject || 'snapshot.csv';
+
+function stockStorageOrigin_() {
+    return !!(STOCK_USE_STORAGE && NEW_INSIGHT_URL && NEW_INSIGHT_KEY);
+}
+
+function stockProjectCfg_() {
+    if (stockStorageOrigin_()) return { url: NEW_INSIGHT_URL, key: NEW_INSIGHT_KEY };
+    return { url: INSIGHT_URL, key: INSIGHT_KEY };
+}
+
+console.log(
+    '[Supabase] Insight host:',
+    (() => { try { return new URL(INSIGHT_URL).host; } catch (_) { return 'invalid-url'; } })(),
+    insightLive ? '(new project live for login)' : '(login still old project)'
+);
+console.log('[Supabase] Stock dump origin:', stockStorageOrigin_() ? 'supabase storage' : 'google sheet');
+
+function isPowerMapPath_(apiPath) {
+    const p = String(apiPath || '');
+    return p.startsWith(POWER_MAP_TABLE) || p.startsWith(POWER_MAP_CORRECTIONS_TABLE);
+}
+
+function isStockDumpPath_(apiPath) {
+    const p = String(apiPath || '');
+    return p.startsWith('stock_upload_meta') || p.startsWith('stock_snapshot');
+}
+
+function supabaseCfgForPath_(apiPath) {
+    if (isPowerMapPath_(apiPath)) return { url: POWERMAP_URL, key: POWERMAP_KEY };
+    if (stockStorageOrigin_() && isStockDumpPath_(apiPath)) return stockProjectCfg_();
+    return { url: INSIGHT_URL, key: INSIGHT_KEY };
+}
+
+function stockPublicCsvUrl_(version) {
+    const cfg = stockProjectCfg_();
+    const base = `${String(cfg.url || '').replace(/\/$/, '')}/storage/v1/object/public/${STOCK_STORAGE_BUCKET}/${STOCK_STORAGE_OBJECT}`;
+    const v = String(version || '').trim();
+    return v ? `${base}?v=${encodeURIComponent(v)}` : base;
+}
+
+async function createStockSignedUpload_() {
+    const cfg = stockProjectCfg_();
+    const root = String(cfg.url || '').replace(/\/$/, '');
+    const objectPath = `${STOCK_STORAGE_BUCKET}/${STOCK_STORAGE_OBJECT}`;
+    const res = await fetch(`${root}/storage/v1/object/upload/sign/${objectPath}`, {
+        method: 'POST',
+        headers: {
+            apikey: cfg.key,
+            Authorization: `Bearer ${cfg.key}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ expiresIn: 600 })
+    });
+    const text = await res.text();
+    let parsed = {};
+    try { parsed = text ? JSON.parse(text) : {}; } catch (_) { parsed = {}; }
+    if (!res.ok) {
+        throw new Error(`Stock signed upload HTTP ${res.status}: ${text.slice(0, 300)}`);
+    }
+    const token = parsed.token || '';
+    let signedUrl = parsed.signedUrl || parsed.url || '';
+    if (signedUrl && signedUrl.startsWith('/')) signedUrl = root + signedUrl;
+    if (!signedUrl && token) {
+        signedUrl = `${root}/storage/v1/object/upload/sign/${objectPath}?token=${encodeURIComponent(token)}`;
+    }
+    if (!signedUrl) throw new Error('Supabase did not return a stock upload URL.');
+    return { signedUrl, token, path: parsed.path || objectPath };
+}
+
 // Zero-dependency Supabase REST Query Helper
 async function querySupabase(apiPath, options = {}) {
-    if (!SUPABASE_URL || !SUPABASE_KEY) {
-        throw new Error("Supabase credentials not configured. Set SUPABASE_URL and SUPABASE_KEY env vars.");
+    const cfg = supabaseCfgForPath_(apiPath);
+    if (!cfg.url || !cfg.key) {
+        throw new Error('Supabase credentials not configured. Set SUPABASE_URL and SUPABASE_KEY env vars.');
     }
     const schema = options.schema || 'public';
-    const url = `${SUPABASE_URL}/rest/v1/${apiPath}`;
+    const url = `${cfg.url}/rest/v1/${apiPath}`;
     const headers = {
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        apikey: cfg.key,
+        Authorization: `Bearer ${cfg.key}`,
         'Content-Type': 'application/json',
         'Accept-Profile': schema,
         ...options.headers
     };
-    // Prefer only for mutating requests (POST/PATCH/DELETE)
     const method = (options.method || 'GET').toUpperCase();
     if (method !== 'GET' && method !== 'HEAD') {
-        headers['Prefer'] = options.prefer || 'return=representation';
+        headers.Prefer = options.prefer || 'return=representation';
         headers['Content-Profile'] = schema;
     }
-    
+
     const response = await fetch(url, {
         method,
         headers,
         body: options.body ? JSON.stringify(options.body) : undefined
     });
-    
+
     if (!response.ok) {
         const errText = await response.text();
         throw new Error(`Supabase REST API returned HTTP ${response.status}: ${errText}`);
     }
-    
+
     const text = await response.text();
     if (!text || text.trim().length === 0) return null;
     try {
@@ -3332,6 +3431,7 @@ async function insertStockMetaOnly_(metaInput, publishedCount) {
 app.get('/api/stock/meta', async (req, res) => {
     if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     const user = await resolveStockUser_(req);
+    const canUpload = canUploadStock_(user);
     let source = 'google_sheet_fallback';
     let meta = readLocalStockMeta_();
     const hasLocal = fs.existsSync(STOCK_CSV_FILE);
@@ -3339,31 +3439,49 @@ app.get('/api/stock/meta', async (req, res) => {
         const sb = await fetchActiveStockMeta_();
         if (sb) {
             meta = stockMetaFromDb_(sb);
-            source = 'supabase';
+            source = stockStorageOrigin_() ? 'supabase_storage' : 'supabase';
         } else if (hasLocal) source = 'local';
     } catch (e) {
         if (hasLocal) source = 'local';
     }
+    if (stockStorageOrigin_()) source = 'supabase_storage';
+    const version = snapshotVersion_(meta) || null;
+    let uploadUrl = '';
+    if (stockStorageOrigin_() && canUpload) {
+        try {
+            const signed = await createStockSignedUpload_();
+            uploadUrl = signed.signedUrl;
+        } catch (e) {
+            console.warn('[Stock meta] signed upload URL:', e.message);
+        }
+    }
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
-    const sheetMirror = !!STOCK_SHEET_SCRIPT_URL;
+    const sheetMirror = !!STOCK_SHEET_SCRIPT_URL && !stockStorageOrigin_();
     return res.json({
         status: 'success',
-        canUpload: canUploadStock_(user),
+        canUpload,
         isAdmin: String((user && user.role) || '').trim().toLowerCase() === 'admin',
         hasLocalDataset: hasLocal,
         meta,
-        version: snapshotVersion_(meta) || null,
-        sheetScriptUrl: canUploadStock_(user) && sheetMirror ? STOCK_SHEET_SCRIPT_URL : '',
-        csvUrl: sheetMirror ? STOCK_SHEET_FALLBACK_URL : null,
+        version,
+        sheetScriptUrl: canUpload && sheetMirror ? STOCK_SHEET_SCRIPT_URL : '',
+        uploadUrl,
+        csvUrl: stockStorageOrigin_()
+            ? stockPublicCsvUrl_(version)
+            : (sheetMirror ? STOCK_SHEET_FALLBACK_URL : null),
         source,
         setupHint:
             source === 'google_sheet_fallback'
-                ? 'Run scripts/create_mzo_insight_stock_snapshot.sql then upload once.'
+                ? 'Run scripts/create_insight_project_gmasnqeb.sql then set INSIGHT_LIVE + STOCK_USE_STORAGE after copy.'
                 : null
     });
 });
 
 app.get('/api/stock/dataset', async (req, res) => {
+    if (stockStorageOrigin_()) {
+        res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+        return res.redirect(302, stockPublicCsvUrl_());
+    }
     if (STOCK_SHEET_SCRIPT_URL) {
         res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
         return res.redirect(302, STOCK_SHEET_FALLBACK_URL);
@@ -3482,6 +3600,7 @@ app.post('/api/stock/publish', (req, res) => {
 
             const body = req.body || {};
             const sheetMirror = String(body.sheetMirror || '') === '1';
+            const storagePublished = String(body.storagePublished || '') === '1';
             let csv = '';
             if (req.file && req.file.buffer) {
                 csv = req.file.buffer.toString('utf8').trim();
@@ -3506,7 +3625,7 @@ app.post('/api/stock/publish', (req, res) => {
                 });
             }
 
-            if (sheetMirror) {
+            if (sheetMirror || storagePublished) {
                 const publishedCount = Number(body.publishedRows || clientStats.publishedRows) || 0;
                 const reportLabel = String(clientStats.today || body.reportDateUsed || reportDateRaw).trim();
                 const stats = {
@@ -3516,6 +3635,7 @@ app.post('/api/stock/publish', (req, res) => {
                     rowsWithCategory: Number(clientStats.rowsWithCategory) || 0,
                     today: reportLabel
                 };
+                const origin = storagePublished ? 'supabase_storage' : 'google_sheet';
                 const baseMeta = {
                     uploadedAt: new Date().toISOString(),
                     uploadedBy: uploadUser.Username || uploadUser.username || req.user.Username || 'user',
@@ -3524,22 +3644,25 @@ app.post('/api/stock/publish', (req, res) => {
                     stats,
                     publishedRows: publishedCount,
                     reportDate: reportLabel,
-                    publishMode: 'google_sheet',
-                    source: 'google_sheet'
+                    publishMode: origin,
+                    source: origin
                 };
                 try {
                     const supabaseMeta = await insertStockMetaOnly_(baseMeta, publishedCount);
                     baseMeta.supabaseUploadId = supabaseMeta && supabaseMeta.supabaseUploadId;
                 } catch (e) {
-                    console.warn('[Stock publish] sheet-mirror meta only:', e.message);
+                    console.warn('[Stock publish] meta only:', e.message);
                     baseMeta.supabaseError = e.message;
                 }
                 return res.json({
                     status: 'success',
-                    message: `Published ${publishedCount} stock rows to Google Sheet.`,
+                    message: storagePublished
+                        ? `Published ${publishedCount} stock rows to Supabase Storage.`
+                        : `Published ${publishedCount} stock rows to Google Sheet.`,
                     meta: baseMeta,
+                    version: snapshotVersion_(baseMeta) || null,
                     supabase: baseMeta.supabaseUploadId ? 'ok' : 'skipped',
-                    source: 'google_sheet'
+                    source: origin
                 });
             }
 

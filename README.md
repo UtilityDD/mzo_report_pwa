@@ -17,7 +17,7 @@ Topic notes:
 
 - `scripts/README_PORTAL_USERS.md` — login users
 - `scripts/README_MZO_INSIGHT_SCHEMA.md` — Supabase schemas
-- `scripts/README_STOCK_SUPABASE.md` / `stock/README_ALLOTMENT.md` — stock
+- `scripts/README_STOCK_SUPABASE.md` / `stock/README_ALLOTMENT.md` — stock (new insight project cutover; `npm run copy:insight`)
 - `scripts/README_NSC_PENDING.md` — NSC
 - `scripts/README_POWER_MAP_MIGRATION.md` — power map
 - `scripts/README_ACTIVITY_LOGS.md` — activity logs
