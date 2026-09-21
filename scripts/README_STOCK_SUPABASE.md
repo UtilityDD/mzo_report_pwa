@@ -6,7 +6,7 @@ Present users keep the **old** `portal_users` login until `INSIGHT_LIVE=1`. Stoc
 
 Who can upload: Admin, or User Management → **Stock Raw Upload = Yes** (`stock_upload_autho`). Others see the page locked.
 
-Flow: Excel is cleaned in the browser → signed `PUT` to Storage `stock/snapshot.csv` (not through Vercel) → `/api/stock/publish` records meta only. Dashboard DataHub `CACHE_STOCK` uses that public `csvUrl`.
+Flow: Excel is cleaned in the browser → signed `PUT` to Storage `stock/snapshot.csv` with upsert (not through Vercel) → `/api/stock/publish` records meta only. If the CSV still posts through `/api/stock/publish`, the server also overwrites `snapshot.csv`. Dashboard DataHub `CACHE_STOCK` uses that public `csvUrl`.
 
 Power Map stays on the old project either way. Do not set `INSIGHT_LIVE` until you are ready to switch login.
 
@@ -28,7 +28,7 @@ That copies `portal_users`, logs, unbilled months, allotments, and `snapshot.csv
 ## Stock dashboard dump
 
 - Upload: `/stock/upload.html` (users with **Stock Raw Upload = Yes**, or admin)
-- Flow after flip: Excel cleaned in the browser → `PUT` `snapshot.csv` to Supabase Storage (signed URL from `/api/stock/meta`) → tiny `/api/stock/publish` meta only
+- Flow after flip: Excel cleaned in the browser → `PUT` `snapshot.csv` to Supabase Storage with upsert (signed URL from `/api/stock/meta`) → tiny `/api/stock/publish` meta only. A Vercel CSV publish also overwrites Storage.
 - Before flip: same page still publishes to the Google sheet + Apps Script
 - Workbook: **Sheet1** — SAP stock rows (Material + Material Group required)
 - Local/Central is hardcoded in `lib/stock_material_category.js` (+ `stock/stock_material_category.js`)

@@ -43,10 +43,12 @@ function nscReportDateLabel_(meta) {
 function snapshotVersion_(meta) {
     if (!meta) return '';
     const today = nscReportDateLabel_(meta);
+    const rows = meta.publishedRows != null ? String(meta.publishedRows) : '';
+    const at = String(meta.uploadedAt || '').trim();
     if (meta.supabaseUploadId != null && String(meta.supabaseUploadId).trim() !== '') {
-        return `${meta.supabaseUploadId}|${today}`;
+        return `${meta.supabaseUploadId}|${today}|${rows}|${at}`;
     }
-    return `${today}|${meta.uploadedAt || ''}|${meta.publishedRows ?? ''}`;
+    return `${today}|${at}|${rows}`;
 }
 
 function snapshotWithheldVersion_(meta) {
@@ -233,9 +235,10 @@ async function createStockSignedUpload_() {
         headers: {
             apikey: cfg.key,
             Authorization: `Bearer ${cfg.key}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'x-upsert': 'true'
         },
-        body: JSON.stringify({ expiresIn: 600 })
+        body: JSON.stringify({ expiresIn: 600, upsert: true })
     });
     const text = await res.text();
     let parsed = {};
@@ -251,6 +254,29 @@ async function createStockSignedUpload_() {
     }
     if (!signedUrl) throw new Error('Supabase did not return a stock upload URL.');
     return { signedUrl, token, path: parsed.path || objectPath };
+}
+
+async function putStockCsvToStorage_(csv) {
+    const body = String(csv || '');
+    if (!body.trim()) throw new Error('Empty stock CSV.');
+    const cfg = { url: NEW_INSIGHT_URL, key: NEW_INSIGHT_KEY };
+    if (!cfg.url || !cfg.key) throw new Error('Insight Supabase is not configured for stock Storage.');
+    const root = String(cfg.url).replace(/\/$/, '');
+    const res = await fetch(`${root}/storage/v1/object/${STOCK_STORAGE_BUCKET}/${STOCK_STORAGE_OBJECT}`, {
+        method: 'POST',
+        headers: {
+            apikey: cfg.key,
+            Authorization: `Bearer ${cfg.key}`,
+            'Content-Type': 'text/csv',
+            'x-upsert': 'true'
+        },
+        body
+    });
+    const text = await res.text();
+    if (!res.ok) {
+        throw new Error(`Stock Storage write HTTP ${res.status}: ${text.slice(0, 300)}`);
+    }
+    return true;
 }
 
 // Zero-dependency Supabase REST Query Helper
@@ -3394,6 +3420,12 @@ async function publishStockToSupabase_(publishedRows, metaInput) {
             body: chunk,
             prefer: 'return=minimal'
         });
+    }
+    try {
+        await putStockCsvToStorage_(stockToCsv(publishedRows));
+    } catch (e) {
+        if (stockStorageOrigin_()) throw e;
+        console.warn('[Stock Supabase] storage snapshot.csv:', e.message);
     }
     return stockMetaFromDb_(metaRow);
 }
