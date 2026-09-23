@@ -32,7 +32,13 @@
 // v109: stock signed upload path includes /storage/v1; home Uploads sheet list
 // v110: admin Sheet links Yes/No for the home-bar button
 // v111: versioned DataHub — download dumps only when remote version differs
-const CACHE_NAME = 'mzo-reports-cache-v114';
+// v116: desktop presentation zoom (mzo_present.js)
+// v117: presentation zoom uses one scrollbar
+// v118: disconnection consumer modal keeps a device-local follow-up timeline
+// v119: NSC page uses presentation zoom (ignore side panels)
+// v120: disconnection follow-up stores the signed-in user's name with the time
+// v121: NSC counts each APPL_NO once (duplicate consumers in a division)
+const CACHE_NAME = 'mzo-reports-cache-v121';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -50,7 +56,8 @@ const PRECACHE_ASSETS = [
   'icons/icon-512-v2.png',
   'tailwind_dist.css',
   'auth.js',
-  'home-button.js'
+  'home-button.js',
+  'mzo_present.js'
 ];
 
 // Third-party CDN URLs to match for Cache-First strategy
@@ -131,10 +138,97 @@ function isNetworkFirstPath(pathname) {
     pathname === '/icons/icon-192-v2.png' ||
     pathname === '/icons/icon-512-v2.png' ||
     pathname === '/mzo_app_update.js' ||
+    pathname === '/mzo_present.js' ||
     pathname === '/version.json' ||
     pathname === '/sw.js' ||
     pathname.startsWith('/api/')
   );
+}
+
+function skipPresentZoom(pathname) {
+  const p = String(pathname || '');
+  if (p === '/login.html' || p === '/offline.html') return true;
+  if (p.startsWith('/power_map/') || p.startsWith('/sld/')) return true;
+  if (p === '/accident/map.html') return true;
+  return false;
+}
+
+function isAppHtmlRequest(request, url) {
+  if (url.origin !== self.location.origin) return false;
+  const path = url.pathname || '';
+  if (path.startsWith('/api/')) return false;
+  if (/\.(js|mjs|css|json|png|jpe?g|gif|webp|svg|ico|csv|map|woff2?|ttf|txt|xml)$/i.test(path)) return false;
+  if (request.mode === 'navigate') return true;
+  if (path === '/' || /\.html$/i.test(path)) return true;
+  const accept = request.headers.get('accept') || '';
+  return accept.indexOf('text/html') !== -1;
+}
+
+const PRESENT_SNIPPET = '<script src="/mzo_present.js" defer></' + 'script>';
+
+function injectPresentScript(response) {
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let pending = '';
+  let decided = false;
+  const stream = new TransformStream({
+    transform(chunk, controller) {
+      pending += decoder.decode(chunk, { stream: true });
+      if (!decided) {
+        const match = pending.match(/<head[^>]*>/i);
+        if (!match) {
+          if (pending.length > 16384) decided = true;
+          else return;
+        } else {
+          const headEnd = pending.indexOf(match[0]) + match[0].length;
+          if (pending.length < headEnd + 1200) return;
+          const windowText = pending.slice(headEnd, headEnd + 1200);
+          if (windowText.indexOf('mzo_present.js') === -1) {
+            pending = pending.slice(0, headEnd) + PRESENT_SNIPPET + pending.slice(headEnd);
+          }
+          decided = true;
+        }
+      }
+      if (pending) {
+        controller.enqueue(encoder.encode(pending));
+        pending = '';
+      }
+    },
+    flush(controller) {
+      pending += decoder.decode();
+      if (!decided) {
+        const match = pending.match(/<head[^>]*>/i);
+        if (match && pending.indexOf('mzo_present.js') === -1) {
+          const headEnd = pending.indexOf(match[0]) + match[0].length;
+          pending = pending.slice(0, headEnd) + PRESENT_SNIPPET + pending.slice(headEnd);
+        }
+      }
+      if (pending) controller.enqueue(encoder.encode(pending));
+    }
+  });
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+  headers.delete('content-encoding');
+  return new Response(response.body.pipeThrough(stream), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: headers
+  });
+}
+
+function withPresentZoom(response, request, url) {
+  try {
+    if (!response || response.status !== 200 || !response.body) return response;
+    if (!isAppHtmlRequest(request, url)) return response;
+    let finalPath = '';
+    try { finalPath = new URL(response.url).pathname; } catch (e) {}
+    if (skipPresentZoom(url.pathname) || skipPresentZoom(finalPath)) return response;
+    const type = (response.headers.get('content-type') || '').toLowerCase();
+    if (type && type.indexOf('text/html') === -1) return response;
+    return injectPresentScript(response);
+  } catch (e) {
+    return response;
+  }
 }
 
 // Install Event: cache static shell assets
@@ -196,7 +290,7 @@ self.addEventListener('fetch', (event) => {
   // Always network for API + NSC page/hub scripts (filters/data keys change often)
   if (isNetworkFirstPath(url.pathname)) {
     event.respondWith(
-      fetch(request).catch(() => {
+      fetch(request).then((res) => withPresentZoom(res, request, url)).catch(() => {
         if (request.mode === 'navigate') {
           return caches.match('offline.html');
         }
@@ -245,7 +339,7 @@ self.addEventListener('fetch', (event) => {
               safePut(cache, request, responseToCache);
             });
           }
-          return networkResponse;
+          return withPresentZoom(networkResponse, request, url);
         }).catch((err) => {
           console.log('[Service Worker] Fetch failed; returning cached version or fallback page', err);
           // If offline and request is a page navigation, return the offline fallback page
@@ -255,7 +349,9 @@ self.addEventListener('fetch', (event) => {
           throw err;
         });
 
-        return cachedResponse || fetchPromise;
+        return cachedResponse
+          ? withPresentZoom(cachedResponse, request, url)
+          : fetchPromise;
       })
     );
   }

@@ -392,6 +392,91 @@
             color: var(--text-secondary);
         }
 
+        #consumerDetailModal .modal-body {
+            max-height: min(70vh, 640px);
+        }
+
+        .followup-panel {
+            border-top: 1px solid var(--border-color);
+            padding-top: 0.75rem;
+        }
+
+        .followup-list {
+            margin: 0 0 0.75rem 0.35rem;
+            padding: 0 0 0 0.9rem;
+            border-left: 2px solid var(--border-color);
+        }
+
+        .followup-item {
+            position: relative;
+            margin-bottom: 0.75rem;
+        }
+
+        .followup-item:last-child {
+            margin-bottom: 0.15rem;
+        }
+
+        .followup-item::before {
+            content: '';
+            position: absolute;
+            left: -1.22rem;
+            top: 0.35rem;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4f46e5;
+        }
+
+        .followup-meta {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 0.1rem 0.35rem;
+            min-width: 0;
+        }
+
+        .followup-who {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .followup-when {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .followup-note {
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 0.86rem;
+            line-height: 1.35;
+        }
+
+        .followup-delete {
+            border: 0;
+            background: transparent;
+            color: var(--text-secondary);
+            padding: 0 0.15rem;
+            line-height: 1;
+        }
+
+        .followup-delete:hover {
+            color: var(--color-disconnected);
+        }
+
+        .followup-empty {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            margin-bottom: 0.75rem;
+        }
+
+        #followupNote {
+            resize: vertical;
+            min-height: 58px;
+        }
+
         /* Mobile View Compact Cards Style */
         @media (max-width: 767px) {
             .custom-container {
@@ -512,6 +597,28 @@
                 flex-direction: column;
                 gap: 8px;
                 align-items: center;
+            }
+
+            #consumerDetailModal .modal-dialog {
+                margin: 0.4rem;
+                max-width: calc(100% - 0.8rem);
+            }
+
+            #consumerDetailModal .modal-content {
+                max-height: calc(100vh - 0.8rem);
+            }
+
+            #consumerDetailModal .modal-body {
+                max-height: none;
+            }
+
+            #followupNote {
+                min-height: 72px;
+            }
+
+            #followupSaveBtn {
+                width: 100%;
+                min-height: 40px;
             }
         }
     </style>
@@ -738,7 +845,7 @@
 
     <!-- Consumer Detail Modal -->
     <div class="modal fade" id="consumerDetailModal" tabindex="-1" aria-labelledby="consumerDetailModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
             <div class="modal-content">
                 <div class="modal-header border-bottom-0 pb-1">
                     <h5 class="modal-title fw-bold" id="consumerDetailModalLabel">Consumer Details</h5>
@@ -1273,6 +1380,7 @@
 
             // Render UI
             updateDashboard();
+            refreshOpenConsumerModal();
         }
 
         function populateFilterOptions(selectId, items) {
@@ -1823,41 +1931,223 @@
             listEl.appendChild(nextLi);
         }
 
-        // Show single consumer detail in Modal dialog
-        function showConsumerDetailModal(c) {
+        const FOLLOWUP_STORE_KEY = 'mzo_discon_followups';
+        const FOLLOWUP_NOTE_MAX = 500;
+        let consumerModalInstance = null;
+        let openConsumerId = null;
+        let modalConsumer = null;
+        let followupClicksBound = false;
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function followupConsumerKey(id) {
+            return String(id || '').trim();
+        }
+
+        function followupCanSave(id) {
+            const key = followupConsumerKey(id);
+            return !!key && !key.startsWith('synthetic-');
+        }
+
+        function readFollowupStore() {
+            try {
+                const raw = localStorage.getItem(FOLLOWUP_STORE_KEY);
+                if (!raw) return {};
+                const data = JSON.parse(raw);
+                if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
+                return data;
+            } catch (err) {
+                return {};
+            }
+        }
+
+        function writeFollowupStore(store) {
+            if (!store || !Object.keys(store).length) {
+                localStorage.removeItem(FOLLOWUP_STORE_KEY);
+                return;
+            }
+            localStorage.setItem(FOLLOWUP_STORE_KEY, JSON.stringify(store));
+        }
+
+        function getFollowups(id) {
+            const key = followupConsumerKey(id);
+            if (!key) return [];
+            const list = readFollowupStore()[key];
+            if (!Array.isArray(list)) return [];
+            return list
+                .filter((entry) => entry && typeof entry.note === 'string' && entry.note.trim())
+                .slice()
+                .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+        }
+
+        function currentFollowupUserName() {
+            try {
+                const profile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}') || {};
+                const name = String(profile.Name || profile.name || '').trim();
+                if (name) return name.slice(0, 80);
+                return String(profile.Username || profile.username || '').trim().slice(0, 80);
+            } catch (err) {
+                return '';
+            }
+        }
+
+        function formatFollowupWhen(iso) {
+            const d = new Date(iso);
+            if (Number.isNaN(d.getTime())) return '';
+            return d.toLocaleString('en-IN', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            });
+        }
+
+        function newFollowupId() {
+            if (window.crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+            return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        }
+
+        function addFollowup(id, note) {
+            const key = followupConsumerKey(id);
+            const text = String(note || '').trim().slice(0, FOLLOWUP_NOTE_MAX);
+            if (!followupCanSave(key) || !text) return { ok: false, reason: 'empty' };
+            const store = readFollowupStore();
+            const list = Array.isArray(store[key]) ? store[key] : [];
+            list.push({
+                id: newFollowupId(),
+                at: new Date().toISOString(),
+                by: currentFollowupUserName(),
+                note: text
+            });
+            store[key] = list;
+            writeFollowupStore(store);
+            return { ok: true };
+        }
+
+        function deleteFollowup(id, entryId) {
+            const key = followupConsumerKey(id);
+            if (!key || !entryId) return;
+            const store = readFollowupStore();
+            const list = Array.isArray(store[key]) ? store[key] : [];
+            const next = list.filter((entry) => entry && entry.id !== entryId);
+            if (next.length) store[key] = next;
+            else delete store[key];
+            writeFollowupStore(store);
+        }
+
+        function followupListHtml(id) {
+            const items = getFollowups(id);
+            if (!items.length) {
+                return '<div class="followup-empty">No follow-up yet.</div>';
+            }
+            return `<div class="followup-list">${items.map((entry) => `
+                <div class="followup-item">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div class="followup-meta">${entry.by ? `<span class="followup-who">${escapeHtml(entry.by)}</span>` : ''}<span class="followup-when">${escapeHtml(formatFollowupWhen(entry.at))}</span></div>
+                        <button type="button" class="followup-delete" data-followup-delete="${escapeHtml(entry.id)}" aria-label="Delete follow-up">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                    <div class="followup-note">${escapeHtml(entry.note)}</div>
+                </div>
+            `).join('')}</div>`;
+        }
+
+        function followupComposerHtml(c, draft) {
+            if (!followupCanSave(c.id)) {
+                return '<div class="followup-empty mb-0">This row has no consumer number, so a follow-up cannot be saved.</div>';
+            }
+            return `
+                <label class="form-label small text-secondary mb-1" for="followupNote">Add a report</label>
+                <textarea id="followupNote" class="form-control form-control-sm" rows="2" maxlength="${FOLLOWUP_NOTE_MAX}" placeholder="What happened on this visit or call">${escapeHtml(draft || '')}</textarea>
+                <div id="followupError" class="text-danger small mt-1" hidden></div>
+                <button type="button" id="followupSaveBtn" class="btn btn-primary btn-sm mt-2">Save follow-up</button>
+            `;
+        }
+
+        function statusBadgeClass(status) {
+            if (status === 'Fully Paid') return 'badge-fully-paid';
+            if (status === 'Partially Paid') return 'badge-partially-paid';
+            if (status === 'Disconnected') return 'badge-disconnected';
+            return 'badge-no-action';
+        }
+
+        function ensureFollowupClicks() {
+            if (followupClicksBound) return;
             const body = document.getElementById('consumerModalBody');
+            if (!body) return;
+            followupClicksBound = true;
+            body.addEventListener('click', (e) => {
+                if (e.target.closest('#followupSaveBtn')) {
+                    e.preventDefault();
+                    saveOpenFollowup();
+                    return;
+                }
+                const del = e.target.closest('[data-followup-delete]');
+                if (!del) return;
+                e.preventDefault();
+                removeOpenFollowup(del.getAttribute('data-followup-delete'));
+            });
+        }
+
+        function getConsumerModal() {
+            const el = document.getElementById('consumerDetailModal');
+            if (!consumerModalInstance) {
+                consumerModalInstance = bootstrap.Modal.getOrCreateInstance(el);
+                el.addEventListener('hidden.bs.modal', () => {
+                    openConsumerId = null;
+                    modalConsumer = null;
+                });
+            }
+            return consumerModalInstance;
+        }
+
+        function renderConsumerModal(c, opts) {
+            opts = opts || {};
+            const body = document.getElementById('consumerModalBody');
+            const count = getFollowups(c.id).length;
+            const missingNote = opts.missing
+                ? '<div class="followup-empty">This consumer number is not in the current file. Saved follow-ups stay on this device.</div>'
+                : '';
             body.innerHTML = `
                 <div class="row g-2 mb-3 mt-1">
                     <div class="col-6">
                         <div class="text-secondary small">Consumer ID</div>
-                        <div class="fw-bold font-monospace text-primary text-break" style="font-size:1.05rem;">${c.id}</div>
+                        <div class="fw-bold font-monospace text-primary text-break" style="font-size:1.05rem;">${escapeHtml(c.id)}</div>
                     </div>
                     <div class="col-6 text-end">
                         <div class="text-secondary small">Status</div>
-                        <span class="badge-status mt-1 ${c.status === 'Fully Paid' ? 'badge-fully-paid' : c.status === 'Partially Paid' ? 'badge-partially-paid' : c.status === 'Disconnected' ? 'badge-disconnected' : 'badge-no-action'}">
-                            ${c.status}
-                        </span>
+                        <span class="badge-status mt-1 ${statusBadgeClass(c.status)}">${escapeHtml(c.status)}</span>
                     </div>
                 </div>
                 <div class="mb-3">
                     <div class="text-secondary small">Consumer Name</div>
-                    <div class="fw-bold text-primary" style="font-size:0.95rem;">${c.name}</div>
+                    <div class="fw-bold text-primary" style="font-size:0.95rem;">${escapeHtml(c.name)}</div>
                 </div>
                 <div class="mb-3">
                     <div class="text-secondary small">Address</div>
-                    <div class="text-primary small">${c.address || 'Not Available'}</div>
+                    <div class="text-primary small">${escapeHtml(c.address || 'Not Available')}</div>
                 </div>
                 <hr class="my-2" style="border-color:var(--border-color)">
                 <div class="row g-2 mb-3">
                     <div class="col-6">
                         <div class="text-secondary small">Geographic Path</div>
                         <div class="fw-semibold text-primary text-wrap" style="font-size:0.8rem;">
-                            ${c.regionName} &gt; ${c.divisionName} &gt; ${c.cccName}
+                            ${escapeHtml(c.regionName)} &gt; ${escapeHtml(c.divisionName)} &gt; ${escapeHtml(c.cccName)}
                         </div>
                     </div>
                     <div class="col-6 text-end">
                         <div class="text-secondary small">CCC Code</div>
-                        <div class="fw-semibold text-primary font-monospace">${c.cccCode || '-'}</div>
+                        <div class="fw-semibold text-primary font-monospace">${escapeHtml(c.cccCode || '-')}</div>
                     </div>
                 </div>
                 <div class="row g-2 mb-3">
@@ -1871,22 +2161,94 @@
                     </div>
                     <div class="col-4 text-end">
                         <div class="text-secondary small font-monospace">Tariff/Class</div>
-                        <div class="fw-semibold text-primary small font-monospace">${c.tariffClass} / ${c.classDesc}</div>
+                        <div class="fw-semibold text-primary small font-monospace">${escapeHtml(c.tariffClass)} / ${escapeHtml(c.classDesc)}</div>
                     </div>
                 </div>
-                <div class="row g-2 mb-3">
+                <div class="row g-2 mb-2">
                     <div class="col-6">
                         <div class="text-secondary small">Paid/Discon Date</div>
-                        <div class="fw-bold text-primary font-monospace">${c.dateStr || 'No Date Data'}</div>
+                        <div class="fw-bold text-primary font-monospace">${escapeHtml(c.dateStr || 'No Date Data')}</div>
                     </div>
                     <div class="col-6 text-end">
                         <div class="text-secondary small">Remarks</div>
-                        <div class="fw-semibold text-primary text-wrap small">${c.remarks || '-'}</div>
+                        <div class="fw-semibold text-primary text-wrap small">${escapeHtml(c.remarks || '-')}</div>
                     </div>
                 </div>
+                ${missingNote}
+                <div class="followup-panel">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div class="fw-bold">Follow-up</div>
+                        <div class="text-secondary small">${count ? escapeHtml(String(count)) + (count === 1 ? ' report' : ' reports') : 'Saved on this device'}</div>
+                    </div>
+                    ${followupListHtml(c.id)}
+                    ${followupComposerHtml(c, opts.draft)}
+                </div>
             `;
-            const modal = new bootstrap.Modal(document.getElementById('consumerDetailModal'));
-            modal.show();
+            ensureFollowupClicks();
+            if (opts.focusNote) {
+                const note = document.getElementById('followupNote');
+                if (note) note.focus();
+            }
+            if (opts.error) {
+                const err = document.getElementById('followupError');
+                if (err) {
+                    err.hidden = false;
+                    err.textContent = opts.error;
+                }
+            }
+        }
+
+        function showConsumerDetailModal(c) {
+            modalConsumer = c;
+            openConsumerId = followupConsumerKey(c.id);
+            renderConsumerModal(c, { draft: '' });
+            getConsumerModal().show();
+        }
+
+        function refreshOpenConsumerModal() {
+            if (!openConsumerId || !modalConsumer) return;
+            const el = document.getElementById('consumerDetailModal');
+            if (!el || !el.classList.contains('show')) return;
+            const draftEl = document.getElementById('followupNote');
+            const draft = draftEl ? draftEl.value : '';
+            const fresh = enrichedConsumers.find((row) => followupConsumerKey(row.id) === openConsumerId);
+            if (fresh) modalConsumer = fresh;
+            renderConsumerModal(modalConsumer, { draft: draft, missing: !fresh });
+        }
+
+        function saveOpenFollowup() {
+            if (!modalConsumer) return;
+            const noteEl = document.getElementById('followupNote');
+            const text = noteEl ? noteEl.value : '';
+            if (!String(text).trim()) {
+                renderConsumerModal(modalConsumer, { draft: text, focusNote: true, error: 'Write a short report first.' });
+                return;
+            }
+            try {
+                const result = addFollowup(modalConsumer.id, text);
+                if (!result.ok) {
+                    renderConsumerModal(modalConsumer, { draft: text, focusNote: true, error: 'Write a short report first.' });
+                    return;
+                }
+            } catch (err) {
+                renderConsumerModal(modalConsumer, { draft: text, focusNote: true, error: 'Could not save on this device.' });
+                return;
+            }
+            renderConsumerModal(modalConsumer, { draft: '', focusNote: true });
+        }
+
+        function removeOpenFollowup(entryId) {
+            if (!modalConsumer || !entryId) return;
+            if (!window.confirm('Remove this follow-up from this device?')) return;
+            const draftEl = document.getElementById('followupNote');
+            const draft = draftEl ? draftEl.value : '';
+            try {
+                deleteFollowup(modalConsumer.id, entryId);
+            } catch (err) {
+                renderConsumerModal(modalConsumer, { draft: draft, error: 'Could not update follow-ups on this device.' });
+                return;
+            }
+            renderConsumerModal(modalConsumer, { draft: draft, focusNote: true });
         }
 
         // Sorting toggling handler

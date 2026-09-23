@@ -165,6 +165,10 @@
     return s === 'witheld' || s === 'withheld' || s === 'scnwithheld';
   }
 
+  function applKeyOf(row) {
+    return cellStr(row && row.APPL_NO).toLowerCase();
+  }
+
   function normalizeSuppOff(name) {
     let s = cellStr(name);
     if (!s) return '';
@@ -255,10 +259,12 @@
   function transformRows(rawRows, reportDate, workbookOfficeMap) {
     const today = reportDate || new Date();
     const todayStr = formatDateDMY(today);
-    const published = [];
-    const withheld = [];
+    const publishedByAppl = new Map();
+    const withheldByAppl = new Map();
     const statusCounts = {};
     const regionCounts = {};
+    let skippedDup = 0;
+    let skippedBlank = 0;
 
     for (let i = 0; i < rawRows.length; i++) {
       const raw = canonicalizeRow(rawRows[i]);
@@ -318,8 +324,8 @@
         AGENCY_NAME: cellStr(raw.AGENCY_NAME),
         METER_NUMBER: cellStr(raw.METER_NUMBER),
         SCN_STATUS: status,
-            SCN_WITHELD_DATE: formatDateDMY(withheldDate) || cellStr(raw.SCN_WITHELD_DATE) || cellStr(raw.SCN_WITHHELD_DATE),
-            SCN_WITHELD_REASON: cellStr(raw.SCN_WITHELD_REASON) || cellStr(raw.SCN_WITHHELD_REASON),
+        SCN_WITHELD_DATE: formatDateDMY(withheldDate) || cellStr(raw.SCN_WITHELD_DATE) || cellStr(raw.SCN_WITHHELD_DATE),
+        SCN_WITHELD_REASON: cellStr(raw.SCN_WITHELD_REASON) || cellStr(raw.SCN_WITHHELD_REASON),
         IS_DUARE_SARKAR: cellStr(raw.IS_DUARE_SARKAR),
         DS_NUMBER: cellStr(raw.DS_NUMBER),
         DS_FORM_DATE: formatDateDMY(dsForm) || cellStr(raw.DS_FORM_DATE),
@@ -334,12 +340,22 @@
         PoleNonPole: poleNonPole
       };
 
-      if (NSC_PUBLISH_STATUSES.has(statusKey)) {
-        published.push(row);
-      } else if (withheldStatusKey(statusKey)) {
-        withheld.push(row);
+      if (NSC_PUBLISH_STATUSES.has(statusKey) || withheldStatusKey(statusKey)) {
+        const key = applKeyOf(row);
+        if (!key) {
+          skippedBlank += 1;
+        } else if (NSC_PUBLISH_STATUSES.has(statusKey)) {
+          if (publishedByAppl.has(key)) skippedDup += 1;
+          publishedByAppl.set(key, row);
+        } else {
+          if (withheldByAppl.has(key)) skippedDup += 1;
+          withheldByAppl.set(key, row);
+        }
       }
     }
+
+    const published = Array.from(publishedByAppl.values());
+    const withheld = Array.from(withheldByAppl.values());
 
     return {
       published,
@@ -348,6 +364,8 @@
         rawRows: rawRows.length,
         publishedRows: published.length,
         withheldRows: withheld.length,
+        skippedDup,
+        skippedBlank,
         statusCounts,
         regionCounts,
         today: todayStr

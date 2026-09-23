@@ -2,7 +2,7 @@
 
 NSC no longer stores rows in Supabase. Upload at `/nsc/upload.html` processes the raw SAP Excel in the browser and inserts cleaned rows into:
 
-- Working/Accepted → spreadsheet tab `nsc_working` (status Working/Accepted stays here even if a withheld date or reason is still filled)
+- Working/Accepted → spreadsheet tab `nsc_working` (status Working/Accepted stays here even if a withheld date or reason is still filled). One row per `APPL_NO` (last row wins) so a repeated consumer in the same division is not counted twice.
 - Withheld → NSCWH tab `Sheet1`
 
 If the file has **no** Withheld status rows, upload **does not clear** the Withheld sheet. It keeps the previous Withheld data and previous withheld row count in meta.

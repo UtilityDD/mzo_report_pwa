@@ -2266,8 +2266,8 @@
     // Client release notes — bump `id` + `note` when shipping a user-visible fix.
     // Shown once as a short toast on open (not in the header).
     const NSC_RELEASE = {
-      id: '38',
-      note: 'Working NSC is counted even when a withheld date or reason is still on the row.'
+      id: '39',
+      note: 'Duplicate application numbers in the same dump are counted once (Chanchal, Balurghat, …).'
     };
     const NSC_CACHE_KEY = 'CACHE_NSC_v5';
     const NSC_PARSED_CACHE_KEY = 'CACHE_NSC_PARSED_v7';
@@ -2390,8 +2390,8 @@
           if (rawVersion && parsedVersion && rawVersion === parsedVersion) {
             const cachedParsed = await mzoDataHub._peek(NSC_PARSED_CACHE_KEY);
             if (cachedParsed && Array.isArray(cachedParsed) && cachedParsed.length > 0) {
-              rawData = cachedParsed;
-              incomingApplCount = rawData.length;
+              incomingApplCount = cachedParsed.length;
+              rawData = uniqueNscByAppl(cachedParsed);
               loadedFromParsedCache = true;
               console.log(`[NSC] Fast loaded ${rawData.length} pre-parsed rows from IndexedDB cache.`);
             }
@@ -2779,14 +2779,30 @@
       return new Date(yyyy, mm - 1, dd);
     }
 
+    function uniqueNscByAppl(rows) {
+      const list = Array.isArray(rows) ? rows : [];
+      const map = new Map();
+      for (let i = 0; i < list.length; i++) {
+        const d = list[i] || {};
+        const appl = String(d.APPL_NO || d._appl || '').trim().toLowerCase();
+        if (!appl) continue;
+        map.set(appl, d);
+      }
+      const out = Array.from(map.values());
+      if (list._stats) out._stats = list._stats;
+      return out;
+    }
+
     /** One-time row normalize so filter passes avoid DOM lookups + string work per cell */
     function normalizeNscRows(rows) {
-      const out = [];
+      const byAppl = new Map();
       let minSC = Infinity, maxSC = -Infinity;
       let minCollMs = Infinity, maxCollMs = -Infinity;
 
       for (let i = 0; i < rows.length; i++) {
         const d = rows[i] || {};
+        const appl = String(d.APPL_NO || '').trim().toLowerCase();
+        if (!appl) continue;
         const rawRegion = String(d.REGION || d.region || d.REG || d.reg || '').trim();
         const region = (window.MzoScope && typeof window.MzoScope.regionNameOf === 'function')
           ? (window.MzoScope.regionNameOf(rawRegion) || rawRegion)
@@ -2827,11 +2843,19 @@
         d._delayRange = String(d.DelayRange || '').trim();
         d._delaySerial = parseInt(d.DelaySerial, 10) || 0;
         d._collMs = collMs;
-        d._appl = String(d.APPL_NO || '').toLowerCase();
+        d._appl = appl;
         d._name = String(d.NAME || '').toLowerCase();
         d._phone = String(d.PHONE_NO || '').toLowerCase();
 
-        if (!isNaN(delaySc)) {
+        byAppl.set(appl, d);
+      }
+
+      const out = Array.from(byAppl.values());
+      for (let i = 0; i < out.length; i++) {
+        const d = out[i];
+        const delaySc = d._delaySc;
+        const collMs = d._collMs;
+        if (delaySc !== null && delaySc !== undefined && !isNaN(delaySc)) {
           if (delaySc < minSC) minSC = delaySc;
           if (delaySc > maxSC) maxSC = delaySc;
         }
@@ -2839,8 +2863,6 @@
           if (collMs < minCollMs) minCollMs = collMs;
           if (collMs > maxCollMs) maxCollMs = collMs;
         }
-
-        out.push(d);
       }
 
       out._stats = {

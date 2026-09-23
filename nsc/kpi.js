@@ -1,4 +1,13 @@
-// Global variables for KPI page
+function uniqueNscByAppl(rows) {
+    const map = new Map();
+    (rows || []).forEach((row) => {
+        const appl = String((row && row.APPL_NO) || '').trim().toLowerCase();
+        if (!appl) return;
+        map.set(appl, row);
+    });
+    return Array.from(map.values());
+}
+
 let allData = [];
 let filteredData = [];
 
@@ -38,10 +47,10 @@ async function loadNscDataset() {
             if (!response.ok) continue;
             const text = (await response.text()).trim();
             if (!text) continue;
-            if (text.startsWith('[')) return JSON.parse(text);
+            if (text.startsWith('[')) return uniqueNscByAppl(JSON.parse(text));
             if (typeof Papa === 'undefined') continue;
             const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
-            if (parsed && parsed.data && parsed.data.length) return parsed.data;
+            if (parsed && parsed.data && parsed.data.length) return uniqueNscByAppl(parsed.data);
         } catch (err) {
             console.warn('NSC load failed for', url, err);
         }
