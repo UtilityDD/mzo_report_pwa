@@ -19,4 +19,4 @@ Do **not** drop `nsc_upload_autho` on `portal_users` — that flag still control
 
 ## Access
 
-Upload requires `nsc_upload_autho` (or legacy `dm1`). Grant via Admin → User Management → **NSC Raw Upload**.
+Upload requires admin, `nsc_upload_autho`, or legacy `dm1`. Grant via Admin → User Management → **NSC Raw Upload**. Admins always can, even if that flag is blank.

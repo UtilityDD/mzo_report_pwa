@@ -780,6 +780,122 @@
       color: #f5c518;
     }
 
+    #uploadListBtn[hidden] {
+      display: none !important;
+    }
+
+    .upload-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 58px 12px 16px;
+      background: rgba(15, 23, 42, 0.45);
+    }
+
+    .upload-overlay[hidden] {
+      display: none !important;
+    }
+
+    .upload-panel {
+      width: min(420px, 100%);
+      max-height: min(72vh, 560px);
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      color: #0f172a;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+    }
+
+    body.dark-theme .upload-panel {
+      background: #1e293b;
+      color: #e2e8f0;
+    }
+
+    .upload-panel header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .upload-panel header button {
+      border: none;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      padding: 2px 4px;
+    }
+
+    .upload-panel input {
+      margin: 0 12px 8px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: 13px;
+    }
+
+    body.dark-theme .upload-panel input {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-color: #334155;
+    }
+
+    .upload-rows {
+      overflow: auto;
+      padding: 0 8px 10px;
+    }
+
+    .upload-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 7px 8px;
+      font-size: 13px;
+      color: inherit;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+    }
+
+    body.dark-theme .upload-row {
+      border-bottom-color: rgba(255, 255, 255, 0.06);
+    }
+
+    .upload-name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .upload-copy {
+      border: none;
+      background: transparent;
+      color: #64748b;
+      cursor: pointer;
+      padding: 2px 4px;
+      font-size: 12px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    .upload-copy.done,
+    .upload-copy:hover {
+      color: #188038;
+    }
+
     .report-card.always-open .chevron {
       display: none !important;
     }
@@ -3259,6 +3375,9 @@
                   <button class="theme-toggle" id="adminUsersBtn" title="User Administration" style="display: none; align-items: center; justify-content: center;" onclick="window.location.href='/admin_users.html'">
                     <i class="fas fa-user-shield"></i>
                   </button>
+                  <button class="theme-toggle" id="uploadListBtn" title="Uploads" hidden type="button">
+                    <i class="fas fa-table"></i>
+                  </button>
                   <button class="theme-toggle" id="themeToggleBtn" title="Toggle theme">
                     <i class="fas fa-sun"></i>
                   </button>
@@ -3794,6 +3913,17 @@
   </div>
 
   <div class="loading-overlay" id="loadingOverlay"></div>
+
+  <div id="uploadPanel" class="upload-overlay" hidden>
+    <div class="upload-panel" role="dialog" aria-label="Uploads">
+      <header>
+        <span>Uploads</span>
+        <button type="button" id="uploadPanelClose" aria-label="Close">×</button>
+      </header>
+      <input id="uploadPanelSearch" type="search" placeholder="Find a sheet…" />
+      <div class="upload-rows" id="uploadRows"></div>
+    </div>
+  </div>
 
   <!-- Sheets list modal (added) -->
   <div id="sheetsModal"
@@ -4617,6 +4747,7 @@
       }
 
       initPageFavorites();
+      initUploadPanel();
 
       // Start card animations
       startCardAnimation();
@@ -4629,6 +4760,206 @@
 
       // Initialize weather forecast component
       initWeatherForecast();
+
+      function sheetOpenUrl(raw) {
+        const url = String(raw || '');
+        if (url.indexOf('docs.google.com/spreadsheets') === -1) return '';
+        try {
+          const parsed = new URL(url);
+          const gid = parsed.searchParams.get('gid');
+          const published = parsed.pathname.indexOf('/spreadsheets/d/e/') !== -1;
+          const match = parsed.pathname.match(/\/spreadsheets\/d\/(?:e\/)?([^/]+)/);
+          if (!match) return '';
+          if (published) {
+            return 'https://docs.google.com/spreadsheets/d/e/' + match[1] + '/pubhtml' + (gid ? '?gid=' + encodeURIComponent(gid) : '');
+          }
+          return 'https://docs.google.com/spreadsheets/d/' + match[1] + '/edit' + (gid ? '#gid=' + gid : '');
+        } catch (e) {
+          return '';
+        }
+      }
+
+      function canViewUploadList() {
+        let profile = {};
+        try {
+          profile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}') || {};
+        } catch (e) {
+          profile = {};
+        }
+        if (String(profile.role || '').toLowerCase() === 'admin') return true;
+        const flag = String(profile['sheets-autho'] != null ? profile['sheets-autho'] : (profile.sheets_autho || ''))
+          .trim()
+          .toLowerCase();
+        return flag === 'list' || flag === 'edit' || flag === 'y' || flag === 'all';
+      }
+
+      function initUploadPanel() {
+        const openBtn = document.getElementById('uploadListBtn');
+        const panel = document.getElementById('uploadPanel');
+        const rowsEl = document.getElementById('uploadRows');
+        const searchEl = document.getElementById('uploadPanelSearch');
+        if (!openBtn || !panel || !rowsEl) return;
+        if (!canViewUploadList()) {
+          openBtn.hidden = true;
+          return;
+        }
+        openBtn.hidden = false;
+        const datasets = Array.isArray(window.MZO_DATASETS) ? window.MZO_DATASETS : [];
+        const sheetFallback = {
+          CACHE_NSC_v5: 'https://docs.google.com/spreadsheets/d/1QnmPKSAtwmW-m1-gn4qmZBWanx9_Vwbk63XhwyQBiKU/edit',
+          CACHE_WITHHELD_v4: 'https://docs.google.com/spreadsheets/d/12nS8GAQ1weIMWoEIeydcdKTKd-XwHNu9W07DKudGuOg/edit'
+        };
+
+        const extras = [
+          { name: 'Consumers', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQT4ufTMHJGTUqNSqFSzz0q2x-ShM_WHlfSRxT4tVqA6GcaMK5g38PDLmcJR4JXuxLi-tKafW-Yxwdo/pub?gid=0&single=true&output=csv' },
+          { name: 'Smart Meter', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSWjwUI4EUgEABlcggpdOS-WSPKY8my-5T0cLxT4h8tNz_IreQy6jUYKBnB5yc0n-fcs8FpVbwo6Qay/pub?gid=327926255&single=true&output=tsv' },
+          { name: 'Upcoming DD', url: 'https://docs.google.com/spreadsheets/d/1aUeVnSc-OmFqqrUdoZxv8v8659u52zlIWddnpJgU9Uk/gviz/tq?tqx=out:csv&gid=487034861' },
+          { name: 'DD Summary', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRawhIW9ICZmzuThsL5opfI40WY6upCg5kFzoFXi2UJPR-svO6_cByXy5Y3u_p-2La_tH8SxhFfl29B/pub?gid=220026293&single=true&output=csv' },
+          { name: 'Accident Reports', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRrrGeyElvh8i8QzTl25Ej7_RJZ9FJ0jicG3tAhguLEvky178oKZ8-QADKcBceUQ5CFjn7hd9eECVJ6/pub?output=csv' },
+          { name: 'Manpower', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRRXojudL5q-ln7pXOcbLaGsBqznppnvsINcp8xEFvpJUWRCiC7bjii9eZYSu0istzyM91m4yybd5g-/pub?gid=2110628491&single=true&output=csv' },
+          { name: 'DTR Records', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=2125422147&single=true&output=csv' },
+          { name: 'Peak Load', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=1835924766&single=true&output=csv' },
+          { name: 'Substation Upkeeping', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSHoWw-c-KCfsYrkQs67uWaKdag1WXVQobLkngEK-bvbky_LMF6RWg-BwgVYA-5f3RcR4u6rQA5XWhH/pub?gid=422662764&single=true&output=csv' },
+          { name: 'PRT / Transformer', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRtpueyQwlq63VP2Tm2_vITV31jKBSceDGJQVJtYeqVVDBSg3QAHzLKrv60i6Z9oODXXzOE-fdfMb8b/pub?gid=0&single=true&output=csv' },
+          { name: 'Highway Crossings', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQTy_LCddlFuzZx9ZyJQTLbqrQ8sb76DG4jyw8ys-s_w6LDxOYhnTTY49eddhqxb9RnTAbksh32y1bH/pub?gid=870376934&single=true&output=csv' },
+          { name: 'O&M Advance', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQPBYq0ZQpaAnu0Mp_qN5oGvklgIpjolyRPf3LfSojRaN-GBBBXKHslR9ue1DOv1432oP2PzYznUUmn/pub?gid=512034300&single=true&output=csv' }
+        ];
+
+        function hrefFor(key, raw, live) {
+          if (live && live[key]) return live[key];
+          const fromUrl = sheetOpenUrl(raw);
+          if (fromUrl) return fromUrl;
+          return sheetFallback[key] || '';
+        }
+
+        function collect(live) {
+          const rows = [];
+          const names = new Set();
+          datasets.forEach((d) => {
+            const href = hrefFor(d.key, d.url, live);
+            if (!href || names.has(d.label)) return;
+            names.add(d.label);
+            rows.push({ name: d.label, href });
+          });
+          extras.forEach((item) => {
+            const href = sheetOpenUrl(item.url);
+            if (!href || names.has(item.name)) return;
+            names.add(item.name);
+            rows.push({ name: item.name, href });
+          });
+          rows.sort((a, b) => a.name.localeCompare(b.name));
+          return rows;
+        }
+
+        let sheetRows = collect(null);
+
+        function renderList() {
+          const q = (searchEl && searchEl.value || '').trim().toLowerCase();
+          rowsEl.textContent = '';
+          sheetRows.forEach((row) => {
+            if (q && row.name.toLowerCase().indexOf(q) === -1) return;
+            const line = document.createElement('div');
+            line.className = 'upload-row';
+            const link = document.createElement('a');
+            link.className = 'upload-name';
+            link.href = row.href;
+            link.target = '_blank';
+            link.rel = 'noopener';
+            link.textContent = row.name;
+            const copy = document.createElement('button');
+            copy.type = 'button';
+            copy.className = 'upload-copy';
+            copy.title = 'Copy link for a signed-in browser';
+            copy.setAttribute('aria-label', 'Copy sheet link for ' + row.name);
+            copy.setAttribute('data-href', row.href);
+            copy.innerHTML = '<i class="fas fa-copy" aria-hidden="true"></i>';
+            line.appendChild(link);
+            line.appendChild(copy);
+            rowsEl.appendChild(line);
+          });
+        }
+
+        function openPanel() {
+          panel.hidden = false;
+          if (searchEl) searchEl.value = '';
+          renderList();
+          if (searchEl) searchEl.focus();
+        }
+
+        function closePanel() {
+          panel.hidden = true;
+        }
+
+        openBtn.addEventListener('click', openPanel);
+        document.getElementById('uploadPanelClose')?.addEventListener('click', closePanel);
+        panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(); });
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && !panel.hidden) closePanel();
+        });
+        if (searchEl) searchEl.addEventListener('input', renderList);
+        rowsEl.addEventListener('click', function (e) {
+          const btn = e.target.closest('.upload-copy');
+          if (!btn) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const href = btn.getAttribute('data-href') || '';
+          if (!href) return;
+          const mark = function () {
+            btn.classList.add('done');
+            btn.title = 'Copied';
+            window.setTimeout(function () {
+              btn.classList.remove('done');
+              btn.title = 'Copy link for a signed-in browser';
+            }, 1200);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(href).then(mark).catch(function () {
+              const area = document.createElement('textarea');
+              area.value = href;
+              document.body.appendChild(area);
+              area.select();
+              try { document.execCommand('copy'); mark(); } catch (err) {}
+              area.remove();
+            });
+            return;
+          }
+          const area = document.createElement('textarea');
+          area.value = href;
+          document.body.appendChild(area);
+          area.select();
+          try { document.execCommand('copy'); mark(); } catch (err) {}
+          area.remove();
+        });
+        renderList();
+
+        const pending = datasets.filter((d) => d.versionUrl && d.csvUrlField && !sheetOpenUrl(d.url));
+        if (!pending.length) return;
+        const byVersion = {};
+        pending.forEach((d) => {
+          if (!byVersion[d.versionUrl]) byVersion[d.versionUrl] = [];
+          byVersion[d.versionUrl].push(d);
+        });
+        Promise.all(Object.keys(byVersion).map(async (versionUrl) => {
+          const live = {};
+          try {
+            const res = await fetch(versionUrl, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+            if (!res.ok) return live;
+            const data = await res.json();
+            byVersion[versionUrl].forEach((d) => {
+              const link = sheetOpenUrl(data[d.csvUrlField]);
+              if (link) live[d.key] = link;
+            });
+          } catch (e) { /* leave tiles without a sheet button */ }
+          return live;
+        })).then((parts) => {
+          const live = {};
+          parts.forEach((part) => Object.assign(live, part || {}));
+          if (Object.keys(live).length) {
+            sheetRows = collect(live);
+            if (!panel.hidden) renderList();
+          }
+        });
+      }
 
       function initPageFavorites() {
         const FAV_PREFIX = 'mzo_page_favorites_';

@@ -964,6 +964,16 @@
       line-height: 1;
     }
     .src-copy:hover { color: var(--primary); }
+    .src-open {
+      border: none;
+      background: transparent;
+      color: #188038;
+      cursor: pointer;
+      padding: 0;
+      font-size: 11px;
+      line-height: 1;
+    }
+    .src-open:hover { color: #0f6b28; }
     body.light-theme .src-kind.supabase { color: #047857; }
 
     .user-list {
@@ -2134,6 +2144,13 @@
                 <option value="edit">Manage</option>
               </select>
             </div>
+            <div class="form-group">
+              <label for="uploadListAuthInput">Upload list</label>
+              <select id="uploadListAuthInput">
+                <option value="">No</option>
+                <option value="list">Yes</option>
+              </select>
+            </div>
           </div>
           <div class="form-row form-row-4">
             <div class="form-group">
@@ -2461,6 +2478,16 @@
         const side = document.createElement('span');
         side.className = 'src-side';
         if (row.kind === 'Sheet' && sheetCopyUrl(row.sheet)) {
+          const open = document.createElement('button');
+          open.type = 'button';
+          open.className = 'src-open';
+          open.title = 'Open sheet';
+          open.setAttribute('aria-label', 'Open sheet for ' + row.name);
+          open.innerHTML = '<i class="fas fa-table"></i>';
+          open.addEventListener('click', () => {
+            const href = sheetCopyUrl(row.sheet);
+            if (href) window.open(href, '_blank', 'noopener');
+          });
           const copy = document.createElement('button');
           copy.type = 'button';
           copy.className = 'src-copy';
@@ -2468,6 +2495,7 @@
           copy.setAttribute('aria-label', 'Copy sheet link for ' + row.name);
           copy.innerHTML = '<i class="fas fa-copy"></i>';
           copy.addEventListener('click', () => copySheetLink(row.sheet));
+          side.appendChild(open);
           side.appendChild(copy);
         }
         side.appendChild(kind);
@@ -2758,6 +2786,7 @@
                 ${userFact('Cancel', esc(flagText(user['stock-cancel-autho'])))}
                 ${userFact('SI', formatSiAuthDisplay(user['si-autho'], user['si-divisions']))}
                 ${userFact('Sheets', formatSheetsAuthDisplay(user['sheets-autho']))}
+                ${userFact('Uploads', formatUploadListDisplay(user['sheets-autho']))}
                 ${userFact('Scope', esc(scope))}
               </div>
               <div class="user-detail-actions">
@@ -3143,6 +3172,22 @@
       return '<span style="font-size:12px;color:var(--text-muted);">View</span>';
     }
 
+    function formatUploadListDisplay(raw) {
+      const mode = String(raw || '').trim().toLowerCase();
+      if (mode === 'list' || mode === 'edit' || mode === 'y' || mode === 'all') {
+        return '<span class="badge badge-user" style="background:rgba(16,185,129,0.15);color:#059669;">Yes</span>';
+      }
+      return '<span style="font-size:12px;color:var(--text-muted);">No</span>';
+    }
+
+    function sheetsAuthoFromForm() {
+      const manage = (document.getElementById('sheetsAuthInput')?.value || '').trim();
+      const list = (document.getElementById('uploadListAuthInput')?.value || '').trim();
+      if (manage === 'edit') return 'edit';
+      if (list === 'list') return 'list';
+      return '';
+    }
+
     function formatSheetsAuthDisplay(raw) {
       const mode = String(raw || '').trim().toLowerCase();
       if (mode === 'edit' || mode === 'y' || mode === 'all') {
@@ -3502,10 +3547,10 @@
       }
       setSiAuthUIFromValue(user['si-autho'] || '', user['si-divisions'] || '');
       const sheetsEl = document.getElementById('sheetsAuthInput');
-      if (sheetsEl) {
-        const sheetsVal = String(user['sheets-autho'] || '').trim().toLowerCase();
-        sheetsEl.value = (sheetsVal === 'edit' || sheetsVal === 'y' || sheetsVal === 'all') ? 'edit' : '';
-      }
+      const uploadListEl = document.getElementById('uploadListAuthInput');
+      const sheetsVal = String(user['sheets-autho'] || '').trim().toLowerCase();
+      if (sheetsEl) sheetsEl.value = (sheetsVal === 'edit' || sheetsVal === 'y' || sheetsVal === 'all') ? 'edit' : '';
+      if (uploadListEl) uploadListEl.value = (sheetsVal === 'list' || sheetsVal === 'edit' || sheetsVal === 'y' || sheetsVal === 'all') ? 'list' : '';
       document.getElementById('zoneCodeInput').value = user.zone_code || '';
       setJurisdictionUI(user.zone_code, user.region_code, user.division_code, user.ccc_code);
       if (lockUsername) hideUsernameSuggestions();
@@ -3534,6 +3579,8 @@
       if (nscUploadEl) nscUploadEl.value = '';
       const sheetsEl = document.getElementById('sheetsAuthInput');
       if (sheetsEl) sheetsEl.value = '';
+      const uploadListEl = document.getElementById('uploadListAuthInput');
+      if (uploadListEl) uploadListEl.value = '';
       autofillSourceUsername = '';
       setExistingUserHint(false);
     }
@@ -3633,6 +3680,8 @@
       if (defectiveUploadEl) defectiveUploadEl.value = '';
       const sheetsEl = document.getElementById('sheetsAuthInput');
       if (sheetsEl) sheetsEl.value = '';
+      const uploadListEl = document.getElementById('uploadListAuthInput');
+      if (uploadListEl) uploadListEl.value = '';
       setJurisdictionUI('', '', '', '');
       ensureSsAuthListsReady();
       
@@ -3734,7 +3783,7 @@
         'defective-upload-autho': document.getElementById('defectiveUploadAuthInput').value.trim(),
         'si-autho': siAuth.mode,
         'si-divisions': siAuth.divisions,
-        'sheets-autho': document.getElementById('sheetsAuthInput').value.trim(),
+        'sheets-autho': sheetsAuthoFromForm(),
         zone_code: document.getElementById('zoneCodeInput').value.trim(),
         region_code: document.getElementById('regionCodeInput').value.trim(),
         division_code: document.getElementById('divisionCodeInput').value.trim(),

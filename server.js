@@ -248,7 +248,13 @@ async function createStockSignedUpload_() {
     }
     const token = parsed.token || '';
     let signedUrl = parsed.signedUrl || parsed.url || '';
-    if (signedUrl && signedUrl.startsWith('/')) signedUrl = root + signedUrl;
+    if (signedUrl && !/^https?:\/\//i.test(signedUrl)) {
+        if (!signedUrl.startsWith('/')) signedUrl = '/' + signedUrl;
+        // Supabase returns /object/upload/sign/... — the host alone 404s.
+        signedUrl = signedUrl.startsWith('/storage/')
+            ? root + signedUrl
+            : root + '/storage/v1' + signedUrl;
+    }
     if (!signedUrl && token) {
         signedUrl = `${root}/storage/v1/object/upload/sign/${objectPath}?token=${encodeURIComponent(token)}`;
     }
@@ -2839,13 +2845,12 @@ const nscUpload = multer({
 
 function canUploadNsc_(user) {
     if (!user) return false;
-    const flag = String(
-        user['nsc-upload-autho'] != null ? user['nsc-upload-autho'] : (user.nsc_upload_autho || '')
-    )
-        .trim()
-        .toLowerCase();
-    if (['y', 'yes', '1', 'true', 'upload'].includes(flag)) return true;
-    // Temporary fallback until admin grants via portal (after SQL alter)
+    if (isPortalAdmin_(user)) return true;
+    if (flagAuthoYes_(
+        user['nsc-upload-autho'] != null ? user['nsc-upload-autho'] : user.nsc_upload_autho
+    )) {
+        return true;
+    }
     const username = String((user.Username || user.username) || '')
         .trim()
         .toLowerCase();
@@ -2853,16 +2858,22 @@ function canUploadNsc_(user) {
 }
 
 async function resolveNscUploadUser_(req) {
-    if (!req.user || !req.user.Username) return null;
+    const session = req.user || null;
+    if (!session || !session.Username) return null;
     try {
         const users = await getLoginCredentials({ forceRefresh: true });
-        const key = String(req.user.Username).trim().toLowerCase();
+        const key = String(session.Username).trim().toLowerCase();
         const fresh = users.find((u) => u.Username && String(u.Username).trim().toLowerCase() === key);
-        if (fresh) return fresh;
+        if (fresh) {
+            if (!isPortalAdmin_(fresh) && isPortalAdmin_(session)) {
+                fresh.role = session.role || 'admin';
+            }
+            return fresh;
+        }
     } catch (e) {
         console.warn('[NSC auth] profile refresh failed:', e.message);
     }
-    return req.user;
+    return session;
 }
 
 function ensureDataDir_() {

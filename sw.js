@@ -29,7 +29,8 @@
 // v105: stock dump can load from Supabase Storage; do not intercept supabase.co
 // v106: stock upload guidance for authorised users
 // v108: NSC upload retries, slimmer Withheld sheet, manual CSV fallback
-const CACHE_NAME = 'mzo-reports-cache-v108';
+// v109: stock signed upload path includes /storage/v1; home Uploads sheet list
+const CACHE_NAME = 'mzo-reports-cache-v109';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
