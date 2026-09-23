@@ -28,7 +28,8 @@
 // v104: retired host freezes with install link; login is blocked
 // v105: stock dump can load from Supabase Storage; do not intercept supabase.co
 // v106: stock upload guidance for authorised users
-const CACHE_NAME = 'mzo-reports-cache-v106';
+// v108: NSC upload retries, slimmer Withheld sheet, manual CSV fallback
+const CACHE_NAME = 'mzo-reports-cache-v108';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [

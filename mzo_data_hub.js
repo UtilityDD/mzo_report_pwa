@@ -760,3 +760,4 @@ function isSyncNeeded() {
 
 window.syncAllData = syncAllData;
 window.isSyncNeeded = isSyncNeeded;
+window.MZO_DATASETS = DATASETS;

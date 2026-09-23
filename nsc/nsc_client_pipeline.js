@@ -19,6 +19,13 @@
     'DelayInQtn', 'DelayRange', 'DelaySerial', 'PoleNonPole'
   ];
 
+  /** Withheld dashboard columns only — smaller Sheet / CSV than the full NSC dump. */
+  const WITHHELD_COLUMNS = [
+    'REGION', 'DIVN_NAME', 'SUPP_OFF', 'CCC_CODE', 'APPL_NO', 'NAME', 'PHONE_NO',
+    'CONN_CLASS', 'APPLIED_PHASE', 'COLL_DATE', 'SCN_WITHELD_DATE', 'SCN_WITHELD_REASON',
+    'IS_PORTAL_APPL', 'TODAY'
+  ];
+
   const REGION_FROM_REG = {
     'MALDA REGION': 'Malda',
     'UTTAR DINAJPUR REGION': 'Uttar Dinajpur',
@@ -341,9 +348,10 @@
     };
   }
 
-  function toCsv(rows) {
-    const header = OUTPUT_COLUMNS.join(',');
-    const lines = rows.map((row) => OUTPUT_COLUMNS.map((col) => {
+  function toCsv(rows, columns) {
+    const cols = Array.isArray(columns) && columns.length ? columns : OUTPUT_COLUMNS;
+    const header = cols.join(',');
+    const lines = rows.map((row) => cols.map((col) => {
       const val = String(row[col] == null ? '' : row[col]);
       if (/[",\n\r]/.test(val)) return `"${val.replace(/"/g, '""')}"`;
       return val;
@@ -393,6 +401,7 @@
       withheld: result.withheld,
       stats: result.stats,
       csv: toCsv(result.published),
+      withheldCsv: toCsv(result.withheld, WITHHELD_COLUMNS),
       reportDateUsed: formatDateDMY(reportDate),
       originalName: fileName || ''
     };
@@ -402,6 +411,7 @@
     processNscArrayBuffer,
     parseManualReportDate,
     OUTPUT_COLUMNS,
+    WITHHELD_COLUMNS,
     toCsv
   };
 })(typeof window !== 'undefined' ? window : globalThis);

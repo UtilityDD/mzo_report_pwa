@@ -410,12 +410,13 @@ async function insertActivityLogToSupabase(entry) {
     });
 }
 
-async function fetchActivityLogsFromSupabase(limit = 2000) {
+async function fetchActivityLogsFromSupabase(limit = 2000, sinceIso) {
     const safeLimit = Math.min(Math.max(Number(limit) || 2000, 1), 5000);
-    const rows = await querySupabase(
-        `${ACTIVITY_LOGS_TABLE}?select=timestamp,username,name,type,details&order=timestamp.desc&limit=${safeLimit}`,
-        { schema: PORTAL_USERS_SCHEMA }
-    );
+    let query = `${ACTIVITY_LOGS_TABLE}?select=timestamp,username,name,type,details&order=timestamp.desc&limit=${safeLimit}`;
+    if (sinceIso) {
+        query = `${ACTIVITY_LOGS_TABLE}?select=timestamp,username&timestamp=gte.${encodeURIComponent(sinceIso)}&order=timestamp.desc&limit=${safeLimit}`;
+    }
+    const rows = await querySupabase(query, { schema: PORTAL_USERS_SCHEMA });
     if (!Array.isArray(rows)) return [];
     return rows.map((l) => ({
         timestamp: l.timestamp,
@@ -1164,9 +1165,13 @@ app.post('/api/admin/users/delete', requireAdmin, async (req, res) => {
 // 5. GET logs (Supabase mzo_insight.activity_logs)
 app.get('/api/admin/logs', requireAdmin, async (req, res) => {
     try {
+        const days = Math.min(Math.max(parseInt(req.query.days, 10) || 0, 0), 30);
+        const sinceIso = days
+            ? new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+            : '';
         try {
-            const logs = await fetchActivityLogsFromSupabase(2000);
-            globalCachedLogs = logs;
+            const logs = await fetchActivityLogsFromSupabase(days ? 5000 : 2000, sinceIso);
+            if (!days) globalCachedLogs = logs;
             return res.json({ status: 'success', logs });
         } catch (sbErr) {
             console.warn('[Activity Log] Supabase read failed, trying local cache:', sbErr.message);
@@ -3085,6 +3090,14 @@ app.get('/api/nsc/meta', async (req, res) => {
             canUpload && NSC_WITHHELD_SHEET_SCRIPT_URL ? NSC_WITHHELD_SHEET_SCRIPT_URL : '',
         csvUrl: NSC_SHEET_SCRIPT_URL ? NSC_SHEET_FALLBACK_URL : null,
         withheldCsvUrl: NSC_WITHHELD_SHEET_SCRIPT_URL ? NSC_WITHHELD_SHEET_FALLBACK_URL : null,
+        nscSheetEditUrl: canUpload
+            ? `https://docs.google.com/spreadsheets/d/${NSC_WORKING_SPREADSHEET_ID}/edit`
+            : '',
+        withheldSheetEditUrl: canUpload
+            ? `https://docs.google.com/spreadsheets/d/${NSC_WITHHELD_SPREADSHEET_ID}/edit`
+            : '',
+        nscSheetTab: 'nsc_working',
+        withheldSheetTab: 'Sheet1',
         source,
         setupHint: null
     });

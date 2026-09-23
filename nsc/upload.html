@@ -32,31 +32,31 @@
       padding: 1.25rem 1.5rem;
       box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
     }
-    h1 { margin: 0 0 0.35rem; font-size: 1.35rem; }
-    .muted { color: var(--muted); font-size: 0.92rem; line-height: 1.45; }
-    .guide {
-      margin: 1rem 0;
-      padding: 0.95rem 1rem;
-      background: #f0f7ff;
-      border: 1px solid #dbeafe;
-      border-radius: 8px;
-      font-size: 0.92rem;
-      line-height: 1.5;
-    }
-    .guide ol { margin: 0.4rem 0 0 1.2rem; padding: 0; }
-    .guide li { margin: 0.25rem 0; }
+    h1 { margin: 0 0 0.25rem; font-size: 1.25rem; }
+    .muted { color: var(--muted); font-size: 0.88rem; line-height: 1.4; }
     .meta {
-      margin: 1rem 0;
-      padding: 0.85rem 1rem;
-      background: #f8fafc;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      font-size: 0.9rem;
+      margin: 0 0 1rem;
+      font-size: 0.88rem;
+      color: var(--muted);
       display: none;
     }
     .meta.show { display: block; }
-    .meta strong { display: inline-block; min-width: 9rem; }
-    .row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin-top: 1rem; }
+    .steps {
+      margin: 0;
+      padding: 0;
+      list-style: decimal;
+      padding-left: 1.25rem;
+    }
+    .steps li { margin: 0.85rem 0; }
+    .steps label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 0.3rem;
+    }
+    .row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-top: 0.35rem; }
+    #mirrorBox { display: none; margin: 0.75rem 0 0; }
+    #mirrorBox.show { display: block; color: var(--bad); }
     input[type="file"], input[type="date"] { width: 100%; max-width: 320px; }
     button, .link-btn {
       border: none;
@@ -75,9 +75,39 @@
     .msg { margin-top: 1rem; padding: 0.85rem 1rem; border-radius: 8px; display: none; white-space: pre-wrap; }
     .msg.ok { display: block; background: #dcfce7; color: var(--ok); }
     .msg.err { display: block; background: #fee2e2; color: var(--bad); }
+    .retry-box {
+      display: none;
+      margin: 0.75rem 0 0;
+      padding: 0.7rem 0.85rem;
+      border-radius: 8px;
+      background: #fff7ed;
+      border: 1px solid #fdba74;
+      color: #9a3412;
+      font-size: 0.88rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+    .retry-box.show { display: block; }
+    .manual-box {
+      display: none;
+      margin-top: 1rem;
+      padding: 1rem;
+      border: 1px solid #fca5a5;
+      background: #fff1f2;
+      border-radius: 10px;
+    }
+    .manual-box.show { display: block; }
+    .manual-box strong { display: block; margin-bottom: 0.35rem; color: var(--bad); }
+    .manual-box ol { margin: 0.25rem 0 0.5rem 1.15rem; padding: 0; font-size: 0.88rem; line-height: 1.4; }
+    .manual-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      align-items: center;
+      margin-top: 0.45rem;
+    }
+    .manual-label { font-size: 0.85rem; font-weight: 600; min-width: 7rem; }
     .locked { opacity: 0.7; }
-    .admin-only { display: none; }
-    .admin-only.show { display: block; }
     .progress-panel {
       display: none;
       margin-top: 1rem;
@@ -126,79 +156,74 @@
   <div class="wrap">
     <div class="card" id="panel">
       <h1>NSC Upload</h1>
+      <p class="meta" id="metaBox"></p>
 
-      <div class="guide" id="guideBox">
-        <strong>How to upload</strong>
-        <ol>
-          <li>Select the <strong>data date</strong> (as-on date of this NSC file).</li>
-          <li>Choose the pending NSC Excel file (same SAP dump).</li>
-          <li>Click <strong>Upload &amp; Publish</strong> and wait until both datasets finish.</li>
-          <li>Open the <strong>NSC</strong> and <strong>Withheld</strong> dashboards to verify.</li>
-        </ol>
-        <p class="muted" style="margin:0.6rem 0 0;">
-          Same as before: you upload the <strong>raw SAP Excel</strong>. The page processes it
-          (DETAILS sheet, status split, division cleanup, delay columns), then inserts the
-          cleaned rows — Working/Accepted → <strong>nsc_working</strong>, Withheld →
-          <strong>NSCWH Sheet1</strong>. Raw extra SAP columns are not copied.
-        </p>
-      </div>
-      <p class="muted" id="mirrorBox" style="margin:0.75rem 0 0;"></p>
-
-      <div class="admin-only" id="adminIntro">
-        <p class="muted">
-          Same pipeline as the old Supabase insert: raw file → process → cleaned 45-column
-          rows. Destination is Google Sheets. A small version record is still stored so
-          dashboards show “Updated on”. Grant rights under Admin → User Management →
-          <strong>NSC Raw Upload</strong>.
-        </p>
-        <p class="muted" id="adminSetupHint" style="display:none;"></p>
-      </div>
-
-      <div class="meta" id="metaBox"></div>
-
-      <div id="uploadBlock" class="locked">
-        <label class="muted" for="reportDateInput"><strong>Data date</strong></label>
-        <div class="row">
+      <ol class="steps locked" id="uploadBlock">
+        <li>
+          <label for="reportDateInput">Date</label>
           <input id="reportDateInput" type="date" disabled required />
-        </div>
-        <p class="muted" style="margin-top:0.35rem;">Use the as-on date of this Excel. It appears as “Updated on” on both dashboards.</p>
-
-        <label class="muted" for="fileInput"><strong>Choose NSC Excel</strong></label>
-        <div class="row">
+        </li>
+        <li>
+          <label for="fileInput">Excel file</label>
           <input id="fileInput" type="file" accept=".xlsx,.xlsb,.xls,.csv" disabled />
-        </div>
-        <div class="row">
-          <button class="primary" id="uploadBtn" disabled>Upload &amp; Publish</button>
-          <a class="link-btn ghost" href="/nsc.html">Open NSC</a>
-          <a class="link-btn ghost" href="/withheld.html">Open Withheld</a>
-          <a class="link-btn ghost" href="/index.html">Home</a>
-        </div>
-      </div>
+        </li>
+        <li>
+          <label>Publish</label>
+          <div class="row">
+            <button class="primary" id="uploadBtn" disabled>Upload</button>
+            <a class="link-btn ghost" href="/nsc.html">NSC</a>
+            <a class="link-btn ghost" href="/withheld.html">Withheld</a>
+            <a class="link-btn ghost" href="/index.html">Home</a>
+          </div>
+        </li>
+      </ol>
+      <p class="muted" id="mirrorBox"></p>
 
       <div class="progress-panel" id="progressPanel">
-        <h2>Upload progress</h2>
         <div class="counts">
-          <div><span class="label">Working/Accepted</span><br><span class="val" id="cntPending">—</span></div>
-          <div><span class="label">Withheld</span><br><span class="val" id="cntWithheld">—</span></div>
-          <div><span class="label">Pending uploaded</span><br><span class="val" id="sentPending">0</span></div>
-          <div><span class="label">Withheld uploaded</span><br><span class="val" id="sentWithheld">0</span></div>
+          <div><span class="label">NSC</span><br><span class="val" id="sentPending">0 / —</span></div>
+          <div><span class="label">Withheld</span><br><span class="val" id="sentWithheld">0 / —</span></div>
         </div>
         <div class="muted" id="progressLabel">Waiting…</div>
         <div class="bar-track"><div class="bar-fill" id="barFill"></div></div>
-        <div class="step-line" id="stepProcess">1. Process Excel</div>
-        <div class="step-line" id="stepPending">2. Upload Working/Accepted</div>
-        <div class="step-line" id="stepWithheld">3. Upload Withheld</div>
-        <div class="step-line" id="stepFinish">4. Activate live datasets</div>
+        <div class="retry-box" id="retryBox"></div>
+        <div class="step-line" id="stepProcess">1. Process</div>
+        <div class="step-line" id="stepPending">2. NSC sheet</div>
+        <div class="step-line" id="stepWithheld">3. Withheld sheet</div>
+        <div class="step-line" id="stepFinish">4. Activate</div>
       </div>
 
       <div id="msg" class="msg"></div>
+
+      <div class="manual-box" id="manualBox">
+        <strong>Sheet write failed</strong>
+        <p class="muted" id="manualHint" style="margin:0 0 0.35rem;"></p>
+        <ol>
+          <li>Download CSV</li>
+          <li>Open the sheet → File → Import → Replace current sheet</li>
+          <li>Click Activate</li>
+        </ol>
+        <div class="manual-row">
+          <span class="manual-label">NSC</span>
+          <a class="link-btn ghost" id="nscSheetLink" href="#" target="_blank" rel="noopener">Open sheet</a>
+          <button type="button" class="ghost" id="dlNscCsv">CSV</button>
+        </div>
+        <div class="manual-row">
+          <span class="manual-label">Withheld</span>
+          <a class="link-btn ghost" id="whSheetLink" href="#" target="_blank" rel="noopener">Open sheet</a>
+          <button type="button" class="ghost" id="dlWhCsv">CSV</button>
+        </div>
+        <div class="row">
+          <button type="button" class="primary" id="activateAfterManual" disabled>Activate</button>
+        </div>
+      </div>
     </div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="/nsc/nsc_client_pipeline.js"></script>
+  <script src="/nsc/nsc_client_pipeline.js?v=108"></script>
   <script src="/mzo_data_hub.js"></script>
-  <script src="/lib/sheet_mirror_client.js?v=93"></script>
+  <script src="/lib/sheet_mirror_client.js?v=108"></script>
   <script>
     const metaBox = document.getElementById('metaBox');
     const msg = document.getElementById('msg');
@@ -206,21 +231,33 @@
     const reportDateInput = document.getElementById('reportDateInput');
     const uploadBtn = document.getElementById('uploadBtn');
     const uploadBlock = document.getElementById('uploadBlock');
-    const adminIntro = document.getElementById('adminIntro');
-    const adminSetupHint = document.getElementById('adminSetupHint');
     const progressPanel = document.getElementById('progressPanel');
     const barFill = document.getElementById('barFill');
     const progressLabel = document.getElementById('progressLabel');
+    const retryBox = document.getElementById('retryBox');
+    const manualBox = document.getElementById('manualBox');
+    const manualHint = document.getElementById('manualHint');
+    const nscSheetLink = document.getElementById('nscSheetLink');
+    const whSheetLink = document.getElementById('whSheetLink');
+    const activateAfterManual = document.getElementById('activateAfterManual');
+    const FALLBACK_NSC_SHEET =
+      'https://docs.google.com/spreadsheets/d/1QnmPKSAtwmW-m1-gn4qmZBWanx9_Vwbk63XhwyQBiKU/edit';
+    const FALLBACK_WH_SHEET =
+      'https://docs.google.com/spreadsheets/d/12nS8GAQ1weIMWoEIeydcdKTKd-XwHNu9W07DKudGuOg/edit';
+    const WITHHELD_CHUNK_ROWS = 600;
 
-    let isAdminViewer = false;
     let sheetScriptUrl = '';
     let withheldSheetScriptUrl = '';
+    let nscSheetEditUrl = FALLBACK_NSC_SHEET;
+    let withheldSheetEditUrl = FALLBACK_WH_SHEET;
+    let lastJob = null;
     let progressState = {
       pendingTotal: 0,
       withheldTotal: 0,
       pendingSent: 0,
       withheldSent: 0,
-      phase: 'idle'
+      phase: 'idle',
+      retryNote: ''
     };
 
     function toIsoDate(d) {
@@ -254,6 +291,96 @@
       msg.textContent = text;
     }
 
+    function hideRetryBox() {
+      retryBox.classList.remove('show');
+      retryBox.textContent = '';
+      progressState.retryNote = '';
+    }
+
+    function showRetryBox(text) {
+      retryBox.textContent = text;
+      retryBox.classList.add('show');
+    }
+
+    function sheetLabel() {
+      return progressState.phase === 'withheld' ? 'Withheld' : 'Working/Accepted';
+    }
+
+    function onSheetRetry(info) {
+      const infoObj = info || {};
+      if (infoObj.kind === 'restart') {
+        if (progressState.phase === 'pending') progressState.pendingSent = 0;
+        if (progressState.phase === 'withheld') progressState.withheldSent = 0;
+        const tryNo = infoObj.tabTry || (infoObj.attempt || 0) + 1;
+        const tryMax = infoObj.tabTries || 3;
+        progressState.retryNote =
+          'Restarting ' + sheetLabel() + ' (' + tryNo + '/' + tryMax + ')…';
+        showRetryBox(progressState.retryNote);
+        updateProgressUi();
+        return;
+      }
+      const chunkPart =
+        infoObj.chunkSeq != null ? ' chunk ' + (Number(infoObj.chunkSeq) + 1) : '';
+      const waitSec = Math.max(1, Math.round((infoObj.waitMs || 1000) / 1000));
+      progressState.retryNote =
+        'Retry' +
+        chunkPart +
+        ' ' +
+        (infoObj.attempt || 1) +
+        '/' +
+        (infoObj.maxAttempts || 8) +
+        ' in ' +
+        waitSec +
+        's';
+      showRetryBox(progressState.retryNote);
+      updateProgressUi();
+    }
+
+    function downloadTextFile(filename, text) {
+      const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    }
+
+    function nscCsvOf(job) {
+      if (!job || !job.result) return '';
+      const r = job.result;
+      if (r.csv) return r.csv;
+      return NSCClientPipeline.toCsv(r.published || []);
+    }
+
+    function withheldCsvOf(job) {
+      if (!job || !job.result) return '';
+      const r = job.result;
+      if (r.withheldCsv) return r.withheldCsv;
+      const cols = NSCClientPipeline.WITHHELD_COLUMNS;
+      return NSCClientPipeline.toCsv(r.withheld || [], cols);
+    }
+
+    function hideManualBox() {
+      manualBox.classList.remove('show');
+      activateAfterManual.disabled = true;
+    }
+
+    function showManualFallback(failedPhase) {
+      const job = lastJob;
+      if (!job || !job.result) return;
+      if (failedPhase === 'withheld') manualHint.textContent = 'Import Withheld CSV into Sheet1.';
+      else if (failedPhase === 'pending') manualHint.textContent = 'Import NSC CSV into nsc_working.';
+      else if (failedPhase === 'finish') manualHint.textContent = 'Sheets may already be updated. Click Activate.';
+      else manualHint.textContent = '';
+      nscSheetLink.href = nscSheetEditUrl || FALLBACK_NSC_SHEET;
+      whSheetLink.href = withheldSheetEditUrl || FALLBACK_WH_SHEET;
+      activateAfterManual.disabled = false;
+      manualBox.classList.add('show');
+    }
+
     function setStep(id, text, done) {
       const el = document.getElementById(id);
       if (!el) return;
@@ -263,8 +390,6 @@
 
     function updateProgressUi() {
       const p = progressState;
-      document.getElementById('cntPending').textContent = fmt(p.pendingTotal);
-      document.getElementById('cntWithheld').textContent = fmt(p.withheldTotal);
       document.getElementById('sentPending').textContent =
         fmt(p.pendingSent) + ' / ' + fmt(p.pendingTotal);
       document.getElementById('sentWithheld').textContent =
@@ -278,15 +403,15 @@
       if (p.phase === 'done') pct = 100;
       barFill.style.width = pct + '%';
 
-      if (p.phase === 'process') progressLabel.textContent = 'Processing Excel in browser…';
+      if (p.retryNote) {
+        progressLabel.textContent = p.retryNote;
+      } else if (p.phase === 'process') progressLabel.textContent = 'Processing…';
       else if (p.phase === 'pending') {
-        progressLabel.textContent =
-          'Uploading Working/Accepted: ' + fmt(p.pendingSent) + ' / ' + fmt(p.pendingTotal);
+        progressLabel.textContent = 'NSC ' + fmt(p.pendingSent) + ' / ' + fmt(p.pendingTotal);
       } else if (p.phase === 'withheld') {
-        progressLabel.textContent =
-          'Uploading Withheld: ' + fmt(p.withheldSent) + ' / ' + fmt(p.withheldTotal);
-      } else if (p.phase === 'finish') progressLabel.textContent = 'Activating live datasets…';
-      else if (p.phase === 'done') progressLabel.textContent = 'Complete';
+        progressLabel.textContent = 'Withheld ' + fmt(p.withheldSent) + ' / ' + fmt(p.withheldTotal);
+      } else if (p.phase === 'finish') progressLabel.textContent = 'Activating…';
+      else if (p.phase === 'done') progressLabel.textContent = 'Done';
       else progressLabel.textContent = 'Waiting…';
     }
 
@@ -306,38 +431,22 @@
 
     function renderAdminMeta(data) {
       const m = data.meta;
-      metaBox.classList.add('show');
-      adminIntro.classList.add('show');
-      if (data.setupHint) {
-        adminSetupHint.style.display = 'block';
-        adminSetupHint.innerHTML = `<strong>Setup:</strong> ${data.setupHint}`;
-      } else {
-        adminSetupHint.style.display = 'none';
-      }
-
       if (!m) {
-        metaBox.innerHTML = `<div>Source: <strong>${data.source}</strong> (no upload yet — fallback may apply)</div>
-          <div>Can upload: <strong>${data.canUpload ? 'Yes' : 'No'}</strong></div>
-          <div>Is admin: <strong>${data.isAdmin ? 'Yes' : 'No'}</strong></div>`;
+        metaBox.classList.remove('show');
+        metaBox.textContent = '';
         return;
       }
       const s = m.stats || {};
-      metaBox.innerHTML = `
-        <div><strong>Last upload</strong> ${m.uploadedAt || '-'} by ${m.uploadedBy || '-'}</div>
-        <div><strong>File</strong> ${m.originalName || '-'}</div>
-        <div><strong>Sheet</strong> ${m.sheetName || '-'}</div>
-        <div><strong>Working/Accepted</strong> ${m.publishedRows ?? s.publishedRows ?? '-'} → NSC</div>
-        <div><strong>Withheld</strong> ${m.withheldRows ?? s.withheldRows ?? '-'} → Withheld dashboard</div>
-        <div><strong>Report date (Updated on)</strong> ${m.reportDate || s.today || '-'}</div>
-        <div><strong>Active source</strong> ${data.source}</div>
-      `;
+      const nsc = m.publishedRows ?? s.publishedRows ?? '-';
+      const wh = m.withheldRows ?? s.withheldRows ?? '-';
+      const when = m.reportDate || s.today || m.uploadedAt || '-';
+      metaBox.textContent = 'Last: ' + when + ' · NSC ' + fmt(nsc) + ' · Withheld ' + fmt(wh);
+      metaBox.classList.add('show');
     }
 
     function hideAdminDetails() {
       metaBox.classList.remove('show');
-      metaBox.innerHTML = '';
-      adminIntro.classList.remove('show');
-      adminSetupHint.style.display = 'none';
+      metaBox.textContent = '';
     }
 
     async function probeScript(url, expectedTab) {
@@ -349,11 +458,10 @@
           return expectedTab + ': error';
         }
         const tab = String(data.tab || '');
-        const id = String(data.spreadsheetId || '');
         if (tab && tab !== expectedTab) {
-          return expectedTab + ': wrong tab (' + tab + ')';
+          return expectedTab + ': wrong tab';
         }
-        return expectedTab + ': ready' + (id ? ' (' + id.slice(0, 8) + '…)' : '');
+        return '';
       } catch (e) {
         return expectedTab + ': unreachable';
       }
@@ -363,15 +471,22 @@
       const el = document.getElementById('mirrorBox');
       if (!el) return;
       if (!sheetScriptUrl && !withheldSheetScriptUrl) {
-        el.textContent = 'Google Sheet mirror is off — this upload will go through the server.';
+        el.textContent = 'Sheet connection is off.';
+        el.classList.add('show');
         return;
       }
-      el.textContent = 'Checking Google Sheet mirror…';
       const parts = await Promise.all([
         probeScript(sheetScriptUrl, 'nsc_working'),
         probeScript(withheldSheetScriptUrl, 'Sheet1')
       ]);
-      el.textContent = 'Google Sheet mirror — ' + parts.join(' · ');
+      const bad = parts.filter(Boolean);
+      if (bad.length) {
+        el.textContent = bad.join(' · ');
+        el.classList.add('show');
+      } else {
+        el.textContent = '';
+        el.classList.remove('show');
+      }
     }
 
     async function loadMeta() {
@@ -382,28 +497,90 @@
           return;
         }
         const data = await res.json();
-        isAdminViewer = !!data.isAdmin;
         sheetScriptUrl = String(data.sheetScriptUrl || '').trim();
         withheldSheetScriptUrl = String(data.withheldSheetScriptUrl || '').trim();
+        nscSheetEditUrl = String(data.nscSheetEditUrl || '').trim() || FALLBACK_NSC_SHEET;
+        withheldSheetEditUrl = String(data.withheldSheetEditUrl || '').trim() || FALLBACK_WH_SHEET;
+        nscSheetLink.href = nscSheetEditUrl;
+        whSheetLink.href = withheldSheetEditUrl;
         await updateMirrorStatus();
-
-        if (isAdminViewer) {
-          renderAdminMeta(data);
-        } else {
-          hideAdminDetails();
-        }
-
         if (data.canUpload) {
+          renderAdminMeta(data);
           uploadBlock.classList.remove('locked');
           fileInput.disabled = false;
           reportDateInput.disabled = false;
           uploadBtn.disabled = false;
         } else {
+          hideAdminDetails();
           showMsg('You are not authorised to upload NSC. Please ask an admin.', false);
         }
       } catch (e) {
         showMsg('Failed to load upload page: ' + e.message, false);
       }
+    }
+
+    async function finishLiveActivate(job, done) {
+      const result = job.result;
+      const uploadId = job.uploadId;
+      const reportDate = job.reportDate;
+      progressState.phase = 'done';
+      setStep('stepFinish', '4. Activate', true);
+      updateProgressUi();
+      hideManualBox();
+
+      const m = (done && done.meta) || {};
+      const s = m.stats || {};
+      const reportLabel = m.reportDate || s.today || result.reportDateUsed || reportDate;
+      const published = m.publishedRows ?? result.published.length;
+      const withheld = m.withheldRows ?? result.withheld.length;
+
+      showMsg(
+        'Published. ' + reportLabel + ' · NSC ' + fmt(published) + ' · Withheld ' + fmt(withheld),
+        true
+      );
+
+      await loadMeta();
+      try {
+        localStorage.removeItem('mzo_last_sync_date');
+        localStorage.removeItem('mzoDataSynced');
+        localStorage.removeItem('mzo_nsc_seen_version');
+        localStorage.removeItem('mzo_nsc_dismissed_version');
+        if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.seedDataset === 'function') {
+          const ver = (done && done.meta && (done.meta.supabaseUploadId || done.version)) || uploadId;
+          await mzoDataHub.seedDataset('CACHE_NSC_v5', nscCsvOf(job), ver);
+          if (typeof mzoDataHub.delete === 'function') {
+            await mzoDataHub.delete('CACHE_NSC_PARSED_v5');
+            await mzoDataHub.delete('CACHE_NSC_PARSED_v7');
+            await mzoDataHub.delete('CACHE_WITHHELD_PARSED_v4');
+          }
+          await mzoDataHub.seedDataset(
+            'CACHE_WITHHELD_v4',
+            withheldCsvOf(job),
+            (done && done.withheldVersion) || ver
+          );
+        }
+      } catch (_) {}
+      try {
+        const ch = new BroadcastChannel('mzo-nsc');
+        ch.postMessage({
+          type: 'nsc-uploaded',
+          reportDate: reportLabel,
+          publishedRows: published,
+          withheldRows: withheld,
+          at: Date.now()
+        });
+        ch.close();
+      } catch (_) {}
+      try {
+        const ch2 = new BroadcastChannel('mzo-withheld');
+        ch2.postMessage({
+          type: 'withheld-uploaded',
+          reportDate: reportLabel,
+          withheldRows: withheld,
+          at: Date.now()
+        });
+        ch2.close();
+      } catch (_) {}
     }
 
     async function postJson(url, body) {
@@ -439,19 +616,24 @@
       uploadBtn.disabled = true;
       uploadBtn.textContent = 'Working…';
       progressPanel.classList.add('show');
+      hideRetryBox();
+      hideManualBox();
+      lastJob = null;
       progressState = {
         pendingTotal: 0,
         withheldTotal: 0,
         pendingSent: 0,
         withheldSent: 0,
-        phase: 'process'
+        phase: 'process',
+        retryNote: ''
       };
-      setStep('stepProcess', '1. Process Excel…', false);
-      setStep('stepPending', '2. Upload Working/Accepted', false);
-      setStep('stepWithheld', '3. Upload Withheld', false);
-      setStep('stepFinish', '4. Activate live datasets', false);
+      setStep('stepProcess', '1. Process', false);
+      setStep('stepPending', '2. NSC sheet', false);
+      setStep('stepWithheld', '3. Withheld sheet', false);
+      setStep('stepFinish', '4. Activate', false);
       updateProgressUi();
-      showMsg('Processing Excel — counts will appear below…', true);
+      msg.className = 'msg';
+      msg.textContent = '';
 
       try {
         const buffer = await file.arrayBuffer();
@@ -460,12 +642,16 @@
         progressState.pendingTotal = result.published.length;
         progressState.withheldTotal = result.withheld.length;
         progressState.phase = 'pending';
-        setStep(
-          'stepProcess',
-          '1. Process Excel — done (raw ' + fmt((result.stats && result.stats.rawRows) || 0) + ')',
-          true
-        );
+        setStep('stepProcess', '1. Process', true);
         updateProgressUi();
+
+        lastJob = {
+          result,
+          reportDate,
+          originalName: file.name,
+          uploadId: null,
+          failedPhase: 'pending'
+        };
 
         const begin = await postJson('/api/nsc/publish/begin', {
           reportDate,
@@ -477,56 +663,56 @@
           stats: result.stats || {}
         });
         const uploadId = begin.uploadId;
+        lastJob.uploadId = uploadId;
         const nscHeaders = (NSCClientPipeline.OUTPUT_COLUMNS || []);
+        const withheldHeaders = (NSCClientPipeline.WITHHELD_COLUMNS || nscHeaders);
         const useSheet =
           !!(window.MzoSheetMirror) && !!sheetScriptUrl && !!withheldSheetScriptUrl;
 
         if (useSheet) {
-          setStep('stepPending', '2. Insert processed Working/Accepted into nsc_working…', false);
+          setStep('stepPending', '2. NSC sheet', false);
           await MzoSheetMirror.publishTab(
             sheetScriptUrl,
             'nsc',
             nscHeaders,
             result.published,
             (n) => {
+              hideRetryBox();
               progressState.pendingSent += n;
               updateProgressUi();
             },
-            'nsc_working'
+            'nsc_working',
+            onSheetRetry
           );
-          setStep(
-            'stepPending',
-            '2. Insert Working/Accepted — ' + fmt(progressState.pendingSent) + ' rows',
-            true
-          );
+          setStep('stepPending', '2. NSC sheet', true);
 
           progressState.phase = 'withheld';
+          lastJob.failedPhase = 'withheld';
           updateProgressUi();
-          setStep('stepWithheld', '3. Insert processed Withheld into NSCWH…', false);
+          setStep('stepWithheld', '3. Withheld sheet', false);
           await MzoSheetMirror.publishTab(
             withheldSheetScriptUrl,
             'withheld',
-            nscHeaders,
+            withheldHeaders,
             result.withheld,
             (n) => {
+              hideRetryBox();
               progressState.withheldSent += n;
               updateProgressUi();
             },
-            'Sheet1'
+            'Sheet1',
+            onSheetRetry,
+            WITHHELD_CHUNK_ROWS
           );
-          setStep(
-            'stepWithheld',
-            '3. Insert Withheld — ' + fmt(progressState.withheldSent) + ' rows',
-            true
-          );
+          setStep('stepWithheld', '3. Withheld sheet', true);
         } else {
-          throw new Error(
-            'Google Sheet mirror is not ready for both NSC and Withheld. Check the status line above.'
-          );
+          throw new Error('Sheet connection is not ready.');
         }
 
+        hideRetryBox();
+        lastJob.failedPhase = 'finish';
         progressState.phase = 'finish';
-        setStep('stepFinish', '4. Activating live datasets…', false);
+        setStep('stepFinish', '4. Activate', false);
         updateProgressUi();
 
         const done = await postJson('/api/nsc/publish/complete', {
@@ -539,77 +725,93 @@
           withheldRows: result.withheld.length,
           stats: result.stats || {}
         });
-        progressState.phase = 'done';
-        setStep('stepFinish', '4. Activate live datasets — done', true);
-        updateProgressUi();
-
-        const m = done.meta || {};
-        const s = m.stats || {};
-        const reportLabel = m.reportDate || s.today || reportDate;
-        const published = m.publishedRows ?? result.published.length;
-        const withheld = m.withheldRows ?? result.withheld.length;
-
-        showMsg(
-          (done.message || 'Upload successful.') +
-            '\nUpdated on: ' + reportLabel +
-            '\nWorking/Accepted: ' + fmt(published) +
-            '\nWithheld: ' + fmt(withheld),
-          true
-        );
-
-        await loadMeta();
-        try {
-          localStorage.removeItem('mzo_last_sync_date');
-          localStorage.removeItem('mzoDataSynced');
-          localStorage.removeItem('mzo_nsc_seen_version');
-          localStorage.removeItem('mzo_nsc_dismissed_version');
-          if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.seedDataset === 'function') {
-            const ver = (done.meta && (done.meta.supabaseUploadId || done.version)) || uploadId;
-            const nscCsv = NSCClientPipeline.toCsv(result.published);
-            const withheldCsv = NSCClientPipeline.toCsv(result.withheld);
-            await mzoDataHub.seedDataset('CACHE_NSC_v5', nscCsv, ver);
-            if (typeof mzoDataHub.delete === 'function') {
-              await mzoDataHub.delete('CACHE_NSC_PARSED_v5');
-            }
-            await mzoDataHub.seedDataset(
-              'CACHE_WITHHELD_v4',
-              withheldCsv,
-              done.withheldVersion || ver
-            );
-          }
-        } catch (_) {}
-        try {
-          const ch = new BroadcastChannel('mzo-nsc');
-          ch.postMessage({
-            type: 'nsc-uploaded',
-            reportDate: reportLabel,
-            publishedRows: published,
-            withheldRows: withheld,
-            at: Date.now()
-          });
-          ch.close();
-        } catch (_) {}
-        try {
-          const ch2 = new BroadcastChannel('mzo-withheld');
-          ch2.postMessage({
-            type: 'withheld-uploaded',
-            reportDate: reportLabel,
-            withheldRows: withheld,
-            at: Date.now()
-          });
-          ch2.close();
-        } catch (_) {}
+        await finishLiveActivate(lastJob, done);
       } catch (e) {
-        let failMsg = e.message || String(e);
-        if (/web page|echo 404|GET metadata/i.test(failMsg)) {
-          failMsg =
-            'Google briefly returned a web page instead of JSON. Wait about a minute, then click Upload & Publish again. Do not paste defective_meter_publish.gs here — NSC uses sheet_mirror_publish.gs.';
+        const raw = e.message || String(e);
+        const friendly =
+          window.MzoSheetMirror && typeof MzoSheetMirror.friendlyRetryMessage === 'function'
+            ? MzoSheetMirror.friendlyRetryMessage(e)
+            : raw;
+        let failMsg = friendly || raw;
+        if (/web page|echo 404|GET metadata|timed out|network|rate-limit|rate-limiting/i.test(raw + ' ' + friendly)) {
+          failMsg = 'Sheet write failed. Import CSV below, then Activate.';
+        } else if (/defective_meter_publish|Invalid action/i.test(raw)) {
+          failMsg = 'Wrong Apps Script on this sheet.';
         }
+        hideRetryBox();
         showMsg(failMsg, false);
-        progressLabel.textContent = 'Failed — see message below';
+        progressState.retryNote = '';
+        progressLabel.textContent = 'Failed';
+        if (lastJob && lastJob.result) {
+          showManualFallback(lastJob.failedPhase || progressState.phase);
+        }
       } finally {
         uploadBtn.disabled = false;
-        uploadBtn.textContent = 'Upload & Publish';
+        uploadBtn.textContent = 'Upload';
+      }
+    });
+
+    document.getElementById('dlNscCsv').addEventListener('click', () => {
+      const csv = nscCsvOf(lastJob);
+      if (!csv) {
+        showMsg('Process a file first.', false);
+        return;
+      }
+      downloadTextFile('nsc_working.csv', csv);
+    });
+    document.getElementById('dlWhCsv').addEventListener('click', () => {
+      const csv = withheldCsvOf(lastJob);
+      if (!csv) {
+        showMsg('Process a file first.', false);
+        return;
+      }
+      downloadTextFile('withheld.csv', csv);
+    });
+    activateAfterManual.addEventListener('click', async () => {
+      if (!lastJob || !lastJob.result) {
+        showMsg('Process a file first.', false);
+        return;
+      }
+      activateAfterManual.disabled = true;
+      uploadBtn.disabled = true;
+      try {
+        const result = lastJob.result;
+        const reportDate = lastJob.reportDate;
+        if (!lastJob.uploadId) {
+          const begin = await postJson('/api/nsc/publish/begin', {
+            reportDate,
+            reportDateUsed: result.reportDateUsed || '',
+            originalName: lastJob.originalName || result.originalName || '',
+            sheetName: result.sheetName || '',
+            publishedRows: result.published.length,
+            withheldRows: result.withheld.length,
+            stats: result.stats || {}
+          });
+          lastJob.uploadId = begin.uploadId;
+        }
+        progressState.phase = 'finish';
+        setStep('stepFinish', '4. Activate', false);
+        updateProgressUi();
+        const done = await postJson('/api/nsc/publish/complete', {
+          uploadId: lastJob.uploadId,
+          reportDate,
+          reportDateUsed: result.reportDateUsed || '',
+          originalName: lastJob.originalName || result.originalName || '',
+          sheetName: result.sheetName || '',
+          publishedRows: result.published.length,
+          withheldRows: result.withheld.length,
+          stats: result.stats || {}
+        });
+        await finishLiveActivate(lastJob, done);
+      } catch (err) {
+        showMsg(
+          ((err && err.message) || String(err)) + '\nTry Activate again.',
+          false
+        );
+        activateAfterManual.disabled = false;
+      } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = 'Upload';
       }
     });
 
