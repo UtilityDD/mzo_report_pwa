@@ -2,9 +2,9 @@
 -- Run in Supabase Dashboard → SQL Editor → Run
 --
 -- sheets_autho: '' | 'list' | 'view' | 'edit'
---   list = can open the home Uploads list of Google Sheet links
---   edit = can Manage unbilled months on important_sheets.html, and can open Uploads
---   admins always can manage and open Uploads regardless of this flag
+--   list = home-bar Sheet links button (Google Sheet list only)
+--   edit = Manage unbilled months on important_sheets.html, and the Sheet links button
+--   admins always can manage and open Sheet links regardless of this flag
 
 ALTER TABLE mzo_insight.portal_users
   ADD COLUMN IF NOT EXISTS sheets_autho text DEFAULT '';

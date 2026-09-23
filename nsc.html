@@ -2266,8 +2266,8 @@
     // Client release notes — bump `id` + `note` when shipping a user-visible fix.
     // Shown once as a short toast on open (not in the header).
     const NSC_RELEASE = {
-      id: '36',
-      note: 'New filter: Agency — filter pending NSC by work agency (including WO not issued).'
+      id: '38',
+      note: 'Working NSC is counted even when a withheld date or reason is still on the row.'
     };
     const NSC_CACHE_KEY = 'CACHE_NSC_v5';
     const NSC_PARSED_CACHE_KEY = 'CACHE_NSC_PARSED_v7';
@@ -2375,6 +2375,7 @@
         } catch (_) {}
 
         let loadedFromParsedCache = false;
+        let incomingApplCount = 0;
         let rawVersion = '';
         try {
           rawVersion = localStorage.getItem('mzo_hub_ver_' + NSC_CACHE_KEY) || '';
@@ -2390,6 +2391,7 @@
             const cachedParsed = await mzoDataHub._peek(NSC_PARSED_CACHE_KEY);
             if (cachedParsed && Array.isArray(cachedParsed) && cachedParsed.length > 0) {
               rawData = cachedParsed;
+              incomingApplCount = rawData.length;
               loadedFromParsedCache = true;
               console.log(`[NSC] Fast loaded ${rawData.length} pre-parsed rows from IndexedDB cache.`);
             }
@@ -2433,6 +2435,9 @@
           }
 
           rawData = normalizeNscRows(data);
+          incomingApplCount = Array.isArray(data)
+            ? data.filter(function (d) { return String((d && d.APPL_NO) || '').trim(); }).length
+            : rawData.length;
           
           if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.set === 'function' && rawData && rawData.length > 0) {
             try {
@@ -2550,7 +2555,7 @@
             }
           }).catch(function () {});
         }
-        reconcileNscRowCountInBackground(loadedRowCount);
+        reconcileNscRowCountInBackground(incomingApplCount || loadedRowCount);
 
         // Register filter event listeners on every mirrored control (inline + drawer)
         // Use a single listener path only (no el.onchange duplicate — that caused double-fires / hangs)
@@ -2776,7 +2781,7 @@
 
     /** One-time row normalize so filter passes avoid DOM lookups + string work per cell */
     function normalizeNscRows(rows) {
-      const out = new Array(rows.length);
+      const out = [];
       let minSC = Infinity, maxSC = -Infinity;
       let minCollMs = Infinity, maxCollMs = -Infinity;
 
@@ -2835,7 +2840,7 @@
           if (collMs > maxCollMs) maxCollMs = collMs;
         }
 
-        out[i] = d;
+        out.push(d);
       }
 
       out._stats = {

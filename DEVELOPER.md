@@ -29,7 +29,7 @@ Unauthenticated HTML requests redirect to `/login.html`. Use a real portal user 
 |------|------|
 | `server.js` | Auth cookie, `/api/*`, static hosting |
 | `login.html` / `index.html` | Login + home hub |
-| `admin_users.html` | Portal users (Supabase `portal_users`), activity, and a compact report data-source list. Each user row shows last use within 15 days (`GET /api/admin/logs?days=15`). |
+| `admin_users.html` | Portal users (Supabase `portal_users`), activity, and a compact report data-source list. Each user row shows last use within 15 days (`GET /api/admin/logs?days=15`). The user form has **Sheet links** Yes/No for the home-bar table button. |
 | `auth.js` | Client session check + logout |
 | `mzo_scope.js` | Login office scope (`window.MzoScope`) |
 | `mzo_data_hub.js` | Dataset registry + IndexedDB (`window.mzoDataHub`) |
@@ -49,7 +49,9 @@ Production stays on the **old** Supabase project (`unsmtschmcvftfqwabaq`) for lo
 
 Companion: `scripts/README_STOCK_SUPABASE.md`.
 
-**Client profile:** `localStorage.mzo_user_profile` (PIN stripped). Scope fields: `role`, `zone_code`, `region_code`, `division_code`, `ccc_code`, plus module flags (`nsc-autho`, `nsc-upload-autho`, `defective-upload-autho`, `si-autho`, …).
+**Client profile:** `localStorage.mzo_user_profile` (PIN stripped). Scope fields: `role`, `zone_code`, `region_code`, `division_code`, `ccc_code`, plus module flags (`nsc-autho`, `nsc-upload-autho`, `defective-upload-autho`, `stock-upload-autho`, `si-autho`, `sheets-autho`, …). The home bar reads this profile. After an admin changes a flag, the user must sign in again so the stored profile refreshes.
+
+**Sheet links (home-bar table button):** `#uploadListBtn` on `index.html`, title **Sheet links**. Hidden unless the user is `admin` or `sheets-autho` is `list`, `edit`, `y`, or `all`. The panel lists Google Sheet links only (not Supabase, JSON, Script, or RSS). Each row opens the spreadsheet and copies that link for a Google-signed-in browser. Stock and Power Map are omitted. NSC and Withheld use fixed edit URLs when `/api/nsc/meta` is slow. Admin → user form → **Sheet links** = Yes stores `list` (the button only). **Sheets** = Manage stores `edit`, which also shows the button and can manage Important Sheets. `''` shows neither the button nor manage. NSC upload and other report grants do not show the button. Column is existing `mzo_insight.portal_users.sheets_autho` (`scripts/alter_portal_users_sheets_auth.sql`). `canManageImportantSheets` still treats only `edit` / `y` / `all` (and admin) as manage.
 
 **`window.MzoScope`** (client-only; do not slice large CSVs on Vercel):
 
@@ -81,15 +83,15 @@ await window.mzoDataHub.waitForDataset('CACHE_NSC_v5');
 const csv = await window.mzoDataHub.get('CACHE_NSC_v5');
 ```
 
-**Versioned load (required):** `get()` / `waitForDataset` revalidate once per page load with a cheap check — `/api/.../meta` when `versionUrl` is set, otherwise `HEAD` plus `If-None-Match` / `If-Modified-Since`. If the stored version matches and IndexedDB already has a body, **do not download the CSV**. If the version changed, fetch, then store the new body and version. Replacing a raw dump also deletes its parsed companion (`CACHE_NSC_PARSED_v7`, `CACHE_WITHHELD_PARSED_v4`, `CACHE_PENDING_MC_PARSED`).
+**Versioned load (required):** `get()` / `waitForDataset` revalidate with a cheap check — `GET /api/hub/versions` during home Sync, then `/api/.../meta` when `versionUrl` is set, otherwise HEAD / Range probe (`Content-Length`, ETag). If the stored version matches and IndexedDB already has a body, **do not download the CSV**. If the version cannot be read cheaply: **lazy** dumps keep the cache; **clerk sheets** (Loss, Collection, …) re-download on header Sync or a new calendar day. Loss page uses `waitForDataset(..., { forceCheck: true })` so a same-day sheet paste (e.g. August) replaces the July cache. Pages should `_peek` (or `peekThenRevalidate`) and paint first, then `waitForDataset` in the background. Replacing a raw dump also deletes its parsed companion (`CACHE_NSC_PARSED_v7`, `CACHE_WITHHELD_PARSED_v4`, `CACHE_PENDING_MC_PARSED`, `CACHE_METER_PARSED_v1`).
 
-Version strings are prefixed: `v:` API meta, `e:` ETag, `m:` Last-Modified, `f:` body fingerprint. `refresh(key)` clears the stored version and forces a download (use after an upload).
+Version strings are prefixed: `v:` API meta, `e:` ETag, `m:` Last-Modified, `l:` Content-Length, `f:` body fingerprint. Length-prefixed versions can match each other. Ignore `Content-Length: 0` / `l:0` (Google published CSVs often send that on HEAD) and fall through to a Range probe or a full GET; after download store a fingerprint instead of `l:0`. `refresh(key)` clears the stored version and forces a download (use after an upload).
 
 **Sync Data** (home header refresh) is a version check, not a wipe and not a blind re-download:
 
-- Daily/auto (first visit of the day): `forceCheck` on every non-`lazySync` dataset, including NSC / stock / withheld. Download only if the version or body fingerprint changed.
-- Manual Sync: version-check `lazySync` dumps (meter, defective, PMSGY, safety) without downloading the body unless a `versionUrl` says it changed. Overlay shows remaining checks, then **Checked N · Updated M**.
-- Opening a report page still skips a same-day Google GET when there is no ETag (`!forceCheck`). Non-lazy sheets on Sync still fingerprint; lazy dumps wait for the page.
+- Daily/auto (first visit of the day): `forceCheck` on every non-`lazySync` dataset, including NSC / stock / withheld. Download only if the cheap version differs.
+- Manual Sync: version-check `lazySync` dumps (meter, CAPEX, disconnection, defective, PMSGY, safety) without downloading the body unless the version changed. Overlay shows remaining checks, then **Checked N · Updated M**.
+- Open a report from IndexedDB immediately if a body exists; do not wait on home Sync.
 - Do not skip a dataset because `syncStatus === 'done'` when `forceCheck` is set.
 
 | Flag | Meaning |
@@ -108,7 +110,7 @@ Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large d
 
 ## Service worker
 
-`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v108`. **Increment it** whenever HTML/CSS/JS that users already cached must update. Also bump `version` + `message` in `version.json` (shown as “App updated”). `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`. Do not intercept `*.supabase.co` in `sw.js` (same as Google Sheet CSVs).
+`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v114` (`version.json` **1.30**). **Increment both** whenever HTML/CSS/JS that users already cached must update. `version.json` `message` is the “App updated” banner. `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`. Do not intercept `*.supabase.co` in `sw.js` (same as Google Sheet CSVs). Network-first already includes `/index.html`, `/admin_users.html`, `/stock/upload.html`, `/mzo_data_hub.js`, and `/version.json`.
 
 Add new/changed report URLs to `isNetworkFirstPath()` so the SW does not keep a stale copy (`/version.json`, `/mzo_app_update.js`). After activate, the SW posts `MZO_APP_UPDATED`. NSC still paints from IndexedDB first, then `waitForDataset`; if the dump version changed it **reloads** (do not only `console.log`).
 
@@ -149,7 +151,7 @@ There is no webpack/vite build. Local run is `npm run dev`. Production is **only
    git push smartlineman main
    ```
 4. Vercel builds from the **smartlineman** GitHub repo. After the `smartlineman` push, confirm the change on https://mzo-reports.vercel.app (login-gated pages need a real portal user). A unique `mzo-reports-….vercel.app` URL is not the public link.
-5. Manual CLI only if the Git deploy did not run, and only while logged into the **Smart Lineman** Vercel team: `npx vercel --prod --yes --scope smart-linemans-projects`. `npx vercel --prod --yes` without that scope can hit the wrong account or return Not authorized. Env vars (`JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_KEY`, `INSIGHT_SUPABASE_URL`, `INSIGHT_SUPABASE_KEY` / `SUPABASE_SERVICE_ROLE_KEY`, `STOCK_USE_STORAGE`, sheet `/exec` URLs) live on the Smart Lineman project; the retired Dipankar project had none (code fallbacks in `server.js`). Leave `INSIGHT_*` and `STOCK_USE_STORAGE` unset until the new project SQL + `npm run copy:insight` have succeeded.
+5. Manual CLI only if the Git deploy did not run, and only while logged into the **Smart Lineman** Vercel team: `npx vercel --prod --yes --scope smart-linemans-projects`. `npx vercel --prod --yes` without that scope can hit the wrong account or return Not authorized. Env vars (`JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_KEY`, `INSIGHT_SUPABASE_URL`, `INSIGHT_SUPABASE_KEY` / `SUPABASE_SERVICE_ROLE_KEY`, `STOCK_USE_STORAGE`, sheet `/exec` URLs) live on the Smart Lineman project; the retired Dipankar project had none (code fallbacks in `server.js`). Stock Storage is already on (`STOCK_USE_STORAGE` plus the insight URL and service key). Do not set `INSIGHT_LIVE` until `npm run copy:insight` has copied `portal_users` and login should move to the new project.
 
 ---
 
@@ -173,15 +175,15 @@ There is no webpack/vite build. Local run is `npm run dev`. Production is **only
 - Clicking a status KPI (e.g. Disconnection Tracker Fully Paid / Disconnected) must filter **charts and table only**. Other KPI totals stay on the broader filter set (office, class, search, breadcrumb) and must not shrink each other.
 - `home-button.js` injects a floating Home control — do not duplicate a second home bar in the header.
 - When a dashboard mixes **counts-only** KPIs and **named-row** KPIs, split them into two labeled bands (Count vs Names). Use one card style. Count-only rows must not open a names modal. Defective Meter is the reference.
-- Home hub (`index.html`): **Often used** (`#favoritesCard`, class `always-open`) sits above New Service Connection and stays expanded on mobile. Each page tile has a star (`.fav-btn`); pins are stored per login in `localStorage` key `mzo_page_favorites_<Username>`. Do not collapse `always-open` groups in `initCollapsibleCards`. The header **Uploads** button (`#uploadListBtn`) opens one compact list of Google Sheet links. Each row copies that spreadsheet link so it can be opened in a browser signed in to Google. It is shown for admins and for users whose `sheets-autho` is `list`, `edit`, `y`, or `all`. Admin → **Upload list** = Yes stores `list` (view the list only). **Sheets** = Manage still stores `edit`, which also shows the list and can manage Important Sheets. NSC upload and other report grants do not show this list.
+- Home hub (`index.html`): **Often used** (`#favoritesCard`, class `always-open`) sits above New Service Connection and stays expanded on mobile. Each page tile has a star (`.fav-btn`); pins are stored per login in `localStorage` key `mzo_page_favorites_<Username>`. Do not collapse `always-open` groups in `initCollapsibleCards`. The header **Sheet links** button (`#uploadListBtn`, table icon) is the only sheet-list entry. Do not put a sheet icon on each report tile. Authorization is Admin → **Sheet links**, not NSC upload or other report grants. See **Sheet links** under Auth.
 
 ---
 
 ## APIs (server.js)
 
-Typical prefixes: `/api/login`, `/api/session-check`, `/api/logout`, `/api/admin/*`, `/api/nsc/*`, `/api/stock/*`, `/api/withheld/*`, `/api/power-map/*`, `/api/defective/meta`. Unauthenticated `/api` returns **401 JSON**, not a login HTML redirect. Do **not** add new `/api/.../dataset` routes that pull a Google sheet through Vercel — put the published CSV URL in `DATASETS` instead (see Bharat Net).
+Typical prefixes: `/api/login`, `/api/session-check`, `/api/logout`, `/api/admin/*`, `/api/nsc/*`, `/api/stock/*`, `/api/withheld/*`, `/api/power-map/*`, `/api/defective/meta`, `/api/hub/versions`. Unauthenticated `/api` returns **401 JSON**, not a login HTML redirect. Do **not** add new `/api/.../dataset` routes that pull a Google sheet through Vercel — put the published CSV URL in `DATASETS` instead (see Bharat Net). `GET /api/hub/versions` returns tiny `{ versions, csvUrls }` for NSC, Withheld, Stock, Defective, and Power Map. `GET /api/power-map/meta` is the Power Map version (Supabase `updated_at`).
 
-Uploads (NSC, stock, defective meter) process the file **in the browser**, then `MzoSheetMirror.publishTab` posts urlencoded chunks to Apps Script (`ContentService` JSON). Bulk bytes do not go through Vercel. Defective Meter uses the same helper as NSC (`lib/sheet_mirror_client.js`). After Apps Script code changes, deploy a **new version** of the **existing** web app (keep the same `/exec` URL). Do not return HtmlService from `doPost` (that is the `ppConfig` web-page error). Google’s `/macros/echo` URL sometimes 404s with that same HTML; the client retries each POST (8 attempts) and, if the tab still fails, restarts from `begin` (3 tries). NSC upload shows those retries in an orange note — leave the page open. If the sheet write still fails, the page offers sheet links plus processed CSVs and **Activate** after a manual File → Import. Withheld publishes 14 columns in ~600-row chunks; NSC Working stays 43 columns. Do not intercept `script.google.com` in `sw.js`. NSC script to paste is `lib/sheet_mirror_publish.gs` (not the defective-meter file).
+Uploads (NSC, stock, defective meter) process the file **in the browser**, then `MzoSheetMirror.publishTab` posts urlencoded chunks to Apps Script (`ContentService` JSON). Bulk bytes do not go through Vercel. Defective Meter uses the same helper as NSC (`lib/sheet_mirror_client.js`). After Apps Script code changes, deploy a **new version** of the **existing** web app (keep the same `/exec` URL). Do not return HtmlService from `doPost` (that is the `ppConfig` web-page error). Google’s `/macros/echo` URL sometimes 404s with that same HTML; the client retries each POST (8 attempts) and, if the tab still fails, restarts from `begin` (3 tries). NSC upload shows those retries in an orange note — leave the page open. If the sheet write still fails, the page offers sheet links plus processed CSVs and **Activate** after a manual File → Import. Withheld publishes 14 columns in ~600-row chunks; NSC Working stays 43 columns. Split by `SCN_STATUS` only: Working/Accepted stay on NSC even if a withheld date or reason is still on the row. If the file has **zero** Withheld-status rows, skip the Withheld `begin` (do not clear Sheet1) and keep the previous Withheld meta. Do not intercept `script.google.com` in `sw.js`. NSC script to paste is `lib/sheet_mirror_publish.gs` (not the defective-meter file).
 
 **Who can upload NSC:** `GET /api/nsc/meta` → `canUpload`. True if `role` is `admin` (case-insensitive), or portal flag `nsc-upload-autho` / `nsc_upload_autho` is Y/yes/1/true/upload, or username `dm1`. Admins always can, even if the flag is blank. The Date / Excel / Upload controls stay disabled until that JSON returns true.
 

@@ -221,9 +221,9 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="/nsc/nsc_client_pipeline.js?v=108"></script>
+  <script src="/nsc/nsc_client_pipeline.js?v=110"></script>
   <script src="/mzo_data_hub.js"></script>
-  <script src="/lib/sheet_mirror_client.js?v=108"></script>
+  <script src="/lib/sheet_mirror_client.js?v=109"></script>
   <script>
     const metaBox = document.getElementById('metaBox');
     const msg = document.getElementById('msg');
@@ -533,9 +533,15 @@
       const reportLabel = m.reportDate || s.today || result.reportDateUsed || reportDate;
       const published = m.publishedRows ?? result.published.length;
       const withheld = m.withheldRows ?? result.withheld.length;
+      const keptWithheld = !!(done && (done.withheldKept || (done.meta && done.meta.withheldKept)))
+        || !(result.withheld && result.withheld.length);
 
       showMsg(
-        'Published. ' + reportLabel + ' · NSC ' + fmt(published) + ' · Withheld ' + fmt(withheld),
+        'Published. ' + reportLabel +
+          ' · NSC ' + fmt(published) +
+          (keptWithheld
+            ? ' · Withheld kept previous (' + fmt(withheld) + ')'
+            : ' · Withheld ' + fmt(withheld)),
         true
       );
 
@@ -551,13 +557,17 @@
           if (typeof mzoDataHub.delete === 'function') {
             await mzoDataHub.delete('CACHE_NSC_PARSED_v5');
             await mzoDataHub.delete('CACHE_NSC_PARSED_v7');
-            await mzoDataHub.delete('CACHE_WITHHELD_PARSED_v4');
           }
-          await mzoDataHub.seedDataset(
-            'CACHE_WITHHELD_v4',
-            withheldCsvOf(job),
-            (done && done.withheldVersion) || ver
-          );
+          if (!keptWithheld && result.withheld && result.withheld.length) {
+            if (typeof mzoDataHub.delete === 'function') {
+              await mzoDataHub.delete('CACHE_WITHHELD_PARSED_v4');
+            }
+            await mzoDataHub.seedDataset(
+              'CACHE_WITHHELD_v4',
+              withheldCsvOf(job),
+              (done && done.withheldVersion) || ver
+            );
+          }
         }
       } catch (_) {}
       try {
@@ -573,12 +583,14 @@
       } catch (_) {}
       try {
         const ch2 = new BroadcastChannel('mzo-withheld');
-        ch2.postMessage({
-          type: 'withheld-uploaded',
-          reportDate: reportLabel,
-          withheldRows: withheld,
-          at: Date.now()
-        });
+        if (!keptWithheld) {
+          ch2.postMessage({
+            type: 'withheld-uploaded',
+            reportDate: reportLabel,
+            withheldRows: withheld,
+            at: Date.now()
+          });
+        }
         ch2.close();
       } catch (_) {}
     }
@@ -650,7 +662,8 @@
           reportDate,
           originalName: file.name,
           uploadId: null,
-          failedPhase: 'pending'
+          failedPhase: 'pending',
+          keepPreviousWithheld: !(result.withheld && result.withheld.length)
         };
 
         const begin = await postJson('/api/nsc/publish/begin', {
@@ -686,25 +699,31 @@
           );
           setStep('stepPending', '2. NSC sheet', true);
 
+          const keepPreviousWithheld = !(result.withheld && result.withheld.length);
           progressState.phase = 'withheld';
           lastJob.failedPhase = 'withheld';
+          lastJob.keepPreviousWithheld = keepPreviousWithheld;
           updateProgressUi();
-          setStep('stepWithheld', '3. Withheld sheet', false);
-          await MzoSheetMirror.publishTab(
-            withheldSheetScriptUrl,
-            'withheld',
-            withheldHeaders,
-            result.withheld,
-            (n) => {
-              hideRetryBox();
-              progressState.withheldSent += n;
-              updateProgressUi();
-            },
-            'Sheet1',
-            onSheetRetry,
-            WITHHELD_CHUNK_ROWS
-          );
-          setStep('stepWithheld', '3. Withheld sheet', true);
+          if (keepPreviousWithheld) {
+            setStep('stepWithheld', '3. Withheld sheet (kept previous)', true);
+          } else {
+            setStep('stepWithheld', '3. Withheld sheet', false);
+            await MzoSheetMirror.publishTab(
+              withheldSheetScriptUrl,
+              'withheld',
+              withheldHeaders,
+              result.withheld,
+              (n) => {
+                hideRetryBox();
+                progressState.withheldSent += n;
+                updateProgressUi();
+              },
+              'Sheet1',
+              onSheetRetry,
+              WITHHELD_CHUNK_ROWS
+            );
+            setStep('stepWithheld', '3. Withheld sheet', true);
+          }
         } else {
           throw new Error('Sheet connection is not ready.');
         }
@@ -723,6 +742,7 @@
           sheetName: result.sheetName || '',
           publishedRows: result.published.length,
           withheldRows: result.withheld.length,
+          keepPreviousWithheld: !!(lastJob && lastJob.keepPreviousWithheld),
           stats: result.stats || {}
         });
         await finishLiveActivate(lastJob, done);
@@ -800,6 +820,7 @@
           sheetName: result.sheetName || '',
           publishedRows: result.published.length,
           withheldRows: result.withheld.length,
+          keepPreviousWithheld: !!(lastJob.keepPreviousWithheld || !(result.withheld && result.withheld.length)),
           stats: result.stats || {}
         });
         await finishLiveActivate(lastJob, done);

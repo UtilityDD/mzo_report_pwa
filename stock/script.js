@@ -649,11 +649,36 @@ async function initDashboard() {
 
         let cachedData, cachedMetadata;
         if (typeof mzoDataHub !== 'undefined') {
-            if (!localStorage.getItem('mzo_stock_pending_refresh') && typeof mzoDataHub.retryDataset === 'function') {
-                try { await mzoDataHub.retryDataset('CACHE_STOCK'); } catch (_) {}
+            if (typeof mzoDataHub._peek === 'function') {
+                cachedData = await mzoDataHub._peek('CACHE_STOCK');
+                cachedMetadata = await mzoDataHub._peek('CACHE_STOCK_METADATA');
             }
-            cachedData = await mzoDataHub.get('CACHE_STOCK');
-            cachedMetadata = await mzoDataHub.get('CACHE_STOCK_METADATA');
+            if (typeof mzoDataHub.waitForDataset === 'function') {
+                if (!cachedData) {
+                    try {
+                        await mzoDataHub.waitForDataset('CACHE_STOCK');
+                        cachedData = await mzoDataHub._peek('CACHE_STOCK');
+                    } catch (_) {}
+                } else {
+                    mzoDataHub.waitForDataset('CACHE_STOCK').then(async function (result) {
+                        if (result === 'updated') {
+                            const fresh = await mzoDataHub._peek('CACHE_STOCK');
+                            if (fresh) {
+                                const results = Papa.parse(fresh, { header: true, skipEmptyLines: true });
+                                handleResults(results.data);
+                            }
+                        }
+                    }).catch(function () {});
+                }
+                if (!cachedMetadata) {
+                    try {
+                        await mzoDataHub.waitForDataset('CACHE_STOCK_METADATA');
+                        cachedMetadata = await mzoDataHub._peek('CACHE_STOCK_METADATA');
+                    } catch (_) {}
+                } else {
+                    mzoDataHub.waitForDataset('CACHE_STOCK_METADATA').catch(function () {});
+                }
+            }
         }
 
         if (cachedMetadata) {

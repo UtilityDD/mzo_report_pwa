@@ -21,9 +21,9 @@ const DATASETS = [
     { key: 'CACHE_PENDING_MC', label: 'Pending Master Card', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQmOUW4jxUtEGWhPHaoNBsvpBcGzhHJZRUx_9mxFBp91sfg4yD8WIqIK_xv0vlFs2yP-Ljz09JW1U2c/pub?gid=0&single=true&output=csv', type: 'csv' },
     { key: 'CACHE_CMO', label: 'CMO Grievances', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS7GVh5HflVhouhVfFOEN2RuA1kCBedmD4Q0CJP02K61DAtWuo3P8XIS8CO7ocZQuJ20uCJBa9qsgZ6/pub?gid=1066071765&single=true&output=csv', type: 'csv' },
     { key: 'CACHE_STOCK', label: 'Stock Data', url: '/api/stock/dataset', type: 'csv', originHeavy: true, versionUrl: '/api/stock/meta', csvUrlField: 'csvUrl' },
-    { key: 'CACHE_POWER_MAP', label: 'Power Map', url: '/api/power-map/data', type: 'csv', originHeavy: true },
+    { key: 'CACHE_POWER_MAP', label: 'Power Map', url: '/api/power-map/data', type: 'csv', originHeavy: true, versionUrl: '/api/power-map/meta', csvUrlField: 'csvUrl' },
     { key: 'CACHE_STOCK_METADATA', label: 'Stock Metadata', url: 'https://docs.google.com/spreadsheets/d/1wDvPuAxNfdO9QzUaIUubg2JnkFM5ZleFNXQdi8s5uh0/export?format=csv&gid=696716331', type: 'csv' },
-    { key: 'CACHE_CAPEX', label: 'CAPEX Details', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQI2neSVbvMR4fF910Q0AWUcq02leP-sob8q4f9goT46hgLutCpxCjSL6y6X3s2vYBJRNN7WrFCjE0R/pub?gid=439685010&single=true&output=csv', type: 'csv' },
+    { key: 'CACHE_CAPEX', label: 'CAPEX Details', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQI2neSVbvMR4fF910Q0AWUcq02leP-sob8q4f9goT46hgLutCpxCjSL6y6X3s2vYBJRNN7WrFCjE0R/pub?gid=439685010&single=true&output=csv', type: 'csv', lazySync: true },
     { key: 'CACHE_VENDORS', label: 'Vendor Map', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTZPn6CB_cHTFVb8S5vpvaBnczj63fYMTI0RVEdMzVcQ8O6XQi5iwTbMp2xa5vsL6zHGWxezWUSehrN/pub?gid=1818971964&single=true&output=csv', type: 'csv' },
     { key: 'CACHE_COSTCENTER', label: 'Cost Center Map', url: 'data/costcenter.json', type: 'json' },
     { key: 'CACHE_REM_v2', label: 'REM Data', url: 'https://docs.google.com/spreadsheets/d/18y_nHZngDDO13nlluN9qba7AfgDe5dKGGHnXRYUU-b8/gviz/tq?tqx=out:csv', type: 'csv' },
@@ -41,7 +41,7 @@ const DATASETS = [
     { key: 'CACHE_METER_MASTER', label: 'Meter Master Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=1053803476&single=true&output=csv', type: 'csv', lazySync: true },
     { key: 'CACHE_METER_CRM', label: 'Meter CRM Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=1638328510&single=true&output=csv', type: 'csv', lazySync: true },
     { key: 'CACHE_METER_ISU', label: 'Meter ISU Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=329630218&single=true&output=csv', type: 'csv', lazySync: true },
-    { key: 'CACHE_DISCONNECTION', label: 'Disconnection Tracker', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv', type: 'csv' },
+    { key: 'CACHE_DISCONNECTION', label: 'Disconnection Tracker', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv', type: 'csv', lazySync: true },
     { key: 'CACHE_PMSGY_0', label: 'PMSGY Data 0', url: 'https://docs.google.com/spreadsheets/d/1u44ctXxvX4GI3Pm7ZPAoaH7rGn9RkxEWkyK5AyMlxGo/export?format=csv&gid=0', type: 'csv', lazySync: true },
     { key: 'CACHE_PMSGY_1', label: 'PMSGY Data 1', url: 'https://docs.google.com/spreadsheets/d/1u44ctXxvX4GI3Pm7ZPAoaH7rGn9RkxEWkyK5AyMlxGo/export?format=csv&gid=1665942193', type: 'csv', lazySync: true },
     { key: 'CACHE_PMSGY_2', label: 'PMSGY Data 2', url: 'https://docs.google.com/spreadsheets/d/1u44ctXxvX4GI3Pm7ZPAoaH7rGn9RkxEWkyK5AyMlxGo/export?format=csv&gid=1873088391', type: 'csv', lazySync: true }
@@ -53,8 +53,15 @@ const FETCH_TIMEOUT_MS = 90000;
 const PARSED_COMPANIONS = {
     CACHE_NSC_v5: ['CACHE_NSC_PARSED_v7', 'CACHE_NSC_PARSED_v5'],
     CACHE_WITHHELD_v4: ['CACHE_WITHHELD_PARSED_v4'],
-    CACHE_PENDING_MC: ['CACHE_PENDING_MC_PARSED']
+    CACHE_PENDING_MC: ['CACHE_PENDING_MC_PARSED'],
+    CACHE_METER_ERP: ['CACHE_METER_PARSED_v1'],
+    CACHE_METER_MASTER: ['CACHE_METER_PARSED_v1'],
+    CACHE_METER_CRM: ['CACHE_METER_PARSED_v1'],
+    CACHE_METER_ISU: ['CACHE_METER_PARSED_v1']
 };
+
+const HUB_VERSIONS_URL = '/api/hub/versions';
+const PROBE_MAX_BYTES = 2048;
 
 class DataHub {
     constructor() {
@@ -181,19 +188,29 @@ class DataHub {
             .trim();
     }
 
+    _usableVersion(ver) {
+        const s = String(ver || '').trim();
+        if (!s) return '';
+        if (/^l:0+$/.test(s)) return '';
+        if (/^f:n0\|/.test(s)) return '';
+        return s;
+    }
+
     _versionFromHeaders(res) {
         if (!res) return '';
         const etag = this._cleanEtag(res.headers.get('ETag'));
         if (etag) return 'e:' + etag;
         const lm = String(res.headers.get('Last-Modified') || '').trim();
-        const len = String(res.headers.get('Content-Length') || '').trim();
+        const rawLen = String(res.headers.get('Content-Length') || '').trim();
+        const len = (rawLen && rawLen !== '0') ? rawLen : '';
         if (lm && len) return 'm:' + lm + '|' + len;
         if (lm) return 'm:' + lm;
         const range = String(res.headers.get('Content-Range') || '').trim();
         const rangeLen = /\/(\d+)\s*$/.exec(range);
-        if (lm && rangeLen) return 'm:' + lm + '|' + rangeLen[1];
+        const rangeTotal = (rangeLen && rangeLen[1] !== '0') ? rangeLen[1] : '';
+        if (lm && rangeTotal) return 'm:' + lm + '|' + rangeTotal;
         if (len) return 'l:' + len;
-        if (rangeLen) return 'l:' + rangeLen[1];
+        if (rangeTotal) return 'l:' + rangeTotal;
         return '';
     }
 
@@ -221,11 +238,33 @@ class DataHub {
         return peeked != null && peeked !== '';
     }
 
+    _lengthFromVersion(ver) {
+        const s = String(ver || '');
+        let m = /^f:n(\d+)/.exec(s);
+        if (m && m[1] !== '0') return m[1];
+        m = /^l:(\d+)/.exec(s);
+        if (m && m[1] !== '0') return m[1];
+        m = /^m:[^|]*\|(\d+)/.exec(s);
+        if (m && m[1] !== '0') return m[1];
+        return '';
+    }
+
     _versionsMatch(local, remote) {
-        if (!local || !remote) return false;
-        if (local === remote) return true;
+        const a = this._usableVersion(local);
+        const b = this._usableVersion(remote);
+        if (!a || !b) return false;
+        if (a === b) return true;
         const strip = (s) => String(s).replace(/^[evmf]:/, '');
-        return strip(local) === strip(remote);
+        if (strip(a) === strip(b)) return true;
+        const ll = this._lengthFromVersion(a);
+        const rl = this._lengthFromVersion(b);
+        return !!(ll && rl && ll === rl);
+    }
+
+    async _cancelBody(res) {
+        try {
+            if (res && res.body && typeof res.body.cancel === 'function') await res.body.cancel();
+        } catch (e) {}
     }
 
     async _probeRemoteVersion(url) {
@@ -238,9 +277,58 @@ class DataHub {
                 8000
             );
             if (head.ok) {
-                const ver = this._versionFromHeaders(head);
+                const ver = this._usableVersion(this._versionFromHeaders(head));
                 if (ver) return ver;
             }
+        } catch (e) {}
+        try {
+            const res = await this._fetchWithTimeout(
+                url,
+                {
+                    method: 'GET',
+                    credentials: cred,
+                    cache: 'no-store',
+                    headers: { Range: 'bytes=0-511' }
+                },
+                8000
+            );
+            const headerVer = this._usableVersion(this._versionFromHeaders(res));
+            const range = String(res.headers.get('Content-Range') || '').trim();
+            const rangeLen = /\/(\d+)\s*$/.exec(range);
+            const declared = Number(res.headers.get('Content-Length') || 0) || (rangeLen ? Number(rangeLen[1]) : 0);
+            const partial = res.status === 206 || !!rangeLen;
+
+            if (partial || (declared > PROBE_MAX_BYTES)) {
+                await this._cancelBody(res);
+                if (headerVer) return headerVer;
+                if (rangeLen && rangeLen[1] !== '0') return 'l:' + rangeLen[1];
+                if (declared > 0) return 'l:' + declared;
+                return '';
+            }
+
+            if (declared > 0 && declared <= PROBE_MAX_BYTES && headerVer) {
+                await this._cancelBody(res);
+                return headerVer;
+            }
+
+            if (!res.body || typeof res.body.getReader !== 'function') {
+                await this._cancelBody(res);
+                return headerVer || (declared > 0 ? 'l:' + declared : '');
+            }
+
+            const reader = res.body.getReader();
+            let size = 0;
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                size += value ? value.byteLength || value.length || 0 : 0;
+                if (size > PROBE_MAX_BYTES) {
+                    try { await reader.cancel(); } catch (e) {}
+                    return '';
+                }
+            }
+            if (headerVer) return headerVer;
+            if (size > 0) return 'l:' + size;
         } catch (e) {}
         return '';
     }
@@ -392,6 +480,15 @@ class DataHub {
         return this.retryDataset(key, opts);
     }
 
+    async peekThenRevalidate(key, opts) {
+        const cached = await this._peek(key);
+        return {
+            cached,
+            fromCache: this._hasBody(cached),
+            revalidate: this.waitForDataset(key, opts)
+        };
+    }
+
     async retryDataset(key, opts) {
         const force = !!(opts && opts.force);
         const forceCheck = !!(opts && (opts.forceCheck || opts.force));
@@ -415,9 +512,16 @@ class DataHub {
                 let metaJson = null;
                 const peeked = await this._peek(key);
                 const hasBody = this._hasBody(peeked);
-                const localVer = this._readStoredVersion(key);
+                const localVer = this._usableVersion(this._readStoredVersion(key));
+                const catalogVer = String((opts && opts.catalogVer) || '').trim();
+                const catalogCsv = String((opts && opts.catalogCsvUrl) || '').trim();
+                if (catalogCsv) fetchUrl = catalogCsv;
 
-                if (dataset.versionUrl) {
+                if (catalogVer) {
+                    remoteVer = this._usableVersion(
+                        catalogVer.indexOf(':') === 1 ? catalogVer : 'v:' + catalogVer
+                    );
+                } else if (dataset.versionUrl) {
                     try {
                         metaJson = await this._getDatasetMeta(dataset);
                     } catch (e) {}
@@ -426,7 +530,7 @@ class DataHub {
                         (metaJson && metaJson.version) ||
                         ''
                     ).trim();
-                    if (remoteVer) remoteVer = 'v:' + remoteVer;
+                    if (remoteVer) remoteVer = this._usableVersion('v:' + remoteVer);
                     const field = dataset.csvUrlField || 'csvUrl';
                     if (metaJson && metaJson[field]) fetchUrl = String(metaJson[field]);
                 } else if (
@@ -435,7 +539,11 @@ class DataHub {
                     !(skipVercelBody && dataset.lazySync) &&
                     !(skipVercelBody && this._isVercelApiUrl(fetchUrl))
                 ) {
-                    remoteVer = await this._probeRemoteVersion(fetchUrl);
+                    remoteVer = this._usableVersion(await this._probeRemoteVersion(fetchUrl));
+                } else if (forceCheck && hasBody) {
+                    remoteVer = this._usableVersion(await this._probeRemoteVersion(fetchUrl));
+                } else if (!hasBody) {
+                    remoteVer = this._usableVersion(await this._probeRemoteVersion(fetchUrl));
                 }
 
                 let expectedRows = 0;
@@ -461,12 +569,18 @@ class DataHub {
                     return 'unchanged';
                 }
 
-                // Google published CSVs often have no HEAD ETag. On a normal page
-                // open, keep today's copy. Manual Sync (forceCheck) still downloads
-                // and replaces only if the fingerprint changed.
-                if (!force && !forceCheck && hasBody && !remoteVer && this._readFetchedDay(key) === new Date().toDateString()) {
-                    this.syncStatus[key] = 'done';
-                    return 'unchanged';
+                // Lazy dumps (Meter, CAPEX): never full-GET without a cheap version.
+                // Clerk sheets (Loss, Collection, …): same-day skip on page open;
+                // header Sync / a new day still downloads so paste-updates appear.
+                if (!force && hasBody && !remoteVer) {
+                    if (dataset.lazySync) {
+                        this.syncStatus[key] = 'done';
+                        return 'unchanged';
+                    }
+                    if (!forceCheck && localVer && this._readFetchedDay(key) === new Date().toDateString()) {
+                        this.syncStatus[key] = 'done';
+                        return 'unchanged';
+                    }
                 }
 
                 // Homepage Sync must not pull dump bytes through Vercel.
@@ -523,7 +637,9 @@ class DataHub {
                     if (response.status !== 304) break;
                     const cached = await this._peek(key);
                     if (this._hasBody(cached)) {
-                        const keep = remoteVer || this._versionFromHeaders(response) || stored;
+                        const keep = this._usableVersion(remoteVer)
+                            || this._usableVersion(this._versionFromHeaders(response))
+                            || this._usableVersion(stored);
                         if (keep) this._writeStoredVersion(key, keep);
                         this._writeFetchedDay(key);
                         this.syncStatus[key] = 'done';
@@ -542,8 +658,8 @@ class DataHub {
                 let data;
                 if (dataset.type === 'json') data = await response.json();
                 else data = await response.text();
-                const headerVer = this._versionFromHeaders(response);
-                const nextVer = remoteVer || headerVer || this._fingerprint(data);
+                const headerVer = this._usableVersion(this._versionFromHeaders(response));
+                const nextVer = this._usableVersion(remoteVer) || headerVer || this._fingerprint(data);
                 if (!force && hasBody && localVer && this._versionsMatch(localVer, nextVer)) {
                     this._writeStoredVersion(key, nextVer);
                     this._writeFetchedDay(key);
@@ -650,6 +766,21 @@ async function syncAllData(progressCallback, opts) {
     const failedLabels = [];
     mzoDataHub.lastSyncStats = { checked: 0, updated: 0, failed: 0, total, failedLabels };
 
+    let catalogVersions = {};
+    let catalogCsvUrls = {};
+    try {
+        const catRes = await mzoDataHub._fetchWithTimeout(
+            HUB_VERSIONS_URL,
+            { credentials: 'same-origin', cache: 'no-store' },
+            12000
+        );
+        if (catRes && catRes.ok) {
+            const cat = await catRes.json();
+            catalogVersions = (cat && cat.versions) || {};
+            catalogCsvUrls = (cat && cat.csvUrls) || {};
+        }
+    } catch (e) {}
+
     try {
         syncDatasets.forEach((d) => {
             if (forceCheck || mzoDataHub.syncStatus[d.key] !== 'done') {
@@ -689,7 +820,9 @@ async function syncAllData(progressCallback, opts) {
                 try {
                     result = await mzoDataHub.retryDataset(dataset.key, {
                         forceCheck,
-                        skipVercelBody: true
+                        skipVercelBody: true,
+                        catalogVer: catalogVersions[dataset.key] || '',
+                        catalogCsvUrl: catalogCsvUrls[dataset.key] || ''
                     });
                     checked++;
                     if (result === 'updated') updated++;

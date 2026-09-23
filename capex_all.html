@@ -1393,9 +1393,18 @@
                 // 3. Load Main Data
                 showLoading("Loading main data...");
                 let rawData;
-                if (await mzoDataHub.isCached('CACHE_CAPEX')) {
-                    console.log("DataHub: Loading CAPEX Details from cache.");
-                    rawData = await mzoDataHub.get('CACHE_CAPEX');
+                if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub._peek === 'function') {
+                    rawData = await mzoDataHub._peek('CACHE_CAPEX');
+                    if (!rawData) {
+                        await mzoDataHub.waitForDataset('CACHE_CAPEX');
+                        rawData = await mzoDataHub._peek('CACHE_CAPEX');
+                    } else {
+                        mzoDataHub.waitForDataset('CACHE_CAPEX').then(async function (result) {
+                            if (result === 'updated') {
+                                try { window.location.reload(); } catch (_) {}
+                            }
+                        }).catch(function () {});
+                    }
                     if (typeof rawData === 'string') {
                         const parsed = Papa.parse(rawData.trim(), {
                             header: true,
@@ -1403,20 +1412,11 @@
                         });
                         rawData = parsed.data;
                     }
-                } else {
-                    console.log("DataHub: CAPEX Details cache miss, fetching from network.");
-                    try {
-                        const mainResponse = await fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vQI2neSVbvMR4fF910Q0AWUcq02leP-sob8q4f9goT46hgLutCpxCjSL6y6X3s2vYBJRNN7WrFCjE0R/pub?gid=439685010&single=true&output=csv');
-                        const text = await mainResponse.text();
-                        const parsed = Papa.parse(text.trim(), {
-                            header: true,
-                            skipEmptyLines: true
-                        });
-                        rawData = parsed.data;
-                    } catch (netErr) {
-                        console.error("CAPEX Google Sheet fetch failed:", netErr);
-                        throw netErr;
-                    }
+                }
+                if (!rawData) {
+                    const mainResponse = await fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vQI2neSVbvMR4fF910Q0AWUcq02leP-sob8q4f9goT46hgLutCpxCjSL6y6X3s2vYBJRNN7WrFCjE0R/pub?gid=439685010&single=true&output=csv');
+                    const text = await mainResponse.text();
+                    rawData = Papa.parse(text.trim(), { header: true, skipEmptyLines: true }).data;
                 }
 
                 allData = cleanData(rawData, costCenterMap);

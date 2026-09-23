@@ -74,7 +74,9 @@
     'DIVN NAME': 'DIVN_NAME', DIVN: 'DIVN_NAME', DIVISION: 'DIVN_NAME', DIV_NAME: 'DIVN_NAME',
     'DIVISION NAME': 'DIVN_NAME', 'SUPP OFF': 'SUPP_OFF', 'SUPPLY OFFICE': 'SUPP_OFF',
     CCC: 'SUPP_OFF', 'CCC NAME': 'SUPP_OFF', 'CCC CODE': 'CCC_CODE',
-    REGION_NAME: 'REG', 'SCN STATUS': 'SCN_STATUS', STATUS: 'SCN_STATUS'
+    REGION_NAME: 'REG', 'SCN STATUS': 'SCN_STATUS', STATUS: 'SCN_STATUS',
+    SCN_WITHHELD_DATE: 'SCN_WITHELD_DATE', 'SCN WITHHELD DATE': 'SCN_WITHELD_DATE',
+    SCN_WITHHELD_REASON: 'SCN_WITHELD_REASON', 'SCN WITHHELD REASON': 'SCN_WITHELD_REASON'
   };
 
   function excelSerialToDate(serial) {
@@ -156,6 +158,11 @@
       return '';
     }
     return s;
+  }
+
+  function withheldStatusKey(statusKey) {
+    const s = String(statusKey || '').toLowerCase().replace(/[\s_-]+/g, '');
+    return s === 'witheld' || s === 'withheld' || s === 'scnwithheld';
   }
 
   function normalizeSuppOff(name) {
@@ -268,7 +275,7 @@
       const qtn = excelSerialToDate(raw.QUOTATION_ISSUE_DATE);
       const created = excelSerialToDate(raw.CREATION_DATE);
       const insp = excelSerialToDate(raw.INSPECTION_DATE);
-      const withheldDate = excelSerialToDate(raw.SCN_WITHELD_DATE);
+      const withheldDate = excelSerialToDate(raw.SCN_WITHELD_DATE || raw.SCN_WITHHELD_DATE);
       const dsForm = excelSerialToDate(raw.DS_FORM_DATE);
 
       const delaySc = coll ? dayDiff(today, coll) : '';
@@ -311,8 +318,8 @@
         AGENCY_NAME: cellStr(raw.AGENCY_NAME),
         METER_NUMBER: cellStr(raw.METER_NUMBER),
         SCN_STATUS: status,
-        SCN_WITHELD_DATE: formatDateDMY(withheldDate) || cellStr(raw.SCN_WITHELD_DATE),
-        SCN_WITHELD_REASON: cellStr(raw.SCN_WITHELD_REASON),
+            SCN_WITHELD_DATE: formatDateDMY(withheldDate) || cellStr(raw.SCN_WITHELD_DATE) || cellStr(raw.SCN_WITHHELD_DATE),
+            SCN_WITHELD_REASON: cellStr(raw.SCN_WITHELD_REASON) || cellStr(raw.SCN_WITHHELD_REASON),
         IS_DUARE_SARKAR: cellStr(raw.IS_DUARE_SARKAR),
         DS_NUMBER: cellStr(raw.DS_NUMBER),
         DS_FORM_DATE: formatDateDMY(dsForm) || cellStr(raw.DS_FORM_DATE),
@@ -329,7 +336,7 @@
 
       if (NSC_PUBLISH_STATUSES.has(statusKey)) {
         published.push(row);
-      } else if (statusKey === 'witheld' || statusKey === 'withheld') {
+      } else if (withheldStatusKey(statusKey)) {
         withheld.push(row);
       }
     }

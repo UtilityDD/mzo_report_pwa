@@ -170,6 +170,14 @@ function doPost(e) {
     if (action === 'complete') {
       SpreadsheetApp.flush();
       var sh3 = sheetFor_(tab, payload);
+      var expected = Number(payload && payload.expectedRows);
+      if (isFinite(expected) && expected >= 0) {
+        var last = sh3.getLastRow();
+        var keepTo = expected + 1;
+        if (last > keepTo) {
+          sh3.getRange(keepTo + 1, 1, last - keepTo, Math.max(1, sh3.getLastColumn())).clearContent();
+        }
+      }
       return jsonOut_({
         status: 'success',
         tab: tab,

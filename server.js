@@ -1278,6 +1278,33 @@ app.get('/api/power-map/data', async (req, res) => {
     }
 });
 
+app.get('/api/power-map/meta', async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+    let version = '';
+    let rows = 0;
+    try {
+        const latest = await querySupabase(
+            POWER_MAP_TABLE + '?select=updated_at&order=updated_at.desc&limit=1'
+        );
+        const row = Array.isArray(latest) && latest[0] ? latest[0] : latest;
+        version = String((row && row.updated_at) || '').trim();
+        const counted = await querySupabase(POWER_MAP_TABLE + '?select=Substation');
+        rows = Array.isArray(counted) ? counted.length : 0;
+        if (!version && rows) version = 'rows:' + rows;
+    } catch (e) {
+        console.warn('[Power Map meta]', e.message);
+    }
+    res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
+    return res.json({
+        status: 'success',
+        version: version || null,
+        rows,
+        csvUrl: POWER_MAP_SHEET_CSV_URL
+    });
+});
+
 // 6.5. Edit sheet row (Power Map Admin Edit - Supabase Table version)
 app.post('/api/admin/edit-sheet-row', async (req, res) => {
     if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
@@ -3006,6 +3033,18 @@ async function saveNscSheetMeta_(meta) {
     }
 }
 
+function overlayKeptWithheld_(baseMeta, prevMeta) {
+    const prevWh = Number(
+        (prevMeta && prevMeta.withheldRows) ||
+        (prevMeta && prevMeta.stats && prevMeta.stats.withheldRows) ||
+        0
+    ) || 0;
+    baseMeta.withheldKept = true;
+    baseMeta.withheldRows = prevWh;
+    baseMeta.stats = Object.assign({}, baseMeta.stats || {}, { withheldRows: prevWh });
+    return baseMeta;
+}
+
 function buildNscMeta_(uploadUser, body, uploadId) {
     const clientStats =
         body && typeof body.stats === 'object' && body.stats ? body.stats : {};
@@ -3255,22 +3294,36 @@ app.post('/api/nsc/publish/complete', async (req, res) => {
         baseMeta.uploadedAt = new Date().toISOString();
         baseMeta.source = 'google_sheet';
 
+        const incomingWh = Number(
+            body.withheldRows != null ? body.withheldRows : baseMeta.withheldRows
+        ) || 0;
+        const keepPreviousWithheld = incomingWh <= 0 || body.keepPreviousWithheld === true;
+        if (keepPreviousWithheld) {
+            const prevMeta = (await fetchNscSheetMeta_()) || readLocalNscMeta_();
+            overlayKeptWithheld_(baseMeta, prevMeta);
+        }
+
         writeLocalNscBackup_(null, baseMeta, null);
         await saveNscSheetMeta_(baseMeta);
 
+        const keptNote = baseMeta.withheldKept
+            ? ` File had 0 Withheld — kept previous Withheld (${baseMeta.withheldRows || 0} rows).`
+            : '';
         console.log(
             `[NSC publish/complete] ${baseMeta.uploadedBy} upload ${uploadId}: ` +
-                `pending=${baseMeta.publishedRows} withheld=${baseMeta.withheldRows}`
+                `pending=${baseMeta.publishedRows} withheld=${baseMeta.withheldRows}` +
+                (baseMeta.withheldKept ? ' (kept previous withheld)' : '')
         );
 
         return res.json({
             status: 'success',
             message: `Published ${baseMeta.publishedRows || 0} Working/Accepted and ${
                 baseMeta.withheldRows || 0
-            } Withheld rows. Refresh NSC and Withheld dashboards.`,
+            } Withheld rows.${keptNote} Refresh NSC and Withheld dashboards.`,
             meta: baseMeta,
             version: snapshotVersion_(baseMeta) || String(uploadId),
-            withheldVersion: snapshotWithheldVersion_(baseMeta) || String(uploadId)
+            withheldVersion: snapshotWithheldVersion_(baseMeta) || String(uploadId),
+            withheldKept: !!baseMeta.withheldKept
         });
     } catch (e) {
         console.error('[NSC publish/complete] Error:', e.message);
@@ -3880,6 +3933,86 @@ app.get('/api/defective/meta', async (req, res) => {
             ? null
             : 'Open the Defective Meter Google Sheet → Extensions → Apps Script → paste lib/defective_meter_publish.gs → Deploy as Web app (Anyone). Paste the /exec URL in the box on this page, or set Vercel env DEFECTIVE_SHEET_SCRIPT_URL.'
     });
+});
+
+app.get('/api/hub/versions', async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+    const versions = {};
+    const csvUrls = {};
+
+    try {
+        let nscMeta = readLocalNscMeta_();
+        const sheetMeta = await fetchNscSheetMeta_();
+        if (sheetMeta && (sheetMeta.reportDate || sheetMeta.uploadedAt || sheetMeta.publishedRows)) {
+            nscMeta = sheetMeta;
+        }
+        const nscVer = snapshotVersion_(nscMeta);
+        const whVer = snapshotWithheldVersion_(nscMeta);
+        if (nscVer) versions.CACHE_NSC_v5 = nscVer;
+        if (whVer) versions.CACHE_WITHHELD_v4 = whVer;
+        if (NSC_SHEET_FALLBACK_URL) csvUrls.CACHE_NSC_v5 = NSC_SHEET_FALLBACK_URL;
+        if (NSC_WITHHELD_SHEET_FALLBACK_URL) csvUrls.CACHE_WITHHELD_v4 = NSC_WITHHELD_SHEET_FALLBACK_URL;
+    } catch (e) {
+        console.warn('[Hub versions] NSC:', e.message);
+    }
+
+    try {
+        let stockMeta = readLocalStockMeta_();
+        const sb = await fetchActiveStockMeta_();
+        if (sb) stockMeta = stockMetaFromDb_(sb);
+        const stockVer = snapshotVersion_(stockMeta);
+        if (stockVer) versions.CACHE_STOCK = stockVer;
+        csvUrls.CACHE_STOCK = stockStorageOrigin_()
+            ? stockPublicCsvUrl_(stockVer)
+            : STOCK_SHEET_FALLBACK_URL;
+    } catch (e) {
+        console.warn('[Hub versions] Stock:', e.message);
+    }
+
+    try {
+        const metaUrl =
+            DEFECTIVE_SHEET_SCRIPT_URL +
+            (DEFECTIVE_SHEET_SCRIPT_URL.includes('?') ? '&' : '?') +
+            'meta=1';
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), 4000) : null;
+        let uploadMeta = null;
+        try {
+            const scriptRes = await fetch(metaUrl, ctrl ? { signal: ctrl.signal } : undefined);
+            if (scriptRes.ok) {
+                const parsed = JSON.parse(await scriptRes.text());
+                uploadMeta = (parsed && parsed.meta) || null;
+            }
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+        const defVer = (uploadMeta && (uploadMeta.uploadedAt || uploadMeta.reportAsOn)) || '';
+        if (defVer) {
+            versions.CACHE_DEFECTIVE = defVer;
+            versions.CACHE_DEFECTIVE_DETAILS = defVer;
+        }
+        csvUrls.CACHE_DEFECTIVE = defectiveExportCsvUrl_(DEFECTIVE_SUMMARY_GID);
+        csvUrls.CACHE_DEFECTIVE_DETAILS = defectiveExportCsvUrl_(DEFECTIVE_DETAILS_GID);
+    } catch (e) {
+        console.warn('[Hub versions] Defective:', e.message);
+    }
+
+    try {
+        const latest = await querySupabase(
+            POWER_MAP_TABLE + '?select=updated_at&order=updated_at.desc&limit=1'
+        );
+        const row = Array.isArray(latest) && latest[0] ? latest[0] : latest;
+        const pmVer = String((row && row.updated_at) || '').trim();
+        if (pmVer) versions.CACHE_POWER_MAP = pmVer;
+        csvUrls.CACHE_POWER_MAP = POWER_MAP_SHEET_CSV_URL;
+    } catch (e) {
+        console.warn('[Hub versions] Power Map:', e.message);
+    }
+
+    res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
+    return res.json({ status: 'success', versions, csvUrls });
 });
 
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {

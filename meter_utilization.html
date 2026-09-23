@@ -1279,6 +1279,52 @@
   let replacementLookup = {}; // meter -> { conId }
   let smartOnly = false;
   let excludeSmart = false;
+  const METER_PARSED_KEY = 'CACHE_METER_PARSED_v1';
+  const METER_RAW_KEYS = ['CACHE_METER_ERP', 'CACHE_METER_MASTER', 'CACHE_METER_CRM', 'CACHE_METER_ISU'];
+
+  function meterBundleVersion() {
+    return METER_RAW_KEYS.map((k) => {
+      try { return localStorage.getItem('mzo_hub_ver_' + k) || ''; } catch (e) { return ''; }
+    }).join('|');
+  }
+
+  async function saveMeterParsed() {
+    if (!window.mzoDataHub || typeof mzoDataHub.set !== 'function') return;
+    try {
+      await mzoDataHub.set(METER_PARSED_KEY, {
+        allERP,
+        masterLookup,
+        replacementLookup,
+        erpDateText: (document.getElementById('erpDateText') || {}).textContent || '',
+        repDateText: (document.getElementById('repDateText') || {}).textContent || '',
+        nscDateText: (document.getElementById('nscDateText') || {}).textContent || ''
+      });
+      localStorage.setItem('mzo_hub_ver_' + METER_PARSED_KEY, meterBundleVersion());
+    } catch (e) {}
+  }
+
+  function applyMeterParsed(parsed) {
+    allERP = parsed.allERP || [];
+    masterLookup = parsed.masterLookup || {};
+    replacementLookup = parsed.replacementLookup || {};
+    masterSet = new Set(Object.keys(masterLookup));
+    replacementSet = new Set(Object.keys(replacementLookup));
+    const erpEl = document.getElementById('erpDateText');
+    const repEl = document.getElementById('repDateText');
+    const nscEl = document.getElementById('nscDateText');
+    if (erpEl && parsed.erpDateText) erpEl.textContent = parsed.erpDateText;
+    if (repEl && parsed.repDateText) repEl.textContent = parsed.repDateText;
+    if (nscEl && parsed.nscDateText) nscEl.textContent = parsed.nscDateText;
+  }
+
+  function revalidateMeterInBackground() {
+    if (!window.mzoDataHub || typeof mzoDataHub.waitForDataset !== 'function') return;
+    Promise.all(METER_RAW_KEYS.map((k) => mzoDataHub.waitForDataset(k))).then((results) => {
+      if (results.some((r) => r === 'updated')) {
+        try { window.location.reload(); } catch (e) {}
+      }
+    }).catch(() => {});
+  }
 
   async function init() {
     try {
@@ -1287,20 +1333,39 @@
       populateFilters();
 
       let erpData, masterData, crmData, isuData;
+      let paintedFromParsed = false;
 
       if (window.mzoDataHub) {
-        await Promise.all([
-          mzoDataHub.waitForDataset('CACHE_METER_ERP'),
-          mzoDataHub.waitForDataset('CACHE_METER_MASTER'),
-          mzoDataHub.waitForDataset('CACHE_METER_CRM'),
-          mzoDataHub.waitForDataset('CACHE_METER_ISU')
-        ]);
-        [erpData, masterData, crmData, isuData] = await Promise.all([
-          mzoDataHub.get('CACHE_METER_ERP'),
-          mzoDataHub.get('CACHE_METER_MASTER'),
-          mzoDataHub.get('CACHE_METER_CRM'),
-          mzoDataHub.get('CACHE_METER_ISU')
-        ]);
+        const bundle = meterBundleVersion();
+        let parsedVer = '';
+        try { parsedVer = localStorage.getItem('mzo_hub_ver_' + METER_PARSED_KEY) || ''; } catch (_) {}
+        if (bundle && parsedVer === bundle) {
+          const parsed = await mzoDataHub._peek(METER_PARSED_KEY);
+          if (parsed && Array.isArray(parsed.allERP) && parsed.allERP.length) {
+            applyMeterParsed(parsed);
+            paintedFromParsed = true;
+          }
+        }
+        if (!paintedFromParsed) {
+          const peeked = await Promise.all(METER_RAW_KEYS.map((k) => mzoDataHub._peek(k)));
+          if (peeked[0]) {
+            [erpData, masterData, crmData, isuData] = peeked;
+          } else {
+            await Promise.all(METER_RAW_KEYS.map((k) => mzoDataHub.waitForDataset(k)));
+            [erpData, masterData, crmData, isuData] = await Promise.all(METER_RAW_KEYS.map((k) => mzoDataHub._peek(k)));
+          }
+        }
+      }
+      if (paintedFromParsed) {
+        applyLoginScopeToFilters();
+        try {
+          const syncDate = localStorage.getItem('mzo_last_sync_date');
+          document.getElementById('syncText').textContent = syncDate ? `Sync Date: ${syncDate}` : 'Malda Zone Real-time';
+        } catch (_) {}
+        updateUI();
+        showLoading(false);
+        revalidateMeterInBackground();
+        return;
       }
       if (!erpData) {
         const results = await Promise.all([
@@ -1334,8 +1399,9 @@
       }
 
       updateUI();
-      
+      await saveMeterParsed();
       showLoading(false);
+      revalidateMeterInBackground();
     } catch (err) {
       console.error(err);
       alert("Error loading data. Check connection.");

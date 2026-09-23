@@ -975,7 +975,18 @@
             try {
                 let csvText = null;
                 if (typeof window.mzoDataHub !== 'undefined') {
-                    csvText = await window.mzoDataHub.get('CACHE_DISCONNECTION');
+                    csvText = await window.mzoDataHub._peek('CACHE_DISCONNECTION');
+                    if (!csvText) {
+                        await window.mzoDataHub.waitForDataset('CACHE_DISCONNECTION');
+                        csvText = await window.mzoDataHub._peek('CACHE_DISCONNECTION');
+                    } else {
+                        window.mzoDataHub.waitForDataset('CACHE_DISCONNECTION').then(async function (result) {
+                            if (result === 'updated') {
+                                const fresh = await window.mzoDataHub._peek('CACHE_DISCONNECTION');
+                                if (fresh) parseCSV(fresh);
+                            }
+                        }).catch(function () {});
+                    }
                 }
 
                 if (!csvText) {
@@ -1004,8 +1015,8 @@
             showLoader("Downloading latest updates from Google Sheets...");
             try {
                 if (typeof window.mzoDataHub !== 'undefined') {
-                    await window.mzoDataHub.retryDataset('CACHE_DISCONNECTION');
-                    const csvText = await window.mzoDataHub.get('CACHE_DISCONNECTION');
+                    await window.mzoDataHub.refresh('CACHE_DISCONNECTION');
+                    const csvText = await window.mzoDataHub._peek('CACHE_DISCONNECTION');
                     if (csvText) {
                         parseCSV(csvText);
                     }

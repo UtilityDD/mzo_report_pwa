@@ -672,8 +672,6 @@
                     await mzoDataHub.refresh(WITHHELD_CACHE_KEY);
                     localStorage.removeItem('mzo_withheld_pending_refresh');
                 } catch (_) {}
-            } else if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.retryDataset === 'function') {
-                try { await mzoDataHub.retryDataset(WITHHELD_CACHE_KEY); } catch (_) {}
             }
 
             let rawVersion = '';
@@ -688,9 +686,16 @@
                 } catch (_) {}
 
                 if (rawVersion && parsedVersion && rawVersion === parsedVersion) {
-                    const cachedParsed = await mzoDataHub.get(WITHHELD_PARSED_CACHE_KEY);
+                    const cachedParsed = await mzoDataHub._peek(WITHHELD_PARSED_CACHE_KEY);
                     if (cachedParsed && Array.isArray(cachedParsed) && cachedParsed.length > 0) {
                         console.log(`[Withheld] Fast loaded ${cachedParsed.length} pre-parsed rows from IndexedDB cache.`);
+                        if (typeof mzoDataHub.waitForDataset === 'function') {
+                            mzoDataHub.waitForDataset(WITHHELD_CACHE_KEY).then(function (result) {
+                                if (result === 'updated') {
+                                    try { window.location.reload(); } catch (_) {}
+                                }
+                            }).catch(function () {});
+                        }
                         return cachedParsed;
                     }
                 }
@@ -698,9 +703,14 @@
 
             let rows = [];
             if (typeof mzoDataHub !== 'undefined') {
-                let cached = await mzoDataHub.get(WITHHELD_CACHE_KEY);
+                let cached = await mzoDataHub._peek(WITHHELD_CACHE_KEY);
+                if (!cached && typeof mzoDataHub.waitForDataset === 'function') {
+                    try { await mzoDataHub.waitForDataset(WITHHELD_CACHE_KEY); } catch (_) {}
+                    cached = await mzoDataHub._peek(WITHHELD_CACHE_KEY);
+                }
                 if (cached && typeof cached === 'string') {
-                    rows = parseWithheldCsv(cached);
+                    rows = parseWithheldCsv(cached).filter((r) => String((r && r.APPL_NO) || '').trim());
+                    const prevRows = rows.slice();
                     const nscToday = await todayFromNscHub();
                     const whToday = firstTodayRaw(rows);
                     if (nscToday && (!whToday || !sameAsOnDay(nscToday, whToday)) && typeof mzoDataHub.refresh === 'function') {
@@ -710,7 +720,11 @@
                             }
                             await mzoDataHub.refresh(WITHHELD_CACHE_KEY);
                             const fresh = await mzoDataHub.get(WITHHELD_CACHE_KEY);
-                            if (fresh && typeof fresh === 'string') rows = parseWithheldCsv(fresh);
+                            const freshRows = (fresh && typeof fresh === 'string')
+                                ? parseWithheldCsv(fresh).filter((r) => String((r && r.APPL_NO) || '').trim())
+                                : [];
+                            if (freshRows.length) rows = freshRows;
+                            else if (prevRows.length) rows = prevRows;
                         } catch (_) {}
                     }
                     console.log('Successfully fetched Withheld data from DataHub.');
@@ -749,7 +763,7 @@
                 if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.set === 'function') {
                     try { await mzoDataHub.set(WITHHELD_CACHE_KEY, csvText); } catch (_) {}
                 }
-                rows = parseWithheldCsv(csvText);
+                rows = parseWithheldCsv(csvText).filter((r) => String((r && r.APPL_NO) || '').trim());
             }
 
             if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.set === 'function' && rows && rows.length > 0) {

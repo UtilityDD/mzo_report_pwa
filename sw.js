@@ -30,7 +30,9 @@
 // v106: stock upload guidance for authorised users
 // v108: NSC upload retries, slimmer Withheld sheet, manual CSV fallback
 // v109: stock signed upload path includes /storage/v1; home Uploads sheet list
-const CACHE_NAME = 'mzo-reports-cache-v109';
+// v110: admin Sheet links Yes/No for the home-bar button
+// v111: versioned DataHub — download dumps only when remote version differs
+const CACHE_NAME = 'mzo-reports-cache-v114';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -115,6 +117,9 @@ function isNetworkFirstPath(pathname) {
     pathname === '/lib/defective_meter_pipeline.js' ||
     pathname === '/lib/sheet_mirror_client.js' ||
     pathname === '/stock/upload.html' ||
+    pathname === '/stock/script.js' ||
+    pathname === '/stock.html' ||
+    pathname === '/capex_all.html' ||
     pathname === '/mzo_data_hub.js' ||
     pathname === '/mzo_presets_hub.js' ||
     pathname === '/mzo_docket_briefing.js' ||
