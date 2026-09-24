@@ -42,8 +42,8 @@
 // v123: admin lives in the Administration group, not the home-bar icon
 // v124: disconnection page has a Follow-ups tab
 // v125: KPI cards show a share of the total; Recent opens consumer follow-ups
-// v133: phone header shows DOM and IND/COM dates
-const CACHE_NAME = 'mzo-reports-cache-v133';
+// v144: Pending NSC uses one flat analysis table and clearer KPI cards
+const CACHE_NAME = 'mzo-reports-cache-v144';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
