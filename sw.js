@@ -43,7 +43,8 @@
 // v124: disconnection page has a Follow-ups tab
 // v125: KPI cards show a share of the total; Recent opens consumer follow-ups
 // v145: Pending NSC follow-ups stay with the application number
-const CACHE_NAME = 'mzo-reports-cache-v145';
+// v146: only an admin can delete a follow-up
+const CACHE_NAME = 'mzo-reports-cache-v146';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [

@@ -2354,15 +2354,24 @@
                 .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
         }
 
-        function currentFollowupUserName() {
+        function currentFollowupProfile() {
             try {
-                const profile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}') || {};
-                const name = String(profile.Name || profile.name || '').trim();
-                if (name) return name.slice(0, 80);
-                return String(profile.Username || profile.username || '').trim().slice(0, 80);
+                return JSON.parse(localStorage.getItem('mzo_user_profile') || '{}') || {};
             } catch (err) {
-                return '';
+                return {};
             }
+        }
+
+        function canDeleteFollowup() {
+            const profile = currentFollowupProfile();
+            return String(profile.role || profile.Role || '').trim().toLowerCase() === 'admin';
+        }
+
+        function currentFollowupUserName() {
+            const profile = currentFollowupProfile();
+            const name = String(profile.Name || profile.name || '').trim();
+            if (name) return name.slice(0, 80);
+            return String(profile.Username || profile.username || '').trim().slice(0, 80);
         }
 
         function followupQuietLine(entry) {
@@ -2407,6 +2416,7 @@
         }
 
         function deleteFollowup(id, entryId) {
+            if (!canDeleteFollowup()) return;
             const key = followupConsumerKey(id);
             if (!key || !entryId) return;
             const store = readFollowupStore();
@@ -2434,9 +2444,9 @@
                             <div class="followup-note">${escapeHtml(entry.note)}</div>
                             <div class="followup-quiet">${escapeHtml(followupQuietLine(entry))}</div>
                         </div>
-                        <button type="button" class="followup-delete" data-followup-delete="${escapeHtml(entry.id)}" aria-label="Delete follow-up">
+                        ${canDeleteFollowup() ? `<button type="button" class="followup-delete" data-followup-delete="${escapeHtml(entry.id)}" aria-label="Delete follow-up">
                             <i class="bi bi-trash"></i>
-                        </button>
+                        </button>` : ''}
                     </div>
                 </div>
             `).join('')}</div>`;
@@ -2471,7 +2481,7 @@
                     return;
                 }
                 const del = e.target.closest('[data-followup-delete]');
-                if (!del) return;
+                if (!del || !canDeleteFollowup()) return;
                 e.preventDefault();
                 removeOpenFollowup(del.getAttribute('data-followup-delete'));
             }
@@ -2722,6 +2732,9 @@
         function flushFollowupOutbox() {
             if (followupFlushing || !followupScriptUrl) return Promise.resolve();
             followupFlushing = true;
+            if (!canDeleteFollowup()) {
+                writeFollowupOutbox(readFollowupOutbox().filter((job) => job && job.op !== 'delete'));
+            }
             const queue = readFollowupOutbox();
             let index = 0;
             const step = () => {
@@ -2909,7 +2922,7 @@
         }
 
         function removeOpenFollowup(entryId) {
-            if (!modalConsumer || !entryId) return;
+            if (!canDeleteFollowup() || !modalConsumer || !entryId) return;
             if (!window.confirm('Remove this follow-up?')) return;
             const draftEl = document.getElementById('followupNote');
             const draft = draftEl ? draftEl.value : '';

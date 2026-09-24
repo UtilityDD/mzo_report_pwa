@@ -4702,13 +4702,18 @@
         });
         return ids;
       }
+      function profile() {
+        try { return JSON.parse(localStorage.getItem('mzo_user_profile') || '{}') || {}; } catch (err) { return {}; }
+      }
+      function canDelete() {
+        const p = profile();
+        return String(p.role || p.Role || '').trim().toLowerCase() === 'admin';
+      }
       function userName() {
-        try {
-          const profile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}') || {};
-          const name = String(profile.Name || profile.name || '').trim();
-          if (name) return name.slice(0, 80);
-          return String(profile.Username || profile.username || '').trim().slice(0, 80);
-        } catch (err) { return ''; }
+        const p = profile();
+        const name = String(p.Name || p.name || '').trim();
+        if (name) return name.slice(0, 80);
+        return String(p.Username || p.username || '').trim().slice(0, 80);
       }
       function newId() {
         if (window.crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
@@ -4736,7 +4741,7 @@
         return '<div class="nsc-fu-series">' + items.map((entry) => (
           '<div class="nsc-fu-item"><div class="d-flex justify-content-between align-items-start gap-2">' +
           '<div><div class="nsc-fu-note">' + esc(entry.note) + '</div><div class="nsc-fu-quiet">' + esc(quietLine(entry)) + '</div></div>' +
-          '<button type="button" class="nsc-fu-del" data-nsc-fu-del="' + esc(entry.id) + '" aria-label="Delete follow-up"><i class="fas fa-trash"></i></button>' +
+          (canDelete() ? '<button type="button" class="nsc-fu-del" data-nsc-fu-del="' + esc(entry.id) + '" aria-label="Delete follow-up"><i class="fas fa-trash"></i></button>' : '') +
           '</div></div>'
         )).join('') + '</div>';
       }
@@ -4771,6 +4776,7 @@
         return true;
       }
       function deleteNote(appl, entryId) {
+        if (!canDelete()) return;
         const key = applKey(appl);
         if (!key || !entryId) return;
         const store = readStore();
@@ -4901,7 +4907,7 @@
           return;
         }
         const del = e.target.closest('[data-nsc-fu-del]');
-        if (!del) return;
+        if (!del || !canDelete()) return;
         e.preventDefault();
         if (!window.confirm('Remove this follow-up?')) return;
         deleteNote(currentAppl(), del.getAttribute('data-nsc-fu-del'));
@@ -4974,6 +4980,7 @@
       }
       function flushOutbox() {
         if (!scriptUrl) return;
+        if (!canDelete()) writeOutbox(readOutbox().filter((job) => job && job.op !== 'delete'));
         const job = readOutbox()[0];
         if (!job) return;
         postJob(job).then(() => { if (readOutbox().length) flushOutbox(); });
