@@ -38,7 +38,12 @@
 // v119: NSC page uses presentation zoom (ignore side panels)
 // v120: disconnection follow-up stores the signed-in user's name with the time
 // v121: NSC counts each APPL_NO once (duplicate consumers in a division)
-const CACHE_NAME = 'mzo-reports-cache-v121';
+// v122: disconnection follow-ups save instantly and refresh comments from the sheet
+// v123: admin lives in the Administration group, not the home-bar icon
+// v124: disconnection page has a Follow-ups tab
+// v125: KPI cards show a share of the total; Recent opens consumer follow-ups
+// v133: phone header shows DOM and IND/COM dates
+const CACHE_NAME = 'mzo-reports-cache-v133';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [

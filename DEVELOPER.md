@@ -29,7 +29,7 @@ Unauthenticated HTML requests redirect to `/login.html`. Use a real portal user 
 |------|------|
 | `server.js` | Auth cookie, `/api/*`, static hosting |
 | `login.html` / `index.html` | Login + home hub |
-| `admin_users.html` | Portal users (Supabase `portal_users`), activity, and a compact report data-source list. Each user row shows last use within 15 days (`GET /api/admin/logs?days=15`). The user form has **Sheet links** Yes/No for the home-bar table button. |
+| `admin_users.html` | Admin panel for portal users, sources, activity, visitors, Power Map, and corrections. Open a section with `?tab=users|sources|activity|visitors|powermap|corrections`. Each user row shows last use within 15 days (`GET /api/admin/logs?days=15`). The user form has **Sheet links** Yes/No for the home-bar table button. Structure editing stays on `admin.html`. |
 | `auth.js` | Client session check + logout |
 | `mzo_scope.js` | Login office scope (`window.MzoScope`) |
 | `mzo_data_hub.js` | Dataset registry + IndexedDB (`window.mzoDataHub`) |
@@ -110,7 +110,7 @@ Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large d
 
 ## Service worker
 
-`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v121` (`version.json` **1.37**). **Increment both** whenever HTML/CSS/JS that users already cached must update. `version.json` `message` is the “App updated” banner. `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`. Do not intercept `*.supabase.co` in `sw.js` (same as Google Sheet CSVs). Network-first already includes `/index.html`, `/admin_users.html`, `/stock/upload.html`, `/mzo_data_hub.js`, `/mzo_present.js`, and `/version.json`.
+`CACHE_NAME` in `sw.js` is currently `mzo-reports-cache-v133` (`version.json` **1.49**). **Increment both** whenever HTML/CSS/JS that users already cached must update. `version.json` `message` is the “App updated” banner. `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`. Do not intercept `*.supabase.co` in `sw.js` (same as Google Sheet CSVs). Network-first already includes `/index.html`, `/admin_users.html`, `/stock/upload.html`, `/mzo_data_hub.js`, `/mzo_present.js`, and `/version.json`.
 
 **Presentation zoom:** the service worker inserts `/mzo_present.js` into HTML responses (right after `<head>`). `index.html` already includes that script, so the worker must not insert a second copy. Skip login, offline, `/power_map/`, `/sld/`, and `/accident/map.html`. Cache the original HTML, and inject only on the response sent to the page. If the page already has a full-window scroller (the home hub `.page`, nearly the whole viewport and not a side panel or dialog), zoom the content inside it so `html` does not grow a second scrollbar. Other reports, including NSC, zoom the page itself. A report open in the home iframe zooms inside that frame only.
 
@@ -174,11 +174,11 @@ There is no webpack/vite build. Local run is `npm run dev`. Production is **only
 
 - Prefer existing page look (Outfit/Inter, cards, KPI grids). Do not introduce a new CSS framework on one page.
 - Sticky chrome must stay thin on mobile; overlays must not grow the sticky box (`position: absolute` / `fixed`, not in-flow).
-- Clicking a status KPI (e.g. Disconnection Tracker Fully Paid / Disconnected) must filter **charts and table only**. Other KPI totals stay on the broader filter set (office, class, search, breadcrumb) and must not shrink each other.
+- Clicking a status KPI (e.g. Disconnection Tracker Fully paid / Disconnected) must filter **charts and table only**. Other KPI totals stay on the broader filter set (office, class, search, breadcrumb) and must not shrink each other. Each status card shows the count with its percent of the total on the same line (`5,182 · 26%`), and the amount on the line below (paid for fully and partly paid, outstanding for disconnected and no action). **Follow-ups** is consumers with a follow-up in the last 7 days, shown the same way (`1 · <0.1%`). It opens the Follow-ups tab and does not filter the other KPIs. A follow-up card shows the consumer only. It opens a follow-up modal with that consumer’s notes, latest first. Each note shows the author and the date in small secondary text.
 - `home-button.js` injects a floating Home control — do not duplicate a second home bar in the header.
 - **Presentation zoom** (`mzo_present.js`): desktop only (width ≥ 900px), fixed bottom-right. Steps are 100 / 125 / 150 / 175, stored in `localStorage` key `mzo_present_zoom`. `+` / `-` step the size and `0` resets, when focus is not in a field. Do not add a second zoom control on report pages. Zoom stays inside the page’s existing scroller so the window does not gain a second vertical scrollbar. Power Map, SLD, and the accident map keep their own pan/zoom. Phones stay at 100% and the control stays hidden.
 - When a dashboard mixes **counts-only** KPIs and **named-row** KPIs, split them into two labeled bands (Count vs Names). Use one card style. Count-only rows must not open a names modal. Defective Meter is the reference.
-- Home hub (`index.html`): **Often used** (`#favoritesCard`, class `always-open`) sits above New Service Connection and stays expanded on mobile. Each page tile has a star (`.fav-btn`); pins are stored per login in `localStorage` key `mzo_page_favorites_<Username>`. Do not collapse `always-open` groups in `initCollapsibleCards`. The header **Sheet links** button (`#uploadListBtn`, table icon) is the only sheet-list entry. Do not put a sheet icon on each report tile. Authorization is Admin → **Sheet links**, not NSC upload or other report grants. See **Sheet links** under Auth.
+- Home hub (`index.html`): **Often used** (`#favoritesCard`, class `always-open`) sits above New Service Connection and stays expanded on mobile. Each page tile has a star (`.fav-btn`); pins are stored per login in `localStorage` key `mzo_page_favorites_<Username>`. Do not collapse `always-open` groups in `initCollapsibleCards`. There is no admin icon in the home bar. Admins open **Administration** on the home hub: Users, Sources, Activity, Visitors, Power Map, and Corrections (`admin_users.html?tab=`) plus Structure (`admin.html`). The header **Sheet links** button (`#uploadListBtn`, table icon) is the only sheet-list entry. Do not put a sheet icon on each report tile. Authorization is Admin → **Sheet links**, not NSC upload or other report grants. See **Sheet links** under Auth.
 
 ---
 
@@ -200,7 +200,11 @@ Page: `bharatnet.html` (home hub New Service Connection, `data-dataset="CACHE_BH
 
 ## Disconnection tracker
 
-Page: `disconnection.html` (DataHub `CACHE_DISCONNECTION`). The consumer modal follow-up timeline is **device-local only** (`localStorage` key `mzo_discon_followups`). Each note is stored under the trimmed consumer number (`CON_ID` / `c.id`). Replacing the sheet reconnects those notes to the new row with the same number. Notes are not written to the sheet, DataHub, or the server, and another browser or phone does not see them. A row with no consumer number (synthetic id) cannot save a follow-up. Add and delete only; the list is newest first. Each note also stores the signed-in user's **Name** (`mzo_user_profile.Name`, or Username if Name is blank) with the time it was saved. Older notes that have no name still show the time only.
+Page: `disconnection.html` (DataHub `CACHE_DISCONNECTION`). On a phone the sticky bar keeps the title and a quiet DOM and IND/COM date line. Search and office filters open from the sliders button. Follow-ups live in the consumer modal and on the **Follow-ups** tab, newest first, matched on the trimmed consumer number (`CON_ID` / `c.id`). Each note stores the signed-in user's **Name** (`mzo_user_profile.Name`, or Username if Name is blank) and the save time. Replacing the consumer dump does not clear them.
+
+Save paints the line immediately into `localStorage` (`mzo_discon_followups`) and queues the sheet write (`mzo_discon_followup_outbox`). The Apps Script call does not block the modal. A slow or failed write retries in the background. A row with no consumer number cannot save a follow-up.
+
+Shared copy is a **Followups** tab via `lib/disconnection_followup.gs` (append and soft-delete, not a republish of the consumer dump). `GET /api/disconnection/meta` returns `sheetScriptUrl` from `DISCONNECTION_FOLLOWUP_SCRIPT_URL` (the Followups web app; env overrides the default `/exec` URL). The open page pulls the comment list about every 15 seconds, when the tab becomes visible, and when a consumer modal opens. That pull refreshes the follow-up list only. It does not reload the disconnection CSV. Do not proxy the comment sheet through Vercel.
 
 ## Defective Meter
 
