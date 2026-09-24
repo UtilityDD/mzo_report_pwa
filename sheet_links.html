@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sheet links</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" />
+  <style>
+    :root { color-scheme: light; --bg: #f4f6fb; --card: #fff; --text: #0f172a; --muted: #64748b; --line: #e2e8f0; --link: #1d4ed8; }
+    body.dark-theme { color-scheme: dark; --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --muted: #94a3b8; --line: #334155; --link: #93c5fd; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body { font-family: Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    .bar { display: flex; align-items: center; height: 44px; padding: 0 12px; background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+    input { width: 100%; border: 1px solid var(--line); background: var(--bg); color: inherit; border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; }
+    .wrap { padding: 0 0 24px; }
+    table { width: 100%; border-collapse: collapse; background: var(--card); font-size: 13px; }
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    th { font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); position: sticky; top: 44px; background: var(--card); }
+    td.n, th.n { width: 3rem; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+    td.when, th.when { width: 8.5rem; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
+    td.act, th.act { width: 2.6rem; text-align: center; }
+    a.name { color: var(--link); text-decoration: none; font-weight: 600; }
+    a.name:hover { text-decoration: underline; }
+    button.copy { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 4px; }
+    button.copy.done, button.copy:hover { color: #188038; }
+    .empty { padding: 24px; color: var(--muted); text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <input id="q" type="search" placeholder="Find a sheet…" aria-label="Find a sheet" />
+  </div>
+  <div class="wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="n">#</th>
+          <th>Sheet</th>
+          <th class="when">Updated</th>
+          <th class="act"></th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="empty" id="empty" hidden>No matching sheet.</div>
+  </div>
+  <script src="mzo_data_hub.js"></script>
+  <script>
+    if (localStorage.getItem('theme') === 'light') document.body.classList.remove('dark-theme');
+    else document.body.classList.add('dark-theme');
+
+    function allowed() {
+      let profile = {};
+      try { profile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}') || {}; } catch (e) { profile = {}; }
+      if (!profile.Username && !profile.username) return false;
+      if (String(profile.role || '').toLowerCase() === 'admin') return true;
+      const flag = String(profile['sheets-autho'] != null ? profile['sheets-autho'] : (profile.sheets_autho || '')).trim().toLowerCase();
+      return flag === 'list' || flag === 'edit' || flag === 'y' || flag === 'all';
+    }
+    if (!allowed()) location.replace('/index.html');
+
+    function sheetOpenUrl(raw) {
+      const url = String(raw || '');
+      if (url.indexOf('docs.google.com/spreadsheets') === -1) return '';
+      try {
+        const parsed = new URL(url);
+        const gid = parsed.searchParams.get('gid');
+        const published = parsed.pathname.indexOf('/spreadsheets/d/e/') !== -1;
+        const match = parsed.pathname.match(/\/spreadsheets\/d\/(?:e\/)?([^/]+)/);
+        if (!match) return '';
+        if (published) return 'https://docs.google.com/spreadsheets/d/e/' + match[1] + '/pubhtml' + (gid ? '?gid=' + encodeURIComponent(gid) : '');
+        return 'https://docs.google.com/spreadsheets/d/' + match[1] + '/edit' + (gid ? '#gid=' + gid : '');
+      } catch (e) { return ''; }
+    }
+
+    function formatWhen(raw) {
+      const s = String(raw || '').trim();
+      if (!s) return '';
+      const pad = function (n) { return String(n).padStart(2, '0'); };
+      const asText = function (day, month, year) {
+        if (!day || !month || !year) return '';
+        const y = year < 100 ? 2000 + year : year;
+        return pad(day) + '/' + pad(month) + '/' + y;
+      };
+      const slash = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
+      if (slash && !/^\d{4}-/.test(s)) return asText(+slash[1], +slash[2], +slash[3]);
+      const d = new Date(s);
+      if (!Number.isNaN(d.getTime()) && (/[A-Za-z]/.test(s) || s.indexOf('T') !== -1 || /^\d{4}-/.test(s))) {
+        return asText(d.getDate(), d.getMonth() + 1, d.getFullYear());
+      }
+      return '';
+    }
+
+    function dateFromVersion(ver) {
+      const s = String(ver || '').trim();
+      if (!s) return '';
+      const modified = s.match(/^m:([^|]+)/);
+      if (modified) return formatWhen(modified[1]);
+      const iso = s.match(/\d{4}-\d{2}-\d{2}T[0-9:.]+Z?/);
+      if (iso) return formatWhen(iso[0]);
+      const report = s.split('|').map(function (p) { return p.trim(); }).find(function (p) {
+        return /^\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}$/.test(p);
+      });
+      return formatWhen(report);
+    }
+
+    const datasets = Array.isArray(window.MZO_DATASETS) ? window.MZO_DATASETS : [];
+    const sheetFallback = {
+      CACHE_NSC_v5: 'https://docs.google.com/spreadsheets/d/1QnmPKSAtwmW-m1-gn4qmZBWanx9_Vwbk63XhwyQBiKU/edit',
+      CACHE_WITHHELD_v4: 'https://docs.google.com/spreadsheets/d/12nS8GAQ1weIMWoEIeydcdKTKd-XwHNu9W07DKudGuOg/edit'
+    };
+    const extras = [
+      { name: 'Consumers', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQT4ufTMHJGTUqNSqFSzz0q2x-ShM_WHlfSRxT4tVqA6GcaMK5g38PDLmcJR4JXuxLi-tKafW-Yxwdo/pub?gid=0&single=true&output=csv' },
+      { name: 'Smart Meter', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSWjwUI4EUgEABlcggpdOS-WSPKY8my-5T0cLxT4h8tNz_IreQy6jUYKBnB5yc0n-fcs8FpVbwo6Qay/pub?gid=327926255&single=true&output=tsv' },
+      { name: 'Upcoming DD', url: 'https://docs.google.com/spreadsheets/d/1aUeVnSc-OmFqqrUdoZxv8v8659u52zlIWddnpJgU9Uk/gviz/tq?tqx=out:csv&gid=487034861' },
+      { name: 'DD Summary', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRawhIW9ICZmzuThsL5opfI40WY6upCg5kFzoFXi2UJPR-svO6_cByXy5Y3u_p-2La_tH8SxhFfl29B/pub?gid=220026293&single=true&output=csv' },
+      { name: 'Accident Reports', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRrrGeyElvh8i8QzTl25Ej7_RJZ9FJ0jicG3tAhguLEvky178oKZ8-QADKcBceUQ5CFjn7hd9eECVJ6/pub?output=csv' },
+      { name: 'Manpower', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRRXojudL5q-ln7pXOcbLaGsBqznppnvsINcp8xEFvpJUWRCiC7bjii9eZYSu0istzyM91m4yybd5g-/pub?gid=2110628491&single=true&output=csv' },
+      { name: 'DTR Records', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=2125422147&single=true&output=csv' },
+      { name: 'Peak Load', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=1835924766&single=true&output=csv' },
+      { name: 'Substation Upkeeping', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSHoWw-c-KCfsYrkQs67uWaKdag1WXVQobLkngEK-bvbky_LMF6RWg-BwgVYA-5f3RcR4u6rQA5XWhH/pub?gid=422662764&single=true&output=csv' },
+      { name: 'PRT / Transformer', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRtpueyQwlq63VP2Tm2_vITV31jKBSceDGJQVJtYeqVVDBSg3QAHzLKrv60i6Z9oODXXzOE-fdfMb8b/pub?gid=0&single=true&output=csv' },
+      { name: 'Highway Crossings', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQTy_LCddlFuzZx9ZyJQTLbqrQ8sb76DG4jyw8ys-s_w6LDxOYhnTTY49eddhqxb9RnTAbksh32y1bH/pub?gid=870376934&single=true&output=csv' },
+      { name: 'O&M Advance', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQPBYq0ZQpaAnu0Mp_qN5oGvklgIpjolyRPf3LfSojRaN-GBBBXKHslR9ue1DOv1432oP2PzYznUUmn/pub?gid=512034300&single=true&output=csv' }
+    ];
+
+    const skipSheet = {
+      CACHE_VENDORS: 1,
+      CACHE_PMSGY_0: 1,
+      CACHE_PMSGY_1: 1,
+      CACHE_PMSGY_2: 1
+    };
+    const byName = new Set();
+    const rows = [];
+    datasets.forEach(function (d) {
+      const href = sheetOpenUrl(d.url) || sheetFallback[d.key] || '';
+      if (skipSheet[d.key] || !href || byName.has(d.label)) return;
+      byName.add(d.label);
+      rows.push({
+        key: d.key,
+        name: d.label,
+        href: href,
+        updated: dateFromVersion(localStorage.getItem('mzo_hub_ver_' + d.key) || '')
+      });
+    });
+    extras.forEach(function (item) {
+      const href = sheetOpenUrl(item.url);
+      if (!href || byName.has(item.name)) return;
+      byName.add(item.name);
+      rows.push({ key: '', name: item.name, href: href, updated: '' });
+    });
+    rows.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    rows.forEach(function (row, i) { row.n = i + 1; });
+
+    const body = document.getElementById('rows');
+    const empty = document.getElementById('empty');
+    const q = document.getElementById('q');
+
+    function paint() {
+      const query = (q.value || '').trim().toLowerCase();
+      body.textContent = '';
+      let shown = 0;
+      rows.forEach(function (row) {
+        if (query && row.name.toLowerCase().indexOf(query) === -1) return;
+        shown += 1;
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td class="n">' + row.n + '</td>' +
+          '<td><a class="name" target="_blank" rel="noopener"></a></td>' +
+          '<td class="when"></td>' +
+          '<td class="act"><button type="button" class="copy" title="Copy link"><i class="fas fa-copy" aria-hidden="true"></i></button></td>';
+        tr.querySelector('a').href = row.href;
+        tr.querySelector('a').textContent = row.name;
+        tr.querySelector('.when').textContent = row.updated || '—';
+        tr.querySelector('.copy').setAttribute('data-href', row.href);
+        tr.querySelector('.copy').setAttribute('aria-label', 'Copy sheet link for ' + row.name);
+        body.appendChild(tr);
+      });
+      empty.hidden = shown !== 0;
+    }
+
+    function setUpdated(key, text) {
+      if (!text) return;
+      const row = rows.find(function (r) { return r.key === key; });
+      if (!row || row.updated) return;
+      row.updated = text;
+      paint();
+    }
+
+    q.addEventListener('input', paint);
+    body.addEventListener('click', function (e) {
+      const btn = e.target.closest('.copy');
+      if (!btn) return;
+      e.preventDefault();
+      const href = btn.getAttribute('data-href') || '';
+      const mark = function () {
+        btn.classList.add('done');
+        setTimeout(function () { btn.classList.remove('done'); }, 1200);
+      };
+      const fallback = function () {
+        const area = document.createElement('textarea');
+        area.value = href;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.left = '-9999px';
+        document.body.appendChild(area);
+        area.select();
+        try { document.execCommand('copy'); } catch (err) {}
+        area.remove();
+        mark();
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        let settled = false;
+        navigator.clipboard.writeText(href).then(function () {
+          settled = true;
+          mark();
+        }).catch(function () {
+          settled = true;
+          fallback();
+        });
+        setTimeout(function () { if (!settled) fallback(); }, 400);
+      } else {
+        fallback();
+      }
+    });
+    paint();
+
+    function applyMeta(key, raw) {
+      setUpdated(key, formatWhen(raw));
+    }
+
+    fetch('/api/hub/versions', { credentials: 'same-origin' })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        const versions = (data && data.versions) || {};
+        Object.keys(versions).forEach(function (key) {
+          setUpdated(key, dateFromVersion(versions[key]));
+        });
+      })
+      .catch(function () {});
+
+    fetch('/api/nsc/meta', { credentials: 'same-origin' })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        const meta = (data && data.meta) || {};
+        const when = meta.uploadedAt || meta.reportDate || (meta.stats && meta.stats.today) || '';
+        applyMeta('CACHE_NSC_v5', when);
+        applyMeta('CACHE_WITHHELD_v4', when);
+      })
+      .catch(function () {});
+
+    fetch('/api/defective/meta', { credentials: 'same-origin' })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        const meta = (data && data.uploadMeta) || {};
+        const when = meta.uploadedAt || meta.reportAsOn || data.version || '';
+        applyMeta('CACHE_DEFECTIVE', when);
+        applyMeta('CACHE_DEFECTIVE_DETAILS', when);
+      })
+      .catch(function () {});
+
+    fetch('/api/stock/meta', { credentials: 'same-origin' })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        const meta = (data && data.meta) || {};
+        const when = meta.reportDate || (meta.stats && meta.stats.today) || '';
+        applyMeta('CACHE_STOCK_METADATA', when);
+      })
+      .catch(function () {});
+
+    function csvFields(line) {
+      const out = [];
+      let cur = '';
+      let q = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line.charAt(i);
+        if (q) {
+          if (ch === '"') {
+            if (line.charAt(i + 1) === '"') { cur += '"'; i++; }
+            else q = false;
+          } else cur += ch;
+        } else if (ch === '"') q = true;
+        else if (ch === ',') { out.push(cur); cur = ''; }
+        else cur += ch;
+      }
+      out.push(cur);
+      return out;
+    }
+
+    function disconnectionReportDate(csv) {
+      const text = String(csv || '');
+      if (!text) return '';
+      const lines = text.split(/\r?\n/);
+      let headerIdx = -1;
+      for (let i = 0; i < lines.length && i < 8; i++) {
+        if (/PAID\/DISCON DATE/i.test(lines[i])) { headerIdx = i; break; }
+      }
+      if (headerIdx < 0) return '';
+      const idx = csvFields(lines[headerIdx]).findIndex(function (h) {
+        return /PAID\/DISCON DATE/i.test(String(h || ''));
+      });
+      if (idx < 0) return '';
+      let best = 0;
+      let label = '';
+      for (let i = headerIdx + 1; i < lines.length; i++) {
+        if (!lines[i]) continue;
+        const raw = String(csvFields(lines[i])[idx] || '').trim();
+        const m = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+        if (!m) continue;
+        const day = parseInt(m[1], 10);
+        const month = parseInt(m[2], 10);
+        const year = parseInt(m[3], 10);
+        const t = Date.UTC(year, month - 1, day);
+        if (t > best) {
+          best = t;
+          label = String(day).padStart(2, '0') + '/' + String(month).padStart(2, '0') + '/' + year;
+        }
+      }
+      return label;
+    }
+
+    function showDisconnectionDate(csv) {
+      const label = disconnectionReportDate(csv);
+      if (label) setUpdated('CACHE_DISCONNECTION', label);
+    }
+
+    function docketHeaderDate(csv) {
+      const text = String(csv || '');
+      if (!text) return '';
+      const lines = text.split(/\r?\n/);
+      let headerIdx = -1;
+      for (let i = 0; i < lines.length && i < 8; i++) {
+        if (/(^|,)doc_crn_dt(,|$)/i.test(lines[i])) { headerIdx = i; break; }
+      }
+      if (headerIdx < 0) return '';
+      const idx = csvFields(lines[headerIdx]).findIndex(function (h) {
+        return /^doc_crn_dt$/i.test(String(h || '').trim());
+      });
+      if (idx < 0) return '';
+      let best = 0;
+      let label = '';
+      for (let i = headerIdx + 1; i < lines.length; i++) {
+        if (!lines[i]) continue;
+        const raw = String(csvFields(lines[i])[idx] || '').trim();
+        const m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2})[:.](\d{1,2})[:.](\d{1,2}))?$/);
+        if (!m) continue;
+        const day = parseInt(m[1], 10);
+        const month = parseInt(m[2], 10);
+        const year = parseInt(m[3], 10);
+        const hh = parseInt(m[4] || '0', 10);
+        const mm = parseInt(m[5] || '0', 10);
+        const ss = parseInt(m[6] || '0', 10);
+        const t = Date.UTC(year, month - 1, day, hh, mm, ss);
+        if (t > best) {
+          best = t;
+          const pad = function (n) { return String(n).padStart(2, '0'); };
+          label = pad(day) + '/' + pad(month) + '/' + year;
+        }
+      }
+      return label;
+    }
+
+    function csvBody(cached) {
+      if (!cached) return '';
+      if (typeof cached === 'string') return cached;
+      return cached.body || cached.text || cached.csv || '';
+    }
+
+    function loadSheetCsv(key) {
+      const hub = window.mzoDataHub;
+      const item = datasets.find(function (d) { return d.key === key; });
+      const peeked = hub && hub._peek ? hub._peek(key) : Promise.resolve('');
+      return Promise.resolve(peeked).then(function (cached) {
+        const body = csvBody(cached);
+        if (body) return body;
+        if (!item || !item.url) return '';
+        return fetch(item.url).then(function (res) { return res.ok ? res.text() : ''; });
+      });
+    }
+
+    loadSheetCsv('CACHE_DISCONNECTION').then(showDisconnectionDate).catch(function () {});
+    loadSheetCsv('CACHE_DOCKET').then(function (csv) {
+      const label = docketHeaderDate(csv);
+      if (label) setUpdated('CACHE_DOCKET', label);
+    }).catch(function () {});
+
+    function csvRows(text) {
+      const rows = [];
+      let row = [];
+      let cur = '';
+      let q = false;
+      const src = String(text || '');
+      for (let i = 0; i < src.length; i++) {
+        const ch = src.charAt(i);
+        if (q) {
+          if (ch === '"') {
+            if (src.charAt(i + 1) === '"') { cur += '"'; i++; }
+            else q = false;
+          } else cur += ch;
+        } else if (ch === '"') q = true;
+        else if (ch === ',') { row.push(cur); cur = ''; }
+        else if (ch === '\n' || ch === '\r') {
+          if (ch === '\r' && src.charAt(i + 1) === '\n') i++;
+          row.push(cur);
+          cur = '';
+          if (row.some(function (cell) { return cell; })) rows.push(row);
+          row = [];
+        } else cur += ch;
+      }
+      if (cur || row.length) { row.push(cur); rows.push(row); }
+      return rows;
+    }
+
+    function cmoHeaderDate(csv) {
+      const rows = csvRows(csv);
+      if (!rows.length) return '';
+      const idx = rows[0].findIndex(function (h) {
+        return /^Report Date$/i.test(String(h || '').trim());
+      });
+      if (idx < 0) return '';
+      let maxRaw = '';
+      for (let i = 1; i < rows.length; i++) {
+        const raw = String((rows[i] && rows[i][idx]) || '').trim();
+        if (raw && raw > maxRaw) maxRaw = raw;
+      }
+      return formatWhen(maxRaw);
+    }
+
+    loadSheetCsv('CACHE_CMO').then(function (csv) {
+      const label = cmoHeaderDate(csv);
+      if (label) setUpdated('CACHE_CMO', label);
+    }).catch(function () {});
+
+    function collectionToDate(csv) {
+      const text = String(csv || '');
+      if (!text) return '';
+      let best = '';
+      text.split(/\r?\n/).forEach(function (line) {
+        const cell = String(line.split(',')[0] || '').replace(/"/g, '').trim();
+        if (/^\d{8}$/.test(cell) && cell > best) best = cell;
+      });
+      if (!best) return '';
+      return best.slice(6, 8) + '/' + best.slice(4, 6) + '/' + best.slice(0, 4);
+    }
+
+    loadSheetCsv('CACHE_COLLECTION').then(function (csv) {
+      const label = collectionToDate(csv);
+      if (label) setUpdated('CACHE_COLLECTION', label);
+    }).catch(function () {});
+  </script>
+</body>
+</html>

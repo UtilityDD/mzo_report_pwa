@@ -379,20 +379,36 @@
       height: calc(100vh - 88px - env(safe-area-inset-bottom, 0px)) !important;
       overflow: hidden !important;
     }
+    #detailPage #offlineDataNote.show + #iframeWrapper {
+      height: calc(100vh - 128px - env(safe-area-inset-bottom, 0px)) !important;
+    }
 
     /*──────────────────────────────────────
    Error banner - Dark Theme
 ──────────────────────────────────────*/
     .error-banner {
       display: none;
-      background: rgb(153 27 27 / 0.2);
-      color: #fca5a5;
-      padding: 12px 16px;
-      border-left: 4px solid var(--danger);
-      margin: 16px;
+      background: rgba(30, 41, 59, 0.92);
+      color: #cbd5e1;
+      padding: 8px 14px;
+      border-left: 3px solid #94a3b8;
+      margin: 10px 16px 0;
       border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.4;
       word-wrap: break-word;
     }
+    #offlineDataNote {
+      display: none;
+      flex: 0 0 auto;
+      background: rgba(30, 41, 59, 0.92);
+      color: #cbd5e1;
+      padding: 8px 14px;
+      font-size: 13px;
+      line-height: 1.4;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.35);
+    }
+    #offlineDataNote.show { display: block; }
 
     /*──────────────────────────────────────
    Content & cards - Modern Dark Theme
@@ -1544,18 +1560,20 @@
     }
 
     /* Mobile error banner */
-    body.dark-theme .error-banner {
-      background: rgb(153 27 27 / 0.2);
-      color: #fca5a5;
-      border-left-color: var(--danger);
-      margin: 12px 8px;
+    body.dark-theme .error-banner,
+    body.dark-theme #offlineDataNote {
+      background: rgba(30, 41, 59, 0.92);
+      color: #cbd5e1;
+      border-left-color: #94a3b8;
+      margin: 10px 8px 0;
       border-radius: 8px;
     }
 
-    body.light-theme .error-banner {
-      background: #fef2f2;
-      color: #dc2626;
-      border-left-color: #dc2626;
+    body.light-theme .error-banner,
+    body.light-theme #offlineDataNote {
+      background: #f8fafc;
+      color: #475569;
+      border-left-color: #94a3b8;
       margin: 12px 8px;
       border-radius: 8px;
     }
@@ -3334,8 +3352,7 @@
       <div class="page active" id="mainPage">
         <div class="app-container">
           <div class="error-banner" id="errorBanner">
-            <i class="fas fa-exclamation-triangle"></i>
-            Connectivity issue detected. Please check your internet connection.
+            You're offline. Saved reports are on this screen.
           </div>
           <div class="header">
             <!-- Mini Progress Bar -->
@@ -3894,6 +3911,7 @@
       </div>
 
 
+      <div id="offlineDataNote">You're offline. This page is showing saved data.</div>
       <div id="iframeWrapper" style="height: calc(100vh - var(--header-height) - 88px - env(safe-area-inset-bottom, 0px)); overflow: hidden; -webkit-overflow-scrolling: touch;">
         <div id="pullToRefresh"
           style="display: none; text-align: center; padding: 10px; color: var(--text-secondary); font-weight: 500; font-size: 14px;">
@@ -3930,17 +3948,6 @@
   </div>
 
   <div class="loading-overlay" id="loadingOverlay"></div>
-
-  <div id="uploadPanel" class="upload-overlay" hidden>
-    <div class="upload-panel" role="dialog" aria-label="Sheet links">
-      <header>
-        <span>Sheet links</span>
-        <button type="button" id="uploadPanelClose" aria-label="Close">×</button>
-      </header>
-      <input id="uploadPanelSearch" type="search" placeholder="Find a sheet…" />
-      <div class="upload-rows" id="uploadRows"></div>
-    </div>
-  </div>
 
   <!-- Sheets list modal (added) -->
   <div id="sheetsModal"
@@ -4392,15 +4399,19 @@
       iframe.src = page;
       let loadFailed = false;
 
+      const offlineNote = document.getElementById('offlineDataNote');
+      if (offlineNote) offlineNote.classList.toggle('show', !navigator.onLine);
+
       const timeout = setTimeout(() => {
+        if (!navigator.onLine) return;
         try {
           const doc = iframe.contentDocument || iframe.contentWindow.document;
           const body = (doc.body && doc.body.innerText || "").toLowerCase();
           if (!body.trim() || body.trim().length < 20) {
-            showIframeError("🛑 Unable to load page content. Network might be unstable.");
+            showIframeError("Unable to load this page. Check the connection, then try again.");
           }
         } catch (err) {
-          showIframeError("🛑 Network issue or unreachable content.");
+          showIframeError("This page did not open. Check the connection, then try again.");
         }
       }, 6000);
 
@@ -4487,6 +4498,7 @@
 
 
     function goBack() {
+      document.getElementById('offlineDataNote')?.classList.remove('show');
       document.getElementById("detailPage").classList.remove("active");
       document.getElementById("mainPage").classList.add("active");
       document.getElementById("subPageFrame").src = "";
@@ -4811,170 +4823,16 @@
 
       function initUploadPanel() {
         const openBtn = document.getElementById('uploadListBtn');
-        const panel = document.getElementById('uploadPanel');
-        const rowsEl = document.getElementById('uploadRows');
-        const searchEl = document.getElementById('uploadPanelSearch');
-        if (!openBtn || !panel || !rowsEl) return;
+        if (!openBtn) return;
         if (!canViewUploadList()) {
           openBtn.hidden = true;
           return;
         }
         openBtn.hidden = false;
-        const datasets = Array.isArray(window.MZO_DATASETS) ? window.MZO_DATASETS : [];
-        const sheetFallback = {
-          CACHE_NSC_v5: 'https://docs.google.com/spreadsheets/d/1QnmPKSAtwmW-m1-gn4qmZBWanx9_Vwbk63XhwyQBiKU/edit',
-          CACHE_WITHHELD_v4: 'https://docs.google.com/spreadsheets/d/12nS8GAQ1weIMWoEIeydcdKTKd-XwHNu9W07DKudGuOg/edit'
-        };
-
-        const extras = [
-          { name: 'Consumers', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQT4ufTMHJGTUqNSqFSzz0q2x-ShM_WHlfSRxT4tVqA6GcaMK5g38PDLmcJR4JXuxLi-tKafW-Yxwdo/pub?gid=0&single=true&output=csv' },
-          { name: 'Smart Meter', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSWjwUI4EUgEABlcggpdOS-WSPKY8my-5T0cLxT4h8tNz_IreQy6jUYKBnB5yc0n-fcs8FpVbwo6Qay/pub?gid=327926255&single=true&output=tsv' },
-          { name: 'Upcoming DD', url: 'https://docs.google.com/spreadsheets/d/1aUeVnSc-OmFqqrUdoZxv8v8659u52zlIWddnpJgU9Uk/gviz/tq?tqx=out:csv&gid=487034861' },
-          { name: 'DD Summary', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRawhIW9ICZmzuThsL5opfI40WY6upCg5kFzoFXi2UJPR-svO6_cByXy5Y3u_p-2La_tH8SxhFfl29B/pub?gid=220026293&single=true&output=csv' },
-          { name: 'Accident Reports', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRrrGeyElvh8i8QzTl25Ej7_RJZ9FJ0jicG3tAhguLEvky178oKZ8-QADKcBceUQ5CFjn7hd9eECVJ6/pub?output=csv' },
-          { name: 'Manpower', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRRXojudL5q-ln7pXOcbLaGsBqznppnvsINcp8xEFvpJUWRCiC7bjii9eZYSu0istzyM91m4yybd5g-/pub?gid=2110628491&single=true&output=csv' },
-          { name: 'DTR Records', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=2125422147&single=true&output=csv' },
-          { name: 'Peak Load', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=1835924766&single=true&output=csv' },
-          { name: 'Substation Upkeeping', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSHoWw-c-KCfsYrkQs67uWaKdag1WXVQobLkngEK-bvbky_LMF6RWg-BwgVYA-5f3RcR4u6rQA5XWhH/pub?gid=422662764&single=true&output=csv' },
-          { name: 'PRT / Transformer', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRtpueyQwlq63VP2Tm2_vITV31jKBSceDGJQVJtYeqVVDBSg3QAHzLKrv60i6Z9oODXXzOE-fdfMb8b/pub?gid=0&single=true&output=csv' },
-          { name: 'Highway Crossings', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQTy_LCddlFuzZx9ZyJQTLbqrQ8sb76DG4jyw8ys-s_w6LDxOYhnTTY49eddhqxb9RnTAbksh32y1bH/pub?gid=870376934&single=true&output=csv' },
-          { name: 'O&M Advance', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQPBYq0ZQpaAnu0Mp_qN5oGvklgIpjolyRPf3LfSojRaN-GBBBXKHslR9ue1DOv1432oP2PzYznUUmn/pub?gid=512034300&single=true&output=csv' }
-        ];
-
-        function hrefFor(key, raw, live) {
-          if (live && live[key]) return live[key];
-          const fromUrl = sheetOpenUrl(raw);
-          if (fromUrl) return fromUrl;
-          return sheetFallback[key] || '';
-        }
-
-        function collect(live) {
-          const rows = [];
-          const names = new Set();
-          datasets.forEach((d) => {
-            const href = hrefFor(d.key, d.url, live);
-            if (!href || names.has(d.label)) return;
-            names.add(d.label);
-            rows.push({ name: d.label, href });
-          });
-          extras.forEach((item) => {
-            const href = sheetOpenUrl(item.url);
-            if (!href || names.has(item.name)) return;
-            names.add(item.name);
-            rows.push({ name: item.name, href });
-          });
-          rows.sort((a, b) => a.name.localeCompare(b.name));
-          return rows;
-        }
-
-        let sheetRows = collect(null);
-
-        function renderList() {
-          const q = (searchEl && searchEl.value || '').trim().toLowerCase();
-          rowsEl.textContent = '';
-          sheetRows.forEach((row) => {
-            if (q && row.name.toLowerCase().indexOf(q) === -1) return;
-            const line = document.createElement('div');
-            line.className = 'upload-row';
-            const link = document.createElement('a');
-            link.className = 'upload-name';
-            link.href = row.href;
-            link.target = '_blank';
-            link.rel = 'noopener';
-            link.textContent = row.name;
-            const copy = document.createElement('button');
-            copy.type = 'button';
-            copy.className = 'upload-copy';
-            copy.title = 'Copy link for a signed-in browser';
-            copy.setAttribute('aria-label', 'Copy sheet link for ' + row.name);
-            copy.setAttribute('data-href', row.href);
-            copy.innerHTML = '<i class="fas fa-copy" aria-hidden="true"></i>';
-            line.appendChild(link);
-            line.appendChild(copy);
-            rowsEl.appendChild(line);
-          });
-        }
-
-        function openPanel() {
-          panel.hidden = false;
-          if (searchEl) searchEl.value = '';
-          renderList();
-          if (searchEl) searchEl.focus();
-        }
-
-        function closePanel() {
-          panel.hidden = true;
-        }
-
-        openBtn.addEventListener('click', openPanel);
-        document.getElementById('uploadPanelClose')?.addEventListener('click', closePanel);
-        panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(); });
-        document.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape' && !panel.hidden) closePanel();
+        openBtn.addEventListener('click', function () {
+          openPage('sheet_links.html', 'Sheet links');
         });
-        if (searchEl) searchEl.addEventListener('input', renderList);
-        rowsEl.addEventListener('click', function (e) {
-          const btn = e.target.closest('.upload-copy');
-          if (!btn) return;
-          e.preventDefault();
-          e.stopPropagation();
-          const href = btn.getAttribute('data-href') || '';
-          if (!href) return;
-          const mark = function () {
-            btn.classList.add('done');
-            btn.title = 'Copied';
-            window.setTimeout(function () {
-              btn.classList.remove('done');
-              btn.title = 'Copy link for a signed-in browser';
-            }, 1200);
-          };
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(href).then(mark).catch(function () {
-              const area = document.createElement('textarea');
-              area.value = href;
-              document.body.appendChild(area);
-              area.select();
-              try { document.execCommand('copy'); mark(); } catch (err) {}
-              area.remove();
-            });
-            return;
-          }
-          const area = document.createElement('textarea');
-          area.value = href;
-          document.body.appendChild(area);
-          area.select();
-          try { document.execCommand('copy'); mark(); } catch (err) {}
-          area.remove();
-        });
-        renderList();
-
-        const pending = datasets.filter((d) => d.versionUrl && d.csvUrlField && !sheetOpenUrl(d.url));
-        if (!pending.length) return;
-        const byVersion = {};
-        pending.forEach((d) => {
-          if (!byVersion[d.versionUrl]) byVersion[d.versionUrl] = [];
-          byVersion[d.versionUrl].push(d);
-        });
-        Promise.all(Object.keys(byVersion).map(async (versionUrl) => {
-          const live = {};
-          try {
-            const res = await fetch(versionUrl, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
-            if (!res.ok) return live;
-            const data = await res.json();
-            byVersion[versionUrl].forEach((d) => {
-              const link = sheetOpenUrl(data[d.csvUrlField]);
-              if (link) live[d.key] = link;
-            });
-          } catch (e) { /* leave tiles without a sheet button */ }
-          return live;
-        })).then((parts) => {
-          const live = {};
-          parts.forEach((part) => Object.assign(live, part || {}));
-          if (Object.keys(live).length) {
-            sheetRows = collect(live);
-            if (!panel.hidden) renderList();
-          }
-        });
+        return;
       }
 
       function initPageFavorites() {

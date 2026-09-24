@@ -49,7 +49,10 @@
 // v149: Pending NSC opens on the office hierarchy table
 // v150: the Pending NSC consumer list is tighter, and Class fits its text
 // v151: report frames clear the bottom back arrow
-const CACHE_NAME = 'mzo-reports-cache-v151';
+// v152: offline opens the saved page; the offline screen is only for a page never saved
+// v153: offline shows a quiet saved-data note, not an error over the page
+// v154: sheet links open as a full page with serial numbers and update dates
+const CACHE_NAME = 'mzo-reports-cache-v154';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -109,6 +112,28 @@ function safePut(cache, request, response) {
   });
 }
 
+function appShellKey(request) {
+  try {
+    const url = new URL(request.url);
+    if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return null;
+    return new Request(url.origin + url.pathname, { method: 'GET' });
+  } catch (_) {
+    return null;
+  }
+}
+
+function readAppCache(request) {
+  const key = appShellKey(request);
+  if (!key) return Promise.resolve(undefined);
+  return caches.open(CACHE_NAME).then((cache) => cache.match(key).then((hit) => hit || cache.match(request)));
+}
+
+function writeAppCache(request, response) {
+  const key = appShellKey(request);
+  if (!key || !response || response.status !== 200) return Promise.resolve();
+  return caches.open(CACHE_NAME).then((cache) => safePut(cache, key, response.clone()));
+}
+
 function isNetworkFirstPath(pathname) {
   return (
     pathname === '/nsc.html' ||
@@ -118,6 +143,7 @@ function isNetworkFirstPath(pathname) {
     pathname === '/historical_nsc.html' ||
     pathname === '/pending_load_extension.html' ||
     pathname === '/index.html' ||
+    pathname === '/sheet_links.html' ||
     pathname === '/weekly.html' ||
     pathname === '/loss.html' ||
     pathname === '/disconnection.html' ||
@@ -301,17 +327,21 @@ self.addEventListener('fetch', (event) => {
   // Always network for API + NSC page/hub scripts (filters/data keys change often)
   if (isNetworkFirstPath(url.pathname)) {
     event.respondWith(
-      fetch(request).then((res) => withPresentZoom(res, request, url)).catch(() => {
-        if (request.mode === 'navigate') {
-          return caches.match('offline.html');
-        }
+      fetch(request).then((res) => {
+        if (!url.pathname.startsWith('/api/')) writeAppCache(request, res.clone());
+        return withPresentZoom(res, request, url);
+      }).catch(() => {
         if (url.pathname.startsWith('/api/')) {
           return new Response(
             JSON.stringify({ error: 'Network unavailable. Offline cache cannot retrieve live API data.' }),
             { headers: { 'Content-Type': 'application/json' }, status: 503 }
           );
         }
-        return caches.match(request).then((cached) => cached || Response.error());
+        return readAppCache(request).then((cached) => {
+          if (cached) return withPresentZoom(cached, request, url);
+          if (request.mode === 'navigate') return caches.match('offline.html');
+          return Response.error();
+        });
       })
     );
     return;
@@ -342,21 +372,13 @@ self.addEventListener('fetch', (event) => {
   } else {
     // Stale-While-Revalidate Strategy with Offline HTML fallback for navigation
     event.respondWith(
-      caches.match(request).then((cachedResponse) => {
+      readAppCache(request).then((cachedResponse) => {
         const fetchPromise = fetch(request).then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            const responseToCache = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              safePut(cache, request, responseToCache);
-            });
-          }
+          if (networkResponse && networkResponse.status === 200) writeAppCache(request, networkResponse.clone());
           return withPresentZoom(networkResponse, request, url);
         }).catch((err) => {
           console.log('[Service Worker] Fetch failed; returning cached version or fallback page', err);
-          // If offline and request is a page navigation, return the offline fallback page
-          if (request.mode === 'navigate') {
-            return caches.match('offline.html');
-          }
+          if (request.mode === 'navigate') return caches.match('offline.html');
           throw err;
         });
 
