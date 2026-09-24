@@ -3951,6 +3951,22 @@ app.get('/api/disconnection/meta', (req, res) => {
     });
 });
 
+const NSC_FOLLOWUP_SCRIPT_URL = String(
+    process.env.NSC_FOLLOWUP_SCRIPT_URL ||
+        'https://script.google.com/macros/s/AKfycbwJj6lpOWN0a62jX51926FUQyzViLOiKA38f9yqSBSYbLMnpBPvOMZQh3gYu0b07L7MJw/exec'
+).trim();
+
+app.get('/api/nsc/followup-meta', (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    return res.json({
+        status: 'success',
+        sheetScriptUrl: NSC_FOLLOWUP_SCRIPT_URL
+    });
+});
+
 app.get('/api/hub/versions', async (req, res) => {
     if (!req.user) {
         return res.status(401).json({ status: 'error', message: 'Unauthorized' });

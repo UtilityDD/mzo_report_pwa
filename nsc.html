@@ -2113,8 +2113,13 @@
       <li class="nav-item"><button class="nav-link" type="button" data-analysis="phase">Phase</button></li>
       <li class="nav-item"><button class="nav-link" type="button" data-analysis="agency">Agency</button></li>
       <li class="nav-item"><button class="nav-link" type="button" data-analysis="wo">WO</button></li>
+      <li class="nav-item"><button class="nav-link" type="button" id="nscFollowupsTab" data-nsc-followups="1">Follow-ups</button></li>
     </ul>
     <div id="analysisTable"></div>
+    <div id="nscFollowupView" hidden>
+      <div class="text-secondary small mb-2" id="nscFollowupCount"></div>
+      <div id="nscFollowupBoard"></div>
+    </div>
   </div> <!-- Close nsc-content-area -->
 
   <!-- Bootstrap 5 Offcanvas Sidebar for Advanced Filters -->
@@ -4105,7 +4110,16 @@
     }
 
     function drawTables() {
+      if (window.nscFollowupView) {
+        if (typeof renderNscFollowupBoard === 'function') renderNscFollowupBoard();
+        return;
+      }
+      const followView = document.getElementById('nscFollowupView');
+      if (followView) followView.hidden = true;
+      const crumb = document.getElementById('analysisBreadcrumb');
+      if (crumb) crumb.hidden = false;
       const host = document.getElementById('analysisTable');
+      if (host) host.hidden = false;
       if (!host) return;
       const vis = visibleOfficeTabs();
       const officeTabs = { region: 1, division: 1, ccc: 1 };
@@ -4125,6 +4139,9 @@
     }
 
     function selectAnalysisTab(tab) {
+      window.nscFollowupView = false;
+      const followTab = document.getElementById('nscFollowupsTab');
+      if (followTab) followTab.classList.remove('active');
       analysisTab = tab;
       analysisJump = false;
       drawTables();
@@ -4135,6 +4152,14 @@
       if (tabs && !tabs.dataset.bound) {
         tabs.dataset.bound = '1';
         tabs.addEventListener('click', (e) => {
+          const followBtn = e.target.closest('[data-nsc-followups]');
+          if (followBtn) {
+            window.nscFollowupView = true;
+            document.querySelectorAll('#pills-tab [data-analysis]').forEach((btn) => btn.classList.remove('active'));
+            followBtn.classList.add('active');
+            if (typeof renderNscFollowupBoard === 'function') renderNscFollowupBoard();
+            return;
+          }
           const btn = e.target.closest('[data-analysis]');
           if (!btn) return;
           selectAnalysisTab(btn.getAttribute('data-analysis'));
@@ -4582,6 +4607,34 @@
 
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
+  <!-- NSC follow-up modal -->
+  <div class="modal fade" id="nscFollowupModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header border-bottom-0 pb-1">
+          <h5 class="modal-title fw-bold" id="nscFollowupModalTitle">Follow-up</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body pt-1" id="nscFollowupModalBody"></div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .nsc-fu-board { display: flex; flex-direction: column; gap: 0.45rem; }
+    .nsc-fu-card { width: 100%; text-align: left; background: var(--surface, #fff); color: inherit; border: 1px solid var(--gray-300, #dee2e6); border-radius: 10px; padding: 0.65rem 0.8rem; }
+    .nsc-fu-card:hover { border-color: #4f46e5; }
+    .nsc-fu-top { display: flex; justify-content: space-between; gap: 0.75rem; align-items: baseline; }
+    .nsc-fu-place { font-size: 0.75rem; color: var(--text-secondary, #6c757d); }
+    .nsc-fu-series { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .nsc-fu-item { border: 1px solid var(--gray-300, #dee2e6); border-radius: 8px; padding: 0.5rem 0.65rem; }
+    .nsc-fu-item:first-child { border-color: #4f46e5; }
+    .nsc-fu-note { white-space: pre-wrap; word-break: break-word; font-size: 0.86rem; }
+    .nsc-fu-quiet { margin-top: 0.2rem; font-size: 0.72rem; color: var(--text-secondary, #6c757d); }
+    .nsc-fu-del { border: 0; background: transparent; color: var(--text-secondary, #6c757d); padding: 0 0.15rem; }
+    .nsc-fu-panel { border-top: 1px solid var(--gray-200, #e5e7eb); margin-top: 0.75rem; padding: 0.75rem; }
+  </style>
+
   <!-- Consumer Detail Modal -->
   <div class="modal fade" id="consumerDetailModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
@@ -4608,6 +4661,371 @@
   </div>
 
   <script>
+    (function nscFollowups() {
+      const STORE_KEY = 'mzo_nsc_followups';
+      const OUTBOX_KEY = 'mzo_nsc_followup_outbox';
+      const NOTE_MAX = 500;
+      const POLL_MS = 15000;
+      let scriptUrl = '';
+      let pulling = false;
+      let openAppl = '';
+      let shownFp = '';
+      let boardFp = '';
+      let modalInst = null;
+
+      function applKey(value) {
+        return String(value || '').trim();
+      }
+      function esc(value) {
+        return String(value == null ? '' : value)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+      function readStore() {
+        try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}') || {}; } catch (err) { return {}; }
+      }
+      function writeStore(store) {
+        localStorage.setItem(STORE_KEY, JSON.stringify(store));
+      }
+      function readOutbox() {
+        try {
+          const list = JSON.parse(localStorage.getItem(OUTBOX_KEY) || '[]');
+          return Array.isArray(list) ? list : [];
+        } catch (err) { return []; }
+      }
+      function writeOutbox(list) {
+        localStorage.setItem(OUTBOX_KEY, JSON.stringify(list));
+      }
+      function hiddenIds(queue) {
+        const ids = new Set();
+        (queue || readOutbox()).forEach((job) => {
+          if (job && job.op === 'delete' && job.id) ids.add(job.id);
+        });
+        return ids;
+      }
+      function userName() {
+        try {
+          const profile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}') || {};
+          const name = String(profile.Name || profile.name || '').trim();
+          if (name) return name.slice(0, 80);
+          return String(profile.Username || profile.username || '').trim().slice(0, 80);
+        } catch (err) { return ''; }
+      }
+      function newId() {
+        if (window.crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+        return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      }
+      function notesFor(appl) {
+        const key = applKey(appl);
+        const list = readStore()[key];
+        if (!Array.isArray(list)) return [];
+        const hidden = hiddenIds();
+        return list.filter((entry) => entry && String(entry.note || '').trim() && !hidden.has(entry.id))
+          .slice()
+          .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+      }
+      function quietLine(entry) {
+        const name = String(entry && entry.by || '').trim();
+        const d = new Date(entry && entry.at);
+        const date = Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        if (name && date) return name + ' · ' + date;
+        return name || date;
+      }
+      function listHtml(appl) {
+        const items = notesFor(appl);
+        if (!items.length) return '<div class="text-secondary small mb-2">No follow-up yet.</div>';
+        return '<div class="nsc-fu-series">' + items.map((entry) => (
+          '<div class="nsc-fu-item"><div class="d-flex justify-content-between align-items-start gap-2">' +
+          '<div><div class="nsc-fu-note">' + esc(entry.note) + '</div><div class="nsc-fu-quiet">' + esc(quietLine(entry)) + '</div></div>' +
+          '<button type="button" class="nsc-fu-del" data-nsc-fu-del="' + esc(entry.id) + '" aria-label="Delete follow-up"><i class="fas fa-trash"></i></button>' +
+          '</div></div>'
+        )).join('') + '</div>';
+      }
+      function composerHtml(appl, draft) {
+        if (!applKey(appl)) return '<div class="text-secondary small">This row has no application number, so a follow-up cannot be saved.</div>';
+        return '<label class="form-label small text-secondary mb-1" for="nscFollowupNote">Add a report</label>' +
+          '<textarea id="nscFollowupNote" class="form-control form-control-sm" rows="2" maxlength="' + NOTE_MAX + '" placeholder="What happened on this visit or call">' + esc(draft || '') + '</textarea>' +
+          '<div id="nscFollowupError" class="text-danger small mt-1" hidden></div>' +
+          '<button type="button" id="nscFollowupSave" class="btn btn-primary btn-sm mt-2">Save follow-up</button>';
+      }
+      function enqueue(job) {
+        if (!job || !job.id || !job.op) return;
+        const queue = readOutbox();
+        if (queue.some((item) => item && item.op === job.op && item.id === job.id)) return;
+        queue.push(job);
+        writeOutbox(queue);
+      }
+      function addNote(appl, text) {
+        const key = applKey(appl);
+        const note = String(text || '').trim().slice(0, NOTE_MAX);
+        if (!key || !note) return false;
+        const store = readStore();
+        const list = Array.isArray(store[key]) ? store[key] : [];
+        const entry = { id: newId(), at: new Date().toISOString(), by: userName(), note: note, sync: scriptUrl ? 'pending' : 'local' };
+        list.push(entry);
+        store[key] = list;
+        writeStore(store);
+        if (scriptUrl) {
+          enqueue({ op: 'add', id: entry.id, applNo: key, at: entry.at, by: entry.by, note: entry.note });
+          flushOutbox();
+        }
+        return true;
+      }
+      function deleteNote(appl, entryId) {
+        const key = applKey(appl);
+        if (!key || !entryId) return;
+        const store = readStore();
+        const next = (store[key] || []).filter((entry) => entry && entry.id !== entryId);
+        if (next.length) store[key] = next;
+        else delete store[key];
+        writeStore(store);
+        const pendingAdd = readOutbox().some((job) => job && job.op === 'add' && job.id === entryId);
+        const kept = readOutbox().filter((job) => !(job && job.op === 'add' && job.id === entryId));
+        if (!pendingAdd && scriptUrl) kept.push({ op: 'delete', id: entryId, applNo: key });
+        writeOutbox(kept);
+        if (scriptUrl) flushOutbox();
+      }
+      function currentAppl() {
+        const row = typeof window.currentConsumerDetail !== 'undefined' ? window.currentConsumerDetail : null;
+        return applKey(openAppl || (row && row.APPL_NO));
+      }
+      function paintList(root) {
+        const appl = currentAppl();
+        const host = root && root.querySelector('[data-nsc-fu-list]');
+        if (host) host.innerHTML = listHtml(appl);
+        shownFp = notesFor(appl).map((entry) => entry.id).sort().join('|');
+      }
+      function findAppl(appl) {
+        const key = applKey(appl).toLowerCase();
+        const rows = typeof filteredData !== 'undefined' ? filteredData : [];
+        return rows.find((row) => applKey(row && row.APPL_NO).toLowerCase() === key) || null;
+      }
+      window.renderNscFollowupBoard = function renderNscFollowupBoard() {
+        const view = document.getElementById('nscFollowupView');
+        const host = document.getElementById('nscFollowupBoard');
+        const countEl = document.getElementById('nscFollowupCount');
+        const analysis = document.getElementById('analysisTable');
+        if (!view || !host) return;
+        view.hidden = false;
+        if (analysis) analysis.hidden = true;
+        const crumb = document.getElementById('analysisBreadcrumb');
+        if (crumb) crumb.hidden = true;
+        const rows = typeof filteredData !== 'undefined' ? filteredData : [];
+        const byAppl = new Map();
+        rows.forEach((row) => {
+          const key = applKey(row && row.APPL_NO);
+          if (key) byAppl.set(key.toLowerCase(), row);
+        });
+        const hidden = hiddenIds();
+        const store = readStore();
+        const items = [];
+        Object.keys(store).forEach((appl) => {
+          const row = byAppl.get(applKey(appl).toLowerCase());
+          if (!row) return;
+          const notes = (store[appl] || []).filter((entry) => entry && entry.note && !hidden.has(entry.id));
+          if (!notes.length) return;
+          notes.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+          items.push({ row: row, latest: notes[0], count: notes.length });
+        });
+        items.sort((a, b) => String(b.latest.at || '').localeCompare(String(a.latest.at || '')));
+        if (countEl) countEl.textContent = items.length ? String(items.length) : 'No follow-ups for the current filters.';
+        const fp = items.map((item) => item.latest.id + '|' + item.count + '|' + item.row.APPL_NO).join('\n');
+        if (fp === boardFp) return;
+        boardFp = fp;
+        host.innerHTML = items.length ? '<div class="nsc-fu-board">' + items.map((item) => (
+          '<button type="button" class="nsc-fu-card" data-nsc-fu-appl="' + esc(item.row.APPL_NO) + '">' +
+          '<div class="nsc-fu-top"><span class="fw-semibold">' + esc(item.row.NAME || item.row.APPL_NO) + '</span>' +
+          '<span class="nsc-fu-place">' + esc(item.count > 1 ? item.count + ' follow-ups' : '1 follow-up') + '</span></div>' +
+          '<div class="nsc-fu-place">' + esc(item.row.APPL_NO) + (item.row.SUPP_OFF ? ' · ' + esc(item.row.SUPP_OFF) : '') + '</div>' +
+          '</button>'
+        )).join('') + '</div>' : '';
+      };
+      function panelHtml(appl, draft) {
+        return '<div class="nsc-fu-panel" data-nsc-fu-root="' + esc(appl) + '">' +
+          '<div class="fw-bold mb-2">Follow-ups</div><div data-nsc-fu-list>' + listHtml(appl) + '</div>' + composerHtml(appl, draft) + '</div>';
+      }
+      window.nscMountConsumerFollowup = function nscMountConsumerFollowup(consumer) {
+        const appl = applKey(consumer && consumer.APPL_NO);
+        openAppl = appl;
+        const body = document.getElementById('consumerDetailBody');
+        if (!body || !appl) return;
+        const wrap = document.createElement('div');
+        wrap.innerHTML = panelHtml(appl, '');
+        body.appendChild(wrap.firstChild);
+        paintList(body);
+        pullComments();
+      };
+      function showFollowupModal(row) {
+        openAppl = applKey(row && row.APPL_NO);
+        const title = document.getElementById('nscFollowupModalTitle');
+        if (title) title.textContent = row.NAME || 'Follow-up';
+        const body = document.getElementById('nscFollowupModalBody');
+        body.innerHTML = '<div class="mb-2"><div class="fw-semibold">' + esc(row.NAME || row.APPL_NO) + '</div>' +
+          '<div class="text-secondary small">' + esc(row.APPL_NO) + (row.SUPP_OFF ? ' · ' + esc(row.SUPP_OFF) : '') + '</div></div>' +
+          panelHtml(openAppl, '');
+        const el = document.getElementById('nscFollowupModal');
+        if (!modalInst) modalInst = bootstrap.Modal.getOrCreateInstance(el);
+        modalInst.show();
+        pullComments();
+      }
+      function refreshOpen() {
+        const appl = currentAppl();
+        document.querySelectorAll('[data-nsc-fu-root]').forEach((root) => {
+          if (applKey(root.getAttribute('data-nsc-fu-root')) !== appl) return;
+          const draftEl = root.querySelector('#nscFollowupNote');
+          const draft = draftEl ? draftEl.value : '';
+          const parent = root.parentNode;
+          const fresh = panelHtml(appl, draft);
+          root.outerHTML = fresh;
+          if (parent) paintList(parent);
+        });
+        if (window.nscFollowupView) renderNscFollowupBoard();
+      }
+      function onFollowupClick(e) {
+        const card = e.target.closest('[data-nsc-fu-appl]');
+        if (card) {
+          const row = findAppl(card.getAttribute('data-nsc-fu-appl'));
+          if (row) showFollowupModal(row);
+          return;
+        }
+        if (e.target.closest('#nscFollowupSave')) {
+          e.preventDefault();
+          const noteEl = document.getElementById('nscFollowupNote');
+          const text = noteEl ? noteEl.value : '';
+          if (!String(text).trim()) {
+            const err = document.getElementById('nscFollowupError');
+            if (err) { err.hidden = false; err.textContent = 'Write a short report first.'; }
+            return;
+          }
+          if (!addNote(currentAppl(), text)) return;
+          refreshOpen();
+          return;
+        }
+        const del = e.target.closest('[data-nsc-fu-del]');
+        if (!del) return;
+        e.preventDefault();
+        if (!window.confirm('Remove this follow-up?')) return;
+        deleteNote(currentAppl(), del.getAttribute('data-nsc-fu-del'));
+        refreshOpen();
+      }
+      document.addEventListener('click', onFollowupClick);
+      function parseJson(text) {
+        const raw = String(text || '').trim();
+        const start = raw.indexOf('{');
+        const end = raw.lastIndexOf('}');
+        if (start < 0 || end < start) return null;
+        try { return JSON.parse(raw.slice(start, end + 1)); } catch (err) { return null; }
+      }
+      function applyRemote(data) {
+        const comments = Array.isArray(data && data.comments) ? data.comments : [];
+        const deleted = new Set((data && data.deletedIds || []).map((id) => String(id)));
+        const store = readStore();
+        let queue = readOutbox();
+        const remoteIds = new Set();
+        comments.forEach((row) => {
+          const id = String(row && row.id || '').trim();
+          const appl = applKey(row && (row.applNo || row.appl_no));
+          const note = String(row && row.note || '').trim().slice(0, NOTE_MAX);
+          if (!id || !appl || !note || deleted.has(id)) return;
+          remoteIds.add(id);
+          if (queue.some((job) => job && job.op === 'delete' && job.id === id)) return;
+          Object.keys(store).forEach((key) => {
+            store[key] = (store[key] || []).filter((entry) => entry && entry.id !== id);
+            if (!store[key].length) delete store[key];
+          });
+          const list = store[appl] || [];
+          list.push({ id: id, at: String(row.at || ''), by: String(row.by || '').slice(0, 80), note: note, sync: 'ok' });
+          store[appl] = list;
+          queue = queue.filter((job) => !(job && job.op === 'add' && job.id === id));
+        });
+        deleted.forEach((id) => {
+          Object.keys(store).forEach((key) => {
+            store[key] = (store[key] || []).filter((entry) => entry && entry.id !== id);
+            if (!store[key].length) delete store[key];
+          });
+          queue = queue.filter((job) => !(job && job.id === id));
+        });
+        queue = queue.filter((job) => {
+          if (!job || job.op !== 'delete') return true;
+          return !deleted.has(job.id) && remoteIds.has(job.id);
+        });
+        writeStore(store);
+        writeOutbox(queue);
+        boardFp = '';
+      }
+      function postJob(job) {
+        const payload = job.op === 'delete'
+          ? { action: 'delete', id: job.id }
+          : { action: 'add', id: job.id, applNo: job.applNo, at: job.at, by: job.by || '', note: job.note };
+        const body = 'data=' + encodeURIComponent(JSON.stringify(payload));
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), 20000) : null;
+        return fetch(scriptUrl, { method: 'POST', credentials: 'omit', redirect: 'follow', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body: body, signal: ctrl ? ctrl.signal : undefined })
+          .then((res) => res.text()).then((text) => {
+            const data = parseJson(text);
+            if (!data || (data.status !== 'success' && data.status !== 'ok')) throw new Error('sync');
+            const queue = readOutbox().filter((item) => !(item && item.id === job.id && item.op === job.op));
+            writeOutbox(queue);
+            if (job.op === 'add') {
+              const store = readStore();
+              (store[job.applNo] || []).forEach((entry) => { if (entry && entry.id === job.id) entry.sync = 'ok'; });
+              writeStore(store);
+            }
+          }).catch(() => {}).finally(() => { if (timer) clearTimeout(timer); });
+      }
+      function flushOutbox() {
+        if (!scriptUrl) return;
+        const job = readOutbox()[0];
+        if (!job) return;
+        postJob(job).then(() => { if (readOutbox().length) flushOutbox(); });
+      }
+      function pullComments() {
+        if (!scriptUrl || pulling) return;
+        pulling = true;
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), 20000) : null;
+        const join = scriptUrl.indexOf('?') >= 0 ? '&' : '?';
+        fetch(scriptUrl + join + 'list=1&t=' + Date.now(), { method: 'GET', credentials: 'omit', redirect: 'follow', signal: ctrl ? ctrl.signal : undefined })
+          .then((res) => res.text()).then((text) => {
+            const data = parseJson(text);
+            if (!data || (data.status !== 'success' && data.status !== 'ok') || !Array.isArray(data.comments)) return;
+            const before = shownFp;
+            applyRemote(data);
+            const appl = currentAppl();
+            const next = notesFor(appl).map((entry) => entry.id).sort().join('|');
+            if (next !== before) refreshOpen();
+            else if (window.nscFollowupView) renderNscFollowupBoard();
+          }).catch(() => {}).finally(() => { if (timer) clearTimeout(timer); pulling = false; });
+      }
+      function enqueueUnsynced() {
+        const store = readStore();
+        Object.keys(store).forEach((appl) => {
+          (store[appl] || []).forEach((entry) => {
+            if (!entry || entry.sync === 'ok') return;
+            enqueue({ op: 'add', id: entry.id, applNo: applKey(appl), at: entry.at, by: entry.by || '', note: entry.note });
+          });
+        });
+      }
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible' || !scriptUrl) return;
+        pullComments();
+        flushOutbox();
+      });
+      fetch('/api/nsc/followup-meta', { credentials: 'same-origin' })
+        .then((res) => res.ok ? res.json() : null)
+        .then((data) => {
+          scriptUrl = data && data.sheetScriptUrl ? String(data.sheetScriptUrl).trim() : '';
+          if (!scriptUrl) return;
+          enqueueUnsynced();
+          flushOutbox();
+          pullComments();
+          setInterval(() => {
+            if (document.visibilityState === 'hidden') return;
+            pullComments();
+            flushOutbox();
+          }, POLL_MS);
+        }).catch(() => {});
+    })();
+
     // Global Click Listener for Consumer Details
     document.addEventListener('click', (e) => {
       const row = e.target.closest('.consumer-trigger');
@@ -4785,6 +5203,7 @@
       }
       const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
       modal.show();
+      if (typeof nscMountConsumerFollowup === 'function') nscMountConsumerFollowup(consumer);
 
       // Store current consumer globally for clipboard function
       window.currentConsumerDetail = consumer;
