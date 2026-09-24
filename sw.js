@@ -44,7 +44,12 @@
 // v125: KPI cards show a share of the total; Recent opens consumer follow-ups
 // v145: Pending NSC follow-ups stay with the application number
 // v146: only an admin can delete a follow-up
-const CACHE_NAME = 'mzo-reports-cache-v146';
+// v147: a saved follow-up appears before the sheet write
+// v148: follow-up lists use the same tables as the other views
+// v149: Pending NSC opens on the office hierarchy table
+// v150: the Pending NSC consumer list is tighter, and Class fits its text
+// v151: report frames clear the bottom back arrow
+const CACHE_NAME = 'mzo-reports-cache-v151';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [

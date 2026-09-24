@@ -1508,6 +1508,29 @@
         font-weight: 700;
       }
     }
+
+    #analysisTable .consumer-list th,
+    #analysisTable .consumer-list td {
+      padding: 2px 5px !important;
+      font-size: 0.72rem !important;
+      line-height: 1.15;
+      white-space: nowrap !important;
+    }
+    #analysisTable .consumer-list .class-col {
+      width: 1%;
+      white-space: nowrap !important;
+      padding-left: 3px !important;
+      padding-right: 3px !important;
+    }
+    #analysisTable .consumer-list .consumer-name,
+    #analysisTable .consumer-list .appl-no-col,
+    #analysisTable .consumer-list .agency-name {
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      width: auto !important;
+      max-width: 220px !important;
+    }
   </style>
 </head>
 
@@ -3807,7 +3830,7 @@
       if (vis.region) return 'region';
       if (vis.division) return 'division';
       if (vis.ccc) return 'ccc';
-      return 'consumers';
+      return 'class';
     }
 
     function rowHasPole(d) {
@@ -4110,7 +4133,7 @@
     }
 
     function drawTables() {
-      if (window.nscFollowupView) {
+      if (window.nscShowingFollowups) {
         if (typeof renderNscFollowupBoard === 'function') renderNscFollowupBoard();
         return;
       }
@@ -4139,7 +4162,7 @@
     }
 
     function selectAnalysisTab(tab) {
-      window.nscFollowupView = false;
+      window.nscShowingFollowups = false;
       const followTab = document.getElementById('nscFollowupsTab');
       if (followTab) followTab.classList.remove('active');
       analysisTab = tab;
@@ -4154,7 +4177,7 @@
         tabs.addEventListener('click', (e) => {
           const followBtn = e.target.closest('[data-nsc-followups]');
           if (followBtn) {
-            window.nscFollowupView = true;
+            window.nscShowingFollowups = true;
             document.querySelectorAll('#pills-tab [data-analysis]').forEach((btn) => btn.classList.remove('active'));
             followBtn.classList.add('active');
             if (typeof renderNscFollowupBoard === 'function') renderNscFollowupBoard();
@@ -4280,13 +4303,13 @@
         if (narrow) {
           body += '<tr class="consumer-trigger" data-appl-no="' + (app.APPL_NO || '') + '" style="cursor:pointer;">' +
             '<td class="appl-no-col" title="' + (app.APPL_NO || '-') + '">' + (app.APPL_NO || '-') + '</td>' +
-            '<td>' + connClass + '</td>' +
+            '<td class="class-col">' + connClass + '</td>' +
             '<td class="consumer-name" title="' + String(app.NAME || '').replace(/"/g, '&quot;') + '">' + (app.NAME || '-') + '</td>' +
             delayHtml + '</tr>';
         } else {
           body += '<tr class="consumer-trigger" data-appl-no="' + (app.APPL_NO || '') + '" style="cursor:pointer;">' +
             '<td class="appl-no-col" title="' + (app.APPL_NO || '-') + '">' + (app.APPL_NO || '-') + '</td>' +
-            '<td>' + connClass + '</td>' +
+            '<td class="class-col">' + connClass + '</td>' +
             '<td class="consumer-name" title="' + String(app.NAME || '').replace(/"/g, '&quot;') + '">' + (app.NAME || '-') + '</td>' +
             '<td>' + (app.LOAD_WATTS || '-') + '</td>' +
             '<td>' + (app.NO_OF_POLES || '0') + '</td>' +
@@ -4298,8 +4321,8 @@
       }
       const pager = consumerPagerHtml(current, pages, start + 1, start + slice.length, total);
       const head = narrow
-        ? '<th>APPL NO</th><th>CLASS</th><th>NAME</th><th class="text-end">DELAY</th>'
-        : '<th>APPL NO</th><th>CLASS</th><th>NAME</th><th>LOAD (W)</th><th>POLES</th><th>PHONE NO</th><th>COLL DATE</th>' +
+        ? '<th>APPL NO</th><th class="class-col">CLASS</th><th>NAME</th><th class="text-end">DELAY</th>'
+        : '<th>APPL NO</th><th class="class-col">CLASS</th><th>NAME</th><th>LOAD (W)</th><th>POLES</th><th>PHONE NO</th><th>COLL DATE</th>' +
           (showAgency ? '<th>AGENCY NAME</th>' : '') + '<th class="text-end">DELAY</th>';
       container.innerHTML =
         '<div class="analysis-block">' +
@@ -4308,7 +4331,7 @@
         '<i class="fas fa-copy text-primary" title="Copy this page" style="cursor:pointer;" onclick="copyTableToWhatsApp(this)"></i>' +
         '</div>' +
         '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">' + pager + '</div>' +
-        '<div class="table-responsive sticky-table-container"><table class="table table-sm mb-0 sticky-table' + (narrow ? ' consumer-compact' : '') + '"><thead><tr>' +
+        '<div class="table-responsive sticky-table-container"><table class="table table-sm mb-0 sticky-table consumer-list' + (narrow ? ' consumer-compact' : '') + '"><thead><tr>' +
         head + '</tr></thead><tbody>' + body + '</tbody></table></div>' +
         '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">' + pager + '</div>' +
         '</div>';
@@ -4771,7 +4794,6 @@
         writeStore(store);
         if (scriptUrl) {
           enqueue({ op: 'add', id: entry.id, applNo: key, at: entry.at, by: entry.by, note: entry.note });
-          flushOutbox();
         }
         return true;
       }
@@ -4837,13 +4859,32 @@
         const fp = items.map((item) => item.latest.id + '|' + item.count + '|' + item.row.APPL_NO).join('\n');
         if (fp === boardFp) return;
         boardFp = fp;
-        host.innerHTML = items.length ? '<div class="nsc-fu-board">' + items.map((item) => (
-          '<button type="button" class="nsc-fu-card" data-nsc-fu-appl="' + esc(item.row.APPL_NO) + '">' +
-          '<div class="nsc-fu-top"><span class="fw-semibold">' + esc(item.row.NAME || item.row.APPL_NO) + '</span>' +
-          '<span class="nsc-fu-place">' + esc(item.count > 1 ? item.count + ' follow-ups' : '1 follow-up') + '</span></div>' +
-          '<div class="nsc-fu-place">' + esc(item.row.APPL_NO) + (item.row.SUPP_OFF ? ' · ' + esc(item.row.SUPP_OFF) : '') + '</div>' +
-          '</button>'
-        )).join('') + '</div>' : '';
+        if (!items.length) {
+          host.innerHTML = '<div class="text-center p-3 text-muted">No follow-ups for the current filters.</div>';
+          return;
+        }
+        const narrow = window.innerWidth <= 768;
+        const head = narrow
+          ? '<th>APPL NO</th><th>NAME</th><th class="text-end">FOLLOW-UPS</th>'
+          : '<th>APPL NO</th><th>NAME</th><th>CCC</th><th class="text-end">FOLLOW-UPS</th>';
+        host.innerHTML = '<div class="table-responsive sticky-table-container"><table class="table table-sm table-hover mb-0 sticky-table' +
+          (narrow ? ' consumer-compact' : '') + '"><thead><tr>' + head + '</tr></thead><tbody>' +
+          items.map((item) => {
+            const name = item.row.NAME || item.row.APPL_NO;
+            const office = item.row.SUPP_OFF || '-';
+            if (narrow) {
+              return '<tr data-nsc-fu-appl="' + esc(item.row.APPL_NO) + '" style="cursor:pointer;">' +
+                '<td class="appl-no-col">' + esc(item.row.APPL_NO) + '</td>' +
+                '<td class="consumer-name">' + esc(name) + '</td>' +
+                '<td class="text-end">' + item.count + '</td></tr>';
+            }
+            return '<tr data-nsc-fu-appl="' + esc(item.row.APPL_NO) + '" style="cursor:pointer;">' +
+              '<td class="appl-no-col">' + esc(item.row.APPL_NO) + '</td>' +
+              '<td class="consumer-name">' + esc(name) + '</td>' +
+              '<td>' + esc(office) + '</td>' +
+              '<td class="text-end">' + item.count + '</td></tr>';
+          }).join('') +
+          '</tbody></table></div>';
       };
       function panelHtml(appl, draft) {
         return '<div class="nsc-fu-panel" data-nsc-fu-root="' + esc(appl) + '">' +
@@ -4884,7 +4925,7 @@
           root.outerHTML = fresh;
           if (parent) paintList(parent);
         });
-        if (window.nscFollowupView) renderNscFollowupBoard();
+        if (window.nscShowingFollowups) renderNscFollowupBoard();
       }
       function onFollowupClick(e) {
         const card = e.target.closest('[data-nsc-fu-appl]');
@@ -4893,17 +4934,21 @@
           if (row) showFollowupModal(row);
           return;
         }
-        if (e.target.closest('#nscFollowupSave')) {
+        const saveBtn = e.target.closest('#nscFollowupSave');
+        if (saveBtn) {
           e.preventDefault();
-          const noteEl = document.getElementById('nscFollowupNote');
+          const root = saveBtn.closest('[data-nsc-fu-root]') || document;
+          const noteEl = root.querySelector('#nscFollowupNote');
           const text = noteEl ? noteEl.value : '';
           if (!String(text).trim()) {
-            const err = document.getElementById('nscFollowupError');
+            const err = root.querySelector('#nscFollowupError');
             if (err) { err.hidden = false; err.textContent = 'Write a short report first.'; }
             return;
           }
           if (!addNote(currentAppl(), text)) return;
+          if (noteEl) noteEl.value = '';
           refreshOpen();
+          setTimeout(() => flushOutbox(), 0);
           return;
         }
         const del = e.target.closest('[data-nsc-fu-del]');
@@ -5000,7 +5045,7 @@
             const appl = currentAppl();
             const next = notesFor(appl).map((entry) => entry.id).sort().join('|');
             if (next !== before) refreshOpen();
-            else if (window.nscFollowupView) renderNscFollowupBoard();
+            else if (window.nscShowingFollowups) renderNscFollowupBoard();
           }).catch(() => {}).finally(() => { if (timer) clearTimeout(timer); pulling = false; });
       }
       function enqueueUnsynced() {

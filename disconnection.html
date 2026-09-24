@@ -706,18 +706,18 @@
                 padding: 0 !important;
                 overflow: visible !important;
             }
-            #dashboardTable {
+            #dashboardTable, #followupTable {
                 display: block;
                 width: 100%;
             }
-            #dashboardTable thead {
+            #dashboardTable thead, #followupTable thead {
                 display: none !important;
             }
-            #dashboardTable tbody {
+            #dashboardTable tbody, #followupTable tbody {
                 display: block;
                 width: 100%;
             }
-            #dashboardTable tbody tr {
+            #dashboardTable tbody tr, #followupTable tbody tr {
                 display: block;
                 width: 100%;
                 background-color: var(--bg-card);
@@ -727,7 +727,7 @@
                 padding: 6px 10px;
                 box-shadow: var(--elevation-1);
             }
-            #dashboardTable tbody tr td {
+            #dashboardTable tbody tr td, #followupTable tbody tr td {
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
@@ -736,10 +736,10 @@
                 font-size: 12px !important;
                 text-align: right !important;
             }
-            #dashboardTable tbody tr td:last-child {
+            #dashboardTable tbody tr td:last-child, #followupTable tbody tr td:last-child {
                 border-bottom: none !important;
             }
-            #dashboardTable tbody tr td::before {
+            #dashboardTable tbody tr td::before, #followupTable tbody tr td::before {
                 content: attr(data-label);
                 font-weight: 600;
                 color: var(--text-secondary);
@@ -1015,7 +1015,19 @@
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <div class="text-secondary small" id="followupBoardCount">No follow-ups yet</div>
                 </div>
-                <div id="followupBoard" class="followup-board"></div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="followupTable">
+                        <thead>
+                            <tr>
+                                <th>Consumer ID</th>
+                                <th>Name</th>
+                                <th>CCC</th>
+                                <th class="text-end">Follow-ups</th>
+                            </tr>
+                        </thead>
+                        <tbody id="followupBoard"></tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -1714,17 +1726,16 @@
             if (fp === followupBoardFp) return;
             followupBoardFp = fp;
             if (!items.length) {
-                host.innerHTML = '<div class="followup-empty">No follow-ups for the current filters.</div>';
+                host.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-secondary">No follow-ups for the current filters.</td></tr>';
                 return;
             }
             host.innerHTML = items.map(({ consumer, count }) => `
-                <button type="button" class="followup-board-item" data-followup-consumer="${escapeHtml(consumer.id)}">
-                    <div class="followup-board-top">
-                        <span class="fw-semibold">${escapeHtml(consumer.name || consumer.id)}</span>
-                        <span class="followup-when">${count > 1 ? escapeHtml(count + ' follow-ups') : '1 follow-up'}</span>
-                    </div>
-                    <div class="followup-board-place">${escapeHtml(consumer.id)}${consumer.cccName ? ' · ' + escapeHtml(consumer.cccName) : ''}</div>
-                </button>
+                <tr data-followup-consumer="${escapeHtml(consumer.id)}" style="cursor:pointer;">
+                    <td data-label="Consumer ID" class="fw-semibold text-indigo font-monospace">${escapeHtml(consumer.id)}</td>
+                    <td data-label="Name" class="fw-medium">${escapeHtml(consumer.name || consumer.id)}</td>
+                    <td data-label="CCC">${escapeHtml(consumer.cccName || '-')}</td>
+                    <td data-label="Follow-ups" class="text-end">${count}</td>
+                </tr>
             `).join('');
         }
 
@@ -2410,7 +2421,6 @@
             writeFollowupStore(store);
             if (followupScriptUrl) {
                 enqueueFollowup({ op: 'add', id: entry.id, conId: key, at: entry.at, by: entry.by, note: entry.note });
-                flushFollowupOutbox();
             }
             return { ok: true };
         }
@@ -2475,9 +2485,10 @@
             if (followupClicksBound) return;
             followupClicksBound = true;
             function onFollowupClick(e) {
-                if (e.target.closest('#followupSaveBtn')) {
+                const saveBtn = e.target.closest('#followupSaveBtn');
+                if (saveBtn) {
                     e.preventDefault();
-                    saveOpenFollowup();
+                    saveOpenFollowup(saveBtn);
                     return;
                 }
                 const del = e.target.closest('[data-followup-delete]');
@@ -2899,9 +2910,10 @@
             renderConsumerModal(modalConsumer, { draft: draft, missing: !fresh });
         }
 
-        function saveOpenFollowup() {
+        function saveOpenFollowup(saveBtn) {
             if (!modalConsumer) return;
-            const noteEl = document.getElementById('followupNote');
+            const root = saveBtn && saveBtn.closest ? (saveBtn.closest('#followupModalBody') || saveBtn.closest('#consumerModalBody') || document) : document;
+            const noteEl = root.querySelector('#followupNote');
             const text = noteEl ? noteEl.value : '';
             if (!String(text).trim()) {
                 paintOpenFollowup({ draft: text, focusNote: true, error: 'Write a short report first.' });
@@ -2919,6 +2931,7 @@
             }
             paintOpenFollowup({ draft: '', focusNote: true });
             renderFollowupBoard(getFilteredData());
+            setTimeout(() => flushFollowupOutbox(), 0);
         }
 
         function removeOpenFollowup(entryId) {
