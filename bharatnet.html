@@ -81,6 +81,17 @@
       text-overflow: ellipsis;
     }
 
+    .header-as-on {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      white-space: nowrap;
+      flex-shrink: 0;
+      letter-spacing: 0.01em;
+    }
+
+    .header-as-on[hidden] { display: none !important; }
+
     .sync-status {
       font-size: 12px;
       color: var(--text-muted);
@@ -483,6 +494,7 @@
     @media (max-width: 1100px) {
       .header { padding: 4px 10px; min-height: 44px; }
       .header-left h1 { font-size: 15px; }
+      .header-as-on { font-size: 11px; }
       .sync-status { display: none; }
       .filter-toggle { display: inline-flex; }
       .filter-toggle[aria-expanded="true"] {
@@ -536,6 +548,7 @@
     <div class="header-bar">
       <div class="header-left">
         <h1>Bharat Net Connections</h1>
+        <span id="headerAsOn" class="header-as-on" hidden></span>
         <div class="sync-status">
           <div class="sync-dot"></div>
           <span>Meter number = given · rest pending</span>
@@ -1225,6 +1238,34 @@
       applyFilters();
     }
 
+    function bharatNetAsOn(csv) {
+      const table = parseCsv(csv);
+      if (table.length < 2) return '';
+      const headers = table[0].map((h) => String(h || '').replace(/^\uFEFF/, '').trim());
+      let idx = headers.findIndex((h) => /upadte\s*date|update\s*date/i.test(h));
+      if (idx < 0 && headers.length >= 14) idx = 13;
+      if (idx < 0) return '';
+      const raw = String((table[1] && table[1][idx]) || '').trim();
+      const m = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+      if (!m) return '';
+      const pad = (n) => String(n).padStart(2, '0');
+      const year = +m[3] < 100 ? 2000 + +m[3] : +m[3];
+      return pad(+m[1]) + '/' + pad(+m[2]) + '/' + year;
+    }
+
+    function showAsOn(label) {
+      const el = document.getElementById('headerAsOn');
+      if (!el) return;
+      if (!label) {
+        el.hidden = true;
+        el.textContent = '';
+        return;
+      }
+      el.textContent = 'As on ' + label;
+      el.hidden = false;
+      try { localStorage.setItem('mzo_bharatnet_as_on', label); } catch (_) {}
+    }
+
     function parseCsv(text) {
       const rows = [];
       let row = [];
@@ -1319,6 +1360,7 @@
 
     function paintCsv(csvText) {
       if (!looksLikeCsv(csvText)) return false;
+      showAsOn(bharatNetAsOn(csvText));
       processRows(rowsToObjects(parseCsv(csvText)));
       return rawData.length > 0;
     }

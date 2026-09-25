@@ -526,6 +526,82 @@
       if (label) setUpdated('CACHE_PENDING_MC', label);
     }).catch(function () {});
 
+    function firstRowHeaderDate(csv, headerRe, fallbackIdx) {
+      const rows = csvRows(csv);
+      if (rows.length < 2) return '';
+      let idx = rows[0].findIndex(function (h) {
+        return headerRe.test(String(h || '').trim());
+      });
+      if (idx < 0 && fallbackIdx >= 0 && rows[0].length > fallbackIdx) idx = fallbackIdx;
+      if (idx < 0) return '';
+      const raw = String((rows[1] && rows[1][idx]) || '').trim();
+      const m = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+      if (!m) return '';
+      const year = parseInt(m[3], 10);
+      const pad = function (n) { return String(n).padStart(2, '0'); };
+      return pad(parseInt(m[1], 10)) + '/' + pad(parseInt(m[2], 10)) + '/' + (year < 100 ? 2000 + year : year);
+    }
+
+    loadSheetCsv('CACHE_BHARATNET').then(function (csv) {
+      const label = firstRowHeaderDate(csv, /upadte\s*date|update\s*date/i, 13);
+      if (label) setUpdated('CACHE_BHARATNET', label, true);
+    }).catch(function () {});
+
+    loadSheetCsv('CACHE_ICDS_APLUS').then(function (csv) {
+      const label = firstRowHeaderDate(csv, /update\s*date/i, 12);
+      if (label) setUpdated('CACHE_ICDS_APLUS', label, true);
+    }).catch(function () {});
+
+    loadSheetCsv('CACHE_ICDS_A').then(function (csv) {
+      const label = firstRowHeaderDate(csv, /update\s*date/i, 12);
+      if (label) setUpdated('CACHE_ICDS_A', label, true);
+    }).catch(function () {});
+
+    function pmsgyAsOn(csv) {
+      const rows = csvRows(csv);
+      if (!rows.length) return '';
+      const idx = rows[0].findIndex(function (h) { return /^Last Action Date$/i.test(String(h || '').trim()); });
+      if (idx < 0) return '';
+      const months = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+      let best = 0;
+      let label = '';
+      const pad = function (n) { return String(n).padStart(2, '0'); };
+      for (let i = 1; i < rows.length; i++) {
+        const raw = String((rows[i] && rows[i][idx]) || '').trim();
+        const named = raw.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})/);
+        const num = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/);
+        let day = 0;
+        let month = 0;
+        let year = 0;
+        if (named && months[named[2].toLowerCase()]) {
+          day = +named[1];
+          month = months[named[2].toLowerCase()];
+          year = +named[3] < 100 ? 2000 + +named[3] : +named[3];
+        } else if (num) {
+          day = +num[1];
+          month = +num[2];
+          year = +num[3] < 100 ? 2000 + +num[3] : +num[3];
+        }
+        const t = Date.UTC(year, month - 1, day);
+        if (day && t > best) {
+          best = t;
+          label = pad(day) + '/' + pad(month) + '/' + year;
+        }
+      }
+      return label;
+    }
+    ['CACHE_PMSGY_MALDA', 'CACHE_PMSGY_UD', 'CACHE_PMSGY_DD'].forEach(function (key) {
+      loadSheetCsv(key).then(function (csv) {
+        const label = pmsgyAsOn(csv);
+        if (label) setUpdated(key, label, true);
+      }).catch(function () {});
+    });
+
+    loadSheetCsv('CACHE_LOSS').then(function (csv) {
+      const label = firstRowHeaderDate(csv, /update\s*on|update\s*date/i, 9);
+      if (label) setUpdated('CACHE_LOSS', label, true);
+    }).catch(function () {});
+
     function latestDottedDate(csv, headerName) {
       const rows = csvRows(csv);
       if (!rows.length) return '';

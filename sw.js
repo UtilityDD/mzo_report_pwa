@@ -54,7 +54,16 @@
 // v154: sheet links open as a full page with serial numbers and update dates
 // v155: report frame is full height; the back button floats and each page keeps bottom space
 // v161: home rows show the sheet-links update date
-const CACHE_NAME = 'mzo-reports-cache-v174';
+// v175: Bharat Net header/home/sheet-links show N2 update date
+// v176: Loss header/home/sheet-links show Sheet1 J2 update date
+// v177: ICDS Connections under New Service Connection
+// v178: ICDS division chart and CCC chart/table
+// v179: PM Surya Ghar delay tracking under Important
+// v180: PM Surya Ghar chart and table sit side by side
+// v181: PM Surya Ghar tables include a total row
+// v182: PM Surya Ghar KPI, charts, and tables share one header set
+// v183: PM Surya Ghar treats net metering as connection and installation as the solar plate
+const CACHE_NAME = 'mzo-reports-cache-v188';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -157,6 +166,8 @@ function isNetworkFirstPath(pathname) {
     pathname === '/jjm.html' ||
     pathname === '/wridd.html' ||
     pathname === '/bharatnet.html' ||
+    pathname === '/icds.html' ||
+    pathname === '/pmsgy.html' ||
     pathname === '/solar.html' ||
     pathname === '/rem/defaulters.html' ||
     pathname === '/admin_users.html' ||

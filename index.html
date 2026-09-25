@@ -4060,6 +4060,10 @@
                     <div class="app-icon connections"><i class="fas fa-network-wired"></i></div>
                     <span class="app-label">Bharat Net</span>
                   </a>
+                  <a class="sub-option" data-page="icds.html" data-dataset="CACHE_ICDS_APLUS" href="#">
+                    <div class="app-icon connections"><i class="fas fa-school"></i></div>
+                    <span class="app-label">ICDS Connections</span>
+                  </a>
                 </div>
               </div>
 
@@ -4222,6 +4226,10 @@
                   <a class="sub-option" data-page="cmo.html" data-dataset="CACHE_CMO" href="#">
                     <div class="app-icon grievance"><i class="fas fa-exclamation-circle"></i></div>
                     <span class="app-label">CMO Grievance</span>
+                  </a>
+                  <a class="sub-option" data-page="pmsgy.html" data-dataset="CACHE_PMSGY_MALDA" href="#">
+                    <div class="app-icon solar"><i class="fas fa-solar-panel"></i></div>
+                    <span class="app-label">PM Surya Ghar</span>
                   </a>
 
                   <!-- Priority SI Works Summary -->
@@ -5521,6 +5529,77 @@
           if (best) setDate('CACHE_COLLECTION', best.slice(6, 8) + '/' + best.slice(4, 6) + '/' + best.slice(0, 4));
         });
         peekCsv('CACHE_CMO').then((csv) => setDate('CACHE_CMO', latestMatch(csv, /Report Date/i, /^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/)));
+
+        function csvRowsLite(text) {
+          const rows = [];
+          let row = [];
+          let cur = '';
+          let q = false;
+          const src = String(text || '');
+          for (let i = 0; i < src.length; i++) {
+            const ch = src.charAt(i);
+            if (q) {
+              if (ch === '"') {
+                if (src.charAt(i + 1) === '"') { cur += '"'; i++; }
+                else q = false;
+              } else cur += ch;
+            } else if (ch === '"') q = true;
+            else if (ch === ',') { row.push(cur); cur = ''; }
+            else if (ch === '\n' || ch === '\r') {
+              if (ch === '\r' && src.charAt(i + 1) === '\n') i++;
+              row.push(cur);
+              cur = '';
+              if (row.some((cell) => cell)) rows.push(row);
+              row = [];
+              if (rows.length >= 2) break;
+            } else cur += ch;
+          }
+          if ((cur || row.length) && rows.length < 2) {
+            row.push(cur);
+            rows.push(row);
+          }
+          return rows;
+        }
+
+        function firstRowCellDate(csv, headerRe, fallbackIdx) {
+          const rows = csvRowsLite(csv);
+          if (rows.length < 2) return '';
+          let idx = rows[0].findIndex((h) => headerRe.test(String(h || '').trim()));
+          if (idx < 0 && fallbackIdx >= 0 && rows[0].length > fallbackIdx) idx = fallbackIdx;
+          if (idx < 0) return '';
+          const raw = String((rows[1] && rows[1][idx]) || '').trim();
+          const m = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+          if (!m) return '';
+          const year = +m[3] < 100 ? 2000 + +m[3] : +m[3];
+          return String(+m[1]).padStart(2, '0') + '/' + String(+m[2]).padStart(2, '0') + '/' + year;
+        }
+
+        function applyForcedDate(key, storageKey, csv, headerRe, fallbackIdx) {
+          const label = firstRowCellDate(csv, headerRe, fallbackIdx);
+          if (!label) return false;
+          dates[key] = label;
+          try { localStorage.setItem(storageKey, label); } catch (_) {}
+          paint();
+          return true;
+        }
+
+        function peekThenDate(key, storageKey, headerRe, fallbackIdx) {
+          try {
+            const stored = localStorage.getItem(storageKey);
+            if (stored) setDate(key, stored);
+          } catch (_) {}
+          peekCsv(key).then((csv) => {
+            applyForcedDate(key, storageKey, csv, headerRe, fallbackIdx);
+          }).catch(() => {});
+        }
+
+        peekThenDate('CACHE_BHARATNET', 'mzo_bharatnet_as_on', /upadte\s*date|update\s*date/i, 13);
+        peekThenDate('CACHE_ICDS_APLUS', 'mzo_icds_as_on', /update\s*date/i, 12);
+        peekThenDate('CACHE_LOSS', 'mzo_loss_as_on', /update\s*on|update\s*date/i, 9);
+        try {
+          const pmsgyAsOn = localStorage.getItem('mzo_pmsgy_as_on');
+          if (pmsgyAsOn) setDate('CACHE_PMSGY_MALDA', pmsgyAsOn);
+        } catch (_) {}
 
         fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vQPBYq0ZQpaAnu0Mp_qN5oGvklgIpjolyRPf3LfSojRaN-GBBBXKHslR9ue1DOv1432oP2PzYznUUmn/pub?gid=512034300&single=true&output=csv')
           .then((res) => res.ok ? res.text() : '')

@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport" />
+  <title>ICDS Connections | MZO</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <script src="mzo_data_hub.js"></script>
+  <script src="mzo_scope.js?v=12"></script>
+  <style>
+    :root {
+      --primary: #0f766e;
+      --primary-dark: #115e59;
+      --bg: #f1f5f9;
+      --card: #fff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --aplus: #d97706;
+      --a: #0f766e;
+      --pending: #f59e0b;
+      --mapped: #2563eb;
+      --meter: #059669;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Outfit, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .header {
+      position: sticky; top: 0; z-index: 1000;
+      height: 48px; min-height: 48px;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 0 14px;
+      background: var(--primary); color: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,.12);
+    }
+    .header-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+    .header h1 { font-size: 1.05rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .as-on {
+      font-size: 0.72rem; font-weight: 600; white-space: nowrap;
+      background: rgba(255,255,255,.16); border-radius: 999px; padding: 2px 8px;
+    }
+    .as-on[hidden] { display: none !important; }
+    .filter-toggle {
+      display: none; align-items: center; justify-content: center;
+      width: 30px; height: 30px; border-radius: 8px;
+      border: 1px solid rgba(255,255,255,.35); background: transparent; color: #fff; cursor: pointer;
+    }
+    .filter-toggle[aria-expanded="true"] { background: #fff; color: var(--primary); }
+    .filters { display: flex; gap: 8px; align-items: center; }
+    .filters select, .search-box {
+      height: 32px; border-radius: 8px; border: 1px solid var(--line);
+      background: #fff; color: var(--text); font: inherit; font-size: 13px;
+    }
+    .filters select { padding: 0 8px; max-width: 160px; }
+    .filters select:disabled, .filters select.mzo-filter-locked {
+      opacity: 1; color: var(--text); background: #f8fafc; pointer-events: none;
+    }
+    .search-box { display: flex; align-items: center; gap: 6px; padding: 0 8px; width: 200px; }
+    .search-box input { border: 0; outline: 0; width: 100%; font: inherit; font-size: 13px; background: transparent; }
+    .search-box i { color: var(--muted); font-size: 12px; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 12px 16px 72px; }
+    .kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 12px; }
+    .kpi {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 8px 10px; cursor: pointer; border-left: 4px solid var(--primary); min-width: 0;
+      font: inherit; text-align: left; color: inherit; width: 100%;
+    }
+    .kpi.active { box-shadow: 0 0 0 2px rgba(15,118,110,.25); }
+    .kpi .lbl { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+    .kpi .val { font-size: 22px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+    .kpi .sub { font-size: 11px; color: var(--muted); }
+    .kpi.total { border-left-color: #334155; }
+    .kpi.aplus { border-left-color: var(--aplus); }
+    .kpi.a { border-left-color: var(--a); }
+    .kpi.pending { border-left-color: var(--pending); }
+    .kpi.mapped { border-left-color: var(--mapped); }
+    .kpi.meter { border-left-color: var(--meter); }
+    .charts, .office-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+    .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+    .panel h2 { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    .chart-wrap { position: relative; height: 220px; }
+    .chart-scroll { max-height: 360px; overflow: auto; }
+    .chart-empty { font-size: 12px; color: var(--muted); padding: 28px 8px; text-align: center; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 7px 8px; border-bottom: 1px solid #f1f5f9; text-align: left; }
+    th { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); background: #f8fafc; position: sticky; top: 0; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #f0fdfa; }
+    .badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 1px 7px; }
+    .badge.aplus { background: #ffedd5; color: #9a3412; }
+    .badge.a { background: #ccfbf1; color: #115e59; }
+    .muted { color: var(--muted); }
+    .tables { display: grid; grid-template-columns: 1.1fr .9fr; gap: 10px; }
+    .scroll { max-height: 420px; overflow: auto; }
+    .error { display: none; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+    .loading { position: fixed; inset: 0; background: rgba(241,245,249,.86); display: flex; align-items: center; justify-content: center; z-index: 2000; font-weight: 600; color: var(--muted); }
+    .loading[hidden] { display: none !important; }
+    @media (max-width: 1100px) {
+      .header { height: 42px; min-height: 42px; padding: 0 8px; }
+      .header h1 { font-size: .88rem; }
+      .as-on { font-size: .62rem; max-width: 42vw; overflow: hidden; text-overflow: ellipsis; }
+      .filter-toggle { display: inline-flex; }
+      .filters {
+        display: none; position: fixed; left: 8px; right: 8px; top: 50px; z-index: 1900;
+        padding: 8px; border-radius: 10px; background: #fff; color: var(--text);
+        box-shadow: 0 10px 24px rgba(15,23,42,.16);
+        grid-template-columns: 1fr 1fr; gap: 8px;
+      }
+      body.filters-open .filters { display: grid; }
+      .filters .search-box { grid-column: 1 / -1; width: 100%; }
+      .filters select { width: 100%; max-width: none; }
+      .kpis { grid-template-columns: repeat(3, 1fr); }
+      .charts, .tables, .office-charts { grid-template-columns: 1fr; }
+      .chart-wrap { height: 200px; }
+      .wrap { padding: 8px 8px 72px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="loading" id="loading">Loading ICDS connections…</div>
+  <header class="header">
+    <div class="header-left">
+      <h1>ICDS Connections</h1>
+      <span id="asOn" class="as-on" hidden></span>
+    </div>
+    <button type="button" class="filter-toggle" id="filterToggle" aria-expanded="false" aria-controls="filters" title="Filters">
+      <i class="fas fa-sliders-h"></i>
+    </button>
+    <div class="filters" id="filters">
+      <div class="search-box">
+        <i class="fas fa-search"></i>
+        <input type="search" id="q" placeholder="AWC, project, CCC…" autocomplete="off">
+      </div>
+      <select id="regionFilter" title="Region"><option value="">All Regions</option></select>
+      <select id="divisionFilter" title="Division"><option value="">All Divisions</option></select>
+      <select id="cccFilter" title="CCC"><option value="">All CCCs</option></select>
+      <select id="priorityFilter" title="Priority">
+        <option value="">All priorities</option>
+        <option value="A+">A+</option>
+        <option value="A">A</option>
+      </select>
+    </div>
+  </header>
+  <div class="wrap">
+    <div class="error" id="error"></div>
+    <div class="kpis" id="kpis"></div>
+    <div class="charts">
+      <section class="panel">
+        <h2>Priority by region</h2>
+        <div class="chart-wrap"><canvas id="priorityChart"></canvas></div>
+      </section>
+      <section class="panel">
+        <h2>CCC mapping by region</h2>
+        <div class="chart-wrap"><canvas id="mapChart"></canvas></div>
+      </section>
+    </div>
+    <div class="office-charts">
+      <section class="panel">
+        <h2>By division</h2>
+        <div class="chart-scroll"><div class="chart-wrap" id="divisionChartWrap"><canvas id="divisionChart"></canvas></div></div>
+        <p class="chart-empty" id="divisionEmpty" hidden>No CCC codes in this view, so divisions are not known yet.</p>
+      </section>
+      <section class="panel">
+        <h2>By CCC</h2>
+        <div class="chart-scroll"><div class="chart-wrap" id="cccChartWrap"><canvas id="cccChart"></canvas></div></div>
+        <p class="chart-empty" id="cccEmpty" hidden>No CCC codes in this view.</p>
+        <div class="scroll" style="max-height:220px;margin-top:8px">
+          <table>
+            <thead>
+              <tr>
+                <th>CCC</th>
+                <th>Division</th>
+                <th class="num">A+</th>
+                <th class="num">A</th>
+                <th class="num">Total</th>
+                <th class="num">Meter</th>
+              </tr>
+            </thead>
+            <tbody id="cccBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+    <div class="tables">
+      <section class="panel">
+        <h2>Regions</h2>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Region</th>
+                <th class="num">A+</th>
+                <th class="num">A</th>
+                <th class="num">Total</th>
+                <th class="num">CCC pending</th>
+                <th class="num">Meter</th>
+              </tr>
+            </thead>
+            <tbody id="regionBody"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="panel">
+        <h2 id="detailTitle">Anganwadi centres</h2>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>AWC</th>
+                <th>Project</th>
+                <th>Office</th>
+                <th>Priority</th>
+              </tr>
+            </thead>
+            <tbody id="awcBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    const regionFilter = document.getElementById('regionFilter');
+    const divisionFilter = document.getElementById('divisionFilter');
+    const cccFilter = document.getElementById('cccFilter');
+    const priorityFilter = document.getElementById('priorityFilter');
+    const searchBox = document.getElementById('q');
+    let rawData = [];
+    let kpiKey = '';
+    let charts = { priority: null, map: null, division: null, ccc: null };
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function blankish(v) {
+      return !String(v == null ? '' : v).trim() || /^(0|na|n\.a\.?|nil|n\/a|-)$/i.test(String(v).trim());
+    }
+    function parseCsv(text) {
+      const rows = [];
+      let row = [], cur = '', inQ = false;
+      const src = String(text || '').replace(/^\uFEFF/, '');
+      for (let i = 0; i < src.length; i++) {
+        const ch = src[i];
+        if (ch === '"') {
+          if (inQ && src[i + 1] === '"') { cur += '"'; i++; }
+          else inQ = !inQ;
+          continue;
+        }
+        if ((ch === ',' && !inQ) || ((ch === '\n' || ch === '\r') && !inQ)) {
+          row.push(cur); cur = '';
+          if (ch === '\n' || (ch === '\r' && src[i + 1] !== '\n')) { rows.push(row); row = []; }
+          continue;
+        }
+        cur += ch;
+      }
+      if (cur.length || row.length) { row.push(cur); rows.push(row); }
+      return rows.filter((r) => r.some((c) => String(c || '').trim()));
+    }
+    function rowsToObjects(table) {
+      if (!table.length) return [];
+      const headers = table[0].map((h) => String(h || '').replace(/^\uFEFF/, '').trim());
+      const out = [];
+      for (let i = 1; i < table.length; i++) {
+        const obj = {};
+        headers.forEach((h, idx) => { if (h) obj[h] = table[i][idx]; });
+        out.push(obj);
+      }
+      return out;
+    }
+    function pick(row, keys) {
+      const wanted = {};
+      keys.forEach((k) => { wanted[String(k).toLowerCase().replace(/[\s_]+/g, ' ')] = k; });
+      const names = Object.keys(row || {});
+      for (let i = 0; i < names.length; i++) {
+        const nk = String(names[i]).toLowerCase().replace(/[\s_]+/g, ' ').trim();
+        if (!wanted[nk]) continue;
+        const v = row[names[i]];
+        if (v != null && String(v).trim() !== '') return String(v).trim();
+      }
+      return '';
+    }
+    function districtRegion(raw) {
+      if (!window.MzoScope || !raw) return '';
+      const direct = MzoScope.regionNameOf(raw);
+      if (direct) return direct;
+      const sorted = String(raw).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean).sort().join(' ');
+      return MzoScope.regionNameOf(sorted) || '';
+    }
+    function officeFromRow(row) {
+      const code = pick(row, ['CCC CODE', 'CCC_CODE']);
+      const district = pick(row, ['DISTRICT']);
+      const fromDistrict = districtRegion(district);
+      if (window.MzoScope && code && !blankish(code)) {
+        const ccc = MzoScope.cccNameOf(code);
+        const parent = ccc ? MzoScope.parentOfCcc(ccc) : null;
+        if (parent) return { region: parent.region, division: parent.division, ccc: parent.ccc, code: code, pending: false };
+      }
+      return { region: fromDistrict || district || 'Unknown', division: '', ccc: '', code: '', pending: true };
+    }
+    function asOnFromCsv(csv) {
+      const table = parseCsv(csv);
+      if (table.length < 2) return '';
+      const headers = table[0].map((h) => String(h || '').replace(/^\uFEFF/, '').trim());
+      let idx = headers.findIndex((h) => /update\s*date/i.test(h));
+      if (idx < 0 && headers.length > 12) idx = 12;
+      const raw = String((table[1] && table[1][idx]) || '').trim();
+      const m = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+      if (!m) return '';
+      const year = +m[3] < 100 ? 2000 + +m[3] : +m[3];
+      const pad = (n) => String(n).padStart(2, '0');
+      return pad(+m[1]) + '/' + pad(+m[2]) + '/' + year;
+    }
+    function showAsOn(label) {
+      const el = document.getElementById('asOn');
+      if (!label) { el.hidden = true; el.textContent = ''; return; }
+      el.textContent = 'As on ' + label;
+      el.hidden = false;
+      try { localStorage.setItem('mzo_icds_as_on', label); } catch (_) {}
+    }
+    function looksLikeCsv(text) {
+      const first = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/, 1)[0] || '';
+      return /district/i.test(first) && /awc/i.test(first);
+    }
+    function ingest(csv, priority) {
+      if (!looksLikeCsv(csv)) return [];
+      return rowsToObjects(parseCsv(csv)).map((row) => {
+        const office = officeFromRow(row);
+        const meter = pick(row, ['METER NUMBER']);
+        const name = pick(row, ['AWC NAME']);
+        const rec = {
+          priority: priority,
+          awc: name,
+          awcCode: pick(row, ['AWC CODE']),
+          project: pick(row, ['PROJECT']),
+          district: pick(row, ['DISTRICT']),
+          meter: blankish(meter) ? '' : meter,
+          metered: !blankish(meter),
+          pending: office.pending,
+          REGION: office.region,
+          DIVISION: office.division,
+          'CCC NAME': office.ccc,
+          'CCC CODE': office.code,
+          REGION_NORM: office.region,
+          DIVISION_NORM: office.division,
+          CCC_NORM: office.ccc
+        };
+        rec._search = [rec.awc, rec.awcCode, rec.project, rec.district, rec.REGION, rec.DIVISION, rec.CCC_NORM, rec.priority].join(' ').toLowerCase();
+        return rec;
+      }).filter((r) => r.awc || r.awcCode);
+    }
+    function unique(arr) {
+      return Array.from(new Set(arr.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    }
+    function isLocked(id) {
+      return !!(window.MzoScope && MzoScope.isFilterLocked(id));
+    }
+    function fillSelect(el, values, allLabel, locked) {
+      const prev = el.value;
+      el.disabled = false;
+      el.classList.remove('mzo-filter-locked');
+      el.innerHTML = '';
+      let opts = values.slice();
+      if (locked && !opts.length && window.MzoScope && MzoScope.getScope) {
+        const scope = MzoScope.getScope() || {};
+        if (el.id === 'regionFilter' && scope.regions) opts = Array.from(scope.regions);
+        if (el.id === 'divisionFilter' && scope.divisions) opts = Array.from(scope.divisions);
+        if (el.id === 'cccFilter' && scope.cccs) opts = Array.from(scope.cccs);
+      }
+      if (!locked) {
+        const all = document.createElement('option');
+        all.value = '';
+        all.textContent = allLabel;
+        el.appendChild(all);
+      }
+      opts.forEach((v) => {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        el.appendChild(opt);
+      });
+      if (locked && opts.length) {
+        el.value = opts[0];
+        el.disabled = true;
+        el.classList.add('mzo-filter-locked');
+      } else if (prev && opts.indexOf(prev) !== -1) el.value = prev;
+    }
+    function populateFilters() {
+      const regionLocked = isLocked('regionFilter');
+      const divLocked = isLocked('divisionFilter');
+      const cccLocked = isLocked('cccFilter');
+      fillSelect(regionFilter, unique(rawData.map((r) => r.REGION_NORM)), 'All Regions', regionLocked);
+      let divSource = rawData;
+      if (!divLocked && regionFilter.value) divSource = rawData.filter((r) => r.REGION_NORM === regionFilter.value);
+      fillSelect(divisionFilter, unique(divSource.map((r) => r.DIVISION_NORM)), 'All Divisions', divLocked);
+      let cccSource = divSource;
+      if (!cccLocked && divisionFilter.value) cccSource = divSource.filter((r) => r.DIVISION_NORM === divisionFilter.value);
+      fillSelect(cccFilter, unique(cccSource.map((r) => r.CCC_NORM)), 'All CCCs', cccLocked);
+      if (window.MzoScope) MzoScope.lockFilters();
+    }
+    function officeFiltered() {
+      const q = String(searchBox.value || '').trim().toLowerCase();
+      return rawData.filter((r) => {
+        if (regionFilter.value && r.REGION_NORM !== regionFilter.value) return false;
+        if (divisionFilter.value && r.DIVISION_NORM !== divisionFilter.value) return false;
+        if (cccFilter.value && r.CCC_NORM !== cccFilter.value) return false;
+        if (priorityFilter.value && r.priority !== priorityFilter.value) return false;
+        if (q && r._search.indexOf(q) === -1) return false;
+        return true;
+      });
+    }
+    function viewRows(base) {
+      if (kpiKey === 'aplus') return base.filter((r) => r.priority === 'A+');
+      if (kpiKey === 'a') return base.filter((r) => r.priority === 'A');
+      if (kpiKey === 'pending') return base.filter((r) => r.pending);
+      if (kpiKey === 'mapped') return base.filter((r) => !r.pending);
+      if (kpiKey === 'meter') return base.filter((r) => r.metered);
+      return base;
+    }
+    function bucket(rows, field) {
+      const map = {};
+      rows.forEach((r) => {
+        const key = field ? r[field] : (r.REGION_NORM || 'Unknown');
+        if (field && !key) return;
+        const label = key || 'Unknown';
+        if (!map[label]) {
+          map[label] = {
+            label: label,
+            division: r.DIVISION_NORM || '',
+            region: r.REGION_NORM || '',
+            aplus: 0, a: 0, total: 0, pending: 0, mapped: 0, meter: 0
+          };
+        }
+        const b = map[label];
+        b.total += 1;
+        if (r.priority === 'A+') b.aplus += 1; else b.a += 1;
+        if (r.pending) b.pending += 1; else b.mapped += 1;
+        if (r.metered) b.meter += 1;
+      });
+      return Object.values(map).sort((x, y) => y.total - x.total || x.label.localeCompare(y.label));
+    }
+    function byRegion(rows) { return bucket(rows, ''); }
+    function paintKpis(base) {
+      const total = base.length;
+      const aplus = base.filter((r) => r.priority === 'A+').length;
+      const a = total - aplus;
+      const pending = base.filter((r) => r.pending).length;
+      const mapped = total - pending;
+      const meter = base.filter((r) => r.metered).length;
+      const pct = (n) => total ? Math.round((n / total) * 100) + '%' : '0%';
+      const cards = [
+        ['total', 'Total', total, 'AWCs without supply'],
+        ['aplus', 'A+', aplus, pct(aplus) + ' priority'],
+        ['a', 'A', a, pct(a) + ' priority'],
+        ['pending', 'CCC pending', pending, 'District used as region'],
+        ['mapped', 'CCC mapped', mapped, pct(mapped) + ' of AWCs'],
+        ['meter', 'Meter given', meter, 'Connection done']
+      ];
+      document.getElementById('kpis').innerHTML = cards.map((c) =>
+        '<button type="button" class="kpi ' + c[0] + (kpiKey === c[0] || (c[0] === 'total' && !kpiKey) ? ' active' : '') + '" data-kpi="' + c[0] + '">' +
+        '<div class="lbl">' + c[1] + '</div><div class="val">' + c[2].toLocaleString('en-IN') + '</div><div class="sub">' + c[3] + '</div></button>'
+      ).join('');
+    }
+    function paintCharts(rows) {
+      if (typeof Chart !== 'function') return;
+      const buckets = byRegion(rows);
+      function draw(key, canvasId, labels, datasets, onBar) {
+        if (charts[key]) charts[key].destroy();
+        const canvas = document.getElementById(canvasId);
+        const wrap = canvas.parentElement;
+        wrap.style.height = Math.max(180, labels.length * 32) + 'px';
+        wrap.hidden = !labels.length;
+        charts[key] = labels.length ? new Chart(canvas, {
+          type: 'bar',
+          data: { labels: labels, datasets: datasets },
+          options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            onClick: onBar,
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } },
+            scales: { x: { stacked: true, ticks: { precision: 0 } }, y: { stacked: true } }
+          }
+        }) : null;
+      }
+      const prioritySets = (list) => [
+        { label: 'A+', data: list.map((b) => b.aplus), backgroundColor: '#d97706' },
+        { label: 'A', data: list.map((b) => b.a), backgroundColor: '#0f766e' }
+      ];
+      draw('priority', 'priorityChart', buckets.map((b) => b.label), [
+        { label: 'A+', data: buckets.map((b) => b.aplus), backgroundColor: '#d97706' },
+        { label: 'A', data: buckets.map((b) => b.a), backgroundColor: '#0f766e' }
+      ]);
+      draw('map', 'mapChart', buckets.map((b) => b.label), [
+        { label: 'CCC pending', data: buckets.map((b) => b.pending), backgroundColor: '#f59e0b' },
+        { label: 'CCC mapped', data: buckets.map((b) => b.mapped), backgroundColor: '#2563eb' }
+      ]);
+      const divisions = bucket(rows, 'DIVISION_NORM');
+      document.getElementById('divisionEmpty').hidden = divisions.length > 0;
+      draw('division', 'divisionChart', divisions.map((b) => b.label), prioritySets(divisions), function (_evt, els) {
+        if (!els.length || isLocked('divisionFilter')) return;
+        const name = divisions[els[0].index].label;
+        divisionFilter.value = divisionFilter.value === name ? '' : name;
+        populateFilters();
+        applyFilters();
+      });
+      const cccs = bucket(rows, 'CCC_NORM');
+      document.getElementById('cccEmpty').hidden = cccs.length > 0;
+      draw('ccc', 'cccChart', cccs.map((b) => b.label), prioritySets(cccs), function (_evt, els) {
+        if (!els.length || isLocked('cccFilter')) return;
+        const name = cccs[els[0].index].label;
+        cccFilter.value = cccFilter.value === name ? '' : name;
+        applyFilters();
+      });
+      document.getElementById('cccBody').innerHTML = cccs.map((b) =>
+        '<tr data-ccc="' + esc(b.label) + '" data-division="' + esc(b.division) + '"><td>' + esc(b.label) + '</td><td>' + esc(b.division) + '</td>' +
+        '<td class="num">' + b.aplus.toLocaleString('en-IN') + '</td>' +
+        '<td class="num">' + b.a.toLocaleString('en-IN') + '</td>' +
+        '<td class="num">' + b.total.toLocaleString('en-IN') + '</td>' +
+        '<td class="num">' + b.meter.toLocaleString('en-IN') + '</td></tr>'
+      ).join('') || '<tr><td colspan="6" class="muted">No mapped CCC in this view.</td></tr>';
+    }
+    function paintTables(rows) {
+      const buckets = byRegion(rows);
+      document.getElementById('regionBody').innerHTML = buckets.map((b) =>
+        '<tr data-region="' + esc(b.label) + '"><td>' + esc(b.label) + '</td>' +
+        '<td class="num">' + b.aplus.toLocaleString('en-IN') + '</td>' +
+        '<td class="num">' + b.a.toLocaleString('en-IN') + '</td>' +
+        '<td class="num">' + b.total.toLocaleString('en-IN') + '</td>' +
+        '<td class="num">' + b.pending.toLocaleString('en-IN') + '</td>' +
+        '<td class="num">' + b.meter.toLocaleString('en-IN') + '</td></tr>'
+      ).join('') || '<tr><td colspan="6" class="muted">No centres in this view.</td></tr>';
+      const list = rows.slice().sort((a, b) => (a.pending === b.pending ? 0 : a.pending ? 1 : -1) || a.awc.localeCompare(b.awc)).slice(0, 120);
+      document.getElementById('detailTitle').textContent = rows.length > 120 ? 'Anganwadi centres (first 120)' : 'Anganwadi centres';
+      document.getElementById('awcBody').innerHTML = list.map((r) =>
+        '<tr><td>' + esc(r.awc || '—') + '</td><td>' + esc(r.project || '—') + '</td><td>' +
+        (r.pending ? '<span class="muted">Pending · ' + esc(r.district || r.REGION_NORM) + '</span>' : esc([r.CCC_NORM, r.DIVISION_NORM].filter(Boolean).join(' · '))) +
+        '</td><td><span class="badge ' + (r.priority === 'A+' ? 'aplus' : 'a') + '">' + esc(r.priority) + '</span></td></tr>'
+      ).join('') || '<tr><td colspan="4" class="muted">No centres in this view.</td></tr>';
+    }
+    function applyFilters() {
+      const base = officeFiltered();
+      paintKpis(base);
+      const rows = viewRows(base);
+      paintCharts(rows);
+      paintTables(rows);
+    }
+    function loadChartLib(done) {
+      if (typeof Chart === 'function') { done(); return; }
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
+      s.onload = done;
+      s.onerror = done;
+      document.head.appendChild(s);
+    }
+    async function loadData() {
+      const err = document.getElementById('error');
+      err.style.display = 'none';
+      try {
+        if (!window.mzoDataHub) throw new Error('Data hub missing');
+        await Promise.all([
+          window.mzoDataHub.waitForDataset('CACHE_ICDS_APLUS'),
+          window.mzoDataHub.waitForDataset('CACHE_ICDS_A')
+        ]);
+        const aplus = (await window.mzoDataHub.get('CACHE_ICDS_APLUS')) || '';
+        const a = (await window.mzoDataHub.get('CACHE_ICDS_A')) || '';
+        showAsOn(asOnFromCsv(aplus) || asOnFromCsv(a));
+        let rows = ingest(aplus, 'A+').concat(ingest(a, 'A'));
+        if (window.MzoScope) rows = MzoScope.filterRows(rows);
+        rawData = rows;
+        if (!rawData.length) throw new Error('empty');
+        populateFilters();
+        loadChartLib(applyFilters);
+      } catch (e) {
+        console.error(e);
+        err.textContent = 'Could not load ICDS connections. Refresh this page.';
+        err.style.display = 'block';
+      } finally {
+        document.getElementById('loading').hidden = true;
+      }
+    }
+    document.getElementById('filterToggle').addEventListener('click', () => {
+      const open = document.body.classList.toggle('filters-open');
+      document.getElementById('filterToggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    document.getElementById('kpis').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-kpi]');
+      if (!btn) return;
+      const key = btn.getAttribute('data-kpi');
+      kpiKey = (key === 'total' || kpiKey === key) ? '' : key;
+      applyFilters();
+    });
+    regionFilter.addEventListener('change', () => { if (!isLocked('regionFilter')) { populateFilters(); applyFilters(); } });
+    divisionFilter.addEventListener('change', () => { if (!isLocked('divisionFilter')) { populateFilters(); applyFilters(); } });
+    cccFilter.addEventListener('change', applyFilters);
+    priorityFilter.addEventListener('change', () => {
+      kpiKey = priorityFilter.value === 'A+' ? 'aplus' : priorityFilter.value === 'A' ? 'a' : (kpiKey === 'aplus' || kpiKey === 'a' ? '' : kpiKey);
+      applyFilters();
+    });
+    searchBox.addEventListener('input', applyFilters);
+    document.getElementById('cccBody').addEventListener('click', (e) => {
+      const tr = e.target.closest('tr[data-ccc]');
+      if (!tr || isLocked('cccFilter')) return;
+      const name = tr.getAttribute('data-ccc');
+      const division = tr.getAttribute('data-division') || '';
+      if (cccFilter.value === name) {
+        cccFilter.value = '';
+      } else {
+        if (division && !isLocked('divisionFilter')) divisionFilter.value = division;
+        populateFilters();
+        cccFilter.value = name;
+      }
+      applyFilters();
+    });
+    document.getElementById('regionBody').addEventListener('click', (e) => {
+      const tr = e.target.closest('tr[data-region]');
+      if (!tr || isLocked('regionFilter')) return;
+      const name = tr.getAttribute('data-region');
+      regionFilter.value = regionFilter.value === name ? '' : name;
+      populateFilters();
+      applyFilters();
+    });
+    loadData();
+  </script>
+</body>
+</html>

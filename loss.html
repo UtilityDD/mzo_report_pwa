@@ -36,13 +36,34 @@
             /* Allow scrolling for content */
         }
 
+        .page-title-row {
+            display: flex;
+            align-items: baseline;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 0 16px 15px;
+            width: calc(100% - 32px);
+            max-width: 1200px;
+        }
+
         h2 {
             text-align: center;
             color: #2c3e50;
-            margin-bottom: 15px;
+            margin: 0;
             font-weight: 700;
             font-size: 24px;
         }
+
+        .header-as-on {
+            font-size: 13px;
+            font-weight: 500;
+            color: #64748b;
+            white-space: nowrap;
+            letter-spacing: 0.01em;
+        }
+
+        .header-as-on[hidden] { display: none !important; }
 
         /* Button styles (toggle-filters-button removed) */
         .toggle-button {
@@ -916,7 +937,14 @@
         @media (max-width: 768px) {
             h2 {
                 font-size: 20px;
+            }
+
+            .page-title-row {
                 margin-bottom: 10px;
+            }
+
+            .header-as-on {
+                font-size: 11px;
             }
 
             .toggle-button,
@@ -1058,7 +1086,10 @@
         <div class="spinner"></div>
     </div>
 
-    <h2>Performance Parameters: Malda Zone</h2>
+    <div class="page-title-row">
+        <h2>Performance Parameters: Malda Zone</h2>
+        <span id="headerAsOn" class="header-as-on" hidden></span>
+    </div>
     <!-- Removed toggle-filters-button -->
     <div class="filters-container">
         <div class="filters" style="display: flex; flex-direction: column; gap: 12px; max-width: 1200px; margin: 0 auto; padding: 0 20px;">
@@ -1420,6 +1451,46 @@
         }
 
 
+        function csvBody(cached) {
+            if (!cached) return '';
+            if (typeof cached === 'string') return cached;
+            return cached.body || cached.text || cached.csv || '';
+        }
+
+        function formatDotDate(raw) {
+            const m = String(raw || '').trim().match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+            if (!m) return '';
+            const pad = (n) => String(n).padStart(2, '0');
+            const year = +m[3] < 100 ? 2000 + +m[3] : +m[3];
+            return pad(+m[1]) + '/' + pad(+m[2]) + '/' + year;
+        }
+
+        function lossAsOn(csv) {
+            const text = csvBody(csv);
+            if (!text || typeof Papa === 'undefined') return '';
+            const parsed = Papa.parse(text, { preview: 2, header: false, skipEmptyLines: true });
+            const rows = (parsed && parsed.data) || [];
+            if (rows.length < 2) return '';
+            const headers = (rows[0] || []).map((h) => String(h || '').replace(/^\uFEFF/, '').trim());
+            let idx = headers.findIndex((h) => /update\s*on|update\s*date|upadte\s*date/i.test(h));
+            if (idx < 0 && headers.length >= 10) idx = 9;
+            if (idx < 0) return '';
+            return formatDotDate((rows[1] && rows[1][idx]) || '');
+        }
+
+        function showAsOn(label) {
+            const el = document.getElementById('headerAsOn');
+            if (!el) return;
+            if (!label) {
+                el.hidden = true;
+                el.textContent = '';
+                return;
+            }
+            el.textContent = 'As on ' + label;
+            el.hidden = false;
+            try { localStorage.setItem('mzo_loss_as_on', label); } catch (_) {}
+        }
+
         // --- Data Fetching and Filter Population ---
         async function fetchCSV() {
             showLoader(); // Show loader when fetching starts
@@ -1441,6 +1512,9 @@
                         : await mzoDataHub.get('CACHE_LOSS_TARGET');
                 }
 
+                const mainText = csvBody(mainCsvData);
+                if (mainText) showAsOn(lossAsOn(mainText));
+
                 await Promise.all([
                     new Promise(resolve => {
                         const config = {
@@ -1448,12 +1522,16 @@
                             complete: function (results) {
                                 rawData = results.data.filter(row => row.CCC && row.YEAR && row.MONTH);
                                 if (window.MzoScope) rawData = window.MzoScope.filterRows(rawData);
+                                if (!document.getElementById('headerAsOn') || document.getElementById('headerAsOn').hidden) {
+                                    const first = (results.data || [])[0] || {};
+                                    showAsOn(formatDotDate(first['Update On'] || first['UPDATE ON'] || first['Update Date']));
+                                }
                                 resolve();
                             }
                         };
-                        if (mainCsvData) {
+                        if (mainText) {
                             console.log("Successfully fetched Loss Report from DataHub.");
-                            Papa.parse(mainCsvData, config);
+                            Papa.parse(mainText, config);
                         } else {
                             console.log("Downloading Loss Report data from network...");
                             Papa.parse(csvUrl, { ...config, download: true });

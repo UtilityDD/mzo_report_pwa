@@ -37,7 +37,7 @@
       '#mzo-app-update-overlay{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:#0f172a;padding:24px;font-family:system-ui,-apple-system,sans-serif}' +
       '#mzo-app-update-card{width:100%;max-width:440px;color:#f8fafc}' +
       '#mzo-app-update-card h3{margin:0 0 16px;font-size:28px;font-weight:700;letter-spacing:-0.03em}' +
-      '#mzo-app-update-card .mzo-update-note{margin:0 0 22px;padding:14px 16px;border-radius:12px;background:rgba(99,102,241,.2);border:1px solid rgba(129,140,248,.5);color:#e0e7ff;font-size:16px;line-height:1.5;font-weight:600}' +
+      '#mzo-app-update-card .mzo-update-note{margin:0 0 22px;padding:14px 16px;border-radius:12px;background:rgba(99,102,241,.2);border:1px solid rgba(129,140,248,.5);color:#e0e7ff;font-size:16px;line-height:1.5;font-weight:600;white-space:pre-line}' +
       '#mzo-app-update-card button{width:100%;border:0;border-radius:12px;padding:14px 16px;font-size:16px;font-weight:600;background:#4f46e5;color:#fff;cursor:pointer}' +
       '</style>' +
       '<div id="mzo-app-update-card">' +

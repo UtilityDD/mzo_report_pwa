@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport" />
+  <title>PM Surya Ghar | MZO</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <script src="mzo_data_hub.js"></script>
+  <script src="mzo_scope.js?v=12"></script>
+  <style>
+    :root { --primary:#0f766e; --text:#0f172a; --muted:#64748b; --line:#e2e8f0; --card:#fff; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Outfit, sans-serif; background: #f1f5f9; color: var(--text); }
+    .header {
+      position: sticky; top: 0; z-index: 1000; height: 48px; min-height: 48px;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 0 14px; background: var(--primary); color: #fff;
+    }
+    .header-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+    h1 { font-size: 1.02rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .as-on { font-size: .72rem; font-weight: 600; background: rgba(255,255,255,.16); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+    .as-on[hidden] { display: none !important; }
+    .filter-toggle { display: none; width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(255,255,255,.35); background: transparent; color: #fff; }
+    .filter-toggle[aria-expanded="true"] { background: #fff; color: var(--primary); }
+    .filters { display: flex; gap: 8px; align-items: center; }
+    .filters select, .search-box { height: 32px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--text); font: inherit; font-size: 13px; }
+    .filters select { padding: 0 8px; max-width: 150px; }
+    .filters select:disabled, .filters select.mzo-filter-locked { opacity: 1; background: #f8fafc; pointer-events: none; }
+    .search-box { display: flex; align-items: center; gap: 6px; padding: 0 8px; width: 180px; }
+    .search-box input { border: 0; outline: 0; width: 100%; font: inherit; font-size: 13px; background: transparent; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 12px 16px 72px; }
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+    .kpi { background: var(--card); border: 1px solid var(--line); border-left: 4px solid #334155; border-radius: 12px; padding: 8px 10px; text-align: left; font: inherit; color: inherit; width: 100%; cursor: pointer; }
+    .kpi.active { box-shadow: 0 0 0 2px rgba(15,118,110,.25); }
+    .kpi .lbl { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; }
+    .kpi .val { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .kpi .sub { font-size: 11px; color: var(--muted); }
+    .kpi.delay { border-left-color: #dc2626; }
+    .kpi.feas { border-left-color: #d97706; }
+    .kpi.vendor { border-left-color: #7c3aed; }
+    .kpi.agree { border-left-color: #2563eb; }
+    .kpi.conn { border-left-color: #0f766e; }
+    .kpi.loan { border-left-color: #b45309; }
+    .kpi.rwa { border-left-color: #db2777; }
+    .section-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; margin: 2px 0 8px; padding-left: 8px; border-left: 3px solid var(--primary); }
+    .filter-badge { border: 0; background: var(--primary); color: #fff; border-radius: 999px; padding: 2px 8px; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+    .filter-badge[hidden] { display: none !important; }
+    .crumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .crumbs:empty { display: none; }
+    .crumbs button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 2px 8px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .pills button { border: 1px solid var(--line); background: #fff; color: var(--muted); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .pills button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .pills button[hidden] { display: none; }
+    .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 7px 8px; border-bottom: 1px solid #f1f5f9; text-align: left; }
+    th { font-size: 11px; text-transform: uppercase; color: var(--muted); background: #f8fafc; position: sticky; top: 0; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #f0fdfa; }
+    tr.total { font-weight: 700; background: #f1f5f9; cursor: default; }
+    tr.total:hover { background: #f1f5f9; }
+    .badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 1px 7px; background: #e2e8f0; }
+    .badge.Feasibility { background: #ffedd5; color: #9a3412; }
+    .badge.Vendor { background: #ede9fe; color: #5b21b6; }
+    .badge.Agreement { background: #dbeafe; color: #1e3a8a; }
+    .badge.Connection { background: #ccfbf1; color: #115e59; }
+    .badge.Loan { background: #fef3c7; color: #92400e; }
+    .hot { color: #b91c1c; font-weight: 700; }
+    .muted { color: var(--muted); }
+    .scroll { max-height: 70vh; overflow: auto; }
+    .detail { position: fixed; inset: 0; z-index: 2100; background: rgba(15,23,42,.4); display: flex; align-items: flex-end; justify-content: center; padding: 12px 0 calc(16px + env(safe-area-inset-bottom, 0px)); }
+    .detail[hidden] { display: none !important; }
+    .detail-card { width: min(520px, 100%); max-height: calc(100dvh - 48px - env(safe-area-inset-bottom, 0px)); overflow: auto; background: #fff; border-radius: 16px 16px 0 0; padding: 12px 14px 16px; }
+    .detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .detail-head button { border: 0; background: #f1f5f9; border-radius: 8px; padding: 6px 10px; font: inherit; font-weight: 600; cursor: pointer; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .detail-item { background: #f8fafc; border-radius: 8px; padding: 6px 8px; }
+    .detail-item .lbl { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--muted); }
+    .detail-item a { color: var(--primary); font-weight: 700; }
+    .error { display: none; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+    .loading { position: fixed; inset: 0; background: rgba(241,245,249,.86); display: flex; align-items: center; justify-content: center; z-index: 2000; font-weight: 600; color: var(--muted); }
+    .loading[hidden] { display: none !important; }
+    @media (max-width: 1100px) {
+      .header { height: 42px; min-height: 42px; padding: 0 8px; }
+      h1 { font-size: .86rem; }
+      .as-on { font-size: .62rem; max-width: 34vw; overflow: hidden; text-overflow: ellipsis; }
+      .filter-toggle { display: inline-flex; align-items: center; justify-content: center; }
+      .filters { display: none; position: fixed; left: 8px; right: 8px; top: 50px; z-index: 1900; padding: 8px; border-radius: 10px; background: #fff; color: var(--text); box-shadow: 0 10px 24px rgba(15,23,42,.16); grid-template-columns: 1fr 1fr; gap: 8px; }
+      body.filters-open .filters { display: grid; }
+      .filters .search-box { grid-column: 1 / -1; width: 100%; }
+      .filters select { width: 100%; max-width: none; }
+      .kpis { grid-template-columns: 1fr 1fr; }
+      .wrap { padding: 8px 8px 72px; }
+      .panel { padding: 6px; }
+      .pills button { padding: 4px 8px; font-size: 12px; }
+      th, td { padding: 3px 4px; font-size: 11px; line-height: 1.15; }
+      .wide-col { display: none; }
+      .detail { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+      .detail-card { width: calc(100% - 16px); margin: 0 8px; max-height: calc(100dvh - 140px - env(safe-area-inset-bottom, 0px)); border-radius: 16px; }
+      .detail-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="loading" id="loading">Loading PM Surya Ghar…</div>
+  <header class="header">
+    <div class="header-left">
+      <h1>PM Surya Ghar</h1>
+      <span id="asOn" class="as-on" hidden></span>
+    </div>
+    <button type="button" class="filter-toggle" id="filterToggle" aria-expanded="false" aria-controls="filters" title="Filters"><i class="fas fa-sliders-h"></i></button>
+    <div class="filters" id="filters">
+      <div class="search-box"><i class="fas fa-search"></i><input type="search" id="q" placeholder="Application, CCC…" autocomplete="off"></div>
+      <select id="regionFilter" title="Region"><option value="">All Regions</option></select>
+      <select id="divisionFilter" title="Division"><option value="">All Divisions</option></select>
+      <select id="cccFilter" title="CCC"><option value="">All CCCs</option></select>
+      <select id="vendorFilter" title="Vendor"><option value="">All vendors</option></select>
+      <select id="categoryFilter" title="Category">
+        <option value="">All categories</option>
+        <option value="Residential-Self">Residential-Self</option>
+        <option value="RWA">Resident Welfare Association</option>
+      </select>
+    </div>
+  </header>
+  <div class="wrap">
+    <div class="error" id="error"></div>
+    <div class="kpis" id="kpis"></div>
+    <h2 class="section-title">Detailed Analysis <button type="button" id="kpiFilterBadge" class="filter-badge" hidden></button></h2>
+    <div id="analysisBreadcrumb" class="crumbs"></div>
+    <div class="pills" id="pills">
+      <button type="button" data-analysis="region">Region</button>
+      <button type="button" data-analysis="division">Division</button>
+      <button type="button" data-analysis="ccc">CCC</button>
+      <button type="button" data-analysis="vendor">Vendor</button>
+      <button type="button" data-analysis="stage">Stage</button>
+      <button type="button" data-analysis="applications">Consumer wise</button>
+    </div>
+    <section class="panel" id="analysisTable"></section>
+    <div class="detail" id="consumerDetail" hidden>
+      <div class="detail-card">
+        <div class="detail-head"><strong id="detailTitle">Consumer</strong><button type="button" id="detailClose">Close</button></div>
+        <div class="detail-grid" id="detailBody"></div>
+      </div>
+    </div>
+  </div>
+  <script>
+    const KPI_LABEL = { vendor: 'Vendor', agreement: 'Agreement', installed: 'Installed', connected: 'Connected', rwa: 'RWA' };
+    const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+    const regionFilter = document.getElementById('regionFilter');
+    const divisionFilter = document.getElementById('divisionFilter');
+    const cccFilter = document.getElementById('cccFilter');
+    const vendorFilter = document.getElementById('vendorFilter');
+    const categoryFilter = document.getElementById('categoryFilter');
+    const searchBox = document.getElementById('q');
+    let rawData = [];
+    let kpiKey = '';
+    let analysisTab = 'region';
+    let analysisJump = true;
+    let stageDrill = '';
+    let consumerByAppl = {};
+
+    function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    function parseCsv(text) {
+      const rows = [];
+      let row = [], cur = '', inQ = false;
+      const src = String(text || '').replace(/^\uFEFF/, '');
+      for (let i = 0; i < src.length; i++) {
+        const ch = src[i];
+        if (ch === '"') { if (inQ && src[i + 1] === '"') { cur += '"'; i++; } else inQ = !inQ; continue; }
+        if ((ch === ',' && !inQ) || ((ch === '\n' || ch === '\r') && !inQ)) {
+          row.push(cur); cur = '';
+          if (ch === '\n' || (ch === '\r' && src[i + 1] !== '\n')) { rows.push(row); row = []; }
+          continue;
+        }
+        cur += ch;
+      }
+      if (cur.length || row.length) { row.push(cur); rows.push(row); }
+      return rows.filter((r) => r.some((c) => String(c || '').trim()));
+    }
+    function rowsToObjects(table) {
+      if (!table.length) return [];
+      const headers = table[0].map((h) => String(h || '').replace(/^\uFEFF/, '').trim());
+      const out = [];
+      for (let i = 1; i < table.length; i++) {
+        const first = String(table[i][0] || '').trim();
+        if (!first || /^logic$/i.test(first)) continue;
+        const obj = {};
+        headers.forEach((h, idx) => { if (h) obj[h] = table[i][idx]; });
+        out.push(obj);
+      }
+      return out;
+    }
+    function pick(row, keys) {
+      const wanted = {};
+      keys.forEach((k) => { wanted[String(k).toLowerCase()] = true; });
+      const names = Object.keys(row || {});
+      for (let i = 0; i < names.length; i++) {
+        if (!wanted[String(names[i]).toLowerCase().trim()]) continue;
+        const v = row[names[i]];
+        if (v != null && String(v).trim() !== '') return String(v).trim();
+      }
+      return '';
+    }
+    function parseDate(raw) {
+      const s = String(raw || '').trim();
+      let m = s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})/);
+      if (m && MONTHS[m[2].toLowerCase()] != null) {
+        let y = +m[3]; if (y < 100) y += 2000;
+        return Date.UTC(y, MONTHS[m[2].toLowerCase()], +m[1]);
+      }
+      m = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/);
+      if (m) {
+        let y = +m[3]; if (y < 100) y += 2000;
+        return Date.UTC(y, +m[2] - 1, +m[1]);
+      }
+      return 0;
+    }
+    function phoneText(raw) {
+      const s = String(raw || '').trim();
+      const m = s.match(/^(\d+)(?:\.(\d+))?[eE]\+(\d+)$/);
+      if (!m) return s;
+      const digits = m[1] + (m[2] || '');
+      const width = (+m[3]) + 1;
+      if (digits.length >= width) return digits.slice(0, width);
+      return digits + '•'.repeat(width - digits.length);
+    }
+    function fmtDate(ms) {
+      if (!ms) return '';
+      const d = new Date(ms);
+      const p = (n) => String(n).padStart(2, '0');
+      return p(d.getUTCDate()) + '/' + p(d.getUTCMonth() + 1) + '/' + d.getUTCFullYear();
+    }
+    function categoryOf(row) {
+      const s = (pick(row, ['Consumer Category']) + ' ' + pick(row, ['Category'])).toLowerCase();
+      if (/welfare|rwa/.test(s)) return 'RWA';
+      if (/self/.test(s)) return 'Residential-Self';
+      return 'Other';
+    }
+    function officeOf(row, regionName) {
+      const divRaw = pick(row, ['Division Name']);
+      const cccRaw = pick(row, ['Sub-Division Name']).replace(/\s*ccc\s*$/i, '').trim();
+      let division = divRaw;
+      let ccc = cccRaw;
+      if (window.MzoScope) {
+        const named = MzoScope.cccNameOf(cccRaw);
+        const parent = named ? MzoScope.parentOfCcc(named) : null;
+        if (parent) {
+          division = parent.division;
+          ccc = parent.ccc;
+        } else {
+          division = MzoScope.divisionNameOf(divRaw) || divRaw;
+          ccc = named || cccRaw;
+        }
+      }
+      return { region: regionName, division: division || '', ccc: ccc || '' };
+    }
+    function flags(row) {
+      const installStatus = pick(row, ['Installation Status']);
+      const installed = /installation completed/i.test(installStatus);
+      const connected = !!parseDate(pick(row, ['Net Metering Date']));
+      return {
+        vendor: !!pick(row, ['Vendor Name']),
+        agreement: !!parseDate(pick(row, ['Agreement Upload Date'])),
+        installed: installed,
+        connected: connected
+      };
+    }
+    function ingest(csv, regionName) {
+      if (!/application number/i.test(String(csv || '').slice(0, 800))) return [];
+      return rowsToObjects(parseCsv(csv)).map((row) => {
+        const office = officeOf(row, regionName);
+        const mark = flags(row);
+        const cap = pick(row, ['Installed Capacity (in kW)']);
+        const rec = {
+          appl: pick(row, ['Application Number']),
+          name: pick(row, ['Consumer Name']),
+          consumerId: pick(row, ['Consumer Number']),
+          mobile: phoneText(pick(row, ['Mobile (Masked)', 'Mobile Number', 'Mobile'])),
+          category: categoryOf(row),
+          stage: pick(row, ['Current Stage']) || 'Blank',
+          sub: pick(row, ['Sub Status of Current Stage']) || 'Blank',
+          phase: pick(row, ['Connection Phase']),
+          vendor: pick(row, ['Vendor Name']),
+          vendorLabel: pick(row, ['Vendor Name']) || 'No vendor',
+          kw: cap,
+          net: fmtDate(parseDate(pick(row, ['Net Metering Date']))),
+          last: parseDate(pick(row, ['Last Action Date'])),
+          vendorSet: mark.vendor,
+          agreement: mark.agreement,
+          installed: mark.installed,
+          connected: mark.connected,
+          REGION: office.region,
+          DIVISION: office.division,
+          'CCC NAME': office.ccc,
+          REGION_NORM: office.region,
+          DIVISION_NORM: office.division,
+          CCC_NORM: office.ccc
+        };
+        rec._search = [rec.appl, rec.name, rec.consumerId, rec.mobile, rec.vendor, rec.stage, rec.sub, rec.CCC_NORM, rec.DIVISION_NORM, rec.category].join(' ').toLowerCase();
+        return rec;
+      }).filter((r) => r.appl);
+    }
+    function unique(arr) { return Array.from(new Set(arr.filter(Boolean))).sort((a, b) => a.localeCompare(b)); }
+    function isLocked(id) { return !!(window.MzoScope && MzoScope.isFilterLocked(id)); }
+    function fillSelect(el, values, allLabel, locked) {
+      const prev = el.value;
+      el.disabled = false;
+      el.classList.remove('mzo-filter-locked');
+      el.innerHTML = '';
+      let opts = values.slice();
+      if (locked && !opts.length && window.MzoScope && MzoScope.getScope) {
+        const scope = MzoScope.getScope() || {};
+        if (el.id === 'regionFilter' && scope.regions) opts = Array.from(scope.regions);
+        if (el.id === 'divisionFilter' && scope.divisions) opts = Array.from(scope.divisions);
+        if (el.id === 'cccFilter' && scope.cccs) opts = Array.from(scope.cccs);
+      }
+      if (!locked) {
+        const all = document.createElement('option');
+        all.value = '';
+        all.textContent = allLabel;
+        el.appendChild(all);
+      }
+      opts.forEach((v) => {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        el.appendChild(opt);
+      });
+      if (locked && opts.length) {
+        el.value = opts[0];
+        el.disabled = true;
+        el.classList.add('mzo-filter-locked');
+      } else if (prev && opts.indexOf(prev) !== -1) el.value = prev;
+    }
+    function populateFilters() {
+      const regionLocked = isLocked('regionFilter');
+      const divLocked = isLocked('divisionFilter');
+      const cccLocked = isLocked('cccFilter');
+      fillSelect(regionFilter, unique(rawData.map((r) => r.REGION_NORM)), 'All Regions', regionLocked);
+      let divSource = rawData;
+      if (!divLocked && regionFilter.value) divSource = rawData.filter((r) => r.REGION_NORM === regionFilter.value);
+      fillSelect(divisionFilter, unique(divSource.map((r) => r.DIVISION_NORM)), 'All Divisions', divLocked);
+      let cccSource = divSource;
+      if (!cccLocked && divisionFilter.value) cccSource = divSource.filter((r) => r.DIVISION_NORM === divisionFilter.value);
+      fillSelect(cccFilter, unique(cccSource.map((r) => r.CCC_NORM)), 'All CCCs', cccLocked);
+      let vendorSource = cccSource;
+      if (cccFilter.value) vendorSource = cccSource.filter((r) => r.CCC_NORM === cccFilter.value);
+      fillSelect(vendorFilter, unique(vendorSource.map((r) => r.vendorLabel)), 'All vendors', false);
+      if (window.MzoScope) MzoScope.lockFilters();
+    }
+    function officeFiltered() {
+      const q = String(searchBox.value || '').trim().toLowerCase();
+      return rawData.filter((r) => {
+        if (regionFilter.value && r.REGION_NORM !== regionFilter.value) return false;
+        if (divisionFilter.value && r.DIVISION_NORM !== divisionFilter.value) return false;
+        if (cccFilter.value && r.CCC_NORM !== cccFilter.value) return false;
+        if (vendorFilter.value && r.vendorLabel !== vendorFilter.value) return false;
+        if (categoryFilter.value && r.category !== categoryFilter.value) return false;
+        if (q && r._search.indexOf(q) === -1) return false;
+        return true;
+      });
+    }
+    function viewRows(base) {
+      let rows = base;
+      if (kpiKey === 'vendor') rows = rows.filter((r) => r.vendorSet);
+      else if (kpiKey === 'agreement') rows = rows.filter((r) => r.agreement);
+      else if (kpiKey === 'installed') rows = rows.filter((r) => r.installed);
+      else if (kpiKey === 'connected') rows = rows.filter((r) => r.connected);
+      else if (kpiKey === 'rwa') rows = rows.filter((r) => r.category === 'RWA');
+      if (stageDrill) {
+        const cut = stageDrill.indexOf('\t');
+        const stage = stageDrill.slice(0, cut);
+        const sub = stageDrill.slice(cut + 1);
+        rows = rows.filter((r) => r.stage === stage && r.sub === sub);
+      }
+      return rows;
+    }
+    function tally(rows, field) {
+      const map = {};
+      rows.forEach((r) => {
+        const key = r[field] || (field === 'CCC_NORM' ? 'CCC pending' : field === 'vendorLabel' ? 'No vendor' : 'Unknown');
+        if (!map[key]) {
+          map[key] = { label: key, division: r.DIVISION_NORM, total: 0, agreement: 0, installed: 0, connected: 0, rwa: 0 };
+        }
+        const b = map[key];
+        b.total += 1;
+        if (r.agreement) b.agreement += 1;
+        if (r.installed) b.installed += 1;
+        if (r.connected) b.connected += 1;
+        if (r.category === 'RWA') b.rwa += 1;
+      });
+      return Object.values(map).sort((a, b) => b.total - a.total || a.label.localeCompare(b.label));
+    }
+    function paintKpis(base) {
+      const n = (fn) => base.filter(fn).length;
+      const cards = [
+        ['total', 'total', 'Total', base.length, 'Applications'],
+        ['vendor', 'vendor', 'Vendor', n((r) => r.vendorSet), 'Vendor name filled'],
+        ['agreement', 'agree', 'Agreement', n((r) => r.agreement), 'Agreement upload date'],
+        ['installed', 'conn', 'Installed', n((r) => r.installed), 'Solar plate completed'],
+        ['connected', 'meter', 'Connected', n((r) => r.connected), 'Net metering date'],
+        ['rwa', 'rwa', 'RWA', n((r) => r.category === 'RWA'), 'Welfare association']
+      ];
+      document.getElementById('kpis').innerHTML = cards.map((c) =>
+        '<button type="button" class="kpi ' + c[1] + (kpiKey === c[0] || (c[0] === 'total' && !kpiKey) ? ' active' : '') + '" data-kpi="' + c[0] + '">' +
+        '<div class="lbl">' + c[2] + '</div><div class="val">' + c[3].toLocaleString('en-IN') + '</div><div class="sub">' + c[4] + '</div></button>'
+      ).join('');
+    }
+function visibleOfficeTabs() {
+      return {
+        region: !isLocked('regionFilter') && !regionFilter.value,
+        division: !isLocked('divisionFilter') && !divisionFilter.value && !cccFilter.value,
+        ccc: !isLocked('cccFilter') && !cccFilter.value
+      };
+    }
+    function defaultAnalysisTab() {
+      const vis = visibleOfficeTabs();
+      if (vis.region) return 'region';
+      if (vis.division) return 'division';
+      if (vis.ccc) return 'ccc';
+      return 'vendor';
+    }
+    function officeRows(buckets, kind) {
+      const cols = kind === 'ccc' ? 7 : 6;
+      if (!buckets.length) return '<tr><td colspan="' + cols + '" class="muted">No applications in this view.</td></tr>';
+      const sum = { total: 0, agreement: 0, installed: 0, connected: 0, rwa: 0 };
+      buckets.forEach((b) => {
+        sum.total += b.total; sum.agreement += b.agreement; sum.installed += b.installed; sum.connected += b.connected; sum.rwa += b.rwa;
+      });
+      const nums = (b) => '<td class="num">' + b.total + '</td><td class="num">' + b.agreement + '</td><td class="num">' + b.installed + '</td><td class="num">' + b.connected + '</td><td class="num">' + b.rwa + '</td>';
+      const body = buckets.map((b) => {
+        const attr = kind === 'ccc'
+          ? ' data-drill="ccc" data-value="' + esc(b.label) + '" data-division="' + esc(b.division) + '"'
+          : ' data-drill="' + kind + '" data-value="' + esc(b.label) + '"';
+        const name = kind === 'ccc' ? '<td>' + esc(b.label) + '</td><td>' + esc(b.division) + '</td>' : '<td>' + esc(b.label) + '</td>';
+        return '<tr' + attr + '>' + name + nums(b) + '</tr>';
+      }).join('');
+      const totalName = kind === 'ccc' ? '<td>Total</td><td></td>' : '<td>Total</td>';
+      return body + '<tr class="total">' + totalName + nums(sum) + '</tr>';
+    }
+    function summaryTable(kind, rows) {
+      const field = kind === 'region' ? 'REGION_NORM' : kind === 'division' ? 'DIVISION_NORM' : kind === 'ccc' ? 'CCC_NORM' : 'vendorLabel';
+      const title = kind === 'region' ? 'Region' : kind === 'division' ? 'Division' : kind === 'ccc' ? 'CCC' : 'Vendor';
+      const head = kind === 'ccc' ? '<th>CCC</th><th>Division</th>' : '<th>' + title + '</th>';
+      return '<div class="scroll"><table><thead><tr>' + head +
+        '<th class="num">Total</th><th class="num">Agreement</th><th class="num">Installed</th><th class="num">Connected</th><th class="num">RWA</th></tr></thead><tbody>' +
+        officeRows(tally(rows, field), kind) + '</tbody></table></div>';
+    }
+    function stageTable(rows) {
+      const map = {};
+      rows.forEach((r) => {
+        const key = r.stage + '	' + r.sub;
+        if (!map[key]) map[key] = { stage: r.stage, sub: r.sub, total: 0 };
+        map[key].total += 1;
+      });
+      const stages = Object.values(map).sort((a, b) => b.total - a.total || a.stage.localeCompare(b.stage));
+      const sum = stages.reduce((n, s) => n + s.total, 0);
+      const body = stages.map((s) =>
+        '<tr data-drill="stage" data-stage="' + esc(s.stage) + '" data-sub="' + esc(s.sub) + '"><td>' + esc(s.stage) + '</td><td>' + esc(s.sub) + '</td><td class="num">' + s.total + '</td></tr>'
+      ).join('') || '<tr><td colspan="3" class="muted">No applications in this view.</td></tr>';
+      return '<div class="scroll"><table><thead><tr><th>Current stage</th><th>Sub status</th><th class="num">Total</th></tr></thead><tbody>' +
+        body + (stages.length ? '<tr class="total"><td>Total</td><td></td><td class="num">' + sum + '</td></tr>' : '') + '</tbody></table></div>';
+    }
+    function applicationTable(rows) {
+      const list = rows.slice().sort((a, b) => (a.connected === b.connected ? 0 : a.connected ? 1 : -1) || a.appl.localeCompare(b.appl));
+      const shown = list.slice(0, 150);
+      consumerByAppl = {};
+      shown.forEach((r) => { consumerByAppl[r.appl] = r; });
+      const body = (shown.map((r) =>
+        '<tr class="consumer-row" data-appl="' + esc(r.appl) + '">' +
+        '<td>' + esc(r.name || r.appl) + '<div class="muted">' + esc(r.appl) + '</div></td>' +
+        '<td>' + esc(r.consumerId || '—') + '</td>' +
+        '<td>' + esc(r.mobile || '—') + '</td>' +
+        '<td class="wide-col">' + esc(r.stage) + '</td>' +
+        '<td class="wide-col num">' + esc(r.kw || '—') + '</td>' +
+        '<td class="wide-col">' + esc(r.net || '—') + '</td></tr>'
+      ).join('') || '<tr><td colspan="6" class="muted">No applications in this view.</td></tr>') +
+        (list.length ? '<tr class="total"><td>Total</td><td colspan="5">' + list.length.toLocaleString('en-IN') +
+          (list.length > shown.length ? ' · first ' + shown.length + ' shown' : '') + '</td></tr>' : '');
+      return '<div class="scroll"><table class="consumer-list"><thead><tr><th>Consumer</th><th>Consumer ID</th><th>Mobile</th><th class="wide-col">Stage</th><th class="wide-col num">kW</th><th class="wide-col">Net metering</th></tr></thead><tbody>' + body + '</tbody></table></div>';
+    }
+    function showConsumer(appl) {
+      const r = consumerByAppl[appl];
+      if (!r) return;
+      const cell = (label, value) => '<div class="detail-item"><span class="lbl">' + label + '</span>' + value + '</div>';
+      const phone = r.mobile && r.mobile.indexOf('•') === -1 ? '<a href="tel:' + esc(r.mobile) + '">' + esc(r.mobile) + '</a>' : esc(r.mobile || '—');
+      document.getElementById('detailTitle').textContent = r.name || r.appl;
+      document.getElementById('detailBody').innerHTML =
+        cell('Consumer ID', esc(r.consumerId || '—')) +
+        cell('Mobile', phone) +
+        cell('Application', esc(r.appl)) +
+        cell('Category', esc(r.category)) +
+        cell('Office', esc([r.CCC_NORM, r.DIVISION_NORM, r.REGION_NORM].filter(Boolean).join(' · ') || '—')) +
+        cell('Vendor', esc(r.vendorLabel)) +
+        cell('Stage', esc(r.stage + (r.sub && r.sub !== 'Blank' ? ' · ' + r.sub : ''))) +
+        cell('kW', esc(r.kw || '—')) +
+        cell('Net metering', esc(r.net || '—'));
+      document.getElementById('consumerDetail').hidden = false;
+    }
+    function renderBadge(count) {
+      const badge = document.getElementById('kpiFilterBadge');
+      if (!KPI_LABEL[kpiKey]) { badge.hidden = true; badge.textContent = ''; return; }
+      badge.hidden = false;
+      badge.textContent = KPI_LABEL[kpiKey] + ' · ' + count.toLocaleString('en-IN');
+    }
+    function renderCrumbs() {
+      const items = [];
+      if (KPI_LABEL[kpiKey]) items.push(['kpi', KPI_LABEL[kpiKey]]);
+      if (stageDrill) items.push(['stage', stageDrill.replace('	', ' · ')]);
+      if (regionFilter.value && !isLocked('regionFilter')) items.push(['region', regionFilter.value]);
+      if (divisionFilter.value && !isLocked('divisionFilter')) items.push(['division', divisionFilter.value]);
+      if (cccFilter.value && !isLocked('cccFilter')) items.push(['ccc', cccFilter.value]);
+      if (vendorFilter.value) items.push(['vendor', vendorFilter.value]);
+      if (categoryFilter.value) items.push(['category', categoryFilter.value]);
+      document.getElementById('analysisBreadcrumb').innerHTML = items.map((item) =>
+        '<button type="button" data-crumb="' + item[0] + '">' + esc(item[1]) + '</button>'
+      ).join('');
+    }
+    function paintAnalysis(rows) {
+      const vis = visibleOfficeTabs();
+      const office = { region: 1, division: 1, ccc: 1 };
+      if (analysisJump || !analysisTab || (office[analysisTab] && !vis[analysisTab])) analysisTab = defaultAnalysisTab();
+      analysisJump = false;
+      document.querySelectorAll('#pills [data-analysis]').forEach((btn) => {
+        const key = btn.getAttribute('data-analysis');
+        btn.hidden = !!(office[key] && !vis[key]);
+        btn.classList.toggle('active', key === analysisTab);
+      });
+      renderBadge(rows.length);
+      renderCrumbs();
+      const host = document.getElementById('analysisTable');
+      if (analysisTab === 'applications') host.innerHTML = applicationTable(rows);
+      else if (analysisTab === 'stage') host.innerHTML = stageTable(rows);
+      else host.innerHTML = summaryTable(analysisTab, rows);
+    }
+    function applyFilters() {
+      const base = officeFiltered();
+      paintKpis(base);
+      paintAnalysis(viewRows(base));
+    }
+    async function loadData() {
+      const err = document.getElementById('error');
+      err.style.display = 'none';
+      try {
+        if (!window.mzoDataHub) throw new Error('Data hub missing');
+        const jobs = [
+          ['CACHE_PMSGY_MALDA', 'Malda'],
+          ['CACHE_PMSGY_UD', 'Raiganj'],
+          ['CACHE_PMSGY_DD', 'Balurghat']
+        ];
+        await Promise.all(jobs.map((j) => window.mzoDataHub.waitForDataset(j[0])));
+        const parts = [];
+        for (let i = 0; i < jobs.length; i++) {
+          const csv = (await window.mzoDataHub.get(jobs[i][0])) || '';
+          parts.push(ingest(csv, jobs[i][1]));
+        }
+        let rows = parts[0].concat(parts[1], parts[2]);
+        let maxLast = 0;
+        rows.forEach((r) => { if (r.last > maxLast) maxLast = r.last; });
+        const label = fmtDate(maxLast);
+        const el = document.getElementById('asOn');
+        el.textContent = 'As on ' + label;
+        el.hidden = !label;
+        try { localStorage.setItem('mzo_pmsgy_as_on', label); } catch (_) {}
+        if (window.MzoScope) rows = MzoScope.filterRows(rows);
+        rawData = rows;
+        if (!rawData.length) throw new Error('empty');
+        populateFilters();
+        applyFilters();
+      } catch (e) {
+        console.error(e);
+        err.textContent = 'Could not load PM Surya Ghar. Refresh this page.';
+        err.style.display = 'block';
+      } finally {
+        document.getElementById('loading').hidden = true;
+      }
+    }
+    document.getElementById('filterToggle').addEventListener('click', () => {
+      const open = document.body.classList.toggle('filters-open');
+      document.getElementById('filterToggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    document.getElementById('kpis').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-kpi]');
+      if (!btn) return;
+      const key = btn.getAttribute('data-kpi');
+      kpiKey = (key === 'total' || kpiKey === key) ? '' : key;
+      analysisJump = true;
+      applyFilters();
+    });
+    regionFilter.addEventListener('change', () => { if (!isLocked('regionFilter')) { analysisJump = true; populateFilters(); applyFilters(); } });
+    divisionFilter.addEventListener('change', () => { if (!isLocked('divisionFilter')) { analysisJump = true; populateFilters(); applyFilters(); } });
+    cccFilter.addEventListener('change', () => { analysisJump = true; applyFilters(); });
+    vendorFilter.addEventListener('change', () => { analysisJump = true; applyFilters(); });
+    categoryFilter.addEventListener('change', () => { analysisJump = true; applyFilters(); });
+    searchBox.addEventListener('input', applyFilters);
+    document.getElementById('pills').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-analysis]');
+      if (!btn) return;
+      analysisTab = btn.getAttribute('data-analysis');
+      analysisJump = false;
+      applyFilters();
+    });
+    document.getElementById('analysisTable').addEventListener('click', (e) => {
+      const tr = e.target.closest('tr[data-drill], tr.consumer-row');
+      if (!tr || tr.classList.contains('total')) return;
+      if (tr.classList.contains('consumer-row')) {
+        showConsumer(tr.getAttribute('data-appl'));
+        return;
+      }
+      const kind = tr.getAttribute('data-drill');
+      const name = tr.getAttribute('data-value') || '';
+      if (kind === 'region' && !isLocked('regionFilter')) {
+        regionFilter.value = name;
+        if (!isLocked('divisionFilter')) divisionFilter.value = '';
+        if (!isLocked('cccFilter')) cccFilter.value = '';
+        populateFilters();
+      } else if (kind === 'division' && !isLocked('divisionFilter')) {
+        divisionFilter.value = name;
+        if (!isLocked('cccFilter')) cccFilter.value = '';
+        populateFilters();
+      } else if (kind === 'ccc' && !isLocked('cccFilter')) {
+        if (name === 'CCC pending') return;
+        const division = tr.getAttribute('data-division') || '';
+        if (division && !isLocked('divisionFilter')) divisionFilter.value = division;
+        populateFilters();
+        cccFilter.value = name;
+      } else if (kind === 'vendor') {
+        vendorFilter.value = name;
+        analysisTab = 'applications';
+        analysisJump = false;
+        applyFilters();
+        return;
+      } else if (kind === 'stage') {
+        stageDrill = (tr.getAttribute('data-stage') || '') + '\t' + (tr.getAttribute('data-sub') || '');
+        analysisTab = 'applications';
+        analysisJump = false;
+        applyFilters();
+        return;
+      } else return;
+      analysisJump = true;
+      applyFilters();
+    });
+    document.getElementById('analysisBreadcrumb').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-crumb]');
+      if (!btn) return;
+      const kind = btn.getAttribute('data-crumb');
+      if (kind === 'kpi') kpiKey = '';
+      if (kind === 'stage') stageDrill = '';
+      if (kind === 'region' && !isLocked('regionFilter')) {
+        regionFilter.value = '';
+        if (!isLocked('divisionFilter')) divisionFilter.value = '';
+        if (!isLocked('cccFilter')) cccFilter.value = '';
+        populateFilters();
+      }
+      if (kind === 'division' && !isLocked('divisionFilter')) {
+        divisionFilter.value = '';
+        if (!isLocked('cccFilter')) cccFilter.value = '';
+        populateFilters();
+      }
+      if (kind === 'ccc' && !isLocked('cccFilter')) cccFilter.value = '';
+      if (kind === 'vendor') vendorFilter.value = '';
+      if (kind === 'category') categoryFilter.value = '';
+      analysisJump = true;
+      applyFilters();
+    });
+    document.getElementById('kpiFilterBadge').addEventListener('click', () => {
+      kpiKey = '';
+      analysisJump = true;
+      applyFilters();
+    });
+    document.getElementById('detailClose').addEventListener('click', () => {
+      document.getElementById('consumerDetail').hidden = true;
+    });
+    document.getElementById('consumerDetail').addEventListener('click', (e) => {
+      if (e.target.id === 'consumerDetail') document.getElementById('consumerDetail').hidden = true;
+    });
+    loadData();
+  </script>
+</body>
+</html>
