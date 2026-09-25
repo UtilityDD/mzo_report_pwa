@@ -326,6 +326,45 @@ async function querySupabase(apiPath, options = {}) {
     }
 }
 
+const PIN_HASH_PREFIX = 'scrypt$';
+
+function isPinHash(value) {
+    return String(value || '').startsWith(PIN_HASH_PREFIX);
+}
+
+function hashPin(pin) {
+    const plain = String(pin || '').trim();
+    if (!plain) return '';
+    if (isPinHash(plain)) return plain;
+    const salt = crypto.randomBytes(16);
+    const hash = crypto.scryptSync(plain, salt, 32, { N: 16384, r: 8, p: 1 });
+    return `${PIN_HASH_PREFIX}${salt.toString('base64')}$${hash.toString('base64')}`;
+}
+
+function verifyPin(pin, stored) {
+    const plain = String(pin || '').trim();
+    const saved = String(stored || '').trim();
+    if (!plain || !saved) return false;
+    if (!isPinHash(saved)) return saved === plain;
+    const parts = saved.split('$');
+    if (parts.length !== 4) return false;
+    try {
+        const salt = Buffer.from(parts[2], 'base64');
+        const expected = Buffer.from(parts[3], 'base64');
+        const actual = crypto.scryptSync(plain, salt, expected.length, { N: 16384, r: 8, p: 1 });
+        return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+    } catch (err) {
+        return false;
+    }
+}
+
+/** Profile sent to browsers. PIN never leaves the server. */
+function portalUserForClient(user) {
+    if (!user) return null;
+    const { PIN, ...clientProfile } = user;
+    return clientProfile;
+}
+
 /** Map DB row → legacy client profile shape (Username, PIN, dtr-autho, …) */
 function portalUserToClient(row) {
     if (!row) return null;
@@ -359,7 +398,7 @@ function clientUserToPortal(user) {
     const username = String(user.Username || user.username || '').trim();
     return {
         username,
-        pin: String(user.PIN != null ? user.PIN : (user.pin || '')).trim(),
+        pin: hashPin(String(user.PIN != null ? user.PIN : (user.pin || '')).trim()),
         name: String(user.Name != null ? user.Name : (user.name || '')).trim(),
         role: String(user.role || '').trim(),
         last_login: String(user.LastLogin != null ? user.LastLogin : (user.last_login || '')).trim(),
@@ -481,16 +520,7 @@ async function initializeLocalUsers() {
         globalCachedUsers = users;
         usersCacheLoadedAt = Date.now();
 
-        try {
-            const dataDir = path.join(__dirname, 'data');
-            if (!fs.existsSync(dataDir)) {
-                fs.mkdirSync(dataDir, { recursive: true });
-            }
-            fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
-            console.log(`[Auth] Cached ${users.length} portal users locally.`);
-        } catch (writeErr) {
-            console.warn("[Auth] Failed to write local users file (read-only filesystem fallback):", writeErr.message);
-        }
+        console.log(`[Auth] Loaded ${users.length} portal users.`);
         return users;
     } catch (err) {
         console.error("[Auth] Failed to load portal users from Supabase:", err.message);
@@ -556,7 +586,7 @@ function matchLoginUser(users, username, pin) {
         if (!u || !u.Username) return false;
         const storedPin = String(u.PIN || '').trim();
         if (!storedPin) return false; // users with blank PIN cannot log in
-        return String(u.Username).trim().toLowerCase() === userKey && storedPin === pinKey;
+        return String(u.Username).trim().toLowerCase() === userKey && verifyPin(pinKey, storedPin);
     }) || null;
 }
 
@@ -637,6 +667,18 @@ app.use(requireAuth);
 app.use((req, res, next) => {
     if (req.path === '/withheld.html' || req.path === '/nsc.html') {
         res.setHeader('Cache-Control', 'no-store, must-revalidate');
+    }
+    next();
+});
+app.use((req, res, next) => {
+    const p = String(req.path || '').toLowerCase();
+    if (
+        p === '/server.js' ||
+        p.startsWith('/data/') ||
+        p.endsWith('/users.json') ||
+        p.includes('.env')
+    ) {
+        return res.status(404).end();
     }
     next();
 });
@@ -760,8 +802,24 @@ app.post('/api/login', async (req, res) => {
         const matchedUser = matchLoginUser(users, username, pin);
 
         if (matchedUser) {
-            // Exclude the PIN from user profile sent to the client
-            const { PIN, ...clientProfile } = matchedUser;
+            if (!isPinHash(matchedUser.PIN)) {
+                try {
+                    const hashed = hashPin(pin);
+                    await querySupabase(
+                        `${PORTAL_USERS_TABLE}?username=eq.${encodeURIComponent(matchedUser.Username)}`,
+                        {
+                            schema: PORTAL_USERS_SCHEMA,
+                            method: 'PATCH',
+                            body: { pin: hashed, updated_at: new Date().toISOString() },
+                            prefer: 'return=minimal'
+                        }
+                    );
+                    matchedUser.PIN = hashed;
+                } catch (hashErr) {
+                    console.warn('[Auth] PIN hash upgrade failed:', hashErr.message);
+                }
+            }
+            const clientProfile = portalUserForClient(matchedUser);
             
             // Generate a stateless signed session token
             const payload = {
@@ -807,8 +865,7 @@ app.get('/api/session-check', async (req, res) => {
         const key = String(req.user.Username).trim().toLowerCase();
         const fresh = users.find((u) => u.Username && String(u.Username).trim().toLowerCase() === key);
         if (fresh) {
-            const { PIN, ...clientProfile } = fresh;
-            return res.status(200).json({ status: 'success', profile: clientProfile });
+            return res.status(200).json({ status: 'success', profile: portalUserForClient(fresh) });
         }
     } catch (err) {
         console.warn('[Auth] session-check profile refresh failed:', err.message);
@@ -1010,7 +1067,7 @@ app.delete('/api/important-sheets/unbilled/:id', requireSheetsEditor, async (req
 app.get('/api/admin/users', requireAdmin, async (req, res) => {
     try {
         const users = await getLoginCredentials();
-        res.json({ status: 'success', users });
+        res.json({ status: 'success', users: (users || []).map(portalUserForClient) });
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
     }
@@ -1074,7 +1131,7 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
             details: `Created user account: ${Username}`
         });
         
-        res.json({ status: 'success', message: 'User created successfully.', user: saved });
+        res.json({ status: 'success', message: 'User created successfully.', user: portalUserForClient(saved) });
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
     }
@@ -1096,10 +1153,12 @@ app.post('/api/admin/users/update', requireAdmin, async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'User not found.' });
         }
         
+        const incomingPin = String(updatedUser.PIN != null ? updatedUser.PIN : '').trim();
         const merged = {
             ...users[idx],
             ...updatedUser,
-            Username: users[idx].Username // Username cannot be changed
+            Username: users[idx].Username, // Username cannot be changed
+            PIN: incomingPin ? incomingPin : users[idx].PIN
         };
 
         const dbRow = clientUserToPortal(merged);
@@ -1122,7 +1181,7 @@ app.post('/api/admin/users/update', requireAdmin, async (req, res) => {
             details: `Updated user account: ${Username}`
         });
         
-        res.json({ status: 'success', message: 'User updated successfully.', user: merged });
+        res.json({ status: 'success', message: 'User updated successfully.', user: portalUserForClient(merged) });
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
     }
@@ -1195,6 +1254,34 @@ app.get('/api/admin/logs', requireAdmin, async (req, res) => {
             }
         }
         res.json({ status: 'success', logs: globalCachedLogs || [] });
+    } catch (err) {
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// Signed-in user's own report visits, last 15 days (home "Often used")
+app.get('/api/me/visits', async (req, res) => {
+    try {
+        const username = String((req.user && (req.user.Username || req.user.username)) || '').trim();
+        if (!username) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+        const since = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
+        const query = `${ACTIVITY_LOGS_TABLE}?select=details&username=eq.${encodeURIComponent(username)}&type=eq.page_visit&timestamp=gte.${encodeURIComponent(since)}&order=timestamp.desc&limit=5000`;
+        const rows = await querySupabase(query, { schema: PORTAL_USERS_SCHEMA });
+        const counts = new Map();
+        (Array.isArray(rows) ? rows : []).forEach((row) => {
+            const details = String(row.details || '');
+            const raw = details.replace(/^Visited page:\s*/i, '').split('?')[0];
+            let path = raw.replace(/^\/+/, '');
+            if (path === '' || path === 'index.html') return;
+            if (/^(login|offline|admin|admin_users|sheet_links|sheet_open)\.html$/i.test(path)) return;
+            path = path.toLowerCase();
+            counts.set(path, (counts.get(path) || 0) + 1);
+        });
+        const pages = Array.from(counts.entries())
+            .map(([path, count]) => ({ path, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 8);
+        res.json({ status: 'success', days: 15, pages });
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
     }

@@ -52,7 +52,9 @@
 // v152: offline opens the saved page; the offline screen is only for a page never saved
 // v153: offline shows a quiet saved-data note, not an error over the page
 // v154: sheet links open as a full page with serial numbers and update dates
-const CACHE_NAME = 'mzo-reports-cache-v154';
+// v155: report frame is full height; the back button floats and each page keeps bottom space
+// v161: home rows show the sheet-links update date
+const CACHE_NAME = 'mzo-reports-cache-v174';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -144,6 +146,7 @@ function isNetworkFirstPath(pathname) {
     pathname === '/pending_load_extension.html' ||
     pathname === '/index.html' ||
     pathname === '/sheet_links.html' ||
+    pathname === '/sheet_open.html' ||
     pathname === '/weekly.html' ||
     pathname === '/loss.html' ||
     pathname === '/disconnection.html' ||
@@ -157,6 +160,7 @@ function isNetworkFirstPath(pathname) {
     pathname === '/solar.html' ||
     pathname === '/rem/defaulters.html' ||
     pathname === '/admin_users.html' ||
+    pathname === '/admin.html' ||
     pathname === '/consumer/defective_meter.html' ||
     pathname === '/lib/defective_meter_pipeline.js' ||
     pathname === '/lib/sheet_mirror_client.js' ||

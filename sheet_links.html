@@ -19,7 +19,7 @@
     th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
     th { font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); position: sticky; top: 44px; background: var(--card); }
     td.n, th.n { width: 3rem; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
-    td.when, th.when { width: 8.5rem; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
+    td.when, th.when { white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
     td.act, th.act { width: 2.6rem; text-align: center; }
     a.name { color: var(--link); text-decoration: none; font-weight: 600; }
     a.name:hover { text-decoration: underline; }
@@ -66,12 +66,13 @@
       if (url.indexOf('docs.google.com/spreadsheets') === -1) return '';
       try {
         const parsed = new URL(url);
-        const gid = parsed.searchParams.get('gid');
+        const gid = parsed.searchParams.get('gid') || ((parsed.hash.match(/gid=(\d+)/) || [])[1] || '');
         const published = parsed.pathname.indexOf('/spreadsheets/d/e/') !== -1;
         const match = parsed.pathname.match(/\/spreadsheets\/d\/(?:e\/)?([^/]+)/);
         if (!match) return '';
         if (published) return 'https://docs.google.com/spreadsheets/d/e/' + match[1] + '/pubhtml' + (gid ? '?gid=' + encodeURIComponent(gid) : '');
-        return 'https://docs.google.com/spreadsheets/d/' + match[1] + '/edit' + (gid ? '#gid=' + gid : '');
+        const edit = 'https://docs.google.com/spreadsheets/d/' + match[1] + '/edit';
+        return gid ? edit + '?gid=' + encodeURIComponent(gid) + '#gid=' + gid : edit;
       } catch (e) { return ''; }
     }
 
@@ -96,14 +97,15 @@
     function dateFromVersion(ver) {
       const s = String(ver || '').trim();
       if (!s) return '';
+      const report = s.split('|').map(function (p) { return p.trim(); }).find(function (p) {
+        return /^\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}$/.test(p);
+      });
+      if (report) return formatWhen(report);
       const modified = s.match(/^m:([^|]+)/);
       if (modified) return formatWhen(modified[1]);
       const iso = s.match(/\d{4}-\d{2}-\d{2}T[0-9:.]+Z?/);
       if (iso) return formatWhen(iso[0]);
-      const report = s.split('|').map(function (p) { return p.trim(); }).find(function (p) {
-        return /^\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}$/.test(p);
-      });
-      return formatWhen(report);
+      return '';
     }
 
     const datasets = Array.isArray(window.MZO_DATASETS) ? window.MZO_DATASETS : [];
@@ -117,20 +119,19 @@
       { name: 'Upcoming DD', url: 'https://docs.google.com/spreadsheets/d/1aUeVnSc-OmFqqrUdoZxv8v8659u52zlIWddnpJgU9Uk/gviz/tq?tqx=out:csv&gid=487034861' },
       { name: 'DD Summary', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRawhIW9ICZmzuThsL5opfI40WY6upCg5kFzoFXi2UJPR-svO6_cByXy5Y3u_p-2La_tH8SxhFfl29B/pub?gid=220026293&single=true&output=csv' },
       { name: 'Accident Reports', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRrrGeyElvh8i8QzTl25Ej7_RJZ9FJ0jicG3tAhguLEvky178oKZ8-QADKcBceUQ5CFjn7hd9eECVJ6/pub?output=csv' },
-      { name: 'Manpower', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRRXojudL5q-ln7pXOcbLaGsBqznppnvsINcp8xEFvpJUWRCiC7bjii9eZYSu0istzyM91m4yybd5g-/pub?gid=2110628491&single=true&output=csv' },
       { name: 'DTR Records', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=2125422147&single=true&output=csv' },
       { name: 'Peak Load', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=1835924766&single=true&output=csv' },
       { name: 'Substation Upkeeping', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSHoWw-c-KCfsYrkQs67uWaKdag1WXVQobLkngEK-bvbky_LMF6RWg-BwgVYA-5f3RcR4u6rQA5XWhH/pub?gid=422662764&single=true&output=csv' },
       { name: 'PRT / Transformer', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRtpueyQwlq63VP2Tm2_vITV31jKBSceDGJQVJtYeqVVDBSg3QAHzLKrv60i6Z9oODXXzOE-fdfMb8b/pub?gid=0&single=true&output=csv' },
-      { name: 'Highway Crossings', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQTy_LCddlFuzZx9ZyJQTLbqrQ8sb76DG4jyw8ys-s_w6LDxOYhnTTY49eddhqxb9RnTAbksh32y1bH/pub?gid=870376934&single=true&output=csv' },
-      { name: 'O&M Advance', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQPBYq0ZQpaAnu0Mp_qN5oGvklgIpjolyRPf3LfSojRaN-GBBBXKHslR9ue1DOv1432oP2PzYznUUmn/pub?gid=512034300&single=true&output=csv' }
+      { name: 'O&M Advance', key: 'OM_ADVANCE', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQPBYq0ZQpaAnu0Mp_qN5oGvklgIpjolyRPf3LfSojRaN-GBBBXKHslR9ue1DOv1432oP2PzYznUUmn/pub?gid=512034300&single=true&output=csv' }
     ];
 
     const skipSheet = {
       CACHE_VENDORS: 1,
       CACHE_PMSGY_0: 1,
       CACHE_PMSGY_1: 1,
-      CACHE_PMSGY_2: 1
+      CACHE_PMSGY_2: 1,
+      CACHE_LOSS_TARGET: 1
     };
     const byName = new Set();
     const rows = [];
@@ -142,14 +143,16 @@
         key: d.key,
         name: d.label,
         href: href,
-        updated: dateFromVersion(localStorage.getItem('mzo_hub_ver_' + d.key) || '')
+        updated: d.key === 'CACHE_JJM'
+          ? 'As updated by RMs'
+          : dateFromVersion(localStorage.getItem('mzo_hub_ver_' + d.key) || '')
       });
     });
     extras.forEach(function (item) {
       const href = sheetOpenUrl(item.url);
       if (!href || byName.has(item.name)) return;
       byName.add(item.name);
-      rows.push({ key: '', name: item.name, href: href, updated: '' });
+      rows.push({ key: item.key || '', csv: item.url, name: item.name, href: href, updated: '' });
     });
     rows.sort(function (a, b) { return a.name.localeCompare(b.name); });
     rows.forEach(function (row, i) { row.n = i + 1; });
@@ -181,10 +184,10 @@
       empty.hidden = shown !== 0;
     }
 
-    function setUpdated(key, text) {
-      if (!text) return;
+    function setUpdated(key, text, force) {
+      if (!text || key === 'CACHE_JJM') return;
       const row = rows.find(function (r) { return r.key === key; });
-      if (!row || row.updated) return;
+      if (!row || (row.updated && !force)) return;
       row.updated = text;
       paint();
     }
@@ -227,8 +230,8 @@
     });
     paint();
 
-    function applyMeta(key, raw) {
-      setUpdated(key, formatWhen(raw));
+    function applyMeta(key, raw, force) {
+      setUpdated(key, formatWhen(raw), force);
     }
 
     fetch('/api/hub/versions', { credentials: 'same-origin' })
@@ -245,9 +248,10 @@
       .then(function (res) { return res.ok ? res.json() : null; })
       .then(function (data) {
         const meta = (data && data.meta) || {};
-        const when = meta.uploadedAt || meta.reportDate || (meta.stats && meta.stats.today) || '';
-        applyMeta('CACHE_NSC_v5', when);
-        applyMeta('CACHE_WITHHELD_v4', when);
+        const reportWhen = meta.reportDate || (meta.stats && meta.stats.today) || '';
+        const when = reportWhen || meta.uploadedAt || '';
+        applyMeta('CACHE_NSC_v5', when, !!reportWhen);
+        applyMeta('CACHE_WITHHELD_v4', when, !!reportWhen);
       })
       .catch(function () {});
 
@@ -449,6 +453,111 @@
       const label = collectionToDate(csv);
       if (label) setUpdated('CACHE_COLLECTION', label);
     }).catch(function () {});
+
+    function capexHeaderDate(csv) {
+      const rows = csvRows(csv);
+      if (!rows.length) return '';
+      const idx = rows[0].findIndex(function (h) {
+        return /^Reporting Date$/i.test(String(h || '').trim());
+      });
+      if (idx < 0) return '';
+      let best = 0;
+      let label = '';
+      for (let i = 1; i < rows.length; i++) {
+        const raw = String((rows[i] && rows[i][idx]) || '').trim();
+        const m = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+        if (!m) continue;
+        const day = parseInt(m[1], 10);
+        const month = parseInt(m[2], 10);
+        const year = parseInt(m[3], 10);
+        const t = Date.UTC(year, month - 1, day);
+        if (t > best) {
+          best = t;
+          label = String(day).padStart(2, '0') + '/' + String(month).padStart(2, '0') + '/' + year;
+        }
+      }
+      return label;
+    }
+
+    loadSheetCsv('CACHE_CAPEX').then(function (csv) {
+      const label = capexHeaderDate(csv);
+      if (label) setUpdated('CACHE_CAPEX', label);
+    }).catch(function () {});
+
+    function pendingMcHeaderDate(csv) {
+      const rows = csvRows(csv);
+      if (!rows.length) return '';
+      const idx = rows[0].findIndex(function (h) {
+        return /^Report Date$/i.test(String(h || '').trim());
+      });
+      if (idx < 0) return '';
+      let best = 0;
+      let label = '';
+      const pad = function (n) { return String(n).padStart(2, '0'); };
+      for (let i = 1; i < rows.length; i++) {
+        const raw = String((rows[i] && rows[i][idx]) || '').trim();
+        if (!raw) continue;
+        const m = raw.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+        let day;
+        let month;
+        let year;
+        if (m) {
+          day = parseInt(m[1], 10);
+          month = parseInt(m[2], 10);
+          year = parseInt(m[3], 10);
+        } else {
+          const d = new Date(raw);
+          if (Number.isNaN(d.getTime())) continue;
+          day = d.getDate();
+          month = d.getMonth() + 1;
+          year = d.getFullYear();
+        }
+        const t = Date.UTC(year, month - 1, day);
+        if (t > best) {
+          best = t;
+          label = pad(day) + '/' + pad(month) + '/' + year;
+        }
+      }
+      return label;
+    }
+
+    loadSheetCsv('CACHE_PENDING_MC').then(function (csv) {
+      const label = pendingMcHeaderDate(csv);
+      if (label) setUpdated('CACHE_PENDING_MC', label);
+    }).catch(function () {});
+
+    function latestDottedDate(csv, headerName) {
+      const rows = csvRows(csv);
+      if (!rows.length) return '';
+      const idx = rows[0].findIndex(function (h) {
+        return new RegExp('^' + headerName + '$', 'i').test(String(h || '').trim());
+      });
+      if (idx < 0) return '';
+      let best = 0;
+      let label = '';
+      for (let i = 1; i < rows.length; i++) {
+        const raw = String((rows[i] && rows[i][idx]) || '').trim();
+        const m = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+        if (!m) continue;
+        const day = parseInt(m[1], 10);
+        const month = parseInt(m[2], 10);
+        const year = parseInt(m[3], 10);
+        const t = Date.UTC(year, month - 1, day);
+        if (t > best) {
+          best = t;
+          label = String(day).padStart(2, '0') + '/' + String(month).padStart(2, '0') + '/' + year;
+        }
+      }
+      return label;
+    }
+
+    const advance = rows.find(function (r) { return r.key === 'OM_ADVANCE'; });
+    if (advance && advance.csv) {
+      fetch(advance.csv).then(function (res) { return res.ok ? res.text() : ''; }).then(function (csv) {
+        const label = latestDottedDate(csv, 'Creation Date');
+        if (label) setUpdated('OM_ADVANCE', label);
+      }).catch(function () {});
+    }
   </script>
 </body>
 </html>
