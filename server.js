@@ -4141,6 +4141,27 @@ app.get('/api/hub/versions', async (req, res) => {
         console.warn('[Hub versions] Power Map:', e.message);
     }
 
+    const metadataScriptUrl = process.env.METADATA_SCRIPT_URL || '';
+    if (metadataScriptUrl) {
+        try {
+            const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            const timer = ctrl ? setTimeout(() => ctrl.abort(), 3000) : null;
+            try {
+                const metaRes = await fetch(metadataScriptUrl, ctrl ? { signal: ctrl.signal } : undefined);
+                if (metaRes.ok) {
+                    const parsedMeta = JSON.parse(await metaRes.text());
+                    if (parsedMeta && parsedMeta.versions) {
+                        Object.assign(versions, parsedMeta.versions);
+                    }
+                }
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
+        } catch (metaErr) {
+            console.warn('[Hub versions] Metadata script fetch failed:', metaErr.message);
+        }
+    }
+
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
     return res.json({ status: 'success', versions, csvUrls });
 });

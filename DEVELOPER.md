@@ -238,6 +238,12 @@ Upload the **consumer dump** (one row per meter), not a summary. The parser acce
 
 Portal user SQL/import notes: `scripts/README_PORTAL_USERS.md`.
 
+## Central Metadata Sync & Report Dates
+
+`lib/mzo_metadata_sync.gs` provides a standalone Apps Script template to aggregate report update dates from source Google Sheets (cells `N2`, `M2`, `J2`, or column dates) on a 15-minute background trigger.
+- Deploy the script as a Web App (Anyone access) and set `METADATA_SCRIPT_URL` in environment variables.
+- `GET /api/hub/versions` in `server.js` automatically merges the returned metadata payload, allowing homepage report cards (`.row-when`) and `sheet_links.html` (`Updated`) to render report update dates in `< 50ms` without probing individual Google Sheets on demand.
+
 ---
 
 ## Keep this guide current
