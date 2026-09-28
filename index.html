@@ -5713,25 +5713,33 @@
 
         if (!searchInput) return;
 
-        searchInput.addEventListener('input', function () {
-          const query = this.value.trim().toLowerCase();
-          
+        function performSearch() {
+          const rawQuery = searchInput.value.trim().toLowerCase();
+          const tokens = rawQuery.split(/\s+/).filter(Boolean);
+
           if (clearBtn) {
-            clearBtn.style.display = query ? 'flex' : 'none';
+            clearBtn.style.display = rawQuery ? 'flex' : 'none';
           }
 
           const cards = document.querySelectorAll('.report-card');
-          cards.forEach(card => {
+          cards.forEach((card) => {
             if (card.classList.contains('loss-chart-card')) return;
+
+            const cardTitle = card.querySelector('.card-title')?.textContent.toLowerCase() || '';
+            const cardTitleMatch = tokens.length > 0 && tokens.every((token) => cardTitle.includes(token));
 
             const subOptions = card.querySelectorAll('.sub-option');
             let hasVisibleSubOption = false;
 
-            subOptions.forEach(option => {
+            subOptions.forEach((option) => {
               const label = option.querySelector('.app-label')?.textContent.toLowerCase() || '';
-              const pageName = option.dataset.page?.toLowerCase() || '';
-              
-              if (label.includes(query) || pageName.includes(query)) {
+              const pageName = (option.getAttribute('data-page') || option.dataset.page || '').toLowerCase();
+              const datasetName = (option.getAttribute('data-dataset') || '').toLowerCase();
+              const fullText = (label + ' ' + pageName + ' ' + datasetName + ' ' + cardTitle).toLowerCase();
+
+              const isMatch = !tokens.length || cardTitleMatch || tokens.every((token) => fullText.includes(token));
+
+              if (isMatch) {
                 option.style.display = '';
                 hasVisibleSubOption = true;
               } else {
@@ -5741,28 +5749,34 @@
 
             if (hasVisibleSubOption) {
               card.style.display = '';
-              if (query || card.classList.contains('always-open') || window.innerWidth > 768) {
+              if (tokens.length > 0) {
                 card.classList.remove('collapsed');
                 const chevron = card.querySelector('.chevron');
                 if (chevron) chevron.classList.remove('collapsed');
               } else {
-                card.classList.add('collapsed');
-                const chevron = card.querySelector('.chevron');
-                if (chevron) chevron.classList.add('collapsed');
+                if (!card.classList.contains('always-open') && window.innerWidth <= 768) {
+                  card.classList.add('collapsed');
+                  const chevron = card.querySelector('.chevron');
+                  if (chevron) chevron.classList.add('collapsed');
+                } else {
+                  card.classList.remove('collapsed');
+                  const chevron = card.querySelector('.chevron');
+                  if (chevron) chevron.classList.remove('collapsed');
+                }
               }
-            } else if (!query && card.classList.contains('always-open')) {
-              card.style.display = '';
-              card.classList.remove('collapsed');
             } else {
               card.style.display = 'none';
             }
           });
-        });
+        }
+
+        searchInput.addEventListener('input', performSearch);
+        searchInput.addEventListener('keyup', performSearch);
 
         if (clearBtn) {
           clearBtn.addEventListener('click', function () {
             searchInput.value = '';
-            searchInput.dispatchEvent(new Event('input'));
+            performSearch();
             searchInput.focus();
           });
         }
