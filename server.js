@@ -4141,11 +4141,11 @@ app.get('/api/hub/versions', async (req, res) => {
         console.warn('[Hub versions] Power Map:', e.message);
     }
 
-    const metadataScriptUrl = process.env.METADATA_SCRIPT_URL || '';
+    const metadataScriptUrl = process.env.METADATA_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbwhkAICXC-UH8i9BaWp7zl4NjrxnaFm5RaXZUvZDzOI9AV7XWndMvpuL9lsMtIovwogZg/exec';
     if (metadataScriptUrl) {
         try {
             const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-            const timer = ctrl ? setTimeout(() => ctrl.abort(), 3000) : null;
+            const timer = ctrl ? setTimeout(() => ctrl.abort(), 3500) : null;
             try {
                 const metaRes = await fetch(metadataScriptUrl, ctrl ? { signal: ctrl.signal } : undefined);
                 if (metaRes.ok) {
