@@ -5733,6 +5733,26 @@
           .catch(() => {});
       }
 
+      function openSubOption(link, shiftKey) {
+        if (!link) return;
+        if (link.getAttribute('target') === '_blank') {
+          const href = link.getAttribute('href');
+          if (href && href !== '#') window.open(href, '_blank');
+          return;
+        }
+        const page = link.getAttribute('data-page');
+        const title = link.querySelector('.app-label')?.textContent.trim() || 'Details';
+        const dataset = link.getAttribute('data-dataset');
+        if (page) {
+          if (typeof openPage === 'function') {
+            openPage(page, title, dataset, { forceAsk: shiftKey });
+          }
+          return;
+        }
+        const href = (link.getAttribute('href') || '').trim();
+        if (href && href !== '#') window.location.href = href;
+      }
+
       function initPageFavorites() {
         const grid = document.getElementById('favoritesGrid');
         const emptyEl = document.getElementById('favoritesEmpty');
@@ -5772,19 +5792,6 @@
           const hasAny = grid.querySelectorAll('a.sub-option').length > 0;
           emptyEl.style.display = hasAny ? 'none' : '';
           if (typeof window.mzoPaintRowDates === 'function') window.mzoPaintRowDates();
-        }
-
-        function openSubOption(link, shiftKey) {
-          if (!link || link.getAttribute('target') === '_blank') return;
-          const page = link.getAttribute('data-page');
-          const title = link.querySelector('.app-label')?.textContent.trim() || 'Details';
-          const dataset = link.getAttribute('data-dataset');
-          if (page) {
-            openPage(page, title, dataset, { forceAsk: shiftKey });
-            return;
-          }
-          const href = (link.getAttribute('href') || '').trim();
-          if (href && href !== '#') window.location.href = href;
         }
 
         fetch('/api/me/visits', { credentials: 'same-origin' })
@@ -5917,12 +5924,22 @@
                   '</div>' +
                   (item.when ? '<div class="search-result-when">' + escHtml(item.when) + '</div>' : '');
 
+                let handled = false;
                 const handleSelect = function (e) {
-                  e.preventDefault();
-                  dropdown.hidden = true;
-                  openSubOption(item.element, e.shiftKey);
+                  if (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }
+                  if (handled) return;
+                  handled = true;
+                  setTimeout(() => { handled = false; }, 300);
+
+                  if (dropdown) dropdown.hidden = true;
+                  if (searchInput) searchInput.blur();
+                  openSubOption(item.element, e ? e.shiftKey : false);
                 };
 
+                row.addEventListener('mousedown', handleSelect);
                 row.addEventListener('click', handleSelect);
                 row.addEventListener('keydown', function (e) {
                   if (e.key === 'Enter') handleSelect(e);
