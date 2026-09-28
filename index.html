@@ -3654,6 +3654,97 @@
       border-bottom: none !important;
     }
 
+    .search-bar-container {
+      position: relative;
+    }
+
+    .search-results-dropdown {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      right: 0;
+      background: #1e293b;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 14px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+      max-height: 360px;
+      overflow-y: auto;
+      z-index: 9999;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    body.light-theme .search-results-dropdown {
+      background: #ffffff;
+      border-color: rgba(15, 23, 42, 0.14);
+      box-shadow: 0 12px 36px rgba(15, 23, 42, 0.18);
+    }
+
+    .search-result-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      color: var(--text-primary);
+      text-decoration: none;
+      transition: background 0.15s ease;
+    }
+
+    body.light-theme .search-result-item {
+      color: #0f172a;
+    }
+
+    .search-result-item:hover,
+    .search-result-item:focus {
+      background: rgba(99, 102, 241, 0.16);
+    }
+
+    body.light-theme .search-result-item:hover,
+    body.light-theme .search-result-item:focus {
+      background: #f1f5f9;
+    }
+
+    .search-result-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .search-result-title {
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    .search-result-category {
+      font-size: 11px;
+      color: #94a3b8;
+      line-height: 1.2;
+    }
+
+    body.light-theme .search-result-category {
+      color: #64748b;
+    }
+
+    .search-result-when {
+      font-size: 11px;
+      color: #3ecf8e;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .search-empty-state {
+      padding: 16px;
+      text-align: center;
+      color: #94a3b8;
+      font-size: 13px;
+    }
+
     #mainPage .sub-option:hover,
     body.light-theme #mainPage .sub-option:hover,
     #mainPage .priority-link:hover {
@@ -3900,6 +3991,7 @@
               <i class="fas fa-search search-icon-input"></i>
               <input type="text" id="mobileQuickSearch" placeholder="Search reports & dashboards..." autocomplete="off">
               <button id="clearSearchBtn"><i class="fas fa-times-circle"></i></button>
+              <div id="searchResultsDropdown" class="search-results-dropdown" hidden></div>
             </div>
 
             <!-- Weather Forecast Panel (Banner) -->
@@ -5710,8 +5802,17 @@
       function initMobileQuickSearch() {
         const searchInput = document.getElementById('mobileQuickSearch');
         const clearBtn = document.getElementById('clearSearchBtn');
+        const dropdown = document.getElementById('searchResultsDropdown');
 
         if (!searchInput) return;
+
+        function escHtml(str) {
+          return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+        }
 
         function performSearch() {
           const rawQuery = searchInput.value.trim().toLowerCase();
@@ -5721,27 +5822,65 @@
             clearBtn.style.display = rawQuery ? 'flex' : 'none';
           }
 
-          const cards = document.querySelectorAll('.report-card');
+          if (!rawQuery || !tokens.length) {
+            if (dropdown) {
+              dropdown.hidden = true;
+              dropdown.innerHTML = '';
+            }
+            const cards = document.querySelectorAll('#mainPage .report-card');
+            cards.forEach((card) => {
+              if (card.classList.contains('loss-chart-card')) return;
+              card.style.display = '';
+              card.querySelectorAll('.sub-option').forEach((opt) => opt.style.display = '');
+              if (!card.classList.contains('always-open') && window.innerWidth <= 768) {
+                card.classList.add('collapsed');
+                const chevron = card.querySelector('.chevron');
+                if (chevron) chevron.classList.add('collapsed');
+              } else {
+                card.classList.remove('collapsed');
+                const chevron = card.querySelector('.chevron');
+                if (chevron) chevron.classList.remove('collapsed');
+              }
+            });
+            return;
+          }
+
+          const matchingItems = [];
+          const cards = document.querySelectorAll('#mainPage .report-card');
+
           cards.forEach((card) => {
             if (card.classList.contains('loss-chart-card')) return;
 
-            const cardTitle = card.querySelector('.card-title')?.textContent.toLowerCase() || '';
-            const cardTitleMatch = tokens.length > 0 && tokens.every((token) => cardTitle.includes(token));
+            const cardTitle = card.querySelector('.card-title')?.textContent.trim() || '';
+            const cardTitleLower = cardTitle.toLowerCase();
+            const cardTitleMatch = tokens.length > 0 && tokens.every((token) => cardTitleLower.includes(token));
 
-            const subOptions = card.querySelectorAll('.sub-option');
+            const subOptions = card.querySelectorAll('a.sub-option');
             let hasVisibleSubOption = false;
 
             subOptions.forEach((option) => {
-              const label = option.querySelector('.app-label')?.textContent.toLowerCase() || '';
+              const label = option.querySelector('.app-label')?.textContent.trim() || '';
               const pageName = (option.getAttribute('data-page') || option.dataset.page || '').toLowerCase();
               const datasetName = (option.getAttribute('data-dataset') || '').toLowerCase();
-              const fullText = (label + ' ' + pageName + ' ' + datasetName + ' ' + cardTitle).toLowerCase();
+              const whenText = option.querySelector('.row-when')?.textContent.trim() || '';
+              const fullText = (label + ' ' + pageName + ' ' + datasetName + ' ' + cardTitleLower).toLowerCase();
 
-              const isMatch = !tokens.length || cardTitleMatch || tokens.every((token) => fullText.includes(token));
+              const isMatch = cardTitleMatch || tokens.every((token) => fullText.includes(token));
 
               if (isMatch) {
                 option.style.display = '';
                 hasVisibleSubOption = true;
+                if (!option.closest('#favoritesCard')) {
+                  matchingItems.push({
+                    element: option,
+                    label: label,
+                    category: cardTitle,
+                    page: pageName,
+                    dataset: datasetName,
+                    when: whenText,
+                    iconHtml: option.querySelector('.app-icon')?.outerHTML || ''
+                  });
+                }
               } else {
                 option.style.display = 'none';
               }
@@ -5749,29 +5888,68 @@
 
             if (hasVisibleSubOption) {
               card.style.display = '';
-              if (tokens.length > 0) {
-                card.classList.remove('collapsed');
-                const chevron = card.querySelector('.chevron');
-                if (chevron) chevron.classList.remove('collapsed');
-              } else {
-                if (!card.classList.contains('always-open') && window.innerWidth <= 768) {
-                  card.classList.add('collapsed');
-                  const chevron = card.querySelector('.chevron');
-                  if (chevron) chevron.classList.add('collapsed');
-                } else {
-                  card.classList.remove('collapsed');
-                  const chevron = card.querySelector('.chevron');
-                  if (chevron) chevron.classList.remove('collapsed');
-                }
-              }
+              card.classList.remove('collapsed');
+              const chevron = card.querySelector('.chevron');
+              if (chevron) chevron.classList.remove('collapsed');
             } else {
               card.style.display = 'none';
             }
           });
+
+          // Render Dynamic Dropdown Results
+          if (dropdown) {
+            dropdown.innerHTML = '';
+            if (matchingItems.length > 0) {
+              dropdown.hidden = false;
+              matchingItems.forEach((item) => {
+                const row = document.createElement('div');
+                row.className = 'search-result-item';
+                row.setAttribute('tabindex', '0');
+                row.innerHTML =
+                  item.iconHtml +
+                  '<div class="search-result-info">' +
+                  '<div class="search-result-title">' + escHtml(item.label) + '</div>' +
+                  '<div class="search-result-category">' + escHtml(item.category) + '</div>' +
+                  '</div>' +
+                  (item.when ? '<div class="search-result-when">' + escHtml(item.when) + '</div>' : '');
+
+                const handleSelect = function (e) {
+                  e.preventDefault();
+                  dropdown.hidden = true;
+                  openSubOption(item.element, e.shiftKey);
+                };
+
+                row.addEventListener('click', handleSelect);
+                row.addEventListener('keydown', function (e) {
+                  if (e.key === 'Enter') handleSelect(e);
+                });
+                dropdown.appendChild(row);
+              });
+            } else {
+              dropdown.hidden = false;
+              dropdown.innerHTML = '<div class="search-empty-state"><i class="fas fa-search" style="margin-right:6px;"></i> No matching report found</div>';
+            }
+          }
         }
 
         searchInput.addEventListener('input', performSearch);
         searchInput.addEventListener('keyup', performSearch);
+        searchInput.addEventListener('focus', function () {
+          if (searchInput.value.trim()) performSearch();
+        });
+
+        document.addEventListener('click', function (e) {
+          if (!e.target.closest('.search-bar-container')) {
+            if (dropdown) dropdown.hidden = true;
+          }
+        });
+
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape') {
+            if (dropdown) dropdown.hidden = true;
+            searchInput.blur();
+          }
+        });
 
         if (clearBtn) {
           clearBtn.addEventListener('click', function () {
