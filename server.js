@@ -347,10 +347,21 @@ function verifyPin(pin, stored) {
     if (!plain || !saved) return false;
     if (!isPinHash(saved)) return saved === plain;
     const parts = saved.split('$');
-    if (parts.length !== 4) return false;
+    let saltB64 = '';
+    let hashB64 = '';
+    if (parts.length === 3) {
+        saltB64 = parts[1];
+        hashB64 = parts[2];
+    } else if (parts.length === 4) {
+        saltB64 = parts[2];
+        hashB64 = parts[3];
+    } else {
+        return false;
+    }
     try {
-        const salt = Buffer.from(parts[2], 'base64');
-        const expected = Buffer.from(parts[3], 'base64');
+        const salt = Buffer.from(saltB64, 'base64');
+        const expected = Buffer.from(hashB64, 'base64');
+        if (!salt.length || !expected.length) return false;
         const actual = crypto.scryptSync(plain, salt, expected.length, { N: 16384, r: 8, p: 1 });
         return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
     } catch (err) {
