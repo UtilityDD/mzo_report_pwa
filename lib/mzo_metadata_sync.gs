@@ -41,6 +41,12 @@ const REPORT_SOURCES = {
     url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRcFPRu1ywimetADU-XYIZ_x3McWUhR5ZbPUIIySO6_V8VJTyU9Vhw8DD-1RBEPFj0q2pUFMvutYV30/pub?gid=1969412059&single=true&output=csv',
     dateColumn: 'Last Action Date',
     type: 'max_date'
+  },
+  'METER': {
+    name: 'Meter Utilization',
+    url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=2125422147&single=true&output=csv',
+    dateColumn: 'Posting Date',
+    type: 'max_date'
   }
 };
 
