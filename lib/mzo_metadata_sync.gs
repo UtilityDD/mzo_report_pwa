@@ -47,6 +47,18 @@ const REPORT_SOURCES = {
     url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=2125422147&single=true&output=csv',
     dateColumn: 'Posting Date',
     type: 'max_date'
+  },
+  'CACHE_CAPEX': {
+    name: 'Capex Details',
+    url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQI2neSVbvMR4fF910Q0AWUcq02leP-sob8q4f9goT46hgLutCpxCjSL6y6X3s2vYBJRNN7WrFCjE0R/pub?gid=439685010&single=true&output=csv',
+    dateColumn: 'Reporting Date',
+    type: 'max_date'
+  },
+  'OM_ADVANCE': {
+    name: 'O&M Advance',
+    url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQPBYq0ZQpaAnu0Mp_qN5oGvklgIpjolyRPf3LfSojRaN-GBBBXKHslR9ue1DOv1432oP2PzYznUUmn/pub?gid=512034300&single=true&output=csv',
+    dateColumn: 'Creation Date',
+    type: 'max_date'
   }
 };
 
