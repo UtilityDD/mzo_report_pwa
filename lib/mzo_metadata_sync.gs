@@ -35,6 +35,12 @@ const REPORT_SOURCES = {
     sheetId: '12nS8GAQ1weIMWoEIeydcdKTKd-XwHNu9W07DKudGuOg',
     dateColumn: 'PAID/DISCON DATE',
     type: 'max_date'
+  },
+  'CACHE_PMSGY_MALDA': {
+    name: 'PM Surya Ghar',
+    url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRcFPRu1ywimetADU-XYIZ_x3McWUhR5ZbPUIIySO6_V8VJTyU9Vhw8DD-1RBEPFj0q2pUFMvutYV30/pub?gid=1969412059&single=true&output=csv',
+    dateColumn: 'Last Action Date',
+    type: 'max_date'
   }
 };
 
@@ -78,7 +84,15 @@ function refreshReportMetadata() {
     let dateVal = '';
 
     try {
-      if (cfg.sheetId) {
+      if (cfg.url) {
+        const resp = UrlFetchApp.fetch(cfg.url, { muteHttpExceptions: true });
+        if (resp.getResponseCode() === 200) {
+          const csvText = resp.getContentText();
+          if (cfg.type === 'max_date' && cfg.dateColumn) {
+            dateVal = findMaxDateInCsvText_(csvText, cfg.dateColumn);
+          }
+        }
+      } else if (cfg.sheetId) {
         const ss = SpreadsheetApp.openById(cfg.sheetId);
         const sheet = cfg.gid ? getSheetByGid_(ss, cfg.gid) : ss.getSheets()[0];
 
@@ -206,6 +220,43 @@ function findMaxDateInSheet_(sheet, colName) {
             maxStr = formatted;
           }
         }
+      }
+    }
+  }
+  return maxStr;
+}
+
+/**
+ * Find maximum date in a CSV text payload by column name
+ */
+function findMaxDateInCsvText_(csvText, colName) {
+  if (!csvText) return '';
+  const lines = String(csvText).split(/\r?\n/);
+  if (lines.length < 2) return '';
+  const months = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  const headers = lines[0].split(',').map(function(h) { return String(h || '').replace(/"/g, '').trim().toUpperCase(); });
+  const colIdx = headers.indexOf(String(colName).toUpperCase());
+  if (colIdx === -1) return '';
+
+  let maxTime = 0;
+  let maxStr = '';
+
+  for (let i = 1; i < lines.length; i++) {
+    const raw = String(lines[i].split(',')[colIdx] || '').replace(/"/g, '').trim();
+    if (!raw) continue;
+    const named = raw.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})/);
+    const num = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/);
+    let d = 0, m = 0, y = 0;
+    if (named && months[named[2].toLowerCase()]) {
+      d = +named[1]; m = months[named[2].toLowerCase()]; y = +named[3] < 100 ? 2000 + +named[3] : +named[3];
+    } else if (num) {
+      d = +num[1]; m = +num[2]; y = +num[3] < 100 ? 2000 + +num[3] : +num[3];
+    }
+    if (d && m && y) {
+      const t = Date.UTC(y, m - 1, d);
+      if (t > maxTime) {
+        maxTime = t;
+        maxStr = String(d).padStart(2, '0') + '/' + String(m).padStart(2, '0') + '/' + y;
       }
     }
   }
