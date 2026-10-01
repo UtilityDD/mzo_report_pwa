@@ -9,6 +9,8 @@
     let filteredRows = [];
     let activeTab = 'orders';
     let selectedNo = '';
+    let orderSort = null;
+    let itemSort = null;
     let clientListCache = { at: 0, rows: null };
     const CLIENT_LIST_TTL_MS = 45 * 1000;
 
@@ -30,6 +32,73 @@
         const s = String(name || '');
         if (/zone/i.test(s)) return 'Zone';
         return s.replace(/\s*\(D\)\s*Division/i, '').replace(/\s*Division$/i, '').trim() || s;
+    }
+
+    function formatViewDate(iso) {
+        const s = String(iso || '').slice(0, 10);
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+        if (!m) return s || '—';
+        return m[3] + '/' + m[2] + '/' + m[1].slice(2);
+    }
+
+    function namesJoin(set) {
+        return [...(set || [])].map(shortName).join(' / ');
+    }
+
+    function cmpVal(a, b, dir) {
+        if (a === b) return 0;
+        const n = a < b ? -1 : 1;
+        return dir === 'desc' ? -n : n;
+    }
+
+    function nextSort(spec, key, defaultKey, defaultDir) {
+        const first = key === 'qty' || key === 'orders' || key === 'date' ? 'desc' : 'asc';
+        if (spec && spec.key === key) return { key, dir: spec.dir === 'asc' ? 'desc' : 'asc' };
+        if (!spec && key === defaultKey) return { key, dir: defaultDir === 'asc' ? 'desc' : 'asc' };
+        return { key, dir: first };
+    }
+
+    function sortTh(label, key, scope, spec, defaultKey, defaultDir) {
+        const active = spec ? spec.key === key : key === defaultKey;
+        const dir = active ? (spec ? spec.dir : defaultDir) : '';
+        return `<th class="allot-sort${active ? ' is-sorted' : ''}" data-sort="${key}" data-scope="${scope}" data-dir="${dir}">${escapeHtml(label)}</th>`;
+    }
+
+    function lineMatLabel(line) {
+        const code = String(line.MaterialCode || '').trim();
+        const qty = formatSummaryQty(line.MaterialCode, line.AllottedQty);
+        const unit = String(line.Unit || '').trim();
+        return [code, qty, unit].filter(Boolean).join(' ');
+    }
+
+    function materialsPlain(lines) {
+        const groups = [];
+        (lines || []).forEach((line) => {
+            const code = String(line.MaterialCode || '').trim();
+            const unit = String(line.Unit || '').trim();
+            const qty = formatSummaryQty(line.MaterialCode, line.AllottedQty);
+            const key = code + '\0' + unit;
+            let g = groups.find((x) => x.key === key);
+            if (!g) {
+                g = { key, code, unit, qtys: [] };
+                groups.push(g);
+            }
+            if (qty) g.qtys.push(qty);
+        });
+        return groups
+            .map((g) => [g.code, g.qtys.join('+'), g.unit].filter(Boolean).join(' '))
+            .join(' / ');
+    }
+
+    function materialsTitle(lines) {
+        return (lines || [])
+            .map((line) => {
+                const desc = String(line.MaterialDescription || '').trim();
+                const base = lineMatLabel(line);
+                return desc ? base + ' — ' + desc : base;
+            })
+            .filter(Boolean)
+            .join('\n');
     }
 
     function showStatus(msg, kind) {
@@ -283,7 +352,11 @@
             .map((r) => ({
                 ...r,
                 orderCount: r.orders.size,
-                divisionCount: r.divisions.size
+                divisionCount: r.divisions.size,
+                divisionLabel: [...r.divisions]
+                    .map(shortName)
+                    .sort((a, b) => a.localeCompare(b))
+                    .join(' / ')
             }))
             .sort((a, b) => a.code.localeCompare(b.code) || b.qty - a.qty);
     }
@@ -527,58 +600,86 @@
               : 'Cancel requires Stock Allot Cancel authorisation';
     }
 
+    function sortedOrders(orders) {
+        const spec = orderSort || { key: 'date', dir: 'desc' };
+        return orders.slice().sort((a, b) => {
+            let c = 0;
+            if (spec.key === 'no') c = cmpVal(a.allotmentNo, b.allotmentNo, spec.dir);
+            else if (spec.key === 'date') c = cmpVal(a.date, b.date, spec.dir);
+            else if (spec.key === 'from') c = cmpVal(namesJoin(a.fromSet), namesJoin(b.fromSet), spec.dir);
+            else if (spec.key === 'to') c = cmpVal(namesJoin(a.toSet), namesJoin(b.toSet), spec.dir);
+            else if (spec.key === 'mats') c = cmpVal(materialsPlain(a.lines), materialsPlain(b.lines), spec.dir);
+            if (c) return c;
+            if (a.date !== b.date) return String(b.date).localeCompare(String(a.date));
+            return String(b.allotmentNo).localeCompare(String(a.allotmentNo));
+        });
+    }
+
     function renderOrders() {
         const host = document.getElementById('allot-view-orders');
         if (!host) return;
-        const orders = groupOrders(filteredRows);
+        const orders = sortedOrders(groupOrders(filteredRows));
         if (!orders.length) {
             host.innerHTML = '<p class="allot-view-empty">No allotment orders match the filters.</p>';
             document.getElementById('allot-view-detail').hidden = true;
             updateCancelButton(null);
             return;
         }
-        host.innerHTML = `<table class="allot-view-table">
+        host.innerHTML = `<table class="allot-view-table allot-view-orders-table">
+            <colgroup>
+                <col style="width:158px">
+                <col style="width:62px">
+                <col style="width:96px">
+                <col style="width:36%">
+                <col>
+                <col style="width:118px">
+            </colgroup>
             <thead>
                 <tr>
-                    <th>Allotment No</th>
-                    <th>Date</th>
-                    <th>From</th>
-                    <th>To</th>
-                    <th>Lines</th>
-                    <th>Qty</th>
-                    <th></th>
+                    ${sortTh('No', 'no', 'orders', orderSort, 'date', 'desc')}
+                    ${sortTh('Date', 'date', 'orders', orderSort, 'date', 'desc')}
+                    ${sortTh('From', 'from', 'orders', orderSort, 'date', 'desc')}
+                    ${sortTh('To', 'to', 'orders', orderSort, 'date', 'desc')}
+                    ${sortTh('Materials', 'mats', 'orders', orderSort, 'date', 'desc')}
+                    <th class="allot-view-act-h"></th>
                 </tr>
             </thead>
             <tbody>
                 ${orders
                     .map((o) => {
-                        const from = [...o.fromSet].map(shortName).join(', ');
-                        const to = [...o.toSet].map(shortName).join(', ');
+                        const from = namesJoin(o.fromSet);
+                        const to = namesJoin(o.toSet);
+                        const mats = materialsPlain(o.lines);
                         const rowClass = [
+                            'allot-view-row',
                             selectedNo === o.allotmentNo ? 'is-selected' : '',
                             o.cancelled ? 'is-cancelled' : ''
                         ]
                             .filter(Boolean)
                             .join(' ');
+                        const remark = String(o.remarks || '').trim();
                         const noCell = o.cancelled
                             ? `<strong>${escapeHtml(o.allotmentNo)}</strong> <span class="allot-cancelled-badge">Cancelled</span>`
                             : `<strong>${escapeHtml(o.allotmentNo)}</strong>`;
                         const actions = `<button type="button" class="allot-btn-secondary allot-view-open" data-no="${escapeHtml(
                             o.allotmentNo
-                        )}">View</button>${
+                        )}">Open</button>${
                             !o.cancelled && canCancelAllotment()
-                                ? ` <button type="button" class="allot-btn-danger allot-view-cancel-row" data-no="${escapeHtml(
+                                ? `<button type="button" class="allot-btn-danger allot-view-cancel-row" data-no="${escapeHtml(
                                       o.allotmentNo
                                   )}">Cancel</button>`
                                 : ''
                         }`;
                         return `<tr data-no="${escapeHtml(o.allotmentNo)}" class="${rowClass}">
-                            <td>${noCell}</td>
-                            <td>${escapeHtml(o.date)}</td>
-                            <td>${escapeHtml(from)}</td>
-                            <td>${escapeHtml(to)}</td>
-                            <td>${o.lines.length}</td>
-                            <td>${formatQty(o.qtyTotal)}</td>
+                            <td class="allot-view-no">${noCell}${
+                                remark
+                                    ? `<div class="allot-view-remark" title="${escapeHtml(remark)}">${escapeHtml(remark)}</div>`
+                                    : ''
+                            }</td>
+                            <td class="allot-view-date">${escapeHtml(formatViewDate(o.date))}</td>
+                            <td class="allot-view-from" title="${escapeHtml([...o.fromSet].join(' / '))}">${escapeHtml(from)}</td>
+                            <td class="allot-view-to" title="${escapeHtml([...o.toSet].join(' / '))}">${escapeHtml(to)}</td>
+                            <td class="allot-view-mats" title="${escapeHtml(materialsTitle(o.lines))}">${escapeHtml(mats)}</td>
                             <td class="allot-view-actions">${actions}</td>
                         </tr>`;
                     })
@@ -586,6 +687,12 @@
             </tbody>
         </table>`;
 
+        host.querySelectorAll('tbody tr.allot-view-row').forEach((tr) => {
+            tr.addEventListener('click', (e) => {
+                if (e.target.closest('button')) return;
+                openOrder(tr.getAttribute('data-no'));
+            });
+        });
         host.querySelectorAll('.allot-view-open').forEach((btn) => {
             btn.addEventListener('click', () => openOrder(btn.getAttribute('data-no')));
         });
@@ -616,20 +723,39 @@
         detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
+    function sortItems(items) {
+        const spec = itemSort || { key: 'code', dir: 'asc' };
+        return items.slice().sort((a, b) => {
+            let c = 0;
+            if (spec.key === 'code') c = cmpVal(a.code, b.code, spec.dir);
+            else if (spec.key === 'description')
+                c = cmpVal(String(a.description || '').toLowerCase(), String(b.description || '').toLowerCase(), spec.dir);
+            else if (spec.key === 'unit') c = cmpVal(a.unit || '', b.unit || '', spec.dir);
+            else if (spec.key === 'qty') c = cmpVal(Number(a.qty) || 0, Number(b.qty) || 0, spec.dir);
+            else if (spec.key === 'orders') c = cmpVal(a.orderCount || 0, b.orderCount || 0, spec.dir);
+            else if (spec.key === 'divisions') c = cmpVal(a.divisionLabel || '', b.divisionLabel || '', spec.dir);
+            if (c) return c;
+            return String(a.code).localeCompare(String(b.code));
+        });
+    }
+
     function itemRowsHtml(items, opts) {
         const showDivisions = !!(opts && opts.showDivisions);
-        return items
+        return sortItems(items)
             .map((it) => {
                 const qtyLabel = formatSummaryQty(it.code, it.qty);
+                const desc = it.description || '';
                 return `<tr>
-                    <td><strong>${escapeHtml(it.code)}</strong></td>
-                    <td>${escapeHtml(it.description || '')}</td>
-                    <td>${escapeHtml(it.unit || '')}</td>
+                    <td class="allot-view-code"><strong>${escapeHtml(it.code)}</strong></td>
+                    <td class="allot-view-desc" title="${escapeHtml(desc)}">${escapeHtml(desc)}</td>
+                    <td class="allot-view-unit">${escapeHtml(it.unit || '')}</td>
                     <td class="allot-view-num">${escapeHtml(qtyLabel)}</td>
                     <td class="allot-view-num">${it.orderCount}</td>
                     ${
                         showDivisions
-                            ? `<td class="allot-view-num">${it.divisionCount || 0}</td>`
+                            ? `<td class="allot-view-divs" title="${escapeHtml(it.divisionLabel || '')}">${escapeHtml(
+                                  it.divisionLabel || '—'
+                              )}</td>`
                             : ''
                     }
                 </tr>`;
@@ -637,19 +763,34 @@
             .join('');
     }
 
-    function itemTableHtml(items, opts) {
+    function itemHeadHtml(opts) {
         const showDivisions = !!(opts && opts.showDivisions);
+        return `<tr>
+            ${sortTh('Material', 'code', 'items', itemSort, 'code', 'asc')}
+            ${sortTh('Description', 'description', 'items', itemSort, 'code', 'asc')}
+            ${sortTh('Unit', 'unit', 'items', itemSort, 'code', 'asc')}
+            ${sortTh('Qty', 'qty', 'items', itemSort, 'code', 'asc')}
+            ${sortTh('Orders', 'orders', 'items', itemSort, 'code', 'asc')}
+            ${showDivisions ? sortTh('To', 'divisions', 'items', itemSort, 'code', 'asc') : ''}
+        </tr>`;
+    }
+
+    function itemColgroup(opts) {
+        const showDivisions = !!(opts && opts.showDivisions);
+        return `<colgroup>
+            <col style="width:108px">
+            <col>
+            <col style="width:46px">
+            <col style="width:78px">
+            <col style="width:62px">
+            ${showDivisions ? '<col style="width:32%">' : ''}
+        </colgroup>`;
+    }
+
+    function itemTableHtml(items, opts) {
         return `<table class="allot-view-table allot-view-item-table">
-            <thead>
-                <tr>
-                    <th>Material</th>
-                    <th>Description</th>
-                    <th>Unit</th>
-                    <th>Qty</th>
-                    <th>Orders</th>
-                    ${showDivisions ? '<th>Divisions</th>' : ''}
-                </tr>
-            </thead>
+            ${itemColgroup(opts)}
+            <thead>${itemHeadHtml(opts)}</thead>
             <tbody>${itemRowsHtml(items, opts)}</tbody>
         </table>`;
     }
@@ -668,13 +809,7 @@
 
         if (groupBy === 'material') {
             const items = summarizeItemsInGroup(active);
-            host.innerHTML = `<div class="allot-view-sum-block">
-                <div class="allot-view-sum-head">
-                    <div class="allot-view-sum-title">Item-wise total</div>
-                    <div class="allot-view-sum-meta">${items.length} item${items.length === 1 ? '' : 's'}</div>
-                </div>
-                ${itemTableHtml(items, { showDivisions: true })}
-            </div>`;
+            host.innerHTML = itemTableHtml(items, { showDivisions: true });
             return;
         }
 
@@ -684,25 +819,22 @@
             return;
         }
 
-        host.innerHTML = groups
+        const body = groups
             .map((g) => {
-                const title =
-                    groupBy === 'date'
-                        ? escapeHtml(g.key)
-                        : escapeHtml(g.title || g.key);
-                const metaParts = [
-                    `${g.orderCount} order${g.orderCount === 1 ? '' : 's'}`,
-                    `${g.items.length} item${g.items.length === 1 ? '' : 's'}`
-                ];
-                return `<div class="allot-view-sum-block">
-                    <div class="allot-view-sum-head">
-                        <div class="allot-view-sum-title">${title}</div>
-                        <div class="allot-view-sum-meta">${metaParts.join(' · ')}</div>
-                    </div>
-                    ${itemTableHtml(g.items, { showDivisions: false })}
-                </div>`;
+                const title = groupBy === 'date' ? formatViewDate(g.key) : g.title || g.key;
+                const meta = `${g.orderCount} order${g.orderCount === 1 ? '' : 's'} · ${g.items.length} item${
+                    g.items.length === 1 ? '' : 's'
+                }`;
+                return `<tr class="allot-view-group"><td colspan="5">${escapeHtml(title)} <span>${escapeHtml(
+                    meta
+                )}</span></td></tr>${itemRowsHtml(g.items, { showDivisions: false })}`;
             })
             .join('');
+        host.innerHTML = `<table class="allot-view-table allot-view-item-table">
+            ${itemColgroup({ showDivisions: false })}
+            <thead>${itemHeadHtml({ showDivisions: false })}</thead>
+            <tbody>${body}</tbody>
+        </table>`;
     }
 
     function renderMaterialSummary() {
@@ -1065,6 +1197,23 @@
 
         document.querySelectorAll('.allot-view-tab').forEach((btn) => {
             btn.addEventListener('click', () => setTab(btn.getAttribute('data-tab')));
+        });
+
+        document.getElementById('allot-view-overlay')?.addEventListener('click', (e) => {
+            const th = e.target.closest('th[data-sort]');
+            if (!th) return;
+            const key = th.getAttribute('data-sort');
+            const scope = th.getAttribute('data-scope') || 'orders';
+            if (!key) return;
+            if (scope === 'orders') {
+                orderSort = nextSort(orderSort, key, 'date', 'desc');
+                renderOrders();
+            } else {
+                itemSort = nextSort(itemSort, key, 'code', 'asc');
+                renderMaterialSummary();
+                renderDivisionSummary();
+                renderDateSummary();
+            }
         });
     }
 

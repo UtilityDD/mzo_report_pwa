@@ -63,7 +63,7 @@
 // v181: PM Surya Ghar tables include a total row
 // v182: PM Surya Ghar KPI, charts, and tables share one header set
 // v183: PM Surya Ghar treats net metering as connection and installation as the solar plate
-const CACHE_NAME = 'mzo-reports-cache-v193';
+const CACHE_NAME = 'mzo-reports-cache-v194';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [

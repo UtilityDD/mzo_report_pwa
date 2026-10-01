@@ -25,6 +25,7 @@ Use **View Allotments** on the Stock page to:
 - Filter by division and date range
 - Open an order letter (+ PDF)
 - See **Material-wise**, **Division-wise**, and **Date-wise** summaries
+- Orders list shows date, from, to (slash-separated), and each material as `code qty unit`. Click a column header to sort. Division and date tabs are one compact table with a group row, not a separate card per group.
 
 ## Soft-cancel
 
