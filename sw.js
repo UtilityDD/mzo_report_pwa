@@ -63,7 +63,7 @@
 // v181: PM Surya Ghar tables include a total row
 // v182: PM Surya Ghar KPI, charts, and tables share one header set
 // v183: PM Surya Ghar treats net metering as connection and installation as the solar plate
-const CACHE_NAME = 'mzo-reports-cache-v188';
+const CACHE_NAME = 'mzo-reports-cache-v190';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -141,7 +141,12 @@ function readAppCache(request) {
 
 function writeAppCache(request, response) {
   const key = appShellKey(request);
-  if (!key || !response || response.status !== 200) return Promise.resolve();
+  if (!key || !response || response.status !== 200 || response.redirected) return Promise.resolve();
+  try {
+    if (new URL(response.url).pathname !== new URL(request.url).pathname) return Promise.resolve();
+  } catch (_) {
+    return Promise.resolve();
+  }
   return caches.open(CACHE_NAME).then((cache) => safePut(cache, key, response.clone()));
 }
 

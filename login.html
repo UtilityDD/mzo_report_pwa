@@ -873,15 +873,27 @@
       }
     });
 
-    // Check if already authenticated on load
+    // A saved flag without a live session used to bounce login ↔ home forever.
     if (localStorage.getItem('mzo_authenticated') === 'true') {
       const cardInstallBtn = document.getElementById('loginInstallBtn');
       if (cardInstallBtn) cardInstallBtn.classList.add('hidden');
       showAuthTransition();
       setAuthCopy('Welcome back', 'Restoring your session');
       setAuthProgress(55);
-      sessionStorage.setItem('mzo_show_docket_briefing', '1');
-      window.location.href = '/index.html';
+      fetch('/api/session-check', { credentials: 'same-origin' })
+        .then((res) => {
+          if (res.ok) {
+            sessionStorage.setItem('mzo_show_docket_briefing', '1');
+            window.location.href = '/index.html';
+            return;
+          }
+          localStorage.removeItem('mzo_authenticated');
+          hideAuthTransition();
+        })
+        .catch(() => {
+          localStorage.removeItem('mzo_authenticated');
+          hideAuthTransition();
+        });
     }
 
     // Apply saved theme on initial load

@@ -176,6 +176,8 @@
         .stats-card.partially-paid { border-left-color: var(--color-partially-paid); }
         .stats-card.disconnected { border-left-color: var(--color-disconnected); }
         .stats-card.no-action { border-left-color: var(--color-no-action); }
+        .stats-card.osd-band { border-left-color: #fca5a5; }
+        .stats-card.osd-band .stats-title { color: #e11d48; }
 
         .stats-title {
             font-size: 0.75rem;
@@ -835,13 +837,19 @@
                     </select>
                 </div>
 
-                <div class="col-6 col-md-3 col-lg-3">
+                <div class="col-6 col-md-2">
                     <select id="divisionFilter" class="form-select form-select-sm">
                         <option value="all">All Divisions</option>
                     </select>
                 </div>
 
-                <div class="col-9 col-md-3 col-lg-3">
+                <div class="col-6 col-md-2">
+                    <select id="cccFilter" class="form-select form-select-sm">
+                        <option value="all">All CCCs</option>
+                    </select>
+                </div>
+
+                <div class="col-6 col-md-2">
                     <select id="classFilter" class="form-select form-select-sm">
                         <option value="all">All Classes</option>
                     </select>
@@ -891,6 +899,20 @@
                     <div class="stats-title" style="color: var(--color-no-action);">No action</div>
                     <div class="stats-value" id="val-noaction-count">0</div>
                     <div class="stats-desc" id="val-noaction-amount">₹0</div>
+                </div>
+            </div>
+            <div class="col-6 col-sm-6 col-md-3 col-lg-2">
+                <div class="card p-3 stats-card osd-band" onclick="filterByOsd(3000)" id="kpi-osd3">
+                    <div class="stats-title">OSD &gt; 3k</div>
+                    <div class="stats-value" id="val-osd3-count">0</div>
+                    <div class="stats-desc" id="val-osd3-amount">₹0</div>
+                </div>
+            </div>
+            <div class="col-6 col-sm-6 col-md-3 col-lg-2">
+                <div class="card p-3 stats-card osd-band" onclick="filterByOsd(5000)" id="kpi-osd5">
+                    <div class="stats-title">OSD &gt; 5k</div>
+                    <div class="stats-value" id="val-osd5-count">0</div>
+                    <div class="stats-desc" id="val-osd5-amount">₹0</div>
                 </div>
             </div>
             <div class="col-6 col-sm-6 col-md-3 col-lg-2">
@@ -1166,6 +1188,7 @@
         let currentHierarchyPath = { region: null, division: null, ccc: null }; // Breadcrumb drilldown state
         let currentTabLevel = 'region'; // active table aggregation tab: 'region', 'division', 'ccc', 'consumer'
         let currentStatusFilter = 'all'; // status filter (fully paid, partially paid, disconnected, no action)
+        let currentOsdMin = 0;
         let activeSort = { column: 'outstandingOSD', direction: 'desc' };
         let tablePage = 1;
         const pageSize = 15;
@@ -1268,8 +1291,9 @@
                     }
                 }
             });
-            document.getElementById('regionFilter').addEventListener('change', () => { tablePage = 1; updateDashboard(); });
-            document.getElementById('divisionFilter').addEventListener('change', () => { tablePage = 1; updateDashboard(); });
+            document.getElementById('regionFilter').addEventListener('change', () => { tablePage = 1; fillCccFilter(); updateDashboard(); });
+            document.getElementById('divisionFilter').addEventListener('change', () => { tablePage = 1; fillCccFilter(); updateDashboard(); });
+            document.getElementById('cccFilter').addEventListener('change', () => { tablePage = 1; updateDashboard(); });
             document.getElementById('classFilter').addEventListener('change', () => { tablePage = 1; updateDashboard(); });
             
             document.getElementById('clearFiltersBtn').addEventListener('click', clearFilters);
@@ -1309,8 +1333,12 @@
             document.getElementById('searchBar').value = '';
             if (document.getElementById('regionFilter')) document.getElementById('regionFilter').value = 'all';
             if (document.getElementById('divisionFilter')) document.getElementById('divisionFilter').value = 'all';
+            const cccEl = document.getElementById('cccFilter');
+            if (cccEl && !cccEl.disabled) cccEl.value = 'all';
             document.getElementById('classFilter').value = 'all';
             currentStatusFilter = 'all';
+            currentOsdMin = 0;
+            fillCccFilter();
             
             // Reset active card highlight
             document.querySelectorAll('.stats-card').forEach(c => c.classList.remove('active-filter'));
@@ -1605,6 +1633,7 @@
             // Populate filter selectors
             populateFilterOptions('regionFilter', Array.from(uniqueRegions).sort());
             populateFilterOptions('divisionFilter', Array.from(uniqueDivisions).sort());
+            fillCccFilter();
             populateFilterOptions('classFilter', Array.from(uniqueClasses).sort());
             if (window.MzoScope) window.MzoScope.lockFilters();
 
@@ -1627,6 +1656,24 @@
             refreshOpenConsumerModal();
         }
 
+        function fillCccFilter() {
+            const regionVal = document.getElementById('regionFilter') ? document.getElementById('regionFilter').value : 'all';
+            const divisionVal = document.getElementById('divisionFilter') ? document.getElementById('divisionFilter').value : 'all';
+            const names = [];
+            const seen = {};
+            enrichedConsumers.forEach((c) => {
+                if (!c.cccName) return;
+                if (regionVal !== 'all' && c.regionName !== regionVal) return;
+                if (divisionVal !== 'all' && c.divisionName !== divisionVal) return;
+                if (seen[c.cccName]) return;
+                seen[c.cccName] = true;
+                names.push(c.cccName);
+            });
+            names.sort((a, b) => a.localeCompare(b));
+            populateFilterOptions('cccFilter', names);
+            if (window.MzoScope) window.MzoScope.lockFilters();
+        }
+
         function populateFilterOptions(selectId, items) {
             const selectEl = document.getElementById(selectId);
             if (!selectEl) return;
@@ -1635,6 +1682,7 @@
             let labelText = 'Classes';
             if (selectId === 'regionFilter') labelText = 'Regions';
             else if (selectId === 'divisionFilter') labelText = 'Divisions';
+            else if (selectId === 'cccFilter') labelText = 'CCCs';
 
             // Keep "All" option
             selectEl.innerHTML = `<option value="all">All ${labelText}</option>`;
@@ -1660,6 +1708,7 @@
             const searchVal = document.getElementById('searchBar').value.toLowerCase().trim();
             const regionVal = document.getElementById('regionFilter') ? document.getElementById('regionFilter').value : 'all';
             const divisionVal = document.getElementById('divisionFilter') ? document.getElementById('divisionFilter').value : 'all';
+            const cccVal = document.getElementById('cccFilter') ? document.getElementById('cccFilter').value : 'all';
             const classVal = document.getElementById('classFilter').value;
 
             return enrichedConsumers.filter(c => {
@@ -1673,9 +1722,12 @@
 
                 // Division filter dropdown
                 if (divisionVal !== 'all' && c.divisionName !== divisionVal) return false;
+                if (cccVal !== 'all' && c.cccName !== cccVal) return false;
 
-                // Status filter applies to charts and table only — KPI cards stay on the broader set
+                // Status and OSD cards filter charts and the table only
                 if (!skipStatus && currentStatusFilter !== 'all' && c.status !== currentStatusFilter) return false;
+                const skipOsd = !!(opts && opts.skipOsd);
+                if (!skipOsd && currentOsdMin && !(c.outstandingOSD > currentOsdMin)) return false;
 
                 // Text search
                 if (searchVal) {
@@ -1748,7 +1800,7 @@
             const filtered = getFilteredData();
 
             // KPI cards ignore status selection so they do not filter each other
-            computeKPIs(getFilteredData({ skipStatus: true }));
+            computeKPIs(getFilteredData({ skipStatus: true, skipOsd: true }));
 
             // Re-draw diagrams
             renderCharts();
@@ -1765,7 +1817,8 @@
             const regionVal = document.getElementById('regionFilter') ? document.getElementById('regionFilter').value : 'all';
             const divisionVal = document.getElementById('divisionFilter') ? document.getElementById('divisionFilter').value : 'all';
             const classVal = document.getElementById('classFilter').value;
-            const hasFilters = searchVal !== '' || regionVal !== 'all' || divisionVal !== 'all' || classVal !== 'all' || currentStatusFilter !== 'all';
+            const cccVal = document.getElementById('cccFilter') ? document.getElementById('cccFilter').value : 'all';
+            const hasFilters = searchVal !== '' || regionVal !== 'all' || divisionVal !== 'all' || cccVal !== 'all' || classVal !== 'all' || currentStatusFilter !== 'all' || currentOsdMin > 0;
             
             const clearBtn = document.getElementById('clearFiltersBtn');
             if (clearBtn) {
@@ -1777,6 +1830,7 @@
                     clearBtn.classList.add('btn-outline-secondary');
                 }
             }
+            highlightKpis();
         }
 
         // KPI calculator
@@ -1790,9 +1844,21 @@
             let disconOSD = 0;
             let noactionCount = 0;
             let noactionOSD = 0;
+            let osd3Count = 0;
+            let osd3Amt = 0;
+            let osd5Count = 0;
+            let osd5Amt = 0;
 
             data.forEach(c => {
                 totalOSD += c.outstandingOSD;
+                if (c.outstandingOSD > 3000) {
+                    osd3Count++;
+                    osd3Amt += c.outstandingOSD;
+                }
+                if (c.outstandingOSD > 5000) {
+                    osd5Count++;
+                    osd5Amt += c.outstandingOSD;
+                }
                 
                 if (c.status === 'Fully Paid') {
                     fullyCount++;
@@ -1825,6 +1891,11 @@
 
             setCountShare('val-noaction-count', noactionCount, total);
             document.getElementById('val-noaction-amount').textContent = '₹' + formatCurrency(noactionOSD);
+
+            setCountShare('val-osd3-count', osd3Count, total);
+            document.getElementById('val-osd3-amount').textContent = '₹' + formatCurrency(osd3Amt);
+            setCountShare('val-osd5-count', osd5Count, total);
+            document.getElementById('val-osd5-amount').textContent = '₹' + formatCurrency(osd5Amt);
 
             const recentIds = recentFollowupConsumerIds();
             const recentCount = data.filter((row) => recentIds.has(followupConsumerKey(row.id))).length;
@@ -1882,6 +1953,7 @@
         function filterByStatus(status) {
             followupRecentOnly = false;
             currentStatusFilter = status;
+            currentOsdMin = 0;
             
             // Highlight selected card
             document.querySelectorAll('.stats-card').forEach(c => c.classList.remove('active-filter'));
@@ -1901,6 +1973,28 @@
 
             tablePage = 1;
             updateDashboard();
+        }
+
+        function filterByOsd(min) {
+            followupRecentOnly = false;
+            currentStatusFilter = 'all';
+            currentOsdMin = min;
+            tablePage = 1;
+            updateDashboard();
+        }
+
+        function highlightKpis() {
+            document.querySelectorAll('.stats-card').forEach((card) => card.classList.remove('active-filter'));
+            const osdCard = currentOsdMin === 3000 ? 'kpi-osd3' : currentOsdMin === 5000 ? 'kpi-osd5' : '';
+            const statusCard = {
+                all: 'kpi-total',
+                'Fully Paid': 'kpi-fully',
+                'Partially Paid': 'kpi-partially',
+                Disconnected: 'kpi-discon',
+                'No Action Taken': 'kpi-noaction'
+            }[currentStatusFilter] || 'kpi-total';
+            const el = document.getElementById(osdCard || statusCard);
+            if (el) el.classList.add('active-filter');
         }
 
         // Render Breadcrumbs
@@ -2151,6 +2245,7 @@
             headerEl.innerHTML = `
                 <th onclick="toggleSort('id')">Consumer ID ${getSortIcon('id')}</th>
                 <th onclick="toggleSort('name')">Name ${getSortIcon('name')}</th>
+                <th onclick="toggleSort('cccName')">CCC ${getSortIcon('cccName')}</th>
                 <th onclick="toggleSort('classDesc')">Class ${getSortIcon('classDesc')}</th>
                 <th onclick="toggleSort('tariffClass')">Tariff ${getSortIcon('tariffClass')}</th>
                 <th class="text-end" onclick="toggleSort('outstandingOSD')">Outstanding OSD ${getSortIcon('outstandingOSD')}</th>
@@ -2175,7 +2270,7 @@
             // Draw Body
             bodyEl.innerHTML = '';
             if (totalCount === 0) {
-                bodyEl.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-secondary">No consumers found. Change filters or search terms.</td></tr>`;
+                bodyEl.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-secondary">No consumers found. Change filters or search terms.</td></tr>`;
                 renderPagination(1, 1);
                 return;
             }
@@ -2199,6 +2294,7 @@
                 tr.innerHTML = `
                     <td data-label="Consumer ID" class="fw-semibold text-indigo font-monospace">${c.id}</td>
                     <td data-label="Name" class="fw-medium">${c.name}</td>
+                    <td data-label="CCC">${escapeHtml(c.cccName || '-')}</td>
                     <td data-label="Class"><span class="small text-secondary">${c.classDesc}</span></td>
                     <td data-label="Tariff"><span class="small text-secondary font-monospace">${c.tariffClass}</span></td>
                     <td data-label="OSD Dues" class="text-end fw-semibold">₹${formatCurrency(c.outstandingOSD)}</td>
