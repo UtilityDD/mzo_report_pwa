@@ -759,9 +759,9 @@
         });
 
         const toNames = [...new Set(rows.map((r) => r.toName))];
-        const toBlock = toNames
-            .map((n) => `The Divisional Manager,<br>${escapeHtml(n)}`)
-            .join('<br><br>');
+        const toBlock = toNames.length
+            ? 'The Divisional Manager,<br>' + toNames.map((n) => escapeHtml(n)).join(' / ')
+            : '';
 
         const tables = Object.values(groups)
             .map((g) => {
@@ -814,7 +814,7 @@
                 <div><strong>Allotment No:</strong> ${escapeHtml(number)}</div>
                 <div><strong>Date:</strong> ${escapeHtml(dateStr)}</div>
             </div>
-            <p><strong>To</strong><br>${toBlock}</p>
+            <p class="letter-to"><strong>To</strong><br>${toBlock}</p>
             <p><strong>Sub:</strong> Allotment / diversion of materials.</p>
             <p>The following materials are hereby allotted / diverted as detailed below.</p>
             ${remarks ? `<p>For the following purpose: <em>${escapeHtml(remarks)}</em></p>` : ''}

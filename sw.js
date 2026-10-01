@@ -63,7 +63,7 @@
 // v181: PM Surya Ghar tables include a total row
 // v182: PM Surya Ghar KPI, charts, and tables share one header set
 // v183: PM Surya Ghar treats net metering as connection and installation as the solar plate
-const CACHE_NAME = 'mzo-reports-cache-v190';
+const CACHE_NAME = 'mzo-reports-cache-v193';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -181,7 +181,11 @@ function isNetworkFirstPath(pathname) {
     pathname === '/lib/defective_meter_pipeline.js' ||
     pathname === '/lib/sheet_mirror_client.js' ||
     pathname === '/stock/upload.html' ||
+    pathname === '/stock/index.html' ||
     pathname === '/stock/script.js' ||
+    pathname === '/stock/allotment.js' ||
+    pathname === '/stock/allotment_view.js' ||
+    pathname === '/stock/style.css' ||
     pathname === '/stock.html' ||
     pathname === '/capex_all.html' ||
     pathname === '/mzo_data_hub.js' ||

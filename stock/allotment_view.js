@@ -422,7 +422,9 @@
             groups[key].lines.push(l);
         });
         const toNames = [...new Set(order.lines.map((r) => r.Division).filter(Boolean))];
-        const toBlock = toNames.map((n) => `The Divisional Manager,<br>${escapeHtml(n)}`).join('<br><br>');
+        const toBlock = toNames.length
+            ? 'The Divisional Manager,<br>' + toNames.map((n) => escapeHtml(n)).join(' / ')
+            : '';
         const remarks = String(order.remarks || '').trim();
         const tables = Object.values(groups)
             .map((g) => {
@@ -477,7 +479,7 @@
                 <div><strong>Allotment No:</strong> ${escapeHtml(order.allotmentNo)}</div>
                 <div><strong>Date:</strong> ${escapeHtml(order.date)}</div>
             </div>
-            <p><strong>To</strong><br>${toBlock || '—'}</p>
+            <p class="letter-to"><strong>To</strong><br>${toBlock || '—'}</p>
             <p><strong>Sub:</strong> Allotment / diversion of materials.</p>
             <p>The following materials are hereby allotted / diverted as detailed below.</p>
             ${remarks ? `<p>For the following purpose: <em>${escapeHtml(remarks)}</em></p>` : ''}

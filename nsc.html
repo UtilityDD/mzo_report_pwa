@@ -1319,6 +1319,13 @@
       box-shadow: inset 0 -1px 0 #dee2e6;
     }
 
+    th.nsc-sort {
+      cursor: pointer;
+      user-select: none;
+    }
+    th.nsc-sort[data-dir="asc"]::after { content: " \25B2"; font-size: 0.62em; }
+    th.nsc-sort[data-dir="desc"]::after { content: " \25BC"; font-size: 0.62em; }
+
     /* For main page tables (that stick below the main header) */
     .main-sticky-table thead th {
       top: 42px; /* Height of the sticky dashboard header */
@@ -1396,6 +1403,60 @@
       padding: 2px 6px;
       border-radius: 4px;
       font-size: 0.8rem;
+    }
+
+    #consumerDetailModal .consumer-sheets {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 768px) {
+      #consumerDetailModal .consumer-sheets {
+        grid-template-columns: 1fr 1fr;
+        align-items: start;
+      }
+    }
+    #consumerDetailModal .consumer-kv {
+      margin: 0;
+      border-color: var(--gray-200, #e5e7eb);
+    }
+    #consumerDetailModal .consumer-kv th,
+    #consumerDetailModal .consumer-kv td {
+      padding: 0.16rem 0.45rem !important;
+      font-size: 0.74rem;
+      line-height: 1.25;
+      vertical-align: top;
+      border-color: var(--gray-200, #e5e7eb);
+    }
+    #consumerDetailModal .consumer-kv th {
+      width: 34%;
+      font-weight: 600;
+      color: var(--text-tertiary);
+      background: var(--gray-50);
+      white-space: nowrap;
+    }
+    #consumerDetailModal .consumer-kv td {
+      font-weight: 500;
+      color: var(--text-primary);
+      word-break: break-word;
+    }
+    #consumerDetailModal .consumer-kv .cd-section th {
+      width: auto;
+      background: #e8eef9;
+      color: #1e3a8a;
+      font-size: 0.66rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.28rem 0.45rem !important;
+    }
+    #consumerDetailModal .consumer-kv .badge,
+    #consumerDetailModal .consumer-kv .status-badge {
+      font-size: 0.65rem;
+      font-weight: 600;
+      padding: 1px 6px;
+    }
+    #consumerDetailModal .nsc-fu-panel {
+      margin-top: 0;
+      padding: 0.45rem 0.6rem 0.6rem;
     }
 
     @media (max-width: 767.98px) {
@@ -1524,7 +1585,8 @@
     }
     #analysisTable .consumer-list .consumer-name,
     #analysisTable .consumer-list .appl-no-col,
-    #analysisTable .consumer-list .agency-name {
+    #analysisTable .consumer-list .agency-name,
+    #analysisTable .consumer-list .ccc-name {
       white-space: nowrap !important;
       overflow: hidden !important;
       text-overflow: ellipsis !important;
@@ -2692,6 +2754,58 @@
       }, 8000);
     }
 
+    let urgentSort = null;
+    let urgentTop = [];
+    let urgentIsMobile = false;
+    const summarySort = {};
+    let consumerSort = null;
+
+    function nextSort(spec, key, defaultKey, defaultDir, firstDir) {
+      const currentKey = spec ? spec.key : defaultKey;
+      const currentDir = spec ? spec.dir : defaultDir;
+      if (currentKey && currentKey === key) return { key: key, dir: currentDir === 'asc' ? 'desc' : 'asc' };
+      return { key: key, dir: firstDir };
+    }
+
+    function sortTh(key, label, className, active) {
+      const on = active && active.key === key;
+      return '<th class="nsc-sort' + (className ? ' ' + className : '') + '" data-sort="' + key + '"' +
+        (on ? ' data-dir="' + active.dir + '"' : '') + '>' + label + '</th>';
+    }
+
+    function sortUrgentList(list, spec) {
+      const dir = spec.dir === 'asc' ? 1 : -1;
+      return list.slice().sort((a, b) => {
+        let cmp = 0;
+        if (spec.key === 'delay') cmp = (parseFloat(a.DelayInSC) || 0) - (parseFloat(b.DelayInSC) || 0);
+        else if (spec.key === 'appl') cmp = String(a.APPL_NO || '').localeCompare(String(b.APPL_NO || ''), undefined, { numeric: true });
+        else if (spec.key === 'class') cmp = String(a.CONN_CLASS || '').localeCompare(String(b.CONN_CLASS || ''));
+        else if (spec.key === 'name') cmp = String(a.NAME || '').localeCompare(String(b.NAME || ''), undefined, { sensitivity: 'base' });
+        else cmp = String(a.SUPP_OFF || '').localeCompare(String(b.SUPP_OFF || ''), undefined, { sensitivity: 'base' });
+        return dir * cmp;
+      });
+    }
+
+    function renderUrgentTable() {
+      const container = document.getElementById('urgentModalBody');
+      if (!container) return;
+      const active = urgentSort || { key: 'delay', dir: 'desc' };
+      const sorted = sortUrgentList(urgentTop, active);
+      const head = urgentIsMobile
+        ? '<th>#</th>' + sortTh('appl', 'Appl. No.', '', active) + sortTh('class', 'Class', '', active) + sortTh('delay', 'Delay', '', active) + sortTh('ccc', 'CCC', '', active)
+        : '<th>#</th>' + sortTh('appl', 'Appl. No.', '', active) + sortTh('class', 'Class', '', active) + sortTh('name', 'Name', '', active) + sortTh('ccc', 'CCC', '', active) + sortTh('delay', 'Delay', '', active);
+      const body = sorted.map((d, i) => {
+        const cells = urgentIsMobile
+          ? '<td class="text-center">' + (d.CONN_CLASS || '-').toUpperCase() + '</td><td class="text-end">' + formatDuration(d.DelayInSC) + '</td><td>' + (d.SUPP_OFF || '-') + '</td>'
+          : '<td>' + (d.CONN_CLASS || '-').toUpperCase() + '</td><td>' + (d.NAME || '-') + '</td><td>' + (d.SUPP_OFF || '-') + '</td><td class="text-end">' + formatDuration(d.DelayInSC) + '</td>';
+        return '<tr class="consumer-trigger" data-appl-no="' + (d.APPL_NO || '') + '" style="cursor:pointer;" title="Click for details">' +
+          '<td class="text-center">' + (i + 1) + '</td>' +
+          '<td><i class="fas fa-info-circle text-primary me-1"></i> ' + (d.APPL_NO || '-') + '</td>' + cells + '</tr>';
+      }).join('');
+      container.innerHTML = '<div class="urgent-scroll-wrapper"><table class="table table-striped table-hover mb-0 text-nowrap sticky-table"><thead class="table-light text-center"><tr>' +
+        head + '</tr></thead><tbody>' + body + '</tbody></table></div>';
+    }
+
     function showUrgentModal(data, opts) {
       const auto = !!(opts && opts.auto);
       const source = data || urgentModalDataCache;
@@ -2712,50 +2826,21 @@
 
       if (sorted.length === 0) return;
 
+      urgentSort = null;
+      urgentTop = sorted;
+      urgentIsMobile = window.innerWidth < 768;
+      renderUrgentTable();
       const container = document.getElementById("urgentModalBody");
-      const isMobile = window.innerWidth < 768;
-
-      const tableHtml = `
-    <div class="urgent-scroll-wrapper">
-      <table class="table table-striped table-hover mb-0 text-nowrap sticky-table">
-        <thead class="table-light text-center">
-          <tr>
-            ${isMobile
-          ? `<th>#</th><th>Appl. No.</th><th>Class</th><th>Delay</th><th>CCC</th>`
-          : `<th>#</th><th>Appl. No.</th><th>Class</th><th>Name</th><th>CCC</th><th>Delay</th>`
-        }
-          </tr>
-        </thead>
-        <tbody>
-          ${sorted
-          .map(
-            (d, i) => `
-                <tr class="consumer-trigger" data-appl-no="${d.APPL_NO}" style="cursor:pointer;" title="Click for details">
-                  <td class="text-center">${i + 1}</td>
-                  <td><i class="fas fa-info-circle text-primary me-1"></i> ${d.APPL_NO || '-'}</td>
-                  ${isMobile
-                ? `
-                    <td class="text-center">${(d.CONN_CLASS || '-').toUpperCase()}</td>
-                    <td class="text-end">${formatDuration(d.DelayInSC)}</td>
-                    <td>${d.SUPP_OFF || '-'}</td>
-                  `
-                : `
-                    <td>${(d.CONN_CLASS || '-').toUpperCase()}</td>
-                    <td>${d.NAME || '-'}</td>
-                    <td>${d.SUPP_OFF || '-'}</td>
-                    <td class="text-end">${formatDuration(d.DelayInSC)}</td>
-                  `
-              }
-                </tr>
-              `
-          )
-          .join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
-
-      container.innerHTML = tableHtml;
+      if (container && !container.dataset.sortBound) {
+        container.dataset.sortBound = '1';
+        container.addEventListener('click', (e) => {
+          const th = e.target.closest('th[data-sort]');
+          if (!th) return;
+          const key = th.getAttribute('data-sort');
+          urgentSort = nextSort(urgentSort, key, 'delay', 'desc', key === 'delay' ? 'desc' : 'asc');
+          renderUrgentTable();
+        });
+      }
 
       const modalEl = document.getElementById("urgentModal");
       const urgentModal = bootstrap.Modal.getOrCreateInstance(modalEl, {
@@ -4084,7 +4169,16 @@
       if (tab === 'delay') list.sort((a, b) => b.serial - a.serial || b.count - a.count);
       else if (tab === 'delay2') list = DELAY2_ORDER.map((key) => ({ key: key, count: map[key].count, poleSum: map[key].poleSum, serial: 0 }));
       else list.sort((a, b) => b.count - a.count || String(a.key).localeCompare(String(b.key)));
-      return list;
+      const spec = summarySort[tab];
+      if (!spec) return list;
+      const dir = spec.dir === 'asc' ? 1 : -1;
+      return list.slice().sort((a, b) => {
+        if (spec.key === 'name') return dir * String(a.key).localeCompare(String(b.key), undefined, { sensitivity: 'base' });
+        const av = spec.key === 'pole' ? a.poleSum : a.count;
+        const bv = spec.key === 'pole' ? b.poleSum : b.count;
+        if (av !== bv) return dir * (av - bv);
+        return String(a.key).localeCompare(String(b.key));
+      });
     }
 
     function summaryTitle(tab) {
@@ -4121,6 +4215,7 @@
           '<td class="text-end">' + row.poleSum + '</td>' +
           '<td class="text-end">' + percent + '%</td></tr>';
       });
+      const active = summarySort[tab] || ((tab === 'delay' || tab === 'delay2') ? null : { key: 'count', dir: 'desc' });
       return note +
         '<div class="analysis-block">' +
         '<div class="d-flex justify-content-between align-items-center mb-2">' +
@@ -4128,7 +4223,10 @@
         '<i class="fas fa-copy text-primary" title="Copy Table" style="cursor:pointer;" onclick="copyTableToWhatsApp(this)"></i>' +
         '</div>' +
         '<div class="table-responsive"><table class="table table-hover table-sm mb-0"><thead><tr>' +
-        '<th>' + summaryTitle(tab) + '</th><th class="text-end">Count</th><th class="text-end">Pole Count</th><th class="text-end">%</th>' +
+        sortTh('name', summaryTitle(tab), '', active) +
+        sortTh('count', 'Count', 'text-end', active) +
+        sortTh('pole', 'Pole Count', 'text-end', active) +
+        sortTh('pct', '%', 'text-end', active) +
         '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
     }
 
@@ -4198,6 +4296,24 @@
       if (table && !table.dataset.bound) {
         table.dataset.bound = '1';
         table.addEventListener('click', (e) => {
+          const sortHead = e.target.closest('th[data-sort]');
+          if (sortHead) {
+            const key = sortHead.getAttribute('data-sort');
+            if (analysisTab === 'consumers') {
+              const def = window.innerWidth <= 768 ? { key: 'delay', dir: 'desc' } : { key: 'coll', dir: 'asc' };
+              const numeric = key === 'delay' || key === 'load' || key === 'poles';
+              consumerSort = nextSort(consumerSort, key, def.key, def.dir, key === 'coll' ? 'asc' : (numeric ? 'desc' : 'asc'));
+              if (consumerApps.length) {
+                sortApplications(consumerApps);
+                renderConsumerPage(1);
+              }
+            } else {
+              const defKey = (analysisTab === 'delay' || analysisTab === 'delay2') ? '' : 'count';
+              summarySort[analysisTab] = nextSort(summarySort[analysisTab], key, defKey, 'desc', key === 'name' ? 'asc' : 'desc');
+              drawTables();
+            }
+            return;
+          }
           const pageBtn = e.target.closest('[data-consumer-page]');
           if (pageBtn && !pageBtn.disabled) {
             const nextPage = parseInt(pageBtn.getAttribute('data-consumer-page'), 10);
@@ -4306,17 +4422,21 @@
         const delayHtml = narrow
           ? '<td class="text-end' + (days > 7 ? ' delay-hot' : '') + '">' + consumerDelayText(days) + '</td>'
           : '<td class="text-end">' + formatDuration(app.DelayInSC) + '</td>';
+        const cccName = app.SUPP_OFF || '-';
+        const cccCell = '<td class="ccc-name" title="' + String(cccName).replace(/"/g, '&quot;') + '">' + cccName + '</td>';
         if (narrow) {
           body += '<tr class="consumer-trigger" data-appl-no="' + (app.APPL_NO || '') + '" style="cursor:pointer;">' +
             '<td class="appl-no-col" title="' + (app.APPL_NO || '-') + '">' + (app.APPL_NO || '-') + '</td>' +
             '<td class="class-col">' + connClass + '</td>' +
             '<td class="consumer-name" title="' + String(app.NAME || '').replace(/"/g, '&quot;') + '">' + (app.NAME || '-') + '</td>' +
+            cccCell +
             delayHtml + '</tr>';
         } else {
           body += '<tr class="consumer-trigger" data-appl-no="' + (app.APPL_NO || '') + '" style="cursor:pointer;">' +
             '<td class="appl-no-col" title="' + (app.APPL_NO || '-') + '">' + (app.APPL_NO || '-') + '</td>' +
             '<td class="class-col">' + connClass + '</td>' +
             '<td class="consumer-name" title="' + String(app.NAME || '').replace(/"/g, '&quot;') + '">' + (app.NAME || '-') + '</td>' +
+            cccCell +
             '<td>' + (app.LOAD_WATTS || '-') + '</td>' +
             '<td>' + (app.NO_OF_POLES || '0') + '</td>' +
             '<td>' + (app.PHONE_NO || '-') + '</td>' +
@@ -4326,10 +4446,12 @@
         }
       }
       const pager = consumerPagerHtml(current, pages, start + 1, start + slice.length, total);
+      const active = effectiveConsumerSort();
       const head = narrow
-        ? '<th>APPL NO</th><th class="class-col">CLASS</th><th>NAME</th><th class="text-end">DELAY</th>'
-        : '<th>APPL NO</th><th class="class-col">CLASS</th><th>NAME</th><th>LOAD (W)</th><th>POLES</th><th>PHONE NO</th><th>COLL DATE</th>' +
-          (showAgency ? '<th>AGENCY NAME</th>' : '') + '<th class="text-end">DELAY</th>';
+        ? sortTh('appl', 'APPL NO', '', active) + sortTh('class', 'CLASS', 'class-col', active) + sortTh('name', 'NAME', '', active) + sortTh('ccc', 'CCC', '', active) + sortTh('delay', 'DELAY', 'text-end', active)
+        : sortTh('appl', 'APPL NO', '', active) + sortTh('class', 'CLASS', 'class-col', active) + sortTh('name', 'NAME', '', active) + sortTh('ccc', 'CCC', '', active) +
+          sortTh('load', 'LOAD (W)', '', active) + sortTh('poles', 'POLES', '', active) + sortTh('phone', 'PHONE NO', '', active) + sortTh('coll', 'COLL DATE', '', active) +
+          (showAgency ? sortTh('agency', 'AGENCY NAME', '', active) : '') + sortTh('delay', 'DELAY', 'text-end', active);
       container.innerHTML =
         '<div class="analysis-block">' +
         '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">' +
@@ -4353,6 +4475,41 @@
       return months + 'M';
     }
 
+    function collDateKey(dateStr) {
+      if (!dateStr || typeof dateStr !== 'string' || !dateStr.trim()) return 0;
+      const parts = dateStr.trim().split(/[-/]/);
+      if (parts.length !== 3) return 0;
+      const d = parseInt(parts[0], 10) || 1;
+      const m = parseInt(parts[1], 10) || 1;
+      let y = parseInt(parts[2], 10) || 0;
+      if (y < 100) y += 2000;
+      return y * 10000 + m * 100 + d;
+    }
+
+    function compareApps(a, b, key) {
+      if (key === 'delay') {
+        const da = parseFloat(a._delaySc != null ? a._delaySc : a.DelayInSC) || 0;
+        const db = parseFloat(b._delaySc != null ? b._delaySc : b.DelayInSC) || 0;
+        return da - db;
+      }
+      if (key === 'load') return (parseFloat(a.LOAD_WATTS) || 0) - (parseFloat(b.LOAD_WATTS) || 0);
+      if (key === 'poles') return (parseInt(a.NO_OF_POLES, 10) || 0) - (parseInt(b.NO_OF_POLES, 10) || 0);
+      if (key === 'coll') return collDateKey(a.COLL_DATE) - collDateKey(b.COLL_DATE);
+      const field = { appl: 'APPL_NO', class: 'CONN_CLASS', name: 'NAME', ccc: 'SUPP_OFF', phone: 'PHONE_NO', agency: 'AGENCY_NAME' }[key] || 'NAME';
+      return String(a[field] || '').localeCompare(String(b[field] || ''), undefined, { numeric: true, sensitivity: 'base' });
+    }
+
+    function effectiveConsumerSort() {
+      if (consumerSort) return consumerSort;
+      return window.innerWidth <= 768 ? { key: 'delay', dir: 'desc' } : { key: 'coll', dir: 'asc' };
+    }
+
+    function sortApplications(applications) {
+      const spec = effectiveConsumerSort();
+      const dir = spec.dir === 'asc' ? 1 : -1;
+      applications.sort((a, b) => dir * compareApps(a, b, spec.key));
+    }
+
     function generateApplicationsTable(applications, container, hideAgencyColumn = false) {
       consumerHost = container;
       if (!applications || applications.length === 0) {
@@ -4360,26 +4517,7 @@
         container.innerHTML = '<div class="text-center p-3 text-muted">No applications found</div>';
         return;
       }
-      const narrow = window.innerWidth <= 768;
-      if (narrow) {
-        applications.sort((a, b) => {
-          const da = parseFloat(a._delaySc != null ? a._delaySc : a.DelayInSC) || 0;
-          const db = parseFloat(b._delaySc != null ? b._delaySc : b.DelayInSC) || 0;
-          return db - da;
-        });
-      } else {
-        const parseSortDate = (dateStr) => {
-          if (!dateStr || typeof dateStr !== 'string' || !dateStr.trim()) return 0;
-          const parts = dateStr.trim().split(/[-/]/);
-          if (parts.length !== 3) return 0;
-          const d = parseInt(parts[0], 10) || 1;
-          const m = parseInt(parts[1], 10) || 1;
-          let y = parseInt(parts[2], 10) || 0;
-          if (y < 100) y += 2000;
-          return y * 10000 + m * 100 + d;
-        };
-        applications.sort((a, b) => parseSortDate(a.COLL_DATE) - parseSortDate(b.COLL_DATE));
-      }
+      sortApplications(applications);
       consumerApps = applications;
       consumerShowAgency = applications[0].AGENCY_NAME !== undefined && !hideAgencyColumn;
       renderConsumerPage(1);
@@ -4666,14 +4804,10 @@
 
   <!-- Consumer Detail Modal -->
   <div class="modal fade" id="consumerDetailModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
       <div class="modal-content border-0 shadow-lg">
-        <div class="modal-header bg-primary text-white py-3">
-          <h5 class="modal-title d-flex align-items-center gap-2">
-            <i class="fas fa-user-circle fs-4"></i>
-            <span class="d-none d-sm-inline">Consumer Application Details</span>
-            <span class="d-sm-none">Consumer</span>
-          </h5>
+        <div class="modal-header bg-primary text-white py-2">
+          <h5 class="modal-title mb-0 text-truncate" id="consumerModalTitle">Consumer</h5>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body p-0" id="consumerDetailBody">
@@ -4700,6 +4834,7 @@
       let openAppl = '';
       let shownFp = '';
       let boardFp = '';
+      let followSort = null;
       let modalInst = null;
 
       function applKey(value) {
@@ -4861,8 +4996,19 @@
           items.push({ row: row, latest: notes[0], count: notes.length });
         });
         items.sort((a, b) => String(b.latest.at || '').localeCompare(String(a.latest.at || '')));
+        if (followSort) {
+          const dir = followSort.dir === 'asc' ? 1 : -1;
+          items.sort((a, b) => {
+            let cmp = 0;
+            if (followSort.key === 'count') cmp = a.count - b.count;
+            else if (followSort.key === 'appl') cmp = String(a.row.APPL_NO || '').localeCompare(String(b.row.APPL_NO || ''), undefined, { numeric: true });
+            else if (followSort.key === 'ccc') cmp = String(a.row.SUPP_OFF || '').localeCompare(String(b.row.SUPP_OFF || ''), undefined, { sensitivity: 'base' });
+            else cmp = String(a.row.NAME || '').localeCompare(String(b.row.NAME || ''), undefined, { sensitivity: 'base' });
+            return dir * cmp || String(b.latest.at || '').localeCompare(String(a.latest.at || ''));
+          });
+        }
         if (countEl) countEl.textContent = items.length ? String(items.length) : 'No follow-ups for the current filters.';
-        const fp = items.map((item) => item.latest.id + '|' + item.count + '|' + item.row.APPL_NO).join('\n');
+        const fp = (followSort ? followSort.key + followSort.dir : 'default') + '\n' + items.map((item) => item.latest.id + '|' + item.count + '|' + item.row.APPL_NO).join('\n');
         if (fp === boardFp) return;
         boardFp = fp;
         if (!items.length) {
@@ -4871,8 +5017,8 @@
         }
         const narrow = window.innerWidth <= 768;
         const head = narrow
-          ? '<th>APPL NO</th><th>NAME</th><th class="text-end">FOLLOW-UPS</th>'
-          : '<th>APPL NO</th><th>NAME</th><th>CCC</th><th class="text-end">FOLLOW-UPS</th>';
+          ? sortTh('appl', 'APPL NO', '', followSort) + sortTh('name', 'NAME', '', followSort) + sortTh('count', 'FOLLOW-UPS', 'text-end', followSort)
+          : sortTh('appl', 'APPL NO', '', followSort) + sortTh('name', 'NAME', '', followSort) + sortTh('ccc', 'CCC', '', followSort) + sortTh('count', 'FOLLOW-UPS', 'text-end', followSort);
         host.innerHTML = '<div class="table-responsive sticky-table-container"><table class="table table-sm table-hover mb-0 sticky-table' +
           (narrow ? ' consumer-compact' : '') + '"><thead><tr>' + head + '</tr></thead><tbody>' +
           items.map((item) => {
@@ -4934,6 +5080,14 @@
         if (window.nscShowingFollowups) renderNscFollowupBoard();
       }
       function onFollowupClick(e) {
+        const sortHead = e.target.closest('#nscFollowupBoard th[data-sort]');
+        if (sortHead) {
+          const key = sortHead.getAttribute('data-sort');
+          followSort = nextSort(followSort, key, '', 'desc', key === 'count' ? 'desc' : 'asc');
+          boardFp = '';
+          renderNscFollowupBoard();
+          return;
+        }
         const card = e.target.closest('[data-nsc-fu-appl]');
         if (card) {
           const row = findAppl(card.getAttribute('data-nsc-fu-appl'));
@@ -5112,153 +5266,58 @@
       const delayColor = (days) => (parseFloat(days) > 60) ? 'text-danger fw-bold' : '';
 
       const days = parseFloat(consumer._delaySc != null ? consumer._delaySc : consumer.DelayInSC) || 0;
-      const phone = consumer.PHONE_NO || '';
-      const briefDelay = days > 7
-        ? '<span class="delay-hot" style="color:#d00000;font-weight:700;">' + consumerDelayText(days) + '</span>'
-        : consumerDelayText(days);
+      const phone = String(consumer.PHONE_NO || '').trim();
+      const esc = (value) => String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      const text = (value) => esc(String(value || '').trim() || '-');
+      const row = (label, html) => '<tr><th>' + esc(label) + '</th><td>' + html + '</td></tr>';
+      const section = (title) => '<tr class="cd-section"><th colspan="2">' + esc(title) + '</th></tr>';
+      const sheet = (rows) => '<table class="table table-sm table-bordered consumer-kv mb-0"><tbody>' + rows.join('') + '</tbody></table>';
+      const delayHtml = (days > 7 ? '<span style="color:#d00000;font-weight:700;">' : '<span class="' + delayColor(consumer.DelayInSC) + '">') +
+        esc(consumerDelayText(days)) + (consumer.DelayRange ? ' · ' + esc(consumer.DelayRange) : '') + '</span>';
+      const duare = consumer.IS_DUARE_SARKAR === 'Y'
+        ? '<span class="badge bg-success">Yes</span>' + (consumer.DS_NUMBER ? ' ' + esc(consumer.DS_NUMBER) : '')
+        : '<span class="badge bg-secondary">No</span>';
+      const wo = consumer.WO_ISSUED === 'Y'
+        ? '<span class="badge bg-success">Issued</span>' + (consumer.WON ? ' ' + esc(consumer.WON) : '')
+        : '<span class="badge bg-danger">Not issued</span>';
+      const phoneHtml = phone ? '<a href="tel:' + esc(phone) + '">' + esc(phone) + '</a>' : '-';
+      const titleEl = document.getElementById('consumerModalTitle');
+      if (titleEl) titleEl.textContent = (consumer.NAME || 'Consumer') + (consumer.APPL_NO ? ' · ' + consumer.APPL_NO : '');
 
-      body.innerHTML = `
-        <div class="consumer-brief d-md-none">
-          <div class="detail-item"><span class="detail-label">Application</span><span class="detail-value modal-consumer-id">${consumer.APPL_NO || '-'}</span></div>
-          <div class="detail-item"><span class="detail-label">Name</span><span class="detail-value fw-bold">${consumer.NAME || '-'}</span></div>
-          <div class="detail-item"><span class="detail-label">Class</span><span class="detail-value">${(consumer.CONN_CLASS || '-').toUpperCase()}${consumer.APPLIED_PHASE ? ' · ' + consumer.APPLIED_PHASE : ''}</span></div>
-          <div class="detail-item"><span class="detail-label">Phone</span><span class="detail-value">${phone ? '<a href="tel:' + phone + '">' + phone + '</a>' : '-'}</span></div>
-          <div class="detail-item"><span class="detail-label">CCC</span><span class="detail-value">${consumer.SUPP_OFF || '-'}</span></div>
-          <div class="detail-item"><span class="detail-label">Load</span><span class="detail-value">${consumer.LOAD_WATTS || '-'} W</span></div>
-          <div class="detail-item"><span class="detail-label">Poles</span><span class="detail-value">${consumer.NO_OF_POLES || '0'}</span></div>
-          <div class="detail-item"><span class="detail-label">Delay</span><span class="detail-value">${briefDelay}</span></div>
-          <div class="detail-item"><span class="detail-label">Agency</span><span class="detail-value">${(consumer.AGENCY_NAME || '').trim() || 'WO not issued'}</span></div>
-          <button type="button" class="btn btn-link consumer-more-btn" id="consumerMoreBtn">More</button>
-        </div>
-        <div class="detail-grid consumer-full">
-          <!-- Basic Info -->
-          <div class="detail-group">
-            <h6><i class="fas fa-id-card"></i> Basic Information</h6>
-            <div class="detail-item">
-              <span class="detail-label">Application Number</span>
-              <span class="detail-value modal-consumer-id">${consumer.APPL_NO || '-'}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Applicant Name</span>
-              <span class="detail-value text-uppercase fw-bold">${consumer.NAME || '-'}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Consumer ID</span>
-              <span class="detail-value">${consumer.CON_ID || '-'}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Contact Number</span>
-              <span class="detail-value"><i class="fas fa-phone-alt text-success me-1"></i> ${consumer.PHONE_NO || '-'}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Full Address</span>
-              <span class="detail-value">${consumer.ADDRESS || '-'}</span>
-            </div>
-          </div>
-
-          <!-- Technical Info -->
-          <div class="detail-group">
-            <h6><i class="fas fa-bolt"></i> Technical Details</h6>
-            <div class="detail-item">
-              <span class="detail-label">Connection Class / Cat</span>
-              <span class="detail-value">${consumer.CONN_CLASS || '-'}${consumer.CONN_CAT ? ' / ' + consumer.CONN_CAT : ''}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Applied Load</span>
-              <span class="detail-value">${consumer.LOAD_WATTS || '-'} Watts (${consumer.APPLIED_PHASE || '-'} Phase)</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Number of Poles Req.</span>
-              <span class="detail-value badge bg-warning text-dark fs-6">${consumer.NO_OF_POLES || '0'} Poles</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Applicant Type</span>
-              <span class="detail-value">${consumer.APPLICANT_TYPE || '-'}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Duare Sarkar Application?</span>
-              <span class="detail-value">
-                ${consumer.IS_DUARE_SARKAR === 'Y' ? 
-                  `<span class="badge bg-success">YES</span> ${consumer.DS_NUMBER ? `(No: ${consumer.DS_NUMBER})` : ''}` : 
-                  '<span class="badge bg-secondary">NO</span>'}
-              </span>
-            </div>
-          </div>
-
-          <!-- Workflow Timeline -->
-          <div class="detail-group">
-            <h6><i class="fas fa-history"></i> Workflow Timeline</h6>
-            <div class="detail-item d-flex justify-content-between">
-              <div>
-                <span class="detail-label">Creation Date</span>
-                <span class="detail-value text-muted">${consumer.CREATION_DATE || '-'}</span>
-              </div>
-            </div>
-            <div class="detail-item d-flex justify-content-between mt-2">
-              <div>
-                <span class="detail-label">Inspection Date</span>
-                <span class="detail-value">${consumer.INSPECTION_DATE || '-'}</span>
-              </div>
-            </div>
-             <div class="detail-item d-flex justify-content-between mt-2">
-              <div>
-                <span class="detail-label">Quotation Issue Date</span>
-                <span class="detail-value">${consumer.QUOTATION_ISSUE_DATE || '-'}</span>
-              </div>
-            </div>
-            <div class="detail-item d-flex justify-content-between mt-2">
-              <div>
-                <span class="detail-label">Payment Collection Date</span>
-                <span class="detail-value fw-bold text-primary">${consumer.COLL_DATE || '-'}</span>
-              </div>
-            </div>
-            <hr class="my-2 opacity-10">
-            <div class="detail-item">
-              <span class="detail-label">Service Connection Delay</span>
-              <span class="detail-value ${delayColor(consumer.DelayInSC)}">${consumer.DelayInSC || '0'} Days (${consumer.DelayRange || '-'})</span>
-            </div>
-          </div>
-
-          <!-- Status & Remarks -->
-          <div class="detail-group" style="border-left-color: #f59e0b;">
-            <h6><i class="fas fa-info-circle"></i> Status & Remarks</h6>
-            <div class="detail-item">
-              <span class="detail-label">Work Order Status</span>
-              <span class="detail-value">
-                ${consumer.WO_ISSUED === 'Y' ? 
-                  `<span class="badge bg-success">ISSUED</span> (No: ${consumer.WON || '-'})` : 
-                  '<span class="badge bg-danger">NOT ISSUED</span>'}
-              </span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Assigned Agency</span>
-              <span class="detail-value fw-bold">${consumer.AGENCY_NAME || 'Pending Allocation'}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Current SCN Status</span>
-              <span class="status-badge ${getStatusClass(consumer.SCN_STATUS)}">${consumer.SCN_STATUS || 'Unknown'}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Withheld Reason</span>
-              <span class="detail-value text-danger small">${consumer.SCN_WITHELD_REASON || 'No restrictions'}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Inspection Comments</span>
-              <span class="detail-value font-italic small text-muted">"${consumer.INSPECTION_COMMENT || 'No comments available'}"</span>
-            </div>
-          </div>
-        </div>
-      `;
+      body.innerHTML =
+        '<div class="consumer-sheets">' +
+        sheet([
+          section('Application'),
+          row('Application', '<span class="modal-consumer-id">' + text(consumer.APPL_NO) + '</span>'),
+          row('Name', text(consumer.NAME)),
+          row('Consumer ID', text(consumer.CON_ID)),
+          row('Phone', phoneHtml),
+          row('CCC', text(consumer.SUPP_OFF)),
+          row('Division', text(consumer.DIVN_NAME)),
+          row('Address', text(consumer.ADDRESS))
+        ]) +
+        sheet([
+          section('Connection'),
+          row('Class', text((consumer.CONN_CLASS || '-').toUpperCase() + (consumer.CONN_CAT ? ' / ' + consumer.CONN_CAT : ''))),
+          row('Load', text((consumer.LOAD_WATTS || '-') + ' W · ' + (consumer.APPLIED_PHASE || '-') + ' ph')),
+          row('Poles', text(consumer.NO_OF_POLES || '0')),
+          row('Type', text(consumer.APPLICANT_TYPE)),
+          row('Duare Sarkar', duare),
+          row('Agency', text((consumer.AGENCY_NAME || '').trim() || 'WO not issued')),
+          row('Work order', wo),
+          row('SCN', '<span class="status-badge ' + getStatusClass(consumer.SCN_STATUS) + '">' + text(consumer.SCN_STATUS || 'Unknown') + '</span>'),
+          row('Delay', delayHtml),
+          row('Created', text(consumer.CREATION_DATE)),
+          row('Inspected', text(consumer.INSPECTION_DATE)),
+          row('Quotation', text(consumer.QUOTATION_ISSUE_DATE)),
+          row('Paid', text(consumer.COLL_DATE)),
+          row('Withheld', text(consumer.SCN_WITHELD_REASON || 'None')),
+          row('Inspection', text(consumer.INSPECTION_COMMENT || 'None'))
+        ]) +
+        '</div>';
 
       const modalEl = document.getElementById('consumerDetailModal');
-      modalEl.classList.remove('show-more');
-      const moreBtn = document.getElementById('consumerMoreBtn');
-      if (moreBtn) {
-        moreBtn.onclick = () => {
-          const open = modalEl.classList.toggle('show-more');
-          moreBtn.textContent = open ? 'Less' : 'More';
-        };
-      }
       const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
       modal.show();
       if (typeof nscMountConsumerFollowup === 'function') nscMountConsumerFollowup(consumer);
