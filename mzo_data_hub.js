@@ -15,6 +15,7 @@ const DATASETS = [
     { key: 'CACHE_COLLECTION', label: 'Collection Report', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ2S20QZ57pQpdawzKFHAIqD_OpCNmbmMbYlttluLVA0JZpVK405pS0-2ZIqm-X9jAA8ZB1XwF2serr/pub?gid=1977250749&single=true&output=csv', type: 'csv' },
     { key: 'CACHE_LOSS', label: 'Loss Report', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSYyqn0urGdbqXarhELRbSCeRvgUCSHID_1Z4E_kptBTR5u69R0HHX0Jk23n6KseriNct2q9XwXu04E/pub?output=csv', type: 'csv' },
     { key: 'CACHE_LOSS_TARGET', label: 'Loss Targets', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSYyqn0urGdbqXarhELRbSCeRvgUCSHID_1Z4E_kptBTR5u69R0HHX0Jk23n6KseriNct2q9XwXu04E/pub?gid=2042465667&single=true&output=csv', type: 'csv' },
+    { key: 'CACHE_FEEDER_OUTAGE', label: 'Feeder Outage', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTsRzMOPBm3foslF8BadPmN24KrV2kGZCAsX7GWrmIDm0uppSLmov0n51ZkKLMz2vJMIFpqYGJETm7R/pub?gid=0&single=true&output=csv', type: 'csv' },
     // Prefers uploaded dataset via /api/withheld/dataset (Supabase); fallback sheet/JSON on server
     { key: 'CACHE_WITHHELD_v4', label: 'Withheld NSC', url: '/api/withheld/dataset', type: 'csv', originHeavy: true, versionUrl: '/api/nsc/meta', csvUrlField: 'withheldCsvUrl', versionField: 'withheldVersion' },
     { key: 'CACHE_WEEKLY', label: 'Weekly Report', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSMuO-ddereEG6J2s2Bmqp-HXo85ky4S4R5Yt-0HdoNHHa5r8xOEK4MJ1Syhyqzjpm2lTI4sT85nR4N/pub?gid=0&single=true&output=csv', type: 'csv' },
@@ -630,6 +631,7 @@ class DataHub {
                     try {
                         response = await this._fetchWithTimeout(fetchUrl, {
                             credentials: /\/api\//.test(fetchUrl) ? 'same-origin' : 'omit',
+                            cache: /docs\.google\.com|spreadsheets\.google\.com|googleusercontent\.com/i.test(fetchUrl) ? 'no-store' : 'default',
                             headers
                         }, timeoutMs);
                     } catch (fetchErr) {

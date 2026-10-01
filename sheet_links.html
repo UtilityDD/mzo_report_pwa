@@ -602,6 +602,34 @@
       if (label) setUpdated('CACHE_LOSS', label, true);
     }).catch(function () {});
 
+    function feederOutageAsOn(csv) {
+      const table = csvRows(csv);
+      if (!table.length) return '';
+      const idx = table[0].findIndex(function (h) {
+        return /^REPORT MONTH$/i.test(String(h || '').trim());
+      });
+      if (idx < 0) return '';
+      let best = '';
+      for (let i = 1; i < table.length; i++) {
+        const raw = String((table[i] && table[i][idx]) || '').replace(/\D/g, '').slice(0, 6);
+        if (/^\d{6}$/.test(raw) && raw > best) best = raw;
+      }
+      if (!best) return '';
+      const year = parseInt(best.slice(0, 4), 10);
+      const month = parseInt(best.slice(4, 6), 10);
+      if (month < 1 || month > 12) return '';
+      const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+      const pad = function (n) { return String(n).padStart(2, '0'); };
+      return pad(last) + '/' + pad(month) + '/' + year;
+    }
+
+    loadSheetCsv('CACHE_FEEDER_OUTAGE').then(function (csv) {
+      const label = feederOutageAsOn(csv);
+      if (!label) return;
+      setUpdated('CACHE_FEEDER_OUTAGE', label, true);
+      try { localStorage.setItem('mzo_feeder_outage_as_on', label); } catch (e) {}
+    }).catch(function () {});
+
     function latestDottedDate(csv, headerName) {
       const rows = csvRows(csv);
       if (!rows.length) return '';

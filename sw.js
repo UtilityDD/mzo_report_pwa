@@ -63,7 +63,13 @@
 // v181: PM Surya Ghar tables include a total row
 // v182: PM Surya Ghar KPI, charts, and tables share one header set
 // v183: PM Surya Ghar treats net metering as connection and installation as the solar plate
-const CACHE_NAME = 'mzo-reports-cache-v194';
+// v195: feeder outage trend page
+// v196: feeder outage trend by office level
+// v197: feeder outage rechecks the published sheet on open
+// v198: feeder outage trend and rankings are tabs
+// v199: feeder outage month chips under filters; one chart plus table
+// v200: feeder outage sheet-links date is the latest report month
+const CACHE_NAME = 'mzo-reports-cache-v200';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -167,6 +173,7 @@ function isNetworkFirstPath(pathname) {
     pathname === '/collection.html' ||
     pathname === '/pending_mc.html' ||
     pathname === '/remosd5000.html' ||
+    pathname === '/feeder_outage.html' ||
     pathname === '/meter_utilization.html' ||
     pathname === '/jjm.html' ||
     pathname === '/wridd.html' ||

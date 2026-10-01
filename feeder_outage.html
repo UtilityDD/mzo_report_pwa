@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Feeder Outage</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="mzo_data_hub.js"></script>
+  <script src="mzo_scope.js?v=2"></script>
+  <script src="mzo_presets_hub.js"></script>
+  <style>
+    body {
+      font-family: 'Roboto', sans-serif;
+      background: #e9ecef;
+      color: #212529;
+      font-size: 0.9rem;
+      margin: 0;
+    }
+    .page-top { position: relative; }
+    .content-wrapper { padding: 1rem; }
+    .dashboard-header {
+      background: #1e3a8a;
+      color: #fff;
+      padding: 0.7rem 1.25rem;
+      margin-bottom: 0.75rem;
+      border-radius: 12px;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.16);
+    }
+    .header-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .dashboard-title { margin: 0; min-width: 0; flex: 1; }
+    .dashboard-title h1 { margin: 0; font-weight: 700; font-size: 1.2rem; line-height: 1.2; }
+    .dashboard-subtitle { font-size: 0.78rem; margin: 3px 0 0; opacity: 0.9; }
+    .header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .filter-toggle {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      min-height: 30px;
+      padding: 4px 8px;
+      border: 1px solid rgba(255,255,255,0.45);
+      background: transparent;
+      color: #fff;
+      border-radius: 6px;
+    }
+    .filter-toggle[aria-expanded="true"] { background: #fff; color: #1e3a8a; }
+    .filter-container {
+      background: #fff;
+      border: 1px solid #dee2e6;
+      border-radius: 12px;
+      padding: 0.85rem 1rem 0.45rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; }
+    .filters select, .filters input {
+      font-size: 0.85rem;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+      padding: 0.35rem 0.5rem;
+      min-width: 140px;
+      flex: 1;
+      background: #fff;
+    }
+    .filters input { min-width: 180px; }
+    .stats-card {
+      border: 1px solid #dee2e6;
+      border-left: 5px solid transparent;
+      border-radius: 12px;
+      background: #fff;
+      padding: 0.7rem 0.85rem;
+      height: 100%;
+      text-align: left;
+    }
+    .stats-card.feeders { border-left-color: #1e3a8a; }
+    .stats-card.daily { border-left-color: #f59e0b; }
+    .stats-card.range { border-left-color: #6366f1; }
+    .stats-card.year { border-left-color: #10b981; }
+    .stats-card.concern { border-left-color: #fca5a5; cursor: pointer; width: 100%; }
+    .stats-card.concern.active { background: rgba(79,70,229,0.08); border-color: #4f46e5; border-left-color: #e11d48; }
+    .stats-title {
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #6c757d;
+    }
+    .stats-card.feeders .stats-title { color: #1e3a8a; }
+    .stats-card.daily .stats-title { color: #b45309; }
+    .stats-card.range .stats-title { color: #4f46e5; }
+    .stats-card.year .stats-title { color: #059669; }
+    .stats-card.concern .stats-title { color: #e11d48; }
+    .stats-value { font-size: 1.28rem; font-weight: 700; margin: 0.1rem 0 0; line-height: 1.15; color: #212529; }
+    .stats-sub { font-size: 0.7rem; color: #6c757d; margin-top: 2px; }
+    .panel {
+      background: #fff;
+      border: 1px solid #dee2e6;
+      border-radius: 12px;
+      padding: 0.75rem 0.9rem 0.85rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      height: 100%;
+    }
+    .panel h2 { font-size: 0.82rem; font-weight: 700; margin: 0 0 0.55rem; color: #1e3a8a; }
+    .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 0.5rem; }
+    .panel-head h2 { margin: 0; }
+    .level-row, .view-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+    .panel-head .view-tabs { margin-bottom: 0; }
+    .filter-container .month-row { margin: 6px 0 0; }
+    .view-tab {
+      border: 0;
+      background: transparent;
+      color: #475569;
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .view-tab.active { background: #1e3a8a; color: #fff; }
+    .view-pane { display: none; }
+    .view-pane.active { display: block; }
+    .rank-scroll { max-height: 480px; overflow: auto; }
+    .month-row { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; margin-bottom: 0.75rem; }
+    .month-chip {
+      border: 1px solid #dee2e6;
+      background: #fff;
+      color: #334155;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 0.75rem;
+      white-space: nowrap;
+    }
+    .month-chip.active { background: #1e3a8a; color: #fff; border-color: #1e3a8a; }
+    .chart-box { position: relative; height: 280px; }
+    .chart-note { font-size: 0.72rem; color: #6c757d; margin: 0.4rem 0 0; }
+    .hot-row, .focus-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.85fr) minmax(36px, 0.5fr) auto;
+      gap: 8px;
+      align-items: center;
+      width: 100%;
+      border: 0;
+      background: transparent;
+      text-align: left;
+      padding: 4px 2px;
+      border-radius: 6px;
+      font-size: 0.78rem;
+    }
+    .hot-row:hover, .focus-row:hover { background: #f8fafc; }
+    .hot-name, .focus-name, .focus-name strong, .focus-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .focus-name strong { display: block; font-weight: 600; }
+    .hot-track { height: 8px; background: #e9ecef; border-radius: 99px; overflow: hidden; }
+    .hot-fill { display: block; height: 100%; background: #1e3a8a; border-radius: 99px; }
+    .hot-fill.warn { background: #e11d48; }
+    .hot-val { font-variant-numeric: tabular-nums; color: #334155; white-space: nowrap; }
+    .focus-list { display: flex; flex-direction: column; gap: 2px; }
+    .focus-meta { color: #6c757d; font-size: 0.68rem; }
+    .why { font-size: 0.68rem; font-weight: 600; color: #e11d48; white-space: nowrap; }
+    .why.freq { color: #b45309; }
+    .empty-note { color: #6c757d; font-size: 0.78rem; margin: 0.25rem 0; }
+    .table-wrap { overflow: auto; max-height: 520px; border-radius: 8px; }
+    table.feeders { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 760px; }
+    table.feeders th, table.feeders td { padding: 4px 6px; border-bottom: 1px solid #e9ecef; text-align: left; vertical-align: middle; }
+    table.feeders th {
+      position: sticky; top: 0; background: #f8fafc; font-weight: 600; cursor: pointer; white-space: nowrap; z-index: 1;
+    }
+    table.feeders th[data-dir="asc"]::after { content: " ▲"; font-size: 9px; }
+    table.feeders th[data-dir="desc"]::after { content: " ▼"; font-size: 9px; }
+    table.feeders td.num, table.feeders th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    table.feeders tbody tr { cursor: pointer; }
+    table.feeders tbody tr:hover { background: #f8fafc; }
+    .feeder-meta { color: #6c757d; font-size: 11px; }
+    .up { color: #e11d48; font-weight: 600; }
+    .down { color: #059669; font-weight: 600; }
+    .spark { display: block; }
+    .spark polyline { fill: none; stroke: #1e3a8a; stroke-width: 1.5; }
+    #loadingOverlay {
+      position: fixed; inset: 0; background: rgba(233,236,239,0.92); z-index: 9999;
+      display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px;
+    }
+    #loadingOverlay.hide { display: none; }
+    #loadError { display: none; background: #fff; border-radius: 12px; padding: 1rem; color: #9f1239; }
+    @media (max-width: 767px) {
+      body { overflow-x: hidden; }
+      .content-wrapper { padding: 8px; }
+      .page-top { position: sticky; top: 0; z-index: 40; margin-bottom: 6px; }
+      .dashboard-header { margin: 0; padding: 6px 8px 5px 10px; border-radius: 10px; min-height: 42px; }
+      .dashboard-title h1 { font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .dashboard-subtitle { display: none; }
+      .filter-toggle { display: inline-flex; }
+      .filter-container {
+        display: none; position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 45;
+        margin: 0; padding: 10px; border-radius: 10px; box-shadow: 0 10px 24px rgba(15,23,42,0.16);
+        max-height: 70vh; overflow: auto;
+      }
+      .page-top.filters-open .filter-container { display: block; }
+      .stats-card { padding: 0.4rem 0.55rem; border-left-width: 4px; border-radius: 8px; }
+      .stats-title { font-size: 0.6rem; }
+      .stats-value { font-size: 0.95rem; }
+      .chart-box { height: 200px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="loadingOverlay"><i class="fas fa-spinner fa-spin"></i><div>Loading feeder outages…</div></div>
+  <div class="content-wrapper">
+    <div class="page-top" id="pageTop">
+      <div class="dashboard-header">
+        <div class="header-top">
+          <div class="dashboard-title">
+            <h1>Feeder Outage</h1>
+            <p class="dashboard-subtitle" id="subtitle">Outages over 5 min</p>
+          </div>
+          <div class="header-actions">
+            <button type="button" class="filter-toggle" id="filterToggle" aria-expanded="false" aria-controls="filters" title="Filters">
+              <i class="fas fa-sliders"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="filter-container" id="filters">
+        <div class="filters">
+          <select id="regionFilter" aria-label="Region"><option value="">All regions</option></select>
+          <select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select>
+          <select id="ssFilter" aria-label="Substation"><option value="">All substations</option></select>
+          <select id="catFilter" aria-label="Feeder category">
+            <option value="">All categories</option>
+            <option value="R">Rural</option>
+            <option value="U">Urban</option>
+            <option value="M">Mixed</option>
+          </select>
+          <select id="natFilter" aria-label="Nature of feeder">
+            <option value="">All natures</option>
+            <option value="A">Agri</option>
+            <option value="O">Others</option>
+            <option value="I">Industrial</option>
+            <option value="__blank">Not set</option>
+          </select>
+          <select id="schemeFilter" aria-label="Scheme"><option value="">All schemes</option></select>
+          <input id="searchBox" type="search" placeholder="Feeder or substation" aria-label="Search">
+        </div>
+        <div class="month-row" id="monthChips"></div>
+      </div>
+    </div>
+
+    <div id="loadError"></div>
+    <div id="app">
+      <div class="row g-2 mb-2" id="summaryCards">
+        <div class="col-6 col-md"><div class="stats-card feeders"><div class="stats-title">Feeders</div><div class="stats-value" id="kpiFeeders">—</div><div class="stats-sub" id="kpiFeedersSub"></div></div></div>
+        <div class="col-6 col-md"><div class="stats-card daily"><div class="stats-title">Avg daily</div><div class="stats-value" id="kpiDaily">—</div><div class="stats-sub" id="kpiDailySub"></div></div></div>
+        <div class="col-4 col-md"><div class="stats-card range"><div class="stats-title">Monthly range</div><div class="stats-value" id="kpiRange">—</div><div class="stats-sub" id="kpiRangeSub"></div></div></div>
+        <div class="col-4 col-md"><div class="stats-card year"><div class="stats-title">Avg yearly</div><div class="stats-value" id="kpiYear">—</div><div class="stats-sub" id="kpiYearSub"></div></div></div>
+        <div class="col-4 col-md"><button type="button" class="stats-card concern" id="concernCard"><div class="stats-title">Concern</div><div class="stats-value" id="kpiConcern">—</div><div class="stats-sub" id="kpiConcernSub">1 h/day or 30 trips</div></button></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div class="view-tabs" id="mainTabs">
+            <button type="button" class="view-tab active" data-pane="trend">Chart</button>
+            <button type="button" class="view-tab" data-pane="table">Data table</button>
+          </div>
+          <div class="level-row" id="trendLevels">
+            <button type="button" class="month-chip active" data-level="all">All</button>
+            <button type="button" class="month-chip" data-level="region">Region</button>
+            <button type="button" class="month-chip" data-level="division">Division</button>
+            <button type="button" class="month-chip" data-level="ss">SS</button>
+            <button type="button" class="month-chip" data-level="feeder">Feeder</button>
+          </div>
+        </div>
+        <div class="view-pane active" id="paneTrend">
+          <div class="chart-box"><canvas id="trendChart"></canvas></div>
+          <p class="chart-note" id="chartNote"></p>
+        </div>
+        <div class="view-pane" id="paneTable">
+          <h2 id="tableTitle">Feeders</h2>
+          <div class="table-wrap">
+            <table class="feeders">
+              <thead id="feederHead"></thead>
+              <tbody id="feederBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const REGION_LABEL = { Malda: 'MALDA', Raiganj: 'UTTAR DINAJPUR', Balurghat: 'DAKSHIN DINAJPUR' };
+    const CAT_LABEL = { R: 'Rural', U: 'Urban', M: 'Mixed' };
+    const NAT_LABEL = { A: 'Agri', O: 'Others', I: 'Industrial' };
+    const DAILY_LIMIT = 1;
+    const COUNT_LIMIT = 30;
+
+    let allRows = [];
+    let monthPick = '';
+    let concernOnly = false;
+    let sortKey = 'daily';
+    let sortDir = 'desc';
+    let trendLevel = 'all';
+    let mainPane = 'trend';
+    let trendChart = null;
+    const TREND_COLORS = ['#1e3a8a', '#e11d48', '#059669', '#d97706', '#7c3aed', '#0891b2', '#be123c', '#ca8a04', '#0f766e', '#4f46e5', '#65a30d', '#9333ea'];
+
+    const $ = (id) => document.getElementById(id);
+
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function pick(row, names) {
+      const keys = Object.keys(row);
+      for (let i = 0; i < names.length; i++) {
+        if (row[names[i]] != null && String(row[names[i]]).trim() !== '') return String(row[names[i]]).trim();
+      }
+      const want = names.map((n) => n.toLowerCase().replace(/[^a-z0-9]+/g, ''));
+      for (let i = 0; i < keys.length; i++) {
+        const nk = keys[i].replace(/^\uFEFF/, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+        if (want.indexOf(nk) !== -1 && row[keys[i]] != null && String(row[keys[i]]).trim() !== '') {
+          return String(row[keys[i]]).trim();
+        }
+      }
+      return '';
+    }
+    function daysInMonth(yyyymm) {
+      const y = +String(yyyymm).slice(0, 4);
+      const m = +String(yyyymm).slice(4, 6);
+      const d = new Date(y, m, 0).getDate();
+      return d || 30;
+    }
+    function monthLabel(yyyymm) {
+      const m = +String(yyyymm).slice(4, 6);
+      return (MONTHS[m - 1] || yyyymm) + ' ' + String(yyyymm).slice(0, 4);
+    }
+    function mean(nums) {
+      if (!nums.length) return 0;
+      let s = 0;
+      for (let i = 0; i < nums.length; i++) s += nums[i];
+      return s / nums.length;
+    }
+    function fmtH(n) {
+      if (!isFinite(n)) return '—';
+      return n.toFixed(1) + ' h';
+    }
+    function fmtDaily(hours) {
+      if (!isFinite(hours)) return '—';
+      const min = hours * 60;
+      if (min >= 90) return hours.toFixed(1) + ' h';
+      return Math.round(min) + ' min';
+    }
+    function regionLabel(name) { return REGION_LABEL[name] || name || '—'; }
+
+    function parseCsv(text) {
+      const rows = [];
+      let row = [];
+      let cur = '';
+      let inQ = false;
+      const src = String(text || '').replace(/^\uFEFF/, '');
+      for (let i = 0; i < src.length; i++) {
+        const ch = src[i];
+        if (ch === '"') {
+          if (inQ && src[i + 1] === '"') { cur += '"'; i++; }
+          else inQ = !inQ;
+          continue;
+        }
+        if ((ch === ',' && !inQ) || ((ch === '\n' || ch === '\r') && !inQ)) {
+          row.push(cur);
+          cur = '';
+          if (ch === '\n' || (ch === '\r' && src[i + 1] !== '\n')) { rows.push(row); row = []; }
+          continue;
+        }
+        cur += ch;
+      }
+      if (cur.length || row.length) { row.push(cur); rows.push(row); }
+      return rows.filter((r) => r.some((c) => String(c || '').trim()));
+    }
+
+    function rowsToObjects(table) {
+      if (!table.length) return [];
+      const headers = table[0].map((h) => String(h || '').replace(/^\uFEFF/, '').trim());
+      const out = [];
+      for (let i = 1; i < table.length; i++) {
+        const obj = {};
+        for (let c = 0; c < headers.length; c++) obj[headers[c]] = table[i][c] == null ? '' : table[i][c];
+        out.push(obj);
+      }
+      return out;
+    }
+
+    function normalize(raw) {
+      const month = pick(raw, ['REPORT MONTH']).replace(/\D/g, '').slice(0, 6);
+      const feeder = pick(raw, ['FEEDER NAME']);
+      if (!month || month.length < 6 || !feeder) return null;
+      const circle = pick(raw, ['CIRCLE NAME']);
+      const divRaw = pick(raw, ['DIVISION NAME']);
+      const region = (window.MzoScope && MzoScope.regionNameOf(circle)) || circle;
+      const division = (window.MzoScope && MzoScope.divisionNameOf(divRaw)) || divRaw;
+      const minutes = parseFloat(String(pick(raw, ['TOTAL DURATION OF OUTAGE OVER 5 MIN'])).replace(/,/g, '')) || 0;
+      const count = parseFloat(String(pick(raw, ['TOTAL COUNT OF OUTAGE OVER 5 MIN'])).replace(/,/g, '')) || 0;
+      const days = daysInMonth(month);
+      const hours = minutes / 60;
+      const substation = pick(raw, ['SUBSTATION NAME']);
+      const code = pick(raw, ['FEEDER CODE']);
+      const category = pick(raw, ['FEEDER CATEGORY']).toUpperCase();
+      const nature = pick(raw, ['NATURE OF FEEDER']).toUpperCase();
+      const scheme = pick(raw, ['FEEDER FLAG']);
+      return {
+        month, feeder, substation, feederCode: code, category, nature, scheme,
+        region, division,
+        REGION_NORM: region,
+        DIVISION_NORM: division,
+        count, minutes, hours, days,
+        daily: hours / days,
+        search: (feeder + ' ' + substation + ' ' + code + ' ' + division).toLowerCase()
+      };
+    }
+
+    function fillSelect(el, pairs, allLabel) {
+      const prev = el.value;
+      const locked = window.MzoScope && MzoScope.isFilterLocked && MzoScope.isFilterLocked(el.id);
+      el.innerHTML = '';
+      if (!locked) {
+        const all = document.createElement('option');
+        all.value = '';
+        all.textContent = allLabel;
+        el.appendChild(all);
+      }
+      pairs.forEach((pair) => {
+        const opt = document.createElement('option');
+        opt.value = pair[0];
+        opt.textContent = pair[1];
+        el.appendChild(opt);
+      });
+      const still = Array.from(el.options).some((o) => o.value === prev);
+      el.value = still ? prev : (el.options[0] ? el.options[0].value : '');
+    }
+
+    function uniq(rows, key) {
+      const set = new Set();
+      rows.forEach((r) => { if (r[key]) set.add(r[key]); });
+      return Array.from(set).sort((a, b) => a.localeCompare(b));
+    }
+
+    function populateFilters() {
+      const region = $('regionFilter').value;
+      const division = $('divisionFilter').value;
+      const regions = uniq(allRows, 'region').map((r) => [r, regionLabel(r)]);
+      fillSelect($('regionFilter'), regions, 'All regions');
+      const divRows = region ? allRows.filter((r) => r.region === $('regionFilter').value) : allRows;
+      fillSelect($('divisionFilter'), uniq(divRows, 'division').map((d) => [d, d]), 'All divisions');
+      if (division && Array.from($('divisionFilter').options).some((o) => o.value === division)) {
+        $('divisionFilter').value = division;
+      }
+      const ssRows = allRows.filter((r) => {
+        if ($('regionFilter').value && r.region !== $('regionFilter').value) return false;
+        if ($('divisionFilter').value && r.division !== $('divisionFilter').value) return false;
+        return true;
+      });
+      fillSelect($('ssFilter'), uniq(ssRows, 'substation').map((s) => [s, s]), 'All substations');
+      const schemes = uniq(allRows, 'scheme');
+      fillSelect($('schemeFilter'), schemes.map((s) => [s, s]), 'All schemes');
+      if (window.MzoScope) MzoScope.lockFilters();
+    }
+
+    function filteredBase() {
+      const region = $('regionFilter').value;
+      const division = $('divisionFilter').value;
+      const ss = $('ssFilter').value;
+      const cat = $('catFilter').value;
+      const nat = $('natFilter').value;
+      const scheme = $('schemeFilter').value;
+      const q = $('searchBox').value.trim().toLowerCase();
+      return allRows.filter((r) => {
+        if (region && r.region !== region) return false;
+        if (division && r.division !== division) return false;
+        if (ss && r.substation !== ss) return false;
+        if (cat && r.category !== cat) return false;
+        if (nat === '__blank' && r.nature) return false;
+        if (nat && nat !== '__blank' && r.nature !== nat) return false;
+        if (scheme && r.scheme !== scheme) return false;
+        if (q && r.search.indexOf(q) === -1) return false;
+        return true;
+      });
+    }
+
+    function rollup(rows) {
+      const map = new Map();
+      rows.forEach((r) => {
+        const key = r.feederCode || (r.feeder + '|' + r.substation + '|' + r.division);
+        if (!map.has(key)) {
+          map.set(key, {
+            key, feeder: r.feeder, substation: r.substation, division: r.division, region: r.region,
+            category: r.category, nature: r.nature, scheme: r.scheme, months: []
+          });
+        }
+        const f = map.get(key);
+        if (!f.months.some((m) => m.month === r.month)) f.months.push(r);
+      });
+      return Array.from(map.values()).map((f) => {
+        f.months.sort((a, b) => a.month.localeCompare(b.month));
+        const year = f.months[f.months.length - 1].month.slice(0, 4);
+        const yearMonths = f.months.filter((m) => m.month.slice(0, 4) === year);
+        f.yearAvg = mean(yearMonths.map((m) => m.hours));
+        f.minHours = Math.min.apply(null, f.months.map((m) => m.hours));
+        f.maxHours = Math.max.apply(null, f.months.map((m) => m.hours));
+        return f;
+      });
+    }
+
+    function sliceOf(feeder) {
+      if (!monthPick) return feeder.months;
+      return feeder.months.filter((m) => m.month === monthPick);
+    }
+
+    function judge(feeder, slice) {
+      const last = slice[slice.length - 1];
+      const idx = feeder.months.findIndex((m) => m.month === last.month);
+      const prev = idx > 0 ? feeder.months[idx - 1] : null;
+      const long = last.daily >= DAILY_LIMIT;
+      const frequent = last.count >= COUNT_LIMIT;
+      const rising = !!(prev && prev.hours > 0 && last.hours >= prev.hours * 1.5 && (last.hours - prev.hours) >= 2);
+      const reasons = [];
+      if (long) reasons.push('1 h/day');
+      if (frequent) reasons.push('30+ trips');
+      if (rising) reasons.push('rising');
+      return { last, prev, long, frequent, rising, on: reasons.length > 0, reasons };
+    }
+
+    function viewModels(base) {
+      return rollup(base).map((f) => {
+        const slice = sliceOf(f);
+        if (!slice.length) return null;
+        const j = judge(f, slice);
+        return {
+          feeder: f,
+          slice,
+          last: j.last,
+          prev: j.prev,
+          concern: j,
+          daily: mean(slice.map((m) => m.daily)),
+          monthly: mean(slice.map((m) => m.hours)),
+          count: mean(slice.map((m) => m.count)),
+          range: f.maxHours - f.minHours,
+          year: f.yearAvg,
+          trend: j.prev && j.prev.hours > 0 ? (j.last.hours - j.prev.hours) / j.prev.hours : null
+        };
+      }).filter(Boolean);
+    }
+
+    function monthStats(rows) {
+      const by = new Map();
+      rows.forEach((r) => {
+        if (!by.has(r.month)) by.set(r.month, []);
+        by.get(r.month).push(r);
+      });
+      return Array.from(by.keys()).sort().map((month) => {
+        const list = by.get(month);
+        return {
+          month,
+          hours: mean(list.map((r) => r.hours)),
+          dailyMin: mean(list.map((r) => r.daily)) * 60,
+          count: mean(list.map((r) => r.count)),
+          n: list.length
+        };
+      });
+    }
+
+    function paintKpis(models, base) {
+      const stats = monthStats(base);
+      const daily = models.length ? mean(models.map((m) => m.daily)) : 0;
+      $('kpiFeeders').textContent = models.length.toLocaleString('en-IN');
+      $('kpiFeedersSub').textContent = monthPick ? monthLabel(monthPick) : (stats.length ? stats.length + ' month' + (stats.length === 1 ? '' : 's') : '');
+      $('kpiDaily').textContent = models.length ? fmtDaily(daily) : '—';
+      $('kpiDailySub').textContent = monthPick ? (monthLabel(monthPick) + ' · per feeder') : 'per feeder, across months';
+      if (stats.length >= 2) {
+        const lows = stats.map((s) => s.hours);
+        $('kpiRange').textContent = Math.min.apply(null, lows).toFixed(1) + '–' + Math.max.apply(null, lows).toFixed(1) + ' h';
+        $('kpiRangeSub').textContent = 'lowest to highest month';
+      } else if (stats.length === 1) {
+        const hours = models.map((m) => m.monthly);
+        const lo = hours.length ? Math.min.apply(null, hours) : 0;
+        const hi = hours.length ? Math.max.apply(null, hours) : 0;
+        $('kpiRange').textContent = lo.toFixed(1) + '–' + hi.toFixed(1) + ' h';
+        $('kpiRangeSub').textContent = 'across feeders · ' + monthLabel(stats[0].month);
+      } else {
+        $('kpiRange').textContent = '—';
+        $('kpiRangeSub').textContent = '';
+      }
+      const year = (monthPick || (stats.length ? stats[stats.length - 1].month : '')).slice(0, 4);
+      const yearStats = stats.filter((s) => s.month.slice(0, 4) === year);
+      $('kpiYear').textContent = yearStats.length ? fmtH(mean(yearStats.map((s) => s.hours))) : '—';
+      $('kpiYearSub').textContent = year ? (year + ' · ' + yearStats.length + ' month' + (yearStats.length === 1 ? '' : 's')) : '';
+      const concerns = models.filter((m) => m.concern.on).length;
+      $('kpiConcern').textContent = concerns.toLocaleString('en-IN');
+      $('concernCard').classList.toggle('active', concernOnly);
+    }
+
+    function paintChart(base) {
+      const built = trendSeries(base);
+      const note = chartNote(built);
+      $('chartNote').textContent = note;
+      const canvas = $('trendChart');
+      if (!window.Chart) {
+        canvas.replaceWith(Object.assign(document.createElement('p'), { className: 'empty-note', textContent: note }));
+        return;
+      }
+      if (trendChart) trendChart.destroy();
+      trendChart = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels: built.months.map(monthLabel),
+          datasets: built.series.map((s, i) => ({
+            label: s.label,
+            data: s.data,
+            borderColor: TREND_COLORS[i % TREND_COLORS.length],
+            backgroundColor: TREND_COLORS[i % TREND_COLORS.length],
+            tension: 0.25,
+            pointRadius: built.months.length === 1 ? 6 : 3,
+            pointHoverRadius: 6,
+            borderWidth: 2,
+            spanGaps: false
+          }))
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 }, padding: 8 } },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => ctx.dataset.label + ': ' + (ctx.parsed.y == null ? '—' : ctx.parsed.y.toFixed(1) + ' h')
+              }
+            }
+          },
+          scales: {
+            y: { beginAtZero: true, title: { display: true, text: 'Hours per feeder', font: { size: 11 } }, ticks: { font: { size: 11 } } },
+            x: { title: { display: true, text: 'Month', font: { size: 11 } }, ticks: { font: { size: 11 } } }
+          }
+        }
+      });
+    }
+
+    function trendSeries(rows) {
+      const months = Array.from(new Set(rows.map((r) => r.month))).sort();
+      if (!months.length) return { months, series: [], capped: false, total: 0 };
+      if (trendLevel === 'all') {
+        const region = $('regionFilter').value;
+        const division = $('divisionFilter').value;
+        const ss = $('ssFilter').value;
+        let label = 'All feeders';
+        if (ss) label = ss;
+        else if (division) label = division;
+        else if (region) label = regionLabel(region);
+        return { months, series: [{ label, data: avgByMonth(rows, months) }], capped: false, total: 1 };
+      }
+      const groups = new Map();
+      rows.forEach((r) => {
+        let key = r.region;
+        let label = regionLabel(r.region);
+        if (trendLevel === 'division') { key = r.division; label = r.division; }
+        else if (trendLevel === 'ss') { key = r.substation; label = r.substation; }
+        else if (trendLevel === 'feeder') { key = r.feederCode || (r.feeder + '|' + r.substation); label = r.feeder; }
+        if (!groups.has(key)) groups.set(key, { label, rows: [] });
+        groups.get(key).rows.push(r);
+      });
+      let list = Array.from(groups.values()).map((g) => ({
+        label: g.label,
+        data: avgByMonth(g.rows, months),
+        score: mean(g.rows.map((r) => r.hours))
+      }));
+      list.sort((a, b) => b.score - a.score);
+      const cap = (trendLevel === 'ss' || trendLevel === 'feeder') ? 12 : list.length;
+      const capped = list.length > cap;
+      if (capped) list = list.slice(0, cap);
+      return { months, series: list, capped, total: groups.size };
+    }
+
+    function avgByMonth(rows, months) {
+      const by = new Map();
+      rows.forEach((r) => {
+        if (!by.has(r.month)) by.set(r.month, []);
+        by.get(r.month).push(r.hours);
+      });
+      return months.map((m) => (by.has(m) ? +mean(by.get(m)).toFixed(2) : null));
+    }
+
+    function chartNote(built) {
+      const unit = trendLevel === 'feeder'
+        ? 'Each line is one feeder’s outage hours in that month.'
+        : 'Each point is the average outage hours per feeder in that month.';
+      const cap = built.capped ? ' Chart shows the 12 highest. The table lists all ' + built.total + ', high to low.' : ' The table uses the same cut, high to low.';
+      return unit + cap;
+    }
+
+    function spark(months) {
+      const w = 72;
+      const h = 18;
+      const max = Math.max.apply(null, months.map((m) => m.hours).concat([0.1]));
+      const pts = months.map((m, i) => {
+        const x = months.length === 1 ? w / 2 : (i / (months.length - 1)) * (w - 4) + 2;
+        const y = h - 2 - (m.hours / max) * (h - 4);
+        return x.toFixed(1) + ',' + y.toFixed(1);
+      }).join(' ');
+      return '<svg class="spark" viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '"><polyline points="' + pts + '"/></svg>';
+    }
+
+    function trendHtml(months, trend) {
+      const pic = spark(months);
+      if (trend == null) return pic;
+      const pct = Math.round(trend * 100);
+      if (Math.abs(pct) < 1) return pic + '<span>flat</span>';
+      const cls = pct > 0 ? 'up' : 'down';
+      const arrow = pct > 0 ? '▲ ' : '▼ ';
+      return pic + '<span class="' + cls + '">' + arrow + Math.abs(pct) + '%</span>';
+    }
+
+    function compareValues(av, bv, dir) {
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === 'string') return av.localeCompare(bv) * dir;
+      return (av - bv) * dir;
+    }
+
+    function groupRows(models) {
+      const map = new Map();
+      models.forEach((m) => {
+        let key = m.feeder.region;
+        let name = regionLabel(key);
+        let extra = '';
+        if (trendLevel === 'division') {
+          key = m.feeder.division;
+          name = key;
+          extra = regionLabel(m.feeder.region);
+        } else if (trendLevel === 'ss') {
+          key = m.feeder.substation;
+          name = key;
+          extra = m.feeder.division || '';
+        }
+        if (!map.has(key)) map.set(key, { key, name, extra, members: [] });
+        map.get(key).members.push(m);
+      });
+      return Array.from(map.values()).map((g) => {
+        const byMonth = new Map();
+        g.members.forEach((m) => {
+          m.feeder.months.forEach((row) => {
+            if (!byMonth.has(row.month)) byMonth.set(row.month, []);
+            byMonth.get(row.month).push(row);
+          });
+        });
+        const months = Array.from(byMonth.keys()).sort().map((month) => {
+          const list = byMonth.get(month);
+          const hours = mean(list.map((r) => r.hours));
+          return { month, hours, daily: hours / (list[0].days || 30), count: mean(list.map((r) => r.count)) };
+        });
+        const slice = monthPick ? months.filter((row) => row.month === monthPick) : months;
+        const use = slice.length ? slice : months;
+        const last = use[use.length - 1];
+        const idx = last ? months.findIndex((row) => row.month === last.month) : -1;
+        const prev = idx > 0 ? months[idx - 1] : null;
+        const year = last ? last.month.slice(0, 4) : '';
+        const yearMonths = months.filter((row) => row.month.slice(0, 4) === year);
+        const hourVals = months.map((row) => row.hours);
+        return {
+          key: g.key,
+          name: g.name,
+          extra: g.extra,
+          feeders: g.members.length,
+          daily: use.length ? mean(use.map((row) => row.daily)) : 0,
+          monthly: use.length ? mean(use.map((row) => row.hours)) : 0,
+          count: use.length ? mean(use.map((row) => row.count)) : 0,
+          minHours: hourVals.length ? Math.min.apply(null, hourVals) : 0,
+          maxHours: hourVals.length ? Math.max.apply(null, hourVals) : 0,
+          range: hourVals.length < 2 ? null : Math.max.apply(null, hourVals) - Math.min.apply(null, hourVals),
+          months,
+          year: yearMonths.length ? mean(yearMonths.map((row) => row.hours)) : 0,
+          trend: prev && prev.hours > 0 && last ? (last.hours - prev.hours) / prev.hours : null
+        };
+      });
+    }
+
+    function paintTable(models) {
+      const list = concernOnly ? models.filter((m) => m.concern.on) : models;
+      const grouped = trendLevel === 'region' || trendLevel === 'division' || trendLevel === 'ss';
+      const rows = grouped ? groupRows(list) : list;
+      const dir = sortDir === 'asc' ? 1 : -1;
+      const nameKey = grouped ? 'name' : 'feeder';
+      rows.sort((a, b) => {
+        const av = grouped
+          ? (sortKey === 'name' || sortKey === 'extra' ? a[sortKey] : a[sortKey === 'feeder' ? 'name' : sortKey])
+          : (sortKey === 'feeder' || sortKey === 'substation' || sortKey === 'division' ? a.feeder[sortKey] : a[sortKey]);
+        const bv = grouped
+          ? (sortKey === 'name' || sortKey === 'extra' ? b[sortKey] : b[sortKey === 'feeder' ? 'name' : sortKey])
+          : (sortKey === 'feeder' || sortKey === 'substation' || sortKey === 'division' ? b.feeder[sortKey] : b[sortKey]);
+        return compareValues(av, bv, dir);
+      });
+      const title = trendLevel === 'region' ? 'Regions' : trendLevel === 'division' ? 'Divisions' : trendLevel === 'ss' ? 'Substations' : 'Feeders';
+      $('tableTitle').textContent = title + ' · ' + rows.length.toLocaleString('en-IN') + ' · high to low';
+      const heads = grouped
+        ? [
+            ['name', trendLevel === 'region' ? 'Region' : trendLevel === 'division' ? 'Division' : 'Substation', ''],
+            ['extra', trendLevel === 'ss' ? 'Division' : 'Region', ''],
+            ['feeders', 'Feeders', 'num'],
+            ['daily', 'Daily', 'num'],
+            ['monthly', 'Month', 'num'],
+            ['count', 'Count', 'num'],
+            ['range', 'Range', 'num'],
+            ['year', 'Year', 'num'],
+            ['trend', 'Trend', 'num']
+          ].filter((col) => trendLevel !== 'region' || col[0] !== 'extra')
+        : [
+            ['feeder', 'Feeder', ''],
+            ['substation', 'Substation', ''],
+            ['division', 'Division', ''],
+            ['daily', 'Daily', 'num'],
+            ['monthly', 'Month', 'num'],
+            ['count', 'Count', 'num'],
+            ['range', 'Range', 'num'],
+            ['year', 'Year', 'num'],
+            ['trend', 'Trend', 'num']
+          ];
+      $('feederHead').innerHTML = '<tr>' + heads.map((col) => (
+        '<th class="' + col[2] + '" data-sort="' + col[0] + '">' + col[1] + '</th>'
+      )).join('') + '</tr>';
+      document.querySelectorAll('table.feeders th').forEach((th) => {
+        if (th.getAttribute('data-sort') === sortKey || (grouped && sortKey === 'feeder' && th.getAttribute('data-sort') === 'name')) {
+          th.setAttribute('data-dir', sortDir);
+        }
+      });
+      $('feederBody').innerHTML = rows.map((row) => {
+        if (!grouped) {
+          const meta = [CAT_LABEL[row.feeder.category] || '', NAT_LABEL[row.feeder.nature] || '', row.feeder.scheme].filter(Boolean).join(' · ');
+          const range = row.feeder.months.length < 2 ? '—' : row.feeder.minHours.toFixed(1) + '–' + row.feeder.maxHours.toFixed(1);
+          return '<tr data-pick="feeder" data-key="' + esc(row.feeder.feeder) + '">' +
+            '<td><div class="feeder-name">' + esc(row.feeder.feeder) + '</div><div class="feeder-meta">' + esc(meta) + '</div></td>' +
+            '<td>' + esc(row.feeder.substation) + '</td>' +
+            '<td>' + esc(row.feeder.division) + '</td>' +
+            '<td class="num">' + esc(fmtDaily(row.daily)) + '</td>' +
+            '<td class="num">' + esc(fmtH(row.monthly)) + '</td>' +
+            '<td class="num">' + esc(String(Math.round(row.count))) + '</td>' +
+            '<td class="num">' + esc(range) + '</td>' +
+            '<td class="num">' + esc(fmtH(row.year)) + '</td>' +
+            '<td class="num">' + trendHtml(row.feeder.months, row.trend) + '</td>' +
+          '</tr>';
+        }
+        const range = row.months.length < 2 ? '—' : row.minHours.toFixed(1) + '–' + row.maxHours.toFixed(1);
+        const extraCell = trendLevel === 'region' ? '' : '<td>' + esc(row.extra) + '</td>';
+        return '<tr data-pick="' + esc(trendLevel) + '" data-key="' + esc(row.key) + '">' +
+          '<td><div class="feeder-name">' + esc(row.name) + '</div></td>' +
+          extraCell +
+          '<td class="num">' + esc(String(row.feeders)) + '</td>' +
+          '<td class="num">' + esc(fmtDaily(row.daily)) + '</td>' +
+          '<td class="num">' + esc(fmtH(row.monthly)) + '</td>' +
+          '<td class="num">' + esc(String(Math.round(row.count))) + '</td>' +
+          '<td class="num">' + esc(range) + '</td>' +
+          '<td class="num">' + esc(fmtH(row.year)) + '</td>' +
+          '<td class="num">' + trendHtml(row.months, row.trend) + '</td>' +
+        '</tr>';
+      }).join('') || '<tr><td colspan="9" class="empty-note">Nothing in this view.</td></tr>';
+    }
+
+    function paintMonths(base) {
+      const months = Array.from(new Set(allRows.map((r) => r.month))).sort();
+      const latest = months[months.length - 1];
+      const first = months[0];
+      $('subtitle').textContent = months.length
+        ? ('Outages over 5 min · ' + (months.length === 1 ? monthLabel(latest) : monthLabel(first) + ' – ' + monthLabel(latest)))
+        : 'Outages over 5 min';
+      if (/^\d{6}$/.test(latest || '')) {
+        const year = +latest.slice(0, 4);
+        const month = +latest.slice(4, 6);
+        const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+        const asOn = String(lastDay).padStart(2, '0') + '/' + String(month).padStart(2, '0') + '/' + year;
+        try { localStorage.setItem('mzo_feeder_outage_as_on', asOn); } catch (e) {}
+      }
+      const chips = [{ id: '', label: 'All months' }].concat(months.slice().reverse().map((m) => ({ id: m, label: monthLabel(m) })));
+      $('monthChips').innerHTML = chips.map((c) => (
+        '<button type="button" class="month-chip' + (c.id === monthPick ? ' active' : '') + '" data-month="' + esc(c.id) + '">' + esc(c.label) + '</button>'
+      )).join('');
+      $('monthChips').querySelectorAll('.month-chip').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          monthPick = btn.getAttribute('data-month') || '';
+          render();
+        });
+      });
+    }
+
+    function render() {
+      const base = filteredBase();
+      const models = viewModels(base);
+      paintMonths(base);
+      paintKpis(models, base);
+      paintChart(base);
+      paintTable(models);
+      if (mainPane === 'trend' && trendChart) {
+        requestAnimationFrame(() => { if (trendChart) trendChart.resize(); });
+      }
+    }
+
+    function showError(msg) {
+      $('loadingOverlay').classList.add('hide');
+      $('app').style.display = 'none';
+      const el = $('loadError');
+      el.style.display = 'block';
+      el.textContent = msg;
+    }
+
+    async function loadData() {
+      if (!window.mzoDataHub) { showError('Data hub is not available.'); return; }
+      await window.mzoDataHub.waitForDataset('CACHE_FEEDER_OUTAGE', { forceCheck: true });
+      const csv = (await window.mzoDataHub.get('CACHE_FEEDER_OUTAGE')) || '';
+      if (!/REPORT MONTH/i.test(csv)) { showError('Feeder outage sheet did not load.'); return; }
+      let rows = rowsToObjects(parseCsv(csv)).map(normalize).filter(Boolean);
+      if (window.MzoScope) {
+        try { rows = MzoScope.filterRows(rows); } catch (err) { console.warn(err); }
+      }
+      allRows = rows;
+      if (!allRows.length) { showError('No feeder rows in your office scope.'); return; }
+      populateFilters();
+      $('loadingOverlay').classList.add('hide');
+      render();
+    }
+
+    (function () {
+      const top = $('pageTop');
+      const btn = $('filterToggle');
+      btn.addEventListener('click', () => {
+        const open = !top.classList.contains('filters-open');
+        top.classList.toggle('filters-open', open);
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+      ['regionFilter', 'divisionFilter', 'ssFilter', 'catFilter', 'natFilter', 'schemeFilter'].forEach((id) => {
+        $(id).addEventListener('change', () => {
+          if (id === 'regionFilter' || id === 'divisionFilter') populateFilters();
+          render();
+        });
+      });
+      $('searchBox').addEventListener('input', () => render());
+      $('concernCard').addEventListener('click', () => { concernOnly = !concernOnly; render(); });
+      $('mainTabs').addEventListener('click', (ev) => {
+        const btn = ev.target.closest('[data-pane]');
+        if (!btn) return;
+        mainPane = btn.getAttribute('data-pane') || 'trend';
+        $('mainTabs').querySelectorAll('[data-pane]').forEach((b) => b.classList.toggle('active', b === btn));
+        $('paneTrend').classList.toggle('active', mainPane === 'trend');
+        $('paneTable').classList.toggle('active', mainPane === 'table');
+        if (mainPane === 'trend' && trendChart) {
+          requestAnimationFrame(() => { if (trendChart) trendChart.resize(); });
+        }
+      });
+      $('trendLevels').addEventListener('click', (ev) => {
+        const btn = ev.target.closest('[data-level]');
+        if (!btn) return;
+        trendLevel = btn.getAttribute('data-level') || 'all';
+        sortKey = 'daily';
+        sortDir = 'desc';
+        $('trendLevels').querySelectorAll('[data-level]').forEach((b) => {
+          b.classList.toggle('active', b === btn);
+        });
+        render();
+      });
+      document.querySelector('table.feeders').addEventListener('click', (ev) => {
+        const th = ev.target.closest('th[data-sort]');
+        if (th) {
+          const key = th.getAttribute('data-sort');
+          if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+          else {
+            sortKey = key;
+            sortDir = (key === 'feeder' || key === 'name' || key === 'substation' || key === 'division' || key === 'extra') ? 'asc' : 'desc';
+          }
+          render();
+          return;
+        }
+        const tr = ev.target.closest('tr[data-pick]');
+        if (!tr) return;
+        const pick = tr.getAttribute('data-pick');
+        const key = tr.getAttribute('data-key') || '';
+        if (pick === 'region') {
+          const el = $('regionFilter');
+          if (window.MzoScope && MzoScope.isFilterLocked('regionFilter')) return;
+          el.value = el.value === key ? '' : key;
+          populateFilters();
+        } else if (pick === 'division') {
+          const el = $('divisionFilter');
+          if (window.MzoScope && MzoScope.isFilterLocked('divisionFilter')) return;
+          el.value = el.value === key ? '' : key;
+          populateFilters();
+        } else if (pick === 'ss') {
+          const el = $('ssFilter');
+          el.value = el.value === key ? '' : key;
+        } else if (pick === 'feeder') {
+          $('searchBox').value = $('searchBox').value === key ? '' : key;
+        }
+        render();
+      });
+    })();
+
+    loadData();
+  </script>
+</body>
+</html>
