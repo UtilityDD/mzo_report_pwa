@@ -847,43 +847,28 @@
         return true;
     }
 
-    async function downloadPdf() {
-        if (!isSaved || allotmentNo === 'DRAFT') {
-            showStatus('Confirm & Upload first — PDF uses the final allotment number.', 'error');
-            return;
-        }
-        if (!showPreview()) return;
-
+    async function generatePdfFromElement(el, filename) {
         const jspdf = window.jspdf;
         if (!jspdf || !jspdf.jsPDF) {
-            showStatus('PDF library not loaded.', 'error');
-            return;
+            throw new Error('PDF library not loaded.');
         }
         if (typeof window.html2canvas !== 'function') {
-            showStatus('PDF capture library not loaded.', 'error');
-            return;
+            throw new Error('PDF capture library not loaded.');
         }
 
-        const el = document.getElementById('allot-letter-preview');
-        if (!el) {
-            showStatus('Letter preview not found.', 'error');
-            return;
-        }
-
-        showStatus('Preparing PDF…', 'info');
         const prev = {
             width: el.style.width,
             maxWidth: el.style.maxWidth,
             minHeight: el.style.minHeight,
             boxShadow: el.style.boxShadow
         };
+
         el.classList.add('allot-letter-capture');
         el.style.width = '640px';
         el.style.maxWidth = '640px';
-        el.style.boxShadow = 'none';
+        if (prev.boxShadow !== undefined) el.style.boxShadow = 'none';
 
         try {
-            // Wait for letterhead logo (and any other images) before capture
             const imgs = Array.from(el.querySelectorAll('img'));
             await Promise.all(
                 imgs.map(
@@ -896,8 +881,9 @@
                               })
                 )
             );
-            // Allow layout to settle at capture width
+
             await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
             const canvas = await window.html2canvas(el, {
                 scale: 2.5,
                 backgroundColor: '#ffffff',
@@ -908,39 +894,131 @@
                 scrollY: 0
             });
 
-            const imgData = canvas.toDataURL('image/png');
             const doc = new jspdf.jsPDF({ unit: 'pt', format: 'a4' });
             const pageW = doc.internal.pageSize.getWidth();
             const pageH = doc.internal.pageSize.getHeight();
             const margin = 28;
             const contentW = pageW - margin * 2;
-            const imgH = (canvas.height * contentW) / canvas.width;
             const pageContentH = pageH - margin * 2;
 
-            let heightLeft = imgH;
-            let offsetY = margin;
+            const domW = el.offsetWidth || 640;
+            const canvasScale = canvas.width / domW;
+            const pxToPt = contentW / domW;
+            const maxDomPageH = pageContentH / pxToPt;
 
-            doc.addImage(imgData, 'PNG', margin, offsetY, contentW, imgH);
-            heightLeft -= pageContentH;
+            const elRect = el.getBoundingClientRect();
+            const breakCandidates = Array.from(
+                el.querySelectorAll('.letter-move, .letter-table tbody tr, .sign-block, .letter-pad, .letter-meta')
+            );
 
-            while (heightLeft > 1) {
-                offsetY = margin - (imgH - heightLeft);
-                doc.addPage();
-                doc.addImage(imgData, 'PNG', margin, offsetY, contentW, imgH);
-                heightLeft -= pageContentH;
+            const totalDomH = el.offsetHeight || Math.round(canvas.height / canvasScale);
+
+            let currentDomY = 0;
+            let isFirstPage = true;
+
+            while (currentDomY < totalDomH - 2) {
+                let targetDomY = currentDomY + maxDomPageH;
+                let sliceDomY = targetDomY;
+
+                if (targetDomY < totalDomH) {
+                    let bestBreakY = 0;
+                    const minThreshold = currentDomY + maxDomPageH * 0.4;
+
+                    for (let i = 0; i < breakCandidates.length; i++) {
+                        const elem = breakCandidates[i];
+                        const elemRect = elem.getBoundingClientRect();
+                        const topPx = elemRect.top - elRect.top;
+
+                        if (topPx > minThreshold && topPx <= targetDomY) {
+                            if (elem.classList.contains('letter-move')) {
+                                if (topPx > bestBreakY) bestBreakY = topPx;
+                            } else if (elem.tagName === 'TR') {
+                                const table = elem.closest('table');
+                                const tableTop = table ? table.getBoundingClientRect().top - elRect.top : topPx;
+                                if (topPx - tableTop < 45) {
+                                    const prevMove = table ? table.previousElementSibling : null;
+                                    if (prevMove && prevMove.classList.contains('letter-move')) {
+                                        const moveTop = prevMove.getBoundingClientRect().top - elRect.top;
+                                        if (moveTop > minThreshold && moveTop > bestBreakY) {
+                                            bestBreakY = moveTop;
+                                            continue;
+                                        }
+                                    }
+                                    if (tableTop > minThreshold && tableTop > bestBreakY) {
+                                        bestBreakY = tableTop;
+                                        continue;
+                                    }
+                                }
+                                if (topPx > bestBreakY) bestBreakY = topPx;
+                            } else {
+                                if (topPx > bestBreakY) bestBreakY = topPx;
+                            }
+                        }
+                    }
+
+                    if (bestBreakY > currentDomY) {
+                        sliceDomY = bestBreakY;
+                    }
+                } else {
+                    sliceDomY = totalDomH;
+                }
+
+                const sliceDomH = Math.min(sliceDomY - currentDomY, totalDomH - currentDomY);
+                if (sliceDomH <= 0) break;
+
+                const sy = Math.round(currentDomY * canvasScale);
+                const sh = Math.min(Math.round(sliceDomH * canvasScale), canvas.height - sy);
+                if (sh <= 0) break;
+
+                const sliceCanvas = document.createElement('canvas');
+                sliceCanvas.width = canvas.width;
+                sliceCanvas.height = sh;
+                const ctx = sliceCanvas.getContext('2d');
+                ctx.drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
+
+                if (!isFirstPage) {
+                    doc.addPage();
+                }
+                isFirstPage = false;
+
+                const slicePdfH = sliceDomH * pxToPt;
+                doc.addImage(sliceCanvas.toDataURL('image/png'), 'PNG', margin, margin, contentW, slicePdfH);
+
+                currentDomY += sliceDomH;
             }
 
-            doc.save(`Allotment_${String(allotmentNo).replace(/[^\w-]+/g, '_')}.pdf`);
+            doc.save(filename);
+        } finally {
+            el.classList.remove('allot-letter-capture');
+            el.style.width = prev.width;
+            if (prev.maxWidth !== undefined) el.style.maxWidth = prev.maxWidth;
+            if (prev.minHeight !== undefined) el.style.minHeight = prev.minHeight;
+            if (prev.boxShadow !== undefined) el.style.boxShadow = prev.boxShadow;
+        }
+    }
+    window.generateAllotmentPdf = generatePdfFromElement;
+
+    async function downloadPdf() {
+        if (!isSaved || allotmentNo === 'DRAFT') {
+            showStatus('Confirm & Upload first — PDF uses the final allotment number.', 'error');
+            return;
+        }
+        if (!showPreview()) return;
+
+        const el = document.getElementById('allot-letter-preview');
+        if (!el) {
+            showStatus('Letter preview not found.', 'error');
+            return;
+        }
+
+        showStatus('Preparing PDF…', 'info');
+        try {
+            const filename = `Allotment_${String(allotmentNo).replace(/[^\w-]+/g, '_')}.pdf`;
+            await generatePdfFromElement(el, filename);
             showStatus(`Saved as ${allotmentNo}. PDF downloaded.`, 'ok');
         } catch (err) {
             console.error(err);
             showStatus(err.message || 'PDF generation failed.', 'error');
-        } finally {
-            el.classList.remove('allot-letter-capture');
-            el.style.width = prev.width;
-            el.style.maxWidth = prev.maxWidth;
-            el.style.minHeight = prev.minHeight;
-            el.style.boxShadow = prev.boxShadow;
         }
     }
 

@@ -993,63 +993,20 @@
     async function downloadDetailPdf() {
         const letter = document.getElementById('allot-view-letter');
         if (!letter || !selectedNo) return;
-        const jspdf = window.jspdf;
-        if (!jspdf || !jspdf.jsPDF || typeof window.html2canvas !== 'function') {
-            showStatus('PDF libraries not loaded.', 'error');
-            return;
-        }
         showStatus('Preparing PDF…', 'info');
-        letter.classList.add('allot-letter-capture');
-        const prevW = letter.style.width;
-        letter.style.width = '640px';
         try {
-            const imgs = Array.from(letter.querySelectorAll('img'));
-            await Promise.all(
-                imgs.map(
-                    (img) =>
-                        img.complete
-                            ? Promise.resolve()
-                            : new Promise((resolve) => {
-                                  img.onload = () => resolve();
-                                  img.onerror = () => resolve();
-                              })
-                )
-            );
-            await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-            const canvas = await window.html2canvas(letter, {
-                scale: 2.5,
-                backgroundColor: '#ffffff',
-                useCORS: true,
-                allowTaint: true,
-                logging: false
-            });
-            const imgData = canvas.toDataURL('image/png');
-            const doc = new jspdf.jsPDF({ unit: 'pt', format: 'a4' });
-            const pageW = doc.internal.pageSize.getWidth();
-            const pageH = doc.internal.pageSize.getHeight();
-            const margin = 28;
-            const contentW = pageW - margin * 2;
-            const imgH = (canvas.height * contentW) / canvas.width;
-            const pageContentH = pageH - margin * 2;
-            let heightLeft = imgH;
-            let offsetY = margin;
-            doc.addImage(imgData, 'PNG', margin, offsetY, contentW, imgH);
-            heightLeft -= pageContentH;
-            while (heightLeft > 1) {
-                offsetY = margin - (imgH - heightLeft);
-                doc.addPage();
-                doc.addImage(imgData, 'PNG', margin, offsetY, contentW, imgH);
-                heightLeft -= pageContentH;
-            }
             const suffix = letter.querySelector('.letter-sheet.is-cancelled') ? '_CANCELLED' : '';
-            doc.save(`Allotment_${String(selectedNo).replace(/[^\w-]+/g, '_')}${suffix}.pdf`);
+            const filename = `Allotment_${String(selectedNo).replace(/[^\w-]+/g, '_')}${suffix}.pdf`;
+            if (typeof window.generateAllotmentPdf === 'function') {
+                await window.generateAllotmentPdf(letter, filename);
+            } else {
+                showStatus('PDF generator unavailable.', 'error');
+                return;
+            }
             showStatus(`PDF downloaded for ${selectedNo}.`, 'ok');
         } catch (err) {
             console.error(err);
             showStatus(err.message || 'PDF failed.', 'error');
-        } finally {
-            letter.classList.remove('allot-letter-capture');
-            letter.style.width = prevW;
         }
     }
 
