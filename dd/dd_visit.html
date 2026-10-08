@@ -167,7 +167,7 @@
     }
     .filter-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
       gap: 8px 10px;
       align-items: end;
     }
@@ -296,7 +296,6 @@
     .badge-notfound { background: #f3e8ff; color: #6b21a8; }
     .badge-otherpower { background: #e0f2fe; color: #0369a1; }
     .badge-paid { background: #d1fae5; color: #047857; }
-    .badge-offsheet { background: #f1f5f9; color: #475569; border: 1px dashed #cbd5e1; }
 
     /* Action Buttons in Table */
     .btn-action {
@@ -513,13 +512,25 @@
     <div class="control-panel">
       <div class="filter-section">
         <h3>
-          <span><i class="fas fa-sliders-h"></i> Filters & Search</span>
+          <span><i class="fas fa-sliders-h"></i> Hierarchy Filters & Search</span>
           <button class="btn-small" onclick="resetFilters()"><i class="fas fa-undo"></i> Reset Filters</button>
         </h3>
         <div class="filter-grid">
           <div class="filter-group" style="grid-column: span 2;">
             <label>Search Consumer / ID / Mobile</label>
             <input type="text" id="searchInput" placeholder="Search by CON_ID, Name, Mobile, Address..." oninput="applyFilters()" />
+          </div>
+          <div class="filter-group">
+            <label>Region</label>
+            <select id="regionFilter" onchange="onRegionChange()">
+              <option value="">All Regions</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Division</label>
+            <select id="divisionFilter" onchange="onDivisionChange()">
+              <option value="">All Divisions</option>
+            </select>
           </div>
           <div class="filter-group">
             <label>CCC Office</label>
@@ -569,8 +580,14 @@
       <div class="view-tab" id="tabHistoryLog" onclick="switchTab('history')">
         <i class="fas fa-history"></i> Follow-Up History Log (<span id="countHistory">0</span>)
       </div>
-      <div class="view-tab" id="tabCccSummary" onclick="switchTab('summary')">
-        <i class="fas fa-chart-pie"></i> CCC Breakdown Summary
+      <div class="view-tab" id="tabRegionSummary" onclick="switchTab('region_summary')">
+        <i class="fas fa-globe"></i> Region Summary
+      </div>
+      <div class="view-tab" id="tabDivSummary" onclick="switchTab('div_summary')">
+        <i class="fas fa-building"></i> Division Summary
+      </div>
+      <div class="view-tab" id="tabCccSummary" onclick="switchTab('ccc_summary')">
+        <i class="fas fa-store"></i> CCC Summary
       </div>
       <button class="btn-small btn-success" style="margin-left: auto;" onclick="exportToCSV()">
         <i class="fas fa-file-excel"></i> Export CSV
@@ -581,11 +598,11 @@
     <div class="table-container" id="tableContainer">
       <table id="ddTable">
         <thead>
-          <tr>
+          <tr id="tableHeaderRow">
             <th>SL</th>
             <th>CON ID / Inst No</th>
             <th>Consumer Name & Address</th>
-            <th>CCC Code</th>
+            <th>CCC Code / Office</th>
             <th>Category</th>
             <th>Total OSD (₹)</th>
             <th>Load (kW)</th>
@@ -703,13 +720,47 @@
 
   <script>
     const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSCKEl95dh4kyG-QPJbFJ5x7U7yo7h5bJGuMewsMr2hjMAlCj7UWxqvL_a-2hdyQd-laI8BAX3hU5_T/pub?gid=0&single=true&output=csv';
+    const SYNC_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzADsMqXVe8Q0onsIqYY0lJuMNJwpgfPGXz1I-_8KVEsaDhQ6pBKdRhFdUWmuREdn9D/exec';
     const STORAGE_KEY = 'dd_visit_followups_v1';
+
+    // Hierarchy Mapping
+    const HIER = {
+      "6610000": { name: "MALDA REGION", divisions: {
+        "6611000": { name: "MALDA DIVISION", cccs: {"6611101":"MANIKCHAK","6611102":"GOLAPGANJ","6611103":"BAISHNABNAGAR","6611104":"KALIACHAK","6611105":"MOTHABARI","6611106":"SUJAPUR","6611107":"RATHBARI","6611108":"FULBARI","6611109":"MOKDUMPUR"}},
+        "6612000": { name: "CHANCHAL DIVISION", cccs: {"6612101":"BHALUKA","6612102":"SAMSI","6612103":"PARANPUR","6612104":"CHANCHAL","6612105":"MALATIPUR","6612106":"HARISHCHANDRAPUR","6612107":"KUSHIDA"}},
+        "6613000": { name: "GAZOLE DIVISION", cccs: {"6613101":"GAZOL","6613102":"AIHO","6613103":"PANDUA","6613104":"BAMONGOLA","6613105":"OLD MALDA"}}
+      }},
+      "6620000": { name: "UTTAR DINAJPUR REGION", divisions: {
+        "6621000": { name: "RAIGANJ DIVISION", cccs: {"6621101":"ITAHAR","6621102":"HEMTABAD","6621103":"KALIYAGANJ","6621104":"RAIGANJ","6621105":"BIRNAGAR","6621106":"KARANDIGHI"}},
+        "6622000": { name: "ISLAMPUR DIVISION", cccs: {"6622101":"ISLAMPUR","6622102":"CHOPRA","6622103":"DALKHOLA","6622104":"GOALPOKHER","6622105":"KANKI"}}
+      }},
+      "6630000": { name: "DAKSHIN DINAJPUR REGION", divisions: {
+        "6631000": { name: "BALURGHAT DIVISION", cccs: {"6631101":"BALURGHAT","6631102":"TAPAN","6631103":"KUMARGANJ","6631104":"HILI","6631105":"PATIRAM"}},
+        "6632000": { name: "BUNIADPUR DIVISION", cccs: {"6632101":"BUNIADPUR","6632102":"KUSMANDI","6632103":"HARIRAMPUR","6632104":"GANGARAMPUR"}}
+      }}
+    };
+
+    let cccLookup = {};
+    Object.keys(HIER).forEach(regId => {
+      const reg = HIER[regId];
+      Object.keys(reg.divisions).forEach(divId => {
+        const div = reg.divisions[divId];
+        Object.keys(div.cccs).forEach(cccCode => {
+          cccLookup[cccCode] = {
+            cccCode: cccCode,
+            cccName: div.cccs[cccCode] + ' CCC',
+            divisionName: div.name,
+            regionName: reg.name
+          };
+        });
+      });
+    });
 
     let allRawData = [];
     let filteredData = [];
     let followUpMap = {}; // CON_ID => record
     let reportOsdDate = '--';
-    let activeTab = 'table'; // 'table', 'history', 'summary'
+    let activeTab = 'table'; // 'table', 'history', 'region_summary', 'div_summary', 'ccc_summary'
     let currentPage = 1;
     const pageSize = 50;
 
@@ -717,6 +768,7 @@
     window.addEventListener('DOMContentLoaded', async () => {
       loadLocalFollowUps();
       await fetchDDData();
+      await fetchAppsScriptVisits();
     });
 
     // Persistent LocalStorage (Remarks only)
@@ -737,6 +789,27 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify(followUpMap));
       } catch (e) {
         console.error('Failed to save local followups', e);
+      }
+    }
+
+    // Fetch Visits from Apps Script Web App Endpoint
+    async function fetchAppsScriptVisits() {
+      try {
+        const res = await fetch(SYNC_ENDPOINT);
+        const json = await res.json();
+        if (json && json.status === 'success' && json.data) {
+          // Merge remotely saved records
+          Object.keys(json.data).forEach(conId => {
+            const remoteRec = json.data[conId];
+            if (remoteRec && remoteRec.conId) {
+              followUpMap[conId] = remoteRec;
+            }
+          });
+          saveLocalFollowUps();
+          applyFilters();
+        }
+      } catch (e) {
+        console.warn('Apps Script sync fetch skipped:', e);
       }
     }
 
@@ -780,6 +853,18 @@
         headers.forEach((h, idx) => {
           obj[h] = r[idx] || '';
         });
+        
+        // Enrich with hierarchy
+        const cccCode = obj.CCC_CODE || '';
+        const info = cccLookup[cccCode] || {
+          cccName: cccCode ? `CCC ${cccCode}` : 'Unknown CCC',
+          divisionName: 'Other Division',
+          regionName: 'Other Region'
+        };
+        obj._cccName = info.cccName;
+        obj._divisionName = info.divisionName;
+        obj._regionName = info.regionName;
+
         result.push(obj);
       }
       return result;
@@ -800,6 +885,7 @@
         }
 
         updateDateBadge();
+        populateHierarchyFilters();
         processData();
         syncBadge.className = 'sync-badge';
         syncBadge.innerHTML = `<i class="fas fa-wifi"></i> Live (${allRawData.length.toLocaleString('en-IN')} Records)`;
@@ -824,20 +910,76 @@
       }
     }
 
-    // Process & Populate Filters
-    function processData() {
-      const cccSet = new Set(allRawData.map(r => r.CCC_CODE).filter(Boolean));
+    // Populate Region, Division, and CCC Filters
+    function populateHierarchyFilters() {
+      const regionSelect = document.getElementById('regionFilter');
+      const divSelect = document.getElementById('divisionFilter');
       const cccSelect = document.getElementById('cccFilter');
-      const curCcc = cccSelect.value;
-      cccSelect.innerHTML = '<option value="">All CCC Offices</option>';
-      Array.from(cccSet).sort().forEach(c => {
+
+      const regions = new Set();
+      allRawData.forEach(r => { if (r._regionName) regions.add(r._regionName); });
+
+      regionSelect.innerHTML = '<option value="">All Regions</option>';
+      Array.from(regions).sort().forEach(reg => {
         const opt = document.createElement('option');
-        opt.value = c;
-        opt.textContent = `CCC ${c}`;
+        opt.value = reg;
+        opt.textContent = reg;
+        regionSelect.appendChild(opt);
+      });
+
+      onRegionChange();
+    }
+
+    function onRegionChange() {
+      const selectedReg = document.getElementById('regionFilter').value;
+      const divSelect = document.getElementById('divisionFilter');
+      
+      const divisions = new Set();
+      allRawData.forEach(r => {
+        if ((!selectedReg || r._regionName === selectedReg) && r._divisionName) {
+          divisions.add(r._divisionName);
+        }
+      });
+
+      divSelect.innerHTML = '<option value="">All Divisions</option>';
+      Array.from(divisions).sort().forEach(div => {
+        const opt = document.createElement('option');
+        opt.value = div;
+        opt.textContent = div;
+        divSelect.appendChild(opt);
+      });
+
+      onDivisionChange();
+    }
+
+    function onDivisionChange() {
+      const selectedReg = document.getElementById('regionFilter').value;
+      const selectedDiv = document.getElementById('divisionFilter').value;
+      const cccSelect = document.getElementById('cccFilter');
+
+      const cccs = new Set();
+      allRawData.forEach(r => {
+        if ((!selectedReg || r._regionName === selectedReg) &&
+            (!selectedDiv || r._divisionName === selectedDiv) && r.CCC_CODE) {
+          cccs.add(r.CCC_CODE);
+        }
+      });
+
+      cccSelect.innerHTML = '<option value="">All CCC Offices</option>';
+      Array.from(cccs).sort().forEach(ccc => {
+        const info = cccLookup[ccc];
+        const label = info ? `${info.cccName} (${ccc})` : `CCC ${ccc}`;
+        const opt = document.createElement('option');
+        opt.value = ccc;
+        opt.textContent = label;
         cccSelect.appendChild(opt);
       });
-      cccSelect.value = curCcc;
 
+      applyFilters();
+    }
+
+    // Process Categories
+    function processData() {
       const catSet = new Set(allRawData.map(r => r.CATEGORY).filter(Boolean));
       const catSelect = document.getElementById('catFilter');
       const curCat = catSelect.value;
@@ -856,6 +998,8 @@
     // Apply Filters & Update KPIs
     function applyFilters() {
       const q = document.getElementById('searchInput').value.toLowerCase().trim();
+      const region = document.getElementById('regionFilter').value;
+      const division = document.getElementById('divisionFilter').value;
       const ccc = document.getElementById('cccFilter').value;
       const cat = document.getElementById('catFilter').value;
       const status = document.getElementById('statusFilter').value;
@@ -896,6 +1040,8 @@
           if (q && !(conId.toLowerCase().includes(q) || name.toLowerCase().includes(q) || mobile.toLowerCase().includes(q) || addr.toLowerCase().includes(q))) {
             return false;
           }
+          if (region && r._regionName !== region) return false;
+          if (division && r._divisionName !== division) return false;
           if (ccc && r.CCC_CODE !== ccc) return false;
           if (cat && r.CATEGORY !== cat) return false;
           if (minOsd > 0 && osd < minOsd) return false;
@@ -954,13 +1100,19 @@
       document.getElementById('kpiSubPaid').textContent = `₹ ${paidSum.toLocaleString('en-IN')} Collected`;
     }
 
-    // Render Data Table
+    // Render Data Table / Hierarchy Summaries
     function renderTable() {
       const tbody = document.getElementById('tableBody');
       tbody.innerHTML = '';
 
-      if (activeTab === 'summary') {
-        renderCccSummary();
+      if (activeTab === 'region_summary') {
+        renderHierarchySummary('region');
+        return;
+      } else if (activeTab === 'div_summary') {
+        renderHierarchySummary('division');
+        return;
+      } else if (activeTab === 'ccc_summary') {
+        renderHierarchySummary('ccc');
         return;
       }
 
@@ -983,7 +1135,7 @@
         const sl = start + idx + 1;
         const isHistoryView = (activeTab === 'history');
 
-        let conId, instNo, name, addr, ccc, cat, osd, load, disconDt, mobile, rec;
+        let conId, instNo, name, addr, ccc, cccLabel, cat, osd, load, disconDt, mobile, rec;
 
         if (isHistoryView) {
           rec = item;
@@ -992,6 +1144,8 @@
           name = rec.consumerName || '--';
           addr = rec.address || '--';
           ccc = rec.cccCode || '--';
+          const info = cccLookup[ccc];
+          cccLabel = info ? `${info.cccName}` : `CCC ${ccc}`;
           cat = rec.category || '--';
           osd = parseFloat(rec.totalOsd || 0);
           load = '--';
@@ -1003,6 +1157,7 @@
           name = item.NAME || '';
           addr = item.ADDRESS || '';
           ccc = item.CCC_CODE || '';
+          cccLabel = item._cccName || `CCC ${ccc}`;
           cat = item.CATEGORY || '';
           osd = parseFloat(item.TOTAL_OSD || item.OUTSTANDING) || 0;
           load = item.CONN_LOAD || '0';
@@ -1056,7 +1211,10 @@
             <div style="font-weight:700; color:var(--text-primary);">${escapeHtml(name)}</div>
             <div style="font-size:10px; color:var(--text-secondary);">${escapeHtml(addr)}</div>
           </td>
-          <td>${ccc}</td>
+          <td>
+            <strong>${cccLabel}</strong>
+            <div style="font-size:10px; color:var(--text-secondary);">Code: ${ccc}</div>
+          </td>
           <td>${cat}</td>
           <td style="font-weight:700; color:var(--danger-color);">${osdFormatted}</td>
           <td>${load} kW</td>
@@ -1075,60 +1233,133 @@
       updatePagination(start + 1, end, total);
     }
 
-    // Render CCC Summary View
-    function renderCccSummary() {
+    // Render Region, Division, and CCC Hierarchy Summaries
+    function renderHierarchySummary(level) {
       const tbody = document.getElementById('tableBody');
       tbody.innerHTML = '';
 
       const thead = document.querySelector('#ddTable thead');
-      thead.innerHTML = `
-        <tr>
-          <th>SL</th>
-          <th>CCC Office Code</th>
-          <th>Total DD Consumers</th>
-          <th>Total OSD Arrears (₹)</th>
-          <th>Visited Consumers</th>
-          <th>Coverage %</th>
-          <th>Total Paid Recovered (₹)</th>
-        </tr>
-      `;
+      
+      if (level === 'region') {
+        thead.innerHTML = `
+          <tr>
+            <th>SL</th>
+            <th>Region Name</th>
+            <th>Total DD Consumers</th>
+            <th>Total OSD Arrears (₹ Cr)</th>
+            <th>Visited Consumers</th>
+            <th>Coverage %</th>
+            <th>Total Paid Recovered (₹)</th>
+          </tr>
+        `;
+      } else if (level === 'division') {
+        thead.innerHTML = `
+          <tr>
+            <th>SL</th>
+            <th>Division Name</th>
+            <th>Region Name</th>
+            <th>Total DD Consumers</th>
+            <th>Total OSD Arrears (₹ Cr)</th>
+            <th>Visited Consumers</th>
+            <th>Coverage %</th>
+            <th>Total Paid Recovered (₹)</th>
+          </tr>
+        `;
+      } else { // ccc
+        thead.innerHTML = `
+          <tr>
+            <th>SL</th>
+            <th>CCC Office Name & Code</th>
+            <th>Division Name</th>
+            <th>Region Name</th>
+            <th>Total DD Consumers</th>
+            <th>Total OSD Arrears (₹ Lakhs)</th>
+            <th>Visited Consumers</th>
+            <th>Coverage %</th>
+            <th>Total Paid Recovered (₹)</th>
+          </tr>
+        `;
+      }
 
       const summaryMap = {};
+
       allRawData.forEach(r => {
-        const ccc = r.CCC_CODE || 'Unknown';
+        let key = '';
+        if (level === 'region') key = r._regionName || 'Unknown Region';
+        else if (level === 'division') key = `${r._divisionName || 'Unknown Division'}|||${r._regionName || ''}`;
+        else key = `${r.CCC_CODE || 'Unknown'}|||${r._cccName || ''}|||${r._divisionName || ''}|||${r._regionName || ''}`;
+
         const osd = parseFloat(r.TOTAL_OSD || r.OUTSTANDING) || 0;
-        if (!summaryMap[ccc]) {
-          summaryMap[ccc] = { count: 0, osd: 0, visited: 0, paidCount: 0, paidSum: 0 };
+
+        if (!summaryMap[key]) {
+          summaryMap[key] = { count: 0, osd: 0, visited: 0, paidSum: 0 };
         }
-        summaryMap[ccc].count++;
-        summaryMap[ccc].osd += osd;
-        
+        summaryMap[key].count++;
+        summaryMap[key].osd += osd;
+
         const rec = followUpMap[r.CON_ID];
         if (rec) {
-          summaryMap[ccc].visited++;
+          summaryMap[key].visited++;
           if (rec.status === 'Paid') {
-            summaryMap[ccc].paidCount++;
-            summaryMap[ccc].paidSum += parseFloat(rec.paidAmount || 0);
+            summaryMap[key].paidSum += parseFloat(rec.paidAmount || 0);
           }
         }
       });
 
-      const sortedCcc = Object.keys(summaryMap).sort();
+      const sortedKeys = Object.keys(summaryMap).sort();
       let sl = 1;
 
-      sortedCcc.forEach(ccc => {
-        const s = summaryMap[ccc];
+      sortedKeys.forEach(k => {
+        const s = summaryMap[k];
         const covPct = s.count > 0 ? ((s.visited / s.count) * 100).toFixed(1) : '0';
         const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${sl++}</td>
-          <td><strong>CCC ${ccc}</strong></td>
-          <td>${s.count.toLocaleString('en-IN')}</td>
-          <td style="font-weight:700; color:var(--danger-color);">₹ ${s.osd.toLocaleString('en-IN', {maximumFractionDigits:2})}</td>
-          <td style="font-weight:700; color:var(--success-color);">${s.visited.toLocaleString('en-IN')}</td>
-          <td>${covPct}%</td>
-          <td style="font-weight:700; color:var(--secondary-color);">₹ ${s.paidSum.toLocaleString('en-IN')}</td>
-        `;
+
+        if (level === 'region') {
+          const osdCr = (s.osd / 10000000).toFixed(2);
+          tr.innerHTML = `
+            <td>${sl++}</td>
+            <td><strong>${k}</strong></td>
+            <td>${s.count.toLocaleString('en-IN')}</td>
+            <td style="font-weight:700; color:var(--danger-color);">₹ ${osdCr} Cr</td>
+            <td style="font-weight:700; color:var(--success-color);">${s.visited.toLocaleString('en-IN')}</td>
+            <td>${covPct}%</td>
+            <td style="font-weight:700; color:var(--secondary-color);">₹ ${s.paidSum.toLocaleString('en-IN')}</td>
+          `;
+        } else if (level === 'division') {
+          const parts = k.split('|||');
+          const divName = parts[0];
+          const regName = parts[1];
+          const osdCr = (s.osd / 10000000).toFixed(2);
+          tr.innerHTML = `
+            <td>${sl++}</td>
+            <td><strong>${divName}</strong></td>
+            <td>${regName}</td>
+            <td>${s.count.toLocaleString('en-IN')}</td>
+            <td style="font-weight:700; color:var(--danger-color);">₹ ${osdCr} Cr</td>
+            <td style="font-weight:700; color:var(--success-color);">${s.visited.toLocaleString('en-IN')}</td>
+            <td>${covPct}%</td>
+            <td style="font-weight:700; color:var(--secondary-color);">₹ ${s.paidSum.toLocaleString('en-IN')}</td>
+          `;
+        } else { // ccc
+          const parts = k.split('|||');
+          const cccCode = parts[0];
+          const cccName = parts[1];
+          const divName = parts[2];
+          const regName = parts[3];
+          const osdLakh = (s.osd / 100000).toFixed(2);
+          tr.innerHTML = `
+            <td>${sl++}</td>
+            <td><strong>${cccName}</strong> (${cccCode})</td>
+            <td>${divName}</td>
+            <td>${regName}</td>
+            <td>${s.count.toLocaleString('en-IN')}</td>
+            <td style="font-weight:700; color:var(--danger-color);">₹ ${osdLakh} L</td>
+            <td style="font-weight:700; color:var(--success-color);">${s.visited.toLocaleString('en-IN')}</td>
+            <td>${covPct}%</td>
+            <td style="font-weight:700; color:var(--secondary-color);">₹ ${s.paidSum.toLocaleString('en-IN')}</td>
+          `;
+        }
+
         tbody.appendChild(tr);
       });
 
@@ -1146,7 +1377,7 @@
           <th>SL</th>
           <th>CON ID / Inst No</th>
           <th>Consumer Name & Address</th>
-          <th>CCC Code</th>
+          <th>CCC Code / Office</th>
           <th>Category</th>
           <th>Total OSD (₹)</th>
           <th>Load (kW)</th>
@@ -1163,7 +1394,11 @@
         document.getElementById('tabMainTable').classList.add('active');
       } else if (tab === 'history') {
         document.getElementById('tabHistoryLog').classList.add('active');
-      } else if (tab === 'summary') {
+      } else if (tab === 'region_summary') {
+        document.getElementById('tabRegionSummary').classList.add('active');
+      } else if (tab === 'div_summary') {
+        document.getElementById('tabDivSummary').classList.add('active');
+      } else if (tab === 'ccc_summary') {
         document.getElementById('tabCccSummary').classList.add('active');
       }
 
@@ -1333,15 +1568,12 @@
     // Background Apps Script Endpoint Sync
     async function syncRecordInBackground(record) {
       try {
-        const endpoint = (window.MZO_CONFIG && window.MZO_CONFIG.DD_VISIT_SCRIPT_URL) || localStorage.getItem('DD_VISIT_SCRIPT_URL');
-        if (endpoint) {
-          await fetch(endpoint, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'SAVE_DD_VISIT', data: record })
-          });
-        }
+        await fetch(SYNC_ENDPOINT, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'SAVE_DD_VISIT', data: record })
+        });
       } catch (e) {
         console.warn('Background sync deferred', e);
       }
@@ -1378,10 +1610,13 @@
 
     function resetFilters() {
       document.getElementById('searchInput').value = '';
+      document.getElementById('regionFilter').value = '';
+      document.getElementById('divisionFilter').value = '';
       document.getElementById('cccFilter').value = '';
       document.getElementById('catFilter').value = '';
       document.getElementById('statusFilter').value = '';
       document.getElementById('osdFilter').value = '0';
+      onRegionChange();
       switchTab('table');
     }
 
@@ -1390,7 +1625,7 @@
         alert('No data to export.');
         return;
       }
-      let csvStr = 'SL,CON_ID,INST_NO,CONSUMER_NAME,ADDRESS,CCC_CODE,CATEGORY,TOTAL_OSD,CONN_LOAD,DISCON_DT,MOBILE,VISIT_STATUS,VISIT_DATE,VISIT_BY,PAID_AMOUNT,PAID_DATE,REMARKS\n';
+      let csvStr = 'SL,CON_ID,INST_NO,CONSUMER_NAME,ADDRESS,CCC_CODE,CCC_NAME,DIVISION_NAME,REGION_NAME,CATEGORY,TOTAL_OSD,CONN_LOAD,DISCON_DT,MOBILE,VISIT_STATUS,VISIT_DATE,VISIT_BY,PAID_AMOUNT,PAID_DATE,REMARKS\n';
       
       filteredData.forEach((item, idx) => {
         const isHistory = (activeTab === 'history');
@@ -1405,6 +1640,9 @@
           `"${escapeCsv(isHistory ? item.consumerName : item.NAME)}"`,
           `"${escapeCsv(isHistory ? item.address : item.ADDRESS)}"`,
           `"${isHistory ? item.cccCode : item.CCC_CODE}"`,
+          `"${escapeCsv(isHistory ? '' : item._cccName)}"`,
+          `"${escapeCsv(isHistory ? '' : item._divisionName)}"`,
+          `"${escapeCsv(isHistory ? '' : item._regionName)}"`,
           `"${isHistory ? item.category : item.CATEGORY}"`,
           osd || '0',
           `"${isHistory ? '' : item.CONN_LOAD}"`,
