@@ -730,7 +730,7 @@ class DataHub {
                 this.syncStatus[key] = 'done';
                 return 'updated';
             } catch (err) {
-                console.error(`Retry failed for ${key}:`, err);
+                console.warn(`[DataHub] Fetch optional dataset failed for ${key}:`, err.message || err);
                 let cached = false;
                 try { cached = this._hasBody(await this._peek(key)); } catch (e) {}
                 if (skipVercelBody && cached) {

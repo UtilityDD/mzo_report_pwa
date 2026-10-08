@@ -11,6 +11,7 @@ const https = require('https');
 // Middleware to parse JSON bodies (raised for NSC/stock publish payloads on Vercel)
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+app.use(express.static(path.join(__dirname)));
 
 // --- Authentication Session Storage & Helpers ---
 const JWT_SECRET = process.env.JWT_SECRET || 'mzo-portal-super-secret-key-123456';
