@@ -1,7 +1,7 @@
 /**
  * DD Visit & Follow-Up Tracking — Google Apps Script
  *
- * Web App Endpoint to sync and store DD Visit Follow-Up records to a Google Sheet.
+ * Web App Endpoint to sync and store DD Visit Follow-Up timeline records to a Google Sheet.
  *
  * Setup & Deployment Instructions:
  * 1. Open Google Sheets (or create a new Google Sheet for DD Visit Tracking).
@@ -25,12 +25,14 @@ var HEADERS = [
   'MOBILE',
   'VISIT_DATE',
   'VISIT_BY',
+  'VISITOR_NAME',
   'STATUS',
   'PAID_AMOUNT',
   'PAID_DATE',
   'REMARKS',
   'UPDATED_AT',
-  'REPORT_OSD_DATE'
+  'REPORT_OSD_DATE',
+  'HISTORY_JSON'
 ];
 
 function setupDDVisitSheet() {
@@ -55,13 +57,18 @@ function doGet(e) {
     }
 
     var values = sheet.getDataRange().getValues();
-    var headers = values[0];
     var map = {};
 
     for (var i = 1; i < values.length; i++) {
       var row = values[i];
       var conId = String(row[0]).trim();
       if (!conId) continue;
+
+      var historyRaw = String(row[17] || '').trim();
+      var history = [];
+      if (historyRaw) {
+        try { history = JSON.parse(historyRaw); } catch (err) {}
+      }
 
       map[conId] = {
         conId: conId,
@@ -74,12 +81,14 @@ function doGet(e) {
         mobile: String(row[7] || ''),
         visitDate: formatDate_(row[8]),
         visitBy: String(row[9] || ''),
-        status: String(row[10] || ''),
-        paidAmount: String(row[11] || ''),
-        paidDate: formatDate_(row[12]),
-        remarks: String(row[13] || ''),
-        updatedAt: String(row[14] || ''),
-        reportOsdDate: String(row[15] || '')
+        visitorName: String(row[10] || ''),
+        status: String(row[11] || ''),
+        paidAmount: String(row[12] || ''),
+        paidDate: formatDate_(row[13]),
+        remarks: String(row[14] || ''),
+        updatedAt: String(row[15] || ''),
+        reportOsdDate: String(row[16] || ''),
+        history: history
       };
     }
 
@@ -119,6 +128,8 @@ function doPost(e) {
       }
     }
 
+    var historyJson = record.history ? JSON.stringify(record.history) : '';
+
     var rowValues = [
       conId,
       record.instNo || record.INST_NO || '',
@@ -130,12 +141,14 @@ function doPost(e) {
       record.mobile || record.REG_MOB_NO || '',
       record.visitDate || '',
       record.visitBy || '',
+      record.visitorName || '',
       record.status || '',
       record.paidAmount || '',
       record.paidDate || '',
       record.remarks || '',
       record.updatedAt || new Date().toISOString(),
-      record.reportOsdDate || ''
+      record.reportOsdDate || '',
+      historyJson
     ];
 
     if (targetRowIndex > 0) {
