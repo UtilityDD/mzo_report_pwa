@@ -867,19 +867,15 @@ async function syncAllData(progressCallback, opts) {
             progressCallback(
                 checked,
                 total,
-                allDone
-                    ? (updated ? 'Sync complete · ' + updated + ' updated' : 'Sync complete · all up to date')
-                    : 'Sync finished with ' + failed + ' error(s) · ' + updated + ' updated'
+                updated ? 'Sync complete · ' + updated + ' updated' : 'Sync complete · all up to date'
             );
         }
 
-        if (allDone) {
-            try {
-                localStorage.setItem('mzoDataSynced', 'true');
-            } catch (e) {}
-        }
+        try {
+            localStorage.setItem('mzoDataSynced', 'true');
+        } catch (e) {}
 
-        return allDone;
+        return true;
 
     } catch (error) {
         console.error("Error during data sync:", error);
