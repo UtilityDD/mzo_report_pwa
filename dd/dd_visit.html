@@ -719,7 +719,7 @@
       await fetchDDData();
     });
 
-    // Persistent LocalStorage
+    // Persistent LocalStorage (Remarks only)
     function loadLocalFollowUps() {
       try {
         const stored = localStorage.getItem(STORAGE_KEY);
@@ -740,45 +740,69 @@
       }
     }
 
-    // Data Fetching & Caching
+    // Stateful Character CSV Parser (Handles quoted newlines without row loss)
+    function parseCSVStateful(csv) {
+      let rows = [];
+      let row = [];
+      let cur = '';
+      let inQ = false;
+      
+      for (let i = 0; i < csv.length; i++) {
+        let c = csv[i];
+        let next = csv[i+1];
+        if (c === '"') {
+          if (inQ && next === '"') { cur += '"'; i++; }
+          else { inQ = !inQ; }
+        } else if (c === ',' && !inQ) {
+          row.push(cur.trim().replace(/^"|"$/g, ''));
+          cur = '';
+        } else if ((c === '\n' || c === '\r') && !inQ) {
+          if (c === '\r' && next === '\n') { i++; }
+          row.push(cur.trim().replace(/^"|"$/g, ''));
+          if (row.length > 1 || (row.length === 1 && row[0] !== '')) { rows.push(row); }
+          row = [];
+          cur = '';
+        } else {
+          cur += c;
+        }
+      }
+      if (cur || row.length > 0) {
+        row.push(cur.trim().replace(/^"|"$/g, ''));
+        if (row.length > 1 || (row.length === 1 && row[0] !== '')) rows.push(row);
+      }
+      
+      if (rows.length < 2) return [];
+      const headers = rows[0];
+      const result = [];
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        let obj = {};
+        headers.forEach((h, idx) => {
+          obj[h] = r[idx] || '';
+        });
+        result.push(obj);
+      }
+      return result;
+    }
+
+    // Data Fetching
     async function fetchDDData() {
       const syncBadge = document.getElementById('syncBadge');
-      syncBadge.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Syncing Data...';
-
-      // Check Cache
-      const cached = localStorage.getItem('CACHE_DD_VISIT_DATA');
-      if (cached) {
-        try {
-          const parsedCache = JSON.parse(cached);
-          allRawData = parsedCache.data || [];
-          reportOsdDate = parsedCache.osdDate || '--';
-          updateDateBadge();
-          processData();
-          syncBadge.innerHTML = '<i class="fas fa-check-circle"></i> Cached (Updating...)';
-        } catch (e) {}
-      }
+      syncBadge.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Syncing 10,000+ Records...';
 
       try {
         const res = await fetch(CSV_URL);
         const csvText = await res.text();
-        const parsed = parseCSV(csvText);
-        allRawData = parsed;
+        allRawData = parseCSVStateful(csvText);
         
         if (allRawData.length > 0) {
           reportOsdDate = allRawData[0].OSD_DATE || '--';
         }
 
-        // Save Cache
-        localStorage.setItem('CACHE_DD_VISIT_DATA', JSON.stringify({
-          data: allRawData,
-          osdDate: reportOsdDate,
-          timestamp: Date.now()
-        }));
-
         updateDateBadge();
         processData();
         syncBadge.className = 'sync-badge';
-        syncBadge.innerHTML = '<i class="fas fa-wifi"></i> Live Synced';
+        syncBadge.innerHTML = `<i class="fas fa-wifi"></i> Live (${allRawData.length.toLocaleString('en-IN')} Records)`;
       } catch (err) {
         console.error('Fetch error:', err);
         syncBadge.className = 'sync-badge';
@@ -800,48 +824,8 @@
       }
     }
 
-    // CSV Parser
-    function parseCSV(text) {
-      const lines = text.split('\n');
-      if (lines.length < 2) return [];
-      const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-      const result = [];
-
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-        
-        let row = [];
-        let inQuotes = false;
-        let currentVal = '';
-        
-        for (let j = 0; j < line.length; j++) {
-          const char = line[j];
-          if (char === '"') {
-            inQuotes = !inQuotes;
-          } else if (char === ',' && !inQuotes) {
-            row.push(currentVal.trim().replace(/^"|"$/g, ''));
-            currentVal = '';
-          } else {
-            currentVal += char;
-          }
-        }
-        row.push(currentVal.trim().replace(/^"|"$/g, ''));
-        
-        if (row.length >= headers.length) {
-          let obj = {};
-          headers.forEach((h, idx) => {
-            obj[h] = row[idx] || '';
-          });
-          result.push(obj);
-        }
-      }
-      return result;
-    }
-
     // Process & Populate Filters
     function processData() {
-      // Populate CCC Filter
       const cccSet = new Set(allRawData.map(r => r.CCC_CODE).filter(Boolean));
       const cccSelect = document.getElementById('cccFilter');
       const curCcc = cccSelect.value;
@@ -854,7 +838,6 @@
       });
       cccSelect.value = curCcc;
 
-      // Populate Category Filter
       const catSet = new Set(allRawData.map(r => r.CATEGORY).filter(Boolean));
       const catSelect = document.getElementById('catFilter');
       const curCat = catSelect.value;
@@ -878,7 +861,6 @@
       const status = document.getElementById('statusFilter').value;
       const minOsd = parseFloat(document.getElementById('osdFilter').value) || 0;
 
-      // Count Off-sheet consumers
       const activeConIds = new Set(allRawData.map(r => r.CON_ID));
       const offSheetRecords = [];
       Object.keys(followUpMap).forEach(conId => {
@@ -892,7 +874,6 @@
       document.getElementById('kpiValOffsheet').textContent = offSheetRecords.length;
 
       if (activeTab === 'history') {
-        // Show all followUpMap entries
         let historyList = Object.values(followUpMap);
         if (q) {
           historyList = historyList.filter(item => 
@@ -904,7 +885,6 @@
         }
         filteredData = historyList;
       } else {
-        // Filter Main Sheet Data
         filteredData = allRawData.filter(r => {
           const conId = r.CON_ID || '';
           const name = r.NAME || '';
@@ -1285,7 +1265,7 @@
       }
     }
 
-    // Save Follow-Up Record (Instant Optimistic + Background Sync)
+    // Save Follow-Up Record (Instant Optimistic + Background Apps Script Sync)
     function saveFollowUp(e) {
       e.preventDefault();
 
@@ -1296,7 +1276,7 @@
       const visitDate = document.getElementById('modalVisitDate').value;
       const visitBySelect = document.getElementById('modalVisitBySelect').value;
       const visitByCustom = document.getElementById('modalVisitByCustom').value;
-      const visitBy = (visitBySelect === 'CUSTOM') ? (visitByCustom.trim() || 'Officer') : visitBySelect;
+      const visitBy = (visitBySelect === 'CUSTOM') ? (visitByCustom.trim() || 'Official') : visitBySelect;
 
       const status = document.getElementById('modalStatus').value;
       const paidAmount = (status === 'Paid') ? document.getElementById('modalPaidAmount').value : '';
@@ -1331,7 +1311,7 @@
       closeModal();
       showToast(`Visit record saved instantly for CON ID: ${conId}`);
 
-      // 3. Background Async Sync
+      // 3. Background Async Sync to Apps Script Endpoint
       setTimeout(() => {
         syncRecordInBackground(record);
       }, 100);
@@ -1350,11 +1330,12 @@
       }
     }
 
-    // Background Endpoint Sync
+    // Background Apps Script Endpoint Sync
     async function syncRecordInBackground(record) {
       try {
-        if (window.MZO_CONFIG && window.MZO_CONFIG.SYNC_ENDPOINT) {
-          await fetch(window.MZO_CONFIG.SYNC_ENDPOINT, {
+        const endpoint = (window.MZO_CONFIG && window.MZO_CONFIG.DD_VISIT_SCRIPT_URL) || localStorage.getItem('DD_VISIT_SCRIPT_URL');
+        if (endpoint) {
+          await fetch(endpoint, {
             method: 'POST',
             mode: 'no-cors',
             headers: { 'Content-Type': 'application/json' },
