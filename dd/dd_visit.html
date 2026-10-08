@@ -697,10 +697,11 @@
           </div>
 
           <div class="modal-footer" style="padding: 10px 0 0; background: none; border-top: none;">
-            <button type="button" class="btn-small" style="color:var(--danger-color); border-color:var(--danger-color);" onclick="deleteFollowUp()">
-              <i class="fas fa-trash"></i> Delete Visit Record
+            <!-- Delete button: visible ONLY for Admin users -->
+            <button type="button" id="btnDeleteVisit" class="btn-small" style="color:var(--danger-color); border-color:var(--danger-color); display:none;" onclick="deleteFollowUp()">
+              <i class="fas fa-trash"></i> Delete Visit Record (Admin)
             </button>
-            <div style="display:flex; gap:8px;">
+            <div style="display:flex; gap:8px; margin-left:auto;">
               <button type="button" class="btn-small" onclick="closeModal()">Cancel</button>
               <button type="submit" class="btn-small btn-solid">
                 <i class="fas fa-save"></i> Save Record (Instant)
@@ -722,6 +723,16 @@
     const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSCKEl95dh4kyG-QPJbFJ5x7U7yo7h5bJGuMewsMr2hjMAlCj7UWxqvL_a-2hdyQd-laI8BAX3hU5_T/pub?gid=0&single=true&output=csv';
     const SYNC_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxgrKdt--yXk4A3_jL8PS6Z5kYXohHVNA3GKxq2jss8TVgqfvJdff_jFDwjj8Gxcdv00Q/exec';
     const STORAGE_KEY = 'dd_visit_followups_v1';
+
+    // Check if signed-in user is an Admin
+    function isAdminUser() {
+      try {
+        const profile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}') || {};
+        return String(profile.role || profile.Role || '').trim().toLowerCase() === 'admin';
+      } catch (e) {
+        return false;
+      }
+    }
 
     // Hierarchy Mapping
     const HIER = {
@@ -798,7 +809,6 @@
         const res = await fetch(SYNC_ENDPOINT);
         const json = await res.json();
         if (json && json.status === 'success' && json.data) {
-          // Merge remotely saved records
           Object.keys(json.data).forEach(conId => {
             const remoteRec = json.data[conId];
             if (remoteRec && remoteRec.conId) {
@@ -913,8 +923,6 @@
     // Populate Region, Division, and CCC Filters
     function populateHierarchyFilters() {
       const regionSelect = document.getElementById('regionFilter');
-      const divSelect = document.getElementById('divisionFilter');
-      const cccSelect = document.getElementById('cccFilter');
 
       const regions = new Set();
       allRawData.forEach(r => { if (r._regionName) regions.add(r._regionName); });
@@ -1265,7 +1273,7 @@
             <th>Total Paid Recovered (₹)</th>
           </tr>
         `;
-      } else { // ccc
+      } else {
         thead.innerHTML = `
           <tr>
             <th>SL</th>
@@ -1340,7 +1348,7 @@
             <td>${covPct}%</td>
             <td style="font-weight:700; color:var(--secondary-color);">₹ ${s.paidSum.toLocaleString('en-IN')}</td>
           `;
-        } else { // ccc
+        } else {
           const parts = k.split('|||');
           const cccCode = parts[0];
           const cccName = parts[1];
@@ -1465,6 +1473,12 @@
 
       document.getElementById('modalRemarks').value = rec ? rec.remarks : '';
 
+      // Delete button: ONLY visible for Admin users
+      const deleteBtn = document.getElementById('btnDeleteVisit');
+      if (deleteBtn) {
+        deleteBtn.style.display = (isAdminUser() && rec) ? 'inline-flex' : 'none';
+      }
+
       document.getElementById('followUpModal').classList.add('open');
     }
 
@@ -1553,6 +1567,10 @@
     }
 
     function deleteFollowUp() {
+      if (!isAdminUser()) {
+        alert('Permission Denied: Only Admin users can delete visit records.');
+        return;
+      }
       const conId = document.getElementById('modalConId').value;
       if (!conId || !followUpMap[conId]) return;
 
