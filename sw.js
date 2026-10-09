@@ -69,8 +69,8 @@
 // v198: feeder outage trend and rankings are tabs
 // v199: feeder outage month chips under filters; one chart plus table
 // v200: feeder outage sheet-links date is the latest report month
-// v207: Redesigned Upcoming DD page UI with multi-tab analytics, interactive KPI cards, and MzoScope
-const CACHE_NAME = 'mzo-reports-cache-v207';
+// v208: Enable widget=true for Puja sheets so all sheet tabs are displayed
+const CACHE_NAME = 'mzo-reports-cache-v208';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
