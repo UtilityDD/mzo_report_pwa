@@ -69,8 +69,8 @@
 // v198: feeder outage trend and rankings are tabs
 // v199: feeder outage month chips under filters; one chart plus table
 // v200: feeder outage sheet-links date is the latest report month
-// v206: Format for Puja 2026 added
-const CACHE_NAME = 'mzo-reports-cache-v206';
+// v207: Redesigned Upcoming DD page UI with multi-tab analytics, interactive KPI cards, and MzoScope
+const CACHE_NAME = 'mzo-reports-cache-v207';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -162,6 +162,8 @@ function writeAppCache(request, response) {
 
 function isNetworkFirstPath(pathname) {
   return (
+    pathname === '/dd/upcomingDD.html' ||
+    pathname === '/dd/dd_visit.html' ||
     pathname === '/puja.html' ||
     pathname === '/nsc.html' ||
     pathname === '/login.html' ||
