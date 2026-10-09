@@ -69,13 +69,15 @@
 // v198: feeder outage trend and rankings are tabs
 // v199: feeder outage month chips under filters; one chart plus table
 // v200: feeder outage sheet-links date is the latest report month
-const CACHE_NAME = 'mzo-reports-cache-v200';
+// v206: Format for Puja 2026 added
+const CACHE_NAME = 'mzo-reports-cache-v206';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
   './',
   'index.html',
   'login.html',
+  'puja.html',
   'offline.html',
   'loss.html',
   'wridd.html',
@@ -85,6 +87,8 @@ const PRECACHE_ASSETS = [
   'mzo_pwa_icons.js',
   'icons/icon-192-v2.png',
   'icons/icon-512-v2.png',
+  'icons/maa-durga-eyes.gif',
+  'icons/diya-cropped.svg',
   'tailwind_dist.css',
   'auth.js',
   'home-button.js',
@@ -158,6 +162,7 @@ function writeAppCache(request, response) {
 
 function isNetworkFirstPath(pathname) {
   return (
+    pathname === '/puja.html' ||
     pathname === '/nsc.html' ||
     pathname === '/login.html' ||
     pathname.startsWith('/nsc/') ||
