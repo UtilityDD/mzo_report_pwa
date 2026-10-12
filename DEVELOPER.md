@@ -34,6 +34,8 @@ Unauthenticated HTML requests redirect to `/login.html`. Use a real portal user 
 | `mzo_scope.js` | Login office scope (`window.MzoScope`) |
 | `mzo_data_hub.js` | Dataset registry + IndexedDB (`window.mzoDataHub`) |
 | `sw.js` | PWA cache; bump `CACHE_NAME` on UI/JS changes |
+| `puja-newspaper.css` | Durga Puja broadsheet newspaper theme tokens, typography, Kashful badges, and ambient Dhunuchi aura |
+| `icons/desktop-bg.webp` | Optimized festive flex banner background for desktop app viewports (`@media (min-width: 768px)`) |
 | `lib/` | Shared parsers (NSC, stock, …) |
 | `nsc/`, `stock/`, `rem/`, … | Feature folders |
 | `data/` | Local JSON/CSV fallbacks |
@@ -156,6 +158,24 @@ There is no webpack/vite build. Local run is `npm run dev`. Production is **only
    ```
 4. Vercel builds from the **smartlineman** GitHub repo. After the `smartlineman` push, confirm the change on https://mzo-reports.vercel.app (login-gated pages need a real portal user). A unique `mzo-reports-….vercel.app` URL is not the public link.
 5. Manual CLI only if the Git deploy did not run, and only while logged into the **Smart Lineman** Vercel team: `npx vercel --prod --yes --scope smart-linemans-projects`. `npx vercel --prod --yes` without that scope can hit the wrong account or return Not authorized. Env vars (`JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_KEY`, `INSIGHT_SUPABASE_URL`, `INSIGHT_SUPABASE_KEY` / `SUPABASE_SERVICE_ROLE_KEY`, `STOCK_USE_STORAGE`, sheet `/exec` URLs) live on the Smart Lineman project; the retired Dipankar project had none (code fallbacks in `server.js`). Stock Storage is already on (`STOCK_USE_STORAGE` plus the insight URL and service key). Do not set `INSIGHT_LIVE` until `npm run copy:insight` has copied `portal_users` and login should move to the new project.
+
+---
+
+---
+
+## UI Themes & Durga Puja Broadsheet Theme
+
+The portal supports a 3-state theme toggle: **Puja** (default: `body.puja-theme`) ⇄ **Dark** (`body.dark-theme`) ⇄ **Light** (`body.light-theme`).
+
+- **Puja Broadsheet Theme (`puja-newspaper.css`):**
+  - Vintage newsprint background texture, authentic Bengali cultural paper-cut collage art for Maa Durga (`.puja-devi-cutting`) and Kashful plumes (`.puja-kashful-cutting`) on desktop & mobile mastheads and report category card badges (`.card-kashful-accent`).
+  - Subtle, non-cluttered ambient Dhunuchi smoke aura animation (`pujaSmokeAura`).
+  - Card expansion stability: expanded report sub-options retain authentic broadsheet card background and borders without dark navy clipping.
+- **Desktop Festive Frame Background:**
+  - High-performance WebP background (`icons/desktop-bg.webp`, ~69.5 KB) enabled on desktop viewports via `@media (min-width: 768px)` with `background-size: cover; background-attachment: fixed;`.
+  - Mobile viewports retain the clean broadsheet paper grain to avoid portrait distortion.
+- **Search Dropdown Suppression:**
+  - Universal `[hidden]` and `.search-results-dropdown[hidden]`, `:empty` rules enforce `display: none !important; border: none !important;` so no empty bordered capsule appears below the search input when idle.
 
 ---
 
