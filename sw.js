@@ -70,7 +70,8 @@
 // v199: feeder outage month chips under filters; one chart plus table
 // v200: feeder outage sheet-links date is the latest report month
 // v208: Enable widget=true for Puja sheets so all sheet tabs are displayed
-const CACHE_NAME = 'mzo-reports-cache-v216';
+// v209: Mobile masthead clean layout and logo sizing across all themes
+const CACHE_NAME = 'mzo-reports-cache-v217';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
