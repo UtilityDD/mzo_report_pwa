@@ -1,4 +1,4 @@
-﻿// sw.js - Service Worker for MZO Reports PWA
+// sw.js - Service Worker for MZO Reports PWA
 // v37: withheld Updated-on uses live NSC TODAY (not stale meta id)
 // v38: historical NSC filters network-first
 // v39: pending load extension filters + network-first
@@ -71,7 +71,7 @@
 // v200: feeder outage sheet-links date is the latest report month
 // v208: Enable widget=true for Puja sheets so all sheet tabs are displayed
 // v209: Mobile masthead clean layout and logo sizing across all themes
-const CACHE_NAME = 'mzo-reports-cache-v223';
+const CACHE_NAME = 'mzo-reports-cache-v225';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
