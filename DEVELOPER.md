@@ -172,7 +172,7 @@ The portal supports a 3-state theme toggle: **Puja** (default: `body.puja-theme`
   - Subtle, non-cluttered ambient Dhunuchi smoke aura animation (`pujaSmokeAura`).
   - Card expansion stability: expanded report sub-options retain authentic broadsheet card background and borders without dark navy clipping.
 - **Desktop Festive Frame Background:**
-  - High-performance WebP background (`icons/desktop-bg.webp`, ~69.5 KB) enabled on desktop viewports via `@media (min-width: 768px)` with `background-size: cover; background-attachment: fixed;`.
+  - High-performance WebP background (`icons/desktop-bg.webp`, ~45.7 KB) enabled on desktop viewports via `@media (min-width: 768px)` with `background-size: cover; background-attachment: fixed;`.
   - Mobile viewports retain the clean broadsheet paper grain to avoid portrait distortion.
 - **Search Dropdown Suppression:**
   - Universal `[hidden]` and `.search-results-dropdown[hidden]`, `:empty` rules enforce `display: none !important; border: none !important;` so no empty bordered capsule appears below the search input when idle.
