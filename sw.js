@@ -71,7 +71,7 @@
 // v200: feeder outage sheet-links date is the latest report month
 // v208: Enable widget=true for Puja sheets so all sheet tabs are displayed
 // v209: Mobile masthead clean layout and logo sizing across all themes
-const CACHE_NAME = 'mzo-reports-cache-v230';
+const CACHE_NAME = 'mzo-reports-cache-v232';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -84,6 +84,7 @@ const PRECACHE_ASSETS = [
   'desktop-bg.webp',
   'offline.html',
   'loss.html',
+  'performance_index.html',
   'wridd.html',
   'weekly.html',
   'manifest.json',
@@ -180,6 +181,7 @@ function isNetworkFirstPath(pathname) {
     pathname === '/sheet_open.html' ||
     pathname === '/weekly.html' ||
     pathname === '/loss.html' ||
+    pathname === '/performance_index.html' ||
     pathname === '/disconnection.html' ||
     pathname === '/collection.html' ||
     pathname === '/pending_mc.html' ||

@@ -23,7 +23,7 @@
       divisions: {
         Malda: { prefix: '6611', cccs: ['Manikchak', 'Golapganj', 'Baishnabnagar', 'Kaliachak', 'Mothabari', 'Sujapur', 'Rathbari', 'Fulbari', 'Mokdumpur'] },
         Chanchal: { prefix: '6612', cccs: ['Bhaluka', 'Samsi', 'Paranpur', 'Chanchal', 'Malatipur', 'Harishchandrapur', 'Kushida'] },
-        Gazole: { prefix: '6613', cccs: ['Gazole', 'Gazol', 'Aiho', 'Pandua', 'Bamongola', 'Old Malda'] }
+        Gazole: { prefix: '6613', cccs: ['Gazole', 'Aiho', 'Pandua', 'Bamongola', 'Old Malda'] }
       }
     },
     Raiganj: {
