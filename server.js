@@ -4167,7 +4167,140 @@ app.get('/api/hub/versions', async (req, res) => {
     return res.json({ status: 'success', versions, csvUrls });
 });
 
-if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+// ──────────────────────────────────────
+//   Power News Hub Feed API (/api/news)
+// ──────────────────────────────────────
+const NEWS_FEEDS_CONFIG = {
+    english: {
+        query: '(electricity OR "power sector" OR WBSEDCL OR "power outage") AND ("West Bengal" OR Malda OR "Uttar Dinajpur" OR "Dakshin Dinajpur" OR Raiganj OR Balurghat) -Roy -BJP -TMC -Bangladesh -BD -Dhaka -Rangpur',
+        lang: 'en-IN',
+        ceid: 'IN:en'
+    },
+    bangla: {
+        query: '(বিদ্যুৎ OR "বিদ্যুৎ পর্ষদ" OR WBSEDCL OR লোডশেডিং) AND ("পশ্চিমবঙ্গ" OR "উত্তরবঙ্গ" OR "মালদা" OR "উত্তর দিনাজপুর" OR "দক্ষিণ দিনাজপুর" OR "রায়গঞ্জ" OR "বালুরঘাট") -রায় -বিজেপি -তৃণমূল -বাংলাদেশ -ঢাকা -রংপুর',
+        lang: 'bn-IN',
+        ceid: 'IN:bn'
+    },
+    districts: {
+        query: '(electricity OR power OR WBSEDCL OR বিদ্যুৎ OR লোডশেডিং) AND (site:anandabazar.com OR site:uttarbangasambad.in OR "Anandabazar Patrika" OR "Uttarbanga Sambad" OR "Uttar Banga Sambad" OR Malda OR "Uttar Dinajpur" OR "Dakshin Dinajpur" OR Raiganj OR Balurghat) -Roy -BJP -TMC -রায় -বিজেপি -তৃণমূল -Bangladesh -BD -Dhaka -Rangpur -বাংলাদেশ -ঢাকা -রংপুর',
+        lang: 'en-IN',
+        ceid: 'IN:en'
+    },
+    national: {
+        query: '(electricity OR "power sector" OR "national grid" OR "power reforms" OR "green energy transition") AND (India OR "Ministry of Power" OR "NTPC" OR "Power Grid Corporation" OR "PGCIL" OR "CEA") -Roy -BJP -TMC -Bangladesh -BD -Dhaka -Rangpur',
+        lang: 'en-IN',
+        ceid: 'IN:en'
+    }
+};
+
+let cachedNewsItems_ = [];
+let lastNewsFetchTime_ = 0;
+const NEWS_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+function fetchRssXml_(url, maxRedirects = 3) {
+    return new Promise((resolve) => {
+        if (maxRedirects <= 0) return resolve('');
+        const req = https.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/rss+xml, application/xml, text/xml, */*'
+            },
+            timeout: 10000
+        }, (res) => {
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                let loc = res.headers.location;
+                if (loc.startsWith('/')) loc = 'https://news.google.com' + loc;
+                return resolve(fetchRssXml_(loc, maxRedirects - 1));
+            }
+            if (res.statusCode !== 200) {
+                return resolve('');
+            }
+            let xml = '';
+            res.on('data', chunk => xml += chunk);
+            res.on('end', () => resolve(xml));
+        });
+        req.on('error', () => resolve(''));
+        req.on('timeout', () => { req.destroy(); resolve(''); });
+    });
+}
+
+function parseGoogleRssXml_(xml) {
+    const items = [];
+    const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+    let match;
+    while ((match = itemRegex.exec(xml)) !== null) {
+        const itemBlock = match[1];
+        const titleMatch = /<title>([\s\S]*?)<\/title>/i.exec(itemBlock);
+        const linkMatch = /<link>([\s\S]*?)<\/link>/i.exec(itemBlock);
+        const pubDateMatch = /<pubDate>([\s\S]*?)<\/pubDate>/i.exec(itemBlock);
+        const descMatch = /<description>([\s\S]*?)<\/description>/i.exec(itemBlock);
+        const sourceMatch = /<source[^>]*>([\s\S]*?)<\/source>/i.exec(itemBlock);
+
+        items.push({
+            title: titleMatch ? titleMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : '',
+            link: linkMatch ? linkMatch[1].trim() : '',
+            pubDate: pubDateMatch ? pubDateMatch[1].trim() : '',
+            description: descMatch ? descMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : '',
+            source: sourceMatch ? sourceMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : ''
+        });
+    }
+    return items;
+}
+
+async function fetchAllNewsFeeds_() {
+    const feedsToFetch = Object.values(NEWS_FEEDS_CONFIG);
+    const results = await Promise.all(feedsToFetch.map(feed => {
+        const url = `https://news.google.com/rss/search?q=${encodeURIComponent(feed.query)}&hl=${feed.lang}&gl=IN&ceid=${feed.ceid}`;
+        return fetchRssXml_(url).then(parseGoogleRssXml_);
+    }));
+
+    const merged = [].concat(...results);
+    const seen = new Set();
+    const unique = [];
+
+    merged.forEach(item => {
+        const key = (item.link || item.title || '').trim();
+        if (key && !seen.has(key)) {
+            seen.add(key);
+            unique.push(item);
+        }
+    });
+
+    unique.sort((a, b) => {
+        const dateA = new Date(a.pubDate || 0);
+        const dateB = new Date(b.pubDate || 0);
+        return dateB - dateA;
+    });
+
+    return unique;
+}
+
+app.get('/api/news', async (req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    try {
+        const now = Date.now();
+        const force = req.query.force === '1' || req.query.force === 'true';
+        if (!force && cachedNewsItems_.length > 0 && (now - lastNewsFetchTime_) < NEWS_CACHE_TTL_MS) {
+            return res.json({ status: 'ok', items: cachedNewsItems_, cached: true });
+        }
+
+        const items = await fetchAllNewsFeeds_();
+        if (items.length > 0) {
+            cachedNewsItems_ = items;
+            lastNewsFetchTime_ = now;
+        }
+
+        return res.json({ status: 'ok', items: cachedNewsItems_ });
+    } catch (err) {
+        console.error('[News API] Error:', err);
+        if (cachedNewsItems_.length > 0) {
+            return res.json({ status: 'ok', items: cachedNewsItems_, fallback: true });
+        }
+        return res.status(500).json({ status: 'error', message: 'Failed to fetch news' });
+    }
+});
+
+if ((process.env.NODE_ENV !== 'production' || !process.env.VERCEL) && require.main === module) {
     const server = app.listen(PORT, () => {
         console.log(`Server is running on http://localhost:${PORT}`);
         console.log('Open your browser and navigate to http://localhost:3000 to use the estimator.');

@@ -71,7 +71,7 @@
 // v200: feeder outage sheet-links date is the latest report month
 // v208: Enable widget=true for Puja sheets so all sheet tabs are displayed
 // v209: Mobile masthead clean layout and logo sizing across all themes
-const CACHE_NAME = 'mzo-reports-cache-v238';
+const CACHE_NAME = 'mzo-reports-cache-v239';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -370,7 +370,7 @@ self.addEventListener('fetch', (event) => {
 
   // Leave Google Sheet CSVs to the browser. Intercepting them (even to
   // pass through) can fail CORS and make homepage Sync report failures.
-  if (isGoogleSheetRequest(url) || isSupabaseRequest(url)) {
+  if (isGoogleSheetRequest(url) || isSupabaseRequest(url) || (url.origin !== self.location.origin && !CDN_URLS.some(cdn => request.url.startsWith(cdn)))) {
     return;
   }
 
