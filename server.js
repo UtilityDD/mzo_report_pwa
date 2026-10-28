@@ -610,6 +610,7 @@ async function requireAuth(req, res, next) {
     if (
         pathName === '/login.html' || 
         pathName === '/api/login' || 
+        pathName === '/api/news' || 
         pathName === '/sw.js' ||
         pathName === '/manifest.json' ||
         pathName === '/offline.html' ||
