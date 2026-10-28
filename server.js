@@ -4225,7 +4225,18 @@ function fetchRssXml_(url, maxRedirects = 3) {
     });
 }
 
-function parseGoogleRssXml_(xml) {
+function isAccidentNews_(title, desc) {
+    const text = ((title || '') + ' ' + (desc || '')).toLowerCase();
+    const keywords = [
+        'electrocution', 'electrocuted', 'electrical accident', 'short circuit',
+        'electric shock', 'transformer blast', 'electric fire', 'power line death',
+        'high voltage death', 'live wire death',
+        'বিদ্যুৎস্পৃষ্ট', 'শর্ট সার্কিট', 'বিদ্যুৎ দুর্ঘটনা', 'বিদ্যুৎস্পর্শ', 'বিদ্যুৎস্পৃষ্টে মৃত্যু'
+    ];
+    return keywords.some(k => text.includes(k));
+}
+
+function parseGoogleRssXml_(xml, category = 'national') {
     const items = [];
     const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
     let match;
@@ -4237,22 +4248,63 @@ function parseGoogleRssXml_(xml) {
         const descMatch = /<description>([\s\S]*?)<\/description>/i.exec(itemBlock);
         const sourceMatch = /<source[^>]*>([\s\S]*?)<\/source>/i.exec(itemBlock);
 
+        let rawTitle = titleMatch ? titleMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : '';
+        let sourceName = sourceMatch ? sourceMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : '';
+
+        // Google News titles always end with " - Source Name"
+        if (rawTitle.includes(' - ')) {
+            const lastIdx = rawTitle.lastIndexOf(' - ');
+            if (!sourceName) {
+                sourceName = rawTitle.substring(lastIdx + 3).trim();
+            }
+            rawTitle = rawTitle.substring(0, lastIdx).trim();
+        }
+
+        // Clean description: Google News RSS descriptions are purely duplicate anchor tags pointing to the article.
+        // Strip all HTML and entities. If the text only duplicates the title/source, keep it empty.
+        let rawDesc = descMatch ? descMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : '';
+        let cleanDesc = rawDesc
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#039;/g, "'")
+            .replace(/&amp;/g, '&')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const lowerDesc = cleanDesc.toLowerCase();
+        const lowerTitle = rawTitle.toLowerCase();
+        const lowerSource = sourceName.toLowerCase();
+
+        if (lowerDesc === lowerTitle || 
+            lowerDesc === (lowerTitle + ' ' + lowerSource) ||
+            lowerDesc === (lowerTitle + ' - ' + lowerSource) ||
+            lowerDesc.startsWith(lowerTitle)) {
+            cleanDesc = '';
+        }
+
+        const isAccident = isAccidentNews_(rawTitle, cleanDesc);
+
         items.push({
-            title: titleMatch ? titleMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : '',
+            title: rawTitle,
             link: linkMatch ? linkMatch[1].trim() : '',
             pubDate: pubDateMatch ? pubDateMatch[1].trim() : '',
-            description: descMatch ? descMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : '',
-            source: sourceMatch ? sourceMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : ''
+            description: cleanDesc,
+            source: sourceName || 'News',
+            category: category,
+            isAccident: isAccident
         });
     }
     return items;
 }
 
 async function fetchAllNewsFeeds_() {
-    const feedsToFetch = Object.values(NEWS_FEEDS_CONFIG);
-    const results = await Promise.all(feedsToFetch.map(feed => {
+    const feedEntries = Object.entries(NEWS_FEEDS_CONFIG);
+    const results = await Promise.all(feedEntries.map(([categoryKey, feed]) => {
         const url = `https://news.google.com/rss/search?q=${encodeURIComponent(feed.query)}&hl=${feed.lang}&gl=IN&ceid=${feed.ceid}`;
-        return fetchRssXml_(url).then(parseGoogleRssXml_);
+        return fetchRssXml_(url).then(xml => parseGoogleRssXml_(xml, categoryKey));
     }));
 
     const merged = [].concat(...results);
