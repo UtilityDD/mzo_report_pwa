@@ -768,12 +768,35 @@
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      padding: 10px 12px;
+      padding: 9px 12px;
       border-bottom: 1px solid var(--line);
       white-space: nowrap;
       position: sticky;
       top: 0;
       z-index: 2;
+    }
+
+    table.data-table th.sortable {
+      cursor: pointer;
+      user-select: none;
+      transition: background-color 0.15s, color 0.15s;
+    }
+
+    table.data-table th.sortable:hover {
+      background: var(--card-border);
+      color: var(--text);
+    }
+
+    .sort-icon {
+      font-size: 9.5px;
+      margin-left: 4px;
+      vertical-align: middle;
+      opacity: 0.35;
+    }
+
+    .sort-icon.active {
+      opacity: 1;
+      color: var(--primary);
     }
 
     table.data-table td {
@@ -1249,18 +1272,8 @@
         </div>
         <div class="table-responsive">
           <table class="data-table" id="casesTable">
-            <thead>
-              <tr>
-                <th>Consumer</th>
-                <th>CCC</th>
-                <th>Date</th>
-                <th class="text-right">Prov (₹)</th>
-                <th class="text-right">Final (₹)</th>
-                <th class="text-center">Cut</th>
-                <th class="text-right">Paid (₹)</th>
-                <th class="text-right">Balance (₹)</th>
-                <th class="text-center">Status</th>
-              </tr>
+            <thead id="casesTableHead">
+              <!-- Rendered dynamically via renderCasesTableHead() -->
             </thead>
             <tbody id="casesTableBody">
               <!-- Rendered via JS -->
@@ -1702,6 +1715,7 @@
       });
 
       currentPage = 1;
+      sortCasesRecords();
       updateInspectionDateRange(filteredRecords);
       updateKpis();
       updateReductionChips();
@@ -2031,6 +2045,62 @@
       charts[canvasId] = new Chart(canvas, { type, data, options });
     }
 
+    // --- Comparative Assessment Matrix Sorting ---
+    let hierarchySortColumn = 'provAmt';
+    let hierarchySortDirection = 'desc';
+
+    function getHierarchySortIcon(col) {
+      if (hierarchySortColumn !== col) return '<i class="fas fa-sort sort-icon"></i>';
+      return hierarchySortDirection === 'asc' 
+        ? '<i class="fas fa-sort-up sort-icon active"></i>' 
+        : '<i class="fas fa-sort-down sort-icon active"></i>';
+    }
+
+    window.handleHierarchySort = function(col) {
+      if (hierarchySortColumn === col) {
+        hierarchySortDirection = (hierarchySortDirection === 'asc') ? 'desc' : 'asc';
+      } else {
+        hierarchySortColumn = col;
+        hierarchySortDirection = (col === 'name' || col === 'reg' || col === 'div') ? 'asc' : 'desc';
+      }
+      updateHierarchyTable();
+    };
+
+    function sortHierarchyList(list) {
+      list.sort((a, b) => {
+        let valA, valB;
+        if (hierarchySortColumn === 'name') {
+          valA = a.name || ''; valB = b.name || '';
+          return hierarchySortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        } else if (hierarchySortColumn === 'reg') {
+          valA = a.reg || a.name || ''; valB = b.reg || b.name || '';
+          return hierarchySortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        } else if (hierarchySortColumn === 'div') {
+          valA = a.div || a.name || ''; valB = b.div || b.name || '';
+          return hierarchySortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        } else if (hierarchySortColumn === 'divs') {
+          valA = a.divs ? a.divs.size : 0; valB = b.divs ? b.divs.size : 0;
+          return hierarchySortDirection === 'asc' ? valA - valB : valB - valA;
+        } else if (hierarchySortColumn === 'cccs') {
+          valA = a.cccs ? a.cccs.size : 0; valB = b.cccs ? b.cccs.size : 0;
+          return hierarchySortDirection === 'asc' ? valA - valB : valB - valA;
+        } else if (hierarchySortColumn === 'cutPct') {
+          valA = a.provAmt > 0 ? (a.reducedAmt / a.provAmt) : 0;
+          valB = b.provAmt > 0 ? (b.reducedAmt / b.provAmt) : 0;
+          return hierarchySortDirection === 'asc' ? valA - valB : valB - valA;
+        } else if (hierarchySortColumn === 'recoveryRate') {
+          valA = (a.finalAmt > 0) ? (a.paidAmt / a.finalAmt) : (a.provAmt > 0 ? a.paidAmt / a.provAmt : 0);
+          valB = (b.finalAmt > 0) ? (b.paidAmt / b.finalAmt) : (b.provAmt > 0 ? b.paidAmt / b.provAmt : 0);
+          return hierarchySortDirection === 'asc' ? valA - valB : valB - valA;
+        } else {
+          valA = Number(a[hierarchySortColumn]) || 0;
+          valB = Number(b[hierarchySortColumn]) || 0;
+          return hierarchySortDirection === 'asc' ? valA - valB : valB - valA;
+        }
+      });
+      return list;
+    }
+
     // --- Comparative Assessment Matrix (Region, Division, CCC) ---
     function updateHierarchyTable() {
       const thead = document.getElementById('hierarchyTableHead');
@@ -2042,18 +2112,18 @@
         if (desc) desc.textContent = 'Comparing 3 Regions across Malda Zone';
         thead.innerHTML = `
           <tr>
-            <th>Region</th>
-            <th class="text-center">Div</th>
-            <th class="text-center">CCC</th>
-            <th class="text-right">Cases</th>
-            <th class="text-right">Prov (₹L)</th>
-            <th class="text-right">Final (₹L)</th>
-            <th class="text-right">Cut (₹L)</th>
-            <th class="text-right">Cut %</th>
-            <th class="text-center">Cut &gt;50%</th>
-            <th class="text-right">Paid (₹L)</th>
-            <th style="width: 100px;">Recovery %</th>
-            <th class="text-right">Balance (₹L)</th>
+            <th class="sortable" onclick="handleHierarchySort('name')" title="Sort by Region">Region ${getHierarchySortIcon('name')}</th>
+            <th class="text-center sortable" onclick="handleHierarchySort('divs')" title="Sort by Divisions">Div ${getHierarchySortIcon('divs')}</th>
+            <th class="text-center sortable" onclick="handleHierarchySort('cccs')" title="Sort by CCCs">CCC ${getHierarchySortIcon('cccs')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('cases')" title="Sort by Cases">Cases ${getHierarchySortIcon('cases')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('provAmt')" title="Sort by Provisional Demand">Prov (₹L) ${getHierarchySortIcon('provAmt')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('finalAmt')" title="Sort by Final Assessment">Final (₹L) ${getHierarchySortIcon('finalAmt')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('reducedAmt')" title="Sort by Amount Cut">Cut (₹L) ${getHierarchySortIcon('reducedAmt')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('cutPct')" title="Sort by Cut %">Cut % ${getHierarchySortIcon('cutPct')}</th>
+            <th class="text-center sortable" onclick="handleHierarchySort('highRedCount')" title="Sort by Cases Cut >50%">Cut &gt;50% ${getHierarchySortIcon('highRedCount')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('paidAmt')" title="Sort by Recovery">Paid (₹L) ${getHierarchySortIcon('paidAmt')}</th>
+            <th style="width: 100px;" class="sortable" onclick="handleHierarchySort('recoveryRate')" title="Sort by Recovery %">Recovery % ${getHierarchySortIcon('recoveryRate')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('balance')" title="Sort by Balance">Balance (₹L) ${getHierarchySortIcon('balance')}</th>
           </tr>
         `;
 
@@ -2112,7 +2182,7 @@
           zoneTot.cccs.add(r.locCode);
         });
 
-        const list = Object.values(regData).sort((a,b) => b.provAmt - a.provAmt);
+        const list = sortHierarchyList(Object.values(regData));
         let html = '';
 
         list.forEach(item => {
@@ -2183,18 +2253,18 @@
         if (desc) desc.textContent = 'Comparing 7 Divisions across Malda Zone';
         thead.innerHTML = `
           <tr>
-            <th>Region</th>
-            <th>Division</th>
-            <th class="text-center">CCC</th>
-            <th class="text-right">Cases</th>
-            <th class="text-right">Prov (₹L)</th>
-            <th class="text-right">Final (₹L)</th>
-            <th class="text-right">Cut (₹L)</th>
-            <th class="text-right">Cut %</th>
-            <th class="text-center">Cut &gt;50%</th>
-            <th class="text-right">Paid (₹L)</th>
-            <th style="width: 100px;">Recovery %</th>
-            <th class="text-right">Balance (₹L)</th>
+            <th class="sortable" onclick="handleHierarchySort('reg')" title="Sort by Region">Region ${getHierarchySortIcon('reg')}</th>
+            <th class="sortable" onclick="handleHierarchySort('name')" title="Sort by Division">Division ${getHierarchySortIcon('name')}</th>
+            <th class="text-center sortable" onclick="handleHierarchySort('cccs')" title="Sort by CCCs">CCC ${getHierarchySortIcon('cccs')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('cases')" title="Sort by Cases">Cases ${getHierarchySortIcon('cases')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('provAmt')" title="Sort by Provisional Demand">Prov (₹L) ${getHierarchySortIcon('provAmt')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('finalAmt')" title="Sort by Final Assessment">Final (₹L) ${getHierarchySortIcon('finalAmt')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('reducedAmt')" title="Sort by Amount Cut">Cut (₹L) ${getHierarchySortIcon('reducedAmt')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('cutPct')" title="Sort by Cut %">Cut % ${getHierarchySortIcon('cutPct')}</th>
+            <th class="text-center sortable" onclick="handleHierarchySort('highRedCount')" title="Sort by Cases Cut >50%">Cut &gt;50% ${getHierarchySortIcon('highRedCount')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('paidAmt')" title="Sort by Recovery">Paid (₹L) ${getHierarchySortIcon('paidAmt')}</th>
+            <th style="width: 100px;" class="sortable" onclick="handleHierarchySort('recoveryRate')" title="Sort by Recovery %">Recovery % ${getHierarchySortIcon('recoveryRate')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('balance')" title="Sort by Balance">Balance (₹L) ${getHierarchySortIcon('balance')}</th>
           </tr>
         `;
 
@@ -2233,7 +2303,7 @@
           divData[div].balance += r.balance;
         });
 
-        const list = Object.values(divData).sort((a,b) => b.provAmt - a.provAmt);
+        const list = sortHierarchyList(Object.values(divData));
         let html = '';
 
         list.forEach(item => {
@@ -2280,18 +2350,18 @@
         if (desc) desc.textContent = 'Comparing 41 CCCs across Malda Zone';
         thead.innerHTML = `
           <tr>
-            <th>Region</th>
-            <th>Division</th>
-            <th>CCC</th>
-            <th class="text-right">Cases</th>
-            <th class="text-right">Prov (₹L)</th>
-            <th class="text-right">Final (₹L)</th>
-            <th class="text-right">Cut (₹L)</th>
-            <th class="text-right">Cut %</th>
-            <th class="text-center">Cut &gt;50%</th>
-            <th class="text-right">Paid (₹L)</th>
-            <th style="width: 100px;">Recovery %</th>
-            <th class="text-right">Balance (₹L)</th>
+            <th class="sortable" onclick="handleHierarchySort('reg')" title="Sort by Region">Region ${getHierarchySortIcon('reg')}</th>
+            <th class="sortable" onclick="handleHierarchySort('div')" title="Sort by Division">Division ${getHierarchySortIcon('div')}</th>
+            <th class="sortable" onclick="handleHierarchySort('name')" title="Sort by CCC">CCC ${getHierarchySortIcon('name')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('cases')" title="Sort by Cases">Cases ${getHierarchySortIcon('cases')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('provAmt')" title="Sort by Provisional Demand">Prov (₹L) ${getHierarchySortIcon('provAmt')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('finalAmt')" title="Sort by Final Assessment">Final (₹L) ${getHierarchySortIcon('finalAmt')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('reducedAmt')" title="Sort by Amount Cut">Cut (₹L) ${getHierarchySortIcon('reducedAmt')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('cutPct')" title="Sort by Cut %">Cut % ${getHierarchySortIcon('cutPct')}</th>
+            <th class="text-center sortable" onclick="handleHierarchySort('highRedCount')" title="Sort by Cases Cut >50%">Cut &gt;50% ${getHierarchySortIcon('highRedCount')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('paidAmt')" title="Sort by Recovery">Paid (₹L) ${getHierarchySortIcon('paidAmt')}</th>
+            <th style="width: 100px;" class="sortable" onclick="handleHierarchySort('recoveryRate')" title="Sort by Recovery %">Recovery % ${getHierarchySortIcon('recoveryRate')}</th>
+            <th class="text-right sortable" onclick="handleHierarchySort('balance')" title="Sort by Balance">Balance (₹L) ${getHierarchySortIcon('balance')}</th>
           </tr>
         `;
 
@@ -2330,7 +2400,7 @@
           cccData[key].balance += r.balance;
         });
 
-        const list = Object.values(cccData).sort((a,b) => b.provAmt - a.provAmt);
+        const list = sortHierarchyList(Object.values(cccData));
         let html = '';
 
         list.forEach(item => {
@@ -2391,10 +2461,83 @@
       switchTab('tab-cases');
     };
 
+    // --- Clean Consumer-Wise Case Explorer Table Sorting ---
+    let casesSortColumn = 'provAmt';
+    let casesSortDirection = 'desc';
+
+    function getCasesSortIcon(col) {
+      if (casesSortColumn !== col) return '<i class="fas fa-sort sort-icon"></i>';
+      return casesSortDirection === 'asc' 
+        ? '<i class="fas fa-sort-up sort-icon active"></i>' 
+        : '<i class="fas fa-sort-down sort-icon active"></i>';
+    }
+
+    function renderCasesTableHead() {
+      const thead = document.getElementById('casesTableHead');
+      if (!thead) return;
+      thead.innerHTML = `
+        <tr>
+          <th class="sortable" onclick="handleCasesSort('consumerId')" title="Sort by Consumer">Consumer ${getCasesSortIcon('consumerId')}</th>
+          <th class="sortable" onclick="handleCasesSort('cccName')" title="Sort by CCC">CCC ${getCasesSortIcon('cccName')}</th>
+          <th class="sortable" onclick="handleCasesSort('inspDate')" title="Sort by Date">Date ${getCasesSortIcon('inspDate')}</th>
+          <th class="text-right sortable" onclick="handleCasesSort('provAmt')" title="Sort by Provisional Demand">Prov (₹) ${getCasesSortIcon('provAmt')}</th>
+          <th class="text-right sortable" onclick="handleCasesSort('finalAmt')" title="Sort by Final Assessment">Final (₹) ${getCasesSortIcon('finalAmt')}</th>
+          <th class="text-center sortable" onclick="handleCasesSort('reductionAmt')" title="Sort by Reduction">Cut ${getCasesSortIcon('reductionAmt')}</th>
+          <th class="text-right sortable" onclick="handleCasesSort('payAmt')" title="Sort by Paid Amount">Paid (₹) ${getCasesSortIcon('payAmt')}</th>
+          <th class="text-right sortable" onclick="handleCasesSort('balance')" title="Sort by Outstanding Balance">Balance (₹) ${getCasesSortIcon('balance')}</th>
+          <th class="text-center sortable" onclick="handleCasesSort('status')" title="Sort by Status">Status ${getCasesSortIcon('status')}</th>
+        </tr>
+      `;
+    }
+
+    window.handleCasesSort = function(col) {
+      if (casesSortColumn === col) {
+        casesSortDirection = (casesSortDirection === 'asc') ? 'desc' : 'asc';
+      } else {
+        casesSortColumn = col;
+        casesSortDirection = (col === 'consumerId' || col === 'cccName' || col === 'status') ? 'asc' : 'desc';
+      }
+      sortCasesRecords();
+      currentPage = 1;
+      updateCasesTable();
+    };
+
+    function sortCasesRecords() {
+      if (!casesSortColumn || !filteredRecords) return;
+      filteredRecords.sort((a, b) => {
+        let valA, valB;
+        if (casesSortColumn === 'consumerId') {
+          valA = String(a.consumerId || '');
+          valB = String(b.consumerId || '');
+          return casesSortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        } else if (casesSortColumn === 'cccName') {
+          valA = cleanCccName(a.cccName, a.locCode);
+          valB = cleanCccName(b.cccName, b.locCode);
+          return casesSortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        } else if (casesSortColumn === 'inspDate') {
+          const dtA = parseDmy(a.inspDate);
+          const dtB = parseDmy(b.inspDate);
+          valA = dtA ? dtA.getTime() : 0;
+          valB = dtB ? dtB.getTime() : 0;
+          return casesSortDirection === 'asc' ? valA - valB : valB - valA;
+        } else if (casesSortColumn === 'status') {
+          valA = String(a.status || '');
+          valB = String(b.status || '');
+          return casesSortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        } else {
+          valA = Number(a[casesSortColumn]) || 0;
+          valB = Number(b[casesSortColumn]) || 0;
+          return casesSortDirection === 'asc' ? valA - valB : valB - valA;
+        }
+      });
+    }
+
     // --- Clean Consumer-Wise Case Explorer Table ---
     function updateCasesTable() {
       const tbody = document.getElementById('casesTableBody');
       if (!tbody) return;
+
+      renderCasesTableHead();
 
       const total = filteredRecords.length;
       document.getElementById('totalCasesFiltered').textContent = total.toLocaleString('en-IN');
