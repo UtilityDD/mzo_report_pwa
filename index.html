@@ -2815,6 +2815,7 @@
         transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         outline: none;
         white-space: nowrap;
+        text-decoration: none;
       }
 
       .footer-gridmind-btn:hover {
@@ -4231,13 +4232,14 @@
           <div class="footer-copy">© 2025 MZO | Think outside the box</div>
           <!-- Desktop Highlighted Footer Button: GridMind AI -->
           <div class="footer-gridmind-wrap" id="footerGridmindWrap">
-            <button type="button" class="footer-gridmind-btn" id="footerGridmindBtn" onclick="openPage('https://grid-mind-ai-opal.vercel.app/', 'GridMind AI', null, { forceSame: true })" aria-label="Search Circulars, Regulations with AI">
+            <a href="https://grid-mind-ai-opal.vercel.app/" target="_blank" rel="noopener noreferrer" class="footer-gridmind-btn" id="footerGridmindBtn" aria-label="Search Circulars, Regulations with AI (Opens in new tab)">
               <span class="footer-gridmind-icon"><i class="fas fa-brain"></i></span>
               <span class="footer-gridmind-label">GridMind AI</span>
               <i class="fas fa-sparkles footer-gridmind-sparkle"></i>
-            </button>
+              <i class="fas fa-external-link-alt" style="font-size: 10px; opacity: 0.75; margin-left: 2px;"></i>
+            </a>
             <div class="footer-gridmind-tooltip" role="tooltip">
-              <i class="fas fa-search" style="color: #f59e0b; margin-right: 5px;"></i>Search Circulars, Regulations with AI..
+              <i class="fas fa-search" style="color: #f59e0b; margin-right: 5px;"></i>Search Circulars, Regulations with AI.. (Opens in new tab)
             </div>
           </div>
         </div>
@@ -4256,9 +4258,14 @@
           </button>
           <h1 class="main-title" style="font-size: 20px;">Page Title</h1>
         </div>
-        <button class="refresh-icon" id="iframeRefreshBtn">
-          <i class="fas fa-sync-alt"></i>
-        </button>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button class="refresh-icon" id="iframeExternalBtn" title="Open in new tab" style="display: none;">
+            <i class="fas fa-external-link-alt"></i>
+          </button>
+          <button class="refresh-icon" id="iframeRefreshBtn" title="Refresh">
+            <i class="fas fa-sync-alt"></i>
+          </button>
+        </div>
       </div>
 
 
@@ -4741,9 +4748,27 @@
 
     async function openPage(page, title, datasetKey, opts) {
       opts = opts || {};
+
+      // External services requiring Google Authentication (e.g. GridMind AI) cannot run inside an iframe
+      // because Google blocks third-party cookies and iframe OAuth (Error 403 Forbidden).
+      if (/^https:\/\/grid-mind-ai-opal\.vercel\.app/i.test(page)) {
+        window.open(page, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
       const iframe = document.getElementById("subPageFrame");
       const errorDiv = document.getElementById("iframeError");
       const loader = document.getElementById("iframeLoader");
+      const externalBtn = document.getElementById("iframeExternalBtn");
+
+      if (externalBtn) {
+        if (/^https?:\/\//i.test(page)) {
+          externalBtn.style.display = "inline-flex";
+          externalBtn.onclick = () => window.open(page, '_blank', 'noopener,noreferrer');
+        } else {
+          externalBtn.style.display = "none";
+        }
+      }
 
       if (isDesktopView() && !opts.forceSame) {
         let mode = opts.forceAsk ? null : getDesktopOpenPreference();
@@ -4889,8 +4914,19 @@
 
     function showIframeError(message) {
         const errorDiv = document.getElementById("iframeError");
-        errorDiv.innerHTML = `${message}<br/><br/> 
-            <button onclick="retryIframe()" class="btn btn-docket" style="width:auto; display:inline-flex;">🔄 Retry Page</button>`;
+        const iframe = document.getElementById("subPageFrame");
+        const currentSrc = (iframe && iframe.src) || "";
+        const externalBtnHtml = (currentSrc && /^https?:\/\//i.test(currentSrc)) ? `
+            <button onclick="window.open('${currentSrc}', '_blank', 'noopener,noreferrer')" class="btn btn-kpi" style="width:auto; display:inline-flex;">
+                <i class="fas fa-external-link-alt" style="margin-right:6px;"></i> Open in Browser
+            </button>` : '';
+        errorDiv.innerHTML = `<div style="text-align:center;">
+            <div>${message}</div>
+            <div style="margin-top:14px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+              <button onclick="retryIframe()" class="btn btn-docket" style="width:auto; display:inline-flex;">🔄 Retry Page</button>
+              ${externalBtnHtml}
+            </div>
+        </div>`;
         errorDiv.style.display = "flex";
     }
 
@@ -4908,6 +4944,8 @@
       document.getElementById("detailPage").classList.remove("active");
       document.getElementById("mainPage").classList.add("active");
       document.getElementById("subPageFrame").src = "";
+      const externalBtn = document.getElementById("iframeExternalBtn");
+      if (externalBtn) externalBtn.style.display = "none";
       // Ensure loader is hidden when going back
       document.getElementById("iframeLoader")?.classList.remove('active');
     }
