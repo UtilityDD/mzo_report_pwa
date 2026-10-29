@@ -47,12 +47,12 @@
   const CODE_TO_CCC = {
     '6611101': 'Manikchak', '6611102': 'Golapganj', '6611103': 'Baishnabnagar',
     '6611104': 'Kaliachak', '6611105': 'Mothabari', '6611106': 'Sujapur',
-    '6611107': 'Rathbari', '6611108': 'Fulbari', '6611109': 'Mokdumpur',
+    '6611107': 'Rathbari', '6611108': 'Fulbari', '6611109': 'Mokdumpur', '66111609': 'Mokdumpur',
     '6612101': 'Bhaluka', '6612102': 'Samsi', '6612103': 'Paranpur',
     '6612104': 'Chanchal', '6612105': 'Malatipur', '6612106': 'Harishchandrapur',
     '6612107': 'Kushida',
     '6613101': 'Gazole', '6613102': 'Aiho', '6613103': 'Pandua',
-    '6613104': 'Bamongola', '6613105': 'Old Malda',
+    '6613104': 'Bamongola', '6613105': 'Old Malda', '66131101': 'Gazole',
     '6621101': 'Itahar', '6621102': 'Hemtabad', '6621103': 'Kaliyaganj',
     '6621104': 'Raiganj', '6621105': 'Birnagar', '6621106': 'Karandighi',
     '6622101': 'Islampur', '6622102': 'Chopra', '6622103': 'Dalkhola',
@@ -65,10 +65,10 @@
 
   const CODE_TO_DIV = {
     '6611101': 'Malda', '6611102': 'Malda', '6611103': 'Malda', '6611104': 'Malda', '6611105': 'Malda',
-    '6611106': 'Malda', '6611107': 'Malda', '6611108': 'Malda', '6611109': 'Malda',
+    '6611106': 'Malda', '6611107': 'Malda', '6611108': 'Malda', '6611109': 'Malda', '66111609': 'Malda',
     '6612101': 'Chanchal', '6612102': 'Chanchal', '6612103': 'Chanchal', '6612104': 'Chanchal',
     '6612105': 'Chanchal', '6612106': 'Chanchal', '6612107': 'Chanchal',
-    '6613101': 'Gazole', '6613102': 'Gazole', '6613103': 'Gazole', '6613104': 'Gazole', '6613105': 'Gazole',
+    '6613101': 'Gazole', '6613102': 'Gazole', '6613103': 'Gazole', '6613104': 'Gazole', '6613105': 'Gazole', '66131101': 'Gazole',
     '6621101': 'Raiganj', '6621102': 'Raiganj', '6621103': 'Raiganj', '6621104': 'Raiganj',
     '6621105': 'Raiganj', '6621106': 'Raiganj',
     '6622101': 'Islampur', '6622102': 'Islampur', '6622103': 'Islampur', '6622104': 'Islampur', '6622105': 'Islampur',
@@ -199,8 +199,10 @@
 
   function cccNameOf(raw) {
     if (!raw) return '';
-    const s = String(raw).trim();
+    let s = String(raw).trim().replace(/\.0+$/, '');
     if (CODE_TO_CCC[s]) return CODE_TO_CCC[s];
+    const m = s.match(/\b(66[123]\d{4})\b/);
+    if (m && CODE_TO_CCC[m[1]]) return CODE_TO_CCC[m[1]];
     const n = norm(raw);
     if (!n) return '';
 

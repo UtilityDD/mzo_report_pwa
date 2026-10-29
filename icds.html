@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <script src="mzo_data_hub.js"></script>
-  <script src="mzo_scope.js?v=12"></script>
+  <script src="mzo_scope.js?v=13"></script>
   <style>
     :root {
       --primary: #0f766e;
@@ -281,23 +281,71 @@
       }
       return '';
     }
-    function districtRegion(raw) {
-      if (!window.MzoScope || !raw) return '';
-      const direct = MzoScope.regionNameOf(raw);
-      if (direct) return direct;
-      const sorted = String(raw).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean).sort().join(' ');
-      return MzoScope.regionNameOf(sorted) || '';
+    function mapDistrictToRegion(rawDistrict, fallbackRegion) {
+      const s = String(rawDistrict || '').trim();
+      const u = s.toUpperCase();
+      if (u.includes('DAKSHIN') || u.includes('SOUTH') || u === 'DD' || u.includes('BALURGHAT')) {
+        return 'Dakshin Dinajpur';
+      }
+      if (u.includes('MALDA') || u.includes('MALDAH')) {
+        return 'Malda';
+      }
+      if (u.includes('UTTAR') || u.includes('NORTH') || u === 'UD' || u.includes('RAIGANJ')) {
+        return 'Uttar Dinajpur';
+      }
+      if (fallbackRegion) {
+        const fb = String(fallbackRegion).trim().toUpperCase();
+        if (fb.includes('BALURGHAT') || fb.includes('DAKSHIN') || fb === 'DD') return 'Dakshin Dinajpur';
+        if (fb.includes('MALDA') || fb.includes('MALDAH')) return 'Malda';
+        if (fb.includes('RAIGANJ') || fb.includes('UTTAR') || fb === 'UD') return 'Uttar Dinajpur';
+      }
+      return s || fallbackRegion || 'Unknown';
+    }
+    function normalizeCccCode(raw) {
+      if (!raw) return '';
+      let s = String(raw).trim().replace(/\.0+$/, '');
+      if (s === '66111609') return '6611109';
+      if (s === '66131101') return '6613101';
+      const m = s.match(/\b(66[123]\d{4})\b/);
+      if (m) return m[1];
+      const digits = s.replace(/\D/g, '');
+      if (digits.length >= 7 && /^66[123]\d{4}$/.test(digits.slice(0, 7))) {
+        return digits.slice(0, 7);
+      }
+      return s;
     }
     function officeFromRow(row) {
-      const code = pick(row, ['CCC CODE', 'CCC_CODE']);
-      const district = pick(row, ['DISTRICT']);
-      const fromDistrict = districtRegion(district);
-      if (window.MzoScope && code && !blankish(code)) {
-        const ccc = MzoScope.cccNameOf(code);
-        const parent = ccc ? MzoScope.parentOfCcc(ccc) : null;
-        if (parent) return { region: parent.region, division: parent.division, ccc: parent.ccc, code: code, pending: false };
+      const rawCode = pick(row, ['CCC CODE', 'CCC_CODE', 'CCC Code', 'CCC', 'OFFICE_CODE', 'code']);
+      const code = normalizeCccCode(rawCode);
+      const rawDistrict = pick(row, ['DISTRICT']);
+      let parent = null;
+      let ccc = '';
+      if (code && !blankish(code)) {
+        if (window.MzoScope) {
+          ccc = MzoScope.cccNameOf(code);
+          parent = ccc ? MzoScope.parentOfCcc(ccc) : null;
+        }
       }
-      return { region: fromDistrict || district || 'Unknown', division: '', ccc: '', code: '', pending: true };
+      const region = mapDistrictToRegion(rawDistrict, parent ? parent.region : '');
+      const districtMapped = mapDistrictToRegion(rawDistrict, region);
+      if (parent) {
+        return {
+          region: region,
+          division: parent.division,
+          ccc: parent.ccc,
+          code: code,
+          district: districtMapped,
+          pending: false
+        };
+      }
+      return {
+        region: region,
+        division: '',
+        ccc: '',
+        code: '',
+        district: districtMapped,
+        pending: true
+      };
     }
     function asOnFromCsv(csv) {
       const table = parseCsv(csv);
@@ -334,7 +382,7 @@
           awc: name,
           awcCode: pick(row, ['AWC CODE']),
           project: pick(row, ['PROJECT']),
-          district: pick(row, ['DISTRICT']),
+          district: office.district,
           meter: blankish(meter) ? '' : meter,
           metered: !blankish(meter),
           pending: office.pending,
@@ -488,14 +536,21 @@
         { label: 'A+', data: list.map((b) => b.aplus), backgroundColor: '#d97706' },
         { label: 'A', data: list.map((b) => b.a), backgroundColor: '#0f766e' }
       ];
+      const onRegionBar = function (_evt, els) {
+        if (!els.length || isLocked('regionFilter')) return;
+        const name = buckets[els[0].index].label;
+        regionFilter.value = regionFilter.value === name ? '' : name;
+        populateFilters();
+        applyFilters();
+      };
       draw('priority', 'priorityChart', buckets.map((b) => b.label), [
         { label: 'A+', data: buckets.map((b) => b.aplus), backgroundColor: '#d97706' },
         { label: 'A', data: buckets.map((b) => b.a), backgroundColor: '#0f766e' }
-      ]);
+      ], onRegionBar);
       draw('map', 'mapChart', buckets.map((b) => b.label), [
         { label: 'CCC pending', data: buckets.map((b) => b.pending), backgroundColor: '#f59e0b' },
         { label: 'CCC mapped', data: buckets.map((b) => b.mapped), backgroundColor: '#2563eb' }
-      ]);
+      ], onRegionBar);
       const divisions = bucket(rows, 'DIVISION_NORM');
       document.getElementById('divisionEmpty').hidden = divisions.length > 0;
       draw('division', 'divisionChart', divisions.map((b) => b.label), prioritySets(divisions), function (_evt, els) {
@@ -560,8 +615,8 @@
       try {
         if (!window.mzoDataHub) throw new Error('Data hub missing');
         await Promise.all([
-          window.mzoDataHub.waitForDataset('CACHE_ICDS_APLUS'),
-          window.mzoDataHub.waitForDataset('CACHE_ICDS_A')
+          window.mzoDataHub.waitForDataset('CACHE_ICDS_APLUS', { forceCheck: true }),
+          window.mzoDataHub.waitForDataset('CACHE_ICDS_A', { forceCheck: true })
         ]);
         const aplus = (await window.mzoDataHub.get('CACHE_ICDS_APLUS')) || '';
         const a = (await window.mzoDataHub.get('CACHE_ICDS_A')) || '';
