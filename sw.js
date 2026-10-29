@@ -71,12 +71,13 @@
 // v200: feeder outage sheet-links date is the latest report month
 // v208: Enable widget=true for Puja sheets so all sheet tabs are displayed
 // v209: Mobile masthead clean layout and logo sizing across all themes
-const CACHE_NAME = 'mzo-reports-cache-v250';
+const CACHE_NAME = 'mzo-reports-cache-v256';
 
 // Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
 const PRECACHE_ASSETS = [
   './',
   'index.html',
+  'executive_briefing.html',
   'media_news.html',
   'theft_assessment.html',
   'login.html',
@@ -96,6 +97,7 @@ const PRECACHE_ASSETS = [
   'manifest.json',
   'manifest-legacy.json',
   'mzo_pwa_icons.js',
+  'mzo_executive_briefing.js',
   'icons/icon-192-v2.png',
   'icons/icon-512-v2.png',
   'icons/maa-durga-eyes.gif',

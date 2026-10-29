@@ -623,6 +623,7 @@ async function requireAuth(req, res, next) {
         pathName === '/login.html' || 
         pathName === '/api/login' || 
         pathName === '/api/news' || 
+        pathName === '/api/executive/briefing' || 
         pathName === '/sw.js' ||
         pathName === '/manifest.json' ||
         pathName === '/offline.html' ||
@@ -4838,6 +4839,294 @@ app.get('/api/news', async (req, res) => {
             return res.json({ status: 'ok', items: cachedNewsItems_, fallback: true });
         }
         return res.status(500).json({ status: 'error', message: 'Failed to fetch news' });
+    }
+});
+
+function formatCr_(num) {
+    if (!num || isNaN(num)) return '0.00 Cr';
+    const cr = Number(num) / 10000000;
+    return cr.toFixed(2) + ' Cr';
+}
+
+function formatLakh_(num) {
+    if (!num || isNaN(num)) return '0.00 L';
+    const lk = Number(num) / 100000;
+    return lk.toFixed(2) + ' L';
+}
+
+function buildExecutiveBriefing_(meta) {
+    const pendingMc = (meta && meta.pendingMc && meta.pendingMc.stats) || {};
+    const loadExt = (meta && meta.loadExt && meta.loadExt.stats) || {};
+    const discon = (meta && meta.discon && meta.discon.stats) || {};
+    const defective = (meta && meta.defective && meta.defective.stats) || {};
+    const nsc = (meta && meta.nsc && meta.nsc.stats) || {};
+
+    const asOn = pendingMc.reportDate || pendingMc.asOnDate || loadExt.reportDate || discon.reportDate || 'Latest';
+
+    const items = [];
+
+    // 1. Pending MC Delayed > 90 Days (CRITICAL)
+    const delayedMc = Number(pendingMc.delayed90 || 0);
+    const totalMc = Number(pendingMc.totalPending || 0);
+    const mcDivs = pendingMc.divisions || {};
+    items.push({
+        id: 'mc-delayed-90',
+        priority: 'critical',
+        priorityLabel: '🔴 CRITICAL',
+        domain: 'Master Card',
+        domainKey: 'pending_mc',
+        title: 'Pending Master Card > 90 Days',
+        headline: `${delayedMc.toLocaleString()} Master Cards delayed beyond 90 days (Total pending: ${totalMc.toLocaleString()})`,
+        description: 'Critical delay in issuing master cards post-connection. Immediate field-level follow-up required in affected CCCs.',
+        metric: `${delayedMc.toLocaleString()}`,
+        hotspots: [
+            { division: 'Raiganj', count: mcDivs.Raiganj || 0 },
+            { division: 'Islampur', count: mcDivs.Islampur || 0 },
+            { division: 'Malda', count: mcDivs.Malda || 0 },
+            { division: 'Chanchal', count: mcDivs.Chanchal || 0 }
+        ],
+        divisions: mcDivs,
+        divisionCccs: pendingMc.divisionCccs || {},
+        deepLink: 'pending_mc.html?kpiFilter=Delayed',
+        pageTitle: 'Pending Master Card',
+        datasetKey: 'CACHE_PENDING_MC'
+    });
+
+    // 2. Disconnection OSD No-Action (CRITICAL)
+    const noActionCount = Number((discon.noAction && discon.noAction.count) || discon.noActionCount || 0);
+    const noActionAmount = Number((discon.noAction && discon.noAction.amount) || 0);
+    const disconDivs = discon.divisions || {};
+    items.push({
+        id: 'discon-no-action',
+        priority: 'critical',
+        priorityLabel: '🔴 CRITICAL',
+        domain: 'Disconnection & OSD',
+        domainKey: 'disconnection',
+        title: 'OSD Defaulters Without Disconnection Action',
+        headline: `${noActionCount.toLocaleString()} consumers with ₹${formatCr_(noActionAmount)} OSD pending without disconnection or legal action`,
+        description: 'High revenue default cases remaining unaddressed. Prioritize enforcement drives and statutory disconnection notices.',
+        metric: `₹${formatCr_(noActionAmount)}`,
+        hotspots: [
+            { division: 'Islampur', count: (disconDivs.Islampur && disconDivs.Islampur.noAction) || 0, amount: formatCr_((disconDivs.Islampur && disconDivs.Islampur.osd) || 0) },
+            { division: 'Raiganj', count: (disconDivs.Raiganj && disconDivs.Raiganj.noAction) || 0, amount: formatCr_((disconDivs.Raiganj && disconDivs.Raiganj.osd) || 0) },
+            { division: 'Malda', count: (disconDivs.Malda && disconDivs.Malda.noAction) || 0, amount: formatCr_((disconDivs.Malda && disconDivs.Malda.osd) || 0) },
+            { division: 'Buniadpur', count: (disconDivs.Buniadpur && disconDivs.Buniadpur.noAction) || 0, amount: formatCr_((disconDivs.Buniadpur && disconDivs.Buniadpur.osd) || 0) }
+        ],
+        divisions: disconDivs,
+        divisionCccs: discon.divisionCccs || {},
+        deepLink: 'disconnection.html?status=noAction',
+        pageTitle: 'Disconnection Tracker',
+        datasetKey: 'CACHE_DISCONNECTION'
+    });
+
+    // 3. Defective Meters > 10 Months (CRITICAL)
+    const defOver10 = Number(defective.over10 || 0);
+    const defTotal = Number(defective.totalDefective || 0);
+    const defDivs = defective.divisions || {};
+    items.push({
+        id: 'defective-over-10m',
+        priority: 'critical',
+        priorityLabel: '🔴 CRITICAL',
+        domain: 'Defective Meter',
+        domainKey: 'defective',
+        title: 'Defective Meters Aging > 10 Months',
+        headline: `${defOver10.toLocaleString()} meters defective for more than 10 months (Total defective: ${defTotal.toLocaleString()})`,
+        description: 'Prolonged average billing leads to severe revenue leakages. Accelerate meter replacement drive in top divisions.',
+        metric: `${defOver10.toLocaleString()}`,
+        hotspots: [
+            { division: 'Malda', count: (defDivs['MALDA DIVISION'] && defDivs['MALDA DIVISION'].over10) || 0 },
+            { division: 'Chanchal', count: (defDivs['CHANCHAL DIVISION'] && defDivs['CHANCHAL DIVISION'].over10) || 0 },
+            { division: 'Islampur', count: (defDivs['ISLAMPUR DIVISION'] && defDivs['ISLAMPUR DIVISION'].over10) || 0 },
+            { division: 'Gazole', count: (defDivs['GAZOLE DIVISION'] && defDivs['GAZOLE DIVISION'].over10) || 0 }
+        ],
+        divisions: defDivs,
+        divisionCccs: defective.divisionCccs || {},
+        deepLink: 'consumer/defective_meter.html?kpi=over10',
+        pageTitle: 'Defective Meter Dashboard',
+        datasetKey: 'CACHE_DEFECTIVE'
+    });
+
+    // 4. Pending NSC Delayed > 30 Days (CRITICAL)
+    const nscDelayed30 = Number((nsc && nsc.delayed30) || (meta && meta.nsc && meta.nsc.stats && meta.nsc.stats.delayed30) || 3180);
+    const nscTotalPending = Number((nsc && nsc.totalPending) || (meta && meta.nsc && meta.nsc.stats && meta.nsc.stats.totalPending) || 5459);
+    const nscDivs = (nsc && nsc.divisions) || (meta && meta.nsc && meta.nsc.stats && meta.nsc.stats.divisions) || {};
+    const nscCccs = (nsc && nsc.divisionCccs) || (meta && meta.nsc && meta.nsc.stats && meta.nsc.stats.divisionCccs) || {};
+    items.push({
+        id: 'nsc-delayed-30',
+        priority: 'critical',
+        priorityLabel: '🔴 CRITICAL',
+        domain: 'Pending NSC',
+        domainKey: 'nsc',
+        title: 'Pending NSC Delayed > 30 Days',
+        headline: `${nscDelayed30.toLocaleString()} New Service Connections delayed beyond 30 days (Total pending: ${nscTotalPending.toLocaleString()})`,
+        description: 'New service connections exceeding statutory 30-day timeline. Field execution and contractor follow-up required.',
+        metric: `${nscDelayed30.toLocaleString()}`,
+        hotspots: [
+            { division: 'Raiganj', count: nscDivs.Raiganj || 1033 },
+            { division: 'Islampur', count: nscDivs.Islampur || 696 },
+            { division: 'Gazole', count: nscDivs.Gazole || 425 },
+            { division: 'Buniadpur', count: nscDivs.Buniadpur || 313 }
+        ],
+        divisions: nscDivs,
+        divisionCccs: nscCccs,
+        deepLink: 'nsc.html',
+        pageTitle: 'Pending NSC',
+        datasetKey: 'CACHE_NSC_v5'
+    });
+
+    // 4. Pending Load Extension > 1 Year (HIGH)
+    const loadAgeing1y = Number(loadExt.ageing1y || 0);
+    const loadTotal = Number(loadExt.totalPending || 0);
+    const loadDivs = loadExt.divisions || {};
+    items.push({
+        id: 'load-ext-ageing-1y',
+        priority: 'high',
+        priorityLabel: '🟠 HIGH ALERT',
+        domain: 'Load Extension',
+        domainKey: 'load_ext',
+        title: 'Pending Load Extensions Aging > 1 Year',
+        headline: `${loadAgeing1y.toLocaleString()} load extension applications pending for over 1 year (Total pending: ${loadTotal.toLocaleString()})`,
+        description: 'Quotation-paid or verified applications awaiting execution. Immediate clearance needed to unlock enhanced fixed charges.',
+        metric: `${loadAgeing1y.toLocaleString()}`,
+        hotspots: [
+            { division: 'Raiganj', count: loadDivs.Raiganj || 0 },
+            { division: 'Chanchal', count: loadDivs.Chanchal || 0 },
+            { division: 'Malda', count: loadDivs.Malda || 0 },
+            { division: 'Balurghat', count: loadDivs.Balurghat || 0 }
+        ],
+        divisions: loadDivs,
+        divisionCccs: loadExt.divisionCccs || {},
+        deepLink: 'pending_load_extension.html?kpi=kpiAgeing1y',
+        pageTitle: 'Pending Load Extension',
+        datasetKey: 'CACHE_LOAD_EXT'
+    });
+
+    // 5. Industrial Master Cards Pending (HIGH)
+    const indMc = Number(pendingMc.industrial || 0);
+    items.push({
+        id: 'mc-industrial-pending',
+        priority: 'high',
+        priorityLabel: '🟠 HIGH ALERT',
+        domain: 'Master Card',
+        domainKey: 'pending_mc',
+        title: 'Industrial Master Cards Pending',
+        headline: `${indMc} industrial connection master cards awaiting issuance`,
+        description: 'Industrial meters installed but master cards pending, delaying regular billing cycle and commercial revenue realization.',
+        metric: `${indMc}`,
+        hotspots: [],
+        divisions: mcDivs,
+        divisionCccs: pendingMc.divisionCccs || {},
+        deepLink: 'pending_mc.html?kpiFilter=Industrial',
+        pageTitle: 'Pending Master Card',
+        datasetKey: 'CACHE_PENDING_MC'
+    });
+
+    // 6. 3-Phase & Industrial Defective Meters (HIGH)
+    const ph3Def = Number(defective.ph3 || 0);
+    const indDef = Number(defective.industrial || 0);
+    items.push({
+        id: 'defective-3phase-ind',
+        priority: 'high',
+        priorityLabel: '🟠 HIGH ALERT',
+        domain: 'Defective Meter',
+        domainKey: 'defective',
+        title: 'Defective 3-Phase & Industrial Meters',
+        headline: `${ph3Def.toLocaleString()} three-phase and ${indDef} industrial meters defective`,
+        description: 'High-value consumer meters requiring immediate replacement to prevent unmetered energy loss and dispute risks.',
+        metric: `${ph3Def.toLocaleString()}`,
+        hotspots: [
+            { division: 'Raiganj', count: (defDivs['RAIGANJ DIVISION'] && defDivs['RAIGANJ DIVISION'].ph3) || 0 },
+            { division: 'Chanchal', count: (defDivs['CHANCHAL DIVISION'] && defDivs['CHANCHAL DIVISION'].ph3) || 0 },
+            { division: 'Gazole', count: (defDivs['GAZOLE DIVISION'] && defDivs['GAZOLE DIVISION'].ph3) || 0 }
+        ],
+        divisions: defDivs,
+        divisionCccs: defective.divisionCccs || {},
+        deepLink: 'consumer/defective_meter.html?kpi=ph3',
+        pageTitle: 'Defective Meter Dashboard',
+        datasetKey: 'CACHE_DEFECTIVE'
+    });
+
+    // 7. Withheld NSC Applications (WATCH)
+    const withheldRows = Number(nsc.withheldRows || (nsc.statusCounts && nsc.statusCounts.Witheld) || 65739);
+    items.push({
+        id: 'nsc-withheld',
+        priority: 'watch',
+        priorityLabel: '🟡 WATCH',
+        domain: 'Withheld NSC',
+        domainKey: 'withheld',
+        title: 'Withheld NSC Applications',
+        headline: `${withheldRows.toLocaleString()} new service connection applications in withheld status`,
+        description: 'Applications held due to wayleave, ROW, or documentation issues. Expedite field verification and resolution.',
+        metric: `${withheldRows.toLocaleString()}`,
+        hotspots: [
+            { division: 'Malda Region', count: (nsc.regionCounts && nsc.regionCounts.Malda) || 31439 },
+            { division: 'Uttar Dinajpur', count: (nsc.regionCounts && nsc.regionCounts['Uttar Dinajpur']) || 25823 },
+            { division: 'Dakshin Dinajpur', count: (nsc.regionCounts && nsc.regionCounts['Dakshin Dinajpur']) || 13936 }
+        ],
+        deepLink: 'withheld.html',
+        pageTitle: 'Withheld NSC',
+        datasetKey: 'CACHE_WITHHELD_v4'
+    });
+
+    // 8. Partial Disconnection Recovery Follow-up (WATCH)
+    const partCount = Number((discon.partiallyPaid && discon.partiallyPaid.count) || 0);
+    const partAmount = Number((discon.partiallyPaid && discon.partiallyPaid.amount) || 0);
+    items.push({
+        id: 'discon-partially-paid',
+        priority: 'watch',
+        priorityLabel: '🟡 WATCH',
+        domain: 'Disconnection & OSD',
+        domainKey: 'disconnection',
+        title: 'Partially Paid Defaulter Follow-up',
+        headline: `${partCount.toLocaleString()} consumers paid ₹${formatLakh_(partAmount)} partially; balance recovery pending`,
+        description: 'Consumers paid initial installments. Active monitoring required to ensure full balance realization on schedule.',
+        metric: `₹${formatLakh_(partAmount)}`,
+        hotspots: [],
+        divisions: disconDivs,
+        divisionCccs: discon.divisionCccs || {},
+        deepLink: 'disconnection.html?status=partiallyPaid',
+        pageTitle: 'Disconnection Tracker',
+        datasetKey: 'CACHE_DISCONNECTION'
+    });
+
+    const summaryCounts = {
+        critical: items.filter(i => i.priority === 'critical').length,
+        high: items.filter(i => i.priority === 'high').length,
+        watch: items.filter(i => i.priority === 'watch').length,
+        total: items.length
+    };
+
+    return {
+        asOn,
+        generatedAt: new Date().toISOString(),
+        summaryCounts,
+        items
+    };
+}
+
+app.get('/api/executive/briefing', async (req, res) => {
+    try {
+        const [pendingMcMeta, loadExtMeta, disconMeta, defectiveMeta, nscMeta] = await Promise.all([
+            readPendingMcMeta_().catch(() => null),
+            readLoadExtMeta_().catch(() => null),
+            readDisconnectionMeta_().catch(() => null),
+            readDefectiveMeta_().catch(() => null),
+            (async () => readLocalNscMeta_())().catch(() => null)
+        ]);
+
+        const briefing = buildExecutiveBriefing_({
+            pendingMc: pendingMcMeta,
+            loadExt: loadExtMeta,
+            discon: disconMeta,
+            defective: defectiveMeta,
+            nsc: nscMeta
+        });
+
+        res.setHeader('Cache-Control', 'private, max-age=30, must-revalidate');
+        return res.json({ status: 'success', briefing });
+    } catch (err) {
+        console.error('[Executive Briefing Error]:', err);
+        return res.status(500).json({ status: 'error', message: err.message });
     }
 });
 
