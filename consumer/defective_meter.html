@@ -594,6 +594,9 @@
                 <div>
 <div class="d-flex align-items-center gap-2 flex-wrap">
   <h1 class="title">Defective Meter Dashboard</h1>
+  <button type="button" id="defectiveCloudSyncBtn" class="btn btn-sm btn-success fw-bold px-2 py-0 ms-2 rounded shadow-sm" style="display: none; font-size: 11px; letter-spacing: 0.5px; height: 22px; line-height: 20px; background: #059669; border-color: #047857; color: white;" title="Sync data directly from source Google Sheet to Cloud Cache">
+    <i class="fas fa-cloud-arrow-down me-1"></i> Sync Sheet
+  </button>
   <button type="button" id="defective-upload-toggle" class="btn btn-sm header-upload-btn px-2 py-0 ms-2 rounded shadow-sm">
     UPLOAD CSV
   </button>
@@ -2200,11 +2203,39 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
                 }
             }
 
-            function applyUploadVisibility(allowed) {
+            function primeKpisFromMeta(stats) {
+                if (!stats) return;
+                const setVal = (id, val) => {
+                    const el = document.getElementById(id);
+                    if (el && val != null) el.textContent = Number(val).toLocaleString('en-IN');
+                };
+                setVal('total-meters', stats.totalDefective);
+                setVal('total-agri', stats.agri);
+                setVal('more-than-5-years', stats.over5);
+                setVal('load-0.5-to-1', stats.load05_1);
+                setVal('load-below-0.5', stats.loadLt05);
+                setVal('more-than-10-years', stats.over10);
+                setVal('three-ph-defective', stats.ph3);
+                setVal('industrial-defective', stats.industrial);
+                setVal('smart-meter-count', stats.smart);
+                setVal('load-above-6', stats.loadGt6);
+                setVal('load-3-to-6', stats.load3_6);
+                setVal('load-1-to-3', stats.load1_3);
+                const rDateEl = document.getElementById('report-date');
+                if (rDateEl && stats.reportDate) {
+                    rDateEl.textContent = 'Report as on ' + stats.reportDate;
+                }
+            }
+
+            function applyUploadVisibility(allowed, canSync) {
                 if (toggle) {
                     toggle.classList.toggle('is-allowed', !!allowed);
                     toggle.style.display = allowed ? 'inline-block' : 'none';
                     toggle.title = allowed ? 'Upload defective-meter CSV' : 'Not authorised to publish';
+                }
+                const syncBtn = document.getElementById('defectiveCloudSyncBtn');
+                if (syncBtn) {
+                    syncBtn.style.display = (canSync || allowed) ? 'inline-block' : 'none';
                 }
                 if (btn) btn.disabled = !allowed;
                 if (allowed) {
@@ -2214,6 +2245,57 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
                 }
             }
 
+            const syncBtn = document.getElementById('defectiveCloudSyncBtn');
+            if (syncBtn && !syncBtn.dataset.bound) {
+                syncBtn.dataset.bound = 'true';
+                syncBtn.addEventListener('click', async function (ev) {
+                    if (ev && ev.preventDefault) ev.preventDefault();
+                    const conf = confirm("Sync Defective Meter from Google Sheet now?\n\nThis will download the latest summary and details from Google Sheets, update the Supabase Cloud Storage cache, and refresh the dashboard.");
+                    if (!conf) return;
+
+                    syncBtn.disabled = true;
+                    const oldHtml = syncBtn.innerHTML;
+                    syncBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Syncing...';
+                    setLoading(true, 'Syncing Defective Meter from Google Sheets to Cloud Cache...');
+
+                    try {
+                        const res = await fetch('/api/defective/sync', {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+                        });
+                        const text = await res.text();
+                        let data = {};
+                        try {
+                            data = JSON.parse(text);
+                        } catch (_) {
+                            if (res.status === 401) {
+                                throw new Error('Session expired or unauthorized. Please re-login.');
+                            }
+                            throw new Error(`Server returned HTTP ${res.status}. Please make sure the local server is restarted.`);
+                        }
+                        if (!res.ok || data.status !== 'success') {
+                            throw new Error(data.message || 'Sync failed');
+                        }
+
+                        if (window.mzoDataHub && typeof window.mzoDataHub.refresh === 'function') {
+                            try { await window.mzoDataHub.refresh('CACHE_DEFECTIVE'); } catch (_) {}
+                            try { await window.mzoDataHub.refresh('CACHE_DEFECTIVE_DETAILS'); } catch (_) {}
+                        }
+
+                        setLoading(true, 'Reloading dashboard with fresh data...');
+                        await loadSummaryDashboard();
+                        alert("Sync complete!\n\n" + (data.message || "Defective Meter data refreshed successfully."));
+                    } catch (err) {
+                        alert("Sync failed: " + (err.message || String(err)));
+                    } finally {
+                        syncBtn.disabled = false;
+                        syncBtn.innerHTML = oldHtml;
+                        setLoading(false);
+                    }
+                });
+            }
+
             function showUploadPanel() {
                 if (card) {
                     card.classList.add('show');
@@ -2221,7 +2303,7 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
                 }
             }
 
-            if (localProfileAllowsUpload()) applyUploadVisibility(true);
+            if (localProfileAllowsUpload()) applyUploadVisibility(true, true);
 
             try {
                 const sess = await fetch('/api/session-check', {
@@ -2232,7 +2314,7 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
                     const sessData = await sess.json();
                     if (sessData && sessData.profile) {
                         localStorage.setItem('mzo_user_profile', JSON.stringify(sessData.profile));
-                        if (localProfileAllowsUpload()) applyUploadVisibility(true);
+                        if (localProfileAllowsUpload()) applyUploadVisibility(true, true);
                     }
                 }
             } catch (e) {}
@@ -2253,16 +2335,20 @@ function renderConsumerWiseModalContent(cccCode, cccName, originalMetricType) {
                     sheetMeta.detailsCsvUrl = data.detailsCsvUrl || sheetMeta.detailsCsvUrl;
                     sheetMeta.sheetScriptUrl = data.sheetScriptUrl || DEFECTIVE_SHEET_DEFAULTS.sheetScriptUrl;
                     const allowed = !!data.canUpload || localProfileAllowsUpload();
+                    const canSync = !!data.canSync || allowed;
                     sheetMeta.canUpload = allowed;
-                    applyUploadVisibility(allowed);
+                    applyUploadVisibility(allowed, canSync);
+                    if (data.stats) {
+                        primeKpisFromMeta(data.stats);
+                    }
                 } else if (res.status === 401) {
-                    applyUploadVisibility(localProfileAllowsUpload());
+                    applyUploadVisibility(localProfileAllowsUpload(), localProfileAllowsUpload());
                 } else if (localProfileAllowsUpload()) {
-                    applyUploadVisibility(true);
+                    applyUploadVisibility(true, true);
                 }
             } catch (e) {
                 console.warn('defective meta', e);
-                applyUploadVisibility(localProfileAllowsUpload());
+                applyUploadVisibility(localProfileAllowsUpload(), localProfileAllowsUpload());
             }
             if (btn) {
                 btn.addEventListener('click', async function (ev) {

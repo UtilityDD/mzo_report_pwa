@@ -22,8 +22,9 @@
   <script src="mzo_data_hub.js"></script>
   <script src="mzo_scope.js?v=4"></script>
   <script src="mzo_presets_hub.js"></script>
-  <!-- noUiSlider CSS -->
+  <!-- noUiSlider CSS & JS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.js"></script>
 
 
   <style>
@@ -646,19 +647,25 @@
       margin: var(--spacing-xs) 0;
     }
 
-    /* Modal dialogs */
-    .modal {
+    /* Manual Copy Modal */
+    #copyModal {
       position: fixed;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
       background: rgba(0, 0, 0, 0.5);
-      display: flex;
+      display: none;
       align-items: center;
       justify-content: center;
-      z-index: 1000;
+      z-index: 1060;
       padding: var(--spacing-md);
+    }
+
+    /* Ensure Bootstrap modals stay completely hidden and never intercept clicks when not open */
+    .modal:not(.show):not(#copyModal) {
+      display: none !important;
+      pointer-events: none !important;
     }
 
 
@@ -865,10 +872,16 @@
       height: 100%;
       background: rgba(255, 255, 255, 0.8);
       z-index: 9999;
-      display: flex;
+      display: none;
+      pointer-events: none;
       align-items: center;
       justify-content: center;
       transition: opacity 0.3s ease;
+    }
+
+    #loadingOverlay.active {
+      display: flex;
+      pointer-events: auto;
     }
 
     .modal-backdrop {
@@ -1110,6 +1123,9 @@
             id="reportDate">Loading...</span></div>
       </div>
       <div class="d-flex align-items-center gap-2">
+        <button type="button" id="loadExtCloudSyncBtn" class="btn btn-sm btn-success fw-bold px-2 py-1 rounded shadow-sm" style="display: none; font-size: 11px; background: #059669; border-color: #047857; color: white;" title="Sync data directly from source Google Sheet to Cloud Cache">
+          <i class="fas fa-cloud-upload-alt me-1"></i>Sync Sheet
+        </button>
         <span id="maxDateSpan" style="font-size: 0.75rem; color: #ffe600;"></span>
       </div>
     </div>
@@ -1789,6 +1805,7 @@
           });
         });
 
+        checkLoadExtCloudSyncAuth().catch(() => {});
         showLoading(false);
       } catch (error) {
         console.error("Error loading data:", error);
@@ -1797,6 +1814,68 @@
         alert("Failed to load data. Please check your internet connection and try again.");
         showLoading(false);
       }
+    }
+
+    async function checkLoadExtCloudSyncAuth() {
+      try {
+        const res = await fetch('/api/load-extension/meta', { credentials: 'same-origin' });
+        if (res.ok) {
+          const meta = await res.json();
+          const btn = document.getElementById('loadExtCloudSyncBtn');
+          if (btn && (meta.canSync || meta.isAdmin)) {
+            btn.style.display = 'inline-flex';
+          }
+        }
+      } catch (_) {}
+    }
+
+    const loadExtCloudSyncBtn = document.getElementById('loadExtCloudSyncBtn');
+    if (loadExtCloudSyncBtn && !loadExtCloudSyncBtn.dataset.bound) {
+      loadExtCloudSyncBtn.dataset.bound = 'true';
+      loadExtCloudSyncBtn.addEventListener('click', async () => {
+        const conf = confirm(
+          "Sync Pending Load Extension from Google Sheet now?\n\nThis will download the latest records from Google Sheets, update the Supabase Cloud Storage cache, and refresh the dashboard."
+        );
+        if (!conf) return;
+
+        loadExtCloudSyncBtn.disabled = true;
+        const originalHtml = loadExtCloudSyncBtn.innerHTML;
+        loadExtCloudSyncBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Syncing...';
+
+        try {
+          const res = await fetch('/api/load-extension/sync', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+          });
+          const text = await res.text();
+          let data = {};
+          try {
+            data = JSON.parse(text);
+          } catch (_) {
+            if (res.status === 401) throw new Error('Session expired. Please re-login.');
+            throw new Error(`Server returned HTTP ${res.status}.`);
+          }
+          if (!res.ok || data.status !== 'success') {
+            throw new Error(data.message || 'Sync failed');
+          }
+
+          if (window.mzoDataHub && typeof window.mzoDataHub.refresh === 'function') {
+            try { await window.mzoDataHub.refresh('CACHE_LOAD_EXT'); } catch (_) {}
+          }
+          try {
+            localStorage.removeItem('mzo_hub_ver_CACHE_LOAD_EXT');
+          } catch (_) {}
+
+          await fetchData();
+          alert("Sync complete!\n\n" + (data.message || "Load Extension refreshed successfully."));
+        } catch (err) {
+          alert("Sync failed: " + (err.message || String(err)));
+        } finally {
+          loadExtCloudSyncBtn.disabled = false;
+          loadExtCloudSyncBtn.innerHTML = originalHtml;
+        }
+      });
     }
 
 
@@ -3463,7 +3542,9 @@
     function showLoading(isLoading) {
       const overlay = document.getElementById('loadingOverlay');
       if (overlay) {
+        overlay.classList.toggle('active', !!isLoading);
         overlay.style.display = isLoading ? 'flex' : 'none';
+        overlay.style.pointerEvents = isLoading ? 'auto' : 'none';
       }
     }
 
@@ -3494,9 +3575,6 @@
       <button onclick="copyFromModal()" style="margin-top:10px;" class="btn btn-primary">Copy</button>
     </div>
   </div>
-
-  <!-- noUiSlider JS -->
-  <script src="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.js"></script>
 
   <div class="modal fade" id="urgentModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-lg" role="document">

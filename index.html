@@ -4435,18 +4435,10 @@
       applyTheme(newTheme);
       
       // Refresh chart if it exists to apply new theme colors
-      if (typeof window.mzoDataHub !== 'undefined') {
-        window.mzoDataHub.get('CACHE_LOSS').then(csvData => {
-          if (csvData) {
-            Papa.parse(csvData, {
-              header: true,
-              complete: function(results) {
-                const rawData = results.data.filter(row => row.CCC && row.YEAR && row.MONTH);
-                if (rawData.length > 0) updateHomepageChart(rawData);
-              }
-            });
-          }
-        });
+      if (window._homepageLossData && window._homepageLossData.length > 0) {
+        updateHomepageChart(window._homepageLossData);
+      } else if (typeof initExecutiveChart === 'function') {
+        initExecutiveChart();
       }
     }
 
@@ -6277,7 +6269,7 @@
         window.mzoDataHub.markSyncComplete();
       }
 
-      if (typeof initExecutiveChart === 'function') initExecutiveChart();
+      if (typeof initExecutiveChart === 'function') initExecutiveChart(0, true);
 
       setTimeout(() => {
         if (showOverlay && syncOverlay) syncOverlay.style.opacity = '0';
@@ -6321,62 +6313,72 @@
     const lossParams = ["CUM. INPUT (MU)", "CUM. DEMAND(MU)", "CUM. COLLEC. (MU)", "CUM. AT&C LOSS", "CUM. DIST. LOSS", "COLL. EFF."];
     const lossParamMap = { "CUM. AT&C LOSS": "AT&C Loss" };
 
-    async function initExecutiveChart(retryCount = 0) {
-      console.log(`initExecutiveChart: Attempt ${retryCount + 1}...`);
-      if (window.innerWidth <= 768) {
-        console.log("initExecutiveChart: Mobile view detected, skipping.");
-        return;
-      }
+    const LOSS_CHART_CACHE_KEY = 'mzo_home_loss_cache_v1';
+    window._homepageLossData = null;
+    let _silentLossRefreshScheduled = false;
 
-      const csvData = await window.mzoDataHub.get('CACHE_LOSS');
-      if (!csvData) {
-        if (retryCount < 5) {
-          console.log("initExecutiveChart: Data not ready, retrying in 2 seconds...");
-          setTimeout(() => initExecutiveChart(retryCount + 1), 2000);
-        } else {
-          console.error("initExecutiveChart: Failed to load data after 5 attempts.");
-          const loader = document.getElementById('homepageLossChartLoader');
-          if (loader) {
-            loader.querySelector('span').textContent = 'Failed to load trend data.';
-            const spinner = loader.querySelector('.spinner');
-            if (spinner) spinner.style.display = 'none';
-          }
+    function extractLossChartRows(parsedRows) {
+      if (!Array.isArray(parsedRows)) return [];
+      const out = [];
+      for (let i = 0; i < parsedRows.length; i++) {
+        const r = parsedRows[i];
+        if (r && r.CCC && r.YEAR && r.MONTH) {
+          out.push({
+            CCC: String(r.CCC).trim(),
+            YEAR: r.YEAR,
+            MONTH: r.MONTH,
+            "CUM. AT&C LOSS": r["CUM. AT&C LOSS"],
+            "CUM. DIST. LOSS": r["CUM. DIST. LOSS"]
+          });
         }
-        return;
       }
+      return out;
+    }
 
-      // Ensure the card is visible (override any stuck animation)
+    function renderLossChartRows(rawData) {
+      if (!Array.isArray(rawData) || rawData.length === 0) return false;
+      window._homepageLossData = rawData;
+
       const card = document.querySelector('.loss-chart-card');
       if (card) {
         card.style.opacity = '1';
         card.style.transform = 'translateY(0)';
       }
 
-      console.log("initExecutiveChart: Data ready, parsing...");
+      populateExecutiveFilter(rawData);
+      updateHomepageChart(rawData);
+
+      const filterElem = document.getElementById('executiveOfficeFilter');
+      if (filterElem && !filterElem.dataset.bound) {
+        filterElem.dataset.bound = 'true';
+        filterElem.addEventListener('change', () => {
+          if (window._homepageLossData) {
+            updateHomepageChart(window._homepageLossData);
+          }
+        });
+      }
+
+      const loader = document.getElementById('homepageLossChartLoader');
+      if (loader) {
+        loader.style.opacity = '0';
+        loader.style.display = 'none';
+      }
+      return true;
+    }
+
+    function parseAndRenderLossCsv(csvData) {
+      if (!csvData) return;
       Papa.parse(csvData, {
         header: true,
         complete: function(results) {
-          console.log("initExecutiveChart: CSV Parse complete. Rows:", results.data.length);
-          const rawData = results.data.filter(row => row.CCC && row.YEAR && row.MONTH);
-          console.log("initExecutiveChart: Filtered valid rows:", rawData.length);
-          
-          if (rawData.length === 0) {
-             console.error("initExecutiveChart: No valid rows found after filtering.");
-             const loader = document.getElementById('homepageLossChartLoader');
-             if (loader) {
-               loader.querySelector('span').textContent = 'No trend data available.';
-               const spinner = loader.querySelector('.spinner');
-               if (spinner) spinner.style.display = 'none';
-             }
-             return;
-          }
-
-          populateExecutiveFilter(rawData);
-          updateHomepageChart(rawData);
-          
-          const filterElem = document.getElementById('executiveOfficeFilter');
-          if (filterElem) {
-            filterElem.addEventListener('change', () => updateHomepageChart(rawData));
+          const rawData = extractLossChartRows(results.data);
+          if (rawData.length > 0) {
+            try {
+              localStorage.setItem(LOSS_CHART_CACHE_KEY, JSON.stringify(rawData));
+            } catch (e) {
+              console.warn("initExecutiveChart: Could not save localStorage cache:", e);
+            }
+            renderLossChartRows(rawData);
           }
         },
         error: function(err) {
@@ -6385,8 +6387,91 @@
       });
     }
 
+    function scheduleSilentLossRefresh() {
+      if (_silentLossRefreshScheduled) return;
+      _silentLossRefreshScheduled = true;
+      const idleCallback = window.requestIdleCallback || ((cb) => setTimeout(cb, 3500));
+      idleCallback(async () => {
+        try {
+          if (!window.mzoDataHub || typeof window.mzoDataHub._peek !== 'function') return;
+          const peeked = await window.mzoDataHub._peek('CACHE_LOSS');
+          if (peeked && (!window._lastLossCsvLen || peeked.length !== window._lastLossCsvLen)) {
+            window._lastLossCsvLen = peeked.length;
+            parseAndRenderLossCsv(peeked);
+          }
+        } catch (_) {}
+      });
+    }
+
+    async function initExecutiveChart(retryCount = 0, isBackground = false) {
+      if (window.innerWidth <= 768) {
+        console.log("initExecutiveChart: Mobile view detected, skipping.");
+        return;
+      }
+
+      // 1. FASTEST (0ms): If already in JS RAM memory, render immediately
+      if (window._homepageLossData && window._homepageLossData.length > 0 && !isBackground) {
+        renderLossChartRows(window._homepageLossData);
+        return;
+      }
+
+      // 2. INSTANT (< 5ms): Read synchronous localStorage cache
+      if (!isBackground) {
+        try {
+          const cachedJson = localStorage.getItem(LOSS_CHART_CACHE_KEY);
+          if (cachedJson) {
+            const cachedRows = JSON.parse(cachedJson);
+            if (Array.isArray(cachedRows) && cachedRows.length > 0) {
+              console.log("initExecutiveChart: Loaded instantly from local cache (" + cachedRows.length + " rows)");
+              renderLossChartRows(cachedRows);
+              scheduleSilentLossRefresh();
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn("initExecutiveChart: Error reading local cache:", e);
+        }
+      }
+
+      // 3. FAST LOCAL DISK (~20ms): Read from IndexedDB via _peek (zero network delay)
+      let csvData = null;
+      if (window.mzoDataHub && typeof window.mzoDataHub._peek === 'function') {
+        try {
+          csvData = await window.mzoDataHub._peek('CACHE_LOSS');
+        } catch (e) {
+          console.warn("initExecutiveChart: _peek error:", e);
+        }
+      }
+
+      if (csvData) {
+        window._lastLossCsvLen = csvData.length;
+        parseAndRenderLossCsv(csvData);
+        if (!isBackground) {
+          scheduleSilentLossRefresh();
+        }
+        return;
+      }
+
+      // 4. FALLBACK: First-time app load before any sync has run
+      if (retryCount < 6) {
+        setTimeout(() => initExecutiveChart(retryCount + 1, isBackground), 1200);
+      } else {
+        const loader = document.getElementById('homepageLossChartLoader');
+        if (loader && !window._homepageLossData) {
+          loader.querySelector('span').textContent = 'Waiting for data sync...';
+          const spinner = loader.querySelector('.spinner');
+          if (spinner) spinner.style.display = 'none';
+        }
+      }
+    }
+
     function populateExecutiveFilter(data) {
       const filter = document.getElementById('executiveOfficeFilter');
+      if (!filter) return;
+      const currentVal = filter.value;
+      if (filter.options && filter.options.length > 1 && filter.dataset.populated) {
+        return;
+      }
       let html = '<option value="MALDA ZONE" selected>MALDA ZONE</option>';
       
       Object.keys(hierarchyData).forEach(region => {
@@ -6411,17 +6496,23 @@
         });
       });
 
-      const allUnitsInData = new Set(data.map(r => r.CCC && r.CCC.trim()).filter(Boolean));
-      const unmappedUnits = [...allUnitsInData].filter(u => !mappedUnits.has(u)).sort();
+      if (Array.isArray(data)) {
+        const allUnitsInData = new Set(data.map(r => r.CCC && r.CCC.trim()).filter(Boolean));
+        const unmappedUnits = [...allUnitsInData].filter(u => !mappedUnits.has(u)).sort();
 
-      if (unmappedUnits.length > 0) {
-        html += `<option value="" disabled>-- UNMAPPED / OTHER --</option>`;
-        unmappedUnits.forEach(u => {
-          html += `<option value="${u}">-- ${u}</option>`;
-        });
+        if (unmappedUnits.length > 0) {
+          html += `<option value="" disabled>-- UNMAPPED / OTHER --</option>`;
+          unmappedUnits.forEach(u => {
+            html += `<option value="${u}">-- ${u}</option>`;
+          });
+        }
       }
       
       filter.innerHTML = html;
+      filter.dataset.populated = 'true';
+      if (currentVal && Array.from(filter.options).some(o => o.value === currentVal)) {
+        filter.value = currentVal;
+      }
     }
 
     function formatLossPct(v) {
@@ -6511,7 +6602,8 @@
     }
 
     function updateHomepageChart(data) {
-      const office = document.getElementById('executiveOfficeFilter').value;
+      const filterElem = document.getElementById('executiveOfficeFilter');
+      const office = (filterElem && filterElem.value) ? filterElem.value : 'MALDA ZONE';
       const metrics = ["CUM. AT&C LOSS", "CUM. DIST. LOSS"];
       const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
       

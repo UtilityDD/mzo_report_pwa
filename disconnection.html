@@ -621,7 +621,7 @@
             .level-short { display: inline; }
             .filter-toggle { display: inline-flex; }
             .header-actions { gap: 6px; }
-            #refreshBtn { padding: 4px 8px; min-height: 30px; }
+            #cloudSyncBtn { padding: 4px 8px; min-height: 30px; }
             .osd-dates {
                 flex-wrap: nowrap;
                 overflow: hidden;
@@ -806,12 +806,12 @@
                         <span id="dataTimestamp">Loading source data...</span>
                     </div>
                 </div>
-                <div class="header-actions d-flex align-items-center">
+                <div class="header-actions d-flex align-items-center gap-1">
+                    <button id="cloudSyncBtn" class="btn btn-warning btn-sm d-flex align-items-center gap-1" style="display: none; font-weight: 500;" title="Sync latest data from Google Sheet to Cloud Cache">
+                        <i class="bi bi-cloud-arrow-up"></i> <span class="cloud-sync-label">Sync Sheet</span>
+                    </button>
                     <button type="button" class="btn btn-sm filter-toggle" id="filterToggle" aria-expanded="false" aria-controls="disconFilters" title="Filters">
                         <i class="bi bi-sliders"></i>
-                    </button>
-                    <button id="refreshBtn" class="btn btn-outline-light btn-sm d-flex align-items-center gap-1" title="Force refresh data from Google Sheet">
-                        <i class="bi bi-arrow-clockwise"></i> <span class="sync-label">Sync</span>
                     </button>
                 </div>
             </div>
@@ -1257,7 +1257,10 @@
 
         // Event bindings
         function bindEvents() {
-            document.getElementById('refreshBtn').addEventListener('click', forceSync);
+            const cloudSyncBtn = document.getElementById('cloudSyncBtn');
+            if (cloudSyncBtn) {
+                cloudSyncBtn.addEventListener('click', triggerCloudSync);
+            }
             const filterHead = document.getElementById('disconHeader');
             const filterToggle = document.getElementById('filterToggle');
             if (filterHead && filterToggle) {
@@ -1348,9 +1351,51 @@
             updateDashboard();
         }
 
+        async function primeKpisFromMeta() {
+            try {
+                const res = await fetch('/api/disconnection/meta');
+                if (!res.ok) return;
+                const meta = await res.json();
+                if (meta && meta.canSync) {
+                    const syncBtn = document.getElementById('cloudSyncBtn');
+                    if (syncBtn) syncBtn.style.display = 'inline-flex';
+                }
+                if (meta && meta.stats && (!rawConsumers || !rawConsumers.length)) {
+                    const s = meta.stats;
+                    const total = s.totalConsumers || 0;
+                    if (total > 0) {
+                        const totalEl = document.getElementById('val-total-count');
+                        if (totalEl) totalEl.textContent = formatNumber(total);
+                        const totalAmtEl = document.getElementById('val-total-amount');
+                        if (totalAmtEl) totalAmtEl.textContent = `₹${formatCurrency(s.totalOSD || 0)}`;
+
+                        setCountShare('val-fully-count', s.fullyPaid?.count || 0, total);
+                        const fullyAmtEl = document.getElementById('val-fully-amount');
+                        if (fullyAmtEl) fullyAmtEl.textContent = '₹' + formatCurrency(s.fullyPaid?.amount || 0);
+
+                        setCountShare('val-partial-count', s.partiallyPaid?.count || 0, total);
+                        const partAmtEl = document.getElementById('val-partial-amount');
+                        if (partAmtEl) partAmtEl.textContent = '₹' + formatCurrency(s.partiallyPaid?.amount || 0);
+
+                        setCountShare('val-discon-count', s.disconnected?.count || 0, total);
+                        const disconAmtEl = document.getElementById('val-discon-amount');
+                        if (disconAmtEl) disconAmtEl.textContent = '₹' + formatCurrency(s.disconnected?.amount || 0);
+
+                        setCountShare('val-noaction-count', s.noAction?.count || 0, total);
+                        const noactionAmtEl = document.getElementById('val-noaction-amount');
+                        if (noactionAmtEl) noactionAmtEl.textContent = '₹' + formatCurrency(s.noAction?.amount || 0);
+
+                        setCountShare('val-osd3-count', s.osd3kCount || 0, total);
+                        setCountShare('val-osd5-count', s.osd5kCount || 0, total);
+                    }
+                }
+            } catch (_) {}
+        }
+
         // Fetch data
         async function loadData() {
             showLoader("Loading tracked data...");
+            primeKpisFromMeta().catch(function() {});
             try {
                 let csvText = null;
                 if (typeof window.mzoDataHub !== 'undefined') {
@@ -1369,8 +1414,16 @@
                 }
 
                 if (!csvText) {
-                    console.log("No cache found, downloading directly from source Google Sheets...");
-                    const sourceUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv';
+                    console.log("No cache found, checking meta for fast origin URL...");
+                    let sourceUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv';
+                    try {
+                        const mRes = await fetch('/api/disconnection/meta');
+                        if (mRes.ok) {
+                            const mJson = await mRes.json();
+                            if (mJson && mJson.csvUrl) sourceUrl = mJson.csvUrl;
+                        }
+                    } catch (_) {}
+
                     const response = await fetch(sourceUrl);
                     if (!response.ok) throw new Error(`Fetch HTTP Status ${response.status}`);
                     csvText = await response.text();
@@ -1390,26 +1443,50 @@
             }
         }
 
-        async function forceSync() {
-            showLoader("Downloading latest updates from Google Sheets...");
+        async function triggerCloudSync() {
+            const ok = confirm("Sync latest Disconnection data from Google Sheets to Supabase Cloud Cache?\n\n(গুগল শিট থেকে ক্লাউড ক্যাশে নতুন ডেটা সিঙ্ক করবেন?)");
+            if (!ok) return;
+            const btn = document.getElementById('cloudSyncBtn');
+            const originalHtml = btn ? btn.innerHTML : '';
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Syncing...';
+            }
+            showLoader("Syncing latest data from Google Sheets to Cloud Cache...");
             try {
+                const res = await fetch('/api/disconnection/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+                });
+                const text = await res.text();
+                let data = {};
+                try {
+                    data = JSON.parse(text);
+                } catch (_) {
+                    if (res.status === 401) {
+                        throw new Error('Session expired or unauthorized. Please re-login.');
+                    }
+                    throw new Error(`Server returned HTTP ${res.status}`);
+                }
+                if (!res.ok || data.status !== 'success') {
+                    throw new Error(data.message || `HTTP ${res.status}`);
+                }
+                alert(data.message || 'Successfully synced data to cloud cache!');
                 if (typeof window.mzoDataHub !== 'undefined') {
                     await window.mzoDataHub.refresh('CACHE_DISCONNECTION');
                     const csvText = await window.mzoDataHub._peek('CACHE_DISCONNECTION');
-                    if (csvText) {
-                        parseCSV(csvText);
-                    }
+                    if (csvText) parseCSV(csvText);
                 } else {
-                    const sourceUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv';
-                    const response = await fetch(sourceUrl + '&t=' + Date.now());
-                    if (!response.ok) throw new Error(`HTTP Status ${response.status}`);
-                    const csvText = await response.text();
-                    parseCSV(csvText);
+                    await loadData();
                 }
             } catch (err) {
-                console.error("Force sync failed:", err);
-                alert("Synchronization failed: " + err.message);
+                console.error("Cloud sync failed:", err);
+                alert("Cloud Sync failed: " + err.message);
             } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
+                }
                 hideLoader();
             }
         }

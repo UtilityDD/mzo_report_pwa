@@ -395,6 +395,9 @@ function portalUserToClient(row) {
         'stock-allot-autho': row.stock_allot_autho || '',
         'stock-cancel-autho': row.stock_cancel_autho || '',
         'defective-upload-autho': row.defective_upload_autho || '',
+        'disconnection-sync-autho': row.disconnection_sync_autho || '',
+        'pending-mc-sync-autho': row.pending_mc_sync_autho || '',
+        'load-ext-sync-autho': row.load_ext_sync_autho || '',
         'si-autho': row.si_autho || '',
         'si-divisions': row.si_divisions || '',
         'sheets-autho': row.sheets_autho || '',
@@ -432,6 +435,15 @@ function clientUserToPortal(user) {
         ).trim(),
         defective_upload_autho: String(
             user['defective-upload-autho'] != null ? user['defective-upload-autho'] : (user.defective_upload_autho || '')
+        ).trim(),
+        disconnection_sync_autho: String(
+            user['disconnection-sync-autho'] != null ? user['disconnection-sync-autho'] : (user.disconnection_sync_autho || '')
+        ).trim(),
+        pending_mc_sync_autho: String(
+            user['pending-mc-sync-autho'] != null ? user['pending-mc-sync-autho'] : (user.pending_mc_sync_autho || '')
+        ).trim(),
+        load_ext_sync_autho: String(
+            user['load-ext-sync-autho'] != null ? user['load-ext-sync-autho'] : (user.load_ext_sync_autho || '')
         ).trim(),
         si_autho: String(user['si-autho'] != null ? user['si-autho'] : (user.si_autho || '')).trim(),
         si_divisions: String(user['si-divisions'] != null ? user['si-divisions'] : (user.si_divisions || '')).trim(),
@@ -1115,6 +1127,10 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
             'stock-upload-autho': '',
             'stock-allot-autho': '',
             'stock-cancel-autho': '',
+            'defective-upload-autho': '',
+            'disconnection-sync-autho': '',
+            'pending-mc-sync-autho': '',
+            'load-ext-sync-autho': '',
             'si-autho': '',
             'si-divisions': '',
             'sheets-autho': '',
@@ -1126,11 +1142,7 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
         };
 
         const dbRow = clientUserToPortal(newUser);
-        const inserted = await querySupabase(PORTAL_USERS_TABLE, {
-            schema: PORTAL_USERS_SCHEMA,
-            method: 'POST',
-            body: dbRow
-        });
+        const inserted = await insertPortalUserWithFallback(dbRow);
         const saved = Array.isArray(inserted) && inserted[0]
             ? portalUserToClient(inserted[0])
             : newUser;
@@ -1149,6 +1161,51 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
         res.status(500).json({ status: 'error', message: err.message });
     }
 });
+
+async function patchPortalUserWithFallback(username, dbRow) {
+    let payload = { ...dbRow };
+    for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+            return await querySupabase(
+                `${PORTAL_USERS_TABLE}?username=eq.${encodeURIComponent(username)}`,
+                {
+                    schema: PORTAL_USERS_SCHEMA,
+                    method: 'PATCH',
+                    body: payload
+                }
+            );
+        } catch (err) {
+            const m = err.message && err.message.match(/Could not find the '([^']+)' column/i);
+            if (m && m[1] && payload[m[1]] !== undefined) {
+                console.warn(`[Portal Users] DB table missing column '${m[1]}' - omitting from patch and retrying...`);
+                delete payload[m[1]];
+                continue;
+            }
+            throw err;
+        }
+    }
+}
+
+async function insertPortalUserWithFallback(dbRow) {
+    let payload = { ...dbRow };
+    for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+            return await querySupabase(PORTAL_USERS_TABLE, {
+                schema: PORTAL_USERS_SCHEMA,
+                method: 'POST',
+                body: payload
+            });
+        } catch (err) {
+            const m = err.message && err.message.match(/Could not find the '([^']+)' column/i);
+            if (m && m[1] && payload[m[1]] !== undefined) {
+                console.warn(`[Portal Users] DB table missing column '${m[1]}' - omitting from insert and retrying...`);
+                delete payload[m[1]];
+                continue;
+            }
+            throw err;
+        }
+    }
+}
 
 // 3. UPDATE a user
 app.post('/api/admin/users/update', requireAdmin, async (req, res) => {
@@ -1176,14 +1233,7 @@ app.post('/api/admin/users/update', requireAdmin, async (req, res) => {
 
         const dbRow = clientUserToPortal(merged);
         delete dbRow.username; // do not patch username
-        await querySupabase(
-            `${PORTAL_USERS_TABLE}?username=eq.${encodeURIComponent(users[idx].Username)}`,
-            {
-                schema: PORTAL_USERS_SCHEMA,
-                method: 'PATCH',
-                body: dbRow
-            }
-        );
+        await patchPortalUserWithFallback(users[idx].Username, dbRow);
         
         await initializeLocalUsers();
         
@@ -3988,67 +4038,484 @@ async function resolveDefectiveUser_(req) {
     return session;
 }
 
+const DEFECTIVE_META_FILE = path.join(NSC_DATA_DIR, 'defective_meta.json');
+let cachedRemoteDefectiveMeta_ = null;
+let lastRemoteDefectiveMetaFetch_ = 0;
+
+async function readDefectiveMeta_() {
+    try {
+        if (fs.existsSync(DEFECTIVE_META_FILE)) {
+            return JSON.parse(fs.readFileSync(DEFECTIVE_META_FILE, 'utf8'));
+        }
+    } catch (_) {}
+
+    const now = Date.now();
+    if (cachedRemoteDefectiveMeta_ && (now - lastRemoteDefectiveMetaFetch_ < 60000)) {
+        return cachedRemoteDefectiveMeta_;
+    }
+    const root = String(NEW_INSIGHT_URL || INSIGHT_URL || '').replace(/\/$/, '');
+    if (root) {
+        try {
+            const url = `${root}/storage/v1/object/public/reports/defective/meta.json`;
+            const r = await fetch(url);
+            if (r.ok) {
+                const data = await r.json();
+                cachedRemoteDefectiveMeta_ = data;
+                lastRemoteDefectiveMetaFetch_ = now;
+                return data;
+            }
+        } catch (_) {}
+    }
+    return null;
+}
+
+function canSyncDefective_(user) {
+    if (!user) return false;
+    if (isPortalAdmin_(user)) return true;
+    const flag = user['defective-upload-autho'] != null ? user['defective-upload-autho'] : user.defective_upload_autho;
+    if (flagAuthoYes_(flag)) return true;
+    const username = String((user.Username || user.username) || '').trim().toLowerCase();
+    return username === 'dm1';
+}
+
 app.get('/api/defective/meta', async (req, res) => {
     if (!req.user) {
         return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     }
     const user = await resolveDefectiveUser_(req);
     const canUpload = canUploadDefective_(user);
-    let uploadMeta = null;
+    const canSync = canSyncDefective_(user);
+    const meta = await readDefectiveMeta_();
+
     let summaryGid = DEFECTIVE_SUMMARY_GID;
     let detailsGid = DEFECTIVE_DETAILS_GID;
-    try {
-        const metaUrl =
-            DEFECTIVE_SHEET_SCRIPT_URL +
-            (DEFECTIVE_SHEET_SCRIPT_URL.includes('?') ? '&' : '?') +
-            'meta=1';
-        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const timer = ctrl ? setTimeout(() => ctrl.abort(), 4000) : null;
-        try {
-            const scriptRes = await fetch(metaUrl, ctrl ? { signal: ctrl.signal } : undefined);
-            if (scriptRes.ok) {
-                const parsed = JSON.parse(await scriptRes.text());
-                uploadMeta = (parsed && parsed.meta) || null;
-                if (parsed && parsed.summaryGid != null) summaryGid = Number(parsed.summaryGid) || summaryGid;
-                if (parsed && parsed.detailsGid != null) detailsGid = Number(parsed.detailsGid) || detailsGid;
-            }
-        } finally {
-            if (timer) clearTimeout(timer);
-        }
-    } catch (e) {}
-    const version =
-        (uploadMeta && (uploadMeta.uploadedAt || uploadMeta.reportAsOn)) || '';
+    const fallbackSummaryUrl = defectiveExportCsvUrl_(summaryGid);
+    const fallbackDetailsUrl = defectiveExportCsvUrl_(detailsGid);
+
+    const version = (meta && meta.version) || '';
+    const summaryCsvUrl = (meta && meta.summaryCsvUrl) ? meta.summaryCsvUrl : fallbackSummaryUrl;
+    const detailsCsvUrl = (meta && meta.detailsCsvUrl) ? meta.detailsCsvUrl : fallbackDetailsUrl;
+
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
     return res.json({
         status: 'success',
         canUpload,
+        canSync,
         isAdmin: isPortalAdmin_(user),
         sheetScriptUrl: canUpload && DEFECTIVE_SHEET_SCRIPT_URL ? DEFECTIVE_SHEET_SCRIPT_URL : '',
         spreadsheetId: DEFECTIVE_SPREADSHEET_ID,
-        summaryCsvUrl: defectiveExportCsvUrl_(summaryGid),
-        detailsCsvUrl: defectiveExportCsvUrl_(detailsGid),
+        summaryCsvUrl,
+        detailsCsvUrl,
         version: version || null,
-        uploadMeta,
-        setupHint: DEFECTIVE_SHEET_SCRIPT_URL
-            ? null
-            : 'Open the Defective Meter Google Sheet → Extensions → Apps Script → paste lib/defective_meter_publish.gs → Deploy as Web app (Anyone). Paste the /exec URL in the box on this page, or set Vercel env DEFECTIVE_SHEET_SCRIPT_URL.'
+        reportDate: (meta && meta.reportDate) || null,
+        stats: (meta && meta.stats) || null,
+        uploadMeta: (meta && meta.stats) || meta || null,
+        source: (meta && meta.source) || 'google_sheet',
+        setupHint: null
     });
 });
+
+app.post('/api/defective/sync', async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+    const user = await resolveDefectiveUser_(req);
+    if (!canSyncDefective_(user)) {
+        return res.status(403).json({
+            status: 'error',
+            message: 'Not authorized to sync defective meter data. Ask an admin to grant permission.'
+        });
+    }
+
+    try {
+        console.log(`[Defective Sync] Triggered by user: ${user.Username || user.username || 'unknown'}`);
+        const { syncDefectiveToSupabase } = require('./scripts/sync_defective_to_supabase');
+        const meta = await syncDefectiveToSupabase();
+
+        cachedRemoteDefectiveMeta_ = meta;
+        lastRemoteDefectiveMetaFetch_ = Date.now();
+
+        try {
+            await logAdminAction(req, 'sync_defective', {
+                target: 'reports/defective',
+                details: `Synced Defective Meter: ${meta.stats.totalDefective} meters (${meta.stats.summaryRows} summary, ${meta.stats.detailsRows} details)`
+            });
+        } catch (_) {}
+
+        return res.json({
+            status: 'success',
+            message: `Defective Meter sync complete! Total: ${meta.stats.totalDefective} meters.`,
+            meta
+        });
+    } catch (err) {
+        console.error('[Defective Sync] Failed:', err.message);
+        return res.status(500).json({
+            status: 'error',
+            message: `Sync failed: ${err.message}`
+        });
+    }
+});
+
+const DISCONNECTION_META_FILE = path.join(NSC_DATA_DIR, 'disconnection_meta.json');
+const DISCONNECTION_SHEET_FALLBACK_URL =
+    'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv';
+
+let cachedRemoteDisconMeta_ = null;
+let lastRemoteDisconMetaFetch_ = 0;
+
+async function readDisconnectionMeta_() {
+    try {
+        if (fs.existsSync(DISCONNECTION_META_FILE)) {
+            return JSON.parse(fs.readFileSync(DISCONNECTION_META_FILE, 'utf8'));
+        }
+    } catch (_) {}
+
+    const now = Date.now();
+    if (cachedRemoteDisconMeta_ && (now - lastRemoteDisconMetaFetch_ < 60000)) {
+        return cachedRemoteDisconMeta_;
+    }
+    const root = String(NEW_INSIGHT_URL || INSIGHT_URL || '').replace(/\/$/, '');
+    if (!root) return null;
+    try {
+        const url = `${root}/storage/v1/object/public/reports/disconnection/meta.json`;
+        const res = await fetch(url);
+        if (res.ok) {
+            cachedRemoteDisconMeta_ = await res.json();
+            lastRemoteDisconMetaFetch_ = now;
+            return cachedRemoteDisconMeta_;
+        }
+    } catch (_) {}
+    return cachedRemoteDisconMeta_;
+}
 
 const DISCONNECTION_FOLLOWUP_SCRIPT_URL = String(
     process.env.DISCONNECTION_FOLLOWUP_SCRIPT_URL ||
         'https://script.google.com/macros/s/AKfycbxaczauxohDew8CYAfus161TrdzJ0AG6lRvxmxjJyxqIyQwEUVtrNuXc9M3uHzon7CB/exec'
 ).trim();
 
-app.get('/api/disconnection/meta', (req, res) => {
+function canSyncDisconnection_(user) {
+    if (!user) return false;
+    if (isPortalAdmin_(user)) return true;
+    const flag = user['disconnection-sync-autho'] != null ? user['disconnection-sync-autho'] : user.disconnection_sync_autho;
+    if (flagAuthoYes_(flag)) return true;
+    const username = String((user.Username || user.username) || '').trim().toLowerCase();
+    if (username === 'dm1') return true;
+    const sheetsVal = String(user['sheets-autho'] || user.sheets_autho || '').trim().toLowerCase();
+    if (sheetsVal.includes('discon') || sheetsVal.includes('sync')) return true;
+    return false;
+}
+
+async function resolveDisconnectionUser_(req) {
+    const session = req.user || null;
+    try {
+        const users = await getLoginCredentials({ forceRefresh: true });
+        const key = String((session && session.Username) || '').trim().toLowerCase();
+        const fresh = users.find((u) => u.Username && String(u.Username).trim().toLowerCase() === key);
+        if (fresh) {
+            if (!isPortalAdmin_(fresh) && isPortalAdmin_(session)) {
+                fresh.role = session.role || 'admin';
+            }
+            return fresh;
+        }
+    } catch (e) {
+        console.warn('[Discon auth] profile refresh failed:', e.message);
+    }
+    return session;
+}
+
+app.get('/api/disconnection/meta', async (req, res) => {
     if (!req.user) {
         return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     }
-    res.setHeader('Cache-Control', 'private, max-age=60');
+    const user = await resolveDisconnectionUser_(req);
+    const canSync = canSyncDisconnection_(user);
+    const meta = await readDisconnectionMeta_();
+    res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
     return res.json({
         status: 'success',
-        sheetScriptUrl: DISCONNECTION_FOLLOWUP_SCRIPT_URL
+        canSync,
+        isAdmin: isPortalAdmin_(user),
+        sheetScriptUrl: DISCONNECTION_FOLLOWUP_SCRIPT_URL,
+        version: meta ? meta.version : null,
+        reportDate: meta ? meta.reportDate : null,
+        stats: meta ? meta.stats : null,
+        csvUrl: meta && meta.csvUrl ? meta.csvUrl : DISCONNECTION_SHEET_FALLBACK_URL,
+        source: meta ? meta.source : 'google_sheet'
     });
+});
+
+let isDisconSyncing_ = false;
+
+app.post('/api/disconnection/sync', async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+    const user = await resolveDisconnectionUser_(req);
+    if (!canSyncDisconnection_(user)) {
+        return res.status(403).json({
+            status: 'error',
+            message: 'Not authorized to sync disconnection data. Ask an admin to grant permission.'
+        });
+    }
+    if (isDisconSyncing_) {
+        return res.status(429).json({
+            status: 'error',
+            message: 'A cloud sync is already in progress. Please wait a moment.'
+        });
+    }
+
+    isDisconSyncing_ = true;
+    try {
+        console.log(`[Disconnection Sync] Triggered by user: ${user.Username || user.username || 'unknown'}`);
+        const { syncDisconnectionToSupabase } = require('./scripts/sync_disconnection_to_supabase');
+        const meta = await syncDisconnectionToSupabase();
+        cachedRemoteDisconMeta_ = meta;
+        lastRemoteDisconMetaFetch_ = Date.now();
+        await logActivity({
+            username: user.Username || user.username,
+            name: user.Name || user.name,
+            type: 'report_sync',
+            details: `Synced Disconnection Tracker: ${meta.stats.totalConsumers} rows`
+        });
+        return res.json({
+            status: 'success',
+            message: `Successfully synced ${meta.stats.totalConsumers} consumers from Google Sheets to Cloud Cache.`,
+            meta
+        });
+    } catch (err) {
+        console.error('[Disconnection Sync] Failed:', err.message);
+        return res.status(500).json({ status: 'error', message: err.message });
+    } finally {
+        isDisconSyncing_ = false;
+    }
+});
+
+// --- Pending Master Card Cloud Sync & Meta ---
+const PENDING_MC_META_FILE = path.join(NSC_DATA_DIR, 'pending_mc_meta.json');
+const PENDING_MC_SHEET_FALLBACK_URL =
+    'https://docs.google.com/spreadsheets/d/e/2PACX-1vQmOUW4jxUtEGWhPHaoNBsvpBcGzhHJZRUx_9mxFBp91sfg4yD8WIqIK_xv0vlFs2yP-Ljz09JW1U2c/pub?gid=0&single=true&output=csv';
+
+let cachedRemotePendingMcMeta_ = null;
+let lastRemotePendingMcMetaFetch_ = 0;
+
+async function readPendingMcMeta_() {
+    try {
+        if (fs.existsSync(PENDING_MC_META_FILE)) {
+            return JSON.parse(fs.readFileSync(PENDING_MC_META_FILE, 'utf8'));
+        }
+    } catch (_) {}
+
+    const now = Date.now();
+    if (cachedRemotePendingMcMeta_ && now - lastRemotePendingMcMetaFetch_ < 60000) {
+        return cachedRemotePendingMcMeta_;
+    }
+
+    const root = String(NEW_INSIGHT_URL || INSIGHT_URL || '').replace(/\/$/, '');
+    if (root) {
+        try {
+            const url = `${root}/storage/v1/object/public/reports/pending_mc/meta.json`;
+            const r = await fetch(url);
+            if (r.ok) {
+                const data = await r.json();
+                cachedRemotePendingMcMeta_ = data;
+                lastRemotePendingMcMetaFetch_ = now;
+                return data;
+            }
+        } catch (_) {}
+    }
+    return cachedRemotePendingMcMeta_;
+}
+
+function canSyncPendingMc_(user) {
+    if (!user) return false;
+    if (isPortalAdmin_(user)) return true;
+    const flag = user['pending-mc-sync-autho'] != null ? user['pending-mc-sync-autho'] : user.pending_mc_sync_autho;
+    if (flagAuthoYes_(flag)) return true;
+    const username = String((user.Username || user.username) || '').trim().toLowerCase();
+    if (username === 'dm1') return true;
+    const sheetsVal = String(user['sheets-autho'] || user.sheets_autho || '').trim().toLowerCase();
+    if (sheetsVal.includes('mc') || sheetsVal.includes('pending') || sheetsVal.includes('sync')) return true;
+    return false;
+}
+
+app.get('/api/pending-mc/meta', async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+    const user = await resolveDisconnectionUser_(req);
+    const canSync = canSyncPendingMc_(user);
+    const meta = await readPendingMcMeta_();
+    res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
+    return res.json({
+        status: 'success',
+        canSync,
+        isAdmin: isPortalAdmin_(user),
+        version: meta ? meta.version : null,
+        reportDate: meta ? meta.reportDate : null,
+        stats: meta ? meta.stats : null,
+        csvUrl: meta && meta.csvUrl ? meta.csvUrl : PENDING_MC_SHEET_FALLBACK_URL,
+        source: meta ? meta.source : 'google_sheet'
+    });
+});
+
+let isPendingMcSyncing_ = false;
+
+app.post('/api/pending-mc/sync', async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+    const user = await resolveDisconnectionUser_(req);
+    if (!canSyncPendingMc_(user)) {
+        return res.status(403).json({
+            status: 'error',
+            message: 'Not authorized to sync Pending Master Card data. Ask an admin to grant permission.'
+        });
+    }
+    if (isPendingMcSyncing_) {
+        return res.status(429).json({
+            status: 'error',
+            message: 'A sync is already in progress. Please wait a moment.'
+        });
+    }
+
+    isPendingMcSyncing_ = true;
+    try {
+        console.log(`[Pending MC Sync] Triggered by user: ${user.Username || user.username || 'unknown'}`);
+        const { syncPendingMcToSupabase } = require('./scripts/sync_pending_mc_to_supabase');
+        const meta = await syncPendingMcToSupabase();
+        cachedRemotePendingMcMeta_ = meta;
+        lastRemotePendingMcMetaFetch_ = Date.now();
+        await logActivity({
+            username: user.Username || user.username,
+            name: user.Name || user.name,
+            type: 'report_sync',
+            details: `Synced Pending Master Card: ${meta.stats.totalPending} records`
+        });
+        return res.json({
+            status: 'success',
+            message: `Successfully synced ${meta.stats.totalPending} Pending MC records to Cloud Cache.`,
+            meta
+        });
+    } catch (err) {
+        console.error('[Pending MC Sync] Failed:', err.message);
+        return res.status(500).json({ status: 'error', message: err.message });
+    } finally {
+        isPendingMcSyncing_ = false;
+    }
+});
+
+// --- Pending Load Extension Cloud Sync & Meta ---
+const LOAD_EXT_META_FILE = path.join(NSC_DATA_DIR, 'load_ext_meta.json');
+const LOAD_EXT_SHEET_FALLBACK_URL =
+    'https://docs.google.com/spreadsheets/d/e/2PACX-1vQP_B-Zl5XhnYkmJiDXKB7B8ksrRRezuLrRqTzEPz4lEw_yDcpGOTnmm0oI8dW9apwuHg9yGqaAqjDS/pub?gid=0&single=true&output=csv';
+
+let cachedRemoteLoadExtMeta_ = null;
+let lastRemoteLoadExtMetaFetch_ = 0;
+
+async function readLoadExtMeta_() {
+    try {
+        if (fs.existsSync(LOAD_EXT_META_FILE)) {
+            return JSON.parse(fs.readFileSync(LOAD_EXT_META_FILE, 'utf8'));
+        }
+    } catch (_) {}
+
+    const now = Date.now();
+    if (cachedRemoteLoadExtMeta_ && now - lastRemoteLoadExtMetaFetch_ < 60000) {
+        return cachedRemoteLoadExtMeta_;
+    }
+
+    const root = String(NEW_INSIGHT_URL || INSIGHT_URL || '').replace(/\/$/, '');
+    if (root) {
+        try {
+            const url = `${root}/storage/v1/object/public/reports/load_extension/meta.json`;
+            const r = await fetch(url);
+            if (r.ok) {
+                const data = await r.json();
+                cachedRemoteLoadExtMeta_ = data;
+                lastRemoteLoadExtMetaFetch_ = now;
+                return data;
+            }
+        } catch (_) {}
+    }
+    return cachedRemoteLoadExtMeta_;
+}
+
+function canSyncLoadExt_(user) {
+    if (!user) return false;
+    if (isPortalAdmin_(user)) return true;
+    const flag = user['load-ext-sync-autho'] != null ? user['load-ext-sync-autho'] : user.load_ext_sync_autho;
+    if (flagAuthoYes_(flag)) return true;
+    const username = String((user.Username || user.username) || '').trim().toLowerCase();
+    if (username === 'dm1') return true;
+    const sheetsVal = String(user['sheets-autho'] || user.sheets_autho || '').trim().toLowerCase();
+    if (sheetsVal.includes('load') || sheetsVal.includes('ext') || sheetsVal.includes('sync')) return true;
+    return false;
+}
+
+app.get('/api/load-extension/meta', async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+    const user = await resolveDisconnectionUser_(req);
+    const canSync = canSyncLoadExt_(user);
+    const meta = await readLoadExtMeta_();
+    res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
+    return res.json({
+        status: 'success',
+        canSync,
+        isAdmin: isPortalAdmin_(user),
+        version: meta ? meta.version : null,
+        reportDate: meta ? meta.reportDate : null,
+        stats: meta ? meta.stats : null,
+        csvUrl: meta && meta.csvUrl ? meta.csvUrl : LOAD_EXT_SHEET_FALLBACK_URL,
+        source: meta ? meta.source : 'google_sheet'
+    });
+});
+
+let isLoadExtSyncing_ = false;
+
+app.post('/api/load-extension/sync', async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+    const user = await resolveDisconnectionUser_(req);
+    if (!canSyncLoadExt_(user)) {
+        return res.status(403).json({
+            status: 'error',
+            message: 'Not authorized to sync Load Extension data. Ask an admin to grant permission.'
+        });
+    }
+    if (isLoadExtSyncing_) {
+        return res.status(429).json({
+            status: 'error',
+            message: 'A sync is already in progress. Please wait a moment.'
+        });
+    }
+
+    isLoadExtSyncing_ = true;
+    try {
+        console.log(`[Load Extension Sync] Triggered by user: ${user.Username || user.username || 'unknown'}`);
+        const { syncLoadExtToSupabase } = require('./scripts/sync_load_ext_to_supabase');
+        const meta = await syncLoadExtToSupabase();
+        cachedRemoteLoadExtMeta_ = meta;
+        lastRemoteLoadExtMetaFetch_ = Date.now();
+        await logActivity({
+            username: user.Username || user.username,
+            name: user.Name || user.name,
+            type: 'report_sync',
+            details: `Synced Load Extension: ${meta.stats.totalPending} applications`
+        });
+        return res.json({
+            status: 'success',
+            message: `Successfully synced ${meta.stats.totalPending} Load Extension applications to Cloud Cache.`,
+            meta
+        });
+    } catch (err) {
+        console.error('[Load Extension Sync] Failed:', err.message);
+        return res.status(500).json({ status: 'error', message: err.message });
+    } finally {
+        isLoadExtSyncing_ = false;
+    }
 });
 
 const NSC_FOLLOWUP_SCRIPT_URL = String(
@@ -4104,31 +4571,52 @@ app.get('/api/hub/versions', async (req, res) => {
     }
 
     try {
-        const metaUrl =
-            DEFECTIVE_SHEET_SCRIPT_URL +
-            (DEFECTIVE_SHEET_SCRIPT_URL.includes('?') ? '&' : '?') +
-            'meta=1';
-        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const timer = ctrl ? setTimeout(() => ctrl.abort(), 4000) : null;
-        let uploadMeta = null;
-        try {
-            const scriptRes = await fetch(metaUrl, ctrl ? { signal: ctrl.signal } : undefined);
-            if (scriptRes.ok) {
-                const parsed = JSON.parse(await scriptRes.text());
-                uploadMeta = (parsed && parsed.meta) || null;
-            }
-        } finally {
-            if (timer) clearTimeout(timer);
+        const disconMeta = await readDisconnectionMeta_();
+        if (disconMeta && disconMeta.version) {
+            versions.CACHE_DISCONNECTION = disconMeta.version;
+            csvUrls.CACHE_DISCONNECTION = disconMeta.csvUrl || DISCONNECTION_SHEET_FALLBACK_URL;
         }
-        const defVer = (uploadMeta && (uploadMeta.uploadedAt || uploadMeta.reportAsOn)) || '';
-        if (defVer) {
-            versions.CACHE_DEFECTIVE = defVer;
-            versions.CACHE_DEFECTIVE_DETAILS = defVer;
+    } catch (e) {
+        console.warn('[Hub versions] Disconnection:', e.message);
+    }
+
+    try {
+        const defMeta = await readDefectiveMeta_();
+        if (defMeta && defMeta.version) {
+            versions.CACHE_DEFECTIVE = defMeta.version;
+            versions.CACHE_DEFECTIVE_DETAILS = defMeta.version;
+            csvUrls.CACHE_DEFECTIVE = defMeta.summaryCsvUrl || defectiveExportCsvUrl_(DEFECTIVE_SUMMARY_GID);
+            csvUrls.CACHE_DEFECTIVE_DETAILS = defMeta.detailsCsvUrl || defectiveExportCsvUrl_(DEFECTIVE_DETAILS_GID);
+        } else {
+            csvUrls.CACHE_DEFECTIVE = defectiveExportCsvUrl_(DEFECTIVE_SUMMARY_GID);
+            csvUrls.CACHE_DEFECTIVE_DETAILS = defectiveExportCsvUrl_(DEFECTIVE_DETAILS_GID);
         }
-        csvUrls.CACHE_DEFECTIVE = defectiveExportCsvUrl_(DEFECTIVE_SUMMARY_GID);
-        csvUrls.CACHE_DEFECTIVE_DETAILS = defectiveExportCsvUrl_(DEFECTIVE_DETAILS_GID);
     } catch (e) {
         console.warn('[Hub versions] Defective:', e.message);
+    }
+
+    try {
+        const mcMeta = await readPendingMcMeta_();
+        if (mcMeta && mcMeta.version) {
+            versions.CACHE_PENDING_MC = mcMeta.version;
+            csvUrls.CACHE_PENDING_MC = mcMeta.csvUrl || PENDING_MC_SHEET_FALLBACK_URL;
+        } else {
+            csvUrls.CACHE_PENDING_MC = PENDING_MC_SHEET_FALLBACK_URL;
+        }
+    } catch (e) {
+        console.warn('[Hub versions] Pending MC:', e.message);
+    }
+
+    try {
+        const leMeta = await readLoadExtMeta_();
+        if (leMeta && leMeta.version) {
+            versions.CACHE_LOAD_EXT = leMeta.version;
+            csvUrls.CACHE_LOAD_EXT = leMeta.csvUrl || LOAD_EXT_SHEET_FALLBACK_URL;
+        } else {
+            csvUrls.CACHE_LOAD_EXT = LOAD_EXT_SHEET_FALLBACK_URL;
+        }
+    } catch (e) {
+        console.warn('[Hub versions] Load Extension:', e.message);
     }
 
     try {
