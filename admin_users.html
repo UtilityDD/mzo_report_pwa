@@ -2007,6 +2007,12 @@
           <h3>Visits</h3>
           <div class="value" id="kpiTodayVisits">-</div>
         </div>
+      <div class="kpi-card" onclick="switchTab('approvalsTab')" style="cursor: pointer;" title="View Pending Approvals Queue">
+        <div class="kpi-icon" style="background: rgba(245, 158, 11, 0.14); color: #f59e0b;"><i class="fas fa-user-clock"></i></div>
+        <div class="kpi-details">
+          <h3>Pending</h3>
+          <div class="value" id="kpiPendingApprovals">0</div>
+        </div>
       </div>
     </div>
 
@@ -2014,6 +2020,9 @@
     <div class="tabs-container">
       <div class="tabs-header">
         <button class="tab-btn active" data-tab="usersTab" onclick="switchTab('usersTab')">Users</button>
+        <button class="tab-btn" data-tab="approvalsTab" onclick="switchTab('approvalsTab')">
+          Approvals <span class="badge" id="pendingApprovalsBadge" style="display:none; background:#f59e0b; color:#fff; font-size:10px; padding:2px 6px; border-radius:10px; margin-left:4px;">0</span>
+        </button>
         <button class="tab-btn" data-tab="sourcesTab" onclick="switchTab('sourcesTab')">Sources</button>
         <button class="tab-btn" data-tab="logsTab" onclick="switchTab('logsTab')">Activity</button>
         <button class="tab-btn" data-tab="uniqueVisitorsTab" onclick="switchTab('uniqueVisitorsTab')">Visitors</button>
@@ -2036,6 +2045,21 @@
 
         <div class="user-list" id="userList">
           <div class="user-empty">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Approvals Queue Tab Content -->
+      <div id="approvalsTab" class="tab-content">
+        <div class="actions-bar" style="margin-bottom: 16px;">
+          <div>
+            <h2 style="font-size: 16px; font-weight: 700; color: var(--text-main);"><i class="fas fa-shield-cat" style="color: #f59e0b; margin-right: 6px;"></i> Google & Portal Registration Approvals</h2>
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Review new Google and manual accounts awaiting authorization, assign Office Hierarchy, and grant permissions.</p>
+          </div>
+          <button class="btn btn-secondary" onclick="loadUsers().then(renderApprovalsQueue)"><i class="fas fa-arrows-rotate"></i> Refresh Queue</button>
+        </div>
+
+        <div id="approvalsListContainer">
+          <div class="user-empty">Loading approval queue…</div>
         </div>
       </div>
 
@@ -2316,6 +2340,21 @@
                   <select id="roleInput">
                     <option value="">User (Standard)</option>
                     <option value="admin">Admin (Full Access)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row" style="margin-top: 8px;">
+                <div class="form-group">
+                  <label for="emailInput">Email (Google / Official)</label>
+                  <input type="email" id="emailInput" placeholder="officer@gmail.com" />
+                </div>
+                <div class="form-group">
+                  <label for="userStatusInput">Account Status</label>
+                  <select id="userStatusInput">
+                    <option value="active">Active (Approved)</option>
+                    <option value="pending">Pending Review</option>
+                    <option value="suspended">Suspended</option>
+                    <option value="rejected">Rejected</option>
                   </select>
                 </div>
               </div>
@@ -2710,6 +2749,9 @@
       if (tabId === 'sourcesTab') {
         ensureSources();
       }
+      if (tabId === 'approvalsTab') {
+        renderApprovalsQueue();
+      }
       if (tabId === 'powerMapTab') {
         loadSubstationsForDropdowns();
       }
@@ -3001,6 +3043,7 @@
         if (data.status === 'success') {
           usersData = data.users || [];
           renderUsers();
+          renderApprovalsQueue();
           refreshUsernameDatalist();
           updateKPIs();
           updateVisitorsTable();
@@ -3037,6 +3080,15 @@
     function updateKPIs() {
       document.getElementById('kpiTotalUsers').textContent = usersData.length;
       document.getElementById('kpiTotalAdmins').textContent = usersData.filter(u => u.role === 'admin').length;
+      
+      const pendingUsers = usersData.filter(u => u.user_status === 'pending');
+      const badge = document.getElementById('pendingApprovalsBadge');
+      if (badge) {
+        badge.textContent = pendingUsers.length;
+        badge.style.display = pendingUsers.length > 0 ? 'inline-block' : 'none';
+      }
+      const kpiPending = document.getElementById('kpiPendingApprovals');
+      if (kpiPending) kpiPending.textContent = pendingUsers.length;
       
       // Calculate today's logins and page visits
       const todayStr = new Date().toISOString().split('T')[0];
@@ -3213,6 +3265,16 @@
         const roleBadge = user.role === 'admin'
           ? '<span class="badge badge-admin">Admin</span>'
           : '<span class="badge badge-user">User</span>';
+        const statusBadge = user.user_status === 'pending'
+          ? '<span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.35); font-weight: 600;"><i class="fas fa-clock"></i> Pending</span>'
+          : (user.user_status === 'rejected'
+            ? '<span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #ef4444;"><i class="fas fa-ban"></i> Rejected</span>'
+            : (user.user_status === 'suspended'
+              ? '<span class="badge" style="background: rgba(148, 163, 184, 0.2); color: #94a3b8;">Suspended</span>'
+              : ''));
+        const providerBadge = user.auth_provider === 'google'
+          ? '<span class="badge" style="background: rgba(66, 133, 244, 0.15); color: #4285F4; border: 1px solid rgba(66, 133, 244, 0.3);"><i class="fab fa-google"></i> Google</span>'
+          : '';
         const scope = [user.region_code, user.division_code, user.ccc_code].filter(Boolean).join(' · ') || '—';
         const open = openUsername === username;
         const used = usedStamp(username);
@@ -3222,6 +3284,8 @@
               <span class="user-id">${id}</span>
               <span class="user-name">${esc(user.Name || '—')}</span>
               <span class="user-used ${used.cls}" title="${esc(used.title)}">${esc(used.text)}</span>
+              ${providerBadge}
+              ${statusBadge}
               ${roleBadge}
               <i class="fas fa-chevron-down user-chevron" aria-hidden="true"></i>
             </button>
@@ -3982,6 +4046,10 @@
       document.getElementById('pinInput').value = '';
       document.getElementById('nameInput').value = user.Name || '';
       document.getElementById('roleInput').value = user.role || '';
+      const emailEl = document.getElementById('emailInput');
+      if (emailEl) emailEl.value = user.email || '';
+      const statusEl = document.getElementById('userStatusInput');
+      if (statusEl) statusEl.value = user.user_status || 'active';
       setSsAuthUIFromValue(user['ss-autho'] || '');
       document.getElementById('dtrAuthInput').value = user['dtr-autho'] || '';
       setUnitAuthUIFromValue('dd', user['dd-autho'] || '');
@@ -4032,6 +4100,10 @@
       if (sheetsEl) sheetsEl.value = '';
       const uploadListEl = document.getElementById('uploadListAuthInput');
       if (uploadListEl) uploadListEl.value = '';
+      const emailEl = document.getElementById('emailInput');
+      if (emailEl) emailEl.value = '';
+      const statusEl = document.getElementById('userStatusInput');
+      if (statusEl) statusEl.value = 'active';
       autofillSourceUsername = '';
       setExistingUserHint(false);
     }
@@ -4229,6 +4301,8 @@
         'si-autho': siAuth.mode,
         'si-divisions': siAuth.divisions,
         'sheets-autho': sheetsAuthoFromForm(),
+        email: (document.getElementById('emailInput')?.value || '').trim().toLowerCase(),
+        user_status: document.getElementById('userStatusInput')?.value || 'active',
         zone_code: document.getElementById('zoneCodeInput').value.trim(),
         region_code: document.getElementById('regionCodeInput').value.trim(),
         division_code: document.getElementById('divisionCodeInput').value.trim(),
@@ -4609,6 +4683,109 @@
         showToast(err.message, 'error');
         buttonEl.disabled = false;
         buttonEl.innerHTML = originalText;
+      }
+    }
+
+    // --- Approval Queue Actions ---
+    function renderApprovalsQueue() {
+      const container = document.getElementById('approvalsListContainer');
+      if (!container) return;
+      const pending = (usersData || []).filter(u => u.user_status === 'pending');
+
+      if (pending.length === 0) {
+        container.innerHTML = `
+          <div style="text-align: center; padding: 48px 20px; color: var(--text-muted); background: var(--card-bg); border-radius: 16px; border: 1px solid var(--card-border);">
+            <div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(16, 185, 129, 0.12); color: var(--success); display: inline-flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 14px;">
+              <i class="fas fa-check-double"></i>
+            </div>
+            <h3 style="font-size: 16px; font-weight: 600; color: var(--text-main); margin-bottom: 4px;">Queue is Clean</h3>
+            <p style="font-size: 13px;">No pending user registrations awaiting review.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = `
+        <div style="display: grid; gap: 14px;">
+          ${pending.map(u => {
+            const reqTime = u.requested_at ? new Date(u.requested_at).toLocaleString() : 'Recently';
+            const email = u.email || `${u.Username}@portal`;
+            return `
+              <div class="user-item" style="border-left: 4px solid #f59e0b; padding: 16px 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
+                  <div>
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                      <span style="font-size: 15px; font-weight: 600; color: var(--text-main);">${esc(u.Name || u.Username)}</span>
+                      <span class="badge" style="background: rgba(66, 133, 244, 0.15); color: #4285F4;"><i class="fab fa-google"></i> ${esc(u.auth_provider || 'google')}</span>
+                      <span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;"><i class="fas fa-clock"></i> Pending Review</span>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-muted); display: flex; gap: 16px; flex-wrap: wrap;">
+                      <span><i class="fas fa-envelope"></i> ${esc(email)}</span>
+                      <span><i class="fas fa-user-tag"></i> ID: <code>${esc(u.Username)}</code></span>
+                      <span><i class="fas fa-calendar-plus"></i> Requested: ${reqTime}</span>
+                    </div>
+                  </div>
+                  <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-primary" onclick="openApprovalModal('${esc(u.Username)}')"><i class="fas fa-user-check"></i> Configure & Approve</button>
+                    <button class="btn btn-secondary" onclick="approveUserQuick('${esc(u.Username)}')"><i class="fas fa-check"></i> Quick Approve</button>
+                    <button class="btn btn-danger" onclick="rejectPendingUser('${esc(u.Username)}')"><i class="fas fa-user-xmark"></i> Reject</button>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    function openApprovalModal(username) {
+      openEditUserModal(username);
+      const title = document.getElementById('modalTitle');
+      if (title) title.textContent = `Review & Approve: ${username}`;
+      const statusEl = document.getElementById('userStatusInput');
+      if (statusEl) statusEl.value = 'active';
+    }
+
+    async function approveUserQuick(username) {
+      if (!confirm(`Approve and activate account for ${username}?`)) return;
+      try {
+        const res = await fetch('/api/admin/users/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, user_status: 'active' })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+          showToast(data.message || 'User approved!', 'success');
+          await loadUsers();
+          renderApprovalsQueue();
+        } else {
+          showToast(data.message || 'Approval failed', 'error');
+        }
+      } catch (e) {
+        showToast(e.message, 'error');
+      }
+    }
+
+    async function rejectPendingUser(username) {
+      const reason = prompt(`Enter reason for declining ${username} (optional):`, 'Not authorized for portal access');
+      if (reason === null) return;
+      try {
+        const res = await fetch('/api/admin/users/reject', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, reason })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+          showToast(`Registration for ${username} rejected.`, 'info');
+          await loadUsers();
+          renderApprovalsQueue();
+        } else {
+          showToast(data.message || 'Failed to reject user', 'error');
+        }
+      } catch (e) {
+        showToast(e.message, 'error');
       }
     }
   </script>

@@ -404,7 +404,16 @@ function portalUserToClient(row) {
         zone_code: row.zone_code || '',
         region_code: row.region_code || '',
         division_code: row.division_code || '',
-        ccc_code: row.ccc_code || ''
+        ccc_code: row.ccc_code || '',
+        email: row.email || '',
+        auth_provider: row.auth_provider || 'pin',
+        user_status: row.user_status || 'active',
+        office_level: row.office_level || 'CCC',
+        upload_permissions: Array.isArray(row.upload_permissions) ? row.upload_permissions : [],
+        can_comment: !!row.can_comment,
+        requested_at: row.requested_at || '',
+        approved_by: row.approved_by || '',
+        approved_at: row.approved_at || ''
     };
 }
 
@@ -452,6 +461,17 @@ function clientUserToPortal(user) {
         region_code: String(user.region_code || '').trim(),
         division_code: String(user.division_code || '').trim(),
         ccc_code: String(user.ccc_code || '').trim(),
+        email: String(user.email || user.Email || '').trim().toLowerCase(),
+        auth_provider: String(user.auth_provider || user['auth-provider'] || 'pin').trim(),
+        user_status: String(user.user_status || user.status || 'active').trim().toLowerCase(),
+        office_level: String(user.office_level || user.officeLevel || 'CCC').trim().toUpperCase(),
+        upload_permissions: Array.isArray(user.upload_permissions)
+            ? user.upload_permissions
+            : (user.upload_permissions ? String(user.upload_permissions).split(',').map(s => s.trim()).filter(Boolean) : []),
+        can_comment: !!(user.can_comment || user['can-comment']),
+        requested_at: user.requested_at || new Date().toISOString(),
+        approved_by: String(user.approved_by || '').trim(),
+        approved_at: user.approved_at || null,
         updated_at: new Date().toISOString()
     };
 }
@@ -622,6 +642,9 @@ async function requireAuth(req, res, next) {
     if (
         pathName === '/login.html' || 
         pathName === '/api/login' || 
+        pathName === '/api/auth/google' || 
+        pathName === '/api/auth/pending-status' || 
+        pathName === '/api/auth/config' || 
         pathName === '/api/news' || 
         pathName === '/api/executive/briefing' || 
         pathName === '/sw.js' ||
@@ -813,7 +836,32 @@ app.post('/api/structures/update', (req, res) => {
     }
 });
 
-// API endpoint for User Login
+// Helper to issue signed stateless session cookie
+function issueSessionCookie(res, clientProfile) {
+    const payload = {
+        profile: clientProfile,
+        expiry: Date.now() + 24 * 60 * 60 * 1000
+    };
+    const payloadStr = Buffer.from(JSON.stringify(payload)).toString('base64');
+    const signature = crypto.createHmac('sha256', JWT_SECRET).update(payloadStr).digest('base64');
+    const token = `${payloadStr}.${signature}`;
+    res.setHeader('Set-Cookie', `mzo_session=${token}; Path=/; HttpOnly; Max-Age=${24 * 60 * 60}; SameSite=Lax`);
+    return token;
+}
+
+// Safely decode Google GIS JWT
+function decodeGoogleJwt(jwt) {
+    try {
+        const parts = String(jwt || '').split('.');
+        if (parts.length !== 3) return null;
+        const payloadBuf = Buffer.from(parts[1], 'base64url');
+        return JSON.parse(payloadBuf.toString('utf8'));
+    } catch (_) {
+        return null;
+    }
+}
+
+// API endpoint for User Login (Username + PIN)
 app.post('/api/login', async (req, res) => {
     const { username, pin } = req.body;
 
@@ -822,12 +870,30 @@ app.post('/api/login', async (req, res) => {
     }
 
     try {
-        // Always re-query Supabase so PIN changes apply immediately
-        // (do not trust stale data/users.json or in-memory cache for auth)
         const users = await getLoginCredentials({ forceRefresh: true });
         const matchedUser = matchLoginUser(users, username, pin);
 
         if (matchedUser) {
+            const status = String(matchedUser.user_status || 'active').toLowerCase();
+            if (status === 'pending') {
+                return res.status(403).json({
+                    status: 'pending',
+                    message: 'Your account is pending administrator approval. Please check back later.'
+                });
+            }
+            if (status === 'rejected') {
+                return res.status(403).json({
+                    status: 'rejected',
+                    message: 'Your account access request has been declined by an administrator.'
+                });
+            }
+            if (status === 'suspended') {
+                return res.status(403).json({
+                    status: 'suspended',
+                    message: 'Your account has been deactivated. Contact an administrator.'
+                });
+            }
+
             if (!isPinHash(matchedUser.PIN)) {
                 try {
                     const hashed = hashPin(pin);
@@ -846,26 +912,15 @@ app.post('/api/login', async (req, res) => {
                 }
             }
             const clientProfile = portalUserForClient(matchedUser);
+            issueSessionCookie(res, clientProfile);
             
-            // Generate a stateless signed session token
-            const payload = {
-                profile: clientProfile,
-                expiry: Date.now() + 24 * 60 * 60 * 1000
-            };
-            const payloadStr = Buffer.from(JSON.stringify(payload)).toString('base64');
-            const signature = require('crypto').createHmac('sha256', JWT_SECRET).update(payloadStr).digest('base64');
-            const token = `${payloadStr}.${signature}`;
-            
-            // Set session cookie
-            res.setHeader('Set-Cookie', `mzo_session=${token}; Path=/; HttpOnly; Max-Age=${24 * 60 * 60}; SameSite=Lax`);
             console.log(`[Auth] User logged in: ${matchedUser.Username} (${matchedUser.Name || 'No Name'})`);
             
-            // Log login event
             await logActivity({
                 username: matchedUser.Username,
                 name: matchedUser.Name || 'No Name',
                 type: 'login',
-                details: `Logged in from IP: ${req.ip || req.headers['x-forwarded-for'] || 'unknown'}`
+                details: `Logged in with PIN from IP: ${req.ip || req.headers['x-forwarded-for'] || 'unknown'}`
             });
             
             return res.status(200).json({
@@ -878,6 +933,234 @@ app.post('/api/login', async (req, res) => {
     } catch (err) {
         console.error("[Auth] Login error:", err.message);
         return res.status(500).json({ status: 'error', message: 'Internal Server Error during validation.' });
+    }
+});
+
+// Public auth configuration (Google Client ID & test capabilities)
+app.get('/api/auth/config', (req, res) => {
+    res.json({
+        googleClientId: process.env.GOOGLE_CLIENT_ID || fileConfig.googleClientId || '',
+        allowLocalTest: req.hostname === 'localhost' || req.hostname === '127.0.0.1'
+    });
+});
+
+// API endpoint for Google Sign-In & Registration
+app.post('/api/auth/google', async (req, res) => {
+    try {
+        const { credential, email: testEmail, name: testName, picture: testPicture } = req.body || {};
+        let email = '';
+        let name = '';
+        let picture = '';
+
+        if (credential) {
+            const decoded = decodeGoogleJwt(credential);
+            if (!decoded || !decoded.email) {
+                return res.status(400).json({ status: 'error', message: 'Invalid Google authentication token.' });
+            }
+            if (decoded.exp && decoded.exp * 1000 < Date.now()) {
+                return res.status(401).json({ status: 'error', message: 'Google authentication token has expired.' });
+            }
+            email = String(decoded.email).trim().toLowerCase();
+            name = String(decoded.name || decoded.given_name || email.split('@')[0]).trim();
+            picture = decoded.picture || '';
+        } else if (testEmail && (req.hostname === 'localhost' || req.hostname === '127.0.0.1')) {
+            email = String(testEmail).trim().toLowerCase();
+            name = String(testName || email.split('@')[0]).trim();
+            picture = testPicture || '';
+        } else {
+            return res.status(400).json({ status: 'error', message: 'Google authentication credential is required.' });
+        }
+
+        const ROOT_ADMIN_EMAILS = ['smartlinemanapp@gmail.com'];
+        const isRootAdmin = ROOT_ADMIN_EMAILS.includes(email.toLowerCase());
+
+        const users = await getLoginCredentials({ forceRefresh: true });
+        const existing = users.find(u => {
+            const uEmail = String(u.email || '').trim().toLowerCase();
+            const uUsername = String(u.Username || '').trim().toLowerCase();
+            return (uEmail && uEmail === email) || (uUsername === email.split('@')[0]);
+        });
+
+        if (existing) {
+            if (isRootAdmin) {
+                existing.role = 'admin';
+                existing.user_status = 'active';
+                existing.office_level = 'CE';
+            } else {
+                const status = String(existing.user_status || 'active').toLowerCase();
+                if (status === 'pending') {
+                    return res.status(200).json({
+                        status: 'pending',
+                        email,
+                        name: existing.Name || name,
+                        requested_at: existing.requested_at,
+                        message: 'Your registration is awaiting administrator approval.'
+                    });
+                }
+                if (status === 'rejected') {
+                    return res.status(403).json({
+                        status: 'rejected',
+                        message: 'Your access request was not approved by an administrator.'
+                    });
+                }
+                if (status === 'suspended') {
+                    return res.status(403).json({
+                        status: 'suspended',
+                        message: 'Your account has been deactivated.'
+                    });
+                }
+            }
+
+            // User is approved and active
+            try {
+                await patchPortalUserWithFallback(existing.Username, {
+                    email,
+                    auth_provider: 'google',
+                    role: isRootAdmin ? 'admin' : (existing.role || 'viewer'),
+                    user_status: 'active',
+                    last_login: new Date().toISOString()
+                });
+            } catch (e) {
+                console.warn('[Google Auth] updating user email failed:', e.message);
+            }
+
+            const clientProfile = portalUserForClient(existing);
+            if (isRootAdmin) clientProfile.role = 'admin';
+            issueSessionCookie(res, clientProfile);
+
+            await logActivity({
+                username: existing.Username,
+                name: existing.Name || name,
+                type: 'login',
+                details: `Signed in via Google (${email}) ${isRootAdmin ? '[ROOT ADMIN]' : ''}`
+            });
+
+            return res.status(200).json({
+                status: 'success',
+                profile: clientProfile
+            });
+        }
+
+        // New user: register or auto-provision root admin
+        let baseUsername = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '');
+        if (!baseUsername) baseUsername = 'user';
+        let candidateUsername = baseUsername;
+        let counter = 1;
+        while (users.some(u => String(u.Username).toLowerCase() === candidateUsername.toLowerCase())) {
+            candidateUsername = `${baseUsername}${counter++}`;
+        }
+
+        if (isRootAdmin) {
+            const rootAdminUser = {
+                Username: candidateUsername,
+                Name: name || 'Admin',
+                email: email,
+                auth_provider: 'google',
+                user_status: 'active',
+                role: 'admin',
+                office_level: 'CE',
+                sheets_autho: 'edit',
+                can_comment: true,
+                disconnection_sync_autho: 'Y',
+                pending_mc_sync_autho: 'Y',
+                load_ext_sync_autho: 'Y',
+                defective_upload_autho: 'Y',
+                nsc_upload_autho: 'Y',
+                stock_upload_autho: 'Y',
+                stock_allot_autho: 'Y',
+                stock_cancel_autho: 'Y',
+                upload_permissions: ['disconnection', 'pending_mc', 'load_ext', 'defective', 'nsc', 'stock', 'stock_allot', 'stock_cancel'],
+                requested_at: new Date().toISOString(),
+                approved_at: new Date().toISOString(),
+                approved_by: 'system_root'
+            };
+
+            try {
+                const dbRow = clientUserToPortal(rootAdminUser);
+                await insertPortalUserWithFallback(dbRow);
+                await initializeLocalUsers();
+            } catch (dbErr) {
+                console.error('[Google Auth] Failed to insert root admin:', dbErr.message);
+            }
+
+            const clientProfile = portalUserForClient(rootAdminUser);
+            issueSessionCookie(res, clientProfile);
+
+            await logActivity({
+                username: candidateUsername,
+                name: name || 'Admin',
+                type: 'user_management',
+                details: `Auto-provisioned Root Administrator via Google: ${email}`
+            });
+
+            return res.status(200).json({
+                status: 'success',
+                profile: clientProfile
+            });
+        }
+
+        const newPendingUser = {
+            Username: candidateUsername,
+            Name: name,
+            email: email,
+            auth_provider: 'google',
+            user_status: 'pending',
+            role: 'viewer',
+            requested_at: new Date().toISOString()
+        };
+
+        try {
+            const dbRow = clientUserToPortal(newPendingUser);
+            await insertPortalUserWithFallback(dbRow);
+            await initializeLocalUsers();
+        } catch (dbErr) {
+            console.error('[Google Auth] Failed to insert pending user:', dbErr.message);
+        }
+
+        await logActivity({
+            username: candidateUsername,
+            name: name,
+            type: 'user_management',
+            details: `New Google user requested registration: ${email}`
+        });
+
+        return res.status(200).json({
+            status: 'pending',
+            email,
+            name,
+            requested_at: newPendingUser.requested_at,
+            message: 'Registration received! Your account is pending administrator role approval.'
+        });
+    } catch (err) {
+        console.error('[Google Auth] Error:', err.message);
+        return res.status(500).json({ status: 'error', message: 'Failed to authenticate with Google.' });
+    }
+});
+
+// Check pending approval status
+app.get('/api/auth/pending-status', async (req, res) => {
+    try {
+        const email = String(req.query.email || '').trim().toLowerCase();
+        if (!email) {
+            return res.status(400).json({ status: 'error', message: 'Email required.' });
+        }
+        const users = await getLoginCredentials({ forceRefresh: true });
+        const user = users.find(u =>
+            String(u.email || '').toLowerCase() === email ||
+            String(u.Username || '').toLowerCase() === email.split('@')[0]
+        );
+        if (!user) {
+            return res.status(200).json({ status: 'not_found' });
+        }
+        return res.status(200).json({
+            status: 'success',
+            user_status: user.user_status || 'active',
+            role: user.role || 'viewer',
+            office_level: user.office_level || 'CCC',
+            approved_at: user.approved_at || null
+        });
+    } catch (err) {
+        return res.status(500).json({ status: 'error', message: err.message });
     }
 });
 
@@ -1165,7 +1448,7 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
 
 async function patchPortalUserWithFallback(username, dbRow) {
     let payload = { ...dbRow };
-    for (let attempt = 0; attempt < 5; attempt++) {
+    for (let attempt = 0; attempt < 20; attempt++) {
         try {
             return await querySupabase(
                 `${PORTAL_USERS_TABLE}?username=eq.${encodeURIComponent(username)}`,
@@ -1189,7 +1472,7 @@ async function patchPortalUserWithFallback(username, dbRow) {
 
 async function insertPortalUserWithFallback(dbRow) {
     let payload = { ...dbRow };
-    for (let attempt = 0; attempt < 5; attempt++) {
+    for (let attempt = 0; attempt < 20; attempt++) {
         try {
             return await querySupabase(PORTAL_USERS_TABLE, {
                 schema: PORTAL_USERS_SCHEMA,
@@ -1288,6 +1571,102 @@ app.post('/api/admin/users/delete', requireAdmin, async (req, res) => {
         res.json({ status: 'success', message: 'User deleted successfully.' });
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// 4b. APPROVE pending user
+app.post('/api/admin/users/approve', requireAdmin, async (req, res) => {
+    try {
+        const {
+            username,
+            role,
+            office_level,
+            zone_code,
+            region_code,
+            division_code,
+            ccc_code,
+            upload_permissions,
+            can_comment,
+            sheets_autho
+        } = req.body || {};
+
+        if (!username) {
+            return res.status(400).json({ status: 'error', message: 'Username is required.' });
+        }
+
+        const users = await getLoginCredentials({ forceRefresh: true });
+        const user = users.find(u => String(u.Username).toLowerCase() === username.trim().toLowerCase());
+        if (!user) {
+            return res.status(404).json({ status: 'error', message: 'User not found.' });
+        }
+
+        const updates = {
+            user_status: 'active',
+            approved_by: req.user.Username,
+            approved_at: new Date().toISOString(),
+            role: role || user.role || 'viewer',
+            office_level: office_level || user.office_level || 'CCC',
+            zone_code: zone_code !== undefined ? String(zone_code).trim() : (user.zone_code || ''),
+            region_code: region_code !== undefined ? String(region_code).trim() : (user.region_code || ''),
+            division_code: division_code !== undefined ? String(division_code).trim() : (user.division_code || ''),
+            ccc_code: ccc_code !== undefined ? String(ccc_code).trim() : (user.ccc_code || ''),
+            can_comment: can_comment !== undefined ? !!can_comment : !!user.can_comment,
+            sheets_autho: sheets_autho !== undefined ? String(sheets_autho).trim() : (user['sheets-autho'] || ''),
+            upload_permissions: Array.isArray(upload_permissions) ? upload_permissions : user.upload_permissions || []
+        };
+
+        if (Array.isArray(upload_permissions)) {
+            updates.disconnection_sync_autho = upload_permissions.includes('disconnection') ? 'Y' : '';
+            updates.pending_mc_sync_autho = upload_permissions.includes('pending_mc') ? 'Y' : '';
+            updates.load_ext_sync_autho = upload_permissions.includes('load_ext') ? 'Y' : '';
+            updates.defective_upload_autho = upload_permissions.includes('defective') ? 'Y' : '';
+            updates.nsc_upload_autho = upload_permissions.includes('nsc') ? 'Y' : '';
+            updates.stock_upload_autho = upload_permissions.includes('stock') ? 'Y' : '';
+            updates.stock_allot_autho = upload_permissions.includes('stock_allot') ? 'Y' : '';
+            updates.stock_cancel_autho = upload_permissions.includes('stock_cancel') ? 'Y' : '';
+        }
+
+        await patchPortalUserWithFallback(user.Username, updates);
+        await initializeLocalUsers();
+
+        await logActivity({
+            username: req.user.Username,
+            name: req.user.Name,
+            type: 'user_management',
+            details: `Approved user: ${user.Username} (Role: ${updates.role}, Office: ${updates.office_level})`
+        });
+
+        return res.json({ status: 'success', message: `User ${user.Username} approved and activated successfully.` });
+    } catch (err) {
+        console.error('[Admin Approve] Error:', err);
+        return res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// 4c. REJECT pending user registration
+app.post('/api/admin/users/reject', requireAdmin, async (req, res) => {
+    try {
+        const { username, reason } = req.body || {};
+        if (!username) {
+            return res.status(400).json({ status: 'error', message: 'Username is required.' });
+        }
+        await patchPortalUserWithFallback(username.trim(), {
+            user_status: 'rejected',
+            approved_by: req.user.Username,
+            approved_at: new Date().toISOString()
+        });
+        await initializeLocalUsers();
+
+        await logActivity({
+            username: req.user.Username,
+            name: req.user.Name,
+            type: 'user_management',
+            details: `Rejected registration for: ${username}${reason ? ` (Reason: ${reason})` : ''}`
+        });
+
+        return res.json({ status: 'success', message: `User ${username} registration rejected.` });
+    } catch (err) {
+        return res.status(500).json({ status: 'error', message: err.message });
     }
 });
 
