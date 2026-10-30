@@ -947,7 +947,7 @@ app.get('/api/auth/config', (req, res) => {
 // API endpoint for Google Sign-In & Registration
 app.post('/api/auth/google', async (req, res) => {
     try {
-        const { credential, email: testEmail, name: testName, picture: testPicture } = req.body || {};
+        const { credential, accessToken, email: testEmail, name: testName, picture: testPicture } = req.body || {};
         let email = '';
         let name = '';
         let picture = '';
@@ -963,6 +963,27 @@ app.post('/api/auth/google', async (req, res) => {
             email = String(decoded.email).trim().toLowerCase();
             name = String(decoded.name || decoded.given_name || email.split('@')[0]).trim();
             picture = decoded.picture || '';
+        } else if (accessToken) {
+            try {
+                const gRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                    headers: { Authorization: `Bearer ${accessToken}` }
+                });
+                if (!gRes.ok) {
+                    const errText = await gRes.text().catch(() => '');
+                    console.warn('[Google Auth] Failed to verify access token with Google API:', errText);
+                    return res.status(401).json({ status: 'error', message: 'Google authorization could not be verified.' });
+                }
+                const gProfile = await gRes.json();
+                if (!gProfile || !gProfile.email) {
+                    return res.status(400).json({ status: 'error', message: 'Google profile did not contain an email address.' });
+                }
+                email = String(gProfile.email).trim().toLowerCase();
+                name = String(gProfile.name || gProfile.given_name || email.split('@')[0]).trim();
+                picture = gProfile.picture || '';
+            } catch (fetchErr) {
+                console.error('[Google Auth] Error contacting Google userinfo API:', fetchErr);
+                return res.status(500).json({ status: 'error', message: 'Could not connect to Google for authentication verification.' });
+            }
         } else if (testEmail && (req.hostname === 'localhost' || req.hostname === '127.0.0.1')) {
             email = String(testEmail).trim().toLowerCase();
             name = String(testName || email.split('@')[0]).trim();

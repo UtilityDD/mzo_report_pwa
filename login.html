@@ -14,7 +14,7 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet" />
   <script src="/mzo_origin_redirect.js"></script>
   <script src="/mzo_app_update.js?v=87"></script>
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://accounts.google.com/gsi/client" async defer onload="window.initGoogleIdentityServices && window.initGoogleIdentityServices()"></script>
   <style>
     *, *::before, *::after {
       box-sizing: border-box;
@@ -860,8 +860,9 @@
     </div>
 
     <div class="google-btn-wrap" id="googleBtnContainer">
-      <!-- Official GIS Button or Styled Fallback Button -->
-      <div id="g_id_signin_mount" style="display:none; width: 100%;"></div>
+      <!-- Official GIS Button Mount -->
+      <div id="g_id_signin_mount" style="display:none; width: 100%; justify-content: center; margin-bottom: 6px;"></div>
+      <!-- Styled Action Button -->
       <button type="button" class="google-signin-btn" id="googleFallbackBtn">
         <svg class="google-icon" viewBox="0 0 24 24">
           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -871,6 +872,11 @@
         </svg>
         <span>Sign in with Google</span>
       </button>
+      <div style="text-align: center; margin-top: 6px;">
+        <button type="button" onclick="openGoogleChooserModal()" style="background: none; border: none; font-size: 11px; color: var(--text-desc); cursor: pointer; text-decoration: underline; padding: 2px 6px;">
+          Choose test account / Instant dev login
+        </button>
+      </div>
     </div>
 
     <div class="auth-divider">
@@ -1250,10 +1256,74 @@
       }
     }
 
-    // Google GIS Credential Handler
+    // Google GIS Credential Handler (JWT One-Tap or GIS Button)
     window.handleGoogleCredentialResponse = function(response) {
       if (response && response.credential) {
         handleGoogleAuthPayload({ credential: response.credential });
+      }
+    };
+
+    let googleTokenClient = null;
+
+    window.initGoogleIdentityServices = function() {
+      if (!authConfig.googleClientId || !window.google?.accounts) return;
+
+      // 1. Initialize OAuth 2.0 Token Client (Opens official Google account selection popup)
+      if (window.google.accounts.oauth2 && !googleTokenClient) {
+        try {
+          googleTokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: authConfig.googleClientId,
+            scope: 'email profile openid',
+            prompt: 'select_account',
+            callback: async (tokenResponse) => {
+              if (tokenResponse && tokenResponse.access_token) {
+                handleGoogleAuthPayload({ accessToken: tokenResponse.access_token });
+              } else if (tokenResponse && tokenResponse.error) {
+                console.warn('[Google Auth] OAuth token response error:', tokenResponse);
+                if (tokenResponse.error !== 'access_denied') {
+                  openGoogleChooserModal();
+                }
+              }
+            },
+            error_callback: (err) => {
+              console.warn('[Google Auth] OAuth popup error:', err);
+              openGoogleChooserModal();
+            }
+          });
+        } catch (err) {
+          console.warn('[Google Auth] OAuth2 init error:', err);
+        }
+      }
+
+      // 2. Initialize GIS ID Services (Render Button & One-Tap)
+      if (window.google.accounts.id) {
+        try {
+          google.accounts.id.initialize({
+            client_id: authConfig.googleClientId,
+            callback: window.handleGoogleCredentialResponse,
+            auto_select: false
+          });
+          const mount = document.getElementById('g_id_signin_mount');
+          if (mount) {
+            mount.innerHTML = '';
+            google.accounts.id.renderButton(mount, {
+              theme: 'outline',
+              size: 'large',
+              width: 320,
+              text: 'continue_with',
+              shape: 'pill'
+            });
+            setTimeout(() => {
+              if (mount.querySelector('iframe')) {
+                mount.style.display = 'flex';
+                const fallback = document.getElementById('googleFallbackBtn');
+                if (fallback) fallback.style.display = 'none';
+              }
+            }, 500);
+          }
+        } catch (err) {
+          console.warn('[Google Auth] GIS render error:', err);
+        }
       }
     };
 
@@ -1262,27 +1332,15 @@
       .then(r => r.json())
       .then(cfg => {
         authConfig = cfg;
-        if (cfg.googleClientId && window.google?.accounts?.id) {
-          google.accounts.id.initialize({
-            client_id: cfg.googleClientId,
-            callback: window.handleGoogleCredentialResponse,
-            auto_select: false
-          });
-          const mount = document.getElementById('g_id_signin_mount');
-          if (mount) {
-            google.accounts.id.renderButton(mount, {
-              theme: 'outline',
-              size: 'large',
-              width: 300,
-              text: 'continue_with',
-              shape: 'pill'
-            });
-            mount.style.display = 'block';
-            document.getElementById('googleFallbackBtn').style.display = 'none';
-          }
-        }
+        window.initGoogleIdentityServices();
       })
       .catch(() => {});
+
+    // Periodic check to ensure GIS mounts once script is cached
+    window.addEventListener('load', () => {
+      setTimeout(() => window.initGoogleIdentityServices(), 300);
+      setTimeout(() => window.initGoogleIdentityServices(), 1200);
+    });
 
     function openGoogleChooserModal() {
       const modal = document.getElementById('googleChooserModal');
@@ -1316,14 +1374,28 @@
       handleGoogleAuthPayload({ email, name: email.split('@')[0] });
     }
 
-    // Fallback or Test Google button click
-    document.getElementById('googleFallbackBtn')?.addEventListener('click', () => {
+    function triggerGoogleSignIn() {
+      if (googleTokenClient) {
+        try {
+          googleTokenClient.requestAccessToken({ prompt: 'select_account' });
+          return;
+        } catch (err) {
+          console.warn('[Google Auth] requestAccessToken error:', err);
+        }
+      }
       if (authConfig.googleClientId && window.google?.accounts?.id) {
-        google.accounts.id.prompt();
+        google.accounts.id.prompt((notification) => {
+          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+            openGoogleChooserModal();
+          }
+        });
       } else {
         openGoogleChooserModal();
       }
-    });
+    }
+
+    // Google sign in button click
+    document.getElementById('googleFallbackBtn')?.addEventListener('click', triggerGoogleSignIn);
 
     // Check if there was an active pending email in sessionStorage
     const lastPendingEmail = sessionStorage.getItem('mzo_pending_email');
