@@ -220,6 +220,8 @@ function isNetworkFirstPath(pathname) {
     pathname === '/stock.html' ||
     pathname === '/capex_all.html' ||
     pathname === '/mzo_data_hub.js' ||
+    pathname === '/mzo_theme.js' ||
+    pathname === '/mzo_theme.css' ||
     pathname === '/mzo_presets_hub.js' ||
     pathname === '/mzo_docket_briefing.js' ||
     pathname === '/mzo_scope.js' ||

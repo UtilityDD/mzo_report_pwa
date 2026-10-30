@@ -1033,70 +1033,42 @@
     }
 
     // Universal Theme Synchronization across Enterprise Workstation
+    // Pages load mzo_theme.js/css (shared tokens). We just tell the active stage to repaint.
     function syncThemeToStage() {
       const isDark = document.body.classList.contains('dark-theme');
-      const themeClass = isDark ? 'dark-theme' : 'light-theme';
       const val = isDark ? 'dark' : 'light';
       try {
         const iframe = document.getElementById('activeStageFrame');
-        if (iframe && iframe.contentWindow && iframe.contentWindow.document) {
-          const doc = iframe.contentWindow.document;
-
-          // 1. Sync HTML document attributes (Bootstrap 5 native theming)
-          if (doc.documentElement) {
-            doc.documentElement.setAttribute('data-bs-theme', val);
-            doc.documentElement.classList.remove('dark-theme', 'light-theme', 'dark', 'light');
-            doc.documentElement.classList.add(themeClass);
-            doc.documentElement.classList.add(val);
-          }
-
-          // 2. Sync Body element classes & Workstation embed flag
-          if (doc.body) {
-            doc.body.classList.remove('dark-theme', 'light-theme', 'dark', 'light', 'puja-theme');
-            doc.body.classList.add(themeClass);
-            doc.body.classList.add(val);
-            doc.body.classList.add('in-workstation');
-          }
-
-          // 3. Inject/update universal workstation theme adapter style block
-          let styleEl = doc.getElementById('mzo-universal-stage-theme');
-          if (!styleEl && doc.head) {
-            styleEl = doc.createElement('style');
-            styleEl.id = 'mzo-universal-stage-theme';
-            doc.head.appendChild(styleEl);
-          }
-          if (styleEl) {
-            styleEl.textContent = `
-              body.dark-theme, body.dark {
-                background-color: #0b1120 !important;
-                color: #f8fafc !important;
-              }
-              body.light-theme, body.light {
-                background-color: #f8fafc !important;
-                color: #0f172a !important;
-              }
-              body.dark-theme .card:not(.colored-kpi),
-              body.dark .card:not(.colored-kpi) {
-                background-color: #111c33 !important;
-                color: #f8fafc !important;
-                border-color: rgba(148, 163, 184, 0.14) !important;
-              }
-              body.light-theme .card:not(.colored-kpi),
-              body.light .card:not(.colored-kpi) {
-                background-color: #ffffff !important;
-                color: #0f172a !important;
-                border-color: rgba(203, 213, 225, 0.8) !important;
-              }
-            `;
-          }
-
-          // 4. Notify embedded scripts via CustomEvent
-          try {
-            iframe.contentWindow.dispatchEvent(new CustomEvent('mzo-theme-change', { detail: { theme: val } }));
-          } catch (_) {}
+        const win = iframe && iframe.contentWindow;
+        if (!win || !win.document) return;
+        if (win.MzoTheme) {
+          win.MzoTheme.apply(val);
+        } else {
+          // Fallback for pages that do not load the shared layer (e.g. admin_users.html)
+          const doc = win.document;
+          const themeClass = isDark ? 'dark-theme' : 'light-theme';
+          doc.documentElement.setAttribute('data-bs-theme', val);
+          [doc.documentElement, doc.body].forEach(el => {
+            if (!el) return;
+            el.classList.remove('dark-theme', 'light-theme', 'dark', 'light', 'puja-theme');
+            el.classList.add(themeClass, val);
+          });
+          try { win.dispatchEvent(new CustomEvent('mzo-theme-change', { detail: { theme: val } })); } catch (_) {}
         }
+        if (win.document.body) win.document.body.classList.add('in-workstation');
       } catch (e) {}
     }
+
+    // Follow theme changes made by a page's own toggle
+    window.addEventListener('storage', (e) => {
+      if (e.key !== 'theme' && e.key !== 'mzo_theme') return;
+      const next = e.newValue === 'light' ? 'light-theme' : 'dark-theme';
+      if (!document.body.classList.contains(next)) {
+        document.body.className = next;
+        updateThemeIcon(next);
+        syncThemeToStage();
+      }
+    });
 
     function toggleTheme() {
       const isDark = document.body.classList.contains('dark-theme');
