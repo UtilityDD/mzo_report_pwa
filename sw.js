@@ -81,6 +81,7 @@ const PRECACHE_ASSETS = [
   'media_news.html',
   'theft_assessment.html',
   'login.html',
+  'css/mzo_ui_core.css',
   'puja.html',
   'puja-newspaper.css',
   'icons/desktop-bg.webp',
