@@ -35,6 +35,9 @@
       --bg-sidebar-elevated: #162238;
       --bg-stage: #090e1a;
       --bg-header: #0e1628;
+      --bg-flyout: #111a2e;
+      --card-bg-elevated: #152238;
+      --card-border-hover: rgba(148, 163, 184, 0.25);
       --border-color: rgba(148, 163, 184, 0.12);
       --border-color-hover: rgba(148, 163, 184, 0.25);
       --text-main: #f8fafc;
@@ -52,6 +55,9 @@
       --bg-sidebar-elevated: #f1f5f9;
       --bg-stage: #edf2f7;
       --bg-header: #ffffff;
+      --bg-flyout: #ffffff;
+      --card-bg-elevated: #ffffff;
+      --card-border-hover: rgba(203, 213, 225, 0.9);
       --border-color: rgba(203, 213, 225, 0.8);
       --border-color-hover: rgba(148, 163, 184, 0.5);
       --text-main: #0f172a;
@@ -350,14 +356,16 @@
     /* Floating Flyout Menu on Hover */
     .group-flyout {
       position: fixed;
+      left: calc(var(--sidebar-width) + 6px);
+      top: 56px;
       display: none;
       opacity: 0;
       pointer-events: none;
       width: 290px;
       max-width: calc(100vw - 40px);
       max-height: calc(100vh - 24px);
-      background: var(--card-bg-elevated);
-      border: 1px solid var(--card-border-hover);
+      background: var(--bg-flyout);
+      border: 1px solid var(--border-color);
       border-radius: 12px;
       box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45), 0 2px 10px rgba(0, 0, 0, 0.25);
       backdrop-filter: blur(20px);
@@ -366,17 +374,22 @@
       flex-direction: column;
       overflow: hidden;
       transition: opacity 0.15s ease, transform 0.15s ease;
-      transform: translateX(-4px);
+      transform: translateX(4px);
     }
 
-    /* Invisible hover bridge */
+    .workstation-sidebar.collapsed .group-flyout {
+      left: calc(var(--sidebar-collapsed-width) + 6px);
+    }
+
+    /* Invisible hover bridge connecting sidebar item to flyout */
     .group-flyout::before {
       content: '';
       position: absolute;
       top: 0;
       bottom: 0;
-      left: -20px;
-      width: 20px;
+      left: -16px;
+      width: 18px;
+      pointer-events: auto;
     }
 
     .nav-group-item:hover > .group-flyout,
@@ -1575,6 +1588,82 @@
 };
 
     let activeModuleKey = 'admin_users';
+    let stageTimer = null;
+
+    // Toggle Left Sidebar (Desktop collapse & Mobile off-canvas drawer)
+    function toggleSidebar(forceState) {
+      const sidebar = document.getElementById('workstationSidebar');
+      if (!sidebar) return;
+      const isMobile = window.innerWidth <= 1024;
+      if (isMobile) {
+        const shouldOpen = typeof forceState === 'boolean' ? forceState : !sidebar.classList.contains('open');
+        sidebar.classList.toggle('open', shouldOpen);
+        const backdrop = document.getElementById('sidebarBackdrop');
+        if (backdrop) backdrop.classList.toggle('active', shouldOpen);
+      } else {
+        const shouldCollapse = typeof forceState === 'boolean' ? !forceState : !sidebar.classList.contains('collapsed');
+        sidebar.classList.toggle('collapsed', shouldCollapse);
+      }
+    }
+
+    // Filter Navigation Items via Search Input
+    function filterNavItems(query) {
+      const q = (query || '').toLowerCase().trim();
+      const groups = document.querySelectorAll('.nav-group-item');
+      groups.forEach(group => {
+        if (!q) {
+          group.style.display = '';
+          const items = group.querySelectorAll('.flyout-item-btn');
+          items.forEach(it => it.style.display = '');
+          return;
+        }
+        const groupTitle = (group.querySelector('.group-title')?.textContent || '').toLowerCase();
+        const items = group.querySelectorAll('.flyout-item-btn');
+        let hasMatch = groupTitle.includes(q);
+        items.forEach(it => {
+          const label = (it.querySelector('.flyout-item-label')?.textContent || '').toLowerCase();
+          const match = label.includes(q) || hasMatch;
+          it.style.display = match ? '' : 'none';
+          if (match) hasMatch = true;
+        });
+        group.style.display = hasMatch ? '' : 'none';
+      });
+    }
+
+    // Reload active iframe stage
+    function refreshCurrentStage() {
+      const iframe = document.getElementById('activeStageFrame');
+      const loader = document.getElementById('stageLoader');
+      if (iframe) {
+        if (loader) loader.classList.add('loading');
+        clearTimeout(stageTimer);
+        stageTimer = setTimeout(() => {
+          if (loader) loader.classList.remove('loading');
+        }, 1200);
+        try {
+          iframe.contentWindow.location.reload();
+        } catch (_) {
+          iframe.src = iframe.src;
+        }
+      }
+    }
+
+    // Open active page in external window/tab
+    function openInNewWindow() {
+      const iframe = document.getElementById('activeStageFrame');
+      if (iframe && iframe.src) {
+        window.open(iframe.src, '_blank');
+      }
+    }
+
+    // Toggle Fullscreen view
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
 
     // Switch active embedded module
     function switchModule(key, name, url, group, updateHistory = true) {
@@ -1585,7 +1674,7 @@
       const bcCategory = document.getElementById('bcCategory');
       const bcPageName = document.getElementById('bcPageName');
 
-      // Close any open flyout
+      // Close all flyouts
       document.querySelectorAll('.nav-group-item').forEach(i => i.classList.remove('flyout-open'));
 
       // Update Breadcrumbs
@@ -1606,16 +1695,31 @@
 
       // Show loader
       if (loader) {
-        loaderText.textContent = `Loading ${name}…`;
+        if (loaderText) loaderText.textContent = `Loading ${name}…`;
         loader.classList.add('loading');
       }
 
-      // Check if same page with hash anchor
-      const currentSrc = iframe.getAttribute('src') || '';
-      if (currentSrc === url) {
+      // Safety timeout: dismiss loader after max 1.2s even if onload is blocked
+      clearTimeout(stageTimer);
+      stageTimer = setTimeout(() => {
         if (loader) loader.classList.remove('loading');
-      } else {
-        iframe.src = url;
+      }, 1200);
+
+      if (iframe) {
+        iframe.onload = () => {
+          clearTimeout(stageTimer);
+          if (loader) loader.classList.remove('loading');
+          syncThemeToStage();
+        };
+
+        const currentSrc = iframe.getAttribute('src') || '';
+        if (currentSrc === url) {
+          clearTimeout(stageTimer);
+          if (loader) loader.classList.remove('loading');
+          syncThemeToStage();
+        } else {
+          iframe.src = url;
+        }
       }
 
       // Update URL hash
@@ -1629,17 +1733,19 @@
       }
     }
 
-    // Hover positioning for flyout
+    // Hover positioning for flyout strictly to the right of the sidebar
     function handleGroupHover(el) {
       const flyout = el.querySelector('.group-flyout');
       if (!flyout) return;
-      const sidebar = document.getElementById('sidebar');
+      const sidebar = document.getElementById('workstationSidebar') || el.closest('.workstation-sidebar');
+      if (!sidebar) return;
       const sidebarRect = sidebar.getBoundingClientRect();
       const rect = el.getBoundingClientRect();
 
-      flyout.style.left = (sidebarRect.right + 4) + 'px';
+      // Position strictly outside and adjacent to the sidebar
+      flyout.style.left = (sidebarRect.right + 6) + 'px';
       const viewportHeight = window.innerHeight;
-      const flyoutHeight = flyout.offsetHeight || 360;
+      const flyoutHeight = flyout.offsetHeight || 380;
       let top = rect.top;
       if (top + flyoutHeight > viewportHeight - 12) {
         top = Math.max(12, viewportHeight - flyoutHeight - 12);
