@@ -379,7 +379,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Always network for API + NSC page/hub scripts (filters/data keys change often)
-  if (isNetworkFirstPath(url.pathname)) {
+  if (self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1' || isNetworkFirstPath(url.pathname)) {
     event.respondWith(
       fetch(request).then((res) => {
         if (!url.pathname.startsWith('/api/')) writeAppCache(request, res.clone());
