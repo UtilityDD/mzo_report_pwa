@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=2" defer></script>
   <style>
     .remark { display: block; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mzo-muted); }
     #reasonHist .row { grid-template-columns: 140px minmax(0, 1fr) 48px; }
@@ -80,24 +81,10 @@
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
     var STATUS = { done: { label: 'Effected', cls: 'ok' }, pending: { label: 'Pending', cls: 'warn' } };
-    // Sheet spellings → office names (the sheet covers the whole state; only Malda Zone CCCs are kept).
-    var OVERRIDES = { kushmandi: 'Kusmandi', hcpur: 'Harishchandrapur', bamangola: 'Bamongola', gazol: 'Gazole', golapgang: 'Golapganj', sujpur: 'Sujapur', oldmalda: 'Old Malda', aiho: 'Aiho' };
-    var all = [], f = { q: '', status: '', reason: '', type: '' }, level = 'region', scope = null, cccIndex = null;
+    var all = [], f = { q: '', status: '', reason: '', type: '' }, level = 'region', scope = null;
 
-    function clean(s) { return String(s || '').toLowerCase().replace(/\s+ccc$/i, '').replace(/\s+division$/i, '').replace(/[^a-z0-9]/g, ''); }
-    function buildIndex() {
-      cccIndex = {};
-      var H = (window.MzoScope && window.MzoScope.HIERARCHY) || {};
-      Object.keys(H).forEach(function (r) {
-        Object.keys(H[r].divisions || {}).forEach(function (d) {
-          (H[r].divisions[d].cccs || []).forEach(function (c) { cccIndex[clean(c)] = { region: r, division: d, ccc: c }; });
-        });
-      });
-      Object.keys(OVERRIDES).forEach(function (k) { var p = window.MzoScope && window.MzoScope.parentOfCcc(OVERRIDES[k]); if (p) cccIndex[k] = p; });
-    }
-    function col(row, re) { var k = Object.keys(row).filter(function (h) { return re.test(h); })[0]; return k ? String(row[k] || '').trim() : ''; }
     function type(row) {
-      var t = (row['Remarks/ Project name'] + ' ' + row['Name of scheme']).toUpperCase();
+      var t = (row.remarks_project_name + ' ' + row.name_of_scheme).toUpperCase();
       return /MIDI/.test(t) ? 'MIDI RLI' : /MAJOR/.test(t) ? 'Major RLI' : /LDTW/.test(t) ? 'LDTW' : /DTW/.test(t) ? 'DTW' : 'Other';
     }
     function reason(text) {
@@ -110,29 +97,29 @@
       return 'Other';
     }
 
-    function prepare(text) {
-      if (!cccIndex) buildIndex();
-      var rows = UI.csv(text), statewide = rows.length;
+    // t.rows: uniform rows of schema/wridd_schemes.json, already scoped to the login by MzoRows. The sheet
+    // covers the whole state: a scheme is in Malda Zone when its CCC is one of the zone's (canonical _ccc,
+    // the sheet's spellings included); the rest have no canonical office and are left out.
+    function prepare(t) {
+      var statewide = t.stats.source_rows;
       all = [];
-      rows.forEach(function (d, i) {
-        var m = cccIndex[clean(d.CCC)];
-        if (!m) return;
-        var now = col(d, /^status of connection as on date/i), prev = col(d, /^status of connection as per previous/i), statusText = now || prev;
+      t.rows.forEach(function (d) {
+        if (!d._ccc) return;
+        var statusText = d.status_of_connection_as_on_date || d.status_of_connection_as_per_previous_report;
         var r = {
-          id: i, name: String(d['Name of scheme'] || '').trim() || 'Unnamed scheme', type: type(d),
-          _region: m.region, _divn: m.division, _supp: m.ccc,
-          district: d.District, block: d.Block, mouza: d.Mouza, jl: d['Jl. no.'], plot: col(d, /^location/i),
+          name: d.name_of_scheme || 'Unnamed scheme', type: type(d),
+          _region: d._region, _divn: d._division, _supp: d._ccc,
+          district: d.district, block: d.block, mouza: d.mouza, jl: d.jl_no, plot: d.location_plot_no,
           statusText: statusText, st: /effected/i.test(statusText) ? 'done' : 'pending',
-          remarks: String(d['Remarks/ Project name'] || '').trim(), prevRemarks: col(d, /^previous remarks/i), presentRemarks: col(d, /^present remarks/i),
-          brief: col(d, /^brief of subjects/i), local: col(d, /^any local communication/i), toWridd: col(d, /^whether communicated/i),
-          circle: d['Name of Circle / Division']
+          remarks: d.remarks_project_name, prevRemarks: d.previous_remarks, presentRemarks: d.present_remarks,
+          brief: d.brief_of_subjects_vis_a_vis_linked_projects, local: d.any_local_communication_made_with_the_requiring_authority_wb, toWridd: d.whether_communicated_to_wri_dd,
+          circle: d.name_of_circle_division
         };
         r.core = /core sector/i.test(r.remarks + ' ' + r.brief + ' ' + r.local);
         r.reason = r.st === 'pending' ? reason(statusText + ' ' + r.brief) : '';
-        r.search = [r.name, r.block, r.mouza, r.remarks, r.prevRemarks, d.CCC].join(' ').toLowerCase();
+        r.search = [r.name, r.block, r.mouza, r.remarks, r.prevRemarks, d.ccc].join(' ').toLowerCase();
         all.push(r);
       });
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       $('meta').textContent = UI.n(all.length) + ' schemes in Malda Zone · ' + UI.n(statewide) + ' statewide';
       fillFilters();
     }
@@ -240,12 +227,12 @@
     $('exportBtn').addEventListener('click', function () {
       UI.exportCsv('wridd-schemes.csv', [{ key: 'name', label: 'Scheme' }, { key: 'type', label: 'Type' }, { key: '_region', label: 'Region' }, { key: '_divn', label: 'Division' }, { key: '_supp', label: 'CCC' }, { key: 'district', label: 'District' }, { key: 'block', label: 'Block' }, { key: 'mouza', label: 'Mouza' }, { key: 'statusText', label: 'Status note' }, COLS[4], { key: 'remarks', label: 'Remarks' }], window.__view || []);
     });
-    UI.refresh('refreshBtn', 'CACHE_WRIDD', function (t) { prepare(t); render(); });
+    MzoRows.refresh('refreshBtn', 'wridd_schemes', function (t) { prepare(t); render(); });
 
     var first = true;
-    UI.load('CACHE_WRIDD', function (text, info) {
-      if (!text) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('appTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
-      prepare(text);
+    MzoRows.load('wridd_schemes', function (t, info) {
+      if (!t) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('appTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      prepare(t);
       if (first) {
         first = false;
         if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';

@@ -82,6 +82,11 @@ const PAGES = {
     key: 'jjm_connections', from: '    // Sheet columns', to: '    function fillFilters() {',
     old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true, stubs: ['fillFilters'],
     known: { sheetDivision: 'computed from DIVISION but never used; dropped' }
+  },
+  'wridd.html': {
+    key: 'wridd_schemes', from: '    var STATUS = {', to: '    function fillFilters() {',
+    old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true, stubs: ['fillFilters'],
+    known: { id: 'the sheet row index, never read; dropped' }
   }
 };
 const PROFILES = [
