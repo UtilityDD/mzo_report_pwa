@@ -223,7 +223,10 @@
                 .then(function (res) { return res.ok ? res.json() : null; }).catch(function () { return null; });
             }
             when = metas[d.versionUrl].then(function (m) {
-              const v = m && ((d.versionField && m[d.versionField]) || m.version);
+              // In mirror mode `version` is the copy's hash; liveVersions keeps the value it replaced.
+              const field = d.versionField || 'version';
+              const live = (m && m.liveVersions) || {};
+              const v = m && (live[field] || live.version || m[field] || m.version);
               return v ? dateFromVersion('v:' + v) : '';
             });
           } else {
@@ -280,7 +283,8 @@
     fetch('/api/hub/versions', { credentials: 'same-origin' })
       .then(function (res) { return res.ok ? res.json() : null; })
       .then(function (data) {
-        const versions = (data && data.versions) || {};
+        // Mirror mode: versions are the copies' hashes; liveVersions keeps the dated ones they replaced.
+        const versions = Object.assign({}, data && data.versions, data && data.liveVersions);
         Object.keys(versions).forEach(function (key) {
           setUpdated(key, dateFromVersion(versions[key]));
         });
