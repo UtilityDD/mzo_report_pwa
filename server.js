@@ -3703,6 +3703,14 @@ const { syncDisconnectionToSupabase } = require('./scripts/sync/sync_disconnecti
 const { syncPendingMcToSupabase } = require('./scripts/sync/sync_pending_mc_to_supabase');
 const { syncLoadExtToSupabase } = require('./scripts/sync/sync_load_ext_to_supabase');
 
+// Public 'reports' bucket the sync jobs publish to (new project). Read-only public GETs, no key; writes are unchanged.
+// REPORTS_PUBLIC_BASE overrides it; without INSIGHT_SUPABASE_URL (localhost, the VM) it is the new project's bucket,
+// never the old project's, which has no reports bucket.
+const REPORTS_PUBLIC_BASE = String(
+    process.env.REPORTS_PUBLIC_BASE ||
+        `${String(NEW_INSIGHT_URL || 'https://gmasnqebdogtavoudbke.supabase.co').replace(/\/$/, '')}/storage/v1/object/public/reports`
+).replace(/\/$/, '');
+
 /** A sync job's meta.json from the public reports bucket (cached 60 s); the local data/ copy as a fallback. */
 function syncedMeta_(folder, localFile) {
     let cached = null;
@@ -3711,10 +3719,9 @@ function syncedMeta_(folder, localFile) {
         async read() {
             const now = Date.now();
             if (cached && now - at < 60000) return cached;
-            const root = String(NEW_INSIGHT_URL || INSIGHT_URL || '').replace(/\/$/, '');
-            if (root) {
+            if (REPORTS_PUBLIC_BASE) {
                 try {
-                    const r = await fetch(`${root}/storage/v1/object/public/reports/${folder}/meta.json`, {
+                    const r = await fetch(`${REPORTS_PUBLIC_BASE}/${folder}/meta.json`, {
                         signal: AbortSignal.timeout(5000)
                     });
                     if (r.ok) {
