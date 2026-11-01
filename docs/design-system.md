@@ -61,6 +61,7 @@ The only home: login opens it, and `/` and the old phone hub URL `/index.html` r
 - Pages can call `parent.openPage(url, title)` to jump to another report (the briefing does). If a page navigates itself to another report the shell follows it; if it lands on `/login.html` the shell signs out to the login page; a Home link (`/app.html`, or the old `/index.html`) goes to **Briefing** instead of loading the shell inside itself.
 - Sidebar collapses to a rail (⌘B / Ctrl B, remembered in `mzo_ws_rail`); on phones it is a drawer. Account menu: theme (Light / Dark / System), sign out (`POST /api/logout`). Recent reports: `mzo_ws_recent`.
 - The service worker does not inject `mzo_present.js` into `app.html`; each report keeps its own zoom control.
+- On the VM (mirror mode) the shell asks for the data manifest once before its first frame loads, so frames reuse it, and shows a quiet **Data as of <time>** in the top bar (muted 12px text, hidden on phones; the tooltip gives the date). That time is when the server last checked its sources (`generatedAt`). In idle time it refreshes datasets this device already keeps whose server copy changed: up to 8 on desktop, up to 3 under 1.5 MB on phones, none on data saver or 2G. Without a mirror (Vercel) none of this shows or runs.
 
 ## Adding a report page
 
