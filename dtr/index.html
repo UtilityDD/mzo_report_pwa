@@ -502,14 +502,28 @@ html.ui .card { margin-bottom: 16px !important; }
   // one uniform row → { REGION, 'DIVN NAME', SUPP_OFF, … } in sheet order, values as text.
   function toRecords(t) {
     const cols = t.columns.filter(c => c.source_name && !c.raw_of && c.name.charAt(0) !== '_');
+    cccOfSupp = {};
     return t.rows.map(d => {
       const record = {};
       cols.forEach(c => {
         const v = d[c.name];
         record[c.source_name] = v == null || v === '' ? (d[c.name + '_raw'] || '') : String(v);
       });
+      if (record.SUPP_OFF && d._ccc) cccOfSupp[record.SUPP_OFF] = d._ccc;
       return record;
     });
+  }
+
+  // The CCC drill matches the canonical CCC (uniform _ccc), not the sheet's text: the CCC table already
+  // counts "RAIGANJ CCC-6621104" and "RAIGANJ  CCC-6621104" (double space) as one CCC, and drilling into
+  // it now keeps both spellings. Every other level matches the cell text, as before.
+  let cccOfSupp = {};
+  function matchesKey(item, key, want) {
+    if (key === 'SUPP_OFF') {
+      const a = cccOfSupp[item.SUPP_OFF], b = cccOfSupp[want];
+      if (a && b) return a === b;
+    }
+    return item[key] === want;
   }
 
   // Helper function to format capacity into kVA or MVA
@@ -532,7 +546,7 @@ html.ui .card { margin-bottom: 16px !important; }
                     if (parseFloat(item[key]) !== parseFloat(filter[key])) {
                         return false;
                     }
-                } else if (item[key] !== filter[key]) {
+                } else if (!matchesKey(item, key, filter[key])) {
                     return false;
                 }
             }
@@ -548,7 +562,7 @@ html.ui .card { margin-bottom: 16px !important; }
       // Apply filters
       let matchesFilter = true;
       for (const key in filter) {
-        if (item[key] !== filter[key]) {
+        if (!matchesKey(item, key, filter[key])) {
           matchesFilter = false;
           break;
         }
