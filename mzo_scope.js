@@ -77,6 +77,13 @@
   let _cachedScope = null;
   let _cachedKey = '';
 
+  // Canonical office names, codes and spellings live in lib/offices.js (window.MzoOffices), which
+  // pages load just before this file. The name lookups below ask it first; the older loose matching
+  // is only the fallback when it is missing or does not know a value.
+  function canon() {
+    return global.MzoOffices || null;
+  }
+
   function norm(v) {
     return String(v == null ? '' : v)
       .toLowerCase()
@@ -154,6 +161,12 @@
   }
 
   function regionNameOf(raw) {
+    const O = canon();
+    if (O && raw != null && String(raw).trim()) {
+      const r = O.parseRegion(raw);
+      if (r && r.level === 'region') return r.region;
+      if (r && r.level !== 'unknown') return '';
+    }
     const n = norm(raw);
     if (!n) return '';
     const keys = Object.keys(HIERARCHY);
@@ -170,6 +183,13 @@
 
   function divisionNameOf(raw) {
     if (!raw) return '';
+    const O = canon();
+    if (O) {
+      // "South Malda" / "North Malda" (old divisions), zone and region names are not one division.
+      const d = O.parseDivision(raw);
+      if (d && d.level === 'division') return d.division;
+      if (d && d.level !== 'unknown') return '';
+    }
     const s = String(raw).trim();
     if (CODE_TO_DIV[s]) return CODE_TO_DIV[s];
     if (/^\d{4}$/.test(s)) {
@@ -201,6 +221,12 @@
     if (CODE_TO_CCC[s]) return CODE_TO_CCC[s];
     const m = s.match(/\b(66[123]\d{4})\b/);
     if (m && CODE_TO_CCC[m[1]]) return CODE_TO_CCC[m[1]];
+    const O = canon();
+    if (O) {
+      const c = O.parseCccName(s);
+      if (c && c.level === 'ccc') return c.ccc;
+      if (c && c.level !== 'unknown') return String(raw).trim(); // a division, zone or sub-station office
+    }
     const n = norm(raw);
     if (!n) return '';
 
@@ -214,7 +240,7 @@
         const cccs = divs[dnames[d]].cccs;
         for (let c = 0; c < cccs.length; c++) {
           const cnorm = norm(cccs[c]);
-          if (n === cnorm || n.indexOf(cnorm) !== -1 || (n.length >= 4 && cnorm.indexOf(n) !== -1)) return cccs[c];
+          if (n === cnorm || n.indexOf(cnorm) !== -1 || (!O && n.length >= 4 && cnorm.indexOf(n) !== -1)) return cccs[c];
         }
       }
     }

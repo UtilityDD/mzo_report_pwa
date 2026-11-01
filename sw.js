@@ -107,7 +107,7 @@ const NETWORK_FIRST = new Set([
   '/collection.html', '/pending_mc.html', '/remosd5000.html', '/feeder_outage.html',
   '/meter_utilization.html', '/jjm.html', '/wridd.html', '/bharatnet.html', '/icds.html', '/pmsgy.html',
   '/solar.html', '/rem/defaulters.html', '/admin_users.html', '/admin.html',
-  '/consumer/defective_meter.html', '/lib/defective_meter_pipeline.js', '/lib/sheet_mirror_client.js',
+  '/consumer/defective_meter.html', '/lib/defective_meter_pipeline.js', '/lib/sheet_mirror_client.js', '/lib/offices.js',
   '/stock/upload.html', '/stock/index.html', '/stock/script.js', '/stock/allotment.js',
   '/stock/allotment_view.js', '/stock/style.css', '/capex_all.html', '/mzo_data_hub.js', '/mzo_theme.js',
   '/mzo_theme.css', '/mzo_ui.js', '/mzo_presets_hub.js', '/mzo_scope.js',
