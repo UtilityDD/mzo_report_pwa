@@ -1207,6 +1207,7 @@ function compute(opts) {
     const O = opts.offices;
     const tree = officeTree(O);
     const ctx = makeContext(opts.read, opts.manifest, tree, O);
+    loadCostCentres(ctx); // before every metric: old SAP cost centres (e.g. accidents on C333430000) resolve to their division
     const asOf = opts.asOf || (opts.manifest && String(opts.manifest.generatedAt || '').slice(0, 10)) || new Date().toISOString().slice(0, 10);
     const only = opts.only ? new Set(opts.only) : null;
     const out = {
