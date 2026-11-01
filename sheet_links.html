@@ -60,6 +60,8 @@
     </div>
   </div>
   <script src="mzo_data_hub.js?v=91"></script>
+  <script src="/mzo_ui.js?v=6"></script>
+  <script src="/mzo_rows.js?v=6"></script>
   <script>
     function allowed() {
       let profile = {};
@@ -147,23 +149,44 @@
       const href = sheetOpenUrl(d.url) || sheetFallback[d.key] || '';
       if (skipSheet[d.key] || !href || byName.has(d.label)) return;
       byName.add(d.label);
-      rows.push({
-        key: d.key,
-        name: d.label,
-        href: href,
-        updated: d.key === 'CACHE_JJM'
-          ? 'As updated by RMs'
-          : dateFromVersion(localStorage.getItem('mzo_hub_ver_' + d.key) || '')
-      });
+      rows.push({ key: d.key, name: d.label, href: href, updated: '', dates: {}, fixed: d.key === 'CACHE_JJM' ? 'As updated by RMs' : '' });
     });
     extras.forEach(function (item) {
       const href = sheetOpenUrl(item.url);
       if (!href || byName.has(item.name)) return;
       byName.add(item.name);
-      rows.push({ key: item.key || '', csv: item.url, name: item.name, href: href, updated: '' });
+      rows.push({ key: item.key || '', name: item.name, href: href, updated: '', dates: {}, fixed: '' });
     });
     rows.sort(function (a, b) { return a.name.localeCompare(b.name); });
     rows.forEach(function (row, i) { row.n = i + 1; });
+
+    // A row's "Updated" date can come from several places. It shows the best one known so far, in this
+    // order, so the result does not depend on which request finishes first:
+    //   data      the dataset's own as-on date, read from its rows by the rule of its page (AS_ON below)
+    //   report    the NSC report date (/api/nsc/meta)
+    //   stored    the version this device stored for the dataset (DataHub)
+    //   mirror    VM mirror: the date behind the copy's version (its meta, or the source's Last-Modified)
+    //   meta      a date from the dataset's meta without a report date (NSC upload, defective, stock)
+    //   versions  the server's version list (/api/hub/versions)
+    const SOURCES = ['data', 'report', 'stored', 'mirror', 'meta', 'versions'];
+    function best(row) {
+      if (row.fixed) return row.fixed;
+      const s = SOURCES.find(function (k) { return row.dates[k]; });
+      return s ? row.dates[s] : '';
+    }
+    function offer(key, source, text) {
+      const row = key && rows.find(function (r) { return r.key === key; });
+      if (!row) return;
+      if (text) row.dates[source] = text; else delete row.dates[source];
+      const next = best(row);
+      if (next === row.updated) return;
+      row.updated = next;
+      paint();
+    }
+    rows.forEach(function (row) {
+      if (row.key) row.dates.stored = dateFromVersion(localStorage.getItem('mzo_hub_ver_' + row.key) || '');
+      row.updated = best(row);
+    });
 
     const body = document.getElementById('rows');
     const empty = document.getElementById('empty');
@@ -192,19 +215,10 @@
       empty.hidden = shown !== 0;
     }
 
-    function setUpdated(key, text, force) {
-      if (!text || key === 'CACHE_JJM') return;
-      const row = rows.find(function (r) { return r.key === key; });
-      if (!row || (row.updated && !force)) return;
-      row.updated = text;
-      if (force) row.forced = true;
-      paint();
-    }
-
     // VM mirror: the hub stores content hashes as versions, so a date that today comes from the stored
     // version is taken from where that version came from: the dataset's meta (report date or upload
-    // time), or the source's Last-Modified (manifest sourceModifiedAt). Same precedence as the stored
-    // version: it fills or replaces an unforced date; a forced one (report meta) still wins.
+    // time), or the source's Last-Modified (manifest sourceModifiedAt). It ranks below the stored
+    // version and above the meta and version-list dates (SOURCES).
     function mirrorDates() {
       const hub = window.mzoDataHub;
       if (!hub || typeof hub.mirrorManifest !== 'function') return;
@@ -214,7 +228,7 @@
         rows.forEach(function (row) {
           const d = datasets.find(function (x) { return x.key === row.key; });
           const hit = d && idx.hub[d.key];
-          if (!hit || row.key === 'CACHE_JJM') return;
+          if (!hit || row.fixed) return;
           if (dateFromVersion(localStorage.getItem('mzo_hub_ver_' + d.key) || '')) return;
           let when;
           if (d.versionUrl) {
@@ -232,7 +246,7 @@
           } else {
             when = Promise.resolve(hit.e.sourceModifiedAt ? formatWhen(hit.e.sourceModifiedAt) : '');
           }
-          when.then(function (text) { if (text && !row.forced) { row.updated = text; paint(); } });
+          when.then(function (text) { offer(row.key, 'mirror', text); });
         });
       }).catch(function () {});
     }
@@ -274,10 +288,6 @@
       }
     });
     paint();
-
-    function applyMeta(key, raw, force) {
-      setUpdated(key, formatWhen(raw), force);
-    }
     mirrorDates();
 
     fetch('/api/hub/versions', { credentials: 'same-origin' })
@@ -286,7 +296,7 @@
         // Mirror mode: versions are the copies' hashes; liveVersions keeps the dated ones they replaced.
         const versions = Object.assign({}, data && data.versions, data && data.liveVersions);
         Object.keys(versions).forEach(function (key) {
-          setUpdated(key, dateFromVersion(versions[key]));
+          offer(key, 'versions', dateFromVersion(versions[key]));
         });
       })
       .catch(function () {});
@@ -296,9 +306,10 @@
       .then(function (data) {
         const meta = (data && data.meta) || {};
         const reportWhen = meta.reportDate || (meta.stats && meta.stats.today) || '';
-        const when = reportWhen || meta.uploadedAt || '';
-        applyMeta('CACHE_NSC_v5', when, !!reportWhen);
-        applyMeta('CACHE_WITHHELD_v4', when, !!reportWhen);
+        ['CACHE_NSC_v5', 'CACHE_WITHHELD_v4'].forEach(function (key) {
+          offer(key, 'report', formatWhen(reportWhen));
+          offer(key, 'meta', reportWhen ? '' : formatWhen(meta.uploadedAt || ''));
+        });
       })
       .catch(function () {});
 
@@ -306,9 +317,9 @@
       .then(function (res) { return res.ok ? res.json() : null; })
       .then(function (data) {
         const meta = (data && data.uploadMeta) || {};
-        const when = meta.uploadedAt || meta.reportAsOn || data.version || '';
-        applyMeta('CACHE_DEFECTIVE', when);
-        applyMeta('CACHE_DEFECTIVE_DETAILS', when);
+        const when = formatWhen(meta.uploadedAt || meta.reportAsOn || (data && data.version) || '');
+        offer('CACHE_DEFECTIVE', 'meta', when);
+        offer('CACHE_DEFECTIVE_DETAILS', 'meta', when);
       })
       .catch(function () {});
 
@@ -316,249 +327,93 @@
       .then(function (res) { return res.ok ? res.json() : null; })
       .then(function (data) {
         const meta = (data && data.meta) || {};
-        const when = meta.reportDate || (meta.stats && meta.stats.today) || '';
-        applyMeta('CACHE_STOCK_METADATA', when);
+        offer('CACHE_STOCK_METADATA', 'meta', formatWhen(meta.reportDate || (meta.stats && meta.stats.today) || ''));
       })
       .catch(function () {});
 
-    function csvBody(cached) {
-      if (!cached) return '';
-      if (typeof cached === 'string') return cached;
-      return cached.body || cached.text || cached.csv || '';
-    }
-
-    function loadSheetCsv(key) {
-      const hub = window.mzoDataHub;
-      const item = datasets.find(function (d) { return d.key === key; });
-      const peeked = hub && hub._peek ? hub._peek(key) : Promise.resolve('');
-      return Promise.resolve(peeked).then(function (cached) {
-        const body = csvBody(cached);
-        if (body) return body;
-        if (!item || !item.url) return '';
-        return (window.mzoMirror ? mzoMirror.fetch : fetch)(item.url).then(function (res) { return res.ok ? res.text() : ''; });
-      });
-    }
-
-    // Parse CSV text into rows (quoted fields, blank rows dropped). `limit` stops after that many rows.
-    function csvRows(text, limit) {
-      const rows = [];
-      let row = [];
-      let cur = '';
-      let q = false;
-      const src = String(text || '');
-      for (let i = 0; i < src.length; i++) {
-        const ch = src.charAt(i);
-        if (q) {
-          if (ch === '"') {
-            if (src.charAt(i + 1) === '"') { cur += '"'; i++; }
-            else q = false;
-          } else cur += ch;
-        } else if (ch === '"') q = true;
-        else if (ch === ',') { row.push(cur); cur = ''; }
-        else if (ch === '\n' || ch === '\r') {
-          if (ch === '\r' && src.charAt(i + 1) === '\n') i++;
-          row.push(cur);
-          cur = '';
-          if (row.some(function (cell) { return cell; })) rows.push(row);
-          row = [];
-          if (limit && rows.length >= limit) return rows;
-        } else cur += ch;
-      }
-      if (cur || row.length) { row.push(cur); rows.push(row); }
-      return rows;
-    }
-
+    // ---- as-on rules: the dataset's own date, from its uniform rows (docs/uniform-data.md) ----
+    // Each rule is the one the dataset's page uses for its "As on" date, over every row of the sheet
+    // (t.all / t.first: not only the login's offices), so this column shows the date the page shows.
+    // A rule returns dd/mm/yyyy, or '' when the rows hold no date.
     const pad = function (n) { return String(n).padStart(2, '0'); };
-
-    // Latest date in the column whose header matches headerRe (header within the first 8 rows).
-    // cellRe captures day, month, year; with looseDates, other date strings are parsed by Date.
-    function latestDate(csv, headerRe, cellRe, looseDates) {
-      const table = csvRows(csv);
-      let head = -1;
-      let idx = -1;
-      for (let i = 0; i < table.length && i < 8 && idx < 0; i++) {
-        idx = table[i].findIndex(function (h) { return headerRe.test(String(h || '').trim()); });
-        head = i;
-      }
-      if (idx < 0) return '';
-      let best = 0;
-      let label = '';
-      for (let i = head + 1; i < table.length; i++) {
-        const raw = String(table[i][idx] || '').trim();
-        if (!raw) continue;
-        const m = raw.match(cellRe);
-        let day, month, year;
-        if (m) {
-          day = parseInt(m[1], 10); month = parseInt(m[2], 10); year = parseInt(m[3], 10);
-        } else if (looseDates) {
-          const d = new Date(raw);
-          if (Number.isNaN(d.getTime())) continue;
-          day = d.getDate(); month = d.getMonth() + 1; year = d.getFullYear();
-        } else continue;
-        const t = Date.UTC(year, month - 1, day);
-        if (t > best) { best = t; label = pad(day) + '/' + pad(month) + '/' + year; }
-      }
-      return label;
+    function dmy(d) { return d && !isNaN(d.getTime()) ? pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear() : ''; }
+    function newest(t, dateOf) {
+      let last = null;
+      t.all.forEach(function (r) { const d = dateOf(r); if (d && (!last || d > last)) last = d; });
+      return dmy(last);
     }
-
-    function showLatest(key, headerRe, cellRe, looseDates) {
-      loadSheetCsv(key).then(function (csv) {
-        const label = latestDate(csv, headerRe, cellRe, looseDates);
-        if (label) setUpdated(key, label);
-      }).catch(function () {});
+    function hasColumn(t, name) { return t.columns.some(function (c) { return c.name === name && c.source_name; }); }
+    // bharatnet.html / icds.html asOnOf(): one cell (N2 / M2), dd.mm.yyyy
+    function cellDate(t, field) {
+      const m = String(t.first(field) || '').match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+      return m ? pad(+m[1]) + '/' + pad(+m[2]) + '/' + (+m[3] < 100 ? 2000 + +m[3] : +m[3]) : '';
     }
-
-    const DOTTED = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
-    showLatest('CACHE_DISCONNECTION', /PAID\/DISCON DATE/i, DOTTED);
-    showLatest('CACHE_DOCKET', /^doc_crn_dt$/i, /^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-    showLatest('CACHE_CAPEX', /^Reporting Date$/i, DOTTED);
-    showLatest('CACHE_PENDING_MC', /^Report Date$/i, /^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/, true);
-
-    function cmoHeaderDate(csv) {
-      const rows = csvRows(csv);
-      if (!rows.length) return '';
-      const idx = rows[0].findIndex(function (h) {
-        return /^Report Date$/i.test(String(h || '').trim());
-      });
-      if (idx < 0) return '';
-      let maxRaw = '';
-      for (let i = 1; i < rows.length; i++) {
-        const raw = String((rows[i] && rows[i][idx]) || '').trim();
-        if (raw && raw > maxRaw) maxRaw = raw;
-      }
-      return formatWhen(maxRaw);
+    // disconnection.html actionDate(): PAID/DISCON DATE, dd.mm.yyyy; blank, #N/A or 0 is no action
+    function actionDate(r) {
+      const iso = r.paid_discon_date;
+      const s = iso ? iso.slice(8, 10) + '.' + iso.slice(5, 7) + '.' + iso.slice(0, 4) : r.paid_discon_date_raw || '';
+      if (s === '' || s.toLowerCase() === '#n/a' || s === '0') return null;
+      const p = s.split('.');
+      if (p.length !== 3) return null;
+      const d = new Date(parseInt(p[2], 10), parseInt(p[1], 10) - 1, parseInt(p[0], 10));
+      return isNaN(d.getTime()) ? null : d;
     }
-
-    loadSheetCsv('CACHE_CMO').then(function (csv) {
-      const label = cmoHeaderDate(csv);
-      if (label) setUpdated('CACHE_CMO', label);
-    }).catch(function () {});
-
-    function collectionToDate(csv) {
-      const text = String(csv || '');
-      if (!text) return '';
-      let best = '';
-      text.split(/\r?\n/).forEach(function (line) {
-        const cell = String(line.split(',')[0] || '').replace(/"/g, '').trim();
-        if (/^\d{8}$/.test(cell) && cell > best) best = cell;
-      });
-      if (!best) return '';
-      return best.slice(6, 8) + '/' + best.slice(4, 6) + '/' + best.slice(0, 4);
+    // docket.html when(): "dd/mm/yyyy hh:mm:ss" (seconds sometimes dotted)
+    function docketWhen(s) {
+      const m = String(s || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2})[.:](\d{1,2})(?:[.:](\d{1,2}))?)?/);
+      return m ? new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)) : null;
     }
-
-    loadSheetCsv('CACHE_COLLECTION').then(function (csv) {
-      const label = collectionToDate(csv);
-      if (label) setUpdated('CACHE_COLLECTION', label);
-    }).catch(function () {});
-
-    function firstRowHeaderDate(csv, headerRe, fallbackIdx) {
-      const rows = csvRows(csv, 2);
-      if (rows.length < 2) return '';
-      let idx = rows[0].findIndex(function (h) {
-        return headerRe.test(String(h || '').trim());
-      });
-      if (idx < 0 && fallbackIdx >= 0 && rows[0].length > fallbackIdx) idx = fallbackIdx;
-      if (idx < 0) return '';
-      const raw = String((rows[1] && rows[1][idx]) || '').trim();
-      const m = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
-      if (!m) return '';
-      const year = parseInt(m[3], 10);
-      return pad(parseInt(m[1], 10)) + '/' + pad(parseInt(m[2], 10)) + '/' + (year < 100 ? 2000 + year : year);
+    // collection.html ymd(): PAYMENT_DT, a yyyymmdd number
+    function paymentDate(v) {
+      const s = v == null ? '' : String(v).trim();
+      if (s.length < 8) return null;
+      const d = new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8));
+      return isNaN(d) ? null : d;
     }
-
-    loadSheetCsv('CACHE_BHARATNET').then(function (csv) {
-      const label = firstRowHeaderDate(csv, /upadte\s*date|update\s*date/i, 13);
-      if (label) setUpdated('CACHE_BHARATNET', label, true);
-    }).catch(function () {});
-
-    loadSheetCsv('CACHE_ICDS_APLUS').then(function (csv) {
-      const label = firstRowHeaderDate(csv, /update\s*date/i, 12);
-      if (label) setUpdated('CACHE_ICDS_APLUS', label, true);
-    }).catch(function () {});
-
-    loadSheetCsv('CACHE_ICDS_A').then(function (csv) {
-      const label = firstRowHeaderDate(csv, /update\s*date/i, 12);
-      if (label) setUpdated('CACHE_ICDS_A', label, true);
-    }).catch(function () {});
-
-    function pmsgyAsOn(csv) {
-      const rows = csvRows(csv);
-      if (!rows.length) return '';
-      const idx = rows[0].findIndex(function (h) { return /^Last Action Date$/i.test(String(h || '').trim()); });
-      if (idx < 0) return '';
-      const months = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
-      let best = 0;
-      let label = '';
-      for (let i = 1; i < rows.length; i++) {
-        const raw = String((rows[i] && rows[i][idx]) || '').trim();
-        const named = raw.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})/);
-        const num = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/);
-        let day = 0;
-        let month = 0;
-        let year = 0;
-        if (named && months[named[2].toLowerCase()]) {
-          day = +named[1];
-          month = months[named[2].toLowerCase()];
-          year = +named[3] < 100 ? 2000 + +named[3] : +named[3];
-        } else if (num) {
-          day = +num[1];
-          month = +num[2];
-          year = +num[3] < 100 ? 2000 + +num[3] : +num[3];
-        }
-        const t = Date.UTC(year, month - 1, day);
-        if (day && t > best) {
-          best = t;
-          label = pad(day) + '/' + pad(month) + '/' + year;
-        }
-      }
-      return label;
+    // pmsgy.html asOnOf(): the newest Last Action Date of an application (not the glossary row)
+    function pmsgyAsOn(t) {
+      if (!hasColumn(t, 'application_number')) return '';
+      return newest(t, function (r) { const f = r.sl_no; return f && !/^logic$/i.test(f) && r.application_number ? UI.date(r.last_action_date) : null; });
     }
-    ['CACHE_PMSGY_MALDA', 'CACHE_PMSGY_UD', 'CACHE_PMSGY_DD'].forEach(function (key) {
-      loadSheetCsv(key).then(function (csv) {
-        const label = pmsgyAsOn(csv);
-        if (label) setUpdated(key, label, true);
-      }).catch(function () {});
+    // feeder_outage.html prepare(): the last day of the newest REPORT MONTH (yyyymm) of a feeder row
+    function feederAsOn(t) {
+      if (!hasColumn(t, 'report_month')) return '';
+      let last = '';
+      t.all.forEach(function (r) { const m = r.report_month.replace(/\D/g, '').slice(0, 6); if (m.length === 6 && r.feeder_name && m > last) last = m; });
+      if (!last) return '';
+      const y = +last.slice(0, 4), m = +last.slice(4, 6);
+      return pad(new Date(Date.UTC(y, m, 0)).getUTCDate()) + '/' + pad(m) + '/' + y;
+    }
+    // registry key → [uniform rows key, rule]
+    const AS_ON = {
+      CACHE_DISCONNECTION: ['disconnection', function (t) { return newest(t, actionDate); }], // disconnection.html
+      CACHE_DOCKET: ['docket_calls', function (t) { return newest(t, function (r) { return r.doc_no ? docketWhen(r.doc_crn_dt) : null; }); }], // docket.html
+      CACHE_CAPEX: ['capex_details', function (t) { // capex_all.html: the newest Reporting Date of a line
+        return hasColumn(t, 'net_balance_value') ? newest(t, function (r) { return r.project_id || r.material_code ? UI.date(r.reporting_date) : null; }) : '';
+      }],
+      CACHE_PENDING_MC: ['pending_mc', function (t) { return newest(t, function (r) { return r.region || r.appl_no ? UI.date(r.report_date) : null; }); }], // pending_mc.html
+      CACHE_CMO: ['cmo_grievances', function (t) { return dmy(UI.date(t.first('report_date'))); }], // cmo.html: the first row's Report Date
+      CACHE_COLLECTION: ['collection_report', function (t) { return newest(t, function (r) { return r.ccc_code ? paymentDate(r.payment_dt) : null; }); }], // collection.html
+      CACHE_BHARATNET: ['bharatnet_connections', function (t) { return cellDate(t, 'upadte_date'); }],
+      CACHE_ICDS_APLUS: ['icds_a_plus', function (t) { return cellDate(t, 'update_date'); }],
+      CACHE_ICDS_A: ['icds_a', function (t) { return cellDate(t, 'update_date'); }],
+      CACHE_PMSGY_MALDA: ['pmsgy_malda', pmsgyAsOn],
+      CACHE_PMSGY_UD: ['pmsgy_uttar_dinajpur', pmsgyAsOn],
+      CACHE_PMSGY_DD: ['pmsgy_dakshin_dinajpur', pmsgyAsOn],
+      CACHE_LOSS: ['loss_report', function (t) { return dmy(UI.date(t.first('update_on'))); }], // loss.html: cell J2
+      CACHE_FEEDER_OUTAGE: ['feeder_outage', feederAsOn],
+      OM_ADVANCE: ['onm_advance', function (t) { return newest(t, function (r) { return r.order_number ? UI.date(r.creation_date) : null; }); }] // advance_onm.html
+    };
+    // ---- end of as-on rules ----
+
+    Object.keys(AS_ON).forEach(function (key) {
+      if (!window.MzoRows || !rows.some(function (r) { return r.key === key; })) return;
+      MzoRows.load(AS_ON[key][0], function (t) {
+        const text = t ? AS_ON[key][1](t) : '';
+        offer(key, 'data', text);
+        if (key === 'CACHE_FEEDER_OUTAGE' && text) { try { localStorage.setItem('mzo_feeder_outage_as_on', text); } catch (e) {} }
+      }, { scope: false });
     });
-
-    loadSheetCsv('CACHE_LOSS').then(function (csv) {
-      const label = firstRowHeaderDate(csv, /update\s*on|update\s*date/i, 9);
-      if (label) setUpdated('CACHE_LOSS', label, true);
-    }).catch(function () {});
-
-    function feederOutageAsOn(csv) {
-      const table = csvRows(csv);
-      if (!table.length) return '';
-      const idx = table[0].findIndex(function (h) {
-        return /^REPORT MONTH$/i.test(String(h || '').trim());
-      });
-      if (idx < 0) return '';
-      let best = '';
-      for (let i = 1; i < table.length; i++) {
-        const raw = String((table[i] && table[i][idx]) || '').replace(/\D/g, '').slice(0, 6);
-        if (/^\d{6}$/.test(raw) && raw > best) best = raw;
-      }
-      if (!best) return '';
-      const year = parseInt(best.slice(0, 4), 10);
-      const month = parseInt(best.slice(4, 6), 10);
-      if (month < 1 || month > 12) return '';
-      const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
-      return pad(last) + '/' + pad(month) + '/' + year;
-    }
-
-    loadSheetCsv('CACHE_FEEDER_OUTAGE').then(function (csv) {
-      const label = feederOutageAsOn(csv);
-      if (!label) return;
-      setUpdated('CACHE_FEEDER_OUTAGE', label, true);
-      try { localStorage.setItem('mzo_feeder_outage_as_on', label); } catch (e) {}
-    }).catch(function () {});
-
-    const advance = rows.find(function (r) { return r.key === 'OM_ADVANCE'; });
-    if (advance && advance.csv) {
-      (window.mzoMirror ? mzoMirror.fetch : fetch)(advance.csv).then(function (res) { return res.ok ? res.text() : ''; }).then(function (csv) {
-        const label = latestDate(csv, /^Creation Date$/i, DOTTED);
-        if (label) setUpdated('OM_ADVANCE', label);
-      }).catch(function () {});
-    }
   </script>
 </body>
 </html>

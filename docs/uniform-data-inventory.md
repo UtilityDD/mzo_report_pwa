@@ -1,67 +1,83 @@
 # Uniform data: page inventory and conversion batches
 
-What every page in the `app.html` NAV reads today, and how the pages split into batches for the conversion to uniform rows ([uniform-data.md](uniform-data.md)). Read from the code on 2026-11-01 (develop at 1be5719). `solar.html` and `nsc.html` are already converted (the prototype); their sections describe the code before conversion.
+What every page in the `app.html` NAV read before the conversion to uniform rows ([uniform-data.md](uniform-data.md)), how the pages were split into batches, and where each one stands. Read from the code on 2026-11-01 (develop at 1be5719); the page sections describe the code before conversion, and each starts with its status. **Status:** every page with sheet data is converted (prototype, batches A–E, the final step), except prt-oil (later) and the pages listed under [Not converted](#not-converted).
 
 Complexity: **S** one dataset, straight mapping · **M** several datasets, or custom office/date logic, or drill + deep links · **L** a very large legacy page, many datasets, writes, maps or bespoke parsing. Points for balancing: S = 1, M = 2, L = 4.
 
 ## Summary
 
-| Page (NAV key) | Datasets (mirror keys) | Loader today | Cx | Batch |
+| Page (NAV key) | Datasets (mirror keys) | Loader before conversion | Cx | Status · batch · commit |
 |---|---|---|---|---|
-| nsc.html (nsc) | nsc_pending (+ follow-ups via Apps Script) | UI.load | L | done |
-| historical_nsc.html | historical_nsc | direct fetch, no cache | M | C |
-| nsc/kpi.html | nsc_pending | UI.load | S | A |
-| weekly.html | weekly_report | UI.load | M | A |
-| pending_mc.html | pending_mc | UI.load | M | A |
-| withheld.html | withheld | UI.load | M | A |
-| pending_load_extension.html | load_extension | UI.load | M | A |
-| solar.html | solar_connections | UI.load | M | done |
-| jjm.html (jjm, jjm_report) | jjm_connections | UI.load | M | A |
-| meter_utilization.html | meter_erp, meter_master, meter_crm, meter_isu | waitForDataset ×4 + parsed bundle | L | C |
-| wridd.html | wridd_schemes | UI.load | M | A |
-| bharatnet.html | bharatnet_connections | UI.load | M | A |
-| icds.html | icds_a_plus, icds_a | UI.load ×2 | M | A |
-| loss.html | loss_report, loss_targets | waitForDataset (forceCheck) | M | B |
-| performance_index.html | loss_report, nsc_pending, pending_mc | waitForDataset ×3 | M | B |
-| collection.html | collection_report | UI.load | M | B |
-| disconnection.html | disconnection (+ follow-ups via Apps Script) | UI.load + fallback chain | L | B |
-| theft_assessment.html | theft_assessment | UI.load | M | B |
-| remosd5000.html | rem_osd | UI.load | M | B |
-| rem/defaulters.html | rem_defaulters_dom, _agri, _ind_com (TSV) | UI.load ×3 | M | B |
-| dd/upcomingDD.html | upcoming_dd | direct fetch (gviz) | S | C |
-| dd/dd_visit.html | dd_visit (+ visit records via Apps Script) | UI.load | M | C |
-| consumer/defective_meter.html | defective_summary, defective_details | UI.load + lazy details | L | D |
-| consumer/consumer.html | consumers | direct fetch | S | C |
-| docket.html | docket_calls | UI.load | S | C |
-| docket/kpi.html | docket_kpi | direct fetch | S | C |
-| smart_meter/dashboard.html | smart_meter_status, smart_meter_work_orders (TSV) | direct fetch ×2, own cache | M | C |
-| capex_all.html | capex_details, vendor_map, costcenter | UI.load + hub.get ×2 | M | D |
-| advance_onm.html | onm_advance, vendor_map, costcenter | direct fetch + hub.get ×2 | M | D |
-| power_map/map.html | power_map_substations (CSV from /api/power-map/data), power_map_taps, pending corrections | DataHub + fetch, Papa | L | E |
-| power_map/nh_sh_crossings.html | highway_crossings | direct fetch, Papa | M | E |
-| prt-oil/index.html | prt_transformers, prt_oil_tests, "Map" tab via Apps Script | fetch + Apps Script, Papa | L | later |
-| feeder_outage.html | feeder_outage | _peek + waitForDataset (forceCheck) | M | D |
-| cmo.html | cmo_grievances | UI.load | S | D |
-| pmsgy.html | pmsgy_malda, pmsgy_uttar_dinajpur, pmsgy_dakshin_dinajpur | waitForDataset ×3 | M | D |
+| nsc.html (nsc) | nsc_pending (+ follow-ups via Apps Script) | UI.load | L | converted · prototype · 6a73dc0 |
+| historical_nsc.html | historical_nsc | direct fetch, no cache | M | converted · C · 9b72052 |
+| nsc/kpi.html | nsc_pending | UI.load | S | converted · A · 552486b |
+| weekly.html | weekly_report | UI.load | M | converted · A · 74ffd8b |
+| pending_mc.html | pending_mc | UI.load | M | converted · A · 0c9158d |
+| withheld.html | withheld | UI.load | M | converted · A · b252e40 |
+| pending_load_extension.html | load_extension | UI.load | M | converted · A · a9e3efb |
+| solar.html | solar_connections | UI.load | M | converted · prototype · 991110f |
+| jjm.html (jjm, jjm_report) | jjm_connections | UI.load | M | converted · A · d7af4ac |
+| meter_utilization.html | meter_erp, meter_master, meter_crm, meter_isu | waitForDataset ×4 + parsed bundle | L | converted · C · 8b376c9 |
+| wridd.html | wridd_schemes | UI.load | M | converted · A · c4d32df |
+| bharatnet.html | bharatnet_connections | UI.load | M | converted · A · bc1aa65 |
+| icds.html | icds_a_plus, icds_a | UI.load ×2 | M | converted · A · 3288031 |
+| loss.html | loss_report, loss_targets | waitForDataset (forceCheck) | M | converted · B · c058c54 |
+| performance_index.html | loss_report, nsc_pending, pending_mc | waitForDataset ×3 | M | converted · rating rebuild · 615a25f, eef4db3 |
+| collection.html | collection_report | UI.load | M | converted · B · 036a7c3 |
+| disconnection.html | disconnection (+ follow-ups via Apps Script) | UI.load + fallback chain | L | converted · B · 03e6ef9 |
+| theft_assessment.html | theft_assessment | UI.load | M | converted · B · 5afc0e5 |
+| remosd5000.html | rem_osd | UI.load | M | converted · B · 1b31754 |
+| rem/defaulters.html | rem_defaulters_dom, _agri, _ind_com (TSV) | UI.load ×3 | M | converted · B · 4437f5b |
+| dd/upcomingDD.html | upcoming_dd | direct fetch (gviz) | S | converted · C · 00a39a6, c557c2d (no-store MzoRows.build) |
+| dd/dd_visit.html | dd_visit (+ visit records via Apps Script) | UI.load | M | converted · C · 135a7cf, db374ab (no-store MzoRows.build) |
+| consumer/defective_meter.html | defective_summary, defective_details | UI.load + lazy details | L | converted · D · c59ccfb |
+| consumer/consumer.html | consumers | direct fetch | S | converted · C · cd070d5 |
+| docket.html | docket_calls | UI.load | S | converted · C · 8fadb73 |
+| docket/kpi.html | docket_kpi | direct fetch | S | converted · C · e2f32b1 |
+| smart_meter/dashboard.html | smart_meter_status, smart_meter_work_orders (TSV) | direct fetch ×2, own cache | M | converted · C · 0175f68 |
+| capex_all.html | capex_details, vendor_map, costcenter | UI.load + hub.get ×2 | M | converted · D · e5b04cc |
+| advance_onm.html | onm_advance, vendor_map, costcenter | direct fetch + hub.get ×2 | M | converted · D · 5818883 |
+| power_map/map.html | power_map_substations (CSV from /api/power-map/data), power_map_taps, pending corrections | DataHub + fetch, Papa | L | converted · E · c49254c |
+| power_map/nh_sh_crossings.html | highway_crossings | direct fetch, Papa | M | converted · E · 081de67 |
+| prt-oil/index.html | prt_transformers, prt_oil_tests, "Map" tab via Apps Script | fetch + Apps Script, Papa | L | not converted (later) |
+| feeder_outage.html | feeder_outage | _peek + waitForDataset (forceCheck) | M | converted · D · 358246b |
+| cmo.html | cmo_grievances | UI.load | S | converted · D · cc61edf |
+| pmsgy.html | pmsgy_malda, pmsgy_uttar_dinajpur, pmsgy_dakshin_dinajpur | waitForDataset ×3 | M | converted · D · b2e8ec5 |
 | si-works/si.html | si_works (Supabase prioritySI, read and write) | supabase-js | L | not converted |
-| accident/accident.html | accident_reports | direct fetch, own parser | M | E |
-| safety_inspection.html | safety_inspection | UI.load | S | D |
+| accident/accident.html | accident_reports | direct fetch, own parser | M | converted · E · 8967cde |
+| safety_inspection.html | safety_inspection | UI.load | S | converted · D · 971ff37 |
 | manpower.html | manpower_pins, manpower_staff (sensitive) | direct fetch | M | not converted |
 | Upkeeping/index.html | none (link to an external app) | — | S | not converted |
-| dtr/index.html | dtr_records | direct fetch, own parser | M | E |
-| dtr/load.html | dtr_peak_load (+ DTR master via Apps Script) | direct fetch ×3, own parser | M | E |
+| dtr/index.html | dtr_records | direct fetch, own parser | M | converted · E · 36710dd |
+| dtr/load.html | dtr_peak_load (+ DTR master via Apps Script) | direct fetch ×3, own parser | M | converted · E · 6b9f07b |
 | health_checkup.html | none (placeholder) | — | S | not converted |
 | puja.html | none (embedded sheets) | — | S | not converted |
-| stock/index.html | stock_snapshot, stock_materials, stock_allotments | DataHub + Papa, 6 JS files | L | E |
-| important_sheets.html | single cells of the important_* sheets, important_unbilled_months | cell fetches + server JSON | S | not converted |
-| sheet_links.html | as-on rules of ~15 datasets | DataHub registry + own parser | M | final |
+| stock/index.html | stock_snapshot, stock_materials, stock_allotments | DataHub + Papa, 6 JS files | L | converted · E · 3688550 |
+| important_sheets.html | single cells of the important_* sheets, important_unbilled_months | cell fetches + server JSON | S | fixed, not converted · D · 4cac325 |
+| sheet_links.html | as-on rules of ~15 datasets | DataHub registry + own parser | M | converted · final · cd102ec |
 | media_news.html | none (server RSS JSON) | — | S | not converted |
 | executive_briefing.html (home) | none in the page (server JSON from meta stats) | /api/executive/briefing | S | not converted (server) |
-| assistant.html (ask) | nsc_pending, load_extension, solar_connections, loss_report, loss_targets | DataHub `_peek`/`waitForDataset` | M | final |
+| assistant.html (ask) | nsc_pending, load_extension, solar_connections, loss_report, loss_targets | DataHub `_peek`/`waitForDataset` | M | converted · final · 11e4a93 |
 | admin_users.html (6 tabs) | power_map_substations (one column) | Papa on /api/power-map/data | S | not converted |
 | admin.html | data/structure.csv via /api/structures, portal users | server JSON | S | not converted |
 
-52 distinct pages (59 NAV entries: performance index and JJM are listed twice, Users/Sources/Activity/… are six tabs of admin_users.html): 2 converted, 37 in batches A–E, 2 in a final step, 1 later, 10 not converted (no tabular data, sensitive, typed Supabase JSON with writes, or server-built).
+52 distinct pages (59 NAV entries: performance index and JJM are listed twice, Users/Sources/Activity/… are six tabs of admin_users.html). Converted: 41 (the 2 prototype pages, 36 in batches A–E, performance_index through the rating rebuild, the 2 of the final step). Not converted: 10, plus prt-oil later.
+
+### Not converted
+
+| Page | Why |
+|---|---|
+| prt-oil/index.html | later: its "Map" tab is only reachable through Apps Script, so it cannot be mirrored; prt_transformers / prt_oil_tests can be converted when the page is |
+| si-works/si.html | typed Supabase JSON (prioritySI) with writes and a permission model on raw strings; uniform rows would add only aliases. `schema/si_works.json` exists for the rating metrics only |
+| manpower.html | sensitive (staff data, PINs): never mirrored |
+| Upkeeping/index.html | no data (a link to an external app) |
+| health_checkup.html | no data (placeholder) |
+| puja.html | no tabular data (embedded sheets) |
+| media_news.html | no sheet data (server RSS JSON) |
+| executive_briefing.html | server JSON built from meta stats (`/api/executive/briefing`): a server-side job of its own, not a page conversion |
+| admin_users.html (6 tabs) | admin pages; one column of the Power Map CSV |
+| admin.html | admin page; server-parsed structure CSV and portal users |
+| important_sheets.html | single cells, not rows; its cell reads were fixed in batch D (`4cac325`) |
 
 ## Batch plan (5 parallel conversions)
 
@@ -72,7 +88,7 @@ Complexity: **S** one dataset, straight mapping · **M** several datasets, or cu
 | **C** Meters, consumers & DD | meter_utilization, consumer, docket, docket/kpi, smart_meter, dd/upcomingDD, dd/dd_visit, historical_nsc | 14 | meter_erp, meter_master, meter_crm, meter_isu, consumers, docket_calls, docket_kpi, smart_meter_status, smart_meter_work_orders, upcoming_dd, dd_visit, historical_nsc |
 | **D** Offices-heavy & important | capex_all, advance_onm, feeder_outage, cmo, pmsgy, safety_inspection, defective_meter | 14 | capex_details, onm_advance, vendor_map, costcenter, feeder_outage, cmo_grievances, pmsgy_malda, pmsgy_uttar_dinajpur, pmsgy_dakshin_dinajpur, safety_inspection, defective_summary, defective_details |
 | **E** Legacy pages | accident, dtr/index, dtr/load, nh_sh_crossings, stock, power_map | 16 | accident_reports, dtr_records, dtr_peak_load, highway_crossings, stock_snapshot, stock_materials, power_map_substations, power_map_taps |
-| final (one person, after A–E) | assistant.html, sheet_links.html | 4 | none (reads others' schemas; adds fields to them) |
+| final (one person, after A–E) | assistant.html, sheet_links.html (+ dd_visit no-store, DTR drill, map pages on phones) | 4 | none (reads others' schemas; needed no new fields) |
 | later | prt-oil/index.html | 4 | prt_transformers, prt_oil_tests (its Map tab is only reachable through Apps Script, so it cannot be mirrored) |
 
 Rules that keep the batches independent:
@@ -85,16 +101,24 @@ Rules that keep the batches independent:
 
 ## Cross-cutting findings (for the lead)
 
-These came out of reading every page; none is fixed here.
+These came out of reading every page; none was fixed in this inventory. Where each stands on 2026-11-01 is in the **Now** note under it.
 
 1. **Scope leak.** `jjm.html`, `bharatnet.html` and `icds.html` do `if (scoped.length || !all.length) all = scoped;`: when the login scope removes every row, the page shows **all** rows to that user. Converting them to `MzoRows.load` (scoped by default) removes the fallback; fix it in the conversion and say so in the commit.
+   - **Now:** fixed. All three pages are scoped by `MzoRows` (batch A: `d7af4ac`, `bc1aa65`, `3288031`); the fallback is gone.
 2. **Pages with no scope at all:** power_map/map.html, power_map/nh_sh_crossings.html, prt-oil/index.html and cmo.html do not load `mzo_scope.js`. The executive briefing applies no office scope either, and assistant.html does not scope loss rows.
+   - **Now:** Ask's loss answers follow the login scope as loss.html does (`11e4a93`). power_map, nh_sh_crossings, cmo (and the other batch E pages) still show every office to every login, as before: the lead's open decision for the user (CMO rows name only a district). prt-oil is not converted. The briefing is server-built and still unscoped.
 3. **One value, several rules.** The NSC "over a year" bucket is `AGE_MONTHS > 12` in the sync scripts but `>= 12` in pending_load_extension and assistant; the briefing's division hotspots show the total instead of the item's own measure. Uniform rows give one source for these values; the rules themselves still have to be agreed.
+   - **Now:** open. Ask and pending_load_extension count over a year as `age >= 12` (574 applications on 2026-11-01), the load extension meta and the briefing as `> 12` (569). Ask's NSC "over 30 days" (`DelayInSC > 30`) and nsc.html's `?kpi=delay30` (DelayRange "More than 1 month") give the same count today (3,482) but are different rules.
 4. **Single-cell values outside the scope.** Report dates that live in one row of a sheet (solar's `Report Date`, bharatnet N2, loss J2, ICDS M2, Disconnection base dates) disappear for a scoped user if a page reads them from scoped rows. The prototype hit this: use `t.first(field)` / `t.all` (see the recipe).
+   - **Now:** fixed on every converted page: single cells are read with `t.first()` / `t.all` (the row parity tools compare the header text for every login), and sheet_links reads them the same way (`cd102ec`).
 5. **important_sheets.html** reads single cells with `export?format=csv&range=D57` and no `gid`, so it reads the first tab, not the configured month tab; one sheet id is 33 characters long and looks truncated.
+   - **Now:** fixed in batch D (`4cac325`): each cell is read from its configured tab (gviz with the tab's gid); the 33-character id is valid.
 6. **sheet_links.html** picks the CMO date by plain text comparison (wrong across months for dd/mm/yyyy) and its dates depend on which request finishes first.
+   - **Now:** fixed (`cd102ec`): the CMO date is read as a date (cmo.html's rule), and each row shows the best date it has in a fixed order (the data's as-on date first), whatever order the requests finish in. Its PM Surya Ghar parser also read only 3-letter months; uniform rows read full month names.
 7. **Duplicate headers.** solar_connections has `APPL_NO` three times and weekly_report `Division` twice. `UI.csv` keeps the last copy under the plain name; uniform rows name them `appl_no`, `appl_no_2`, `appl_no_3` (first copy first). A page that read the plain name must pick the right one (weekly: check which `Division` column it meant).
+   - **Now:** handled: uniform rows keep every copy (`appl_no`, `appl_no_2`, …) and weekly reads `division_2`, the column it read before (`74ffd8b`).
 8. **Dates that stay numbers.** `yyyymmdd` (disconnection `PAID DATE`, rem/defaulters, DD pages) and `yyyymm` (feeder_outage `REPORT MONTH`) are not dates to the inference (the mirror does the same); pages keep converting them. A schema `format` hint is an open question.
+   - **Now:** unchanged: pages still convert `yyyymmdd` / `yyyymm` themselves (a schema `format` hint is still an open question in uniform-data.md).
 
 ## Pages
 
@@ -104,6 +128,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 ## New service connection
 
 ### nsc.html  (NAV key: nsc; retired hashes nsc_simple|nsc_pipeline|nsc_classic redirect here)
+- **Status (2026-11-01):** converted in `6a73dc0` (prototype).
 - **Kind:** kit (665 lines) · **Loads:** /mzo_presets_hub.js?v=88 (auth bootstrap; injects auth.js + /mzo_app_update.js)
 - **Datasets:**
   - `nsc_pending` via UI.load CACHE_NSC_v5 (hub URL `/api/nsc/dataset` → 302 to the Google Sheet CSV; also `UI.refresh('refreshBtn', KEY)` and `mzoDataHub.refresh(KEY)`+`_peek` in "Load latest").
@@ -167,6 +192,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
   - CACHE_NSC_v5 is also read by performance_index.html and assistant.html, referenced by admin_users.html and sheet_links.html, and written by nsc/upload.html.
 
 ### historical_nsc.html  (NAV key: historical_nsc)
+- **Status (2026-11-01):** converted in `9b72052` (batch C).
 - **Kind:** kit (289 lines) · **Loads:** none (kit only). It does **not** load mzo_data_hub.js or auth/presets.
 - **Datasets:** `historical_nsc` via direct fetch `https://docs.google.com/spreadsheets/d/e/2PACX-1vT1VYUaMC92oZPb3f452Q2b5WJf3Zhm02JdVq2Hsykt-_ipAcIIYaFdgYm4qZdZ8heGcrDon5eQA7nk/pub?gid=2021450441&single=true&output=csv` (refresh uses `{cache:'no-store'}`; no IndexedDB cache).
 - **Parser:** UI.csv
@@ -193,6 +219,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none (copy of block (a))
 
 ### nsc/kpi.html  (NAV key: nsc_kpi)
+- **Status (2026-11-01):** converted in `552486b` (batch A).
 - **Kind:** kit (129 lines) · **Loads:** none (kit only)
 - **Datasets:** `nsc_pending` via UI.load CACHE_NSC_v5
 - **Parser:** UI.csv
@@ -219,6 +246,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** no helper file. Same dataset/dedupe as nsc.html; the two should move to `nsc_pending` uniform rows together.
 
 ### weekly.html  (NAV key: weekly)
+- **Status (2026-11-01):** converted in `74ffd8b` (batch A).
 - **Kind:** kit (305 lines) · **Loads:** none (kit only)
 - **Datasets:** `weekly_report` via UI.load CACHE_WEEKLY (+ UI.refresh)
 - **Parser:** UI.csv
@@ -247,6 +275,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none (copy of block (a))
 
 ### pending_mc.html  (NAV key: pending_mc)
+- **Status (2026-11-01):** converted in `0c9158d` (batch A).
 - **Kind:** kit (272 lines) · **Loads:** none (kit only)
 - **Datasets:**
   - `pending_mc` via UI.load CACHE_PENDING_MC (+ UI.refresh).
@@ -284,6 +313,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** no helper file (copy of block (b)). CACHE_PENDING_MC is also read by performance_index.html and referenced by sheet_links.html.
 
 ### withheld.html  (NAV key: withheld)
+- **Status (2026-11-01):** converted in `b252e40` (batch A).
 - **Kind:** kit (256 lines) · **Loads:** none (kit only)
 - **Datasets:**
   - `withheld` via UI.load CACHE_WITHHELD_v4 (hub URL `/api/withheld/dataset` → 302 to the sheet). When localStorage `mzo_withheld_pending_refresh` is set, the page calls `mzoDataHub.refresh(KEY)` first. Also UI.refresh.
@@ -318,6 +348,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** no helper file (copy of block (b)). CACHE_WITHHELD_v4 is written by nsc/upload.html and referenced by admin_users.html and sheet_links.html.
 
 ### pending_load_extension.html  (NAV key: pending_load_extension)
+- **Status (2026-11-01):** converted in `a9e3efb` (batch A).
 - **Kind:** kit (252 lines) · **Loads:** none (kit only)
 - **Datasets:**
   - `load_extension` via UI.load CACHE_LOAD_EXT (+ UI.refresh, + `hub.refresh`/`_peek` after sync).
@@ -349,6 +380,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** no helper file (copy of block (b)). CACHE_LOAD_EXT is also read by assistant.html.
 
 ### solar.html  (NAV key: solar)
+- **Status (2026-11-01):** converted in `991110f` (prototype).
 - **Kind:** kit (229 lines) · **Loads:** none (kit only)
 - **Datasets:** `solar_connections` via UI.load CACHE_SOLAR (+ UI.refresh)
 - **Parser:** UI.csv
@@ -380,6 +412,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** no helper file (copy of block (b)). CACHE_SOLAR is also read by assistant.html.
 
 ### jjm.html  (NAV keys: jjm and jjm_report, the same page listed twice in app.html)
+- **Status (2026-11-01):** converted in `d7af4ac` (batch A).
 - **Kind:** kit (195 lines) · **Loads:** none (kit only)
 - **Datasets:** `jjm_connections` via UI.load CACHE_JJM (+ UI.refresh)
 - **Parser:** UI.csv
@@ -407,6 +440,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** no helper file (copy of block (a)). CACHE_JJM is referenced by sheet_links.html.
 
 ### meter_utilization.html  (NAV key: meter_utilization)
+- **Status (2026-11-01):** converted in `8b376c9` (batch C).
 - **Kind:** kit (412 lines) · **Loads:** none (kit only)
 - **Datasets:**
   - `meter_erp`, `meter_master`, `meter_crm`, `meter_isu` via `mzoDataHub._peek` / `waitForDataset` on CACHE_METER_ERP/MASTER/CRM/ISU (all four together).
@@ -460,6 +494,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** no helper file (copy of block (a)). CACHE_METER_* and CACHE_METER_PARSED_v1 are used only by this page.
 
 ### wridd.html  (NAV key: wridd)
+- **Status (2026-11-01):** converted in `c4d32df` (batch A).
 - **Kind:** kit (258 lines) · **Loads:** none (kit only)
 - **Datasets:** `wridd_schemes` via UI.load CACHE_WRIDD (+ UI.refresh)
 - **Parser:** UI.csv
@@ -488,6 +523,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none (copy of block (a))
 
 ### bharatnet.html  (NAV key: bharatnet)
+- **Status (2026-11-01):** converted in `bc1aa65` (batch A).
 - **Kind:** kit (243 lines) · **Loads:** none (kit only)
 - **Datasets:** `bharatnet_connections` via UI.load CACHE_BHARATNET (+ UI.refresh)
 - **Parser:** UI.csv
@@ -529,6 +565,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
   - CACHE_BHARATNET is referenced by sheet_links.html and apps-script/mzo_metadata_sync.gs.
 
 ### icds.html  (NAV key: icds)
+- **Status (2026-11-01):** converted in `3288031` (batch A).
 - **Kind:** kit (300 lines) · **Loads:** none (kit only)
 - **Datasets:**
   - `icds_a_plus` via UI.load CACHE_ICDS_APLUS and `icds_a` via UI.load CACHE_ICDS_A, both with `{ forceCheck: true }`.
@@ -568,6 +605,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 ## Revenue
 
 ### loss.html  (NAV key: loss)
+- **Status (2026-11-01):** converted in `c058c54` (batch B).
 - **Kind:** kit (264 lines) · **Loads:** none besides the kit files
 - **Datasets:** `loss_report` via `hub._peek('CACHE_LOSS')` + `waitForDataset('CACHE_LOSS', { forceCheck: true })` (it always revalidates; no UI.load). `loss_targets` is loaded the same way from `CACHE_LOSS_TARGET`.
 - **Parser:** UI.csv (both)
@@ -585,6 +623,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** no helper file. `CACHE_LOSS` is also parsed by performance_index.html (and assistant.html). The same name aliases appear in performance_index.html's `ALIAS`/`DIV_PAT`/`REG_PAT`.
 
 ### performance_index.html  (NAV key: performance_index; also perf_index_imp)
+- **Status (2026-11-01):** rebuilt by the rating work instead of batch B: it shows the VM's precomputed rating (`/api/data/rating`), else rates in the browser from uniform rows (`lib/rating_metrics.js` reads every dataset through `MzoRows.get`; `615a25f`, `eef4db3`, `bc72255`).
 - **Kind:** kit (343 lines) · **Loads:** none besides the kit files
 - **Datasets:** `loss_report`, `nsc_pending` and `pending_mc`, each via `waitForDataset(k, { forceCheck })` + `hub.get(k)` on `CACHE_LOSS`, `CACHE_NSC_v5` (`/api/nsc/dataset`) and `CACHE_PENDING_MC` respectively. On force it also calls `hub.resetVersionChecks()`.
 - **Parser:** UI.csv (all three)
@@ -602,6 +641,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** no helper file. Datasets are shared with loss.html (CACHE_LOSS), nsc.html and nsc/kpi.html (CACHE_NSC_v5; nsc/kpi also reads `DelayInQtn`), and pending_mc.html (CACHE_PENDING_MC).
 
 ### collection.html  (NAV key: collection)
+- **Status (2026-11-01):** converted in `036a7c3` (batch B).
 - **Kind:** kit (305 lines) · **Loads:** none besides the kit files
 - **Datasets:** `collection_report` via UI.load CACHE_COLLECTION (+ UI.refresh)
 - **Parser:** UI.csv
@@ -619,6 +659,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none
 
 ### disconnection.html  (NAV key: disconnection)
+- **Status (2026-11-01):** converted in `03e6ef9` (batch B).
 - **Kind:** kit (865 lines) · **Loads:** `/auth.js` (explicit), nothing else besides the kit files
 - **Datasets:** `disconnection` via UI.load CACHE_DISCONNECTION (+ UI.refresh). Fallback when the hub has nothing: fetch `meta.csvUrl` from `/api/disconnection/meta`, else the published sheet `…2PACX-1vSkl9m38…/pub?gid=0&single=true&output=csv`. It also reads `/api/disconnection/meta` (server JSON: `canSync`, `sheetScriptUrl`, `csvUrl`, `stats.{totalConsumers,totalOSD,fullyPaid,partiallyPaid,disconnected,noAction}`). A follow-up comments feed comes from the Apps Script `sheetScriptUrl?list=1` as JSON `{comments:[{id,conId|con_id,note,at,by}], deletedIds}`. That feed is not in the dataset lists (nsc_followups is NSC only).
 - **Parser:** first `normalizeCsv` (header-row detection), then UI.csv. Base dates use a custom `csvLine` split of the first two lines.
@@ -636,6 +677,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** no helper file. The same CSV and column names are parsed server-side by `scripts/sync/sync_disconnection_to_supabase.js` (it also uses positional fallbacks, e.g. `NOTOSD` → 5 and `PAID/DISCON DATE` → 12), by `scripts/tools/compute_briefing_cccs.js`, and by server.js meta/sync.
 
 ### theft_assessment.html  (NAV key: theft_assessment)
+- **Status (2026-11-01):** converted in `5afc0e5` (batch B).
 - **Kind:** kit (307 lines) · **Loads:** none besides the kit files
 - **Datasets:** `theft_assessment` via UI.load CACHE_THEFT_ASSESSMENT_v2 (+ UI.refresh)
 - **Parser:** UI.csv. An object body `{data: text}` is unwrapped first.
@@ -653,6 +695,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none
 
 ### remosd5000.html  (NAV key: remosd5000)
+- **Status (2026-11-01):** converted in `1b31754` (batch B).
 - **Kind:** kit (241 lines) · **Loads:** none besides the kit files
 - **Datasets:** `rem_osd` via UI.load CACHE_REM_v2 (+ UI.refresh). The source is the gviz `tq?tqx=out:csv` export.
 - **Parser:** UI.csv
@@ -670,6 +713,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none
 
 ### rem/defaulters.html  (NAV key: rem_defaulters)
+- **Status (2026-11-01):** converted in `4437f5b` (batch B).
 - **Kind:** kit (315 lines) · **Loads:** none besides the kit files
 - **Datasets:** `rem_defaulters_dom` via UI.load CACHE_REM_DOM, `rem_defaulters_agri` via UI.load CACHE_REM_AGRI, and `rem_defaulters_ind_com` via UI.load CACHE_REM_DEFAULTERS. All three are published `output=tsv`. On refresh: `waitForDataset(forceCheck)` + `_peek`.
 - **Parser:** custom `split('\t')` (`tsv()`): `\r` removed, blank lines dropped, header trimmed, values trimmed
@@ -690,6 +734,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 ## DD visit
 
 ### dd/upcomingDD.html  (NAV key: upcoming_dd)
+- **Status (2026-11-01):** converted in `00a39a6` (batch C); `c557c2d` builds its rows with `MzoRows.build`, nothing stored on the device.
 - **Kind:** kit (296 lines) · **Loads:** none besides the kit files (no mzo_data_hub.js)
 - **Datasets:** `upcoming_dd` via fetch `https://docs.google.com/spreadsheets/d/1aUeVnSc-OmFqqrUdoZxv8v8659u52zlIWddnpJgU9Uk/gviz/tq?tqx=out:csv&gid=487034861` with `cache: 'no-store'`
 - **Parser:** UI.csv
@@ -707,6 +752,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** no shared file. The code is very similar to dd/dd_visit.html (own copies of `ymd`, `uniq`, `fillFilters`, `drill`, and the `DISCON_DT` handling).
 
 ### dd/dd_visit.html  (NAV key: dd_visit_page)
+- **Status (2026-11-01):** converted in `135a7cf` (batch C); `db374ab` (final) reads the sheet with no cache and builds its rows with `MzoRows.build`, storing nothing on the device (the sheet holds PAN), and deletes the copies older versions kept.
 - **Kind:** kit (368 lines) · **Loads:** none besides the kit files
 - **Datasets:** `dd_visit` via UI.load CACHE_DD_VISIT; refresh uses `waitForDataset(forceCheck)` + `_peek`. Visit records come from the Apps Script `https://script.google.com/macros/s/AKfycbxgrKdt--yXk4A3_jL8PS6Z5kYXohHVNA3GKxq2jss8TVgqfvJdff_jFDwjj8Gxcdv00Q/exec?t=` as JSON `{status:'success', data:{<conId>: rec}}`, merged with localStorage `dd_visit_followups_v1` by `updatedAt`. That feed is not in the dataset lists.
 - **Parser:** UI.csv (sheet); JSON (visits)
@@ -727,6 +773,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 ## Consumers & meters
 
 ### consumer/defective_meter.html  (NAV key: defective_meter)
+- **Status (2026-11-01):** converted in `c59ccfb` (batch D).
 - **Kind:** kit (460 lines) · **Loads:** `/lib/defective_meter_pipeline.js?v=85`, `/lib/sheet_mirror_client.js?v=110`
 - **Datasets:** `defective_summary` via UI.load CACHE_DEFECTIVE. On error it falls back to fetching `meta.summaryCsvUrl` or `…1dMLSX2bZBqZMPooh7_CrniCjqgy4MijaFW62GKJJldA/export?format=csv&gid=0`. `defective_details` is loaded lazily: `waitForDataset('CACHE_DEFECTIVE_DETAILS')` + `_peek`, else fetch `meta.detailsCsvUrl` or `…&gid=1638574999`. It also reads `/api/defective/meta` (server JSON: `summaryCsvUrl`, `detailsCsvUrl`, `sheetScriptUrl`, `canUpload`, `canSync`, `stats.{totalDefective,agri,over5,load05_1,loadLt05,over10,ph3,industrial,smart,loadGt6,load3_6,load1_3,reportDate}`).
 - **Parser:** `MzoDefectivePipeline.parseDump(text).rows` → `parseCsv`. It auto-detects the delimiter (tab, `|`, `;` or `,`), strips NULs and BOM, and finds the header row among the first 25 rows by alias score. Headers are canonicalised via `FIELD_ALIASES`/`mapHeader`; lowercase KPI names (`total`, `over10`…) are preserved. TOTAL / GRAND TOTAL rows are skipped, and so are rows with no id, ccc or meter. The page also drops rows that are entirely blank and throws when the text looks like a Google sign-in page.
@@ -744,6 +791,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** `/lib/sheet_mirror_client.js` is also loaded by nsc/upload.html and stock/upload.html. `/lib/defective_meter_pipeline.js` is loaded only by this page (also listed in sw.js).
 
 ### consumer/consumer.html  (NAV key: consumers)
+- **Status (2026-11-01):** converted in `cd070d5` (batch C).
 - **Kind:** kit (232 lines) · **Loads:** none besides the kit files (no mzo_data_hub.js)
 - **Datasets:** `consumers` via fetch `https://docs.google.com/spreadsheets/d/e/2PACX-1vQT4ufTMHJGTUqNSqFSzz0q2x-ShM_WHlfSRxT4tVqA6GcaMK5g38PDLmcJR4JXuxLi-tKafW-Yxwdo/pub?gid=0&single=true&output=csv` (`cache: 'no-store'` on refresh, `'default'` otherwise)
 - **Parser:** UI.csv
@@ -761,6 +809,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none
 
 ### docket.html  (NAV key: docket)
+- **Status (2026-11-01):** converted in `8fadb73` (batch C).
 - **Kind:** kit (251 lines) · **Loads:** none besides the kit files
 - **Datasets:** `docket_calls` via UI.load CACHE_DOCKET (+ UI.refresh)
 - **Parser:** UI.csv
@@ -778,6 +827,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none. It links to docket/kpi.html, which uses a different sheet; `DESCRIPTION` means free text here and a 'B' flag there.
 
 ### docket/kpi.html  (NAV key: docket_kpi)
+- **Status (2026-11-01):** converted in `e2f32b1` (batch C).
 - **Kind:** kit (211 lines) · **Loads:** none besides the kit files (no mzo_data_hub.js)
 - **Datasets:** `docket_kpi` via fetch `https://docs.google.com/spreadsheets/d/e/2PACX-1vThi-zr48XGYbnQO7YR8xmhVQZV2Wb3t05wTN2kqM254DXNOr5wfeBWNIhywNk2egvpYeSte2EWLLvD/pub?gid=0&single=true&output=csv` (`no-store` on refresh)
 - **Parser:** UI.csv
@@ -795,6 +845,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none
 
 ### smart_meter/dashboard.html  (NAV key: smart_meter)
+- **Status (2026-11-01):** converted in `0175f68` (batch C).
 - **Kind:** kit (272 lines) · **Loads:** none besides the kit files (no mzo_data_hub.js)
 - **Datasets:** `smart_meter_status` via fetch `https://docs.google.com/spreadsheets/d/e/2PACX-1vSWjwUI4EUgEABlcggpdOS-WSPKY8my-5T0cLxT4h8tNz_IreQy6jUYKBnB5yc0n-fcs8FpVbwo6Qay/pub?gid=327926255&single=true&output=tsv`, and `smart_meter_work_orders` via fetch of the same document with `gid=958431052&…&output=tsv`. Both use `cache: 'no-store'`, with the last good copy kept in the Cache API `mzo-smart-meter-v1` and painted first.
 - **Parser:** custom `split('\t')` (`tsv()`): BOM stripped, blank lines dropped, header and values trimmed, no quote handling
@@ -815,6 +866,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 ## Vendor advances
 
 ### capex_all.html  (NAV key: capex_all)
+- **Status (2026-11-01):** converted in `e5b04cc` (batch D).
 - **Kind:** kit (256 lines) · **Loads:** none (only mzo_theme / mzo_ui / mzo_data_hub / mzo_scope)
 - **Datasets:** `capex_details` via UI.load CACHE_CAPEX (+ UI.refresh CACHE_CAPEX; if hub reports error, falls back to direct fetch of the same published CSV URL gid=439685010) · `vendor_map` via `hub.get('CACHE_VENDORS')`, fallback fetch of the published CSV gid=1818971964 · `costcenter` via `hub.get('CACHE_COSTCENTER')`, fallback fetch `/data/costcenter.json` (maps are loaded first; the main render waits for them)
 - **Parser:** UI.csv (main + vendor map); JSON for costcenter (accepts either a parsed array or a string → `JSON.parse`)
@@ -835,6 +887,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** advance_onm.html (near-identical code block: `num`, `unitName`, `regionOf`, `maps()`, `hubText`, AGE/OVER stats, dim tabs; both read vendor_map + costcenter). sheet_links.html also parses CACHE_CAPEX `Reporting Date` (dd.mm.yyyy) for its as-on label. No page-specific JS file.
 
 ### advance_onm.html  (NAV key: advance_onm)
+- **Status (2026-11-01):** converted in `5818883` (batch D).
 - **Kind:** kit (246 lines) · **Loads:** none (only mzo_theme / mzo_ui / mzo_data_hub / mzo_scope)
 - **Datasets:** `onm_advance` via direct fetch `https://docs.google.com/spreadsheets/d/e/2PACX-1vQPBYq0ZQpaAnu0Mp_qN5oGvklgIpjolyRPf3LfSojRaN-GBBBXKHslR9ue1DOv1432oP2PzYznUUmn/pub?gid=512034300&single=true&output=csv` (no DataHub key; refresh uses `cache: 'no-store'`) · `vendor_map` via `hub.get('CACHE_VENDORS')`, fallback CSV fetch · `costcenter` via `hub.get('CACHE_COSTCENTER')`, fallback `/data/costcenter.json`
 - **Parser:** UI.csv (main + vendor map); JSON (costcenter, string or array)
@@ -858,6 +911,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 ## Substation & network
 
 ### power_map/map.html  (NAV key: power_map)
+- **Status (2026-11-01):** converted in `c49254c` (batch E); `ec5478b` (final) adds the Filters button on phones.
 - **Kind:** legacy (5389 lines) · **Loads:** `../mzo_data_hub.js` (relative path) + CDN: Leaflet 1.9.4, PapaParse 5.3.2, typed.js 2.1.0, Leaflet.PolylineMeasure 3.0.0, jsPDF 2.5.1, html2canvas 1.4.1. Does **not** load mzo_ui.js, mzo_scope.js or auth.js. No power_map/*.js files exist (the folder holds only map.html, nh_sh_crossings.html, streetview_overlay.html).
 - **Datasets:**
   - `power_map_substations` via `mzoDataHub.retryDataset('CACHE_POWER_MAP')` + `mzoDataHub.get('CACHE_POWER_MAP')`; if empty, direct `fetch('/api/power-map/data', {credentials:'same-origin'})` and then `mzoDataHub.set('CACHE_POWER_MAP', rawText)`. Server: Supabase table `mzo_power_substations` rebuilt as CSV, falling back to the published sheet `…2PACX-1vT8hYE6YBbfVQDJhgB3cIWqrrGrjMQAQ22mcmCJTOa995gCH-xBAfsAPpBvNYS1KlYIFMRHM59iGB7K/pub?output=csv`. Retried up to 3 times.
@@ -882,6 +936,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** admin_users.html (also fetches `/api/power-map/data`, lists CACHE_POWER_MAP as source "Supabase", and handles the admin pending-corrections endpoints); server.js builds the CSV. No shared page JS file. nh_sh_crossings.html uses a similar Leaflet / Papa / WestBengal.geojson pattern but shares no code file.
 
 ### power_map/nh_sh_crossings.html  (NAV key: highway_crossings)
+- **Status (2026-11-01):** converted in `081de67` (batch E); `ec5478b` (final) adds the Filters button on phones.
 - **Kind:** legacy (1575 lines) · **Loads:** none of the kit besides mzo_theme.js; CDN Leaflet 1.9.4, PapaParse 5.3.2, Leaflet.PolylineMeasure 3.0.0 (no mzo_ui / mzo_data_hub / mzo_scope / auth)
 - **Datasets:** `highway_crossings` via direct fetch `https://docs.google.com/spreadsheets/d/e/2PACX-1vQTy_LCddlFuzZx9ZyJQTLbqrQ8sb76DG4jyw8ys-s_w6LDxOYhnTTY49eddhqxb9RnTAbksh32y1bH/pub?gid=870376934&single=true&output=csv`. Non-tabular: WestBengal.geojson (GitHub raw), Nominatim reverse geocode per marker click.
 - **Parser:** `Papa.parse(csvText, { header: true, dynamicTyping: true, skipEmptyLines: true })`
@@ -899,6 +954,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** power_map/streetview_overlay.html (receives its URL params). admin_users.html lists the same sheet URL as "Highway Crossings" (catalogue only). No shared JS file.
 
 ### prt-oil/index.html  (NAV key: prt_oil)
+- **Status (2026-11-01):** not converted: later (its Map tab is only reachable through Apps Script, so it cannot be mirrored).
 - **Kind:** legacy (1771 lines) · **Loads:** none of the kit besides mzo_theme.js; CDN Bootstrap 5.3.0 bundle, jsPDF 2.5.1, PapaParse 5.4.1, jspdf-autotable 3.5.28 (no mzo_ui / mzo_data_hub / mzo_scope / auth)
 - **Datasets:**
   - Apps Script `https://script.google.com/macros/s/AKfycbxhEdt6LWidyEwq0VUoHv55vSXX1DyWbAHqEppFA1X59j43mlgfxS1NVhXNdz5KpVbe/exec?action=getInitialData` → JSON `{ map, ptrs }` (apps-script/prt_oil.gs: `getSheetData("Map")`, `getSheetData("ptrs")`). `ptrs` = `prt_transformers`; **`map` = the "Map" tab (Region / Division / Substation list), which is not in the brief's dataset list.**
@@ -922,6 +978,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** apps-script/prt_oil.gs (backend for getInitialData / addPTR / submitTestRecord). admin_users.html and sheet_links.html list the gid=0 PTR CSV (links only). No shared page JS file.
 
 ### feeder_outage.html  (NAV key: feeder_outage)
+- **Status (2026-11-01):** converted in `358246b` (batch D).
 - **Kind:** kit (365 lines) · **Loads:** none (only mzo_theme / mzo_ui / mzo_data_hub / mzo_scope)
 - **Datasets:** `feeder_outage` via `mzoDataHub._peek('CACHE_FEEDER_OUTAGE')` (paint from cache) then `waitForDataset('CACHE_FEEDER_OUTAGE', { forceCheck: true })` + `_peek` on every load (the published CSV has no ETag)
 - **Parser:** UI.csv
@@ -942,6 +999,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 ## Important
 
 ### cmo.html  (NAV key: cmo)
+- **Status (2026-11-01):** converted in `cc61edf` (batch D).
 - **Kind:** kit (225 lines) · **Loads:** none (mzo_theme / mzo_ui / mzo_data_hub only; **mzo_scope.js is not loaded**)
 - **Datasets:** `cmo_grievances` via UI.load CACHE_CMO (+ UI.refresh CACHE_CMO)
 - **Parser:** UI.csv
@@ -959,6 +1017,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** sheet_links.html (reads CACHE_CMO `Report Date` for its as-on label). No page-specific JS file.
 
 ### pmsgy.html  (NAV key: pmsgy)
+- **Status (2026-11-01):** converted in `b2e8ec5` (batch D).
 - **Kind:** kit (334 lines) · **Loads:** none (only mzo_theme / mzo_ui / mzo_data_hub / mzo_scope)
 - **Datasets:** `pmsgy_malda`, `pmsgy_uttar_dinajpur`, `pmsgy_dakshin_dinajpur` via `waitForDataset(CACHE_PMSGY_MALDA / _UD / _DD)` (with `{forceCheck:true}` on refresh; the datasets are lazySync) then `_peek` each; rows concatenated
 - **Parser:** UI.csv
@@ -976,6 +1035,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** sheet_links.html (parses the same three tabs' `Last Action Date` with the same dd-Mon-yy / dd/mm/yyyy logic for its as-on labels). No page-specific JS file.
 
 ### si-works/si.html  (NAV key: si_works)
+- **Status (2026-11-01):** not converted: typed Supabase JSON with writes and a permission model on raw strings; uniform rows would add only aliases (its schema exists for the rating metrics only).
 - **Kind:** legacy (3837 lines) · **Loads:** CDN bootstrap@5.3.0 (css + bundle), bootstrap-icons@1.10.0, jspdf 2.5.1, jspdf-autotable 3.5.28, ESM `@supabase/supabase-js@2` (also `../auth.js`). Does NOT load mzo_ui / mzo_data_hub / mzo_scope.
 - **Datasets:** `si_works` via Supabase table `prioritySI` (schema `mzo_insight`, supabase-js `createClient(SUPABASE_URL, anon key)` hardcoded in the page): `fetchData()` → `client.from('prioritySI').select('*')`; `editRecord(id)` re-reads one row `.select('*').eq('id', id).single()`. Plus `/api/session-check` (GET, JSON) for the portal profile (`role`, `si-autho`/`si_autho`, `si-divisions`/`si_divisions`, `Username`, `Name`), cached in localStorage `mzo_user_profile`.
 - **Parser:** JSON (supabase-js rows; keys are the Postgres column names, which are the original sheet headers with spaces/punctuation).
@@ -993,6 +1053,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none (page-specific code is all inline; `auth.js` is the common auth file).
 
 ### accident/accident.html  (NAV key: accident)
+- **Status (2026-11-01):** converted in `8967cde` (batch E).
 - **Kind:** legacy (1698 lines) · **Loads:** nothing beyond mzo_theme.js / mzo_theme.css (no mzo_ui, data hub or scope).
 - **Datasets:** `accident_reports` via `fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vRrrGeyElvh8i8QzTl25Ej7_RJZ9FJ0jicG3tAhguLEvky178oKZ8-QADKcBceUQ5CFjn7hd9eECVJ6/pub?output=csv')` (first tab, no gid, no cache options).
 - **Parser:** custom `parseCSV`: `text.trim().split('\n')`, then `parseCSVLine` per line (a quote char toggles inQuotes; `""` escapes are not handled; a quoted field with a newline breaks the row). Headers `.trim()`, values `.trim()` (which also strips `\r`).
@@ -1010,6 +1071,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none.
 
 ### safety_inspection.html  (NAV key: safety_app)
+- **Status (2026-11-01):** converted in `971ff37` (batch D).
 - **Kind:** kit (279 lines) · **Loads:** nothing beyond kit (mzo_theme, mzo_ui, mzo_data_hub, mzo_scope).
 - **Datasets:** `safety_inspection` via `UI.load('CACHE_SAFETY_v2')` (+ `UI.refresh('refreshBtn', 'CACHE_SAFETY_v2')`). The DataHub URL is gviz `…/1A2fjKboWKnw10iaOs1wcXDrdg9jhhDGfzF9OagPjA5s/gviz/tq?tqx=out:csv`, lazySync.
 - **Parser:** UI.csv
@@ -1027,6 +1089,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none.
 
 ### manpower.html  (NAV key: manpower)
+- **Status (2026-11-01):** not converted: sensitive (staff data and PINs), never mirrored.
 - **Kind:** kit (268 lines) · **Loads:** none besides mzo_theme/mzo_ui. Note it does NOT load mzo_data_hub or mzo_scope.
 - **Datasets:** `manpower_pins` (sensitive) via `fetch(SHEET + '2073511562', {cache:'no-store'})`, and `manpower_staff` (sensitive) via `fetch(SHEET + '2110628491', {cache:'no-store'})` after the PIN passes. `SHEET` = `https://docs.google.com/spreadsheets/d/e/2PACX-1vRRXojudL5q-ln7pXOcbLaGsBqznppnvsINcp8xEFvpJUWRCiC7bjii9eZYSu0istzyM91m4yybd5g-/pub?single=true&output=csv&gid=`.
 - **Parser:** pins: custom `text.split(/\r?\n/).slice(1)`, each line through `UI.csv('a,b\n' + line)[0].b`, i.e. column B by position with the real header ignored. Staff: `UI.csv`, then keys re-trimmed (redundant).
@@ -1044,6 +1107,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none.
 
 ### Upkeeping/index.html  (NAV key: upkeeping)
+- **Status (2026-11-01):** not converted: no data (a link to an external app).
 - **Kind:** kit (21 lines, static) · **Loads:** none (only mzo_theme.js/css).
 - **Datasets:** none. The page is a static link-out button to `https://mzowbsedcl-dev.github.io/Upkeeping/` (external app). It does not read `substation_upkeeping`; if a mirror dataset exists, only the external app uses it.
 - **Parser:** n/a
@@ -1057,6 +1121,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none.
 
 ### dtr/index.html  (NAV key: dtr)
+- **Status (2026-11-01):** converted in `36710dd` (batch E); `a83ce53` (final) drills the CCC level on the canonical `_ccc`.
 - **Kind:** legacy (939 lines) · **Loads:** CDN bootstrap@5.3.0 (css + bundle), font-awesome 6.0.0-beta3. No mzo_ui, data hub or scope.
 - **Datasets:** `dtr_records` via `fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=2125422147&single=true&output=csv')`.
 - **Parser:** custom: `csvText.split('\n')` (blank lines dropped), header `lines[0].split(',')` with `.trim()` and all `"` removed; each row `split(',')` the same way. Rows whose cell count ≠ header count are silently dropped, which includes any row with a quoted comma.
@@ -1074,6 +1139,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** no shared code. Same published spreadsheet (other gid) as dtr/load.html; the URL is also listed in sheet_links.html and admin_users.html.
 
 ### dtr/load.html  (NAV key: dtr_load)
+- **Status (2026-11-01):** converted in `6b9f07b` (batch E).
 - **Kind:** legacy (1981 lines) · **Loads:** CDN jquery 3.6.0, DataTables 1.13.6 (+ bootstrap5 css/js), FixedHeader 3.4.0, Buttons 2.4.2 (+ html5, print), JSZip 3.10.1, Responsive 2.5.0, bootstrap@5.3.2 (css twice + bundle), font-awesome 6.4.0. No mzo_ui, data hub or scope.
 - **Datasets:** `dtr_peak_load` via `fetch(updateDataSheetUrl)` = `…/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=1835924766&single=true&output=csv`. It is fetched fresh three separate times: pre-fill the form, the confirm check, and the "all data" modal. The DTR master record comes from Apps Script GET `https://script.google.com/macros/s/AKfycbwzaD7imXDsD3gWhxRXf9kx01NHKrzyXZGsBg2-azotO26PjybS-3R07Vyuh7Wscy1UIw/exec?action=search&code=<code>` (JSON `{status, data}`; one row of the master DTR sheet, not in the dataset list). PIN check: POST `/api/dtr/verify-pin` `{pin}` → `{status, dtrAutho}` (comma-separated DTR code prefixes).
 - **Parser:** custom `parseCSV`: `split('\n')`, then per line a regex `/(?:"([^"]*(?:""[^"]*)*)"|([^,]*))(?:,|$)/g`, which handles quotes and `""` but not embedded newlines. Values `.trim()`. Rows with fewer values than headers are dropped. Apps Script search is JSON.
@@ -1091,6 +1157,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** no shared code. Same spreadsheet (other gid) as dtr/index.html.
 
 ### health_checkup.html  (NAV key: health_checkup)
+- **Status (2026-11-01):** not converted: no data (placeholder page).
 - **Kind:** kit (16 lines, static placeholder) · **Loads:** none (only mzo_theme.js/css).
 - **Datasets:** none ("Records are not available yet.").
 - **Parser:** n/a
@@ -1104,6 +1171,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none.
 
 ### puja.html  (NAV key: puja)
+- **Status (2026-11-01):** not converted: no tabular data (embedded sheets).
 - **Kind:** legacy (553 lines; pure embed) · **Loads:** `/mzo_present.js` (desktop presentation zoom; puja.html is its only loader), CDN font-awesome 6.5.0, Google Fonts Inter.
 - **Datasets:** none parsed. It iframes six Google Sheets chosen by year pills: Format-I 2025 (`/spreadsheets/d/1EGhWifLAYcnX6ZKVxPxtpxafdCrk_ueR67ObR9vDUM8/edit?gid=0`), Format-I 2026 (`/d/e/2PACX-1vT4MqI8y1hron59lymFqAcv-s1GUtZbQrTagrXfmNgsg16Pad1at-5BcLZTfcRP00d7k8SExO4FV21p/pubhtml`, default), Format-II 2025 (`/d/1Jh5-C7HXNoByxaGvzb8kBku1ov_HqwDS_wID-sS85Pk/edit?gid=0`), Format-II 2026 (`/d/e/2PACX-1vSe6UXoMQ0CIYX38GKifEdQqulDRgZgknQUOo2f1wm6AID9ezqSRzsR17SLIC3pjaMsnf0ISbEZQTYz/pubhtml`), Hourly Load 2025 (`/d/1lkQlOv4sWzSTIOKAkem-oJmEvA7RNTLT0w-tsKi-_kI/edit?gid=0`), Hourly Load 2026 (`/d/1-9z4sry_mHbVg5jDFn5kkOHRtWqXwjqVD00ysOoxT3I/edit?gid=1276887615`). These correspond to the mirror's `puja_format_1_2025` … `puja_hourly_load_2026`, but the page uses them only as `pubhtml?widget=true&chrome=false` or `/htmlview` embeds plus Excel/PDF export links (`pub?output=xlsx|pdf` or `export?format=xlsx|pdf[&gid]`).
 - **Parser:** n/a (iframe).
@@ -1117,6 +1185,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none (`mzo_present.js` has no other loader).
 
 ### stock/index.html  (NAV key: stock)
+- **Status (2026-11-01):** converted in `3688550` (batch E).
 - **Kind:** legacy (303 lines HTML + 3.8k lines JS; `class="ui"` but no mzo_ui) · **Loads:** `/stock/stock_material_category.js`, `/stock/stock_pole_count.js`, `/stock/script.js`, `/stock/allotment.js`, `/stock/allotment_view.js`, `/stock/style.css`, CDN papaparse 5.3.0, jspdf 2.5.1 (umd), html2canvas 1.4.1. Loads mzo_data_hub.js but NOT mzo_ui or mzo_scope.
 - **Datasets:** `stock_snapshot` via `mzoDataHub._peek('CACHE_STOCK')`, else `waitForDataset` then `_peek`; a background `waitForDataset` re-renders on `'updated'`. Fallback `Papa.parse('/api/stock/dataset', {download:true, header:true})`. Before load it calls `mzoDataHub.refresh('CACHE_STOCK')` once when localStorage `mzo_stock_pending_refresh === '1'` (set by upload.html). `stock_materials` via `_peek` / `waitForDataset('CACHE_STOCK_METADATA')`, fallback `Papa.parse(METADATA_URL, {download:true, header:true})` with `https://docs.google.com/spreadsheets/d/1wDvPuAxNfdO9QzUaIUubg2JnkFM5ZleFNXQdi8s5uh0/export?format=csv&gid=696716331`. `stock_allotments` via POST `/api/stock/allotment` `{action:'listAllotments', force}` (server JSON `{rows, source}`; the server reads Supabase `stock_allotments`, with a legacy sheet / Apps Script fallback). `/api/session-check` (profile flags, allotment.js).
 - **Parser:** `Papa.parse(text, {header:true, skipEmptyLines:true})` for cached bodies. The network fallbacks use `{download:true, header:true}` without `skipEmptyLines`. Allotments are server JSON.
@@ -1134,6 +1203,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** `stock/stock_material_category.js` is also loaded by stock/upload.html. `stock/stock_client_pipeline.js` (upload.html only) defines the published CSV columns and the M/D/YYYY `Date`; it mirrors server `lib/stock_pipeline.js`. script.js, allotment.js and allotment_view.js share globals (`window.allData`, `window.PLANT_MAP`, `window.parseStockNumber`, `MzoStockPoleCount`). Convert the whole stock folder as one unit.
 
 ### important_sheets.html  (NAV key: important_sheets)
+- **Status (2026-11-01):** not converted to rows (single cells); batch D fixed its cell reads (`4cac325`: each cell from its configured tab; the 33-character sheet id is valid).
 - **Kind:** kit (207 lines) · **Loads:** none besides kit + `/auth.js`
 - **Datasets:**
   - Supabase table `important_unbilled_months` (schema `mzo_insight`) via `GET /api/important-sheets/unbilled` (server JSON; the server maps `sheet_id`→`sheetId` and `sort_order`→`sortOrder`, and filters `active=eq.true` unless `?all=1` and the user can manage). If the call fails or returns no months, a hard-coded `FALLBACK` list (Jan-2026 … Aug-2026, with sheet id and gid) is used.
@@ -1154,6 +1224,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none (no helper file). The `sheets-autho` gate logic is duplicated in sheet_links.html (`allowed()`), app.html and server `requireSheetsEditor`.
 
 ### sheet_links.html  (NAV key: sheet_links)
+- **Status (2026-11-01):** converted in `cd102ec` (final step).
 - **Kind:** legacy (525 lines; uses `html.ui` and mzo_theme.css but not mzo_ui.js; own table, CSS and CSV parser) · **Loads:** none besides `mzo_theme.js` and `mzo_data_hub.js?v=90`
 - **Datasets:** the page lists every `window.MZO_DATASETS` entry (registry `key`, `label`, `url`), except `CACHE_VENDORS` and `CACHE_LOSS_TARGET`, plus a hard-coded `extras` list of direct sheets: consumers, smart_meter_status, upcoming_dd, dd_visit, dd_summary, accident_reports, dtr_records, dtr_peak_load, substation_upkeeping, prt_transformers, and onm_advance (pseudo-key `OM_ADVANCE`). It reads row data only to find an "Updated" (as-on) date. For each dataset below it calls `loadSheetCsv(key)`, which tries `mzoDataHub._peek(key)` first (string, or object `.body` / `.text` / `.csv`) and otherwise `fetch(item.url)` of the whole registry URL:
   - `disconnection` (CACHE_DISCONNECTION), `docket_calls` (CACHE_DOCKET), `capex_details` (CACHE_CAPEX), `pending_mc` (CACHE_PENDING_MC), `cmo_grievances` (CACHE_CMO), `collection_report` (CACHE_COLLECTION), `bharatnet_connections` (CACHE_BHARATNET), `icds_a_plus` (CACHE_ICDS_APLUS), `icds_a` (CACHE_ICDS_A), `pmsgy_malda` / `pmsgy_uttar_dinajpur` / `pmsgy_dakshin_dinajpur` (CACHE_PMSGY_MALDA / _UD / _DD), `loss_report` (CACHE_LOSS), `feeder_outage` (CACHE_FEEDER_OUTAGE).
@@ -1204,6 +1275,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 ## Media
 
 ### media_news.html  (NAV key: media_news)
+- **Status (2026-11-01):** not converted: no sheet data (server RSS JSON).
 - **Kind:** kit (173 lines) · **Loads:** none besides kit
 - **Datasets:** none from the registry. It reads `GET /api/news` (`?force=1` on refresh). The server fetches 4 Google News RSS queries (`english`, `bangla`, `districts`, `national`) and caches them for 15 min. This source is not in the mirror lists. Offline fallback: `localStorage` `mzo_merged_news_v2`, or the legacy key `mzo_merged_news`.
 - **Parser:** server JSON (`{status:'ok', items:[…]}`).
@@ -1224,6 +1296,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 ## Briefing and Ask
 
 ### executive_briefing.html  (NAV key: home (HOME entry "Briefing"))
+- **Status (2026-11-01):** not converted: server JSON built from meta stats (`/api/executive/briefing`); converting it is a server-side job of its own.
 - **Kind:** kit (204 lines) · **Loads:** none besides kit
 - **Datasets:** page: `GET /api/executive/briefing` only (server JSON `{status, briefing:{asOn, generatedAt, summaryCounts, items[]}}`). The server reads no row data at request time. It reads precomputed meta JSON:
   - `pending_mc`: `PENDING_MC_META.read()`, i.e. Supabase Storage public `reports/pending_mc/meta.json` (60 s cache), local fallback `data/pending_mc_meta.json`.
@@ -1274,6 +1347,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** assistant.html (`briefing()` reads the same endpoint and repeats the `isZero` and hotspot logic). The server-side helpers are shared with scripts/sync/* and scripts/tools/compute_briefing_cccs.js; `/api/hub/versions` and the `/api/*/meta` routes read the same `*_META` stores.
 
 ### assistant.html  (NAV key: ask (ASK entry "Ask"))
+- **Status (2026-11-01):** converted in `11e4a93` (final step).
 - **Kind:** kit (435 lines) · **Loads:** `/lib/assistant_catalog.js?v=1` (also `mzo_data_hub.js?v=90`, `mzo_scope.js?v=14`)
 - **Datasets:** read through `dataset(key)`, which returns `mzoDataHub._peek(key)` if cached (and triggers `waitForDataset` in the background), else `await waitForDataset(key)` and then `_peek`:
   - `nsc_pending` (CACHE_NSC_v5)
@@ -1339,6 +1413,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 ## Administration
 
 ### admin_users.html  (NAV keys: admin_users, admin_sources, admin_activity, admin_visitors, admin_powermap, admin_corrections; all `admin_users.html?tab=…`)
+- **Status (2026-11-01):** not converted: admin pages; reads one column of the Power Map CSV.
 - **Kind:** legacy (6374 lines; no `html.ui`; Font Awesome; own CSS plus mzo_theme.css) · **Loads:** `https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js`, `mzo_scope.js?v=14`, `mzo_data_hub.js?v=90` (used only for `window.MZO_DATASETS`). CSS: font-awesome 6.5.0 CDN.
 - **Datasets:**
   - `power_map_substations` via `fetch('/api/power-map/data')` (server CSV of CACHE_POWER_MAP; the DataHub is not used), for the substation dropdowns.
@@ -1373,6 +1448,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** no page-specific helper file. Code blocks: `EXTRA_SOURCES` / `sheetCopyUrl` ≈ sheet_links.html `extras` / `sheetOpenUrl`. power_map/map.html reads the same `/api/power-map/data` CSV and defines the missing `saveSubstation` / `saveConnection`. admin.html calls the same `/api/admin/users*` and `/api/admin/sync` endpoints.
 
 ### admin.html  (NAV key: admin_structure)
+- **Status (2026-11-01):** not converted: admin page; server-parsed structure CSV and portal users.
 - **Kind:** legacy (669 lines; `html.ui` plus mzo_theme.css, no mzo_ui.js) · **Loads:** none besides `mzo_theme.js`
 - **Datasets:**
   - Estimate structures via `GET /api/structures` (server JSON). The server reads the repo file `data/structure.csv`, which is not in the mirror lists.

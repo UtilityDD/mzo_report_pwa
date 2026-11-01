@@ -93,6 +93,9 @@
     var $ = function (id) { return document.getElementById(id); };
     var SYNC = 'https://script.google.com/macros/s/AKfycbxgrKdt--yXk4A3_jL8PS6Z5kYXohHVNA3GKxq2jss8TVgqfvJdff_jFDwjj8Gxcdv00Q/exec';
     var STORE = 'dd_visit_followups_v1';
+    // The sheet also holds PAN: it is not mirrored, it is read with no cache at all (no-store, not
+    // through DataHub), and MzoRows.build turns it into rows without storing anything on the device.
+    var CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSCKEl95dh4kyG-QPJbFJ5x7U7yo7h5bJGuMewsMr2hjMAlCj7UWxqvL_a-2hdyQd-laI8BAX3hU5_T/pub?gid=0&single=true&output=csv';
     var CLASS = { D: 'Domestic', C: 'Commercial', A: 'Agriculture', I: 'Industrial', W: 'Water works', P: 'Public' };
     var OUTCOMES = ['Found Live', 'Found Disconnected', 'Premises Not Found', 'Using Power form other source', 'Paid'];
     var OUT_LABEL = { 'Using Power form other source': 'Power from other source' };
@@ -364,17 +367,35 @@
       fillFilters(); setLevel('region');
     });
     $('exportBtn').addEventListener('click', function () { var ex = window.__export; if (ex) UI.exportCsv('dd-visit-' + (view === 'history' ? 'history-' : '') + new Date().toISOString().slice(0, 10) + '.csv', ex.cols, ex.rows); });
+    // Copies of the sheet that earlier versions of this page kept on the device (DataHub's raw body
+    // with its version marks, and the uniform rows in MZORows) are deleted. Cheap, so every load.
+    function forgetStoredCopies() {
+      var hub = window.mzoDataHub;
+      if (hub && hub.delete) Promise.resolve().then(function () { return hub.delete('CACHE_DD_VISIT'); }).catch(function () {});
+      try { ['mzo_hub_ver_CACHE_DD_VISIT', 'mzo_hub_fetched_CACHE_DD_VISIT', 'mzo_rows_schema_dd_visit'].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
+      try {
+        var req = indexedDB.open('MZORows', 1); // the same version and store as mzo_rows.js
+        req.onupgradeneeded = function () { if (!req.result.objectStoreNames.contains('rows')) req.result.createObjectStore('rows'); };
+        req.onsuccess = function () {
+          var d = req.result;
+          try { var tx = d.transaction('rows', 'readwrite'); tx.objectStore('rows').delete('dd_visit'); tx.oncomplete = tx.onerror = tx.onabort = function () { d.close(); }; } catch (e) { d.close(); }
+        };
+      } catch (e) {}
+    }
+    function load() {
+      return fetch(CSV_URL, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('sheet ' + r.status); return r.text(); })
+        .then(function (text) { return MzoRows.build('dd_visit', text); })
+        .then(function (t) { prepare(t); render(); })
+        .catch(function () { if (!all.length) { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } });
+    }
     $('refreshBtn').addEventListener('click', function () {
       var bt = this; bt.classList.add('spin');
-      MzoRows.get('dd_visit', { forceCheck: true }).then(function (t) { prepare(t); render(); }, function () {})
-        .then(pullRemote).then(function () { bt.classList.remove('spin'); });
+      load().then(pullRemote).then(function () { bt.classList.remove('spin'); });
     });
 
+    forgetStoredCopies();
     loadLocal();
-    MzoRows.load('dd_visit', function (t, info) {
-      if (!t) { if (info && info.error && !all.length) { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
-      prepare(t); render();
-    }).then(pullRemote);
+    load().then(pullRemote);
   });
   </script>
 </body>
