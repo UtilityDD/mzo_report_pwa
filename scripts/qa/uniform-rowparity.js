@@ -77,6 +77,11 @@ const PAGES = {
         return JSON.stringify(out);
       }
     }
+  },
+  'jjm.html': {
+    key: 'jjm_connections', from: '    // Sheet columns', to: '    function fillFilters() {',
+    old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true, stubs: ['fillFilters'],
+    known: { sheetDivision: 'computed from DIVISION but never used; dropped' }
   }
 };
 const PROFILES = [
