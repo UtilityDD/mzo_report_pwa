@@ -11,6 +11,7 @@
   <script src="/mzo_ui.js?v=4" defer></script>
   <script src="/mzo_data_hub.js?v=90" defer></script>
   <script src="/mzo_scope.js?v=14" defer></script>
+  <script src="/mzo_rows.js?v=1" defer></script>
   <style>
     .ui-head { align-items: center; }
 
@@ -120,40 +121,38 @@
       set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
       del: function (k) { try { localStorage.removeItem(k); } catch (e) {} }
     };
-    var KEY = 'CACHE_NSC_v5';
+    var ROWS = 'nsc_pending';
 
     /* ---------------- parsing: one row per APPL_NO (the last row in the dump wins), scoped to the login ---------------- */
+    // t.rows: uniform rows of schema/nsc_pending.json (snake_case, numbers, ISO dates, Y/N as true/false,
+    // canonical _region/_division/_ccc). Loaded unscoped so the last row per application wins first.
     var CLASS = { D: 'Domestic', A: 'Agriculture', C: 'Commercial', P: 'Public', I: 'Industrial', W: 'Water works', S: 'Street light', GS: 'Govt. supply', X: 'Other' };
     function blank(v) { var s = String(v == null ? '' : v).trim(); return !s || /^\(?null\)?$/i.test(s); }
-    function parse(input) {
-      var list = UI.csv(input), byAppl = new Map(), today = null, S = window.MzoScope, rows = [];
-      list.forEach(function (d) {
-        var appl = String((d && d.APPL_NO) || '').trim();
-        if (!appl) return;
-        byAppl.set(appl, d);
-        if (!today && d.TODAY) today = UI.date(d.TODAY);
+    function parse(t) {
+      var byAppl = new Map(), today = null, S = window.MzoScope, rows = [];
+      t.rows.forEach(function (d) {
+        if (!d.appl_no) return;
+        byAppl.set(d.appl_no, d);
+        if (!today && d.today) today = UI.date(d.today);
       });
       byAppl.forEach(function (d, appl) {
-        var o = UI.office(d.CCC_CODE, d.SUPP_OFF);
-        var poles = parseInt(d.NO_OF_POLES, 10) || 0;
-        var paid = UI.date(d.COLL_DATE), delay = parseFloat(d.DelayInSC);
-        var cls = String(d.CONN_CLASS || '').trim().toUpperCase();
-        var wh = String(d.SCN_WITHELD_DATE || '').trim();
+        var poles = Math.trunc(d.no_of_poles) || 0;
+        var paid = UI.date(d.coll_date), delay = d.delayinsc;
+        var cls = d.conn_class.toUpperCase();
         rows.push({
-          appl: appl, con: String(d.CON_ID || '').trim(),
-          name: blank(d.NAME) ? '' : UI.title(d.NAME), phone: blank(d.PHONE_NO) ? '' : String(d.PHONE_NO).trim(), address: blank(d.ADDRESS) ? '' : d.ADDRESS,
-          _region: o.region || (S && S.regionNameOf(d.REGION || d.REG)) || '', _divn: o.division || (S && S.divisionNameOf(d.DIVN_NAME)) || String(d.DIVN_NAME || ''),
-          _supp: o.ccc || (S && S.cccNameOf(d.SUPP_OFF)) || String(d.SUPP_OFF || ''), CCC_CODE: String(d.CCC_CODE || '').trim(),
-          cls: cls, clsLabel: CLASS[cls] || cls || '—', phase: String(d.APPLIED_PHASE || '').trim().toUpperCase(), load: parseFloat(d.LOAD_WATTS) || 0,
-          area: d.CONN_CAT === 'U' ? 'Urban' : d.CONN_CAT === 'R' ? 'Rural' : '',
-          poles: poles, pole: poles > 0 || /^pole/i.test(String(d.PoleNonPole || '')),
-          wo: String(d.WO_ISSUED || '').trim().toUpperCase() === 'Y', won: blank(d.WON) ? '' : String(d.WON).trim(), woDate: UI.date(d.WO_CREATION_DATE),
-          agency: blank(d.AGENCY_NAME) ? '' : String(d.AGENCY_NAME).trim(), meter: blank(d.METER_NUMBER) ? '' : String(d.METER_NUMBER).trim(),
-          withheld: wh !== '' && wh !== '0', reason: blank(d.SCN_WITHELD_REASON) ? '' : d.SCN_WITHELD_REASON,
-          paid: paid, delay: isNaN(delay) ? (paid && today ? Math.max(0, Math.round((today - paid) / 864e5)) : null) : delay,
-          portal: String(d.IS_PORTAL_APPL || '').toUpperCase() === 'Y', comment: blank(d.INSPECTION_COMMENT) ? '' : d.INSPECTION_COMMENT,
-          delayRange: String(d.DelayRange || '').trim(), delaySerial: parseInt(d.DelaySerial, 10) || 0,
-          procB: String(d.APPLICANT_TYPE || '').trim() === 'Promoter/ Developer', status: blank(d.SCN_STATUS) ? '' : d.SCN_STATUS
+          appl: appl, con: d.con_id,
+          name: blank(d.name) ? '' : UI.title(d.name), phone: blank(d.phone_no) ? '' : d.phone_no, address: blank(d.address) ? '' : d.address,
+          _region: d._region, _divn: d._division || d.divn_name, _supp: d._ccc || d.supp_off, CCC_CODE: d.ccc_code,
+          cls: cls, clsLabel: CLASS[cls] || cls || '—', phase: d.applied_phase.toUpperCase(), load: d.load_watts || 0,
+          area: d.conn_cat === 'U' ? 'Urban' : d.conn_cat === 'R' ? 'Rural' : '',
+          poles: poles, pole: poles > 0 || /^pole/i.test(d.polenonpole),
+          wo: d.wo_issued === true, won: blank(d.won) ? '' : d.won, woDate: UI.date(d.wo_creation_date),
+          agency: blank(d.agency_name) ? '' : d.agency_name, meter: blank(d.meter_number) ? '' : d.meter_number,
+          withheld: d.scn_witheld_date !== '' && d.scn_witheld_date !== '0', reason: blank(d.scn_witheld_reason) ? '' : d.scn_witheld_reason,
+          paid: paid, delay: delay == null ? (paid && today ? Math.max(0, Math.round((today - paid) / 864e5)) : null) : delay,
+          portal: d.is_portal_appl === true, comment: blank(d.inspection_comment) ? '' : d.inspection_comment,
+          delayRange: d.delayrange, delaySerial: Math.trunc(d.delayserial) || 0,
+          procB: d.applicant_type === 'Promoter/ Developer', status: blank(d.scn_status) ? '' : d.scn_status
         });
       });
       if (S) rows = S.filterRows(rows);
@@ -540,13 +539,11 @@
     function markSeen(v) { if (v) LS.set(SEEN_KEY, String(v)); }
     function showNotice(reportOn) { var w = dmy(reportOn); $('noticeMsg').textContent = w ? 'New NSC data is available, updated on ' + UI.fmtDate(w) + '.' : 'New NSC data is available.'; $('notice').hidden = false; }
     function loadLatest() {
-      var b = $('refreshBtn'), hub = window.mzoDataHub;
-      if (!hub) return;
+      var b = $('refreshBtn');
       b.classList.add('spin'); $('noticeLoad').disabled = true;
       fetchMeta().then(function (m) { if (m && m.version) markSeen(m.version); })
-        .then(function () { return hub.refresh(KEY); })
-        .then(function () { return hub._peek(KEY); })
-        .then(function (raw) { LS.del(PENDING_KEY); $('notice').hidden = true; if (raw) { setData(raw); UI.toast('Latest data loaded'); } })
+        .then(function () { return MzoRows.reload(ROWS, { scope: false }); })
+        .then(function (t) { LS.del(PENDING_KEY); $('notice').hidden = true; if (t) { setData(t); UI.toast('Latest data loaded'); } })
         .catch(function (e) { UI.toast('Could not refresh: ' + (e && e.message || e)); })
         .then(function () { b.classList.remove('spin'); $('noticeLoad').disabled = false; });
     }
@@ -587,8 +584,8 @@
       if (p.get('followups') === '1') tab = 'followups';
     }
 
-    function setData(text) {
-      all = parse(text);
+    function setData(t) {
+      all = parse(t);
       $('asOn').textContent = all.asOn ? UI.fmtDate(all.asOn) : '';
       fillFilters();
       if (firstData) {
@@ -633,7 +630,7 @@
       UI.exportCsv('pending-nsc-' + lastTable.title.toLowerCase().replace(/\W+/g, '-') + '.csv', lastTable.cols.map(function (c, i) { return { key: i, label: c }; }), lastTable.rows.map(function (r) { var o = {}; r.forEach(function (c, i) { o[i] = c; }); return o; }));
     });
     document.addEventListener('click', function (e) { if (e.target.closest('[data-copy-detail]') && openRow) copyDetail(openRow); });
-    UI.refresh('refreshBtn', KEY, function (t) { setData(t); checkUpdate(); });
+    MzoRows.refresh('refreshBtn', ROWS, function (t) { setData(t); checkUpdate(); }, { scope: false });
     $('noticeLoad').addEventListener('click', loadLatest);
     $('noticeDismiss').addEventListener('click', function () {
       fetchMeta().then(function (d) { if (d && d.version) markSeen(d.version); });
@@ -641,10 +638,10 @@
     });
 
     /* ---------------- start ---------------- */
-    UI.load(KEY, function (text, info) {
-      if (!text) { if (info && info.error && !all.length) { $('asOn').textContent = 'No data'; $('table').innerHTML = '<div class="ui-empty">Could not load the NSC data.</div>'; } return; }
-      setData(text);
-    });
+    MzoRows.load(ROWS, function (t, info) {
+      if (!t) { if (info && info.error && !all.length) { $('asOn').textContent = 'No data'; $('table').innerHTML = '<div class="ui-empty">Could not load the NSC data.</div>'; } return; }
+      setData(t);
+    }, { scope: false });
     if (LS.get(PENDING_KEY) === '1') loadLatest(); // an upload just finished on this device: start from the fresh dump
     setTimeout(checkUpdate, 2500);
     setInterval(checkUpdate, 90 * 1000);
