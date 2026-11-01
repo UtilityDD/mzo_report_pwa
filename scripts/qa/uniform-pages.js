@@ -44,7 +44,8 @@ function cookie(profile) {
   return payload + '.' + crypto.createHmac('sha256', secret).update(payload).digest('base64');
 }
 
-// Page scripts: what to click. Deep links are relative query strings.
+// Page scripts: what to click. Deep links are relative query strings. drillTable: the table opened
+// level by level (default #table); fdp: the tables whose first row marks the first data paint.
 const PAGES = {
   solar: {
     url: 'solar.html', key: 'solar_connections', stats: '#stats .ui-stat', tabs: '#drill .ui-drill-tab',
@@ -122,7 +123,7 @@ const PAGES = {
     deep: []
   },
   disconnection: {
-    url: 'disconnection.html', key: 'disconnection', stats: '#stats .ui-stat', tabs: '#drill .ui-drill-tab',
+    url: 'disconnection.html', key: 'disconnection', stats: '#stats .ui-stat', tabs: '#drill .ui-drill-tab', fdp: '#table, #followTable',
     texts: ['asOn', 'base'],
     steps: async (page, shot, h) => {
       await h.clickAll('#fOsd .ui-opt', 'osd');
@@ -169,8 +170,9 @@ async function newContext(browser, base, profile, route, opts) {
     const t = () => {
       if (window.__fdp != null) return;
       const vs = document.querySelectorAll('.ui-stat .v');
-      const row = document.querySelector(fdpTable + ' tbody tr td:not([colspan])');
-      const empty = document.querySelector(fdpTable + ' tbody .ui-empty');
+      const sels = fdpTable.split(',').map((x) => x.trim());
+      const row = sels.map((x) => document.querySelector(x + ' tbody tr td:not([colspan])')).find(Boolean);
+      const empty = sels.map((x) => document.querySelector(x + ' tbody .ui-empty')).find(Boolean);
       const shown = row || (empty && !/loading/i.test(empty.textContent)); // a real row, or a real "nothing matches"
       if (vs.length && ![].some.call(vs, (v) => v.querySelector('.ui-skel') || !/\d/.test(v.textContent)) && shown) { window.__fdp = performance.now(); window.__fdpRow = !!row; return; }
       requestAnimationFrame(t);
@@ -337,7 +339,7 @@ async function parity(pw) {
     for (const prof of profiles) {
       const runs = {};
       for (const base of [oldBase].concat(newBases)) {
-        const ctx = await newContext(browser, base, PROFILES[prof], route, { table: PAGES[p].drillTable });
+        const ctx = await newContext(browser, base, PROFILES[prof], route, { table: PAGES[p].fdp || PAGES[p].drillTable });
         const page = await ctx.newPage();
         const errors = [];
         page.on('pageerror', (e) => errors.push(String(e.message || e).slice(0, 200)));
@@ -371,7 +373,7 @@ async function timing(pw) {
     for (const which of ['old', 'new']) {
       const cold = [], warm = [], bytes = [];
       for (let i = 0; i < runsN; i++) {
-        const ctx = await newContext(browser, bases[which], PROFILES.admin, route, { cpu, table: PAGES[p].drillTable });
+        const ctx = await newContext(browser, bases[which], PROFILES.admin, route, { cpu, table: PAGES[p].fdp || PAGES[p].drillTable });
         const page = await ctx.newPage();
         if (cpu > 1) { const cdp = await ctx.newCDPSession(page); await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu }); }
         let got = 0;
