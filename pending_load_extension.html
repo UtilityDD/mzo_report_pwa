@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=2" defer></script>
 </head>
 <body>
   <main class="ui-page">
@@ -85,26 +86,25 @@
       return Math.round(((r.applied - r.curr) * rate * r.age) / 850);
     }
 
-    function prepare(text) {
-      var rows = UI.csv(text), asOn = '';
-      all = rows.filter(function (d) { return d.APPL_NO || d.CON_ID; }).map(function (d) {
-        if (!asOn && d.report_date) asOn = d.report_date;
-        var o = UI.office(d['CCC CODE']);
+    // t.rows: uniform rows of schema/load_extension.json (snake_case, numbers, ISO dates, canonical
+    // _region/_division/_ccc), already scoped to the login by MzoRows.
+    function prepare(t) {
+      var asOn = t.first('report_date'); // one value for the whole sheet: read it before the scope
+      all = t.rows.filter(function (d) { return d.appl_no || d.con_id; }).map(function (d) {
         var r = {
-          appl: (d.APPL_NO || '').trim(), con: (d.CON_ID || '').trim(), name: UI.blank(d.NAME) ? '' : UI.title(d.NAME),
-          address: d.ADDRESS, code: String(d['CCC CODE'] || '').trim(),
-          _region: o.region, _divn: o.division, _supp: o.ccc, CCC_CODE: String(d['CCC CODE'] || '').trim(),
-          cls: String(d.CONN_CLASS || '').trim().toUpperCase(), phase: String(d.CONN_PHASE || '').trim().toUpperCase(),
-          applied: parseFloat(d.LOAD_APPLIED) || 0, curr: parseFloat(d.CURR_LOAD) || 0,
-          age: parseInt(d.AGE_MONTHS, 10) || 0, collected: d.COLLECTION_DATE,
-          wo: UI.blank(d.WON_ASSIGNED) ? '' : d.WON_ASSIGNED, assignee: UI.blank(d.WO_ASSIGNEE) ? '' : UI.title(d.WO_ASSIGNEE),
-          category: d.CONN_CATEGORY === 'U' ? 'Urban' : d.CONN_CATEGORY === 'R' ? 'Rural' : ''
+          appl: d.appl_no, con: d.con_id, name: UI.blank(d.name) ? '' : UI.title(d.name),
+          address: d.address, code: d.ccc_code,
+          _region: d._region, _divn: d._division, _supp: d._ccc, CCC_CODE: d.ccc_code,
+          cls: d.conn_class.toUpperCase(), phase: d.conn_phase.toUpperCase(),
+          applied: d.load_applied || 0, curr: d.curr_load || 0,
+          age: Math.trunc(d.age_months) || 0, collected: d.collection_date,
+          wo: UI.blank(d.won_assigned) ? '' : d.won_assigned, assignee: UI.blank(d.wo_assignee) ? '' : UI.title(d.wo_assignee),
+          category: d.conn_category === 'U' ? 'Urban' : d.conn_category === 'R' ? 'Rural' : ''
         };
         r.loss = loss(r);
         r.ageKey = AGE.filter(function (b) { return r.age <= b.max; })[0].key;
         return r;
       });
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       $('asOn').textContent = asOn ? 'As on ' + UI.fmtDate(asOn) : UI.n(all.length) + ' applications';
     }
 
@@ -212,7 +212,7 @@
       UI.exportCsv('pending-load-extension.csv', [{ key: 'appl', label: 'Application' }, { key: 'con', label: 'Consumer ID' }, { key: 'name', label: 'Name' }, { key: '_region', label: 'Region' }, { key: '_divn', label: 'Division' }, { key: '_supp', label: 'CCC' }]
         .concat(APP_COLS.slice(3).map(function (c) { return { key: c.key, label: c.label, csv: c.csv }; })), window.__view || []);
     });
-    UI.refresh('refreshBtn', 'CACHE_LOAD_EXT', function (t) { prepare(t); render(); });
+    MzoRows.refresh('refreshBtn', 'load_extension', function (t) { prepare(t); render(); });
 
     // Sync from the Google Sheet (authorised users only)
     fetch('/api/load-extension/meta', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; })
@@ -225,7 +225,7 @@
         .then(function (d) {
           if (d.status !== 'success') throw new Error(d.message || 'Sync failed');
           try { localStorage.removeItem('mzo_hub_ver_CACHE_LOAD_EXT'); } catch (e) {}
-          return window.mzoDataHub.refresh('CACHE_LOAD_EXT').then(function () { return window.mzoDataHub._peek('CACHE_LOAD_EXT'); });
+          return MzoRows.reload('load_extension');
         })
         .then(function (t) { if (t) { prepare(t); render(); } UI.toast('Synced from the sheet'); })
         .catch(function (e) { UI.toast(e.message || 'Sync failed'); })
@@ -235,9 +235,9 @@
     // Deep links: ?region= ?division= ?ccc= (open the report there), ?q=, ?kpi=kpiAgeing1y
     var params = new URLSearchParams(location.search);
     var first = true;
-    UI.load('CACHE_LOAD_EXT', function (text, info) {
-      if (!text) { if (info && info.error) { $('asOn').textContent = 'No data'; $('table').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
-      prepare(text);
+    MzoRows.load('load_extension', function (t, info) {
+      if (!t) { if (info && info.error) { $('asOn').textContent = 'No data'; $('table').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      prepare(t);
       if (first) {
         first = false;
         dr.fromParams(params, all);

@@ -50,6 +50,12 @@ const PAGES = {
       withheld: 'application 4001062497 has SCN_WITHELD_DATE "26/07/0201" (a typo in the sheet): UI.date read it as the year 201, uniform rows leave it empty and keep the text in scn_witheld_date_raw',
       year: 'as withheld (the "… and earlier" year facet counts one application less)', ago: 'as withheld (it was 666,663 days, in no stat card)'
     }
+  },
+  'pending_load_extension.html': {
+    key: 'load_extension', from: '    var CLASS = {', to: '    var STAT = {',
+    old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true,
+    // COLLECTION_DATE is kept as text and shown through UI.fmtDate: compare what is shown.
+    display: { collected: (v, UI) => UI.fmtDate(v) }
   }
 };
 const PROFILES = [
