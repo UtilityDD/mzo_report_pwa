@@ -13,7 +13,7 @@ app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // Server-side files are never served, locally or from the Vercel function.
-const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|lib\/stock_(pipeline|material_category)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
+const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|lib\/(stock_(pipeline|material_category)|mirror)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
 app.use((req, res, next) => (PRIVATE_PATH.test(req.path) ? res.status(404).end() : next()));
 // Old URLs (vercel.json has the same redirects): the retired phone home page, the NSC drafts and an extension-less report.
 app.get(['/', '/index.html'], (req, res) => res.redirect(302, '/app.html'));
@@ -718,6 +718,12 @@ async function requireAuth(req, res, next) {
 }
 
 app.use(requireAuth);
+
+// VM mirror mode (MZO_DATA_MODE=mirror + MZO_SNAPSHOT_DIR): /api/data/* serve the sync's snapshots, report
+// reads below use them, and writes refresh them. Off on Vercel and by default (docs/architecture.md, "Mirror mode").
+const mirror = require('./lib/mirror').create({ appRoot: __dirname });
+const refreshMirror = mirror.refreshMirror;
+mirror.mount(app);
 
 // --- Estimate structures (admin.html) ---
 const STRUCTURE_FILE = path.join(__dirname, 'data', 'structure.csv'); // literal path: Vercel bundles it with the function
