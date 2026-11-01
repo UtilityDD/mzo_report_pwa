@@ -56,6 +56,12 @@ const PAGES = {
     old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true,
     // COLLECTION_DATE is kept as text and shown through UI.fmtDate: compare what is shown.
     display: { collected: (v, UI) => UI.fmtDate(v) }
+  },
+  'pending_mc.html': {
+    key: 'pending_mc', from: '    var CLASS = {', to: '    // Every panel filter;',
+    old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true,
+    display: { collected: (v, UI) => (UI.blank(v) ? '' : UI.fmtDate(v)) },
+    known: { docs: 'DOCS_SUNMITTED was read into the row but never shown; it is no longer loaded' }
   }
 };
 const PROFILES = [
