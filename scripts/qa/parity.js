@@ -470,7 +470,8 @@ async function loadOnce(ctx, base, p, o) {
     if (elapsed < 2500) continue;
     if (state.skel === 0 && quiet && sinceChange > 2500) { settledReason = 'stable+idle'; break; }
     if (state.skel === 0 && sinceChange > 8000 && elapsed > 12000) { settledReason = 'stable(busy network)'; break; }
-    if (sinceChange > 20000 && elapsed > 30000) { settledReason = 'stable(skeletons left)'; break; }
+    // Skeletons left: keep waiting while the page still has requests open (some sheets take over a minute).
+    if (sinceChange > 20000 && elapsed > 30000 && (inflight === 0 || elapsed > 100000)) { settledReason = 'stable(skeletons left)'; break; }
   }
   const settleMs = Date.now() - t0;
 

@@ -139,7 +139,9 @@ function main() {
       const fa = flatten(a), fb = flatten(b);
       // fields that move by themselves: differ between A and a later run of the same mode, or between A's cold and warm loads
       const moving = new Set();
-      for (const v of vols) { const lv = getLoad(v.pages[k], vp, ph); if (lv) diffMaps(fa, flatten(lv)).forEach((d) => moving.add(d.field)); }
+      for (const v of vols) { const lv = getLoad(v.pages[k], vp, ph) || getLoad(v.pages[k], 'desktop', 'cold'); if (lv) diffMaps(fa, flatten(lv)).forEach((d) => moving.add(d.field)); }
+      // A's own cold vs warm loads (minutes apart) also show what moves.
+      if (ph === 'warm' || vp === 'phone') { const lc = getLoad(ra, 'desktop', 'cold'); if (lc && lc !== a) diffMaps(flatten(lc), fa).forEach((d) => moving.add(d.field)); }
       for (const d of diffMaps(fa, fb)) {
         const item = { page: k, name, url, phase: vp + '/' + ph, field: d.field, a: d.a, b: d.b };
         if (moving.has(d.field)) { item.volatile = true; volatileHits.push(item); pageVol++; } else { mismatches.push(item); pageMis++; }
