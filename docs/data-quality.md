@@ -7,11 +7,11 @@ The checks live in `vm/quality/` and run on the VM after every successful sync o
 - `sys_quality_issues`: one row per dataset, check and column, with severity, count, up to 10 masked examples, a plain-language hint, `source_fix` (the fix belongs in the source sheet), `first_seen`, `last_seen` and `status` (`open` or `resolved`).
 - `sys_quality_scores`: one row per dataset with its score (0–100), its open issue count and when it was checked.
 
-The findings below come from a full read of every source on **2026-11-01 around 12:00 IST**: 109 datasets, about 1.2 million rows. They were read with GET requests only, through the same published-CSV, gviz and PostgREST URLs that the mirror uses. Examples are masked: names show their first letter, phone, e-mail, PIN, bank, Aadhaar and PAN values are hidden, and consumer, application and meter numbers keep only their first two and last two characters. Row numbers are sheet rows (row 1 is the header), so they lead straight to the cell.
+The findings below come from a full read of every source on **2026-11-01 around 12:00 IST**: 109 datasets, about 1.2 million rows. A second full read at 12:41–12:55 IST gave the same results. Both reads used GET requests only, through the same published-CSV, gviz and PostgREST URLs that the mirror uses. Examples are masked: names show their first letter, phone, e-mail, PIN, bank, Aadhaar and PAN values are hidden, and consumer, application and meter numbers keep only their first two and last two characters. Row numbers are sheet rows (row 1 is the header), so they lead straight to the cell.
 
 ## Summary
 
-The average score is 94. Forty-nine datasets score 100, and nine score below 80. The checks found 235 issues: 9 errors, 96 warnings and 130 notes. Most of the problems come from a few habits in the source sheets:
+The average score is 95. Forty-nine datasets score 100, and nine score below 80. The checks found 235 issues: 8 errors, 97 warnings and 130 notes. Most of the problems come from a few habits in the source sheets:
 
 1. **Old data left in place.** Six reports have not been refreshed for months, and three mix rows from two different report dates.
 2. **Copies that drifted apart.** Some applications are in both the Pending NSC list and the Withheld list. The Pending MC Google Sheet is newer than the copy the app reads. The Defective Meter details do not add up to the summary.
@@ -26,7 +26,7 @@ Datasets that are not listed here scored 100. Each row shows up to three of the 
 | Dataset | Rows | Score | Errors / warnings / notes | Top issues |
 |---|---:|---:|---|---|
 | `dd_summary` | 47,332 | 45 | 2 / 4 / 4 | office.code_name_mismatch (CCC) ×996; freshness.stale (Date of Visit, 291 days); number.text_in_numeric (OSD) ×1,414 |
-| `solar_connections` | 6,827 | 58 | 1 / 11 / 8 | key.blank (SOLAR_APPL_NO) ×1; date.mixed_formats (COLL_DATE) ×3,336; date.mixed_formats (QUOTATION_ISSUE_DATE) ×3,325 |
+| `solar_connections` | 6,827 | 56 | 1 / 11 / 8 | key.blank (SOLAR_APPL_NO) ×1; date.mixed_formats (COLL_DATE) ×3,336; date.mixed_formats (QUOTATION_ISSUE_DATE) ×3,325 |
 | `weekly_report` | 2,911 | 59 | 1 / 1 / 2 | freshness.stale (last report 23/02/2026); header.duplicate (Division, columns B and AB) |
 | `safety_inspection` | 6,137 | 62 | 1 / 2 / 1 | freshness.stale (last entry 25/03/2026); date.mixed_formats (Rectification done on) ×1,205; key.duplicate_row ×160 |
 | `onm_advance` | 3,252 | 66 | 1 / 2 / 0 | freshness.stale (latest Creation Date 31/07/2025); value.sheet_error (Resp. CCtr, Description) ×8 |
@@ -35,40 +35,41 @@ Datasets that are not listed here scored 100. Each row shows up to three of the 
 | `smart_meter_work_orders` | 17,863 | 70 | 1 / 0 / 0 | freshness.stale (as on 12/11/2025) |
 | `capex_details` | 41,608 | 78 | 0 / 2 / 3 | freshness.mixed_as_on (Reporting Date) ×296; freshness.stale (28/09/2026) |
 | `dtr_peak_load` | 91 | 84 | 0 / 3 / 0 | row.ghost ×3; key.duplicate_row ×2; freshness.stale (06/05/2026) |
-| `highway_crossings` | 5,266 | 84 | 1 / 2 / 2 | key.duplicate (ID) ×245; value.geo_out_of_area (Lat) ×9; value.geo_out_of_area (Long) ×8 |
 | `pending_mc` | 2,153 | 85 | 0 / 2 / 4 | cross.snapshot_mismatch (Storage 28/10 vs sheet 30/10) ×488; date.mixed_formats (Meter Installation Date) ×56 |
 | `rem_defaulters_ind_com` | 3,027 | 86 | 0 / 2 / 1 | date.too_old (DATE_OF_CO) ×26; header.blank (column V) |
 | `pmsgy_malda` | 3,674 | 87 | 0 / 5 / 6 | value.geo_out_of_area (Latitude) ×69, (Longitude) ×68; office.parent_mismatch (Division Name) ×37 |
-| `costcenter` | 239 | 88 | 0 / 3 / 2 | office.unknown_ccc (Unit Name) ×46; office.parent_mismatch (Division Name) ×9 |
 | `disconnection` | 19,906 | 88 | 0 / 1 / 6 | freshness.stale (latest paid/disconnection date 04/10/2026) |
 | `loss_report` | 2,863 | 88 | 0 / 3 / 1 | key.duplicate_row ×560; row.total_row ×523; office.ambiguous_name (CCC: "MALDA REGION") ×45 |
 | `pmsgy_uttar_dinajpur` | 1,665 | 88 | 0 / 4 / 5 | value.geo_out_of_area (Latitude) ×13, (Longitude) ×12; office.unknown_ccc (Sub-Division Name) ×3 |
 | `puja_hourly_load_2025` | 14 | 88 | 0 / 9 / 0 | value.sheet_error (#DIV/0! in nine columns) ×2 each |
 | `pmsgy_dakshin_dinajpur` | 1,075 | 89 | 0 / 4 / 4 | number.text_in_numeric (Module Quantity) ×10; office.parent_mismatch (District) ×6 |
 | `icds_a_plus` | 630 | 91 | 0 / 1 / 11 | office.unknown_code (CCC CODE 662101040) ×14 |
-| `smart_meter_status` | 9,541 | 91 | 0 / 1 / 4 | office.ambiguous_name (CCC Name "MALDA") ×10 |
 | `substation_upkeeping` | 21 | 91 | 0 / 2 / 0 | office.blank (Division) ×7; number.negative ×1 |
 | `accident_reports` | 1,631 | 92 | 0 / 3 / 2 | office.parent_mismatch (Division) ×15; office.outside_zone ×1,135 (note) |
 | `dd_user_auth` | 65 | 92 | 0 / 2 / 0 | office.unknown_ccc (office) ×8; number.text_in_numeric (dd_view) ×7 |
+| `highway_crossings` | 5,266 | 92 | 0 / 3 / 2 | key.duplicate (ID) ×245; value.geo_out_of_area (Lat) ×9; value.geo_out_of_area (Long) ×8 |
 | `loss_targets` | 51 | 92 | 0 / 2 / 1 | row.total_row ×10; office.ambiguous_name ×1 |
 | `icds_a` | 3,538 | 94 | 0 / 1 / 5 | date.mixed_formats (METER INSTALL DATE) ×27 |
 | `important_unbilled_aug_2026` | 56 | 94 | 0 / 3 / 0 | value.sheet_error (#DIV/0!) ×6 in three columns |
 | `powermap_v_lines` | 209 | 94 | 0 / 4 / 1 | value.geo_out_of_area (from/to lat/lng) ×6–11 |
+| `costcenter` | 239 | 95 | 0 / 1 / 3 | office.unknown_code (Cost Cen_Code C366000100) ×1; office.outside_zone ×124 (note) |
 | `meter_crm` | 10,843 | 95 | 0 / 1 / 4 | date.future (SERV_CONN_DATE 27/09/2027) ×1 |
 | `powermap_v_substations` | 165 | 95 | 0 / 2 / 0 | value.geo_out_of_area (lat) ×24, (lng) ×9 |
+| `smart_meter_status` | 9,541 | 95 | 0 / 1 / 4 | office.ambiguous_name (CCC Name "MALDA") ×10 |
 | `withheld` | 66,589 | 95 | 0 / 1 / 3 | cross.overlap (APPL_NO also in Pending NSC) ×12 |
 | `dd_visit` | 10,251 | 96 | 0 / 1 / 2 | date.too_old (DATE_OF_CO) ×147 |
 | `manpower_staff` | 818 | 96 | 0 / 1 / 1 | value.sheet_error (Cost Center Name) ×6 |
 | `nsc_pending` | 5,140 | 96 | 0 / 1 / 3 | date.mixed_formats (DS_FORM_DATE) ×7 |
+| `portal_users` | 122 | 96 | 0 / 1 / 2 | cross.portal_unknown_office (an nsc_autho grant of 6622000) ×1 |
 | `power_map_substations` | 98 | 96 | 0 / 1 / 1 | number.text_in_numeric (MVA "2x6.3") ×9 |
 | `powermap_substations` | 263 | 96 | 0 / 2 / 0 | value.geo_out_of_area (lat) ×24, (lng) ×9 |
 | `rem_osd` | 2,664 | 96 | 0 / 1 / 3 | office.parent_mismatch (Division) ×1 |
-| `upcoming_dd` | 18,668 | 96 | 0 / 1 / 1 | date.too_old (DATE_OF_CO) ×47 |
 | `meter_master` | 282,303 | 97 | 0 / 1 / 0 | key.duplicate_row ×6,057 |
 | `rem_defaulters_agri` | 5,519 | 97 | 0 / 1 / 0 | date.too_old (DATE_OF_CO) ×21 |
 | `rem_defaulters_dom` | 8,027 | 97 | 0 / 1 / 0 | date.too_old (DATE_OF_CO) ×65 |
+| `upcoming_dd` | 18,668 | 97 | 0 / 1 / 0 | date.too_old (DATE_OF_CO) ×47 |
 
-Datasets that score 97–99 have notes only (spelling variants, codes of division or region offices, outliers). The 49 datasets that score 100 include Pending NSC follow-ups, the stock dump against its materials list, the stock allotments against the materials list, the defective summary against its Google sheet, the disconnection tracker against its Google sheet, docket calls, CMO grievances, feeder outage, DTR records and every Power Map v1 table except substations.
+Datasets that score 97–99 have notes (spelling variants, codes of division or region offices, outliers) or a single small warning. The 49 datasets that score 100 include Pending NSC follow-ups, the defective summary, docket calls, CMO grievances, feeder outage, DTR records, Bharat Net, JJM, the materials list, vendor map, the activity log and the Important-sheets unbilled reports.
 
 ### Headline findings
 
@@ -83,7 +84,7 @@ Datasets that score 97–99 have notes only (spelling variants, codes of divisio
 | 7 | Meter master data has 6,057 rows that exactly copy an earlier row (rows 224,511–280,935 repeat rows from 223,375–273,567). Meter ERP has 103 meter serial numbers entered twice in a block (rows 230,238 onward repeat 219,460 onward). | `meter_master`, `meter_erp` | 6,057 + 103 |
 | 8 | Solar connections: eight date columns hold two formats ("2024-01-10 00:00:00" and "24-01-2024 00:00"). COLL_DATE alone has 3,336 rows in the second format. Row 6267 is broken (a time in DIVN_CODE, "(null)" office, a 2027 creation date), and APPL_NO appears three times as a header (columns V, AE, AM). | `solar_connections` | 3,336 (max) |
 | 9 | Highway crossings: 245 rows repeat an ID used by an earlier row (one ID appears 15 times). Some coordinates have lost their decimal point (Lat 25636413 instead of 25.636413, Long 88770708), and some lie outside the zone. | `highway_crossings` | 245 + 17 |
-| 10 | Safety inspections: 160 rows are exact copies of the row above, and "Rectification done on" mixes dd/mm/yyyy (2,658) with dd-mm-yyyy (1,205). | `safety_inspection` | 160 + 1,205 |
+| 10 | Safety inspections: 160 rows are exact copies of an earlier row (usually the one above), and "Rectification done on" mixes dd/mm/yyyy (2,658) with dd-mm-yyyy (1,205). | `safety_inspection` | 160 + 1,205 |
 | 11 | CAPEX details: 296 rows are left over from the 19/08/2026 report under the 28/09/2026 one, and 8,030 rows belong to cost centres of other zones (C3346…, C3343…). | `capex_details` | 296 + 8,030 |
 | 12 | DD summary OSD is written in accounting style, so "(0.37)" means −0.37 (1,414 cells). Its Dis Date mixes yyyymmdd (559) with dd/mm/yyyy, and contains #NUM! (27), years such as 0204 or 8013 (8) and 12/12/1912 (5). | `dd_summary` | 1,414 |
 | 13 | PM Surya Ghar (national portal export): latitude and longitude are swapped or junk (latitude 88.27, latitude 130, longitude 400) in 69 + 68 Malda rows. Rows from other DISCOMs also appear (sub-division "ABOHAR", Punjab; "Dibrugarh-I", Assam). | `pmsgy_*` | 69 / 68 |
@@ -150,7 +151,7 @@ Sheet: [Weekly report](https://docs.google.com/spreadsheets/d/e/2PACX-1vSMuO-dde
 
 Sheet: [Safety inspections](https://docs.google.com/spreadsheets/d/1A2fjKboWKnw10iaOs1wcXDrdg9jhhDGfzF9OagPjA5s/edit).
 
-- **160 rows are copies of the row above** (rows 38, 61, 67, 72, 79, 91, 92, 96, …). Delete the copies.
+- **160 rows are copies of an earlier row**, usually the one above (rows 38, 61, 67, 72, 79, 91, 92, 96, …). Delete the copies.
 - `Rectification done on`: 1,205 cells written dd-mm-yyyy (e.g. row 2: 21-04-2025) and 2,658 written dd/mm/yyyy. Use one format.
 - The latest `Entered on` is 25/03/2026. Check that the safety app still writes to this sheet.
 
@@ -279,6 +280,6 @@ node vm/quality/audit.js --sources [--only nsc_pending,withheld] [--out report.j
 node vm/quality/audit.js --pb [--only …]                                                # the sync hook for every dataset (PB_* env)
 ```
 
-`--sources` prints a score line per dataset and writes the full JSON report with `--out`. The hook needs no setup: after each successful sync, `run.js` calls `require('../quality').check(key, 'ds_' + key, ctx)`. It reads the dataset's raw snapshot, or the `ds_` records for sensitive datasets that have no snapshot. One pass keeps memory flat: the 282,000-row meter master runs in about 2 s with a peak of about 140 MB, and most datasets take well under a second. It writes the two collections, resolves issues that did not come back, and never fails the sync.
+`--sources` prints a score line per dataset and writes the full JSON report with `--out`. The hook needs no setup: after each successful sync, `run.js` calls `require('../quality').check(key, 'ds_' + key, ctx)`. It reads the dataset's raw snapshot, or the `ds_` records for sensitive datasets that have no snapshot. One pass keeps memory flat: the 282,000-row meter master runs in about 2 s with a peak of about 140 MB, and most datasets take well under a second. It writes the two collections, resolves issues that did not come back, and never fails the sync. When a source is unchanged, the hook only re-ages its stored report date, once a day, so a sheet that nobody updates still turns stale. That state, and the previous headers for `header.drift`, sit in `headers.json` under `MZO_QUALITY_STATE_DIR` (default: the service's cache directory, else `vm/quality/.state/`).
 
 **Masking.** `vm/quality/lib/mask.js` masks every sample before it is stored: PIN, password and token columns, phone, e-mail, bank, PAN and Aadhaar values, and person names and addresses. Consumer, application and meter numbers keep their first two and last two characters. Office names, codes, dates and amounts stay readable, because the sheet owner needs them to find the row.
