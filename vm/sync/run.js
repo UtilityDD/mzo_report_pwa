@@ -241,6 +241,8 @@ async function main() {
         const rows = require('child_process').spawnSync(process.execPath, ['--max-old-space-size=256', '--max-semi-space-size=4',
             path.join(__dirname, 'rows.js'), '--dir', snapshotDir, '--prune'], { stdio: 'inherit', timeout: 10 * 60000 });
         if (rows.status) log('uniform rows: exit ' + rows.status);
+        // Performance rating from those snapshots (docs/rating/metrics-layer.md), same rules: own capped heap, never fails the sync.
+        if (require('child_process').spawnSync(process.execPath, ['--max-old-space-size=160', '--max-semi-space-size=4', path.join(__dirname, 'rating.js'), '--dir', snapshotDir, '--min-minutes', '15'], { stdio: 'inherit', timeout: 10 * 60000 }).status) log('performance rating: failed (see above)');
     }
     if (registry && results.length) {
         try {

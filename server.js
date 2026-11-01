@@ -761,6 +761,10 @@ if (String(process.env.MZO_DATA_MODE || '').toLowerCase() === 'mirror') {
         app.get('/api/data/rows/:key', require('./vm/sync/lib/rows').handler({ dir: mirror.dir, app: __dirname, on: mirror.on, manifest: mirror.manifest }));
     } catch (err) { console.warn('[Mirror] uniform rows unavailable:', err.message); }
 }
+// Performance rating precomputed after each sync (vm/sync/rating.js; docs/rating/metrics-layer.md): 204 outside mirror mode, before the first build and on Vercel (no vm/), so the page computes it itself.
+let ratingRoute = (req, res) => (req.user ? res.status(204).end() : res.status(401).json({ status: 'error', message: 'Unauthorized' }));
+try { if (mirror.on() || String(process.env.MZO_DATA_MODE || '').toLowerCase() === 'mirror') ratingRoute = require('./vm/sync/lib/rating').handler({ dir: mirror.dir, app: __dirname, on: mirror.on }); } catch (err) { console.warn('[Mirror] rating unavailable:', err.message); }
+app.get('/api/data/rating', ratingRoute);
 
 // --- Estimate structures (admin.html) ---
 const STRUCTURE_FILE = path.join(__dirname, 'data', 'structure.csv'); // literal path: Vercel bundles it with the function
