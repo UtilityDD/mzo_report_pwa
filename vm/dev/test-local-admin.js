@@ -41,6 +41,16 @@ const PORTAL_USERS = [
 
 // ---- Child: one server, one configuration ---------------------------------------------------------
 async function child(out, cookieIn) {
+    // Files the server writes under data/ (the activity log cache) go to a temporary folder instead.
+    const DATA = path.join(ROOT, 'data') + path.sep;
+    const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'mzo-test-data-'));
+    const inData = (p) => (path.resolve(String(p)) + path.sep).startsWith(DATA);
+    const moved = (p) => path.join(sandbox, path.relative(DATA, path.resolve(String(p))));
+    const { writeFileSync, mkdirSync, readFileSync } = fs;
+    fs.writeFileSync = (p, ...a) => writeFileSync(inData(p) ? moved(p) : p, ...a);
+    fs.mkdirSync = (p, ...a) => (inData(p) ? undefined : mkdirSync(p, ...a));
+    fs.readFileSync = (p, ...a) => readFileSync(inData(p) && fs.existsSync(moved(p)) ? moved(p) : p, ...a);
+
     const realFetch = global.fetch;
     const upstream = [];
     global.fetch = async (input, opts) => {
@@ -122,6 +132,7 @@ async function child(out, cookieIn) {
     }
     srv.close();
     fs.writeFileSync(out, JSON.stringify({ results, upstream }));
+    fs.rmSync(sandbox, { recursive: true, force: true });
     process.exit(0);
 }
 
