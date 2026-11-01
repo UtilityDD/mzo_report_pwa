@@ -162,7 +162,7 @@
     costCentres();
     if (worker || workerBroken || typeof Worker === 'undefined') return;
     try {
-      worker = new Worker('/mzo_rows.js?v=3&worker=1');
+      worker = new Worker('/mzo_rows.js?v=4&worker=1');
     } catch (e) { workerBroken = true; return; }
     worker.onmessage = function (e) {
       var j = jobs[e.data.id]; if (!j) return;
@@ -242,11 +242,30 @@
     if (!opts.local && seen && seen.m && seen.m.datasets && seen.m.datasets[key]) early = rowsRequest(key, cached); // VM, seen earlier this session
     return Promise.all([schema(key), manifest()]).then(function (r) {
       var sc = r[0], m = r[1];
-      if (m && m.datasets && m.datasets[key] && !opts.local) {
+      var entry = m && m.datasets && m.datasets[key];
+      if (entry && !opts.local && !heldLocal(key, sourceOf(sc, opts).hub, entry)) {
         return fromMirror(key, cached, sc, early).catch(function () { return fromSource(key, cached, sc, opts, true); });
       }
       return fromSource(key, cached, sc, opts, false);
     });
+  }
+
+  // Read-your-writes: right after a save or an upload, DataHub keeps reading the source until the
+  // mirror moves past the version it had then (mzo_data_hub.js _mirrorHold / mirrorFresh). Honour
+  // the same holds, so a page never shows the mirror's copy from before the user's own write.
+  function heldLocal(key, hub, entry) {
+    var ver = String(entry && entry.version != null ? entry.version : '');
+    var names = ['url:' + key];
+    if (hub) names.push(hub);
+    for (var i = 0; i < names.length; i++) {
+      try {
+        var raw = localStorage.getItem('mzo_mirror_hold_' + names[i]);
+        if (!raw) continue;
+        var h = JSON.parse(raw);
+        if (h && Date.now() < h.until && (h.v === ver || h.v === 'v:' + ver)) return true;
+      } catch (e) {}
+    }
+    return false;
   }
 
   function rowsRequest(key, cached) {
@@ -284,7 +303,11 @@
       // The VM has the raw snapshot even when it cannot serve rows.
       get = fetchT('/api/data/file/' + encodeURIComponent(key), { cache: 'no-cache' }, 180000).then(function (res) {
         if (!res.ok) throw new Error('file ' + res.status);
-        return res.text().then(function (text) { return { text: text, ver: 'f:' + (res.headers.get('ETag') || hash32(text)) }; });
+        // The raw snapshot keeps the source's own format, which can differ from the hub copy the
+        // schema describes (Power Map: JSON snapshot, CSV hub copy). Trust the Content-Type.
+        var ct = String(res.headers.get('Content-Type') || '').toLowerCase();
+        var fmt = /json/.test(ct) ? 'json' : (/tab-separated/.test(ct) ? 'tsv' : (/csv/.test(ct) ? 'csv' : ''));
+        return res.text().then(function (text) { return { text: text, ver: 'f:' + (res.headers.get('ETag') || hash32(text)), format: fmt }; });
       });
     } else {
       if (!src.hub && src.url) src.hub = registerUrl(key, src);
@@ -302,7 +325,7 @@
       var t1 = now();
       if (cached && cached.meta && cached.meta.from === 'local' && cached.meta.raw === raw.ver && cached.meta.schemaFile === sc.hash && cached.meta.code === CODE) return { same: true };
       var input = typeof raw.text === 'string' ? raw.text : raw.text; // DataHub json datasets arrive parsed
-      var format = typeof input === 'string' ? src.format : 'json';
+      var format = typeof input === 'string' ? (raw.format || src.format) : 'json';
       return compute(input, { key: key, version: raw.ver, format: format, schema: sc.doc }).then(function (out) {
         return { json: out.json, meta: { from: 'local', raw: raw.ver, schemaFile: sc.hash, code: CODE, at: Date.now() }, ms: { fetch: Math.round(t1 - t0), build: out.ms, where: out.where }, source: 'local' };
       });
