@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=2" defer></script>
 </head>
 <body>
   <main class="ui-page">
@@ -90,25 +91,26 @@
 
     var data = {}, periods = [], metric = 'atc', targets = {}, asOn = '';
     function pctNum(v) { var x = parseFloat(String(v || '').replace('%', '')); return isFinite(x) ? x : null; }
-    function num(v) { var x = parseFloat(v); return isFinite(x) ? x : null; }
     function pk(y, m) { return y * 100 + m; }
     function fy(y, m) { return m >= 4 ? y : y - 1; }
 
+    // main / target: uniform rows of schema/loss_report.json and schema/loss_targets.json, unscoped
+    // (the sheet holds zone, region, division-total and CCC rows; the selects pin the login's office).
     function prepare(main, target) {
       data = {}; var seen = {};
-      UI.csv(main).forEach(function (r) {
-        var y = parseInt(r.YEAR, 10), m = parseInt(r.MONTH, 10), name = String(r.CCC || '').trim();
+      asOn = main.first('update_on') || ''; // one cell of the sheet (J2)
+      main.all.forEach(function (r) {
+        var y = Math.trunc(r.year), m = Math.trunc(r.month), name = r.ccc;
         if (!name || !y || !m) return;
-        if (!asOn && r['Update On']) asOn = r['Update On'];
         var k = pk(y, m); seen[k] = 1;
         (data[name] || (data[name] = {}))[k] = {
-          atc: pctNum(r['CUM. AT&C LOSS']), dist: pctNum(r['CUM. DIST. LOSS']), ce: pctNum(r['COLL. EFF.']),
-          input: num(r['CUM. INPUT (MU)']), demand: num(r['CUM. DEMAND(MU)']), coll: num(r['CUM. COLLEC. (MU)'])
+          atc: pctNum(r.cum_at_c_loss), dist: pctNum(r.cum_dist_loss), ce: pctNum(r.coll_eff),
+          input: r.cum_input_mu, demand: r.cum_demand_mu, coll: r.cum_collec_mu
         };
       });
       periods = Object.keys(seen).map(Number).sort(function (a, b) { return b - a; });
       targets = {};
-      UI.csv(target || '').forEach(function (r) { var n = String(r.CCC || '').trim(); if (n) targets[n] = { atc: pctNum(r['CUM. AT&C LOSS']), dist: pctNum(r['CUM. DIST. LOSS']) }; });
+      (target ? target.all : []).forEach(function (r) { if (r.ccc) targets[r.ccc] = { atc: pctNum(r.cum_at_c_loss), dist: pctNum(r.cum_dist_loss) }; });
       var p = periods[0];
       $('meta').textContent = (p ? 'Cumulative to ' + MON[p % 100 - 1] + ' ' + Math.floor(p / 100) : '') + (asOn ? ' · Updated ' + UI.fmtDate(asOn) : '');
       $('period').innerHTML = periods.map(function (k) { return '<option value="' + k + '">' + MON[k % 100 - 1] + ' ' + Math.floor(k / 100) + '</option>'; }).join('');
@@ -227,15 +229,22 @@
     });
 
     // Loss sheet is pasted by hand; always revalidate so a same-day paste shows (docs/reports.md).
-    function load(force) {
-      var hub = window.mzoDataHub, b = $('refreshBtn');
-      if (force) b.classList.add('spin');
-      return Promise.all([hub._peek('CACHE_LOSS'), hub._peek('CACHE_LOSS_TARGET')]).then(function (c) {
-        if (c[0] && !force) { prepare(c[0], c[1]); scopeLock(); render(); }
-        return Promise.all([hub.waitForDataset('CACHE_LOSS', { forceCheck: true }).catch(function () {}), hub.waitForDataset('CACHE_LOSS_TARGET', { forceCheck: true }).catch(function () {})])
-          .then(function () { return Promise.all([hub._peek('CACHE_LOSS'), hub._peek('CACHE_LOSS_TARGET')]); })
-          .then(function (f) { if (f[0] && (force || f[0] !== c[0] || f[1] !== c[1])) { prepare(f[0], f[1]); scopeLock(); render(); } else if (!f[0] && !c[0]) { $('meta').textContent = 'Could not load data'; $('offices').innerHTML = $('trend').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } });
-      }).then(function () { b.classList.remove('spin'); });
+    // Paint from the cached rows at once, again when newer rows (or the targets) arrive.
+    var ROWS = { scope: false, forceCheck: true }, main = null, target = null;
+    function paint() { if (!main) return; prepare(main, target); scopeLock(); render(); }
+    function load() {
+      MzoRows.load('loss_report', function (t, info) {
+        if (t) { main = t; paint(); }
+        else if (info && info.error && !main) { $('meta').textContent = 'Could not load data'; $('offices').innerHTML = $('trend').innerHTML = '<div class="ui-empty">Could not load data.</div>'; }
+      }, ROWS);
+      MzoRows.load('loss_targets', function (t) { if (t) { target = t; paint(); } }, ROWS);
+    }
+    function refresh() {
+      var b = $('refreshBtn');
+      b.classList.add('spin');
+      Promise.all([MzoRows.get('loss_report', ROWS).catch(function () { return null; }), MzoRows.get('loss_targets', ROWS).catch(function () { return null; })])
+        .then(function (r) { if (r[0]) main = r[0]; if (r[1]) target = r[1]; paint(); })
+        .then(function () { b.classList.remove('spin'); }, function () { b.classList.remove('spin'); });
     }
     // First paint: pin the login scope, then open ?region= / ?division= / ?ccc= (the deepest one wins).
     var locked = false;
@@ -260,8 +269,8 @@
       }
       ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { UI.mark($(id)); });
     }
-    $('refreshBtn').addEventListener('click', function () { load(true); });
-    load(false);
+    $('refreshBtn').addEventListener('click', refresh);
+    load();
   });
   </script>
 </body>

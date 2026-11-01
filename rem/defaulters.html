@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=2" defer></script>
   <style>
     .rd-copy { margin-left: auto; margin-right: 2px; }
   </style>
@@ -102,20 +103,26 @@
       { key: 'o3', label: '₹10K – 25K', min: 1e4, max: 2.5e4 },
       { key: 'o4', label: 'Under ₹10K', min: -Infinity, max: 1e4 }
     ];
-    var parts = { DOM: [], AGRI: [], IC: [] }, all = [], f = { q: '', type: '', pay: '', osd: '' }, level = 'region', scope = null;
+    var parts = { DOM: [], AGRI: [], IC: [] }, cols = { DOM: [], AGRI: [], IC: [] }, all = [], f = { q: '', type: '', pay: '', osd: '' }, level = 'region', scope = null;
 
-    function tsv(text) {
-      var lines = String(text || '').replace(/\r/g, '').split('\n').filter(function (l) { return l.trim(); });
-      if (!lines.length) return [];
-      var head = lines[0].split('\t').map(function (h) { return h.trim(); });
-      var gi = head.indexOf('GOVT_STAT'), ai = head.indexOf('ADDRESS'), yn = /^(YES|NO)$/i;
-      return lines.slice(1).map(function (l) {
-        var v = l.split('\t'), o = {};
-        // Some sheet rows carry an extra empty cell after NAME, shifting every later column right by one.
-        if (gi > 0 && ai > 0 && !yn.test((v[gi] || '').trim()) && yn.test((v[gi + 1] || '').trim()) && !(v[ai] || '').trim()) v.splice(ai, 1);
-        head.forEach(function (h, i) { if (h) o[h] = v[i] ? v[i].trim() : ''; });
-        return o;
+    // The sheet's own columns of a rows document, in sheet order (no _raw or office columns).
+    function sheetCols(t) { return t.columns.filter(function (c) { return !c.raw_of && c.name.charAt(0) !== '_'; }); }
+    // A cell as the sheet wrote it (a typed value as text, or the text that did not parse).
+    function cell(r, c) { var v = r[c.name]; return v == null || v === '' ? r[c.name + '_raw'] || '' : String(v); }
+    // Some sheet rows carry an extra empty cell after NAME, shifting every later column right by one:
+    // GOVT_STAT then holds the base class and the next cell YES/NO. Move those cells back.
+    function unshift(rows, list) {
+      var names = list.map(function (c) { return c.name; }), ai = names.indexOf('address'), gi = names.indexOf('govt_stat'), yn = /^(YES|NO)$/i;
+      if (ai <= 0 || gi <= 0 || gi + 1 >= list.length) return rows;
+      rows.forEach(function (r) {
+        if (yn.test(r.govt_stat) || !yn.test(cell(r, list[gi + 1])) || r.address) return;
+        for (var i = ai; i < list.length; i++) {
+          var c = list[i], s = i + 1 < list.length ? cell(r, list[i + 1]) : '';
+          if (c.type === 'number') { var n = s === '' ? null : Number(s); r[c.name] = isFinite(n) ? n : null; r[c.name + '_raw'] = s !== '' && r[c.name] == null ? s : ''; }
+          else r[c.name] = s;
+        }
       });
+      return rows;
     }
     function ymd(s) { s = String(s || '').trim(); if (s.length !== 8) return null; var d = new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)); return isNaN(d) ? null : d; }
     function monthsSince(d) {
@@ -126,29 +133,38 @@
       return m;
     }
 
-    function enrich(rows, type) {
-      return rows.filter(function (r) { return r.CON_ID || r.CCC_CODE; }).map(function (r) {
-        var code = String(r.CCC_CODE || '').trim(), o = UI.office(code);
-        var bc = String(r.BASE_CLASS || '').trim().toUpperCase();
-        var last = ymd(r.LAST_PDT), days = last ? Math.max(0, Math.round((Date.now() - last.getTime()) / 864e5)) : null, m = monthsSince(last);
-        var txt = ((r.NAME || '') + ' ' + (r.ADDRESS || '')).toLowerCase();
+    // t.rows: uniform rows of schema/rem_defaulters_*.json, already scoped to the login by MzoRows.
+    // The yyyymmdd dates stay numbers; ymd() reads them as before.
+    function enrich(t, type) {
+      cols[type] = sheetCols(t);
+      return unshift(t.rows, cols[type]).filter(function (r) { return r.con_id || r.ccc_code; }).map(function (r) {
+        var code = r.ccc_code;
+        var bc = r.base_class.toUpperCase();
+        var last = ymd(r.last_pdt), days = last ? Math.max(0, Math.round((Date.now() - last.getTime()) / 864e5)) : null, m = monthsSince(last);
+        var txt = (r.name + ' ' + r.address).toLowerCase();
         return {
-          raw: r, con: String(r.CON_ID || '').trim(), name: UI.title(r.NAME || ''), address: r.ADDRESS || '', code: code,
-          _region: o.region, _divn: o.division, _supp: o.ccc || code, CCC_CODE: code,
+          raw: r, con: r.con_id, name: UI.title(r.name), address: r.address, code: code,
+          _region: r._region, _divn: r._division, _supp: r._ccc || code, CCC_CODE: code,
           type: type === 'IC' ? (bc === 'I' ? 'IND' : 'COM') : type, base: bc,
-          osd: parseFloat(r.NOTOSD_UPD) || 0, locked: parseFloat(r.LOCKED_OSD) || 0,
-          last: last, lastDays: days, lastMonths: m, mobile: r.REG_MOB_NO,
+          osd: r.notosd_upd || 0, locked: r.locked_osd || 0,
+          last: last, lastDays: days, lastMonths: m, mobile: r.reg_mob_no,
           payKey: PAY.filter(function (p) { return p.test(m, days); })[0].key,
           school: txt.indexOf('school') !== -1, party: txt.indexOf('party') !== -1,
           tower: ['indus', 'bharti', 'jio', 'bsnl', 'telecom'].some(function (k) { return txt.indexOf(k) !== -1; }),
-          upd: r.UPD_DT
+          upd: r.upd_dt == null ? '' : String(r.upd_dt)
         };
       });
     }
+    // The export writes every sheet column under its sheet header, as the sheet wrote it.
+    function exportCols() {
+      var seen = {}, out = [];
+      ['DOM', 'AGRI', 'IC'].forEach(function (p) { cols[p].forEach(function (c) { if (c.source_name && !seen[c.name]) { seen[c.name] = 1; out.push(c); } }); });
+      return out;
+    }
+    function cells(r) { var o = {}; exportCols().forEach(function (c) { if (c.name in r.raw) o[c.source_name] = cell(r.raw, c); }); return o; }
 
     function rebuild() {
       all = parts.DOM.concat(parts.AGRI, parts.IC);
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       all.forEach(function (r) { r.osdKey = OSD.filter(function (b) { return r.osd >= b.min && r.osd < b.max; })[0].key; });
       var upd = all.reduce(function (m, r) { return r.upd && r.upd > m ? r.upd : m; }, '');
       $('meta').textContent = (upd ? 'Updated ' + UI.fmtDate(ymd(upd)) + ' · ' : '') + UI.n(all.length) + ' consumers' + (parts.IC.length ? '' : ' · loading commercial and industrial…');
@@ -230,12 +246,12 @@
     function detail(r) {
       var x = r.raw;
       var pairs = [
-        ['Consumer ID', r.con], ['Name', r.name], ['Address', r.address], ['Mobile', r.mobile], ['Installation', x.INST_NO], ['MRU', x.MRU],
+        ['Consumer ID', r.con], ['Name', r.name], ['Address', r.address], ['Mobile', r.mobile], ['Installation', x.inst_no], ['MRU', x.mru],
         ['CCC', r._supp], ['Division', r._divn], ['Region', r._region],
-        ['Type', TYPE[r.type]], ['Base class', r.base], ['Class', x.CLASS_DESC], ['Govt.', x.GOVT_STAT],
-        ['Outstanding', UI.inr(r.osd)], ['Locked OSD', r.locked ? UI.inr(r.locked) : ''], ['Bill date', fd(x.BDATE)],
-        ['Last payment', r.last ? lastLabel(r) + ' (' + UI.fmtDate(r.last) + ')' : 'None recorded'], ['Notice issued', fd(x.NOT_ISSUE_DT)],
-        ['Report date', fd(x.UPD_DT)], ['Disconnected', x.DISC_FLAG]
+        ['Type', TYPE[r.type]], ['Base class', r.base], ['Class', x.class_desc], ['Govt.', x.govt_stat],
+        ['Outstanding', UI.inr(r.osd)], ['Locked OSD', r.locked ? UI.inr(r.locked) : ''], ['Bill date', fd(x.bdate)],
+        ['Last payment', r.last ? lastLabel(r) + ' (' + UI.fmtDate(r.last) + ')' : 'None recorded'], ['Notice issued', fd(x.not_issue_dt)],
+        ['Report date', fd(x.upd_dt)], ['Disconnected', x.disc_flag]
       ];
       UI.drawer(r.name || 'Consumer', r.con + ' · ' + [r._supp, r._divn].filter(Boolean).join(', '), pairs);
       var head = document.querySelector('#ui-drawer header'), btn = head.querySelector('.rd-copy');
@@ -281,17 +297,16 @@
     });
     $('exportBtn').addEventListener('click', function () {
       var v = window.__view || [];
-      var keys = []; v.forEach(function (r) { Object.keys(r.raw).forEach(function (k) { if (keys.indexOf(k) === -1) keys.push(k); }); });
       UI.exportCsv('rem-defaulters.csv', [{ key: 't', label: 'TYPE', csv: function (r) { return r.type; } }, { key: 'c', label: 'CCC', csv: function (r) { return r._supp; } }]
-        .concat(keys.map(function (k) { return { key: k, label: k, csv: function (r) { return r.raw[k]; } }; })), v);
+        .concat(exportCols().map(function (c) { return { key: c.name, label: c.source_name, csv: function (r) { return c.name in r.raw ? cell(r.raw, c) : undefined; } }; })), v);
     });
 
     // DOM + AGRI paint first; the larger I&C sheet joins when ready.
-    var SRC = { DOM: 'CACHE_REM_DOM', AGRI: 'CACHE_REM_AGRI', IC: 'CACHE_REM_DEFAULTERS' }, first = true;
+    var SRC = { DOM: 'rem_defaulters_dom', AGRI: 'rem_defaulters_agri', IC: 'rem_defaulters_ind_com' }, first = true;
     function onData(part) {
-      return function (text, info) {
-        if (!text) { if (info && info.error && !all.length) { $('meta').textContent = 'Could not load data'; $('table').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
-        parts[part] = enrich(tsv(text), part);
+      return function (t, info) {
+        if (!t) { if (info && info.error && !all.length) { $('meta').textContent = 'Could not load data'; $('table').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+        parts[part] = enrich(t, part);
         rebuild();
         if (first) {
           first = false;
@@ -303,9 +318,8 @@
     }
     function loadAll(force) {
       return Promise.all(Object.keys(SRC).map(function (p) {
-        if (!force) return UI.load(SRC[p], onData(p));
-        return Promise.resolve(window.mzoDataHub.waitForDataset(SRC[p], { forceCheck: true })).catch(function () {})
-          .then(function () { return window.mzoDataHub._peek(SRC[p]); }).then(function (t) { if (t) onData(p)(t, {}); });
+        if (!force) return MzoRows.load(SRC[p], onData(p));
+        return MzoRows.get(SRC[p], { forceCheck: true }).then(function (t) { onData(p)(t, {}); }, function () {});
       }));
     }
     $('refreshBtn').addEventListener('click', function () { var b = this; b.classList.add('spin'); loadAll(true).then(function () { b.classList.remove('spin'); }); });
