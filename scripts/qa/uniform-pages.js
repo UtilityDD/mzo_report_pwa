@@ -268,7 +268,7 @@ async function walk(page, cfg, base) {
       await row.click(); await shot('open:' + label);
       await page.keyboard.press('Escape');
     },
-    search: async (id, text) => { await page.fill('#' + id, text); await page.waitForTimeout(400); await shot('search:' + text); await page.fill('#' + id, ''); await page.waitForTimeout(400); },
+    search: async (id, text) => { if (!(await page.locator('#' + id).isVisible())) return; await page.fill('#' + id, text); await page.waitForTimeout(400); await shot('search:' + text); await page.fill('#' + id, ''); await page.waitForTimeout(400); },
     // click every element matching the selector, one state each
     clickAll: async (selector, label) => {
       const n = await page.locator(selector).count();
