@@ -765,6 +765,7 @@ app.post('/api/structures/update', requireAdmin, (req, res) => {
             .concat(structures.map((s) => STRUCTURE_COLUMNS.map((k) => (k === 'id' ? s.id : `"${String(s[k] == null ? '' : s[k]).replace(/"/g, '""')}"`)).join(',')))
             .join('\n');
         fs.writeFileSync(STRUCTURE_FILE, csv, 'utf-8');
+        refreshMirror(['structure'], 'structures update');
         res.status(200).json({ message: 'Structures updated successfully!' });
     } catch (error) {
         console.error('Error writing structure file:', error.message);
@@ -1270,6 +1271,7 @@ app.post('/api/important-sheets/unbilled', requireSheetsEditor, async (req, res)
             body: payload
         });
         const row = Array.isArray(inserted) ? inserted[0] : inserted;
+        refreshMirror(['important_unbilled_months'], 'unbilled month added');
         await logActivity({
             username: req.user.Username,
             name: req.user.Name,
@@ -1310,6 +1312,7 @@ app.patch('/api/important-sheets/unbilled/:id', requireSheetsEditor, async (req,
             }
         );
         const row = Array.isArray(updated) ? updated[0] : updated;
+        refreshMirror(['important_unbilled_months'], 'unbilled month updated');
         await logActivity({
             username: req.user.Username,
             name: req.user.Name,
@@ -1335,6 +1338,7 @@ app.delete('/api/important-sheets/unbilled/:id', requireSheetsEditor, async (req
             method: 'DELETE',
             prefer: 'return=minimal'
         });
+        refreshMirror(['important_unbilled_months'], 'unbilled month deleted');
         await logActivity({
             username: req.user.Username,
             name: req.user.Name,
@@ -1408,6 +1412,7 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
             : newUser;
         
         await initializeLocalUsers();
+        refreshMirror(['portal_users'], 'admin user change');
         
         await logActivity({
             username: req.user.Username,
@@ -1496,6 +1501,7 @@ app.post('/api/admin/users/update', requireAdmin, async (req, res) => {
         await patchPortalUserWithFallback(users[idx].Username, dbRow);
         
         await initializeLocalUsers();
+        refreshMirror(['portal_users'], 'admin user change');
         
         await logActivity({
             username: req.user.Username,
@@ -1536,6 +1542,7 @@ app.post('/api/admin/users/delete', requireAdmin, async (req, res) => {
         );
         
         await initializeLocalUsers();
+        refreshMirror(['portal_users'], 'admin user change');
         
         await logActivity({
             username: req.user.Username,
@@ -1604,6 +1611,7 @@ app.post('/api/admin/users/approve', requireAdmin, async (req, res) => {
 
         await patchPortalUserWithFallback(user.Username, updates);
         await initializeLocalUsers();
+        refreshMirror(['portal_users'], 'admin user change');
 
         await logActivity({
             username: req.user.Username,
@@ -1632,6 +1640,7 @@ app.post('/api/admin/users/reject', requireAdmin, async (req, res) => {
             approved_at: new Date().toISOString()
         });
         await initializeLocalUsers();
+        refreshMirror(['portal_users'], 'admin user change');
 
         await logActivity({
             username: req.user.Username,
@@ -1869,6 +1878,7 @@ app.post('/api/admin/edit-sheet-row', async (req, res) => {
                 connection_target: connectionTarget || null,
                 proposed_value: newValue
             });
+            refreshMirror(['power_map_corrections'], 'power map suggestion');
             return res.json({ status: 'success', isSuggestion: true, message: 'Edit submitted as suggested correction. Pending Admin approval.' });
         }
 
@@ -1882,6 +1892,7 @@ app.post('/api/admin/edit-sheet-row', async (req, res) => {
             }
         }
         await patchSubstation_(rowKeyValue, { [columnName]: finalValue });
+        refreshMirror(['power_map_substations'], 'power map edit');
         return res.json({ status: 'success', message: 'Database row updated successfully.' });
     } catch (err) {
         console.error('[Admin Edit] Error updating Supabase row:', err.message);
@@ -1908,6 +1919,7 @@ app.post('/api/admin/append-sheet-row', async (req, res) => {
                 substation: rowData.Substation,
                 proposed_value: JSON.stringify(rowData)
             });
+            refreshMirror(['power_map_corrections'], 'power map suggestion');
             return res.json({ status: 'success', isSuggestion: true, message: 'Substation creation submitted for Admin approval.' });
         }
         
@@ -1941,6 +1953,7 @@ app.post('/api/admin/append-sheet-row', async (req, res) => {
             method: 'POST',
             body: payload
         });
+        refreshMirror(['power_map_substations'], 'power map substation added');
         
         return res.json({ status: 'success', message: 'Substation appended successfully.' });
     } catch (err) {
@@ -1970,11 +1983,13 @@ app.post('/api/admin/add-connection', async (req, res) => {
                 connection_target: targetSubstation,
                 proposed_value: JSON.stringify({ rl, conductorSize, peakLoad })
             });
+            refreshMirror(['power_map_corrections'], 'power map suggestion');
             return res.json({ status: 'success', isSuggestion: true, message: 'Feeder connection submitted for Admin approval.' });
         }
 
         if (!record) return res.status(404).json({ status: 'error', message: `Source Substation '${sourceSubstation}' not found.` });
         await patchSubstation_(sourceSubstation, appendConnection_(record, targetSubstation, { rl, conductorSize, peakLoad }));
+        refreshMirror(['power_map_substations'], 'power map connection added');
         return res.json({ status: 'success', message: 'Connection added successfully.' });
     } catch (err) {
         console.error('[Admin Add Connection] Error adding connection to Supabase:', err.message);
@@ -2040,6 +2055,7 @@ app.post('/api/admin/approve-correction', requireAdmin, async (req, res) => {
         await querySupabase(`${POWER_MAP_CORRECTIONS_TABLE}?id=eq.${id}`, {
             method: 'DELETE'
         });
+        refreshMirror(['power_map_substations', 'power_map_corrections'], 'power map correction approved');
         
         // Log activity
         await logActivity({
@@ -2075,6 +2091,7 @@ app.post('/api/admin/reject-correction', requireAdmin, async (req, res) => {
         await querySupabase(`${POWER_MAP_CORRECTIONS_TABLE}?id=eq.${id}`, {
             method: 'DELETE'
         });
+        refreshMirror(['power_map_corrections'], 'power map correction rejected');
         
         // Log activity
         await logActivity({
@@ -2929,6 +2946,7 @@ app.post('/api/stock/allotment', async (req, res) => {
             try {
                 const created = await createAllotmentInSupabase_(payload);
                 invalidateAllotListCache_();
+                refreshMirror(['stock_allotments', 'stock_allot_seq'], 'allotment created');
                 return res.json(created);
             } catch (e) {
                 const missing =
@@ -2943,6 +2961,7 @@ app.post('/api/stock/allotment', async (req, res) => {
                     try {
                         const created = await createAllotmentInSupabase_(payload, { omitCancelFields: true });
                         invalidateAllotListCache_();
+                        refreshMirror(['stock_allotments', 'stock_allot_seq'], 'allotment created');
                         return res.json(created);
                     } catch (e2) {
                         console.error('[stock/allotment] Supabase create retry failed:', e2.message);
@@ -2972,6 +2991,7 @@ app.post('/api/stock/allotment', async (req, res) => {
             try {
                 const result = await cancelAllotmentInSupabase_(no, cancelledBy, reason);
                 invalidateAllotListCache_();
+                refreshMirror(['stock_allotments'], 'allotment cancelled');
                 return res.json(result);
             } catch (e) {
                 console.error('[stock/allotment] cancel failed:', e.message);
@@ -2991,6 +3011,7 @@ app.post('/api/stock/allotment', async (req, res) => {
             if (!(await requireStockAllotmentAccess_(req, res))) return;
             try {
                 const result = await migrateAllotmentsFromLegacy_();
+                refreshMirror(['stock_allotments', 'stock_allot_seq'], 'allotments migrated');
                 return res.json(result);
             } catch (e) {
                 console.error('[stock/allotment] migrate failed:', e.message);
@@ -3343,6 +3364,7 @@ app.post('/api/nsc/publish/complete', async (req, res) => {
 
         writeLocalNscMeta_(baseMeta);
         await saveNscSheetMeta_(baseMeta);
+        refreshMirror(['nsc_pending', 'withheld'], 'NSC publish');
 
         const keptNote = baseMeta.withheldKept
             ? ` File had 0 Withheld — kept previous Withheld (${baseMeta.withheldRows || 0} rows).`
@@ -3682,6 +3704,7 @@ app.post('/api/stock/publish', (req, res) => {
                     console.warn('[Stock publish] meta only:', e.message);
                     baseMeta.supabaseError = e.message;
                 }
+                refreshMirror(['stock_snapshot', 'stock_upload_meta'], 'stock publish');
                 return res.json({
                     status: 'success',
                     message: storagePublished
@@ -3735,6 +3758,7 @@ app.post('/api/stock/publish', (req, res) => {
                 baseMeta.supabaseUploadId = supabaseMeta && supabaseMeta.supabaseUploadId;
                 baseMeta.source = 'supabase';
                 writeLocalStockBackup_(csvOut, baseMeta);
+                refreshMirror(['stock_snapshot', 'stock_upload_meta', 'stock_snapshot_db'], 'stock publish');
             } catch (e) {
                 supabaseError = e.message;
                 console.error('[Stock publish] publish failed:', e.message);
@@ -3818,7 +3842,7 @@ const PENDING_MC_META = syncedMeta_('pending_mc', 'pending_mc_meta.json');
 const LOAD_EXT_META = syncedMeta_('load_extension', 'load_ext_meta.json');
 
 /** POST route that runs one sync job (one at a time per instance) and logs it. */
-function syncRoute_(routePath, { label, can, forbidden, run, meta, done, bareError }) {
+function syncRoute_(routePath, { label, can, forbidden, run, meta, done, bareError, mirrorKeys }) {
     let running = false;
     app.post(routePath, async (req, res) => {
         if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
@@ -3832,6 +3856,7 @@ function syncRoute_(routePath, { label, can, forbidden, run, meta, done, bareErr
             console.log(`[${label}] Triggered by user: ${user.Username || user.username || 'unknown'}`);
             const result = await run();
             meta.set(result);
+            refreshMirror(mirrorKeys, label);
             const summary = done(result);
             await logActivity({
                 username: user.Username || user.username,
@@ -3925,6 +3950,7 @@ syncRoute_('/api/defective/sync', {
     forbidden: 'Not authorized to sync defective meter data. Ask an admin to grant permission.',
     run: syncDefectiveToSupabase,
     meta: DEFECTIVE_META,
+    mirrorKeys: ['defective_summary', 'defective_details'],
     done: (m) => ({
         log: `Synced Defective Meter: ${m.stats.totalDefective} meters (${m.stats.summaryRows} summary, ${m.stats.detailsRows} details)`,
         message: `Defective Meter sync complete! Total: ${m.stats.totalDefective} meters.`
@@ -3961,6 +3987,7 @@ syncRoute_('/api/disconnection/sync', {
     forbidden: 'Not authorized to sync disconnection data. Ask an admin to grant permission.',
     run: syncDisconnectionToSupabase,
     meta: DISCONNECTION_META,
+    mirrorKeys: ['disconnection'],
     bareError: true,
     done: (m) => ({
         log: `Synced Disconnection Tracker: ${m.stats.totalConsumers} rows`,
@@ -3993,6 +4020,7 @@ syncRoute_('/api/pending-mc/sync', {
     forbidden: 'Not authorized to sync Pending Master Card data. Ask an admin to grant permission.',
     run: syncPendingMcToSupabase,
     meta: PENDING_MC_META,
+    mirrorKeys: ['pending_mc'],
     done: (m) => ({
         log: `Synced Pending Master Card: ${m.stats.totalPending} records`,
         message: `Successfully synced ${m.stats.totalPending} Pending MC records to Cloud Cache.`
@@ -4024,6 +4052,7 @@ syncRoute_('/api/load-extension/sync', {
     forbidden: 'Not authorized to sync Load Extension data. Ask an admin to grant permission.',
     run: syncLoadExtToSupabase,
     meta: LOAD_EXT_META,
+    mirrorKeys: ['load_extension'],
     done: (m) => ({
         log: `Synced Load Extension: ${m.stats.totalPending} applications`,
         message: `Successfully synced ${m.stats.totalPending} Load Extension applications to Cloud Cache.`
