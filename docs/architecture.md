@@ -166,21 +166,16 @@ Report `meta.json` files are read from `REPORTS_PUBLIC_BASE`, which defaults to 
 
 Not wired, on purpose: login and Google sign-in (PIN-hash upgrades and last-login updates in `portal_users`), activity logs (every page visit) and `POST /api/admin/sync` (a read). Writes that skip the app, such as `si-works/si.html` straight to Supabase or edits on Vercel, reach the mirror at the next scheduled sync.
 
-**On the VM.** The app unit (`mzo-reports.service`) needs:
+**On the VM.** `provision.sh` creates `/opt/mzo/data/snapshots` (owner `opc`) and `mzo-sync.service` sets `MZO_SNAPSHOT_DIR`. The app unit (`mzo-reports.service`) also needs:
 
 ```
 EnvironmentFile=-/etc/mzo/pocketbase.env
 Environment=MZO_DATA_MODE=mirror
+Environment=MZO_SNAPSHOT_DIR=/opt/mzo/data/snapshots
+Environment=SYNC_TMP_DIR=/opt/mzo/data/sync-tmp
 ```
 
-and `/etc/mzo/pocketbase.env` (read by both the app and `mzo-sync.service`) gains:
-
-```
-MZO_SNAPSHOT_DIR=/opt/mzo/data/snapshots
-SYNC_TMP_DIR=/opt/mzo/data/sync-tmp
-```
-
-`/opt/mzo/data/snapshots` and `/opt/mzo/data/sync-tmp` must exist and be owned by `opc` (the sync writes them, the app reads the snapshots). `pocketbase.env` gives the write-through run its PocketBase login; one shared `SYNC_TMP_DIR` gives the timer's sync and the write-through sync one lock file across releases, so they never run at the same time. `MZO_DATA_MODE=off` in `/etc/mzo/app.env` turns mirror mode off without a commit (an `EnvironmentFile` value wins over `Environment=`). A restart of the app also stops a write-through run in progress; the next scheduled sync catches up.
+and `mzo-sync.service` the same `SYNC_TMP_DIR` line, with `/opt/mzo/data/sync-tmp` created (owner `opc`) next to the snapshots. `pocketbase.env` gives the write-through run its PocketBase login. The shared `SYNC_TMP_DIR` gives the timer's sync and the write-through sync one lock file across releases (without it the lock sits in each release's `vm/sync/.tmp`, so two syncs could overlap around a deploy). `MZO_DATA_MODE=off` in `/etc/mzo/app.env` turns mirror mode off without a commit (an `EnvironmentFile` value wins over `Environment=`). A restart of the app also stops a write-through run in progress; the next scheduled sync catches up.
 
 **Local test.** Build a snapshot folder from the live sources (GET only, never Apps Script), then run the app against it:
 
