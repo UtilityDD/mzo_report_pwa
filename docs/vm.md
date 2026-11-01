@@ -175,3 +175,25 @@ For a new VM, copy `vm/deploy/` (and `vm/pocketbase/VERSION`) over and run it fr
 | `.github/workflows/vm-deploy.yml` | push to `develop` (smartlinemanapp repo only) | Polls `/deploy.json` for up to 5 min until `commit` is this push and `status` is `ok`; fails at once if the VM rolled the commit back. A newer push cancels the older check |
 
 Actions never connect to the VM; the VM pulls. Run the syntax check locally with `node scripts/tools/check_syntax.js`. Pushing a change under `.github/workflows/` needs a GitHub token with the `workflow` scope.
+
+## Parity checks (mirror mode shows the same numbers)
+
+`scripts/qa/` checks that mirror mode shows exactly what original mode shows, page by page, and how fast. It needs Chrome and `playwright-core` (resolved from `node_modules`, `PLAYWRIGHT_CORE_PATH` or the npx cache); nothing is installed in the repo.
+
+```bash
+# two local apps from the same checkout, both with the upstream write guard (snapshots: node vm/dev/make-snapshots.js --out <dir>, or a vm/sync run)
+scripts/qa/serve-local.sh 3600                       # original mode
+scripts/qa/serve-local.sh 3601 /path/to/snapshots    # MZO_DATA_MODE=mirror
+node scripts/qa/parity.js http://localhost:3600 original-local
+node scripts/qa/parity.js http://localhost:3601 mirror-local
+node scripts/qa/snapshot-fresh.js /path/to/snapshots --out <out>/snapshot-fresh.json   # which sources changed since the snapshot
+node scripts/qa/diff.js original-local mirror-local --volatile original-local-2       # → <out>/diff-original-local-mirror-local.md
+node scripts/qa/timing.js --a original-local,original-local-2 --b mirror-local,mirror-local-2   # cold-load medians over runs
+# the VM: a real session cookie (in a mode-600 file), never the development one
+QA_COOKIE_FILE=<file> node scripts/qa/parity.js https://130.210.43.11.sslip.io vm
+QA_COOKIE_FILE=<file> node scripts/qa/snapshot-fresh.js https://130.210.43.11.sslip.io/api/data/manifest --out <out>/vm/_snapshot-fresh.json
+```
+
+- `parity.js` loads every page in the `app.html` NAV plus the shell, standalone, at 1280 px (cold: fresh profile; warm: opened again) and six key pages at 390 px. It blocks every browser request that is not GET/HEAD/OPTIONS. `guard-writes.js` (preloaded by `serve-local.sh`) stops the local server's own upstream writes, such as the `page_visit` activity rows. On localhost it signs the development test session; elsewhere it needs `QA_COOKIE`.
+- Per page it records the kit stat cards, side-panel facet counts, table row counts, the first five rows and the footer totals, chart series sums, header dates, briefing rows and select option counts. It also records the time from navigation to the final numbers on screen, console errors, failed requests and request counts per host. Output goes to `agent-progress/parity/<label>/<page>.json` (or `--out` / `QA_OUT`). Table cells on admin and manpower pages are stored as short hashes.
+- `diff.js` lists every difference. Known source switches between the modes (`scripts/qa/expected.json`) go to *Expected differences*. With `--volatile`, fields that also differ between two original runs go to *moves by itself*. A source that `snapshot-fresh.js` found changed after the snapshot (saved as `<B>/_snapshot-fresh.json`) explains the differences on the pages that read it. Everything else is a **real mismatch**.
