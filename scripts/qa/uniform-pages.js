@@ -2,13 +2,16 @@
 /* Browser parity and timing for pages converted to MzoRows.
  *
  *   node scripts/qa/uniform-pages.js parity --old <baseUrl> --new <baseUrl>[,<baseUrl>…] --snap <dir> [--pages solar,nsc] [--out <dir>]
+ *        [--profiles admin,division,region,ccc] [--theme light|dark] [--width 390]
  *   node scripts/qa/uniform-pages.js timing --old <baseUrl> --new <baseUrl> [--snap <dir>] [--runs 3] [--cpu 4]
  *
  * parity: every page is opened on each base with the same data (Google and Supabase Storage
  * requests are answered from the snapshot folder), as admin and as a division user. It records
  * what the page shows (stat cards, facet counts, level tabs, table rows and totals, the as-on
  * date) on load, after each stat card, each analysis tab, each drill level (first row opened at
- * every level) and each deep link, and compares the old base with every new base.
+ * every level) and each deep link, and compares the old base with every new base. A page entry can
+ * also name its own selectors (ready, asOn, drill, list), selects to step through, and hist bars
+ * are clicked one by one; every table on the page and an open drawer are recorded.
  * timing: first data paint (stat values and a real table row on screen), cold (empty storage)
  * and warm (second load), median of --runs, live sources unless --snap is given.
  *
@@ -31,7 +34,9 @@ function loadPlaywright() {
 
 const PROFILES = {
   admin: { Username: 'local-preview', Name: 'Local Preview', role: 'admin', office_level: 'CE' },
-  division: { Username: 'qa-gazole', Name: 'QA Gazole', role: 'user', division_code: 'Gazole' }
+  division: { Username: 'qa-gazole', Name: 'QA Gazole', role: 'user', division_code: 'Gazole' },
+  region: { Username: 'qa-raiganj', Name: 'QA Raiganj', role: 'user', region_code: 'Raiganj' },
+  ccc: { Username: 'qa-fulbari', Name: 'QA Fulbari', role: 'user', ccc_code: '6611108' }
 };
 function cookie(profile) {
   const secret = process.env.QA_JWT_SECRET || 'mzo-portal-super-secret-key-123456';
@@ -48,6 +53,12 @@ const PAGES = {
   nsc: {
     url: 'nsc.html', key: 'nsc_pending', stats: '#kpis .ui-stat', tabs: '#tabs .ui-drill-tab',
     deep: ['?region=Raiganj', '?division=Gazole', '?ccc=Kaliyaganj', '?q=6000188039', '?kpi=delay30', '?kpi=pole', '?kpi=nonpole', '?kpi=withheld', '?kpi=ind', '?kpi=procb', '?kpi=com3', '?followups=1']
+  },
+  // Batch C (wave-c): pages with their own table ids; hist bars are clicked too (hists: true)
+  consumer: {
+    url: 'consumer/consumer.html', key: 'consumers', stats: '.ui-stats .ui-stat', tabs: '#none', asOn: '#meta', ready: '#pivot tbody tr td:not([colspan])',
+    drill: '#pivot tbody tr.click', hists: true, deep: [],
+    selects: { rowDim: ['_region', '_divn', '_supp', 'CONN_STAT', 'BASE_CLASS', 'CONN_PHASE', 'CATEGORY', 'GOVT_STAT', 'TYPE_OF_METER', 'CONN_BY', 'TIME_OF_DAY'], colDim: ['CONN_STAT', 'BASE_CLASS', 'CONN_PHASE', 'TYPE_OF_METER'], f_CONN_STAT: ['LIVE'], f_BASE_CLASS: ['D', 'A'], f_GOVT_STAT: ['YES'] }
   }
 };
 
@@ -75,23 +86,28 @@ function router(snap) {
 }
 
 async function newContext(browser, base, profile, route, opts) {
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  opts = opts || {};
+  const width = Number(opts.width || 1280);
+  const ctx = await browser.newContext({ viewport: { width, height: width < 600 ? 844 : 900 }, deviceScaleFactor: 1, isMobile: false });
   await ctx.addCookies([{ name: 'mzo_session', value: cookie(profile), domain: new URL(base).hostname, path: '/', httpOnly: true, sameSite: 'Lax' }]);
   const version = await fetch(base + '/version.json').then((r) => r.json()).then((j) => j.version).catch(() => '');
-  await ctx.addInitScript(({ profile, version }) => {
-    try { localStorage.setItem('mzo_user_profile', JSON.stringify(profile)); localStorage.setItem('mzo_authenticated', 'true'); if (version) localStorage.setItem('mzo_app_version', version); } catch (_) {}
+  await ctx.addInitScript(({ profile, version, ready, theme }) => {
+    try {
+      localStorage.setItem('mzo_user_profile', JSON.stringify(profile)); localStorage.setItem('mzo_authenticated', 'true'); if (version) localStorage.setItem('mzo_app_version', version);
+      if (theme) ['theme', 'mzo_theme', 'collectionDashboardTheme'].forEach((k) => localStorage.setItem(k, theme));
+    } catch (_) {}
     window.__fdp = null;
     const t = () => {
       if (window.__fdp != null) return;
       const vs = document.querySelectorAll('.ui-stat .v');
-      const row = document.querySelector('#table tbody tr td:not([colspan])');
-      const empty = document.querySelector('#table tbody .ui-empty');
+      const row = document.querySelector(ready || '#table tbody tr td:not([colspan])');
+      const empty = document.querySelector((ready || '#table tbody tr td:not([colspan])').split(' tbody')[0] + ' tbody .ui-empty');
       const shown = row || (empty && !/loading/i.test(empty.textContent)); // a real row, or a real "nothing matches"
       if (vs.length && ![].some.call(vs, (v) => v.querySelector('.ui-skel') || !/\d/.test(v.textContent)) && shown) { window.__fdp = performance.now(); window.__fdpRow = !!row; return; }
       requestAnimationFrame(t);
     };
     requestAnimationFrame(t);
-  }, { profile, version });
+  }, { profile, version, ready: opts.ready || '', theme: opts.theme || '' });
   const stats = { requests: 0, bytes: {}, blocked: [] };
   await ctx.route('**/*', async (r) => {
     const req = r.request(), url = req.url();
@@ -101,7 +117,7 @@ async function newContext(browser, base, profile, route, opts) {
     if (hit) return r.fulfill({ status: 200, headers: { 'content-type': hit.type, 'access-control-allow-origin': '*' }, body: req.method() === 'HEAD' ? '' : fs.readFileSync(hit.file) });
     return r.continue();
   });
-  if (opts && opts.cpu) ctx.__cpu = opts.cpu;
+  if (opts.cpu) ctx.__cpu = opts.cpu;
   ctx.__stats = stats;
   return ctx;
 }
@@ -111,9 +127,10 @@ async function settle(page, ms) {
   await page.waitForTimeout(600);
 }
 
-function snapshot() {
+function snapshot(cfg) {
+  cfg = cfg || {};
   const txt = (el) => (el ? String(el.textContent || '').replace(/\s+/g, ' ').trim() : '');
-  const out = { asOn: txt(document.getElementById('asOn')) };
+  const out = { asOn: txt(document.querySelector(cfg.asOn || '#asOn')) };
   out.stats = [].map.call(document.querySelectorAll('.ui-stat'), (s) => [txt(s.querySelector('.k')), txt(s.querySelector('.v')), txt(s.querySelector('.s')), s.getAttribute('aria-pressed')]);
   out.facets = [].map.call(document.querySelectorAll('.ui-opts'), (g) => (g.id || '') + ':' + [].map.call(g.querySelectorAll('.ui-opt'), (o) => txt(o.querySelector('span')) + '=' + txt(o.querySelector('small')) + (o.getAttribute('aria-checked') === 'true' ? '*' : '')).join('|'));
   out.tabs = [].map.call(document.querySelectorAll('.ui-drill-tab'), (t) => txt(t) + (t.getAttribute('aria-selected') === 'true' ? '*' : ''));
@@ -129,15 +146,35 @@ function snapshot() {
   }
   out.footer = txt(document.querySelector('#table .ui-panel-f span'));
   out.selects = [].map.call(document.querySelectorAll('.ui-side select'), (s) => s.id + '=' + s.value + '/' + s.options.length + (s.disabled ? ' locked' : ''));
+  if (cfg.generic) {
+    // every select, every table (by its container id), every hist, every plain stat value, an open drawer
+    out.selects = [].map.call(document.querySelectorAll('select'), (s) => s.id + '=' + s.value + '/' + [].map.call(s.options, (o) => o.value).join(',') + (s.disabled ? ' locked' : ''));
+    out.tables = {};
+    [].forEach.call(document.querySelectorAll('main table.ui-table'), (tb) => {
+      const host = tb.closest('[id]'), id = host ? host.id : '?';
+      const rows = [].slice.call(tb.tBodies[0] ? tb.tBodies[0].rows : []);
+      const pf = host && host.querySelector('.ui-panel-f span');
+      out.tables[id] = { head: [].map.call(tb.querySelectorAll('thead th'), txt), rows: rows.length, first: rows.slice(0, 8).map((r) => [].map.call(r.cells, txt).join(' | ')), foot: tb.tFoot ? txt(tb.tFoot) : '', more: txt(pf) };
+    });
+    out.hists = [].map.call(document.querySelectorAll('main .ui-hist'), (h) => (h.id || '') + ':' + [].map.call(h.querySelectorAll('.row'), (r) => [].map.call(r.querySelectorAll('span'), txt).join('=') + (r.classList.contains('on') ? '*' : '')).join('|'));
+    out.values = [].map.call(document.querySelectorAll('main [id]'), (e) => e).filter((e) => !e.children.length && /^(s[A-Z]|c[A-Z]|listCount|appCount|meta)/.test(e.id)).map((e) => e.id + '=' + txt(e));
+    const dr = document.querySelector('#ui-drawer:not([hidden])');
+    out.drawer = dr ? txt(dr).slice(0, 1500) : '';
+    out.clear = !!(document.getElementById('clearBtn') && !document.getElementById('clearBtn').hidden);
+  }
   return out;
 }
 
 async function walk(page, cfg, base) {
   const states = {};
-  const shot = async (label) => { await page.waitForTimeout(150); states[label] = await page.evaluate(snapshot); };
+  const scfg = { asOn: cfg.asOn, generic: !!cfg.ready };
+  const shot = async (label) => { await page.waitForTimeout(150); states[label] = await page.evaluate(snapshot, scfg); };
   await page.goto(base + '/' + cfg.url, { waitUntil: 'domcontentloaded' });
   await settle(page);
+  if (cfg.settle) await page.waitForTimeout(cfg.settle);
   await shot('load');
+  // where the rows came from (not compared): MzoRows timings per dataset (fetch/build/where)
+  states.__rows = await page.evaluate(() => (window.MzoRows ? JSON.parse(JSON.stringify(window.MzoRows.last)) : null));
   // stat cards (each toggles a filter; click again to clear)
   const nStats = await page.locator(cfg.stats).count();
   for (let i = 0; i < nStats; i++) {
@@ -153,17 +190,52 @@ async function walk(page, cfg, base) {
     await tab.click();
     await shot('tab:' + label);
   }
+  // hist bars (each toggles a filter; click again to clear)
+  if (cfg.hists) {
+    // bars by (hist id, label): a click re-renders the other hists, so indexes move
+    const bars = await page.evaluate(() => [].map.call(document.querySelectorAll('main .ui-hist .row.click'), (r) => ({ host: (r.closest('.ui-hist') || {}).id || '', label: (r.querySelector('span') || {}).textContent || '' })));
+    const find = (b) => page.locator('#' + b.host + ' .row.click').filter({ has: page.locator('span:first-child', { hasText: b.label }) }).first();
+    for (const b of bars) {
+      if (!b.host || !(await find(b).count())) continue;
+      await find(b).click();
+      await shot('hist:' + b.host + ':' + b.label.slice(0, 30));
+      if (await find(b).count()) await find(b).click();
+    }
+  }
+  // selects: each listed value, then back to the first
+  for (const [id, values] of Object.entries(cfg.selects || {})) {
+    const sel = page.locator('#' + id);
+    if (!(await sel.count()) || await sel.isDisabled()) continue;
+    const first = await sel.inputValue();
+    for (const v of values) {
+      const has = await sel.evaluate((s, v) => [].some.call(s.options, (o) => o.value === v), v);
+      if (!has) continue;
+      await sel.selectOption(v);
+      await shot('select:' + id + '=' + v);
+    }
+    await sel.selectOption(first);
+  }
+  // the first rows of the detail list open a drawer
+  if (cfg.list) {
+    for (let i = 0; i < 3; i++) {
+      const row = page.locator(cfg.list).nth(i);
+      if (!(await row.count())) break;
+      await row.click();
+      await shot('list#' + i);
+      if (await page.locator('#ui-drawer:not([hidden])').count()) await page.keyboard.press('Escape');
+    }
+  }
   // drill: back to the first tab, then open the first row at every level down to the list
-  await page.locator(cfg.tabs).first().click();
+  if (await page.locator(cfg.tabs).count()) await page.locator(cfg.tabs).first().click();
   for (let level = 0; level < 4; level++) {
-    const row = page.locator('#table tbody tr.click').first();
+    const row = page.locator(cfg.drill || '#table tbody tr.click').first();
     if (!(await row.count())) break;
     const name = ((await row.locator('td').first().textContent()) || '').trim();
     await row.click();
     await shot('drill' + level + ':' + name.slice(0, 30));
     if (await page.locator('#ui-drawer:not([hidden])').count()) { await page.keyboard.press('Escape'); break; }
   }
-  for (const q of cfg.deep) {
+  for (const q of cfg.deep || []) {
     await page.goto(base + '/' + cfg.url + q, { waitUntil: 'domcontentloaded' });
     await settle(page);
     await shot('deep' + q);
@@ -174,6 +246,7 @@ async function walk(page, cfg, base) {
 function diffStates(a, b) {
   const out = [];
   Object.keys(Object.assign({}, a, b)).forEach((k) => {
+    if (k.indexOf('__') === 0) return;
     const x = a[k], y = b[k];
     if (!x || !y) { out.push({ state: k, field: '*', old: !!x, new: !!y }); return; }
     Object.keys(Object.assign({}, x, y)).forEach((f) => { if (JSON.stringify(x[f]) !== JSON.stringify(y[f])) out.push({ state: k, field: f, old: x[f], new: y[f] }); });
@@ -187,13 +260,16 @@ async function parity(pw) {
   const outDir = arg('out', path.join(process.cwd(), 'uniform-parity'));
   fs.mkdirSync(outDir, { recursive: true });
   const route = router(snap);
+  const profiles = String(arg('profiles', 'admin,division')).split(',');
+  const look = { theme: arg('theme', ''), width: arg('width', '') };
+  const tag = (look.theme ? '-' + look.theme : '') + (look.width ? '-w' + look.width : '');
   const browser = await pw.chromium.launch({ channel: process.env.QA_CHANNEL || 'chrome', headless: true });
   const summary = [];
   for (const p of pages) {
-    for (const prof of Object.keys(PROFILES)) {
+    for (const prof of profiles) {
       const runs = {};
       for (const base of [oldBase].concat(newBases)) {
-        const ctx = await newContext(browser, base, PROFILES[prof], route);
+        const ctx = await newContext(browser, base, PROFILES[prof], route, Object.assign({ ready: PAGES[p].ready }, look));
         const page = await ctx.newPage();
         const errors = [];
         page.on('pageerror', (e) => errors.push(String(e.message || e).slice(0, 200)));
@@ -204,14 +280,15 @@ async function parity(pw) {
       const old = runs[oldBase];
       for (const nb of newBases) {
         const d = diffStates(old.states, runs[nb].states);
-        summary.push({ page: p, profile: prof, base: nb, states: Object.keys(old.states).length, differences: d.length, errors: runs[nb].errors.length, oldErrors: old.errors.length });
-        fs.writeFileSync(path.join(outDir, `${p}-${prof}-${new URL(nb).port}.json`), JSON.stringify({ old: oldBase, new: nb, differences: d, oldStates: old.states, newStates: runs[nb].states, errors: runs[nb].errors, oldErrorsList: old.errors, blocked: runs[nb].blocked }, null, 1));
-        console.log(`[parity] ${p} as ${prof}: ${new URL(nb).port} vs ${new URL(oldBase).port}: ${Object.keys(old.states).length} states, ${d.length} differences, console errors new ${runs[nb].errors.length} / old ${old.errors.length}`);
+        summary.push({ page: p, profile: prof, base: nb, theme: look.theme, width: look.width, rows: runs[nb].states.__rows, states: Object.keys(old.states).filter((k) => k.indexOf('__')).length, differences: d.length, errors: runs[nb].errors.length, oldErrors: old.errors.length });
+        fs.writeFileSync(path.join(outDir, `${p}-${prof}-${new URL(nb).port}${tag}.json`), JSON.stringify({ old: oldBase, new: nb, differences: d, oldStates: old.states, newStates: runs[nb].states, errors: runs[nb].errors, oldErrorsList: old.errors, blocked: runs[nb].blocked }, null, 1));
+        console.log(`[parity] ${p} as ${prof}${tag}: ${new URL(nb).port} vs ${new URL(oldBase).port}: ${Object.keys(old.states).filter((k) => k.indexOf('__')).length} states, ${d.length} differences, console errors new ${runs[nb].errors.length} / old ${old.errors.length}`);
         d.slice(0, 12).forEach((x) => console.log(`    ${x.state} · ${x.field}: ${JSON.stringify(x.old).slice(0, 160)}  →  ${JSON.stringify(x.new).slice(0, 160)}`));
+        if (runs[nb].states.__rows) console.log('    rows: ' + JSON.stringify(runs[nb].states.__rows).slice(0, 300));
       }
     }
   }
-  fs.writeFileSync(path.join(outDir, 'summary.json'), JSON.stringify(summary, null, 1));
+  fs.writeFileSync(path.join(outDir, 'summary' + tag + '.json'), JSON.stringify(summary, null, 1));
   await browser.close();
 }
 
@@ -227,7 +304,7 @@ async function timing(pw) {
     for (const which of ['old', 'new']) {
       const cold = [], warm = [], bytes = [];
       for (let i = 0; i < runsN; i++) {
-        const ctx = await newContext(browser, bases[which], PROFILES.admin, route);
+        const ctx = await newContext(browser, bases[which], PROFILES.admin, route, { ready: PAGES[p].ready });
         const page = await ctx.newPage();
         if (cpu > 1) { const cdp = await ctx.newCDPSession(page); await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu }); }
         let got = 0;
