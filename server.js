@@ -13,7 +13,7 @@ app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // Server-side files are never served, locally or from the Vercel function.
-const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
+const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
 app.use((req, res, next) => (PRIVATE_PATH.test(req.path) ? res.status(404).end() : next()));
 // Old URLs (vercel.json has the same redirects): the retired phone home page, the NSC drafts and an extension-less report.
 app.get(['/', '/index.html'], (req, res) => res.redirect(302, '/app.html'));
@@ -31,6 +31,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'mzo-portal-super-secret-key-123456
 if (!process.env.JWT_SECRET && process.env.VERCEL) {
     console.warn('[Auth] JWT_SECRET is not set: sessions are signed with the development fallback. Set JWT_SECRET in the Vercel project.');
 }
+// VM-only admin accounts from MZO_LOCAL_ADMINS (set only in the VM's /etc/mzo/app.env). Unset: inactive.
+const localAdmins = require('./lib/local_admins').create({ secret: JWT_SECRET });
 const POWER_MAP_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT8hYE6YBbfVQDJhgB3cIWqrrGrjMQAQ22mcmCJTOa995gCH-xBAfsAPpBvNYS1KlYIFMRHM59iGB7K/pub?output=csv';
 // Distinct table names (do not use generic "substations" — may clash with other projects/tables)
 const POWER_MAP_TABLE = 'mzo_power_substations';
@@ -573,11 +575,16 @@ async function logActivity(activity) {
             details: clip(activity.details, 1000)
         };
 
-        // Source of truth: Supabase mzo_insight.activity_logs
-        try {
-            await insertActivityLogToSupabase(entry);
-        } catch (sbErr) {
-            console.error('[Activity Log] Supabase write failed:', sbErr.message);
+        // Source of truth: Supabase mzo_insight.activity_logs. A VM-only admin exists nowhere in
+        // Supabase, so its activity stays on this host (the journal and the local cache below).
+        if (localAdmins.isLocalUsername(entry.username)) {
+            if (entry.type !== 'page_visit') console.log(`[Activity] ${entry.username} ${entry.type}: ${entry.details}`);
+        } else {
+            try {
+                await insertActivityLogToSupabase(entry);
+            } catch (sbErr) {
+                console.error('[Activity Log] Supabase write failed:', sbErr.message);
+            }
         }
 
         if (globalCachedLogs === null) {
@@ -691,7 +698,13 @@ function readSession_(req) {
     if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
     try {
         const session = JSON.parse(Buffer.from(parts[0], 'base64').toString('utf-8'));
-        return session && Date.now() < session.expiry ? session.profile : null;
+        if (!(session && Date.now() < session.expiry)) return null;
+        // A VM-only admin's session lasts only while its MZO_LOCAL_ADMINS entry (and hash) is unchanged.
+        if (session.local !== undefined) {
+            if (!localAdmins.sessionValid(session)) return null;
+            req.localAdmin = true;
+        }
+        return session.profile;
     } catch (_) {
         return null;
     }
@@ -784,10 +797,11 @@ app.post('/api/structures/update', requireAdmin, (req, res) => {
 });
 
 // Helper to issue signed stateless session cookie
-function issueSessionCookie(res, clientProfile) {
+function issueSessionCookie(res, clientProfile, extra) {
     const payload = {
         profile: clientProfile,
-        expiry: Date.now() + 24 * 60 * 60 * 1000
+        expiry: Date.now() + 24 * 60 * 60 * 1000,
+        ...(extra || {})
     };
     const payloadStr = Buffer.from(JSON.stringify(payload)).toString('base64');
     const signature = crypto.createHmac('sha256', JWT_SECRET).update(payloadStr).digest('base64');
@@ -828,6 +842,52 @@ async function googleTokenInfo_(kind, token) {
     return info;
 }
 
+/** Full admin profile: the Google root admin's, also used for VM-only admins (MZO_LOCAL_ADMINS). */
+function rootAdminProfile_({ Username, Name, email, auth_provider, approved_by }) {
+    return {
+        Username,
+        Name,
+        email,
+        auth_provider,
+        user_status: 'active',
+        role: 'admin',
+        office_level: 'CE',
+        sheets_autho: 'edit',
+        can_comment: true,
+        disconnection_sync_autho: 'Y',
+        pending_mc_sync_autho: 'Y',
+        load_ext_sync_autho: 'Y',
+        defective_upload_autho: 'Y',
+        nsc_upload_autho: 'Y',
+        stock_upload_autho: 'Y',
+        stock_allot_autho: 'Y',
+        stock_cancel_autho: 'Y',
+        upload_permissions: ['disconnection', 'pending_mc', 'load_ext', 'defective', 'nsc', 'stock', 'stock_allot', 'stock_cancel'],
+        requested_at: new Date().toISOString(),
+        approved_at: new Date().toISOString(),
+        approved_by
+    };
+}
+
+/** Sign-in of a VM-only admin: checked against its MZO_LOCAL_ADMINS hash only, never Supabase. */
+async function loginLocalAdmin_(req, res, admin, pin) {
+    if (!(await localAdmins.attempt(admin, String(pin).trim(), req))) {
+        return res.status(401).json({ status: 'error', message: 'Invalid Username or PIN.' });
+    }
+    const clientProfile = portalUserForClient(rootAdminProfile_({
+        Username: admin.username, Name: admin.name, email: '', auth_provider: 'local', approved_by: 'vm_local_admin'
+    }));
+    issueSessionCookie(res, clientProfile, { local: localAdmins.sessionKey(admin) });
+    console.log(`[Auth] VM-only admin logged in: ${admin.username} (${admin.name})`);
+    await logActivity({
+        username: admin.username,
+        name: admin.name,
+        type: 'login',
+        details: `Logged in as a VM-only admin from IP: ${req.ip || req.headers['x-forwarded-for'] || 'unknown'}`
+    });
+    return res.status(200).json({ status: 'success', profile: clientProfile });
+}
+
 // API endpoint for User Login (Username + PIN)
 app.post('/api/login', async (req, res) => {
     const { username, pin } = req.body;
@@ -835,6 +895,8 @@ app.post('/api/login', async (req, res) => {
     if (!username || !pin || !String(pin).trim()) {
         return res.status(400).json({ status: 'error', message: 'Username and PIN are required.' });
     }
+    const localAdmin = localAdmins.find(username);
+    if (localAdmin) return loginLocalAdmin_(req, res, localAdmin, pin);
 
     try {
         const users = await getLoginCredentials({ forceRefresh: true });
@@ -1030,34 +1092,18 @@ app.post('/api/auth/google', async (req, res) => {
         if (!baseUsername) baseUsername = 'user';
         let candidateUsername = baseUsername;
         let counter = 1;
-        while (users.some(u => String(u.Username).toLowerCase() === candidateUsername.toLowerCase())) {
+        while (users.some(u => String(u.Username).toLowerCase() === candidateUsername.toLowerCase()) || localAdmins.isLocalUsername(candidateUsername)) {
             candidateUsername = `${baseUsername}${counter++}`;
         }
 
         if (isRootAdmin) {
-            const rootAdminUser = {
+            const rootAdminUser = rootAdminProfile_({
                 Username: candidateUsername,
                 Name: name || 'Admin',
                 email: email,
                 auth_provider: 'google',
-                user_status: 'active',
-                role: 'admin',
-                office_level: 'CE',
-                sheets_autho: 'edit',
-                can_comment: true,
-                disconnection_sync_autho: 'Y',
-                pending_mc_sync_autho: 'Y',
-                load_ext_sync_autho: 'Y',
-                defective_upload_autho: 'Y',
-                nsc_upload_autho: 'Y',
-                stock_upload_autho: 'Y',
-                stock_allot_autho: 'Y',
-                stock_cancel_autho: 'Y',
-                upload_permissions: ['disconnection', 'pending_mc', 'load_ext', 'defective', 'nsc', 'stock', 'stock_allot', 'stock_cancel'],
-                requested_at: new Date().toISOString(),
-                approved_at: new Date().toISOString(),
                 approved_by: 'system_root'
-            };
+            });
 
             try {
                 const dbRow = clientUserToPortal(rootAdminUser);
@@ -1150,6 +1196,8 @@ app.get('/api/session-check', async (req, res) => {
     if (!req.user || !req.user.Username) {
         return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     }
+    // A VM-only admin is not in Supabase: its profile is the one it signed in with.
+    if (req.localAdmin) return res.status(200).json({ status: 'success', profile: req.user });
     try {
         const users = await getLoginCredentials({ forceRefresh: true });
         const key = String(req.user.Username).trim().toLowerCase();
@@ -2189,6 +2237,8 @@ function hasPermission_(user, flag, sheetsWords) {
 async function resolveFreshUser_(req, force = false) {
     const session = req.user || null;
     if (!session || !session.Username) return session;
+    // A VM-only admin is not in Supabase: never demoted, never replaced by a row of the same name.
+    if (req.localAdmin) return session;
     try {
         const users = await getLoginCredentials({ forceRefresh: force });
         const key = String(session.Username).trim().toLowerCase();
