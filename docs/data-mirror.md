@@ -117,17 +117,21 @@ Every dataset is one PocketBase collection named `ds_<key>`, for example `ds_nsc
 
 ### Columns
 
+Names, types and values are `lib/uniform.js`'s, the same module that builds the pages' uniform rows ([uniform-data.md](uniform-data.md)): the sync calls its `fieldNames`, `stats`, `chooseType` and `build` rather than having rules of its own, so a column has the same name and type in the portal as in `/api/data/rows/<key>` for the same bytes. `scripts/qa/mirror-types.js` checks that for every dataset ([below](#checking-that-the-mirror-and-the-uniform-rows-agree)).
+
 - **Names:** the source header in snake_case ASCII: lowercase, anything that is not a letter or digit becomes `_`, repeats collapse, leading and trailing `_` go, a leading digit gets `c_` (`2025` → `c_2025`), at most 60 characters, duplicates get `_2`, `_3`. Names PocketBase reserves (`id`, `created`, `updated`, …) are treated as taken, so a source column `id` becomes `id_2`. An empty header becomes `col_<letter>` (`col_c` for column C). Columns with neither a header nor any value (spreadsheet padding) are dropped. `sys_datasets.columns` maps every field back to its original header.
 - **Report-style sheets** (Puja, Important data sheets) have title rows and merged headers. They are copied with every row as data and columns named by letter (`col_a`, `col_b`, …), so nothing is lost to a guessed header.
-- **Types**, inferred per column from all its non-empty values:
+- **Types**, inferred per column from all its non-empty values, where placeholders (`(null)`, `null`, `NA`, `N/A`, `#N/A`, `NIL`, `none`, `-`, `.`) do not count: they are empty in a typed column and stay as written in a text column.
+  - **Identifier columns stay text**, whatever their values: names ending in `no`, `nos`, `id`, `empid`, `code`, `number`, `num`, `phone`, `mobile`, `mob`, `contact`, `pin`, `pincode`, `mru`, `won`, `account`, `acc_no` or `ifsc` (`con_id`, `ccc_code`, `phone_no`, `inst_no`), unless the name says it is a count or an amount (`count_of_doc_no`, `subsidy_amount_released_to_loan_account`). Leading zeros, search and joins keep working, and a phone column does not change type when someone types a landline.
   - `number` when at least 98 % parse as numbers. Indian (`12,34,567`) and Western (`1,234,567`) grouping commas are stripped. Codes with leading zeros (`007`) and integers of more than 15 significant digits (bank accounts) stay text, since a number would change them.
   - `date` when at least 98 % parse as dates: `dd/mm/yyyy`, `dd.mm.yyyy`, `dd-mm-yyyy`, `m/d/yyyy`, `yyyy-mm-dd`, ISO, `1-Oct-2026`, `Oct 1, 2026`, with optional times. Slash dates are read day-first unless the column only makes sense month-first (a day above 12 in the second place) or the source says `dateOrder: 'mdy'`. Date-only values are stored as UTC midnight. Times without a zone are India time (UTC+05:30), except zone-less ISO `T` timestamps from Supabase, which are UTC. Fractions of a second are cut to milliseconds.
   - `bool` when every non-empty value is Y/N, Yes/No or true/false.
   - `json` for Supabase json/array values (kept as objects).
   - `text` otherwise.
-  - Primary-key columns stay text unless the source says otherwise. A source can force a type per column (`columnTypes`); forcing `text` keeps PINs and codes exactly as written.
-- **Nothing is dropped.** When a column is typed but a few of its values (at most 2 %) do not parse, those values are kept word for word in a companion text field `<name>_raw` next to it (empty on the rows that did parse); its `columns` entry has `raw_of`.
-- **Blanks:** PocketBase number and bool fields cannot be empty, so a blank cell reads as `0` in a number column and `false` in a bool column. Blank dates and texts stay empty.
+  - Primary-key columns stay text unless the source says otherwise. A source can force a type per column (`columnTypes`; Supabase tables take theirs from the Postgres column types); forcing `text` keeps PINs and codes exactly as written. These overrides are handed to `lib/uniform.js` as its `columnTypes`.
+  - Header-less report sheets (`header: false`) keep every column, including empty ones, as `col_<letter>`, as uniform does.
+- **Nothing is dropped.** When a column is typed but a few of its values (at most 2 %) do not parse, those values are kept word for word in a companion text field `<name>_raw` next to it (empty on the rows that did parse); its `columns` entry has `raw_of`. A placeholder is not such a value: it is simply empty.
+- **Empty values.** In the uniform rows an empty number, date or yes/no is `null`. PocketBase 0.40.6 has no empty number or bool: it stores `null` as `0` and `false` (there is no nullable option; tested 2026-11-01). So every row has a system field `_nulls`, a json list of its number and bool fields that are empty (for example `["paid_amount","metered"]`), or `null` when there are none. `0` in a field listed there means "no value"; `0` in any other number field is a real zero. The portal shows listed fields as empty and leaves them out of CSV exports; to filter them in the API use `_nulls ~ '"paid_amount"'` (or `!~`). Empty dates are `''` and empty json is `null`, which PocketBase stores as they are, so they are not listed. Empty text is `''`.
 
 ### System fields on every `ds_` collection
 
@@ -138,6 +142,7 @@ Every dataset is one PocketBase collection named `ds_<key>`, for example `ds_nsc
 | `_row_no` | Position in the source (1 = first data row); the portal's default order |
 | `_hash` | sha1 of the row's stored values, used to skip unchanged rows |
 | `_synced_at` | When the sync last inserted or updated this row (not touched for unchanged rows) |
+| `_nulls` | The row's number and bool fields that are empty in the source (stored as `0` / `false`), or `null` |
 
 ### Office fields and `dim_offices`
 
@@ -157,7 +162,28 @@ One row per dataset attempt: `dataset`, `started_at`, `finished_at`, `status`, `
 
 ### Why the data collections are not migrations
 
-`vm/pocketbase/pb_migrations/` creates only the fixed collections: `sys_datasets`, `sys_sync_runs`, `portal_users_auth`, and the settings. The `ds_` collections are created and altered by the sync at run time from what it reads, because their fields are the source headers: a clerk adding, renaming or retyping a sheet column would otherwise need a migration, a commit and a deploy before the mirror could follow. The sync keeps each collection in step on every run (new columns added, removed ones dropped, a retyped column re-created and refilled in the same run). For the same reason PocketBase runs with `--automigrate=false`: otherwise it writes a migration file for every change the sync makes.
+`vm/pocketbase/pb_migrations/` creates only the fixed collections: `sys_datasets`, `sys_sync_runs`, `portal_users_auth`, and the settings. The `ds_` collections are created and altered by the sync at run time from what it reads, because their fields are the source headers: a clerk adding, renaming or retyping a sheet column would otherwise need a migration, a commit and a deploy before the mirror could follow. The sync keeps each collection in step on every run (new columns added, removed ones dropped, a retyped column migrated as below). For the same reason PocketBase runs with `--automigrate=false`: otherwise it writes a migration file for every change the sync makes.
+
+### Type changes
+
+PocketBase cannot change a field's type in place (`validation_field_type_change`), and dropping and re-adding a field leaves it empty until every row is written again. So when a column's type changes (a sheet starts holding text in a number column, or the inference rules change), the sync migrates it in two steps that never show the portal an empty column:
+
+1. Before writing rows, it adds the new field next to the old one as `_stage_<name>`. The old field keeps its values, and fields the source no longer has stay too. Every row is then written, with the new values in `_stage_<name>`.
+2. After the rows, one collection update drops the old field and renames `_stage_<name>` to `<name>` (PocketBase renames the column, so the values stay), drops the columns the source lost, and the registry's `columns` is updated right after.
+
+The portal reads the field list from `sys_datasets.columns`, so it never sees the `_stage_` fields. A run that stops between the two steps (time limit, crash, restart) leaves both fields; the next run keeps `_stage_<name>`, writes only the rows that did not get their new values yet (their `_hash` still differs) and then swaps. Whenever a field is added to an existing collection, the run writes every row, so a new or renamed column is filled at once.
+
+### Upgrading from the first sync (mzo-sync/1)
+
+The VM's collections were written by mzo-sync/1 (its own inference, empties as `0`/`false`, no `_nulls`). `LOGIC_VERSION` is `mzo-sync/2`, and a collection without `_nulls` is treated as out of date whatever its version check says, so the first run after the deploy re-reads every source once (the timer's `--due` run picks them up as they fall due; `sudo systemctl start mzo-sync` or `run.js --all` does it in one go) and migrates each collection with the steps above: about 180 identifier and placeholder columns change type in 40 datasets, stale `_raw` companions and the four invented `column_17`–`column_20` fields of `disconnection` are dropped, `_nulls` is added everywhere, and every row with an empty number or bool, or in a collection with a retyped column, is written once. Rows of other collections keep their hash and are not written. Row keys and record ids stay the same, except `disconnection`, whose rows are keyed by content and lose four empty columns: its ~20k rows are inserted under new ids and the old ones deleted in the same run, so for a few seconds the portal shows them twice. The quality checks may report a one-time `header.drift` on `disconnection` (the four blank headers no longer have invented names); it clears on the next run. Measured on a copy of the mirror: see [Memory and speed](#memory-and-speed).
+
+### Checking that the mirror and the uniform rows agree
+
+```bash
+node scripts/qa/mirror-types.js --snap <snapshot dir> --env <pb env file> [--live] [--only a,b] [--json out.json]
+```
+
+For every dataset it compares `lib/uniform.js` `build()` on the snapshot bytes (with the source's `header`, `dateOrder` and type overrides), the sync's own column builder on the same bytes, and the live collection's fields and `sys_datasets.columns`: names, types, date order, `_raw` companions and office fields. `--live` reads the datasets without a snapshot (sensitive ones, Supabase tables no page reads) from the source, GET only and in memory. It also lists where a `schema/<key>.json` pins a different type than the mirror infers (the pages' view). `vm/dev/test-sync-types.js --env <local pb env>` runs a mzo-sync/1 collection through an interrupted, a resumed and an unchanged run on a local PocketBase.
 
 ## Schedules and change detection
 
@@ -304,7 +330,7 @@ Measured on a Mac (Node 24, PocketBase 0.40.6 on 127.0.0.1, 2026-11-01). On macO
 2. Run `node run.js --only <key> --dry-run` to see the row count and the inferred types, then `--only <key>` against a local PocketBase.
 3. Add it to the inventory above.
 
-Changing type inference or row hashing: bump `LOGIC_VERSION` in `lib/sync.js` so every source is re-read in full once.
+Changing type inference or row hashing: bump `LOGIC_VERSION` in `lib/sync.js` so every source is re-read in full once. Type inference itself lives in `lib/uniform.js`; a hash of that file is part of the sync's content hash, so any change to it re-reads the sources by itself (sources with a cheap version check within their 24-hour full-download window), and the collections follow through the type change steps above. That run diffs every row (rows whose values did not change are not written).
 
 ## PocketBase setup
 

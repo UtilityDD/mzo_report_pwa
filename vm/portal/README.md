@@ -23,7 +23,7 @@ A read-only admin console for the PocketBase data mirror on the VM: every mirror
   - the latest `sys_sync_runs`;
   - a table of all datasets with their source links.
 - **Dataset page:**
-  - **Data:** server-side paging. Sort by clicking a header. The filter builder offers per-type conditions on any column. Search covers the text columns, plus the number columns when the search text is a number. Columns can be shown and hidden. Cells are formatted by type. A row drawer shows every field and the system fields. **Export CSV** downloads the current filter and sort, with the shown columns, fetching 1,000 rows per request.
+  - **Data:** server-side paging. Sort by clicking a header. The filter builder offers per-type conditions on any column. Search covers the text columns, plus the number columns when the search text is a number. Columns can be shown and hidden. Cells are formatted by type; a number or yes/no field listed in the row's `_nulls` (empty in the source, stored as 0 / No) shows as empty and exports as an empty cell. A row drawer shows every field and the system fields. **Export CSV** downloads the current filter and sort, with the shown columns, fetching 1,000 rows per request.
   - **Schema:** each column's normalised name, source name and type, the primary key, and the system fields.
   - **Source:** source type, reference, a link to the source, schedule, last version, status and the last error.
   - **Sync history:** the runs for that dataset.
