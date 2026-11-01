@@ -156,6 +156,9 @@ async function newContext(browser, base, profile, route, opts) {
 
 async function settle(page, ms) {
   await page.waitForFunction(() => window.__fdp != null, null, { timeout: ms || 120000 }).catch(() => {});
+  // Side requests (report-date meta, live version checks) can land after the first paint and change
+  // the as-on date: compare the settled page, not whichever was faster.
+  await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
   await page.waitForTimeout(600);
 }
 
@@ -214,9 +217,9 @@ async function walk(page, cfg, base, quick) {
     for (let i = 0; i < n; i++) {
       const el = page.locator(sel).nth(i);
       const label = ((await el.textContent()) || '').replace(/\s+/g, ' ').trim().slice(0, 30);
-      await el.click();
+      await el.dispatchEvent('click'); // also inside a collapsed panel section
       await shot('click:' + sel + '#' + i + ':' + label);
-      if (await page.locator(sel).nth(i).count()) await page.locator(sel).nth(i).click();
+      if (await page.locator(sel).nth(i).count()) await page.locator(sel).nth(i).dispatchEvent('click');
     }
   }
   // select boxes: the first options, then back to "all"
