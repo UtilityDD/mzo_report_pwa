@@ -42,6 +42,14 @@ const PAGES = {
       REGION: 'raw office cells were copied onto the row only for MzoScope; the login scope now runs on the uniform rows',
       DIVN_NAME: 'as REGION', SUPP_OFF: 'as REGION', CCC_CODE: 'as REGION'
     }
+  },
+  'withheld.html': {
+    key: 'withheld', from: '    var CLASS = {', to: '    var STAT = {',
+    old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: false,
+    known: {
+      withheld: 'application 4001062497 has SCN_WITHELD_DATE "26/07/0201" (a typo in the sheet): UI.date read it as the year 201, uniform rows leave it empty and keep the text in scn_witheld_date_raw',
+      year: 'as withheld (the "… and earlier" year facet counts one application less)', ago: 'as withheld (it was 666,663 days, in no stat card)'
+    }
   }
 };
 const PROFILES = [
