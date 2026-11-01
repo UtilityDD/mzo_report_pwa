@@ -6,6 +6,7 @@
  *   --volatile  runs of the same mode as A taken at another time: any field that differs between A
  *               and those runs is tagged "moves by itself" (live sheets changing), not a parity failure.
  *
+ *   --fresh     snapshot freshness file (default <B>/_snapshot-fresh.json from snapshot-fresh.js)
  *   --expected  known source switches between the modes (default scripts/qa/expected.json): their
  *               differences go to an "Expected differences" section, everything else is a real mismatch.
  *
@@ -134,6 +135,18 @@ function main() {
   const vols = args.volatile ? String(args.volatile).split(',').map((l) => loadRun(root, l)) : [];
   const rulesFile = args.expected === 'none' ? null : (args.expected || path.join(__dirname, 'expected.json'));
   const rules = rulesFile ? JSON.parse(fs.readFileSync(rulesFile, 'utf8')).rules || [] : [];
+  // Snapshot freshness (scripts/qa/snapshot-fresh.js, saved as <B>/_snapshot-fresh.json): a source that
+  // changed after the snapshot explains differences on the pages that read it.
+  const freshFile = args.fresh || path.join(root, lb, '_snapshot-fresh.json');
+  let fresh = null;
+  try { fresh = JSON.parse(fs.readFileSync(freshFile, 'utf8')); } catch (_) {}
+  if (fresh) {
+    const changed = Object.entries(fresh.datasets || {}).filter(([, r]) => r.status === 'changed');
+    if (changed.length) rules.push({
+      id: 'source-changed-after-snapshot', datasets: [].concat(...changed.map(([, r]) => r.dataHubKeys || [])),
+      reason: 'These sources changed between the snapshot (' + (fresh.manifestGeneratedAt || '?') + ') and the freshness check (' + fresh.checkedAt + '): ' + changed.map(([k, r]) => k + ' (' + r.snapshotBytes + ' → ' + r.liveBytes + ' bytes)').join(', ') + '. Differences on pages that read them are live data moving.'
+    });
+  }
   const hubKeys = (r) => { const s = new Set(); for (const [vp, ph] of PHASES) { const l = getLoad(r, vp, ph); if (l && l.data) Object.keys(l.data.hubVersions || {}).forEach((k) => s.add(k)); if (l && l.frameData) Object.keys(l.frameData.hubVersions || {}).forEach((k) => s.add(k)); } return s; };
   const googleSource = (run, ep) => { const s = run.sources && run.sources[ep]; if (!s) return null; return Object.values(s.urls || {}).some((u) => /docs\.google\.com|googleusercontent\.com/.test(u)); };
   // Rules that apply to page k, given A's flattened values.
@@ -227,7 +240,7 @@ function main() {
   }
   L.push('');
   if (rules.length) {
-    L.push('## Expected differences', '', 'Known source switches between the two modes, listed by rule (`' + path.relative(REPO, rulesFile) + '`). These are not parity failures.', '');
+    L.push('## Expected differences', '', 'Known source switches between the two modes, listed by rule (`' + (rulesFile ? path.relative(REPO, rulesFile) : 'no rules file') + '`, plus the snapshot freshness check when present). These are not parity failures.', '');
     const byRule = {};
     expectedHits.forEach((m) => m.expected.forEach((id) => (byRule[id] = byRule[id] || []).push(m)));
     if (!expectedHits.length) L.push('None.');
