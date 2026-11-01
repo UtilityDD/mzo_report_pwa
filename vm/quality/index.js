@@ -21,7 +21,7 @@
 const fs = require('fs');
 const path = require('path');
 const { Readable } = require('stream');
-const { Checker } = require('./lib/engine');
+const { Checker, freshnessIssue } = require('./lib/engine');
 const { createResolver } = require('./lib/offices');
 const input = require('./lib/input');
 const cross = require('./lib/cross');
@@ -74,7 +74,7 @@ function stateFile() {
     return path.join(dir, 'headers.json');
 }
 
-function readHeaderState() {
+function readState() {
     try {
         return JSON.parse(fs.readFileSync(stateFile(), 'utf8'));
     } catch (_) {
@@ -82,16 +82,22 @@ function readHeaderState() {
     }
 }
 
-function writeHeaderState(key, header) {
+/** Per dataset: { header: [...], asOn: {column, date, max_age_days}, agedOn: 'yyyy-mm-dd' } (an array is an old header-only entry). */
+function stateOf(key) {
+    const e = readState()[key];
+    return Array.isArray(e) ? { header: e } : e || {};
+}
+
+function writeState(key, patch) {
     try {
         const file = stateFile();
         fs.mkdirSync(path.dirname(file), { recursive: true });
-        const st = readHeaderState();
-        st[key] = header;
+        const st = readState();
+        st[key] = Object.assign(Array.isArray(st[key]) ? { header: st[key] } : st[key] || {}, patch);
         const tmp = file + '.' + process.pid;
         fs.writeFileSync(tmp, JSON.stringify(st));
         fs.renameSync(tmp, file);
-    } catch (_) { /* drift detection just restarts next time */ }
+    } catch (_) { /* drift and re-ageing just restart next time */ }
 }
 
 /** header.drift: columns renamed, added or removed since the previous run. */
@@ -310,6 +316,7 @@ async function check(datasetKey, collectionName, ctx = {}) {
     const t0 = Date.now();
     try {
         if (!ctx.pb || !datasetKey) return null;
+        if ((ctx.summary && ctx.summary.status === 'unchanged') || ctx.unchanged) return await reage(datasetKey, ctx, log);
         const reg = ctx.registry;
         const ds = reg && typeof reg.get === 'function' ? reg.get(datasetKey) : null;
         const src = ctx.source || null;
@@ -317,7 +324,7 @@ async function check(datasetKey, collectionName, ctx = {}) {
         if (!opened) return null;
         let previousHeader = null;
         if (ctx.before && Array.isArray(ctx.before.columns)) previousHeader = ctx.before.columns.filter((c) => !c.raw_of).map((c) => c.source_name);
-        else previousHeader = readHeaderState()[datasetKey] || null;
+        else previousHeader = stateOf(datasetKey).header || null;
         const officeIssues = Array.isArray(ctx.officeIssues) ? ctx.officeIssues
             : ctx.summary && Array.isArray(ctx.summary.officeIssues) ? ctx.summary.officeIssues : undefined;
 
@@ -325,7 +332,9 @@ async function check(datasetKey, collectionName, ctx = {}) {
             key: datasetKey, meta: metaOf(src, ds), rows: opened.rows, rawValues: opened.rawValues, objectRows: opened.objectRows,
             firstRowNo: opened.firstRowNo, officeIssues, previousHeader, now: ctx.now
         });
-        if (res.header && !opened.objectRows) writeHeaderState(datasetKey, res.header);
+        const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+        writeState(datasetKey, Object.assign(res.header && !opened.objectRows ? { header: res.header } : {},
+            { asOn: res.asOn ? { column: res.asOn.column, date: res.asOn.date, max_age_days: res.asOn.max_age_days } : null, agedOn: today }));
 
         // Storage snapshots: compare with the totals in their meta.json.
         const extra = [];
@@ -379,4 +388,23 @@ async function check(datasetKey, collectionName, ctx = {}) {
     }
 }
 
-module.exports = { check, analyse, collectFacts, runCross, headerDrift, openDataset, score, OFFICE_EXTERNAL };
+/**
+ * A dataset that did not change still gets older: once a day, re-age its "as on" date (kept in
+ * the state file by the last full check) and update freshness.stale / freshness.future. No data is read.
+ */
+async function reage(key, ctx, log) {
+    const st = stateOf(key);
+    const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+    if (!st.asOn || !st.asOn.date || st.agedOn === today) return null;
+    const age = Math.round((Date.parse(today) - Date.parse(st.asOn.date)) / 86400000);
+    const issue = freshnessIssue(Object.assign({}, st.asOn, { age_days: age }));
+    const ds = ctx.registry && ctx.registry.get(key);
+    const saved = await saveDataset(ctx.pb, key, issue ? [issue] : [], {
+        families: (c) => c === 'freshness.stale' || c === 'freshness.future', rows: (ds && ds.row_count) || 0, now: ctx.now ? new Date(ctx.now) : new Date()
+    });
+    writeState(key, { agedOn: today });
+    log(`quality ${key}: unchanged, as on ${st.asOn.date} is ${age} days old; score ${saved.score}`);
+    return saved;
+}
+
+module.exports = { check, reage, analyse, collectFacts, runCross, headerDrift, openDataset, score, OFFICE_EXTERNAL };

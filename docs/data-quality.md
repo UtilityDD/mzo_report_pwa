@@ -75,7 +75,7 @@ Datasets that score 97–99 have notes only (spelling variants, codes of divisio
 | # | Finding | Dataset | Count |
 |---:|---|---|---:|
 | 1 | Defective meter details mix two report dates: 28,215 rows are from 16/10/2026 and 27,778 from 23/10/2026, while the summary is all 16/10. Their totals disagree too: the >10-year count is 23,066 names against 23,219 counted (load 1–3 kW: 17,443 against 17,730). | `defective_details` | 27,778 rows; 539 meters |
-| 2 | DD summary: 977 rows have Office Code 6621101 (Itahar CCC, Raiganj division) but say CCC = Islampur and Division = Islampur. Another 19 rows have 6612103 (Paranpur) but say Chanchal. | `dd_summary` | 996 |
+| 2 | DD summary: 977 rows have Office Code 6621101 (Itahar CCC, Raiganj division) but say CCC = Islampur and Division = Islampur. 976 of them copy Islampur rows (6622101) under the wrong code, so they are a pasted duplicate block. Another 19 rows have 6612103 (Paranpur) but say Chanchal. | `dd_summary` | 996 |
 | 3 | 12 applications are in both the Pending NSC list (as on 30/10) and the Withheld list (as on 29/10). One upload puts each application in only one of them, so one copy is from an older upload. | `withheld` | 12 |
 | 4 | The Pending Master Card Google Sheet is newer (30/10, 2,147 rows) than its Supabase Storage copy that the app shows (28/10, 2,153 rows): 247 applications differ. "Sync sheet" was not run after the last paste. | `pending_mc` | 488 |
 | 5 | Loss report: a block of 560 rows is an exact copy of earlier rows (every value the same, including MONTH and YEAR), and 523 total rows ("Raiganj Div Total", "MALDA REGION", "South Malda Div Total") sit inside the data. | `loss_report` | 560 + 523 |
@@ -108,7 +108,7 @@ Sheet: [Defective meter workbook](https://docs.google.com/spreadsheets/d/1dMLSX2
 
 Sheet: [DD summary](https://docs.google.com/spreadsheets/d/e/2PACX-1vRawhIW9ICZmzuThsL5opfI40WY6upCg5kFzoFXi2UJPR-svO6_cByXy5Y3u_p-2La_tH8SxhFfl29B/pubhtml?gid=220026293&single=true).
 
-- **`Office Code` vs `CCC` / `Division`:** 977 rows from row 23,647 have code 6621101 (Itahar) with CCC "Islampur", Division "Islampur". 19 rows from row 324 have 6612103 (Paranpur) with CCC "Chanchal". Correct the code or the name.
+- **`Office Code` vs `CCC` / `Division`:** 977 rows from row 23,647 have code 6621101 (Itahar) with CCC "Islampur", Division "Islampur". 976 of them are exact copies of Islampur rows coded 6622101 apart from the code, so this is a pasted duplicate block: delete it. Separately, 19 rows from row 324 have 6612103 (Paranpur) with CCC "Chanchal": correct the code or the name.
 - **`OSD`:** 1,414 cells in accounting format, e.g. "(0.37)" in row 4,060 and "(120.00)" in row 4,133. Write −0.37 or format the column as a plain number.
 - **`Dis Date`:** 559 cells as yyyymmdd from row 46,460 (e.g. 20231228), #NUM! in rows 41,678, 42,554, 42,652 and 24 more, impossible years in rows 5,038 (15/02/0204), 7,145, 7,682, 8,161 and 8,742 (31/01/8013), and 12/12/1912 in rows 4,275, 4,696, 41,751, 41,808 and 45,086. Use dd/mm/yyyy, and leave the cell blank when there is no date.
 - **`Date of Visit`:** the latest visit is 14/01/2026. If the sheet is still in use, it needs the newer visits.
@@ -253,7 +253,7 @@ These were sent as `NOTE` lines in `agent-progress/dq-audit.log`.
 5. **Defective Meter shows one "as on" date for a details list that mixes 16/10 and 23/10,** and its count cards (summary) and name lists (details) disagree by up to 287 meters per metric. The page should show the details' own date, or refuse a mixed publish (the pipeline can check that `REPORT_AS_ON` has one value).
 6. **Pending MC shows the 28/10 Storage copy while the sheet is at 30/10.** There is no prompt that a newer sheet exists. The mirror's write-through refresh (phase 2) covers the "Sync sheet" button, but nothing detects a sheet that was pasted without syncing; the `cross.snapshot_mismatch` issue now does.
 7. **The stock fallback (Google Sheet1, used when Storage is down) is six weeks old** and includes other zones' plants. A Storage outage would silently show September stock for every plant.
-8. **DD summary rows with code 6621101 and name Islampur:** pages that filter by code count them under Itahar, and pages that filter by name count them under Islampur. dq-offices' enrichment currently picks the name; a by-code page and a by-name page give different Islampur and Itahar totals.
+8. **DD summary rows with code 6621101 and name Islampur:** pages that filter by code count them under Itahar, and pages that filter by name count them under Islampur, so a by-code page and a by-name page give different Islampur and Itahar totals. dq-offices found that 976 of the 977 rows duplicate real Islampur rows, so the fix is in the sheet: delete the block.
 
 ## How the checks work
 

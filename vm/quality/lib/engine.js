@@ -222,22 +222,31 @@ class Checker {
             this._ensureCols(values.length);
             this._setupRoles();
         }
+        // First look at the row as a whole: a repeated header row is reported and kept out of
+        // the column statistics (its "Qty" would read as text in a number column).
         let nonEmpty = 0;
-        let meaningful = 0;
         let headerEcho = 0;
         let isTotal = false;
         for (let i = 0; i < values.length; i++) {
             const v = values[i];
             if (V.isBlank(v)) continue;
             nonEmpty++;
+            if (this.layout) continue;
             const col = this.cols[i];
-            const kind = this._cell(col, v, rowNo);
-            if (kind === 'value') meaningful++;
-            if (!this.layout) {
-                const s = typeof v === 'string' ? v.trim() : '';
-                if (s && col.low && s.toLowerCase().replace(/\s+/g, ' ') === col.low) headerEcho++;
-                if (s && s.length <= 40 && (i < 4 || col.officeRole === 'ccc') && (TOTAL_RE.test(s) || (this.rules.summary && col.officeRole === 'ccc' && AGGREGATE_RE.test(s)))) isTotal = true;
-            }
+            const s = typeof v === 'string' ? v.trim() : '';
+            if (s && col.low && s.toLowerCase().replace(/\s+/g, ' ') === col.low) headerEcho++;
+            if (s && s.length <= 40 && (i < 4 || col.officeRole === 'ccc') && (TOTAL_RE.test(s) || (this.rules.summary && col.officeRole === 'ccc' && AGGREGATE_RE.test(s)))) isTotal = true;
+        }
+        if (nonEmpty > 0 && !this.layout && headerEcho >= 2 && headerEcho >= nonEmpty * 0.5) {
+            this.repeatedHeader.n++;
+            pushSample(this.repeatedHeader.samples, { row: rowNo, cells: this._cells(values, 4) });
+            return;
+        }
+        let meaningful = 0;
+        for (let i = 0; i < values.length; i++) {
+            const v = values[i];
+            if (V.isBlank(v)) continue;
+            if (this._cell(this.cols[i], v, rowNo) === 'value') meaningful++;
         }
         if (nonEmpty === 0) {
             this.blankPending++;
@@ -258,10 +267,7 @@ class Checker {
                 this.ghost[meaningful]++;
                 if (this.ghost.samples.length < SAMPLE_MAX) this.ghost.samples.push({ row: rowNo, cells: this._cells(values, 3) });
             }
-            if (headerEcho >= 2 && headerEcho >= nonEmpty * 0.5) {
-                this.repeatedHeader.n++;
-                pushSample(this.repeatedHeader.samples, { row: rowNo, cells: this._cells(values, 4) });
-            } else if (isTotal) {
+            if (isTotal) {
                 this.totalRows.n++;
                 pushSample(this.totalRows.samples, { row: rowNo, cells: this._cells(values, 4) });
             }
@@ -271,8 +277,11 @@ class Checker {
                 this.dupRows.n++;
                 pushSample(this.dupRows.samples, { row: rowNo, same_as_row: first });
             }
-            this._keys(values, rowNo);
-            this._office(values, rowNo);
+            if (!isTotal) {
+                // A total row has no key and no single office of its own.
+                this._keys(values, rowNo);
+                this._office(values, rowNo);
+            }
         }
         for (const f of this.facts) f.row(values, this.headerNames, rowNo);
     }
@@ -889,14 +898,28 @@ class Checker {
         const todayIst = Math.floor((this.now + 330 * 60000) / DAY_MS) * DAY_MS;
         const age = Math.round((todayIst - t) / DAY_MS);
         this.asOn = { column: col.name, date: V.isoDay(t), age_days: age, max_age_days: maxAge };
-        if (age < -1) {
-            add({ check: 'freshness.future', severity: 'warn', column: col.name, count: 1, sample: [{ as_on: V.isoDay(t), age_days: age }], source_fix: true,
-                hint: `The report date in "${col.name}" is in the future (${V.isoDay(t)}). Check the date typed in the sheet.` });
-        } else if (maxAge && age > maxAge) {
-            add({ check: 'freshness.stale', severity: age > maxAge * 3 ? 'error' : 'warn', column: col.name, count: 1, sample: [{ as_on: V.isoDay(t), age_days: age, expected_within_days: maxAge }], source_fix: true,
-                hint: `The data is ${age} days old (as on ${V.isoDay(t)}); this report is normally refreshed within ${maxAge} days. Paste or upload the latest report.` });
-        }
+        const issue = freshnessIssue(this.asOn);
+        if (issue) add(issue);
     }
+}
+
+/**
+ * freshness.stale / freshness.future for an "as on" date, or null when it is fine.
+ * Also used by the sync hook to re-age a dataset that did not change.
+ * @param {{column, date (yyyy-mm-dd), age_days, max_age_days}} asOn
+ */
+function freshnessIssue(asOn) {
+    if (!asOn || !asOn.date) return null;
+    const { column, date, age_days: age, max_age_days: maxAge } = asOn;
+    if (age < -1) {
+        return { check: 'freshness.future', severity: 'warn', column, count: 1, sample: [{ as_on: date, age_days: age }], source_fix: true,
+            hint: `The report date in "${column}" is in the future (${date}). Check the date typed in the sheet.` };
+    }
+    if (maxAge && age > maxAge) {
+        return { check: 'freshness.stale', severity: age > maxAge * 3 ? 'error' : 'warn', column, count: 1, sample: [{ as_on: date, age_days: age, expected_within_days: maxAge }], source_fix: true,
+            hint: `The data is ${age} days old (as on ${date}); this report is normally refreshed within ${maxAge} days. Paste or upload the latest report.` };
+    }
+    return null;
 }
 
 function insertExtreme(arr, v, row, better) {
@@ -993,4 +1016,4 @@ function letter(index) {
     return s;
 }
 
-module.exports = { Checker, columnLetter, letter, normHeader, outliers };
+module.exports = { Checker, columnLetter, letter, normHeader, outliers, freshnessIssue };
