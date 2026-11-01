@@ -6,9 +6,10 @@
   <title>O&amp;M advance · MZO Reports</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
-  <script src="/mzo_ui.js?v=5" defer></script>
+  <script src="/mzo_ui.js?v=6" defer></script>
   <script src="/mzo_data_hub.js?v=91" defer></script>
-  <script src="/mzo_scope.js?v=14" defer></script>
+  <script src="/lib/offices.js?v=2" defer></script>
+  <script src="/mzo_scope.js?v=17" defer></script>
   <style>.ui-grid > .ui-panel { margin-top: 0; } #ageTable td:first-child { white-space: nowrap; }</style>
 </head>
 <body>
@@ -86,6 +87,7 @@
     function maps(vText, ccData) {
       vendors = {}; UI.csv(vText || '').forEach(function (v) { if (v.VENDOR_NO && v.NAME) vendors[String(v.VENDOR_NO).trim()] = v.NAME.trim(); });
       cc = {}; (ccData || []).forEach(function (e) { if (e['Cost Cen_Code'] && e['Unit Name'] && e['Division Name']) cc[String(e['Cost Cen_Code']).trim()] = { unit: e['Unit Name'].trim(), division: e['Division Name'].trim() }; });
+      if (window.MzoOffices) window.MzoOffices.addCostCentres(ccData || []);
     }
     function prepare(text) {
       asOn = null;
@@ -93,6 +95,9 @@
       all = UI.csv(text).filter(function (r) { return r['Order Number']; }).map(function (r) {
         // Cost centre column is "Resp. CCtr"; fall back to the plant code for the division.
         var m = cc[String(r['Resp. CCtr'] || '').trim()] || {}, divRaw = m.division || '';
+        var off = window.MzoOffices ? window.MzoOffices.parseCode(r['Resp. CCtr']) : null;
+        if (off && off.division && (off.level === 'ccc' || off.level === 'division')) divRaw = off.division + ' Division';
+        if (off && off.level === 'ccc' && m.unit) m = { unit: off.ccc + ' CCC', division: m.division };
         var isDiv = /division$/i.test(divRaw), div = divRaw.replace(/\s*division$/i, '');
         if (!divRaw && window.MzoScope) { var pd = window.MzoScope.divisionNameOf(String(r.Plant || '').trim()); if (pd) { div = pd; isDiv = true; } }
         var created = UI.date(r['Creation Date']); if (created && (!asOn || created > asOn)) asOn = created;

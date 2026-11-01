@@ -190,6 +190,7 @@ async function main() {
         }
         registry = new Registry(pb);
         await registry.load();
+        await require('./lib/office_enrich').syncDim(pb); // dim_offices from lib/offices.js, when it changed
     }
 
     const batchSize = Math.max(1, Math.min(1000, args.batch || Number(process.env.SYNC_BATCH_SIZE) || 500));

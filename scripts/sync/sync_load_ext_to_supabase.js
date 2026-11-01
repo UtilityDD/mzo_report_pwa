@@ -70,8 +70,9 @@ async function run() {
 
     const ageVal = ageIdx >= 0 ? parseInt(cols[ageIdx], 10) : 0;
     if (!isNaN(ageVal)) {
-      if (ageVal > 6) ageing6mCount++;
-      if (ageVal > 12) ageing1yCount++;
+      // Same rule as pending_load_extension.html ("6–12 months" starts at 6, "Over a year" at 12 months).
+      if (ageVal >= 6) ageing6mCount++;
+      if (ageVal >= 12) ageing1yCount++;
     }
 
     if (!reportDateRaw && repDateIdx >= 0 && cols[repDateIdx]) {

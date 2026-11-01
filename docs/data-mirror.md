@@ -139,6 +139,10 @@ Every dataset is one PocketBase collection named `ds_<key>`, for example `ds_nsc
 | `_hash` | sha1 of the row's stored values, used to skip unchanged rows |
 | `_synced_at` | When the sync last inserted or updated this row (not touched for unchanged rows) |
 
+### Office fields and `dim_offices`
+
+A `ds_` collection whose source has office columns (CCC code, CCC / unit name, division, region, circle, district, cost centre, plant…) also gets `_region`, `_division`, `_ccc_code` and `_ccc`: the row's office in the canonical list (`lib/offices.js`; empty when the row names no MZO office, e.g. a zone store, another zone's row in a statewide sheet, or a total row). `dim_offices` holds that list: one row per office (zone, 3 regions, 7 divisions, 41 CCCs) with code, parent, district, old plant codes and the aliases found in the data; the sync rewrites it when the list changes. Unknown, contradictory and out-of-zone office values reach `sys_quality_issues` as `office.*` checks. The glue is `vm/sync/lib/office_enrich.js` (three calls from `sync.js`, `upsert.js` and `run.js`); see [architecture.md](architecture.md#offices) and [data-quality-offices.md](data-quality-offices.md).
+
 ### Who can read it
 
 Every `ds_` collection and both `sys_` collections can be listed and viewed only by signed-in portal users (`@request.auth.collectionName = "portal_users_auth"`) and superusers; create, update and delete are superuser-only. No collection has a public rule: the mirror holds PINs, staff bank details and consumer contact data as-is. `portal_users_auth` is an email + password auth collection with no self sign-up; provisioning creates the accounts. A fresh install's default `users` collection (public sign-up) is removed by a migration.

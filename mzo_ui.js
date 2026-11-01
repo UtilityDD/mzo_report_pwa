@@ -74,7 +74,9 @@
     }
     if (f !== '' || row.length) { row.push(f); rows.push(row); }
     if (!rows.length) return [];
-    var head = rows[0].map(function (h) { return h.trim(); }), out = new Array(rows.length - 1);
+    // A repeated header keeps both columns: the first keeps the name, later ones get _2, _3 (weekly has two
+    // "Division" columns, the solar sheet three "APPL_NO").
+    var seen = {}, head = rows[0].map(function (h) { h = h.trim(); var k = seen[h] = (seen[h] || 0) + 1; return k > 1 ? h + '_' + k : h; }), out = new Array(rows.length - 1);
     for (var r = 1; r < rows.length; r++) {
       var o = {}, cells = rows[r];
       for (var k = 0; k < head.length; k++) o[head[k]] = cells[k] != null ? cells[k] : '';
@@ -87,12 +89,24 @@
   var REGION_ALIAS = { 'malda': 'Malda', 'malda region': 'Malda', 'uttar dinajpur': 'Raiganj', 'uttar dinajpur region': 'Raiganj', 'raiganj': 'Raiganj', 'dakshin dinajpur': 'Balurghat', 'dakshin dinajpur region': 'Balurghat', 'dakhsin dinajpur': 'Balurghat', 'dakhsin dinajpur region': 'Balurghat', 'd/dinajpur region': 'Balurghat', 'u/dinajpur region': 'Raiganj', 'balurghat': 'Balurghat' };
   var officeCache = {};
   function office(code, name) {
-    var key = String(code == null ? '' : code).replace(/\D/g, '');
-    if (key.length > 7) key = key.slice(-7);
-    var ck = key + '|' + (name || '');
+    var raw = String(code == null ? '' : code).trim();
+    var ck = raw + '|' + (name || '');
     if (officeCache[ck]) return officeCache[ck];
-    var S = w.MzoScope, o = null;
-    if (S) {
+    var O = w.MzoOffices, S = w.MzoScope, o = null;
+    if (O) {
+      // lib/offices.js: every code form (6611101, C366111010, padded, known typos, division and region
+      // offices) and every CCC spelling. A CCC name fills in when the code is missing or names only a division.
+      var c = raw ? O.parseCode(raw) : null;
+      if (!c || c.level !== 'ccc') {
+        var nm = name ? O.parseCccName(name, c && c.division) : null;
+        if (nm && nm.level === 'ccc' && (!c || !c.division || c.division === nm.division)) c = nm;
+        else if ((!c || !c.region) && nm && nm.region) c = nm;
+      }
+      if (c && c.region) o = { region: c.region, division: c.division || '', ccc: c.ccc || '' };
+    }
+    var key = raw.replace(/\D/g, '');
+    if (key.length > 7) key = key.slice(-7);
+    if (!o && S) {
       o = (key && S.parentOfCcc(key)) || (name && S.parentOfCcc(String(name).replace(/\s*CCC.*$/i, '').trim())) || null;
       if (!o && key.length >= 4) {
         var div = S.divisionNameOf && S.divisionNameOf(key.slice(0, 4));
@@ -110,7 +124,11 @@
     o = o ? { region: o.region || '', division: o.division || '', ccc: o.ccc || '' } : { region: '', division: '', ccc: '' };
     return (officeCache[ck] = o);
   }
-  function regionName(s) { return REGION_ALIAS[String(s || '').trim().toLowerCase()] || title(s); }
+  function regionName(s) {
+    var O = w.MzoOffices, r = O && s != null && String(s).trim() ? O.parseRegion(s) : null;
+    if (r && r.level === 'region') return r.region;
+    return REGION_ALIAS[String(s || '').trim().toLowerCase()] || title(s);
+  }
 
   /* ---------- data hub ---------- */
   // Paint from IndexedDB at once; re-render if the hub downloads a newer body.

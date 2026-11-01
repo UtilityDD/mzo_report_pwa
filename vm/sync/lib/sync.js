@@ -8,6 +8,7 @@ const { spool, removeFile } = require('./spool');
 const { buildColumns, fieldList } = require('./schema');
 const { ensureCollection } = require('./collections');
 const { writeRows } = require('./upsert');
+const officeEnrich = require('./office_enrich'); // dq-offices: canonical _region/_division/_ccc_code/_ccc
 const { makeSourceFetch } = require('./http');
 const { parsePbDate } = require('./schedule');
 const { removeSnapshot } = require('./snapshot');
@@ -149,6 +150,7 @@ async function syncSource(src, env) {
         }
 
         const salt = LOGIC_VERSION + stableStringify({
+            offices: officeEnrich.VERSION, // a new office list rewrites the office fields
             pk: src.primaryKey || null,
             types: src.columnTypes || null,
             order: src.dateOrder || null
@@ -202,7 +204,8 @@ async function syncSource(src, env) {
             return result;
         }
 
-        const ens = await ensureCollection(pb, collection, fieldList(columns));
+        const oe = officeEnrich.prepare(src, columns);
+        const ens = await ensureCollection(pb, collection, fieldList(columns).concat(oe ? oe.fields : []));
         const w = await writeRows({
             pb,
             collection,
@@ -213,8 +216,10 @@ async function syncSource(src, env) {
             syncedAt: started,
             signal: ac.signal,
             warnings,
-            log: ctx.log
+            log: ctx.log,
+            enrich: oe ? oe.enrich : null
         });
+        if (oe) summary.officeIssues = oe.issues(); // read by the quality hook (vm/quality)
         phase(key, 'rows written', t0);
         Object.assign(summary, { inserted: w.inserted, updated: w.updated, deleted: w.deleted });
         summary.writeMs = w.writeMs;

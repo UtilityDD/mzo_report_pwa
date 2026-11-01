@@ -77,6 +77,13 @@
   let _cachedScope = null;
   let _cachedKey = '';
 
+  // Canonical office names, codes and spellings live in lib/offices.js (window.MzoOffices), which
+  // pages load just before this file. The name lookups below ask it first; the older loose matching
+  // is only the fallback when it is missing or does not know a value.
+  function canon() {
+    return global.MzoOffices || null;
+  }
+
   function norm(v) {
     return String(v == null ? '' : v)
       .toLowerCase()
@@ -154,6 +161,11 @@
   }
 
   function regionNameOf(raw) {
+    const O = canon();
+    if (O && raw != null && String(raw).trim()) {
+      const r = O.parseRegion(raw);
+      return r && r.level === 'region' ? r.region : '';
+    }
     const n = norm(raw);
     if (!n) return '';
     const keys = Object.keys(HIERARCHY);
@@ -170,6 +182,12 @@
 
   function divisionNameOf(raw) {
     if (!raw) return '';
+    const O = canon();
+    if (O) {
+      // "South Malda" / "North Malda" (old divisions), zone and region names are not one division.
+      const d = O.parseDivision(raw);
+      return d && d.level === 'division' ? d.division : '';
+    }
     const s = String(raw).trim();
     if (CODE_TO_DIV[s]) return CODE_TO_DIV[s];
     if (/^\d{4}$/.test(s)) {
@@ -201,8 +219,15 @@
     if (CODE_TO_CCC[s]) return CODE_TO_CCC[s];
     const m = s.match(/\b(66[123]\d{4})\b/);
     if (m && CODE_TO_CCC[m[1]]) return CODE_TO_CCC[m[1]];
+    const O = canon();
+    if (O) {
+      const c = O.parseCccName(s);
+      // Not a CCC (a division, region, zone, total or sub-station row, or an unknown name): kept as written.
+      return c && c.level === 'ccc' ? c.ccc : String(raw).trim();
+    }
     const n = norm(raw);
     if (!n) return '';
+    if (/\btotal\b/i.test(String(raw))) return String(raw).trim();
 
     if (n === 'gazole' || n === 'gazol') return 'Gazole';
 
@@ -213,8 +238,7 @@
       for (let d = 0; d < dnames.length; d++) {
         const cccs = divs[dnames[d]].cccs;
         for (let c = 0; c < cccs.length; c++) {
-          const cnorm = norm(cccs[c]);
-          if (n === cnorm || n.indexOf(cnorm) !== -1 || (n.length >= 4 && cnorm.indexOf(n) !== -1)) return cccs[c];
+          if (n === norm(cccs[c])) return cccs[c];
         }
       }
     }
@@ -225,6 +249,11 @@
     const s = String(raw == null ? '' : raw).trim();
     if (!s) return '';
     const division = divisionNameOf(divisionName) || divisionName;
+    const O = canon();
+    if (O) {
+      const c = O.parseCccName(s, division); // knows the short forms used inside one division ("Pa" = Pandua)
+      if (c && c.level === 'ccc') return c.ccc;
+    }
     const list = listCccs('', division);
     const n = norm(s);
     if (!n) return '';
@@ -471,6 +500,22 @@
     return false;
   }
 
+  /** Is a row's region / division / CCC value one of the scope's offices? Exact canonical names. */
+  function inScope(value, kind, scope) {
+    if (!value) return false;
+    const O = canon();
+    if (!O) return inSetNorm(value, kind === 'region' ? scope.regionNorms : kind === 'division' ? scope.divisionNorms : scope.cccNorms);
+    let name = '';
+    if (kind === 'region') name = regionNameOf(value);
+    else if (kind === 'division') name = divisionNameOf(value);
+    else {
+      const c = O.parseCccName(value);
+      name = c && c.level === 'ccc' ? c.ccc : '';
+    }
+    const set = kind === 'region' ? scope.regions : kind === 'division' ? scope.divisions : scope.cccs;
+    return !!name && set.has(name);
+  }
+
   function matchRow(row) {
     const scope = getScope();
     if (!scope || scope.unscoped) return true;
@@ -481,33 +526,55 @@
     const ccc = pickField(row, CCC_KEYS);
     const codes = collectCodes(row);
 
-    if (!region && !div && !ccc && !codes.length) return true;
+    if (!region && !div && !ccc && !codes.length) {
+      // No office in the usual columns. Look through every office-type column lib/offices.js knows
+      // (Office Code, Location Code, DISTRICT, CIRCLE NAME, Sub-Division Name, …); a row that still
+      // names no office is shown only to zone and admin logins (they returned above, unscoped).
+      const found = officeOfRow(row);
+      return found ? matchRow(found) : false;
+    }
 
     for (let i = 0; i < codes.length; i++) {
       const rawCode = codes[i];
       if (scope.codes.has(rawCode)) return true;
       const named = CODE_TO_CCC[rawCode];
-      if (named && inSetNorm(named, scope.cccNorms)) return true;
+      if (named && (canon() ? scope.cccs.has(named) : inSetNorm(named, scope.cccNorms))) return true;
       for (let p = 0; p < scope.prefixes.length; p++) {
         if (rawCode.indexOf(scope.prefixes[p]) === 0) return true;
       }
     }
 
     if (scope.level === 'ccc') {
-      if (inSetNorm(ccc, scope.cccNorms)) return true;
+      if (inScope(ccc, 'ccc', scope)) return true;
       return false;
     }
     if (scope.level === 'division' || scope.level === 'codes') {
-      if (inSetNorm(div, scope.divisionNorms)) return true;
-      if (inSetNorm(ccc, scope.cccNorms)) return true;
+      if (inScope(div, 'division', scope)) return true;
+      if (inScope(ccc, 'ccc', scope)) return true;
       return false;
     }
     if (scope.level === 'region') {
-      if (inSetNorm(region, scope.regionNorms)) return true;
-      if (inSetNorm(div, scope.divisionNorms)) return true;
-      if (inSetNorm(ccc, scope.cccNorms)) return true;
+      if (inScope(region, 'region', scope)) return true;
+      if (inScope(div, 'division', scope)) return true;
+      if (inScope(ccc, 'ccc', scope)) return true;
     }
     return false;
+  }
+
+  /** A row's office through lib/offices.js, as { _region, _divn, _supp, CCC_CODE }, or null. */
+  function officeOfRow(row) {
+    const O = canon();
+    if (!O || !O.officeColumns || !O.resolve) return null;
+    const keys = Object.keys(row);
+    const roles = O.officeColumns('', keys.map(function (k, i) { return { source_name: k, index: i }; }));
+    if (!roles) return null;
+    const cells = {};
+    Object.keys(roles).forEach(function (role) {
+      cells[role] = roles[role].map(function (c) { return row[keys[c.index]]; });
+    });
+    const o = O.resolve(cells).office;
+    if (!o || !o.region) return null;
+    return { _region: o.region, _divn: o.division || '', _supp: o.ccc || '', CCC_CODE: o.ccc_code || '' };
   }
 
   function filterRows(rows) {

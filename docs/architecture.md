@@ -57,6 +57,7 @@ Sheet links (sidebar **Important → Sheet links**) has its own rules: see [repo
 - Admin or empty jurisdiction → **unscoped** (all offices).
 - Grain: **CCC > division > region**.
 - `filterRows(rows)` after parse; `lockFilters()` after filling Region/Division/CCC `<select>`s.
+- A row whose usual office fields are empty is first resolved through every office-type column `lib/offices.js` knows (Office Code, Location Code, DISTRICT, CIRCLE NAME, Sub-Division Name, …). A row that still names no office is shown only to zone and admin logins.
 - Banner: “Showing {label} — set by admin”.
 - **Do not** add per-page “Office Prefs”. Scope comes from login only.
 
@@ -65,9 +66,32 @@ Canonical names in `mzo_scope.js` `HIERARCHY`:
 - Regions: **Malda**, **Raiganj**, **Balurghat**
 - Divisions: Malda, Chanchal, Gazole, Raiganj, Islampur, Balurghat, Buniadpur. Treat **Div** / **Div.** / **Division** as the same office; UI shows the name without that suffix.
 
-Office codes match `/66[123]\d{4}/` (e.g. `6611108`, `C36611108`). If a dataset’s office columns are missing from `REGION_KEYS` / `DIV_KEYS` / `CCC_KEYS` / `CODE_KEYS`, extend those lists — do not invent a second matcher.
+Office codes match `/66[123]\d{4}/` (e.g. `6611108`, `C366111080`). If a dataset’s office columns are missing from `REGION_KEYS` / `DIV_KEYS` / `CCC_KEYS` / `CODE_KEYS`, extend those lists. Names and codes resolve through `lib/offices.js` (see **Offices**); do not add a page-level alias table.
 
 **Locked dropdowns:** when a filter is locked, show the **office name only** (no leftover “All Regions / All Divisions / All CCCs”). Do not cascade-filter empty lists from a mismatched region value. WRIDD (`wridd.html`) is the reference for this.
+
+## Offices
+
+`lib/offices.js` is the one canonical office list. It loads in the browser as `window.MzoOffices` (every page that loads `mzo_scope.js` loads it just before) and in Node with `require` (the mirror's `vm/sync/lib/offices.js` wraps it and adds the old cost centres from `data/costcenter.json`). `MzoScope.regionNameOf` / `divisionNameOf` / `cccNameOf`, `UI.office` and `UI.regionName` ask it first and fall back to their older matching only when it is missing. Matching is exact on normalised names and aliases, never “one name contains the other”: `Malda` is not Old Malda, and total rows (`Raiganj Div Total`, `MALDA REGION`) are never a CCC.
+
+| Level | Offices | Code |
+|---|---|---|
+| Zone | Malda Zone | `6600000` (plants `6600`, `7201`) |
+| Region (3) | Malda, Raiganj, Balurghat | `66R0000` (`6610000`…) |
+| Division (7) | Malda, Chanchal, Gazole · Raiganj, Islampur · Balurghat, Buniadpur | `66RD000`, prefix `66RD` |
+| CCC (41) | listed in `CCCS` with their division | `66RD1CC` (`6611101` = Manikchak) |
+
+**Codes it reads:** `6611101`, `6611101.0`, ` 6611101 `; SAP cost centres `C3` + code + `0` (`C366111050` = Mothabari); 8-digit padded codes (`66211010` = Itahar); codes inside names (`SAMSI CCC-6612102`, `BALURGHAT CCC (6631101)`); division prefixes (`6611`) and old SAP plants (`3342` Malda, `3343` Chanchal, `3432` Raiganj, `3433` and `3461` Balurghat, `3434` Islampur, `3462` Buniadpur); division offices `66RD000` and their other units `66RD0xx`/`66RD3xx` (stores, sub-stations); old cost centres `C333…`/`C334…` through `data/costcenter.json` (`MzoOffices.addCostCentres(list)` in the browser); the known mistyped codes `66111609` and `66131101`.
+
+**Names it reads** (case, spaces, dots, `CCC`, `Customer Care Center/Centre`, `(D)`, `Division`/`Divisioin`/`Div`, `Region`, `(O&M)` and a trailing code are ignored):
+- Regions by district: Malda / Maldah / `MALDAH ` → Malda; Uttar Dinajpur / U. Dinajpur / U/Dinajpur / Dinajpur Uttar / Raigunj → Raiganj; Dakshin Dinajpur / Dakhsin / D. Dinajpur / Dinajpur Dakshin → Balurghat; LGD district codes 316 / 311 / 310.
+- Divisions: Raigunj and Uttar Dinajpur (D) Division → Raiganj; Dakshin Dinajpur (D) Division → Balurghat; Gazol / Gajol → Gazole. **North Malda** and **South Malda** are the two old Malda divisions; each covers parts of two current divisions, so a row with only that name keeps its region and takes the division from its CCC.
+- CCCs: Mathurapur = Manikchak; Mokdampur = Mokdumpur; Baisnabnagar = Baishnabnagar; H.C. Pur = Harishchandrapur; Gazol / Gajol = Gazole; Pandua-I = Pandua; Bamangola = Bamongola; Kaliaganj = Kaliyaganj; Karandeghi = Karandighi; Goalpokhar = Goalpokher; Kumargunj = Kumarganj; Kushmandi / Kushmundi = Kusmandi; Golapgang = Golapganj; Sujpur = Sujapur; `Pa` = Pandua inside Gazole division.
+- Statewide sheets (WRIDD, accidents, PM Surya Ghar) also hold other zones' offices; those are recognised as outside the zone, not as unknown MZO offices.
+
+**Adding an office or an alias:** add the spelling to that office's aliases in `lib/offices.js` (a new CCC also goes into `mzo_scope.js` `HIERARCHY` and `CODE_TO_CCC`, which must list the same 41 CCCs), bump `VERSION` there so the mirror rewrites its office fields, and bump `lib/offices.js?v=` on every page. The mirror's `dim_offices` collection is rewritten from the list on the next sync.
+
+**In the mirror** every `ds_` collection with office columns gets `_region`, `_division`, `_ccc_code` and `_ccc` (empty when unknown), and unknown or contradictory values go to `sys_quality_issues` as `office.*` checks. Findings: [data-quality-offices.md](data-quality-offices.md).
 
 ## DataHub
 
