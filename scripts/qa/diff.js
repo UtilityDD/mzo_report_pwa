@@ -124,7 +124,7 @@ function errList(load) {
   if (load.navError) out.push('nav: ' + load.navError);
   return out;
 }
-const errNorm = (s) => s.replace(/\d+/g, '#').replace(/https?:\/\/[^/\s]+/g, '');
+const errNorm = (s) => s.replace(/status of (\d+) \([^)]*\)/g, 'status of $1').replace(/\d+/g, '#').replace(/https?:\/\/[^/\s]+/g, '');
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -187,7 +187,8 @@ function main() {
       const exp = rulesFor(k, ra, rb, fa);
       for (const d of diffMaps(fa, fb)) {
         const item = { page: k, name, url, phase: vp + '/' + ph, field: d.field, a: d.a, b: d.b };
-        if (exp.length) { item.expected = exp.map((r) => r.id); expectedHits.push(item); }
+        const hit = exp.filter((r) => !r.fields || new RegExp(r.fields).test(d.field));
+        if (hit.length) { item.expected = hit.map((r) => r.id); expectedHits.push(item); }
         else if (moving.has(d.field)) { item.volatile = true; volatileHits.push(item); pageVol++; } else { mismatches.push(item); pageMis++; }
       }
     }
