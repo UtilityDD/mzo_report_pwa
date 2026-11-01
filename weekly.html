@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=2" defer></script>
   <style>
     .wk-chart { position: relative; display: flex; align-items: stretch; gap: 2px; height: 180px; padding: 4px 0 0; }
     .wk-chart .col { position: relative; flex: 1 1 0; min-width: 2px; cursor: pointer; border-radius: 2px; }
@@ -93,7 +94,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var KEY = 'CACHE_WEEKLY';
+    var ROWS = 'weekly_report';
     var METRIC = {
       dep: { label: 'Deposited', title: 'Deposited by week' },
       dis: { label: 'Disposed', title: 'Disposed by week' },
@@ -103,27 +104,27 @@
     };
     var all = [], weeks = [], f = { cat: 'ALL', metric: 'net' }, level = 'region', scope = null;
 
+    // A metric of one category: <base>_dom / _com / _ind (e.g. deposited_in_last_week_dom); ALL is their sum.
     function num(row, base, cat) {
-      var get = function (c) { return parseInt(row[base + ' (' + c + ')'], 10) || 0; };
-      if (cat !== 'ALL') return get(cat);
-      if (row[base + ' (All)'] != null) return get('All');
-      return get('DOM') + get('COM') + get('IND');
+      var get = function (c) { return Math.trunc(row[base + '_' + c]) || 0; };
+      if (cat !== 'ALL') return get(cat.toLowerCase());
+      return get('dom') + get('com') + get('ind');
     }
 
-    function prepare(text) {
+    // t.rows: uniform rows of schema/weekly_report.json (snake_case, numbers, ISO dates, canonical
+    // _region/_division/_ccc), already scoped to the login by MzoRows. The sheet has two Division
+    // columns: division_2 is the current division name (division holds old names like SOUTH MALDA).
+    function prepare(t) {
       var seen = {};
-      all = UI.csv(text).filter(function (d) { return d['Date of report in Current Week']; }).map(function (d) {
-        var dt = UI.date(d['Date of report in Current Week']);
-        var o = UI.office(d['CCC Code']);
-        var r = {
+      t.all.forEach(function (d) { var dt = UI.date(d.date_of_report_in_current_week); if (dt) seen[dt.getTime()] = dt; }); // the sheet's weeks, before the scope
+      all = t.rows.filter(function (d) { return d.date_of_report_in_current_week; }).map(function (d) {
+        var dt = UI.date(d.date_of_report_in_current_week);
+        return {
           raw: d, week: dt ? dt.getTime() : 0, weekDate: dt,
-          _region: o.region || UI.regionName(d.Region), _divn: o.division || UI.title(d.Division_2 || d.Division),
-          _supp: o.ccc || d.CCC || d.CCC1 || UI.title(d['CCC Name']), CCC_CODE: String(d['CCC Code'] || '').trim()
+          _region: d._region || UI.regionName(d.region), _divn: d._division || UI.title(d.division_2 || d.division),
+          _supp: d._ccc || d.ccc || d.ccc1 || UI.title(d.ccc_name), CCC_CODE: d.ccc_code
         };
-        if (r.week) seen[r.week] = dt;
-        return r;
       });
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       weeks = Object.keys(seen).map(Number).sort(function (a, b) { return b - a; });
       $('meta').textContent = weeks.length ? UI.n(weeks.length) + ' weeks · ' + UI.fmtDate(new Date(weeks[weeks.length - 1])) + ' to ' + UI.fmtDate(new Date(weeks[0])) : 'No weeks reported';
       UI.fill('weekFilter', weeks.map(function (w) { return { value: String(w), label: 'Week of ' + UI.fmtDate(new Date(w)) }; }), 'All weeks (average)');
@@ -146,12 +147,12 @@
       var t = { last: 0, dep: 0, eff: 0, wit: 0, dis: 0, pend: 0 };
       rows.forEach(function (r) {
         var d = r.raw, c = f.cat;
-        t.last += num(d, 'Pending as on Monday of Last Week', c);
-        t.dep += num(d, 'Deposited in last week', c);
-        t.eff += num(d, 'Conn. Eff.', c);
-        t.wit += num(d, 'Withheld', c);
-        t.dis += num(d, 'Total disposed', c);
-        t.pend += num(d, 'Pending as on Monday of Current Week', c);
+        t.last += num(d, 'pending_as_on_monday_of_last_week', c);
+        t.dep += num(d, 'deposited_in_last_week', c);
+        t.eff += num(d, 'conn_eff', c);
+        t.wit += num(d, 'withheld', c);
+        t.dis += num(d, 'total_disposed', c);
+        t.pend += num(d, 'pending_as_on_monday_of_current_week', c);
       });
       t.net = t.dep - t.dis;
       return t;
@@ -287,12 +288,12 @@
     $('exportBtn').addEventListener('click', function () {
       UI.exportCsv('weekly-deposit-disposal.csv', [WEEK_COLS[0], { key: 'last', label: 'Pending last Monday' }, WEEK_COLS[1], { key: 'eff', label: 'Connections effected' }, { key: 'wit', label: 'Withheld' }, WEEK_COLS[2], WEEK_COLS[3], WEEK_COLS[4]], window.__weeks || []);
     });
-    UI.refresh('refreshBtn', KEY, function (t) { prepare(t); render(); });
+    MzoRows.refresh('refreshBtn', ROWS, function (t) { prepare(t); render(); });
 
     var first = true;
-    UI.load(KEY, function (text, info) {
-      if (!text) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = $('weekTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
-      prepare(text);
+    MzoRows.load(ROWS, function (t, info) {
+      if (!t) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = $('weekTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      prepare(t);
       if (first) {
         first = false;
         if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';

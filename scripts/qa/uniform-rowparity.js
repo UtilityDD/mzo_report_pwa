@@ -62,6 +62,21 @@ const PAGES = {
     old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true,
     display: { collected: (v, UI) => (UI.blank(v) ? '' : UI.fmtDate(v)) },
     known: { docs: 'DOCS_SUNMITTED was read into the row but never shown; it is no longer loaded' }
+  },
+  'weekly.html': {
+    key: 'weekly_report', from: '    var METRIC = {', to: '    function fillOffices() {',
+    old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true, stubs: ['fillOffices'],
+    // r.raw is the sheet row (old: UI.csv object, new: uniform row): compare the 18 metric values the page reads from it.
+    display: {
+      raw: (v) => {
+        if (!v || typeof v !== 'object') return v;
+        const out = [];
+        for (const b of [['Pending as on Monday of Last Week', 'pending_as_on_monday_of_last_week'], ['Deposited in last week', 'deposited_in_last_week'], ['Conn. Eff.', 'conn_eff'], ['Withheld', 'withheld'], ['Total disposed', 'total_disposed'], ['Pending as on Monday of Current Week', 'pending_as_on_monday_of_current_week']]) {
+          for (const c of ['DOM', 'COM', 'IND']) out.push(b[1] + '_dom' in v ? Math.trunc(v[b[1] + '_' + c.toLowerCase()]) || 0 : parseInt(v[b[0] + ' (' + c + ')'], 10) || 0);
+        }
+        return JSON.stringify(out);
+      }
+    }
   }
 };
 const PROFILES = [
