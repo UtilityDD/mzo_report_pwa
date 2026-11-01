@@ -50,7 +50,10 @@ Rules the engine applies to each entry: `quality.status` `na` → n/a (level); `
 {
   engine: 'rating/1',
   generatedAt, referenceDate,
-  inputs: { metricsLogic, metricsGeneratedAt, source, asOn: { <metricId>: { asOn, period, stale } } },
+  inputs: { metricsLogic, metricsGeneratedAt, source,
+            asOn: { <metricId>: { asOn, period, stale, datasets: [ { key, label, page } ] } } },   // source dataset(s) of each metric:
+                                                 // mirror key, label (metricsDoc.datasets[key].label if given, else the engine's
+                                                 // list), and the page that shows the same figures
   bands:   [ { grade: 'A+', min: 90, label: 'Excellent' }, … { grade: 'D', min: null, label: 'Very poor' } ],
   pillars: [ { id, label, short, weight, basis } ],               // base weights, sum 100
   penaltyCap: 5,
