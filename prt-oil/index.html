@@ -139,6 +139,7 @@ html.ui #loadingOverlay i { color: var(--mzo-muted); }
 }
 </style>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
+  <script src="/mzo_data_hub.js?v=91" defer></script>
 </head>
 <body class="p-4">
 <div id="loadingOverlay" style="
@@ -620,6 +621,10 @@ const scriptUrl = 'https://script.google.com/macros/s/AKfycbxhEdt6LWidyEwq0VUoHv
 const testRecordsCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRtpueyQwlq63VP2Tm2_vITV31jKBSceDGJQVJtYeqVVDBSg3QAHzLKrv60i6Z9oODXXzOE-fdfMb8b/pub?gid=906452022&single=true&output=csv";
 const ptrCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRtpueyQwlq63VP2Tm2_vITV31jKBSceDGJQVJtYeqVVDBSg3QAHzLKrv60i6Z9oODXXzOE-fdfMb8b/pub?gid=0&single=true&output=csv";
 
+// Sheets come from the VM mirror when there is one; after a save the page reads the source until the copy catches up.
+function sheetFetch(url) { return window.mzoMirror ? mzoMirror.fetch(url) : fetch(url); }
+function sheetsChanged() { return window.mzoMirror ? Promise.all([mzoMirror.fresh(testRecordsCsvUrl), mzoMirror.fresh(ptrCsvUrl)]).catch(function () {}) : Promise.resolve(); }
+
 let mapData = [], ptrData = [], testRecords = [];
 let selectedRecord = null; // will store clicked report
 
@@ -736,7 +741,7 @@ function formatDateToDDMMYYYY(dateString) {
 function fetchData() {
   return Promise.all([
     fetch(scriptUrl + '?action=getInitialData').then(res => res.json()),
-    fetch(testRecordsCsvUrl).then(res => res.text())
+    sheetFetch(testRecordsCsvUrl).then(res => res.text())
   ])
   .then(([initialData, csvText]) => {
     mapData = initialData.map;
@@ -913,7 +918,7 @@ detailHtml += `<div class="d-flex mb-1 align-items-start">
 }
 
 function loadPTRs() {
-  fetch(ptrCsvUrl)
+  sheetFetch(ptrCsvUrl)
     .then(res => res.text())
     .then(csv => {
       const lines = csv.trim().split("\n");
@@ -1176,7 +1181,8 @@ document.getElementById("confirmTestSubmit").addEventListener("click", function 
     
     showSuccessModal("Test Record Submitted Successfully!");
     pendingTestRecord = null;
-    fetchData(); // Re-fetch data to update reports table
+    if (window.mzoMirror) mzoMirror.refresh(['prt_transformers', 'prt_oil_tests'], 'PRT oil test saved');
+    sheetsChanged().then(fetchData); // Re-fetch data to update reports table
   })
   .catch(err => {
     setLoadingState(button, false);
@@ -1286,7 +1292,7 @@ document.getElementById("confirmPtrSubmit").addEventListener("click", function (
     document.getElementById("ptrForm").reset();
     
     // Refresh data to include new PTR
-    fetchData(); // This also calls populatePTRDropdown() and populateReportsTable()
+    sheetsChanged().then(fetchData); // This also calls populatePTRDropdown() and populateReportsTable()
     populateYearDropdown(); 
     
     showSuccessModal("PTR Added Successfully!", true);
@@ -1393,7 +1399,7 @@ check("Tan δ at 90 °C", getVal("Tan δ at 90 °C"), 0.015, "max");
 
 document.getElementById("alertButton").addEventListener("click", () => {
   // This uses the testRecordsCsvUrl directly, which is correct for this function
-  fetch(testRecordsCsvUrl)
+  sheetFetch(testRecordsCsvUrl)
     .then(res => res.text())
     .then(csv => {
       const lines = csv.split("\n");

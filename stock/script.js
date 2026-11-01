@@ -610,10 +610,14 @@ function parseMetadata(csvData) {
     });
 }
 
+// Materials sheet straight from the network: the VM mirror copy when there is one, else Google.
 function fetchMetadataFromNetwork() {
-    return new Promise((resolve, reject) => {
-        Papa.parse(METADATA_URL, {
-            download: true,
+    const sheet = typeof mzoMirror !== 'undefined' ? mzoMirror.fetch(METADATA_URL) : fetch(METADATA_URL);
+    return sheet.then(res => {
+        if (!res.ok) throw new Error('Sheet HTTP ' + res.status);
+        return res.text();
+    }).then(text => new Promise((resolve, reject) => {
+        Papa.parse(text, {
             header: true,
             complete: function (results) {
                 results.data.forEach(row => {
@@ -634,7 +638,7 @@ function fetchMetadataFromNetwork() {
                 reject(error);
             }
         });
-    });
+    }));
 }
 
 // Initialize

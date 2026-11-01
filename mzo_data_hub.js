@@ -4,6 +4,8 @@
 //   lazySync     multi-MB sheet: never re-downloaded just to find its version (needs a versionUrl or a forced refresh)
 //   originHeavy  body comes from meta.csvUrl (Google / Supabase Storage), not through Vercel
 //   versionUrl   small JSON with { version, csvUrl } (field names via versionField / csvUrlField)
+// Mirror mode (VM): when /api/data/manifest lists a dataset under dataHubKeys, its version comes from
+// the manifest and its body from /api/data/file/<key>; otherwise (or on any failure) the logic above.
 
 const DB_NAME = 'MZODashboardData';
 const DB_VERSION = 1;
@@ -74,12 +76,254 @@ const ROW_CHECKS = [
 ];
 const PROBE_MAX_BYTES = 2048;
 
+// Mirror mode (VM only): the server keeps a copy of every source and lists it in one manifest.
+// One manifest request per page (shared by the shell's frames through sessionStorage for 20 s)
+// replaces the per-dataset meta calls and Google probes. 204 or 404 means there is no mirror
+// (Vercel): remembered for 30 min, and everything works as before. Any other failure falls back
+// to the original source for that page or dataset.
+const MIRROR = {
+    manifestUrl: '/api/data/manifest',
+    fileUrl: '/api/data/file/',
+    shareKey: 'mzo_mirror_manifest',   // sessionStorage: { at, m }
+    offKey: 'mzo_mirror_off',          // localStorage: time of the last 404
+    holdPrefix: 'mzo_mirror_hold_',    // localStorage per dataset: { v, until }
+    ttlMs: 20000,
+    offMs: 30 * 60 * 1000,
+    holdMs: 20 * 60 * 1000,
+    timeoutMs: 5000
+};
+
+/** Same source URL however it is written: no #fragment, no single=true, no ?v= (Storage version), sorted query. */
+function mirrorNormUrl(url) {
+    try {
+        const u = new URL(String(url || '').trim(), location.href);
+        const pairs = [];
+        u.searchParams.forEach((v, k) => { if (k !== 'v' && !(k === 'single' && v === 'true')) pairs.push([k, v]); });
+        pairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0)));
+        const q = pairs.map((p) => encodeURIComponent(p[0]) + '=' + encodeURIComponent(p[1])).join('&');
+        return u.origin.toLowerCase() + u.pathname + (q ? '?' + q : '');
+    } catch (e) {
+        return '';
+    }
+}
+
 class DataHub {
     constructor() {
         this.db = null;
         this.initPromise = this._initDB();
         this.syncStatus = {}; // Tracks: 'idle', 'syncing', 'done', 'error'
         this.syncPromises = {}; // Tracks active fetch promises for individual datasets
+        this._recent = {}; // key -> { v, ver }: last large body read, so a repeat _peek skips IndexedDB
+        this._mirror = null; // { at, generatedAt, hub, urls, names }
+        this._mirrorPending = null;
+        this._mirrorFailAt = 0;
+    }
+
+    /* ---------- mirror manifest ---------- */
+
+    _mirrorIsOff() {
+        try {
+            const t = Number(localStorage.getItem(MIRROR.offKey) || 0);
+            if (t && Date.now() - t < MIRROR.offMs) return true;
+            if (t) localStorage.removeItem(MIRROR.offKey);
+        } catch (e) {}
+        return false;
+    }
+
+    _mirrorBuild(m, at) {
+        const hub = {};
+        const urls = {};
+        const names = {};
+        const sets = (m && m.datasets) || {};
+        Object.keys(sets).forEach((name) => {
+            const e = sets[name];
+            if (!e || e.sensitive || !e.version) return;
+            names[name] = String(e.version);
+            const hubUrl = e.dataHubUrl;
+            (Array.isArray(e.dataHubKeys) ? e.dataHubKeys : []).forEach((h) => {
+                if (hub[h]) return;
+                const u = typeof hubUrl === 'string' ? hubUrl : (hubUrl && hubUrl[h]);
+                hub[h] = { name, e, url: (typeof u === 'string' && u.charAt(0) === '/') ? u : MIRROR.fileUrl + encodeURIComponent(name) };
+            });
+            (Array.isArray(e.urls) ? e.urls : []).forEach((raw) => {
+                const n = mirrorNormUrl(raw);
+                if (n && !urls[n]) urls[n] = name;
+            });
+        });
+        return { at, generatedAt: (m && m.generatedAt) || '', hub, urls, names };
+    }
+
+    _mirrorShared(maxAge) {
+        try {
+            const s = JSON.parse(sessionStorage.getItem(MIRROR.shareKey) || 'null');
+            const age = s ? Date.now() - Number(s.at || 0) : Infinity;
+            if (s && s.m && age >= 0 && age < maxAge) return this._mirrorBuild(s.m, Number(s.at));
+        } catch (e) {}
+        return null;
+    }
+
+    _mirrorFetch() {
+        if (this._mirrorPending) return this._mirrorPending;
+        this._mirrorPending = (async () => {
+            try {
+                const res = await this._fetchWithTimeout(MIRROR.manifestUrl, {
+                    credentials: 'same-origin',
+                    cache: 'no-cache',
+                    headers: { Accept: 'application/json' }
+                }, MIRROR.timeoutMs);
+                // No mirror on this server: 204 (no console noise), or 404 where the route does not exist.
+                const off = () => {
+                    try { localStorage.setItem(MIRROR.offKey, String(Date.now())); sessionStorage.removeItem(MIRROR.shareKey); } catch (e) {}
+                    this._mirror = null;
+                    return null;
+                };
+                if (res.status === 204 || res.status === 404) return off();
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const m = await res.json();
+                if (m && m.mode === 'off') return off();
+                if (!m || typeof m.datasets !== 'object') throw new Error('not a manifest');
+                const at = Date.now();
+                try { sessionStorage.setItem(MIRROR.shareKey, JSON.stringify({ at, m })); } catch (e) {}
+                this._mirror = this._mirrorBuild(m, at);
+                return this._mirror;
+            } catch (e) {
+                this._mirrorFailAt = Date.now();
+                return null;
+            } finally {
+                this._mirrorPending = null;
+            }
+        })();
+        return this._mirrorPending;
+    }
+
+    /** The manifest index, or null when there is no mirror. fresh: a forced check wants a copy under 3 s old. */
+    async mirrorManifest(fresh) {
+        if (this._mirrorIsOff()) return null;
+        const maxAge = fresh ? 3000 : MIRROR.ttlMs;
+        const cur = this._mirror;
+        if (cur && Date.now() - cur.at < maxAge) return cur;
+        if (this._mirrorPending) return this._mirrorPending;
+        const shared = this._mirrorShared(maxAge);
+        if (shared) return (this._mirror = shared);
+        // The shell starts the manifest request before its frames load: wait for it.
+        try {
+            const p = window.parent !== window && window.parent.__mzoManifestPending;
+            if (p && typeof p.then === 'function') {
+                await p;
+                const again = this._mirrorShared(maxAge);
+                if (again) return (this._mirror = again);
+            }
+        } catch (e) {}
+        if (this._mirrorIsOff()) return null;
+        if (!fresh && Date.now() - this._mirrorFailAt < MIRROR.ttlMs) return null;
+        return this._mirrorFetch();
+    }
+
+    /** { name, e, url } for a DataHub key served by the mirror, else null. */
+    async _mirrorFor(key, fresh) {
+        const idx = await this.mirrorManifest(fresh);
+        const hit = idx && idx.hub[key];
+        if (!hit) return null;
+        const dataset = DATASETS.find((d) => d.key === key);
+        const ct = String(hit.e.contentType || '').toLowerCase();
+        // A JSON copy cannot stand in for a CSV body (or the reverse) unless the server rebuilds it.
+        if (dataset && ct && hit.url.indexOf(MIRROR.fileUrl) === 0) {
+            if ((dataset.type === 'json') !== (ct.indexOf('json') !== -1)) return null;
+        }
+        return hit;
+    }
+
+    /** The original source URL of a mirrored dataset (for forced refreshes and fallbacks). */
+    _mirrorOrigin(hit, dataset) {
+        const urls = (hit && Array.isArray(hit.e.urls)) ? hit.e.urls : [];
+        const abs = urls.filter((u) => /^https?:\/\//i.test(String(u)));
+        if (dataset && /^https?:\/\//i.test(dataset.url)) {
+            const want = mirrorNormUrl(dataset.url);
+            const same = abs.find((u) => mirrorNormUrl(u) === want);
+            if (same) return same;
+        }
+        return abs[0] || '';
+    }
+
+    // A forced refresh or a seeded upload is newer than the mirror's current copy: keep the
+    // local body until the mirror moves past that version (or the hold expires).
+    _mirrorHold(key, ver) {
+        try { localStorage.setItem(MIRROR.holdPrefix + key, JSON.stringify({ v: ver, until: Date.now() + MIRROR.holdMs })); } catch (e) {}
+    }
+
+    _mirrorHeld(key, ver) {
+        try {
+            const raw = localStorage.getItem(MIRROR.holdPrefix + key);
+            if (!raw) return false;
+            const h = JSON.parse(raw);
+            if (h && h.v === ver && Date.now() < h.until) return true;
+            localStorage.removeItem(MIRROR.holdPrefix + key);
+        } catch (e) {}
+        return false;
+    }
+
+    /**
+     * The page wrote these sheets itself (Apps Script), so the server cannot know: ask it to sync
+     * them now. Mirror mode only (Vercel never sees the call); never rejects, never waits on the UI.
+     */
+    async mirrorRefresh(keys, reason) {
+        try {
+            if (!(await this.mirrorManifest(false))) return;
+            await fetch('/api/data/refresh', {
+                method: 'POST',
+                credentials: 'same-origin',
+                keepalive: true,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keys: [].concat(keys || []), reason: String(reason || '').slice(0, 200) })
+            });
+        } catch (e) {}
+    }
+
+    /** { mode: 'mirror' | 'origin', generatedAt } for this page (one manifest request at most). */
+    async mirrorStatus() {
+        const idx = await this.mirrorManifest(false);
+        return idx ? { mode: 'mirror', generatedAt: idx.generatedAt } : { mode: 'origin', generatedAt: '' };
+    }
+
+    /** Mirror URL for an exact source URL, or the URL unchanged. */
+    async mirrorUrl(url) {
+        const n = mirrorNormUrl(url);
+        if (!n || !/^https?:\/\//i.test(String(url || '').trim())) return url;
+        const idx = await this.mirrorManifest(false);
+        const name = idx && idx.urls[n];
+        if (!name || this._mirrorHeld('url:' + name, idx.names[name])) return url;
+        return MIRROR.fileUrl + encodeURIComponent(name);
+    }
+
+    /**
+     * After a page writes a sheet itself (Apps Script), read that sheet from the source until the
+     * mirror's copy changes (at most 2 h), so the page shows its own write at once.
+     */
+    async mirrorFresh(url) {
+        const idx = await this.mirrorManifest(true);
+        const name = idx && idx.urls[mirrorNormUrl(url)];
+        if (!name) return;
+        try {
+            localStorage.setItem(MIRROR.holdPrefix + 'url:' + name, JSON.stringify({ v: idx.names[name], until: Date.now() + 2 * 3600 * 1000 }));
+        } catch (e) {}
+    }
+
+    /** fetch() that reads the mirror copy of a source URL when there is one, else (or on failure) the source. */
+    async mirrorFetch(url, init) {
+        const mapped = await this.mirrorUrl(url);
+        if (mapped !== url) {
+            const opts = Object.assign({}, init || {});
+            opts.credentials = 'same-origin';
+            // The copy carries an ETag, so the browser cache can revalidate it instead of re-downloading.
+            if (opts.cache === 'no-store' || opts.cache === 'reload') opts.cache = 'no-cache';
+            try {
+                const res = await fetch(mapped, opts);
+                if (res.ok) return res;
+                await this._cancelBody(res);
+            } catch (e) {}
+            console.warn('[DataHub] Mirror copy failed, reading the source:', url);
+        }
+        return fetch(url, init);
     }
 
     resetVersionChecks() {
@@ -139,17 +383,36 @@ class DataHub {
     // Save data to cache
     async set(key, data) {
         await this.initPromise;
+        delete this._recent[key];
         if (this.useMemoryFallback) {
             this.memoryCache[key] = data;
             return;
         }
+        // Resolve once the write is committed, so a version written afterwards never points at an older body.
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
             const request = store.put(data, key);
 
-            request.onsuccess = () => resolve();
+            transaction.oncomplete = () => resolve();
             request.onerror = (e) => reject(e.target.error);
+            transaction.onabort = () => reject(transaction.error || new Error('IndexedDB write aborted'));
+        });
+    }
+
+    /** True when IndexedDB holds a body for key, without reading (and copying) the body. */
+    async _hasStored(key) {
+        await this.initPromise;
+        if (this.useMemoryFallback) return this._hasBody(this.memoryCache[key]);
+        if (!this.db) return false;
+        return new Promise((resolve) => {
+            try {
+                const request = this.db.transaction([STORE_NAME], 'readonly').objectStore(STORE_NAME).count(key);
+                request.onsuccess = () => resolve(request.result > 0);
+                request.onerror = () => resolve(false);
+            } catch (e) {
+                resolve(false);
+            }
         });
     }
 
@@ -340,17 +603,34 @@ class DataHub {
     }
 
     // IndexedDB read that must not wait on the in-flight retry (avoids deadlock)
+    // A large text body read in the last 15 s is handed out again while its stored version is
+    // unchanged: UI.load reads a body, revalidates, then reads it again, and the second copy of a
+    // multi-MB string is pure cost. Strings are immutable, so sharing one is safe.
     async _peek(key) {
         await this.initPromise;
         if (this.useMemoryFallback) {
             return this.memoryCache[key];
         }
         if (!this.db) return undefined;
+        const hit = this._recent[key];
+        const ver = this._readStoredVersion(key);
+        if (hit) {
+            if (ver && hit.ver === ver) return hit.v;
+            delete this._recent[key];
+        }
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([STORE_NAME], 'readonly');
             const store = transaction.objectStore(STORE_NAME);
             const request = store.get(key);
-            request.onsuccess = () => resolve(request.result);
+            request.onsuccess = () => {
+                const v = request.result;
+                if (ver && typeof v === 'string' && v.length > 65536) {
+                    const entry = { v, ver };
+                    this._recent[key] = entry;
+                    setTimeout(() => { if (this._recent[key] === entry) delete this._recent[key]; }, 15000);
+                }
+                resolve(v);
+            };
             request.onerror = (e) => reject(e.target.error);
         });
     }
@@ -383,6 +663,11 @@ class DataHub {
         await this.set(key, data);
         if (version) this._writeStoredVersion(key, String(version));
         this.syncStatus[key] = 'done';
+        // An upload is newer than the mirror's copy until the mirror syncs it: keep this body.
+        try {
+            const hit = await this._mirrorFor(key, true);
+            if (hit) this._mirrorHold(key, 'v:' + hit.e.version);
+        } catch (e) {}
         return true;
     }
 
@@ -404,6 +689,7 @@ class DataHub {
         await this.initPromise;
         this.syncStatus[key] = 'idle';
         delete this.syncPromises[key];
+        delete this._recent[key];
         if (this.useMemoryFallback) {
             delete this.memoryCache[key];
             return;
@@ -450,143 +736,26 @@ class DataHub {
         this.syncStatus[key] = 'syncing';
         this.syncPromises[key] = (async () => {
             try {
-                let remoteVer = '';
-                let fetchUrl = dataset.url;
-                let metaJson = null;
-                const peeked = await this._peek(key);
-                const hasBody = this._hasBody(peeked);
-                const localVer = this._usableVersion(this._readStoredVersion(key));
-
-                if (dataset.versionUrl) {
-                    try {
-                        metaJson = await this._getDatasetMeta(dataset);
-                    } catch (e) {}
-                    remoteVer = String(
-                        (metaJson && dataset.versionField && metaJson[dataset.versionField]) ||
-                        (metaJson && metaJson.version) ||
-                        ''
-                    ).trim();
-                    if (remoteVer) remoteVer = this._usableVersion('v:' + remoteVer);
-                    const field = dataset.csvUrlField || 'csvUrl';
-                    if (metaJson && metaJson[field]) fetchUrl = String(metaJson[field]);
-                } else if (!force && hasBody) {
-                    remoteVer = this._usableVersion(await this._probeRemoteVersion(fetchUrl));
-                } else if (forceCheck && hasBody) {
-                    remoteVer = this._usableVersion(await this._probeRemoteVersion(fetchUrl));
-                } else if (!hasBody) {
-                    remoteVer = this._usableVersion(await this._probeRemoteVersion(fetchUrl));
-                }
-
-                let expectedRows = 0;
-                if (dataset.key.startsWith('CACHE_WITHHELD')) {
-                    expectedRows = Number(
-                        (metaJson && metaJson.meta && metaJson.meta.withheldRows) ||
-                        (metaJson && metaJson.withheldRows) ||
-                        0
-                    );
-                }
-                let cachedRows = 0;
-                if (typeof peeked === 'string') {
-                    cachedRows = Math.max(0, peeked.split(/\r?\n/).filter((l) => l.trim().length).length - 1);
-                } else if (Array.isArray(peeked)) {
-                    cachedRows = peeked.length;
-                }
-                const rowLooksComplete = !expectedRows || cachedRows >= expectedRows * 0.95;
-
-                if (!force && hasBody && remoteVer && localVer && this._versionsMatch(localVer, remoteVer) && rowLooksComplete) {
-                    if (localVer !== remoteVer) this._writeStoredVersion(key, remoteVer);
-                    this._writeFetchedDay(key);
-                    this.syncStatus[key] = 'done';
-                    return 'unchanged';
-                }
-
-                // Lazy dumps (Meter, CAPEX): never full-GET without a cheap version.
-                // Clerk sheets (Loss, Collection, …): same-day skip on page open;
-                // a forced refresh or a new day still downloads so paste-updates appear.
-                if (!force && hasBody && !remoteVer) {
-                    if (dataset.lazySync) {
+                const hit = await this._mirrorFor(key, forceCheck);
+                if (hit) {
+                    const got = await this._syncFromMirror(dataset, key, hit, force);
+                    if (got) {
                         this.syncStatus[key] = 'done';
-                        return 'unchanged';
-                    }
-                    if (!forceCheck && localVer && this._readFetchedDay(key) === new Date().toDateString()) {
-                        this.syncStatus[key] = 'done';
-                        return 'unchanged';
+                        return got;
                     }
                 }
-
-                let allowConditional = !force && !!localVer;
-                let response = null;
-                for (let attempt = 0; attempt < 2; attempt++) {
-                    const headers = {};
-                    const stored = this._readStoredVersion(key);
-                    if (allowConditional && stored && !/docs\.google\.com|spreadsheets\.google\.com/i.test(fetchUrl)) {
-                        if (stored.indexOf('m:') === 0) {
-                            const lm = stored.slice(2).split('|')[0];
-                            if (lm) headers['If-Modified-Since'] = lm;
-                        } else if (stored.indexOf('f:') !== 0 && stored.indexOf('l:') !== 0) {
-                            const tag = stored.replace(/^[ev]:/, '').replace(/"/g, '');
-                            if (tag) headers['If-None-Match'] = '"' + tag + '"';
-                        }
-                    }
-                    response = await this._fetchWithTimeout(fetchUrl, {
-                        credentials: /\/api\//.test(fetchUrl) ? 'same-origin' : 'omit',
-                        cache: /docs\.google\.com|spreadsheets\.google\.com|googleusercontent\.com/i.test(fetchUrl) ? 'no-store' : 'default',
-                        headers
-                    }, dataset.lazySync ? 180000 : FETCH_TIMEOUT_MS);
-                    if (response.status !== 304) break;
-                    const cached = await this._peek(key);
-                    if (this._hasBody(cached)) {
-                        const keep = this._usableVersion(remoteVer)
-                            || this._usableVersion(this._versionFromHeaders(response))
-                            || this._usableVersion(stored);
-                        if (keep) this._writeStoredVersion(key, keep);
-                        this._writeFetchedDay(key);
-                        this.syncStatus[key] = 'done';
-                        return 'unchanged';
-                    }
-                    allowConditional = false;
-                }
-                if (!response || !response.ok) {
-                    throw new Error(`HTTP ${response ? response.status : 0}`);
-                }
-
-                let data;
-                if (dataset.type === 'json') data = await response.json();
-                else data = await response.text();
-                const headerVer = this._usableVersion(this._versionFromHeaders(response));
-                const nextVer = this._usableVersion(remoteVer) || headerVer || this._fingerprint(data);
-                if (!force && hasBody && localVer && this._versionsMatch(localVer, nextVer)) {
-                    this._writeStoredVersion(key, nextVer);
-                    this._writeFetchedDay(key);
+                try {
+                    return await this._syncFromOrigin(dataset, key, force, forceCheck, hit ? this._mirrorOrigin(hit, dataset) : '');
+                } catch (err) {
+                    if (!(hit && force)) throw err;
+                    // The source is unreachable: the mirror's copy beats an empty cache.
+                    console.warn(`[DataHub] Source refresh failed for ${key}, using the mirror copy:`, err.message || err);
+                    try { localStorage.removeItem(MIRROR.holdPrefix + key); } catch (e) {}
+                    const got = await this._syncFromMirror(dataset, key, hit, false);
+                    if (!got) throw err;
                     this.syncStatus[key] = 'done';
-                    return 'unchanged';
+                    return got;
                 }
-                if (!force && hasBody && this._fingerprint(peeked) === this._fingerprint(data)) {
-                    this._writeStoredVersion(key, nextVer);
-                    this._writeFetchedDay(key);
-                    this.syncStatus[key] = 'done';
-                    return 'unchanged';
-                }
-                this._writeStoredVersion(key, nextVer);
-
-                // NSC / Withheld: refuse to cache a truncated CSV (stale sheet / partial response)
-                const rowCheck = ROW_CHECKS.find((c) => dataset.key.startsWith(c.prefix));
-                if (rowCheck && typeof data === 'string') {
-                    const rowCount = Math.max(0, data.split(/\r?\n/).filter((l) => l.trim().length).length - 1);
-                    const expected = Number(
-                        rowCheck.headers.map((h) => response.headers.get(h)).find(Boolean) ||
-                        (metaJson && metaJson.meta && metaJson.meta[rowCheck.metaField]) ||
-                        0
-                    );
-                    if (expected > 0 && rowCount < expected * 0.95) {
-                        throw new Error(`${rowCheck.label} incomplete: got ${rowCount} rows, server has ${expected}`);
-                    }
-                }
-                await this.set(dataset.key, data);
-                await this._invalidateCompanions(dataset.key);
-                this._writeFetchedDay(key);
-                this.syncStatus[key] = 'done';
-                return 'updated';
             } catch (err) {
                 console.warn(`[DataHub] Fetch optional dataset failed for ${key}:`, err.message || err);
                 this.syncStatus[key] = 'error';
@@ -598,9 +767,225 @@ class DataHub {
 
         return this.syncPromises[key];
     }
+
+    /**
+     * Mirror mode: the manifest version is the dataset version, so an unchanged dataset costs no
+     * request and no IndexedDB read. Returns 'unchanged' | 'updated', or null to use the source.
+     */
+    async _syncFromMirror(dataset, key, hit, force) {
+        const remoteVer = 'v:' + String(hit.e.version);
+        if (force) {
+            // Right after a write the mirror may still hold the previous copy: read the source,
+            // and keep that body until the mirror has moved past this version.
+            this._mirrorHold(key, remoteVer);
+            return null;
+        }
+        const localVer = this._readStoredVersion(key);
+        if ((localVer === remoteVer || this._mirrorHeld(key, remoteVer)) && await this._hasStored(key)) {
+            return 'unchanged';
+        }
+        let res;
+        try {
+            // no-cache: the browser revalidates its own copy by ETag (a 304 costs no body).
+            res = await this._fetchWithTimeout(hit.url, { credentials: 'same-origin', cache: 'no-cache' },
+                dataset.lazySync ? 180000 : FETCH_TIMEOUT_MS);
+        } catch (e) {
+            console.warn(`[DataHub] Mirror copy unreachable for ${key}, reading the source:`, e.message || e);
+            return null;
+        }
+        const ct = String(res.headers.get('Content-Type') || '').toLowerCase();
+        if (!res.ok || ct.indexOf('text/html') !== -1) {
+            await this._cancelBody(res);
+            console.warn(`[DataHub] Mirror copy failed for ${key} (HTTP ${res.status}), reading the source`);
+            return null;
+        }
+        let data;
+        try {
+            data = dataset.type === 'json' ? await res.json() : await res.text();
+        } catch (e) {
+            console.warn(`[DataHub] Mirror copy unreadable for ${key}, reading the source:`, e.message || e);
+            return null;
+        }
+        const rowCheck = ROW_CHECKS.find((c) => dataset.key.startsWith(c.prefix));
+        if (rowCheck && typeof data === 'string') {
+            const expected = Number(rowCheck.headers.map((h) => res.headers.get(h)).find(Boolean) || 0);
+            const rowCount = expected > 0 ? Math.max(0, data.split(/\r?\n/).filter((l) => l.trim().length).length - 1) : 0;
+            if (expected > 0 && rowCount < expected * 0.95) {
+                console.warn(`[DataHub] Mirror copy of ${rowCheck.label} incomplete (${rowCount} of ${expected} rows), reading the source`);
+                return null;
+            }
+        }
+        if (await this._hasStored(key)) {
+            const peeked = await this._peek(key);
+            if (this._hasBody(peeked) && this._fingerprint(peeked) === this._fingerprint(data)) {
+                this._writeStoredVersion(key, remoteVer);
+                return 'unchanged';
+            }
+        }
+        await this.set(key, data);
+        this._writeStoredVersion(key, remoteVer);
+        try { localStorage.removeItem(MIRROR.holdPrefix + key); } catch (e) {}
+        await this._invalidateCompanions(key);
+        return 'updated';
+    }
+
+    /** Today's logic: version from /api/.../meta or a HEAD / Range probe, body from the source. */
+    async _syncFromOrigin(dataset, key, force, forceCheck, originUrl) {
+        let remoteVer = '';
+        let fetchUrl = dataset.url;
+        let metaJson = null;
+        const peeked = await this._peek(key);
+        const hasBody = this._hasBody(peeked);
+        const localVer = this._usableVersion(this._readStoredVersion(key));
+
+        if (dataset.versionUrl) {
+            try {
+                metaJson = await this._getDatasetMeta(dataset);
+            } catch (e) {}
+            remoteVer = String(
+                (metaJson && dataset.versionField && metaJson[dataset.versionField]) ||
+                (metaJson && metaJson.version) ||
+                ''
+            ).trim();
+            if (remoteVer) remoteVer = this._usableVersion('v:' + remoteVer);
+            const field = dataset.csvUrlField || 'csvUrl';
+            if (metaJson && metaJson[field]) fetchUrl = String(metaJson[field]);
+            // On the VM the meta may point at the mirror copy; a refresh or fallback wants the source.
+            if (originUrl && fetchUrl.indexOf(MIRROR.fileUrl) === 0) fetchUrl = originUrl;
+        } else if (!force && hasBody) {
+            remoteVer = this._usableVersion(await this._probeRemoteVersion(fetchUrl));
+        } else if (forceCheck && hasBody) {
+            remoteVer = this._usableVersion(await this._probeRemoteVersion(fetchUrl));
+        } else if (!hasBody) {
+            remoteVer = this._usableVersion(await this._probeRemoteVersion(fetchUrl));
+        }
+
+        let expectedRows = 0;
+        if (dataset.key.startsWith('CACHE_WITHHELD')) {
+            expectedRows = Number(
+                (metaJson && metaJson.meta && metaJson.meta.withheldRows) ||
+                (metaJson && metaJson.withheldRows) ||
+                0
+            );
+        }
+        // Counting rows splits the whole body: only when there is a row count to compare with.
+        let cachedRows = 0;
+        if (expectedRows && typeof peeked === 'string') {
+            cachedRows = Math.max(0, peeked.split(/\r?\n/).filter((l) => l.trim().length).length - 1);
+        } else if (Array.isArray(peeked)) {
+            cachedRows = peeked.length;
+        }
+        const rowLooksComplete = !expectedRows || cachedRows >= expectedRows * 0.95;
+
+        if (!force && hasBody && remoteVer && localVer && this._versionsMatch(localVer, remoteVer) && rowLooksComplete) {
+            if (localVer !== remoteVer) this._writeStoredVersion(key, remoteVer);
+            this._writeFetchedDay(key);
+            this.syncStatus[key] = 'done';
+            return 'unchanged';
+        }
+
+        // Lazy dumps (Meter, CAPEX): never full-GET without a cheap version.
+        // Clerk sheets (Loss, Collection, …): same-day skip on page open;
+        // a forced refresh or a new day still downloads so paste-updates appear.
+        if (!force && hasBody && !remoteVer) {
+            if (dataset.lazySync) {
+                this.syncStatus[key] = 'done';
+                return 'unchanged';
+            }
+            if (!forceCheck && localVer && this._readFetchedDay(key) === new Date().toDateString()) {
+                this.syncStatus[key] = 'done';
+                return 'unchanged';
+            }
+        }
+
+        let allowConditional = !force && !!localVer;
+        let response = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+            const headers = {};
+            const stored = this._readStoredVersion(key);
+            if (allowConditional && stored && !/docs\.google\.com|spreadsheets\.google\.com/i.test(fetchUrl)) {
+                if (stored.indexOf('m:') === 0) {
+                    const lm = stored.slice(2).split('|')[0];
+                    if (lm) headers['If-Modified-Since'] = lm;
+                } else if (stored.indexOf('f:') !== 0 && stored.indexOf('l:') !== 0) {
+                    const tag = stored.replace(/^[ev]:/, '').replace(/"/g, '');
+                    if (tag) headers['If-None-Match'] = '"' + tag + '"';
+                }
+            }
+            response = await this._fetchWithTimeout(fetchUrl, {
+                credentials: /\/api\//.test(fetchUrl) ? 'same-origin' : 'omit',
+                cache: /docs\.google\.com|spreadsheets\.google\.com|googleusercontent\.com/i.test(fetchUrl) ? 'no-store' : 'default',
+                headers
+            }, dataset.lazySync ? 180000 : FETCH_TIMEOUT_MS);
+            if (response.status !== 304) break;
+            const cached = await this._peek(key);
+            if (this._hasBody(cached)) {
+                const keep = this._usableVersion(remoteVer)
+                    || this._usableVersion(this._versionFromHeaders(response))
+                    || this._usableVersion(stored);
+                if (keep) this._writeStoredVersion(key, keep);
+                this._writeFetchedDay(key);
+                this.syncStatus[key] = 'done';
+                return 'unchanged';
+            }
+            allowConditional = false;
+        }
+        if (!response || !response.ok) {
+            throw new Error(`HTTP ${response ? response.status : 0}`);
+        }
+
+        let data;
+        if (dataset.type === 'json') data = await response.json();
+        else data = await response.text();
+        const headerVer = this._usableVersion(this._versionFromHeaders(response));
+        const nextVer = this._usableVersion(remoteVer) || headerVer || this._fingerprint(data);
+        if (!force && hasBody && localVer && this._versionsMatch(localVer, nextVer)) {
+            this._writeStoredVersion(key, nextVer);
+            this._writeFetchedDay(key);
+            this.syncStatus[key] = 'done';
+            return 'unchanged';
+        }
+        if (!force && hasBody && this._fingerprint(peeked) === this._fingerprint(data)) {
+            this._writeStoredVersion(key, nextVer);
+            this._writeFetchedDay(key);
+            this.syncStatus[key] = 'done';
+            return 'unchanged';
+        }
+
+        // NSC / Withheld: refuse to cache a truncated CSV (stale sheet / partial response)
+        const rowCheck = ROW_CHECKS.find((c) => dataset.key.startsWith(c.prefix));
+        if (rowCheck && typeof data === 'string') {
+            const expected = Number(
+                rowCheck.headers.map((h) => response.headers.get(h)).find(Boolean) ||
+                (metaJson && metaJson.meta && metaJson.meta[rowCheck.metaField]) ||
+                0
+            );
+            const rowCount = expected > 0 ? Math.max(0, data.split(/\r?\n/).filter((l) => l.trim().length).length - 1) : 0;
+            if (expected > 0 && rowCount < expected * 0.95) {
+                throw new Error(`${rowCheck.label} incomplete: got ${rowCount} rows, server has ${expected}`);
+            }
+        }
+        await this.set(dataset.key, data);
+        // The version goes in after the body, so a refused or failed write is retried next time.
+        this._writeStoredVersion(key, nextVer);
+        await this._invalidateCompanions(dataset.key);
+        this._writeFetchedDay(key);
+        this.syncStatus[key] = 'done';
+        return 'updated';
+    }
 }
 
 const mzoDataHub = new DataHub();
 window.mzoDataHub = mzoDataHub;
 
 window.MZO_DATASETS = DATASETS;
+
+// Pages that fetch a sheet themselves: mzoMirror(url) → the mirror URL (or url unchanged);
+// mzoMirror.fetch(url, init) reads the mirror copy and falls back to the source on any failure;
+// mzoMirror.fresh(url) after the page itself wrote that sheet (read the source until the copy changes);
+// mzoMirror.refresh(keys, reason) asks the VM to sync those mirror keys now (fire and forget).
+window.mzoMirror = function (url) { return mzoDataHub.mirrorUrl(url); };
+window.mzoMirror.fetch = function (url, init) { return mzoDataHub.mirrorFetch(url, init); };
+window.mzoMirror.fresh = function (url) { return mzoDataHub.mirrorFresh(url); };
+window.mzoMirror.refresh = function (keys, reason) { return mzoDataHub.mirrorRefresh(keys, reason); };
+window.mzoMirror.status = function () { return mzoDataHub.mirrorStatus(); };
