@@ -131,7 +131,7 @@ On the VM the app serves report data from local copies instead of Google and Sup
 | `GET /api/data/manifest` | The manifest without sensitive entries and without URLs that carry keys. Read from disk, cached by mtime; `ETag` + 304, `Cache-Control: private, no-cache`, br/gzip by `Accept-Encoding`. Datasets being refreshed after a write are left out, so clients load them live meanwhile. | 204 (also before the first manifest exists) |
 | `GET /api/data/file/:key` | Streams the snapshot (or its `.br`/`.gz` copy) from an open file through two reused 64 KB buffers. `ETag` = manifest version, 304 on `If-None-Match`, `Content-Type` from the manifest, `Cache-Control: private, no-cache`. 404 for unknown, sensitive or malformed keys. | 404 |
 | `GET /api/data/status` | `{ mode, generatedAt, datasets, ageSeconds, refreshing, lastRefresh }` | 404 |
-| `POST /api/data/refresh` | `{ keys, reason }`: the browser asks to refresh a sheet it wrote itself through Apps Script. Allow-list: `nsc_followups`, `dtr_peak_load`, `prt_oil_tests`, `dd_visit`; 30 per user per 10 min. | 404 |
+| `POST /api/data/refresh` | `{ keys, reason }`: the browser asks to refresh a sheet it wrote itself through Apps Script. Allow-list: `nsc_followups`, `dtr_peak_load`, `prt_transformers`, `prt_oil_tests` (a PRT save writes both); 30 per user per 10 min. | 404 |
 
 `requireAuth` lets `*.json`/`*.js` paths through without a session, so these routes check `req.user` themselves. `lib/mirror.js` is in `PRIVATE_PATH` and is never served.
 
