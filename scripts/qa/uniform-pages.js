@@ -369,10 +369,11 @@ async function timing(pw) {
   const browser = await pw.chromium.launch({ channel: process.env.QA_CHANNEL || 'chrome', headless: true });
   const med = (xs) => { const s = xs.filter((x) => x != null).sort((a, b) => a - b); return s.length ? Math.round(s[Math.floor((s.length - 1) / 2)]) : null; };
   const rows = [];
+  // Old and new runs alternate (old, new, old, new, …) so both see the same machine load.
   for (const p of pages) {
-    for (const which of ['old', 'new']) {
-      const cold = [], warm = [], bytes = [];
-      for (let i = 0; i < runsN; i++) {
+    const acc = { old: { cold: [], warm: [], bytes: [] }, new: { cold: [], warm: [], bytes: [] } };
+    for (let i = 0; i < runsN; i++) {
+      for (const which of ['old', 'new']) {
         const ctx = await newContext(browser, bases[which], PROFILES.admin, route, { cpu, table: PAGES[p].fdp || PAGES[p].drillTable });
         const page = await ctx.newPage();
         if (cpu > 1) { const cdp = await ctx.newCDPSession(page); await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu }); }
@@ -382,11 +383,14 @@ async function timing(pw) {
           await page.goto(bases[which] + '/' + PAGES[p].url, { waitUntil: 'domcontentloaded' });
           await page.waitForFunction(() => window.__fdp != null, null, { timeout: 180000 }).catch(() => {});
           const ms = await page.evaluate(() => window.__fdp);
-          (pass === 'cold' ? cold : warm).push(ms);
-          if (pass === 'cold') { bytes.push(got); await page.waitForTimeout(2500); } // let background checks finish
+          acc[which][pass].push(ms);
+          if (pass === 'cold') { acc[which].bytes.push(got); await page.waitForTimeout(2500); } // let background checks finish
         }
         await ctx.close();
       }
+    }
+    for (const which of ['old', 'new']) {
+      const { cold, warm, bytes } = acc[which];
       rows.push({ page: p, which, base: bases[which], cold: med(cold), warm: med(warm), coldAll: cold.map(Math.round), warmAll: warm.map(Math.round), dataBytes: med(bytes) });
       console.log(`[timing] ${p} ${which}: first data paint cold ${med(cold)} ms, warm ${med(warm)} ms (runs ${cold.map(Math.round).join('/')} · ${warm.map(Math.round).join('/')}), data bytes ${med(bytes)}${cpu > 1 ? ', cpu x' + cpu : ''}`);
     }
