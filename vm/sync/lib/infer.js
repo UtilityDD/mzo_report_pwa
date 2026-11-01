@@ -98,25 +98,37 @@ function letterName(index) {
     return U.baseName('', index);
 }
 
+const NULLABLE = new Set(['number', 'bool']); // the types PocketBase cannot leave empty
+
 /**
  * Converts spool rows to PocketBase values through lib/uniform.js build(): each chunk of rows is
  * built header-less with every column's type pinned, so the values are exactly uniform's.
  * @param {{name, index, type, date_order?, raw_name?}[]} columns from buildColumns()
+ * @param {object} [oldTypes] column name → type of the field the portal still shows while the
+ *   column's type changes (collections.js staging). When that old field is a number or bool, the
+ *   row's _nulls describes it, as stored, until the swap; such rows are counted in `provisional`.
  */
 class Converter {
-    constructor(columns) {
+    constructor(columns, oldTypes) {
         this.columns = columns;
+        const pin = (c, type) => (type === 'date' ? { type: 'date', order: c.date_order || 'dmy' } : { type });
         const fields = {};
-        for (const c of columns) {
-            fields[letterName(c.index)] = c.type === 'date' ? { type: 'date', order: c.date_order || 'dmy' } : { type: c.type };
-        }
+        for (const c of columns) fields[letterName(c.index)] = pin(c, c.type);
         this.opts = { offices: null, schema: { header: false, keep: 'pinned', offices: false, fields } };
+        this.shadow = null; // staged columns whose shown (old) field is a number or bool
+        const old = {};
+        for (const c of columns) {
+            const t = oldTypes && oldTypes[c.name];
+            if (t && t !== c.type && NULLABLE.has(t)) old[letterName(c.index)] = pin(c, t);
+        }
+        if (Object.keys(old).length) this.shadow = { offices: null, schema: { header: false, keep: 'pinned', offices: false, fields: old } };
     }
 
     /**
      * @param {any[][]} rows spool rows (raw cell values by source column index)
-     * @returns {{ values: any[][], raw: string[][], nulls: (string[]|null)[] }} per column: PocketBase
-     *   values and _raw texts ('' where the value parsed); per row: the number/bool fields that are empty
+     * @returns {{ values: any[][], raw: string[][], nulls: (string[]|null)[], provisional: Uint8Array }}
+     *   per column: PocketBase values and _raw texts ('' where the value parsed); per row: the
+     *   number/bool fields that are empty, and whether that list is the staged one (old fields)
      */
     convert(rows) {
         const res = U.build(rows, this.opts);
@@ -127,8 +139,25 @@ class Converter {
         const nulls = new Array(n).fill(null);
         const values = [];
         const raw = [];
+        let shadow = null;
+        if (this.shadow) {
+            const sres = U.build(rows, this.shadow);
+            shadow = new Map();
+            sres.columns.forEach((c, i) => { if (!c.raw_of) shadow.set(c.name, sres.data[i]); });
+        }
+        const provisional = new Uint8Array(n); // rows whose _nulls differs from the new types' _nulls
         for (const c of this.columns) {
             const name = letterName(c.index);
+            const old = shadow && shadow.get(name);
+            if (old) {
+                // The portal still shows the old field: list the column when its old value is empty.
+                const isNew = NULLABLE.has(c.type) ? (r) => res.data[at.get(name)][r] === null : () => false;
+                for (let r = 0; r < n; r++) {
+                    const was = old[r] === null;
+                    if (was) (nulls[r] || (nulls[r] = [])).push(c.name);
+                    if (was !== isNew(r)) provisional[r] = 1;
+                }
+            }
             const data = res.data[at.get(name)];
             const ri = at.get('\u0000' + name);
             if (ri !== undefined && !c.raw_name) {
@@ -141,7 +170,7 @@ class Converter {
                     const v = data[r];
                     if (v === null) {
                         out[r] = zero;
-                        (nulls[r] || (nulls[r] = [])).push(c.name);
+                        if (!old) (nulls[r] || (nulls[r] = [])).push(c.name);
                     } else out[r] = v;
                 }
             } else if (c.type === 'date') {
@@ -152,7 +181,7 @@ class Converter {
             values.push(out);
             if (c.raw_name) raw.push(ri === undefined ? null : res.data[ri]);
         }
-        return { values, raw, nulls };
+        return { values, raw, nulls, provisional };
     }
 }
 

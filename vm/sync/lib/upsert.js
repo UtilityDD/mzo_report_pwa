@@ -79,10 +79,12 @@ function rowKeyFn(columns, primaryKey, warnings) {
  *                   changes, collections.js); default: the column name
  * @param force      write every row, even when its _hash is unchanged (a field was added that the
  *                   existing rows have no value in yet)
+ * @param oldTypes   staged column → type of the old field the portal shows until the swap; _nulls
+ *                   describes that field meanwhile (stats.provisional rows: the next run tidies them)
  * @returns {Promise<{total, inserted, updated, deleted, unchanged, failed, failures: string[], batches, writeMs}>}
  */
-async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batchSize, syncedAt, signal, warnings, log, enrich, writeName, force }) {
-    const stats = { total: 0, inserted: 0, updated: 0, deleted: 0, unchanged: 0, failed: 0, failures: [], batches: 0, writeMs: 0, loadMs: 0, duplicateKeys: 0 };
+async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batchSize, syncedAt, signal, warnings, log, enrich, writeName, force, oldTypes }) {
+    const stats = { total: 0, inserted: 0, updated: 0, deleted: 0, unchanged: 0, failed: 0, failures: [], batches: 0, writeMs: 0, loadMs: 0, duplicateKeys: 0, provisional: 0 };
     const base = `/api/collections/${collection}/records`;
     const t0 = Date.now();
 
@@ -141,7 +143,7 @@ async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batch
         index.seen.fill(0);
     }
 
-    const conv = new Converter(columns);
+    const conv = new Converter(columns, oldTypes);
     const target = columns.map((c) => (writeName ? writeName(c.name) : c.name));
     const rawTarget = columns.map((c) => (c.raw_name ? (writeName ? writeName(c.raw_name) : c.raw_name) : null));
     const rawSlot = new Array(columns.length); // column → its index in Converter's raw list, or -1
@@ -180,6 +182,7 @@ async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batch
             // hash, so a row without any keeps the hash it had before _nulls existed.
             const nulls = cv.nulls[r];
             record[NULLS_FIELD] = nulls;
+            if (cv.provisional[r]) stats.provisional++;
             if (nulls) typed.push(nulls);
             const hash = sha1(stableStringify(typed));
             const hashNum = RowIndex.hashNum(hash);

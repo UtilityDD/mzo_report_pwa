@@ -78,14 +78,14 @@ const order = (list) => list.map((f) => f.name).join(',');
 /**
  * Make collection `name` ready for this run's rows (step 1 above).
  * @param {{name, type}[]} columns data fields, _raw companions and office fields, in order
- * @returns {Promise<{ created, altered, staged: string[], dropped: string[], force: boolean,
+ * @returns {Promise<{ created, altered, staged: string[], dropped: string[], oldTypes, force: boolean,
  *   writeName(name) → field to write the column to, finish() → Promise<{altered}> }>}
  *   force: a field was added that existing rows have no value in yet, so every row must be written.
  */
 async function ensureCollection(pb, name, columns) {
     const wanted = columns.map(dataFieldDef).concat(SYSTEM_DEFS);
     const existing = await pb.getCollection(name);
-    const none = { staged: [], dropped: [], force: false, writeName: (n) => n, finish: async () => ({ altered: false }) };
+    const none = { staged: [], dropped: [], oldTypes: {}, force: false, writeName: (n) => n, finish: async () => ({ altered: false }) };
     if (!existing) {
         const collection = await pb.createCollection(Object.assign({
             name,
@@ -101,6 +101,7 @@ async function ensureCollection(pb, name, columns) {
     const wantedNames = new Set(wanted.map((f) => f.name));
     const fields = [existing.fields.find((f) => f.name === 'id')];
     const staged = new Map(); // column name → staging field name
+    const oldTypes = {}; // column name → the type of the field the portal still shows while staged
     let changed = false;
     let force = false;
     for (const want of wanted) {
@@ -124,6 +125,7 @@ async function ensureCollection(pb, name, columns) {
                 force = true;
             }
             staged.set(want.name, sname);
+            oldTypes[want.name] = ex.type;
         } else {
             fields.push(want);
             changed = true;
@@ -163,6 +165,7 @@ async function ensureCollection(pb, name, columns) {
         collection,
         staged: [...staged.keys()],
         dropped,
+        oldTypes,
         force,
         writeName: (n) => staged.get(n) || n,
         // Step 2: one update swaps the staging fields in and drops what the source lost.

@@ -97,7 +97,7 @@ async function* fromPocketBase(pb, collection, registryColumns) {
             yield cols.map((c) => {
                 const raw = rawOf.get(c.name);
                 if (raw && r[raw]) return r[raw];
-                if (nulls && nulls.has(c.name)) return '';
+                if (nulls && (c.type === 'number' || c.type === 'bool') && nulls.has(c.name)) return '';
                 const v = r[c.name];
                 if (c.type === 'date' && typeof v === 'string') return v ? v.slice(0, 10) : '';
                 if (c.type === 'bool') return v ? 'TRUE' : 'FALSE';

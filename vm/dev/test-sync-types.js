@@ -9,9 +9,12 @@
  *    amount_raw companion for its one "(null)", flag text (its NA cells were not Y/N), no _nulls.
  * 2. Syncs the same rows with the current code, failing the second write batch: the run errors,
  *    the old fields keep every value (what the portal reads), the new types wait in _stage_ fields.
+ *    Meanwhile _nulls describes the fields the portal shows: row 5's blank con_id (still the old
+ *    number field, 0) is listed, so it shows empty, not 0.
  * 3. Syncs again: the run resumes, then swaps the fields in: con_id text, flag bool, no
  *    amount_raw, empty numbers/bools in _nulls, the same record ids; values equal lib/uniform.js's.
- * 4. Syncs a third time: unchanged, nothing written.
+ * 4. Syncs a third time: row 5's _nulls still names the old con_id, so that one row is tidied;
+ *    a fourth run is unchanged, nothing written.
  * 5. Edits three rows (rows without a primary key are keyed by their content, so they get new
  *    keys): each old record is deleted in the same batch as its new one is inserted, so the row
  *    count never changes, not even between batches.
@@ -43,13 +46,13 @@ function readEnv(file) {
   return out;
 }
 
-// 60 rows: con_id digits (an identifier: text now), amount with one "(null)" and three blanks,
+// 60 rows: con_id digits (an identifier: text now; row 5 blank), amount with one "(null)" and three blanks,
 // paid Y/N with one blank, flag Y/N/NA (a bool now: NA is a placeholder), a dd/mm date.
 const HEADER = ['CON_ID', 'AMOUNT', 'PAID', 'STATUS_DATE', 'NOTE', 'FLAG'];
 const ROWS = [];
 for (let i = 0; i < 60; i++) {
   ROWS.push([
-    String(110000000 + i * 7),
+    i === 4 ? '' : String(110000000 + i * 7),
     i === 5 ? '(null)' : i % 20 === 3 ? '' : String(1000 + i * 25) + (i % 4 ? '' : '.50'),
     i === 9 ? '' : i % 3 ? 'Y' : 'N',
     String((i % 28) + 1).padStart(2, '0') + '/10/2026',
@@ -144,6 +147,7 @@ async function main() {
       assert.equal(r.con_id, v1[k].con_id, 'con_id values intact mid-migration');
       assert.equal(r.flag, v1[k].flag, 'flag values intact mid-migration');
     });
+    assert.ok(mid[4]._stage_con_id === '' && (mid[4]._nulls || []).includes('con_id'), 'row 5: the shown (old, number) con_id is listed as empty while staged');
     assert.ok(mid.some((r) => r._stage_con_id) && mid.some((r) => !r._stage_con_id), 'the first batch was written, the rest not');
     console.log('ok   interrupted run: old fields kept every value, new types staged');
 
@@ -166,16 +170,22 @@ async function main() {
       assert.equal(r.flag, col('flag')[k] === null ? false : col('flag')[k]);
       assert.equal(r.status_date.slice(0, 10), col('status_date')[k]);
       const want = ['amount', 'paid', 'flag'].filter((n) => col(n)[k] === null);
+      if (k === 4) want.unshift('con_id'); // still the staged list until the next run tidies it
       assert.deepEqual(r._nulls || [], want, `row ${k + 1} _nulls`);
     });
     const ds = new Registry(pb); await ds.load();
     assert.deepEqual(ds.get(KEY).columns.map((c) => c.name + ':' + c.type), res.columns.map((c) => c.name + ':' + c.type), 'registry columns = uniform columns');
     console.log(`ok   resumed run: ${s2.updated} rows written, fields swapped; types, values and _nulls equal lib/uniform.js`);
 
-    // 4. nothing changed
+    // 4. the next run tidies row 5's _nulls, then nothing changes
     const s3 = await run(pb);
-    assert.equal(s3.status, 'unchanged', s3.message);
-    console.log('ok   third run: unchanged');
+    assert.equal(s3.status, 'ok', s3.message);
+    assert.equal(s3.updated, 1, 'only the provisional row is written');
+    const tidy = await records(pb);
+    assert.deepEqual(tidy[4]._nulls || [], ['amount', 'paid', 'flag'].filter((n) => col(n)[4] === null), 'row 5 _nulls tidied');
+    const s3b = await run(pb);
+    assert.equal(s3b.status, 'unchanged', s3b.message);
+    console.log('ok   third run tidied the one provisional _nulls; fourth run unchanged');
 
     // 5. re-keyed rows are replaced within one batch
     for (const k of [2, 30, 59]) ROWS[k][4] = 'edited';

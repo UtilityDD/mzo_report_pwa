@@ -153,7 +153,8 @@ async function syncSource(src, env) {
         const fetchedRecently = Number.isFinite(fetchedAt) && Date.now() - fetchedAt < maxSkipMs;
         const snapshotReady = !wantSnap || !!(ds && ds.snapshot_sha1 && ds.snapshot_file &&
             fs.existsSync(path.join(snapshotDir, ds.snapshot_file)));
-        if (!force && !fullCheck && healthy && snapshotReady && version && ds.last_version === version && fetchedRecently) {
+        // (content_hash is '' after a partial write or provisional _nulls: then the rows are re-read)
+        if (!force && !fullCheck && healthy && snapshotReady && version && ds.last_version === version && fetchedRecently && ds.content_hash) {
             summary.rows = ds.row_count || 0;
             summary.columns = ds.column_count || 0;
             return await finish('unchanged', `version unchanged (${version.slice(0, 40)})`, snapFields);
@@ -231,7 +232,8 @@ async function syncSource(src, env) {
             log: ctx.log,
             enrich: oe ? oe.enrich : null,
             writeName: ens.writeName,
-            force: ens.force
+            force: ens.force,
+            oldTypes: ens.oldTypes
         });
         if (oe) summary.officeIssues = oe.issues(); // read by the quality hook (vm/quality)
         phase(key, 'rows written', t0);
@@ -258,7 +260,8 @@ async function syncSource(src, env) {
             columns: registryColumns,
             last_version: lastVersion,
             // A partial write must be re-checked next time, so only remember the hash on success.
-            content_hash: w.failed ? '' : sp.hash,
+            // Rows whose _nulls described a staged column's old field are rewritten by the next run.
+            content_hash: w.failed || w.provisional ? '' : sp.hash,
             last_fetched_at: fetchedNow,
             last_synced_at: pbDate(new Date())
         }, snapFields));

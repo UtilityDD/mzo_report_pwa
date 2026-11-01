@@ -43,9 +43,10 @@
   /* ---------- cells ---------- */
   // A column's value in a record. PocketBase stores an empty number as 0 and an empty yes/no as
   // false; the sync lists those fields in the record's _nulls, and they show as empty here.
+  // (_nulls only ever means something for number and yes/no columns.)
   function val(r, c) {
     var n = r && r._nulls;
-    return n && n.length && n.indexOf(c.name) >= 0 ? null : r[c.name];
+    return n && n.length && (c.type === 'number' || c.type === 'bool') && n.indexOf(c.name) >= 0 ? null : r[c.name];
   }
   function emptyCell(td) { td.classList.add('pt-nil'); td.textContent = '—'; return td; }
   function cell(c, v) {
