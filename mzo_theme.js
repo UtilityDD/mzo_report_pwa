@@ -26,7 +26,6 @@
     root.classList.toggle('dark', !isLight);
     var b = document.body;
     if (b) {
-      b.classList.remove('puja-theme');
       b.classList.toggle('light-theme', isLight);
       b.classList.toggle('dark-theme', !isLight);
       b.classList.toggle('light', isLight);

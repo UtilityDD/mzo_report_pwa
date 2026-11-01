@@ -75,7 +75,7 @@
       try { seen = localStorage.getItem(STORAGE_KEY) || ''; } catch (e) {}
       var returning = false;
       try {
-        returning = !!(localStorage.getItem('mzo_authenticated') || localStorage.getItem('mzo_last_sync_date'));
+        returning = !!localStorage.getItem('mzo_authenticated');
       } catch (e) {}
       if (!seen && !returning) {
         try { localStorage.setItem(STORAGE_KEY, next); } catch (e) {}

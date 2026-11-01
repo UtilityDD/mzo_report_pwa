@@ -1,5 +1,5 @@
 /**
- * mzo_presets_hub.js — bootstrap for pages loaded outside the shell (index.html, nsc.html).
+ * mzo_presets_hub.js — bootstrap for nsc.html when it is opened outside the shell.
  * Hides the page until auth.js has checked the session, starts the app-update check and
  * registers the service worker. (The old office-preference presets were retired.)
  */

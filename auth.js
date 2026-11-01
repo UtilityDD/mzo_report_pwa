@@ -1,6 +1,6 @@
 // auth.js — login gate for standalone pages (the app.html shell checks the session itself).
-// Checks the session cookie, keeps the cached profile fresh, offers window.mzoLogout(), adds a
-// sign-out button to the phone hub header, and inside an iframe hands page links to the shell.
+// Checks the session cookie, keeps the cached profile fresh, offers window.mzoLogout(), and inside an
+// iframe hands page links to the shell.
 (function () {
     'use strict';
 
@@ -82,38 +82,6 @@
         });
     }
     window.mzoLogout = mzoLogout;
-
-    // Phone hub only (top-level index.html): a round sign-out button in the header.
-    function injectLogoutButton() {
-        if (localStorage.getItem('mzo_authenticated') !== 'true') return;
-        var path = window.location.pathname.toLowerCase();
-        if (!(path.endsWith('/index.html') || path.endsWith('/') || path === '') || window.self !== window.top) return;
-        if (document.querySelector('.logout-btn, .logout-float-btn')) return;
-
-        // First match by priority, not document order: the action row sits inside `.header`.
-        var header = null;
-        ['.header-actions', '.header-row', '.header', '.filters-container', '.filters'].some(function (sel) { return (header = document.querySelector(sel)); });
-        var btn = document.createElement('button');
-        btn.type = 'button';
-        btn.title = 'Sign out';
-        btn.innerHTML = '<i class="fas fa-sign-out-alt"></i>';
-        btn.addEventListener('click', mzoLogout);
-        if (header) {
-            btn.className = 'theme-toggle logout-btn';
-            btn.style.cssText = 'width:40px;height:40px;border-radius:50%;background:rgba(239,68,68,.1);color:#ef4444;' +
-                'border:1px solid rgba(239,68,68,.2);cursor:pointer;font-size:16px;display:inline-flex;align-items:center;' +
-                'justify-content:center;margin-left:4px;transition:background .2s ease;outline:none';
-            header.appendChild(btn);
-        } else {
-            btn.className = 'logout-float-btn';
-            btn.style.cssText = 'position:fixed;bottom:80px;left:20px;z-index:9999;width:44px;height:44px;border-radius:50%;border:0;' +
-                'background:#ef4444;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;' +
-                'box-shadow:0 4px 12px rgba(239,68,68,.4)';
-            document.body.appendChild(btn);
-        }
-    }
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', injectLogoutButton);
-    else injectLogoutButton();
 
     if (window.self === window.top) return;
 

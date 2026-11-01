@@ -10,7 +10,7 @@ Plain HTML/CSS/JS pages served by a small Express server (`server.js`). No build
 
 ```bash
 npm install
-npm run dev        # http://localhost:3000 (desktop workstation: /app.html)
+npm run dev        # http://localhost:3000 (opens /app.html after sign-in)
 ```
 
 Optional `.env` (git-ignored, loaded by `npm run dev`): `ANTHROPIC_API_KEY` for **Ask**, plus any of the variables in [docs/deploy.md](docs/deploy.md#deploy).
@@ -22,8 +22,7 @@ Optional `.env` (git-ignored, loaded by `npm run dev`): `ANTHROPIC_API_KEY` for 
 | Path | What |
 |---|---|
 | `server.js` | Express: session login, `/api/*`, static files |
-| `app.html` | Desktop workstation shell (sidebar, ⌘K search, reports in tabs) |
-| `index.html` | Phone home hub |
+| `app.html` | The app on desktop and phone: sidebar, ⌘K search, reports in tabs. `/` and the old `/index.html` redirect here |
 | `login.html`, `auth.js` | Sign-in and session check |
 | `*.html`, `nsc/`, `consumer/`, `rem/`, `docket/`, `smart_meter/`, `Upkeeping/` | Report pages |
 | `power_map/`, `si-works/`, `dtr/`, `accident/`, `prt-oil/`, `stock/`, `dd/` | Field tools (maps, forms, stock) |

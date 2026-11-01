@@ -1,8 +1,8 @@
 // mzo_data_hub.js — one IndexedDB cache for every report dataset (window.mzoDataHub).
-// Each dataset keeps a version in localStorage (mzo_hub_ver_<key>); a page open or the home Sync only
-// downloads the body when the remote version differs. Options per dataset:
-//   lazySync     multi-MB sheet: skipped by the home Sync, fetched when its page opens
-//   originHeavy  body comes from meta.csvUrl (Google / Supabase Storage), never through Vercel on Sync
+// Each dataset keeps a version in localStorage (mzo_hub_ver_<key>); opening a page only downloads the
+// body when the remote version differs. Options per dataset:
+//   lazySync     multi-MB sheet: never re-downloaded just to find its version (needs a versionUrl or a forced refresh)
+//   originHeavy  body comes from meta.csvUrl (Google / Supabase Storage), not through Vercel
 //   versionUrl   small JSON with { version, csvUrl } (field names via versionField / csvUrlField)
 
 const DB_NAME = 'MZODashboardData';
@@ -67,8 +67,6 @@ const PARSED_COMPANIONS = {
     CACHE_METER_ISU: ['CACHE_METER_PARSED_v1']
 };
 
-const HUB_VERSIONS_URL = '/api/hub/versions';
-
 // Server-published row counts: a body with fewer than 95% of these rows is not cached.
 const ROW_CHECKS = [
     { prefix: 'CACHE_NSC', label: 'NSC', headers: ['X-NSC-Published-Rows', 'X-NSC-Row-Count'], metaField: 'publishedRows' },
@@ -82,7 +80,6 @@ class DataHub {
         this.initPromise = this._initDB();
         this.syncStatus = {}; // Tracks: 'idle', 'syncing', 'done', 'error'
         this.syncPromises = {}; // Tracks active fetch promises for individual datasets
-        this.lastSyncStats = { checked: 0, updated: 0, failed: 0, total: 0 };
     }
 
     resetVersionChecks() {
@@ -241,10 +238,6 @@ class DataHub {
             rows = data.length;
         }
         return 'f:n' + s.length + '|r' + rows + '|h' + ((h >>> 0).toString(16));
-    }
-
-    _isVercelApiUrl(url) {
-        return /\/api\//i.test(String(url || ''));
     }
 
     _hasBody(peeked) {
@@ -431,35 +424,6 @@ class DataHub {
         return this.retryDataset(key, { force: true });
     }
 
-    // Checks if a dataset is currently cached (does not hit the network)
-    async isCached(key) {
-        const data = await this._peek(key);
-        return data !== undefined && data !== null && data !== '';
-    }
-
-    // Daily Sync Logic
-    isFirstSyncOfDay() {
-        try {
-            const today = new Date().toDateString();
-            const lastSyncDate = localStorage.getItem('mzo_last_sync_date');
-            return lastSyncDate !== today;
-        } catch (e) {
-            return true;
-        }
-    }
-
-    markSyncComplete() {
-        try {
-            const today = new Date().toDateString();
-            localStorage.setItem('mzo_last_sync_date', today);
-            localStorage.setItem('mzoDataSynced', 'true'); // Keep old flag for compatibility if needed
-        } catch (e) {}
-    }
-
-    getSyncStatus(key) {
-        return this.syncStatus[key] || 'idle';
-    }
-
     async waitForDataset(key, opts) {
         const forceCheck = !!(opts && opts.forceCheck);
         if (!forceCheck && this.syncStatus[key] === 'done') return true;
@@ -472,7 +436,6 @@ class DataHub {
     async retryDataset(key, opts) {
         const force = !!(opts && opts.force);
         const forceCheck = !!(opts && (opts.forceCheck || opts.force));
-        const skipVercelBody = !!(opts && opts.skipVercelBody);
         const dataset = DATASETS.find(d => d.key === key);
         if (!dataset) return false;
         if (this.syncPromises[key]) {
@@ -493,15 +456,8 @@ class DataHub {
                 const peeked = await this._peek(key);
                 const hasBody = this._hasBody(peeked);
                 const localVer = this._usableVersion(this._readStoredVersion(key));
-                const catalogVer = String((opts && opts.catalogVer) || '').trim();
-                const catalogCsv = String((opts && opts.catalogCsvUrl) || '').trim();
-                if (catalogCsv) fetchUrl = catalogCsv;
 
-                if (catalogVer) {
-                    remoteVer = this._usableVersion(
-                        catalogVer.indexOf(':') === 1 ? catalogVer : 'v:' + catalogVer
-                    );
-                } else if (dataset.versionUrl) {
+                if (dataset.versionUrl) {
                     try {
                         metaJson = await this._getDatasetMeta(dataset);
                     } catch (e) {}
@@ -513,12 +469,7 @@ class DataHub {
                     if (remoteVer) remoteVer = this._usableVersion('v:' + remoteVer);
                     const field = dataset.csvUrlField || 'csvUrl';
                     if (metaJson && metaJson[field]) fetchUrl = String(metaJson[field]);
-                } else if (
-                    !force &&
-                    hasBody &&
-                    !(skipVercelBody && dataset.lazySync) &&
-                    !(skipVercelBody && this._isVercelApiUrl(fetchUrl))
-                ) {
+                } else if (!force && hasBody) {
                     remoteVer = this._usableVersion(await this._probeRemoteVersion(fetchUrl));
                 } else if (forceCheck && hasBody) {
                     remoteVer = this._usableVersion(await this._probeRemoteVersion(fetchUrl));
@@ -551,35 +502,13 @@ class DataHub {
 
                 // Lazy dumps (Meter, CAPEX): never full-GET without a cheap version.
                 // Clerk sheets (Loss, Collection, …): same-day skip on page open;
-                // header Sync / a new day still downloads so paste-updates appear.
+                // a forced refresh or a new day still downloads so paste-updates appear.
                 if (!force && hasBody && !remoteVer) {
                     if (dataset.lazySync) {
                         this.syncStatus[key] = 'done';
                         return 'unchanged';
                     }
                     if (!forceCheck && localVer && this._readFetchedDay(key) === new Date().toDateString()) {
-                        this.syncStatus[key] = 'done';
-                        return 'unchanged';
-                    }
-                }
-
-                // Homepage Sync must not pull dump bytes through Vercel.
-                // originHeavy datasets keep /api/.../dataset as a fallback URL; use the
-                // origin csvUrl from meta instead. Tiny /api/.../meta JSON is fine.
-                if (skipVercelBody && this._isVercelApiUrl(fetchUrl)) {
-                    this.syncStatus[key] = 'done';
-                    return 'unchanged';
-                }
-
-                // Homepage Sync: do not download multi-MB lazy dumps just to fingerprint
-                // them. Google published CSVs usually have no ETag, so a "version check"
-                // would otherwise GET the whole sheet and can hang the overlay.
-                if (skipVercelBody && dataset.lazySync && !force) {
-                    if (hasBody && remoteVer && localVer && this._versionsMatch(localVer, remoteVer) && rowLooksComplete) {
-                        this.syncStatus[key] = 'done';
-                        return 'unchanged';
-                    }
-                    if (!remoteVer || !hasBody) {
                         this.syncStatus[key] = 'done';
                         return 'unchanged';
                     }
@@ -599,22 +528,11 @@ class DataHub {
                             if (tag) headers['If-None-Match'] = '"' + tag + '"';
                         }
                     }
-                    const timeoutMs = skipVercelBody
-                        ? (dataset.lazySync ? 60000 : 30000)
-                        : (dataset.lazySync ? 180000 : FETCH_TIMEOUT_MS);
-                    try {
-                        response = await this._fetchWithTimeout(fetchUrl, {
-                            credentials: /\/api\//.test(fetchUrl) ? 'same-origin' : 'omit',
-                            cache: /docs\.google\.com|spreadsheets\.google\.com|googleusercontent\.com/i.test(fetchUrl) ? 'no-store' : 'default',
-                            headers
-                        }, timeoutMs);
-                    } catch (fetchErr) {
-                        if (skipVercelBody && hasBody) {
-                            this.syncStatus[key] = 'done';
-                            return 'unchanged';
-                        }
-                        throw fetchErr;
-                    }
+                    response = await this._fetchWithTimeout(fetchUrl, {
+                        credentials: /\/api\//.test(fetchUrl) ? 'same-origin' : 'omit',
+                        cache: /docs\.google\.com|spreadsheets\.google\.com|googleusercontent\.com/i.test(fetchUrl) ? 'no-store' : 'default',
+                        headers
+                    }, dataset.lazySync ? 180000 : FETCH_TIMEOUT_MS);
                     if (response.status !== 304) break;
                     const cached = await this._peek(key);
                     if (this._hasBody(cached)) {
@@ -629,10 +547,6 @@ class DataHub {
                     allowConditional = false;
                 }
                 if (!response || !response.ok) {
-                    if (skipVercelBody && hasBody) {
-                        this.syncStatus[key] = 'done';
-                        return 'unchanged';
-                    }
                     throw new Error(`HTTP ${response ? response.status : 0}`);
                 }
 
@@ -675,12 +589,6 @@ class DataHub {
                 return 'updated';
             } catch (err) {
                 console.warn(`[DataHub] Fetch optional dataset failed for ${key}:`, err.message || err);
-                let cached = false;
-                try { cached = this._hasBody(await this._peek(key)); } catch (e) {}
-                if (skipVercelBody && cached) {
-                    this.syncStatus[key] = 'done';
-                    return 'unchanged';
-                }
                 this.syncStatus[key] = 'error';
                 return false;
             } finally {
@@ -695,148 +603,4 @@ class DataHub {
 const mzoDataHub = new DataHub();
 window.mzoDataHub = mzoDataHub;
 
-// Home Sync: version-check every non-lazy dataset, six at a time
-async function syncAllData(progressCallback, opts) {
-    opts = opts || {};
-    const forceCheck = !!opts.forceCheck;
-    const includeLazy = !!opts.includeLazy;
-    if (forceCheck && typeof mzoDataHub.resetVersionChecks === 'function') {
-        mzoDataHub.resetVersionChecks();
-    }
-    let checked = 0;
-    let updated = 0;
-    let failed = 0;
-    const syncDatasets = [];
-    for (const d of DATASETS) {
-        if (!includeLazy && d.lazySync) continue;
-        syncDatasets.push(d);
-    }
-    const total = syncDatasets.length;
-    const BATCH_SIZE = 6;
-    const inFlight = new Set();
-    const failedLabels = [];
-    mzoDataHub.lastSyncStats = { checked: 0, updated: 0, failed: 0, total, failedLabels };
-
-    let catalogVersions = {};
-    let catalogCsvUrls = {};
-    try {
-        const catRes = await mzoDataHub._fetchWithTimeout(
-            HUB_VERSIONS_URL,
-            { credentials: 'same-origin', cache: 'no-store' },
-            12000
-        );
-        if (catRes && catRes.ok) {
-            const cat = await catRes.json();
-            catalogVersions = (cat && cat.versions) || {};
-            catalogCsvUrls = (cat && cat.csvUrls) || {};
-        }
-    } catch (e) {}
-
-    try {
-        syncDatasets.forEach((d) => {
-            if (forceCheck || mzoDataHub.syncStatus[d.key] !== 'done') {
-                mzoDataHub.syncStatus[d.key] = 'pending';
-            }
-        });
-
-        const queue = [...syncDatasets];
-        const workers = [];
-
-        const summary = () =>
-            'Checked ' + checked + ' / ' + total + ' · Updated ' + updated;
-
-        const updateProgress = (label) => {
-            if (!progressCallback) return;
-            const active = [...inFlight].slice(0, 3).join(', ');
-            const detail = active
-                ? summary() + ' · still: ' + active
-                : label;
-            progressCallback(checked, total, detail);
-        };
-
-        const executeWorker = async () => {
-            while (queue.length > 0) {
-                const dataset = queue.shift();
-                if (!dataset) break;
-
-                if (!forceCheck && mzoDataHub.syncStatus[dataset.key] === 'done') {
-                    checked++;
-                    updateProgress(summary());
-                    continue;
-                }
-
-                inFlight.add(dataset.label);
-                updateProgress('Checking ' + dataset.label + '…');
-                let result = false;
-                try {
-                    result = await mzoDataHub.retryDataset(dataset.key, {
-                        forceCheck,
-                        skipVercelBody: true,
-                        catalogVer: catalogVersions[dataset.key] || '',
-                        catalogCsvUrl: catalogCsvUrls[dataset.key] || ''
-                    });
-                    checked++;
-                    if (result === 'updated') updated++;
-                    else if (!result) {
-                        failed++;
-                        failedLabels.push(dataset.label);
-                    }
-                } catch (e) {
-                    checked++;
-                    failed++;
-                    failedLabels.push(dataset.label);
-                } finally {
-                    inFlight.delete(dataset.label);
-                }
-                mzoDataHub.lastSyncStats = { checked, updated, failed, total, failedLabels };
-                updateProgress(
-                    result === 'updated'
-                        ? 'Updated ' + dataset.label + ' · ' + summary()
-                        : result
-                            ? 'Up to date: ' + dataset.label + ' · ' + summary()
-                            : 'Failed ' + dataset.label + ' · ' + summary()
-                );
-            }
-        };
-
-        for (let i = 0; i < Math.min(BATCH_SIZE, queue.length); i++) {
-            workers.push(executeWorker());
-        }
-
-        await Promise.all(workers);
-
-        if (progressCallback) {
-            progressCallback(
-                checked,
-                total,
-                updated ? 'Sync complete · ' + updated + ' updated' : 'Sync complete · all up to date'
-            );
-        }
-
-        try {
-            localStorage.setItem('mzoDataSynced', 'true');
-        } catch (e) {}
-
-        return true;
-
-    } catch (error) {
-        console.error("Error during data sync:", error);
-        if (progressCallback) {
-            progressCallback(checked, total, "Sync encountered a critical error.");
-        }
-        return false;
-    }
-}
-
-// Function checking if sync is needed
-function isSyncNeeded() {
-    try {
-        return localStorage.getItem('mzoDataSynced') !== 'true';
-    } catch (e) {
-        return true;
-    }
-}
-
-window.syncAllData = syncAllData;
-window.isSyncNeeded = isSyncNeeded;
 window.MZO_DATASETS = DATASETS;

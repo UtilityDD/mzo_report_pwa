@@ -9,21 +9,16 @@
 //   - Cache first for third-party CDNs (libraries, fonts).
 //   - Stale-while-revalidate for every other same-origin asset.
 //   - HTML responses get /mzo_present.js (desktop presentation zoom) injected after <head>.
-const CACHE_NAME = 'mzo-reports-cache-v261';
+const CACHE_NAME = 'mzo-reports-cache-v262';
 
 // Precached on install (not the data hub: it changes with dataset keys)
 const PRECACHE_ASSETS = [
-  './',
-  'index.html',
+  'app.html',
   'executive_briefing.html',
   'media_news.html',
   'theft_assessment.html',
   'login.html',
   'puja.html',
-  'puja-newspaper.css',
-  'icons/desktop-bg.webp',
-  'icons/grid-action-light.webp',
-  'icons/grid-twilight-dark.webp',
   'offline.html',
   'loss.html',
   'performance_index.html',
@@ -34,7 +29,6 @@ const PRECACHE_ASSETS = [
   'mzo_pwa_icons.js',
   'icons/icon-192-v2.png',
   'icons/icon-512-v2.png',
-  'icons/maa-durga-eyes.gif',
   'icons/diya-cropped.svg',
   'auth.js',
   'mzo_present.js'
@@ -108,7 +102,7 @@ function writeAppCache(request, response) {
 const NETWORK_FIRST = new Set([
   '/dd/upcomingDD.html', '/dd/dd_visit.html', '/puja.html', '/nsc.html', '/nsc_simple.html',
   '/nsc_pipeline.html', '/nsc_classic.html', '/lib/nsc_rows.js', '/login.html', '/withheld.html',
-  '/historical_nsc.html', '/pending_load_extension.html', '/index.html', '/app.html', '/assistant.html',
+  '/historical_nsc.html', '/pending_load_extension.html', '/app.html', '/assistant.html',
   '/lib/assistant_catalog.js', '/sheet_links.html', '/sheet_open.html', '/weekly.html', '/loss.html',
   '/performance_index.html', '/theft_assessment.html', '/media_news.html', '/disconnection.html',
   '/collection.html', '/pending_mc.html', '/remosd5000.html', '/feeder_outage.html',
@@ -117,7 +111,7 @@ const NETWORK_FIRST = new Set([
   '/consumer/defective_meter.html', '/lib/defective_meter_pipeline.js', '/lib/sheet_mirror_client.js',
   '/stock/upload.html', '/stock/index.html', '/stock/script.js', '/stock/allotment.js',
   '/stock/allotment_view.js', '/stock/style.css', '/capex_all.html', '/mzo_data_hub.js', '/mzo_theme.js',
-  '/mzo_theme.css', '/mzo_ui.js', '/mzo_presets_hub.js', '/mzo_docket_briefing.js', '/mzo_scope.js',
+  '/mzo_theme.css', '/mzo_ui.js', '/mzo_presets_hub.js', '/mzo_scope.js',
   '/mzo_origin_redirect.js', '/mzo_pwa_icons.js', '/manifest.json', '/manifest-legacy.json',
   '/icons/icon-192-v2.png', '/icons/icon-512-v2.png', '/mzo_app_update.js', '/mzo_present.js',
   '/version.json', '/sw.js'

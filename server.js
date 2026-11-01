@@ -15,7 +15,8 @@ app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 // Server-side files are never served, locally or from the Vercel function.
 const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|lib\/stock_(pipeline|material_category)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
 app.use((req, res, next) => (PRIVATE_PATH.test(req.path) ? res.status(404).end() : next()));
-// Old extension-less URL (vercel.json has the same redirect)
+// Old URLs (vercel.json has the same redirects): the retired phone home page and an extension-less report.
+app.get(['/', '/index.html'], (req, res) => res.redirect(302, '/app.html'));
 app.get('/performance_index', (req, res) => res.redirect(308, '/performance_index.html'));
 // Static files are public, as on Vercel where the CDN serves them before this app; pages gate themselves with auth.js.
 app.use(express.static(__dirname));
@@ -691,14 +692,14 @@ async function requireAuth(req, res, next) {
     const profile = readSession_(req);
     if (profile) {
         req.user = profile;
-        // Page visits feed Admin → Visitors and the home "Often used" list.
-        const isHtml = pathName === '/' || path.extname(pathName).toLowerCase() === '.html';
+        // Page visits feed Admin → Visitors.
+        const isHtml = path.extname(pathName).toLowerCase() === '.html';
         if (isHtml && pathName !== '/login.html' && pathName !== '/admin_users.html') {
             await logActivity({
                 username: req.user.Username,
                 name: req.user.Name || 'No Name',
                 type: 'page_visit',
-                details: `Visited page: ${pathName === '/' ? '/index.html' : pathName}`
+                details: `Visited page: ${pathName}`
             });
         }
         return next();
@@ -1152,7 +1153,7 @@ function requireAdmin(req, res, next) {
         if (req.xhr || req.headers.accept?.includes('application/json')) {
             return res.status(403).json({ status: 'error', message: 'Forbidden: Admin access required.' });
         } else {
-            return res.redirect('/index.html');
+            return res.redirect('/app.html');
         }
     }
     next();
@@ -1653,34 +1654,6 @@ app.get('/api/admin/logs', requireAdmin, async (req, res) => {
             }
         }
         res.json({ status: 'success', logs: globalCachedLogs || [] });
-    } catch (err) {
-        res.status(500).json({ status: 'error', message: err.message });
-    }
-});
-
-// Signed-in user's own report visits, last 15 days (home "Often used")
-app.get('/api/me/visits', async (req, res) => {
-    try {
-        const username = String((req.user && (req.user.Username || req.user.username)) || '').trim();
-        if (!username) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-        const since = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
-        const query = `${ACTIVITY_LOGS_TABLE}?select=details&username=eq.${encodeURIComponent(username)}&type=eq.page_visit&timestamp=gte.${encodeURIComponent(since)}&order=timestamp.desc&limit=5000`;
-        const rows = await querySupabase(query, { schema: PORTAL_USERS_SCHEMA });
-        const counts = new Map();
-        (Array.isArray(rows) ? rows : []).forEach((row) => {
-            const details = String(row.details || '');
-            const raw = details.replace(/^Visited page:\s*/i, '').split('?')[0];
-            let path = raw.replace(/^\/+/, '');
-            if (path === '' || path === 'index.html') return;
-            if (/^(login|offline|admin|admin_users|sheet_links|sheet_open)\.html$/i.test(path)) return;
-            path = path.toLowerCase();
-            counts.set(path, (counts.get(path) || 0) + 1);
-        });
-        const pages = Array.from(counts.entries())
-            .map(([path, count]) => ({ path, count }))
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 8);
-        res.json({ status: 'success', days: 15, pages });
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
     }
