@@ -37,6 +37,16 @@ const POWER_MAP_TABLE = 'mzo_power_substations';
 const POWER_MAP_CORRECTIONS_TABLE = 'mzo_power_corrections';
 // CSV built from the table (mirror mode loads CACHE_POWER_MAP from here).
 const POWER_MAP_DATA_URL = '/api/power-map/data';
+
+/** The updated_at that `?select=updated_at&order=updated_at.desc&limit=1` returns for these rows ('' if none; Postgres sorts nulls first). */
+function powerMapLatestUpdatedAt_(rows) {
+    if (!Array.isArray(rows) || !rows.length || rows.some((r) => !r || r.updated_at == null)) return '';
+    const later = (a, b) => {
+        const d = Date.parse(b) - Date.parse(a);
+        return d > 0 || (d === 0 && b > a) ? b : a;
+    };
+    return rows.map((r) => String(r.updated_at)).reduce(later).trim();
+}
 // Portal login + activity logs live in mzo_insight (not Google Sheet)
 const PORTAL_USERS_SCHEMA = 'mzo_insight';
 const PORTAL_USERS_TABLE = 'portal_users';
@@ -1237,6 +1247,7 @@ app.get('/api/important-sheets/unbilled', async (req, res) => {
         let rows = await mirror.readJson('important_unbilled_months');
         if (Array.isArray(rows)) {
             if (!includeAll) rows = rows.filter((r) => r && r.active === true);
+            res.setHeader('X-Mzo-Data', 'mirror');
         } else {
             let path = `${UNBILLED_MONTHS_TABLE}?select=*&order=sort_order.asc,id.asc`;
             if (!includeAll) path += '&active=eq.true';
@@ -1780,7 +1791,12 @@ app.get('/api/power-map/meta', async (req, res) => {
     if (pm && Array.isArray(pmRows)) {
         res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
         res.setHeader('X-Mzo-Data', 'mirror');
-        return res.json({ status: 'success', version: pm.version, rows: pmRows.length, csvUrl: POWER_MAP_DATA_URL });
+        // liveVersions: the version the live read gives (updated_at, else rows:<n>), for pages that show it as a date.
+        const liveVersion = powerMapLatestUpdatedAt_(pmRows) || (pmRows.length ? 'rows:' + pmRows.length : '');
+        return res.json({
+            status: 'success', version: pm.version, rows: pmRows.length, csvUrl: POWER_MAP_DATA_URL,
+            liveVersions: { version: liveVersion || null }
+        });
     }
     let version = '';
     let rows = 0;
@@ -2791,7 +2807,7 @@ async function loadAllotmentRowsCached_(force = false) {
     const mirrored = force ? null : await mirror.readJson('stock_allotments');
     if (Array.isArray(mirrored)) {
         if (allotMirrorRows_.src !== mirrored) allotMirrorRows_ = { src: mirrored, rows: mirrored.map(allotDbToClient_) };
-        return { rows: allotMirrorRows_.rows, source: 'supabase' };
+        return { rows: allotMirrorRows_.rows, source: 'supabase', mirror: true };
     }
     if (!force && allotListCache_.rows && now - allotListCache_.at < ALLOT_LIST_TTL_MS) {
         return { rows: allotListCache_.rows, source: allotListCache_.source || 'cache' };
@@ -2815,6 +2831,7 @@ const truthy_ = (v) => v === true || v === 1 || v === '1' || v === 'true';
 /** listAllotments / getAllotment from the cached ledger (GET query or POST body). */
 async function sendAllotmentRead_(action, params, res) {
     const loaded = await loadAllotmentRowsCached_(truthy_(params.force) || truthy_(params.refresh));
+    if (loaded.mirror) res.setHeader('X-Mzo-Data', 'mirror');
     if (action === 'getAllotment') {
         const no = String(params.allotmentNo || params.AllotmentNo || '').trim();
         if (!no) return res.status(400).json({ status: 'error', error: 'allotmentNo is required' });
@@ -3263,6 +3280,10 @@ app.get('/api/nsc/meta', async (req, res) => {
         meta,
         version: nscMirror ? nscMirror.version : (snapshotVersion_(meta) || null),
         withheldVersion: whMirror ? whMirror.version : (snapshotWithheldVersion_(meta) || null),
+        // Mirror mode only: the versions the live response carries (they hold the report date).
+        ...(nscMirror || whMirror ? {
+            liveVersions: { version: snapshotVersion_(meta) || null, withheldVersion: snapshotWithheldVersion_(meta) || null }
+        } : {}),
         sheetScriptUrl: canUpload ? NSC_SHEET_SCRIPT_URL : '',
         withheldSheetScriptUrl: canUpload ? NSC_WITHHELD_SHEET_SCRIPT_URL : '',
         csvUrl: nscMirror ? mirror.hubUrl(nscMirror) : NSC_SHEET_FALLBACK_URL,
@@ -3590,6 +3611,7 @@ app.get('/api/stock/meta', async (req, res) => {
     if (stockStorageOrigin_()) source = 'supabase_storage';
     // Mirror mode: the dump is the Storage snapshot; its version and URL come from the manifest and the
     // as-on date from its Date column (this host may only see an older upload meta).
+    const liveVersion = snapshotVersion_(meta) || null; // before the mirror's as-on overlay
     const stockMirror = await mirror.entryForDataHubKey('CACHE_STOCK');
     if (stockMirror) {
         res.setHeader('X-Mzo-Data', 'mirror');
@@ -3615,6 +3637,7 @@ app.get('/api/stock/meta', async (req, res) => {
         isAdmin: isPortalAdmin_(user),
         meta,
         version,
+        ...(stockMirror ? { liveVersions: { version: liveVersion } } : {}),
         sheetScriptUrl: canUpload && sheetMirror ? STOCK_SHEET_SCRIPT_URL : '',
         uploadUrl,
         csvUrl: stockMirror ? mirror.hubUrl(stockMirror) : (sheetMirror ? STOCK_SHEET_FALLBACK_URL : stockPublicCsvUrl_(version)),
@@ -3890,6 +3913,7 @@ async function syncedMetaFields_(meta, fallbackCsvUrl, dataHubKey, res) {
     };
     const m = dataHubKey ? await mirror.entryForDataHubKey(dataHubKey) : null;
     if (m) {
+        fields.liveVersions = { version: fields.version };
         fields.version = m.version;
         fields.csvUrl = mirror.hubUrl(m);
         if (res) res.setHeader('X-Mzo-Data', 'mirror');
@@ -3936,6 +3960,7 @@ app.get('/api/defective/meta', async (req, res) => {
         summaryCsvUrl: mirrored ? mirror.hubUrl(sumMirror) : ((meta && meta.summaryCsvUrl) || defectiveExportCsvUrl_(DEFECTIVE_SUMMARY_GID)),
         detailsCsvUrl: mirrored ? mirror.hubUrl(detMirror) : ((meta && meta.detailsCsvUrl) || defectiveExportCsvUrl_(DEFECTIVE_DETAILS_GID)),
         version: mirrored ? `${sumMirror.version.slice(0, 20)}${detMirror.version.slice(0, 20)}` : ((meta && meta.version) || null),
+        ...(mirrored ? { liveVersions: { version: (meta && meta.version) || null } } : {}),
         reportDate: (meta && meta.reportDate) || null,
         stats: (meta && meta.stats) || null,
         uploadMeta: (meta && meta.stats) || meta || null,
@@ -4122,9 +4147,16 @@ app.get('/api/hub/versions', async (req, res) => {
         pendingMc: async () => synced(await PENDING_MC_META.read(), 'CACHE_PENDING_MC', PENDING_MC_SHEET_FALLBACK_URL),
         loadExt: async () => synced(await LOAD_EXT_META.read(), 'CACHE_LOAD_EXT', LOAD_EXT_SHEET_FALLBACK_URL),
         powerMap: async () => {
-            const latest = await querySupabase(POWER_MAP_TABLE + '?select=updated_at&order=updated_at.desc&limit=1');
-            const row = Array.isArray(latest) && latest[0] ? latest[0] : latest;
-            const pmVer = String((row && row.updated_at) || '').trim();
+            // Mirror mode: the same value from the table snapshot, without a Supabase request.
+            const pmRows = mirror.on() ? await mirror.readJson('power_map_substations') : null;
+            let pmVer = '';
+            if (Array.isArray(pmRows)) {
+                pmVer = powerMapLatestUpdatedAt_(pmRows);
+            } else {
+                const latest = await querySupabase(POWER_MAP_TABLE + '?select=updated_at&order=updated_at.desc&limit=1');
+                const row = Array.isArray(latest) && latest[0] ? latest[0] : latest;
+                pmVer = String((row && row.updated_at) || '').trim();
+            }
             if (pmVer) versions.CACHE_POWER_MAP = pmVer;
             csvUrls.CACHE_POWER_MAP = POWER_MAP_SHEET_CSV_URL;
         },
@@ -4137,23 +4169,10 @@ app.get('/api/hub/versions', async (req, res) => {
             return parsed && parsed.versions;
         }
     };
-    // Mirror mode: every DataHub key in the manifest gets its version and URL from there, and the live
-    // read of a source runs only when the manifest lacks one of its keys (the Apps Script metadata always runs,
-    // for the datasets that have no snapshot).
+    // Mirror mode: every DataHub key in the manifest gets its version and URL from there. The live reads
+    // still run (cached, Power Map from its snapshot): what they give is returned as liveVersions, because
+    // pages show those versions as dates.
     const fromMirror = await mirror.dataHubEntries();
-    const mirrored = new Set(fromMirror.map((x) => x.dataHubKey));
-    const taskKeys = {
-        nsc: ['CACHE_NSC_v5', 'CACHE_WITHHELD_v4'],
-        stock: ['CACHE_STOCK'],
-        disconnection: ['CACHE_DISCONNECTION'],
-        defective: ['CACHE_DEFECTIVE', 'CACHE_DEFECTIVE_DETAILS'],
-        pendingMc: ['CACHE_PENDING_MC'],
-        loadExt: ['CACHE_LOAD_EXT'],
-        powerMap: ['CACHE_POWER_MAP']
-    };
-    Object.keys(taskKeys).forEach((n) => {
-        if (taskKeys[n].every((k) => mirrored.has(k))) delete tasks[n];
-    });
     const names = Object.keys(tasks);
     const results = await Promise.allSettled(names.map((n) => tasks[n]()));
     results.forEach((r, i) => {
@@ -4161,14 +4180,16 @@ app.get('/api/hub/versions', async (req, res) => {
     });
     const extra = results[names.indexOf('metadata')];
     if (extra.status === 'fulfilled' && extra.value) Object.assign(versions, extra.value);
+    const liveVersions = {};
     fromMirror.forEach((x) => {
+        if (versions[x.dataHubKey]) liveVersions[x.dataHubKey] = versions[x.dataHubKey];
         versions[x.dataHubKey] = x.version;
         csvUrls[x.dataHubKey] = x.dataHubKey === 'CACHE_POWER_MAP' ? POWER_MAP_DATA_URL : x.url;
     });
     if (fromMirror.length) res.setHeader('X-Mzo-Data', 'mirror');
 
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
-    return res.json({ status: 'success', versions, csvUrls });
+    return res.json(fromMirror.length ? { status: 'success', versions, csvUrls, liveVersions } : { status: 'success', versions, csvUrls });
 });
 
 // ──────────────────────────────────────

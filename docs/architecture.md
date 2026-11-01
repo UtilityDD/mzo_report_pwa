@@ -92,7 +92,26 @@ Open a report from IndexedDB immediately if a body exists, then version-check in
 | `lazySync` | Multi-MB sheet with no cheap version: a cached body is kept until a forced refresh or a `versionUrl` says it changed (never a full GET just to fingerprint it). |
 | `versionUrl` / `versionField` | JSON meta for version (Withheld uses `withheldVersion`) |
 
-Do **not** `fetch()` or `Papa.parse(url, { download: true })` a Google Sheet from a page if a DataHub key exists. Register the URL in `DATASETS`, then `waitForDataset` + `get`.
+Do **not** `fetch()` or `Papa.parse(url, { download: true })` a Google Sheet from a page if a DataHub key exists. Register the URL in `DATASETS`, then `waitForDataset` + `get`. A page that must read a sheet itself (no DataHub key) loads `mzo_data_hub.js` and calls `mzoMirror.fetch(url, init)` instead of `fetch(url, init)` (see below).
+
+**Mirror mode in the browser (VM).** On first use a page asks `GET /api/data/manifest` once (`mirrorManifest()`); the shell asks before its first frame loads, and frames reuse that copy from `sessionStorage` (`mzo_mirror_manifest`) for 20 s or wait for the shell's request in flight. For every dataset listed under some entry's `dataHubKeys`:
+
+- the version is `v:` + the manifest version (sha1 of the bytes). When it equals the stored version and IndexedDB holds a body (checked with `count()`, without reading the body), `waitForDataset` returns `'unchanged'` with no request at all: no meta call, no Google probe;
+- otherwise the body comes from `/api/data/file/<key>` (or the entry's same-origin `dataHubUrl`, e.g. Power Map's `/api/power-map/data`), with `cache: 'no-cache'` so the browser revalidates by ETag. An identical body (same fingerprint) keeps the parsed companions; a changed one replaces the body and drops them, as before;
+- any failure (network, non-200, HTML, a JSON copy for a CSV dataset, a short NSC/Withheld copy when the response carries the row-count headers) falls back to the original logic for that dataset. 204 or 404 from the manifest means no mirror (Vercel, local): remembered in `localStorage` `mzo_mirror_off` for 30 min, and everything works as before;
+- `forceCheck` (refresh buttons, Loss) uses a manifest under 3 s old. `refresh(key)` and `seedDataset()` (after an upload) read the **source**, then hold that body (`mzo_mirror_hold_<key>`) until the manifest version moves past the one it replaced (at most 20 min), so a write is never hidden by an older copy.
+
+| Helper | Use |
+|---|---|
+| `mzoMirror.fetch(url, init)` | `fetch()` for a page's own sheet URL: the mirror copy when the manifest lists that URL in some entry's `urls` (matched without `#…`, `single=true`, `v=` and query order), else, or on any failure, the source. `no-store` becomes `no-cache` (ETag revalidation). |
+| `mzoMirror(url)` | The mapped URL (a promise), or the URL unchanged. |
+| `mzoMirror.fresh(url)` | After the page itself wrote that sheet through Apps Script: read the source until the copy changes (at most 2 h). PRT oil and DTR peak load use it. |
+| `mzoMirror.refresh(keys, reason)` | Fire and forget `POST /api/data/refresh` after such a write, only when the mirror is on: NSC follow-ups (`nsc_followups`), DTR peak load (`dtr_peak_load`), PRT oil tests (`prt_transformers`, `prt_oil_tests`). |
+| `mzoMirror.status()` | `{ mode: 'mirror' \| 'origin', generatedAt }`. |
+
+Pages that read sheets through `mzoMirror.fetch`: accident, consumers, docket KPI, DTR records and peak load, historical NSC, line-highway crossings, PRT oil, smart meter, upcoming DD, O&M and capex advances, and the source fallbacks of defective meter, disconnection, Power Map tap points, sheet links and stock materials. Left on the source on purpose: manpower and DD visit (sensitive, never mirrored), Priority SI works (reads and writes Supabase directly), important data sheets (single-cell range reads, which have no copy), Durga Puja (embedded sheets) and every Apps Script call. Sheet links rebuilds its **Updated** dates in mirror mode from where today's stored versions got them (the dataset meta's `liveVersions`, or the source's `sourceModifiedAt`), never from the mirror's fetch time.
+
+A repeated `_peek` of a large body within 15 s returns the same string without another IndexedDB read (UI.load reads, revalidates, reads again), as long as the stored version has not changed.
 
 DataHub keys in use: `CACHE_NSC_v5`, `CACHE_WITHHELD_v4`, `CACHE_STOCK`, `CACHE_POWER_MAP`, `CACHE_SOLAR`, `CACHE_JJM`, `CACHE_WRIDD`, `CACHE_BHARATNET`, `CACHE_METER_*`, `CACHE_DEFECTIVE`, `CACHE_DEFECTIVE_DETAILS`, plus collection/loss/weekly/docket/REM/capex/etc. in `DATASETS`. `window.MZO_DATASETS` is that same list. Admin → Sources classifies each report as Sheet, Supabase, JSON, Script, or RSS. Sheet rows have a small open control and a copy control for the spreadsheet link only. Stock’s label follows `/api/stock/meta` `source` (Supabase Storage vs Google Sheet).
 
@@ -124,6 +143,8 @@ On the VM the app serves report data from local copies instead of Google and Sup
 
 **Snapshots.** `vm/sync/run.js` keeps the untouched source bytes of every non-sensitive dataset in `MZO_SNAPSHOT_DIR` (default `/opt/mzo/data/snapshots`): `<key>.<csv|tsv|json>` plus `.gz` and `.br`, and `manifest.json` (`version` = sha1 of the bytes, `file`, `contentType`, `dataHubKeys`, `urls`, `fetchedAt`, …). Sensitive datasets (`portal_users`, `dd_user_auth`, `activity_logs`, the manpower sheets) never get a snapshot; they stay in PocketBase for the admin portal.
 
+The browser side (manifest sharing, versions, fallbacks, `mzoMirror`) is under **DataHub** above.
+
 **Endpoints** (`lib/mirror.js`, mounted after `requireAuth`, all need a session):
 
 | Endpoint | Mirror on | Mirror off |
@@ -142,9 +163,9 @@ On the VM the app serves report data from local copies instead of Google and Sup
 | `/api/power-map/data` | The same CSV, built from `power_map_substations.json` (the body of the same `select=*&limit=5000` query). Byte-identical. |
 | `/api/stock/allotment` list / get | The same rows from `stock_allotments.json` (the body of the server's own ordered query). Byte-identical. The view's refresh button (`force`) still reads live, because allotments are also made on other hosts. |
 | `/api/important-sheets/unbilled` | The same months from `important_unbilled_months.json`. Byte-identical. |
-| `/api/nsc/meta`, `/api/stock/meta`, `/api/defective/meta`, `/api/disconnection/meta`, `/api/pending-mc/meta`, `/api/load-extension/meta` | Same shape. `version` / `withheldVersion` are manifest versions and the CSV URLs are `/api/data/file/<key>`. NSC's TODAY comes from the snapshot's first row, the stock as-on date from the snapshot's `Date` column, and stock `source` is `supabase_storage`. The NSC upload meta (Apps Script) and the report `meta.json` files stay live. |
-| `/api/power-map/meta` | `version` = manifest version, `rows` from the snapshot, `csvUrl` = `/api/power-map/data` (live, `csvUrl` is the published sheet, which lags the table that edits go to). |
-| `/api/hub/versions` | Every DataHub key in the manifest gets its manifest version and URL; a live read runs only for a source whose keys the manifest lacks. The Apps Script metadata still runs for datasets without a snapshot. |
+| `/api/nsc/meta`, `/api/stock/meta`, `/api/defective/meta`, `/api/disconnection/meta`, `/api/pending-mc/meta`, `/api/load-extension/meta` | Same shape. `version` / `withheldVersion` are manifest versions and the CSV URLs are `/api/data/file/<key>`. NSC's TODAY comes from the snapshot's first row, the stock as-on date from the snapshot's `Date` column, and stock `source` is `supabase_storage`. The NSC upload meta (Apps Script) and the report `meta.json` files stay live. `liveVersions: { version, withheldVersion }` carries what the live response's version fields would be (they hold report dates and upload times, which Sheet links shows). |
+| `/api/power-map/meta` | `version` = manifest version, `rows` from the snapshot, `csvUrl` = `/api/power-map/data` (live, `csvUrl` is the published sheet, which lags the table that edits go to). `liveVersions.version` is the latest `updated_at`, from the snapshot. |
+| `/api/hub/versions` | Every DataHub key in the manifest gets its manifest version and URL. The live reads still run (cached; Power Map from its snapshot) and what they give for those keys is returned as `liveVersions: { <CACHE_KEY>: <version> }`; keys without a snapshot keep their live version. |
 | `/api/executive/briefing` | Unchanged: its inputs (report `meta.json`, NSC upload meta) have no snapshots. |
 
 Report `meta.json` files are read from `REPORTS_PUBLIC_BASE`, which defaults to the new project's public `reports` bucket when `INSIGHT_SUPABASE_URL` is unset (so localhost and the VM get real numbers too).
@@ -166,21 +187,16 @@ Report `meta.json` files are read from `REPORTS_PUBLIC_BASE`, which defaults to 
 
 Not wired, on purpose: login and Google sign-in (PIN-hash upgrades and last-login updates in `portal_users`), activity logs (every page visit) and `POST /api/admin/sync` (a read). Writes that skip the app, such as `si-works/si.html` straight to Supabase or edits on Vercel, reach the mirror at the next scheduled sync.
 
-**On the VM.** The app unit (`mzo-reports.service`) needs:
+**On the VM.** `provision.sh` creates `/opt/mzo/data/snapshots` (owner `opc`) and `mzo-sync.service` sets `MZO_SNAPSHOT_DIR`. The app unit (`mzo-reports.service`) also needs:
 
 ```
 EnvironmentFile=-/etc/mzo/pocketbase.env
 Environment=MZO_DATA_MODE=mirror
+Environment=MZO_SNAPSHOT_DIR=/opt/mzo/data/snapshots
+Environment=SYNC_TMP_DIR=/opt/mzo/data/sync-tmp
 ```
 
-and `/etc/mzo/pocketbase.env` (read by both the app and `mzo-sync.service`) gains:
-
-```
-MZO_SNAPSHOT_DIR=/opt/mzo/data/snapshots
-SYNC_TMP_DIR=/opt/mzo/data/sync-tmp
-```
-
-`/opt/mzo/data/snapshots` and `/opt/mzo/data/sync-tmp` must exist and be owned by `opc` (the sync writes them, the app reads the snapshots). `pocketbase.env` gives the write-through run its PocketBase login; one shared `SYNC_TMP_DIR` gives the timer's sync and the write-through sync one lock file across releases, so they never run at the same time. `MZO_DATA_MODE=off` in `/etc/mzo/app.env` turns mirror mode off without a commit (an `EnvironmentFile` value wins over `Environment=`). A restart of the app also stops a write-through run in progress; the next scheduled sync catches up.
+and `mzo-sync.service` the same `SYNC_TMP_DIR` line, with `/opt/mzo/data/sync-tmp` created (owner `opc`) next to the snapshots. `pocketbase.env` gives the write-through run its PocketBase login. The shared `SYNC_TMP_DIR` gives the timer's sync and the write-through sync one lock file across releases (without it the lock sits in each release's `vm/sync/.tmp`, so two syncs could overlap around a deploy). `MZO_DATA_MODE=off` in `/etc/mzo/app.env` turns mirror mode off without a commit (an `EnvironmentFile` value wins over `Environment=`). A restart of the app also stops a write-through run in progress; the next scheduled sync catches up.
 
 **Local test.** Build a snapshot folder from the live sources (GET only, never Apps Script), then run the app against it:
 
@@ -190,4 +206,6 @@ node vm/dev/make-snapshots.js --out /tmp/mzo-snapshots  # about 60 MB, 20 s; --o
 MZO_DATA_MODE=mirror MZO_SNAPSHOT_DIR=/tmp/mzo-snapshots PORT=3400 npm run dev
 ```
 
-Switched responses carry `X-Mzo-Data: mirror`.
+Switched responses carry `X-Mzo-Data: mirror`. `liveVersions` appears only in mirror mode; original-mode responses are unchanged.
+
+**Test.** `node vm/dev/test-mirror-server.js` runs `server.js` in both modes with every upstream request answered from fixtures (no network; any upstream write fails it) and checks the byte parity, the manifest versions, `liveVersions` and that original mode has no mirror fields.

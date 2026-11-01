@@ -118,6 +118,9 @@ install -d -m 750 -o root -g "$APP_USER" /etc/mzo
 id pocketbase >/dev/null 2>&1 ||
   useradd --system --home-dir "$PB_DIR" --no-create-home --shell /sbin/nologin pocketbase
 install -d -m 750 -o pocketbase -g pocketbase "$PB_DIR/pb_data"
+# Raw snapshots written by the sync (opc) and served by the app in mirror mode.
+install -d -m 755 -o root -g root "$MZO/data"
+install -d -m 755 -o "$APP_USER" -g "$APP_USER" "$MZO/data/snapshots" "$MZO/data/sync-tmp"
 if [ -e "$APP" ] && [ ! -L "$APP" ]; then
   mv "$APP" "$BACKUP/app-dir-$(date -u +%Y%m%dT%H%M%SZ)"
   echo "moved an old $APP folder into $BACKUP"

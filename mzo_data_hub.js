@@ -114,7 +114,7 @@ class DataHub {
         this.syncStatus = {}; // Tracks: 'idle', 'syncing', 'done', 'error'
         this.syncPromises = {}; // Tracks active fetch promises for individual datasets
         this._recent = {}; // key -> { v, ver }: last large body read, so a repeat _peek skips IndexedDB
-        this._mirror = null; // { at, own, generatedAt, hub, urls }
+        this._mirror = null; // { at, generatedAt, hub, urls, names }
         this._mirrorPending = null;
         this._mirrorFailAt = 0;
     }
@@ -130,7 +130,7 @@ class DataHub {
         return false;
     }
 
-    _mirrorBuild(m, at, own) {
+    _mirrorBuild(m, at) {
         const hub = {};
         const urls = {};
         const names = {};
@@ -150,14 +150,14 @@ class DataHub {
                 if (n && !urls[n]) urls[n] = name;
             });
         });
-        return { at, own, generatedAt: (m && m.generatedAt) || '', hub, urls, names };
+        return { at, generatedAt: (m && m.generatedAt) || '', hub, urls, names };
     }
 
-    _mirrorShared() {
+    _mirrorShared(maxAge) {
         try {
             const s = JSON.parse(sessionStorage.getItem(MIRROR.shareKey) || 'null');
             const age = s ? Date.now() - Number(s.at || 0) : Infinity;
-            if (s && s.m && age >= 0 && age < MIRROR.ttlMs) return this._mirrorBuild(s.m, Number(s.at), false);
+            if (s && s.m && age >= 0 && age < maxAge) return this._mirrorBuild(s.m, Number(s.at));
         } catch (e) {}
         return null;
     }
@@ -173,7 +173,7 @@ class DataHub {
                 }, MIRROR.timeoutMs);
                 // No mirror on this server: 204 (no console noise), or 404 where the route does not exist.
                 const off = () => {
-                    try { localStorage.setItem(MIRROR.offKey, String(Date.now())); } catch (e) {}
+                    try { localStorage.setItem(MIRROR.offKey, String(Date.now())); sessionStorage.removeItem(MIRROR.shareKey); } catch (e) {}
                     this._mirror = null;
                     return null;
                 };
@@ -184,7 +184,7 @@ class DataHub {
                 if (!m || typeof m.datasets !== 'object') throw new Error('not a manifest');
                 const at = Date.now();
                 try { sessionStorage.setItem(MIRROR.shareKey, JSON.stringify({ at, m })); } catch (e) {}
-                this._mirror = this._mirrorBuild(m, at, true);
+                this._mirror = this._mirrorBuild(m, at);
                 return this._mirror;
             } catch (e) {
                 this._mirrorFailAt = Date.now();
@@ -196,28 +196,26 @@ class DataHub {
         return this._mirrorPending;
     }
 
-    /** The manifest index, or null when there is no mirror. fresh: a forced check wants a new copy. */
+    /** The manifest index, or null when there is no mirror. fresh: a forced check wants a copy under 3 s old. */
     async mirrorManifest(fresh) {
         if (this._mirrorIsOff()) return null;
-        const now = Date.now();
+        const maxAge = fresh ? 3000 : MIRROR.ttlMs;
         const cur = this._mirror;
-        if (cur && now - cur.at < (fresh ? (cur.own ? 3000 : 0) : MIRROR.ttlMs)) return cur;
+        if (cur && Date.now() - cur.at < maxAge) return cur;
         if (this._mirrorPending) return this._mirrorPending;
-        if (!fresh) {
-            const shared = this._mirrorShared();
-            if (shared) return (this._mirror = shared);
-            // The shell starts the manifest request before its frames load: wait for it.
-            try {
-                const p = window.parent !== window && window.parent.__mzoManifestPending;
-                if (p && typeof p.then === 'function') {
-                    await p;
-                    const again = this._mirrorShared();
-                    if (again) return (this._mirror = again);
-                }
-            } catch (e) {}
-            if (this._mirrorIsOff()) return null;
-            if (now - this._mirrorFailAt < MIRROR.ttlMs) return null;
-        }
+        const shared = this._mirrorShared(maxAge);
+        if (shared) return (this._mirror = shared);
+        // The shell starts the manifest request before its frames load: wait for it.
+        try {
+            const p = window.parent !== window && window.parent.__mzoManifestPending;
+            if (p && typeof p.then === 'function') {
+                await p;
+                const again = this._mirrorShared(maxAge);
+                if (again) return (this._mirror = again);
+            }
+        } catch (e) {}
+        if (this._mirrorIsOff()) return null;
+        if (!fresh && Date.now() - this._mirrorFailAt < MIRROR.ttlMs) return null;
         return this._mirrorFetch();
     }
 
@@ -262,6 +260,23 @@ class DataHub {
             localStorage.removeItem(MIRROR.holdPrefix + key);
         } catch (e) {}
         return false;
+    }
+
+    /**
+     * The page wrote these sheets itself (Apps Script), so the server cannot know: ask it to sync
+     * them now. Mirror mode only (Vercel never sees the call); never rejects, never waits on the UI.
+     */
+    async mirrorRefresh(keys, reason) {
+        try {
+            if (!(await this.mirrorManifest(false))) return;
+            await fetch('/api/data/refresh', {
+                method: 'POST',
+                credentials: 'same-origin',
+                keepalive: true,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keys: [].concat(keys || []), reason: String(reason || '').slice(0, 200) })
+            });
+        } catch (e) {}
     }
 
     /** { mode: 'mirror' | 'origin', generatedAt } for this page (one manifest request at most). */
@@ -967,8 +982,10 @@ window.MZO_DATASETS = DATASETS;
 
 // Pages that fetch a sheet themselves: mzoMirror(url) → the mirror URL (or url unchanged);
 // mzoMirror.fetch(url, init) reads the mirror copy and falls back to the source on any failure;
-// mzoMirror.fresh(url) after the page itself wrote that sheet (read the source until the copy changes).
+// mzoMirror.fresh(url) after the page itself wrote that sheet (read the source until the copy changes);
+// mzoMirror.refresh(keys, reason) asks the VM to sync those mirror keys now (fire and forget).
 window.mzoMirror = function (url) { return mzoDataHub.mirrorUrl(url); };
 window.mzoMirror.fetch = function (url, init) { return mzoDataHub.mirrorFetch(url, init); };
 window.mzoMirror.fresh = function (url) { return mzoDataHub.mirrorFresh(url); };
+window.mzoMirror.refresh = function (keys, reason) { return mzoDataHub.mirrorRefresh(keys, reason); };
 window.mzoMirror.status = function () { return mzoDataHub.mirrorStatus(); };

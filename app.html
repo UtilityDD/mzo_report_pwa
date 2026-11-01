@@ -223,6 +223,7 @@
     .crumbs .c-p { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
     .crumbs .c-g:empty, .crumbs .c-g:empty + .c-s { display: none; }
     .vr { width: 1px; height: 18px; background: var(--border); margin: 0 4px; flex: none; }
+    .asof { flex: none; padding: 0 6px; font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; cursor: default; position: relative; }
     .ib {
       width: 32px; height: 32px; flex: none;
       display: grid; place-items: center;
@@ -419,6 +420,7 @@
           <div class="crumbs" aria-label="Current page">
             <span class="c-g" id="cG"></span><span class="c-s">/</span><span class="c-p" id="cP">Loading…</span>
           </div>
+          <span class="asof hide-sm" id="asOf" hidden></span>
           <button type="button" class="ib" id="reloadBtn" data-tip="Reload page" aria-label="Reload page"><svg class="ic"><use href="#i-reload"/></svg></button>
           <button type="button" class="ib hide-sm" id="popBtn" data-tip="Open in new tab" aria-label="Open in new tab"><svg class="ic"><use href="#i-ext"/></svg></button>
           <button type="button" class="ib hide-sm" id="fsBtn" data-tip="Full screen" aria-label="Full screen"><svg class="ic"><use href="#i-max" id="fsIco"/></svg></button>
@@ -754,6 +756,7 @@
       Object.keys(frames).forEach(function (key) { frames[key].el.classList.toggle('off', key !== k); });
       active = k;
       busy(!f.loaded, m.n);
+      paintAsOf();
       evict();
     }
 
@@ -1087,6 +1090,72 @@
     }
     window.addEventListener('keydown', shortcuts);
 
+    /* ================= Data mirror (VM only) ================= */
+    // The server's copy of the source sheets is listed in one manifest. Ask for it once here, before the
+    // first report frame loads, so the frame reads it from sessionStorage (same keys as MIRROR in
+    // mzo_data_hub.js). 204/404 means there is no mirror (Vercel): nothing else happens.
+    var MIRROR_SHARE = 'mzo_mirror_manifest', MIRROR_OFF = 'mzo_mirror_off';
+    function mirrorCopy() { try { return JSON.parse(sessionStorage.getItem(MIRROR_SHARE) || 'null'); } catch (e) { return null; } }
+    var mirrorP = (function () {
+      var off = Number(LS.get(MIRROR_OFF) || 0), s = mirrorCopy();
+      if (off && Date.now() - off < 30 * 60 * 1000) return Promise.resolve(null);
+      if (s && s.m && Date.now() - s.at < 20000) return Promise.resolve(s.m);
+      return fetch('/api/data/manifest', { credentials: 'same-origin', cache: 'no-cache', headers: { Accept: 'application/json' } })
+        .then(function (r) {
+          if (r.status === 204 || r.status === 404) { LS.set(MIRROR_OFF, String(Date.now())); try { sessionStorage.removeItem(MIRROR_SHARE); } catch (e) {} return null; }
+          return r.ok ? r.json() : null;
+        })
+        .then(function (m) {
+          if (m && m.mode === 'off') LS.set(MIRROR_OFF, String(Date.now()));
+          if (!m || typeof m.datasets !== 'object') return null;
+          try { sessionStorage.setItem(MIRROR_SHARE, JSON.stringify({ at: Date.now(), m: m })); } catch (e) {}
+          return m;
+        })
+        .catch(function () { return null; });
+    })();
+    window.__mzoManifestPending = mirrorP;
+
+    // "Data as of" the last time the server checked its sources (refreshed by every frame's manifest).
+    function paintAsOf() {
+      var el = $('asOf'), s = mirrorCopy(), d = new Date(s && s.m && s.m.generatedAt || '');
+      if (isNaN(d)) { el.hidden = true; return; }
+      var t = d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+      var day = d.toDateString() === new Date().toDateString() ? '' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ', ';
+      el.textContent = 'Data as of ' + day + t;
+      el.setAttribute('data-tip', 'Server copy of the sheets, checked ' + d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }));
+      el.hidden = false;
+    }
+    mirrorP.then(paintAsOf);
+    window.addEventListener('storage', function (e) { if (e.key === MIRROR_SHARE) paintAsOf(); });
+
+    // In idle time, refresh datasets this device already keeps whose server copy has changed, so the
+    // next report opens on current data. Small ones only on phones; nothing on data saver or 2G.
+    function warmData(m) {
+      var c = navigator.connection || {};
+      if (!m || !m.datasets || c.saveData || /2g/.test(c.effectiveType || '')) return;
+      var small = MAX_ALIVE <= 2, cap = small ? 1.5e6 : 25e6, keys = [];
+      Object.keys(m.datasets).forEach(function (name) {
+        var e = m.datasets[name];
+        if (!e || e.sensitive || !e.version || !Array.isArray(e.dataHubKeys) || (e.bytes || 0) > cap) return;
+        e.dataHubKeys.forEach(function (k) {
+          var have = LS.get('mzo_hub_ver_' + k);
+          if (have && have !== 'v:' + e.version && keys.indexOf(k) < 0) keys.push(k);
+        });
+      });
+      keys = keys.slice(0, small ? 3 : 8);
+      if (!keys.length) return;
+      var s = document.createElement('script');
+      s.src = '/mzo_data_hub.js?v=91'; s.async = true;
+      s.onload = function () {
+        var hub = window.mzoDataHub;
+        if (!hub) return;
+        keys.reduce(function (p, k) {
+          return p.then(function () { return new Promise(function (done) { idle(function () { Promise.resolve(hub.waitForDataset(k)).catch(function () {}).then(done); }); }); });
+        }, Promise.resolve());
+      };
+      document.head.appendChild(s);
+    }
+
     /* ================= Boot ================= */
     index();
     renderNav();
@@ -1113,13 +1182,14 @@
         .catch(function () {});
     }
 
-    // After first paint: app-update notice, and warm recent pages.
+    // After first paint: app-update notice, warm recent pages, then (mirror only) changed datasets.
     var idle = window.requestIdleCallback || function (fn) { return setTimeout(fn, 1200); };
     idle(function () {
       var s = document.createElement('script');
       s.src = '/mzo_app_update.js?v=87'; s.async = true;
       document.head.appendChild(s);
       recents().slice(0, 3).forEach(function (k) { prefetch(MODS[k]); });
+      mirrorP.then(function (m) { if (m) setTimeout(function () { idle(function () { warmData(m); }); }, 4000); });
     });
   })();
   </script>
