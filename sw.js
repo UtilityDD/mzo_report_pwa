@@ -5,11 +5,12 @@
 // Strategies
 //   - Google Sheets, Apps Script and Supabase requests are never intercepted (CORS, large bodies).
 //   - Network first for /api/, the shell, report pages and shared scripts whose data keys change often
-//     (NETWORK_FIRST); the last good copy is the offline fallback.
+//     (NETWORK_FIRST); the last good copy is the offline fallback. /api/ answers are never cached here:
+//     the VM mirror's /api/data/* bodies live in IndexedDB (mzo_data_hub.js) and revalidate by ETag.
 //   - Cache first for third-party CDNs (libraries, fonts).
 //   - Stale-while-revalidate for every other same-origin asset.
 //   - HTML responses get /mzo_present.js (desktop presentation zoom) injected after <head>.
-const CACHE_NAME = 'mzo-reports-cache-v264';
+const CACHE_NAME = 'mzo-reports-cache-v265';
 
 // Precached on install (not the data hub: it changes with dataset keys)
 const PRECACHE_ASSETS = [
