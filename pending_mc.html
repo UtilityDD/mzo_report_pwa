@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
   <style>
     .mc-copy { margin-left: auto; }
     #ui-drawer header .mc-copy + [data-x] { margin-left: 4px; }
@@ -67,7 +68,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var KEY = 'CACHE_PENDING_MC';
+    var KEY = 'CACHE_PENDING_MC', ROWS = 'pending_mc';
     var CLASS = { D: 'Domestic', C: 'Commercial', I: 'Industrial', A: 'Agriculture', T: 'Temporary', J: 'Public', P: 'Public', W: 'Water works' };
     var AGE = [
       { key: 'a0', label: 'Up to 7 days', max: 7, dot: 'ok' },
@@ -88,40 +89,33 @@
       { k: 'ccc', label: 'CCC', field: '_supp' }, { k: 'agency', label: 'Agency', field: 'agency' }] });
     var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
 
-    function ccc(raw, division) {
-      var s = String(raw == null ? '' : raw).trim(), S = window.MzoScope;
-      if (!s || !S) return s;
-      return (S.cccNameInDivision && S.cccNameInDivision(s, division)) || (S.cccNameOf && S.cccNameOf(s)) || s;
-    }
+    function keep(d) { return d.region || d.appl_no; }
 
-    function prepare(text) {
+    // t.rows: uniform rows of schema/pending_mc.json (snake_case, numbers, ISO dates, canonical
+    // _region/_division/_ccc), already scoped to the login by MzoRows.
+    function prepare(t) {
       var latest = null;
-      var rows = Array.isArray(text) ? text : UI.csv(text);
-      all = rows.filter(function (d) { return d && (d.Region || d.APPL_NO); }).map(function (d) {
-        var S = window.MzoScope;
-        var division = (S && S.divisionNameOf && S.divisionNameOf(d.Division)) || UI.title(d.Division);
-        var rep = UI.date(d['Report Date']), inst = UI.date(d['Meter Installation Date']);
-        if (rep && (!latest || rep > latest)) latest = rep;
-        var code = String(d['SUBSTR(A.SUPP_OFF,-7,7)'] || '').trim();
+      t.all.forEach(function (d) { var rep = keep(d) && UI.date(d.report_date); if (rep && (!latest || rep > latest)) latest = rep; }); // the sheet's date, not the scope's
+      all = t.rows.filter(keep).map(function (d) {
+        var rep = UI.date(d.report_date), inst = UI.date(d.meter_installation_date);
         var r = {
-          appl: String(d.APPL_NO || '').trim(), con: String(d.CON_ID || '').trim(),
-          name: [d.FNAME, d.LNAME].filter(function (x) { return !UI.blank(x); }).map(UI.title).join(' '),
-          address: [d.ADDR1, d.ADDR2].filter(function (x) { return !UI.blank(x); }).join(', '),
-          _region: UI.regionName(d.Region), _divn: division, _supp: ccc(d.CCC, division), CCC_CODE: code,
-          cls: String(d.CLASS || '').trim().toUpperCase(), desc: UI.blank(d.DESC) ? '' : UI.title(d.DESC),
-          phase: String(d.PHASE || '').trim().toUpperCase(), load: parseFloat(d.LOAD) || 0,
-          tariff: UI.blank(d.TARIFF_CLASS) ? '' : d.TARIFF_CLASS, type: UI.blank(d.PROB_TYPE) ? '' : d.PROB_TYPE,
-          agency: UI.blank(d.WO_ASSIGNEE_TYPE) ? 'Individual' : UI.title(d.WO_ASSIGNEE_TYPE),
-          wo: UI.blank(d.WO_NO) ? '' : d.WO_NO, woStatus: d.WO_STATUS === 'C' ? 'Completed' : '',
-          collected: d.COLL_DATE, installed: inst, report: rep, docs: UI.blank(d.DOCS_SUNMITTED) ? '' : d.DOCS_SUNMITTED,
-          area: d.CATG === 'U' ? 'Urban' : d.CATG === 'R' ? 'Rural' : ''
+          appl: d.appl_no, con: d.con_id,
+          name: [d.fname, d.lname].filter(function (x) { return !UI.blank(x); }).map(UI.title).join(' '),
+          address: [d.addr1, d.addr2].filter(function (x) { return !UI.blank(x); }).join(', '),
+          _region: d._region || UI.regionName(d.region), _divn: d._division || UI.title(d.division), _supp: d._ccc || d.ccc, CCC_CODE: d.substr_a_supp_off_7_7,
+          cls: d.class.toUpperCase(), desc: UI.blank(d.desc) ? '' : UI.title(d.desc),
+          phase: d.phase.toUpperCase(), load: d.load || 0,
+          tariff: UI.blank(d.tariff_class) ? '' : d.tariff_class, type: UI.blank(d.prob_type) ? '' : d.prob_type,
+          agency: UI.blank(d.wo_assignee_type) ? 'Individual' : UI.title(d.wo_assignee_type),
+          wo: UI.blank(d.wo_no) ? '' : d.wo_no, woStatus: d.wo_status === 'C' ? 'Completed' : '',
+          collected: d.coll_date, installed: inst, report: rep,
+          area: d.catg === 'U' ? 'Urban' : d.catg === 'R' ? 'Rural' : ''
         };
         r.days = rep && inst ? Math.round((rep - inst) / 864e5) : null;
         r.ageKey = r.days == null ? '' : AGE.filter(function (b) { return r.days <= b.max; })[0].key;
         r.label = CLASS[r.cls] || r.desc || r.cls || '—';
         return r;
       });
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       $('asOn').textContent = latest ? 'As on ' + UI.fmtDate(latest) : UI.n(all.length) + ' pending';
     }
 
@@ -232,8 +226,8 @@
         { key: 'wo', label: 'Work order' }].concat(APP_COLS.slice(6)), window.__view || []);
     });
 
-    function reload(text) { if (text) { prepare(text); render(); } }
-    UI.refresh('refreshBtn', KEY, reload);
+    function reload(t) { if (t) { prepare(t); render(); } }
+    MzoRows.refresh('refreshBtn', ROWS, reload);
 
     // Sync from the Google Sheet (authorised users only)
     fetch('/api/pending-mc/meta', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; })
@@ -247,8 +241,7 @@
           if (d.status !== 'success') throw new Error(d.message || 'Sync failed');
           try { localStorage.removeItem('mzo_hub_ver_' + KEY); localStorage.removeItem('mzo_hub_ver_CACHE_PENDING_MC_PARSED'); } catch (e) {}
           return Promise.resolve(window.mzoDataHub.delete('CACHE_PENDING_MC_PARSED')).catch(function () {})
-            .then(function () { return window.mzoDataHub.refresh(KEY); })
-            .then(function () { return window.mzoDataHub._peek(KEY); });
+            .then(function () { return MzoRows.reload(ROWS); });
         })
         .then(function (t) { reload(t); UI.toast('Synced from the sheet'); })
         .catch(function (e) { UI.toast(e.message || 'Sync failed'); })
@@ -257,9 +250,9 @@
 
     // Deep links: ?kpiFilter=Delayed|Industrial|WithinMonth, ?region=, ?division=, ?ccc= (open the report there)
     var params = new URLSearchParams(location.search), first = true;
-    UI.load(KEY, function (text, info) {
-      if (!text) { if (info && info.error) { $('asOn').textContent = 'No data'; $('table').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
-      prepare(text);
+    MzoRows.load(ROWS, function (t, info) {
+      if (!t) { if (info && info.error) { $('asOn').textContent = 'No data'; $('table').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      prepare(t);
       if (first) {
         first = false;
         var k = params.get('kpiFilter'); if (STAT[k]) f.stat = k;

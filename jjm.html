@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
 </head>
 <body>
   <main class="ui-page">
@@ -58,38 +59,27 @@
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    // Sheet columns (matched loosely: headers carry long descriptions and letters A–F).
+    // Sheet columns: the uniform names of the long headers (letters A–F), schema/jjm_connections.json.
     var M = [
-      { k: 'total', label: 'Deposited by PHE', short: 'Deposited', re: /TOTAL NO CONNECTION/i, dot: '' },
-      { k: 'done', label: 'Connected', short: 'Connected', re: /ALREADY DONE/i, dot: 'ok' },
-      { k: 'wip', label: 'Work in progress', short: 'In progress', re: /^work in progress/i, dot: '' },
-      { k: 'notReady', label: 'PHE not ready', short: 'PHE not ready', re: /PHE NOT READY/i, dot: 'warn' },
-      { k: 'phe', label: 'PHE issue', short: 'PHE issue', re: /ISSUED OF PHE|ISSUES? OF PHE/i, dot: 'bad' },
-      { k: 'row', label: 'Right of way', short: 'Right of way', re: /OBJECTION FOR POLE/i, dot: 'bad' }
+      { k: 'total', label: 'Deposited by PHE', short: 'Deposited', f: 'total_no_connection_for_which_phe_deposited_charges_a_b_c_d', dot: '' },
+      { k: 'done', label: 'Connected', short: 'Connected', f: 'connection_already_done_b', dot: 'ok' },
+      { k: 'wip', label: 'Work in progress', short: 'In progress', f: 'work_in_progress', dot: '' },
+      { k: 'notReady', label: 'PHE not ready', short: 'PHE not ready', f: 'wbsedcl_work_complete_but_phe_not_ready_c', dot: 'warn' },
+      { k: 'phe', label: 'PHE issue', short: 'PHE issue', f: 'work_could_not_be_done_due_to_issued_of_phe_pump_house_chang', dot: 'bad' },
+      { k: 'row', label: 'Right of way', short: 'Right of way', f: 'connection_could_not_be_given_due_to_objection_for_pole_erec', dot: 'bad' }
     ];
     var all = [], level = 'region', f = { m: '' }, scope = null;
-    // Spellings used in this sheet → office names used everywhere else.
-    var ALIAS = { 'MOKDAMPUR': 'Mokdumpur', 'BAISNABNAGAR': 'Baishnabnagar', 'H.C. PUR': 'Harishchandrapur', 'HC PUR': 'Harishchandrapur', 'BAMANGOLA': 'Bamongola',
-      'KALIAGANJ': 'Kaliyaganj', 'KARANDEGHI': 'Karandighi', 'GOALPOKHAR': 'Goalpokher', 'KUMARGUNJ': 'Kumarganj', 'KUSHMUNDI': 'Kusmandi' };
-    function region(raw) { var u = String(raw || '').toUpperCase(); return u.indexOf('MALDA') !== -1 ? 'Malda' : u.indexOf('UTTAR') !== -1 ? 'Raiganj' : u.indexOf('DAK') !== -1 ? 'Balurghat' : UI.title(raw); }
 
-    function prepare(text) {
-      var rows = UI.csv(text);
-      var head = Object.keys(rows[0] || {}), col = {};
-      M.forEach(function (m) { col[m.k] = head.filter(function (h) { return m.re.test(h); })[0]; });
-      var S = window.MzoScope;
-      all = rows.filter(function (d) { return String(d['CCC NAME'] || '').trim(); }).map(function (d) {
-        var name = String(d['CCC NAME']).trim(), o = S ? S.parentOfCcc(ALIAS[name.toUpperCase()] || name) : null;
-        var div = S && S.divisionNameOf ? S.divisionNameOf(d.DIVISION) : '';
-        var r = {
-          _region: o ? o.region : region(d['REGION NAME']), _divn: o ? o.division : (div || ''), _supp: o ? o.ccc : UI.title(name),
-          sheetDivision: UI.title(d.DIVISION)
-        };
-        M.forEach(function (m) { r[m.k] = parseFloat(col[m.k] ? d[col[m.k]] : 0) || 0; });
+    // t.rows: uniform rows (one per CCC; canonical _region/_division/_ccc from the CCC name, the
+    // sheet's spellings included), already scoped to the login by MzoRows. Unmapped rows (BULK)
+    // keep the sheet's names.
+    function prepare(t) {
+      all = t.rows.filter(function (d) { return d.ccc_name; }).map(function (d) {
+        var r = { _region: d._region || UI.title(d.region_name), _divn: d._division, _supp: d._ccc || UI.title(d.ccc_name) };
+        M.forEach(function (m) { r[m.k] = d[m.f] || 0; });
         r.blocked = r.phe + r.row;
         return r;
       });
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       $('meta').textContent = 'As updated by RMs · ' + UI.n(all.length) + ' CCCs';
       fillFilters();
     }
@@ -177,12 +167,12 @@
       var rows = base();
       UI.exportCsv('jjm-connections.csv', [{ key: '_region', label: 'Region' }, { key: '_divn', label: 'Division' }, { key: '_supp', label: 'CCC' }].concat(M.map(function (m) { return { key: m.k, label: m.label }; })), rows);
     });
-    UI.refresh('refreshBtn', 'CACHE_JJM', function (t) { prepare(t); render(); });
+    MzoRows.refresh('refreshBtn', 'jjm_connections', function (t) { prepare(t); render(); });
 
     var first = true;
-    UI.load('CACHE_JJM', function (text, info) {
-      if (!text) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
-      prepare(text);
+    MzoRows.load('jjm_connections', function (t, info) {
+      if (!t) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      prepare(t);
       if (first) {
         first = false;
         if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';

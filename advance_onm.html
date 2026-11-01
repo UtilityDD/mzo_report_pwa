@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
   <style>.ui-grid > .ui-panel { margin-top: 0; } #ageTable td:first-child { white-space: nowrap; }</style>
 </head>
 <body>
@@ -65,11 +66,6 @@
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var URLS = {
-      main: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQPBYq0ZQpaAnu0Mp_qN5oGvklgIpjolyRPf3LfSojRaN-GBBBXKHslR9ue1DOv1432oP2PzYznUUmn/pub?gid=512034300&single=true&output=csv',
-      vendors: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTZPn6CB_cHTFVb8S5vpvaBnczj63fYMTI0RVEdMzVcQ8O6XQi5iwTbMp2xa5vsL6zHGWxezWUSehrN/pub?gid=1818971964&single=true&output=csv',
-      costcenter: '/data/costcenter.json'
-    };
     var AGE = [
       { key: 'a0', label: 'Under 6 months', min: 0, max: 180 }, { key: 'a1', label: '6–12 months', min: 181, max: 365 },
       { key: 'a2', label: '1–2 years', min: 366, max: 730 }, { key: 'a3', label: '2–3 years', min: 731, max: 1095 },
@@ -81,31 +77,31 @@
 
     $('stats').innerHTML = OVER.map(function (o) { return '<button type="button" class="ui-stat" data-k="' + o[0] + '"><div class="k">' + (o[3] ? '<span class="ui-dot ' + o[3] + '"></span>' : '') + o[1] + '</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>'; }).join('');
 
-    function num(v) { var x = parseFloat(String(v == null ? '' : v).replace(/,/g, '')); return isFinite(x) ? x : 0; }
     function unitName(u) { return UI.title(u).replace(/\bCcc\b/g, 'CCC').replace(/\bSs\b/g, 'SS').replace(/\bKv\b/g, 'kV').replace(/\bDtr\b/g, 'DTR'); }
     function regionOf(div) { var H = window.MzoScope && window.MzoScope.HIERARCHY, out = ''; if (H) Object.keys(H).forEach(function (r) { if (H[r].divisions && H[r].divisions[div]) out = r; }); return out; }
-    function maps(vText, ccData) {
-      vendors = {}; UI.csv(vText || '').forEach(function (v) { if (v.VENDOR_NO && v.NAME) vendors[String(v.VENDOR_NO).trim()] = v.NAME.trim(); });
-      cc = {}; (ccData || []).forEach(function (e) { if (e['Cost Cen_Code'] && e['Unit Name'] && e['Division Name']) cc[String(e['Cost Cen_Code']).trim()] = { unit: e['Unit Name'].trim(), division: e['Division Name'].trim() }; });
-      if (window.MzoOffices) window.MzoOffices.addCostCentres(ccData || []);
+    // vt, ct: uniform rows of vendor_map and costcenter (or null): vendor code → name, cost centre → unit / division names.
+    function maps(vt, ct) {
+      vendors = {}; (vt ? vt.rows : []).forEach(function (v) { if (v.vendor_no && v.name) vendors[v.vendor_no] = v.name; });
+      cc = {}; (ct ? ct.rows : []).forEach(function (e) { if (e.cost_cen_code && e.unit_name && e.division_name) cc[e.cost_cen_code] = { unit: e.unit_name, division: e.division_name }; });
     }
-    function prepare(text) {
+    // t.rows: uniform rows of schema/onm_advance.json, already scoped to the login by MzoRows.
+    // _division / _ccc are the canonical office of the cost centre ("Resp. CCtr"), else of the plant;
+    // the cost-centre map names the units as before.
+    function prepare(t) {
       asOn = null;
       var today = Date.now();
-      all = UI.csv(text).filter(function (r) { return r['Order Number']; }).map(function (r) {
-        // Cost centre column is "Resp. CCtr"; fall back to the plant code for the division.
-        var m = cc[String(r['Resp. CCtr'] || '').trim()] || {}, divRaw = m.division || '';
-        var off = window.MzoOffices ? window.MzoOffices.parseCode(r['Resp. CCtr']) : null;
-        if (off && off.division && (off.level === 'ccc' || off.level === 'division')) divRaw = off.division + ' Division';
-        if (off && off.level === 'ccc' && m.unit) m = { unit: off.ccc + ' CCC', division: m.division };
+      // As on: the newest Creation Date over every order of the sheet, not only the login's.
+      t.all.forEach(function (r) { var c = r.order_number ? UI.date(r.creation_date) : null; if (c && (!asOn || c > asOn)) asOn = c; });
+      all = t.rows.filter(function (r) { return r.order_number; }).map(function (r) {
+        var m = cc[r.resp_cctr] || {}, divRaw = r._division ? r._division + ' Division' : m.division || '';
+        if (r._ccc && m.unit) m = { unit: r._ccc + ' CCC', division: m.division };
         var isDiv = /division$/i.test(divRaw), div = divRaw.replace(/\s*division$/i, '');
-        if (!divRaw && window.MzoScope) { var pd = window.MzoScope.divisionNameOf(String(r.Plant || '').trim()); if (pd) { div = pd; isDiv = true; } }
-        var created = UI.date(r['Creation Date']); if (created && (!asOn || created > asOn)) asOn = created;
-        var vcode = String(r.Vendor || '').trim();
+        var created = UI.date(r.creation_date);
+        var vcode = r.vendor;
         var o = {
-          order: String(r['Order Number']).trim(), created: created, rawDate: r['Creation Date'],
+          order: r.order_number, created: created, rawDate: r.creation_date,
           age: created ? Math.max(0, Math.ceil((today - created.getTime()) / 864e5)) : 0,
-          value: num(r['Mat Balance(Value)']), work: String(r.Description || '').trim() || '—', plant: r.Plant, costCentre: r['Resp. CCtr'],
+          value: r.mat_balance_value || 0, work: r.description || '—', plant: r.plant, costCentre: r.resp_cctr,
           division: div ? (isDiv ? div : UI.title(div)) : 'Unknown', unit: m.unit ? unitName(m.unit) : 'Unknown unit',
           vendor: vendors[vcode] || 'Unknown vendor (' + vcode + ')', vcode: vcode
         };
@@ -114,7 +110,6 @@
         o.ageKey = AGE.filter(function (a) { return o.age >= a.min && o.age <= a.max; })[0].key;
         return o;
       });
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       fillFilters();
     }
 
@@ -229,19 +224,23 @@
       UI.exportCsv('om-advance.csv', [{ key: 'order', label: 'Order' }, { key: 'work', label: 'Work' }, { key: 'vendor', label: 'Vendor' }, { key: 'vcode', label: 'Vendor code' }, { key: 'unit', label: 'Unit' }, { key: 'division', label: 'Division' }].concat(COLS.slice(4)), window.__view || []);
     });
 
-    function hubText(key, url) {
-      var hub = window.mzoDataHub;
-      var viaHub = hub ? Promise.resolve(hub.get(key)).catch(function () { return null; }) : Promise.resolve(null);
-      return viaHub.then(function (d) { return d || (window.mzoMirror ? mzoMirror.fetch : fetch)(url).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return /\.json$/.test(url) ? r.json() : r.text(); }); });
+    // Three datasets through MzoRows (cache first): paint once each has rows, and again when one changes.
+    // The O&M sheet has no version: every load checks it (forceCheck), as the old direct fetch did.
+    var KEYS = ['vendor_map', 'costcenter', 'onm_advance'], got = {};
+    function paint() {
+      if (!KEYS.every(function (k) { return k in got; })) return;
+      if (!got.onm_advance) { if (!all.length) { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('dimTable').innerHTML = '<div class="ui-empty">Could not load the O&amp;M sheet.</div>'; } return; }
+      maps(got.vendor_map, got.costcenter);
+      prepare(got.onm_advance); markAll(); render();
     }
-    var mapsP = Promise.all([hubText('CACHE_VENDORS', URLS.vendors).catch(function () { return ''; }), hubText('CACHE_COSTCENTER', URLS.costcenter).catch(function () { return []; })])
-      .then(function (m) { maps(m[0], typeof m[1] === 'string' ? JSON.parse(m[1] || '[]') : m[1]); });
     function load(force) {
       var b = $('refreshBtn'); if (force) b.classList.add('spin');
-      return Promise.all([mapsP, (window.mzoMirror ? mzoMirror.fetch : fetch)(URLS.main, { cache: force ? 'no-store' : 'default' }).then(function (r) { if (!r.ok) throw new Error('Sheet HTTP ' + r.status); return r.text(); })])
-        .then(function (res) { prepare(res[1]); markAll(); render(); })
-        .catch(function (e) { if (!all.length) { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('dimTable').innerHTML = '<div class="ui-empty">' + UI.esc(e.message) + '</div>'; } else UI.toast(e.message); })
-        .then(function () { b.classList.remove('spin'); });
+      var done = force
+        ? MzoRows.get('onm_advance', { forceCheck: true }).then(function (t) { got.onm_advance = t; paint(); }, function () { UI.toast('Could not refresh the O&M sheet'); })
+        : Promise.all(KEYS.map(function (k) {
+          return MzoRows.load(k, function (t) { got[k] = t || got[k] || null; paint(); }, k === 'onm_advance' ? { forceCheck: true } : { scope: false });
+        }));
+      return Promise.resolve(done).catch(function () {}).then(function () { b.classList.remove('spin'); });
     }
     $('refreshBtn').addEventListener('click', function () { load(true); });
     load(false);
