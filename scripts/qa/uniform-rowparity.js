@@ -87,6 +87,11 @@ const PAGES = {
     key: 'wridd_schemes', from: '    var STATUS = {', to: '    function fillFilters() {',
     old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true, stubs: ['fillFilters'],
     known: { id: 'the sheet row index, never read; dropped' }
+  },
+  'bharatnet.html': {
+    key: 'bharatnet_connections', from: '    var STATUS = {', to: '    function fillFilters() {',
+    old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true, stubs: ['fillFilters'],
+    known: { id: 'the row index, never read; dropped', 'CCC NAME': 'the raw CCC name was copied onto the row only for MzoScope; the login scope now runs on the uniform rows' }
   }
 };
 const PROFILES = [
