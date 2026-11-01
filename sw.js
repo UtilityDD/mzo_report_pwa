@@ -9,7 +9,7 @@
 //   - Cache first for third-party CDNs (libraries, fonts).
 //   - Stale-while-revalidate for every other same-origin asset.
 //   - HTML responses get /mzo_present.js (desktop presentation zoom) injected after <head>.
-const CACHE_NAME = 'mzo-reports-cache-v262';
+const CACHE_NAME = 'mzo-reports-cache-v263';
 
 // Precached on install (not the data hub: it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -100,8 +100,7 @@ function writeAppCache(request, response) {
 }
 
 const NETWORK_FIRST = new Set([
-  '/dd/upcomingDD.html', '/dd/dd_visit.html', '/puja.html', '/nsc.html', '/nsc_simple.html',
-  '/nsc_pipeline.html', '/nsc_classic.html', '/lib/nsc_rows.js', '/login.html', '/withheld.html',
+  '/dd/upcomingDD.html', '/dd/dd_visit.html', '/puja.html', '/nsc.html', '/login.html', '/withheld.html',
   '/historical_nsc.html', '/pending_load_extension.html', '/app.html', '/assistant.html',
   '/lib/assistant_catalog.js', '/sheet_links.html', '/sheet_open.html', '/weekly.html', '/loss.html',
   '/performance_index.html', '/theft_assessment.html', '/media_news.html', '/disconnection.html',

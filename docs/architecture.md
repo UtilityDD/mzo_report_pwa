@@ -31,7 +31,7 @@ Unauthenticated HTML requests redirect to `/login.html`. Use a real portal user 
 | `mzo_scope.js` | Login office scope (`window.MzoScope`) |
 | `mzo_data_hub.js` | Dataset registry + IndexedDB (`window.mzoDataHub`) |
 | `sw.js` | PWA cache; bump `CACHE_NAME` on UI/JS changes |
-| `lib/` | Code shared with the browser: `nsc_rows.js` (NSC rows), `assistant_catalog.js` (Ask), `sheet_mirror_client.js` (chunked sheet publish), `defective_meter_pipeline.js`; plus the server-only `stock_pipeline.js` |
+| `lib/` | Code shared with the browser: `assistant_catalog.js` (Ask), `sheet_mirror_client.js` (chunked sheet publish), `defective_meter_pipeline.js`; plus the server-only `stock_pipeline.js` |
 | `apps-script/` | Google Apps Script sources, deployed by hand as web apps (see [apps-script.md](apps-script.md)); not served |
 | `scripts/` | Node/SQL tooling: `sql/`, `sync/`, `migrate/`, `tools/` (see [scripts/README.md](../scripts/README.md)); not served |
 | `nsc/`, `stock/`, `power_map/`, `dtr/`, … | Feature folders; each served folder needs a `vercel.json` static build entry |

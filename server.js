@@ -15,8 +15,13 @@ app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 // Server-side files are never served, locally or from the Vercel function.
 const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|lib\/stock_(pipeline|material_category)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
 app.use((req, res, next) => (PRIVATE_PATH.test(req.path) ? res.status(404).end() : next()));
-// Old URLs (vercel.json has the same redirects): the retired phone home page and an extension-less report.
+// Old URLs (vercel.json has the same redirects): the retired phone home page, the NSC drafts and an extension-less report.
 app.get(['/', '/index.html'], (req, res) => res.redirect(302, '/app.html'));
+// The three NSC drafts became the single Pending NSC page.
+app.get(['/nsc_simple.html', '/nsc_pipeline.html', '/nsc_classic.html'], (req, res) => {
+    const i = req.originalUrl.indexOf('?');
+    res.redirect(302, '/nsc.html' + (i === -1 ? '' : req.originalUrl.slice(i)));
+});
 app.get('/performance_index', (req, res) => res.redirect(308, '/performance_index.html'));
 // Static files are public, as on Vercel where the CDN serves them before this app; pages gate themselves with auth.js.
 app.use(express.static(__dirname));
