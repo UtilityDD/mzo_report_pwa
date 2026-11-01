@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=3" defer></script>
   <script src="/lib/defective_meter_pipeline.js?v=85" defer></script>
   <script src="/lib/sheet_mirror_client.js?v=110" defer></script>
   <style>
@@ -17,6 +18,8 @@
     .dm-band h2 { margin: 0; font-size: 12.5px; font-weight: 500; color: var(--mzo-muted); }
     .dm-band span { font-size: 12px; color: var(--mzo-faint); }
     .dm-status { margin: -8px 0 16px; }
+    .dm-names-note { margin: 0; padding: 10px 16px 0; font-size: 12px; color: var(--mzo-muted); }
+    .dm-names-note[hidden] { display: none; }
     .dm-status[hidden] { display: none; }
     .dm-prog { height: 4px; border-radius: 2px; background: var(--mzo-chart-soft); overflow: hidden; margin-top: 6px; max-width: 420px; }
     .dm-prog b { display: block; height: 100%; width: 0; background: var(--mzo-text); transition: width .2s ease; }
@@ -97,6 +100,7 @@
         <h2 id="namesTitle">Consumers</h2>
         <button type="button" class="ui-btn sm" id="exportBtn" hidden><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
       </div>
+      <p class="dm-names-note" id="namesNote" hidden></p>
       <div id="namesTable"><div class="ui-empty">Pick a CCC to list its consumers.</div></div>
     </section>
   </main>
@@ -107,8 +111,6 @@
     var $ = function (id) { return document.getElementById(id); };
     var P = window.MzoDefectivePipeline;
     var DEFAULTS = {
-      summaryCsvUrl: 'https://docs.google.com/spreadsheets/d/1dMLSX2bZBqZMPooh7_CrniCjqgy4MijaFW62GKJJldA/export?format=csv&gid=0',
-      detailsCsvUrl: 'https://docs.google.com/spreadsheets/d/1dMLSX2bZBqZMPooh7_CrniCjqgy4MijaFW62GKJJldA/export?format=csv&gid=1638574999',
       sheetScriptUrl: 'https://script.google.com/macros/s/AKfycbzULRzoJRMlt_x3nlEo6RLFVzELgwAD5Z7f8JuvqwxBgC6cpc0BF7dynKwBg0hNIkBn/exec'
     };
     // metric key (pipeline name) → label; priority metrics have consumer names in the details tab
@@ -117,21 +119,40 @@
     var LABEL = {}; COUNT.concat(PRIO).forEach(function (m) { LABEL[m[0]] = m[1]; });
     var STAT_KEY = { total: 'totalDefective', agri: 'agri', over5years: 'over5', load05to1: 'load05_1', loadBelow05: 'loadLt05', over10years: 'over10', '3phase': 'ph3', industrial: 'industrial', smartmeter: 'smart', loadAbove6: 'loadGt6', load3to6: 'load3_6', load1to3: 'load1_3' };
     var CLASS = { D: 'Domestic', C: 'Commercial', A: 'Agriculture', I: 'Industrial', W: 'Water works', H: 'Class H' };
-    var meta = { summaryCsvUrl: '', detailsCsvUrl: '', sheetScriptUrl: '', canUpload: false };
+    var meta = { sheetScriptUrl: '', canUpload: false };
     var rows = [], details = null, detailsP = null, metric = 'total', level = 'region', namesCcc = '', scope = null, asOn = '';
 
     function field(m) { return P ? P.kpiField(m) : 'total'; }
     function isPrio(m) { return !!(P && P.isPriorityMetric(m)); }
     function sum(list, f) { var s = 0; for (var i = 0; i < list.length; i++) { var n = Number(list[i][f]); if (n) s += n; } return s; }
     function ymd(v) { var t = String(v || '').trim(); if (/^\d{8}$/.test(t)) return new Date(+t.slice(0, 4), +t.slice(4, 6) - 1, +t.slice(6, 8)); return UI.date(t); }
-    function parseRows(text) {
-      if (/accounts\.google\.com|Sign in/i.test(text) && text.length < 5000) throw new Error('Sheet is not public.');
-      return P.parseDump(text).rows.filter(function (r) { return Object.keys(r).some(function (k) { return String(r[k] || '').trim(); }); });
+    // t: uniform rows of schema/defective_summary.json or _details.json. The page keeps its own row
+    // shape (the published column names); offices are the canonical ones of CCC_CODE. As the
+    // pipeline did, TOTAL rows and rows with no consumer, CCC or meter are not rows.
+    function isRow(d) {
+      var id = (d.con_id || '').toUpperCase(), name = (d.name || '').toUpperCase(), ccc = (d.ccc_code || '').toUpperCase();
+      if (id === 'TOTAL' || name === 'TOTAL' || ccc === 'TOTAL' || id === 'GRAND TOTAL') return false;
+      return !!(id || ccc || d.meter_no);
     }
-    function withOffice(r) {
-      var o = UI.office(r.CCC_CODE);
-      r._region = o.region; r._divn = o.division; r._supp = o.ccc || String(r.CCC_CODE || '');
-      return r;
+    function checkColumns(t) {
+      var has = function (n) { return t.columns.some(function (c) { return c.name === n && c.source_name; }); };
+      if (!has('ccc_code') && !has('con_id') && !has('meter_no')) throw new Error('CSV columns were not recognised.');
+    }
+    function office(o, d) { o._region = d._region; o._divn = d._division; o._supp = d._ccc || d.ccc_code; return o; }
+    function summaryRow(d) {
+      return office({
+        REPORT_AS_ON: d.report_as_on, CCC_CODE: d.ccc_code, BASE_CLASS: d.base_class, DEFECT_YEAR: d.defect_year,
+        total: d.total, agri: d.agri, over10: d.over10, over5: d.over5, ph3: d.ph3, industrial: d.industrial, smart: d.smart,
+        load_gt6: d.load_gt6, load_3_6: d.load_3_6, load_1_3: d.load_1_3, load_05_1: d.load_05_1, load_lt_05: d.load_lt_05,
+        phase_1: d.phase_1, phase_3: d.phase_3, phase_other: d.phase_other
+      }, d);
+    }
+    function detailRow(d) {
+      return office({
+        CON_ID: d.con_id, CCC_CODE: d.ccc_code, NAME: d.name, ADDRESS: d.address, METER_NO: d.meter_no, FIRST_REPORTED_DEF_DT: d.first_reported_def_dt,
+        PHASE: d.phase, CONN_LOAD: d.conn_load, REPORT_AS_ON: d.report_as_on, BASE_CLASS: d.base_class, CONN_STAT: d.conn_stat, MRU: d.mru, MOBILE_NO: d.mobile_no,
+        over10: d.over10, ph3: d.ph3, industrial: d.industrial, smart: d.smart, load_gt6: d.load_gt6, load_3_6: d.load_3_6, load_1_3: d.load_1_3
+      }, d);
     }
 
     /* ---------- stat strips ---------- */
@@ -216,7 +237,7 @@
       if (p) {
         var ccc = $('cccFilter').value;
         if (ccc && ccc !== namesCcc) namesCcc = ccc;
-        if (namesCcc) showNames(namesCcc, true); else { $('namesTitle').textContent = LABEL[metric] + ' · consumers'; $('exportBtn').hidden = true; $('namesTable').innerHTML = '<div class="ui-empty">Pick a CCC in the table above to list its consumers.</div>'; }
+        if (namesCcc) showNames(namesCcc, true); else { $('namesTitle').textContent = LABEL[metric] + ' · consumers'; $('exportBtn').hidden = true; $('namesNote').hidden = true; $('namesTable').innerHTML = '<div class="ui-empty">Pick a CCC in the table above to list its consumers.</div>'; }
       }
       $('clearBtn').hidden = !(metric !== 'total' || $('classFilter').value || $('yearFilter').value || ['regionFilter', 'divisionFilter', 'cccFilter'].some(function (id) { return $(id).value && !$(id).disabled; }));
     }
@@ -225,14 +246,9 @@
     function loadDetails() {
       if (details) return Promise.resolve(details);
       if (detailsP) return detailsP;
-      var hub = window.mzoDataHub;
-      detailsP = Promise.resolve(hub && hub.waitForDataset('CACHE_DEFECTIVE_DETAILS')).catch(function () {})
-        .then(function () { return hub ? hub._peek('CACHE_DEFECTIVE_DETAILS') : null; })
-        .then(function (t) {
-          if (typeof t === 'string' && t.trim()) return t;
-          return (window.mzoMirror ? mzoMirror.fetch : fetch)(meta.detailsCsvUrl || DEFAULTS.detailsCsvUrl, { credentials: 'omit' }).then(function (r) { if (!r.ok) throw new Error('Sheet HTTP ' + r.status); return r.text(); });
-        })
-        .then(function (t) { details = parseRows(t).map(withOffice); if (window.MzoScope) details = window.MzoScope.filterRows(details); detailsP = null; return details; })
+      // Loaded on demand (only the priority metrics list names); already scoped by MzoRows.
+      detailsP = MzoRows.get('defective_details')
+        .then(function (t) { checkColumns(t); details = t.rows.filter(isRow).map(detailRow); detailsP = null; return details; })
         .catch(function (e) { detailsP = null; throw e; });
       return detailsP;
     }
@@ -245,6 +261,18 @@
       { key: 'CONN_LOAD', label: 'Load (kW)', num: true, sortVal: function (r) { return parseFloat(r.CONN_LOAD) || 0; } },
       { key: 'MRU', label: 'MRU', hideSm: true }
     ];
+    // The names tab can hold more than one report (REPORT_AS_ON per row), and the counts come from
+    // the summary: say which reports the listed names come from when that is not the summary's date.
+    function namesNote(list) {
+      var seen = {}, dates = [];
+      list.forEach(function (r) { var k = String(r.REPORT_AS_ON || ''); if (k && !seen[k]) { seen[k] = 1; dates.push(k); } });
+      dates.sort();
+      var labels = dates.map(function (k) { var d = ymd(k); return d ? UI.fmtDate(d) : k; });
+      var other = labels.length > 1 || (labels.length === 1 && asOn && labels[0] !== asOn);
+      $('namesNote').hidden = !other;
+      $('namesNote').textContent = !other ? '' : (labels.length > 1 ? 'Names from the reports of ' + labels.slice(0, -1).join(', ') + ' and ' + labels[labels.length - 1] : 'Names as on ' + labels[0]) +
+        (asOn ? '; the counts above are as on ' + asOn + '.' : '.');
+    }
     function showNames(ccc, quiet) {
       namesCcc = ccc;
       var flag = P ? P.detailsFlag(metric) : '';
@@ -268,13 +296,15 @@
         window.__names = list;
         $('exportBtn').hidden = !list.length;
         $('namesTitle').innerHTML = UI.esc(LABEL[metric]) + ' · ' + UI.esc(ccc) + ' <small>' + UI.n(list.length) + '</small>';
+        namesNote(list);
         UI.table('namesTable', {
           rows: list, sort: loadSort ? { key: 'CONN_LOAD', dir: 'desc' } : { key: 'FIRST_REPORTED_DEF_DT', dir: 'asc' }, limit: 50, resetPage: true,
           empty: 'No matching consumers in the names tab.', columns: NAME_COLS,
           onRow: function (r) {
             UI.drawer(UI.blank(r.NAME) ? (r.METER_NO || 'Consumer') : UI.title(r.NAME), [r._supp, r._divn].filter(Boolean).join(' · '), [
               ['Consumer ID', r.CON_ID], ['Meter', r.METER_NO], ['Reported defective', UI.fmtDate(ymd(r.FIRST_REPORTED_DEF_DT))], ['Class', CLASS[r.BASE_CLASS] || r.BASE_CLASS],
-              ['Phase', r.PHASE], ['Load (kW)', r.CONN_LOAD], ['Connection', r.CONN_STAT], ['MRU', r.MRU], ['Mobile', r.MOBILE_NO], ['Address', r.ADDRESS], ['CCC code', r.CCC_CODE]
+              ['Phase', r.PHASE], ['Load (kW)', r.CONN_LOAD], ['Connection', r.CONN_STAT], ['MRU', r.MRU], ['Mobile', r.MOBILE_NO], ['Address', r.ADDRESS], ['CCC code', r.CCC_CODE],
+              ['In the report of', r.REPORT_AS_ON ? UI.fmtDate(ymd(r.REPORT_AS_ON)) : '']
             ]);
           }
         });
@@ -333,13 +363,14 @@
 
     /* ---------- data ---------- */
     var first = true;
-    function onSummary(text) {
-      var parsed = parseRows(text);
-      if (!parsed.some(function (r) { return r.total != null && r.total !== ''; })) throw new Error('Summary is empty.');
-      rows = parsed.map(withOffice);
-      if (window.MzoScope) rows = window.MzoScope.filterRows(rows);
-      var d = rows.length ? ymd(rows[0].REPORT_AS_ON) : null;
-      asOn = d ? UI.fmtDate(d) : (rows[0] && rows[0].REPORT_AS_ON) || '';
+    // t.rows: the summary, already scoped to the login. The report date is one value of the sheet
+    // (t.first), so a login with no rows still sees it.
+    function onSummary(t) {
+      checkColumns(t);
+      if (!t.all.some(function (d) { return isRow(d) && d.total != null; })) throw new Error('Summary is empty.');
+      rows = t.rows.filter(isRow).map(summaryRow);
+      var raw = t.first('report_as_on'), d = raw ? ymd(raw) : null;
+      asOn = d ? UI.fmtDate(d) : raw || '';
       $('meta').textContent = (asOn ? 'As on ' + asOn + ' · ' : '') + UI.n(sum(rows, 'total')) + ' meters';
       fillFilters();
       if (first) {
@@ -365,15 +396,11 @@
       $('meta').textContent = 'Could not load data';
       $('officeTable').innerHTML = '<div class="ui-empty">' + UI.esc(msg || 'Could not load data.') + '</div>';
     }
-    function loadSummary() {
-      return new Promise(function (resolve) {
-        UI.load('CACHE_DEFECTIVE', function (text, info) {
-          if (text) { try { onSummary(text); } catch (e) { fail(e.message); } resolve(); return; }
-          if (info && info.error) {
-            (window.mzoMirror ? mzoMirror.fetch : fetch)(meta.summaryCsvUrl || DEFAULTS.summaryCsvUrl, { credentials: 'omit' }).then(function (r) { if (!r.ok) throw new Error('Sheet HTTP ' + r.status); return r.text(); })
-              .then(function (t) { onSummary(t); }).catch(function (e) { fail(e.message); }).then(resolve);
-          }
-        });
+    function loadSummary(reload) {
+      if (reload) return MzoRows.reload('defective_summary').then(function (t) { try { onSummary(t); } catch (e) { fail(e.message); } }, function (e) { fail(e && e.message); });
+      return MzoRows.load('defective_summary', function (t, info) {
+        if (t) { try { onSummary(t); } catch (e) { fail(e.message); } return; }
+        if (info && info.error) fail('Could not load data.');
       });
     }
 
@@ -391,7 +418,7 @@
     permit(profileAllows(), profileAllows());
     var metaP = fetch('/api/defective/meta', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (m) {
       if (!m) return;
-      meta.summaryCsvUrl = m.summaryCsvUrl || ''; meta.detailsCsvUrl = m.detailsCsvUrl || ''; meta.sheetScriptUrl = m.sheetScriptUrl || DEFAULTS.sheetScriptUrl;
+      meta.sheetScriptUrl = m.sheetScriptUrl || DEFAULTS.sheetScriptUrl;
       var up = !!m.canUpload || profileAllows();
       permit(up, !!m.canSync || up);
       primeFromMeta(m.stats);
@@ -410,7 +437,7 @@
       var btn = $('uploadBtn'); btn.disabled = true;
       publish(file).then(function () {
         status('Published. Reloading…', 100);
-        details = null; return loadSummary();
+        details = null; return loadSummary(true);
       }).then(function () { status(''); UI.toast('Dump published'); })
         .catch(function (e) { status('Upload failed: ' + (e.message || e), 0); })
         .then(function () { btn.disabled = false; });
@@ -433,8 +460,7 @@
       }).then(function () {
         return Mirror.postScript(url, { action: 'savemeta', meta: { uploadedAt: new Date().toISOString(), originalName: file.name, sourceRows: built.sourceRows, summaryRows: built.summary.length, detailsRows: built.details.length, reportAsOn: built.reportAsOn } }).catch(function () {});
       }).then(function () {
-        var hub = window.mzoDataHub;
-        return hub ? Promise.all([hub.refresh('CACHE_DEFECTIVE').catch(function () {}), hub.refresh('CACHE_DEFECTIVE_DETAILS').catch(function () {})]) : null;
+        return MzoRows.reload('defective_details').catch(function () {});
       });
     }
     $('syncBtn').addEventListener('click', function () {
@@ -442,19 +468,19 @@
       var b = this; b.disabled = true; b.classList.add('spin');
       fetch('/api/defective/sync', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' } })
         .then(function (r) { return r.json().catch(function () { throw new Error(r.status === 401 ? 'Session expired. Sign in again.' : 'HTTP ' + r.status); }).then(function (d) { if (!r.ok || d.status !== 'success') throw new Error(d.message || 'Sync failed'); return d; }); })
-        .then(function () { var hub = window.mzoDataHub; details = null; return Promise.all([hub.refresh('CACHE_DEFECTIVE').catch(function () {}), hub.refresh('CACHE_DEFECTIVE_DETAILS').catch(function () {})]); })
-        .then(loadSummary).then(function () { UI.toast('Synced from the sheet'); })
+        .then(function () { details = null; return MzoRows.reload('defective_details').catch(function () {}); })
+        .then(function () { return loadSummary(true); }).then(function () { UI.toast('Synced from the sheet'); })
         .catch(function (e) { UI.toast(e.message || 'Sync failed'); })
         .then(function () { b.disabled = false; b.classList.remove('spin'); });
     });
-    UI.refresh('refreshBtn', 'CACHE_DEFECTIVE', function (t) {
+    MzoRows.refresh('refreshBtn', 'defective_summary', function (t) {
       details = null;
       try { onSummary(t); } catch (e) { UI.toast(e.message || 'Refresh failed'); }
     });
 
     if (!P) { fail('Defective pipeline failed to load.'); return; }
     // Meta first (it can point the hub at Supabase Storage); then the summary.
-    Promise.race([metaP, new Promise(function (r) { setTimeout(r, 1500); })]).then(loadSummary);
+    Promise.race([metaP, new Promise(function (r) { setTimeout(r, 1500); })]).then(function () { return loadSummary(); });
   });
   </script>
 </body>
