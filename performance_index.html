@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Performance index · MZO Reports</title>
+  <link rel="icon" href="/icons/icon-192-v2.png" />
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -71,7 +72,13 @@
 
     /* Phone: the ranking becomes cards */
     @media (max-width: 720px) {
+      .ui-head { flex-wrap: nowrap; align-items: flex-start; }
       .pi-tools .ui-search { max-width: none; flex-basis: 100%; }
+      .pi-tools .ui-select { flex: 1 1 auto; min-width: 0; }
+      .pi-tools .ui-select select { max-width: none; width: 100%; }
+      .pi-tools .sp, .pi-tools .ui-note { display: none; }
+      .pi-mini > span small { display: none; }
+      .pi-btn-t { display: none; }
       .ui-table.pi-table thead { display: none; }
       .ui-table.pi-table, .ui-table.pi-table tbody { display: block; }
       .ui-table.pi-table tbody tr { display: grid; grid-template-columns: repeat(var(--np, 5), minmax(0, 1fr)); gap: 10px 10px; padding: 12px 14px; border-bottom: 1px solid var(--mzo-border); }
@@ -163,7 +170,32 @@
     .pi-rules dt { color: var(--mzo-muted); background: var(--mzo-surface-2); }
     .pi-rules dd { color: var(--mzo-text-2); line-height: 1.5; }
     .pi-rules dt:nth-last-of-type(1), .pi-rules dd:last-child { border-bottom: 0; }
+    .pi-method > p, .pi-method .basis { max-width: 920px; }
+    .pi-toc { display: flex; flex-wrap: wrap; gap: 2px; margin: -6px -8px 10px; }
+    .pi-toc .ui-btn { height: 26px; padding: 0 8px; font-size: 12.5px; }
+    .pi-method h3 { scroll-margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--mzo-border); }
+    .pi-method h3:first-of-type { border-top: 0; padding-top: 0; }
+    .pi-method h4.pi-mh { margin: 18px 0 6px; font-size: 13px; font-weight: 600; scroll-margin-top: 12px; }
+    .pi-method h4.pi-mh small { margin-left: 6px; font-weight: 400; color: var(--mzo-muted); }
+    .pi-method .pi-box { margin: 8px 0 4px; }
+    .pi-method .pi-why { max-width: 920px; }
+    .pi-formula { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 10px 0; padding: 9px 12px; border-radius: 8px; background: var(--mzo-surface-2); font-size: 12.5px; max-width: 920px; }
+    .pi-formula .k { color: var(--mzo-muted); }
+    .pi-formula code { font-size: 12.5px; color: var(--mzo-text); white-space: normal; }
+    .pi-mparam { padding: 11px 12px; border-top: 1px solid var(--mzo-border); scroll-margin-top: 80px; }
+    .pi-mparam:first-child { border-top: 0; }
+    .pi-mparam.hit { background: var(--mzo-surface-2); box-shadow: inset 0 0 0 1px var(--mzo-border-strong); }
+    .pi-mparam .lbl { font-weight: 600; }
+    .pi-mparam .lbl small { margin-left: 8px; font-weight: 400; color: var(--mzo-muted); font-size: 12px; }
+    .pi-mparam .basis { margin: 4px 0 0; }
+    .pi-defs { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 3px 12px; margin: 6px 0 0; font-size: 12.5px; }
+    .pi-defs dt { color: var(--mzo-muted); }
+    .pi-defs dd { margin: 0; color: var(--mzo-text-2); line-height: 1.45; word-break: break-word; }
+    .pi-defs .ref { display: block; margin-top: 1px; }
+    .pi-foot { margin-top: 18px; }
     @media (max-width: 720px) {
+      .pi-defs { grid-template-columns: minmax(0, 1fr); gap: 0; }
+      .pi-defs dt { margin-top: 5px; font-size: 11.5px; }
       .pi-method { padding: 14px 12px 20px; }
       .pi-rules { grid-template-columns: minmax(0, 1fr); }
       .pi-rules dt { border-bottom: 0; padding-bottom: 2px; background: none; }
@@ -179,7 +211,6 @@
         <p class="pi-meta" id="meta">Loading the rating…</p>
       </div>
       <div class="ui-actions">
-        <button type="button" class="ui-btn" id="methodBtn">Methodology</button>
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
     </header>
@@ -215,7 +246,6 @@
     var SVG = 'http://www.w3.org/2000/svg';
     var LEVELS = [{ k: 'region', label: 'Regions', one: 'region' }, { k: 'division', label: 'Divisions', one: 'division' }, { k: 'ccc', label: 'CCCs', one: 'CCC' }];
     var LEVEL_WORD = { zone: 'Zone', region: 'Region', division: 'Division', ccc: 'CCC' };
-    var METHOD_DOC = 'https://github.com/smartlinemanapp/mzo-reports/blob/develop/docs/rating/methodology.md';
     var LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
 
     /* ---------------- DOM: text only (no HTML strings from data) ---------------- */
@@ -234,6 +264,7 @@
     }
     function add(el, kids) {
       if (kids == null || kids === false) return el;
+      if (Array.isArray(el)) { el.push(kids); return el; }
       if (Array.isArray(kids)) { kids.forEach(function (k) { add(el, k); }); return el; }
       el.appendChild(kids instanceof Node ? kids : document.createTextNode(String(kids)));
       return el;
@@ -259,7 +290,7 @@
 
     /* ---------------- state ---------------- */
     var R = null, SRC = '', bandIdx = {}, mine = { code: null, chain: {} };
-    var st = { tab: 'ranking', level: 'region', q: '', within: '', sort: null, office: '' };
+    var st = { tab: 'ranking', level: 'region', q: '', within: '', sort: null, office: '', param: '' };
 
     function gradeTone(g) {
       if (!g || !(g in bandIdx)) return 'none';
@@ -305,16 +336,28 @@
       st.q = p.get('q') || '';
       st.within = p.get('within') || '';
       st.office = p.get('office') || '';
+      st.param = p.get('param') || '';
+      readHash();
       return p;
+    }
+    // Methodology anchors: #tab=method&param=<id> (links from the scorecard and the header).
+    function readHash() {
+      var hp = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+      var tab = lower(hp.get('tab'));
+      if (tab !== 'method' && tab !== 'methodology') return false;
+      st.tab = 'methodology';
+      st.param = hp.get('param') || '';
+      st.office = '';
+      return true;
     }
     function writeUrl() {
       try {
         var p = new URLSearchParams(location.search);
         var set = function (k, v) { if (v) p.set(k, v); else p.delete(k); };
         set('level', st.level); set('tab', st.tab === 'methodology' ? 'methodology' : '');
-        set('q', st.q); set('within', st.within); set('office', st.office);
-        var qs = p.toString();
-        history.replaceState(history.state, '', location.pathname + (qs ? '?' + qs : '') + location.hash);
+        set('q', st.q); set('within', st.within); set('office', st.office); set('param', st.tab === 'methodology' ? st.param : '');
+        var qs = p.toString(), hash = /^#tab=/i.test(location.hash) ? '' : location.hash;
+        history.replaceState(history.state, '', location.pathname + (qs ? '?' + qs : '') + hash);
       } catch (e) {}
     }
 
@@ -389,7 +432,7 @@
       add(meta, [
         dates.length ? 'Inputs as on ' + (dates[0] === dates[dates.length - 1] ? fmtDay(dates[0]) : shortDay(dates[0]) + ' – ' + fmtDay(dates[dates.length - 1])) : 'Inputs —',
         src ? ' · ' + src : '', ' · ',
-        h('button', { type: 'button', class: 'pi-link', text: 'How it is scored', on: { click: function () { go('methodology'); } } })
+        h('a', { class: 'pi-link', href: '#tab=method', text: 'How is this calculated?' })
       ]);
 
       // Quiet data-quality note: inputs left out everywhere because they are stale, and per-office flags.
@@ -400,8 +443,8 @@
       var dq = clear($('dq'));
       if (stale.length || flagged) {
         var parts = [];
-        if (stale.length) parts.push('Not scored, data too old: ' + stale.map(function (s) { return s.label + ' (' + fmtDay(s.asOn) + ')'; }).join(', ') + '.');
-        if (flagged) parts.push(flagged + ' office values are left out for too few cases, low coverage or no data, and their weight is shared within the pillar.');
+        if (stale.length) parts.push('Too old to score: ' + stale.map(function (s) { return s.label + ' (' + fmtDay(s.asOn) + ')'; }).join(', ') + '.');
+        if (flagged) parts.push(flagged + ' office values left out for too few cases or low coverage; their weight stays in the pillar.');
         add(dq, [h('span', { class: 'ui-dot warn', 'aria-hidden': 'true' }), h('span', null, [parts.join(' '), ' ', h('button', { type: 'button', class: 'pi-link', text: 'Details', on: { click: function () { go('methodology', 'pi-inputs'); } } })])]);
         dq.hidden = false;
       } else dq.hidden = true;
@@ -458,6 +501,7 @@
     });
     function go(tab, anchor) {
       st.tab = tab;
+      if (tab !== 'methodology') st.param = '';
       paint();
       if (anchor) { var a = $(anchor); if (a) a.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
     }
@@ -548,7 +592,7 @@
       if (!list.length) add(tbody, h('tr', null, h('td', { colspan: String(cols.length + 1) }, h('div', { class: 'ui-empty', text: 'No office matches.' }))));
       list.forEach(function (o) {
         var tr = h('tr', { class: 'click' + (isMine(o) ? ' mine' : ''), tabindex: '0', 'data-code': o.code, 'aria-label': fullName(o) + ', ' + (o.rated ? 'rank ' + o.rank + ' of ' + o.of + ', grade ' + o.grade + ', score ' + d1(o.score) : 'not graded') });
-        cols.forEach(function (c) { add(tr, h('td', { class: c.cls + (c.key === 'score' ? ' num' : ''), 'data-label': c.full || c.label }, cell(c, o))); });
+        cols.forEach(function (c) { add(tr, h('td', { class: c.cls + (c.key === 'score' ? ' num' : ''), 'data-label': c.label, title: c.full || null }, cell(c, o))); });
         add(tr, h('td', { class: 'chev' }, icon('chev')));
         add(tbody, tr);
       });
@@ -608,7 +652,7 @@
     function ensureDrawer() {
       if (drawer) return drawer;
       var closeBtn = h('button', { type: 'button', class: 'ui-btn icon ghost', 'aria-label': 'Close', on: { click: closeCard } }, icon('x'));
-      var copyBtn = h('button', { type: 'button', class: 'ui-btn sm', on: { click: function () { UI.copy(location.href).then(function () { UI.toast('Link copied'); }); } } }, [icon('copy'), 'Copy link']);
+      var copyBtn = h('button', { type: 'button', class: 'ui-btn sm', 'aria-label': 'Copy link', title: 'Copy a link to this scorecard', on: { click: function () { UI.copy(location.href).then(function () { UI.toast('Link copied'); }); } } }, [icon('copy'), h('span', { class: 'pi-btn-t', text: 'Copy link' })]);
       var title = h('h3', { id: 'scTitle' }), sub = h('p', { id: 'scSub' });
       var body = h('div', { class: 'pi-sc', id: 'scBody' });
       var sec = h('section', { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'scTitle' }, [
@@ -657,7 +701,7 @@
       chain.forEach(function (c, i) {
         var x = off(c); if (!x) return;
         if (i) add(trail, h('span', { class: 'sep', 'aria-hidden': 'true', text: '/' }));
-        add(trail, c === o.code ? h('span', { class: 'c', 'aria-current': 'page', text: x.name }) : h('button', { type: 'button', title: 'Open ' + fullName(x), text: x.name, on: { click: function () { openCard(c); } } }));
+        add(trail, c === o.code ? h('span', { class: 'c', 'aria-current': 'page', text: fullName(x) }) : h('button', { type: 'button', title: 'Open the ' + fullName(x) + ' scorecard', text: fullName(x), on: { click: function () { openCard(c); } } }));
       });
       return h('div', null, [
         h('div', { class: 'pi-sum' }, [
@@ -717,7 +761,9 @@
         h('div', { class: 'pi-src' }, [
           h('span', null, ['Value ', h('span', { class: 'now', text: x.display || '—' })]),
           x.asOn || asOn.asOn ? h('span', { text: 'as on ' + fmtDay(x.asOn || asOn.asOn) }) : null,
-          h('span', { title: (m.sourceText || '') + (m.ref ? ' — ' + m.ref : ''), text: 'benchmark ' + (m.source || x.source || '—') })
+          (asOn.datasets || []).length ? h('span', { text: 'from ' + asOn.datasets.map(function (d) { return d.label || d.key; }).join(', ') }) : null,
+          h('span', { title: (m.sourceText || '') + (m.ref ? ' — ' + m.ref : ''), text: 'benchmark ' + (m.source || x.source || '—') }),
+          h('span', null, h('a', { class: 'pi-link', href: '#tab=method&param=' + encodeURIComponent(x.id), text: 'How it is scored' }))
         ]),
         flagLines(x)
       ]);
@@ -761,7 +807,7 @@
           ]);
         }))
       ]);
-      return [h('h4', null, [(lv ? lv.label : 'Offices') + ' in ' + fullName(o), h('small', { text: 'rank among all ' + (lv ? lv.label : '') })]), h('div', { class: 'pi-box' }, h('div', { class: 'ui-table-wrap' }, t))];
+      return [h('h4', null, [(lv ? lv.label : 'Offices') + ' in ' + fullName(o), h('small', { text: 'rank among all ' + (lv ? lv.label : '') })]), h('div', { class: 'pi-box pi-kids' }, h('div', { class: 'ui-table-wrap' }, t))];
     }
     function contributionsBlock(o) {
       var keys = Object.keys(o.contributions || {});
@@ -790,81 +836,193 @@
       return out;
     }
 
-    /* ---------------- methodology ---------------- */
+    /* ---------------- methodology (rendered from ratingDoc.method) ---------------- */
+    function safeUrl(u) { return /^https?:\/\/[^\s<>"']+$/i.test(String(u || '')) ? String(u) : null; }
+    function safePage(p) { return /^\/[\w\/.-]+\.html$/.test(String(p || '')) ? String(p) : null; }
+    var LEVEL_PLURAL = { zone: 'zone', region: 'regions', division: 'divisions', ccc: 'CCCs' };
+    function paras(list, cls) { return (Array.isArray(list) ? list : list ? [list] : []).map(function (s) { return h('p', { class: cls || null, text: s }); }); }
+    function sourceEl(s, ref) {
+      if (!s) return null;
+      var url = safeUrl(s.url);
+      return h('span', null, [url ? h('a', { class: 'pi-link', href: url, target: '_blank', rel: 'noopener noreferrer', text: s.label || s.key }) : (s.label || s.key || ''), ref ? h('span', { class: 'ref', text: ref }) : null]);
+    }
+    function mSection(id, title, sub) { return h('h3', { id: 'm-' + id, 'data-sec': id }, [title, sub ? h('small', { text: sub }) : null]); }
     function paintMethod() {
-      var v = clear($('view')), box = h('div', { class: 'pi-method' });
+      var v = clear($('view')), box = h('div', { class: 'pi-method' }), M = R.method;
       add(v, box);
-      add(box, [
-        h('p', { text: 'Every region, division and CCC is rated on the same method, modelled on the national DISCOM ratings: the REC Consumer Service Rating of DISCOMs (CSRD) and the PFC Integrated Rating, with RDSS targets and WBERC standards as benchmarks. Each parameter earns marks on a straight line between the value that earns full marks and the value that earns none. Weights add up to 100. Offices are ranked only against their peers at the same level.' }),
-        h('p', null, [h('a', { class: 'pi-link', href: METHOD_DOC, target: '_blank', rel: 'noopener', text: 'Full methodology document' }), ' (docs/rating/methodology.md, with every source and threshold).'])
-      ]);
+      if (!M) { paintMethodRows(box); return; }
+      var SECS = [['about', 'About'], ['grades', 'Grades'], ['pillars', 'Pillars'], ['levels', 'Levels'], ['rules', 'n/a and quality'], ['penalties', 'Safety'], ['caveats', 'Data caveats'], ['excluded', 'Not scored'], ['sources', 'Sources'], ['example', 'Worked example']];
+      add(box, h('nav', { class: 'pi-toc', 'aria-label': 'Methodology sections' }, SECS.map(function (s) {
+        return h('button', { type: 'button', class: 'ui-btn sm ghost', text: s[1], on: { click: function () { var t = $('m-' + s[0]); if (t) t.scrollIntoView({ block: 'start', behavior: 'smooth' }); } } });
+      })));
 
-      // Grade bands
-      var bands = R.bands.map(function (b, i) {
-        var hi = i ? R.bands[i - 1].min : null, lo = b.min;
-        return h('tr', null, [h('td', null, grade({ grade: b.grade, band: null })), h('td', { text: b.label }), h('td', { class: 'num', text: lo == null ? 'under ' + hi : hi == null ? lo + ' and above' : lo + ' to under ' + hi })]);
+      // 1. What this rating is
+      add(box, [mSection('about', M.title || 'What this rating is'), paras(M.intro)]);
+      if (M.formula) add(box, h('p', { class: 'pi-formula' }, [h('span', { class: 'k', text: 'Each parameter' }), h('code', { text: M.formula })]));
+
+      // 2. Grade bands
+      var bands = (M.bands || R.bands).map(function (b, i, all) {
+        var hi = i ? all[i - 1].min : null, lo = b.min;
+        return h('tr', null, [h('td', null, grade({ grade: b.grade, band: null })), h('td', { text: b.label }), h('td', { class: 'num', text: lo == null || !isFinite(lo) ? 'under ' + hi : hi == null ? lo + ' and above' : lo + ' to under ' + hi })]);
       });
-      add(box, [h('h3', null, ['Grades', h('small', { text: 'CSRD bands' })]), h('div', { class: 'pi-box' }, h('div', { class: 'ui-table-wrap' }, h('table', { class: 'ui-table' }, [h('thead', null, h('tr', null, [h('th', { text: 'Grade' }), h('th', { text: 'Meaning' }), h('th', { class: 'num', text: 'Score' })])), h('tbody', null, bands)])))]);
+      add(box, [mSection('grades', 'Grades', 'score out of 100'), h('div', { class: 'pi-box' }, h('div', { class: 'ui-table-wrap' }, h('table', { class: 'ui-table' }, [h('thead', null, h('tr', null, [h('th', { text: 'Grade' }), h('th', { text: 'Meaning' }), h('th', { class: 'num', text: 'Score' })])), h('tbody', null, bands)]))), paras(M.bandsNote, 'basis')]);
 
-      // Pillars and parameters
-      var byPillar = {};
-      (R.methodology || []).forEach(function (m) { (byPillar[m.pillar] = byPillar[m.pillar] || []).push(m); });
-      var pillars = R.pillars.concat(byPillar.penalty ? [{ id: 'penalty', label: (byPillar.penalty[0] || {}).pillarLabel || 'Penalties', weight: null, basis: R.rules && R.rules.penalties }] : []);
-      pillars.forEach(function (p) {
-        var list = byPillar[p.id] || [];
+      // 3. Pillars and weights, then every parameter
+      var total = (M.pillars || []).reduce(function (s, p) { return s + (p.weight || 0); }, 0);
+      add(box, [mSection('pillars', 'Pillars and weights', total + ' marks'), h('div', { class: 'pi-box' }, h('div', { class: 'ui-table-wrap' }, h('table', { class: 'ui-table' }, [
+        h('thead', null, h('tr', null, [h('th', { text: 'Pillar' }), h('th', { class: 'num', text: 'Marks' }), h('th', { class: 'num hide-sm', text: 'Parameters' }), h('th', { class: 'hide-sm', text: 'Set against' })])),
+        h('tbody', null, (M.pillars || []).map(function (p) {
+          return h('tr', { class: 'click', tabindex: '0', on: { click: function () { var t = $('m-p-' + p.id); if (t) t.scrollIntoView({ block: 'start', behavior: 'smooth' }); } } }, [h('td', { class: 'wrap', text: p.label }), h('td', { class: 'num', text: String(p.weight) }), h('td', { class: 'num hide-sm', text: String((p.params || []).length) }), h('td', { class: 'wrap hide-sm', text: p.national || '' })]);
+        }))
+      ])))]);
+      (M.pillars || []).forEach(function (p) {
         add(box, [
-          h('h3', null, [p.label, h('small', { text: p.weight != null ? p.weight + ' marks' : 'deductions' })]),
-          p.basis ? h('p', { class: 'basis', text: p.basis }) : null,
-          h('div', { class: 'pi-box' }, h('div', { class: 'ui-table-wrap' }, h('table', { class: 'ui-table' }, [
-            h('thead', null, h('tr', null, [h('th', { text: 'Parameter' }), h('th', { class: 'num', text: 'Marks' }), h('th', { class: 'num', text: p.id === 'penalty' ? 'No deduction at' : 'Full marks at' }), h('th', { class: 'num', text: p.id === 'penalty' ? 'Full deduction at' : 'Zero at' }), h('th', { class: 'hide-sm', text: 'Formula' }), h('th', { class: 'hide-sm', text: 'Benchmark source' })])),
-            h('tbody', null, list.map(function (m) {
+          h('h4', { id: 'm-p-' + p.id, class: 'pi-mh' }, [p.label, h('small', { text: p.weight + ' marks · ' + (p.params || []).length + ' parameters' })]),
+          paras(p.basis, 'basis'),
+          p.national ? h('p', { class: 'basis', text: 'National reference: ' + p.national }) : null,
+          h('div', { class: 'pi-box' }, (p.params || []).map(methodParam))
+        ]);
+      });
+
+      // 4. How levels work, ranks, explanations
+      add(box, [mSection('levels', 'How levels work'), paras(M.levelsRule), paras(M.rankRule), paras(M.whyRule)]);
+
+      // 5. n/a and re-weighting, data quality (with the inputs and their dates)
+      add(box, [mSection('rules', 'n/a, re-weighting and data quality'), h('h4', { class: 'pi-mh', text: 'When a parameter cannot be measured' }), paras(M.naRule), h('h4', { class: 'pi-mh', text: 'Data quality and stale inputs' }), paras(M.qualityRule)]);
+      add(box, inputsTable());
+
+      // Safety penalties
+      add(box, [mSection('penalties', 'Safety penalties', 'up to −' + (M.penaltyCap != null ? M.penaltyCap : R.penaltyCap)), paras(M.penaltyRule)]);
+      if ((M.penalties || []).length) add(box, h('div', { class: 'pi-box' }, M.penalties.map(function (p) {
+        return h('div', { class: 'pi-mparam', id: 'm-' + p.id, 'data-param': p.id }, [
+          h('div', { class: 'lbl' }, [p.label, h('small', { text: 'up to −' + p.max + ' marks' })]),
+          defs([
+            ['Formula', p.formula],
+            ['No deduction at', p.noneDisplay], ['Full deduction at', p.worstDisplay],
+            ['Computed at', levelsText(p.levels)],
+            ['Source', sourceEl(p.source, p.ref)]
+          ])
+        ]);
+      })));
+
+      // 6. Known data caveats
+      if ((M.caveats || []).length) add(box, [mSection('caveats', 'Known data caveats', 'from this run’s data'), h('ul', { class: 'pi-why' }, M.caveats.map(function (c) { return h('li', { id: c.id ? 'm-c-' + c.id : null, text: c.text }); }))]);
+
+      // 7. Not scored, and what would close the gaps
+      if ((M.excluded || []).length) add(box, [mSection('excluded', 'What is not scored, and why'), h('div', { class: 'pi-box' }, h('div', { class: 'ui-table-wrap' }, h('table', { class: 'ui-table' }, [
+        h('thead', null, h('tr', null, [h('th', { text: 'Left out' }), h('th', { text: 'Why' })])),
+        h('tbody', null, M.excluded.map(function (x) { return h('tr', null, [h('td', { class: 'wrap', text: x.item }), h('td', { class: 'wrap', text: x.reason })]); }))
+      ])))]);
+      if ((M.gaps || []).length) add(box, [h('h4', { class: 'pi-mh', text: 'Data that would make the rating more complete' }), h('ul', { class: 'pi-why' }, M.gaps.map(function (g) { return h('li', { text: g }); }))]);
+
+      // 8. Sources
+      if ((M.sources || []).length) add(box, [mSection('sources', 'Sources', 'official documents'), h('div', { class: 'pi-box' }, M.sources.map(function (s) {
+        return h('div', { class: 'pi-mparam' }, [h('div', { class: 'lbl' }, [sourceEl(s), h('small', { text: s.key })]), s.ref ? h('p', { class: 'basis', text: s.ref }) : null]);
+      }))]);
+
+      // 9. Worked example
+      if (M.example) add(box, exampleBlock(M.example));
+      add(box, h('p', { class: 'ui-note pi-foot', text: 'Method ' + (M.version || R.engine || '') + ' · rated ' + fmtDay(R.referenceDate) + (R.inputs && R.inputs.metricsLogic ? ' · metrics ' + R.inputs.metricsLogic : '') }));
+      if (st.param) hitParam(st.param);
+    }
+    function defs(pairs) {
+      return h('dl', { class: 'pi-defs' }, pairs.filter(function (p) { return p[1] != null && p[1] !== '' && !(Array.isArray(p[1]) && !p[1].length); }).map(function (p) { return [h('dt', { text: p[0] }), h('dd', null, p[1])]; }));
+    }
+    function levelsText(lv) { return (lv || []).map(function (l) { return LEVEL_PLURAL[l] || l; }).join(', '); }
+    function datasetLinks(ds) {
+      return (ds || []).map(function (d, i) {
+        var pg = safePage(d.page);
+        return [i ? ', ' : '', pg ? h('a', { class: 'pi-link', href: pg, text: d.label || d.key }) : (d.label || d.key)];
+      });
+    }
+    function methodParam(x) {
+      var dir = x.direction === 'higher' ? 'higher is better' : 'lower is better';
+      return h('div', { class: 'pi-mparam', id: 'm-' + x.id, 'data-param': x.id }, [
+        h('div', { class: 'lbl' }, [x.label, h('small', { text: x.max + ' marks · ' + dir })]),
+        defs([
+          ['Formula', x.formula],
+          ['Full marks at', (x.direction === 'higher' ? '≥ ' : '≤ ') + x.fullDisplay],
+          ['Zero marks at', (x.direction === 'higher' ? '≤ ' : '≥ ') + x.zeroDisplay],
+          x.stretch ? ['National stretch', x.stretch + ' (shown, not scored)'] : ['', null],
+          ['Computed at', levelsText(x.levels)],
+          ['Data', datasetLinks(x.datasets)],
+          ['Source', sourceEl(x.source, x.ref)],
+          (x.notes || []).length ? ['Notes', h('span', null, x.notes.map(function (n, i) { return [i ? ' ' : '', n]; }))] : ['', null]
+        ])
+      ]);
+    }
+    function inputsTable() {
+      var asOn = (R.inputs && R.inputs.asOn) || {}, seen = {}, rowsM = [];
+      (R.methodology || []).forEach(function (m) { if (m.metric && !seen[m.metric]) { seen[m.metric] = 1; rowsM.push(m); } });
+      return [h('h4', { class: 'pi-mh', id: 'pi-inputs' }, ['Inputs in this rating', h('small', { text: 'with their as-on dates' })]), h('div', { class: 'pi-box' }, h('div', { class: 'ui-table-wrap' }, h('table', { class: 'ui-table' }, [
+        h('thead', null, h('tr', null, [h('th', { text: 'Input' }), h('th', { class: 'hide-sm', text: 'Data' }), h('th', { class: 'num', text: 'As on' }), h('th', { class: 'hide-sm', text: 'Period' }), h('th', { text: 'Status' })])),
+        h('tbody', null, rowsM.map(function (m) {
+          var a = asOn[m.metric] || {};
+          return h('tr', null, [
+            h('td', { class: 'wrap', text: m.label }),
+            h('td', { class: 'wrap hide-sm' }, datasetLinks(a.datasets)),
+            h('td', { class: 'num', text: fmtDay(a.asOn) }),
+            h('td', { class: 'wrap hide-sm', text: a.period || '' }),
+            h('td', null, a.stale ? h('span', { class: 'ui-badge warn', text: 'stale, not scored' }) : h('span', { class: 'ui-badge ok', text: 'current' }))
+          ]);
+        }))
+      ])))];
+    }
+    function exampleBlock(ex) {
+      var o = off(ex.code), lv = levelOf(ex.level);
+      var out = [mSection('example', 'Worked example', ex.name + ' ' + (ex.level === 'ccc' ? 'CCC' : ex.level)),
+        h('p', null, [ex.name + ' scores ' + d1(ex.score) + ' of 100, grade ', grade({ grade: ex.grade, band: null }), ', rank ' + ex.rank + ' of ' + ex.of + ' ' + (lv ? lv.label : '') + '. Each parameter: marks = maximum × the fraction of the way from the zero-marks level to the full-marks level; the pillar marks add up to the score' + (ex.penaltyTotal ? ', less ' + d1(-ex.penaltyTotal) + ' for safety.' : '.') + ' ',
+          o ? h('button', { type: 'button', class: 'pi-link', text: 'Open its scorecard', on: { click: function () { openCard(ex.code); } } }) : null])];
+      var sum = 0;
+      (ex.pillars || []).forEach(function (p) {
+        sum += p.marks || 0;
+        add(out, h('div', { class: 'pi-box' }, [
+          h('div', { class: 'pi-box-h' }, [h('b', { text: p.label }), h('span', { text: d1(p.marks) + ' of ' + d1(p.max) + (p.max !== p.weight ? ' (base ' + p.weight + ')' : '') })]),
+          p.note ? h('div', { class: 'pi-box-n', text: p.note.charAt(0).toUpperCase() + p.note.slice(1) + '.' }) : null,
+          h('div', { class: 'ui-table-wrap' }, h('table', { class: 'ui-table' }, [
+            h('thead', null, h('tr', null, [h('th', { text: 'Parameter' }), h('th', { class: 'num', text: 'Value' }), h('th', { class: 'num hide-sm', text: 'Zero at' }), h('th', { class: 'num hide-sm', text: 'Full at' }), h('th', { class: 'num', text: 'Fraction' }), h('th', { class: 'num', text: 'Marks' })])),
+            h('tbody', null, (p.params || []).map(function (x) {
+              var sc = x.status === 'scored';
               return h('tr', null, [
-                h('td', { class: 'wrap' }, [m.label, h('span', { class: 'ref', text: m.direction === 'higher' ? 'higher is better' : 'lower is better' })]),
-                h('td', { class: 'num', text: String(m.max) }),
-                h('td', { class: 'num', text: m.fullDisplay }),
-                h('td', { class: 'num', text: m.zeroDisplay }),
-                h('td', { class: 'wrap hide-sm', text: m.formula || '' }),
-                h('td', { class: 'wrap hide-sm' }, [m.sourceText || m.source || '', m.ref ? h('span', { class: 'ref', text: m.ref }) : null, m.stretch ? h('span', { class: 'ref', text: 'Stretch (not scored): ' + m.stretch }) : null])
+                h('td', { class: 'wrap' }, [x.label, !sc && x.naReason ? h('span', { class: 'sub', text: 'n/a: ' + x.naReason }) : null]),
+                h('td', { class: 'num', text: x.display || '—' }),
+                h('td', { class: 'num hide-sm', text: x.zero }), h('td', { class: 'num hide-sm', text: x.full }),
+                h('td', { class: 'num', text: sc && x.fraction != null ? x.fraction.toFixed(2) : 'n/a' }),
+                h('td', { class: 'num', text: sc ? d1(x.marks) + ' / ' + d1(x.effMax) : '— / 0' })
               ]);
             }))
-          ])))
-        ]);
+          ]))
+        ]));
       });
-
-      // Rules
-      var RULE_LABEL = { linear: 'Scale', naParameter: 'n/a parameter', naPillar: 'n/a pillar', minRated: 'Minimum to grade', penalties: 'Penalties', levels: 'Levels', ranks: 'Ranks' };
-      var rules = R.rules || {}, dl = h('dl', { class: 'pi-rules' });
-      Object.keys(rules).forEach(function (k) { add(dl, [h('dt', { text: RULE_LABEL[k] || k }), h('dd', { text: rules[k] })]); });
-      add(dl, [h('dt', { text: 'Data quality' }), h('dd', { text: 'Stale inputs, too few cases and low coverage make a value n/a for that office; dataset caveats are shown next to the value. Nothing is invented: a missing value is never scored as zero or full.' })]);
-      add(box, [h('h3', { text: 'Rules' }), dl]);
-
-      // Inputs and their dates
-      var asOn = (R.inputs && R.inputs.asOn) || {}, seen = {};
-      var inRows = (R.methodology || []).filter(function (m) { if (!m.metric || seen[m.metric]) return false; seen[m.metric] = 1; return true; }).map(function (m) {
-        var a = asOn[m.metric] || {};
-        return h('tr', null, [
-          h('td', { class: 'wrap', text: m.label }),
-          h('td', { class: 'num', text: fmtDay(a.asOn) }),
-          h('td', { class: 'wrap hide-sm', text: a.period || '' }),
-          h('td', null, a.stale ? h('span', { class: 'ui-badge warn', text: 'stale, not scored' }) : h('span', { class: 'ui-badge ok', text: 'current' }))
+      add(out, h('p', { class: 'pi-formula' }, [h('span', { class: 'k', text: 'Score' }), h('code', { text: (ex.pillars || []).map(function (p) { return d1(p.marks); }).join(' + ') + (ex.penaltyTotal ? ' − ' + d1(-ex.penaltyTotal) : '') + ' = ' + d1(sum + (ex.penaltyTotal || 0)) + ' → ' + ex.grade })]));
+      return out;
+    }
+    function hitParam(id) {
+      var el = document.querySelector('[data-param="' + String(id).replace(/[^\w-]/g, '') + '"]');
+      [].forEach.call(document.querySelectorAll('.pi-mparam.hit'), function (x) { x.classList.remove('hit'); });
+      if (!el) return;
+      el.classList.add('hit');
+      setTimeout(function () { el.scrollIntoView({ block: 'center' }); }, 0);
+    }
+    // Older documents without ratingDoc.method: the flat methodology rows and rules.
+    function paintMethodRows(box) {
+      add(box, h('h3', { text: 'Parameters' }));
+      add(box, h('div', { class: 'pi-box' }, (R.methodology || []).map(function (m) {
+        return h('div', { class: 'pi-mparam', id: 'm-' + m.id, 'data-param': m.id }, [
+          h('div', { class: 'lbl' }, [m.label, h('small', { text: m.pillarLabel + ' · ' + m.max + ' marks' })]),
+          defs([['Formula', m.formula], ['Full marks at', m.fullDisplay], ['Zero marks at', m.zeroDisplay], ['Source', (m.sourceText || m.source || '') + (m.ref ? ' — ' + m.ref : '')]])
         ]);
-      });
-      add(box, [h('h3', { id: 'pi-inputs' }, ['Inputs', h('small', { text: 'as on dates used in this rating' })]), h('div', { class: 'pi-box' }, h('div', { class: 'ui-table-wrap' }, h('table', { class: 'ui-table' }, [
-        h('thead', null, h('tr', null, [h('th', { text: 'Input' }), h('th', { class: 'num', text: 'As on' }), h('th', { class: 'hide-sm', text: 'Period' }), h('th', { text: 'Status' })])),
-        h('tbody', null, inRows)
-      ])))]);
-
-      // Sources
-      var src = R.sources || {};
-      add(box, [h('h3', { text: 'Benchmark sources' }), h('dl', { class: 'pi-rules' }, Object.keys(src).map(function (k) { return [h('dt', { text: k }), h('dd', { text: src[k] })]; }))]);
-      add(box, h('p', { class: 'ui-note', style: 'margin-top:14px', text: 'Engine ' + (R.engine || '') + ' · rated ' + fmtDay(R.referenceDate) + (R.inputs && R.inputs.metricsLogic ? ' · metrics ' + R.inputs.metricsLogic : '') }));
+      })));
+      var rules = R.rules || {};
+      add(box, [h('h3', { text: 'Rules' }), h('dl', { class: 'pi-rules' }, Object.keys(rules).map(function (k) { return [h('dt', { text: k }), h('dd', { text: rules[k] })]; }))]);
+      add(box, inputsTable());
+      if (st.param) hitParam(st.param);
     }
 
     /* ---------------- paint ---------------- */
     function paint() {
       paintTabs();
       $('tools').hidden = !R || st.tab !== 'ranking';
-      $('methodBtn').setAttribute('aria-pressed', String(st.tab === 'methodology'));
       writeUrl();
       if (!R) return;
       if (st.tab === 'methodology') paintMethod(); else paintRanking();
@@ -936,7 +1094,12 @@
       }).then(function () { btn.classList.remove('spin'); });
     }
 
-    $('methodBtn').addEventListener('click', function () { go(st.tab === 'methodology' ? 'ranking' : 'methodology'); });
+    window.addEventListener('hashchange', function () {
+      if (!readHash()) return;
+      if (drawer && !drawer.hidden) { drawer.hidden = true; }
+      paint();
+      if (!st.param) { var t = $('panel'); if (t) t.scrollIntoView({ block: 'start' }); }
+    });
     $('refreshBtn').addEventListener('click', function () { var hub = window.mzoDataHub; try { if (hub && hub.resetVersionChecks) hub.resetVersionChecks(); } catch (e) {} load(true); });
 
     readUrl();

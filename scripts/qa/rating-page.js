@@ -22,7 +22,13 @@ const ROOT = path.join(__dirname, '..', '..');
 const DOC = arg('doc', path.join(ROOT, 'docs/rating/sample-rating.json'));
 const SHOTS = arg('shots', '');
 const ONLY = (arg('only', '') || '').split(',').filter(Boolean);
-const { chromium } = require('playwright-core');
+function loadPlaywright() {
+  for (const t of [process.env.PLAYWRIGHT_CORE_PATH, 'playwright-core', 'playwright']) { if (!t) continue; try { return require(t); } catch (_) {} }
+  const npx = path.join(require('os').homedir(), '.npm', '_npx');
+  for (const d of fs.existsSync(npx) ? fs.readdirSync(npx) : []) { const p = path.join(npx, d, 'node_modules', 'playwright-core'); if (fs.existsSync(path.join(p, 'package.json'))) return require(p); }
+  throw new Error('playwright-core not found');
+}
+const { chromium } = loadPlaywright();
 
 const PROFILES = {
   admin: { Username: 'local-preview', Name: 'Local Preview', role: 'admin', office_level: 'CE' },
@@ -41,7 +47,7 @@ const results = [];
 function check(name, ok, detail) { results.push({ name, ok: !!ok, detail: detail || '' }); if (!ok) console.log('FAIL', name, detail || ''); }
 
 async function context(browser, who, vp, theme, docBody) {
-  const ctx = await browser.newContext(Object.assign({ viewport: { width: VIEWPORTS[vp].width, height: VIEWPORTS[vp].height }, acceptDownloads: true }, vp === 'phone' ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}));
+  const ctx = await browser.newContext(Object.assign({ viewport: { width: VIEWPORTS[vp].width, height: VIEWPORTS[vp].height }, acceptDownloads: true, reducedMotion: 'reduce' }, vp === 'phone' ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}));
   const host = new URL(BASE).hostname;
   await ctx.addCookies([{ name: 'mzo_session', value: cookie(PROFILES[who]), domain: host, path: '/', httpOnly: true, sameSite: 'Lax' }]);
   const version = await fetch(BASE + '/version.json').then((r) => r.json()).then((j) => j.version).catch(() => '');
@@ -139,7 +145,10 @@ async function run() {
         if (vp === 'desktop') {
           await page.click('#view th[data-sort="score"]');
           let s = await page.$$eval('#view tbody tr[data-code] .pi-score b', (b) => b.map((x) => +x.textContent));
-          check(tag + ' sort score toggles to ascending', s.length > 2 && s[0] <= s[s.length - 1], s.slice(0, 3).join(','));
+          check(tag + ' sort score descending', s.length > 2 && s.every((v, i) => !i || s[i - 1] >= v), s.slice(0, 3).join(','));
+          await page.click('#view th[data-sort="score"]');
+          s = await page.$$eval('#view tbody tr[data-code] .pi-score b', (b) => b.map((x) => +x.textContent));
+          check(tag + ' sort score toggles to ascending', s.length > 2 && s.every((v, i) => !i || s[i - 1] <= v), s.slice(0, 3).join(','));
           await page.click('#view th[data-sort="name"]');
           s = await page.$$eval('#view tbody tr[data-code] .pi-off', (b) => b.map((x) => x.firstChild.textContent));
           check(tag + ' sort by name', s.join() === s.slice().sort((a, b) => a.localeCompare(b, 'en')).join(), s.slice(0, 3).join(','));
@@ -188,9 +197,10 @@ async function run() {
         }
         await shot(page, tag + '-3-scorecard', false);
         if (vp === 'desktop' && theme === 'light') {
-          await page.$eval('#scorecard > section', (s) => { s.style.height = 'auto'; s.style.overflow = 'visible'; });
-          await shot(page, tag + '-3b-scorecard-full', true);
-          await page.$eval('#scorecard > section', (s) => { s.style.height = ''; s.style.overflow = ''; });
+          const tall = await page.$eval('#scorecard > section', (s) => s.scrollHeight);
+          await page.setViewportSize({ width: 1280, height: Math.min(tall + 10, 9000) });
+          await shot(page, tag + '-3b-scorecard-full', false);
+          await page.setViewportSize({ width: 1280, height: 900 });
         }
         // Parent (division) from the trail, then its children and contributions.
         await page.click('#scBody .pi-trail button >> nth=2');
