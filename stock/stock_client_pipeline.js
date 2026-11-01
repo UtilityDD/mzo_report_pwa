@@ -1,5 +1,6 @@
 /**
- * Browser-side stock Excel → cleaned CSV (mirrors lib/stock_pipeline.js).
+ * Browser-side SAP stock Excel → cleaned dashboard CSV (the only place the Excel is processed).
+ * Output columns match lib/stock_pipeline.js, which the server uses for the published CSV.
  * Category comes from hardcoded stock_material_category.js (lookupStockCategory).
  */
 (function (global) {

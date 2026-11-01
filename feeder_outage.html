@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Feeder outage · MZO Reports</title>
   <script src="/mzo_theme.js?v=3"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=3" />
-  <script src="/mzo_ui.js?v=2" defer></script>
-  <script src="/mzo_data_hub.js" defer></script>
-  <script src="/mzo_scope.js?v=5" defer></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
+  <script src="/mzo_ui.js?v=4" defer></script>
+  <script src="/mzo_data_hub.js?v=90" defer></script>
+  <script src="/mzo_scope.js?v=14" defer></script>
 </head>
 <body>
   <main class="ui-page">
@@ -104,15 +104,14 @@
       };
     }
 
-    function uniq(rows, k) { var s = {}; rows.forEach(function (r) { if (r[k]) s[r[k]] = 1; }); return Object.keys(s).sort(); }
     function fillFilters() {
       var reg = $('regionFilter').value, div = $('divisionFilter').value;
-      UI.fill('regionFilter', uniq(all, 'region'), 'All regions');
+      UI.fill('regionFilter', UI.uniq(all, 'region'), 'All regions');
       var r1 = all.filter(function (r) { return !reg || r.region === reg; });
-      UI.fill('divisionFilter', uniq(r1, 'division'), 'All divisions');
+      UI.fill('divisionFilter', UI.uniq(r1, 'division'), 'All divisions');
       var r2 = r1.filter(function (r) { return !div || r.division === div; });
-      UI.fill('ssFilter', uniq(r2, 'substation'), 'All substations');
-      UI.fill('schemeFilter', uniq(all, 'scheme'), 'All schemes');
+      UI.fill('ssFilter', UI.uniq(r2, 'substation'), 'All substations');
+      UI.fill('schemeFilter', UI.uniq(all, 'scheme'), 'All schemes');
       if (!scope) scope = UI.lockScope();
       ['regionFilter', 'divisionFilter', 'ssFilter', 'catFilter', 'natFilter', 'schemeFilter'].forEach(function (id) { UI.mark($(id)); });
     }
@@ -126,11 +125,12 @@
       });
     }
 
+    function feederKey(r) { return r.code || (r.feeder + '|' + r.substation + '|' + r.division); }
     // One record per feeder with its months; concern judged on the last month in view.
     function feeders(rows) {
       var map = {};
       rows.forEach(function (r) {
-        var key = r.code || (r.feeder + '|' + r.substation + '|' + r.division);
+        var key = feederKey(r);
         var f = map[key] || (map[key] = { key: key, feeder: r.feeder, code: r.code, substation: r.substation, division: r.division, region: r.region, category: r.category, nature: r.nature, scheme: r.scheme, months: [] });
         if (!f.months.some(function (m) { return m.month === r.month; })) f.months.push(r);
       });
@@ -199,10 +199,10 @@
     }
 
     function render() {
-      var b = base(), list = feeders(b), months = uniq(all, 'month');
+      var b = base(), list = feeders(b);
       // Stats
-      var stats = uniq(b, 'month').map(function (m) { return mean(b.filter(function (r) { return r.month === m; }).map(function (r) { return r.hours; })); });
-      var bMonths = uniq(b, 'month');
+      var bMonths = UI.uniq(b, 'month');
+      var stats = bMonths.map(function (m) { return mean(b.filter(function (r) { return r.month === m; }).map(function (r) { return r.hours; })); });
       $('sFeeders').textContent = UI.n(list.length);
       $('sFeedersS').textContent = monthPick ? mLabel(monthPick) : bMonths.length + ' month' + (bMonths.length === 1 ? '' : 's');
       $('sDaily').textContent = list.length ? fmtDaily(mean(list.map(function (f) { return f.daily; }))) : '—';
@@ -216,17 +216,18 @@
       $('concernStat').setAttribute('aria-pressed', String(concernOnly));
 
       var view = concernOnly ? list.filter(function (f) { return f.concern; }) : list;
-      var viewRows = concernOnly ? b.filter(function (r) { var k = r.code || (r.feeder + '|' + r.substation + '|' + r.division); return view.some(function (f) { return f.key === k; }); }) : b;
+      var keep = concernOnly ? new Set(view.map(function (f) { return f.key; })) : null;
+      var viewRows = keep ? b.filter(function (r) { return keep.has(feederKey(r)); }) : b;
 
       // Chart: average outage hours per feeder by month, for the chosen cut
-      var ms = uniq(viewRows, 'month'), series = [], capped = false, total = 0;
+      var ms = UI.uniq(viewRows, 'month'), series = [], capped = false, total = 0;
       if (level === 'all') {
         var reg = $('regionFilter').value, div = $('divisionFilter').value, ss = $('ssFilter').value;
         series = [{ label: ss || div || reg || 'All feeders', values: avgByMonth(viewRows, ms), strong: true }];
       } else {
         var by = {};
         viewRows.forEach(function (r) {
-          var k = level === 'region' ? r.region : level === 'division' ? r.division : level === 'ss' ? r.substation : (r.code || r.feeder + '|' + r.substation);
+          var k = level === 'region' ? r.region : level === 'division' ? r.division : level === 'ss' ? r.substation : feederKey(r);
           (by[k] || (by[k] = { label: level === 'feeder' ? r.feeder : k, rows: [] })).rows.push(r);
         });
         var gs = Object.keys(by).map(function (k) { return { label: by[k].label, values: avgByMonth(by[k].rows, ms), score: mean(by[k].rows.map(function (r) { return r.hours; })) }; });
@@ -305,7 +306,7 @@
       var rows = UI.csv(text).map(normalize).filter(Boolean);
       if (window.MzoScope) { try { rows = MzoScope.filterRows(rows); } catch (e) {} }
       all = rows;
-      var ms = uniq(all, 'month'), latest = ms[ms.length - 1];
+      var ms = UI.uniq(all, 'month'), latest = ms[ms.length - 1];
       $('meta').textContent = 'Outages over 5 min · ' + (ms.length ? (ms.length === 1 ? mLabel(latest) : mLabel(ms[0]) + ' – ' + mLabel(latest)) : 'no rows in your scope');
       if (/^\d{6}$/.test(latest || '')) {
         var y = +latest.slice(0, 4), m = +latest.slice(4, 6), d = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -341,7 +342,7 @@
       UI.exportCsv('feeder-outage.csv', ex.cols.map(function (c) { return { key: c.key, label: c.label, csv: c.csv || function (r) { var v = r[c.key]; return typeof v === 'number' ? +v.toFixed(2) : v; } }; }), ex.rows);
     });
 
-    // Google's published CSV has no ETag: always check so a same-day replace is picked up (DEVELOPER.md).
+    // Google's published CSV has no ETag: always check so a same-day replace is picked up (docs/reports.md).
     function load(force) {
       var hub = window.mzoDataHub, b = $('refreshBtn');
       if (!hub) { $('meta').textContent = 'Data hub is not available'; return; }

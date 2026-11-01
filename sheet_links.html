@@ -36,7 +36,7 @@
     [hidden] { display: none !important; }
     @media (max-width: 760px) { .sheet-container { padding: 16px 14px 56px; } .bar { flex-basis: 100%; } td.n, th.n { display: none; } td:nth-child(2), th:nth-child(2) { padding-left: 16px; } }
 </style>
-  <link rel="stylesheet" href="mzo_theme.css?v=3" />
+  <link rel="stylesheet" href="mzo_theme.css?v=5" />
 </head>
 <body>
   <div class="sheet-container">
@@ -59,11 +59,8 @@
       <div class="empty" id="empty" hidden>No matching sheet.</div>
     </div>
   </div>
-  <script src="mzo_data_hub.js"></script>
+  <script src="mzo_data_hub.js?v=90"></script>
   <script>
-    if (localStorage.getItem('theme') === 'light') document.body.classList.remove('dark-theme');
-    else document.body.classList.add('dark-theme');
-
     function allowed() {
       let profile = {};
       try { profile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}') || {}; } catch (e) { profile = {}; }
@@ -142,9 +139,6 @@
 
     const skipSheet = {
       CACHE_VENDORS: 1,
-      CACHE_PMSGY_0: 1,
-      CACHE_PMSGY_1: 1,
-      CACHE_PMSGY_2: 1,
       CACHE_LOSS_TARGET: 1
     };
     const byName = new Set();
@@ -288,98 +282,6 @@
       })
       .catch(function () {});
 
-    function csvFields(line) {
-      const out = [];
-      let cur = '';
-      let q = false;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line.charAt(i);
-        if (q) {
-          if (ch === '"') {
-            if (line.charAt(i + 1) === '"') { cur += '"'; i++; }
-            else q = false;
-          } else cur += ch;
-        } else if (ch === '"') q = true;
-        else if (ch === ',') { out.push(cur); cur = ''; }
-        else cur += ch;
-      }
-      out.push(cur);
-      return out;
-    }
-
-    function disconnectionReportDate(csv) {
-      const text = String(csv || '');
-      if (!text) return '';
-      const lines = text.split(/\r?\n/);
-      let headerIdx = -1;
-      for (let i = 0; i < lines.length && i < 8; i++) {
-        if (/PAID\/DISCON DATE/i.test(lines[i])) { headerIdx = i; break; }
-      }
-      if (headerIdx < 0) return '';
-      const idx = csvFields(lines[headerIdx]).findIndex(function (h) {
-        return /PAID\/DISCON DATE/i.test(String(h || ''));
-      });
-      if (idx < 0) return '';
-      let best = 0;
-      let label = '';
-      for (let i = headerIdx + 1; i < lines.length; i++) {
-        if (!lines[i]) continue;
-        const raw = String(csvFields(lines[i])[idx] || '').trim();
-        const m = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-        if (!m) continue;
-        const day = parseInt(m[1], 10);
-        const month = parseInt(m[2], 10);
-        const year = parseInt(m[3], 10);
-        const t = Date.UTC(year, month - 1, day);
-        if (t > best) {
-          best = t;
-          label = String(day).padStart(2, '0') + '/' + String(month).padStart(2, '0') + '/' + year;
-        }
-      }
-      return label;
-    }
-
-    function showDisconnectionDate(csv) {
-      const label = disconnectionReportDate(csv);
-      if (label) setUpdated('CACHE_DISCONNECTION', label);
-    }
-
-    function docketHeaderDate(csv) {
-      const text = String(csv || '');
-      if (!text) return '';
-      const lines = text.split(/\r?\n/);
-      let headerIdx = -1;
-      for (let i = 0; i < lines.length && i < 8; i++) {
-        if (/(^|,)doc_crn_dt(,|$)/i.test(lines[i])) { headerIdx = i; break; }
-      }
-      if (headerIdx < 0) return '';
-      const idx = csvFields(lines[headerIdx]).findIndex(function (h) {
-        return /^doc_crn_dt$/i.test(String(h || '').trim());
-      });
-      if (idx < 0) return '';
-      let best = 0;
-      let label = '';
-      for (let i = headerIdx + 1; i < lines.length; i++) {
-        if (!lines[i]) continue;
-        const raw = String(csvFields(lines[i])[idx] || '').trim();
-        const m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2})[:.](\d{1,2})[:.](\d{1,2}))?$/);
-        if (!m) continue;
-        const day = parseInt(m[1], 10);
-        const month = parseInt(m[2], 10);
-        const year = parseInt(m[3], 10);
-        const hh = parseInt(m[4] || '0', 10);
-        const mm = parseInt(m[5] || '0', 10);
-        const ss = parseInt(m[6] || '0', 10);
-        const t = Date.UTC(year, month - 1, day, hh, mm, ss);
-        if (t > best) {
-          best = t;
-          const pad = function (n) { return String(n).padStart(2, '0'); };
-          label = pad(day) + '/' + pad(month) + '/' + year;
-        }
-      }
-      return label;
-    }
-
     function csvBody(cached) {
       if (!cached) return '';
       if (typeof cached === 'string') return cached;
@@ -398,13 +300,8 @@
       });
     }
 
-    loadSheetCsv('CACHE_DISCONNECTION').then(showDisconnectionDate).catch(function () {});
-    loadSheetCsv('CACHE_DOCKET').then(function (csv) {
-      const label = docketHeaderDate(csv);
-      if (label) setUpdated('CACHE_DOCKET', label);
-    }).catch(function () {});
-
-    function csvRows(text) {
+    // Parse CSV text into rows (quoted fields, blank rows dropped). `limit` stops after that many rows.
+    function csvRows(text, limit) {
       const rows = [];
       let row = [];
       let cur = '';
@@ -425,11 +322,58 @@
           cur = '';
           if (row.some(function (cell) { return cell; })) rows.push(row);
           row = [];
+          if (limit && rows.length >= limit) return rows;
         } else cur += ch;
       }
       if (cur || row.length) { row.push(cur); rows.push(row); }
       return rows;
     }
+
+    const pad = function (n) { return String(n).padStart(2, '0'); };
+
+    // Latest date in the column whose header matches headerRe (header within the first 8 rows).
+    // cellRe captures day, month, year; with looseDates, other date strings are parsed by Date.
+    function latestDate(csv, headerRe, cellRe, looseDates) {
+      const table = csvRows(csv);
+      let head = -1;
+      let idx = -1;
+      for (let i = 0; i < table.length && i < 8 && idx < 0; i++) {
+        idx = table[i].findIndex(function (h) { return headerRe.test(String(h || '').trim()); });
+        head = i;
+      }
+      if (idx < 0) return '';
+      let best = 0;
+      let label = '';
+      for (let i = head + 1; i < table.length; i++) {
+        const raw = String(table[i][idx] || '').trim();
+        if (!raw) continue;
+        const m = raw.match(cellRe);
+        let day, month, year;
+        if (m) {
+          day = parseInt(m[1], 10); month = parseInt(m[2], 10); year = parseInt(m[3], 10);
+        } else if (looseDates) {
+          const d = new Date(raw);
+          if (Number.isNaN(d.getTime())) continue;
+          day = d.getDate(); month = d.getMonth() + 1; year = d.getFullYear();
+        } else continue;
+        const t = Date.UTC(year, month - 1, day);
+        if (t > best) { best = t; label = pad(day) + '/' + pad(month) + '/' + year; }
+      }
+      return label;
+    }
+
+    function showLatest(key, headerRe, cellRe, looseDates) {
+      loadSheetCsv(key).then(function (csv) {
+        const label = latestDate(csv, headerRe, cellRe, looseDates);
+        if (label) setUpdated(key, label);
+      }).catch(function () {});
+    }
+
+    const DOTTED = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
+    showLatest('CACHE_DISCONNECTION', /PAID\/DISCON DATE/i, DOTTED);
+    showLatest('CACHE_DOCKET', /^doc_crn_dt$/i, /^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    showLatest('CACHE_CAPEX', /^Reporting Date$/i, DOTTED);
+    showLatest('CACHE_PENDING_MC', /^Report Date$/i, /^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/, true);
 
     function cmoHeaderDate(csv) {
       const rows = csvRows(csv);
@@ -468,80 +412,8 @@
       if (label) setUpdated('CACHE_COLLECTION', label);
     }).catch(function () {});
 
-    function capexHeaderDate(csv) {
-      const rows = csvRows(csv);
-      if (!rows.length) return '';
-      const idx = rows[0].findIndex(function (h) {
-        return /^Reporting Date$/i.test(String(h || '').trim());
-      });
-      if (idx < 0) return '';
-      let best = 0;
-      let label = '';
-      for (let i = 1; i < rows.length; i++) {
-        const raw = String((rows[i] && rows[i][idx]) || '').trim();
-        const m = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-        if (!m) continue;
-        const day = parseInt(m[1], 10);
-        const month = parseInt(m[2], 10);
-        const year = parseInt(m[3], 10);
-        const t = Date.UTC(year, month - 1, day);
-        if (t > best) {
-          best = t;
-          label = String(day).padStart(2, '0') + '/' + String(month).padStart(2, '0') + '/' + year;
-        }
-      }
-      return label;
-    }
-
-    loadSheetCsv('CACHE_CAPEX').then(function (csv) {
-      const label = capexHeaderDate(csv);
-      if (label) setUpdated('CACHE_CAPEX', label);
-    }).catch(function () {});
-
-    function pendingMcHeaderDate(csv) {
-      const rows = csvRows(csv);
-      if (!rows.length) return '';
-      const idx = rows[0].findIndex(function (h) {
-        return /^Report Date$/i.test(String(h || '').trim());
-      });
-      if (idx < 0) return '';
-      let best = 0;
-      let label = '';
-      const pad = function (n) { return String(n).padStart(2, '0'); };
-      for (let i = 1; i < rows.length; i++) {
-        const raw = String((rows[i] && rows[i][idx]) || '').trim();
-        if (!raw) continue;
-        const m = raw.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
-        let day;
-        let month;
-        let year;
-        if (m) {
-          day = parseInt(m[1], 10);
-          month = parseInt(m[2], 10);
-          year = parseInt(m[3], 10);
-        } else {
-          const d = new Date(raw);
-          if (Number.isNaN(d.getTime())) continue;
-          day = d.getDate();
-          month = d.getMonth() + 1;
-          year = d.getFullYear();
-        }
-        const t = Date.UTC(year, month - 1, day);
-        if (t > best) {
-          best = t;
-          label = pad(day) + '/' + pad(month) + '/' + year;
-        }
-      }
-      return label;
-    }
-
-    loadSheetCsv('CACHE_PENDING_MC').then(function (csv) {
-      const label = pendingMcHeaderDate(csv);
-      if (label) setUpdated('CACHE_PENDING_MC', label);
-    }).catch(function () {});
-
     function firstRowHeaderDate(csv, headerRe, fallbackIdx) {
-      const rows = csvRows(csv);
+      const rows = csvRows(csv, 2);
       if (rows.length < 2) return '';
       let idx = rows[0].findIndex(function (h) {
         return headerRe.test(String(h || '').trim());
@@ -552,7 +424,6 @@
       const m = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
       if (!m) return '';
       const year = parseInt(m[3], 10);
-      const pad = function (n) { return String(n).padStart(2, '0'); };
       return pad(parseInt(m[1], 10)) + '/' + pad(parseInt(m[2], 10)) + '/' + (year < 100 ? 2000 + year : year);
     }
 
@@ -579,7 +450,6 @@
       const months = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
       let best = 0;
       let label = '';
-      const pad = function (n) { return String(n).padStart(2, '0'); };
       for (let i = 1; i < rows.length; i++) {
         const raw = String((rows[i] && rows[i][idx]) || '').trim();
         const named = raw.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})/);
@@ -633,7 +503,6 @@
       const month = parseInt(best.slice(4, 6), 10);
       if (month < 1 || month > 12) return '';
       const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
-      const pad = function (n) { return String(n).padStart(2, '0'); };
       return pad(last) + '/' + pad(month) + '/' + year;
     }
 
@@ -644,35 +513,10 @@
       try { localStorage.setItem('mzo_feeder_outage_as_on', label); } catch (e) {}
     }).catch(function () {});
 
-    function latestDottedDate(csv, headerName) {
-      const rows = csvRows(csv);
-      if (!rows.length) return '';
-      const idx = rows[0].findIndex(function (h) {
-        return new RegExp('^' + headerName + '$', 'i').test(String(h || '').trim());
-      });
-      if (idx < 0) return '';
-      let best = 0;
-      let label = '';
-      for (let i = 1; i < rows.length; i++) {
-        const raw = String((rows[i] && rows[i][idx]) || '').trim();
-        const m = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-        if (!m) continue;
-        const day = parseInt(m[1], 10);
-        const month = parseInt(m[2], 10);
-        const year = parseInt(m[3], 10);
-        const t = Date.UTC(year, month - 1, day);
-        if (t > best) {
-          best = t;
-          label = String(day).padStart(2, '0') + '/' + String(month).padStart(2, '0') + '/' + year;
-        }
-      }
-      return label;
-    }
-
     const advance = rows.find(function (r) { return r.key === 'OM_ADVANCE'; });
     if (advance && advance.csv) {
       fetch(advance.csv).then(function (res) { return res.ok ? res.text() : ''; }).then(function (csv) {
-        const label = latestDottedDate(csv, 'Creation Date');
+        const label = latestDate(csv, /^Creation Date$/i, DOTTED);
         if (label) setUpdated('OM_ADVANCE', label);
       }).catch(function () {});
     }

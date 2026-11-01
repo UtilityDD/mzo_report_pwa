@@ -1,14 +1,11 @@
-/* mzo_ui.js — small helpers for pages built on the MZO UI kit (<html class="ui">).
+/* mzo_ui.js — helpers for pages built on the MZO UI kit (<html class="ui">).
  * No dependencies. Uses window.mzoDataHub and window.MzoScope when present.
  *
- *   UI.csv(text)                     → array of row objects (header row = keys)
- *   UI.n(x) / UI.inr(x) / UI.pct(a,b) / UI.date(s) / UI.fmtDate(d)
- *   UI.office(code)                  → { region, division, ccc } (canonical names)
- *   UI.load(key, render)             → paint cached data now, repaint when the hub has newer data
- *   UI.fill(select, values, allLabel)/ UI.lockScope()
- *   UI.table(el, { columns, rows, sort, limit, onRow, foot, empty })
- *   UI.hist(el, rows, { onClick, active })
- *   UI.exportCsv(name, columns, rows) / UI.toast(msg) / UI.icon(name) / UI.esc(s)
+ *   Format   UI.n / inr / pct / esc / blank / date / fmtDate / days / age / title
+ *   Data     UI.csv(text) → row objects · UI.load(key, render) · UI.refresh(btn, key, onText) · UI.office(code, name) · UI.regionName(s)
+ *   Filters  UI.fill(select, values, allLabel) / mark / uniq / offices(rows) / lockScope · UI.facet · UI.sidePanel · UI.drill
+ *   Views    UI.table(el, cfg) · UI.bar · UI.hist(el, rows, { onClick, active }) · UI.line(el, cfg)
+ *   Misc     UI.exportCsv(name, columns, rows) · UI.toast · UI.debounce · UI.copy · UI.drawer · UI.icon
  */
 (function (w) {
   'use strict';
@@ -129,12 +126,27 @@
       else if (!first) render(fresh || null, { error: !fresh });
     }).catch(function () { if (!first) render(null, { error: true }); });
   }
+  // Refresh button: force a version check for `key`, then hand the stored body to onText.
+  function refresh(btn, key, onText) {
+    if (typeof btn === 'string') btn = document.getElementById(btn);
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var hub = w.mzoDataHub;
+      if (!hub) return;
+      btn.classList.add('spin');
+      Promise.resolve(hub.waitForDataset(key, { forceCheck: true })).catch(function () {})
+        .then(function () { return hub._peek(key); })
+        .then(function (text) { if (text) onText(text); })
+        .catch(function () {})
+        .then(function () { btn.classList.remove('spin'); });
+    });
+  }
 
   /* ---------- selects / scope ---------- */
-  function fill(sel, values, allLabel, keep) {
+  function fill(sel, values, allLabel) {
     if (typeof sel === 'string') sel = document.getElementById(sel);
     if (!sel || sel.disabled) return;
-    var cur = keep !== false ? sel.value : '';
+    var cur = sel.value;
     var h = '<option value="">' + esc(allLabel) + '</option>';
     values.forEach(function (v) { var val = typeof v === 'object' ? v.value : v, lab = typeof v === 'object' ? v.label : v; h += '<option value="' + esc(val) + '">' + esc(lab) + '</option>'; });
     sel.innerHTML = h;
@@ -142,6 +154,18 @@
     mark(sel);
   }
   function mark(sel) { if (sel) sel.classList.toggle('on', !!sel.value && !sel.disabled); }
+  // Sorted distinct non-empty values of rows[k].
+  function uniq(rows, k) { var s = {}; rows.forEach(function (r) { if (r[k]) s[r[k]] = 1; }); return Object.keys(s).sort(); }
+  // Office selects #regionFilter → #divisionFilter → #cccFilter from rows (_region / _divn / _supp);
+  // each list is narrowed by the choice above it.
+  function offices(rows, regionLabel) {
+    var val = function (id) { var el = document.getElementById(id); return el ? el.value : ''; };
+    var reg = val('regionFilter'), div = val('divisionFilter');
+    fill('regionFilter', uniq(rows, '_region'), regionLabel || 'All regions');
+    var r1 = reg ? rows.filter(function (r) { return r._region === reg; }) : rows;
+    fill('divisionFilter', uniq(r1, '_divn'), 'All divisions');
+    fill('cccFilter', uniq(div ? r1.filter(function (r) { return r._divn === div; }) : r1, '_supp'), 'All CCCs');
+  }
   // Login scope: pin and disable office selects (#regionFilter, #divisionFilter, #cccFilter).
   function lockScope() {
     var S = w.MzoScope;
@@ -161,12 +185,12 @@
   }
 
   /* ---------- table ---------- */
-  // columns: [{ key, label, num, fmt(v,row) → html, sortVal(row), cls, hideSm }]
+  // cfg: { columns: [{ key, label, num, fmt(v,row) → html, sortVal(row), cls, hideSm, width, csv(row) }],
+  //        rows, sort: { key, dir }, limit, resetPage, onRow(row), selected(row), foot, empty, count }
+  // Sort and paging live on the element (el.__ui); set el.__ui = null when the column set changes.
   function table(el, cfg) {
     if (typeof el === 'string') el = document.getElementById(el);
-    if (cfg.reset) el.__ui = null; // new column set (e.g. tab switch): forget sort/paging
     var st = el.__ui || (el.__ui = { sort: cfg.sort || null, limit: cfg.limit || 0, shown: cfg.limit || 0 });
-    if (cfg.forceSort && cfg.sort) st.sort = cfg.sort; // caller decides the order this time (e.g. a stat changed the metric)
     if (cfg.resetPage) st.shown = st.limit;
     var cols = cfg.columns, rows = cfg.rows.slice();
     if (st.sort) {
@@ -221,7 +245,6 @@
       var tr = e.target.closest('tr[data-i]');
       if (tr && cfg.onRow) cfg.onRow(view[+tr.getAttribute('data-i')], e);
     };
-    return rows;
   }
 
   function bar(v, max, label) {
@@ -235,12 +258,157 @@
     opts = opts || {};
     var max = Math.max.apply(null, rows.map(function (r) { return r.value; }).concat([0]));
     el.className = 'ui-hist';
-    if (opts.labelWidth) el.style.setProperty('--ui-hist-label', opts.labelWidth);
     el.innerHTML = rows.map(function (r, i) {
       var on = opts.active != null && opts.active === r.key;
-      return '<div class="row' + (opts.onClick ? ' click' : '') + (on ? ' on' : '') + '" data-i="' + i + '"><span title="' + esc(r.label) + '">' + esc(r.label) + '</span><i><b style="width:' + (max ? Math.max(r.value ? 1.5 : 0, (r.value / max) * 100) : 0) + '%"></b></i><span>' + esc(opts.fmt ? opts.fmt(r.value, r) : n(r.value)) + '</span></div>';
+      return '<div class="row' + (opts.onClick ? ' click' : '') + (on ? ' on' : '') + '" data-i="' + i + '"><span title="' + esc(r.label) + '">' + esc(r.label) + '</span><i><b style="width:' + (max ? Math.max(r.value ? 1.5 : 0, (r.value / max) * 100) : 0) + '%"></b></i><span>' + n(r.value) + '</span></div>';
     }).join('');
     el.onclick = opts.onClick ? function (e) { var row = e.target.closest('.row'); if (row) opts.onClick(rows[+row.getAttribute('data-i')]); } : null;
+  }
+
+  /* ---------- filter side panel ----------
+   * UI.facet(el, opts, value, onChange): toggle options with counts.
+   *   opts: [{ value, label, count }] — clicking the chosen option again clears it (onChange('')).
+   * UI.sidePanel({ side, toggle, label, count, clear, onClear }): wires the panel header,
+   *   the narrow-screen toggle, and returns setActive(n) to show "n on". */
+  function facet(el, opts, value, onChange) {
+    if (typeof el === 'string') el = document.getElementById(el);
+    if (!el) return;
+    el.classList.add('ui-opts');
+    el.setAttribute('role', 'radiogroup');
+    var cur = value == null ? '' : String(value);
+    el.innerHTML = opts.map(function (o) {
+      var on = cur !== '' && cur === String(o.value);
+      return '<button type="button" class="ui-opt' + (o.count || on ? '' : ' zero') + '" role="radio" aria-checked="' + on + '" data-v="' + esc(o.value) + '"><i></i><span title="' + esc(o.label) + '">' + esc(o.label) + '</span>' + (o.count != null ? '<small>' + n(o.count) + '</small>' : '') + '</button>';
+    }).join('');
+    el.onclick = function (e) {
+      var b = e.target.closest('.ui-opt'); if (!b) return;
+      var v = b.getAttribute('data-v');
+      onChange(cur === v ? '' : v);
+    };
+  }
+  function sidePanel(cfg) {
+    var $id = function (x) { return typeof x === 'string' ? document.getElementById(x) : x; };
+    var side = $id(cfg.side), toggle = $id(cfg.toggle), label = $id(cfg.label), count = $id(cfg.count), clear = $id(cfg.clear);
+    if (toggle) toggle.addEventListener('click', function () { var open = !side.classList.contains('open'); side.classList.toggle('open', open); toggle.setAttribute('aria-expanded', String(open)); });
+    if (clear && cfg.onClear) clear.addEventListener('click', cfg.onClear);
+    // Tabbed groups: <div class="ui-seg ui-side-tabs" data-tabs> <button data-pane="id">…
+    [].forEach.call(side.querySelectorAll('[data-tabs]'), function (tabs) {
+      tabs.addEventListener('click', function (e) {
+        var b = e.target.closest('button[data-pane]'); if (!b) return;
+        [].forEach.call(tabs.querySelectorAll('button[data-pane]'), function (x) { var on = x === b; x.setAttribute('aria-pressed', String(on)); x.setAttribute('aria-selected', String(on)); var pane = document.getElementById(x.getAttribute('data-pane')); if (pane) pane.hidden = !on; });
+      });
+    });
+    return function setActive(nOn, tabsState) {
+      if (label) label.textContent = nOn ? nOn + ' on' : '';
+      if (count) count.textContent = nOn ? ' · ' + nOn : '';
+      if (clear) clear.disabled = !nOn;
+      if (tabsState) Object.keys(tabsState).forEach(function (pane) { var b = side.querySelector('button[data-pane="' + pane + '"]'); if (b) b.classList.toggle('has', !!tabsState[pane]); });
+    };
+  }
+
+  /* ---------- detailed report: one table that walks Region → Division → CCC (→ …) → list ----------
+   * UI.drill({ el, levels, lists, root, onChange }) → api
+   *   el      host for the level tabs and the office trail (inside the table's panel)
+   *   levels  group levels [{ k, label, field }]; default region/_region, division/_divn, ccc/_supp
+   *   lists   row-level tabs after the groups [{ k, label }]; default [{ k: 'list', label: 'Applications' }]
+   * The office path is the progressive filter: rows match through api.match(r). A login scope pins the
+   * levels it covers (shown in the trail, not clickable) and the report starts one level below. */
+  var OFFICE_LEVELS = [{ k: 'region', label: 'Region', field: '_region' }, { k: 'division', label: 'Division', field: '_divn' }, { k: 'ccc', label: 'CCC', field: '_supp' }];
+  function drill(cfg) {
+    var host = typeof cfg.el === 'string' ? document.getElementById(cfg.el) : cfg.el;
+    var levels = cfg.levels || OFFICE_LEVELS, lists = cfg.lists || [{ k: 'list', label: 'Applications' }];
+    var steps = levels.concat(lists), path = {}, pins = {}, start = 0, counts = {};
+    var S = w.MzoScope;
+    if (S && !S.isUnscoped()) {
+      var sc = S.getScope() || {}, one = function (set) { return set && set.size === 1 ? Array.from(set)[0] : ''; };
+      var pin = { region: sc.region || one(sc.regions), division: sc.division || one(sc.divisions), ccc: sc.ccc || (sc.level === 'ccc' ? one(sc.cccs) : '') };
+      levels.forEach(function (l, i) { if (pin[l.k]) { pins[l.k] = pin[l.k]; start = i + 1; } });
+    }
+    start = Math.min(start, steps.length - 1);
+    var level = steps[start].k;
+    function idx(k) { for (var i = 0; i < steps.length; i++) if (steps[i].k === k) return i; return -1; }
+    function changed() { if (cfg.onChange) cfg.onChange(); }
+    function valueOf(r, l) { return r[l.field] || 'Unmapped'; }
+    var api = {
+      level: function () { return level; },
+      isList: function () { return idx(level) >= levels.length; },
+      label: function () { return steps[idx(level)].label; },
+      // Group key of a row at the current level, and the parent shown under it when the path does not already say it.
+      key: function (r) { return valueOf(r, steps[idx(level)]); },
+      parent: function (r) { var i = idx(level) - 1; return i >= 0 && i < levels.length && !path[levels[i].k] && !pins[levels[i].k] ? (r[levels[i].field] || '') : ''; },
+      where: function () { var last = ''; levels.forEach(function (l) { if (path[l.k]) last = path[l.k]; else if (!last && pins[l.k]) last = pins[l.k]; }); return last; },
+      match: function (r) {
+        for (var i = 0; i < levels.length; i++) { var p = path[levels[i].k]; if (p && valueOf(r, levels[i]) !== p) return false; }
+        return true;
+      },
+      // A row at a group level opens the next level for that group; `row` fills the parents the path skipped.
+      open: function (name, row) {
+        var i = idx(level); if (i >= levels.length) return;
+        for (var j = start; j < i; j++) if (row && !path[levels[j].k]) path[levels[j].k] = valueOf(row, levels[j]);
+        path[level] = name; level = steps[i + 1].k; changed();
+      },
+      // A tab: a group tab lists that level inside the path above it; a list tab keeps the whole path.
+      go: function (k, quiet) {
+        var i = idx(k); if (i < start) return;
+        for (var j = i; j < levels.length; j++) delete path[levels[j].k];
+        level = k; if (!quiet) changed();
+      },
+      // A trail crumb: keep the path through `k` ('' = the top) and list the level below it.
+      up: function (k) {
+        var i = k ? idx(k) : start - 1;
+        for (var j = i + 1; j < levels.length; j++) delete path[levels[j].k];
+        level = steps[Math.max(i + 1, start)].k; changed();
+      },
+      // Deep links: ?region= ?division= ?ccc= (any case; "X Division" works). Picks names that exist in `rows`.
+      fromParams: function (params, rows) {
+        var deepest = -1;
+        levels.forEach(function (l, i) {
+          if (i < start) return;
+          var want = String(params.get(l.k) || '').trim().toLowerCase().replace(/\s+(division|region)$/, '');
+          if (!want) return;
+          if (l.k === 'region') want = regionName(want).toLowerCase();
+          for (var x = 0; x < rows.length; x++) {
+            var v = rows[x][l.field];
+            if (v && String(v).toLowerCase() === want && api.match(rows[x])) {
+              for (var j = start; j < i; j++) if (!path[levels[j].k]) path[levels[j].k] = valueOf(rows[x], levels[j]);
+              path[l.k] = v; deepest = i; break;
+            }
+          }
+        });
+        if (deepest >= 0) level = steps[deepest + 1].k;
+        return deepest >= 0;
+      },
+      // counts: { listKey: n } shown on the list tabs; hint: text on the right of the trail.
+      paint: function (c, hint) {
+        counts = c || counts;
+        var cur = idx(level), tabs = steps.map(function (s, i) {
+          if (i < start) return '';
+          var nn = counts[s.k];
+          return '<button type="button" class="ui-drill-tab" role="tab" data-k="' + s.k + '" aria-selected="' + (i === cur) + '">' + esc(s.label) + (nn != null ? '<small>' + n(nn) + '</small>' : '') + '</button>';
+        }).join('');
+        var crumbs = [], root = !Object.keys(pins).length;
+        if (root) crumbs.push({ label: cfg.root || 'All offices', up: '', next: start });
+        levels.forEach(function (l, i) {
+          if (pins[l.k]) crumbs.push({ label: pins[l.k], kind: l.label, up: i === start - 1 ? '' : null, next: i === start - 1 ? start : -1 });
+          else if (path[l.k]) crumbs.push({ label: path[l.k], kind: l.label, up: l.k, next: i + 1 });
+        });
+        var trail = crumbs.map(function (c, i) {
+          var here = i === crumbs.length - 1 && c.next === cur, tip = c.kind ? ' title="' + esc(c.kind + ': ' + c.label) + '"' : '';
+          var html = c.up === null || here
+            ? '<span class="c' + (here ? '' : ' lock') + '"' + tip + (here ? ' aria-current="location"' : '') + '>' + esc(c.label) + '</span>'
+            : '<button type="button" data-up="' + esc(c.up) + '"' + tip + '>' + esc(c.label) + '</button>';
+          return (i ? '<span class="sep" aria-hidden="true">/</span>' : '') + html;
+        }).join('');
+        host.innerHTML = '<div class="ui-drill-tabs" role="tablist" aria-label="Level">' + tabs + '</div>' +
+          '<div class="ui-trail"><nav aria-label="Office">' + trail + '</nav>' +
+          '<small>' + esc(hint != null ? hint : api.isList() ? '' : 'Click a row to open it') + '</small></div>';
+      }
+    };
+    host.addEventListener('click', function (e) {
+      var t = e.target.closest('[data-k]'); if (t && host.contains(t)) { api.go(t.getAttribute('data-k')); return; }
+      var u = e.target.closest('[data-up]'); if (u && host.contains(u)) api.up(u.getAttribute('data-up'));
+    });
+    return api;
   }
 
   /* ---------- line chart (inline SVG, no library) ----------
@@ -275,9 +443,10 @@
     for (var g = lo; g <= hi + step / 2; g += step) {
       s += '<line x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + y(g) + '" y2="' + y(g) + '" class="gl"/><text x="' + (P.l - 8) + '" y="' + (y(g) + 4) + '" text-anchor="end">' + esc(cfg.axis ? cfg.axis(g) : fmt(g)) + '</text>';
     }
-    // Thin crowded x labels: keep roughly one per 56px, always the last.
+    // Thin crowded x labels: keep roughly one per 56px, counted back from the last so it is always shown
+    // and the spacing stays even (counting from the first could leave the last two labels overlapping).
     var every = Math.max(1, Math.ceil(labels.length / Math.max(2, Math.floor((W - P.l - P.r) / 56))));
-    labels.forEach(function (l, i) { if (i % every === 0 || i === labels.length - 1) s += '<text x="' + x(i) + '" y="' + (H - 6) + '" text-anchor="middle">' + esc(l) + '</text>'; });
+    labels.forEach(function (l, i) { if ((labels.length - 1 - i) % every === 0) s += '<text x="' + x(i) + '" y="' + (H - 6) + '" text-anchor="middle">' + esc(l) + '</text>'; });
     series.forEach(function (se, si) {
       var d = '', pen = false;
       se.values.forEach(function (v, i) { if (v == null || !isFinite(v)) { pen = false; return; } d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); pen = true; });
@@ -306,7 +475,7 @@
 
   /* ---------- misc ---------- */
   function exportCsv(name, cols, rows) {
-    var q = function (v) { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    var q = function (v) { v = v == null ? '' : String(v); return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
     var out = [cols.map(function (c) { return q(c.label); }).join(',')];
     rows.forEach(function (r) { out.push(cols.map(function (c) { return q(c.csv ? c.csv(r) : r[c.key]); }).join(',')); });
     var blob = new Blob(['﻿' + out.join('\n')], { type: 'text/csv;charset=utf-8' });
@@ -329,7 +498,8 @@
     document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (e) {} ta.remove();
     return Promise.resolve();
   }
-  function drawer(titleText, sub, pairs) {
+  // pairs: [[label, value]] (blank values are skipped); extraHtml goes under the list, actionsHtml in the header.
+  function drawer(titleText, sub, pairs, extraHtml, actionsHtml) {
     var d = document.getElementById('ui-drawer');
     if (!d) {
       d = document.createElement('div'); d.id = 'ui-drawer'; d.className = 'ui-drawer'; d.hidden = true;
@@ -340,13 +510,13 @@
     }
     var act = d.querySelector('.ui-drawer-act');
     if (!act) { act = document.createElement('div'); act.className = 'ui-drawer-act'; d.querySelector('header').insertBefore(act, d.querySelector('[data-x]')); }
-    act.innerHTML = typeof arguments[4] === 'string' ? arguments[4] : '';
+    act.innerHTML = actionsHtml || '';
     d.querySelector('h3').textContent = titleText;
     d.querySelector('p').textContent = sub || '';
     var dl = d.querySelector('dl'), extra = d.querySelector('.ui-drawer-x');
     if (!extra) { extra = document.createElement('div'); extra.className = 'ui-drawer-x'; dl.parentNode.appendChild(extra); }
     dl.innerHTML = (pairs || []).filter(function (p) { return !blank(p[1]); }).map(function (p) { return '<dt>' + esc(p[0]) + '</dt><dd>' + esc(p[1]) + '</dd>'; }).join('');
-    extra.innerHTML = typeof arguments[3] === 'string' ? arguments[3] : '';
+    extra.innerHTML = extraHtml || '';
     d.hidden = false;
     return d;
   }
@@ -385,9 +555,9 @@
 
   w.UI = {
     n: n, inr: inr, pct: pct, esc: esc, blank: blank, date: date, fmtDate: fmtDate, days: days, age: age, title: title,
-    csv: csv, office: office, regionName: regionName, load: load,
-    fill: fill, mark: mark, lockScope: lockScope,
-    table: table, bar: bar, hist: hist, line: line,
+    csv: csv, office: office, regionName: regionName, load: load, refresh: refresh,
+    fill: fill, mark: mark, uniq: uniq, offices: offices, lockScope: lockScope,
+    table: table, bar: bar, hist: hist, line: line, facet: facet, sidePanel: sidePanel, drill: drill,
     exportCsv: exportCsv, toast: toast, debounce: debounce, copy: copy, drawer: drawer, icon: icon
   };
 })(window);

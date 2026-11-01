@@ -74,7 +74,7 @@
             .form-grid { grid-template-columns: 1fr; }
         }
 </style>
-  <link rel="stylesheet" href="mzo_theme.css?v=3" />
+  <link rel="stylesheet" href="mzo_theme.css?v=5" />
 </head>
 <body>
 
@@ -232,35 +232,23 @@
             if (!response.ok) throw new Error('Failed to fetch structures from the server.');
             const rawStructures = await response.json();
 
+            // Materials / labour arrive as "index:qty;index:qty" (e.g. "1:1;3:1;5:3")
+            const parsePairs = (v) => {
+                if (Array.isArray(v)) return v;
+                if (typeof v !== 'string' || !v) return [];
+                return v.split(';')
+                    .map(pair => {
+                        const parts = pair.split(':');
+                        if (parts.length < 2) return null;
+                        return { index: parseInt(parts[0].trim(), 10), qty: parseFloat(parts[1].trim()) };
+                    })
+                    .filter(item => item && !isNaN(item.index) && !isNaN(item.qty));
+            };
+
             // Convert API data to the JSON structure used by the editor
             structureData = rawStructures.map(s => {
-                // Parse materials - semicolon separated "1:1;3:1;5:3"
-                let materials = [];
-                if (typeof s.materials === 'string' && s.materials) {
-                    materials = s.materials.split(';')
-                        .map(pair => {
-                            const parts = pair.split(':');
-                            if (parts.length < 2) return null;
-                            return { index: parseInt(parts[0].trim(), 10), qty: parseFloat(parts[1].trim()) };
-                        })
-                        .filter(item => item && !isNaN(item.index) && !isNaN(item.qty));
-                } else if (Array.isArray(s.materials)) {
-                    materials = s.materials;
-                }
-
-                // Parse labour - semicolon separated
-                let labour = [];
-                if (typeof s.labour === 'string' && s.labour) {
-                    labour = s.labour.split(';')
-                        .map(pair => {
-                            const parts = pair.split(':');
-                            if (parts.length < 2) return null;
-                            return { index: parseInt(parts[0].trim(), 10), qty: parseFloat(parts[1].trim()) };
-                        })
-                        .filter(item => item && !isNaN(item.index) && !isNaN(item.qty));
-                } else if (Array.isArray(s.labour)) {
-                    labour = s.labour;
-                }
+                const materials = parsePairs(s.materials);
+                const labour = parsePairs(s.labour);
 
                 // Parse voltage - pipe separated "33 kV|11 kV"
                 let voltage = [];
@@ -299,33 +287,33 @@
             card.dataset.index = index;
             card.innerHTML = `
                 <div class="structure-header">
-                    <span>ID: ${structure.id}</span>
+                    <span>ID: ${escapeHtml(structure.id)}</span>
                     <button class="btn btn-danger" onclick="deleteStructure(${index})">Delete</button>
                 </div>
                 <div class="structure-body">
                     <div class="form-group">
                         <label>ID (unique, no spaces)</label>
-                        <input type="text" data-field="id" value="${structure.id}">
+                        <input type="text" data-field="id" value="${escapeHtml(structure.id)}">
                     </div>
                     <div class="form-group">
                         <label>Name</label>
-                        <input type="text" data-field="name" value="${structure.name}">
+                        <input type="text" data-field="name" value="${escapeHtml(structure.name)}">
                     </div>
                     <div class="form-group">
                         <label>Description</label>
-                        <input type="text" data-field="description" value="${structure.description}">
+                        <input type="text" data-field="description" value="${escapeHtml(structure.description)}">
                     </div>
                     <div class="form-group">
                         <label>Voltage (comma-separated)</label>
-                        <input type="text" data-field="voltage" value="${Array.isArray(structure.voltage) ? structure.voltage.join(', ') : (structure.voltage || '')}">
+                        <input type="text" data-field="voltage" value="${escapeHtml(Array.isArray(structure.voltage) ? structure.voltage.join(', ') : (structure.voltage || ''))}">
                     </div>
                     <div class="form-group">
                         <label>Materials (JSON format)</label>
-                        <textarea data-field="materials">${JSON.stringify(structure.materials, null, 2)}</textarea>
+                        <textarea data-field="materials">${escapeHtml(JSON.stringify(structure.materials, null, 2))}</textarea>
                     </div>
                     <div class="form-group">
                         <label>Labour (JSON format)</label>
-                        <textarea data-field="labour">${JSON.stringify(structure.labour, null, 2)}</textarea>
+                        <textarea data-field="labour">${escapeHtml(JSON.stringify(structure.labour, null, 2))}</textarea>
                     </div>
                 </div>
             `;
@@ -393,8 +381,8 @@
                     <td>${mapping}</td>
                     <td>
                         <div class="actions">
-                            <button class="btn btn-primary" type="button" onclick="openUserModal('${jsQuote(user.Username || '')}')">Edit</button>
-                            <button class="btn btn-danger" type="button" onclick="deleteUser('${jsQuote(user.Username || '')}')">Delete</button>
+                            <button class="btn btn-primary" type="button" onclick="openUserModal('${escapeHtml(jsQuote(user.Username || ''))}')">Edit</button>
+                            <button class="btn btn-danger" type="button" onclick="deleteUser('${escapeHtml(jsQuote(user.Username || ''))}')">Delete</button>
                         </div>
                     </td>
                 </tr>
@@ -611,19 +599,16 @@
             structure.voltage = typeof voltageString === 'string' ? voltageString.split(',').map(v => v.trim()).filter(Boolean) : [];
 
             // --- JSON Textareas (Materials & Labour) ---
+            let field = 'materials';
             try {
-                const materialsText = card.querySelector('[data-field="materials"]').value;
-                structure.materials = JSON.parse(materialsText);
-
-                const labourText = card.querySelector('[data-field="labour"]').value;
-                structure.labour = JSON.parse(labourText);
-
+                structure.materials = JSON.parse(card.querySelector('[data-field="materials"]').value);
+                field = 'labour';
+                structure.labour = JSON.parse(card.querySelector('[data-field="labour"]').value);
                 newStructureData.push(structure);
             } catch (e) {
                 allValid = false;
                 alert(`Invalid JSON format in structure with ID '${structure.id}'. Please correct it before saving.\n\nError: ${e.message}`);
-                const textarea = e.message.includes('materials') ? card.querySelector('[data-field="materials"]') : card.querySelector('[data-field="labour"]');
-                textarea.style.border = '2px solid var(--error-color)';
+                card.querySelector(`[data-field="${field}"]`).style.border = '2px solid var(--mzo-bad)';
             }
         });
 
@@ -633,24 +618,6 @@
             return true;
         }
         return false;
-    }
-
-    // --- CSV Parser Utility ---
-    function parseCSV(text) {
-        const lines = text.trim().split('\n');
-        const headers = lines[0].split(',').map(h => h.trim());
-        const rows = [];
-        for (let i = 1; i < lines.length; i++) {
-            const values = lines[i].split(',').map(v => v.trim());
-            if (values.length === headers.length) {
-                const row = {};
-                for (let j = 0; j < headers.length; j++) {
-                    row[headers[j]] = values[j];
-                }
-                rows.push(row);
-            }
-        }
-        return rows;
     }
 
     // --- UI Helpers ---
@@ -685,7 +652,7 @@
     }
 
     function escapeHtml(value) {
-        return String(value)
+        return String(value == null ? '' : value)
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')

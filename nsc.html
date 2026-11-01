@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Pending NSC · MZO Reports</title>
   <script src="/mzo_theme.js?v=3"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=3" />
+  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
   <!-- auth gate (loads auth.js), app-update check, service worker -->
-  <script src="/mzo_presets_hub.js?v=87"></script>
-  <script src="/mzo_ui.js?v=1" defer></script>
-  <script src="/mzo_data_hub.js?v=87" defer></script>
-  <script src="/mzo_scope.js?v=10" defer></script>
+  <script src="/mzo_presets_hub.js?v=88"></script>
+  <script src="/mzo_ui.js?v=4" defer></script>
+  <script src="/mzo_data_hub.js?v=90" defer></script>
+  <script src="/mzo_scope.js?v=14" defer></script>
   <style>
     .nsc-more { margin-top: -8px; }
     .nsc-more .lbl { font-size: 12.5px; color: var(--mzo-muted); }
@@ -28,7 +28,6 @@
     /* Mix: two-way splits */
     .nsc-mix { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 32px; }
     #appTable td:not(.wrap) { white-space: nowrap; }
-    a.ui-btn { text-decoration: none; }
     .nsc-mix .row { display: grid; gap: 6px; }
     .nsc-mix .t { font-size: 12.5px; color: var(--mzo-muted); }
     .nsc-mix .bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--mzo-chart-soft); }
@@ -385,16 +384,10 @@
     }
 
     /* ---------------- filters ---------------- */
-    function uniq(rows, k) { var s = {}; rows.forEach(function (r) { if (r[k]) s[r[k]] = 1; }); return Object.keys(s).sort(); }
     function fillFilters(initial) {
-      var reg = $('regionFilter').value, div = $('divisionFilter').value;
-      UI.fill('regionFilter', uniq(all, '_region'), 'All regions');
-      var r1 = all.filter(function (r) { return !reg || r._region === reg; });
-      UI.fill('divisionFilter', uniq(r1, '_divn'), 'All divisions');
-      var r2 = r1.filter(function (r) { return !div || r._divn === div; });
-      UI.fill('cccFilter', uniq(r2, '_supp'), 'All CCCs');
-      var r3 = r2.filter(function (r) { return !$('cccFilter').value || r._supp === $('cccFilter').value; });
-      UI.fill('agencyFilter', uniq(r3, '_agency'), 'All agencies');
+      UI.offices(all);
+      var o = office();
+      UI.fill('agencyFilter', UI.uniq(all.filter(function (r) { return (!o.region || r._region === o.region) && (!o.division || r._divn === o.division) && (!o.ccc || r._supp === o.ccc); }), '_agency'), 'All agencies');
       if (initial) {
         var cc = {}; all.forEach(function (r) { if (r._class) cc[r._class] = (cc[r._class] || 0) + 1; });
         UI.fill('classFilter', Object.keys(cc).sort(function (a, b) { return cc[b] - cc[a]; }).map(function (c) { return { value: c, label: CLASS[c] ? CLASS[c] : c }; }), 'All classes');
@@ -506,8 +499,8 @@
     }
 
     function renderHists() {
-      var forDelay = rowsWhere('delay', true), dr = {}, serial = {};
-      forDelay.forEach(function (d) { if (!d._delayRange) return; dr[d._delayRange] = (dr[d._delayRange] || 0) + 1; serial[d._delayRange] = d._delaySerial; });
+      var forDelay = rowsWhere('delay', true), dr = {};
+      forDelay.forEach(function (d) { if (d._delayRange) dr[d._delayRange] = (dr[d._delayRange] || 0) + 1; });
       UI.hist('delayHist', Object.keys(DELAY_LABEL).filter(function (k) { return dr[k] || f.delay === k; }).concat(Object.keys(dr).filter(function (k) { return !DELAY_LABEL[k]; }))
         .map(function (k) { return { key: k, label: DELAY_LABEL[k] || k, value: dr[k] || 0 }; }),
         { active: f.delay, onClick: function (row) { f.delay = f.delay === row.key ? '' : row.key; $('delayFilter').value = f.delay; UI.mark($('delayFilter')); render(); } });
@@ -879,7 +872,7 @@
       }).catch(function () {});
       return {
         mount: function (el, appl, draft) { host = el; openAppl = key(appl); paint(draft); pull(); },
-        notes: notesFor, readStore: readStore, hiddenIds: hiddenIds, quiet: quiet
+        readStore: readStore, hiddenIds: hiddenIds, quiet: quiet
       };
     })();
 
@@ -901,7 +894,7 @@
     }
 
     /* ---------------- data freshness: new upload banner, reload ---------------- */
-    var SEEN_KEY = 'mzo_nsc_seen_version', PENDING_KEY = 'mzo_nsc_pending_refresh', DISMISS_KEY = 'mzo_nsc_dismissed_version';
+    var SEEN_KEY = 'mzo_nsc_seen_version', PENDING_KEY = 'mzo_nsc_pending_refresh';
     function dmy(v) {
       var s = String(v || '').trim(), iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
       if (iso) return iso[3] + '/' + iso[2] + '/' + iso[1];
@@ -912,7 +905,7 @@
       return fetch('/api/nsc/meta', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; })
         .then(function (d) { return d && d.status !== 'error' ? d : null; }).catch(function () { return null; });
     }
-    function markSeen(v) { if (v) { LS.set(SEEN_KEY, String(v)); LS.del(DISMISS_KEY); } }
+    function markSeen(v) { if (v) LS.set(SEEN_KEY, String(v)); }
     function showNotice(reportOn) { var w = dmy(reportOn); $('noticeMsg').textContent = w ? 'New NSC data is available, updated on ' + UI.fmtDate(w) + '.' : 'New NSC data is available.'; $('notice').hidden = false; }
     function loadLatest() {
       var b = $('refreshBtn'), hub = window.mzoDataHub;
@@ -930,9 +923,9 @@
         if (!data) return;
         $('uploadLink').hidden = !data.canUpload;
         if (!data.version || !data.meta) return;
-        var v = String(data.version), seen = LS.get(SEEN_KEY) || '', dismissed = LS.get(DISMISS_KEY) || '';
+        var v = String(data.version);
         var serverReport = dmy(data.meta.reportDate || (data.meta.stats && data.meta.stats.today) || '');
-        if (seen === v || dismissed === v) { $('notice').hidden = true; return; }
+        if ((LS.get(SEEN_KEY) || '') === v) { $('notice').hidden = true; return; }
         if (!reportDate) return;
         if (serverReport && dmy(reportDate) === serverReport) { markSeen(v); $('notice').hidden = true; return; }
         showNotice(serverReport || data.meta.reportDate);
@@ -1033,7 +1026,7 @@
     $('refreshBtn').addEventListener('click', loadLatest);
     $('noticeLoad').addEventListener('click', loadLatest);
     $('noticeDismiss').addEventListener('click', function () {
-      fetchMeta().then(function (d) { if (d && d.version) { LS.set(DISMISS_KEY, String(d.version)); markSeen(d.version); } });
+      fetchMeta().then(function (d) { if (d && d.version) markSeen(d.version); });
       $('notice').hidden = true;
     });
 

@@ -2,7 +2,7 @@
 <html lang="en">
 
 <head>
-  <script src="/mzo_theme.js?v=2"></script>
+  <script src="/mzo_theme.js?v=3"></script>
     <meta charset="UTF-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
     <title>Power Map</title>
@@ -13,9 +13,6 @@
 
     <!-- PapaParse for CSV parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
-    <!-- Leaflet PolylineDecorator for line styling -->
-    <script
-        src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-polylinedecorator/1.6.0/leaflet.polylineDecorator.min.js"></script>
     <!-- Typed.js for animated text -->
     <script src="https://unpkg.com/typed.js@2.1.0/dist/typed.umd.js"></script>
 
@@ -23,17 +20,11 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 
     <!-- Leaflet.PolylineMeasure plugin -->
-    <!-- Leaflet.PolylineMeasure CSS -->
     <link rel="stylesheet" href="https://ppete2.github.io/Leaflet.PolylineMeasure/Leaflet.PolylineMeasure.css" />
     <script src="https://cdn.jsdelivr.net/npm/leaflet.polylinemeasure@3.0.0/Leaflet.PolylineMeasure.js"></script>
 
-    <!-- Google Fonts -->
-
-
     <!-- jsPDF for Vector PDF generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <!-- html2pdf.js for PDF generation -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <!-- html2canvas for map capture -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
@@ -59,18 +50,6 @@
             color: var(--text-primary);
         }
 
-        @keyframes fade {
-
-            0%,
-            100% {
-                opacity: 1;
-            }
-
-            50% {
-                opacity: 0;
-            }
-        }
-
         @keyframes pulse-ring {
             0% {
                 transform: scale(0.33);
@@ -93,18 +72,6 @@
 
             100% {
                 transform: scale(0.8);
-            }
-        }
-
-        @keyframes slideUp {
-            from {
-                transform: translateY(20px);
-                opacity: 0;
-            }
-
-            to {
-                transform: translateY(0);
-                opacity: 1;
             }
         }
 
@@ -1383,10 +1350,6 @@
                     font-family: 'Inter', sans-serif;
                 }
 
-                .no-print {
-                    display: none !important;
-                }
-
                 /* Hide UI controls during print */
                 .leaflet-control-container,
                 #search-container,
@@ -1398,7 +1361,8 @@
                     display: none !important;
                 }
             }
-    
+        }
+
         /* Custom Modals styling */
         .custom-modal-overlay {
             position: fixed;
@@ -1506,9 +1470,6 @@
             gap: 12px;
             margin-bottom: 12px;
         }
-        .form-full-row {
-            margin-bottom: 12px;
-        }
         .custom-modal-body select {
             width: 100%;
             padding: 10px 12px;
@@ -1524,7 +1485,7 @@
             border-color: var(--accent-color);
         }
 </style>
-  <link rel="stylesheet" href="/mzo_theme.css?v=2" />
+  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
 </head>
 
 <body>
@@ -1668,7 +1629,6 @@
                 <i class="fas fa-check"></i> Apply filters
             </button>
         </div>
-        <div id="resize-handle-y"></div>
     </div>
 
     <div id="network-stats-bar" aria-label="Network summary">
@@ -1902,13 +1862,6 @@
                             <label for="addConnRL">Length (RL in km)</label>
                             <input type="number" step="any" id="addConnRL" class="custom-modal-input" placeholder="e.g. 12.5" />
                         </div>
-                        <div>
-                            <label for="addConnStyle">Line Style</label>
-                            <select id="addConnStyle">
-                                <option value="solid">Solid (Existing)</option>
-                                <option value="dashed">Dashed (Proposed)</option>
-                            </select>
-                        </div>
                     </div>
                 </div>
                 <div class="custom-modal-footer">
@@ -1919,9 +1872,8 @@
         </div>
     </div>
 
-    <script src="../mzo_data_hub.js"></script>
+    <script src="../mzo_data_hub.js?v=90"></script>
     <script>
-        // Helper to escape HTML characters globally
         function formatSubstationFieldLabel(column) {
             const labels = {
                 'MVA': 'Capacity (MVA)',
@@ -1949,30 +1901,25 @@
 
         // Global variables
         const csvUrl = '/api/power-map/data';
-        // IMPORTANT: Replace this URL with the one you published for your "Taps" sheet
         const tapsCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT8hYE6YBbfVQDJhgB3cIWqrrGrjMQAQ22mcmCJTOa995gCH-xBAfsAPpBvNYS1KlYIFMRHM59iGB7K/pub?gid=2098159409&single=true&output=csv';
-        const POWER_MAP_EDITABLE_SPREADSHEET_ID = '1nBLLL3zc3OjuJ6umq3uQVmjXCPhlVATYhQX1BlfqS2w'; // Replace with your editable spreadsheet ID
+        const POWER_MAP_EDITABLE_SPREADSHEET_ID = '1nBLLL3zc3OjuJ6umq3uQVmjXCPhlVATYhQX1BlfqS2w';
         const geojsonUrl = 'https://raw.githubusercontent.com/shuklaneerajdev/IndiaStateTopojsonFiles/master/WestBengal.geojson';
         let map, worldPolygon, stateLayer, maskLayer;
         let selectedFilters = { Region: new Set(), Division: new Set(), Remarks: new Set() };
         let allData = []; // Store all data for filtering
         let allTapsData = []; // Store all tap data
         let substationMap = {}; // Stores {SubstationName: {lat, lng, marker}}
-        let loadingDataComplete = false;
         let allLineLabels = []; // Store all connection line labels for toggling
         let allMarkers = []; // Store all substation markers for toggling labels
         let osmEhvLayer = null;
         let osmEhvEnabled = false;
-        let osmEhvLoading = false;
         let osmEhvMoveTimer = null;
         let osmEhvRequestId = 0;
         let osmRoadsLayer = null;
         let osmRoadsEnabled = false;
-        let osmRoadsLoading = false;
         let osmRoadsMoveTimer = null;
         let osmRoadsRequestId = 0;
         let mapBaseLayers = null;
-        let mapLayersControl = null;
         let noMapBaseLayer = null;
         const OSM_EHV_MIN_VOLTAGE = 66000; // include 66 / 110 / 132 / 220 / 400 / 765 kV
         const OSM_EHV_MIN_ZOOM = 8;
@@ -2580,10 +2527,9 @@ out geom;`;
             return { lines, towers };
         }
 
-        async function fetchOsmEhvForBounds(bounds, zoom, externalSignal) {
-            const query = buildOsmEhvOverpassQuery(bounds, zoom);
+        /** POST an Overpass query, trying each endpoint; `externalSignal` cancels the whole attempt. */
+        async function fetchOverpass(query, externalSignal) {
             let lastError = null;
-
             for (const endpoint of OVERPASS_ENDPOINTS) {
                 if (externalSignal && externalSignal.aborted) {
                     const abortErr = new Error('aborted');
@@ -2591,23 +2537,18 @@ out geom;`;
                     throw abortErr;
                 }
                 try {
-                    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-                    const onAbort = () => { if (controller) controller.abort(); };
-                    if (externalSignal && controller) {
-                        if (externalSignal.aborted) controller.abort();
-                        else externalSignal.addEventListener('abort', onAbort, { once: true });
-                    }
-                    const timer = controller ? setTimeout(() => controller.abort(), 65000) : null;
+                    const controller = new AbortController();
+                    const onAbort = () => controller.abort();
+                    if (externalSignal) externalSignal.addEventListener('abort', onAbort, { once: true });
+                    const timer = setTimeout(() => controller.abort(), 65000);
                     const response = await fetch(endpoint, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
                         body: `data=${encodeURIComponent(query)}`,
-                        signal: controller ? controller.signal : (externalSignal || undefined)
+                        signal: controller.signal
                     });
-                    if (timer) clearTimeout(timer);
-                    if (externalSignal && controller) {
-                        externalSignal.removeEventListener('abort', onAbort);
-                    }
+                    clearTimeout(timer);
+                    if (externalSignal) externalSignal.removeEventListener('abort', onAbort);
                     if (!response.ok) {
                         lastError = new Error(`Overpass HTTP ${response.status}`);
                         continue;
@@ -2622,8 +2563,19 @@ out geom;`;
             throw lastError || new Error('Overpass request failed');
         }
 
-        async function prefetchOsmEhvNeighbors(baseBounds, zoom) {
-            if (!osmEhvEnabled || !baseBounds) return;
+        function fetchOsmEhvForBounds(bounds, zoom, externalSignal) {
+            return fetchOverpass(buildOsmEhvOverpassQuery(bounds, zoom), externalSignal);
+        }
+
+        function fetchOsmRoadsForBounds(bounds, zoom, externalSignal) {
+            return fetchOverpass(buildOsmRoadsOverpassQuery(bounds, zoom), externalSignal);
+        }
+
+        /** Warm the cache for up to two neighbouring views so panning paints instantly. */
+        async function prefetchOsmNeighbors(kind, baseBounds, zoom) {
+            const isEhv = kind === 'ehv';
+            const enabled = () => (isEhv ? osmEhvEnabled : osmRoadsEnabled);
+            if (!enabled() || !baseBounds) return;
             const latSpan = baseBounds.getNorth() - baseBounds.getSouth();
             const lonSpan = baseBounds.getEast() - baseBounds.getWest();
             const shifts = [
@@ -2633,10 +2585,10 @@ out geom;`;
                 [0, -lonSpan * 0.85]
             ];
             const wbNear = getWestBengalNearBounds();
-            const band = osmZoomBandEhv(zoom);
+            const band = isEhv ? osmZoomBandEhv(zoom) : osmZoomBandRoads(zoom);
             let done = 0;
             for (const [dLat, dLon] of shifts) {
-                if (!osmEhvEnabled || done >= 2) break;
+                if (!enabled() || done >= 2) break;
                 const shifted = L.latLngBounds(
                     [baseBounds.getSouth() + dLat, baseBounds.getWest() + dLon],
                     [baseBounds.getNorth() + dLat, baseBounds.getEast() + dLon]
@@ -2646,14 +2598,14 @@ out geom;`;
                 const latS = clipped.getNorth() - clipped.getSouth();
                 const lonS = clipped.getEast() - clipped.getWest();
                 if (latS > OSM_MAX_BBOX_SPAN_DEG || lonS > OSM_MAX_BBOX_SPAN_DEG) continue;
-                const key = makeOsmCacheKey('ehv', clipped, band);
+                const key = makeOsmCacheKey(kind, clipped, band);
                 if (getOsmCached(key)) continue;
                 try {
-                    const els = await fetchOsmEhvForBounds(clipped, zoom, null);
+                    const els = isEhv ? await fetchOsmEhvForBounds(clipped, zoom, null) : await fetchOsmRoadsForBounds(clipped, zoom, null);
                     setOsmCached(key, els);
                     done++;
                     await yieldToMain();
-                } catch (e) {
+                } catch (err) {
                     /* quiet prefetch */
                 }
             }
@@ -2695,7 +2647,6 @@ out geom;`;
             osmEhvAbort = typeof AbortController !== 'undefined' ? new AbortController() : null;
             const signal = osmEhvAbort ? osmEhvAbort.signal : null;
 
-            osmEhvLoading = true;
             const hadContent = osmLayerHasContent(osmEhvLayer) || !!cached;
             if (!hadContent && !quiet) {
                 showStatus('Loading OSM EHV in background…', 0, 55);
@@ -2715,7 +2666,7 @@ out geom;`;
                 }
                 if (osmEhvPrefetchTimer) clearTimeout(osmEhvPrefetchTimer);
                 osmEhvPrefetchTimer = setTimeout(() => {
-                    runWhenIdle(() => prefetchOsmEhvNeighbors(queryBounds, zoom), 1800);
+                    runWhenIdle(() => prefetchOsmNeighbors('ehv', queryBounds, zoom), 1800);
                 }, 600);
             } catch (err) {
                 if (err && err.name === 'AbortError') return;
@@ -2724,8 +2675,6 @@ out geom;`;
                 if (!hadContent && !quiet) {
                     showStatus('Could not load OSM EHV data (Overpass busy). Try again.', 4000, 0);
                 }
-            } finally {
-                if (requestId === osmEhvRequestId) osmEhvLoading = false;
             }
         }
 
@@ -2746,7 +2695,6 @@ out geom;`;
                     try { osmEhvAbort.abort(); } catch (e) { /* ignore */ }
                 }
                 osmEhvRequestId++;
-                osmEhvLoading = false;
                 clearOsmEhvLayer();
                 showStatus('OSM EHV overlay hidden', 2000, null);
                 return;
@@ -2885,85 +2833,6 @@ out geom;`;
             return drawn;
         }
 
-        async function fetchOsmRoadsForBounds(bounds, zoom, externalSignal) {
-            const query = buildOsmRoadsOverpassQuery(bounds, zoom);
-            let lastError = null;
-
-            for (const endpoint of OVERPASS_ENDPOINTS) {
-                if (externalSignal && externalSignal.aborted) {
-                    const abortErr = new Error('aborted');
-                    abortErr.name = 'AbortError';
-                    throw abortErr;
-                }
-                try {
-                    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-                    const onAbort = () => { if (controller) controller.abort(); };
-                    if (externalSignal && controller) {
-                        if (externalSignal.aborted) controller.abort();
-                        else externalSignal.addEventListener('abort', onAbort, { once: true });
-                    }
-                    const timer = controller ? setTimeout(() => controller.abort(), 65000) : null;
-                    const response = await fetch(endpoint, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
-                        body: `data=${encodeURIComponent(query)}`,
-                        signal: controller ? controller.signal : (externalSignal || undefined)
-                    });
-                    if (timer) clearTimeout(timer);
-                    if (externalSignal && controller) {
-                        externalSignal.removeEventListener('abort', onAbort);
-                    }
-                    if (!response.ok) {
-                        lastError = new Error(`Overpass HTTP ${response.status}`);
-                        continue;
-                    }
-                    const data = await response.json();
-                    return data.elements || [];
-                } catch (err) {
-                    if (err && err.name === 'AbortError') throw err;
-                    lastError = err;
-                }
-            }
-            throw lastError || new Error('Overpass roads request failed');
-        }
-
-        async function prefetchOsmRoadsNeighbors(baseBounds, zoom) {
-            if (!osmRoadsEnabled || !baseBounds) return;
-            const latSpan = baseBounds.getNorth() - baseBounds.getSouth();
-            const lonSpan = baseBounds.getEast() - baseBounds.getWest();
-            const shifts = [
-                [latSpan * 0.85, 0],
-                [-latSpan * 0.85, 0],
-                [0, lonSpan * 0.85],
-                [0, -lonSpan * 0.85]
-            ];
-            const wbNear = getWestBengalNearBounds();
-            const band = osmZoomBandRoads(zoom);
-            let done = 0;
-            for (const [dLat, dLon] of shifts) {
-                if (!osmRoadsEnabled || done >= 2) break;
-                const shifted = L.latLngBounds(
-                    [baseBounds.getSouth() + dLat, baseBounds.getWest() + dLon],
-                    [baseBounds.getNorth() + dLat, baseBounds.getEast() + dLon]
-                );
-                const clipped = intersectLatLngBounds(shifted, wbNear);
-                if (!clipped) continue;
-                const latS = clipped.getNorth() - clipped.getSouth();
-                const lonS = clipped.getEast() - clipped.getWest();
-                if (latS > OSM_MAX_BBOX_SPAN_DEG || lonS > OSM_MAX_BBOX_SPAN_DEG) continue;
-                const key = makeOsmCacheKey('roads', clipped, band);
-                if (getOsmCached(key)) continue;
-                try {
-                    const els = await fetchOsmRoadsForBounds(clipped, zoom, null);
-                    setOsmCached(key, els);
-                    done++;
-                    await yieldToMain();
-                } catch (e) {
-                    /* quiet prefetch */
-                }
-            }
-        }
-
         async function reloadOsmRoadsOverlay(force, opts) {
             if (!map || !osmRoadsEnabled) return;
             const quiet = !!(opts && opts.quiet);
@@ -2999,7 +2868,6 @@ out geom;`;
             osmRoadsAbort = typeof AbortController !== 'undefined' ? new AbortController() : null;
             const signal = osmRoadsAbort ? osmRoadsAbort.signal : null;
 
-            osmRoadsLoading = true;
             const hadContent = osmLayerHasContent(osmRoadsLayer) || !!cached;
             if (!hadContent && !quiet) {
                 showStatus('Loading OSM roads in background…', 0, 55);
@@ -3018,7 +2886,7 @@ out geom;`;
                 }
                 if (osmRoadsPrefetchTimer) clearTimeout(osmRoadsPrefetchTimer);
                 osmRoadsPrefetchTimer = setTimeout(() => {
-                    runWhenIdle(() => prefetchOsmRoadsNeighbors(queryBounds, zoom), 1800);
+                    runWhenIdle(() => prefetchOsmNeighbors('roads', queryBounds, zoom), 1800);
                 }, 700);
             } catch (err) {
                 if (err && err.name === 'AbortError') return;
@@ -3027,8 +2895,6 @@ out geom;`;
                 if (!hadContent && !quiet) {
                     showStatus('Could not load OSM roads (Overpass busy). Try again.', 4000, 0);
                 }
-            } finally {
-                if (requestId === osmRoadsRequestId) osmRoadsLoading = false;
             }
         }
 
@@ -3049,7 +2915,6 @@ out geom;`;
                     try { osmRoadsAbort.abort(); } catch (e) { /* ignore */ }
                 }
                 osmRoadsRequestId++;
-                osmRoadsLoading = false;
                 clearOsmRoadsLayer();
                 showStatus('OSM roads overlay hidden', 2000, null);
                 // Refresh shared attribution if EHV still on
@@ -3141,21 +3006,21 @@ out geom;`;
             }).setView([23.5, 87.5], 9);
 
             // Google Maps (Roadmap) tile layer
-            const googleStreets = L.tileLayer('http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            const googleStreets = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
                 maxZoom: 20,
                 subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
                 attribution: 'Map data &copy; Google'
             });
 
             // Google Satellite layer
-            const googleSat = L.tileLayer('http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+            const googleSat = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
                 maxZoom: 20,
                 subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
                 attribution: 'Map data &copy; Google'
             });
 
             // Google Hybrid layer
-            const googleHybrid = L.tileLayer('http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+            const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
                 maxZoom: 20,
                 subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
                 attribution: 'Map data &copy; Google'
@@ -3176,7 +3041,7 @@ out geom;`;
             // Add Google Hybrid as default
             googleHybrid.addTo(map);
 
-            // Optional: Add a layer control to switch between map types
+            // Layer control to switch between map types
             const baseMaps = {
                 "Google Maps": googleStreets,
                 "Google Satellite": googleSat,
@@ -3185,7 +3050,7 @@ out geom;`;
                 "No Map": noMap
             };
             mapBaseLayers = baseMaps;
-            mapLayersControl = L.control.layers(baseMaps).addTo(map);
+            L.control.layers(baseMaps).addTo(map);
 
             osmEhvLayer = L.layerGroup().addTo(map);
             osmRoadsLayer = L.layerGroup().addTo(map);
@@ -3202,13 +3067,11 @@ out geom;`;
                     showClearControl: true, // Show a clear button
                     showUnitControl: true // Show unit selection control
                 }).addTo(map);
-                console.log("Leaflet.PolylineMeasure control added successfully.");
             } else {
                 console.error("Leaflet.PolylineMeasure plugin not loaded. Distance measurement tool will not be available.");
             }
 
-            // Add a popup on map click to show coordinates in DMS format
-            // Coordinate popup handler
+            // Map click: coordinates in degrees/decimal minutes, plus "Create SS here" for editors
             map.on('click', function (e) {
                 // Do not show coordinate popup if a marker was clicked (markers have own popup)
                 if (e.originalEvent.target.closest('.leaflet-marker-icon')) {
@@ -3222,10 +3085,10 @@ out geom;`;
                 const dmsLng = decimalToDMS(lng, false);
                 const coordinates = `${dmsLat} ${dmsLng}`;
 
-                let isAdmin = false;
+                let canCreate = false;
                 try {
                     const profile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}');
-                    isAdmin = (profile.role === 'admin');
+                    canCreate = !!(profile.role === 'admin' || profile.division_code || profile.region_code);
                 } catch (err) {}
 
                 let btnHtml = `
@@ -3233,14 +3096,6 @@ out geom;`;
                         style="margin-top: 5px; font-size: 10px; padding: 2px 4px; cursor: pointer; background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 3px;">
                         Copy
                     </button>`;
-                
-                let canCreate = isAdmin;
-                if (!canCreate) {
-                    try {
-                        const profile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}');
-                        canCreate = (profile.role === 'admin' || profile.division_code || profile.region_code);
-                    } catch (err) {}
-                }
                 if (canCreate) {
                     btnHtml += `
                     <button onclick="openAddSubstationModal(${lat}, ${lng})" 
@@ -3260,7 +3115,6 @@ out geom;`;
                     .setContent(popupContent)
                     .openOn(map);
             });
-
 
             return map;
         }
@@ -3581,7 +3435,7 @@ out geom;`;
             ['Region', 'Division', 'Remarks'].forEach(category => {
                 // For Region, filter out TCL since it's handled separately
                 const valuesToDisplay = Array.from(uniqueValues[category])
-                    .filter(v => category !== 'Region' || (tclValue && v.toUpperCase() !== tclValue.toUpperCase()))
+                    .filter(v => category !== 'Region' || !tclValue || v.toUpperCase() !== tclValue.toUpperCase())
                     .sort();
 
                 if (valuesToDisplay.length > 0) {
@@ -3658,6 +3512,13 @@ out geom;`;
             // Generate table HTML
             let tableHtml = '<table id="report-table"><thead><tr><th>Sl. No.</th><th>Region</th><th>Division</th><th>Substation</th><th>Capacity (MVA)</th><th>Loading</th><th>Voltage</th><th>Remarks</th><th>Connectivity</th></tr></thead><tbody>';
 
+            // Substation rows by name (first row wins)
+            const entryByName = new Map();
+            allData.forEach(d => {
+                const name = (d.Substation || '').trim();
+                if (name && !entryByName.has(name)) entryByName.set(name, d);
+            });
+
             // Sort remarks alphabetically for consistent order
             const sortedRemarks = Object.keys(groupedByRemarks).sort();
 
@@ -3666,7 +3527,7 @@ out geom;`;
                 // Add a header row for the remark group
                 tableHtml += `
                 <tr>
-                    <td colspan="7" style="background-color: #e9ecef; font-weight: bold; text-align: left; padding-left: 10px;">${remark} (${groupedByRemarks[remark].length})</td>
+                    <td colspan="9" style="background-color: #e9ecef; font-weight: bold; text-align: left; padding-left: 10px;">${escapeHtml(remark)} (${groupedByRemarks[remark].length})</td>
                 </tr>
             `;
 
@@ -3687,17 +3548,6 @@ out geom;`;
 
                     const allConnections = []; // Array to hold connection objects {text: '...', isProposed: true/false}
 
-                    // Helper to find a substation's data entry. Memoized for performance.
-                    const memoizedGetSubstationEntry = (() => {
-                        const cache = new Map();
-                        return (name) => {
-                            if (cache.has(name)) return cache.get(name);
-                            const entry = allData.find(d => (d.Substation || '').trim() === name.trim());
-                            cache.set(name, entry);
-                            return entry;
-                        };
-                    })();
-
                     // 1. Find connections FROM the current substation (outgoing)
                     if (ss['Connected to']) {
                         const connections = ss['Connected to'].split(':').map(s => s.trim()).filter(Boolean);
@@ -3707,7 +3557,7 @@ out geom;`;
 
                         connections.forEach((conn, index) => {
                             const rl = rls[index] || 'N/A';
-                            const targetSSEntry = memoizedGetSubstationEntry(conn);
+                            const targetSSEntry = entryByName.get(conn.trim());
                             const ssIsProposed = targetSSEntry && (targetSSEntry.Comment || '').toLowerCase() === 'blue';
 
                             const isProposed = lineIsProposed || ssIsProposed;
@@ -3771,8 +3621,7 @@ out geom;`;
                         const proposedCount = sortedConnections.filter(c => c.isProposed).length;
                         const existingCount = sortedConnections.length - proposedCount;
 
-                        let connectionItems = sortedConnections.map(c => c.text);
-                        connectivityHtml = connectionItems.join(', ');
+                        connectivityHtml = escapeHtml(sortedConnections.map(c => c.text).join(', '));
 
                         // Add the summary
                         const summaryHtml = `<br><span style="font-style: italic; color: #0056b3; font-weight: bold;">Existing: ${existingCount}</span>, <span style="font-style: italic; color: #c82333; font-weight: bold;">Proposed: ${proposedCount}</span>`;
@@ -3782,13 +3631,13 @@ out geom;`;
                     tableHtml += `
                     <tr>
                         <td>${slNo++}</td>
-                        <td>${ss.Region || 'N/A'}</td>
-                        <td>${ss.Division || 'N/A'}</td>
-                        <td>${ss.Substation || 'N/A'}</td>
-                        <td>${ss.MVA || 'N/A'}</td>
-                        <td>${ss['Para-1'] || 'N/A'}</td>
-                        <td>${ss['Para-2'] || 'N/A'}</td>
-                        <td>${ss['Para-3'] || 'N/A'}</td>
+                        <td>${escapeHtml(ss.Region || 'N/A')}</td>
+                        <td>${escapeHtml(ss.Division || 'N/A')}</td>
+                        <td>${escapeHtml(ss.Substation || 'N/A')}</td>
+                        <td>${escapeHtml(ss.MVA || 'N/A')}</td>
+                        <td>${escapeHtml(ss['Para-1'] || 'N/A')}</td>
+                        <td>${escapeHtml(ss['Para-2'] || 'N/A')}</td>
+                        <td>${escapeHtml(ss['Para-3'] || 'N/A')}</td>
                         <td>${connectivityHtml}</td>
                     </tr>
                 `;
@@ -3888,9 +3737,9 @@ out geom;`;
                 tableHtml += `
                 <tr>
                     <td>${slNo++}</td>
-                    <td>${feederName}</td>
-                    <td>${tappedSS}</td>
-                    <td>${division}</td>
+                    <td>${escapeHtml(feederName)}</td>
+                    <td>${escapeHtml(tappedSS)}</td>
+                    <td>${escapeHtml(division)}</td>
                     <td>${status}</td>
                 </tr>
             `;
@@ -3945,10 +3794,8 @@ out geom;`;
             let visibleRouteKm = 0;
             const visibleRouteKeys = new Set();
 
-            // Create a map to track substations and their visibility
+            // Substations that pass the filters, and layers that are never filtered
             let substationVisibility = {};
-            let visibleMarkers = new Set();
-            let visibleLines = new Set();
             let mapLayersToPreserve = new Set();
 
             // Make sure we track the layers we want to preserve
@@ -4032,32 +3879,12 @@ out geom;`;
                         if (layer._substations) { // Regular connection
                             shouldBeVisible = layer._substations.every(name => substationVisibility[name]);
                         } else if (layer._tapInfo) { // Tap connection
-                            const { tapped, source } = layer._tapInfo;
+                            const { tapped } = layer._tapInfo;
                             const tappingCheckbox = document.getElementById('toggle-tapping-sources');
                             const areTapsVisible = tappingCheckbox ? tappingCheckbox.checked : true;
                             shouldBeVisible = substationVisibility[tapped] && areTapsVisible;
                         }
-                        else if (layer._latlngs && layer._latlngs.length >= 2) {
-                            // Fallback for lines without metadata (should be rare)
-                            let isConnectingVisibleMarkers = false;
-
-                            for (let marker of visibleMarkers) {
-                                let markerPos = marker.getLatLng();
-                                let firstPoint = layer._latlngs[0];
-                                let lastPoint = layer._latlngs[layer._latlngs.length - 1];
-
-                                // Check if this line connects to this marker (approximate)
-                                if ((Math.abs(markerPos.lat - firstPoint.lat) < 0.0001 &&
-                                    Math.abs(markerPos.lng - firstPoint.lng) < 0.0001) ||
-                                    (Math.abs(markerPos.lat - lastPoint.lat) < 0.0001 &&
-                                        Math.abs(markerPos.lng - lastPoint.lng) < 0.0001)) {
-                                    isConnectingVisibleMarkers = true;
-                                    break;
-                                }
-                            }
-
-                            shouldBeVisible = isConnectingVisibleMarkers;
-                        }
+                        // Lines without metadata (e.g. measuring-tool lines) stay hidden, as before.
                     }
 
                     // Update visibility without removing/adding layers
@@ -4073,15 +3900,19 @@ out geom;`;
                             layer._isVisible = true;
                         }
 
-                        // Count visible connections by style for summary
-                        if (layer.options && layer.options.dashArray) {
+                        // Count visible connections by style for summary (pending suggestions are not counted)
+                        if (layer._pendingCorrection) {
+                            // shown on the map, not part of the network totals
+                        } else if (layer.options && layer.options.dashArray) {
                             dashedConnectionCount++;
                         } else {
                             solidConnectionCount++;
                         }
 
                         // If it's a tap, increment the tap counter
-                        if (layer._tapInfo) {
+                        if (layer._pendingCorrection) {
+                            // not counted
+                        } else if (layer._tapInfo) {
                             tapConnectionCount++;
                         } else {
                             const rk = [layer._sourceSubstation || '', layer._targetSubstation || ''].sort().join('-');
@@ -4105,22 +3936,10 @@ out geom;`;
                         }
                     }
                 }
-                // Also check for standalone tooltips (L.Tooltip instances directly added to the map)
+                // Tooltips bound to a hidden layer (tooltip._source is the layer that bound it).
+                // Same result as the old nested scan of every layer per tooltip, in one step.
                 else if (layer instanceof L.Tooltip) {
-                    // Find parent layer of the tooltip
-                    let parentFound = false;
-                    map.eachLayer(potentialParent => {
-                        if (potentialParent._tooltip === layer && potentialParent._isVisible === false) {
-                            // If parent is not visible, hide this tooltip
-                            map.removeLayer(layer);
-                            parentFound = true;
-                        }
-                    });
-
-                    // If no parent found, might be an orphaned tooltip
-                    if (!parentFound && layer._source && !layer._source._isVisible) {
-                        map.removeLayer(layer);
-                    }
+                    if (layer._source && !layer._source._isVisible) map.removeLayer(layer);
                 }
             });
 
@@ -4145,7 +3964,6 @@ out geom;`;
 
         // Restore state boundaries
         function restoreMapBorders() {
-
             if (maskLayer) {
                 maskLayer.bringToBack();
             }
@@ -4153,10 +3971,7 @@ out geom;`;
 
         // Plot tap connections from the Taps sheet
         function plotTaps(tapsData, substationMap) {
-            if (!tapsData || tapsData.length === 0) {
-                console.log("No tap data to plot.");
-                return;
-            }
+            if (!tapsData || tapsData.length === 0) return;
 
             let tapsAdded = 0;
             tapsData.forEach(tap => {
@@ -4198,8 +4013,6 @@ out geom;`;
             if (window.connectionCounts) {
                 window.connectionCounts.taps = tapsAdded;
             }
-
-            console.log(`Added ${tapsAdded} tap connections to the map.`);
         }
 
         // Plot map data (substations and connections)
@@ -4222,12 +4035,16 @@ out geom;`;
             }
 
             substationMap = {}; // Reset substationMap on each plot
-            let isAdmin = false;
             let userProfile = {};
             try {
                 userProfile = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}');
-                isAdmin = (userProfile.role === 'admin');
             } catch (e) {}
+            // Admins edit everything; others edit records in their own division or region.
+            const userDiv = (userProfile.division_code || '').trim().toLowerCase();
+            const userReg = (userProfile.region_code || '').trim().toLowerCase();
+            const canEditRecord = (entry) => userProfile.role === 'admin' ||
+                !!(userDiv && (entry.Division || '').trim().toLowerCase() === userDiv) ||
+                !!(userReg && (entry.Region || '').trim().toLowerCase() === userReg);
             let connectionMap = {};
             let markersAdded = 0;
             let connectionsAdded = 0;
@@ -4247,14 +4064,7 @@ out geom;`;
                         ? entry.Comment.trim().toLowerCase()
                         : "black";
                         
-                    let canEdit = isAdmin;
-                    if (!canEdit) {
-                        const userDiv = (userProfile.division_code || '').trim().toLowerCase();
-                        const userReg = (userProfile.region_code || '').trim().toLowerCase();
-                        const recordDiv = (entry.Division || '').trim().toLowerCase();
-                        const recordReg = (entry.Region || '').trim().toLowerCase();
-                        canEdit = (userDiv && recordDiv === userDiv) || (userReg && recordReg === userReg);
-                    }
+                    const canEdit = canEditRecord(entry);
 
                     let symbol = entry.Symbol ? entry.Symbol.trim() : "⚡";
                     let fontSize = entry.SymbolSize && !isNaN(entry.SymbolSize) ? parseInt(entry.SymbolSize) : 18;
@@ -4291,14 +4101,10 @@ out geom;`;
                     marker.closeTooltip(); // Hide permanent tooltip by default
                     allMarkers.push(marker); // Store for label toggling
 
-                    // escapeHtml resolved at global scope
-
-                    // Admin status resolved at outer scope
-
-                    let capacityHtml = `${entry['MVA'] || 'N/A'}`;
-                    let para1Html = `${entry['Para-1'] || 'N/A'}`;
-                    let para2Html = `${entry['Para-2'] || 'N/A'}`;
-                    let para3Html = `${entry['Para-3'] || 'N/A'}`;
+                    let capacityHtml = escapeHtml(entry['MVA'] || 'N/A');
+                    let para1Html = escapeHtml(entry['Para-1'] || 'N/A');
+                    let para2Html = escapeHtml(entry['Para-2'] || 'N/A');
+                    let para3Html = escapeHtml(entry['Para-3'] || 'N/A');
 
                     if (canEdit) {
                         const editStyle = 'cursor: pointer; color: #4f46e5; margin-left: 6px; font-size: 11px;';
@@ -4320,9 +4126,9 @@ out geom;`;
                         myCorrections.forEach(corr => {
                             const fieldLabel = formatSubstationFieldLabel(corr.column_name);
                             if (corr.connection_target) {
-                                suggestionsHtml += `• Line to ${corr.connection_target} ${fieldLabel}: <del>${entry[corr.column_name] || 'N/A'}</del> → <b>${corr.proposed_value}</b><br>`;
+                                suggestionsHtml += `• Line to ${escapeHtml(corr.connection_target)} ${escapeHtml(fieldLabel)}: <del>${escapeHtml(entry[corr.column_name] || 'N/A')}</del> → <b>${escapeHtml(corr.proposed_value)}</b><br>`;
                             } else {
-                                suggestionsHtml += `• ${fieldLabel}: <del>${entry[corr.column_name] || 'N/A'}</del> → <b>${corr.proposed_value}</b><br>`;
+                                suggestionsHtml += `• ${escapeHtml(fieldLabel)}: <del>${escapeHtml(entry[corr.column_name] || 'N/A')}</del> → <b>${escapeHtml(corr.proposed_value)}</b><br>`;
                             }
                         });
                         suggestionsHtml += `<small style="display:block; margin-top:2px; color:#b45309; font-size:10px;"><i class="fas fa-clock"></i> Waiting for Admin approval</small></div>`;
@@ -4331,7 +4137,7 @@ out geom;`;
                     const popupContent = `
                     <div style="font-family: Arial, sans-serif; font-size: 12px; min-width: 170px;" class="substation-popup-body">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px solid #ddd; padding-bottom: 4px;">
-                            <b style="font-size: 13px; color: #1e293b;">${entry.Substation}</b>
+                            <b style="font-size: 13px; color: #1e293b;">${escapeHtml(entry.Substation)}</b>
                             <a href="${streetViewUrl}" target="_blank" title="Open 3D Street View" style="color: #337ab7; text-decoration: none; font-size: 14px; margin-left: 10px;"><i class="fas fa-street-view"></i></a>
                         </div>
                         <div style="display: flex; flex-direction: column; gap: 4px;">
@@ -4371,7 +4177,7 @@ out geom;`;
 
                             let key = [entry.Substation.trim(), target].sort().join("-"); // Use trimmed name for key
                             if (!connectionMap[key]) {
-                                connectionMap[key] = { count: 0, labels: new Set() };
+                                connectionMap[key] = { count: 0 };
                             }
                             let offsetIndex = connectionMap[key].count++;
 
@@ -4424,19 +4230,10 @@ out geom;`;
 
                                 combinedLine.on('click', function (e) {
                                     const info = feederInfo;
-                                    let conductorHtml = `${info.conductor || 'N/A'}`;
-                                    let loadHtml = `${info.load || 'N/A'}`;
-                                    let rlHtml = `${info.rlDisplay || 'N/A'}`;
-                                    
-                                    let canEditConn = isAdmin;
-                                    if (!canEditConn) {
-                                        const userDiv = (userProfile.division_code || '').trim().toLowerCase();
-                                        const userReg = (userProfile.region_code || '').trim().toLowerCase();
-                                        const recordDiv = (entry.Division || '').trim().toLowerCase();
-                                        const recordReg = (entry.Region || '').trim().toLowerCase();
-                                        canEditConn = (userDiv && recordDiv === userDiv) || (userReg && recordReg === userReg);
-                                    }
-                                    if (canEditConn) {
+                                    let conductorHtml = escapeHtml(info.conductor || 'N/A');
+                                    let loadHtml = escapeHtml(info.load || 'N/A');
+                                    let rlHtml = escapeHtml(info.rlDisplay || 'N/A');
+                                    if (canEditRecord(entry)) {
                                         const editStyle = 'cursor: pointer; color: #4f46e5; margin-left: 6px; font-size: 11px;';
                                         conductorHtml += ` <i class="fas fa-pen edit-conn-field" style="${editStyle}" data-source="${escapeHtml(info.source)}" data-target="${escapeHtml(info.target)}" data-column="ConductorSize" data-value="${escapeHtml(info.conductor || '')}"></i>`;
                                         loadHtml += ` <i class="fas fa-pen edit-conn-field" style="${editStyle}" data-source="${escapeHtml(info.source)}" data-target="${escapeHtml(info.target)}" data-column="PeakLoad" data-value="${escapeHtml(info.load || '')}"></i>`;
@@ -4467,7 +4264,6 @@ out geom;`;
                                 combinedLine._substations = [entry.Substation.trim(), target]; // Use trimmed name
                                 combinedLine._sourceSubstation = entry.Substation.trim();
                                 combinedLine._targetSubstation = target;
-                                combinedLine._connectionIndex = index;
                                 combinedLine._routeLength = routeLenRaw;
 
                                 // Track connection type
@@ -4544,11 +4340,11 @@ out geom;`;
                         let popupContent = `
                         <div style="font-family: Arial, sans-serif; font-size: 12px; text-align: left; min-width: 200px;">
                             <span style="background-color: #fef3c7; color: #d97706; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px;">PROPOSED SUBSTATION</span><br>
-                            <b style="font-size: 14px; color: #d97706; display: block; margin-top: 4px;">${rowData.Substation} (Pending)</b>
-                            <b>MVA:</b> ${rowData.MVA || 'N/A'}<br>
-                            <b>Division:</b> ${rowData.Division || 'N/A'}<br>
-                            <b>Region:</b> ${rowData.Region || 'N/A'}<br>
-                            <span style="font-size: 11px; color: #b45309; display: block; margin-top: 5px; border-top: 1px dashed #fcd34d; padding-top: 4px;"><i class="fas fa-clock"></i> Proposed by: ${corr.suggested_by_name || corr.suggested_by}</span>
+                            <b style="font-size: 14px; color: #d97706; display: block; margin-top: 4px;">${escapeHtml(rowData.Substation)} (Pending)</b>
+                            <b>MVA:</b> ${escapeHtml(rowData.MVA || 'N/A')}<br>
+                            <b>Division:</b> ${escapeHtml(rowData.Division || 'N/A')}<br>
+                            <b>Region:</b> ${escapeHtml(rowData.Region || 'N/A')}<br>
+                            <span style="font-size: 11px; color: #b45309; display: block; margin-top: 5px; border-top: 1px dashed #fcd34d; padding-top: 4px;"><i class="fas fa-clock"></i> Proposed by: ${escapeHtml(corr.suggested_by_name || corr.suggested_by)}</span>
                         </div>`;
                         marker.bindPopup(popupContent);
                         allMarkers.push(marker);
@@ -4562,13 +4358,10 @@ out geom;`;
             proposedConns.forEach(corr => {
                 try {
                     const connDetails = JSON.parse(corr.proposed_value);
-                    const fromMarker = substationMap[corr.substation.trim()];
-                    const toMarker = substationMap[corr.connection_target.trim()];
-                    if (fromMarker && toMarker) {
-                        const fromLatLng = fromMarker.getLatLng();
-                        const toLatLng = toMarker.getLatLng();
-                        
-                        const proposedLine = L.polyline([fromLatLng, toLatLng], {
+                    const from = substationMap[corr.substation.trim()];
+                    const to = substationMap[corr.connection_target.trim()];
+                    if (from && to) {
+                        const proposedLine = L.polyline([[from.lat, from.lng], [to.lat, to.lng]], {
                             color: '#d97706',
                             dashArray: '5,10',
                             weight: 3,
@@ -4578,14 +4371,16 @@ out geom;`;
                         const popupContent = `
                         <div style="font-family: Arial, sans-serif; font-size: 12px; text-align: left; min-width: 180px;">
                             <span style="background-color: #fef3c7; color: #d97706; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px;">PROPOSED FEEDER CONNECTION</span><br>
-                            <b style="display:block; margin-top: 4px;">From:</b> ${corr.substation}<br>
-                            <b>To:</b> ${corr.connection_target}<br>
-                            <b>Conductor:</b> ${connDetails.conductorSize || 'N/A'}<br>
-                            <b>Peak Load:</b> ${connDetails.peakLoad || 'N/A'}<br>
-                            <span style="font-size: 11px; color: #b45309; display: block; margin-top: 5px; border-top: 1px dashed #fcd34d; padding-top: 4px;"><i class="fas fa-clock"></i> Proposed by: ${corr.suggested_by_name || corr.suggested_by}</span>
+                            <b style="display:block; margin-top: 4px;">From:</b> ${escapeHtml(corr.substation)}<br>
+                            <b>To:</b> ${escapeHtml(corr.connection_target)}<br>
+                            <b>Conductor:</b> ${escapeHtml(connDetails.conductorSize || 'N/A')}<br>
+                            <b>Peak Load:</b> ${escapeHtml(connDetails.peakLoad || 'N/A')}<br>
+                            <span style="font-size: 11px; color: #b45309; display: block; margin-top: 5px; border-top: 1px dashed #fcd34d; padding-top: 4px;"><i class="fas fa-clock"></i> Proposed by: ${escapeHtml(corr.suggested_by_name || corr.suggested_by)}</span>
                         </div>`;
                         proposedLine.bindPopup(popupContent);
-                        allConnectionLines.push(proposedLine);
+                        // Follow the substation filters like other lines
+                        proposedLine._substations = [corr.substation.trim(), corr.connection_target.trim()];
+                        proposedLine._pendingCorrection = true;
                     }
                 } catch(e) { console.error("Proposed connection line render failed:", e); }
             });
@@ -4598,8 +4393,6 @@ out geom;`;
                 routeKm: Math.round(totalRouteKm * 10) / 10
             };
 
-            console.log(`Added ${markersAdded} markers and ${connectionsAdded} connections to the map`);
-            console.log(`Connection types: ${solidConnections} solid (existing), ${dashedConnections} dashed (proposed)`);
             showStatus(`Added ${markersAdded} substations and ${connectionsAdded} connections`, 0, 90); // 90% progress
             syncFeederLabelVisibility();
         }
@@ -4673,91 +4466,6 @@ out geom;`;
             } else {
                 showStatus(`Substation "${targetSubstationName}" not found on map. It might have invalid coordinates or be filtered out.`, 5000);
             }
-        }
-
-        // Update legend from data
-        function updateLegend(data) {
-            // This uses the static legend in HTML for now
-            // Could be enhanced to dynamically create from data if needed
-        }
-
-        // Function to make an element draggable
-        function makeDraggable(elmnt) {
-            let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-            const header = elmnt.querySelector("h3"); // Assuming h3 is the header/handle
-
-            if (header) {
-                // if present, the header is where you move the DIV from:
-                header.onmousedown = dragMouseDown;
-            } else {
-                // otherwise, move the DIV from anywhere inside the DIV:
-                elmnt.onmousedown = dragMouseDown;
-            }
-
-            function dragMouseDown(e) {
-                e = e || window.event;
-                e.preventDefault();
-                // get the mouse cursor position at startup:
-                pos3 = e.clientX;
-                pos4 = e.clientY;
-                document.onmouseup = closeDragElement;
-                // call a function whenever the cursor moves:
-                document.onmousemove = elementDrag;
-            }
-
-            function elementDrag(e) {
-                e = e || window.event;
-                e.preventDefault();
-                // calculate the new cursor position:
-                pos1 = pos3 - e.clientX;
-                pos2 = pos4 - e.clientY;
-                pos3 = e.clientX;
-                pos4 = e.clientY;
-                // set the element's new position:
-                elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
-                elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
-                // Unset right/bottom to prevent conflicts when dragging elements
-                // that are initially positioned with `right` or `bottom` in CSS.
-                elmnt.style.right = 'auto';
-                elmnt.style.bottom = 'auto';
-            }
-
-            function closeDragElement() {
-                // stop moving when mouse button is released:
-                document.onmouseup = null;
-                document.onmousemove = null;
-            }
-        }
-
-        // Function to make an element vertically resizable
-        function makeResizable(elmnt) {
-            const handle = elmnt.querySelector("#resize-handle-y");
-            if (!handle) return;
-
-            handle.onmousedown = function (e) {
-                e.preventDefault();
-                let startY = e.clientY;
-                let startHeight = parseInt(document.defaultView.getComputedStyle(elmnt).height, 10);
-
-                function doDrag(e) {
-                    const newHeight = startHeight + e.clientY - startY;
-                    // Set min and max height constraints
-                    const minHeight = 150;
-                    const maxHeight = window.innerHeight - elmnt.offsetTop - 20; // 20px buffer from bottom
-
-                    if (newHeight > minHeight && newHeight < maxHeight) {
-                        elmnt.style.height = newHeight + 'px';
-                    }
-                }
-
-                function stopDrag() {
-                    document.documentElement.removeEventListener('mousemove', doDrag, false);
-                    document.documentElement.removeEventListener('mouseup', stopDrag, false);
-                }
-
-                document.documentElement.addEventListener('mousemove', doDrag, false);
-                document.documentElement.addEventListener('mouseup', stopDrag, false);
-            };
         }
 
         // Fetch pending suggested corrections and re-plot (must exist before initApp)
@@ -4836,10 +4544,8 @@ out geom;`;
                 }
 
                 // Fetch Taps data
-                if (tapsCsvUrl && tapsCsvUrl !== 'YOUR_TAPS_SHEET_PUBLISHED_CSV_URL_HERE') {
-                    showStatus("Fetching tapping point data...", 0, 65); // 65% progress
-                    allTapsData = await fetchCSV(tapsCsvUrl); // This now correctly fetches all tap rows
-                }
+                showStatus("Fetching tapping point data...", 0, 65); // 65% progress
+                allTapsData = await fetchCSV(tapsCsvUrl);
 
                 // Create filter options
                 showStatus("Creating filter options...", 0, 70); // 70% progress
@@ -4850,12 +4556,7 @@ out geom;`;
                 await reloadMapAndSuggestions();
                 updateNetworkStatsBar();
 
-                // Update legend 
-                showStatus("Updating legend...", 0, 99); // 99% progress
-                updateLegend(allData);
-
                 // Remove loading screen
-                loadingDataComplete = true;
                 showStatus("Map loaded successfully!", 3000, 100); // 100% progress
 
                 // Smooth fade out of the initial loading screen
@@ -4872,7 +4573,6 @@ out geom;`;
             } catch (error) {
                 console.error("Error initializing application:", error);
                 document.getElementById("loading-text").textContent = "Error loading map data. Please try again later.";
-                // document.getElementById("loading-icon").style.animation = "fade 2s infinite"; // Removed rotating animation
                 document.getElementById("progress-bar").style.width = "0%"; // Reset progress on error
                 document.getElementById("progress-bar").textContent = "Error";
                 document.getElementById("progress-container").style.backgroundColor = "#ffdddd"; // Indicate error
@@ -4890,9 +4590,16 @@ out geom;`;
         });
 
 
-        async function downloadMapImage() {
-            console.log("downloadMapImage() called");
+        // Map chrome hidden while capturing the PDF
+        const PDF_HIDE_ELEMENTS = ['search-container', 'filter-container', 'toggle-filter-table-container', 'zoom-level-display', 'loading-screen', 'leaflet-control-container', 'top-actions-container', 'network-stats-bar', 'map-legend', 'osm-ehv-attribution'];
+        function setPdfChromeOpacity(value) {
+            PDF_HIDE_ELEMENTS.forEach(id => {
+                const el = document.getElementById(id) || document.querySelector(`.${id}`);
+                if (el) el.style.opacity = value;
+            });
+        }
 
+        async function downloadMapImage() {
             // Show download overlay
             const downloadOverlay = document.getElementById('download-overlay');
             downloadOverlay.style.display = 'flex';
@@ -4900,30 +4607,26 @@ out geom;`;
             // Small delay to ensure overlay is visible before heavy processing
             await new Promise(resolve => setTimeout(resolve, 100));
 
+            // 0. Force-enable SS labels only (not feeder labels); restored in `finally`
+            const ssLabelCheckbox = document.getElementById('toggle-ss-labels');
+            const originalSSState = ssLabelCheckbox ? ssLabelCheckbox.checked : false;
+
             try {
-                console.log("Step 1: Checking SS labels...");
-                // 0. Force-enable SS labels only (not feeder labels)
-                const ssLabelCheckbox = document.getElementById('toggle-ss-labels');
-                const originalSSState = ssLabelCheckbox ? ssLabelCheckbox.checked : false;
 
                 if (ssLabelCheckbox && !ssLabelCheckbox.checked) {
                     ssLabelCheckbox.checked = true;
                     ssLabelCheckbox.dispatchEvent(new Event('change'));
                 }
 
-                console.log("Step 2: Filtering markers...");
                 // 1. Determine the MINIMUM bounds of the network (no extra padding for consistent sizing)
                 // allMarkers contains actual Leaflet marker objects, visibility is via opacity
                 const visibleMarkers = allMarkers.filter(m => m.options && m.options.opacity > 0);
-                console.log("Visible markers count:", visibleMarkers.length);
 
                 if (visibleMarkers.length === 0) {
                     showStatus("No data selected to export", 3000, 100);
-                    console.log("No visible markers, returning early");
                     return;
                 }
 
-                console.log("Step 3: Calculating bounds...");
                 // Calculate bounds directly from markers (they are Leaflet markers)
                 const group = new L.featureGroup(visibleMarkers);
                 let bounds = group.getBounds();
@@ -4988,7 +4691,6 @@ out geom;`;
                     showStatus(`Area too large for full detail. Scaling to fit...`, 2000, 10);
                 }
 
-                console.log(`Resizing map to: ${targetWidth}px x ${targetHeight}px for Zoom ${TARGET_ZOOM}`);
                 showStatus("Resizing view for high complexity...", 10, 20);
 
                 // 3. Prepare UI for Clean Capture
@@ -5001,15 +4703,9 @@ out geom;`;
                 };
 
                 // Hide overlays
-                const hideElements = ['search-container', 'filter-container', 'toggle-filter-table-container', 'zoom-level-display', 'loading-screen', 'leaflet-control-container', 'top-actions-container', 'network-stats-bar', 'map-legend', 'osm-ehv-attribution'];
-                hideElements.forEach(id => {
-                    const el = document.getElementById(id) || document.querySelector(`.${id}`);
-                    if (el) el.style.opacity = '0';
-                });
+                setPdfChromeOpacity('0');
 
                 // 4. Resize Map Container (Temporary)
-                // We make it huge but potentially overflow hidden on body so it doesn't break page scroll too much ???
-                // Actually, if we set it absoluteTop 0, Left 0, it just covers everything or goes off screen.
                 mapContainer.style.width = `${targetWidth}px`;
                 mapContainer.style.height = `${targetHeight}px`;
                 mapContainer.style.zIndex = '-1'; // Hide behind if needed, or just let it overlay
@@ -5052,10 +4748,7 @@ out geom;`;
                 mapContainer.style.zIndex = originalStyle.zIndex;
 
                 // Restore UI
-                hideElements.forEach(id => {
-                    const el = document.getElementById(id) || document.querySelector(`.${id}`);
-                    if (el) el.style.opacity = '1';
-                });
+                setPdfChromeOpacity('1');
 
                 // Restore View (Optional, but nice to go back to what user was looking at)
                 map.invalidateSize();
@@ -5138,34 +4831,25 @@ out geom;`;
                 const selectedRegion = Array.from(selectedFilters.Region)[0] || 'MaldaZone';
                 const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
                 doc.save(`PowerMap_${selectedRegion}_${timestamp}.pdf`);
-
-                // Restore original SS label state
-                if (ssLabelCheckbox) {
-                    ssLabelCheckbox.checked = originalSSState;
-                    ssLabelCheckbox.dispatchEvent(new Event('change'));
-                }
-
-                // Hide download overlay
-                downloadOverlay.style.display = 'none';
                 showStatus("PDF Downloaded Successfully!", 3000, 100);
 
             } catch (error) {
                 console.error("Detailed Map Capture failed:", error);
 
                 // Restore UI in case of error
-                const hideElements = ['search-container', 'filter-container', 'toggle-filter-table-container', 'zoom-level-display', 'loading-screen', 'leaflet-control-container', 'top-actions-container', 'network-stats-bar', 'map-legend', 'osm-ehv-attribution'];
-                hideElements.forEach(id => {
-                    const el = document.getElementById(id) || document.querySelector(`.${id}`);
-                    if (el) el.style.opacity = '1';
-                });
+                setPdfChromeOpacity('1');
                 const mapContainer = document.getElementById('map');
                 mapContainer.style.width = '100%';
                 mapContainer.style.height = '100vh';
                 map.invalidateSize();
-
-                // Hide download overlay on error
-                document.getElementById('download-overlay').style.display = 'none';
                 showStatus("Capture failed. Try selecting fewer features.", 5000, 100);
+            } finally {
+                // Overlay and label state come back whatever happened (including "nothing to export")
+                downloadOverlay.style.display = 'none';
+                if (ssLabelCheckbox && ssLabelCheckbox.checked !== originalSSState) {
+                    ssLabelCheckbox.checked = originalSSState;
+                    ssLabelCheckbox.dispatchEvent(new Event('change'));
+                }
             }
         }
 
@@ -5189,10 +4873,6 @@ out geom;`;
             }
 
             await initApp(); // Ensure main app initialization is complete
-
-            // Make floating panels draggable
-            // makeDraggable(document.getElementById('filter-container'));
-            // makeResizable(document.getElementById('filter-container'));
 
             // Initialize filter container state
             const filterContainer = document.getElementById('filter-container');
@@ -5340,7 +5020,7 @@ out geom;`;
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
-                            spreadsheetId: typeof POWER_MAP_EDITABLE_SPREADSHEET_ID !== 'undefined' ? POWER_MAP_EDITABLE_SPREADSHEET_ID : '',
+                            spreadsheetId: POWER_MAP_EDITABLE_SPREADSHEET_ID,
                             sheetName: '', // First sheet
                             rowKeyColumn: 'Substation',
                             rowKeyValue: source, // The row is identified by the source substation name
@@ -5404,7 +5084,7 @@ out geom;`;
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
-                            spreadsheetId: typeof POWER_MAP_EDITABLE_SPREADSHEET_ID !== 'undefined' ? POWER_MAP_EDITABLE_SPREADSHEET_ID : '',
+                            spreadsheetId: POWER_MAP_EDITABLE_SPREADSHEET_ID,
                             sheetName: '', // First sheet
                             rowKeyColumn: 'Substation',
                             rowKeyValue: substation,
@@ -5496,15 +5176,6 @@ out geom;`;
                 document.getElementById('addSubstationForm').reset();
             };
 
-            // Convert decimal coordinates to Degrees/Decimal Minutes format
-            function convertCoordToDMS(decimal, isLat) {
-                const hemisphere = isLat ? (decimal >= 0 ? 'N' : 'S') : (decimal >= 0 ? 'E' : 'W');
-                const absDecimal = Math.abs(decimal);
-                const degrees = Math.floor(absDecimal);
-                const minutes = (absDecimal - degrees) * 60;
-                return `${hemisphere}${degrees}°${minutes.toFixed(3)}'`;
-            }
-
             // Submit New Substation Form
             window.submitNewSubstation = async function(e) {
                 e.preventDefault();
@@ -5519,8 +5190,8 @@ out geom;`;
                 const color = document.getElementById('addSsColor').value;
                 
                 // Format values into Degrees/Decimal Minutes
-                const lat = convertCoordToDMS(latDecimal, true);
-                const lng = convertCoordToDMS(lngDecimal, false);
+                const lat = decimalToDMS(latDecimal, true);
+                const lng = decimalToDMS(lngDecimal, false);
                 
                 const rowData = {
                     "Substation": name,
@@ -5546,7 +5217,7 @@ out geom;`;
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            spreadsheetId: typeof POWER_MAP_EDITABLE_SPREADSHEET_ID !== 'undefined' ? POWER_MAP_EDITABLE_SPREADSHEET_ID : '',
+                            spreadsheetId: POWER_MAP_EDITABLE_SPREADSHEET_ID,
                             sheetName: '',
                             rowData: rowData
                         })
@@ -5629,7 +5300,6 @@ out geom;`;
                 const conductor = document.getElementById('addConnConductor').value.trim();
                 const load = document.getElementById('addConnLoad').value.trim();
                 const rl = document.getElementById('addConnRL').value.trim();
-                const style = document.getElementById('addConnStyle').value;
                 
                 showStatus("Creating Feeder connection in Google Sheet...", 2000, 50);
                 
@@ -5638,7 +5308,7 @@ out geom;`;
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            spreadsheetId: typeof POWER_MAP_EDITABLE_SPREADSHEET_ID !== 'undefined' ? POWER_MAP_EDITABLE_SPREADSHEET_ID : '',
+                            spreadsheetId: POWER_MAP_EDITABLE_SPREADSHEET_ID,
                             sheetName: '',
                             sourceSubstation: source,
                             targetSubstation: target,

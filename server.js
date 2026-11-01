@@ -2,19 +2,29 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const https = require('https');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const DATA_DIR = path.join(__dirname, 'data');
 
-const https = require('https');
-
-// Middleware to parse JSON bodies (raised for NSC/stock publish payloads on Vercel)
+// Body parsers (limits raised for NSC/stock publish payloads)
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
-app.use(express.static(path.join(__dirname)));
 
-// --- Authentication Session Storage & Helpers ---
+// Server-side files are never served, locally or from the Vercel function.
+const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|lib\/stock_(pipeline|material_category)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
+app.use((req, res, next) => (PRIVATE_PATH.test(req.path) ? res.status(404).end() : next()));
+// Old extension-less URL (vercel.json has the same redirect)
+app.get('/performance_index', (req, res) => res.redirect(308, '/performance_index.html'));
+// Static files are public, as on Vercel where the CDN serves them before this app; pages gate themselves with auth.js.
+app.use(express.static(__dirname));
+
+// Session cookies are signed with JWT_SECRET; the fallback is for local development only.
 const JWT_SECRET = process.env.JWT_SECRET || 'mzo-portal-super-secret-key-123456';
+if (!process.env.JWT_SECRET && process.env.VERCEL) {
+    console.warn('[Auth] JWT_SECRET is not set: sessions are signed with the development fallback. Set JWT_SECRET in the Vercel project.');
+}
 const POWER_MAP_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT8hYE6YBbfVQDJhgB3cIWqrrGrjMQAQ22mcmCJTOa995gCH-xBAfsAPpBvNYS1KlYIFMRHM59iGB7K/pub?output=csv';
 // Distinct table names (do not use generic "substations" — may clash with other projects/tables)
 const POWER_MAP_TABLE = 'mzo_power_substations';
@@ -23,13 +33,8 @@ const POWER_MAP_CORRECTIONS_TABLE = 'mzo_power_corrections';
 const PORTAL_USERS_SCHEMA = 'mzo_insight';
 const PORTAL_USERS_TABLE = 'portal_users';
 const ACTIVITY_LOGS_TABLE = 'activity_logs';
-const USERS_FILE = path.join(__dirname, 'data', 'users.json');
-const LOGS_FILE = path.join(__dirname, 'data', 'activity_log.json');
-
-function datasetEtag_(value) {
-    const v = String(value == null ? '' : value).replace(/"/g, '').trim();
-    return v ? `"${v}"` : '';
-}
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const LOGS_FILE = path.join(DATA_DIR, 'activity_log.json');
 
 function bodyEtag_(body) {
     const hex = crypto.createHash('sha1').update(String(body == null ? '' : body), 'utf8').digest('hex').slice(0, 16);
@@ -92,34 +97,56 @@ function sendDatasetCsv_(req, res, csv, options) {
 
 function parseCookies(cookieHeader) {
     const list = {};
-    if (!cookieHeader) return list;
-    cookieHeader.split(';').forEach(cookie => {
-        const parts = cookie.split('=');
-        list[parts.shift().trim()] = decodeURI(parts.join('='));
+    String(cookieHeader || '').split(';').forEach((cookie) => {
+        const at = cookie.indexOf('=');
+        if (at < 0) return;
+        const raw = cookie.slice(at + 1).trim();
+        try {
+            list[cookie.slice(0, at).trim()] = decodeURIComponent(raw);
+        } catch (_) {
+            list[cookie.slice(0, at).trim()] = raw; // malformed %-escape from another app on the host
+        }
     });
     return list;
 }
 
-function fetchSheet(url) {
-    if (typeof fetch === 'function') {
-        return fetch(url).then(res => {
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return res.text();
-        });
-    }
-    
-    return new Promise((resolve, reject) => {
-        https.get(url, (res) => {
-            if (res.statusCode !== 200) {
-                reject(new Error(`Failed to fetch sheet: HTTP ${res.statusCode}`));
-                return;
-            }
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => resolve(data));
-        }).on('error', err => reject(err));
-    });
+async function fetchSheet(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.text();
 }
+
+/** One CSV line → fields (quoted fields, "" escapes). Fields are not trimmed. */
+function parseCsvLine_(line) {
+    const out = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (inQuotes) {
+            if (ch === '"') {
+                if (line[i + 1] === '"') {
+                    cur += '"';
+                    i++;
+                } else {
+                    inQuotes = false;
+                }
+            } else {
+                cur += ch;
+            }
+        } else if (ch === '"') {
+            inQuotes = true;
+        } else if (ch === ',') {
+            out.push(cur);
+            cur = '';
+        } else {
+            cur += ch;
+        }
+    }
+    out.push(cur);
+    return out;
+}
+
 
 let globalCachedUsers = null;
 let globalCachedLogs = null;
@@ -131,12 +158,12 @@ const USERS_CACHE_TTL_MS = 2 * 60 * 1000; // short TTL for admin/list reads
 let SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 let SUPABASE_KEY = process.env.SUPABASE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 
-// Same project anon key already shipped in client pages (e.g. dd/upcomingDD2.html).
+// Same project anon key already shipped in client pages.
 const SUPABASE_FALLBACK_URL = 'https://unsmtschmcvftfqwabaq.supabase.co';
 const SUPABASE_FALLBACK_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVuc210c2NobWN2ZnRmcXdhYmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM1NzA1MTYsImV4cCI6MjA2OTE0NjUxNn0.X3_q0FyEjam4ct03sjiqINz0_Hfu0AlWgRcymA3us9o';
 
 let fileConfig = {};
-const supabaseConfigPath = path.join(__dirname, 'data', 'supabase_config.json');
+const supabaseConfigPath = path.join(DATA_DIR, 'supabase_config.json');
 if (fs.existsSync(supabaseConfigPath)) {
     try {
         fileConfig = JSON.parse(fs.readFileSync(supabaseConfigPath, 'utf8')) || {};
@@ -518,12 +545,14 @@ async function fetchActivityLogsFromSupabase(limit = 2000, sinceIso) {
 
 async function logActivity(activity) {
     try {
+        // Some fields come from the request (page path, names, labels): keep them bounded.
+        const clip = (v, max) => String(v == null ? '' : v).slice(0, max);
         const entry = {
             timestamp: new Date().toISOString(),
-            username: activity.username,
-            name: activity.name,
-            type: activity.type,
-            details: activity.details
+            username: clip(activity.username, 100),
+            name: clip(activity.name, 200),
+            type: clip(activity.type, 50),
+            details: clip(activity.details, 1000)
         };
 
         // Source of truth: Supabase mzo_insight.activity_logs
@@ -634,204 +663,97 @@ function matchLoginUser(users, username, pin) {
     }) || null;
 }
 
-// Authentication middleware
+/** Profile from a valid, unexpired mzo_session cookie, else null. */
+function readSession_(req) {
+    const token = parseCookies(req.headers.cookie).mzo_session;
+    const parts = String(token || '').split('.');
+    if (parts.length !== 2) return null;
+    const expected = Buffer.from(crypto.createHmac('sha256', JWT_SECRET).update(parts[0]).digest('base64'));
+    const given = Buffer.from(parts[1]);
+    if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
+    try {
+        const session = JSON.parse(Buffer.from(parts[0], 'base64').toString('utf-8'));
+        return session && Date.now() < session.expiry ? session.profile : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+// Reachable without a session (static files are already served above).
+const PUBLIC_PATHS = new Set([
+    '/login.html', '/offline.html', '/sw.js', '/manifest.json',
+    '/api/login', '/api/auth/google', '/api/auth/pending-status', '/api/auth/config', '/api/news'
+]);
+const PUBLIC_ASSET = /^\/(icons|assets)\/|\.(css|js|png|json|ico)$/i;
+
 async function requireAuth(req, res, next) {
     const pathName = req.path;
-    
-    // Whitelist static assets, login page, and login API
-    if (
-        pathName === '/login.html' || 
-        pathName === '/api/login' || 
-        pathName === '/api/auth/google' || 
-        pathName === '/api/auth/pending-status' || 
-        pathName === '/api/auth/config' || 
-        pathName === '/api/news' || 
-        pathName === '/api/executive/briefing' || 
-        pathName === '/sw.js' ||
-        pathName === '/manifest.json' ||
-        pathName === '/offline.html' ||
-        pathName.startsWith('/icons/') || 
-        pathName.startsWith('/assets/') || 
-        pathName.endsWith('.css') || 
-        pathName.endsWith('.js') || 
-        pathName.endsWith('.png') || 
-        pathName.endsWith('.json') ||
-        pathName.endsWith('.ico')
-    ) {
+    const profile = readSession_(req);
+    if (profile) {
+        req.user = profile;
+        // Page visits feed Admin → Visitors and the home "Often used" list.
+        const isHtml = pathName === '/' || path.extname(pathName).toLowerCase() === '.html';
+        if (isHtml && pathName !== '/login.html' && pathName !== '/admin_users.html') {
+            await logActivity({
+                username: req.user.Username,
+                name: req.user.Name || 'No Name',
+                type: 'page_visit',
+                details: `Visited page: ${pathName === '/' ? '/index.html' : pathName}`
+            });
+        }
         return next();
     }
-    
-    // Read and verify session cookies
-    const cookieHeader = req.headers.cookie || '';
-    const cookies = parseCookies(cookieHeader);
-    const token = cookies.mzo_session;
-    
-    if (token) {
-        try {
-            const parts = token.split('.');
-            if (parts.length === 2) {
-                const [payloadStr, signature] = parts;
-                const expectedSignature = require('crypto').createHmac('sha256', JWT_SECRET).update(payloadStr).digest('base64');
-                if (signature === expectedSignature) {
-                    const session = JSON.parse(Buffer.from(payloadStr, 'base64').toString('utf-8'));
-                    if (Date.now() < session.expiry) {
-                        req.user = session.profile;
-                        
-                        // Log page visits (intercept requests for HTML pages, excluding APIs and assets)
-                        const ext = path.extname(pathName).toLowerCase();
-                        const isHtml = ext === '.html' || pathName === '/' || pathName === '';
-                        const isAssetOrApi = pathName.startsWith('/api/') || pathName.startsWith('/icons/') || pathName.startsWith('/assets/') || ext === '.css' || ext === '.js' || ext === '.png' || ext === '.json' || ext === '.ico';
-                        
-                        if (isHtml && !isAssetOrApi && pathName !== '/login.html' && pathName !== '/admin_users.html') {
-                            await logActivity({
-                                username: req.user.Username,
-                                name: req.user.Name || 'No Name',
-                                type: 'page_visit',
-                                details: `Visited page: ${pathName === '/' ? '/index.html' : pathName}`
-                            });
-                        }
-                        
-                        return next();
-                    }
-                }
-            }
-        } catch (err) {
-            console.error("[Auth] Session cookie verification failed:", err.message);
-        }
-    }
-    
-    // Redirect / return 401 if unauthenticated
-    // API routes must never get an HTML login redirect (breaks CSV/JSON clients like Power Map)
-    if (pathName.startsWith('/api/')) {
-        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    }
-    if (req.xhr || (req.headers.accept && req.headers.accept.includes('application/json'))) {
+    if (PUBLIC_PATHS.has(pathName) || PUBLIC_ASSET.test(pathName)) return next();
+    // API callers (CSV/JSON clients like Power Map) get 401, never an HTML redirect.
+    if (pathName.startsWith('/api/') || req.xhr || String(req.headers.accept || '').includes('application/json')) {
         return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     }
     return res.redirect('/login.html');
 }
 
-// Enable authentication check before serving static files
 app.use(requireAuth);
-app.use((req, res, next) => {
-    if (req.path === '/withheld.html' || req.path === '/nsc.html') {
-        res.setHeader('Cache-Control', 'no-store, must-revalidate');
-    }
-    next();
-});
-app.use((req, res, next) => {
-    const p = String(req.path || '').toLowerCase();
-    if (
-        p === '/server.js' ||
-        p.startsWith('/data/') ||
-        p.endsWith('/users.json') ||
-        p.includes('.env')
-    ) {
-        return res.status(404).end();
-    }
-    next();
-});
-app.use(express.static(__dirname));
 
-// --- File Paths ---
-const STRUCTURE_FILE = path.join(__dirname, 'data', 'structure.csv');
+// --- Estimate structures (admin.html) ---
+const STRUCTURE_FILE = path.join(__dirname, 'data', 'structure.csv'); // literal path: Vercel bundles it with the function
+const STRUCTURE_COLUMNS = ['id', 'name', 'description', 'voltage', 'materials', 'labour'];
 
-// --- CSV Parser Utility ---
-function parseCSV(text) {
-    const lines = text.trim().split('\n');
-    const headers = lines[0].split(',').map(h => h.trim());
+function parseStructuresCsv_(text) {
+    const lines = String(text || '').trim().split(/\r?\n/);
+    const headers = parseCsvLine_(lines[0] || '').map((h) => h.trim());
     const rows = [];
     for (let i = 1; i < lines.length; i++) {
-        // Handle quoted values with commas inside
-        const values = parseCSVLine(lines[i]);
-        if (values.length === headers.length) {
-            const row = {};
-            for (let j = 0; j < headers.length; j++) {
-                row[headers[j]] = values[j];
-            }
-            rows.push(row);
-        }
+        const values = parseCsvLine_(lines[i]).map((v) => v.trim());
+        if (values.length !== headers.length) continue;
+        const row = {};
+        STRUCTURE_COLUMNS.forEach((k) => { row[k] = values[headers.indexOf(k)]; });
+        rows.push(row);
     }
     return rows;
 }
 
-function parseCSVLine(line) {
-    const values = [];
-    let current = '';
-    let inQuotes = false;
-    
-    for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        if (char === '"') {
-            inQuotes = !inQuotes;
-        } else if (char === ',' && !inQuotes) {
-            values.push(current.trim());
-            current = '';
-        } else {
-            current += char;
-        }
-    }
-    values.push(current.trim());
-    return values;
-}
-
-// --- CSV Generator Utility ---
-function generateCSV(structures) {
-    const headers = ['id', 'name', 'description', 'voltage', 'materials', 'labour'];
-    const lines = [headers.join(',')];
-    
-    structures.forEach(s => {
-        const row = [
-            s.id,
-            `"${s.name}"`,
-            `"${s.description}"`,
-            `"${s.voltage}"`,
-            `"${s.materials}"`,
-            `"${s.labour}"`
-        ];
-        lines.push(row.join(','));
-    });
-    
-    return lines.join('\n');
-}
-
-// API endpoint to GET the current structure data (as JSON)
 app.get('/api/structures', (req, res) => {
     try {
-        const csvText = fs.readFileSync(STRUCTURE_FILE, 'utf-8');
-        const structures = parseCSV(csvText);
-        
-        // Convert to the format expected by the app
-        const formattedStructures = structures.map(s => ({
-            id: s.id,
-            name: s.name,
-            description: s.description,
-            voltage: s.voltage,
-            materials: s.materials,
-            labour: s.labour
-        }));
-        
-        res.json(formattedStructures);
+        res.json(parseStructuresCsv_(fs.readFileSync(STRUCTURE_FILE, 'utf-8')));
     } catch (error) {
-        console.error("Error reading structure file:", error.message);
+        console.error('Error reading structure file:', error.message);
         res.status(500).json({ message: 'Error reading structure data.', details: error.message });
     }
 });
 
-// API endpoint to POST (update) the structure data
-app.post('/api/structures/update', (req, res) => {
-    const updatedStructures = req.body;
-
-    if (!Array.isArray(updatedStructures)) {
+// Writes data/structure.csv (works locally; the Vercel filesystem is read-only).
+app.post('/api/structures/update', requireAdmin, (req, res) => {
+    const structures = req.body;
+    if (!Array.isArray(structures)) {
         return res.status(400).send('Invalid data format. Expected an array of structures.');
     }
-
     try {
-        const csvContent = generateCSV(updatedStructures);
-        fs.writeFileSync(STRUCTURE_FILE, csvContent, 'utf-8');
+        const csv = [STRUCTURE_COLUMNS.join(',')]
+            .concat(structures.map((s) => STRUCTURE_COLUMNS.map((k) => (k === 'id' ? s.id : `"${String(s[k] == null ? '' : s[k]).replace(/"/g, '""')}"`)).join(',')))
+            .join('\n');
+        fs.writeFileSync(STRUCTURE_FILE, csv, 'utf-8');
         res.status(200).json({ message: 'Structures updated successfully!' });
     } catch (error) {
-        console.error("Error writing structure file:", error.message);
+        console.error('Error writing structure file:', error.message);
         res.status(500).json({ message: 'An error occurred while saving data.', details: error.message });
     }
 });
@@ -849,16 +771,36 @@ function issueSessionCookie(res, clientProfile) {
     return token;
 }
 
-// Safely decode Google GIS JWT
-function decodeGoogleJwt(jwt) {
-    try {
-        const parts = String(jwt || '').split('.');
-        if (parts.length !== 3) return null;
-        const payloadBuf = Buffer.from(parts[1], 'base64url');
-        return JSON.parse(payloadBuf.toString('utf8'));
-    } catch (_) {
-        return null;
-    }
+const ROOT_ADMIN_EMAILS = ['smartlinemanapp@gmail.com'];
+const GOOGLE_ISSUERS = new Set(['accounts.google.com', 'https://accounts.google.com']);
+
+function googleClientId_() {
+    return String(process.env.GOOGLE_CLIENT_ID || fileConfig.googleClientId || '').trim();
+}
+
+/** Local test sign-in (email only) is for a developer machine, never a deployment. */
+function isLocalRequest_(req) {
+    return !process.env.VERCEL && (req.hostname === 'localhost' || req.hostname === '127.0.0.1');
+}
+
+/**
+ * Google checks the token's signature and expiry; we check it was issued to this app's
+ * client ID for a verified email. kind: 'id_token' (Sign-In button) or 'access_token' (popup).
+ * Returns the claims, or null when the token does not qualify. Throws if Google is unreachable.
+ */
+async function googleTokenInfo_(kind, token) {
+    const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?${kind}=${encodeURIComponent(token)}`, {
+        signal: AbortSignal.timeout(8000)
+    });
+    if (!res.ok) return null;
+    const info = await res.json().catch(() => null);
+    if (!info || !info.email) return null;
+    const audience = kind === 'id_token' ? info.aud : (info.aud || info.azp);
+    if (audience !== googleClientId_()) return null;
+    if (kind === 'id_token' && !GOOGLE_ISSUERS.has(info.iss)) return null;
+    if (!(Number(info.exp) * 1000 > Date.now())) return null;
+    if (String(info.email_verified) !== 'true') return null;
+    return info;
 }
 
 // API endpoint for User Login (Username + PIN)
@@ -939,8 +881,8 @@ app.post('/api/login', async (req, res) => {
 // Public auth configuration (Google Client ID & test capabilities)
 app.get('/api/auth/config', (req, res) => {
     res.json({
-        googleClientId: process.env.GOOGLE_CLIENT_ID || fileConfig.googleClientId || '',
-        allowLocalTest: req.hostname === 'localhost' || req.hostname === '127.0.0.1'
+        googleClientId: googleClientId_(),
+        allowLocalTest: isLocalRequest_(req)
     });
 });
 
@@ -952,39 +894,39 @@ app.post('/api/auth/google', async (req, res) => {
         let name = '';
         let picture = '';
 
-        if (credential) {
-            const decoded = decodeGoogleJwt(credential);
-            if (!decoded || !decoded.email) {
-                return res.status(400).json({ status: 'error', message: 'Invalid Google authentication token.' });
+        if (credential || accessToken) {
+            if (!googleClientId_()) {
+                return res.status(503).json({ status: 'error', message: 'Google sign-in is not configured on the server.' });
             }
-            if (decoded.exp && decoded.exp * 1000 < Date.now()) {
-                return res.status(401).json({ status: 'error', message: 'Google authentication token has expired.' });
-            }
-            email = String(decoded.email).trim().toLowerCase();
-            name = String(decoded.name || decoded.given_name || email.split('@')[0]).trim();
-            picture = decoded.picture || '';
-        } else if (accessToken) {
+            let info;
             try {
-                const gRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                    headers: { Authorization: `Bearer ${accessToken}` }
-                });
-                if (!gRes.ok) {
-                    const errText = await gRes.text().catch(() => '');
-                    console.warn('[Google Auth] Failed to verify access token with Google API:', errText);
-                    return res.status(401).json({ status: 'error', message: 'Google authorization could not be verified.' });
-                }
-                const gProfile = await gRes.json();
-                if (!gProfile || !gProfile.email) {
-                    return res.status(400).json({ status: 'error', message: 'Google profile did not contain an email address.' });
-                }
-                email = String(gProfile.email).trim().toLowerCase();
-                name = String(gProfile.name || gProfile.given_name || email.split('@')[0]).trim();
-                picture = gProfile.picture || '';
-            } catch (fetchErr) {
-                console.error('[Google Auth] Error contacting Google userinfo API:', fetchErr);
-                return res.status(500).json({ status: 'error', message: 'Could not connect to Google for authentication verification.' });
+                info = await googleTokenInfo_(credential ? 'id_token' : 'access_token', credential || accessToken);
+            } catch (netErr) {
+                console.error('[Google Auth] tokeninfo unreachable:', netErr.message);
+                return res.status(503).json({ status: 'error', message: 'Could not connect to Google for authentication verification.' });
             }
-        } else if (testEmail && (req.hostname === 'localhost' || req.hostname === '127.0.0.1')) {
+            if (!info) {
+                return res.status(401).json({ status: 'error', message: 'Google sign-in could not be verified. Please try again.' });
+            }
+            email = String(info.email).trim().toLowerCase();
+            name = String(info.name || info.given_name || '').trim();
+            picture = info.picture || '';
+            if (accessToken && !name) {
+                // Access-token info has no profile; the name and photo come from userinfo.
+                try {
+                    const gRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                        headers: { Authorization: `Bearer ${accessToken}` },
+                        signal: AbortSignal.timeout(8000)
+                    });
+                    if (gRes.ok) {
+                        const g = await gRes.json();
+                        name = String(g.name || g.given_name || '').trim();
+                        picture = g.picture || picture;
+                    }
+                } catch (_) { /* profile is optional */ }
+            }
+            name = name || email.split('@')[0];
+        } else if (testEmail && isLocalRequest_(req)) {
             email = String(testEmail).trim().toLowerCase();
             name = String(testName || email.split('@')[0]).trim();
             picture = testPicture || '';
@@ -992,15 +934,11 @@ app.post('/api/auth/google', async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'Google authentication credential is required.' });
         }
 
-        const ROOT_ADMIN_EMAILS = ['smartlinemanapp@gmail.com'];
-        const isRootAdmin = ROOT_ADMIN_EMAILS.includes(email.toLowerCase());
+        const isRootAdmin = ROOT_ADMIN_EMAILS.includes(email);
 
+        // Accounts link to Google by their saved email (set by an admin, or at the first Google sign-in).
         const users = await getLoginCredentials({ forceRefresh: true });
-        const existing = users.find(u => {
-            const uEmail = String(u.email || '').trim().toLowerCase();
-            const uUsername = String(u.Username || '').trim().toLowerCase();
-            return (uEmail && uEmail === email) || (uUsername === email.split('@')[0]);
-        });
+        const existing = users.find((u) => String(u.email || '').trim().toLowerCase() === email);
 
         if (existing) {
             if (isRootAdmin) {
@@ -1166,10 +1104,7 @@ app.get('/api/auth/pending-status', async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'Email required.' });
         }
         const users = await getLoginCredentials({ forceRefresh: true });
-        const user = users.find(u =>
-            String(u.email || '').toLowerCase() === email ||
-            String(u.Username || '').toLowerCase() === email.split('@')[0]
-        );
+        const user = users.find((u) => String(u.email || '').trim().toLowerCase() === email);
         if (!user) {
             return res.status(200).json({ status: 'not_found' });
         }
@@ -1856,94 +1791,95 @@ app.get('/api/power-map/meta', async (req, res) => {
     });
 });
 
-// 6.5. Edit sheet row (Power Map Admin Edit - Supabase Table version)
+// --- Power map edits ---
+// "Connected to", RL, ConductorSize and PeakLoad hold one " : "-separated entry per connection.
+async function fetchSubstation_(name) {
+    const rows = await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(name)}&select=*`);
+    return Array.isArray(rows) && rows[0] ? rows[0] : null;
+}
+
+function patchSubstation_(name, body) {
+    return querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(name)}`, { method: 'PATCH', body });
+}
+
+/** New value of `column` with the entry for connection `target` replaced; null when there is no such connection. */
+function setConnectionValue_(record, column, target, value) {
+    const conns = String(record['Connected to'] || '').split(':').map((x) => x.trim().toLowerCase());
+    const idx = conns.indexOf(String(target).trim().toLowerCase());
+    if (idx === -1) return null;
+    const vals = String(record[column] || '').split(':').map((x) => x.trim());
+    while (vals.length < conns.length) vals.push('');
+    vals[idx] = value;
+    return vals.join(' : ');
+}
+
+/** Patch body that appends one connection (target + its RL / conductor / peak load). */
+function appendConnection_(record, target, details) {
+    const add = (col, v) => {
+        const cur = String(record[col] || '').trim();
+        return cur ? `${cur} : ${v || ''}` : (v || '');
+    };
+    return {
+        'Connected to': add('Connected to', target),
+        RL: add('RL', details.rl),
+        ConductorSize: add('ConductorSize', details.conductorSize),
+        PeakLoad: add('PeakLoad', details.peakLoad)
+    };
+}
+
+/** Non-admins may propose edits only inside their own division or region. */
+function inJurisdiction_(user, division, region) {
+    const userDiv = String(user.division_code || '').trim().toLowerCase();
+    const userReg = String(user.region_code || '').trim().toLowerCase();
+    return (userDiv && String(division || '').trim().toLowerCase() === userDiv) ||
+        (userReg && String(region || '').trim().toLowerCase() === userReg);
+}
+
+function suggestCorrection_(user, suggestion) {
+    return querySupabase(POWER_MAP_CORRECTIONS_TABLE, {
+        method: 'POST',
+        body: { ...suggestion, suggested_by: user.Username, suggested_by_name: user.Name || user.Username, status: 'pending' }
+    });
+}
+
+// Power Map edit: admins write; others file a suggestion for an admin to approve.
 app.post('/api/admin/edit-sheet-row', async (req, res) => {
     if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     try {
         const { rowKeyColumn, rowKeyValue, columnName, newValue, connectionTarget } = req.body;
-        
         if (!rowKeyColumn || !rowKeyValue || !columnName) {
             return res.status(400).json({ status: 'error', message: 'Missing required parameters.' });
         }
 
-        // Check permission if not super admin
         if (req.user.role !== 'admin') {
-            const records = await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(rowKeyValue)}&select=*`);
-            if (!records || records.length === 0) {
-                return res.status(404).json({ status: 'error', message: 'Substation not found.' });
-            }
-            const record = records[0];
-            
-            const userDiv = (req.user.division_code || '').trim().toLowerCase();
-            const userReg = (req.user.region_code || '').trim().toLowerCase();
-            const recordDiv = (record.Division || '').trim().toLowerCase();
-            const recordReg = (record.Region || '').trim().toLowerCase();
-            
-            const hasAccess = (userDiv && recordDiv === userDiv) || (userReg && recordReg === userReg);
-            if (!hasAccess) {
+            const record = await fetchSubstation_(rowKeyValue);
+            if (!record) return res.status(404).json({ status: 'error', message: 'Substation not found.' });
+            if (!inJurisdiction_(req.user, record.Division, record.Region)) {
                 return res.status(403).json({ status: 'error', message: 'Forbidden: You do not have edit permission for this jurisdiction.' });
             }
-            
-            // Route to suggestions
-            const suggestion = {
+            await suggestCorrection_(req.user, {
                 type: 'edit_substation',
                 substation: rowKeyValue,
                 column_name: columnName,
                 connection_target: connectionTarget || null,
-                proposed_value: newValue,
-                suggested_by: req.user.Username,
-                suggested_by_name: req.user.Name || req.user.Username,
-                status: 'pending'
-            };
-            
-            await querySupabase(POWER_MAP_CORRECTIONS_TABLE, {
-                method: 'POST',
-                body: suggestion
+                proposed_value: newValue
             });
-            
             return res.json({ status: 'success', isSuggestion: true, message: 'Edit submitted as suggested correction. Pending Admin approval.' });
         }
 
         let finalValue = newValue;
-
-        // Handle colon-separated connection modifications
         if (connectionTarget) {
-            // Fetch the existing record to retrieve its connections arrays
-            const records = await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(rowKeyValue)}&select=*`);
-            if (!records || records.length === 0) {
-                return res.status(404).json({ status: 'error', message: `Substation '${rowKeyValue}' not found.` });
-            }
-            const record = records[0];
-            
-            const connStr = record["Connected to"] || '';
-            const conns = connStr.split(':').map(s => s.trim().toLowerCase());
-            
-            const targetIdx = conns.indexOf(connectionTarget.trim().toLowerCase());
-            if (targetIdx === -1) {
+            const record = await fetchSubstation_(rowKeyValue);
+            if (!record) return res.status(404).json({ status: 'error', message: `Substation '${rowKeyValue}' not found.` });
+            finalValue = setConnectionValue_(record, columnName, connectionTarget, newValue);
+            if (finalValue === null) {
                 return res.status(400).json({ status: 'error', message: `Connection target '${connectionTarget}' not found.` });
             }
-
-            const currentValStr = record[columnName] || '';
-            const vals = currentValStr.split(':').map(s => s.trim());
-            while (vals.length < conns.length) {
-                vals.push("");
-            }
-            vals[targetIdx] = newValue;
-            finalValue = vals.join(" : ");
         }
-
-        // Patch the column value in Supabase
-        const patchBody = {};
-        patchBody[columnName] = finalValue;
-        
-        await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(rowKeyValue)}`, {
-            method: 'PATCH',
-            body: patchBody
-        });
-
+        await patchSubstation_(rowKeyValue, { [columnName]: finalValue });
         return res.json({ status: 'success', message: 'Database row updated successfully.' });
     } catch (err) {
-        console.error("[Admin Edit] Error updating Supabase row:", err.message);
+        console.error('[Admin Edit] Error updating Supabase row:', err.message);
         return res.status(500).json({ status: 'error', message: err.message });
     }
 });
@@ -1958,36 +1894,19 @@ app.post('/api/admin/append-sheet-row', async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'Missing rowData.' });
         }
 
-        // Check permission if not super admin
         if (req.user.role !== 'admin') {
-            const userDiv = (req.user.division_code || '').trim().toLowerCase();
-            const userReg = (req.user.region_code || '').trim().toLowerCase();
-            const targetDiv = (rowData.Division || '').trim().toLowerCase();
-            const targetReg = (rowData.Region || '').trim().toLowerCase();
-            
-            const hasAccess = (userDiv && targetDiv === userDiv) || (userReg && targetReg === userReg);
-            if (!hasAccess) {
+            if (!inJurisdiction_(req.user, rowData.Division, rowData.Region)) {
                 return res.status(403).json({ status: 'error', message: 'Forbidden: You cannot create a substation outside your jurisdiction.' });
             }
-            
-            const suggestion = {
+            await suggestCorrection_(req.user, {
                 type: 'add_substation',
                 substation: rowData.Substation,
-                proposed_value: JSON.stringify(rowData),
-                suggested_by: req.user.Username,
-                suggested_by_name: req.user.Name || req.user.Username,
-                status: 'pending'
-            };
-            
-            await querySupabase(POWER_MAP_CORRECTIONS_TABLE, {
-                method: 'POST',
-                body: suggestion
+                proposed_value: JSON.stringify(rowData)
             });
-            
             return res.json({ status: 'success', isSuggestion: true, message: 'Substation creation submitted for Admin approval.' });
         }
         
-        // Build payload matching exact columns in Supabase (all 22 columns)
+        // All 22 columns of the substations table
         const payload = {
             "Substation": rowData.Substation || '',
             "Region": rowData.Region || '',
@@ -2013,8 +1932,6 @@ app.post('/api/admin/append-sheet-row', async (req, res) => {
             "PeakLoad": rowData.PeakLoad || ''
         };
 
-        console.log(`[Admin Add Substation] Appending row to Supabase:`, payload);
-        
         await querySupabase(POWER_MAP_TABLE, {
             method: 'POST',
             body: payload
@@ -2032,85 +1949,30 @@ app.post('/api/admin/add-connection', async (req, res) => {
     if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     try {
         const { sourceSubstation, targetSubstation, rl, conductorSize, peakLoad } = req.body;
-        
         if (!sourceSubstation || !targetSubstation) {
             return res.status(400).json({ status: 'error', message: 'Missing sourceSubstation or targetSubstation.' });
         }
+        const record = await fetchSubstation_(sourceSubstation);
 
-        // Check permission if not super admin
         if (req.user.role !== 'admin') {
-            const records = await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(sourceSubstation)}&select=*`);
-            if (!records || records.length === 0) {
-                return res.status(404).json({ status: 'error', message: 'Source Substation not found.' });
-            }
-            const record = records[0];
-            
-            const userDiv = (req.user.division_code || '').trim().toLowerCase();
-            const userReg = (req.user.region_code || '').trim().toLowerCase();
-            const recordDiv = (record.Division || '').trim().toLowerCase();
-            const recordReg = (record.Region || '').trim().toLowerCase();
-            
-            const hasAccess = (userDiv && recordDiv === userDiv) || (userReg && recordReg === userReg);
-            if (!hasAccess) {
+            if (!record) return res.status(404).json({ status: 'error', message: 'Source Substation not found.' });
+            if (!inJurisdiction_(req.user, record.Division, record.Region)) {
                 return res.status(403).json({ status: 'error', message: 'Forbidden: You do not have connection edit permissions for this jurisdiction.' });
             }
-            
-            const connDetails = { rl, conductorSize, peakLoad };
-            const suggestion = {
+            await suggestCorrection_(req.user, {
                 type: 'add_connection',
                 substation: sourceSubstation,
                 connection_target: targetSubstation,
-                proposed_value: JSON.stringify(connDetails),
-                suggested_by: req.user.Username,
-                suggested_by_name: req.user.Name || req.user.Username,
-                status: 'pending'
-            };
-            
-            await querySupabase(POWER_MAP_CORRECTIONS_TABLE, {
-                method: 'POST',
-                body: suggestion
+                proposed_value: JSON.stringify({ rl, conductorSize, peakLoad })
             });
-            
             return res.json({ status: 'success', isSuggestion: true, message: 'Feeder connection submitted for Admin approval.' });
         }
-        
-        // Fetch the source record to retrieve its connections arrays
-        const records = await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(sourceSubstation)}&select=*`);
-        if (!records || records.length === 0) {
-            return res.status(404).json({ status: 'error', message: `Source Substation '${sourceSubstation}' not found.` });
-        }
-        const record = records[0];
 
-        const currentConns = (record["Connected to"] || '').toString().trim();
-        const nextConns = currentConns ? currentConns + " : " + targetSubstation : targetSubstation;
-
-        const currentRl = (record["RL"] || '').toString().trim();
-        const nextRl = currentRl ? currentRl + " : " + (rl || "") : (rl || "");
-
-        const currentCond = (record["ConductorSize"] || '').toString().trim();
-        const nextCond = currentCond ? currentCond + " : " + (conductorSize || "") : (conductorSize || "");
-
-        const currentLoad = (record["PeakLoad"] || '').toString().trim();
-        const nextLoad = currentLoad ? currentLoad + " : " + (peakLoad || "") : (peakLoad || "");
-
-        // Patch connection details back to Supabase
-        const patchBody = {
-            "Connected to": nextConns,
-            "RL": nextRl,
-            "ConductorSize": nextCond,
-            "PeakLoad": nextLoad
-        };
-
-        console.log(`[Admin Add Connection] Updating feeder connection in Supabase:`, patchBody);
-        
-        await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(sourceSubstation)}`, {
-            method: 'PATCH',
-            body: patchBody
-        });
-
+        if (!record) return res.status(404).json({ status: 'error', message: `Source Substation '${sourceSubstation}' not found.` });
+        await patchSubstation_(sourceSubstation, appendConnection_(record, targetSubstation, { rl, conductorSize, peakLoad }));
         return res.json({ status: 'success', message: 'Connection added successfully.' });
     } catch (err) {
-        console.error("[Admin Add Connection] Error adding connection to Supabase:", err.message);
+        console.error('[Admin Add Connection] Error adding connection to Supabase:', err.message);
         return res.status(500).json({ status: 'error', message: err.message });
     }
 });
@@ -2152,83 +2014,24 @@ app.post('/api/admin/approve-correction', requireAdmin, async (req, res) => {
         }
         const proposal = corrections[0];
         
-        console.log(`[Admin Approve] Processing proposal ID: ${id}, type: ${proposal.type}`);
-        
         if (proposal.type === 'edit_substation') {
-            // Apply edit to substations
             let finalValue = proposal.proposed_value;
-            
             if (proposal.connection_target) {
-                // Connection cell list edit (colon-separated)
-                const records = await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(proposal.substation)}&select=*`);
-                if (!records || records.length === 0) throw new Error(`Target Substation '${proposal.substation}' not found.`);
-                const record = records[0];
-                
-                const connStr = record["Connected to"] || '';
-                const conns = connStr.split(':').map(s => s.trim().toLowerCase());
-                const targetIdx = conns.indexOf(proposal.connection_target.trim().toLowerCase());
-                if (targetIdx === -1) throw new Error(`Connection target '${proposal.connection_target}' not found.`);
-                
-                const currentValStr = record[proposal.column_name] || '';
-                const vals = currentValStr.split(':').map(s => s.trim());
-                while (vals.length < conns.length) {
-                    vals.push("");
-                }
-                vals[targetIdx] = proposal.proposed_value;
-                finalValue = vals.join(" : ");
+                const record = await fetchSubstation_(proposal.substation);
+                if (!record) throw new Error(`Target Substation '${proposal.substation}' not found.`);
+                finalValue = setConnectionValue_(record, proposal.column_name, proposal.connection_target, proposal.proposed_value);
+                if (finalValue === null) throw new Error(`Connection target '${proposal.connection_target}' not found.`);
             }
-            
-            const patchBody = {};
-            patchBody[proposal.column_name] = finalValue;
-            
-            await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(proposal.substation)}`, {
-                method: 'PATCH',
-                body: patchBody
-            });
-            
+            await patchSubstation_(proposal.substation, { [proposal.column_name]: finalValue });
         } else if (proposal.type === 'add_substation') {
-            // Parse rowData from proposed_value
-            const rowData = JSON.parse(proposal.proposed_value);
-            
-            await querySupabase(POWER_MAP_TABLE, {
-                method: 'POST',
-                body: rowData
-            });
-            
+            await querySupabase(POWER_MAP_TABLE, { method: 'POST', body: JSON.parse(proposal.proposed_value) });
         } else if (proposal.type === 'add_connection') {
-            // Parse connection fields
-            const connDetails = JSON.parse(proposal.proposed_value);
-            
-            const records = await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(proposal.substation)}&select=*`);
-            if (!records || records.length === 0) throw new Error(`Source Substation '${proposal.substation}' not found.`);
-            const record = records[0];
-            
-            const currentConns = (record["Connected to"] || '').toString().trim();
-            const nextConns = currentConns ? currentConns + " : " + proposal.connection_target : proposal.connection_target;
-
-            const currentRl = (record["RL"] || '').toString().trim();
-            const nextRl = currentRl ? currentRl + " : " + (connDetails.rl || "") : (connDetails.rl || "");
-
-            const currentCond = (record["ConductorSize"] || '').toString().trim();
-            const nextCond = currentCond ? currentCond + " : " + (connDetails.conductorSize || "") : (connDetails.conductorSize || "");
-
-            const currentLoad = (record["PeakLoad"] || '').toString().trim();
-            const nextLoad = currentLoad ? currentLoad + " : " + (connDetails.peakLoad || "") : (connDetails.peakLoad || "");
-
-            const patchBody = {
-                "Connected to": nextConns,
-                "RL": nextRl,
-                "ConductorSize": nextCond,
-                "PeakLoad": nextLoad
-            };
-            
-            await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(proposal.substation)}`, {
-                method: 'PATCH',
-                body: patchBody
-            });
+            const record = await fetchSubstation_(proposal.substation);
+            if (!record) throw new Error(`Source Substation '${proposal.substation}' not found.`);
+            await patchSubstation_(proposal.substation, appendConnection_(record, proposal.connection_target, JSON.parse(proposal.proposed_value)));
         }
-        
-        // Delete the suggestion or mark as approved
+
+        // The suggestion is done
         await querySupabase(`${POWER_MAP_CORRECTIONS_TABLE}?id=eq.${id}`, {
             method: 'DELETE'
         });
@@ -2283,148 +2086,30 @@ app.post('/api/admin/reject-correction', requireAdmin, async (req, res) => {
     }
 });
 
-// 6.8. Delete substation (Power Map Admin Delete Substation - Supabase version)
-app.post('/api/admin/delete-substation', requireAdmin, async (req, res) => {
-    try {
-        const { substation } = req.body;
-        
-        if (!substation) {
-            return res.status(400).json({ status: 'error', message: 'Missing substation name.' });
-        }
-        
-        console.log(`[Admin Delete Substation] Deleting substation: ${substation}`);
-        
-        // 1. Delete the substation record
-        await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(substation)}`, {
-            method: 'DELETE'
-        });
-        
-        // 2. Clean up references in other substations' connections
-        const allRecords = await querySupabase(POWER_MAP_TABLE + '?select=*');
-        for (const record of allRecords) {
-            const connStr = record["Connected to"] || '';
-            if (connStr) {
-                const conns = connStr.split(':').map(s => s.trim());
-                const lowerConns = conns.map(s => s.toLowerCase());
-                const targetIdx = lowerConns.indexOf(substation.toLowerCase().trim());
-                
-                if (targetIdx !== -1) {
-                    conns.splice(targetIdx, 1);
-                    
-                    const rls = (record["RL"] || '').split(':').map(s => s.trim());
-                    rls.splice(targetIdx, 1);
-                    
-                    const conds = (record["ConductorSize"] || '').split(':').map(s => s.trim());
-                    conds.splice(targetIdx, 1);
-                    
-                    const loads = (record["PeakLoad"] || '').split(':').map(s => s.trim());
-                    loads.splice(targetIdx, 1);
-                    
-                    const patchBody = {
-                        "Connected to": conns.join(" : "),
-                        "RL": rls.join(" : "),
-                        "ConductorSize": conds.join(" : "),
-                        "PeakLoad": loads.join(" : ")
-                    };
-                    
-                    await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(record.Substation)}`, {
-                        method: 'PATCH',
-                        body: patchBody
-                    });
-                }
-            }
-        }
-        
-        return res.json({ status: 'success', message: 'Substation and all associated line connections deleted successfully.' });
-    } catch (err) {
-        console.error("[Admin Delete Substation] Error deleting substation:", err.message);
-        return res.status(500).json({ status: 'error', message: err.message });
+// DTR load page: check a PIN against users with DTR rights on the server (PINs never leave it).
+const dtrPinAttempts = new Map(); // username -> [timestamps] (best effort per instance)
+app.post('/api/dtr/verify-pin', async (req, res) => {
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    const who = String(req.user.Username || '').toLowerCase();
+    const now = Date.now();
+    const recent = (dtrPinAttempts.get(who) || []).filter((t) => now - t < 10 * 60 * 1000);
+    if (recent.length >= 20) {
+        return res.status(429).json({ status: 'error', message: 'Too many attempts. Try again in a few minutes.' });
     }
-});
-
-// 6.9. Delete feeder connection (Power Map Admin Delete Connection - Supabase version)
-app.post('/api/admin/delete-connection', requireAdmin, async (req, res) => {
-    try {
-        const { source, target } = req.body;
-        
-        if (!source || !target) {
-            return res.status(400).json({ status: 'error', message: 'Missing source or target substation.' });
-        }
-        
-        console.log(`[Admin Delete Connection] Deleting connection from ${source} to ${target}`);
-        
-        const records = await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(source)}&select=*`);
-        if (!records || records.length === 0) {
-            return res.status(404).json({ status: 'error', message: `Source substation '${source}' not found.` });
-        }
-        const record = records[0];
-        
-        const connStr = record["Connected to"] || '';
-        const conns = connStr.split(':').map(s => s.trim());
-        const lowerConns = conns.map(s => s.toLowerCase());
-        const targetIdx = lowerConns.indexOf(target.toLowerCase().trim());
-        
-        if (targetIdx === -1) {
-            return res.status(400).json({ status: 'error', message: `Feeder connection to '${target}' not found.` });
-        }
-        
-        conns.splice(targetIdx, 1);
-        
-        const rls = (record["RL"] || '').split(':').map(s => s.trim());
-        rls.splice(targetIdx, 1);
-        
-        const conds = (record["ConductorSize"] || '').split(':').map(s => s.trim());
-        conds.splice(targetIdx, 1);
-        
-        const loads = (record["PeakLoad"] || '').split(':').map(s => s.trim());
-        loads.splice(targetIdx, 1);
-        
-        const patchBody = {
-            "Connected to": conns.join(" : "),
-            "RL": rls.join(" : "),
-            "ConductorSize": conds.join(" : "),
-            "PeakLoad": loads.join(" : ")
-        };
-        
-        await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(source)}`, {
-            method: 'PATCH',
-            body: patchBody
-        });
-        
-        return res.json({ status: 'success', message: 'Feeder line connection deleted successfully.' });
-    } catch (err) {
-        console.error("[Admin Delete Connection] Error deleting connection:", err.message);
-        return res.status(500).json({ status: 'error', message: err.message });
-    }
-});
-
-// 7. GET local users list formatted as CSV (mirroring Google Sheets format for backwards compatibility)
-app.get('/api/users-csv', async (req, res) => {
+    recent.push(now);
+    dtrPinAttempts.set(who, recent);
+    const pin = String((req.body && req.body.pin) || '').trim();
+    if (!pin) return res.status(400).json({ status: 'error', message: 'Please enter a PIN.' });
     try {
         const users = await getLoginCredentials();
-        if (users.length === 0) {
-            return res.send('');
+        const match = users.find((u) => String(u['dtr-autho'] || '').trim() && verifyPin(pin, u.PIN));
+        if (!match) {
+            return res.status(401).json({ status: 'error', message: 'Invalid PIN or missing DTR authorization.' });
         }
-        
-        const headers = Object.keys(users[0]);
-        const csvLines = [headers.join(',')];
-        
-        users.forEach(u => {
-            const row = headers.map(header => {
-                const val = String(u[header] || '');
-                if (val.includes(',') || val.includes('"') || val.includes('\n')) {
-                    return `"${val.replace(/"/g, '""')}"`;
-                }
-                return val;
-            });
-            csvLines.push(row.join(','));
-        });
-        
-        res.setHeader('Content-Type', 'text/csv');
-        res.send(csvLines.join('\n'));
+        return res.json({ status: 'success', dtrAutho: String(match['dtr-autho']).trim(), name: match.Name || match.Username });
     } catch (err) {
-        console.error("[Users CSV] Error generating CSV:", err.message);
-        res.status(500).send('Error generating user CSV.');
+        console.error('[DTR PIN] Error:', err.message);
+        return res.status(500).json({ status: 'error', message: 'Could not validate PIN.' });
     }
 });
 
@@ -2444,6 +2129,40 @@ function isPortalAdmin_(user) {
 function flagAuthoYes_(raw) {
     const flag = String(raw || '').trim().toLowerCase();
     return ['y', 'yes', '1', 'true', 'upload', 'allot'].includes(flag);
+}
+
+/**
+ * Upload / sync permission: admins, the user's own flag (e.g. 'nsc-upload-autho'), the legacy
+ * 'dm1' account, and optionally a word in their sheets-autho value.
+ */
+function hasPermission_(user, flag, sheetsWords) {
+    if (!user) return false;
+    if (isPortalAdmin_(user)) return true;
+    if (flagAuthoYes_(user[flag] != null ? user[flag] : user[flag.replace(/-/g, '_')])) return true;
+    if (String(user.Username || user.username || '').trim().toLowerCase() === 'dm1') return true;
+    const sheets = String(user['sheets-autho'] || user.sheets_autho || '').trim().toLowerCase();
+    return (sheetsWords || []).some((w) => sheets.includes(w));
+}
+
+/**
+ * The signed-in user's current portal row, so permission changes apply without a new login
+ * (cached up to USERS_CACHE_TTL_MS unless force). Falls back to the session profile.
+ */
+async function resolveFreshUser_(req, force = false) {
+    const session = req.user || null;
+    if (!session || !session.Username) return session;
+    try {
+        const users = await getLoginCredentials({ forceRefresh: force });
+        const key = String(session.Username).trim().toLowerCase();
+        const fresh = users.find((u) => u.Username && String(u.Username).trim().toLowerCase() === key);
+        if (fresh) {
+            // An admin session (e.g. the root Google admin) stays admin even if the row lags behind.
+            return !isPortalAdmin_(fresh) && isPortalAdmin_(session) ? { ...fresh, role: session.role || 'admin' } : fresh;
+        }
+    } catch (e) {
+        console.warn('[Auth] profile refresh failed:', e.message);
+    }
+    return session;
 }
 
 function canAccessStockAllotment_(user) {
@@ -2466,24 +2185,10 @@ function canAccessStockAllotment_(user) {
 /** Soft-cancel allotments — separate from create (stock_cancel_autho; admin also allowed). */
 function canCancelStockAllotment_(user) {
     if (!user) return false;
-    const role = String(user.role || '').trim().toLowerCase();
-    if (role === 'admin') return true;
+    if (isPortalAdmin_(user)) return true;
     return flagAuthoYes_(
         user['stock-cancel-autho'] != null ? user['stock-cancel-autho'] : user.stock_cancel_autho
     );
-}
-
-async function resolveStockUser_(req) {
-    if (!req.user || !req.user.Username) return req.user || null;
-    try {
-        const users = await getLoginCredentials({ forceRefresh: true });
-        const key = String(req.user.Username).trim().toLowerCase();
-        const fresh = users.find((u) => u.Username && String(u.Username).trim().toLowerCase() === key);
-        if (fresh) return fresh;
-    } catch (e) {
-        console.warn('[stock auth] profile refresh failed:', e.message);
-    }
-    return req.user;
 }
 
 function requireStockAllotmentLogin_(req, res) {
@@ -2496,7 +2201,7 @@ function requireStockAllotmentLogin_(req, res) {
 
 async function requireStockAllotmentAccess_(req, res) {
     if (!requireStockAllotmentLogin_(req, res)) return false;
-    const user = await resolveStockUser_(req);
+    const user = await resolveFreshUser_(req, true);
     if (!canAccessStockAllotment_(user)) {
         res.status(403).json({
             status: 'error',
@@ -2510,7 +2215,7 @@ async function requireStockAllotmentAccess_(req, res) {
 
 async function requireStockAllotmentCancelAccess_(req, res) {
     if (!requireStockAllotmentLogin_(req, res)) return false;
-    const user = await resolveStockUser_(req);
+    const user = await resolveFreshUser_(req, true);
     if (!canCancelStockAllotment_(user)) {
         res.status(403).json({
             status: 'error',
@@ -2528,36 +2233,6 @@ const ALLOT_LIST_TTL_MS = 60 * 1000;
 
 function invalidateAllotListCache_() {
     allotListCache_ = { at: 0, rows: null, source: '' };
-}
-
-function parseCsvLine_(line) {
-    const out = [];
-    let cur = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (inQuotes) {
-            if (ch === '"') {
-                if (line[i + 1] === '"') {
-                    cur += '"';
-                    i++;
-                } else {
-                    inQuotes = false;
-                }
-            } else {
-                cur += ch;
-            }
-        } else if (ch === '"') {
-            inQuotes = true;
-        } else if (ch === ',') {
-            out.push(cur);
-            cur = '';
-        } else {
-            cur += ch;
-        }
-    }
-    out.push(cur);
-    return out;
 }
 
 function parseAllotmentCsv_(text) {
@@ -2736,12 +2411,6 @@ function allotClientToDb_(row, allotmentNo, createdBy, createdAtIso) {
     };
 }
 
-function encodeAllotmentNoFilter_(allotmentNo) {
-    // Plain URL-encoding works for values with "/".
-    // Quoted eq."MZO/ALT/..." returns no rows on this PostgREST/Supabase setup.
-    return encodeURIComponent(String(allotmentNo || '').trim());
-}
-
 /** Find ledger lines for one allotment_no (handles slash in MZO/ALT/…). */
 async function findAllotmentDbRows_(allotmentNo) {
     const target = String(allotmentNo || '').trim();
@@ -2767,7 +2436,7 @@ async function findAllotmentDbRows_(allotmentNo) {
         } catch (e) {
             if (/status|cancelled_at|cancelled_by|cancel_reason|42703|PGRST204/i.test(e.message || '')) {
                 throw new Error(
-                    'Cancel columns missing. Run scripts/alter_stock_allotments_cancel.sql in Supabase SQL Editor.'
+                    'Cancel columns missing. Run scripts/sql/upgrade_existing_tables.sql in the Supabase SQL Editor.'
                 );
             }
             console.warn('[stock cancel] lookup attempt failed:', e.message);
@@ -2788,7 +2457,7 @@ async function findAllotmentDbRows_(allotmentNo) {
         } catch (e) {
             if (/status|cancelled_at|cancelled_by|42703|PGRST204/i.test(e.message || '')) {
                 throw new Error(
-                    'Cancel columns missing. Run scripts/alter_stock_allotments_cancel.sql in Supabase SQL Editor.'
+                    'Cancel columns missing. Run scripts/sql/upgrade_existing_tables.sql in the Supabase SQL Editor.'
                 );
             }
             throw e;
@@ -2855,7 +2524,7 @@ async function cancelAllotmentInSupabase_(allotmentNo, cancelledBy, reason) {
     } catch (e) {
         if (/status|cancelled_at|cancelled_by|cancel_reason|PGRST|42703/i.test(e.message || '')) {
             throw new Error(
-                'Cancel columns missing. Run scripts/alter_stock_allotments_cancel.sql in Supabase SQL Editor.'
+                'Cancel columns missing. Run scripts/sql/upgrade_existing_tables.sql in the Supabase SQL Editor.'
             );
         }
         throw e;
@@ -2951,22 +2620,17 @@ async function createAllotmentInSupabase_(payload, opts) {
     };
 }
 
-async function fetchLegacyAllotmentRowsOnly_() {
+/** Rows from the legacy Sheet / Apps Script ledger (before Supabase), with where they came from. */
+async function fetchLegacyAllotments_({ allowEmpty = false } = {}) {
     try {
-        const text = await fetchAllotmentCsvText_();
-        const rows = parseAllotmentCsv_(text);
-        if (Array.isArray(rows) && rows.length) {
-            return {
-                rows,
-                source: process.env.STOCK_ALLOTMENTS_CSV_URL ? 'csv' : 'apps-script-csv'
-            };
+        const rows = parseAllotmentCsv_(await fetchAllotmentCsvText_());
+        if (rows && (allowEmpty || rows.length)) {
+            return { rows, source: process.env.STOCK_ALLOTMENTS_CSV_URL ? 'csv' : 'apps-script-csv' };
         }
     } catch (err) {
-        console.warn('[stock/allotment] Legacy CSV fetch failed:', err.message);
+        console.warn('[stock/allotment] Legacy CSV fetch failed, trying JSON:', err.message);
     }
-
-    const scriptUrl = stockAllotmentScriptUrl_();
-    const upstream = await fetch(scriptUrl, {
+    const upstream = await fetch(stockAllotmentScriptUrl_(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'listAllotments' }),
@@ -2977,13 +2641,12 @@ async function fetchLegacyAllotmentRowsOnly_() {
     try {
         data = JSON.parse(text);
     } catch (e) {
-        throw new Error('Legacy Apps Script returned non-JSON while listing allotments for migration.');
+        throw new Error('Apps Script returned non-JSON while listing allotments.');
     }
     if (!upstream.ok || data.error || data.status === 'error') {
-        throw new Error(data.error || data.message || 'Failed to list legacy allotments');
+        throw new Error(data.error || data.message || 'Failed to list allotments');
     }
-    const rows = Array.isArray(data.rows) ? data.rows : [];
-    return { rows, source: 'apps-script-json' };
+    return { rows: Array.isArray(data.rows) ? data.rows : [], source: 'apps-script-json' };
 }
 
 function parseAllotmentSeqFromNo_(allotmentNo) {
@@ -3032,7 +2695,7 @@ async function syncAllotmentSeqFromRows_(rows) {
  * Skips allotment numbers that already exist in stock_allotments.
  */
 async function migrateAllotmentsFromLegacy_() {
-    const legacy = await fetchLegacyAllotmentRowsOnly_();
+    const legacy = await fetchLegacyAllotments_();
     const legacyRows = legacy.rows || [];
     if (!legacyRows.length) {
         return {
@@ -3103,52 +2766,33 @@ async function loadAllotmentRowsCached_(force = false) {
         return { rows: allotListCache_.rows, source: allotListCache_.source || 'cache' };
     }
 
-    // 1) Supabase is source of truth once reachable (even if empty — do not fall back to Excel)
+    // Supabase is the source of truth once reachable (even if empty); the legacy ledger is a fallback.
     try {
         const rows = await fetchAllotmentsFromSupabase_();
-        if (Array.isArray(rows)) {
-            allotListCache_ = { at: now, rows, source: 'supabase' };
-            return { rows, source: 'supabase' };
-        }
+        allotListCache_ = { at: now, rows, source: 'supabase' };
+        return { rows, source: 'supabase' };
     } catch (err) {
         console.warn('[stock/allotment] Supabase list failed, trying legacy sheet:', err.message);
     }
+    const legacy = await fetchLegacyAllotments_({ allowEmpty: true });
+    allotListCache_ = { at: now, rows: legacy.rows, source: legacy.source };
+    return legacy;
+}
 
-    try {
-        const text = await fetchAllotmentCsvText_();
-        const rows = parseAllotmentCsv_(text);
-        if (rows) {
-            allotListCache_ = {
-                at: now,
-                rows,
-                source: process.env.STOCK_ALLOTMENTS_CSV_URL ? 'csv' : 'apps-script-csv'
-            };
-            return { rows, source: allotListCache_.source };
-        }
-    } catch (err) {
-        console.warn('[stock/allotment] CSV list failed, falling back to JSON:', err.message);
-    }
+const truthy_ = (v) => v === true || v === 1 || v === '1' || v === 'true';
 
-    const scriptUrl = stockAllotmentScriptUrl_();
-    const upstream = await fetch(scriptUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'listAllotments' }),
-        redirect: 'follow'
-    });
-    const text = await upstream.text();
-    let data;
-    try {
-        data = JSON.parse(text);
-    } catch (e) {
-        throw new Error('Apps Script returned non-JSON while listing allotments.');
+/** listAllotments / getAllotment from the cached ledger (GET query or POST body). */
+async function sendAllotmentRead_(action, params, res) {
+    const loaded = await loadAllotmentRowsCached_(truthy_(params.force) || truthy_(params.refresh));
+    if (action === 'getAllotment') {
+        const no = String(params.allotmentNo || params.AllotmentNo || '').trim();
+        if (!no) return res.status(400).json({ status: 'error', error: 'allotmentNo is required' });
+        const rows = loaded.rows.filter((r) => String(r.AllotmentNo || '') === no);
+        if (!rows.length) return res.status(404).json({ status: 'error', error: `Allotment not found: ${no}` });
+        return res.json({ status: 'success', allotmentNo: no, rows, count: rows.length, source: loaded.source });
     }
-    if (!upstream.ok || data.error || data.status === 'error') {
-        throw new Error(data.error || data.message || 'Failed to list allotments');
-    }
-    const rows = Array.isArray(data.rows) ? data.rows : [];
-    allotListCache_ = { at: now, rows, source: 'apps-script-json' };
-    return { rows, source: 'apps-script-json' };
+    const rows = filterAllotmentRowsLocal_(loaded.rows, params);
+    return res.json({ status: 'success', rows, count: rows.length, source: loaded.source });
 }
 
 async function proxyStockAllotment_(payload, res) {
@@ -3233,23 +2877,15 @@ async function proxyStockAllotment_(payload, res) {
     return res.json(data);
 }
 
+// Reads only; create / cancel / migrate go through POST with their own permission checks.
 app.get('/api/stock/allotment', async (req, res) => {
     try {
         if (!requireStockAllotmentLogin_(req, res)) return;
         const action = req.query.action || 'listAllotments';
-        if (action === 'listAllotments') {
-            const force = String(req.query.force || '') === '1' || String(req.query.refresh || '') === '1';
-            const loaded = await loadAllotmentRowsCached_(force);
-            const rows = filterAllotmentRowsLocal_(loaded.rows, req.query);
-            return res.json({
-                status: 'success',
-                rows,
-                count: rows.length,
-                source: loaded.source
-            });
+        if (action !== 'listAllotments' && action !== 'getAllotment') {
+            return res.status(405).json({ status: 'error', error: 'Use POST for this action.' });
         }
-        const payload = { action, ...req.query };
-        return await proxyStockAllotment_(payload, res);
+        return await sendAllotmentRead_(action, req.query, res);
     } catch (err) {
         console.error('[stock/allotment] GET Error:', err.message);
         return res.status(500).json({ status: 'error', error: err.message });
@@ -3333,16 +2969,8 @@ app.post('/api/stock/allotment', async (req, res) => {
             }
         }
 
-        if (action === 'listAllotments') {
-            const force = !!(payload.force || payload.refresh);
-            const loaded = await loadAllotmentRowsCached_(force);
-            const rows = filterAllotmentRowsLocal_(loaded.rows, payload);
-            return res.json({
-                status: 'success',
-                rows,
-                count: rows.length,
-                source: loaded.source
-            });
+        if (action === 'listAllotments' || action === 'getAllotment') {
+            return await sendAllotmentRead_(action, payload, res);
         }
 
         if (action === 'migrateFromSheet') {
@@ -3359,26 +2987,6 @@ app.post('/api/stock/allotment', async (req, res) => {
             }
         }
 
-        if (action === 'getAllotment') {
-            const force = !!(payload.force || payload.refresh);
-            const loaded = await loadAllotmentRowsCached_(force);
-            const no = String(payload.allotmentNo || payload.AllotmentNo || '').trim();
-            if (!no) {
-                return res.status(400).json({ status: 'error', error: 'allotmentNo is required' });
-            }
-            const rows = loaded.rows.filter((r) => String(r.AllotmentNo || '') === no);
-            if (!rows.length) {
-                return res.status(404).json({ status: 'error', error: `Allotment not found: ${no}` });
-            }
-            return res.json({
-                status: 'success',
-                allotmentNo: no,
-                rows,
-                count: rows.length,
-                source: loaded.source
-            });
-        }
-
         return res.status(400).json({ status: 'error', error: 'Invalid action' });
     } catch (err) {
         console.error('[stock/allotment] Error:', err.message);
@@ -3387,20 +2995,14 @@ app.post('/api/stock/allotment', async (req, res) => {
 });
 
 // --- NSC raw upload → Google Sheets (processed in browser) ---
-const multer = require('multer');
-const { toCsv: nscToCsv } = require('./lib/nsc_pipeline');
-
-const NSC_DATA_DIR = path.join(__dirname, 'data');
-const NSC_CSV_FILE = path.join(NSC_DATA_DIR, 'nsc.csv');
-const NSC_WITHHELD_CSV_FILE = path.join(NSC_DATA_DIR, 'withheld.csv');
-const NSC_META_FILE = path.join(NSC_DATA_DIR, 'nsc_meta.json');
+const NSC_META_FILE = path.join(DATA_DIR, 'nsc_meta.json');
 const NSC_WORKING_SPREADSHEET_ID = '1QnmPKSAtwmW-m1-gn4qmZBWanx9_Vwbk63XhwyQBiKU';
 const NSC_WITHHELD_SPREADSHEET_ID = '12nS8GAQ1weIMWoEIeydcdKTKd-XwHNu9W07DKudGuOg';
 const NSC_SHEET_FALLBACK_URL =
     `https://docs.google.com/spreadsheets/d/${NSC_WORKING_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=nsc_working`;
 const NSC_WITHHELD_SHEET_FALLBACK_URL =
     `https://docs.google.com/spreadsheets/d/${NSC_WITHHELD_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet1`;
-/** Web app /exec URLs from lib/sheet_mirror_publish.gs (one deploy per Google file). Env overrides if set. */
+/** Web app /exec URLs from apps-script/sheet_mirror_publish.gs (one deploy per Google file). Env overrides if set. */
 const NSC_SHEET_SCRIPT_URL = String(
     process.env.NSC_SHEET_SCRIPT_URL ||
         'https://script.google.com/macros/s/AKfycbwJj6lpOWN0a62jX51926FUQyzViLOiKA38f9yqSBSYbLMnpBPvOMZQh3gYu0b07L7MJw/exec'
@@ -3411,53 +3013,12 @@ const NSC_WITHHELD_SHEET_SCRIPT_URL = String(
 ).trim();
 const nscPendingMetaById_ = Object.create(null);
 
-const nscUpload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 60 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-        const name = String(file.originalname || '').toLowerCase();
-        if (/\.(xlsx|xlsb|xls|csv)$/i.test(name)) return cb(null, true);
-        cb(new Error('Only Excel (.xlsx/.xlsb/.xls) or CSV files are allowed.'));
-    }
-});
-
 function canUploadNsc_(user) {
-    if (!user) return false;
-    if (isPortalAdmin_(user)) return true;
-    if (flagAuthoYes_(
-        user['nsc-upload-autho'] != null ? user['nsc-upload-autho'] : user.nsc_upload_autho
-    )) {
-        return true;
-    }
-    const username = String((user.Username || user.username) || '')
-        .trim()
-        .toLowerCase();
-    return username === 'dm1';
-}
-
-async function resolveNscUploadUser_(req) {
-    const session = req.user || null;
-    if (!session || !session.Username) return null;
-    try {
-        const users = await getLoginCredentials({ forceRefresh: true });
-        const key = String(session.Username).trim().toLowerCase();
-        const fresh = users.find((u) => u.Username && String(u.Username).trim().toLowerCase() === key);
-        if (fresh) {
-            if (!isPortalAdmin_(fresh) && isPortalAdmin_(session)) {
-                fresh.role = session.role || 'admin';
-            }
-            return fresh;
-        }
-    } catch (e) {
-        console.warn('[NSC auth] profile refresh failed:', e.message);
-    }
-    return session;
+    return hasPermission_(user, 'nsc-upload-autho');
 }
 
 function ensureDataDir_() {
-    if (!fs.existsSync(NSC_DATA_DIR)) {
-        fs.mkdirSync(NSC_DATA_DIR, { recursive: true });
-    }
+    fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
 function readLocalNscMeta_() {
@@ -3469,39 +3030,40 @@ function readLocalNscMeta_() {
     }
 }
 
-/** Local CSV backup for localhost only — Vercel /var/task is read-only (EROFS). */
-function writeLocalNscBackup_(csv, meta, withheldCsv) {
+/** Local copy of the NSC meta (localhost only; the Vercel filesystem is read-only). */
+function writeLocalNscMeta_(meta) {
     try {
         ensureDataDir_();
-        if (csv != null) fs.writeFileSync(NSC_CSV_FILE, csv, 'utf8');
-        if (withheldCsv != null) fs.writeFileSync(NSC_WITHHELD_CSV_FILE, withheldCsv, 'utf8');
         fs.writeFileSync(NSC_META_FILE, JSON.stringify(meta, null, 2), 'utf8');
-        return true;
     } catch (e) {
-        if (e && (e.code === 'EROFS' || e.code === 'EACCES' || /read-only/i.test(e.message))) {
-            console.warn('[NSC] Skipping local backup (read-only FS):', e.message);
-            return false;
+        console.warn('[NSC] Local meta not saved:', e.message);
+    }
+}
+
+// The Apps Script meta call takes 1-2 s and several endpoints need it on a page load:
+// cache it for a minute and share one in-flight request.
+let nscSheetMetaCache_ = { at: 0, value: null, pending: null };
+
+/** Meta of the last NSC upload, from the nsc_working Apps Script (null if unavailable). */
+async function fetchNscSheetMeta_({ fresh = false } = {}) {
+    const c = nscSheetMetaCache_;
+    if (!fresh && c.value && Date.now() - c.at < 60 * 1000) return c.value;
+    if (!fresh && c.pending) return c.pending;
+    const request = (async () => {
+        try {
+            const text = await fetchSheet(NSC_SHEET_SCRIPT_URL + (NSC_SHEET_SCRIPT_URL.includes('?') ? '&' : '?') + 'meta=1');
+            const data = JSON.parse(text);
+            const meta = data && data.meta && typeof data.meta === 'object' ? data.meta : null;
+            if (meta) nscSheetMetaCache_ = { at: Date.now(), value: meta, pending: null };
+            return meta || c.value;
+        } catch (e) {
+            return c.value; // last good copy, if any
+        } finally {
+            if (nscSheetMetaCache_.pending === request) nscSheetMetaCache_.pending = null;
         }
-        console.warn('[NSC] Local backup failed:', e.message);
-        return false;
-    }
-}
-
-function nscScriptMetaUrl_() {
-    if (!NSC_SHEET_SCRIPT_URL) return '';
-    return NSC_SHEET_SCRIPT_URL + (NSC_SHEET_SCRIPT_URL.includes('?') ? '&' : '?') + 'meta=1';
-}
-
-async function fetchNscSheetMeta_() {
-    const url = nscScriptMetaUrl_();
-    if (!url) return null;
-    try {
-        const text = await fetchSheet(url);
-        const data = JSON.parse(text);
-        return data && data.meta && typeof data.meta === 'object' ? data.meta : null;
-    } catch (e) {
-        return null;
-    }
+    })();
+    if (!fresh) c.pending = request;
+    return request;
 }
 
 const NSC_TODAY_PEEK_URL_ =
@@ -3513,31 +3075,9 @@ function parseTodayFromPeekCsv_(text) {
     if (!raw || raw.charAt(0) === '{' || raw.charAt(0) === '<') return '';
     const lines = raw.split(/\r?\n/).filter((l) => l.trim());
     if (lines.length < 2) return '';
-    const splitCsvLine = (line) => {
-        const out = [];
-        let cur = '';
-        let inQ = false;
-        for (let i = 0; i < line.length; i++) {
-            const ch = line.charAt(i);
-            if (ch === '"') {
-                if (inQ && line.charAt(i + 1) === '"') {
-                    cur += '"';
-                    i++;
-                } else {
-                    inQ = !inQ;
-                }
-            } else if (ch === ',' && !inQ) {
-                out.push(cur.trim());
-                cur = '';
-            } else {
-                cur += ch;
-            }
-        }
-        out.push(cur.trim());
-        return out.map((c) => c.replace(/^"|"$/g, '').trim());
-    };
-    const headers = splitCsvLine(lines[0]);
-    const values = splitCsvLine(lines[1]);
+    const cells = (line) => parseCsvLine_(line).map((c) => c.trim().replace(/^"|"$/g, '').trim());
+    const headers = cells(lines[0]);
+    const values = cells(lines[1]);
     const idx = headers.findIndex((h) => String(h).replace(/^\uFEFF/, '').trim().toUpperCase() === 'TODAY');
     if (idx < 0) return '';
     return String(values[idx] || '').trim();
@@ -3571,7 +3111,8 @@ function overlayLiveNscToday_(meta, liveToday) {
 }
 
 async function saveNscSheetMeta_(meta) {
-    if (!NSC_SHEET_SCRIPT_URL || !meta) return;
+    if (!meta) return;
+    nscSheetMetaCache_ = { at: Date.now(), value: meta, pending: null };
     try {
         const body = 'data=' + encodeURIComponent(JSON.stringify({ action: 'savemeta', meta }));
         await fetch(NSC_SHEET_SCRIPT_URL, {
@@ -3634,7 +3175,7 @@ async function requireNscUploader_(req, res) {
         res.status(401).json({ status: 'error', message: 'Unauthorized' });
         return null;
     }
-    const uploadUser = await resolveNscUploadUser_(req);
+    const uploadUser = await resolveFreshUser_(req, true);
     if (!canUploadNsc_(uploadUser)) {
         res.status(403).json({
             status: 'error',
@@ -3651,29 +3192,18 @@ app.get('/api/nsc/meta', async (req, res) => {
         return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     }
 
-    const user = await resolveNscUploadUser_(req);
-    const hasLocal = fs.existsSync(NSC_CSV_FILE);
+    const user = await resolveFreshUser_(req);
     let meta = readLocalNscMeta_();
     let source = meta ? 'local' : 'google_sheet';
-
-    try {
-        const sheetMeta = await fetchNscSheetMeta_();
-        if (sheetMeta && (sheetMeta.reportDate || sheetMeta.uploadedAt || sheetMeta.publishedRows)) {
-            meta = sheetMeta;
-            source = 'google_sheet';
-        }
-    } catch (e) {
-        console.warn('[NSC meta] Sheet meta unavailable:', e.message);
+    // Both helpers swallow their own errors.
+    const [sheetMeta, liveToday] = await Promise.all([fetchNscSheetMeta_(), peekNscTodayFromSheet_()]);
+    if (sheetMeta && (sheetMeta.reportDate || sheetMeta.uploadedAt || sheetMeta.publishedRows)) {
+        meta = sheetMeta;
+        source = 'google_sheet';
     }
-
-    try {
-        const liveToday = await peekNscTodayFromSheet_();
-        if (liveToday) {
-            meta = overlayLiveNscToday_(meta, liveToday);
-            source = 'google_sheet';
-        }
-    } catch (e) {
-        console.warn('[NSC meta] Live TODAY overlay failed:', e.message);
+    if (liveToday) {
+        meta = overlayLiveNscToday_(meta, liveToday);
+        source = 'google_sheet';
     }
 
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
@@ -3681,22 +3211,16 @@ app.get('/api/nsc/meta', async (req, res) => {
     return res.json({
         status: 'success',
         canUpload,
-        isAdmin: String((user && user.role) || '').trim().toLowerCase() === 'admin',
-        hasLocalDataset: hasLocal,
+        isAdmin: isPortalAdmin_(user),
         meta,
         version: snapshotVersion_(meta) || null,
         withheldVersion: snapshotWithheldVersion_(meta) || null,
-        sheetScriptUrl: canUpload && NSC_SHEET_SCRIPT_URL ? NSC_SHEET_SCRIPT_URL : '',
-        withheldSheetScriptUrl:
-            canUpload && NSC_WITHHELD_SHEET_SCRIPT_URL ? NSC_WITHHELD_SHEET_SCRIPT_URL : '',
-        csvUrl: NSC_SHEET_SCRIPT_URL ? NSC_SHEET_FALLBACK_URL : null,
-        withheldCsvUrl: NSC_WITHHELD_SHEET_SCRIPT_URL ? NSC_WITHHELD_SHEET_FALLBACK_URL : null,
-        nscSheetEditUrl: canUpload
-            ? `https://docs.google.com/spreadsheets/d/${NSC_WORKING_SPREADSHEET_ID}/edit`
-            : '',
-        withheldSheetEditUrl: canUpload
-            ? `https://docs.google.com/spreadsheets/d/${NSC_WITHHELD_SPREADSHEET_ID}/edit`
-            : '',
+        sheetScriptUrl: canUpload ? NSC_SHEET_SCRIPT_URL : '',
+        withheldSheetScriptUrl: canUpload ? NSC_WITHHELD_SHEET_SCRIPT_URL : '',
+        csvUrl: NSC_SHEET_FALLBACK_URL,
+        withheldCsvUrl: NSC_WITHHELD_SHEET_FALLBACK_URL,
+        nscSheetEditUrl: canUpload ? `https://docs.google.com/spreadsheets/d/${NSC_WORKING_SPREADSHEET_ID}/edit` : '',
+        withheldSheetEditUrl: canUpload ? `https://docs.google.com/spreadsheets/d/${NSC_WITHHELD_SPREADSHEET_ID}/edit` : '',
         nscSheetTab: 'nsc_working',
         withheldSheetTab: 'Sheet1',
         source,
@@ -3704,75 +3228,18 @@ app.get('/api/nsc/meta', async (req, res) => {
     });
 });
 
-app.get('/api/nsc/dataset', async (req, res) => {
-    if (NSC_SHEET_SCRIPT_URL) {
-        res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
-        return res.redirect(302, NSC_SHEET_FALLBACK_URL);
-    }
-    try {
-        if (fs.existsSync(NSC_CSV_FILE)) {
-            const localCsv = fs.readFileSync(NSC_CSV_FILE, 'utf8');
-            return sendDatasetCsv_(req, res, localCsv, {
-                etag: datasetEtag_(snapshotVersion_(readLocalNscMeta_()) || 'local'),
-                headers: { 'X-NSC-Source': 'local' }
-            });
-        }
-        const csv = await fetchSheet(NSC_SHEET_FALLBACK_URL);
-        return sendDatasetCsv_(req, res, csv, {
-            headers: { 'X-NSC-Source': 'google_sheet' }
-        });
-    } catch (err) {
-        console.error('[NSC dataset] Error:', err.message);
-        return res.status(500).json({ status: 'error', message: err.message });
-    }
+// The browser writes NSC / Withheld rows to Google Sheets (nsc/upload.html); the dumps are read from there.
+app.get('/api/nsc/dataset', (req, res) => {
+    res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+    return res.redirect(302, NSC_SHEET_FALLBACK_URL);
 });
 
-app.get('/api/withheld/dataset', async (req, res) => {
-    if (NSC_WITHHELD_SHEET_SCRIPT_URL) {
-        res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
-        return res.redirect(302, NSC_WITHHELD_SHEET_FALLBACK_URL);
-    }
-    try {
-        if (fs.existsSync(NSC_WITHHELD_CSV_FILE)) {
-            const localCsv = fs.readFileSync(NSC_WITHHELD_CSV_FILE, 'utf8');
-            return sendDatasetCsv_(req, res, localCsv, {
-                etag: datasetEtag_(snapshotVersion_(readLocalNscMeta_()) || 'local'),
-                headers: { 'X-Withheld-Source': 'local' }
-            });
-        }
-
-        const jsonPath = path.join(NSC_DATA_DIR, 'withheld.json');
-        if (fs.existsSync(jsonPath)) {
-            try {
-                const rows = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
-                if (Array.isArray(rows) && rows.length) {
-                    const csv = nscToCsv(rows);
-                    return sendDatasetCsv_(req, res, csv, {
-                        etag: datasetEtag_('json-' + rows.length),
-                        headers: {
-                            'X-Withheld-Source': 'local_json',
-                            'X-Withheld-Row-Count': String(rows.length)
-                        }
-                    });
-                }
-            } catch (e) {
-                console.warn('[Withheld dataset] local JSON read failed:', e.message);
-            }
-        }
-
-        const csv = await fetchSheet(NSC_WITHHELD_SHEET_FALLBACK_URL);
-        return sendDatasetCsv_(req, res, csv, {
-            headers: { 'X-Withheld-Source': 'google_sheet' }
-        });
-    } catch (err) {
-        console.error('[Withheld dataset] Error:', err.message);
-        return res.status(500).json({ status: 'error', message: err.message });
-    }
+app.get('/api/withheld/dataset', (req, res) => {
+    res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+    return res.redirect(302, NSC_WITHHELD_SHEET_FALLBACK_URL);
 });
 
-/**
- * Chunked browser publish — begin session (keeps previous active until complete).
- */
+/** Browser publish (nsc/upload.html): begin, write rows to the Sheets, then complete with the meta. */
 app.post('/api/nsc/publish/begin', async (req, res) => {
     try {
         const uploadUser = await requireNscUploader_(req, res);
@@ -3821,13 +3288,6 @@ app.post('/api/nsc/publish/begin', async (req, res) => {
     }
 });
 
-app.post('/api/nsc/publish/chunk', (req, res) => {
-    return res.status(410).json({
-        status: 'error',
-        message: 'NSC rows are published to Google Sheets from the browser. Use /nsc/upload.html.'
-    });
-});
-
 app.post('/api/nsc/publish/complete', async (req, res) => {
     try {
         const uploadUser = await requireNscUploader_(req, res);
@@ -3850,11 +3310,11 @@ app.post('/api/nsc/publish/complete', async (req, res) => {
         ) || 0;
         const keepPreviousWithheld = incomingWh <= 0 || body.keepPreviousWithheld === true;
         if (keepPreviousWithheld) {
-            const prevMeta = (await fetchNscSheetMeta_()) || readLocalNscMeta_();
+            const prevMeta = (await fetchNscSheetMeta_({ fresh: true })) || readLocalNscMeta_();
             overlayKeptWithheld_(baseMeta, prevMeta);
         }
 
-        writeLocalNscBackup_(null, baseMeta, null);
+        writeLocalNscMeta_(baseMeta);
         await saveNscSheetMeta_(baseMeta);
 
         const keptNote = baseMeta.withheldKept
@@ -3882,37 +3342,29 @@ app.post('/api/nsc/publish/complete', async (req, res) => {
     }
 });
 
-app.post('/api/nsc/upload', (req, res) => {
-    return res.status(410).json({
-        status: 'error',
-        message: 'NSC raw upload now processes in the browser and writes to Google Sheets. Use /nsc/upload.html.'
-    });
-});
-
-app.post('/api/nsc/publish', (req, res) => {
-    return res.status(410).json({
-        status: 'error',
-        message: 'NSC rows are published to Google Sheets from the browser. Use /nsc/upload.html.'
-    });
-});
-
-
-// --- Stock dump upload → Supabase + local CACHE_STOCK ---
+// --- Stock dump: the browser cleans the SAP Excel (stock/upload.html) and publishes here ---
+const multer = require('multer');
 const {
-    processStockWorkbook,
     publishedFromCsv: stockPublishedFromCsv,
     toCsv: stockToCsv,
-    dashboardRowToDb: stockRowToDb,
-    dbRowsToCsv: stockDbRowsToCsv,
-    DB_KEYS: STOCK_DB_KEYS
+    dashboardRowToDb: stockRowToDb
 } = require('./lib/stock_pipeline');
 
-const STOCK_CSV_FILE = path.join(NSC_DATA_DIR, 'stock.csv');
-const STOCK_META_FILE = path.join(NSC_DATA_DIR, 'stock_meta.json');
+const csvUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 60 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (/\.csv$/i.test(String(file.originalname || ''))) return cb(null, true);
+        cb(new Error('Only CSV files are allowed.'));
+    }
+});
+
+const STOCK_CSV_FILE = path.join(DATA_DIR, 'stock.csv');
+const STOCK_META_FILE = path.join(DATA_DIR, 'stock_meta.json');
 const STOCK_SPREADSHEET_ID = '1wDvPuAxNfdO9QzUaIUubg2JnkFM5ZleFNXQdi8s5uh0';
 const STOCK_SHEET_FALLBACK_URL =
     `https://docs.google.com/spreadsheets/d/${STOCK_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet1`;
-/** Web app /exec from lib/sheet_mirror_publish.gs (ROLE=stock) on the Stock workbook. */
+/** Web app /exec from apps-script/sheet_mirror_publish.gs (ROLE=stock) on the Stock workbook. */
 const STOCK_SHEET_SCRIPT_URL = String(
     process.env.STOCK_SHEET_SCRIPT_URL ||
         'https://script.google.com/macros/s/AKfycbzM3EziyopjZW57OjhPW6cM3Wa2141hteRkKDxYDaoZXZSbLMgqH2fhEFLD_1bwLVJ5/exec'
@@ -3920,13 +3372,7 @@ const STOCK_SHEET_SCRIPT_URL = String(
 const STOCK_INSERT_BATCH = 400;
 
 function canUploadStock_(user) {
-    if (!user) return false;
-    if (String(user.role || '').trim().toLowerCase() === 'admin') return true;
-    if (flagAuthoYes_(user['stock-upload-autho'] != null ? user['stock-upload-autho'] : user.stock_upload_autho)) {
-        return true;
-    }
-    const username = String((user.Username || user.username) || '').trim().toLowerCase();
-    return username === 'dm1';
+    return hasPermission_(user, 'stock-upload-autho');
 }
 
 function readLocalStockMeta_() {
@@ -3976,28 +3422,6 @@ async function fetchActiveStockMeta_() {
         { schema: PORTAL_USERS_SCHEMA }
     );
     return Array.isArray(rows) && rows[0] ? rows[0] : null;
-}
-
-async function fetchStockCsvFromSupabase_() {
-    const active = await fetchActiveStockMeta_();
-    if (!active) return null;
-    const selectCols = ['upload_id', ...STOCK_DB_KEYS].join(',');
-    const pageSize = 1000;
-    let from = 0;
-    const all = [];
-    while (true) {
-        const batch = await querySupabase(
-            `stock_snapshot?upload_id=eq.${active.id}&select=${selectCols}&order=id.asc&limit=${pageSize}&offset=${from}`,
-            { schema: PORTAL_USERS_SCHEMA }
-        );
-        if (!Array.isArray(batch) || !batch.length) break;
-        all.push(...batch);
-        if (batch.length < pageSize) break;
-        from += pageSize;
-        if (from > 500000) break;
-    }
-    if (!all.length) return { csv: null, meta: stockMetaFromDb_(active) };
-    return { csv: stockDbRowsToCsv(all), meta: stockMetaFromDb_(active) };
 }
 
 async function publishStockToSupabase_(publishedRows, metaInput) {
@@ -4090,7 +3514,7 @@ async function insertStockMetaOnly_(metaInput, publishedCount) {
 
 app.get('/api/stock/meta', async (req, res) => {
     if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    const user = await resolveStockUser_(req);
+    const user = await resolveFreshUser_(req);
     const canUpload = canUploadStock_(user);
     let source = 'google_sheet_fallback';
     let meta = readLocalStockMeta_();
@@ -4116,129 +3540,27 @@ app.get('/api/stock/meta', async (req, res) => {
         }
     }
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
-    const sheetMirror = !!STOCK_SHEET_SCRIPT_URL && !stockStorageOrigin_();
+    const sheetMirror = !stockStorageOrigin_();
     return res.json({
         status: 'success',
         canUpload,
-        isAdmin: String((user && user.role) || '').trim().toLowerCase() === 'admin',
-        hasLocalDataset: hasLocal,
+        isAdmin: isPortalAdmin_(user),
         meta,
         version,
         sheetScriptUrl: canUpload && sheetMirror ? STOCK_SHEET_SCRIPT_URL : '',
         uploadUrl,
-        csvUrl: stockStorageOrigin_()
-            ? stockPublicCsvUrl_(version)
-            : (sheetMirror ? STOCK_SHEET_FALLBACK_URL : null),
+        csvUrl: sheetMirror ? STOCK_SHEET_FALLBACK_URL : stockPublicCsvUrl_(version),
         source,
         setupHint:
             source === 'google_sheet_fallback'
-                ? 'Run scripts/create_insight_project_gmasnqeb.sql then set INSIGHT_LIVE + STOCK_USE_STORAGE after copy.'
+                ? 'Run scripts/sql/create_insight_project_gmasnqeb.sql then set INSIGHT_LIVE + STOCK_USE_STORAGE after copy.'
                 : null
     });
 });
 
-app.get('/api/stock/dataset', async (req, res) => {
-    if (stockStorageOrigin_()) {
-        res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
-        return res.redirect(302, stockPublicCsvUrl_());
-    }
-    if (STOCK_SHEET_SCRIPT_URL) {
-        res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
-        return res.redirect(302, STOCK_SHEET_FALLBACK_URL);
-    }
-    try {
-        try {
-            const fromSb = await fetchStockCsvFromSupabase_();
-            if (fromSb && fromSb.csv) {
-                return sendDatasetCsv_(req, res, fromSb.csv, {
-                    etag: datasetEtag_(snapshotVersion_(fromSb.meta) || 'sb'),
-                    headers: { 'X-Stock-Source': 'supabase' }
-                });
-            }
-        } catch (e) {
-            console.warn('[Stock dataset] Supabase read failed:', e.message);
-        }
-        if (fs.existsSync(STOCK_CSV_FILE)) {
-            const localCsv = fs.readFileSync(STOCK_CSV_FILE, 'utf8');
-            return sendDatasetCsv_(req, res, localCsv, {
-                etag: datasetEtag_(snapshotVersion_(readLocalStockMeta_()) || 'local'),
-                headers: { 'X-Stock-Source': 'local' }
-            });
-        }
-        const csv = await fetchSheet(STOCK_SHEET_FALLBACK_URL);
-        return sendDatasetCsv_(req, res, csv, {
-            headers: { 'X-Stock-Source': 'google_sheet_fallback' }
-        });
-    } catch (err) {
-        console.error('[Stock dataset] Error:', err.message);
-        return res.status(500).json({ status: 'error', message: err.message });
-    }
-});
-
-app.post('/api/stock/upload', (req, res) => {
-    nscUpload.single('file')(req, res, async (err) => {
-        if (err) return res.status(400).json({ status: 'error', message: err.message });
-        try {
-            if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-            const uploadUser = await resolveStockUser_(req);
-            if (!canUploadStock_(uploadUser)) {
-                return res.status(403).json({
-                    status: 'error',
-                    message: 'Stock upload is not authorised. Ask an admin to enable Stock Upload in User Management.'
-                });
-            }
-            if (!req.file || !req.file.buffer) {
-                return res.status(400).json({ status: 'error', message: 'No file uploaded.' });
-            }
-            const reportDateRaw = String((req.body && req.body.reportDate) || '').trim();
-            if (!reportDateRaw) {
-                return res.status(400).json({
-                    status: 'error',
-                    message: 'Report date is required (shown as stock as-of date).'
-                });
-            }
-            const originalName = req.file.originalname || 'stock_upload.xlsx';
-            const result = processStockWorkbook(req.file.buffer, originalName, { reportDate: reportDateRaw });
-            const baseMeta = {
-                uploadedAt: new Date().toISOString(),
-                uploadedBy: uploadUser.Username || uploadUser.username || 'user',
-                originalName,
-                sheetName: result.sheetName,
-                stats: result.stats,
-                publishedRows: result.published.length,
-                reportDate: result.reportDateUsed || reportDateRaw
-            };
-            writeLocalStockBackup_(result.csv, baseMeta);
-
-            let supabaseMeta = null;
-            let supabaseError = null;
-            try {
-                supabaseMeta = await publishStockToSupabase_(result.published, baseMeta);
-                baseMeta.supabaseUploadId = supabaseMeta && supabaseMeta.supabaseUploadId;
-                baseMeta.source = 'supabase';
-                writeLocalStockBackup_(result.csv, baseMeta);
-            } catch (e) {
-                supabaseError = e.message;
-                console.error('[Stock upload] Supabase publish failed:', e.message);
-                baseMeta.source = 'local';
-                baseMeta.supabaseError = supabaseError;
-                writeLocalStockBackup_(result.csv, baseMeta);
-            }
-
-            return res.json({
-                status: 'success',
-                message: supabaseMeta
-                    ? `Published ${baseMeta.publishedRows} stock rows.`
-                    : `Saved ${baseMeta.publishedRows} rows locally, but live publish failed (${supabaseError}).`,
-                meta: baseMeta,
-                supabase: supabaseMeta ? 'ok' : 'failed',
-                supabaseError
-            });
-        } catch (e) {
-            console.error('[Stock upload] Error:', e.message);
-            return res.status(500).json({ status: 'error', message: e.message });
-        }
-    });
+app.get('/api/stock/dataset', (req, res) => {
+    res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+    return res.redirect(302, stockStorageOrigin_() ? stockPublicCsvUrl_() : STOCK_SHEET_FALLBACK_URL);
 });
 
 /**
@@ -4246,11 +3568,11 @@ app.post('/api/stock/upload', (req, res) => {
  * Authorized users process Excel in the browser; only cleaned CSV is posted.
  */
 app.post('/api/stock/publish', (req, res) => {
-    nscUpload.single('csv')(req, res, async (err) => {
+    csvUpload.single('csv')(req, res, async (err) => {
         if (err) return res.status(400).json({ status: 'error', message: err.message });
         try {
             if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-            const uploadUser = await resolveStockUser_(req);
+            const uploadUser = await resolveFreshUser_(req, true);
             if (!canUploadStock_(uploadUser)) {
                 return res.status(403).json({
                     status: 'error',
@@ -4396,6 +3718,97 @@ app.post('/api/stock/publish', (req, res) => {
     });
 });
 
+// --- Synced report snapshots: defective meters, disconnection, pending master card, load extension ---
+// scripts/sync/* copy each Google Sheet to the Supabase 'reports' bucket with a meta.json (version + KPIs).
+const { syncDefectiveToSupabase } = require('./scripts/sync/sync_defective_to_supabase');
+const { syncDisconnectionToSupabase } = require('./scripts/sync/sync_disconnection_to_supabase');
+const { syncPendingMcToSupabase } = require('./scripts/sync/sync_pending_mc_to_supabase');
+const { syncLoadExtToSupabase } = require('./scripts/sync/sync_load_ext_to_supabase');
+
+/** A sync job's meta.json from the public reports bucket (cached 60 s); the local data/ copy as a fallback. */
+function syncedMeta_(folder, localFile) {
+    let cached = null;
+    let at = 0;
+    return {
+        async read() {
+            const now = Date.now();
+            if (cached && now - at < 60000) return cached;
+            const root = String(NEW_INSIGHT_URL || INSIGHT_URL || '').replace(/\/$/, '');
+            if (root) {
+                try {
+                    const r = await fetch(`${root}/storage/v1/object/public/reports/${folder}/meta.json`, {
+                        signal: AbortSignal.timeout(5000)
+                    });
+                    if (r.ok) {
+                        cached = await r.json();
+                        at = now;
+                        return cached;
+                    }
+                } catch (_) { /* fall back below */ }
+            }
+            try {
+                return JSON.parse(fs.readFileSync(path.join(DATA_DIR, localFile), 'utf8'));
+            } catch (_) {
+                return cached;
+            }
+        },
+        set(meta) {
+            cached = meta;
+            at = Date.now();
+        }
+    };
+}
+
+const DEFECTIVE_META = syncedMeta_('defective', 'defective_meta.json');
+const DISCONNECTION_META = syncedMeta_('disconnection', 'disconnection_meta.json');
+const PENDING_MC_META = syncedMeta_('pending_mc', 'pending_mc_meta.json');
+const LOAD_EXT_META = syncedMeta_('load_extension', 'load_ext_meta.json');
+
+/** POST route that runs one sync job (one at a time per instance) and logs it. */
+function syncRoute_(routePath, { label, can, forbidden, run, meta, done, bareError }) {
+    let running = false;
+    app.post(routePath, async (req, res) => {
+        if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+        const user = await resolveFreshUser_(req, true);
+        if (!can(user)) return res.status(403).json({ status: 'error', message: forbidden });
+        if (running) {
+            return res.status(429).json({ status: 'error', message: 'A sync is already in progress. Please wait a moment.' });
+        }
+        running = true;
+        try {
+            console.log(`[${label}] Triggered by user: ${user.Username || user.username || 'unknown'}`);
+            const result = await run();
+            meta.set(result);
+            const summary = done(result);
+            await logActivity({
+                username: user.Username || user.username,
+                name: user.Name || user.name,
+                type: 'report_sync',
+                details: summary.log
+            });
+            return res.json({ status: 'success', message: summary.message, meta: result });
+        } catch (err) {
+            console.error(`[${label}] Failed:`, err.message);
+            // disconnection.html adds its own "Sync failed:" prefix
+            return res.status(500).json({ status: 'error', message: bareError ? err.message : `Sync failed: ${err.message}` });
+        } finally {
+            running = false;
+        }
+    });
+}
+
+/** Common fields of the disconnection / pending MC / load extension meta responses. */
+function syncedMetaFields_(meta, fallbackCsvUrl) {
+    return {
+        version: meta ? meta.version : null,
+        reportDate: meta ? meta.reportDate : null,
+        stats: meta ? meta.stats : null,
+        csvUrl: (meta && meta.csvUrl) || fallbackCsvUrl,
+        source: meta ? meta.source : 'google_sheet'
+    };
+}
+
+// Defective meters
 const DEFECTIVE_SPREADSHEET_ID = '1dMLSX2bZBqZMPooh7_CrniCjqgy4MijaFW62GKJJldA';
 const DEFECTIVE_SUMMARY_GID = 0;
 const DEFECTIVE_DETAILS_GID = 1638574999;
@@ -4408,106 +3821,25 @@ const DEFECTIVE_SHEET_SCRIPT_URL = String(
 ).trim();
 
 function canUploadDefective_(user) {
-    if (!user) return false;
-    if (isPortalAdmin_(user)) return true;
-    if (flagAuthoYes_(
-        user['defective-upload-autho'] != null ? user['defective-upload-autho'] : user.defective_upload_autho
-    )) {
-        return true;
-    }
-    const username = String((user.Username || user.username) || '')
-        .trim()
-        .toLowerCase();
-    return username === 'dm1';
-}
-
-async function resolveDefectiveUser_(req) {
-    const session = req.user || null;
-    try {
-        const users = await getLoginCredentials({ forceRefresh: true });
-        const key = String((session && session.Username) || '').trim().toLowerCase();
-        const fresh = users.find((u) => u.Username && String(u.Username).trim().toLowerCase() === key);
-        if (fresh) {
-            if (!isPortalAdmin_(fresh) && isPortalAdmin_(session)) {
-                fresh.role = session.role || 'admin';
-            }
-            return fresh;
-        }
-    } catch (e) {
-        console.warn('[Defective auth] profile refresh failed:', e.message);
-    }
-    return session;
-}
-
-const DEFECTIVE_META_FILE = path.join(NSC_DATA_DIR, 'defective_meta.json');
-let cachedRemoteDefectiveMeta_ = null;
-let lastRemoteDefectiveMetaFetch_ = 0;
-
-async function readDefectiveMeta_() {
-    try {
-        if (fs.existsSync(DEFECTIVE_META_FILE)) {
-            return JSON.parse(fs.readFileSync(DEFECTIVE_META_FILE, 'utf8'));
-        }
-    } catch (_) {}
-
-    const now = Date.now();
-    if (cachedRemoteDefectiveMeta_ && (now - lastRemoteDefectiveMetaFetch_ < 60000)) {
-        return cachedRemoteDefectiveMeta_;
-    }
-    const root = String(NEW_INSIGHT_URL || INSIGHT_URL || '').replace(/\/$/, '');
-    if (root) {
-        try {
-            const url = `${root}/storage/v1/object/public/reports/defective/meta.json`;
-            const r = await fetch(url);
-            if (r.ok) {
-                const data = await r.json();
-                cachedRemoteDefectiveMeta_ = data;
-                lastRemoteDefectiveMetaFetch_ = now;
-                return data;
-            }
-        } catch (_) {}
-    }
-    return null;
-}
-
-function canSyncDefective_(user) {
-    if (!user) return false;
-    if (isPortalAdmin_(user)) return true;
-    const flag = user['defective-upload-autho'] != null ? user['defective-upload-autho'] : user.defective_upload_autho;
-    if (flagAuthoYes_(flag)) return true;
-    const username = String((user.Username || user.username) || '').trim().toLowerCase();
-    return username === 'dm1';
+    return hasPermission_(user, 'defective-upload-autho');
 }
 
 app.get('/api/defective/meta', async (req, res) => {
-    if (!req.user) {
-        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    }
-    const user = await resolveDefectiveUser_(req);
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    const user = await resolveFreshUser_(req);
     const canUpload = canUploadDefective_(user);
-    const canSync = canSyncDefective_(user);
-    const meta = await readDefectiveMeta_();
-
-    let summaryGid = DEFECTIVE_SUMMARY_GID;
-    let detailsGid = DEFECTIVE_DETAILS_GID;
-    const fallbackSummaryUrl = defectiveExportCsvUrl_(summaryGid);
-    const fallbackDetailsUrl = defectiveExportCsvUrl_(detailsGid);
-
-    const version = (meta && meta.version) || '';
-    const summaryCsvUrl = (meta && meta.summaryCsvUrl) ? meta.summaryCsvUrl : fallbackSummaryUrl;
-    const detailsCsvUrl = (meta && meta.detailsCsvUrl) ? meta.detailsCsvUrl : fallbackDetailsUrl;
-
+    const meta = await DEFECTIVE_META.read();
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
     return res.json({
         status: 'success',
         canUpload,
-        canSync,
+        canSync: canUpload,
         isAdmin: isPortalAdmin_(user),
         sheetScriptUrl: canUpload && DEFECTIVE_SHEET_SCRIPT_URL ? DEFECTIVE_SHEET_SCRIPT_URL : '',
         spreadsheetId: DEFECTIVE_SPREADSHEET_ID,
-        summaryCsvUrl,
-        detailsCsvUrl,
-        version: version || null,
+        summaryCsvUrl: (meta && meta.summaryCsvUrl) || defectiveExportCsvUrl_(DEFECTIVE_SUMMARY_GID),
+        detailsCsvUrl: (meta && meta.detailsCsvUrl) || defectiveExportCsvUrl_(DEFECTIVE_DETAILS_GID),
+        version: (meta && meta.version) || null,
         reportDate: (meta && meta.reportDate) || null,
         stats: (meta && meta.stats) || null,
         uploadMeta: (meta && meta.stats) || meta || null,
@@ -4516,407 +3848,115 @@ app.get('/api/defective/meta', async (req, res) => {
     });
 });
 
-app.post('/api/defective/sync', async (req, res) => {
-    if (!req.user) {
-        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    }
-    const user = await resolveDefectiveUser_(req);
-    if (!canSyncDefective_(user)) {
-        return res.status(403).json({
-            status: 'error',
-            message: 'Not authorized to sync defective meter data. Ask an admin to grant permission.'
-        });
-    }
-
-    try {
-        console.log(`[Defective Sync] Triggered by user: ${user.Username || user.username || 'unknown'}`);
-        const { syncDefectiveToSupabase } = require('./scripts/sync_defective_to_supabase');
-        const meta = await syncDefectiveToSupabase();
-
-        cachedRemoteDefectiveMeta_ = meta;
-        lastRemoteDefectiveMetaFetch_ = Date.now();
-
-        try {
-            await logAdminAction(req, 'sync_defective', {
-                target: 'reports/defective',
-                details: `Synced Defective Meter: ${meta.stats.totalDefective} meters (${meta.stats.summaryRows} summary, ${meta.stats.detailsRows} details)`
-            });
-        } catch (_) {}
-
-        return res.json({
-            status: 'success',
-            message: `Defective Meter sync complete! Total: ${meta.stats.totalDefective} meters.`,
-            meta
-        });
-    } catch (err) {
-        console.error('[Defective Sync] Failed:', err.message);
-        return res.status(500).json({
-            status: 'error',
-            message: `Sync failed: ${err.message}`
-        });
-    }
+syncRoute_('/api/defective/sync', {
+    label: 'Defective Sync',
+    can: canUploadDefective_,
+    forbidden: 'Not authorized to sync defective meter data. Ask an admin to grant permission.',
+    run: syncDefectiveToSupabase,
+    meta: DEFECTIVE_META,
+    done: (m) => ({
+        log: `Synced Defective Meter: ${m.stats.totalDefective} meters (${m.stats.summaryRows} summary, ${m.stats.detailsRows} details)`,
+        message: `Defective Meter sync complete! Total: ${m.stats.totalDefective} meters.`
+    })
 });
 
-const DISCONNECTION_META_FILE = path.join(NSC_DATA_DIR, 'disconnection_meta.json');
+// Disconnection tracker
 const DISCONNECTION_SHEET_FALLBACK_URL =
     'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv';
-
-let cachedRemoteDisconMeta_ = null;
-let lastRemoteDisconMetaFetch_ = 0;
-
-async function readDisconnectionMeta_() {
-    try {
-        if (fs.existsSync(DISCONNECTION_META_FILE)) {
-            return JSON.parse(fs.readFileSync(DISCONNECTION_META_FILE, 'utf8'));
-        }
-    } catch (_) {}
-
-    const now = Date.now();
-    if (cachedRemoteDisconMeta_ && (now - lastRemoteDisconMetaFetch_ < 60000)) {
-        return cachedRemoteDisconMeta_;
-    }
-    const root = String(NEW_INSIGHT_URL || INSIGHT_URL || '').replace(/\/$/, '');
-    if (!root) return null;
-    try {
-        const url = `${root}/storage/v1/object/public/reports/disconnection/meta.json`;
-        const res = await fetch(url);
-        if (res.ok) {
-            cachedRemoteDisconMeta_ = await res.json();
-            lastRemoteDisconMetaFetch_ = now;
-            return cachedRemoteDisconMeta_;
-        }
-    } catch (_) {}
-    return cachedRemoteDisconMeta_;
-}
-
 const DISCONNECTION_FOLLOWUP_SCRIPT_URL = String(
     process.env.DISCONNECTION_FOLLOWUP_SCRIPT_URL ||
         'https://script.google.com/macros/s/AKfycbxaczauxohDew8CYAfus161TrdzJ0AG6lRvxmxjJyxqIyQwEUVtrNuXc9M3uHzon7CB/exec'
 ).trim();
 
-function canSyncDisconnection_(user) {
-    if (!user) return false;
-    if (isPortalAdmin_(user)) return true;
-    const flag = user['disconnection-sync-autho'] != null ? user['disconnection-sync-autho'] : user.disconnection_sync_autho;
-    if (flagAuthoYes_(flag)) return true;
-    const username = String((user.Username || user.username) || '').trim().toLowerCase();
-    if (username === 'dm1') return true;
-    const sheetsVal = String(user['sheets-autho'] || user.sheets_autho || '').trim().toLowerCase();
-    if (sheetsVal.includes('discon') || sheetsVal.includes('sync')) return true;
-    return false;
-}
-
-async function resolveDisconnectionUser_(req) {
-    const session = req.user || null;
-    try {
-        const users = await getLoginCredentials({ forceRefresh: true });
-        const key = String((session && session.Username) || '').trim().toLowerCase();
-        const fresh = users.find((u) => u.Username && String(u.Username).trim().toLowerCase() === key);
-        if (fresh) {
-            if (!isPortalAdmin_(fresh) && isPortalAdmin_(session)) {
-                fresh.role = session.role || 'admin';
-            }
-            return fresh;
-        }
-    } catch (e) {
-        console.warn('[Discon auth] profile refresh failed:', e.message);
-    }
-    return session;
-}
+const canSyncDisconnection_ = (user) => hasPermission_(user, 'disconnection-sync-autho', ['discon', 'sync']);
 
 app.get('/api/disconnection/meta', async (req, res) => {
-    if (!req.user) {
-        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    }
-    const user = await resolveDisconnectionUser_(req);
-    const canSync = canSyncDisconnection_(user);
-    const meta = await readDisconnectionMeta_();
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    const user = await resolveFreshUser_(req);
+    const meta = await DISCONNECTION_META.read();
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
     return res.json({
         status: 'success',
-        canSync,
+        canSync: canSyncDisconnection_(user),
         isAdmin: isPortalAdmin_(user),
         sheetScriptUrl: DISCONNECTION_FOLLOWUP_SCRIPT_URL,
-        version: meta ? meta.version : null,
-        reportDate: meta ? meta.reportDate : null,
-        stats: meta ? meta.stats : null,
-        csvUrl: meta && meta.csvUrl ? meta.csvUrl : DISCONNECTION_SHEET_FALLBACK_URL,
-        source: meta ? meta.source : 'google_sheet'
+        ...syncedMetaFields_(meta, DISCONNECTION_SHEET_FALLBACK_URL)
     });
 });
 
-let isDisconSyncing_ = false;
-
-app.post('/api/disconnection/sync', async (req, res) => {
-    if (!req.user) {
-        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    }
-    const user = await resolveDisconnectionUser_(req);
-    if (!canSyncDisconnection_(user)) {
-        return res.status(403).json({
-            status: 'error',
-            message: 'Not authorized to sync disconnection data. Ask an admin to grant permission.'
-        });
-    }
-    if (isDisconSyncing_) {
-        return res.status(429).json({
-            status: 'error',
-            message: 'A cloud sync is already in progress. Please wait a moment.'
-        });
-    }
-
-    isDisconSyncing_ = true;
-    try {
-        console.log(`[Disconnection Sync] Triggered by user: ${user.Username || user.username || 'unknown'}`);
-        const { syncDisconnectionToSupabase } = require('./scripts/sync_disconnection_to_supabase');
-        const meta = await syncDisconnectionToSupabase();
-        cachedRemoteDisconMeta_ = meta;
-        lastRemoteDisconMetaFetch_ = Date.now();
-        await logActivity({
-            username: user.Username || user.username,
-            name: user.Name || user.name,
-            type: 'report_sync',
-            details: `Synced Disconnection Tracker: ${meta.stats.totalConsumers} rows`
-        });
-        return res.json({
-            status: 'success',
-            message: `Successfully synced ${meta.stats.totalConsumers} consumers from Google Sheets to Cloud Cache.`,
-            meta
-        });
-    } catch (err) {
-        console.error('[Disconnection Sync] Failed:', err.message);
-        return res.status(500).json({ status: 'error', message: err.message });
-    } finally {
-        isDisconSyncing_ = false;
-    }
+syncRoute_('/api/disconnection/sync', {
+    label: 'Disconnection Sync',
+    can: canSyncDisconnection_,
+    forbidden: 'Not authorized to sync disconnection data. Ask an admin to grant permission.',
+    run: syncDisconnectionToSupabase,
+    meta: DISCONNECTION_META,
+    bareError: true,
+    done: (m) => ({
+        log: `Synced Disconnection Tracker: ${m.stats.totalConsumers} rows`,
+        message: `Successfully synced ${m.stats.totalConsumers} consumers from Google Sheets to Cloud Cache.`
+    })
 });
 
-// --- Pending Master Card Cloud Sync & Meta ---
-const PENDING_MC_META_FILE = path.join(NSC_DATA_DIR, 'pending_mc_meta.json');
+// Pending master card
 const PENDING_MC_SHEET_FALLBACK_URL =
     'https://docs.google.com/spreadsheets/d/e/2PACX-1vQmOUW4jxUtEGWhPHaoNBsvpBcGzhHJZRUx_9mxFBp91sfg4yD8WIqIK_xv0vlFs2yP-Ljz09JW1U2c/pub?gid=0&single=true&output=csv';
 
-let cachedRemotePendingMcMeta_ = null;
-let lastRemotePendingMcMetaFetch_ = 0;
-
-async function readPendingMcMeta_() {
-    try {
-        if (fs.existsSync(PENDING_MC_META_FILE)) {
-            return JSON.parse(fs.readFileSync(PENDING_MC_META_FILE, 'utf8'));
-        }
-    } catch (_) {}
-
-    const now = Date.now();
-    if (cachedRemotePendingMcMeta_ && now - lastRemotePendingMcMetaFetch_ < 60000) {
-        return cachedRemotePendingMcMeta_;
-    }
-
-    const root = String(NEW_INSIGHT_URL || INSIGHT_URL || '').replace(/\/$/, '');
-    if (root) {
-        try {
-            const url = `${root}/storage/v1/object/public/reports/pending_mc/meta.json`;
-            const r = await fetch(url);
-            if (r.ok) {
-                const data = await r.json();
-                cachedRemotePendingMcMeta_ = data;
-                lastRemotePendingMcMetaFetch_ = now;
-                return data;
-            }
-        } catch (_) {}
-    }
-    return cachedRemotePendingMcMeta_;
-}
-
-function canSyncPendingMc_(user) {
-    if (!user) return false;
-    if (isPortalAdmin_(user)) return true;
-    const flag = user['pending-mc-sync-autho'] != null ? user['pending-mc-sync-autho'] : user.pending_mc_sync_autho;
-    if (flagAuthoYes_(flag)) return true;
-    const username = String((user.Username || user.username) || '').trim().toLowerCase();
-    if (username === 'dm1') return true;
-    const sheetsVal = String(user['sheets-autho'] || user.sheets_autho || '').trim().toLowerCase();
-    if (sheetsVal.includes('mc') || sheetsVal.includes('pending') || sheetsVal.includes('sync')) return true;
-    return false;
-}
+const canSyncPendingMc_ = (user) => hasPermission_(user, 'pending-mc-sync-autho', ['mc', 'pending', 'sync']);
 
 app.get('/api/pending-mc/meta', async (req, res) => {
-    if (!req.user) {
-        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    }
-    const user = await resolveDisconnectionUser_(req);
-    const canSync = canSyncPendingMc_(user);
-    const meta = await readPendingMcMeta_();
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    const user = await resolveFreshUser_(req);
+    const meta = await PENDING_MC_META.read();
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
     return res.json({
         status: 'success',
-        canSync,
+        canSync: canSyncPendingMc_(user),
         isAdmin: isPortalAdmin_(user),
-        version: meta ? meta.version : null,
-        reportDate: meta ? meta.reportDate : null,
-        stats: meta ? meta.stats : null,
-        csvUrl: meta && meta.csvUrl ? meta.csvUrl : PENDING_MC_SHEET_FALLBACK_URL,
-        source: meta ? meta.source : 'google_sheet'
+        ...syncedMetaFields_(meta, PENDING_MC_SHEET_FALLBACK_URL)
     });
 });
 
-let isPendingMcSyncing_ = false;
-
-app.post('/api/pending-mc/sync', async (req, res) => {
-    if (!req.user) {
-        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    }
-    const user = await resolveDisconnectionUser_(req);
-    if (!canSyncPendingMc_(user)) {
-        return res.status(403).json({
-            status: 'error',
-            message: 'Not authorized to sync Pending Master Card data. Ask an admin to grant permission.'
-        });
-    }
-    if (isPendingMcSyncing_) {
-        return res.status(429).json({
-            status: 'error',
-            message: 'A sync is already in progress. Please wait a moment.'
-        });
-    }
-
-    isPendingMcSyncing_ = true;
-    try {
-        console.log(`[Pending MC Sync] Triggered by user: ${user.Username || user.username || 'unknown'}`);
-        const { syncPendingMcToSupabase } = require('./scripts/sync_pending_mc_to_supabase');
-        const meta = await syncPendingMcToSupabase();
-        cachedRemotePendingMcMeta_ = meta;
-        lastRemotePendingMcMetaFetch_ = Date.now();
-        await logActivity({
-            username: user.Username || user.username,
-            name: user.Name || user.name,
-            type: 'report_sync',
-            details: `Synced Pending Master Card: ${meta.stats.totalPending} records`
-        });
-        return res.json({
-            status: 'success',
-            message: `Successfully synced ${meta.stats.totalPending} Pending MC records to Cloud Cache.`,
-            meta
-        });
-    } catch (err) {
-        console.error('[Pending MC Sync] Failed:', err.message);
-        return res.status(500).json({ status: 'error', message: err.message });
-    } finally {
-        isPendingMcSyncing_ = false;
-    }
+syncRoute_('/api/pending-mc/sync', {
+    label: 'Pending MC Sync',
+    can: canSyncPendingMc_,
+    forbidden: 'Not authorized to sync Pending Master Card data. Ask an admin to grant permission.',
+    run: syncPendingMcToSupabase,
+    meta: PENDING_MC_META,
+    done: (m) => ({
+        log: `Synced Pending Master Card: ${m.stats.totalPending} records`,
+        message: `Successfully synced ${m.stats.totalPending} Pending MC records to Cloud Cache.`
+    })
 });
 
-// --- Pending Load Extension Cloud Sync & Meta ---
-const LOAD_EXT_META_FILE = path.join(NSC_DATA_DIR, 'load_ext_meta.json');
+// Pending load extension
 const LOAD_EXT_SHEET_FALLBACK_URL =
     'https://docs.google.com/spreadsheets/d/e/2PACX-1vQP_B-Zl5XhnYkmJiDXKB7B8ksrRRezuLrRqTzEPz4lEw_yDcpGOTnmm0oI8dW9apwuHg9yGqaAqjDS/pub?gid=0&single=true&output=csv';
 
-let cachedRemoteLoadExtMeta_ = null;
-let lastRemoteLoadExtMetaFetch_ = 0;
-
-async function readLoadExtMeta_() {
-    try {
-        if (fs.existsSync(LOAD_EXT_META_FILE)) {
-            return JSON.parse(fs.readFileSync(LOAD_EXT_META_FILE, 'utf8'));
-        }
-    } catch (_) {}
-
-    const now = Date.now();
-    if (cachedRemoteLoadExtMeta_ && now - lastRemoteLoadExtMetaFetch_ < 60000) {
-        return cachedRemoteLoadExtMeta_;
-    }
-
-    const root = String(NEW_INSIGHT_URL || INSIGHT_URL || '').replace(/\/$/, '');
-    if (root) {
-        try {
-            const url = `${root}/storage/v1/object/public/reports/load_extension/meta.json`;
-            const r = await fetch(url);
-            if (r.ok) {
-                const data = await r.json();
-                cachedRemoteLoadExtMeta_ = data;
-                lastRemoteLoadExtMetaFetch_ = now;
-                return data;
-            }
-        } catch (_) {}
-    }
-    return cachedRemoteLoadExtMeta_;
-}
-
-function canSyncLoadExt_(user) {
-    if (!user) return false;
-    if (isPortalAdmin_(user)) return true;
-    const flag = user['load-ext-sync-autho'] != null ? user['load-ext-sync-autho'] : user.load_ext_sync_autho;
-    if (flagAuthoYes_(flag)) return true;
-    const username = String((user.Username || user.username) || '').trim().toLowerCase();
-    if (username === 'dm1') return true;
-    const sheetsVal = String(user['sheets-autho'] || user.sheets_autho || '').trim().toLowerCase();
-    if (sheetsVal.includes('load') || sheetsVal.includes('ext') || sheetsVal.includes('sync')) return true;
-    return false;
-}
+const canSyncLoadExt_ = (user) => hasPermission_(user, 'load-ext-sync-autho', ['load', 'ext', 'sync']);
 
 app.get('/api/load-extension/meta', async (req, res) => {
-    if (!req.user) {
-        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    }
-    const user = await resolveDisconnectionUser_(req);
-    const canSync = canSyncLoadExt_(user);
-    const meta = await readLoadExtMeta_();
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    const user = await resolveFreshUser_(req);
+    const meta = await LOAD_EXT_META.read();
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
     return res.json({
         status: 'success',
-        canSync,
+        canSync: canSyncLoadExt_(user),
         isAdmin: isPortalAdmin_(user),
-        version: meta ? meta.version : null,
-        reportDate: meta ? meta.reportDate : null,
-        stats: meta ? meta.stats : null,
-        csvUrl: meta && meta.csvUrl ? meta.csvUrl : LOAD_EXT_SHEET_FALLBACK_URL,
-        source: meta ? meta.source : 'google_sheet'
+        ...syncedMetaFields_(meta, LOAD_EXT_SHEET_FALLBACK_URL)
     });
 });
 
-let isLoadExtSyncing_ = false;
-
-app.post('/api/load-extension/sync', async (req, res) => {
-    if (!req.user) {
-        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    }
-    const user = await resolveDisconnectionUser_(req);
-    if (!canSyncLoadExt_(user)) {
-        return res.status(403).json({
-            status: 'error',
-            message: 'Not authorized to sync Load Extension data. Ask an admin to grant permission.'
-        });
-    }
-    if (isLoadExtSyncing_) {
-        return res.status(429).json({
-            status: 'error',
-            message: 'A sync is already in progress. Please wait a moment.'
-        });
-    }
-
-    isLoadExtSyncing_ = true;
-    try {
-        console.log(`[Load Extension Sync] Triggered by user: ${user.Username || user.username || 'unknown'}`);
-        const { syncLoadExtToSupabase } = require('./scripts/sync_load_ext_to_supabase');
-        const meta = await syncLoadExtToSupabase();
-        cachedRemoteLoadExtMeta_ = meta;
-        lastRemoteLoadExtMetaFetch_ = Date.now();
-        await logActivity({
-            username: user.Username || user.username,
-            name: user.Name || user.name,
-            type: 'report_sync',
-            details: `Synced Load Extension: ${meta.stats.totalPending} applications`
-        });
-        return res.json({
-            status: 'success',
-            message: `Successfully synced ${meta.stats.totalPending} Load Extension applications to Cloud Cache.`,
-            meta
-        });
-    } catch (err) {
-        console.error('[Load Extension Sync] Failed:', err.message);
-        return res.status(500).json({ status: 'error', message: err.message });
-    } finally {
-        isLoadExtSyncing_ = false;
-    }
+syncRoute_('/api/load-extension/sync', {
+    label: 'Load Extension Sync',
+    can: canSyncLoadExt_,
+    forbidden: 'Not authorized to sync Load Extension data. Ask an admin to grant permission.',
+    run: syncLoadExtToSupabase,
+    meta: LOAD_EXT_META,
+    done: (m) => ({
+        log: `Synced Load Extension: ${m.stats.totalPending} applications`,
+        message: `Successfully synced ${m.stats.totalPending} Load Extension applications to Cloud Cache.`
+    })
 });
 
 const NSC_FOLLOWUP_SCRIPT_URL = String(
@@ -4941,117 +3981,69 @@ app.get('/api/hub/versions', async (req, res) => {
     }
     const versions = {};
     const csvUrls = {};
-
-    try {
-        let nscMeta = readLocalNscMeta_();
-        const sheetMeta = await fetchNscSheetMeta_();
-        if (sheetMeta && (sheetMeta.reportDate || sheetMeta.uploadedAt || sheetMeta.publishedRows)) {
-            nscMeta = sheetMeta;
-        }
-        const nscVer = snapshotVersion_(nscMeta);
-        const whVer = snapshotWithheldVersion_(nscMeta);
-        if (nscVer) versions.CACHE_NSC_v5 = nscVer;
-        if (whVer) versions.CACHE_WITHHELD_v4 = whVer;
-        if (NSC_SHEET_FALLBACK_URL) csvUrls.CACHE_NSC_v5 = NSC_SHEET_FALLBACK_URL;
-        if (NSC_WITHHELD_SHEET_FALLBACK_URL) csvUrls.CACHE_WITHHELD_v4 = NSC_WITHHELD_SHEET_FALLBACK_URL;
-    } catch (e) {
-        console.warn('[Hub versions] NSC:', e.message);
-    }
-
-    try {
-        let stockMeta = readLocalStockMeta_();
-        const sb = await fetchActiveStockMeta_();
-        if (sb) stockMeta = stockMetaFromDb_(sb);
-        const stockVer = snapshotVersion_(stockMeta);
-        if (stockVer) versions.CACHE_STOCK = stockVer;
-        csvUrls.CACHE_STOCK = stockStorageOrigin_()
-            ? stockPublicCsvUrl_(stockVer)
-            : STOCK_SHEET_FALLBACK_URL;
-    } catch (e) {
-        console.warn('[Hub versions] Stock:', e.message);
-    }
-
-    try {
-        const disconMeta = await readDisconnectionMeta_();
-        if (disconMeta && disconMeta.version) {
-            versions.CACHE_DISCONNECTION = disconMeta.version;
-            csvUrls.CACHE_DISCONNECTION = disconMeta.csvUrl || DISCONNECTION_SHEET_FALLBACK_URL;
-        }
-    } catch (e) {
-        console.warn('[Hub versions] Disconnection:', e.message);
-    }
-
-    try {
-        const defMeta = await readDefectiveMeta_();
-        if (defMeta && defMeta.version) {
-            versions.CACHE_DEFECTIVE = defMeta.version;
-            versions.CACHE_DEFECTIVE_DETAILS = defMeta.version;
-            csvUrls.CACHE_DEFECTIVE = defMeta.summaryCsvUrl || defectiveExportCsvUrl_(DEFECTIVE_SUMMARY_GID);
-            csvUrls.CACHE_DEFECTIVE_DETAILS = defMeta.detailsCsvUrl || defectiveExportCsvUrl_(DEFECTIVE_DETAILS_GID);
-        } else {
-            csvUrls.CACHE_DEFECTIVE = defectiveExportCsvUrl_(DEFECTIVE_SUMMARY_GID);
-            csvUrls.CACHE_DEFECTIVE_DETAILS = defectiveExportCsvUrl_(DEFECTIVE_DETAILS_GID);
-        }
-    } catch (e) {
-        console.warn('[Hub versions] Defective:', e.message);
-    }
-
-    try {
-        const mcMeta = await readPendingMcMeta_();
-        if (mcMeta && mcMeta.version) {
-            versions.CACHE_PENDING_MC = mcMeta.version;
-            csvUrls.CACHE_PENDING_MC = mcMeta.csvUrl || PENDING_MC_SHEET_FALLBACK_URL;
-        } else {
-            csvUrls.CACHE_PENDING_MC = PENDING_MC_SHEET_FALLBACK_URL;
-        }
-    } catch (e) {
-        console.warn('[Hub versions] Pending MC:', e.message);
-    }
-
-    try {
-        const leMeta = await readLoadExtMeta_();
-        if (leMeta && leMeta.version) {
-            versions.CACHE_LOAD_EXT = leMeta.version;
-            csvUrls.CACHE_LOAD_EXT = leMeta.csvUrl || LOAD_EXT_SHEET_FALLBACK_URL;
-        } else {
-            csvUrls.CACHE_LOAD_EXT = LOAD_EXT_SHEET_FALLBACK_URL;
-        }
-    } catch (e) {
-        console.warn('[Hub versions] Load Extension:', e.message);
-    }
-
-    try {
-        const latest = await querySupabase(
-            POWER_MAP_TABLE + '?select=updated_at&order=updated_at.desc&limit=1'
-        );
-        const row = Array.isArray(latest) && latest[0] ? latest[0] : latest;
-        const pmVer = String((row && row.updated_at) || '').trim();
-        if (pmVer) versions.CACHE_POWER_MAP = pmVer;
-        csvUrls.CACHE_POWER_MAP = POWER_MAP_SHEET_CSV_URL;
-    } catch (e) {
-        console.warn('[Hub versions] Power Map:', e.message);
-    }
-
-    const metadataScriptUrl = process.env.METADATA_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbwhkAICXC-UH8i9BaWp7zl4NjrxnaFm5RaXZUvZDzOI9AV7XWndMvpuL9lsMtIovwogZg/exec';
-    if (metadataScriptUrl) {
-        try {
-            const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-            const timer = ctrl ? setTimeout(() => ctrl.abort(), 3500) : null;
-            try {
-                const metaRes = await fetch(metadataScriptUrl, ctrl ? { signal: ctrl.signal } : undefined);
-                if (metaRes.ok) {
-                    const parsedMeta = JSON.parse(await metaRes.text());
-                    if (parsedMeta && parsedMeta.versions) {
-                        Object.assign(versions, parsedMeta.versions);
-                    }
-                }
-            } finally {
-                if (timer) clearTimeout(timer);
+    const synced = (meta, key, csvUrl) => {
+        if (meta && meta.version) versions[key] = meta.version;
+        csvUrls[key] = (meta && meta.version && meta.csvUrl) || csvUrl;
+    };
+    // Each source is independent: fetch in parallel, and one failing does not hide the others.
+    const tasks = {
+        nsc: async () => {
+            const sheetMeta = await fetchNscSheetMeta_();
+            const nscMeta = sheetMeta && (sheetMeta.reportDate || sheetMeta.uploadedAt || sheetMeta.publishedRows)
+                ? sheetMeta
+                : readLocalNscMeta_();
+            const nscVer = snapshotVersion_(nscMeta);
+            const whVer = snapshotWithheldVersion_(nscMeta);
+            if (nscVer) versions.CACHE_NSC_v5 = nscVer;
+            if (whVer) versions.CACHE_WITHHELD_v4 = whVer;
+            csvUrls.CACHE_NSC_v5 = NSC_SHEET_FALLBACK_URL;
+            csvUrls.CACHE_WITHHELD_v4 = NSC_WITHHELD_SHEET_FALLBACK_URL;
+        },
+        stock: async () => {
+            const sb = await fetchActiveStockMeta_();
+            const stockVer = snapshotVersion_(sb ? stockMetaFromDb_(sb) : readLocalStockMeta_());
+            if (stockVer) versions.CACHE_STOCK = stockVer;
+            csvUrls.CACHE_STOCK = stockStorageOrigin_() ? stockPublicCsvUrl_(stockVer) : STOCK_SHEET_FALLBACK_URL;
+        },
+        disconnection: async () => {
+            const meta = await DISCONNECTION_META.read();
+            if (meta && meta.version) synced(meta, 'CACHE_DISCONNECTION', DISCONNECTION_SHEET_FALLBACK_URL);
+        },
+        defective: async () => {
+            const meta = await DEFECTIVE_META.read();
+            const has = !!(meta && meta.version);
+            if (has) {
+                versions.CACHE_DEFECTIVE = meta.version;
+                versions.CACHE_DEFECTIVE_DETAILS = meta.version;
             }
-        } catch (metaErr) {
-            console.warn('[Hub versions] Metadata script fetch failed:', metaErr.message);
+            csvUrls.CACHE_DEFECTIVE = (has && meta.summaryCsvUrl) || defectiveExportCsvUrl_(DEFECTIVE_SUMMARY_GID);
+            csvUrls.CACHE_DEFECTIVE_DETAILS = (has && meta.detailsCsvUrl) || defectiveExportCsvUrl_(DEFECTIVE_DETAILS_GID);
+        },
+        pendingMc: async () => synced(await PENDING_MC_META.read(), 'CACHE_PENDING_MC', PENDING_MC_SHEET_FALLBACK_URL),
+        loadExt: async () => synced(await LOAD_EXT_META.read(), 'CACHE_LOAD_EXT', LOAD_EXT_SHEET_FALLBACK_URL),
+        powerMap: async () => {
+            const latest = await querySupabase(POWER_MAP_TABLE + '?select=updated_at&order=updated_at.desc&limit=1');
+            const row = Array.isArray(latest) && latest[0] ? latest[0] : latest;
+            const pmVer = String((row && row.updated_at) || '').trim();
+            if (pmVer) versions.CACHE_POWER_MAP = pmVer;
+            csvUrls.CACHE_POWER_MAP = POWER_MAP_SHEET_CSV_URL;
+        },
+        // Versions of the remaining datasets, kept by apps-script/mzo_metadata_sync.gs (applied last).
+        metadata: async () => {
+            const url = process.env.METADATA_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbwhkAICXC-UH8i9BaWp7zl4NjrxnaFm5RaXZUvZDzOI9AV7XWndMvpuL9lsMtIovwogZg/exec';
+            const metaRes = await fetch(url, { signal: AbortSignal.timeout(3500) });
+            if (!metaRes.ok) return null;
+            const parsed = JSON.parse(await metaRes.text());
+            return parsed && parsed.versions;
         }
-    }
+    };
+    const names = Object.keys(tasks);
+    const results = await Promise.allSettled(names.map((n) => tasks[n]()));
+    results.forEach((r, i) => {
+        if (r.status === 'rejected') console.warn(`[Hub versions] ${names[i]}:`, r.reason && r.reason.message);
+    });
+    const extra = results[names.indexOf('metadata')];
+    if (extra.status === 'fulfilled' && extra.value) Object.assign(versions, extra.value);
 
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
     return res.json({ status: 'success', versions, csvUrls });
@@ -5254,6 +4246,7 @@ function formatLakh_(num) {
     return lk.toFixed(2) + ' L';
 }
 
+// Numbers come from the sync jobs' meta; an item whose numbers are unavailable is left out (never guessed).
 function buildExecutiveBriefing_(meta) {
     const pendingMc = (meta && meta.pendingMc && meta.pendingMc.stats) || {};
     const loadExt = (meta && meta.loadExt && meta.loadExt.stats) || {};
@@ -5346,33 +4339,29 @@ function buildExecutiveBriefing_(meta) {
         datasetKey: 'CACHE_DEFECTIVE'
     });
 
-    // 4. Pending NSC Delayed > 30 Days (CRITICAL)
-    const nscDelayed30 = Number((nsc && nsc.delayed30) || (meta && meta.nsc && meta.nsc.stats && meta.nsc.stats.delayed30) || 3180);
-    const nscTotalPending = Number((nsc && nsc.totalPending) || (meta && meta.nsc && meta.nsc.stats && meta.nsc.stats.totalPending) || 5459);
-    const nscDivs = (nsc && nsc.divisions) || (meta && meta.nsc && meta.nsc.stats && meta.nsc.stats.divisions) || {};
-    const nscCccs = (nsc && nsc.divisionCccs) || (meta && meta.nsc && meta.nsc.stats && meta.nsc.stats.divisionCccs) || {};
-    items.push({
-        id: 'nsc-delayed-30',
-        priority: 'critical',
-        priorityLabel: '🔴 CRITICAL',
-        domain: 'Pending NSC',
-        domainKey: 'nsc',
-        title: 'Pending NSC Delayed > 30 Days',
-        headline: `${nscDelayed30.toLocaleString()} New Service Connections delayed beyond 30 days (Total pending: ${nscTotalPending.toLocaleString()})`,
-        description: 'New service connections exceeding statutory 30-day timeline. Field execution and contractor follow-up required.',
-        metric: `${nscDelayed30.toLocaleString()}`,
-        hotspots: [
-            { division: 'Raiganj', count: nscDivs.Raiganj || 1033 },
-            { division: 'Islampur', count: nscDivs.Islampur || 696 },
-            { division: 'Gazole', count: nscDivs.Gazole || 425 },
-            { division: 'Buniadpur', count: nscDivs.Buniadpur || 313 }
-        ],
-        divisions: nscDivs,
-        divisionCccs: nscCccs,
-        deepLink: 'nsc.html',
-        pageTitle: 'Pending NSC',
-        datasetKey: 'CACHE_NSC_v5'
-    });
+    // Pending NSC delayed > 30 days (CRITICAL) — needs delayed30, which scripts/tools/compute_briefing_cccs.js adds
+    if (nsc.delayed30 != null) {
+        const nscDelayed30 = Number(nsc.delayed30) || 0;
+        const nscTotalPending = Number(nsc.totalPending) || 0;
+        const nscDivs = nsc.divisions || {};
+        items.push({
+            id: 'nsc-delayed-30',
+            priority: 'critical',
+            priorityLabel: '🔴 CRITICAL',
+            domain: 'Pending NSC',
+            domainKey: 'nsc',
+            title: 'Pending NSC Delayed > 30 Days',
+            headline: `${nscDelayed30.toLocaleString()} New Service Connections delayed beyond 30 days (Total pending: ${nscTotalPending.toLocaleString()})`,
+            description: 'New service connections exceeding statutory 30-day timeline. Field execution and contractor follow-up required.',
+            metric: `${nscDelayed30.toLocaleString()}`,
+            hotspots: ['Raiganj', 'Islampur', 'Gazole', 'Buniadpur'].map((d) => ({ division: d, count: nscDivs[d] || 0 })),
+            divisions: nscDivs,
+            divisionCccs: nsc.divisionCccs || {},
+            deepLink: 'nsc.html',
+            pageTitle: 'Pending NSC',
+            datasetKey: 'CACHE_NSC_v5'
+        });
+    }
 
     // 4. Pending Load Extension > 1 Year (HIGH)
     const loadAgeing1y = Number(loadExt.ageing1y || 0);
@@ -5446,27 +4435,30 @@ function buildExecutiveBriefing_(meta) {
         datasetKey: 'CACHE_DEFECTIVE'
     });
 
-    // 7. Withheld NSC Applications (WATCH)
-    const withheldRows = Number(nsc.withheldRows || (nsc.statusCounts && nsc.statusCounts.Witheld) || 65739);
-    items.push({
-        id: 'nsc-withheld',
-        priority: 'watch',
-        priorityLabel: '🟡 WATCH',
-        domain: 'Withheld NSC',
-        domainKey: 'withheld',
-        title: 'Withheld NSC Applications',
-        headline: `${withheldRows.toLocaleString()} new service connection applications in withheld status`,
-        description: 'Applications held due to wayleave, ROW, or documentation issues. Expedite field verification and resolution.',
-        metric: `${withheldRows.toLocaleString()}`,
-        hotspots: [
-            { division: 'Malda Region', count: (nsc.regionCounts && nsc.regionCounts.Malda) || 31439 },
-            { division: 'Uttar Dinajpur', count: (nsc.regionCounts && nsc.regionCounts['Uttar Dinajpur']) || 25823 },
-            { division: 'Dakshin Dinajpur', count: (nsc.regionCounts && nsc.regionCounts['Dakshin Dinajpur']) || 13936 }
-        ],
-        deepLink: 'withheld.html',
-        pageTitle: 'Withheld NSC',
-        datasetKey: 'CACHE_WITHHELD_v4'
-    });
+    // Withheld NSC applications (WATCH) — counts from the last NSC upload
+    const withheldRows = Number(nsc.withheldRows || (nsc.statusCounts && nsc.statusCounts.Witheld) || 0);
+    if (withheldRows) {
+        const regions = nsc.regionCounts || {};
+        items.push({
+            id: 'nsc-withheld',
+            priority: 'watch',
+            priorityLabel: '🟡 WATCH',
+            domain: 'Withheld NSC',
+            domainKey: 'withheld',
+            title: 'Withheld NSC Applications',
+            headline: `${withheldRows.toLocaleString()} new service connection applications in withheld status`,
+            description: 'Applications held due to wayleave, ROW, or documentation issues. Expedite field verification and resolution.',
+            metric: `${withheldRows.toLocaleString()}`,
+            hotspots: [
+                { division: 'Malda Region', count: regions.Malda || 0 },
+                { division: 'Uttar Dinajpur', count: regions['Uttar Dinajpur'] || 0 },
+                { division: 'Dakshin Dinajpur', count: regions['Dakshin Dinajpur'] || 0 }
+            ],
+            deepLink: 'withheld.html',
+            pageTitle: 'Withheld NSC',
+            datasetKey: 'CACHE_WITHHELD_v4'
+        });
+    }
 
     // 8. Partial Disconnection Recovery Follow-up (WATCH)
     const partCount = Number((discon.partiallyPaid && discon.partiallyPaid.count) || 0);
@@ -5505,13 +4497,15 @@ function buildExecutiveBriefing_(meta) {
 }
 
 app.get('/api/executive/briefing', async (req, res) => {
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     try {
         const [pendingMcMeta, loadExtMeta, disconMeta, defectiveMeta, nscMeta] = await Promise.all([
-            readPendingMcMeta_().catch(() => null),
-            readLoadExtMeta_().catch(() => null),
-            readDisconnectionMeta_().catch(() => null),
-            readDefectiveMeta_().catch(() => null),
-            (async () => readLocalNscMeta_())().catch(() => null)
+            PENDING_MC_META.read().catch(() => null),
+            LOAD_EXT_META.read().catch(() => null),
+            DISCONNECTION_META.read().catch(() => null),
+            DEFECTIVE_META.read().catch(() => null),
+            // data/nsc_meta.json (with delayed30) when the briefing tool ran locally; else the Sheet's upload meta
+            Promise.resolve(readLocalNscMeta_() || fetchNscSheetMeta_()).catch(() => null)
         ]);
 
         const briefing = buildExecutiveBriefing_({
@@ -5726,11 +4720,7 @@ app.post('/api/assistant', async (req, res) => {
 
 if ((process.env.NODE_ENV !== 'production' || !process.env.VERCEL) && require.main === module) {
     const server = app.listen(PORT, () => {
-        console.log(`Server is running on http://localhost:${PORT}`);
-        console.log('Open your browser and navigate to http://localhost:3000 to use the estimator.');
-        console.log('Navigate to http://localhost:3000/admin.html to manage structures.');
-        console.log('NSC upload: http://localhost:3000/nsc/upload.html');
-        console.log('Stock upload: http://localhost:3000/stock/upload.html');
+        console.log(`MZO Reports on http://localhost:${PORT} (workstation: /app.html)`);
     });
     server.on('error', (err) => {
         if (err && err.code === 'EADDRINUSE') {

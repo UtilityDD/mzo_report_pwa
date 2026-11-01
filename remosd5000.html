@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>REM OSD over ₹5,000 · MZO Reports</title>
   <script src="/mzo_theme.js?v=3"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=3" />
-  <script src="/mzo_ui.js?v=2" defer></script>
-  <script src="/mzo_data_hub.js" defer></script>
-  <script src="/mzo_scope.js?v=5" defer></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
+  <script src="/mzo_ui.js?v=4" defer></script>
+  <script src="/mzo_data_hub.js?v=90" defer></script>
+  <script src="/mzo_scope.js?v=14" defer></script>
 </head>
 <body>
   <main class="ui-page">
@@ -101,14 +101,8 @@
       fillFilters();
     }
 
-    function uniq(rows, k) { var s = {}; rows.forEach(function (r) { if (r[k]) s[r[k]] = 1; }); return Object.keys(s).sort(); }
     function fillFilters() {
-      var reg = $('regionFilter').value, div = $('divisionFilter').value;
-      UI.fill('regionFilter', uniq(all, '_region'), 'All regions');
-      var r1 = all.filter(function (r) { return !reg || r._region === reg; });
-      UI.fill('divisionFilter', uniq(r1, '_divn'), 'All divisions');
-      var r2 = r1.filter(function (r) { return !div || r._divn === div; });
-      UI.fill('cccFilter', uniq(r2, '_supp'), 'All CCCs');
+      UI.offices(all);
       if (!scope) scope = UI.lockScope();
     }
     function offices() {
@@ -134,15 +128,14 @@
       // Trend across notice dates for the selected class
       var byDate = {};
       o.forEach(function (r) { var b = byDate[r._due] || (byDate[r._due] = { count: 0, amt: 0 }); b.count += cnt(r, cls); b.amt += amt(r, cls); });
-      var asc = dates.slice().reverse(), every = Math.max(1, Math.ceil(asc.length / Math.max(3, Math.min(8, Math.floor(($('trend').clientWidth || 600) / 95)))));
-      var labels = asc.map(function (d, i) { var x = dmy(d); return (asc.length - 1 - i) % every === 0 ? x.getDate() + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][x.getMonth()] + ' ' + String(x.getFullYear()).slice(2) : ''; });
+      // UI.line thins crowded axis labels itself; the tooltip names the full notice date.
+      var asc = dates.slice().reverse();
+      var labels = asc.map(function (d) { var x = UI.fmtDate(dmy(d)).split(' '); return x[0] + ' ' + x[1] + ' ' + x[2].slice(2); });
       var vals = asc.map(function (d) { var b = byDate[d]; return b ? b[metric] : null; });
       $('trendTitle').textContent = (metric === 'amt' ? 'Outstanding' : 'Consumers') + ' · ' + CLASS_LABEL[cls];
-      UI.line('trend', { labels: labels, series: [{ label: CLASS_LABEL[cls], values: vals, strong: true }], fmt: metric === 'amt' ? lakh : UI.n, axis: metric === 'amt' ? axisL : UI.n, title: 'Trend' });
-      var tipDates = asc;
-      $('trend').querySelector('svg') && $('trend').querySelector('svg').addEventListener('pointermove', function (e) {
-        var hit = e.target.closest && e.target.closest('rect.hit'); if (!hit) return;
-        var b = $('trend').querySelector('.ui-tip b'); if (b) b.textContent = 'Notice due ' + UI.fmtDate(dmy(tipDates[+hit.getAttribute('data-i')]));
+      UI.line('trend', {
+        labels: labels, tipLabels: asc.map(function (d) { return 'Notice due ' + UI.fmtDate(dmy(d)); }),
+        series: [{ label: CLASS_LABEL[cls], values: vals, strong: true }], fmt: metric === 'amt' ? lakh : UI.n, axis: metric === 'amt' ? axisL : UI.n, title: 'Trend'
       });
 
       // Offices on the selected date, with change since the previous notice
@@ -229,12 +222,7 @@
         { key: 'd', label: 'Change %', csv: function (x) { return x.d == null ? '' : x.d.toFixed(1); } }
       ], window.__rows || []);
     });
-    $('refreshBtn').addEventListener('click', function () {
-      var b = this; b.classList.add('spin');
-      Promise.resolve(window.mzoDataHub.waitForDataset('CACHE_REM_v2', { forceCheck: true })).catch(function () {})
-        .then(function () { return window.mzoDataHub._peek('CACHE_REM_v2'); }).then(function (t) { if (t) { prepare(t); update(); } })
-        .then(function () { b.classList.remove('spin'); });
-    });
+    UI.refresh('refreshBtn', 'CACHE_REM_v2', function (t) { prepare(t); update(); });
 
     var first = true;
     UI.load('CACHE_REM_v2', function (text, info) {

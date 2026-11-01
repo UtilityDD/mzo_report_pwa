@@ -1,348 +1,149 @@
-// auth.js - Client-Side Session Integrations & Logout Management
-(function() {
+// auth.js — login gate for standalone pages (the app.html shell checks the session itself).
+// Checks the session cookie, keeps the cached profile fresh, offers window.mzoLogout(), adds a
+// sign-out button to the phone hub header, and inside an iframe hands page links to the shell.
+(function () {
     'use strict';
 
-    if (!window.__mzoAppUpdateScript) {
-        window.__mzoAppUpdateScript = true;
-        var updateScript = document.createElement('script');
-        updateScript.src = '/mzo_app_update.js?v=87';
-        updateScript.async = true;
-        document.head.appendChild(updateScript);
+    function loadScript(flag, src, async) {
+        if (window[flag]) return;
+        window[flag] = true;
+        var s = document.createElement('script');
+        s.src = src;
+        if (async) s.async = true;
+        document.head.appendChild(s);
     }
+    loadScript('__mzoAppUpdateScript', '/mzo_app_update.js?v=87', true);
+    if (!window.__mzoRetiredNotice) loadScript('__mzoRetiredNoticeScript', '/mzo_origin_redirect.js', false);
 
-    if (!window.__mzoRetiredNotice && !window.__mzoRetiredNoticeScript) {
-        window.__mzoRetiredNoticeScript = true;
-        var noticeScript = document.createElement('script');
-        noticeScript.src = '/mzo_origin_redirect.js';
-        document.head.appendChild(noticeScript);
+    function clearSession() {
+        localStorage.removeItem('mzo_authenticated');
+        localStorage.removeItem('mzo_user_profile');
     }
+    function toLogin() { window.location.href = '/login.html'; }
+    function offlineGate() { if (localStorage.getItem('mzo_authenticated') !== 'true') toLogin(); }
 
-    // Verify authentication state (essential for offline routing and online validity check)
+    // Online: the server decides. Offline (or the check fails): the cached flag decides.
     if (navigator.onLine) {
-        // Online: verify the session cookie with the server first
-        fetch('/api/session-check', { 
-            headers: { 'Accept': 'application/json' },
-            credentials: 'same-origin'
-        })
-            .then(res => {
-                if (res.ok) {
-                    // Session is valid! Ensure flags are set
-                    localStorage.setItem('mzo_authenticated', 'true');
-                    res.json().then(data => {
-                        if (data.profile) {
-                            localStorage.setItem('mzo_user_profile', JSON.stringify(data.profile));
-                        }
-                    });
-                } else {
-                    // Session is invalid on the server! Clear storage and redirect
-                    localStorage.removeItem('mzo_authenticated');
-                    localStorage.removeItem('mzo_user_profile');
-                    window.location.href = '/login.html';
-                }
+        fetch('/api/session-check', { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+            .then(function (res) {
+                if (!res.ok) { clearSession(); toLogin(); return; }
+                localStorage.setItem('mzo_authenticated', 'true');
+                // mzo_presets_hub.js hides the page while the local flag is missing.
+                if (document.documentElement.style.display === 'none') document.documentElement.style.display = '';
+                return res.json().then(function (data) {
+                    if (data && data.profile) localStorage.setItem('mzo_user_profile', JSON.stringify(data.profile));
+                }, function () {});
             })
-            .catch(() => {
-                // Network error, fallback to offline check
-                if (localStorage.getItem('mzo_authenticated') !== 'true') {
-                    window.location.href = '/login.html';
-                }
-            });
+            .catch(offlineGate);
     } else {
-        // Offline: rely strictly on localStorage flags
-        if (localStorage.getItem('mzo_authenticated') !== 'true') {
-            window.location.href = '/login.html';
-        }
+        offlineGate();
     }
 
-    // Custom clean confirmation modal
-    function showLogoutModal() {
-        return new Promise((resolve) => {
-            if (document.getElementById('mzo-logout-modal')) {
-                document.getElementById('mzo-logout-modal').remove();
-            }
-
-            const overlay = document.createElement('div');
+    // Sign-out confirmation, drawn with the theme tokens (falls back to light colours).
+    function confirmLogout() {
+        return new Promise(function (resolve) {
+            var old = document.getElementById('mzo-logout-modal');
+            if (old) old.remove();
+            var overlay = document.createElement('div');
             overlay.id = 'mzo-logout-modal';
-            overlay.style.position = 'fixed';
-            overlay.style.top = '0';
-            overlay.style.left = '0';
-            overlay.style.width = '100vw';
-            overlay.style.height = '100vh';
-            overlay.style.background = 'rgba(15, 23, 42, 0.6)';
-            overlay.style.backdropFilter = 'blur(8px)';
-            overlay.style.webkitBackdropFilter = 'blur(8px)';
-            overlay.style.display = 'flex';
-            overlay.style.alignItems = 'center';
-            overlay.style.justifyContent = 'center';
-            overlay.style.zIndex = '999999';
-            overlay.style.opacity = '0';
-            overlay.style.transition = 'opacity 0.25s ease';
-
-            const card = document.createElement('div');
-            card.style.width = '90%';
-            card.style.maxWidth = '320px';
-            card.style.background = 'rgba(30, 41, 59, 0.9)';
-            card.style.border = '1px solid rgba(255, 255, 255, 0.08)';
-            card.style.borderRadius = '16px';
-            card.style.padding = '24px';
-            card.style.boxShadow = '0 20px 40px rgba(0, 0, 0, 0.4)';
-            card.style.display = 'flex';
-            card.style.flexDirection = 'column';
-            card.style.gap = '16px';
-            card.style.transform = 'scale(0.95) translateY(10px)';
-            card.style.transition = 'all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)';
-            card.style.fontFamily = "'Inter', -apple-system, sans-serif";
-
-            const title = document.createElement('h3');
-            title.textContent = 'Sign Out';
-            title.style.color = '#f8fafc';
-            title.style.fontSize = '18px';
-            title.style.fontWeight = '600';
-            title.style.margin = '0';
-
-            const message = document.createElement('p');
-            message.textContent = 'Are you sure you want to sign out of the MZO Portal?';
-            message.style.color = '#94a3b8';
-            message.style.fontSize = '13px';
-            message.style.lineHeight = '1.5';
-            message.style.margin = '0';
-
-            const btnContainer = document.createElement('div');
-            btnContainer.style.display = 'flex';
-            btnContainer.style.gap = '12px';
-            btnContainer.style.marginTop = '8px';
-
-            const cancelBtn = document.createElement('button');
-            cancelBtn.textContent = 'Cancel';
-            cancelBtn.style.flex = '1';
-            cancelBtn.style.background = 'rgba(255, 255, 255, 0.05)';
-            cancelBtn.style.color = '#e2e8f0';
-            cancelBtn.style.border = '1px solid rgba(255, 255, 255, 0.08)';
-            cancelBtn.style.borderRadius = '8px';
-            cancelBtn.style.padding = '10px';
-            cancelBtn.style.fontSize = '13px';
-            cancelBtn.style.fontWeight = '500';
-            cancelBtn.style.cursor = 'pointer';
-            cancelBtn.style.outline = 'none';
-            cancelBtn.style.transition = 'background 0.2s';
-            
-            cancelBtn.addEventListener('mouseenter', () => cancelBtn.style.background = 'rgba(255, 255, 255, 0.1)');
-            cancelBtn.addEventListener('mouseleave', () => cancelBtn.style.background = 'rgba(255, 255, 255, 0.05)');
-
-            const confirmBtn = document.createElement('button');
-            confirmBtn.textContent = 'Sign Out';
-            confirmBtn.style.flex = '1';
-            confirmBtn.style.background = '#ef4444';
-            confirmBtn.style.color = '#ffffff';
-            confirmBtn.style.border = 'none';
-            confirmBtn.style.borderRadius = '8px';
-            confirmBtn.style.padding = '10px';
-            confirmBtn.style.fontSize = '13px';
-            confirmBtn.style.fontWeight = '600';
-            confirmBtn.style.cursor = 'pointer';
-            confirmBtn.style.outline = 'none';
-            confirmBtn.style.transition = 'background 0.2s';
-
-            confirmBtn.addEventListener('mouseenter', () => confirmBtn.style.background = '#dc2626');
-            confirmBtn.addEventListener('mouseleave', () => confirmBtn.style.background = '#ef4444');
-
-            btnContainer.appendChild(cancelBtn);
-            btnContainer.appendChild(confirmBtn);
-            card.appendChild(title);
-            card.appendChild(message);
-            card.appendChild(btnContainer);
-            overlay.appendChild(card);
+            overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;display:flex;align-items:center;justify-content:center;' +
+                'background:rgba(9,9,10,.45);opacity:0;transition:opacity .2s ease';
+            overlay.innerHTML =
+                '<div role="dialog" aria-modal="true" aria-labelledby="mzo-logout-t" style="width:90%;max-width:320px;padding:20px;border-radius:12px;' +
+                'background:var(--mzo-surface,#fff);color:var(--mzo-text,#18181b);border:1px solid var(--mzo-border,#e7e7e5);' +
+                'box-shadow:0 16px 40px rgba(0,0,0,.18);font:14px/1.45 var(--mzo-font,system-ui,-apple-system,sans-serif)">' +
+                '<h3 id="mzo-logout-t" style="margin:0 0 6px;font-size:16px;font-weight:600">Sign out</h3>' +
+                '<p style="margin:0 0 16px;font-size:13px;color:var(--mzo-muted,#71717a)">Sign out of MZO Reports on this device?</p>' +
+                '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+                '<button type="button" data-v="0" style="height:34px;padding:0 14px;border-radius:8px;border:1px solid var(--mzo-border-strong,#d4d4d2);' +
+                'background:var(--mzo-surface,#fff);color:inherit;font:inherit;cursor:pointer">Cancel</button>' +
+                '<button type="button" data-v="1" style="height:34px;padding:0 14px;border-radius:8px;border:0;background:var(--mzo-bad,#b42318);' +
+                'color:#fff;font:inherit;font-weight:500;cursor:pointer">Sign out</button></div></div>';
             document.body.appendChild(overlay);
-
-            setTimeout(() => {
-                overlay.style.opacity = '1';
-                card.style.transform = 'scale(1) translateY(0)';
-            }, 10);
-
-            cancelBtn.addEventListener('click', () => {
+            requestAnimationFrame(function () { overlay.style.opacity = '1'; });
+            function close(ok) {
                 overlay.style.opacity = '0';
-                card.style.transform = 'scale(0.95) translateY(10px)';
-                setTimeout(() => {
-                    overlay.remove();
-                    resolve(false);
-                }, 250);
-            });
-
-            confirmBtn.addEventListener('click', () => {
-                overlay.style.opacity = '0';
-                card.style.transform = 'scale(0.95) translateY(10px)';
-                setTimeout(() => {
-                    overlay.remove();
-                    resolve(true);
-                }, 250);
-            });
-            
-            overlay.addEventListener('click', (e) => {
-                if (e.target === overlay) {
-                    cancelBtn.click();
-                }
+                setTimeout(function () { overlay.remove(); resolve(ok); }, 200);
+            }
+            overlay.addEventListener('click', function (e) {
+                var b = e.target.closest('button[data-v]');
+                if (b) close(b.getAttribute('data-v') === '1');
+                else if (e.target === overlay) close(false);
             });
         });
     }
 
-    // Global Logout function
-    async function mzoLogout() {
-        const confirmed = await showLogoutModal();
-        if (!confirmed) return;
-        
-        try {
-            const res = await fetch('/api/logout', { 
-                method: 'POST',
-                credentials: 'same-origin'
-            });
-            if (res.ok) {
-                console.log("[Auth] Successfully logged out via API");
-            }
-        } catch (err) {
-            console.warn("[Auth] API logout connection failed (likely offline):", err);
-        } finally {
-            // Always clear client-side data
-            localStorage.removeItem('mzo_authenticated');
-            localStorage.removeItem('mzo_user_profile');
-            window.location.href = '/login.html';
-        }
+    function mzoLogout() {
+        return confirmLogout().then(function (ok) {
+            if (!ok) return;
+            return fetch('/api/logout', { method: 'POST', credentials: 'same-origin' })
+                .catch(function () {}) // offline: still sign out locally
+                .then(function () { clearSession(); toLogin(); });
+        });
     }
     window.mzoLogout = mzoLogout;
 
+    // Phone hub only (top-level index.html): a round sign-out button in the header.
     function injectLogoutButton() {
         if (localStorage.getItem('mzo_authenticated') !== 'true') return;
+        var path = window.location.pathname.toLowerCase();
+        if (!(path.endsWith('/index.html') || path.endsWith('/') || path === '') || window.self !== window.top) return;
+        if (document.querySelector('.logout-btn, .logout-float-btn')) return;
 
-        // Only inject logout button on the main index.html page (top level, not in iframe)
-        const path = window.location.pathname.toLowerCase();
-        const isIndexPage = path.endsWith('/index.html') || path.endsWith('/') || path === '';
-        const isTopLevel = (window.self === window.top);
-        if (!isIndexPage || !isTopLevel) return;
-
-        // Prevent duplicate injection
-        if (document.querySelector('.logout-btn') || document.querySelector('.logout-float-btn')) return;
-
-        // Try to find a header container to append the logout button
-        let headerContainer = document.querySelector('.header-actions') ||
-                             document.querySelector('.header-row') || 
-                             document.querySelector('.header') || 
-                             document.querySelector('.filters-container') ||
-                             document.querySelector('.filters');
-
-        if (headerContainer) {
-            const logoutBtn = document.createElement('button');
-            logoutBtn.className = 'theme-toggle logout-btn';
-            logoutBtn.title = 'Sign Out';
-            logoutBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i>';
-            
-            // Circular styling to match theme-toggle and sync-btn
-            logoutBtn.style.width = '40px';
-            logoutBtn.style.height = '40px';
-            logoutBtn.style.borderRadius = '50%';
-            logoutBtn.style.background = 'rgba(239, 68, 68, 0.1)';
-            logoutBtn.style.color = '#ef4444';
-            logoutBtn.style.border = '1px solid rgba(239, 68, 68, 0.2)';
-            logoutBtn.style.cursor = 'pointer';
-            logoutBtn.style.fontSize = '16px';
-            logoutBtn.style.display = 'inline-flex';
-            logoutBtn.style.alignItems = 'center';
-            logoutBtn.style.justifyContent = 'center';
-            logoutBtn.style.marginLeft = '4px';
-            logoutBtn.style.transition = 'all 0.2s ease';
-            logoutBtn.style.outline = 'none';
-
-            logoutBtn.addEventListener('mouseenter', () => {
-                logoutBtn.style.background = 'rgba(239, 68, 68, 0.2)';
-                logoutBtn.style.transform = 'translateY(-2px) scale(1.05)';
-            });
-
-            logoutBtn.addEventListener('mouseleave', () => {
-                logoutBtn.style.background = 'rgba(239, 68, 68, 0.1)';
-                logoutBtn.style.transform = 'none';
-            });
-
-            logoutBtn.addEventListener('click', mzoLogout);
-
-            headerContainer.appendChild(logoutBtn);
-            console.log("[Auth] Dynamic Sign Out button injected successfully");
+        // First match by priority, not document order: the action row sits inside `.header`.
+        var header = null;
+        ['.header-actions', '.header-row', '.header', '.filters-container', '.filters'].some(function (sel) { return (header = document.querySelector(sel)); });
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.title = 'Sign out';
+        btn.innerHTML = '<i class="fas fa-sign-out-alt"></i>';
+        btn.addEventListener('click', mzoLogout);
+        if (header) {
+            btn.className = 'theme-toggle logout-btn';
+            btn.style.cssText = 'width:40px;height:40px;border-radius:50%;background:rgba(239,68,68,.1);color:#ef4444;' +
+                'border:1px solid rgba(239,68,68,.2);cursor:pointer;font-size:16px;display:inline-flex;align-items:center;' +
+                'justify-content:center;margin-left:4px;transition:background .2s ease;outline:none';
+            header.appendChild(btn);
         } else {
-            // Fallback: create floating logout button at the bottom-left of the screen
-            const floatBtn = document.createElement('div');
-            floatBtn.className = 'logout-float-btn';
-            floatBtn.style.position = 'fixed';
-            floatBtn.style.bottom = '80px';
-            floatBtn.style.left = '20px';
-            floatBtn.style.zIndex = '9999';
-            floatBtn.innerHTML = `
-                <button onclick="window.mzoLogout()" style="background:#ef4444; color:#fff; border:none; border-radius:50%; width:44px; height:44px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(239,68,68,0.4); cursor:pointer; font-size:16px;">
-                    <i class="fas fa-sign-out-alt"></i>
-                </button>
-            `;
-            document.body.appendChild(floatBtn);
-            console.log("[Auth] Floating Sign Out button injected successfully");
+            btn.className = 'logout-float-btn';
+            btn.style.cssText = 'position:fixed;bottom:80px;left:20px;z-index:9999;width:44px;height:44px;border-radius:50%;border:0;' +
+                'background:#ef4444;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;' +
+                'box-shadow:0 4px 12px rgba(239,68,68,.4)';
+            document.body.appendChild(btn);
         }
     }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', injectLogoutButton);
+    else injectLogoutButton();
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', injectLogoutButton);
-    } else {
-        injectLogoutButton();
+    if (window.self === window.top) return;
+
+    // Inside an iframe: drop the outer top spacing (the frame already has its own).
+    function tightenFrame() {
+        document.body.style.paddingTop = '0px';
+        document.body.style.marginTop = '0px';
+        var container = document.querySelector('.dashboard-container, .app-container, .container-fluid');
+        if (container) { container.style.marginTop = '0px'; container.style.paddingTop = '0px'; }
     }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tightenFrame);
+    else tightenFrame();
 
-    // Optimize layout spacing when loaded inside an iframe (removes double margins)
-    if (window.self !== window.top) {
-        const adjustIframeLayout = () => {
-            document.body.style.paddingTop = '0px';
-            document.body.style.marginTop = '0px';
-            
-            // Adjust common container wrappers if present
-            const container = document.querySelector('.dashboard-container') || 
-                              document.querySelector('.app-container') ||
-                              document.querySelector('.container-fluid');
-            if (container) {
-                container.style.marginTop = '0px';
-                container.style.paddingTop = '0px';
-            }
-        };
-
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', adjustIframeLayout);
+    // Same-origin .html links open through the shell (parent.openPage) instead of inside this frame.
+    document.addEventListener('click', function (e) {
+        var a = e.target.closest('a[href]');
+        if (!a || a.getAttribute('target') === '_blank') return;
+        var href = a.getAttribute('href');
+        if (!href || href.charAt(0) === '#' || href.indexOf('.html') === -1) return;
+        var url;
+        try { url = new URL(href, window.location.href); } catch (err) { return; }
+        if (url.origin !== window.location.origin) return;
+        e.preventDefault();
+        // Resolve against this page, so "upload.html" on /stock/ opens /stock/upload.html.
+        var target = url.pathname.replace(/^\//, '') + url.search + url.hash;
+        if (window.parent && typeof window.parent.openPage === 'function') {
+            var label = a.querySelector('.kpi-title, .app-label');
+            window.parent.openPage(target, ((label || a).textContent || '').trim() || 'Dashboard');
         } else {
-            adjustIframeLayout();
+            window.location.href = url.href;
         }
-
-        // Intercept local HTML link clicks inside the iframe to navigate properly in the parent PWA
-        document.addEventListener('click', (e) => {
-            const anchor = e.target.closest('a');
-            if (anchor && anchor.getAttribute('href')) {
-                const href = anchor.getAttribute('href');
-                
-                // Match local relative HTML page links (e.g. "loss.html", "nsc.html")
-                // ignoring external links, target="_blank", mailto/tel protocols, and hashes.
-                if (href && 
-                    href.includes('.html') && 
-                    !href.startsWith('http') && 
-                    !href.startsWith('//') && 
-                    !href.startsWith('#') &&
-                    anchor.getAttribute('target') !== '_blank') {
-                    
-                    e.preventDefault();
-                    
-                    // Route to parent window's PWA navigation controller
-                    if (window.parent && typeof window.parent.openPage === 'function') {
-                        // Infer page title from link text
-                        const title = anchor.querySelector('.kpi-title')?.textContent.trim() || 
-                                      anchor.querySelector('.app-label')?.textContent.trim() || 
-                                      anchor.textContent.trim() || 
-                                      "Dashboard";
-                        // Find dataset key if present
-                        const dataset = anchor.getAttribute('data-dataset') || null;
-                        
-                        window.parent.openPage(href, title, dataset);
-                    } else {
-                        // Standalone fallback
-                        window.location.href = href;
-                    }
-                }
-            }
-        });
-    }
+    });
 })();

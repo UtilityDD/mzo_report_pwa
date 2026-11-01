@@ -1,79 +1,17 @@
-// sw.js - Service Worker for MZO Reports PWA
-// v37: withheld Updated-on uses live NSC TODAY (not stale meta id)
-// v38: historical NSC filters network-first
-// v39: pending load extension filters + network-first
-// v40: drop office prefs UI; pending load extension ticker/modal
-// v41: login scope on solar, JJM, meter utilization, WRIDD
-// v42: WRIDD filter dropdowns show scoped office names
-// v84: defective/NSC sheet-mirror retries Failed to fetch; skip duplicate chunks
-// v85: home hub Often used favorites group
-// v86: app update banner; reload stale NSC dump; drop install-app modal
-// v87: Sync Data version-checks reports and downloads only if changed
-// v88: homepage Sync must not hang on multi-MB Google sheet GETs
-// v89: do not intercept Google Sheet fetches (CORS); keep cached copy if a check fails
-// v90: Meter Utilization treats Div and Division as the same office
-// v91: drop division HQ names from Meter Utilization CCC list
-// v92: disconnection base OSD dates + KPI status does not shrink other KPIs
-// v93: do not intercept Apps Script; retry Google echo HTML 404 on NSC publish
-// v94: Bharat Net connections dashboard under NSC
-// v95: Bharat Net loads via /api/bharatnet/dataset (Google pub CORS redirect)
-// v96: Bharat Net opens without DataHub wait; CSV via /api only
-// v97: Bharat Net paints from local CSV if the live API is empty
-// v98: fix Bharat Net syntax error (CCC NAME key)
-// v99: Bharat Net region/division charts with value labels
-// v100: Bharat Net CSV from Google in the browser, not through Vercel
-// v101: NSC Detailed Analysis drills to consumers; compact consumer modal on mobile
-// v102: retired mzo-report-pwa host redirects to mzo-reports.vercel.app
-// v103: old host shows install link; new origin uses gold MZO icon
-// v104: retired host freezes with install link; login is blocked
-// v105: stock dump can load from Supabase Storage; do not intercept supabase.co
-// v106: stock upload guidance for authorised users
-// v108: NSC upload retries, slimmer Withheld sheet, manual CSV fallback
-// v109: stock signed upload path includes /storage/v1; home Uploads sheet list
-// v110: admin Sheet links Yes/No for the home-bar button
-// v111: versioned DataHub — download dumps only when remote version differs
-// v116: desktop presentation zoom (mzo_present.js)
-// v117: presentation zoom uses one scrollbar
-// v118: disconnection consumer modal keeps a device-local follow-up timeline
-// v119: NSC page uses presentation zoom (ignore side panels)
-// v120: disconnection follow-up stores the signed-in user's name with the time
-// v121: NSC counts each APPL_NO once (duplicate consumers in a division)
-// v122: disconnection follow-ups save instantly and refresh comments from the sheet
-// v123: admin lives in the Administration group, not the home-bar icon
-// v124: disconnection page has a Follow-ups tab
-// v125: KPI cards show a share of the total; Recent opens consumer follow-ups
-// v145: Pending NSC follow-ups stay with the application number
-// v146: only an admin can delete a follow-up
-// v147: a saved follow-up appears before the sheet write
-// v148: follow-up lists use the same tables as the other views
-// v149: Pending NSC opens on the office hierarchy table
-// v150: the Pending NSC consumer list is tighter, and Class fits its text
-// v151: report frames clear the bottom back arrow
-// v152: offline opens the saved page; the offline screen is only for a page never saved
-// v153: offline shows a quiet saved-data note, not an error over the page
-// v154: sheet links open as a full page with serial numbers and update dates
-// v155: report frame is full height; the back button floats and each page keeps bottom space
-// v161: home rows show the sheet-links update date
-// v175: Bharat Net header/home/sheet-links show N2 update date
-// v176: Loss header/home/sheet-links show Sheet1 J2 update date
-// v177: ICDS Connections under New Service Connection
-// v178: ICDS division chart and CCC chart/table
-// v179: PM Surya Ghar delay tracking under Important
-// v180: PM Surya Ghar chart and table sit side by side
-// v181: PM Surya Ghar tables include a total row
-// v182: PM Surya Ghar KPI, charts, and tables share one header set
-// v183: PM Surya Ghar treats net metering as connection and installation as the solar plate
-// v195: feeder outage trend page
-// v196: feeder outage trend by office level
-// v197: feeder outage rechecks the published sheet on open
-// v198: feeder outage trend and rankings are tabs
-// v199: feeder outage month chips under filters; one chart plus table
-// v200: feeder outage sheet-links date is the latest report month
-// v208: Enable widget=true for Puja sheets so all sheet tabs are displayed
-// v209: Mobile masthead clean layout and logo sizing across all themes
-const CACHE_NAME = 'mzo-reports-cache-v259';
+// sw.js — service worker for MZO Reports.
+// Bump CACHE_NAME (and version.json "cache") on every release: activation clears older caches and
+// tells open pages to show the update notice (mzo_app_update.js listens for MZO_APP_UPDATED).
+//
+// Strategies
+//   - Google Sheets, Apps Script and Supabase requests are never intercepted (CORS, large bodies).
+//   - Network first for /api/, the shell, report pages and shared scripts whose data keys change often
+//     (NETWORK_FIRST); the last good copy is the offline fallback.
+//   - Cache first for third-party CDNs (libraries, fonts).
+//   - Stale-while-revalidate for every other same-origin asset.
+//   - HTML responses get /mzo_present.js (desktop presentation zoom) injected after <head>.
+const CACHE_NAME = 'mzo-reports-cache-v261';
 
-// Assets to precache during installation (avoid pinning data-hub — it changes with dataset keys)
+// Precached on install (not the data hub: it changes with dataset keys)
 const PRECACHE_ASSETS = [
   './',
   'index.html',
@@ -81,15 +19,11 @@ const PRECACHE_ASSETS = [
   'media_news.html',
   'theft_assessment.html',
   'login.html',
-  'css/mzo_ui_core.css',
   'puja.html',
   'puja-newspaper.css',
   'icons/desktop-bg.webp',
-  'desktop-bg.webp',
   'icons/grid-action-light.webp',
-  'grid-action-light.webp',
   'icons/grid-twilight-dark.webp',
-  'grid-twilight-dark.webp',
   'offline.html',
   'loss.html',
   'performance_index.html',
@@ -98,18 +32,15 @@ const PRECACHE_ASSETS = [
   'manifest.json',
   'manifest-legacy.json',
   'mzo_pwa_icons.js',
-  'mzo_executive_briefing.js',
   'icons/icon-192-v2.png',
   'icons/icon-512-v2.png',
   'icons/maa-durga-eyes.gif',
   'icons/diya-cropped.svg',
-  'tailwind_dist.css',
   'auth.js',
-  'home-button.js',
   'mzo_present.js'
 ];
 
-// Third-party CDN URLs to match for Cache-First strategy
+// Third-party CDNs served cache-first
 const CDN_URLS = [
   'https://fonts.googleapis.com',
   'https://fonts.gstatic.com',
@@ -174,83 +105,33 @@ function writeAppCache(request, response) {
   return caches.open(CACHE_NAME).then((cache) => safePut(cache, key, response.clone()));
 }
 
+const NETWORK_FIRST = new Set([
+  '/dd/upcomingDD.html', '/dd/dd_visit.html', '/puja.html', '/nsc.html', '/nsc_simple.html',
+  '/nsc_pipeline.html', '/nsc_classic.html', '/lib/nsc_rows.js', '/login.html', '/withheld.html',
+  '/historical_nsc.html', '/pending_load_extension.html', '/index.html', '/app.html', '/assistant.html',
+  '/lib/assistant_catalog.js', '/sheet_links.html', '/sheet_open.html', '/weekly.html', '/loss.html',
+  '/performance_index.html', '/theft_assessment.html', '/media_news.html', '/disconnection.html',
+  '/collection.html', '/pending_mc.html', '/remosd5000.html', '/feeder_outage.html',
+  '/meter_utilization.html', '/jjm.html', '/wridd.html', '/bharatnet.html', '/icds.html', '/pmsgy.html',
+  '/solar.html', '/rem/defaulters.html', '/admin_users.html', '/admin.html',
+  '/consumer/defective_meter.html', '/lib/defective_meter_pipeline.js', '/lib/sheet_mirror_client.js',
+  '/stock/upload.html', '/stock/index.html', '/stock/script.js', '/stock/allotment.js',
+  '/stock/allotment_view.js', '/stock/style.css', '/capex_all.html', '/mzo_data_hub.js', '/mzo_theme.js',
+  '/mzo_theme.css', '/mzo_ui.js', '/mzo_presets_hub.js', '/mzo_docket_briefing.js', '/mzo_scope.js',
+  '/mzo_origin_redirect.js', '/mzo_pwa_icons.js', '/manifest.json', '/manifest-legacy.json',
+  '/icons/icon-192-v2.png', '/icons/icon-512-v2.png', '/mzo_app_update.js', '/mzo_present.js',
+  '/version.json', '/sw.js'
+]);
+const NETWORK_FIRST_PREFIXES = ['/api/', '/nsc/'];
+
 function isNetworkFirstPath(pathname) {
-  return (
-    pathname === '/dd/upcomingDD.html' ||
-    pathname === '/dd/dd_visit.html' ||
-    pathname === '/puja.html' ||
-    pathname === '/nsc.html' ||
-    pathname === '/nsc_simple.html' ||
-    pathname === '/nsc_pipeline.html' ||
-    pathname === '/nsc_classic.html' ||
-    pathname === '/lib/nsc_rows.js' ||
-    pathname === '/login.html' ||
-    pathname.startsWith('/nsc/') ||
-    pathname === '/withheld.html' ||
-    pathname === '/historical_nsc.html' ||
-    pathname === '/pending_load_extension.html' ||
-    pathname === '/index.html' ||
-    pathname === '/app.html' ||
-    pathname === '/assistant.html' ||
-    pathname === '/lib/assistant_catalog.js' ||
-    pathname === '/sheet_links.html' ||
-    pathname === '/sheet_open.html' ||
-    pathname === '/weekly.html' ||
-    pathname === '/loss.html' ||
-    pathname === '/performance_index.html' ||
-    pathname === '/theft_assessment.html' ||
-    pathname === '/media_news.html' ||
-    pathname === '/disconnection.html' ||
-    pathname === '/collection.html' ||
-    pathname === '/pending_mc.html' ||
-    pathname === '/remosd5000.html' ||
-    pathname === '/feeder_outage.html' ||
-    pathname === '/meter_utilization.html' ||
-    pathname === '/jjm.html' ||
-    pathname === '/wridd.html' ||
-    pathname === '/bharatnet.html' ||
-    pathname === '/icds.html' ||
-    pathname === '/pmsgy.html' ||
-    pathname === '/solar.html' ||
-    pathname === '/rem/defaulters.html' ||
-    pathname === '/admin_users.html' ||
-    pathname === '/admin.html' ||
-    pathname === '/consumer/defective_meter.html' ||
-    pathname === '/lib/defective_meter_pipeline.js' ||
-    pathname === '/lib/sheet_mirror_client.js' ||
-    pathname === '/stock/upload.html' ||
-    pathname === '/stock/index.html' ||
-    pathname === '/stock/script.js' ||
-    pathname === '/stock/allotment.js' ||
-    pathname === '/stock/allotment_view.js' ||
-    pathname === '/stock/style.css' ||
-    pathname === '/stock.html' ||
-    pathname === '/capex_all.html' ||
-    pathname === '/mzo_data_hub.js' ||
-    pathname === '/mzo_theme.js' ||
-    pathname === '/mzo_theme.css' ||
-    pathname === '/mzo_ui.js' ||
-    pathname === '/mzo_presets_hub.js' ||
-    pathname === '/mzo_docket_briefing.js' ||
-    pathname === '/mzo_scope.js' ||
-    pathname === '/mzo_origin_redirect.js' ||
-    pathname === '/mzo_pwa_icons.js' ||
-    pathname === '/manifest.json' ||
-    pathname === '/manifest-legacy.json' ||
-    pathname === '/icons/icon-192-v2.png' ||
-    pathname === '/icons/icon-512-v2.png' ||
-    pathname === '/mzo_app_update.js' ||
-    pathname === '/mzo_present.js' ||
-    pathname === '/version.json' ||
-    pathname === '/sw.js' ||
-    pathname.startsWith('/api/')
-  );
+  return NETWORK_FIRST.has(pathname) || NETWORK_FIRST_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
 function skipPresentZoom(pathname) {
   const p = String(pathname || '');
   if (p === '/login.html' || p === '/offline.html' || p === '/app.html') return true;
-  if (p.startsWith('/power_map/') || p.startsWith('/sld/')) return true;
+  if (p.startsWith('/power_map/')) return true;
   if (p === '/accident/map.html') return true;
   return false;
 }
@@ -333,14 +214,14 @@ function withPresentZoom(response, request, url) {
   }
 }
 
-// Install Event: cache static shell assets
+// Install: precache the shell. Each asset is cached on its own, so one missing file
+// cannot block the whole install (cache.addAll fails on any 404).
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('[Service Worker] Pre-caching application shell v33');
-        return cache.addAll(PRECACHE_ASSETS);
-      })
+      .then((cache) => Promise.all(PRECACHE_ASSETS.map((asset) => cache.add(asset).catch((err) => {
+        console.warn('[Service Worker] precache skipped:', asset, err && err.message);
+      }))))
       .then(() => self.skipWaiting())
   );
 });
@@ -350,12 +231,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
-        cacheNames.map((cache) => {
-          if (cache !== CACHE_NAME) {
-            console.log('[Service Worker] Clearing old cache:', cache);
-            return caches.delete(cache);
-          }
-        })
+        cacheNames.map((cache) => (cache !== CACHE_NAME ? caches.delete(cache) : null))
       );
     }).then(() => self.clients.claim()).then(() => {
       return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
@@ -367,36 +243,32 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch Event: intercept network requests
+function offlinePage() {
+  return caches.match('offline.html').then((page) => page || Response.error());
+}
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
-
-  // Ignore non-GET requests immediately
-  if (request.method !== 'GET') {
-    return;
-  }
-
-  // Ignore chrome-extension: and other non-http schemes (avoids Cache.put TypeError)
-  if (!canCacheRequest(request)) {
-    return;
-  }
+  // Only GET over http(s); chrome-extension: and friends would make Cache.put throw.
+  if (request.method !== 'GET' || !canCacheRequest(request)) return;
 
   const url = new URL(request.url);
+  const isCDN = CDN_URLS.some((cdn) => request.url.startsWith(cdn));
 
-  // Leave Google Sheet CSVs to the browser. Intercepting them (even to
-  // pass through) can fail CORS and make homepage Sync report failures.
-  if (isGoogleSheetRequest(url) || isSupabaseRequest(url) || (url.origin !== self.location.origin && !CDN_URLS.some(cdn => request.url.startsWith(cdn)))) {
-    return;
-  }
+  // Leave Google Sheets, Apps Script, Supabase and other origins to the browser. Intercepting them
+  // (even to pass through) can fail CORS and make the home Sync report failures.
+  if (isGoogleSheetRequest(url) || isSupabaseRequest(url) || (url.origin !== self.location.origin && !isCDN)) return;
 
-  // Always network for API + NSC page/hub scripts (filters/data keys change often)
+  const isApi = url.pathname.startsWith('/api/');
+
+  // Network first (always on localhost, so local edits show at once)
   if (self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1' || isNetworkFirstPath(url.pathname)) {
     event.respondWith(
       fetch(request).then((res) => {
-        if (!url.pathname.startsWith('/api/')) writeAppCache(request, res.clone());
+        if (!isApi) writeAppCache(request, res.clone());
         return withPresentZoom(res, request, url);
       }).catch(() => {
-        if (url.pathname.startsWith('/api/')) {
+        if (isApi) {
           return new Response(
             JSON.stringify({ error: 'Network unavailable. Offline cache cannot retrieve live API data.' }),
             { headers: { 'Content-Type': 'application/json' }, status: 503 }
@@ -404,53 +276,39 @@ self.addEventListener('fetch', (event) => {
         }
         return readAppCache(request).then((cached) => {
           if (cached) return withPresentZoom(cached, request, url);
-          if (request.mode === 'navigate') return caches.match('offline.html');
-          return Response.error();
+          return request.mode === 'navigate' ? offlinePage() : Response.error();
         });
       })
     );
     return;
   }
 
-  // Caching Strategy: Stale-While-Revalidate for local assets and HTML navigation
-  // Cache-First for static external CDN resources (Libraries & Web Fonts)
-  const isCDN = CDN_URLS.some(cdn => request.url.startsWith(cdn));
-
+  // Cache first for CDN libraries and fonts
   if (isCDN) {
-    // Cache-First Strategy
     event.respondWith(
-      caches.match(request).then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-        return fetch(request).then((networkResponse) => {
-          if (!networkResponse || networkResponse.status !== 200) {
-            return networkResponse;
-          }
-          return caches.open(CACHE_NAME).then((cache) => {
-            safePut(cache, request, networkResponse.clone());
-            return networkResponse;
-          });
-        });
-      })
+      caches.match(request).then((cached) => cached || fetch(request).then((res) => {
+        if (res && res.status === 200) caches.open(CACHE_NAME).then((cache) => safePut(cache, request, res.clone()));
+        return res;
+      }))
     );
-  } else {
-    // Stale-While-Revalidate Strategy with Offline HTML fallback for navigation
-    event.respondWith(
-      readAppCache(request).then((cachedResponse) => {
-        const fetchPromise = fetch(request).then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) writeAppCache(request, networkResponse.clone());
-          return withPresentZoom(networkResponse, request, url);
-        }).catch((err) => {
-          console.log('[Service Worker] Fetch failed; returning cached version or fallback page', err);
-          if (request.mode === 'navigate') return caches.match('offline.html');
-          throw err;
-        });
-
-        return cachedResponse
-          ? withPresentZoom(cachedResponse, request, url)
-          : fetchPromise;
-      })
-    );
+    return;
   }
+
+  // Stale-while-revalidate, with the offline page for navigations that were never saved
+  event.respondWith(
+    readAppCache(request).then((cached) => {
+      const refresh = fetch(request).then((res) => {
+        if (res && res.status === 200) writeAppCache(request, res.clone());
+        return withPresentZoom(res, request, url);
+      });
+      if (cached) {
+        refresh.catch(() => {}); // background refresh; the cached copy already answered
+        return withPresentZoom(cached, request, url);
+      }
+      return refresh.catch((err) => {
+        if (request.mode === 'navigate') return offlinePage();
+        throw err;
+      });
+    })
+  );
 });

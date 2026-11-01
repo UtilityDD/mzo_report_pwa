@@ -1,5 +1,5 @@
 /**
- * Browser-side NSC Excel → cleaned publish payload (mirrors lib/nsc_pipeline.js).
+ * Browser-side NSC Excel → cleaned publish payload (the only NSC pipeline; the server just stores the CSV).
  * Raw .xlsb is ~20+ MB; Vercel rejects bodies over ~4.5 MB ("Request Entity Too Large").
  * Process in the browser, then POST only Working/Accepted CSV (~2 MB).
  */

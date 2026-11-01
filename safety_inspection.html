@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Safety inspection · MZO Reports</title>
   <script src="/mzo_theme.js?v=3"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=3" />
-  <script src="/mzo_ui.js?v=2" defer></script>
-  <script src="/mzo_data_hub.js" defer></script>
-  <script src="/mzo_scope.js?v=5" defer></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
+  <script src="/mzo_ui.js?v=4" defer></script>
+  <script src="/mzo_data_hub.js?v=90" defer></script>
+  <script src="/mzo_scope.js?v=14" defer></script>
   <style>
     .si-desc { max-width: 380px; white-space: normal; color: var(--mzo-text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   </style>
@@ -125,14 +125,8 @@
       fillFilters();
     }
 
-    function uniq(rows, k) { var s = {}; rows.forEach(function (r) { if (r[k]) s[r[k]] = 1; }); return Object.keys(s).sort(); }
     function fillFilters() {
-      var reg = $('regionFilter').value, div = $('divisionFilter').value;
-      UI.fill('regionFilter', uniq(all, '_region'), 'All regions');
-      var r1 = all.filter(function (r) { return !reg || r._region === reg; });
-      UI.fill('divisionFilter', uniq(r1, '_divn'), 'All divisions');
-      var r2 = r1.filter(function (r) { return !div || r._divn === div; });
-      UI.fill('cccFilter', uniq(r2, '_supp'), 'All CCCs');
+      UI.offices(all);
       if (!scope) scope = UI.lockScope();
       ['regionFilter', 'divisionFilter', 'cccFilter', 'catFilter'].forEach(function (id) { UI.mark($(id)); });
     }
@@ -204,7 +198,7 @@
       var lab = keys.map(function (k) { return MN[k % 100 - 1] + (narrow ? '' : ' ' + String(Math.floor(k / 100)).slice(2)); });
       $('weekNote').textContent = keys.length ? keys.length + ' months' : '';
       UI.line('weekChart', {
-        labels: narrow ? lab.map(function (l, i) { return i % 2 ? '' : l; }) : lab,
+        labels: lab, // UI.line thins crowded labels; blanking them here also blanked the tooltip
         series: [{ label: 'Rectified', values: keys.map(function (k) { return w[k].r; }) }, { label: 'Inspected', values: keys.map(function (k) { return w[k].i; }), strong: true }],
         fmt: UI.n, axis: function (v) { return UI.n(v); }, title: 'Monthly progress'
       });
@@ -273,12 +267,7 @@
       UI.exportCsv('safety-inspection.csv', [{ key: 'location', label: 'Location' }, { key: 'text', label: 'Issue' }, { key: 'cat', label: 'Issue type' }, { key: '_region', label: 'Region' }, { key: '_divn', label: 'Division' }, { key: 'office', label: 'Office' }, { key: 'by', label: 'Inspected by' }]
         .concat(COLS.slice(4)).concat([{ key: 'doneBy', label: 'Rectified by' }, { key: 'remarks', label: 'Remarks' }]), window.__view || []);
     });
-    $('refreshBtn').addEventListener('click', function () {
-      var bt = this; bt.classList.add('spin');
-      Promise.resolve(window.mzoDataHub.waitForDataset('CACHE_SAFETY_v2', { forceCheck: true })).catch(function () {})
-        .then(function () { return window.mzoDataHub._peek('CACHE_SAFETY_v2'); }).then(function (t) { if (t) { raw = UI.csv(t); build(); render(); } })
-        .then(function () { bt.classList.remove('spin'); });
-    });
+    UI.refresh('refreshBtn', 'CACHE_SAFETY_v2', function (t) { raw = UI.csv(t); build(); render(); });
 
     UI.load('CACHE_SAFETY_v2', function (text, info) {
       if (!text) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }

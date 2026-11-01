@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Losses · MZO Reports</title>
   <script src="/mzo_theme.js?v=3"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=3" />
-  <script src="/mzo_ui.js?v=2" defer></script>
-  <script src="/mzo_data_hub.js" defer></script>
-  <script src="/mzo_scope.js?v=5" defer></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
+  <script src="/mzo_ui.js?v=4" defer></script>
+  <script src="/mzo_data_hub.js?v=90" defer></script>
+  <script src="/mzo_scope.js?v=14" defer></script>
 </head>
 <body>
   <main class="ui-page">
@@ -115,7 +115,7 @@
       var reg = $('regionFilter').value, div = $('divisionFilter').value;
       UI.fill('regionFilter', Object.keys(TREE), 'Malda Zone');
       var divs = reg ? Object.keys(TREE[reg].divs) : [];
-      UI.fill('divisionFilter', divs, reg ? 'All divisions' : 'All divisions');
+      UI.fill('divisionFilter', divs, 'All divisions');
       $('divisionFilter').parentNode.hidden = !reg;
       var cccs = reg && div && TREE[reg].divs[div] ? TREE[reg].divs[div].cccs : [];
       UI.fill('cccFilter', cccs.map(function (c) { return { value: c, label: cccLabel(c) }; }), 'All CCCs');
@@ -222,7 +222,7 @@
       UI.exportCsv('losses.csv', [{ key: 'label', label: 'Office' }, { key: 'atc', label: 'AT&C loss %' }, { key: 'dMar', label: 'Change vs March (pts)' }, { key: 'dLy', label: 'Change vs last year (pts)' }, { key: 'target', label: 'Target %' }, { key: 'dist', label: 'Distribution loss %' }, { key: 'ce', label: 'Collection efficiency %' }, { key: 'input', label: 'Input (MU)' }], window.__rows || []);
     });
 
-    // Loss sheet is pasted by hand; always revalidate so a same-day paste shows (DEVELOPER.md).
+    // Loss sheet is pasted by hand; always revalidate so a same-day paste shows (docs/reports.md).
     function load(force) {
       var hub = window.mzoDataHub, b = $('refreshBtn');
       if (force) b.classList.add('spin');
@@ -233,14 +233,26 @@
           .then(function (f) { if (f[0] && (force || f[0] !== c[0] || f[1] !== c[1])) { prepare(f[0], f[1]); scopeLock(); render(); } else if (!f[0] && !c[0]) { $('meta').textContent = 'Could not load data'; $('offices').innerHTML = $('trend').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } });
       }).then(function () { b.classList.remove('spin'); });
     }
+    // First paint: pin the login scope, then open ?region= / ?division= / ?ccc= (the deepest one wins).
     var locked = false;
     function scopeLock() {
       if (locked) return; locked = true;
-      var sc = UI.lockScope();
-      if (sc) { fillOffices(); }
-      var p = new URLSearchParams(location.search).get('division');
-      if (p && !$('divisionFilter').disabled) {
-        Object.keys(TREE).forEach(function (r) { Object.keys(TREE[r].divs).forEach(function (d) { if (d.toLowerCase() === p.toLowerCase()) { $('regionFilter').value = r; fillOffices(); $('divisionFilter').value = d; fillOffices(); } }); });
+      if (UI.lockScope()) fillOffices();
+      var params = new URLSearchParams(location.search);
+      var want = function (k) { return String(params.get(k) || '').trim().toLowerCase().replace(/\s+(division|region)$/, ''); };
+      var wr = want('region'), wd = want('division'), wc = want('ccc'), hit = null;
+      Object.keys(TREE).forEach(function (r) {
+        if (wr && !hit && UI.regionName(wr) === r) hit = { r: r };
+        Object.keys(TREE[r].divs).forEach(function (d) {
+          if (wd && d.toLowerCase() === wd && (!hit || !hit.d)) hit = { r: r, d: d };
+          TREE[r].divs[d].cccs.forEach(function (c) { if (wc && (c.toLowerCase() === wc || cccLabel(c).toLowerCase() === wc)) hit = { r: r, d: d, c: c }; });
+        });
+      });
+      if (hit) {
+        [['regionFilter', hit.r], ['divisionFilter', hit.d], ['cccFilter', hit.c]].forEach(function (x) {
+          if (x[1] && !$(x[0]).disabled) $(x[0]).value = x[1];
+          fillOffices();
+        });
       }
       ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { UI.mark($(id)); });
     }

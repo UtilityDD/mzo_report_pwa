@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Weekly deposit vs disposal · MZO Reports</title>
   <script src="/mzo_theme.js?v=3"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=3" />
-  <script src="/mzo_ui.js?v=1" defer></script>
-  <script src="/mzo_data_hub.js" defer></script>
-  <script src="/mzo_scope.js?v=5" defer></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
+  <script src="/mzo_ui.js?v=4" defer></script>
+  <script src="/mzo_data_hub.js?v=90" defer></script>
+  <script src="/mzo_scope.js?v=14" defer></script>
   <style>
     .wk-chart { position: relative; display: flex; align-items: stretch; gap: 2px; height: 180px; padding: 4px 0 0; }
     .wk-chart .col { position: relative; flex: 1 1 0; min-width: 2px; cursor: pointer; border-radius: 2px; }
@@ -129,16 +129,10 @@
       fillOffices();
     }
 
-    function uniq(rows, k) { var s = {}; rows.forEach(function (r) { if (r[k]) s[r[k]] = 1; }); return Object.keys(s).sort(); }
     function fillOffices() {
-      var reg = $('regionFilter').value, div = $('divisionFilter').value;
-      UI.fill('regionFilter', uniq(all, '_region'), 'All regions');
-      var r1 = all.filter(function (r) { return !reg || r._region === reg; });
-      UI.fill('divisionFilter', uniq(r1, '_divn'), 'All divisions');
-      var r2 = r1.filter(function (r) { return !div || r._divn === div; });
-      UI.fill('cccFilter', uniq(r2, '_supp'), 'All CCCs');
+      UI.offices(all);
       if (!scope) scope = UI.lockScope();
-      ['weekFilter', 'regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { UI.mark($(id)); });
+      UI.mark($('weekFilter'));
     }
 
     function officeRows() {
@@ -169,7 +163,7 @@
     function render() {
       var rows = officeRows(), wk = $('weekFilter').value, avg = !wk;
       var inWeek = wk ? rows.filter(function (r) { return String(r.week) === wk; }) : rows;
-      var nWeeks = wk ? 1 : uniq(rows.map(function (r) { return { w: r.week }; }), 'w').length || 1;
+      var nWeeks = wk ? 1 : UI.uniq(rows.map(function (r) { return { w: r.week }; }), 'w').length || 1;
       var t = scale(sum(inWeek), nWeeks);
 
       var sub = {
@@ -292,12 +286,7 @@
     $('exportBtn').addEventListener('click', function () {
       UI.exportCsv('weekly-deposit-disposal.csv', [WEEK_COLS[0], { key: 'last', label: 'Pending last Monday' }, WEEK_COLS[1], { key: 'eff', label: 'Connections effected' }, { key: 'wit', label: 'Withheld' }, WEEK_COLS[2], WEEK_COLS[3], WEEK_COLS[4]], window.__weeks || []);
     });
-    $('refreshBtn').addEventListener('click', function () {
-      var b = this; b.classList.add('spin');
-      Promise.resolve(window.mzoDataHub.waitForDataset(KEY, { forceCheck: true })).catch(function () {})
-        .then(function () { return window.mzoDataHub._peek(KEY); }).then(function (t) { if (t) { prepare(t); render(); } })
-        .then(function () { b.classList.remove('spin'); });
-    });
+    UI.refresh('refreshBtn', KEY, function (t) { prepare(t); render(); });
 
     var first = true;
     UI.load(KEY, function (text, info) {

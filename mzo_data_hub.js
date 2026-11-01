@@ -1,11 +1,14 @@
-// mzo_data_hub.js
-// Handles centralized data fetching and caching using IndexedDB
+// mzo_data_hub.js — one IndexedDB cache for every report dataset (window.mzoDataHub).
+// Each dataset keeps a version in localStorage (mzo_hub_ver_<key>); a page open or the home Sync only
+// downloads the body when the remote version differs. Options per dataset:
+//   lazySync     multi-MB sheet: skipped by the home Sync, fetched when its page opens
+//   originHeavy  body comes from meta.csvUrl (Google / Supabase Storage), never through Vercel on Sync
+//   versionUrl   small JSON with { version, csvUrl } (field names via versionField / csvUrlField)
 
 const DB_NAME = 'MZODashboardData';
 const DB_VERSION = 1;
 const STORE_NAME = 'datasets';
 
-// Major datasets to cache
 const DATASETS = [
     { key: 'CACHE_SAFETY_v2', label: 'Safety Inspection', url: 'https://docs.google.com/spreadsheets/d/1A2fjKboWKnw10iaOs1wcXDrdg9jhhDGfzF9OagPjA5s/gviz/tq?tqx=out:csv', type: 'csv', lazySync: true },
     { key: 'CACHE_DOCKET', label: 'Docket Calls', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTT56PULgjKw_-wu8lmMWNE6SC1KBDyAKxeHaMloZJWUQ9HQsJoqosYF33DrQK3NX9Bvfn0mjfx-dkP/pub?gid=1059428699&single=true&output=csv', type: 'csv' },
@@ -43,17 +46,12 @@ const DATASETS = [
     { key: 'CACHE_PMSGY_MALDA', label: 'PM Surya Ghar Malda', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRcFPRu1ywimetADU-XYIZ_x3McWUhR5ZbPUIIySO6_V8VJTyU9Vhw8DD-1RBEPFj0q2pUFMvutYV30/pub?gid=1969412059&single=true&output=csv', type: 'csv', lazySync: true },
     { key: 'CACHE_PMSGY_UD', label: 'PM Surya Ghar Uttar Dinajpur', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRcFPRu1ywimetADU-XYIZ_x3McWUhR5ZbPUIIySO6_V8VJTyU9Vhw8DD-1RBEPFj0q2pUFMvutYV30/pub?gid=711223367&single=true&output=csv', type: 'csv', lazySync: true },
     { key: 'CACHE_PMSGY_DD', label: 'PM Surya Ghar Dakshin Dinajpur', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRcFPRu1ywimetADU-XYIZ_x3McWUhR5ZbPUIIySO6_V8VJTyU9Vhw8DD-1RBEPFj0q2pUFMvutYV30/pub?gid=40136871&single=true&output=csv', type: 'csv', lazySync: true },
-    // lazySync: multi‑MB sheets — skip daily homepage sync; fetch on page open via waitForDataset/get
     { key: 'CACHE_METER_ERP', label: 'Meter ERP Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=1335293243&single=true&output=csv', type: 'csv', lazySync: true },
     { key: 'CACHE_METER_MASTER', label: 'Meter Master Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=1053803476&single=true&output=csv', type: 'csv', lazySync: true },
     { key: 'CACHE_METER_CRM', label: 'Meter CRM Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=1638328510&single=true&output=csv', type: 'csv', lazySync: true },
     { key: 'CACHE_METER_ISU', label: 'Meter ISU Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=329630218&single=true&output=csv', type: 'csv', lazySync: true },
     { key: 'CACHE_DISCONNECTION', label: 'Disconnection Tracker', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv', type: 'csv', originHeavy: true, versionUrl: '/api/disconnection/meta', csvUrlField: 'csvUrl', versionField: 'version', lazySync: true },
-    { key: 'CACHE_PMSGY_0', label: 'PMSGY Data 0', url: 'https://docs.google.com/spreadsheets/d/1u44ctXxvX4GI3Pm7ZPAoaH7rGn9RkxEWkyK5AyMlxGo/export?format=csv&gid=0', type: 'csv', lazySync: true },
-    { key: 'CACHE_PMSGY_1', label: 'PMSGY Data 1', url: 'https://docs.google.com/spreadsheets/d/1u44ctXxvX4GI3Pm7ZPAoaH7rGn9RkxEWkyK5AyMlxGo/export?format=csv&gid=1665942193', type: 'csv', lazySync: true },
-    { key: 'CACHE_PMSGY_2', label: 'PMSGY Data 2', url: 'https://docs.google.com/spreadsheets/d/1u44ctXxvX4GI3Pm7ZPAoaH7rGn9RkxEWkyK5AyMlxGo/export?format=csv&gid=1873088391', type: 'csv', lazySync: true },
-    { key: 'CACHE_DD_VISIT', label: 'DD Visit Consumers', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSCKEl95dh4kyG-QPJbFJ5x7U7yo7h5bJGuMewsMr2hjMAlCj7UWxqvL_a-2hdyQd-laI8BAX3hU5_T/pub?gid=0&single=true&output=csv', type: 'csv', lazySync: true },
-    { key: 'CACHE_THEFT_ASSESSMENT_v2', label: 'Theft Assessment Billing', url: 'https://docs.google.com/spreadsheets/d/1RiP2NDE6BgtgEp3Fufpx1G8p9k3VR786TY60LpvMdZM/export?format=csv', type: 'csv', lazySync: true }
+    { key: 'CACHE_DD_VISIT', label: 'DD Visit Consumers', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSCKEl95dh4kyG-QPJbFJ5x7U7yo7h5bJGuMewsMr2hjMAlCj7UWxqvL_a-2hdyQd-laI8BAX3hU5_T/pub?gid=0&single=true&output=csv', type: 'csv', lazySync: true }
 ];
 
 const FETCH_TIMEOUT_MS = 90000;
@@ -70,6 +68,12 @@ const PARSED_COMPANIONS = {
 };
 
 const HUB_VERSIONS_URL = '/api/hub/versions';
+
+// Server-published row counts: a body with fewer than 95% of these rows is not cached.
+const ROW_CHECKS = [
+    { prefix: 'CACHE_NSC', label: 'NSC', headers: ['X-NSC-Published-Rows', 'X-NSC-Row-Count'], metaField: 'publishedRows' },
+    { prefix: 'CACHE_WITHHELD', label: 'Withheld', headers: ['X-Withheld-Rows', 'X-Withheld-Row-Count'], metaField: 'withheldRows' }
+];
 const PROBE_MAX_BYTES = 2048;
 
 class DataHub {
@@ -382,11 +386,6 @@ class DataHub {
         return res.json();
     }
 
-    async _resolveRemoteVersion(dataset) {
-        const data = await this._getDatasetMeta(dataset);
-        return String((data && data.version) || '').trim();
-    }
-
     async seedDataset(key, data, version) {
         await this.set(key, data);
         if (version) this._writeStoredVersion(key, String(version));
@@ -432,23 +431,6 @@ class DataHub {
         return this.retryDataset(key, { force: true });
     }
 
-    // Clear all cached data
-    async clear() {
-        await this.initPromise;
-        if (this.useMemoryFallback) {
-            this.memoryCache = {};
-            return;
-        }
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(STORE_NAME);
-            const request = store.clear();
-
-            request.onsuccess = () => resolve();
-            request.onerror = (e) => reject(e.target.error);
-        });
-    }
-
     // Checks if a dataset is currently cached (does not hit the network)
     async isCached(key) {
         const data = await this._peek(key);
@@ -474,8 +456,6 @@ class DataHub {
         } catch (e) {}
     }
 
-    // --- Modern Hybrid Sync Extensions ---
-
     getSyncStatus(key) {
         return this.syncStatus[key] || 'idle';
     }
@@ -487,15 +467,6 @@ class DataHub {
             return this.syncPromises[key];
         }
         return this.retryDataset(key, opts);
-    }
-
-    async peekThenRevalidate(key, opts) {
-        const cached = await this._peek(key);
-        return {
-            cached,
-            fromCache: this._hasBody(cached),
-            revalidate: this.waitForDataset(key, opts)
-        };
     }
 
     async retryDataset(key, opts) {
@@ -685,47 +656,18 @@ class DataHub {
                 this._writeStoredVersion(key, nextVer);
 
                 // NSC / Withheld: refuse to cache a truncated CSV (stale sheet / partial response)
-                if (dataset.key.startsWith('CACHE_NSC') && typeof data === 'string') {
-                    const lines = data.split(/\r?\n/).filter((l) => l.trim().length);
-                    const rowCount = Math.max(0, lines.length - 1);
+                const rowCheck = ROW_CHECKS.find((c) => dataset.key.startsWith(c.prefix));
+                if (rowCheck && typeof data === 'string') {
+                    const rowCount = Math.max(0, data.split(/\r?\n/).filter((l) => l.trim().length).length - 1);
                     const expected = Number(
-                        response.headers.get('X-NSC-Published-Rows') ||
-                        response.headers.get('X-NSC-Row-Count') ||
-                        (metaJson && metaJson.meta && metaJson.meta.publishedRows) ||
+                        rowCheck.headers.map((h) => response.headers.get(h)).find(Boolean) ||
+                        (metaJson && metaJson.meta && metaJson.meta[rowCheck.metaField]) ||
                         0
                     );
-                    console.log(
-                        `[DataHub] ${dataset.key} rows=${rowCount}` +
-                        (expected ? ` expected=${expected}` : '') +
-                        ` source=${response.headers.get('X-NSC-Source') || '?'}`
-                    );
                     if (expected > 0 && rowCount < expected * 0.95) {
-                        throw new Error(
-                            `NSC incomplete: got ${rowCount} rows, server has ${expected}`
-                        );
+                        throw new Error(`${rowCheck.label} incomplete: got ${rowCount} rows, server has ${expected}`);
                     }
                 }
-                if (dataset.key.startsWith('CACHE_WITHHELD') && typeof data === 'string') {
-                    const lines = data.split(/\r?\n/).filter((l) => l.trim().length);
-                    const rowCount = Math.max(0, lines.length - 1);
-                    const expected = Number(
-                        response.headers.get('X-Withheld-Rows') ||
-                        response.headers.get('X-Withheld-Row-Count') ||
-                        (metaJson && metaJson.meta && metaJson.meta.withheldRows) ||
-                        0
-                    );
-                    console.log(
-                        `[DataHub] ${dataset.key} rows=${rowCount}` +
-                        (expected ? ` expected=${expected}` : '') +
-                        ` source=${response.headers.get('X-Withheld-Source') || '?'}`
-                    );
-                    if (expected > 0 && rowCount < expected * 0.95) {
-                        throw new Error(
-                            `Withheld incomplete: got ${rowCount} rows, server has ${expected}`
-                        );
-                    }
-                }
-
                 await this.set(dataset.key, data);
                 await this._invalidateCompanions(dataset.key);
                 this._writeFetchedDay(key);
@@ -753,8 +695,7 @@ class DataHub {
 const mzoDataHub = new DataHub();
 window.mzoDataHub = mzoDataHub;
 
-// Main function to sync all datasets
-// Main function to sync all datasets in parallel batches
+// Home Sync: version-check every non-lazy dataset, six at a time
 async function syncAllData(progressCallback, opts) {
     opts = opts || {};
     const forceCheck = !!opts.forceCheck;
@@ -864,7 +805,6 @@ async function syncAllData(progressCallback, opts) {
 
         await Promise.all(workers);
 
-        const allDone = failed === 0;
         if (progressCallback) {
             progressCallback(
                 checked,

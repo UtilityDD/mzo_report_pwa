@@ -682,22 +682,18 @@ async function initDashboard() {
         }
 
         if (cachedMetadata) {
-            console.log("Successfully fetched Stock Metadata from DataHub.");
             parseMetadata(cachedMetadata);
         } else {
-            console.log("Downloading Stock Metadata from network...");
             await fetchMetadataFromNetwork().catch(console.error);
         }
 
         if (cachedData) {
-            console.log("Successfully fetched Stock Data from DataHub.");
             const results = Papa.parse(cachedData, {
                 header: true,
                 skipEmptyLines: true
             });
             handleResults(results.data);
         } else {
-            console.log("Downloading Stock Data from network...");
             fetchFromNetwork();
         }
     } catch (e) {

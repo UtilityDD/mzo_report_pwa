@@ -5,14 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Collection · MZO Reports</title>
   <script src="/mzo_theme.js?v=3"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=3" />
-  <script src="/mzo_ui.js?v=2" defer></script>
-  <script src="/mzo_data_hub.js" defer></script>
-  <script src="/mzo_scope.js?v=5" defer></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
+  <script src="/mzo_ui.js?v=4" defer></script>
+  <script src="/mzo_data_hub.js?v=90" defer></script>
+  <script src="/mzo_scope.js?v=14" defer></script>
   <style>
     .co-day { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--mzo-muted); }
     .co-day select { height: 28px; }
-    .co-month { padding: 0 20px 24px; }
   </style>
 </head>
 <body>
@@ -120,14 +119,8 @@
       fillFilters();
     }
 
-    function uniq(rows, k) { var s = {}; rows.forEach(function (r) { if (r[k]) s[r[k]] = 1; }); return Object.keys(s).sort(); }
     function fillFilters() {
-      var reg = $('regionFilter').value, div = $('divisionFilter').value;
-      UI.fill('regionFilter', uniq(all, '_region'), 'All regions');
-      var r1 = all.filter(function (r) { return !reg || r._region === reg; });
-      UI.fill('divisionFilter', uniq(r1, '_divn'), 'All divisions');
-      var r2 = r1.filter(function (r) { return !div || r._divn === div; });
-      UI.fill('cccFilter', uniq(r2, '_supp'), 'All CCCs');
+      UI.offices(all);
       if (!scope) scope = UI.lockScope();
     }
 
@@ -204,17 +197,9 @@
         labels.push(d.getDate() + ' ' + MON[d.getMonth()]);
         vals.push(buckets[d.getTime()] != null ? buckets[d.getTime()] : (scale === 'day' ? null : 0));
       }
-      // Thin the x labels so they do not collide.
-      var slots = Math.max(3, Math.floor(($('trend').clientWidth || 600) / 80)), every = Math.max(1, Math.ceil(n / slots));
-      var shown = labels.map(function (l, i) { return (labels.length - 1 - i) % every === 0 ? l : ''; });
       $('trendTitle').textContent = (scale === 'week' ? 'Weekly collection, last 26 weeks' : 'Daily collection, last 60 days') + ' · ' + scopeLabel;
-      UI.line('trend', { labels: shown, series: [{ label: scale === 'week' ? 'Week starting' : 'Day', values: vals, strong: true }], fmt: UI.inr, axis: axis, title: 'Collection' });
-      // Tooltip should show the full date even where the axis label is thinned.
-      var tipLabels = labels;
-      $('trend').querySelector('svg').addEventListener('pointermove', function (e) {
-        var r = e.target.closest && e.target.closest('rect.hit'); if (!r) return;
-        var b = $('trend').querySelector('.ui-tip b'); if (b) b.textContent = tipLabels[+r.getAttribute('data-i')];
-      });
+      // UI.line thins crowded axis labels itself; the tooltip keeps the full date.
+      UI.line('trend', { labels: labels, series: [{ label: scale === 'week' ? 'Week starting' : 'Day', values: vals, strong: true }], fmt: UI.inr, axis: axis, title: 'Collection' });
     }
 
     function drawTable(v, latest, cDay) {
@@ -299,12 +284,7 @@
         { key: 'ly', label: 'Same month last year (Rs)', csv: r('ly') }, { key: 'yoy', label: 'Change vs last year %', csv: p('yoy') }
       ], window.__rows || []);
     });
-    $('refreshBtn').addEventListener('click', function () {
-      var b = this; b.classList.add('spin');
-      Promise.resolve(window.mzoDataHub.waitForDataset('CACHE_COLLECTION', { forceCheck: true })).catch(function () {})
-        .then(function () { return window.mzoDataHub._peek('CACHE_COLLECTION'); }).then(function (t) { if (t) { prepare(t); render(); } })
-        .then(function () { b.classList.remove('spin'); });
-    });
+    UI.refresh('refreshBtn', 'CACHE_COLLECTION', function (t) { prepare(t); render(); });
 
     var first = true;
     UI.load('CACHE_COLLECTION', function (text, info) {

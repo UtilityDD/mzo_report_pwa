@@ -17,7 +17,6 @@
     if (p === '/app.html') return true; // workstation shell: pages inside it zoom themselves
     if (p === '/offline.html' || /\/offline\.html$/i.test(p)) return true;
     if (p.indexOf('/power_map/') !== -1) return true;
-    if (p.indexOf('/sld/') !== -1) return true;
     if (/\/accident\/map\.html$/i.test(p)) return true;
     return false;
   }

@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>WRIDD schemes · MZO Reports</title>
   <script src="/mzo_theme.js?v=3"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=3" />
-  <script src="/mzo_ui.js?v=1" defer></script>
-  <script src="/mzo_data_hub.js" defer></script>
-  <script src="/mzo_scope.js?v=7" defer></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
+  <script src="/mzo_ui.js?v=4" defer></script>
+  <script src="/mzo_data_hub.js?v=90" defer></script>
+  <script src="/mzo_scope.js?v=14" defer></script>
   <style>
     .remark { display: block; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mzo-muted); }
     #reasonHist .row { grid-template-columns: 140px minmax(0, 1fr) 48px; }
@@ -136,14 +136,8 @@
       fillFilters();
     }
 
-    function uniq(rows, k) { var s = {}; rows.forEach(function (r) { if (r[k]) s[r[k]] = 1; }); return Object.keys(s).sort(); }
     function fillFilters() {
-      var reg = $('regionFilter').value, div = $('divisionFilter').value;
-      UI.fill('regionFilter', uniq(all, '_region'), 'All regions');
-      var r1 = all.filter(function (r) { return !reg || r._region === reg; });
-      UI.fill('divisionFilter', uniq(r1, '_divn'), 'All divisions');
-      var r2 = r1.filter(function (r) { return !div || r._divn === div; });
-      UI.fill('cccFilter', uniq(r2, '_supp'), 'All CCCs');
+      UI.offices(all);
       if (!scope) scope = UI.lockScope();
     }
 
@@ -160,7 +154,7 @@
       [].forEach.call(document.querySelectorAll('#stats .ui-stat'), function (el) {
         var k = el.getAttribute('data-k'), c = b.filter(function (r) { return match(r, k); }).length;
         el.querySelector('.v').textContent = UI.n(c);
-        el.querySelector('.s').textContent = !k ? UI.n(uniq(b, '_supp').length) + ' CCCs' : UI.pct(c, b.length) + ' of schemes';
+        el.querySelector('.s').textContent = !k ? UI.n(UI.uniq(b, '_supp').length) + ' CCCs' : UI.pct(c, b.length) + ' of schemes';
         el.setAttribute('aria-pressed', String(f.status === k));
       });
 
@@ -245,12 +239,7 @@
     $('exportBtn').addEventListener('click', function () {
       UI.exportCsv('wridd-schemes.csv', [{ key: 'name', label: 'Scheme' }, { key: 'type', label: 'Type' }, { key: '_region', label: 'Region' }, { key: '_divn', label: 'Division' }, { key: '_supp', label: 'CCC' }, { key: 'district', label: 'District' }, { key: 'block', label: 'Block' }, { key: 'mouza', label: 'Mouza' }, { key: 'statusText', label: 'Status note' }, COLS[4], { key: 'remarks', label: 'Remarks' }], window.__view || []);
     });
-    $('refreshBtn').addEventListener('click', function () {
-      var b = this; b.classList.add('spin');
-      Promise.resolve(window.mzoDataHub.waitForDataset('CACHE_WRIDD', { forceCheck: true })).catch(function () {})
-        .then(function () { return window.mzoDataHub._peek('CACHE_WRIDD'); }).then(function (t) { if (t) { prepare(t); render(); } })
-        .then(function () { b.classList.remove('spin'); });
-    });
+    UI.refresh('refreshBtn', 'CACHE_WRIDD', function (t) { prepare(t); render(); });
 
     var first = true;
     UI.load('CACHE_WRIDD', function (text, info) {

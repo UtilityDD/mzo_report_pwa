@@ -980,7 +980,7 @@
             renderAll();
             updateLoadTag({ at: 0 });
             const tip = /Invalid action|listAllotments/i.test(err.message || '')
-                ? ' Redeploy Apps Script with the latest allotment_code.gs (New version).'
+                ? ' Redeploy the allotment Apps Script (apps-script/stock_allotment.gs) as a new version.'
                 : /404|API not found/i.test(err.message || '')
                   ? ' Restart/redeploy the Node server so /api/stock/allotment is available.'
                   : '';

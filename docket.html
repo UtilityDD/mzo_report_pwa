@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Docket calls · MZO Reports</title>
   <script src="/mzo_theme.js?v=3"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=3" />
-  <script src="/mzo_ui.js?v=2" defer></script>
-  <script src="/mzo_data_hub.js" defer></script>
-  <script src="/mzo_scope.js?v=5" defer></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
+  <script src="/mzo_ui.js?v=4" defer></script>
+  <script src="/mzo_data_hub.js?v=90" defer></script>
+  <script src="/mzo_scope.js?v=14" defer></script>
   <style>#probHist .row { grid-template-columns: minmax(120px, 44%) minmax(0, 1fr) 52px; }</style>
 </head>
 <body>
@@ -114,14 +114,8 @@
       UI.fill('probFilter', Object.keys(probs).sort(), 'All problems');
       fillOffices();
     }
-    function uniq(rows, k) { var s = {}; rows.forEach(function (r) { if (r[k]) s[r[k]] = 1; }); return Object.keys(s).sort(); }
     function fillOffices() {
-      var reg = $('regionFilter').value, div = $('divisionFilter').value;
-      UI.fill('regionFilter', uniq(all, '_region'), 'All regions');
-      var r1 = all.filter(function (r) { return !reg || r._region === reg; });
-      UI.fill('divisionFilter', uniq(r1, '_divn'), 'All divisions');
-      var r2 = r1.filter(function (r) { return !div || r._divn === div; });
-      UI.fill('cccFilter', uniq(r2, '_supp'), 'All CCCs');
+      UI.offices(all);
       if (!scope) scope = UI.lockScope();
     }
 
@@ -146,7 +140,7 @@
         var k = el.getAttribute('data-k'), rows = k ? b.filter(STAT[k]) : b;
         el.querySelector('.v').textContent = UI.n(rows.length);
         var cons = {}; rows.forEach(function (r) { if (r.con) cons[r.con] = 1; });
-        el.querySelector('.s').textContent = !k ? UI.n(Object.keys(cons).length) + ' consumers' : k === 'repeat' ? UI.n(Object.keys(cons).length) + ' consumers' : UI.pct(rows.length, b.length) + ' of open';
+        el.querySelector('.s').textContent = !k || k === 'repeat' ? UI.n(Object.keys(cons).length) + ' consumers' : UI.pct(rows.length, b.length) + ' of open';
         el.setAttribute('aria-pressed', String(f.stat === k));
       });
 
@@ -238,12 +232,7 @@
     $('kpiLink').addEventListener('click', function (e) {
       if (window.parent !== window && typeof window.parent.openPage === 'function') { e.preventDefault(); window.parent.openPage('docket/kpi.html', 'Docket KPI'); }
     });
-    $('refreshBtn').addEventListener('click', function () {
-      var b = this; b.classList.add('spin');
-      Promise.resolve(window.mzoDataHub.waitForDataset('CACHE_DOCKET', { forceCheck: true })).catch(function () {})
-        .then(function () { return window.mzoDataHub._peek('CACHE_DOCKET'); }).then(function (t) { if (t) { prepare(t); render(); } })
-        .then(function () { b.classList.remove('spin'); });
-    });
+    UI.refresh('refreshBtn', 'CACHE_DOCKET', function (t) { prepare(t); render(); });
 
     var first = true;
     UI.load('CACHE_DOCKET', function (text, info) {

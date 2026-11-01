@@ -5,85 +5,65 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Withheld NSC · MZO Reports</title>
   <script src="/mzo_theme.js?v=3"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=3" />
-  <script src="/mzo_ui.js?v=1" defer></script>
-  <script src="/mzo_data_hub.js" defer></script>
-  <script src="/mzo_scope.js?v=5" defer></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
+  <script src="/mzo_ui.js?v=4" defer></script>
+  <script src="/mzo_data_hub.js?v=90" defer></script>
+  <script src="/mzo_scope.js?v=14" defer></script>
   <style>
-    /* Long reason names: label and count on one line, bar below */
-    #reasonHist .row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "l v" "b b"; height: auto; row-gap: 6px; padding: 6px 4px; }
-    #reasonHist .row > span:first-child { grid-area: l; white-space: normal; }
-    #reasonHist .row > i { grid-area: b; }
-    #reasonHist .row > span:last-child { grid-area: v; }
+    /* Reasons are long: let them wrap instead of truncating */
+    #fReason .ui-opt { height: auto; min-height: 27px; padding-block: 4px; align-items: flex-start; line-height: 1.35; }
+    #fReason .ui-opt i { margin-top: 2px; }
+    #fReason .ui-opt span { white-space: normal; }
   </style>
 </head>
 <body>
   <main class="ui-page">
     <header class="ui-head">
-      <div>
-        <h1>Withheld NSC</h1>
-        <p id="meta">Loading…</p>
-      </div>
+      <div><h1>Withheld NSC<span class="ui-badge ui-date" id="asOn">…</span></h1></div>
       <div class="ui-actions">
-        <div class="ui-seg" id="source" role="group" aria-label="Source">
-          <button type="button" data-s="" aria-pressed="true">All</button>
-          <button type="button" data-s="Y" aria-pressed="false">Portal</button>
-          <button type="button" data-s="N" aria-pressed="false">Offline</button>
-        </div>
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
     </header>
 
-    <div class="ui-filters">
-      <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Application, name or phone" autocomplete="off" /></label>
-      <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
-      <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
-      <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
-      <span class="ui-select"><select id="classFilter" aria-label="Class"><option value="">All classes</option></select></span>
-      <span class="ui-select"><select id="reasonFilter" aria-label="Reason"><option value="">All reasons</option></select></span>
-      <button type="button" class="ui-btn ghost" id="clearBtn" hidden><svg class="ui-i"><use href="#ui-x"/></svg>Clear</button>
-    </div>
-
-    <section class="ui-stats" style="--n:5" id="stats" aria-label="Summary">
-      <button type="button" class="ui-stat" data-k=""><div class="k">Withheld</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="d7"><div class="k">Last 7 days</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="d30"><div class="k">Last 30 days</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="d90"><div class="k">Last 90 days</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="invalid"><div class="k"><span class="ui-dot bad"></span>No valid reason</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-    </section>
-
-    <div class="ui-grid">
-      <section class="ui-panel">
-        <div class="ui-panel-h">
-          <h2>Breakdown</h2>
-          <div class="ui-tabs" role="tablist" id="levelTabs">
-            <button type="button" class="ui-tab" role="tab" data-l="region" aria-selected="true">Region</button>
-            <button type="button" class="ui-tab" role="tab" data-l="division">Division</button>
-            <button type="button" class="ui-tab" role="tab" data-l="ccc">CCC</button>
-            <button type="button" class="ui-tab" role="tab" data-l="cls">Class</button>
-          </div>
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h"><h2>Filters<small id="activeLabel"></small></h2><button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button></div>
+        <div class="ui-side-sec ui-side-stack">
+          <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Search" title="Application, name or phone" aria-label="Search by application, name or phone" autocomplete="off" /></label>
         </div>
-        <div id="officeTable" style="--max-h:520px"><div class="ui-empty">Loading…</div></div>
-      </section>
-      <div>
-        <section class="ui-panel">
-          <div class="ui-panel-h"><h2>By reason</h2><span class="ui-note">Every withheld application needs a valid reason</span></div>
-          <div class="ui-panel-b"><div id="reasonHist"></div></div>
+        <div class="ui-side-sec"><div id="fSrc" aria-label="Source"></div></div>
+        <div class="ui-side-sec">
+          <div class="ui-seg ui-side-tabs" data-tabs role="tablist" aria-label="Group">
+            <button type="button" role="tab" data-pane="fReason" aria-pressed="true" aria-selected="true">Reason</button>
+            <button type="button" role="tab" data-pane="fYear" aria-pressed="false" aria-selected="false">Year</button>
+            <button type="button" role="tab" data-pane="fClass" aria-pressed="false" aria-selected="false">Class</button>
+          </div>
+          <div id="fReason" aria-label="Reason"></div>
+          <div id="fYear" aria-label="Withheld in" hidden></div>
+          <div id="fClass" aria-label="Class" hidden></div>
+        </div>
+      </aside>
+
+      <div class="ui-main">
+        <section class="ui-stats" id="stats" aria-label="Summary">
+          <button type="button" class="ui-stat" data-k=""><div class="k">Withheld</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="d7"><div class="k">Last 7 days</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="d30"><div class="k">Last 30 days</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="d90"><div class="k">Last 90 days</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="invalid"><div class="k"><span class="ui-dot bad"></span>No valid reason</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
         </section>
+
         <section class="ui-panel">
-          <div class="ui-panel-h"><h2>Withheld by year</h2></div>
-          <div class="ui-panel-b"><div id="yearHist"></div></div>
+          <div class="ui-panel-h">
+            <h2>Detailed report</h2>
+            <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+          </div>
+          <div id="drill"></div>
+          <div id="table"><div class="ui-empty">Loading…</div></div>
         </section>
       </div>
     </div>
-
-    <section class="ui-panel">
-      <div class="ui-panel-h">
-        <h2>Applications <small id="appCount"></small></h2>
-        <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
-      </div>
-      <div id="appTable"><div class="ui-empty">Loading…</div></div>
-    </section>
   </main>
 
   <script>
@@ -96,7 +76,9 @@
       'Dependent on other application', 'Particulars of capacitor bank(if installed) not Found', 'Meter and Main Switch should be separated', 'YES', 'y', 'no',
       'Location of installation of Transformer need to be identified clearly', 'yes'];
     var NO_REASON = 'No valid reason';
-    var all = [], asOn = null, f = { q: '', src: '', stat: '', year: '' }, level = 'region', scope = null;
+    var all = [], asOn = null, f = { q: '', src: '', stat: '', year: '', cls: '', reason: '' }, shown = '';
+    var dr = UI.drill({ el: 'drill', root: 'Malda Zone', onChange: render });
+    var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
 
     function prepare(text) {
       var rows = Array.isArray(text) ? text : UI.csv(text), today = null, seen = {};
@@ -124,9 +106,8 @@
       if (today && (!asOn || today > asOn)) asOn = today;
       all.forEach(function (r) { r.ago = r.withheld && asOn ? Math.floor((asOn - r.withheld) / 864e5) : null; });
       paintMeta();
-      fillFilters();
     }
-    function paintMeta() { $('meta').textContent = (asOn ? 'As on ' + UI.fmtDate(asOn) + ' · ' : '') + UI.n(all.length) + ' applications'; }
+    function paintMeta() { $('asOn').textContent = asOn ? 'As on ' + UI.fmtDate(asOn) : UI.n(all.length) + ' applications'; }
 
     var STAT = {
       d7: function (r) { return r.ago != null && r.ago >= 0 && r.ago <= 7; },
@@ -135,33 +116,38 @@
       invalid: function (r) { return r.invalid; }
     };
 
-    function uniq(rows, k) { var s = {}; rows.forEach(function (r) { if (r[k]) s[r[k]] = 1; }); return Object.keys(s).sort(); }
-    function fillFilters() {
-      var reg = $('regionFilter').value, div = $('divisionFilter').value;
-      UI.fill('regionFilter', uniq(all, '_region'), 'All regions');
-      var r1 = all.filter(function (r) { return !reg || r._region === reg; });
-      UI.fill('divisionFilter', uniq(r1, '_divn'), 'All divisions');
-      var r2 = r1.filter(function (r) { return !div || r._divn === div; });
-      UI.fill('cccFilter', uniq(r2, '_supp'), 'All CCCs');
-      var cls = {}; all.forEach(function (r) { if (r.cls) cls[r.cls] = r.label; });
-      UI.fill('classFilter', Object.keys(cls).sort().map(function (c) { return { value: c, label: cls[c] === c ? c : cls[c] + ' (' + c + ')' }; }), 'All classes');
-      var reasons = uniq(all.filter(function (r) { return !r.invalid; }), 'group');
-      UI.fill('reasonFilter', [{ value: NO_REASON, label: NO_REASON }].concat(reasons), 'All reasons');
-      if (!scope) scope = UI.lockScope();
-    }
-
-    function base() {
-      var q = f.q.toLowerCase(), reg = $('regionFilter').value, div = $('divisionFilter').value, cc = $('cccFilter').value, cl = $('classFilter').value, rs = $('reasonFilter').value;
+    // A year key is "2024", or "<=2016" for that year and earlier.
+    function inYear(r, y) { return y.indexOf('<=') === 0 ? !!r.year && r.year <= y.slice(2) : r.year === y; }
+    // Every panel filter; `skip` leaves one facet out so it can count its own options.
+    function base(skip) {
+      var q = f.q.toLowerCase();
       return all.filter(function (r) {
-        return (!f.src || r.portal === f.src) && (!reg || r._region === reg) && (!div || r._divn === div) && (!cc || r._supp === cc) &&
-          (!cl || r.cls === cl) && (!rs || r.group === rs) &&
+        return (skip === 'src' || !f.src || r.portal === f.src) && dr.match(r) &&
+          (skip === 'cls' || !f.cls || r.cls === f.cls) && (skip === 'reason' || !f.reason || r.group === f.reason) && (skip === 'year' || !f.year || inYear(r, f.year)) &&
           (!q || r.appl.indexOf(q) !== -1 || r.name.toLowerCase().indexOf(q) !== -1 || r.phone.indexOf(q) !== -1);
       });
     }
 
+    function tally(rows, k) { var c = {}; rows.forEach(function (r) { if (r[k]) c[r[k]] = (c[r[k]] || 0) + 1; }); return c; }
+    function byCount(c, keep) { var keys = Object.keys(c); if (keep && keys.indexOf(keep) === -1) keys.push(keep); return keys.sort(function (a, b) { return (c[b] || 0) - (c[a] || 0); }); }
+    function facets() {
+      var sr = tally(base('src'), 'portal');
+      UI.facet('fSrc', [{ value: 'Y', label: 'Portal', count: sr.Y || 0 }, { value: 'N', label: 'Offline', count: sr.N || 0 }], f.src, function (v) { f.src = v; render(); });
+      var rs = tally(base('reason'), 'group');
+      UI.facet('fReason', byCount(rs, f.reason).map(function (k) { return { value: k, label: k, count: rs[k] || 0 }; }), f.reason, function (v) { f.reason = v; render(); });
+      var yr = tally(base('year'), 'year'), years = Object.keys(yr).sort().reverse(), rowsY = years.slice(0, 9).map(function (y) { return { value: y, label: y, count: yr[y] }; });
+      if (years.length > 9) rowsY.push({ value: '<=' + years[9], label: years[9] + ' and earlier', count: years.slice(9).reduce(function (a, y) { return a + yr[y]; }, 0) });
+      if (f.year && !rowsY.some(function (o) { return o.value === f.year; })) rowsY.push({ value: f.year, label: f.year.replace('<=', '') + (f.year.indexOf('<=') === 0 ? ' and earlier' : ''), count: 0 });
+      UI.facet('fYear', rowsY, f.year, function (v) { f.year = v; render(); });
+      var cl = tally(base('cls'), 'cls');
+      UI.facet('fClass', byCount(cl, f.cls).map(function (c) { return { value: c, label: CLASS[c] || c, count: cl[c] || 0 }; }), f.cls, function (v) { f.cls = v; render(); });
+      var on = (f.q ? 1 : 0) + ['src', 'reason', 'year', 'cls'].filter(function (k) { return f[k]; }).length;
+      setActive(on, { fReason: f.reason, fYear: f.year, fClass: f.cls });
+    }
     function render() {
       var b = base();
-      var view = b.filter(function (r) { return (!f.stat || STAT[f.stat](r)) && (!f.year || (f.year.indexOf('<=') === 0 ? (r.year && r.year <= f.year.slice(2)) : r.year === f.year)); });
+      facets();
+      var view = b.filter(function (r) { return !f.stat || STAT[f.stat](r); });
 
       [].forEach.call(document.querySelectorAll('#stats .ui-stat'), function (el) {
         var k = el.getAttribute('data-k'), c = k ? b.filter(STAT[k]).length : b.length;
@@ -170,42 +156,33 @@
         el.setAttribute('aria-pressed', String(f.stat === k));
       });
 
-      var key = { region: '_region', division: '_divn', ccc: '_supp', cls: 'label' }[level], groups = {};
-      view.forEach(function (r) {
-        var name = r[key] || 'Unmapped';
-        var g = groups[name] || (groups[name] = { name: name, parent: level === 'ccc' ? r._divn : level === 'division' ? r._region : '', n: 0, d30: 0, portal: 0, invalid: 0 });
-        g.n++; if (STAT.d30(r)) g.d30++; if (r.portal === 'Y') g.portal++; if (r.invalid) g.invalid++;
-      });
-      var list = Object.keys(groups).map(function (k) { return groups[k]; }), max = Math.max.apply(null, list.map(function (g) { return g.n; }).concat([0]));
-      UI.table('officeTable', {
-        rows: list, sort: { key: 'n', dir: 'desc' }, count: level === 'ccc' || level === 'cls',
-        empty: 'Nothing withheld for these filters.',
-        columns: [
-          { key: 'name', label: { region: 'Region', division: 'Division', ccc: 'CCC', cls: 'Class' }[level], fmt: function (v, g) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.parent ? '<span class="sub">' + UI.esc(g.parent) + '</span>' : ''); } },
-          { key: 'n', label: 'Withheld', num: true, fmt: UI.n },
-          { key: 'd30', label: 'Last 30 days', num: true, fmt: UI.n },
-          { key: 'invalid', label: 'No valid reason', num: true, fmt: UI.n, hideSm: true },
-          { key: 'portal', label: 'Portal', num: true, hideSm: true, sortVal: function (g) { return g.n ? g.portal / g.n : 0; }, fmt: function (v, g) { return UI.pct(v, g.n); } },
-          { key: 'share', label: 'Share', sortVal: function (g) { return g.n; }, fmt: function (_, g) { return UI.bar(g.n, max, UI.pct(g.n, view.length)); }, hideSm: true, width: '24%' }
-        ],
-        foot: list.length > 1 ? { n: view.length, d30: view.filter(STAT.d30).length, invalid: view.filter(STAT.invalid).length, portal: view.filter(function (r) { return r.portal === 'Y'; }).length } : null,
-        onRow: level === 'region' || level === 'division' ? function (g) { drill(g.name); } : null
-      });
-
-      var rs = {}; view.forEach(function (r) { rs[r.group] = (rs[r.group] || 0) + 1; });
-      UI.hist('reasonHist', Object.keys(rs).sort(function (a, c) { return rs[c] - rs[a]; }).slice(0, 8).map(function (k) { return { key: k, label: k, value: rs[k] }; }),
-        { active: $('reasonFilter').value, onClick: function (row) { var s = $('reasonFilter'); s.value = s.value === row.key ? '' : row.key; UI.mark(s); render(); } });
-      var yr = {}; b.filter(function (r) { return !f.stat || STAT[f.stat](r); }).forEach(function (r) { if (r.year) yr[r.year] = (yr[r.year] || 0) + 1; });
-      var years = Object.keys(yr).sort().reverse(), rowsY = years.slice(0, 9).map(function (y) { return { key: y, label: y, value: yr[y] }; });
-      if (years.length > 9) {
-        var cut = years[9];
-        rowsY.push({ key: '<=' + cut, label: cut + ' and earlier', value: years.slice(9).reduce(function (a, y) { return a + yr[y]; }, 0) });
+      // Detailed report: offices down the path, then the applications
+      if (dr.level() !== shown) { $('table').__ui = null; shown = dr.level(); }
+      if (dr.isList()) {
+        UI.table('table', { rows: view, sort: { key: 'withheld', dir: 'desc' }, limit: 50, resetPage: true, empty: 'No applications match these filters.', columns: APP_COLS, onRow: detail });
+      } else {
+        var groups = {};
+        view.forEach(function (r) {
+          var k = dr.key(r), g = groups[k] || (groups[k] = { name: k, parent: dr.parent(r), row: r, n: 0, d30: 0, portal: 0, invalid: 0 });
+          g.n++; if (STAT.d30(r)) g.d30++; if (r.portal === 'Y') g.portal++; if (r.invalid) g.invalid++;
+        });
+        var list = Object.keys(groups).map(function (k) { return groups[k]; }), max = Math.max.apply(null, list.map(function (g) { return g.n; }).concat([0]));
+        UI.table('table', {
+          rows: list, sort: { key: 'n', dir: 'desc' }, count: false,
+          empty: 'Nothing withheld for these filters.',
+          columns: [
+            { key: 'name', label: dr.label(), fmt: function (v, g) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.parent ? '<span class="sub">' + UI.esc(g.parent) + '</span>' : ''); } },
+            { key: 'n', label: 'Withheld', num: true, fmt: UI.n },
+            { key: 'd30', label: 'Last 30 days', num: true, fmt: UI.n },
+            { key: 'invalid', label: 'No valid reason', num: true, fmt: UI.n, hideSm: true },
+            { key: 'portal', label: 'Portal', num: true, hideSm: true, sortVal: function (g) { return g.n ? g.portal / g.n : 0; }, fmt: function (v, g) { return UI.pct(v, g.n); } },
+            { key: 'share', label: 'Share', sortVal: function (g) { return g.n; }, fmt: function (_, g) { return UI.bar(g.n, max, UI.pct(g.n, view.length)); }, hideSm: true, width: '24%' }
+          ],
+          foot: list.length > 1 ? { n: view.length, d30: view.filter(STAT.d30).length, invalid: view.filter(STAT.invalid).length, portal: view.filter(function (r) { return r.portal === 'Y'; }).length } : null,
+          onRow: function (g) { dr.open(g.name, g.row); }
+        });
       }
-      UI.hist('yearHist', rowsY, { active: f.year, onClick: function (row) { f.year = f.year === row.key ? '' : row.key; render(); } });
-
-      $('appCount').textContent = UI.n(view.length);
-      UI.table('appTable', { rows: view, sort: { key: 'withheld', dir: 'desc' }, limit: 50, resetPage: true, empty: 'No applications match these filters.', columns: APP_COLS, onRow: detail });
-      $('clearBtn').hidden = !(f.q || f.src || f.stat || f.year || $('classFilter').value || $('reasonFilter').value || ['regionFilter', 'divisionFilter', 'cccFilter'].some(function (id) { return $(id).value && !$(id).disabled; }));
+      dr.paint({ list: view.length });
       window.__view = view;
     }
 
@@ -227,42 +204,12 @@
       ]);
     }
 
-    function setLevel(l) {
-      level = l;
-      [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === l)); });
-      render();
-    }
-    function drill(name) {
-      if (level === 'region') { $('regionFilter').value = name; $('divisionFilter').value = ''; level = 'division'; }
-      else { $('divisionFilter').value = name; level = 'ccc'; }
-      $('cccFilter').value = '';
-      offices(); setLevel(level);
-    }
-    function offices() { fillFilters(); ['regionFilter', 'divisionFilter', 'cccFilter', 'classFilter', 'reasonFilter'].forEach(function (x) { UI.mark($(x)); }); }
-
-    ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
-      $(id).addEventListener('change', function () {
-        if (id === 'regionFilter') $('divisionFilter').value = '';
-        if (id !== 'cccFilter') $('cccFilter').value = '';
-        offices(); render();
-      });
-    });
-    ['classFilter', 'reasonFilter'].forEach(function (id) { $(id).addEventListener('change', function () { UI.mark(this); render(); }); });
     $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim().toLowerCase(); render(); }, 180));
-    $('source').addEventListener('click', function (e) {
-      var b = e.target.closest('button'); if (!b) return;
-      f.src = b.getAttribute('data-s');
-      [].forEach.call(this.querySelectorAll('button'), function (x) { x.setAttribute('aria-pressed', String(x === b)); });
-      render();
-    });
     $('stats').addEventListener('click', function (e) { var s = e.target.closest('.ui-stat'); if (!s) return; var k = s.getAttribute('data-k'); f.stat = f.stat === k ? '' : k; render(); });
-    $('levelTabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-tab'); if (t) setLevel(t.getAttribute('data-l')); });
-    $('clearBtn').addEventListener('click', function () {
-      f.q = ''; f.stat = ''; f.year = ''; f.src = ''; $('q').value = ''; $('classFilter').value = ''; $('reasonFilter').value = '';
-      [].forEach.call(document.querySelectorAll('#source button'), function (x) { x.setAttribute('aria-pressed', String(x.getAttribute('data-s') === '')); });
-      ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });
-      offices(); render();
-    });
+    function clearAll() {
+      f.q = ''; f.stat = ''; f.year = ''; f.src = ''; f.cls = ''; f.reason = ''; $('q').value = '';
+      render();
+    }
     $('exportBtn').addEventListener('click', function () {
       UI.exportCsv('withheld-nsc.csv', [
         { key: 'appl', label: 'Application' }, { key: 'name', label: 'Name' }, { key: 'phone', label: 'Phone' },
@@ -271,13 +218,7 @@
         .concat([{ key: 'portal', label: 'Source', csv: function (r) { return r.portal === 'Y' ? 'Portal' : 'Offline'; } }]), window.__view || []);
     });
 
-    function reload(text) { if (text) { prepare(text); render(); } }
-    $('refreshBtn').addEventListener('click', function () {
-      var b = this; b.classList.add('spin');
-      Promise.resolve(window.mzoDataHub.waitForDataset(KEY, { forceCheck: true })).catch(function () {})
-        .then(function () { return window.mzoDataHub._peek(KEY); }).then(reload)
-        .then(function () { b.classList.remove('spin'); });
-    });
+    UI.refresh('refreshBtn', KEY, function (t) { prepare(t); render(); });
 
     // A fresh NSC upload (nsc/upload.html) asks this page to reload its dump.
     try {
@@ -302,13 +243,10 @@
       : Promise.resolve();
     start.then(function () {
       UI.load(KEY, function (text, info) {
-        if (!text) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('appTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+        if (!text) { if (info && info.error) { $('asOn').textContent = 'No data'; $('table').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
         var firstPaint = !all.length;
         prepare(text);
-        if (firstPaint) {
-          if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';
-          [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === level)); });
-        }
+        if (firstPaint) dr.fromParams(new URLSearchParams(location.search), all); // ?region= ?division= ?ccc=
         render();
       });
     });

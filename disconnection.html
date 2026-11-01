@@ -5,14 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Disconnection tracker · MZO Reports</title>
   <script src="/mzo_theme.js?v=3"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=3" />
-  <script src="/mzo_ui.js?v=1" defer></script>
-  <script src="/mzo_data_hub.js" defer></script>
-  <script src="/mzo_scope.js?v=5" defer></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
+  <script src="/mzo_ui.js?v=4" defer></script>
+  <script src="/mzo_data_hub.js?v=90" defer></script>
+  <script src="/mzo_scope.js?v=14" defer></script>
   <script src="/auth.js" defer></script>
   <style>
-    .ui-head .dc-base { margin-top: 1px; font-size: 12px; color: var(--mzo-faint); }
-    .ui-stats.dc-more { margin-top: -6px; }
+    .dc-base { padding: 10px 14px; font-size: 12px; line-height: 1.5; color: var(--mzo-muted); }
     .ui-stat .v .pct { margin-left: 6px; font-size: 13px; font-weight: 500; letter-spacing: 0; color: var(--mzo-muted); }
     .dc-legend { display: flex; gap: 14px; font-size: 12px; color: var(--mzo-muted); }
     .dc-legend span { display: inline-flex; align-items: center; gap: 6px; }
@@ -24,7 +23,6 @@
     .dc-act i b { height: 100%; }
     .dc-act i b.p { background: var(--mzo-ok); }
     .dc-act i b.d { background: var(--mzo-bad); }
-    .dc-list-h .ui-tab small { margin-left: 5px; font-weight: 400; color: var(--mzo-muted); font-variant-numeric: tabular-nums; }
     .dc-list-h .right { display: flex; align-items: center; gap: 8px; }
     .ui-table td.num { white-space: nowrap; }
     .dc-note-cell { max-width: 420px; }
@@ -57,80 +55,56 @@
 <body>
   <main class="ui-page">
     <header class="ui-head">
-      <div>
-        <h1>Disconnection tracker</h1>
-        <p id="meta">Loading…</p>
-        <p class="dc-base" id="base" hidden></p>
-      </div>
+      <div><h1>Disconnection tracker<span class="ui-badge ui-date" id="asOn">…</span></h1></div>
       <div class="ui-actions">
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
         <button type="button" class="ui-btn" id="syncBtn" hidden><svg class="ui-i"><use href="#ui-sync"/></svg>Sync sheet</button>
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
     </header>
 
-    <div class="ui-filters">
-      <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Consumer ID, name or address" autocomplete="off" /></label>
-      <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
-      <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
-      <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
-      <span class="ui-select"><select id="classFilter" aria-label="Class"><option value="">All classes</option></select></span>
-      <button type="button" class="ui-btn ghost" id="clearBtn" hidden><svg class="ui-i"><use href="#ui-x"/></svg>Clear</button>
-    </div>
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h"><h2>Filters<small id="activeLabel"></small></h2><button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button></div>
+        <div class="ui-side-sec ui-side-stack">
+          <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Search" title="Consumer ID, name or address" aria-label="Search by consumer ID, name or address" autocomplete="off" /></label>
+        </div>
+        <div class="ui-side-sec"><div id="fOsd" aria-label="Outstanding"></div></div>
+        <div class="ui-side-sec"><div id="fClass" aria-label="Class"></div></div>
+        <p class="dc-base" id="base" hidden></p>
+      </aside>
 
-    <section class="ui-stats" style="--n:5" id="stats" aria-label="Status">
-      <button type="button" class="ui-stat" data-k="all"><div class="k">Consumers</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="Fully Paid"><div class="k"><span class="ui-dot ok"></span>Fully paid</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="Partially Paid"><div class="k"><span class="ui-dot"></span>Part paid</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="Disconnected"><div class="k"><span class="ui-dot bad"></span>Disconnected</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="No Action Taken"><div class="k"><span class="ui-dot warn"></span>No action</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-    </section>
-    <section class="ui-stats dc-more" style="--n:3" id="stats2" aria-label="Outstanding and follow-ups">
-      <button type="button" class="ui-stat" data-osd="3000"><div class="k">OSD above ₹3,000</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-osd="5000"><div class="k">OSD above ₹5,000</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-fu="1"><div class="k">Follow-ups</div><div class="v"><span class="ui-skel"></span></div><div class="s">Last 7 days</div></button>
-    </section>
+      <div class="ui-main">
+        <section class="ui-stats" id="stats" aria-label="Status">
+          <button type="button" class="ui-stat" data-k="all"><div class="k">Consumers</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="Fully Paid"><div class="k"><span class="ui-dot ok"></span>Fully paid</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="Partially Paid"><div class="k"><span class="ui-dot"></span>Part paid</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="Disconnected"><div class="k"><span class="ui-dot bad"></span>Disconnected</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="No Action Taken"><div class="k"><span class="ui-dot warn"></span>No action</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+        </section>
 
-    <div class="ui-grid">
-      <div>
-      <section class="ui-panel">
-        <div class="ui-panel-h">
-          <h2>By office</h2>
-          <div class="ui-tabs" role="tablist" id="levelTabs">
-            <button type="button" class="ui-tab" role="tab" data-l="region" aria-selected="true">Region</button>
-            <button type="button" class="ui-tab" role="tab" data-l="division">Division</button>
-            <button type="button" class="ui-tab" role="tab" data-l="ccc">CCC</button>
+        <section class="ui-panel">
+          <div class="ui-panel-h dc-list-h">
+            <h2>Detailed report</h2>
+            <div class="right">
+              <div class="ui-seg" id="fuRange" role="group" aria-label="Follow-up range" hidden>
+                <button type="button" data-r="recent" aria-pressed="false">Last 7 days</button>
+                <button type="button" data-r="all" aria-pressed="true">All</button>
+              </div>
+              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+            </div>
           </div>
-        </div>
-        <div id="officeTable" style="--max-h:560px"><div class="ui-empty">Loading…</div></div>
-      </section>
-      <section class="ui-panel">
-        <div class="ui-panel-h"><h2>By class</h2></div>
-        <div class="ui-panel-b"><div id="classHist"></div></div>
-      </section>
-      </div>
-      <section class="ui-panel">
-        <div class="ui-panel-h"><h2>Recent activity</h2><div class="dc-legend"><span><i class="ui-dot ok"></i>Paid</span><span><i class="ui-dot bad"></i>Disconnected</span></div></div>
-        <div class="ui-panel-b"><div id="activity" class="dc-act"></div></div>
-      </section>
-    </div>
+          <div id="drill"></div>
+          <div id="table"><div class="ui-empty">Loading…</div></div>
+          <div id="followTable" hidden></div>
+        </section>
 
-    <section class="ui-panel" id="listPanel">
-      <div class="ui-panel-h dc-list-h">
-        <div class="ui-tabs" role="tablist" id="listTabs">
-          <button type="button" class="ui-tab" role="tab" data-t="consumers" aria-selected="true">Consumers<small id="nConsumers"></small></button>
-          <button type="button" class="ui-tab" role="tab" data-t="followups" aria-selected="false">Follow-ups<small id="nFollowups"></small></button>
-        </div>
-        <div class="right">
-          <div class="ui-seg" id="fuRange" role="group" aria-label="Follow-up range" hidden>
-            <button type="button" data-r="recent" aria-pressed="false">Last 7 days</button>
-            <button type="button" data-r="all" aria-pressed="true">All</button>
-          </div>
-          <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
-        </div>
+        <section class="ui-panel">
+          <div class="ui-panel-h"><h2>Recent activity</h2><div class="dc-legend"><span><i class="ui-dot ok"></i>Paid</span><span><i class="ui-dot bad"></i>Disconnected</span></div></div>
+          <div class="ui-panel-b"><div id="activity" class="dc-act"></div></div>
+        </section>
       </div>
-      <div id="consumerTable"><div class="ui-empty">Loading…</div></div>
-      <div id="followTable" hidden></div>
-    </section>
+    </div>
   </main>
 
   <div class="ui-drawer" id="drawer" hidden>
@@ -156,8 +130,11 @@
       'No Action Taken': { label: 'No action', cls: 'warn' }
     };
 
-    var all = [], scope = null, level = 'region', listTab = 'consumers';
-    var f = { q: '', status: 'all', osd: 0 };
+    var all = [], shown = '';
+    // Detailed report: Region → Division → CCC → consumers (or their follow-ups)
+    var dr = UI.drill({ el: 'drill', root: 'Malda Zone', lists: [{ k: 'list', label: 'Consumers' }, { k: 'followups', label: 'Follow-ups' }], onChange: function () { render(); } });
+    var f = { q: '', status: 'all', osd: 0, cls: '' };
+    var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
     var followupRecentOnly = false, haveData = false;
 
     var metaP = fetch('/api/disconnection/meta', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
@@ -271,49 +248,32 @@
       });
       if (window.MzoScope) all = window.MzoScope.filterRows(all);
       haveData = true;
-      $('meta').textContent = (maxDate ? 'As on ' + UI.fmtDate(maxDate) + ' · ' : '') + UI.n(all.length) + ' consumers';
+      $('asOn').textContent = maxDate ? 'As on ' + UI.fmtDate(maxDate) : UI.n(all.length) + ' consumers';
       var fmt = function (s) { return s ? UI.fmtDate(s) : '—'; };
-      $('base').textContent = 'OSD base · DOM ' + fmt(base.dom) + ' · IND/COM ' + fmt(base.ind);
+      $('base').textContent = 'OSD base date: domestic ' + fmt(base.dom) + ', industrial and commercial ' + fmt(base.ind) + '.';
       $('base').hidden = !(base.dom || base.ind);
-      fillFilters();
     }
 
     /* ------------------------------------------------------------------ filters */
 
-    function uniq(rows, k) { var s = {}; rows.forEach(function (r) { if (r[k]) s[r[k]] = 1; }); return Object.keys(s).sort(); }
-    function fillFilters() {
-      var reg = $('regionFilter').value, div = $('divisionFilter').value;
-      UI.fill('regionFilter', uniq(all, '_region'), 'All regions');
-      var r1 = all.filter(function (r) { return !reg || r._region === reg; });
-      UI.fill('divisionFilter', uniq(r1, '_divn'), 'All divisions');
-      var r2 = r1.filter(function (r) { return !div || r._divn === div; });
-      UI.fill('cccFilter', uniq(r2, '_supp'), 'All CCCs');
-      UI.fill('classFilter', uniq(all, 'classDesc').map(function (c) { return { value: c, label: UI.title(c) }; }), 'All classes');
-      if (!scope) scope = UI.lockScope();
-      ['regionFilter', 'divisionFilter', 'cccFilter', 'classFilter'].forEach(function (id) { UI.mark($(id)); });
-    }
-
-    // Office, class and search: the base every number is counted on.
-    function base(opts) {
-      var q = f.q.toLowerCase(), reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value, cls = opts && opts.skipClass ? '' : $('classFilter').value;
+    // Office path and panel filters (outstanding, class, search): the base every number is counted on.
+    // `skip` leaves one facet out so it can count its own options.
+    function base(skip) {
+      var q = f.q.toLowerCase();
+      var cls = skip === 'cls' ? '' : f.cls, osd = skip === 'osd' ? 0 : f.osd;
       return all.filter(function (c) {
-        if (reg && c._region !== reg) return false;
-        if (div && c._divn !== div) return false;
-        if (ccc && c._supp !== ccc) return false;
+        if (!dr.match(c)) return false;
         if (cls && c.classDesc !== cls) return false;
+        if (osd && !(c.osd > osd)) return false;
         if (q && !(c.id.toLowerCase().indexOf(q) !== -1 || c.name.toLowerCase().indexOf(q) !== -1 || c.address.toLowerCase().indexOf(q) !== -1 ||
           c._supp.toLowerCase().indexOf(q) !== -1 || c._divn.toLowerCase().indexOf(q) !== -1 || c._region.toLowerCase().indexOf(q) !== -1 ||
           c.remarks.toLowerCase().indexOf(q) !== -1)) return false;
         return true;
       });
     }
-    // Status and OSD stats filter the breakdowns and lists only.
+    // The status cards filter the breakdowns and lists only.
     function narrow(rows) {
-      return rows.filter(function (c) {
-        if (f.status !== 'all' && c.status !== f.status) return false;
-        if (f.osd && !(c.osd > f.osd)) return false;
-        return true;
-      });
+      return f.status === 'all' ? rows : rows.filter(function (c) { return c.status === f.status; });
     }
 
     /* ------------------------------------------------------------------ render */
@@ -326,11 +286,9 @@
     }
 
     function renderStats(b) {
-      var t = { 'Fully Paid': [0, 0], 'Partially Paid': [0, 0], 'Disconnected': [0, 0], 'No Action Taken': [0, 0] }, osd = 0, o3 = [0, 0], o5 = [0, 0];
+      var t = { 'Fully Paid': [0, 0], 'Partially Paid': [0, 0], 'Disconnected': [0, 0], 'No Action Taken': [0, 0] }, osd = 0;
       b.forEach(function (c) {
         osd += c.osd;
-        if (c.osd > 3000) { o3[0]++; o3[1] += c.osd; }
-        if (c.osd > 5000) { o5[0]++; o5[1] += c.osd; }
         var s = t[c.status]; s[0]++;
         s[1] += (c.status === 'Fully Paid' || c.status === 'Partially Paid') ? c.paid : c.osd;
       });
@@ -338,24 +296,24 @@
         var k = el.getAttribute('data-k');
         if (k === 'all') setStat(el, b.length, null, amount(osd) + ' outstanding');
         else setStat(el, t[k][0], b.length, amount(t[k][1]) + (k === 'Fully Paid' || k === 'Partially Paid' ? ' paid' : ' due'));
-        el.setAttribute('aria-pressed', String(!f.osd && f.status === k));
-      });
-      var recent = recentFollowupIds();
-      var fu = b.filter(function (c) { return recent.has(fuKey(c.id)); }).length;
-      [].forEach.call(document.querySelectorAll('#stats2 .ui-stat'), function (el) {
-        var o = +el.getAttribute('data-osd');
-        if (o === 3000) setStat(el, o3[0], b.length, amount(o3[1]) + ' due');
-        else if (o === 5000) setStat(el, o5[0], b.length, amount(o5[1]) + ' due');
-        else setStat(el, fu, b.length);
-        el.setAttribute('aria-pressed', String(o ? f.osd === o : (followupRecentOnly && listTab === 'followups')));
+        el.setAttribute('aria-pressed', String(f.status === k));
       });
     }
 
-    function renderOffices(view) {
-      var key = level === 'region' ? '_region' : level === 'division' ? '_divn' : '_supp', groups = {};
+    function renderReport(view, keepPage) {
+      var lv = dr.level();
+      if (lv !== shown) { $('table').__ui = null; shown = lv; keepPage = false; }
+      if (lv !== 'followups') followupRecentOnly = false;
+      $('table').hidden = lv === 'followups';
+      $('followTable').hidden = lv !== 'followups';
+      $('fuRange').hidden = lv !== 'followups';
+      $('exportBtn').hidden = lv === 'followups';
+      [].forEach.call(document.querySelectorAll('#fuRange button'), function (b) { b.setAttribute('aria-pressed', String((b.getAttribute('data-r') === 'recent') === followupRecentOnly)); });
+      if (lv === 'list') { renderConsumers(view, keepPage); return; }
+      if (lv === 'followups') return; // drawn by renderFollowupBoard
+      var groups = {};
       view.forEach(function (c) {
-        var name = c[key] || 'Unmapped';
-        var g = groups[name] || (groups[name] = { name: name, parent: level === 'ccc' ? c._divn : level === 'division' ? c._region : '', n: 0, osd: 0, paid: 0, discon: 0, none: 0 });
+        var k = dr.key(c), g = groups[k] || (groups[k] = { name: k, parent: dr.parent(c), row: c, n: 0, osd: 0, paid: 0, discon: 0, none: 0 });
         g.n++; g.osd += c.osd;
         if (c.status === 'Fully Paid' || c.status === 'Partially Paid') g.paid++;
         else if (c.status === 'Disconnected') g.discon++;
@@ -363,12 +321,11 @@
       });
       var list = Object.keys(groups).map(function (k) { return groups[k]; });
       var tot = list.reduce(function (a, g) { a.n += g.n; a.osd += g.osd; a.paid += g.paid; a.discon += g.discon; a.none += g.none; return a; }, { n: 0, osd: 0, paid: 0, discon: 0, none: 0, act: 0 });
-      var sel = level === 'region' ? $('regionFilter').value : level === 'division' ? $('divisionFilter').value : $('cccFilter').value;
-      UI.table('officeTable', {
+      UI.table('table', {
         rows: list, sort: { key: 'osd', dir: 'desc' }, count: false,
         empty: 'No consumers for these filters.',
         columns: [
-          { key: 'name', label: level === 'ccc' ? 'CCC' : level === 'division' ? 'Division' : 'Region', fmt: function (v, g) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.parent ? '<span class="sub">' + UI.esc(g.parent) + '</span>' : ''); } },
+          { key: 'name', label: dr.label(), fmt: function (v, g) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.parent ? '<span class="sub">' + UI.esc(g.parent) + '</span>' : ''); } },
           { key: 'n', label: 'Consumers', num: true, fmt: UI.n },
           { key: 'osd', label: 'OSD', num: true, fmt: amount },
           { key: 'paid', label: 'Paid', num: true, fmt: UI.n, hideSm: true },
@@ -377,8 +334,7 @@
           { key: 'act', label: 'Action taken', width: '22%', hideSm: true, sortVal: function (g) { return g.n ? (g.paid + g.discon) / g.n : 0; }, fmt: function (_, g) { var a = g.paid + g.discon; return UI.bar(a, g.n, a ? UI.pct(a, g.n) : '0%'); } }
         ],
         foot: list.length > 1 ? tot : null,
-        selected: function (g) { return sel && g.name === sel; },
-        onRow: function (g) { drill(g.name); }
+        onRow: function (g) { dr.open(g.name, g.row); }
       });
     }
 
@@ -395,26 +351,20 @@
       var max = Math.max.apply(null, list.map(function (d) { return d.p + d.x; }));
       var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       $('activity').innerHTML = list.map(function (d) {
-        var tot = d.p + d.x;
         return '<div class="row" title="' + UI.fmtDate(d.d) + ': ' + UI.n(d.p) + ' paid, ' + UI.n(d.x) + ' disconnected"><span>' + d.d.getDate() + ' ' + MON[d.d.getMonth()] + '</span>' +
           '<i><b class="p" style="width:' + (d.p / max * 100) + '%"></b><b class="d" style="width:' + (d.x / max * 100) + '%"></b></i>' +
           '<span>' + UI.n(d.p) + ' · ' + UI.n(d.x) + '</span></div>';
       }).join('');
     }
 
-    function renderClasses(view) {
-      var cls = {};
-      view.forEach(function (c) { var k = c.classDesc || 'Unknown'; cls[k] = (cls[k] || 0) + 1; });
-      var cur = $('classFilter').value;
-      UI.hist('classHist', Object.keys(cls).sort(function (a, b) { return cls[b] - cls[a]; }).map(function (k) { return { key: k, label: UI.title(k), value: cls[k] }; }), {
-        active: cur,
-        onClick: function (row) {
-          if (row.key === 'Unknown') return;
-          $('classFilter').value = cur === row.key ? '' : row.key;
-          UI.mark($('classFilter'));
-          render();
-        }
-      });
+    function facets() {
+      var bo = base('osd'), sum = function (min) { return bo.filter(function (c) { return c.osd > min; }).length; };
+      UI.facet('fOsd', [{ value: 3000, label: 'OSD above ₹3,000', count: sum(3000) }, { value: 5000, label: 'OSD above ₹5,000', count: sum(5000) }], f.osd, function (v) { f.osd = +v || 0; render(); });
+      var cls = {}; base('cls').forEach(function (c) { if (c.classDesc) cls[c.classDesc] = (cls[c.classDesc] || 0) + 1; });
+      var keys = Object.keys(cls); if (f.cls && keys.indexOf(f.cls) === -1) keys.push(f.cls);
+      UI.facet('fClass', keys.sort(function (a, b) { return (cls[b] || 0) - (cls[a] || 0); }).map(function (k) { return { value: k, label: UI.title(k), count: cls[k] || 0 }; }), f.cls, function (v) { f.cls = v; render(); });
+      var on = (f.q ? 1 : 0) + (f.osd ? 1 : 0) + (f.cls ? 1 : 0);
+      setActive(on);
     }
 
     var CONSUMER_COLS = [
@@ -434,8 +384,7 @@
       noteCounts = {};
       var hidden = hiddenFollowupIds(), store = readFollowupStore();
       Object.keys(store).forEach(function (k) { var n = (store[k] || []).filter(function (e) { return e && e.note && !hidden.has(e.id); }).length; if (n) noteCounts[fuKey(k)] = n; });
-      $('nConsumers').textContent = UI.n(view.length);
-      UI.table('consumerTable', {
+      UI.table('table', {
         rows: view, sort: { key: 'osd', dir: 'desc' }, limit: 50, resetPage: !keepPage,
         empty: 'No consumers match these filters.',
         columns: CONSUMER_COLS,
@@ -459,7 +408,7 @@
         items.push({ c: c, id: c.id, name: c.display, _supp: c._supp, _divn: c._divn, latest: notes[0], at: notes[0].at || '', count: notes.length });
       });
       items.sort(function (a, b) { return String(b.at).localeCompare(String(a.at)); });
-      $('nFollowups').textContent = items.length ? UI.n(items.length) : '';
+      dr.paint({ list: (view || []).length, followups: items.length });
       var fp = (followupRecentOnly ? 'r:' : 'a:') + items.map(function (i) { return i.latest.id + '|' + i.count + '|' + i.id; }).sort().join('\n');
       if (!force && fp === boardFp) return;
       boardFp = fp;
@@ -482,39 +431,10 @@
       var b = base(), view = narrow(b);
       lastView = view;
       renderStats(b);
-      renderOffices(view);
+      renderReport(view, opts.keepPage);
       renderActivity(view);
-      renderClasses(narrow(base({ skipClass: true })));
-      renderConsumers(view, opts.keepPage);
+      facets();
       renderFollowupBoard(view, true);
-      var locked = function (id) { return $(id).disabled; };
-      $('clearBtn').hidden = !(f.q || f.status !== 'all' || f.osd || $('classFilter').value ||
-        (!locked('regionFilter') && $('regionFilter').value) || (!locked('divisionFilter') && $('divisionFilter').value) || (!locked('cccFilter') && $('cccFilter').value));
-    }
-
-    function setLevel(l) {
-      level = l;
-      [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === l)); });
-      render();
-    }
-    function drill(name) {
-      if (level === 'region') { if ($('regionFilter').disabled) return setLevel('division'); $('regionFilter').value = name; $('divisionFilter').value = ''; $('cccFilter').value = ''; fillFilters(); setLevel('division'); }
-      else if (level === 'division') { if ($('divisionFilter').disabled) return setLevel('ccc'); $('divisionFilter').value = name; $('cccFilter').value = ''; fillFilters(); setLevel('ccc'); }
-      else {
-        if (!$('cccFilter').disabled) { $('cccFilter').value = $('cccFilter').value === name ? '' : name; fillFilters(); }
-        setList('consumers');
-        render();
-        if ($('cccFilter').value) $('listPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    }
-    function setList(t) {
-      listTab = t;
-      [].forEach.call(document.querySelectorAll('#listTabs .ui-tab'), function (b) { b.setAttribute('aria-selected', String(b.getAttribute('data-t') === t)); });
-      $('consumerTable').hidden = t !== 'consumers';
-      $('followTable').hidden = t !== 'followups';
-      $('fuRange').hidden = t !== 'followups';
-      $('exportBtn').hidden = t !== 'consumers';
-      [].forEach.call(document.querySelectorAll('#fuRange button'), function (b) { b.setAttribute('aria-pressed', String((b.getAttribute('data-r') === 'recent') === followupRecentOnly)); });
     }
 
     /* ------------------------------------------------------------------ follow-ups
@@ -594,23 +514,38 @@
       if (followupScriptUrl) enqueueFollowup({ op: 'add', id: entry.id, conId: key, at: entry.at, by: entry.by, note: entry.note });
       return { ok: true };
     }
+    // Remove one note id from every consumer's list (a note can only live under one consumer).
+    function dropFromStore(store, entryId) {
+      Object.keys(store).forEach(function (k) {
+        store[k] = (store[k] || []).filter(function (e) { return e && e.id !== entryId; });
+        if (!store[k].length) delete store[k];
+      });
+    }
     function deleteFollowup(id, entryId) {
       if (!canDeleteFollowup()) return;
       var key = fuKey(id); if (!key || !entryId) return;
-      var store = readFollowupStore(), list = Array.isArray(store[key]) ? store[key] : [];
-      var next = list.filter(function (e) { return e && e.id !== entryId; });
-      if (next.length) store[key] = next; else delete store[key];
+      var store = readFollowupStore();
+      dropFromStore(store, entryId);
       writeFollowupStore(store);
-      var pendingAdd = readFollowupOutbox().some(function (j) { return j && j.op === 'add' && j.id === entryId; });
-      var kept = readFollowupOutbox().filter(function (j) { return !(j && j.op === 'add' && j.id === entryId); });
+      // A note that never reached the sheet just leaves the outbox; a synced one queues a delete.
+      var queue = readFollowupOutbox(), isPendingAdd = function (j) { return j && j.op === 'add' && j.id === entryId; };
+      var pendingAdd = queue.some(isPendingAdd), kept = queue.filter(function (j) { return !isPendingAdd(j); });
       if (!pendingAdd && followupScriptUrl) kept.push({ op: 'delete', id: entryId, conId: key });
       writeFollowupOutbox(kept);
       if (followupScriptUrl) flushFollowupOutbox();
     }
-    function parseFollowupJson(text) {
-      var raw = String(text || '').trim();
-      if (!raw || (raw.charAt(0) !== '{' && raw.charAt(0) !== '[')) throw new Error('Follow-up sync returned a web page.');
-      return JSON.parse(raw);
+    // Apps Script call with a 20 s timeout; resolves to the parsed JSON when the script answers success/ok.
+    function scriptCall(url, init) {
+      var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 20000) : null;
+      init.credentials = 'omit'; init.redirect = 'follow'; if (ctrl) init.signal = ctrl.signal;
+      return fetch(url, init).then(function (res) { return res.text(); }).then(function (text) {
+        var raw = String(text || '').trim();
+        if (!raw || (raw.charAt(0) !== '{' && raw.charAt(0) !== '[')) throw new Error('Follow-up sync returned a web page.');
+        var d = JSON.parse(raw);
+        if (!d || (d.status !== 'success' && d.status !== 'ok')) throw new Error((d && d.message) || 'Follow-up sync failed');
+        return d;
+      }).finally(function () { if (timer) clearTimeout(timer); });
     }
     function enqueueUnsyncedFollowups() {
       if (!followupScriptUrl) return;
@@ -635,14 +570,14 @@
         if (!id || !conId || !note || deleted.has(id)) return;
         remoteIds.add(id);
         if (queue.some(function (j) { return j && j.op === 'delete' && j.id === id; })) return;
-        Object.keys(store).forEach(function (k) { store[k] = (store[k] || []).filter(function (e) { return e && e.id !== id; }); if (!store[k].length) delete store[k]; });
+        dropFromStore(store, id);
         var list = store[conId] || [];
         list.push({ id: id, at: String(row.at || ''), by: String(row.by || '').slice(0, 80), note: note, sync: 'ok' });
         store[conId] = list;
         queue = queue.filter(function (j) { return !(j && j.op === 'add' && j.id === id); });
       });
       deleted.forEach(function (id) {
-        Object.keys(store).forEach(function (k) { store[k] = (store[k] || []).filter(function (e) { return e && e.id !== id; }); if (!store[k].length) delete store[k]; });
+        dropFromStore(store, id);
         queue = queue.filter(function (j) { return !(j && j.id === id); });
       });
       queue = queue.filter(function (j) { return !j || j.op !== 'delete' || !(deleted.has(j.id) || !remoteIds.has(j.id)); });
@@ -651,18 +586,10 @@
     }
     function postFollowupJob(job) {
       var payload = job.op === 'delete' ? { action: 'delete', id: job.id } : { action: 'add', id: job.id, conId: job.conId, at: job.at, by: job.by || '', note: job.note };
-      var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 20000) : null;
-      return fetch(followupScriptUrl, {
-        method: 'POST', credentials: 'omit', redirect: 'follow',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'data=' + encodeURIComponent(JSON.stringify(payload)),
-        signal: ctrl ? ctrl.signal : undefined
-      }).then(function (res) { return res.text(); }).then(function (text) {
-        var d = parseFollowupJson(text);
-        if (!d || (d.status !== 'success' && d.status !== 'ok')) throw new Error((d && d.message) || 'Follow-up sync failed');
-        return d;
-      }).finally(function () { if (timer) clearTimeout(timer); });
+      return scriptCall(followupScriptUrl, {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'data=' + encodeURIComponent(JSON.stringify(payload))
+      });
     }
     function flushFollowupOutbox() {
       if (followupFlushing || !followupScriptUrl) return Promise.resolve();
@@ -693,19 +620,15 @@
     function pullFollowupComments() {
       if (followupPulling || !followupScriptUrl) return Promise.resolve();
       followupPulling = true;
-      var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 20000) : null;
       var url = followupScriptUrl + (followupScriptUrl.indexOf('?') >= 0 ? '&' : '?') + 'list=1&t=' + Date.now();
-      return fetch(url, { method: 'GET', credentials: 'omit', redirect: 'follow', signal: ctrl ? ctrl.signal : undefined })
-        .then(function (res) { return res.text(); })
-        .then(function (text) {
-          var d = parseFollowupJson(text);
-          if (!d || (d.status !== 'success' && d.status !== 'ok') || !Array.isArray(d.comments)) return;
+      return scriptCall(url, { method: 'GET' })
+        .then(function (d) {
+          if (!Array.isArray(d.comments)) return;
           applyRemoteFollowups(d);
           maybeRefreshFollowups();
         })
         .catch(function () {})
-        .finally(function () { if (timer) clearTimeout(timer); followupPulling = false; });
+        .finally(function () { followupPulling = false; });
     }
     // A pull refreshes the follow-up list only; it never reloads the consumer CSV.
     function maybeRefreshFollowups() {
@@ -833,14 +756,6 @@
 
     /* ------------------------------------------------------------------ events */
 
-    ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
-      $(id).addEventListener('change', function () {
-        if (id === 'regionFilter') $('divisionFilter').value = '';
-        if (id !== 'cccFilter') $('cccFilter').value = '';
-        fillFilters(); render();
-      });
-    });
-    $('classFilter').addEventListener('change', function () { UI.mark(this); render(); });
     $('q').addEventListener('input', UI.debounce(function () {
       f.q = this.value.trim();
       render();
@@ -849,46 +764,22 @@
     $('stats').addEventListener('click', function (e) {
       var s = e.target.closest('.ui-stat'); if (!s) return;
       var k = s.getAttribute('data-k');
-      followupRecentOnly = false; f.osd = 0;
+      followupRecentOnly = false;
       f.status = (k === 'all' || f.status === k) ? 'all' : k;
       render();
-    });
-    $('stats2').addEventListener('click', function (e) {
-      var s = e.target.closest('.ui-stat'); if (!s) return;
-      if (s.getAttribute('data-fu')) {
-        followupRecentOnly = !(followupRecentOnly && listTab === 'followups');
-        setList(followupRecentOnly ? 'followups' : listTab);
-        render();
-        if (followupRecentOnly) $('listPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
-        return;
-      }
-      var o = +s.getAttribute('data-osd');
-      followupRecentOnly = false; f.status = 'all';
-      f.osd = f.osd === o ? 0 : o;
-      render();
-    });
-    $('levelTabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-tab'); if (t) setLevel(t.getAttribute('data-l')); });
-    $('listTabs').addEventListener('click', function (e) {
-      var t = e.target.closest('.ui-tab'); if (!t) return;
-      if (t.getAttribute('data-t') === 'followups') followupRecentOnly = false;
-      setList(t.getAttribute('data-t'));
-      render({ keepPage: true });
     });
     $('fuRange').addEventListener('click', function (e) {
       var b = e.target.closest('button'); if (!b) return;
       followupRecentOnly = b.getAttribute('data-r') === 'recent';
-      setList('followups');
       render({ keepPage: true });
     });
-    $('clearBtn').addEventListener('click', function () {
-      f.q = ''; f.status = 'all'; f.osd = 0; followupRecentOnly = false; $('q').value = '';
-      ['regionFilter', 'divisionFilter', 'cccFilter', 'classFilter'].forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });
-      fillFilters();
-      setLevel(scope && (scope.level === 'division' || scope.level === 'ccc') ? 'ccc' : scope && scope.level === 'region' ? 'division' : 'region');
-    });
+    function clearAll() {
+      f.q = ''; f.status = 'all'; f.osd = 0; f.cls = ''; followupRecentOnly = false; $('q').value = '';
+      render();
+    }
     $('exportBtn').addEventListener('click', function () {
       if (!lastView.length) { UI.toast('Nothing to export'); return; }
-      var where = $('cccFilter').value || $('divisionFilter').value || $('regionFilter').value;
+      var where = dr.where();
       UI.exportCsv('disconnection-' + (where ? where.toLowerCase().replace(/\s+/g, '-') : 'all') + '.csv', [
         { key: 'id', label: 'Consumer ID' }, { key: 'name', label: 'Name' }, { key: 'address', label: 'Address' },
         { key: '_region', label: 'Region' }, { key: '_divn', label: 'Division' }, { key: 'cccCode', label: 'CCC code' }, { key: '_supp', label: 'CCC' },
@@ -899,12 +790,7 @@
 
     function reparse(text) { if (!text) return; prepare(text); render({ keepPage: true }); refreshOpenDrawer(); }
 
-    $('refreshBtn').addEventListener('click', function () {
-      var b = this; b.classList.add('spin');
-      Promise.resolve(window.mzoDataHub && window.mzoDataHub.waitForDataset(HUB_KEY, { forceCheck: true })).catch(function () {})
-        .then(function () { return window.mzoDataHub._peek(HUB_KEY); }).then(reparse)
-        .then(function () { b.classList.remove('spin'); });
-    });
+    UI.refresh('refreshBtn', HUB_KEY, reparse);
 
     // Sync from the Google Sheet to the cloud cache (Admin, dm1, disconnection-sync-autho).
     metaP.then(function (m) { if (m && m.canSync) $('syncBtn').hidden = false; });
@@ -937,9 +823,6 @@
         if (k === 'all') setStat(el, t, null, UI.inr(s.totalOSD || 0) + ' outstanding');
         else if (map[k]) setStat(el, map[k].count || 0, t, UI.inr(map[k].amount || 0) + (k === 'Fully Paid' || k === 'Partially Paid' ? ' paid' : ' due'));
       });
-      var els = document.querySelectorAll('#stats2 .ui-stat');
-      if (s.osd3kCount != null) setStat(els[0], s.osd3kCount, t, '');
-      if (s.osd5kCount != null) setStat(els[1], s.osd5kCount, t, '');
     });
 
     /* ------------------------------------------------------------------ boot */
@@ -949,19 +832,12 @@
       prepare(text);
       if (first) {
         first = false;
-        var d = params.get('division');
-        if (d && !$('divisionFilter').disabled) {
-          var m = [].filter.call($('divisionFilter').options, function (o) { return o.value && o.value.toLowerCase() === d.trim().toLowerCase().replace(/\s+division$/, ''); })[0];
-          if (m) { $('divisionFilter').value = m.value; fillFilters(); level = 'ccc'; }
-        }
+        dr.fromParams(params, all); // ?region= ?division= ?ccc=
         var st = params.get('status');
         if (st === 'noAction' || st === 'No Action Taken') f.status = 'No Action Taken';
         else if (st === 'disconnected' || st === 'Disconnected') f.status = 'Disconnected';
         else if (st === 'partiallyPaid' || st === 'Partially Paid') f.status = 'Partially Paid';
-        if (params.get('followups') === '1') setList('followups');
-        if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc';
-        else if (scope && scope.level === 'region' && level === 'region') level = 'division';
-        [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === level)); });
+        if (params.get('followups') === '1') dr.go('followups', true);
         render();
       } else {
         render({ keepPage: true });
@@ -974,11 +850,10 @@
         .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
         .then(onData)
         .catch(function () {
-          $('meta').textContent = 'Could not load data';
-          ['officeTable', 'consumerTable'].forEach(function (id) { $(id).innerHTML = '<div class="ui-empty">Could not load data. <button type="button" class="ui-btn sm" onclick="location.reload()">Retry</button></div>'; });
+          $('asOn').textContent = 'No data';
+          $('table').innerHTML = '<div class="ui-empty">Could not load data. <button type="button" class="ui-btn sm" onclick="location.reload()">Retry</button></div>';
         });
     }
-    setList(listTab);
     UI.load(HUB_KEY, function (text, info) {
       if (text) onData(text);
       else if (info && info.error && !haveData) fallback();

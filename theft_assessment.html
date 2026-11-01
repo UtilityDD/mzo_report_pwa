@@ -5,11 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Theft assessment · MZO Reports</title>
   <script src="/mzo_theme.js?v=3"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=3" />
-  <script src="/mzo_ui.js?v=2" defer></script>
-  <script src="/mzo_data_hub.js" defer></script>
-  <script src="/mzo_scope.js?v=5" defer></script>
-  <style>a.ui-btn { text-decoration: none; }</style>
+  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
+  <script src="/mzo_ui.js?v=4" defer></script>
+  <script src="/mzo_data_hub.js?v=90" defer></script>
+  <script src="/mzo_scope.js?v=14" defer></script>
 </head>
 <body>
   <main class="ui-page">
@@ -141,15 +140,9 @@
       fillFilters();
     }
 
-    function uniq(rows, k) { var s = {}; rows.forEach(function (r) { if (r[k]) s[r[k]] = 1; }); return Object.keys(s).sort(); }
     function fillFilters() {
-      var reg = $('regionFilter').value, div = $('divisionFilter').value;
-      UI.fill('regionFilter', uniq(all, '_region'), 'All regions');
-      var r1 = all.filter(function (r) { return !reg || r._region === reg; });
-      UI.fill('divisionFilter', uniq(r1, '_divn'), 'All divisions');
-      var r2 = r1.filter(function (r) { return !div || r._divn === div; });
-      UI.fill('cccFilter', uniq(r2, '_supp'), 'All CCCs');
-      UI.fill('yearFilter', uniq(all, 'year').reverse(), 'All years');
+      UI.offices(all);
+      UI.fill('yearFilter', UI.uniq(all, 'year').reverse(), 'All years');
       if (!scope) scope = UI.lockScope();
     }
 
@@ -170,7 +163,9 @@
       return !s || r.status === s;
     }
     var STAT = { final: function (r) { return r.hasFinal; }, cut: function (r) { return r.cut > 0; }, paid: function (r) { return r.pay > 0; }, due: function (r) { return r.balance > 0; } };
-    function cutOk(r) { return !f.cut || (f.cut === 'pending_final' ? !r.hasFinal : r.bucket === f.cut); }
+    // Cut bucket shown in the chart; "No cut" also holds the few bills that rose at final.
+    function cutKey(r) { return !r.hasFinal ? 'pending_final' : r.bucket === 'increased' ? 'zero' : r.bucket; }
+    function cutOk(r) { return !f.cut || cutKey(r) === f.cut; }
 
     function render() {
       var b = base(), v = b.filter(function (r) { return statusOk(r) && (!f.stat || STAT[f.stat](r)) && cutOk(r); });
@@ -222,7 +217,7 @@
 
       // Distributions
       var forCut = b.filter(function (r) { return statusOk(r) && (!f.stat || STAT[f.stat](r)); });
-      UI.hist('cutHist', CUT.map(function (c) { return { key: c.key, label: c.label, value: forCut.filter(function (r) { return c.key === 'pending_final' ? !r.hasFinal : c.key === 'zero' ? r.hasFinal && (r.bucket === 'zero' || r.bucket === 'increased') : r.bucket === c.key; }).length }; }),
+      UI.hist('cutHist', CUT.map(function (c) { return { key: c.key, label: c.label, value: forCut.filter(function (r) { return cutKey(r) === c.key; }).length }; }),
         { active: f.cut, onClick: function (row) { f.cut = f.cut === row.key ? '' : row.key; render(); } });
       var yrs = {}; v.forEach(function (r) { if (r.year) yrs[r.year] = (yrs[r.year] || 0) + 1; });
       UI.hist('yearHist', Object.keys(yrs).sort().reverse().slice(0, 8).map(function (y) { return { key: y, label: y, value: yrs[y] }; }),
@@ -293,12 +288,7 @@
         { key: 'fir', label: 'FIR', csv: function (r) { return r.fir ? 'Yes' : 'No'; } }, { key: 'firDetails', label: 'FIR details' }, { key: 'police', label: 'Police station' }
       ], window.__view || []);
     });
-    $('refreshBtn').addEventListener('click', function () {
-      var b = this; b.classList.add('spin');
-      Promise.resolve(window.mzoDataHub.waitForDataset(KEY, { forceCheck: true })).catch(function () {})
-        .then(function () { return window.mzoDataHub._peek(KEY); }).then(function (t) { if (t) { prepare(t); render(); } })
-        .then(function () { b.classList.remove('spin'); });
-    });
+    UI.refresh('refreshBtn', KEY, function (t) { prepare(t); render(); });
 
     var first = true;
     UI.load(KEY, function (text, info) {

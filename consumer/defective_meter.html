@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Defective meters · MZO Reports</title>
   <script src="/mzo_theme.js?v=3"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=3" />
-  <script src="/mzo_ui.js?v=2" defer></script>
-  <script src="/mzo_data_hub.js" defer></script>
-  <script src="/mzo_scope.js?v=5" defer></script>
-  <script src="/lib/defective_meter_pipeline.js?v=84" defer></script>
-  <script src="/lib/sheet_mirror_client.js?v=108" defer></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
+  <script src="/mzo_ui.js?v=4" defer></script>
+  <script src="/mzo_data_hub.js?v=90" defer></script>
+  <script src="/mzo_scope.js?v=14" defer></script>
+  <script src="/lib/defective_meter_pipeline.js?v=85" defer></script>
+  <script src="/lib/sheet_mirror_client.js?v=110" defer></script>
   <style>
     .dm-band { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 8px; }
     .dm-band h2 { margin: 0; font-size: 12.5px; font-weight: 500; color: var(--mzo-muted); }
@@ -147,16 +147,10 @@
     }
 
     /* ---------- filters ---------- */
-    function uniq(list, k) { var s = {}; list.forEach(function (r) { if (r[k]) s[r[k]] = 1; }); return Object.keys(s).sort(); }
     function fillFilters() {
-      var reg = $('regionFilter').value, div = $('divisionFilter').value;
-      UI.fill('regionFilter', uniq(rows, '_region'), 'All regions');
-      var r1 = rows.filter(function (r) { return !reg || r._region === reg; });
-      UI.fill('divisionFilter', uniq(r1, '_divn'), 'All divisions');
-      var r2 = r1.filter(function (r) { return !div || r._divn === div; });
-      UI.fill('cccFilter', uniq(r2, '_supp'), 'All CCCs');
-      UI.fill('classFilter', uniq(rows, 'BASE_CLASS').map(function (c) { return { value: c, label: CLASS[c] || c }; }), 'All classes');
-      UI.fill('yearFilter', uniq(rows, 'DEFECT_YEAR').sort(function (a, b) { return b - a; }), 'Any year');
+      UI.offices(rows);
+      UI.fill('classFilter', UI.uniq(rows, 'BASE_CLASS').map(function (c) { return { value: c, label: CLASS[c] || c }; }), 'All classes');
+      UI.fill('yearFilter', UI.uniq(rows, 'DEFECT_YEAR').sort(function (a, b) { return b - a; }), 'Any year');
       if (!scope) scope = UI.lockScope();
     }
     function base() {
@@ -168,11 +162,11 @@
 
     /* ---------- render ---------- */
     function render() {
-      var b = base(), f = field(metric);
+      var b = base(), f = field(metric), tot = sum(b, 'total');
       [].forEach.call(document.querySelectorAll('.ui-stat[data-m]'), function (el) {
-        var m = el.getAttribute('data-m'), v = sum(b, field(m)), tot = sum(b, 'total');
+        var m = el.getAttribute('data-m'), v = sum(b, field(m));
         el.querySelector('.v').textContent = UI.n(v);
-        el.querySelector('.s').textContent = m === 'total' ? (UI.n(uniq(b, '_supp').length) + ' CCCs') : UI.pct(v, tot) + ' of defective';
+        el.querySelector('.s').textContent = m === 'total' ? (UI.n(UI.uniq(b, '_supp').length) + ' CCCs') : UI.pct(v, tot) + ' of defective';
         el.setAttribute('aria-pressed', String(m === metric));
       });
 
@@ -196,13 +190,13 @@
           { key: 'share', label: 'Share', sortVal: function (x) { return x.n; }, fmt: function (_, x) { return UI.bar(x.n, max, UI.pct(x.n, total)); }, width: '40%' }
         ],
         foot: list.length > 1 ? { n: total } : null,
-        // Count-only metrics never open names (DEVELOPER.md).
+        // Count-only metrics never open names (docs/reports.md).
         onRow: level === 'ccc' ? (namesRow ? function (x) { showNames(x.name); } : null) : function (x) { drill(x.name); }
       });
 
       // Distributions for the active metric (year ignores the year filter so it can be used to pick one)
+      var reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value, cls = $('classFilter').value;
       var noYear = rows.filter(function (r) {
-        var reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value, cls = $('classFilter').value;
         return (!reg || r._region === reg) && (!div || r._divn === div) && (!ccc || r._supp === ccc) && (!cls || r.BASE_CLASS === cls);
       });
       var yr = {}; noYear.forEach(function (r) { var n = Number(r[f]) || 0; if (n && r.DEFECT_YEAR) yr[r.DEFECT_YEAR] = (yr[r.DEFECT_YEAR] || 0) + n; });
@@ -452,13 +446,9 @@
         .catch(function (e) { UI.toast(e.message || 'Sync failed'); })
         .then(function () { b.disabled = false; b.classList.remove('spin'); });
     });
-    $('refreshBtn').addEventListener('click', function () {
-      var b = this; b.classList.add('spin');
-      Promise.resolve(window.mzoDataHub && window.mzoDataHub.waitForDataset('CACHE_DEFECTIVE', { forceCheck: true })).catch(function () {})
-        .then(function () { return window.mzoDataHub._peek('CACHE_DEFECTIVE'); })
-        .then(function (t) { if (t) { details = null; onSummary(t); } })
-        .catch(function (e) { UI.toast(e.message || 'Refresh failed'); })
-        .then(function () { b.classList.remove('spin'); });
+    UI.refresh('refreshBtn', 'CACHE_DEFECTIVE', function (t) {
+      details = null;
+      try { onSummary(t); } catch (e) { UI.toast(e.message || 'Refresh failed'); }
     });
 
     if (!P) { fail('Defective pipeline failed to load.'); return; }

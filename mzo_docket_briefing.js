@@ -24,100 +24,6 @@
         'No power': 'No power'
     };
 
-    const REGION_DATA = {
-        'MALDA REGION': {
-            code: '6610000',
-            divisions: {
-                'MALDA DIVISION': {
-                    code: '6611000',
-                    cccs: {
-                        'MANIKCHAK CCC': '6611101',
-                        'GOLAPGANJ CCC': '6611102',
-                        'BAISHNABNAGAR CCC': '6611103',
-                        'KALIACHAK CCC': '6611104',
-                        'MOTHABARI CCC': '6611105',
-                        'SUJAPUR CCC': '6611106',
-                        'RATHBARI CCC': '6611107',
-                        'FULBARI CCC': '6611108',
-                        'MOKDUMPUR CCC': '6611109'
-                    }
-                },
-                'CHANCHAL DIVISION': {
-                    code: '6612000',
-                    cccs: {
-                        'BHALUKA CCC': '6612101',
-                        'SAMSI CCC': '6612102',
-                        'PARANPUR CCC': '6612103',
-                        'CHANCHAL CCC': '6612104',
-                        'MALATIPUR CCC': '6612105',
-                        'HARISHCHANDRAPUR CCC': '6612106',
-                        'KUSHIDA CCC': '6612107'
-                    }
-                },
-                'GAZOLE DIVISION': {
-                    code: '6613000',
-                    cccs: {
-                        'GAZOL CCC': '6613101',
-                        'AIHO. CCC': '6613102',
-                        'PANDUA CCC': '6613103',
-                        'BAMONGOLA CCC': '6613104',
-                        'OLD MALDA CCC': '6613105'
-                    }
-                }
-            }
-        },
-        'UTTAR DINAJPUR REGION': {
-            code: '6620000',
-            divisions: {
-                'RAIGANJ DIVISION': {
-                    code: '6621000',
-                    cccs: {
-                        'ITAHAR CCC': '6621101',
-                        'HEMTABAD CCC': '6621102',
-                        'KALIYAGANJ CCC': '6621103',
-                        'RAIGANJ CCC': '6621104',
-                        'BIRNAGAR CCC': '6621105',
-                        'KARANDIGHI CCC': '6621106'
-                    }
-                },
-                'ISLAMPUR DIVISION': {
-                    code: '6622000',
-                    cccs: {
-                        'ISLAMPUR CCC': '6622101',
-                        'CHOPRA CCC': '6622102',
-                        'DALKHOLA CCC': '6622103',
-                        'GOALPOKHER CCC': '6622104',
-                        'KANKI CCC': '6622105'
-                    }
-                }
-            }
-        },
-        'DAKSHIN DINAJPUR REGION': {
-            code: '6630000',
-            divisions: {
-                'BALURGHAT DIVISION': {
-                    code: '6631000',
-                    cccs: {
-                        'BALURGHAT CCC': '6631101',
-                        'TAPAN CCC': '6631102',
-                        'KUMARGANJ CCC': '6631103',
-                        'HILI CCC': '6631104',
-                        'PATIRAM CCC': '6631105'
-                    }
-                },
-                'BUNIADPUR DIVISION': {
-                    code: '6632000',
-                    cccs: {
-                        'BUNIADPUR CCC': '6632101',
-                        'KUSMANDI CCC': '6632102',
-                        'HARIRAMPUR CCC': '6632103',
-                        'GANGARAMPUR CCC': '6632104'
-                    }
-                }
-            }
-        }
-    };
-
     function parseDateString(dateString) {
         if (!dateString) return new Date(NaN);
         const parts = dateString.trim().split(' ');
@@ -126,59 +32,6 @@
         const [day, month, year] = datePart.split('/').map(Number);
         const [hours, minutes, seconds] = timePart.split(/[.:]/).map(Number);
         return new Date(year, (month || 1) - 1, day || 1, hours || 0, minutes || 0, seconds || 0);
-    }
-
-    function normalizeKey(value) {
-        return String(value || '')
-            .toLowerCase()
-            .replace(/region|division|div|ccc/g, '')
-            .replace(/[^a-z0-9]/g, '');
-    }
-
-    function fuzzyMatch(saved, candidate) {
-        if (!saved || !candidate || saved === 'all' || candidate === 'all') return false;
-        const s = normalizeKey(saved);
-        const o = normalizeKey(candidate);
-        if (!s || !o) return false;
-        if (s.includes('uttar') || s.includes('udinajpur')) {
-            return o.includes('uttar') || o.includes('udinajpur');
-        }
-        if (s.includes('dakshin') || s.includes('ddinajpur')) {
-            return o.includes('dakshin') || o.includes('ddinajpur');
-        }
-        return s.includes(o) || o.includes(s);
-    }
-
-    function resolveRegionKey(regionName) {
-        if (!regionName || regionName === 'all') return null;
-        for (const key of Object.keys(REGION_DATA)) {
-            if (fuzzyMatch(regionName, key)) return key;
-        }
-        return null;
-    }
-
-    function resolveDivisionKey(regionKey, divisionName) {
-        if (!regionKey || !divisionName || divisionName === 'all') return null;
-        const divisions = REGION_DATA[regionKey].divisions;
-        for (const key of Object.keys(divisions)) {
-            if (fuzzyMatch(divisionName, key)) return key;
-        }
-        return null;
-    }
-
-    function findCccCode(cccValue) {
-        if (!cccValue || cccValue === 'all') return null;
-        if (/^\d+$/.test(String(cccValue))) return String(cccValue);
-        for (const region of Object.values(REGION_DATA)) {
-            for (const division of Object.values(region.divisions)) {
-                for (const [name, code] of Object.entries(division.cccs)) {
-                    if (fuzzyMatch(cccValue, name) || String(code) === String(cccValue)) {
-                        return code;
-                    }
-                }
-            }
-        }
-        return null;
     }
 
     function normalizeRow(row) {
@@ -218,31 +71,6 @@
             const diffHours = (now - parsedDate) / (1000 * 60 * 60);
             return diffHours >= 24;
         });
-    }
-
-    function findCccName(cccValue) {
-        const code = findCccCode(cccValue);
-        if (!code) return null;
-        for (const region of Object.values(REGION_DATA)) {
-            for (const division of Object.values(region.divisions)) {
-                for (const [name, cccCode] of Object.entries(division.cccs)) {
-                    if (cccCode === code) return name;
-                }
-            }
-        }
-        return null;
-    }
-
-    function buildCccList() {
-        const list = [];
-        Object.entries(REGION_DATA).forEach(([region, regObj]) => {
-            Object.entries(regObj.divisions).forEach(([division, divObj]) => {
-                Object.entries(divObj.cccs).forEach(([name, code]) => {
-                    list.push({ code, name, region, division });
-                });
-            });
-        });
-        return list;
     }
 
     function buildSummary(data) {
@@ -484,7 +312,7 @@
 
     async function tryShow(opts) {
         opts = opts || {};
-        // Always show after login unless snoozed (force bypasses snooze, e.g. after prefs save)
+        // Shown once after login unless snoozed; opts.force bypasses both checks.
         if (!opts.force) {
             if (sessionStorage.getItem(SESSION_KEY) !== '1') return false;
             if (isSnoozed()) {

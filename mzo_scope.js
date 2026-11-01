@@ -63,18 +63,16 @@
     '6632104': 'Gangarampur'
   };
 
-  const CODE_TO_DIV = {
-    '6611101': 'Malda', '6611102': 'Malda', '6611103': 'Malda', '6611104': 'Malda', '6611105': 'Malda',
-    '6611106': 'Malda', '6611107': 'Malda', '6611108': 'Malda', '6611109': 'Malda', '66111609': 'Malda',
-    '6612101': 'Chanchal', '6612102': 'Chanchal', '6612103': 'Chanchal', '6612104': 'Chanchal',
-    '6612105': 'Chanchal', '6612106': 'Chanchal', '6612107': 'Chanchal',
-    '6613101': 'Gazole', '6613102': 'Gazole', '6613103': 'Gazole', '6613104': 'Gazole', '6613105': 'Gazole', '66131101': 'Gazole',
-    '6621101': 'Raiganj', '6621102': 'Raiganj', '6621103': 'Raiganj', '6621104': 'Raiganj',
-    '6621105': 'Raiganj', '6621106': 'Raiganj',
-    '6622101': 'Islampur', '6622102': 'Islampur', '6622103': 'Islampur', '6622104': 'Islampur', '6622105': 'Islampur',
-    '6631101': 'Balurghat', '6631102': 'Balurghat', '6631103': 'Balurghat', '6631104': 'Balurghat', '6631105': 'Balurghat',
-    '6632101': 'Buniadpur', '6632102': 'Buniadpur', '6632103': 'Buniadpur', '6632104': 'Buniadpur'
-  };
+  // Office code → division, derived from the CCC names above.
+  const CODE_TO_DIV = {};
+  Object.keys(CODE_TO_CCC).forEach(function (code) {
+    Object.keys(HIERARCHY).forEach(function (region) {
+      const divs = HIERARCHY[region].divisions;
+      Object.keys(divs).forEach(function (div) {
+        if (divs[div].cccs.indexOf(CODE_TO_CCC[code]) !== -1) CODE_TO_DIV[code] = div;
+      });
+    });
+  });
 
   let _cachedScope = null;
   let _cachedKey = '';
@@ -216,39 +214,26 @@
         const cccs = divs[dnames[d]].cccs;
         for (let c = 0; c < cccs.length; c++) {
           const cnorm = norm(cccs[c]);
-          if (n === cnorm || n.indexOf(cnorm) !== -1 || (n.length >= 4 && cnorm.indexOf(n) !== -1)) {
-            return cccs[c] === 'Gazol' ? 'Gazole' : cccs[c];
-          }
+          if (n === cnorm || n.indexOf(cnorm) !== -1 || (n.length >= 4 && cnorm.indexOf(n) !== -1)) return cccs[c];
         }
       }
     }
     return String(raw || '').trim();
   }
 
-  function foldCcc(name) {
-    return name === 'Gazol' ? 'Gazole' : name;
-  }
-
   function cccNameInDivision(raw, divisionName) {
     const s = String(raw == null ? '' : raw).trim();
     if (!s) return '';
     const division = divisionNameOf(divisionName) || divisionName;
-    const list = listCccs('', division).filter(function (c) { return c !== 'Gazol'; });
+    const list = listCccs('', division);
     const n = norm(s);
     if (!n) return '';
     for (let i = 0; i < list.length; i++) {
-      if (norm(list[i]) === n) return foldCcc(list[i]);
+      if (norm(list[i]) === n) return list[i];
     }
-    const prefixed = [];
-    for (let i = 0; i < list.length; i++) {
-      const cn = norm(list[i]);
-      if (cn.indexOf(n) === 0) prefixed.push(foldCcc(list[i]));
-    }
-    const uniq = prefixed.filter(function (c, i, a) { return a.indexOf(c) === i; });
-    if (uniq.length === 1) return uniq[0];
-    const named = cccNameOf(s);
-    if (named && list.some(function (c) { return foldCcc(c) === named; })) return named;
-    return named || s;
+    const prefixed = list.filter(function (c) { return norm(c).indexOf(n) === 0; });
+    if (prefixed.length === 1) return prefixed[0];
+    return cccNameOf(s) || s;
   }
 
   function parentOfCcc(cccName) {
@@ -650,24 +635,6 @@
     }
   }
 
-  function isFilterLocked(filterId) {
-    const scope = getScope();
-    if (!scope || scope.unscoped) return false;
-    const id = String(filterId || '').replace(/Drawer$/, '');
-    if (id === 'regionSelect' || id === 'regionFilter' || id === 'region' || id === 'region-filter' || id === 'locationFilter') {
-      return scope.level === 'region' || scope.level === 'division' || scope.level === 'ccc' ||
-        (scope.level === 'codes' && scope.regions && scope.regions.size === 1);
-    }
-    if (id === 'divnSelect' || id === 'divisionSelect' || id === 'divisionFilter' || id === 'division' || id === 'division-filter') {
-      return scope.level === 'division' || scope.level === 'ccc' ||
-        (scope.level === 'codes' && scope.divisions && scope.divisions.size === 1);
-    }
-    if (id === 'suppSelect' || id === 'cccSelect' || id === 'cccFilter' || id === 'unitFilter' || id === 'ccc-filter' || id === 'ccc-select') {
-      return scope.level === 'ccc';
-    }
-    return false;
-  }
-
   function mountBanner() {
     const scope = getScope();
     if (!scope || scope.unscoped) return;
@@ -762,7 +729,6 @@
     matchRow: matchRow,
     filterRows: filterRows,
     lockFilters: lockFilters,
-    isFilterLocked: isFilterLocked,
     mountBanner: mountBanner,
     listRegions: listRegions,
     listDivisions: listDivisions,

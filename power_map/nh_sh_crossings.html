@@ -498,7 +498,7 @@
             background-color: #f9f9f9;
         }
     </style>
-  <link rel="stylesheet" href="/mzo_theme.css?v=3" />
+  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
   <style id="mzo-skin">
     /* Panels on the map: design-system surfaces (map tiles untouched) */
     #map-header, #filter-container, #search-container, #map-legend, #toggle-filter-container .toggle-icon {
@@ -633,6 +633,33 @@
         'UG Cable Required': new Set(),
         'Status': new Set()
     };
+    const FILTER_CATEGORIES = Object.keys(selectedFilters);
+    const num = (v) => parseFloat(v) || 0;
+
+    function escapeHtml(v) {
+        return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    }
+
+    // Filter value of an entry; "UG Cable Required" is derived from the UG cable length.
+    function categoryValue(entry, cat) {
+        if (cat === 'UG Cable Required') return entry['Approx. UG Cable required (m)'] > 0 ? 'Yes' : 'No';
+        return String(entry[cat] || '').trim();
+    }
+
+    // Entry passes every active filter except `skipCat`; blank values always pass.
+    function passesFilters(entry, skipCat) {
+        return FILTER_CATEGORIES.every(cat => {
+            if (cat === skipCat) return true;
+            const value = categoryValue(entry, cat);
+            return !value || selectedFilters[cat].has(value);
+        });
+    }
+
+    function styleFor(entry, colorBy) {
+        if (colorBy === 'Status') return getStyleForStatus(entry['Status']);
+        if (colorBy === 'NH/SH') return getStyleForNhSh(entry['NH/SH']);
+        return getStyleForVoltage(entry['Voltage Level']);
+    }
 
     // Make an element draggable
     function makeDraggable(elmnt) {
@@ -737,19 +764,19 @@
 
         allMarkersLayerGroup = L.featureGroup().addTo(map);
 
-        const googleStreets = L.tileLayer('http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',{
+        const googleStreets = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',{
             maxZoom: 20,
             subdomains:['mt0','mt1','mt2','mt3'],
             attribution: 'Map data &copy; Google'
         });
 
-        const googleSat = L.tileLayer('http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{
+        const googleSat = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{
             maxZoom: 20,
             subdomains:['mt0','mt1','mt2','mt3'],
             attribution: 'Map data &copy; Google'
         });
 
-        const googleHybrid = L.tileLayer('http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}',{
+        const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}',{
             maxZoom: 20,
             subdomains:['mt0','mt1','mt2','mt3'],
             attribution: 'Map data &copy; Google'
@@ -916,24 +943,16 @@
     // Create filter UI from data
     function createFilterOptions(data) {
         const filterOptionsContainer = document.getElementById('filter-options');
-        const categories = ['Division', 'CCC', 'NH/SH', 'Voltage Level', 'DTR Required', 'UG Cable Required', 'Status'];
         const uniqueValues = {};
-
-        categories.forEach(cat => uniqueValues[cat] = new Set());
-
+        FILTER_CATEGORIES.forEach(cat => uniqueValues[cat] = new Set());
         data.forEach(entry => {
-            // Handle standard categories from CSV
-            ['Division', 'CCC', 'NH/SH', 'Voltage Level', 'DTR Required', 'Status'].forEach(cat => {
-                const value = String(entry[cat] || '').trim();
+            FILTER_CATEGORIES.forEach(cat => {
+                const value = categoryValue(entry, cat);
                 if (value) uniqueValues[cat].add(value);
             });
-
-            // Handle synthetic category for UG Cable
-            const ugCableValue = (entry['Approx. UG Cable required (m)'] > 0) ? 'Yes' : 'No';
-            uniqueValues['UG Cable Required'].add(ugCableValue);
         });
 
-        categories.forEach(cat => {
+        FILTER_CATEGORIES.forEach(cat => {
             if (uniqueValues[cat].size > 0) {
                 const categoryDiv = document.createElement('div');
                 categoryDiv.className = 'filter-category';
@@ -1054,19 +1073,8 @@
     // Update marker styles based on the selected coloring option
     function updateMarkerStyles() {
         const colorBy = document.querySelector('input[name="colorBy"]:checked').value;
-        
         allData.forEach(entry => {
-            if (entry.marker) {
-                let style;
-                if (colorBy === 'Status') {
-                    style = getStyleForStatus(entry['Status']);
-                } else if (colorBy === 'NH/SH') {
-                    style = getStyleForNhSh(entry['NH/SH']);
-                } else { // Default to Voltage Level
-                    style = getStyleForVoltage(entry['Voltage Level']);
-                }
-                entry.marker.setStyle(style);
-            }
+            if (entry.marker) entry.marker.setStyle(styleFor(entry, colorBy));
         });
 
         createLegend(); // Update the legend to match
@@ -1105,36 +1113,25 @@
         for (const [name, style] of Object.entries(legendItems)) {
             const item = document.createElement('div');
             item.className = 'legend-item';
-            item.innerHTML = `<span class="legend-symbol" style="background-color: ${style.fillColor};"></span> ${name}`;
+            item.innerHTML = `<span class="legend-symbol" style="background-color: ${style.fillColor};"></span> ${escapeHtml(name)}`;
             legendContainer.appendChild(item);
         }
     }
 
     // Update filter counts based on visible data
     function updateFilterCounts(visibleData) {
-        const categories = ['Division', 'CCC', 'NH/SH', 'Voltage Level', 'DTR Required', 'UG Cable Required', 'Status'];
-
         // Calculate counts from the currently visible data
         const counts = {};
-        categories.forEach(cat => { counts[cat] = {}; });
-
+        FILTER_CATEGORIES.forEach(cat => { counts[cat] = {}; });
         visibleData.forEach(entry => {
-            categories.forEach(cat => {
-                let value;
-                if (cat === 'UG Cable Required') {
-                    value = (entry['Approx. UG Cable required (m)'] > 0) ? 'Yes' : 'No';
-                } else {
-                    value = String(entry[cat] || '').trim();
-                }
-
-                if (value) {
-                    counts[cat][value] = (counts[cat][value] || 0) + 1;
-                }
+            FILTER_CATEGORIES.forEach(cat => {
+                const value = categoryValue(entry, cat);
+                if (value) counts[cat][value] = (counts[cat][value] || 0) + 1;
             });
         });
 
         // Update the DOM for each category
-        categories.forEach(cat => {
+        FILTER_CATEGORIES.forEach(cat => {
             const categoryCheckboxes = document.querySelectorAll(`#filter-options input[data-category="${cat}"]`);
             
             // Update individual item counts
@@ -1168,27 +1165,11 @@
     // Apply filters and update map
     function applyFilters() {
         allMarkersLayerGroup.clearLayers();
-        const filteredData = allData.filter(entry => {
-            return Object.keys(selectedFilters).every(cat => {
-                let value;
-                if (cat === 'UG Cable Required') {
-                    value = (entry['Approx. UG Cable required (m)'] > 0) ? 'Yes' : 'No';
-                } else {
-                    value = String(entry[cat] || '').trim();
-                }
-                return !value || selectedFilters[cat].has(value);
-            });
-        });
+        const filteredData = allData.filter(entry => passesFilters(entry));
 
         // Update summary in the filter panel
-        const totalLocations = filteredData.length;
-        const totalCrossings = filteredData.reduce((sum, entry) => {
-            const htSpans = parseFloat(entry['Number of Span (HT)']) || 0;
-            const ltSpans = parseFloat(entry['Number of Span (LT)']) || 0;
-            return sum + htSpans + ltSpans;
-        }, 0);
         const summaryElement = document.getElementById('filter-summary');
-        if (summaryElement) summaryElement.innerHTML = `Total Loc: ${totalLocations}, Total X-ing: ${totalCrossings}`;
+        if (summaryElement) summaryElement.textContent = `Total Loc: ${filteredData.length}, Total X-ing: ${totalCrossings(filteredData)}`;
 
         filteredData.forEach(entry => {
             if (entry.marker) entry.marker.addTo(allMarkersLayerGroup);
@@ -1197,138 +1178,101 @@
         updateFilterCounts(filteredData);
     }
 
+    function totalCrossings(data) {
+        return data.reduce((sum, entry) => sum + num(entry['Number of Span (HT)']) + num(entry['Number of Span (LT)']), 0);
+    }
+
+    /** Per-category breakdowns shared by the report modal and its CSV (the reported category is skipped). */
+    function summarize(data, primaryCategory) {
+        return FILTER_CATEGORIES.filter(cat => cat !== primaryCategory).map(cat => {
+            const groups = {};
+            data.forEach(entry => {
+                const key = cat === 'UG Cable Required' ? categoryValue(entry, cat) : String(entry[cat] || 'N/A').trim();
+                if (!key) return;
+                const g = groups[key] || (groups[key] = { count: 0, ht_spans: 0, lt_spans: 0, ht_length: 0, lt_length: 0, ug_cable: 0, oh_ht: 0, oh_lt: 0 });
+                g.count++;
+                g.ht_spans += num(entry['Number of Span (HT)']);
+                g.lt_spans += num(entry['Number of Span (LT)']);
+                g.ht_length += num(entry['R/L HT-11kV (in m)']) + num(entry['R/L HT-33kV (in m)']);
+                g.lt_length += num(entry['R/L LT (in m)']);
+                g.ug_cable += num(entry['Approx. UG Cable required (m)']);
+                g.oh_ht += num(entry['Approx. OH-HT required (m)']);
+                g.oh_lt += num(entry['Approx. OH-LT required (m)']);
+            });
+            return { cat, rows: Object.entries(groups).sort() };
+        }).filter(section => section.rows.length);
+    }
+
+    /** Material needed where a DTR is required (null when none is). */
+    function materialSummary(data) {
+        const required = data.filter(entry => {
+            const v = String(entry['DTR Required'] || '').trim().toLowerCase();
+            return v && v !== 'no' && v !== 'n/a' && v !== 'not required' && v !== '0';
+        });
+        if (!required.length) return null;
+        const counts = {};
+        required.forEach(d => {
+            const type = String(d['DTR Required'] || 'Unknown').trim();
+            counts[type] = (counts[type] || 0) + 1;
+        });
+        const total = (col) => required.reduce((sum, d) => sum + num(d[col]), 0);
+        return {
+            dtr: Object.entries(counts).map(([type, count]) => `${type} (${count})`).join(', '),
+            ugKm: (total('Approx. UG Cable required (m)') / 1000).toFixed(3),
+            htKm: ((total('Approx. OH-HT required (m)') * 3 * 1.03) / 1000).toFixed(3),
+            ltKm: ((total('Approx. OH-LT required (m)') * 4 * 1.03) / 1000).toFixed(3)
+        };
+    }
+
+    // Extra columns per breakdown in the modal: [header, value]
+    const SUMMARY_COLUMNS = {
+        'Voltage Level': [['HT Spans (count)', g => g.ht_spans], ['LT Spans (count)', g => g.lt_spans], ['HT Length (m)', g => g.ht_length.toFixed(2)], ['LT Length (m)', g => g.lt_length.toFixed(2)]],
+        'DTR Required': [['UG Cable (m)', g => g.ug_cable.toFixed(2)], ['OH-HT (m)', g => g.oh_ht.toFixed(2)], ['OH-LT (m)', g => g.oh_lt.toFixed(2)]],
+        'UG Cable Required': [['Total UG Cable (m)', g => g.ug_cable.toFixed(2)]]
+    };
+
+    // CSV: Category, Value, Location Count, then these columns
+    const CSV_COLUMNS = ['HT Spans (count)', 'LT Spans (count)', 'HT Length (m)', 'LT Length (m)', 'UG Cable (m)', 'OH-HT (m)', 'OH-LT (m)'];
+    function csvCells(cat, g) {
+        if (cat === 'Voltage Level') return [g.ht_spans, g.lt_spans, g.ht_length.toFixed(2), g.lt_length.toFixed(2), '', '', ''];
+        if (cat === 'DTR Required') return ['', '', '', '', g.ug_cable.toFixed(2), g.oh_ht.toFixed(2), g.oh_lt.toFixed(2)];
+        if (cat === 'UG Cable Required') return ['', '', '', '', g.ug_cable.toFixed(2), '', ''];
+        return ['', '', '', '', '', '', ''];
+    }
+    const csvText = (v) => `"${String(v).replace(/"/g, '""')}"`;
+
     // Export report data to a CSV file
     function exportReportToCsv(data, primaryCategory, title) {
         if (data.length === 0) {
             alert("No data to export.");
             return;
         }
-
-        let csvContent = "Category,Value,Location Count,HT Spans (count),LT Spans (count),HT Length (m),LT Length (m),UG Cable (m),OH-HT (m),OH-LT (m)\r\n"; // Expanded CSV Header
-
-        const categoriesToSummarize = ['Division', 'CCC', 'NH/SH', 'Voltage Level', 'DTR Required', 'UG Cable Required', 'Status'];
-
-        categoriesToSummarize.forEach(cat => {
-            if (cat === primaryCategory) {
-                return; // Skip self
-            }
-
-            if (cat === 'Voltage Level') {
-                const voltageSummary = {};
-                data.forEach(entry => {
-                    const value = String(entry[cat] || 'N/A').trim();
-                    if (value) {
-                        if (!voltageSummary[value]) {
-                            voltageSummary[value] = { count: 0, ht_spans: 0, lt_spans: 0, ht_length: 0, lt_length: 0 };
-                        }
-                        voltageSummary[value].count++;
-                        voltageSummary[value].ht_spans += parseFloat(entry['Number of Span (HT)']) || 0;
-                        voltageSummary[value].lt_spans += parseFloat(entry['Number of Span (LT)']) || 0;
-                        voltageSummary[value].lt_length += parseFloat(entry['R/L LT (in m)']) || 0;
-                        voltageSummary[value].ht_length += (parseFloat(entry['R/L HT-11kV (in m)']) || 0) + (parseFloat(entry['R/L HT-33kV (in m)']) || 0);
-                    }
-                });
-
-                if (Object.keys(voltageSummary).length > 0) {
-                    Object.entries(voltageSummary).sort().forEach(([key, summary]) => {
-                        const escapedKey = `"${key.replace(/"/g, '""')}"`;
-                        csvContent += `${cat},${escapedKey},${summary.count},${summary.ht_spans},${summary.lt_spans},${summary.ht_length.toFixed(2)},${summary.lt_length.toFixed(2)},,,\r\n`;
-                    });
-                }
-            } else if (cat === 'DTR Required') {
-                const dtrSummary = {};
-                data.forEach(entry => {
-                    const value = String(entry[cat] || 'N/A').trim();
-                    if (value) {
-                        if (!dtrSummary[value]) {
-                            dtrSummary[value] = { count: 0, ug_cable: 0, oh_ht: 0, oh_lt: 0 };
-                        }
-                        dtrSummary[value].count++;
-                        dtrSummary[value].ug_cable += parseFloat(entry['Approx. UG Cable required (m)']) || 0;
-                        dtrSummary[value].oh_ht += parseFloat(entry['Approx. OH-HT required (m)']) || 0;
-                        dtrSummary[value].oh_lt += parseFloat(entry['Approx. OH-LT required (m)']) || 0;
-                    }
-                });
-                if (Object.keys(dtrSummary).length > 0) {
-                    Object.entries(dtrSummary).sort().forEach(([key, summary]) => {
-                        const escapedKey = `"${key.replace(/"/g, '""')}"`;
-                        csvContent += `${cat},${escapedKey},${summary.count},,,,${summary.ug_cable.toFixed(2)},${summary.oh_ht.toFixed(2)},${summary.oh_lt.toFixed(2)}\r\n`;
-                    });
-                }
-            } else if (cat === 'UG Cable Required') {
-                const ugSummary = {};
-                data.forEach(entry => {
-                    const value = (entry['Approx. UG Cable required (m)'] > 0) ? 'Yes' : 'No';
-                    if (!ugSummary[value]) {
-                        ugSummary[value] = { count: 0, ug_cable: 0 };
-                    }
-                    ugSummary[value].count++;
-                    ugSummary[value].ug_cable += parseFloat(entry['Approx. UG Cable required (m)']) || 0;
-                });
-                if (Object.keys(ugSummary).length > 0) {
-                    Object.entries(ugSummary).sort().forEach(([key, summary]) => {
-                        const escapedKey = `"${key.replace(/"/g, '""')}"`;
-                        csvContent += `${cat},${escapedKey},${summary.count},,,,,${summary.ug_cable.toFixed(2)},,,\r\n`;
-                    });
-                }
-            } else {
-                const counts = {};
-                data.forEach(entry => {
-                    const value = String(entry[cat] || 'N/A').trim();
-                    if (value) {
-                       counts[value] = (counts[value] || 0) + 1;
-                    }
-                });
-
-                if (Object.keys(counts).length > 0) {
-                    Object.entries(counts).sort().forEach(([key, count]) => {
-                        const escapedKey = `"${key.replace(/"/g, '""')}"`;
-                        csvContent += `${cat},${escapedKey},${count},,,,,,,,\r\n`; // Add empty commas for all summary columns
-                    });
-                }
-            }
-        });
-
-        // --- Add Material Required Summary to CSV ---
-        const dtrRequiredData = data.filter(entry => {
-            const dtrValue = String(entry['DTR Required'] || '').trim().toLowerCase();
-            return dtrValue && dtrValue !== 'no' && dtrValue !== 'n/a' && dtrValue !== 'not required' && dtrValue !== '0';
-        });
-
-        if (dtrRequiredData.length > 0) {
-            csvContent += "\r\n"; // Add a blank line for separation
-            csvContent += "Material Required Summary\r\n";
-            csvContent += "Material,Value\r\n";
-
-            // DTR counts
-            const dtrCounts = {};
-            dtrRequiredData.forEach(d => {
-                const type = String(d['DTR Required'] || 'Unknown').trim();
-                dtrCounts[type] = (dtrCounts[type] || 0) + 1;
+        let csvContent = 'Category,Value,Location Count,' + CSV_COLUMNS.join(',') + '\r\n';
+        summarize(data, primaryCategory).forEach(({ cat, rows }) => {
+            rows.forEach(([key, g]) => {
+                csvContent += [cat, csvText(key), g.count].concat(csvCells(cat, g)).join(',') + '\r\n';
             });
-            const dtrTypesWithCounts = Object.entries(dtrCounts).map(([type, count]) => `${type} (${count})`).join(', ');
-            csvContent += `Required DTR,"${dtrTypesWithCounts}"\r\n`;
+        });
 
-            const totalUgCableM = dtrRequiredData.reduce((sum, d) => sum + (parseFloat(d['Approx. UG Cable required (m)']) || 0), 0);
-            csvContent += `Required UG Cable (km),${(totalUgCableM / 1000).toFixed(3)}\r\n`;
-
-            const totalOhHtM = dtrRequiredData.reduce((sum, d) => sum + (parseFloat(d['Approx. OH-HT required (m)']) || 0), 0);
-            csvContent += `Conductor Required for HT (km),${((totalOhHtM * 3 * 1.03) / 1000).toFixed(3)}\r\n`;
-
-            const totalOhLtM = dtrRequiredData.reduce((sum, d) => sum + (parseFloat(d['Approx. OH-LT required (m)']) || 0), 0);
-            csvContent += `Conductor Required for LT (km),${((totalOhLtM * 4 * 1.03) / 1000).toFixed(3)}\r\n`;
+        const material = materialSummary(data);
+        if (material) {
+            csvContent += '\r\nMaterial Required Summary\r\nMaterial,Value\r\n';
+            csvContent += `Required DTR,${csvText(material.dtr)}\r\n`;
+            csvContent += `Required UG Cable (km),${material.ugKm}\r\n`;
+            csvContent += `Conductor Required for HT (km),${material.htKm}\r\n`;
+            csvContent += `Conductor Required for LT (km),${material.ltKm}\r\n`;
         }
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
         const url = URL.createObjectURL(blob);
         link.setAttribute("href", url);
-        const filename = title.replace(/[^a-z0-9]/gi, '_').toLowerCase() + '.csv';
-        link.setAttribute("download", filename);
+        link.setAttribute("download", title.replace(/[^a-z0-9]/gi, '_').toLowerCase() + '.csv');
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     }
 
     // Generate summary HTML for the report modal
@@ -1336,170 +1280,37 @@
         if (data.length === 0) {
             return '<p>No data available for this selection based on current filters.</p>';
         }
+        let html = `<h4>Total Loc: ${data.length}, Total X-ing: ${totalCrossings(data)}</h4>`;
+        summarize(data, primaryCategory).forEach(({ cat, rows }) => {
+            const cols = SUMMARY_COLUMNS[cat] || [];
+            html += `<h5>Breakdown by ${cat}</h5>`;
+            html += '<table class="report-summary-table">';
+            html += `<thead><tr><th>${cat} Value</th><th>Location Count</th>${cols.map(c => `<th>${c[0]}</th>`).join('')}</tr></thead>`;
+            html += '<tbody>';
+            rows.forEach(([key, g]) => {
+                html += `<tr><td>${escapeHtml(key)}</td><td>${g.count}</td>${cols.map(c => `<td>${c[1](g)}</td>`).join('')}</tr>`;
+            });
+            html += '</tbody></table>';
 
-        // Calculate total locations (items) and total crossings (spans)
-        const totalLocations = data.length;
-        
-        const totalCrossings = data.reduce((sum, entry) => {
-            const htSpans = parseFloat(entry['Number of Span (HT)']) || 0;
-            const ltSpans = parseFloat(entry['Number of Span (LT)']) || 0;
-            return sum + htSpans + ltSpans;
-        }, 0);
-
-        let html = `<h4>Total Loc: ${totalLocations}, Total X-ing: ${totalCrossings}</h4>`;
-        const categoriesToSummarize = ['Division', 'CCC', 'NH/SH', 'Voltage Level', 'DTR Required', 'UG Cable Required', 'Status'];
-
-        categoriesToSummarize.forEach(cat => {
-            // Don't generate a breakdown for the category we are already reporting on
-            if (cat === primaryCategory) {
-                return;
-            }
-
-            if (cat === 'Voltage Level') {
-                const voltageSummary = {};
-                data.forEach(entry => {
-                    const value = String(entry[cat] || 'N/A').trim();
-                    if (value) {
-                        if (!voltageSummary[value]) {
-                            voltageSummary[value] = { count: 0, ht_spans: 0, lt_spans: 0, ht_length: 0, lt_length: 0 };
-                        }
-                        voltageSummary[value].count++;
-                        voltageSummary[value].ht_spans += parseFloat(entry['Number of Span (HT)']) || 0;
-                        voltageSummary[value].lt_spans += parseFloat(entry['Number of Span (LT)']) || 0;
-                        voltageSummary[value].lt_length += parseFloat(entry['R/L LT (in m)']) || 0;
-                        voltageSummary[value].ht_length += (parseFloat(entry['R/L HT-11kV (in m)']) || 0) + (parseFloat(entry['R/L HT-33kV (in m)']) || 0);
-                    }
-                });
-
-                if (Object.keys(voltageSummary).length > 0) {
-                    html += `<h5>Breakdown by ${cat}</h5>`;
-                    html += '<table class="report-summary-table">';
-                    html += `<thead><tr><th>${cat} Value</th><th>Location Count</th><th>HT Spans (count)</th><th>LT Spans (count)</th><th>HT Length (m)</th><th>LT Length (m)</th></tr></thead>`;
-                    html += '<tbody>';
-                    Object.entries(voltageSummary).sort().forEach(([key, summary]) => {
-                        html += `<tr><td>${key}</td><td>${summary.count}</td><td>${summary.ht_spans}</td><td>${summary.lt_spans}</td><td>${summary.ht_length.toFixed(2)}</td><td>${summary.lt_length.toFixed(2)}</td></tr>`;
-                    });
-                    html += '</tbody></table>';
-                }
-            } else if (cat === 'DTR Required') {
-                const dtrSummary = {};
-                data.forEach(entry => {
-                    const value = String(entry[cat] || 'N/A').trim();
-                    if (value) {
-                        if (!dtrSummary[value]) {
-                            dtrSummary[value] = { count: 0, ug_cable: 0, oh_ht: 0, oh_lt: 0 };
-                        }
-                        dtrSummary[value].count++;
-                        dtrSummary[value].ug_cable += parseFloat(entry['Approx. UG Cable required (m)']) || 0;
-                        dtrSummary[value].oh_ht += parseFloat(entry['Approx. OH-HT required (m)']) || 0;
-                        dtrSummary[value].oh_lt += parseFloat(entry['Approx. OH-LT required (m)']) || 0;
-                    }
-                });
-                if (Object.keys(dtrSummary).length > 0) {
-                    html += `<h5>Breakdown by ${cat}</h5>`;
-                    html += '<table class="report-summary-table">';
-                    html += `<thead><tr><th>${cat} Value</th><th>Location Count</th><th>UG Cable (m)</th><th>OH-HT (m)</th><th>OH-LT (m)</th></tr></thead>`;
-                    html += '<tbody>';
-                    Object.entries(dtrSummary).sort().forEach(([key, summary]) => {
-                        html += `<tr><td>${key}</td><td>${summary.count}</td><td>${summary.ug_cable.toFixed(2)}</td><td>${summary.oh_ht.toFixed(2)}</td><td>${summary.oh_lt.toFixed(2)}</td></tr>`;
-                    });
-                    html += '</tbody></table>';
-
-                    // --- New Material Required Table Logic ---
-                    // Filter for only the rows where a DTR is actually required.
-                    const dtrRequiredData = data.filter(entry => {
-                        const dtrValue = String(entry['DTR Required'] || '').trim().toLowerCase();
-                        return dtrValue && dtrValue !== 'no' && dtrValue !== 'n/a' && dtrValue !== 'not required' && dtrValue !== '0';
-                    });
-
-                    if (dtrRequiredData.length > 0) {
-                        // Count occurrences of each DTR type
-                        const dtrCounts = {};
-                        dtrRequiredData.forEach(d => {
-                            const type = String(d['DTR Required'] || 'Unknown').trim();
-                            dtrCounts[type] = (dtrCounts[type] || 0) + 1;
-                        });
-                        const dtrTypesWithCounts = Object.entries(dtrCounts)
-                            .map(([type, count]) => `${type} (${count})`)
-                            .join(', ');
-
-                        const totalUgCableM = dtrRequiredData.reduce((sum, d) => sum + (parseFloat(d['Approx. UG Cable required (m)']) || 0), 0);
-                        const totalUgCableKm = (totalUgCableM / 1000).toFixed(3);
-
-                        const totalOhHtM = dtrRequiredData.reduce((sum, d) => sum + (parseFloat(d['Approx. OH-HT required (m)']) || 0), 0);
-                        const totalHtConductorKm = ((totalOhHtM * 3 * 1.03) / 1000).toFixed(3);
-
-                        const totalOhLtM = dtrRequiredData.reduce((sum, d) => sum + (parseFloat(d['Approx. OH-LT required (m)']) || 0), 0);
-                        const totalLtConductorKm = ((totalOhLtM * 4 * 1.03) / 1000).toFixed(3);
-
-                        html += '<table class="material-required-table">';
-                        html += '<thead><tr><th colspan="2">Material Required Summary</th></tr></thead>';
-                        html += '<tbody>';
-                        html += `<tr><td>Required DTR</td><td>${dtrTypesWithCounts}</td></tr>`;
-                        html += `<tr><td>Required UG Cable (km)</td><td>${totalUgCableKm}</td></tr>`;
-                        html += `<tr><td>Conductor Required for HT (km)</td><td>${totalHtConductorKm}</td></tr>`;
-                        html += `<tr><td>Conductor Required for LT (km)</td><td>${totalLtConductorKm}</td></tr>`;
-                        html += '</tbody></table>';
-                    }
-                }
-            } else if (cat === 'UG Cable Required') {
-                const ugSummary = {};
-                data.forEach(entry => {
-                    const value = (entry['Approx. UG Cable required (m)'] > 0) ? 'Yes' : 'No';
-                    if (!ugSummary[value]) {
-                        ugSummary[value] = { count: 0, ug_cable: 0 };
-                    }
-                    ugSummary[value].count++;
-                    ugSummary[value].ug_cable += parseFloat(entry['Approx. UG Cable required (m)']) || 0;
-                });
-                if (Object.keys(ugSummary).length > 0) {
-                    html += `<h5>Breakdown by ${cat}</h5>`;
-                    html += '<table class="report-summary-table">';
-                    html += `<thead><tr><th>${cat} Value</th><th>Location Count</th><th>Total UG Cable (m)</th></tr></thead>`;
-                    html += '<tbody>';
-                    Object.entries(ugSummary).sort().forEach(([key, summary]) => {
-                        html += `<tr><td>${key}</td><td>${summary.count}</td><td>${summary.ug_cable.toFixed(2)}</td></tr>`;
-                    });
-                    html += '</tbody></table>';
-                }
-            } else {
-                const counts = {};
-                data.forEach(entry => {
-                    const value = String(entry[cat] || 'N/A').trim();
-                    if (value) {
-                       counts[value] = (counts[value] || 0) + 1;
-                    }
-                });
-
-                if (Object.keys(counts).length > 0) {
-                    html += `<h5>Breakdown by ${cat}</h5>`;
-                    html += '<table class="report-summary-table">';
-                    html += `<thead><tr><th>${cat} Value</th><th>Location Count</th></tr></thead>`;
-                    html += '<tbody>';
-                    Object.entries(counts).sort().forEach(([key, count]) => {
-                        html += `<tr><td>${key}</td><td>${count}</td></tr>`;
-                    });
-                    html += '</tbody></table>';
-                }
+            // Material table sits under the DTR breakdown
+            const material = cat === 'DTR Required' ? materialSummary(data) : null;
+            if (material) {
+                html += '<table class="material-required-table">';
+                html += '<thead><tr><th colspan="2">Material Required Summary</th></tr></thead>';
+                html += '<tbody>';
+                html += `<tr><td>Required DTR</td><td>${escapeHtml(material.dtr)}</td></tr>`;
+                html += `<tr><td>Required UG Cable (km)</td><td>${material.ugKm}</td></tr>`;
+                html += `<tr><td>Conductor Required for HT (km)</td><td>${material.htKm}</td></tr>`;
+                html += `<tr><td>Conductor Required for LT (km)</td><td>${material.ltKm}</td></tr>`;
+                html += '</tbody></table>';
             }
         });
-
         return html;
     }
 
     // Show a report for all currently filtered items
     function showOverallReport() {
-        const filteredData = allData.filter(entry => {
-            return Object.keys(selectedFilters).every(cat => {
-                let value;
-                if (cat === 'UG Cable Required') {
-                    value = (entry['Approx. UG Cable required (m)'] > 0) ? 'Yes' : 'No';
-                } else {
-                    value = String(entry[cat] || '').trim();
-                }
-                return !value || selectedFilters[cat].has(value);
-            });
-        });
+        const filteredData = allData.filter(entry => passesFilters(entry));
 
         const reportTitle = `Overall Report (${filteredData.length} Locations)`;
         
@@ -1519,25 +1330,8 @@
 
     // Show a detailed report in a modal
     function showReportFor(category, value) {
-        // Filter data for the specific item, considering other active filters.
-        const reportData = allData.filter(entry => {
-            let mainCondition = false;
-            if (category === 'UG Cable Required') {
-                mainCondition = ((entry['Approx. UG Cable required (m)'] > 0 ? 'Yes' : 'No') === value);
-            } else {
-                mainCondition = (String(entry[category] || '').trim() === value);
-            }
-            if (!mainCondition) return false;
-
-            // Check against all *other* active filters.
-            return Object.keys(selectedFilters).every(otherCat => {
-                if (otherCat === category) return true; // Skip self
-                let entryValue = (otherCat === 'UG Cable Required')
-                    ? (entry['Approx. UG Cable required (m)'] > 0 ? 'Yes' : 'No')
-                    : String(entry[otherCat] || '').trim();
-                return !entryValue || selectedFilters[otherCat].has(entryValue);
-            });
-        });
+        // This value, within every *other* active filter
+        const reportData = allData.filter(entry => categoryValue(entry, category) === value && passesFilters(entry, category));
 
         const reportTitle = `Summary for ${category}: ${value}`;
         const summaryHtml = generateSummaryHtml(reportData, category);
@@ -1619,121 +1413,81 @@
         }
     }
 
+    function popupHeader(entry) {
+        let headerText = entry['NH/SH'] || 'N/A';
+        const upper = String(headerText).toUpperCase();
+        if (upper === 'NH') headerText = 'NH-crossing';
+        else if (upper === 'SH') headerText = 'SH-crossing';
+        return `<b>${escapeHtml(headerText)}</b><br><hr style="margin: 5px 0;">`;
+    }
+
+    function copyIcon(title, text) {
+        return ` <i class="fa-solid fa-copy" style="cursor: pointer; color: #007bff; margin-left: 5px;" title="${title}" onclick="copyToClipboard(this, ${escapeHtml(JSON.stringify(String(text)))})"></i>`;
+    }
+
+    function popupProperties(entry) {
+        let html = '';
+        for (const [key, value] of Object.entries(entry)) {
+            if (key === 'Lat' || key === 'Long' || key === 'marker' || key === 'fetchedLocation') continue;
+            if (key === 'ID') {
+                const latLong = `${entry.Lat || 'N/A'}, ${entry.Long || 'N/A'}`;
+                html += `<b>${key}:</b> ${escapeHtml(value || 'N/A')}${copyIcon('Copy ID', value)}<br>`;
+                html += `<b>Lat/Long:</b> ${escapeHtml(latLong)}${copyIcon('Copy Lat/Long', latLong)}<br>`;
+            } else if (key === 'Status' && String(value || '').trim().toLowerCase() === 'e-note not prepared') {
+                html += `<b>${escapeHtml(key)}:</b> <span style="color: red; font-weight: bold;">${escapeHtml(value || 'N/A')}</span><br>`;
+            } else {
+                html += `<b>${escapeHtml(key)}:</b> ${escapeHtml(value || 'N/A')}<br>`;
+            }
+        }
+        return html;
+    }
+
     // Create markers from data and store them
     function createAllMarkers(data) {
-        let markersAdded = 0;
+        const colorBy = document.querySelector('input[name="colorBy"]:checked').value;
         data.forEach(entry => {
-            let lat = parseFloat(entry.Lat);
-            let lng = parseFloat(entry.Long);
-            
-            if (!isNaN(lat) && !isNaN(lng)) {
-                const colorBy = document.querySelector('input[name="colorBy"]:checked').value;
-                let style;
-                if (colorBy === 'Status') {
-                    style = getStyleForStatus(entry['Status']);
-                } else if (colorBy === 'NH/SH') {
-                    style = getStyleForNhSh(entry['NH/SH']);
-                } else { // Default to Voltage Level
-                    style = getStyleForVoltage(entry['Voltage Level']);
-                }
-                let marker = L.circleMarker([lat, lng], style);
-
-                // Helper to generate the popup header
-                const getPopupHeader = (entry) => {
-                    let headerText = entry['NH/SH'] || 'N/A';
-                    const upperHeaderText = String(headerText).toUpperCase();
-                    if (upperHeaderText === 'NH') {
-                        headerText = 'NH-crossing';
-                    } else if (upperHeaderText === 'SH') {
-                        headerText = 'SH-crossing';
-                    }
-                    return `<b>${headerText}</b><br><hr style="margin: 5px 0;">`;
-                };
-
-                // Helper to generate the properties part of the popup
-                const generatePropertiesHtml = (entry) => {
-                    let propertiesHtml = '';
-                    for (const [key, value] of Object.entries(entry)) {
-                        if (key !== 'Lat' && key !== 'Long' && key !== 'marker' && key !== 'fetchedLocation') {
-                            if (key === 'ID') {
-                                const latLongString = `${entry.Lat || 'N/A'}, ${entry.Long || 'N/A'}`;
-                                // Add copy icon for ID
-                                propertiesHtml += `<b>${key}:</b> ${value || 'N/A'} <i class="fa-solid fa-copy" style="cursor: pointer; color: #007bff; margin-left: 5px;" title="Copy ID" onclick="copyToClipboard(this, '${value}')"></i><br>`;
-                                // Add copy icon for Lat/Long
-                                propertiesHtml += `<b>Lat/Long:</b> ${latLongString} <i class="fa-solid fa-copy" style="cursor: pointer; color: #007bff; margin-left: 5px;" title="Copy Lat/Long" onclick="copyToClipboard(this, '${latLongString}')"></i><br>`;
-                            } else if (key === 'Status' && String(value || '').trim().toLowerCase() === 'e-note not prepared') {
-                                propertiesHtml += `<b>${key}:</b> <span style="color: red; font-weight: bold;">${value || 'N/A'}</span><br>`;
-                            } else {
-                                propertiesHtml += `<b>${key}:</b> ${value || 'N/A'}<br>`;
-                            }
-                        }
-                    }
-                    return propertiesHtml;
-                };
-
-                marker.on('click', async function() {
-                    // If we already have the location, just open the popup
-                    if (this.getPopup() && this.getPopup().getContent().includes('Location:</b> <i')) {
-                        // Already fetching or fetched, just open it
-                        return;
-                    }
-
-                    // --- Create URL for the new overlay page ---
-                    const overlayUrl = new URL('streetview_overlay.html', window.location.href);
-                    overlayUrl.searchParams.append('lat', lat);
-                    overlayUrl.searchParams.append('lng', lng);
-                    overlayUrl.searchParams.append('id', entry.ID || 'N/A');
-                    overlayUrl.searchParams.append('division', entry.Division || 'N/A');
-                    overlayUrl.searchParams.append('ccc', entry.CCC || 'N/A');
-                    overlayUrl.searchParams.append('enote', entry['e-note no.'] || 'N/A');
-
-                    // Link to the new overlay page
-                    const streetViewLink = `<a href="${overlayUrl.href}" target="_blank" title="View in Google Street View with Details" style="margin-left: 10px; color: #0056b3; text-decoration: none;"><i class="fa-solid fa-street-view"></i> 3D Street View</a>`;
-
-                    // Build initial content with a loading indicator
-                    let initialPopupContent = getPopupHeader(entry);
-                    initialPopupContent += `<b>Location:</b> <i class="fa-solid fa-spinner fa-spin"></i> Loading... ${streetViewLink}<br><hr style="margin: 5px 0;">`;
-                    initialPopupContent += generatePropertiesHtml(entry);
-                    
-                    // Bind and open the initial popup
-                    this.bindPopup(initialPopupContent).openPopup();
-
-                    // Fetch location from Nominatim (OpenStreetMap's free service)
-                    try {
-                        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`);
-                        if (!response.ok) throw new Error('Failed to fetch location');
-                        const locationData = await response.json();
-                        
-                        const locationString = locationData.display_name || 'Location not found';
-                        entry.fetchedLocation = locationString; // Store fetched location back into the data object
-                        // Build final content with the fetched location
-                        let finalPopupContent = getPopupHeader(entry);
-                        finalPopupContent += `<b>Location:</b> ${locationString} ${streetViewLink}<br><hr style="margin: 5px 0;">`;
-                        finalPopupContent += generatePropertiesHtml(entry);
-
-                        // Update the popup and mark as fetched
-                        this.setPopupContent(finalPopupContent);
-                        this.locationFetched = true;
-
-                    } catch (error) {
-                        console.error('Reverse geocoding error:', error);
-                        
-                        // Build content to show the error
-                        let errorPopupContent = getPopupHeader(entry);
-                        errorPopupContent += `<b>Location:</b> Could not be retrieved. ${streetViewLink}<br><hr style="margin: 5px 0;">`;
-                        errorPopupContent += generatePropertiesHtml(entry);
-                        this.setPopupContent(errorPopupContent);
-                        this.locationFetched = false; // Allow a retry on next click
-                    }
-                });
-
-                entry.marker = marker; // Store marker reference
-                markersAdded++;
-            } else {
+            const lat = parseFloat(entry.Lat);
+            const lng = parseFloat(entry.Long);
+            if (isNaN(lat) || isNaN(lng)) {
                 console.warn(`Skipping entry due to invalid coordinates:`, entry);
+                return;
             }
+            const marker = L.circleMarker([lat, lng], styleFor(entry, colorBy));
+
+            marker.on('click', async function () {
+                // Once bound, Leaflet opens the popup itself; look the place up only once
+                if (this._geocode === 'done' || this._geocode === 'loading') return;
+                this._geocode = 'loading';
+
+                const overlayUrl = new URL('streetview_overlay.html', window.location.href);
+                overlayUrl.searchParams.append('lat', lat);
+                overlayUrl.searchParams.append('lng', lng);
+                overlayUrl.searchParams.append('id', entry.ID || 'N/A');
+                overlayUrl.searchParams.append('division', entry.Division || 'N/A');
+                overlayUrl.searchParams.append('ccc', entry.CCC || 'N/A');
+                overlayUrl.searchParams.append('enote', entry['e-note no.'] || 'N/A');
+                const streetViewLink = `<a href="${escapeHtml(overlayUrl.href)}" target="_blank" title="View in Google Street View with Details" style="margin-left: 10px; color: #0056b3; text-decoration: none;"><i class="fa-solid fa-street-view"></i> 3D Street View</a>`;
+                const content = (location) => popupHeader(entry) + `<b>Location:</b> ${location} ${streetViewLink}<br><hr style="margin: 5px 0;">` + popupProperties(entry);
+
+                this.bindPopup(content('<i class="fa-solid fa-spinner fa-spin"></i> Loading...')).openPopup();
+
+                // Reverse geocode with Nominatim (OpenStreetMap)
+                try {
+                    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`);
+                    if (!response.ok) throw new Error('Failed to fetch location');
+                    const locationData = await response.json();
+                    entry.fetchedLocation = locationData.display_name || 'Location not found';
+                    this.setPopupContent(content(escapeHtml(entry.fetchedLocation)));
+                    this._geocode = 'done';
+                } catch (error) {
+                    console.error('Reverse geocoding error:', error);
+                    this.setPopupContent(content('Could not be retrieved.'));
+                    this._geocode = ''; // retry on next click
+                }
+            });
+
+            entry.marker = marker;
         });
-        console.log(`Created ${markersAdded} total markers.`);
     }
 
     // Initialize the app

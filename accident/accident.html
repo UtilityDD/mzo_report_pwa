@@ -150,23 +150,6 @@
       margin-bottom: 8px;
     }
 
-    .trend-indicator {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      font-size: 1.25rem;
-      opacity: 0.7;
-    }
-
-    .click-hint {
-      font-size: 0.65rem;
-      color: var(--mzo-muted, #999);
-      margin-top: 4px;
-      opacity: 0.8;
-      font-weight: 500;
-    }
-
     /* Modal Styles */
     .modal-overlay {
       position: fixed;
@@ -340,12 +323,6 @@
       color: var(--mzo-muted, #666);
     }
 
-    .empty-state-icon {
-      font-size: 3rem;
-      margin-bottom: 16px;
-      opacity: 0.5;
-    }
-
     .loading {
       text-align: center;
       color: white;
@@ -471,18 +448,6 @@
     @keyframes shimmer {
       0% { left: -100%; }
       100% { left: 100%; }
-    }
-
-    .debug {
-      background: var(--mzo-surface, rgba(255, 255, 255, 0.95));
-      backdrop-filter: blur(10px);
-      padding: 16px;
-      border-radius: 12px;
-      margin-top: 24px;
-      font-size: 0.75rem;
-      max-height: 200px;
-      overflow-y: auto;
-      border: 1px solid rgba(255, 255, 255, 0.2);
     }
 
     /* Mobile-specific optimizations */
@@ -694,7 +659,7 @@
 }
 
   </style>
-  <link rel="stylesheet" href="/mzo_theme.css?v=3" />
+  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
   <style id="mzo-skin">
 html.ui body { margin: 0; padding: 0; font: 13px/1.5 var(--mzo-font); background: var(--mzo-bg) !important; background-image: none !important; color: var(--mzo-text); }
 html.ui .container { max-width: 1200px; margin: 0 auto; padding: 24px 28px 72px; }
@@ -727,7 +692,6 @@ html.ui .stat-card { display: flex; flex-direction: column; }
 html.ui .stat-label { order: 1; font-size: 12.5px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--mzo-muted); }
 html.ui .stat-card[data-type="fatal"] .stat-label::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: var(--mzo-bad); vertical-align: 1px; }
 html.ui .stat-card[data-type="pending"] .stat-label::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: var(--mzo-warn); vertical-align: 1px; }
-html.ui .trend-indicator, html.ui .click-hint { display: none !important; }
 html.ui #calendarSummary { max-width: none !important; margin: 0 !important; background: var(--mzo-surface); border: 1px solid var(--mzo-border); border-radius: 10px; padding: 0 0 16px; }
 html.ui .acc-tl-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 50px; padding: 9px 12px 9px 16px; border-bottom: 1px solid var(--mzo-border); margin-bottom: 16px; }
 html.ui .acc-h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--mzo-text); }
@@ -776,7 +740,6 @@ html.ui .loading-pulse { background: var(--mzo-border-strong) !important; box-sh
 html.ui .loading-text { color: var(--mzo-muted) !important; font-size: 13px !important; text-shadow: none !important; background: none !important; -webkit-text-fill-color: currentColor !important; }
 html.ui .loading-progress { background: var(--mzo-chart-soft) !important; }
 html.ui .loading-progress::before { background: var(--mzo-text) !important; }
-html.ui .debug { background: var(--mzo-surface-2); color: var(--mzo-text); }
 @media (max-width: 760px) {
   html.ui .container { padding: 16px 14px 56px; }
   html.ui .stats-overview { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
@@ -798,9 +761,6 @@ html.ui .debug { background: var(--mzo-surface-2); color: var(--mzo-text); }
       </div>
       <button type="button" class="acc-btn" onclick="toggleAnalytics()">Analytics summary</button>
     </div>
-    <!-- Analytics Button -->
-
-
 <!-- Hidden Analytics Summary -->
 <div id="analysisBox" style="display: none; z-index: 1000; position: relative; background: #f8f9fa; padding: 20px; margin-top: 20px; border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); max-width: 960px; margin-inline: auto;">
   <h3 class="acc-analytics-title">Analytics summary</h3>
@@ -878,11 +838,6 @@ html.ui .debug { background: var(--mzo-surface-2); color: var(--mzo-text); }
 <div id="calendarGrid"></div>
 
 </div>
-
-    <div class="debug" id="debug" style="display: none;">
-      <strong>Debug Info:</strong><br>
-      <div id="debugContent"></div>
-    </div>
   </div>
 
   <!-- Modal -->
@@ -939,8 +894,55 @@ html.ui .debug { background: var(--mzo-surface-2); color: var(--mzo-text); }
     let currentRegionFilter = 'zone';
     let currentModalTab = 'division';
     let lastModalData = [];
+    let timelineData = [];   // rows behind the timeline (current region tab)
+    let searchRows = [];     // rows behind the search results
+    let victimListRows = []; // rows behind the victim list modal
 
-    
+    function esc(v) {
+      return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // "DD/MM/YYYY" → Date, or null when blank or invalid
+    function parseDMY(str) {
+      if (!str || !String(str).includes('/')) return null;
+      const [dd, mm, yyyy] = String(str).split('/');
+      if (!dd || !mm || !yyyy) return null;
+      const d = new Date(`${yyyy}-${mm}-${dd}`);
+      return isNaN(d) ? null : d;
+    }
+
+    // Uttar Dinajpur rows are stored under Raiganj (see processData); 'zone' means no region filter
+    function regionKey(filter) {
+      if (!filter || filter === 'zone') return null;
+      return filter === 'Uttar Dinajpur (D) Region' ? 'Raiganj (D) Region' : filter;
+    }
+
+    function rowsForRegion(filter) {
+      const region = regionKey(filter);
+      return region ? processedData.filter(row => row._mappedRegion === region) : processedData;
+    }
+
+    function isFatal(row) {
+      return (row['Fatality On Enquery'] || '').toLowerCase() === 'yes' || (row['Nature of Injury'] || '').toLowerCase() === 'fatal';
+    }
+
+    function isInquiryPending(row) {
+      return !(row['Inquiry Submitted on'] || '').trim();
+    }
+
+    // One result card (search results and victim lists); clicks are delegated by index
+    function victimCard(row, index, withDivision) {
+      const fatalStyle = (row['Nature of Injury'] || '').toLowerCase() === 'fatal' ? 'color: var(--mzo-bad); font-weight: 600;' : '';
+      const field = (k) => esc((row[k] || '').trim() || '--');
+      const inquiry = (row['Inquiry Submitted on'] || '').trim();
+      return `
+    <div class="search-result" data-i="${index}">
+      <div><strong>Victim:</strong> <span style="${fatalStyle}">${field('Name of victim')}, ${field('Age of Victim')}, ${field('Category of Victim')}</span></div>
+      <div><strong>Accident ID:</strong> <span style="${fatalStyle}">${field('Accident Id')}</span></div>
+      <div><strong>Inquiry Submitted on:</strong> ${inquiry ? esc(inquiry) : '<span class="ui-badge warn">Pending</span>'}</div>${withDivision ? `
+      <div><strong>Division:</strong> ${field('Name of Division / RE Project')}</div>` : ''}
+    </div>`;
+    }
 
     // Valid regions for Malda Zone
     const VALID_REGIONS = [
@@ -949,14 +951,6 @@ html.ui .debug { background: var(--mzo-surface-2); color: var(--mzo-text); }
       'Raiganj (D) Region',
       'Uttar Dinajpur (D) Region'
     ];
-
-    // Toggle debug info (double-click on title)
-    document.addEventListener('dblclick', (e) => {
-      if (e.target.classList.contains('title')) {
-        const debug = document.getElementById('debug');
-        debug.style.display = debug.style.display === 'none' ? 'block' : 'none';
-      }
-    });
 
     // Tab event listeners
     document.querySelectorAll('.tab').forEach(tab => {
@@ -986,11 +980,27 @@ html.ui .debug { background: var(--mzo-surface-2); color: var(--mzo-text); }
       });
     });
 
-    // Escape key to close modal
+    // Escape closes any open modal
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        closeModal();
+        ['modalOverlay', 'victimModalOverlay', 'victimListOverlay'].forEach(id => document.getElementById(id).classList.remove('active'));
       }
+    });
+
+    // Timeline view switch (registered once; reads the current region's rows)
+    document.getElementById('timelineView').addEventListener('change', (e) => {
+      if (e.target.value === 'monthly') updateMonthlyCalendar(timelineData);
+      else updateYearlyCalendar(timelineData);
+    });
+
+    // Result cards open the victim details
+    document.getElementById('searchResults').addEventListener('click', (e) => {
+      const card = e.target.closest('.search-result[data-i]');
+      if (card) openVictimModal(searchRows[+card.dataset.i]);
+    });
+    document.getElementById('victimListContent').addEventListener('click', (e) => {
+      const card = e.target.closest('.search-result[data-i]');
+      if (card) openVictimModal(victimListRows[+card.dataset.i]);
     });
 
     // Stat card click handlers
@@ -1023,70 +1033,36 @@ html.ui .debug { background: var(--mzo-surface-2); color: var(--mzo-text); }
       
       // Calculate and display date range
       updateDateRange();
-      
-      // Debug info
-      console.log('Raw data rows:', accidentData.length);
-      console.log('Processed data rows:', processedData.length);
-      
-      updateDebugInfo();
     }
 
 
-document.getElementById('universalSearch').addEventListener('input', function () {
-  const query = this.value.trim().toLowerCase();
-  const resultContainer = document.getElementById('searchResults');
+    document.getElementById('universalSearch').addEventListener('input', function () {
+      const query = this.value.trim().toLowerCase();
+      const resultContainer = document.getElementById('searchResults');
 
-  if (!query || query.length < 2) {
-    resultContainer.innerHTML = '';
-    resultContainer.style.display = 'none';
-    return;
-  }
+      if (!query || query.length < 2) {
+        resultContainer.innerHTML = '';
+        resultContainer.style.display = 'none';
+        return;
+      }
 
-  const matched = processedData.filter(row => {
-    const victim = (row['Name of victim'] || '').toLowerCase();
-    const id = (row['Accident Id'] || '').toLowerCase();
-    const location = (row['Accident Location'] || '').toLowerCase();
-    return victim.includes(query) || id.includes(query) || location.includes(query);
-  });
+      const matched = processedData.filter(row => {
+        const victim = (row['Name of victim'] || '').toLowerCase();
+        const id = (row['Accident Id'] || '').toLowerCase();
+        const location = (row['Accident Location'] || '').toLowerCase();
+        return victim.includes(query) || id.includes(query) || location.includes(query);
+      });
 
-  if (matched.length === 0) {
-    resultContainer.innerHTML = '<div class="empty-state">No results found.</div>';
-    resultContainer.style.display = 'block';
-    return;
-  }
+      if (matched.length === 0) {
+        resultContainer.innerHTML = '<div class="empty-state">No results found.</div>';
+        resultContainer.style.display = 'block';
+        return;
+      }
 
-resultContainer.innerHTML = matched.slice(0, 25).map(row => {
-  const isFatal = (row['Nature of Injury'] || '').toLowerCase() === 'fatal';
-  const redStyle = 'color: var(--mzo-bad); font-weight: 600;';
-
-  const name = row['Name of victim']?.trim() || '--';
-  const age = row['Age of Victim']?.trim() || '--';
-  const category = row['Category of Victim']?.trim() || '--';
-  const id = row['Accident Id']?.trim() || '--';
-  const division = row['Name of Division / RE Project']?.trim() || '--';
-
-  let inquiry = row['Inquiry Submitted on']?.trim();
-  inquiry = inquiry
-    ? inquiry
-    : `<span class="ui-badge warn">Pending</span>`;
-
-  return `
-    <div class="search-result" onclick='openVictimModal(${JSON.stringify(row).replace(/'/g, "\\'")})'>
-      <div><strong>Victim:</strong> <span style="${isFatal ? redStyle : ''}">${name}, ${age}, ${category}</span></div>
-      <div><strong>Accident ID:</strong> <span style="${isFatal ? redStyle : ''}">${id}</span></div>
-      <div><strong>Inquiry Submitted on:</strong> ${inquiry}</div>
-      <div><strong>Division:</strong> ${division}</div>
-    </div>
-  `;
-}).join('');
-
-
-  resultContainer.style.display = 'block';
-});
-
-
-
-
+      searchRows = matched.slice(0, 25);
+      resultContainer.innerHTML = searchRows.map((row, i) => victimCard(row, i, true)).join('');
+      resultContainer.style.display = 'block';
+    });
 
     function parseCSV(text) {
       const lines = text.trim().split('\n');
@@ -1170,86 +1146,14 @@ resultContainer.innerHTML = matched.slice(0, 25).map(row => {
     }
 
     function updateStats(regionFilter) {
-      let filteredData = processedData;
-      
-      // Apply region filter
-      if (regionFilter !== 'zone') {
-        // Map display names to internal names
-        let targetRegion = regionFilter;
-        if (regionFilter === 'Uttar Dinajpur (D) Region') {
-          targetRegion = 'Raiganj (D) Region'; // This is how we stored mapped Uttar Dinajpur
-        }
-        // For other regions, use as-is
-        // Malda (D) Region and Dakshin Dinajpur (D) Region don't need mapping
-        
-        filteredData = processedData.filter(row => row._mappedRegion === targetRegion);
-      }
-      
-      // Calculate statistics
-      const totalAccidents = filteredData.length;
-      
-      const fatalAccidents = filteredData.filter(row => {
-        const fatalityOnEnquery = row['Fatality On Enquery'];
-        const natureOfInjury = row['Nature of Injury'];
-        
-        // Check both columns for fatal accidents
-        const isFatalFromEnquery = fatalityOnEnquery && fatalityOnEnquery.toLowerCase() === 'yes';
-        const isFatalFromNature = natureOfInjury && natureOfInjury.toLowerCase() === 'fatal';
-        
-        return isFatalFromEnquery || isFatalFromNature;
-      }).length;
-      
-      const pendingInquiries = filteredData.filter(row => {
-        const enquiryOn = row['Inquiry Submitted on'];
-        // Count as pending if 'Inquiry Submitted on' is null, empty, or undefined
-        return !enquiryOn || enquiryOn.trim() === '';
-      }).length;
-      
-      // Calculate average response time
-      const responseTimes = filteredData
-        .map(row => {
-          const days = row['Pending since last status change(days)'];
-          return days ? parseInt(days) : 0;
-        })
-        .filter(days => days > 0);
-      
-      const avgResponseTime = responseTimes.length > 0 
-        ? Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length)
-        : 0;
-      
-      // Update display
-      document.getElementById('totalAccidents').textContent = totalAccidents;
-      document.getElementById('fatalAccidents').textContent = fatalAccidents;
-      document.getElementById('pendingInquiries').textContent = pendingInquiries;
+      const filteredData = rowsForRegion(regionFilter);
+      document.getElementById('totalAccidents').textContent = filteredData.length;
+      document.getElementById('fatalAccidents').textContent = filteredData.filter(isFatal).length;
+      document.getElementById('pendingInquiries').textContent = filteredData.filter(isInquiryPending).length;
 
-
-
-updateMonthlyCalendar(filteredData);
-document.getElementById('timelineView').addEventListener('change', (e) => {
-  const mode = e.target.value;
-  if (mode === 'monthly') {
-    updateMonthlyCalendar(filteredData);
-  } else {
-    updateYearlyCalendar(filteredData);
-  }
-});
-
-      
-      // Update debug info
-      updateDebugInfo(regionFilter, filteredData);
-    }
-
-    function updateDebugInfo(currentFilter = 'zone', currentData = processedData) {
-      const debugContent = document.getElementById('debugContent');
-
-
-            if (!debugContent) return;
-
-      debugContent.innerHTML = `
-        <div><strong>Current Filter:</strong> ${currentFilter}</div>
-        <div><strong>Total Filtered Records:</strong> ${currentData.length}</div>
-        <div><strong>Sample Record:</strong> <pre>${JSON.stringify(currentData[0] || {}, null, 2)}</pre></div>
-      `;
+      timelineData = filteredData;
+      if (document.getElementById('timelineView').value === 'yearly') updateYearlyCalendar(filteredData);
+      else updateMonthlyCalendar(filteredData);
     }
 
 function openModal(cardType) {
@@ -1263,30 +1167,16 @@ function openModal(cardType) {
 
   document.getElementById('modalTitle').textContent = titleMap[cardType] || 'Accident Details';
 
-  const parseDate = (str) => {
-    const [dd, mm, yyyy] = str.split('/');
-    return new Date(`${yyyy}-${mm}-${dd}`);
-  };
-
   let modalData = [];
-  const region = currentRegionFilter === 'zone' ? null : currentRegionFilter;
-  const regionMap = {
-    'Uttar Dinajpur (D) Region': 'Raiganj (D) Region'
-  };
-  const finalRegion = regionMap[region] || region;
-
-  // Filter data first based on the selected region
-  let relevantDataForModal = processedData.filter(row => {
-    return finalRegion ? row._mappedRegion === finalRegion : true;
-  });
+  const relevantDataForModal = rowsForRegion(currentRegionFilter);
 
   if (cardType === 'recent') {
     const validDatesForRegion = relevantDataForModal
       .map(row => ({
         ...row,
-        _dateObj: parseDate(row['Date of Accident'])
+        _dateObj: parseDMY(row['Date of Accident'])
       }))
-      .filter(row => !isNaN(row._dateObj));
+      .filter(row => row._dateObj);
 
     let maxDate = new Date(); // Default to current date if no valid dates in region
     if (validDatesForRegion.length > 0) {
@@ -1314,11 +1204,9 @@ function openModal(cardType) {
     // Existing logic for other card types
     modalData = relevantDataForModal.filter(row => {
       if (cardType === 'fatal') {
-        const f = row['Fatality On Enquery']?.toLowerCase() === 'yes';
-        const n = row['Nature of Injury']?.toLowerCase() === 'fatal';
-        return f || n;
+        return isFatal(row);
       } else if (cardType === 'pending') {
-        return !row['Inquiry Submitted on'] || row['Inquiry Submitted on'].trim() === '';
+        return isInquiryPending(row);
       } else if (cardType === 'response') {
         return row['Pending since last status change(days)'];
       }
@@ -1329,8 +1217,7 @@ function openModal(cardType) {
      document.getElementById('modalSubtitle').textContent = 'Breakdown by divisions and units';
   }
 
-  // ... rest of the openModal function remains the same ...
-  // Grouped modal content (this part is correct after modalData is correctly filtered)
+  // Group by division or unit (CCC / substation)
   const tabKey = currentModalTab === 'unit'
     ? 'Name of CCC/ Substation/ RE Project'
     : 'Name of Division / RE Project';
@@ -1347,7 +1234,6 @@ function openModal(cardType) {
 
   if (Object.keys(grouped).length === 0) {
     breakdownList.innerHTML = `<div class="empty-state">No data available for selected filter.</div>`;
-    return;
   }
 
   Object.entries(grouped)
@@ -1355,19 +1241,18 @@ function openModal(cardType) {
     .forEach(([name, count]) => {
       const item = document.createElement('div');
       item.className = 'breakdown-item';
-item.innerHTML = `
-  <div class="breakdown-name">${name}</div>
+      item.innerHTML = `
+  <div class="breakdown-name">${esc(name)}</div>
   <div class="breakdown-count">${count}</div>
 `;
-item.style.cursor = 'pointer';
-item.addEventListener('click', () => {
-  openVictimListModal(name, document.getElementById('modalTitle').textContent, currentModalTab);
-});
-
+      item.style.cursor = 'pointer';
+      item.addEventListener('click', () => {
+        openVictimListModal(name, document.getElementById('modalTitle').textContent, currentModalTab);
+      });
       breakdownList.appendChild(item);
     });
 
-    overlay.classList.add('active'); // This line was moved to the end as the logic inside needs to run first
+  overlay.classList.add('active');
 }
 
     function closeModal() {
@@ -1400,21 +1285,12 @@ function updateModalContent() {
 
 
 function updateDateRange() {
-  // Parse DD/MM/YYYY to Date
-  const parseDate = (str) => {
-    if (!str || !str.includes('/')) return null;
-    const [dd, mm, yyyy] = str.split('/');
-    if (!dd || !mm || !yyyy) return null;
-    const date = new Date(`${yyyy}-${mm}-${dd}`);
-    return isNaN(date) ? null : date;
-  };
-
   // Format Date to DD/MM/YYYY
   const formatDDMMYYYY = (date) =>
     `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
 
   const validDates = processedData
-    .map(row => parseDate(row['Date of Accident']))
+    .map(row => parseDMY(row['Date of Accident']))
     .filter(date => date !== null);
 
   if (validDates.length === 0) return;
@@ -1440,21 +1316,14 @@ function updateMonthlyCalendar(filteredData) {
     count: 0
   }));
 
-  const parseDate = (str) => {
-    const [dd, mm, yyyy] = str.split('/');
-    const d = new Date(`${yyyy}-${mm}-${dd}`);
-    return isNaN(d) ? null : d;
-  };
-
   filteredData.forEach(row => {
-    const dateStr = row['Date of Accident'];
-    const date = parseDate(dateStr);
+    const date = parseDMY(row['Date of Accident']);
     if (date) {
       const monthIndex = date.getMonth();
       monthMap[monthIndex].count++;
     }
   });
-const total = monthMap.reduce((sum, m) => sum + m.count, 0);  // Add this
+const total = monthMap.reduce((sum, m) => sum + m.count, 0);
 const topCounts = [...monthMap]
   .sort((a, b) => b.count - a.count)
   .slice(0, 3)
@@ -1489,15 +1358,8 @@ box.addEventListener('click', () => {
 function updateYearlyCalendar(filteredData) {
   const yearMap = {};
 
-  const parseDate = (str) => {
-    const [dd, mm, yyyy] = str.split('/');
-    const d = new Date(`${yyyy}-${mm}-${dd}`);
-    return isNaN(d) ? null : d;
-  };
-
   filteredData.forEach(row => {
-    const dateStr = row['Date of Accident'];
-    const date = parseDate(dateStr);
+    const date = parseDMY(row['Date of Accident']);
     if (date) {
       const year = date.getFullYear();
       yearMap[year] = (yearMap[year] || 0) + 1;
@@ -1541,25 +1403,12 @@ function openTimelineModal(viewType, label) {
   const breakdownList = document.getElementById('breakdownList');
   const overlay = document.getElementById('modalOverlay');
 
-  // Hide modal tabs for calendar clicks
-  document.getElementById('modalTabs').style.display = 'none';
   breakdownList.innerHTML = '';
 
-  const parseDate = (str) => {
-    const [dd, mm, yyyy] = str.split('/');
-    const d = new Date(`${yyyy}-${mm}-${dd}`);
-    return isNaN(d) ? null : d;
-  };
-
-  // Region filtering
-  const regionMap = { 'Uttar Dinajpur (D) Region': 'Raiganj (D) Region' };
-  const region = currentRegionFilter === 'zone' ? null : (regionMap[currentRegionFilter] || currentRegionFilter);
-
-  // Filter matching rows by date and region
-  const filtered = processedData.filter(row => {
-    const date = parseDate(row['Date of Accident']);
-    const matchesRegion = region ? row._mappedRegion === region : true;
-    if (!date || !matchesRegion) return false;
+  // Rows of the current region in this month (any year) or this year
+  const filtered = rowsForRegion(currentRegionFilter).filter(row => {
+    const date = parseDMY(row['Date of Accident']);
+    if (!date) return false;
 
     const month = date.toLocaleString('default', { month: 'short' });
     const year = date.getFullYear().toString();
@@ -1569,8 +1418,7 @@ function openTimelineModal(viewType, label) {
   // Group by reverse (e.g., month → year; year → month)
   const grouped = {};
   filtered.forEach(row => {
-    const date = parseDate(row['Date of Accident']);
-    if (!date) return;
+    const date = parseDMY(row['Date of Accident']);
 
     const key = viewType === 'year'
       ? date.toLocaleString('default', { month: 'short' })
@@ -1597,13 +1445,12 @@ function openTimelineModal(viewType, label) {
         const item = document.createElement('div');
         item.className = 'breakdown-item';
         item.innerHTML = `
-          <div class="breakdown-name">${name}</div>
+          <div class="breakdown-name">${esc(name)}</div>
           <div class="breakdown-count">${count}</div>
         `;
         breakdownList.appendChild(item);
       });
   }
-document.getElementById('modalTabs').style.display = 'flex';
 
   overlay.classList.add('active');
 }
@@ -1624,17 +1471,13 @@ function openVictimModal(row) {
     'Accident Location', 'Working System in Voltage Class', 'Accident in Voltage Class',
     'Cause of Accident', 'Addl. Casue of Accident', 'Inquiry Submitted on',
     'Inquiry Accepted on', 'Incident Disposed on', 'Payment Released on'
-   
   ];
 
-  container.innerHTML = fields.map(key => {
-    const val = row[key]?.trim() || '--';
-    return `
+  container.innerHTML = fields.map(key => `
       <div style="margin-bottom: 8px;">
-        <strong>${key}:</strong> ${val}
+        <strong>${esc(key)}:</strong> ${esc((row[key] || '').trim() || '--')}
       </div>
-    `;
-  }).join('');
+    `).join('');
 
   overlay.classList.add('active');
 }
@@ -1656,31 +1499,10 @@ function openVictimListModal(groupName, modalType, modalTab) {
   title.textContent = `Victims in ${groupName}`;
   subtitle.textContent = `${filtered.length} entries from ${modalType}`;
 
-  if (filtered.length === 0) {
-    container.innerHTML = '<div class="empty-state">No data found.</div>';
-  } else {
-    container.innerHTML = filtered.map(row => {
-      const isFatal = (row['Nature of Injury'] || '').toLowerCase() === 'fatal';
-      const redStyle = 'color: var(--mzo-bad); font-weight: 600;';
-      const name = row['Name of victim']?.trim() || '--';
-      const age = row['Age of Victim']?.trim() || '--';
-      const category = row['Category of Victim']?.trim() || '--';
-      const id = row['Accident Id']?.trim() || '--';
-
-      let inquiry = row['Inquiry Submitted on']?.trim();
-      inquiry = inquiry
-        ? inquiry
-        : `<span class="ui-badge warn">Pending</span>`;
-
-      return `
-        <div class="search-result" onclick='openVictimModal(${JSON.stringify(row).replace(/'/g, "\\'")})'>
-          <div><strong>Victim:</strong> <span style="${isFatal ? redStyle : ''}">${name}, ${age}, ${category}</span></div>
-          <div><strong>Accident ID:</strong> <span style="${isFatal ? redStyle : ''}">${id}</span></div>
-          <div><strong>Inquiry Submitted on:</strong> ${inquiry}</div>
-        </div>
-      `;
-    }).join('');
-  }
+  victimListRows = filtered;
+  container.innerHTML = filtered.length === 0
+    ? '<div class="empty-state">No data found.</div>'
+    : filtered.map((row, i) => victimCard(row, i, false)).join('');
 
   overlay.classList.add('active');
 }
@@ -1712,12 +1534,9 @@ const averageAge = (() => {
 
   const fatalCount = byField('Nature of Injury', 'Fatal').length;
   const fatalityRate = ((fatalCount / total) * 100).toFixed(1);
-  const noESI = byField('Coverage under ESI or Not', 'No').length;
-  const unskilled = byField('Skilled or Not', 'No').length;
-  const noInquiry = data.filter(row => !(row['Inquiry Submitted on'] || '').trim()).length;
-  const postMortem = byField('Post Morten Attached', 'Yes').length;
-  const commonCauses = topN(data, 'Cause of Accident').map(([cause, count]) => `${cause} (${count})`).join(', ');
-  const topDivs = topN(data, 'Name of Division / RE Project').map(([d]) => d);
+  const noInquiry = data.filter(isInquiryPending).length;
+  const commonCauses = esc(topN(data, 'Cause of Accident').map(([cause, count]) => `${cause} (${count})`).join(', '));
+  const topDivs = topN(data, 'Name of Division / RE Project').map(([d]) => esc(d));
 const delayByRegion = {};
 const countByRegion = {};
 
@@ -1741,11 +1560,11 @@ data.forEach(row => {
   }
 });
 
-const delaySummary = Object.entries(delayByRegion)
+const delaySummary = esc(Object.entries(delayByRegion)
   .map(([region, totalDays]) => {
     const avg = (totalDays / countByRegion[region]).toFixed(1);
     return `${region}: ${avg} days`;
-  }).join(', ');
+  }).join(', '));
 
 
   const psMap = {};
@@ -1762,11 +1581,11 @@ data.forEach(row => {
   }
 });
 
-const psSummary = Object.entries(psMap)
+const psSummary = esc(Object.entries(psMap)
   .sort((a, b) => b[1] - a[1])
   .slice(0, 10)
   .map(([ps, count]) => `${ps} (${count})`)
-  .join(', ');
+  .join(', '));
 
 // Voltage class distribution
 const voltageMap = {};
@@ -1774,9 +1593,9 @@ data.forEach(row => {
   const voltage = (row['Accident in Voltage Class'] || 'Unknown').trim();
   voltageMap[voltage] = (voltageMap[voltage] || 0) + 1;
 });
-const voltageList = Object.entries(voltageMap)
+const voltageList = esc(Object.entries(voltageMap)
   .map(([level, count]) => `${level}: ${(count / total * 100).toFixed(1)}%`)
-  .join(', ');
+  .join(', '));
 
   // Category distribution
   const categoryMap = {};
@@ -1784,16 +1603,16 @@ const voltageList = Object.entries(voltageMap)
     const key = (row['Category of Victim'] || 'Unknown').trim();
     categoryMap[key] = (categoryMap[key] || 0) + 1;
   });
-  const categoryList = Object.entries(categoryMap)
+  const categoryList = esc(Object.entries(categoryMap)
     .map(([cat, count]) => `${cat}: ${(count / total * 100).toFixed(1)}%`)
-    .join(', ');
+    .join(', '));
 
   // Top cause for Outsourced victims
   const outsourcedOnly = data.filter(row => (row['Category of Victim'] || '').toLowerCase() === 'outsourced');
   let outsourcedCauseInfo = 'No data for outsourced victims.';
   if (outsourcedOnly.length) {
     const top = topN(outsourcedOnly, 'Cause of Accident', 1)[0];
-    outsourcedCauseInfo = `Most common cause for <strong>Outsourced</strong> victims: <strong>${top[0]}</strong> (${top[1]} cases)`;
+    outsourcedCauseInfo = `Most common cause for <strong>Outsourced</strong> victims: <strong>${esc(top[0])}</strong> (${top[1]} cases)`;
   }
 
   return `
@@ -1845,11 +1664,7 @@ function toggleAnalytics() {
         });
 
         if (!isActive) {
-          const mappedRegion = region === 'Uttar Dinajpur (D) Region' ? 'Raiganj (D) Region' : region;
-          const filtered = region === 'zone'
-            ? processedData
-            : processedData.filter(r => r._mappedRegion === mappedRegion);
-          panel.innerHTML = generateAnalytics(filtered);
+          panel.innerHTML = generateAnalytics(rowsForRegion(region));
           panel.style.display = 'block';
           button.classList.add('active');
         }
