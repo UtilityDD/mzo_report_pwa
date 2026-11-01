@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=3" defer></script>
   <style>.ui-grid > .ui-panel { margin-top: 0; } #ageTable td:first-child { white-space: nowrap; }</style>
 </head>
 <body>
@@ -67,11 +68,6 @@
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var URLS = {
-      vendors: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTZPn6CB_cHTFVb8S5vpvaBnczj63fYMTI0RVEdMzVcQ8O6XQi5iwTbMp2xa5vsL6zHGWxezWUSehrN/pub?gid=1818971964&single=true&output=csv',
-      costcenter: '/data/costcenter.json',
-      main: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQI2neSVbvMR4fF910Q0AWUcq02leP-sob8q4f9goT46hgLutCpxCjSL6y6X3s2vYBJRNN7WrFCjE0R/pub?gid=439685010&single=true&output=csv'
-    };
     var AGE = [
       { key: 'a0', label: 'Under 6 months', min: 0, max: 180 }, { key: 'a1', label: '6–12 months', min: 181, max: 365 },
       { key: 'a2', label: '12–18 months', min: 366, max: 545 }, { key: 'a3', label: '18–24 months', min: 546, max: 730 },
@@ -83,36 +79,39 @@
 
     $('stats').innerHTML = OVER.map(function (o) { return '<button type="button" class="ui-stat" data-k="' + o[0] + '"><div class="k">' + (o[3] ? '<span class="ui-dot ' + o[3] + '"></span>' : '') + o[1] + '</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>'; }).join('');
 
-    function num(v) { var x = parseFloat(String(v == null ? '' : v).replace(/,/g, '')); return isFinite(x) ? x : 0; }
     function unitName(u) { return UI.title(u).replace(/\bCcc\b/g, 'CCC').replace(/\bSs\b/g, 'SS').replace(/\bKv\b/g, 'kV').replace(/\bDtr\b/g, 'DTR'); }
     function regionOf(div) { var H = window.MzoScope && window.MzoScope.HIERARCHY, out = ''; if (H) Object.keys(H).forEach(function (r) { if (H[r].divisions && H[r].divisions[div]) out = r; }); return out; }
-    function maps(vText, ccData) {
-      vendors = {}; UI.csv(vText || '').forEach(function (v) { if (v.VENDOR_NO && v.NAME) vendors[String(v.VENDOR_NO).trim()] = v.NAME.trim(); });
-      cc = {}; (ccData || []).forEach(function (e) { if (e['Cost Cen_Code'] && e['Unit Name'] && e['Division Name']) cc[String(e['Cost Cen_Code']).trim()] = { unit: e['Unit Name'].trim(), division: e['Division Name'].trim() }; });
-      if (window.MzoOffices) window.MzoOffices.addCostCentres(ccData || []);
+    // vt, ct: uniform rows of vendor_map and costcenter (or null): vendor code → name, cost centre → unit / division names.
+    function maps(vt, ct) {
+      vendors = {}; (vt ? vt.rows : []).forEach(function (v) { if (v.vendor_no && v.name) vendors[v.vendor_no] = v.name; });
+      cc = {}; (ct ? ct.rows : []).forEach(function (e) { if (e.cost_cen_code && e.unit_name && e.division_name) cc[e.cost_cen_code] = { unit: e.unit_name, division: e.division_name }; });
     }
-    function prepare(text) {
+    // t.rows: uniform rows of schema/capex_details.json, already scoped to the login by MzoRows.
+    // _division / _ccc are the canonical office of the cost centre (old SAP cost centres included);
+    // the cost-centre map names the other units (stores, sub-stations) as before.
+    function line(r) { return r.project_id || r.material_code; }
+    function prepare(t) {
       asOn = null;
-      all = UI.csv(text).filter(function (r) { return r['Net Balance Value'] !== undefined && (r['Project ID'] || r['Material Code']); }).map(function (r) {
-        var m = cc[String(r['Cost Centre'] || '').trim()] || {}, divRaw = m.division || '', div = divRaw.replace(/\s*division$/i, '');
-        var off = window.MzoOffices ? window.MzoOffices.parseCode(r['Cost Centre']) : null;
-        if (off && off.division && (off.level === 'ccc' || off.level === 'division')) { div = off.division; divRaw = off.division + ' Division'; }
-        if (off && off.level === 'ccc' && m.unit) m = { unit: off.ccc + ' CCC', division: m.division };
-        var unit = m.unit || 'Unknown unit', vcode = String(r.Vendor || '').trim();
-        var rd = UI.date(r['Reporting Date']); if (rd && (!asOn || rd > asOn)) asOn = rd;
+      var hasValue = t.columns.some(function (c) { return c.name === 'net_balance_value' && c.source_name; });
+      // As on: the newest Reporting Date over every line of the sheet, not only the login's.
+      if (hasValue) t.all.forEach(function (r) { var rd = line(r) ? UI.date(r.reporting_date) : null; if (rd && (!asOn || rd > asOn)) asOn = rd; });
+      all = (hasValue ? t.rows : []).filter(line).map(function (r) {
+        var m = cc[r.cost_centre] || {}, divRaw = m.division || '', div = divRaw.replace(/\s*division$/i, '');
+        if (r._division) { div = r._division; divRaw = r._division + ' Division'; }
+        if (r._ccc && m.unit) m = { unit: r._ccc + ' CCC', division: m.division };
+        var unit = m.unit || 'Unknown unit', vcode = r.vendor;
         var isDiv = /division$/i.test(divRaw);
         var o = {
-          value: num(r['Net Balance Value']), qty: num(r['Net Balance Qty']), age: parseInt(String(r['Ageing in Days'] || '0').replace(/,/g, ''), 10) || 0,
+          value: r.net_balance_value || 0, qty: r.net_balance_qty || 0, age: Math.trunc(r.ageing_in_days || 0),
           division: div ? (isDiv ? div : UI.title(div)) : 'Unknown', unit: unitName(unit), vendor: vendors[vcode] || 'Unknown vendor (' + vcode + ')', vcode: vcode,
-          material: String(r['Material description'] || '').trim() || '—', mcode: String(r['Material Code'] || '').trim(), project: String(r['Project ID'] || '').trim(),
-          network: String(r.Network || '').trim(), doc: String(r['Issued Document'] || '').trim(), issued: r['Issued Date'], plant: r.Plant, costCentre: r['Cost Centre']
+          material: r.material_description || '—', mcode: r.material_code, project: r.project_id,
+          network: r.network, doc: r.issued_document, issued: r.issued_date, plant: r.plant, costCentre: r.cost_centre
         };
         o._divn = isDiv ? div : ''; o._region = isDiv ? regionOf(div) : '';
         o._supp = /ccc$/i.test(unit) && window.MzoScope ? (window.MzoScope.cccNameOf(unit.replace(/\s*ccc$/i, '')) || '') : '';
         o.ageKey = AGE.filter(function (a) { return o.age >= a.min && o.age <= a.max; })[0].key;
         return o;
       });
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       fillFilters();
     }
 
@@ -232,28 +231,19 @@
       UI.exportCsv('capex-advance.csv', [{ key: 'project', label: 'Project' }, { key: 'network', label: 'Network' }, { key: 'mcode', label: 'Material code' }, { key: 'material', label: 'Material' }, { key: 'vendor', label: 'Vendor' }, { key: 'doc', label: 'Issued document' }, { key: 'issued', label: 'Issued on' }, { key: 'unit', label: 'Unit' }, { key: 'division', label: 'Division' }, { key: 'qty', label: 'Qty' }].concat(COLS.slice(5)), window.__view || []);
     });
 
-    function hubText(key, url) {
-      var hub = window.mzoDataHub;
-      var viaHub = hub ? Promise.resolve(hub.get(key)).catch(function () { return null; }) : Promise.resolve(null);
-      return viaHub.then(function (d) { return d || (window.mzoMirror ? mzoMirror.fetch : fetch)(url).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return /json/.test(r.headers.get('content-type') || '') || /\.json$/.test(url) ? r.json() : r.text(); }); });
+    // Three datasets through MzoRows (cache first): paint once each has rows, and again when one changes.
+    var KEYS = ['vendor_map', 'costcenter', 'capex_details'], got = {}, first = true;
+    function paint() {
+      if (!KEYS.every(function (k) { return k in got; })) return;
+      if (!got.capex_details) { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('dimTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; return; }
+      maps(got.vendor_map, got.costcenter);
+      prepare(got.capex_details);
+      if (first) { first = false; markAll(); }
+      render();
     }
-    function loadMaps() {
-      return Promise.all([hubText('CACHE_VENDORS', URLS.vendors).catch(function () { return ''; }), hubText('CACHE_COSTCENTER', URLS.costcenter).catch(function () { return []; })])
-        .then(function (m) { maps(m[0], typeof m[1] === 'string' ? JSON.parse(m[1] || '[]') : m[1]); });
-    }
-    var mapsP = loadMaps(), first = true;
-    UI.refresh('refreshBtn', 'CACHE_CAPEX', function (t) { prepare(t); render(); });
-    mapsP.then(function () {
-      UI.load('CACHE_CAPEX', function (text, info) {
-        if (!text) {
-          if (info && info.error) (window.mzoMirror ? mzoMirror.fetch : fetch)(URLS.main).then(function (r) { return r.text(); }).then(function (t) { prepare(t); render(); })
-            .catch(function () { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('dimTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; });
-          return;
-        }
-        prepare(text);
-        if (first) { first = false; markAll(); }
-        render();
-      });
+    MzoRows.refresh('refreshBtn', 'capex_details', function (t) { got.capex_details = t; paint(); });
+    KEYS.forEach(function (k) {
+      MzoRows.load(k, function (t) { got[k] = t || got[k] || null; paint(); }, { scope: k === 'capex_details' });
     });
   });
   </script>
