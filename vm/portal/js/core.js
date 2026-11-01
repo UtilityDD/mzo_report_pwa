@@ -179,7 +179,8 @@
     { name: '_row_key', type: 'text', about: 'Source primary key, or a content hash when the source has none (unique)' },
     { name: '_row_no', type: 'number', about: 'Position of the row in the source' },
     { name: '_synced_at', type: 'date', about: 'When the sync last wrote this row' },
-    { name: '_hash', type: 'text', about: 'Hash of the row, used to skip unchanged rows' }
+    { name: '_hash', type: 'text', about: 'Hash of the row, used to skip unchanged rows' },
+    { name: '_nulls', type: 'json', about: 'Number and yes/no fields that are empty in the source (PocketBase stores them as 0 / No; shown as empty)' }
   ];
 
   /* ---------- PocketBase filter strings ----------

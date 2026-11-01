@@ -87,14 +87,17 @@ async function* fromPocketBase(pb, collection, registryColumns) {
     const cols = (registryColumns || []).filter((c) => !c.raw_of);
     const rawOf = new Map((registryColumns || []).filter((c) => c.raw_of).map((c) => [c.raw_of, c.name]));
     yield cols.map((c) => c.source_name);
-    const fields = ['_row_no'].concat(cols.map((c) => c.name), [...rawOf.values()]).join(',');
+    const fields = ['_row_no', '_nulls'].concat(cols.map((c) => c.name), [...rawOf.values()]).join(',');
     for (let page = 1; ; page++) {
         const res = await pb.listRecords(collection, { page, perPage: 500, sort: '_row_no', fields, skipTotal: 1 });
         const items = (res && res.items) || [];
         for (const r of items) {
+            // _nulls: number / bool fields that are empty in the source (PocketBase stores 0 / false)
+            const nulls = Array.isArray(r._nulls) && r._nulls.length ? new Set(r._nulls) : null;
             yield cols.map((c) => {
                 const raw = rawOf.get(c.name);
                 if (raw && r[raw]) return r[raw];
+                if (nulls && nulls.has(c.name)) return '';
                 const v = r[c.name];
                 if (c.type === 'date' && typeof v === 'string') return v ? v.slice(0, 10) : '';
                 if (c.type === 'bool') return v ? 'TRUE' : 'FALSE';
