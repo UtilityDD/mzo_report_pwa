@@ -12,6 +12,9 @@
  * 3. Syncs again: the run resumes, then swaps the fields in: con_id text, flag bool, no
  *    amount_raw, empty numbers/bools in _nulls, the same record ids; values equal lib/uniform.js's.
  * 4. Syncs a third time: unchanged, nothing written.
+ * 5. Edits three rows (rows without a primary key are keyed by their content, so they get new
+ *    keys): each old record is deleted in the same batch as its new one is inserted, so the row
+ *    count never changes, not even between batches.
  * Removes the collection and its registry rows at the end. Exit 1 on any failure.
  */
 'use strict';
@@ -173,6 +176,30 @@ async function main() {
     const s3 = await run(pb);
     assert.equal(s3.status, 'unchanged', s3.message);
     console.log('ok   third run: unchanged');
+
+    // 5. re-keyed rows are replaced within one batch
+    for (const k of [2, 30, 59]) ROWS[k][4] = 'edited';
+    let count = ROWS.length, low = count, high = count, batchesSeen = 0;
+    const counting = new Proxy(pb, { get(t, p) {
+      if (p === 'batch') return async (reqs) => {
+        const r = await t.batch(reqs);
+        batchesSeen++;
+        for (const q of reqs) count += q.method === 'POST' ? 1 : q.method === 'DELETE' ? -1 : 0;
+        low = Math.min(low, count); high = Math.max(high, count);
+        return r;
+      };
+      const v = t[p]; return typeof v === 'function' ? v.bind(t) : v;
+    } });
+    const s4 = await run(counting);
+    assert.equal(s4.status, 'ok', s4.message);
+    assert.equal(s4.inserted, 3, 'three re-keyed rows inserted');
+    assert.equal(s4.deleted, 3, 'their old records deleted');
+    assert.equal(low, ROWS.length, `row count never dropped (lowest ${low})`);
+    assert.equal(high, ROWS.length, `row count never grew (highest ${high})`);
+    const fin = await records(pb);
+    assert.equal(fin.length, ROWS.length);
+    assert.deepEqual(fin.filter((r) => r.note === 'edited').map((r) => r._row_no), [3, 31, 60]);
+    console.log(`ok   re-keyed rows: 3 replaced in ${batchesSeen} batch(es), the row count stayed ${ROWS.length} throughout`);
     ok = true;
   } finally {
     await cleanup(pb);

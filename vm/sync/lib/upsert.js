@@ -111,6 +111,36 @@ async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batch
         if (signal && signal.aborted) throw signal.reason || new Error('Aborted');
     };
 
+    // The record id of a source row (its key; repeats get an occurrence suffix), marked seen in
+    // this run. A new id gets a slot past existingCount.
+    const claim = (values) => {
+        const baseKey = keyer.key(values);
+        let key = baseKey;
+        let id = recordId(key);
+        const dup = isSeen(id);
+        for (let occ = 2; isSeen(id); occ++) {
+            key = baseKey + ':' + occ; // exact duplicate (or repeated key): occurrence index
+            id = recordId(key);
+        }
+        let slot = index.map.get(id);
+        if (slot === undefined) slot = index.add(id, 0, 0, true);
+        else index.seen[slot] = 1;
+        return { key, id, slot, dup };
+    };
+
+    // Pass 1, keys only: the existing records this run deletes, by their row number. Each is
+    // deleted in the same batch transaction as the new record inserted at its row number, so a
+    // row whose key changed (content-keyed rows whose content changed, or a re-keyed dataset)
+    // is replaced in one step: the portal never sees it twice, nor missing.
+    const replaceAt = new Map(); // _row_no → { id, slot } of an existing record that goes
+    if (existingCount) {
+        for await (const values of readSpool(spoolFile)) claim(values);
+        for (const [id, slot] of index.map) {
+            if (slot < existingCount && !index.seen[slot] && !replaceAt.has(index.row[slot])) replaceAt.set(index.row[slot], { id, slot });
+        }
+        index.seen.fill(0);
+    }
+
     const conv = new Converter(columns);
     const target = columns.map((c) => (writeName ? writeName(c.name) : c.name));
     const rawTarget = columns.map((c) => (c.raw_name ? (writeName ? writeName(c.raw_name) : c.raw_name) : null));
@@ -123,14 +153,9 @@ async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batch
         for (let r = 0; r < chunk.length; r++) {
             const values = chunk[r];
             rowNo++;
-            const baseKey = keyer.key(values);
-            let key = baseKey;
-            let id = recordId(key);
-            if (isSeen(id)) stats.duplicateKeys++;
-            for (let occ = 2; isSeen(id); occ++) {
-                key = baseKey + ':' + occ; // exact duplicate (or repeated key): occurrence index
-                id = recordId(key);
-            }
+            const { key, id, slot, dup } = claim(values);
+            if (dup) stats.duplicateKeys++;
+            const isNew = slot >= existingCount;
             const record = {};
             const typed = [];
             for (let ci = 0; ci < columns.length; ci++) {
@@ -158,10 +183,6 @@ async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batch
             if (nulls) typed.push(nulls);
             const hash = sha1(stableStringify(typed));
             const hashNum = RowIndex.hashNum(hash);
-            let slot = index.map.get(id);
-            const isNew = slot === undefined;
-            if (isNew) slot = index.add(id, hashNum, rowNo, true);
-            else index.seen[slot] = 1;
             if (!isNew && !force && index.hash[slot] === hashNum && index.row[slot] === rowNo) {
                 stats.unchanged++;
                 continue;
@@ -172,6 +193,11 @@ async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batch
             record._synced_at = syncedAtStr;
             if (isNew) {
                 record.id = id;
+                const old = replaceAt.get(rowNo);
+                if (old && !index.seen[old.slot]) { // the record this row replaces: same transaction
+                    index.seen[old.slot] = 1;
+                    queue.push({ kind: 'deleted', req: { method: 'DELETE', url: `${base}/${old.id}` } });
+                }
                 queue.push({ kind: 'inserted', req: { method: 'POST', url: base + '?fields=id', body: record } });
             } else {
                 queue.push({ kind: 'updated', req: { method: 'PATCH', url: `${base}/${id}?fields=id`, body: record } });
@@ -192,7 +218,7 @@ async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batch
     stats.total = rowNo;
     await flush();
 
-    // Rows no longer in the source.
+    // Rows no longer in the source (the ones no new row replaced).
     for (const [id, slot] of index.map) {
         if (index.seen[slot]) continue;
         queue.push({ kind: 'deleted', req: { method: 'DELETE', url: `${base}/${id}` } });
