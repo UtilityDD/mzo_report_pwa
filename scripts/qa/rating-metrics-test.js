@@ -270,6 +270,16 @@ test('compute() takes promises and gives the same document as computeSync()', as
     assert.ok(/^dataset missing: consumers/.test(b.errors.receivable_days));
 });
 
+test('compute({ rated }) computes only the metrics the rating scores', async () => {
+    const R = require(path.join(APP, 'lib', 'rating.js'));
+    const src = Object.assign({ nsc_pending: nscRows(), loss_report: lossRows(), loss_targets: targetRows() }, reliabilityRows());
+    const asked = [];
+    const doc = await M.compute((k) => { asked.push(k); return src[k] || null; }, { rated: R.METHOD, asOf: '2026-11-01', generatedAt: 'x', manifest: null });
+    assert.deepStrictEqual(Object.keys(doc.metrics).concat(Object.keys(doc.errors)).sort(), M.ratedIds(R.METHOD).sort());
+    assert.ok(!asked.includes('meter_master') && asked.includes('nsc_pending'));
+    await assert.rejects(M.compute(src, { rated: true, manifest: null }), /needs lib\/rating\.js/);
+});
+
 test('dataset lists: DATASETS, datasetsFor and the ids lib/rating.js rates', () => {
     assert.strictEqual(M.METRICS.length, 46);
     assert.strictEqual(M.DATASETS.length, 37); // costcenter is not read: offices come placed in the rows
