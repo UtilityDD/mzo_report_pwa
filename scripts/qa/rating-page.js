@@ -142,6 +142,13 @@ async function run() {
           check(tag + ' ' + lv + ' rows', n === nOf(lv), String(n));
           const firstRank = await txt(page, '#view tbody tr[data-code] .pi-rank');
           check(tag + ' ' + lv + ' rank n/N', new RegExp('^1/' + doc.levels[lv].of + '$').test(firstRank), firstRank);
+          if (who === 'admin' && vp === 'desktop') {
+            // Every row shows exactly the engine's rank, grade, score and pillar marks, in the engine's order.
+            const shown = await page.$$eval('#view tbody tr[data-code]', (rs) => rs.map((r) => [r.getAttribute('data-code'), r.querySelector('.pi-rank') ? r.querySelector('.pi-rank').textContent : '—', r.querySelector('.pi-grade').lastChild.textContent, r.querySelector('.pi-score b') ? r.querySelector('.pi-score b').textContent : '', [].map.call(r.querySelectorAll('.pi-mini > span:not(.pi-track)'), (s) => s.firstChild.textContent).join(',')].join('|')));
+            const d1 = (v) => (Math.round(v * 10) / 10).toFixed(1);
+            const want = doc.levels[lv].order.map((c) => { const o = doc.offices[c]; return [c, o.rank ? o.rank + '/' + o.of : '—', o.grade || 'n/a', o.rated ? d1(o.score) : '', o.pillars.map((p) => (p.na ? '' : d1(p.marks))).filter(Boolean).join(',')].join('|'); });
+            check(tag + ' ' + lv + ' rows equal the engine output', JSON.stringify(shown) === JSON.stringify(want), shown.find((s, i) => s !== want[i]) + ' vs ' + want.find((s, i) => s !== shown[i]));
+          }
           const firstGrade = await txt(page, '#view tbody tr[data-code] .pi-grade');
           check(tag + ' ' + lv + ' grade text', /^Grade (A\+|A|B\+|B|C\+|C|D)$/.test(firstGrade), firstGrade);
         }
