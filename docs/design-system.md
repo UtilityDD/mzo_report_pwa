@@ -4,12 +4,41 @@ The Graphite look, the UI kit (`mzo_theme.css` + `mzo_ui.js`), the workstation s
 
 ## Design system (Graphite)
 
-One look across the workstation and every report: neutral greys, one **fill** colour for primary actions and selected pills, one teal **accent** for focus, links and the active marker, the operating-system font (no web fonts), hairline borders, almost no shadows. Light and dark are equal citizens.
+One look across the workstation and every report: neutral greys, one **fill** colour for primary actions and selected pills, one teal **accent** for focus, links and the active marker, small **hints of colour** that carry meaning (see [Colour](#colour)), the operating-system font (no web fonts), hairline borders, almost no shadows. Light and dark are equal citizens.
 
-- **Tokens** live in `mzo_theme.css` (`--mzo-canvas`, `--mzo-bg`, `--mzo-surface`, `--mzo-surface-2`, `--mzo-border(-strong)`, `--mzo-text`, `--mzo-text-2`, `--mzo-muted`, `--mzo-faint`, `--mzo-fill` / `--mzo-on-fill`, `--mzo-accent`, `--mzo-ok|warn|bad|info(-soft)`, `--mzo-chart(-soft)`). `app.html` inlines the same values; keep the two blocks in sync.
+- **Tokens** live in `mzo_theme.css` (`--mzo-canvas`, `--mzo-bg`, `--mzo-surface`, `--mzo-surface-2`, `--mzo-border(-strong)`, `--mzo-text`, `--mzo-text-2`, `--mzo-muted`, `--mzo-faint`, `--mzo-fill` / `--mzo-on-fill`, `--mzo-accent`, `--mzo-ok|warn|bad|info(-soft)`, `--mzo-ok|warn|bad-mark`, `--mzo-c1` … `--mzo-c6`, `--mzo-chart(-muted|-soft)`). `app.html` inlines the same values (it uses `--c1` … `--c6` and `--warn-mark` for the sidebar); keep the two blocks in sync.
 - **Theme:** `mzo_theme.js` paints `html[data-mzo-theme="light|dark"]` before first paint from `localStorage` (`theme`, `mzo_theme`, `collectionDashboardTheme`). The shell also stores `mzo_theme_pref` (`light` / `dark` / `system`) and writes the resolved value to those keys, so pages only ever see `light` or `dark`. Inside the shell, `mzo_theme.js` adds `html.mzo-in-shell` (page theme toggles and the floating home button are hidden).
 - **Fonts:** `mzo_theme.css` aliases Inter / Outfit / Roboto / Poppins to local system faces (`@font-face … local()`), so Chart.js canvases and older CSS that name those families render in the system UI font without downloading anything. Do not add Google Fonts links.
 - **No:** emojis in UI text, gradients, glows, glass blur, coloured left-accent cards, icon tiles, explanatory paragraphs, Font Awesome / Bootstrap / Chart.js on new pages.
+
+### Colour
+
+The base stays neutral. Colour is added only where it carries **identity** (which series, which group) or **state** (how late, how bad), never as decoration. Body text, values and labels stay in the text tokens; a coloured mark (dot, line, bar) sits beside them.
+
+**Categorical palette** (identity). Assign in this order and never cycle: past six series, fold the rest into "Other" or grey them (`UI.line` does this itself).
+
+| Token | Hue | Light | Dark |
+|---|---|---|---|
+| `--mzo-c1` | teal | `#12a195` | `#0aa99b` |
+| `--mzo-c2` | blue | `#427fd8` | `#427fd8` |
+| `--mzo-c3` | plum | `#982c72` | `#a5397e` |
+| `--mzo-c4` | violet | `#886acf` | `#9477dd` |
+| `--mzo-c5` | gold | `#b08505` | `#a1790c` |
+| `--mzo-c6` | sky | `#0c8bbb` | `#0c8bbb` |
+
+Validated with the dataviz palette validator (OKLab ΔE ×100, Machado 2009 colour-blind simulation) against the card surface (`#ffffff` light, `#161617` dark): all six inside the lightness band and above the chroma floor; worst neighbouring pair under protan/deutan ΔE 14.8 light / 14.1 dark (target ≥ 8); worst neighbouring pair with normal vision 16.2 / 17.3 (floor 15); every slot ≥ 3:1 against the surface and the page background. The first three slots also pass with every pair compared (14.8 / 13.4), so charts where any two series can touch should stay at three. The palette has no green, red or amber, so a series never reads as a status.
+
+**Status colours** (state): text uses `--mzo-ok` / `--mzo-warn` / `--mzo-bad` (≥ 4.3:1 on their `-soft` badge backgrounds, ≥ 5:1 on the surface); dots, bars and chart marks use `--mzo-ok-mark` / `--mzo-warn-mark` / `--mzo-bad-mark` (light `#16a34a` / `#f59e0b` / `#dc2626`, dark the text tokens `#4ade80` / `#fbbf24` / `#f87171`). The mark steps keep amber and red apart (ΔE 24 light, was 9 with the text tokens). Amber is below 3:1 on white by design, and green and red are close for red-green colour blindness, so a status colour always sits beside its label.
+
+When to use which:
+
+- **Chart series** → categorical, in slot order. A single series, share-of-total bars (`UI.bar`) and histograms (`UI.hist`) use slot 1; progress bars (done out of total: connected, installed, rectified) pass tone `2`. The current financial year is always slot 1, last year 2, the year before 3 (`UI.line` does this for the `strong` series). Colour follows the entity, not its rank: when a filter or sort changes the order, give each series a fixed `color`.
+- **Identity** → categorical: the sidebar group icons (`hue` in `NAV`: new service connection teal, revenue gold, DD visit sky, consumers & meters blue, vendor advances violet, substation & network plum, Important amber because it means "needs attention"; Media and Administration neutral), and categories that have their own chart (Historical analysis classes).
+- **State** → status: delay and age buckets (up to a month ok, up to six months warn, beyond that bad, unless the report has its own rule such as master card 90 days), stat cards that are a state (Connected, Pending, Blocked, Overdue), badges, briefing severity, low stock. Use `.ui-dot.ok|warn|bad` before the label, `.ui-badge.ok|warn|bad` in tables, `dot` on `UI.facet` options.
+- **Totals and plain counts** stay neutral; the selected stat and the selected detailed-report tab get the accent underline. Do not put the accent next to green: in dark mode they are only ΔE 9.6 apart.
+- Never mix status and categorical colours in one chart. Grey (`--mzo-chart-muted` or tone `'muted'`) is for "the rest".
+
+**Chart default.** The palette lives in the tokens, so every chart picks it up without page code: `--mzo-chart` is slot 1, and kit charts read it (`.ui-bar` and `.ui-hist` fill with `var(--bar, var(--mzo-chart))`; page CSS charts such as Historical analysis and Weekly use `var(--mzo-chart)` too). In script, `UI.color(tone)` turns `1`…`6`, `'ok' | 'warn' | 'bad'`, `'accent'` or `'muted'` into the right `var(...)`; `UI.bar(v, max, label, tone)`, `UI.hist(el, rows, { tone })` (or `tone` per row) and `UI.line` series `color` all accept it. To recolour a page chart for a selection, set `--mzo-chart` on its container. No page loads Chart.js any more; if one ever does, `mzo_theme.js` only gives it the page font and axis colours, so read `--mzo-c1` … `--mzo-c6` with `getComputedStyle(document.documentElement)` and pass them as dataset colours.
 
 **UI kit (rebuilt pages).** A page opts in with `<html class="ui">` and loads `/mzo_theme.js`, `/mzo_theme.css`, `/mzo_ui.js` (+ `mzo_data_hub.js`, `mzo_scope.js` when it reads data). Structure every report the same way:
 
