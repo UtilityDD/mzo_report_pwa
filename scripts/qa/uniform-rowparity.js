@@ -92,6 +92,15 @@ const PAGES = {
     key: 'bharatnet_connections', from: '    var STATUS = {', to: '    function fillFilters() {',
     old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true, stubs: ['fillFilters'],
     known: { id: 'the row index, never read; dropped', 'CCC NAME': 'the raw CCC name was copied onto the row only for MzoScope; the login scope now runs on the uniform rows' }
+  },
+  'icds.html': {
+    keys: { ap: 'icds_a_plus', a: 'icds_a' }, from: '    var STATUS = {', to: '    function fillFilters() {',
+    old: '(texts = RAW, combine())', new: '(tables = ROWS, combine())', rows: 'all', scope: true, stubs: ['fillFilters', 'tabs'],
+    known: {
+      awc: 'sheet cells with a trailing space ("Laxmipur "): uniform values are trimmed', project: 'as awc ("Itahar " was a separate project in the histogram)',
+      ownership: 'as awc', search: 'as awc (one space less)',
+      code: '14 centres with the unknown code 662101040: the drawer shows the code as written instead of its first 7 digits (6621010, not a CCC either)'
+    }
   }
 };
 const PROFILES = [
