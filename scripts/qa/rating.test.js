@@ -330,3 +330,18 @@ test('the real sample: shape, levels and arithmetic', () => {
     // stale safety data: no office gets a penalty this month
     for (const o of Object.values(d.offices)) assert.equal(o.penaltyTotal, 0);
 });
+
+test('docs/rating/methodology.md is generated from the engine and is current', () => {
+    const gen = require(path.join(REPO, 'scripts', 'rating', 'methodology.js'));
+    const want = gen.build();
+    const have = require('fs').readFileSync(gen.OUT, 'utf8');
+    assert.equal(have, want, 'run: node scripts/rating/methodology.js');
+    // the page gets the same content: every parameter's formula and reference are in ratingDoc.method
+    const d = R.rate(SAMPLE);
+    for (const pl of d.method.pillars) for (const x of pl.params) {
+        assert.ok(have.includes(x.formula.replace(/\|/g, '\\|')), x.id + ' formula in the document');
+        assert.ok(x.source.label && (x.source.url || x.source.key === 'ZONE'), x.id + ' source with a link');
+    }
+    for (const c of d.method.caveats) assert.ok(have.includes(c.text), c.id + ' caveat in the document');
+    assert.equal(d.method.example.level, 'ccc');
+});

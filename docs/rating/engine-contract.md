@@ -84,14 +84,14 @@ Rules the engine applies to each entry: `quality.status` `na` → n/a (level); `
   bands: [ { grade, min, label } ], bandsNote,
   pillars: [ { id, label, short, weight, national, basis,       // national = the national weights it is set against
                params: [ { id, metric, label, unit, direction, max, formula, full, zero, fullDisplay, zeroDisplay,
-                           source: { key, label, url }, ref, stretch, levels: ['zone',…], notes: [string],
+                           source: { key, short, label, url }, ref, stretch, levels: ['zone',…], notes: [string],
                            datasets: [ { key, label, page } ] } ] } ],
   penalties: [ { id, metric, label, unit, max, formula, none, worst, noneDisplay, worstDisplay, source, ref, levels } ], penaltyCap,
   levelsRule: [paragraph], naRule: [paragraph], qualityRule: [paragraph], penaltyRule: [paragraph], rankRule, whyRule,
   caveats: [ { id, text } ],                         // from this run's data: HT rows at regions, the swapped loss month,
                                                      // reliability coverage, stale inputs, mixed dates
   excluded: [ { item, reason } ], gaps: [string],
-  sources: [ { key, label, url, ref } ],
+  sources: [ { key, short, label, url, ref } ],
   example: { code, name, level, score, grade, rank, of, penaltyTotal,             // one CCC (opts.example, else the median-ranked CCC)
              pillars: [ { id, label, weight, max, marks, note,
                           params: [ { id, label, display, full, zero, fraction, max, effMax, marks, status, naReason } ] } ] } }
