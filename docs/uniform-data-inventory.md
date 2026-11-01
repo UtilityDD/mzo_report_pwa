@@ -91,6 +91,8 @@ Complexity: **S** one dataset, straight mapping · **M** several datasets, or cu
 | final (one person, after A–E) | assistant.html, sheet_links.html (+ dd_visit no-store, DTR drill, map pages on phones) | 4 | none (reads others' schemas; needed no new fields) |
 | later | prt-oil/index.html | 4 | prt_transformers, prt_oil_tests (its Map tab is only reachable through Apps Script, so it cannot be mirrored) |
 
+Parity entries ([uniform-data.md](uniform-data.md#parity-method)): the prototype pages and batches A–D are in `scripts/qa/uniform-rowparity/<batch>.js` and `scripts/qa/uniform-pages/<batch>.js` (`prototype`, `a-connections`, `b-revenue`, `c-meters`, `d-offices`), run by the one `uniform-rowparity.js` and `uniform-pages.js`. Batch E's pages are off the UI kit and have their own tools (`legacy-rowparity.js`, `legacy-pages.js`), as do the final step's (`sheet-links-rowparity.js`, `sheet-links-pages.js`, `assistant-rowparity.js`).
+
 Rules that keep the batches independent:
 
 - **Code shared between pages stays in one batch.** capex_all and advance_onm share a copied code block (`num`, `unitName`, `regionOf`, `maps()`): D. dd/upcomingDD and dd/dd_visit are copies of each other: C. bharatnet and icds share `asOnOf()` and the scope fallback: A. loss and performance_index share the office alias maps: B. The stock page's six JS files (one, `stock/stock_material_category.js`, is also loaded by `stock/upload.html`): E only.
