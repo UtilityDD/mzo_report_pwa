@@ -691,6 +691,7 @@ table.dataTable.dtr-inline.collapsed>tbody>tr.parent>th.dtr-control:before {
 }
 </style>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
+  <script src="/mzo_data_hub.js?v=91" defer></script>
   <style id="mzo-skin">
 /* MZO tool skin: Bootstrap components on the design tokens (page-local, html.ui) */
 html.ui body { margin: 0; padding: 0 !important; font: 13px/1.5 var(--mzo-font); background: var(--mzo-bg); color: var(--mzo-text); --bs-body-bg: var(--mzo-bg); --bs-body-color: var(--mzo-text); --bs-border-color: var(--mzo-border); --bs-emphasis-color: var(--mzo-text); --bs-secondary-color: var(--mzo-muted); }
@@ -1076,6 +1077,10 @@ html.ui .dtr-data { color: var(--mzo-muted); }
 <script>
 const scriptUrl = "https://script.google.com/macros/s/AKfycbwzaD7imXDsD3gWhxRXf9kx01NHKrzyXZGsBg2-azotO26PjybS-3R07Vyuh7Wscy1UIw/exec";
 const updateDataSheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=1835924766&single=true&output=csv";
+// The sheet comes from the VM mirror when there is one. After a save: read the source until the copy has the
+// new row, and ask the server to sync it now (the write goes straight to Apps Script, so it cannot see it).
+function sheetFetch(url) { return window.mzoMirror ? mzoMirror.fetch(url) : fetch(url); }
+function sheetSaved() { if (window.mzoMirror) { mzoMirror.fresh(updateDataSheetUrl); mzoMirror.refresh(['dtr_peak_load'], 'DTR peak load saved'); } }
 
 // Global variables
 window.currentCode = null;
@@ -1292,7 +1297,7 @@ function displayResults(data) {
 async function populateFormWithLastUpdate(code, masterData) {
     showLoading("Fetching last update...");
     try {
-        const response = await fetch(updateDataSheetUrl);
+        const response = await sheetFetch(updateDataSheetUrl);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
         const csvText = await response.text();
@@ -1528,7 +1533,7 @@ for (const field of requiredFields) {
   showLoading("Checking previous updates...");
 
   try {
-    const response = await fetch(updateDataSheetUrl);
+    const response = await sheetFetch(updateDataSheetUrl);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -1725,6 +1730,7 @@ function submitData() {
   .then(res => res.json())
   .then(data => {
     if (data.status === "success") {
+      sheetSaved();
       showSuccess(data.updated ? "Data Successfully Updated!" : "Data Successfully Added!");
       setTimeout(() => resetSearch(), 2000);
     } else {
@@ -1814,7 +1820,7 @@ async function showAllLoadData() {
   showLoading("Fetching authorized load data...");
 
   try {
-    const res = await fetch(updateDataSheetUrl);
+    const res = await sheetFetch(updateDataSheetUrl);
     if (!res.ok) throw new Error("Failed to fetch data");
 
     const csvText = await res.text();
