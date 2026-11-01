@@ -89,11 +89,15 @@
     function maps(vText, ccData) {
       vendors = {}; UI.csv(vText || '').forEach(function (v) { if (v.VENDOR_NO && v.NAME) vendors[String(v.VENDOR_NO).trim()] = v.NAME.trim(); });
       cc = {}; (ccData || []).forEach(function (e) { if (e['Cost Cen_Code'] && e['Unit Name'] && e['Division Name']) cc[String(e['Cost Cen_Code']).trim()] = { unit: e['Unit Name'].trim(), division: e['Division Name'].trim() }; });
+      if (window.MzoOffices) window.MzoOffices.addCostCentres(ccData || []);
     }
     function prepare(text) {
       asOn = null;
       all = UI.csv(text).filter(function (r) { return r['Net Balance Value'] !== undefined && (r['Project ID'] || r['Material Code']); }).map(function (r) {
         var m = cc[String(r['Cost Centre'] || '').trim()] || {}, divRaw = m.division || '', div = divRaw.replace(/\s*division$/i, '');
+        var off = window.MzoOffices ? window.MzoOffices.parseCode(r['Cost Centre']) : null;
+        if (off && off.division && (off.level === 'ccc' || off.level === 'division')) { div = off.division; divRaw = off.division + ' Division'; }
+        if (off && off.level === 'ccc' && m.unit) m = { unit: off.ccc + ' CCC', division: m.division };
         var unit = m.unit || 'Unknown unit', vcode = String(r.Vendor || '').trim();
         var rd = UI.date(r['Reporting Date']); if (rd && (!asOn || rd > asOn)) asOn = rd;
         var isDiv = /division$/i.test(divRaw);

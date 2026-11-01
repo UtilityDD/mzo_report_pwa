@@ -87,6 +87,7 @@
     function maps(vText, ccData) {
       vendors = {}; UI.csv(vText || '').forEach(function (v) { if (v.VENDOR_NO && v.NAME) vendors[String(v.VENDOR_NO).trim()] = v.NAME.trim(); });
       cc = {}; (ccData || []).forEach(function (e) { if (e['Cost Cen_Code'] && e['Unit Name'] && e['Division Name']) cc[String(e['Cost Cen_Code']).trim()] = { unit: e['Unit Name'].trim(), division: e['Division Name'].trim() }; });
+      if (window.MzoOffices) window.MzoOffices.addCostCentres(ccData || []);
     }
     function prepare(text) {
       asOn = null;
@@ -94,6 +95,9 @@
       all = UI.csv(text).filter(function (r) { return r['Order Number']; }).map(function (r) {
         // Cost centre column is "Resp. CCtr"; fall back to the plant code for the division.
         var m = cc[String(r['Resp. CCtr'] || '').trim()] || {}, divRaw = m.division || '';
+        var off = window.MzoOffices ? window.MzoOffices.parseCode(r['Resp. CCtr']) : null;
+        if (off && off.division && (off.level === 'ccc' || off.level === 'division')) divRaw = off.division + ' Division';
+        if (off && off.level === 'ccc' && m.unit) m = { unit: off.ccc + ' CCC', division: m.division };
         var isDiv = /division$/i.test(divRaw), div = divRaw.replace(/\s*division$/i, '');
         if (!divRaw && window.MzoScope) { var pd = window.MzoScope.divisionNameOf(String(r.Plant || '').trim()); if (pd) { div = pd; isDiv = true; } }
         var created = UI.date(r['Creation Date']); if (created && (!asOn || created > asOn)) asOn = created;
