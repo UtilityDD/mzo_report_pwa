@@ -36,6 +36,14 @@ async function apiCount(collection, filter) {
   return r.totalItems;
 }
 
+async function apiList(collection, filter, perPage, sort) {
+  const a = await (await fetch(BASE + '/api/collections/portal_users_auth/auth-with-password', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ identity: CRED.portal.email, password: CRED.portal.password })
+  })).json();
+  const r = await (await fetch(BASE + '/api/collections/' + collection + '/records?perPage=' + (perPage || 500) + '&filter=' + encodeURIComponent(filter || '') + (sort ? '&sort=' + encodeURIComponent(sort) : ''), { headers: { Authorization: a.token } })).json();
+  return r.items || [];
+}
+
 async function newPage(browser, opts) {
   const ctx = await browser.newContext({
     viewport: opts.phone ? { width: 390, height: 844 } : { width: 1440, height: 900 },
@@ -95,6 +103,238 @@ async function clearFilters(page) {
   if (many) await many.click();
   else { const x = await page.$('.pt-chip-x'); if (x) await x.click(); }
   await page.waitForFunction(() => !document.querySelector('.pt-data.busy'));
+}
+
+/* ---------- data quality ---------- */
+const IST = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric' });
+const istDay = (pbDate) => IST.format(new Date(String(pbDate).replace(' ', 'T')));
+const RANK = { Error: 0, Warning: 1, Note: 2 };
+// Every check id vm/quality can store, read from its source.
+function qualityCheckIds() {
+  const dir = path.join(__dirname, '..', '..', 'quality');
+  const files = ['index.js', 'lib/engine.js', 'lib/cross.js'].map((f) => path.join(dir, f)).filter((f) => fs.existsSync(f));
+  const ids = new Set();
+  files.forEach((f) => {
+    const src = fs.readFileSync(f, 'utf8');
+    (src.match(/'(office|date|number|value|key|row|header|freshness|cross)\.[a-z_]+'/g) || []).forEach((m) => ids.add(m.slice(1, -1)));
+    (src.match(/office\.unknown_\$\{/g) || []).forEach(() => ['office.unknown_region', 'office.unknown_division', 'office.unknown_ccc'].forEach((x) => ids.add(x)));
+  });
+  return [...ids];
+}
+const quietly = (page) => page.waitForFunction(() => !document.querySelector('.ui-empty .pt-skel'));
+async function rowsOf(page) { return page.$$eval('.pt-qtable tbody tr', (trs) => trs.length); }
+
+async function qualityTests(browser) {
+  const since = new Date(Date.now() - 7 * 864e5).toISOString().replace('T', ' ');
+  const scores = await apiList('sys_quality_scores', '', 500);
+  const open = await apiList('sys_quality_issues', "status = 'open'", 500);
+  const recent = await apiList('sys_quality_issues', "status = 'resolved' && last_seen >= '" + since + "'", 500);
+  const avg = Math.round(scores.reduce((a, s) => a + s.score, 0) / scores.length);
+  const sevN = (s) => open.filter((i) => i.severity === s).length;
+  const sheetOnly = open.filter((i) => i.source_fix);
+  const datasets = await apiList('sys_datasets', '', 500);
+  const dsBy = Object.fromEntries(datasets.map((d) => [d.key, d]));
+
+  /* desktop light: full pass */
+  {
+    const { ctx, page, errors, blocked } = await newPage(browser, { theme: 'light' });
+    await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
+    await signIn(page, CRED.portal);
+    await page.waitForSelector('.pt-dq-avg');
+    const card = await page.textContent('.pt-dq');
+    const bandN = await page.$$eval('.pt-dq-band > b', (b) => b.map((x) => Number(x.textContent.replace(/,/g, ''))));
+    const lo = scores.filter((s) => s.score < 80).length, mid = scores.filter((s) => s.score >= 80 && s.score < 95).length, hi = scores.filter((s) => s.score >= 95).length;
+    check('overview card: average score and bands', (await page.textContent('.pt-dq-num')) === String(avg) && bandN.join() === [hi, mid, lo].join(), avg + ' · ' + bandN.join('/'));
+    const sevCard = await page.$$eval('.pt-dq-sevi b', (b) => b.map((x) => x.textContent));
+    check('overview card: open errors / warnings / notes and last checked', sevCard[0] === String(sevN('error')) && sevCard[1] === String(sevN('warn')) && sevCard[2] === String(sevN('info')) && /\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}/.test(sevCard[3]), sevCard.join(' · '));
+    check('overview card links to the page', (await page.getAttribute('.pt-dq .ui-panel-h a', 'href')) === '#/quality' && card.includes('Data quality'));
+    await page.evaluate(() => document.querySelector('.pt-dq').scrollIntoView({ block: 'center' }));
+    await shot(page, 'quality-overview-card-light');
+
+    await page.click('#nav a[href="#/quality"]');
+    await page.waitForSelector('.pt-qtable tbody tr');
+    const tiles = await page.$$eval('.pt-qtiles .ui-stat', (s) => s.map((x) => x.querySelector('.k').textContent.trim() + '=' + x.querySelector('.v').textContent.trim()));
+    check('quality tiles', tiles[0] === 'Average score=' + avg && tiles[1] === 'Below 80=' + lo && tiles[2] === 'Open errors=' + sevN('error') && tiles[3] === 'Open warnings=' + sevN('warn') && tiles[4] === 'Open notes=' + sevN('info') && /Last checked=\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}/.test(tiles[5]), tiles.join(' · '));
+    check('by dataset: every scored dataset', await rowsOf(page) === scores.length, String(await rowsOf(page)));
+    const sc = await page.$$eval('.pt-qtable tbody tr .pt-score span', (s) => s.map((x) => Number(x.textContent)));
+    check('by dataset: sorted by score ascending', sc.every((v, i) => i === 0 || v >= sc[i - 1]) && sc[0] === Math.min(...scores.map((s) => s.score)), sc.join(','));
+    const bands = await page.$$eval('.pt-qtable tbody tr .pt-score', (s) => s.map((x) => x.className.match(/pt-band-(\w+)/)[1]));
+    const fills = await page.$$eval('.pt-qtable tbody tr .pt-score i b', (b) => b.map((x) => getComputedStyle(x).backgroundColor));
+    const marks = await page.evaluate(() => ['ok', 'warn', 'bad'].map((k) => { const e = document.createElement('div'); e.style.color = 'var(--mzo-' + k + '-mark)'; document.body.appendChild(e); const c = getComputedStyle(e).color; e.remove(); return c; }));
+    check('score bars use the status mark colours by band', sc.every((v, i) => bands[i] === (v >= 95 ? 'ok' : v >= 80 ? 'warn' : 'bad')) && fills.every((f, i) => f === marks[['ok', 'warn', 'bad'].indexOf(bands[i])]), bands.slice(0, 4).join(','));
+    const ist = await page.$eval('.pt-qtable tbody tr td:last-child time', (t) => t.textContent);
+    check('checked time in IST dd/mm/yyyy', /^\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}$/.test(ist), ist);
+    await shot(page, 'quality-datasets-light');
+    await page.click('.pt-qtable tbody tr:first-child td:nth-child(3)');
+    await page.waitForSelector('.pt-dsq');
+    check('a dataset row opens its Quality tab', /#\/d\/[a-z_]+\/quality$/.test(page.url()) && (await page.getAttribute('.pt-tabs a[aria-selected="true"]', 'href')).endsWith('/quality'));
+    await page.goBack();
+    await page.waitForSelector('.pt-qtable tbody tr');
+
+    // All issues
+    await page.click('.pt-qtabs a:has-text("All issues")');
+    await page.waitForSelector('.pt-qtable tbody tr .pt-sev');
+    let sev = await page.$$eval('.pt-qtable tbody tr .pt-sev', (b) => b.map((x) => x.textContent));
+    check('all issues: every open issue, errors first', sev.length === open.length && sev.every((v, i) => i === 0 || RANK[v] >= RANK[sev[i - 1]]), sev.length + ' rows');
+    const checks = await page.$$eval('.pt-qtable tbody tr td:nth-child(3)', (t) => t.map((x) => x.textContent));
+    check('friendly check names (no raw ids)', checks.every((t) => !/^[a-z]+\.[a-z_]+$/.test(t)) && checks.includes('Report out of date') && checks.includes('Copied row'), checks.slice(0, 3).join(', '));
+    const ids = qualityCheckIds();
+    const missing = await page.evaluate((list) => list.filter((id) => !window.Portal.quality.NAMES[id]), ids);
+    check('a friendly name for every check id in vm/quality', ids.length > 40 && missing.length === 0, ids.length + ' ids' + (missing.length ? ', missing ' + missing.join(',') : ''));
+    const pctCell = await page.$eval('.pt-qtable tbody tr:first-child td:nth-child(6)', (t) => t.textContent);
+    const first = open.slice().sort((a, b) => ({ error: 0, warn: 1, info: 2 }[a.severity] - { error: 0, warn: 1, info: 2 }[b.severity]) || b.count - a.count)[0];
+    const firstSeen = await page.$eval('.pt-qtable tbody tr:first-child td:nth-child(7)', (t) => t.textContent);
+    check('% of rows and first seen (IST)', pctCell === ((first.count / dsBy[first.dataset].row_count) * 100).toFixed(1) + '%' && firstSeen === istDay(first.first_seen), pctCell + ' · ' + firstSeen);
+    await shot(page, 'quality-issues-light');
+
+    await page.selectOption('.pt-qbar select[aria-label="Severity"]', 'warn');
+    sev = await page.$$eval('.pt-qtable tbody tr .pt-sev', (b) => b.map((x) => x.textContent));
+    check('filter: severity', sev.length === sevN('warn') && sev.every((v) => v === 'Warning'), String(sev.length));
+    await page.selectOption('.pt-qbar select[aria-label="Severity"]', '');
+    await page.selectOption('.pt-qbar select[aria-label="Check family"]', 'cross');
+    check('filter: check family', await rowsOf(page) === open.filter((i) => i.check.startsWith('cross.')).length);
+    await page.selectOption('.pt-qbar select[aria-label="Check family"]', '');
+    await page.check('.pt-qsheet input');
+    check('filter: fix in sheet only', await rowsOf(page) === sheetOnly.length, String(await rowsOf(page)));
+    await page.uncheck('.pt-qsheet input');
+    await page.selectOption('.pt-qbar select[aria-label="Report area"]', 'Revenue');
+    const rev = open.filter((i) => dsBy[i.dataset] && dsBy[i.dataset].group === 'Revenue').length;
+    check('filter: report area', await rowsOf(page) === rev, String(rev));
+    await page.selectOption('.pt-qbar select[aria-label="Report area"]', '');
+    await page.selectOption('.pt-qbar select[aria-label="Status"]', 'resolved');
+    const st = await page.$$eval('.pt-qtable tbody tr td:last-child', (t) => t.map((x) => x.textContent));
+    check('filter: resolved in the last 7 days', st.length === recent.length && st.every((x) => x === 'Resolved'), String(st.length));
+    await page.selectOption('.pt-qbar select[aria-label="Status"]', 'open');
+    await page.fill('.pt-qsearch input', 'MALDA REGION');
+    await page.waitForTimeout(400);
+    check('filter: search', await rowsOf(page) >= 1 && (await page.textContent('.pt-qtable tbody')).includes('Ambiguous office name'));
+    await page.click('.pt-qbar button:has-text("Clear")');
+    check('clear filters', await rowsOf(page) === open.length);
+
+    // Issue drawer (same-shape samples → table)
+    await page.fill('.pt-qsearch input', 'Applicant Name');
+    await page.waitForTimeout(400);
+    await page.click('.pt-qtable tbody tr:has-text("Extra spaces")');
+    await page.waitForSelector('.pt-drawer:not([hidden]) .pt-hint-full');
+    const hint = await page.textContent('.pt-drawer .pt-hint-full');
+    const sampleHead = await page.$$eval('.pt-drawer .pt-sample th', (t) => t.map((x) => x.textContent));
+    const sampleTxt = await page.textContent('.pt-drawer .pt-sample');
+    check('issue drawer: full hint and sample table', hint.includes('<b>Trim</b>') && sampleHead.join() === 'row,value' && sampleTxt.includes('<img src=x onerror='), sampleHead.join());
+    check('issue drawer: links', (await page.getAttribute('.pt-drawer .pt-drawer-acts a:has-text("Open sheet")', 'href')).startsWith('https://docs.google.com/') && (await page.getAttribute('.pt-drawer .pt-drawer-acts a:has-text("Open data")', 'href')) === '#/d/nsc_pending');
+    check('XSS probes in samples and hints render as text', await page.evaluate(() => window.__xss === undefined && !document.querySelector('.pt-drawer-b img, .pt-drawer-b script, .pt-drawer-b b')));
+    await page.waitForTimeout(300);
+    await shot(page, 'quality-drawer-light');
+    await page.keyboard.press('Escape');
+    await page.click('.pt-qbar button:has-text("Clear")');
+
+    // Owner action list
+    await page.click('.pt-qtabs a:has-text("Owner action list")');
+    await page.waitForSelector('.pt-act-g');
+    const items = await page.$$('.pt-act-i');
+    check('owner action list: open source_fix issues only', items.length === sheetOnly.length, items.length + ' items');
+    const firstGroup = await page.$eval('.pt-act-g', (g) => ({ t: g.querySelector('.pt-act-t b').textContent, sev: [...g.querySelectorAll('.pt-sev')].map((x) => x.textContent) }));
+    check('owner action list: worst sheet first, severity order inside', firstGroup.sev[0] === 'Error' && firstGroup.sev.every((v, i) => i === 0 || RANK[v] >= RANK[firstGroup.sev[i - 1]]), firstGroup.t + ': ' + firstGroup.sev.join(','));
+    const snap = await page.$$eval('.pt-act-g', (gs) => gs.map((g) => ({ t: g.querySelector('.pt-act-t b').textContent, href: (g.querySelector('.pt-act-b a') || {}).href || '', items: [...g.querySelectorAll('.pt-act-i b')].map((b) => b.textContent) })).find((g) => g.items.includes('Storage copy differs from the sheet')));
+    check('Storage snapshot listed under its Google sheet', !!snap && snap.href === dsBy.defective_meter.source_url && snap.t === 'Defective meter', snap ? snap.t + ' ' + snap.href : 'not found');
+    const samples = await page.$$eval('.pt-act-i', (li) => li.map((x) => x.querySelectorAll('.pt-act-s li').length));
+    check('up to 3 sample rows per line', samples.every((n) => n <= 3) && samples.some((n) => n === 3));
+    const hrefs = await page.$$eval('.pt-act-b a', (a) => a.map((x) => x.getAttribute('href')));
+    check('Open sheet links are http(s) only', hrefs.length > 0 && hrefs.every((u) => /^https?:\/\//.test(u)) && await page.evaluate(() => window.__xss === undefined && !document.querySelector('.pt-act-l img, .pt-act-l script')));
+    await page.click('.pt-actions .ui-panel-h button:has-text("Copy list as text")');
+    await page.waitForTimeout(200);
+    const clip = await page.evaluate(() => navigator.clipboard.readText());
+    check('copy list as plain text', clip.includes('[Error] Report out of date (Date): 1') && clip.includes('https://docs.google.com/') && clip.includes('<script>window.__xss=7</script>'), clip.split('\n')[0]);
+    const [dlq] = await Promise.all([page.waitForEvent('download'), page.click('.pt-actions .ui-panel-h button:has-text("Export CSV")')]);
+    const csvq = fs.readFileSync(await dlq.path(), 'utf8').replace(/^﻿/, '').trim().split(/\r\n/);
+    check('owner action list CSV', csvq.length >= sheetOnly.length + 1 && csvq[0].startsWith('sheet,sheet_url,dataset,dataset_key,severity,check'), (csvq.length - 1) + ' lines, ' + dlq.suggestedFilename());
+    await shot(page, 'quality-actions-light');
+    await page.click('.pt-act-i:has-text("Storage copy differs")');
+    await page.waitForSelector('.pt-drawer:not([hidden]) .pt-sample-kv');
+    check('issue drawer: key/value list when sample shapes differ', (await page.$$('.pt-drawer .pt-sample-kv > li')).length === 4 && (await page.textContent('.pt-drawer .pt-dl')).includes('Compared with'));
+    await page.keyboard.press('Escape');
+
+    // Dataset Quality tab
+    await page.goto(BASE + '/#/d/nsc_pending/quality');
+    await page.waitForSelector('.pt-dsq');
+    await page.waitForFunction(() => document.querySelectorAll('.ui-panel').length >= 3 && !document.querySelector('.pt-tabbody .pt-skel'));
+    const nsOpen = open.filter((i) => i.dataset === 'nsc_pending').length;
+    const nsRes = (await apiList('sys_quality_issues', "dataset = 'nsc_pending' && status = 'resolved'", 20)).length;
+    const panels = await page.$$eval('.pt-tabbody > div > .ui-panel, .pt-tabbody > .ui-panel', (p) => p.map((x) => ({ h: (x.querySelector('h2') || {}).textContent || '', n: x.querySelectorAll('tbody tr').length })));
+    const nsScore = scores.find((s) => s.dataset === 'nsc_pending').score;
+    check('dataset Quality tab: score, open issues and the last resolved', (await page.textContent('.pt-dsq .pt-dq-num')) === String(nsScore) && panels.some((p) => p.h.startsWith('Open issues') && p.n === nsOpen) && panels.some((p) => p.h.startsWith('Resolved') && p.n === nsRes), JSON.stringify(panels));
+    await shot(page, 'quality-dataset-tab-light');
+
+    check('quality desktop light: zero console errors', errors.length === 0, errors.slice(0, 5).join(' | '));
+    check('quality desktop light: no blocked requests', blocked.length === 0, blocked.slice(0, 5).join(' | '));
+    await ctx.close();
+  }
+
+  /* empty state (no results yet) */
+  {
+    const { ctx, page, errors } = await newPage(browser, { theme: 'light' });
+    await ctx.route(/\/api\/collections\/sys_quality_(scores|issues)\/records/, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ page: 1, perPage: 500, totalItems: 0, totalPages: 0, items: [] }) }));
+    await signIn(page, CRED.portal);
+    await page.waitForSelector('.pt-dq .ui-empty');
+    const a = await page.textContent('.pt-dq .ui-empty');
+    await page.click('#nav a[href="#/quality"]');
+    await page.waitForSelector('.pt-view .ui-empty');
+    const b = await page.textContent('.pt-view .ui-empty');
+    await page.goto(BASE + '/#/d/loss_report/quality');
+    await page.waitForSelector('.pt-tabbody .ui-panel .ui-empty');
+    const c = await page.textContent('.pt-tabbody .ui-panel .ui-empty');
+    const msg = 'Results appear after the next sync';
+    check('empty state before the first quality run', a === msg && b === msg && c === msg);
+    check('empty state: zero console errors', errors.length === 0, errors.slice(0, 3).join(' | '));
+    await ctx.close();
+  }
+
+  /* dark desktop and 390px phones */
+  for (const v of [{ theme: 'dark' }, { theme: 'light', phone: true }, { theme: 'dark', phone: true }]) {
+    const tag = (v.phone ? 'phone' : 'desktop') + '-' + v.theme;
+    const { ctx, page, errors, blocked } = await newPage(browser, v);
+    await signIn(page, CRED.portal);
+    await page.goto(BASE + '/#/quality');
+    await page.waitForSelector('.pt-qtable tbody tr');
+    if (!v.phone) {
+      await shot(page, 'quality-datasets-dark');
+      await page.click('.pt-qtabs a:has-text("Owner action list")');
+      await page.waitForSelector('.pt-act-g');
+      await shot(page, 'quality-actions-dark');
+    } else {
+      const cards = await page.evaluate(() => { const t = document.querySelector('.pt-qtable'); return getComputedStyle(t.querySelector('thead')).display === 'none' && getComputedStyle(t.querySelector('tbody tr')).display === 'grid'; });
+      check(tag + ': tables become cards', cards);
+      const ov = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      check(tag + ': no horizontal overflow', ov <= 0, String(ov));
+      await shot(page, 'quality-phone-datasets-' + v.theme);
+      check(tag + ': filters hidden in a drawer', await page.evaluate(() => document.querySelector('.pt-qbar').getBoundingClientRect().left >= innerWidth));
+      await page.click('.pt-qfilters');
+      await page.waitForTimeout(350);
+      check(tag + ': Filters opens the drawer', await page.evaluate(() => { const r = document.querySelector('.pt-qbar').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth + 1; }));
+      await page.selectOption('.pt-qbar select[aria-label="Severity"]', 'error');
+      await shot(page, 'quality-phone-filters-' + v.theme);
+      await page.click('.pt-qdone');
+      await page.waitForTimeout(350);
+      check(tag + ': filter applies from the drawer', await rowsOf(page) === 1 && (await page.textContent('.pt-qfilters')).includes('Filters · 1'));
+      await page.click('.pt-qfilters');
+      await page.waitForTimeout(350);
+      await page.click('.pt-qbar button:has-text("Clear")');
+      await page.click('.pt-qdone');
+      await page.waitForTimeout(350);
+      check(tag + ': Clear from the drawer', await rowsOf(page) === (await apiList('sys_quality_scores', '', 500)).length);
+      await page.click('.pt-qtabs a:has-text("Owner action list")');
+      await page.waitForSelector('.pt-act-g');
+      await shot(page, 'quality-phone-actions-' + v.theme);
+      await page.click('.pt-act-i:has-text("Total row inside the data")');
+      await page.waitForSelector('.pt-drawer:not([hidden]) .pt-hint-full');
+      await page.waitForTimeout(300);
+      await shot(page, 'quality-phone-drawer-' + v.theme);
+      check(tag + ': probe in a nested sample renders as text', (await page.textContent('.pt-drawer .pt-sample')).includes('<script>window.__xss=7</script>') && await page.evaluate(() => window.__xss === undefined));
+      await page.keyboard.press('Escape');
+    }
+    check(tag + ': quality pages, zero console errors', errors.length === 0, errors.slice(0, 5).join(' | '));
+    check(tag + ': quality pages, no blocked requests', blocked.length === 0, blocked.slice(0, 5).join(' | '));
+    await ctx.close();
+  }
 }
 
 (async () => {
@@ -408,6 +648,8 @@ async function clearFilters(page) {
     check(tag + ': no blocked requests', blocked.length === 0, blocked.slice(0, 5).join(' | '));
     await ctx.close();
   }
+
+  await qualityTests(browser);
 
   await browser.close();
   console.log('\n' + (results.length - failed) + '/' + results.length + ' checks passed');
