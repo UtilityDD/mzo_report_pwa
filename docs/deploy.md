@@ -55,5 +55,7 @@ Set on Vercel (Smart Lineman project); locally in the git-ignored `.env`. `serve
 | `REPORTS_STORAGE_BUCKET` | Bucket for the synced report snapshots (disconnection, defective, pending MC, load extension) |
 | `*_SCRIPT_URL` (`NSC_SHEET`, `NSC_WITHHELD_SHEET`, `NSC_FOLLOWUP`, `STOCK_SHEET`, `STOCK_ALLOTMENT`, `DEFECTIVE_SHEET`, `DISCONNECTION_FOLLOWUP`, `METADATA`) | Apps Script web apps, see [apps-script.md](apps-script.md) |
 | `*_CSV_URL` (`DISCONNECTION_SHEET`, `PENDING_MC_SHEET`, `LOAD_EXT_SHEET`, `DEFECTIVE_SUMMARY`, `DEFECTIVE_DETAILS`, `STOCK_ALLOTMENTS`) | Override the published sheet a sync job or the allotment list reads |
+| `REPORTS_PUBLIC_BASE` | Public URL of the report snapshots bucket that `meta.json` is read from (GET only). Default: `<INSIGHT_SUPABASE_URL>/storage/v1/object/public/reports`, or the new project's bucket when that is unset |
+| `MZO_DATA_MODE`, `MZO_SNAPSHOT_DIR` | VM only. `MZO_DATA_MODE=mirror` with an existing `MZO_SNAPSHOT_DIR` (default `/opt/mzo/data/snapshots`) serves report data from the sync's snapshots. Never set on Vercel. See **Mirror mode** in [architecture.md](architecture.md#mirror-mode-vm-only) |
 | `PORT` | Local port (default 3000) |
 
