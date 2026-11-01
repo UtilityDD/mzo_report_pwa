@@ -13,7 +13,8 @@
  *
  * Session: on localhost the harness forges the dev test cookie (secret: env QA_JWT_SECRET or the
  * development fallback). Elsewhere it uses env QA_COOKIE (`mzo_session=<payload>.<sig>` or just the
- * value); without it only pages that need no session are loaded.
+ * value) or QA_COOKIE_FILE (a file holding it); without one every page lands on the login page and is
+ * marked skipped.
  *
  * Safety: every browser request that is not GET/HEAD/OPTIONS is aborted and listed under `blocked`.
  *
@@ -110,11 +111,14 @@ function isLocalBase(base) { return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?
 
 function sessionFor(base) {
   const profileDefault = { Username: 'local-preview', Name: 'Local Preview', role: 'admin', office_level: 'CE' };
-  if (process.env.QA_COOKIE) {
-    const v = process.env.QA_COOKIE.replace(/^mzo_session=/, '').trim();
+  let given = process.env.QA_COOKIE || '';
+  if (!given && process.env.QA_COOKIE_FILE) { try { given = fs.readFileSync(process.env.QA_COOKIE_FILE, 'utf8'); } catch (_) {} }
+  if (given) {
+    let v = given.trim().replace(/^cookie:\s*/i, '').replace(/^mzo_session=/, '').split(';')[0].trim();
+    try { v = decodeURIComponent(v); } catch (_) {}
     let profile = profileDefault;
     try { profile = JSON.parse(Buffer.from(v.split('.')[0], 'base64').toString('utf8')).profile || profileDefault; } catch (_) {}
-    return { value: v, profile, source: 'QA_COOKIE' };
+    return { value: v, profile, source: process.env.QA_COOKIE ? 'QA_COOKIE' : 'QA_COOKIE_FILE' };
   }
   if (!isLocalBase(base)) return null;
   const secret = process.env.QA_JWT_SECRET || 'mzo-portal-super-secret-key-123456';
