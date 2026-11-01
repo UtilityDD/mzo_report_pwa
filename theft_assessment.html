@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=2" defer></script>
 </head>
 <body>
   <main class="ui-page">
@@ -87,8 +88,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var KEY = 'CACHE_THEFT_ASSESSMENT_v2';
-    var PREFIX = { '6611': ['Malda', 'Malda'], '6612': ['Malda', 'Chanchal'], '6613': ['Malda', 'Gazole'], '6621': ['Raiganj', 'Raiganj'], '6622': ['Raiganj', 'Islampur'], '6631': ['Balurghat', 'Balurghat'], '6632': ['Balurghat', 'Buniadpur'] };
+    var KEY = 'theft_assessment';
     var STATUS = { recovered: ['Recovered', 'ok'], partial: ['Partly paid', 'warn'], unpaid: ['Unpaid', 'bad'], pending_final: ['Final pending', ''] };
     var CUT = [
       { key: 'critical', label: 'Cut over 50%' }, { key: 'moderate', label: 'Cut 20–50%' }, { key: 'minor', label: 'Cut under 20%' },
@@ -97,18 +97,23 @@
     var all = [], f = { q: '', stat: '', cut: '' }, level = 'region', scope = null;
 
     function num(s) { var n = parseFloat(String(s == null ? '' : s).replace(/[^\d.-]/g, '')); return isNaN(n) ? 0 : n; }
+    // A uniform number, or the page's old clean-up of a cell that did not parse (units, ₹ signs).
+    function amt(r, k) { return r[k] != null ? r[k] : num(r[k + '_raw']); }
+    // A uniform date (ISO) back as the sheet writes it (dd.mm.yyyy); a cell that did not parse as written.
+    function dots(r, k) { var v = r[k]; return v ? v.slice(8, 10) + '.' + v.slice(5, 7) + '.' + v.slice(0, 4) : r[k + '_raw'] || ''; }
     function dmy(s) { var p = String(s || '').trim().split(/[./-]/); if (p.length !== 3) return null; var y = +p[2]; if (y < 2000 || y > 2040) return null; return new Date(y, +p[1] - 1, +p[0]); }
     function cccName(raw) { var s = String(raw || '').replace(/\s*(CUSTOMER CARE CENTER|CUSTOMER CARE CENTRE|CCC)\s*/gi, '').trim(); return s ? UI.title(s) : 'Unknown'; }
 
     // Rules kept from the old page: a paid provisional bill counts as final; buckets by % cut.
-    function prepare(text) {
-      if (text && typeof text === 'object' && text.data) text = text.data;
-      var rows = UI.csv(text), lo = null, hi = null;
-      all = rows.map(function (r, i) {
-        var loc = String(r['Location Code'] || '').trim();
-        var o = UI.office(loc), pre = PREFIX[loc.slice(0, 4)] || ['Malda', 'Malda'];
-        var provU = num(r['Provsnl Bill Unit']), provA = num(r['Provsnl Bill Amt']), finU = num(r['Final Billing Unit']), finA = num(r['Final Bill Amt']), pay = num(r['PAYMENT AMT']);
-        var explicitFinal = finA > 0 || String(r['Final Print Doc No'] || '').trim().length > 3;
+    // t.rows: uniform rows of schema/theft_assessment.json, already scoped to the login by MzoRows.
+    function prepare(t) {
+      var lo = null, hi = null;
+      // The inspection range in the header covers the whole sheet, as before (t.all, not the scoped rows).
+      t.all.forEach(function (r) { var d = dmy(dots(r, 'inspection_date')); if (d) { if (!lo || d < lo) lo = d; if (!hi || d > hi) hi = d; } });
+      all = t.rows.map(function (r) {
+        var loc = r.location_code;
+        var provU = amt(r, 'provsnl_bill_unit'), provA = amt(r, 'provsnl_bill_amt'), finU = amt(r, 'final_billing_unit'), finA = amt(r, 'final_bill_amt'), pay = amt(r, 'payment_amt');
+        var explicitFinal = finA > 0 || r.final_print_doc_no.length > 3;
         var paid = pay > 0, hasFinal = explicitFinal || paid;
         var effA = explicitFinal ? finA : paid ? (provA > 0 ? provA : pay) : 0;
         var effU = explicitFinal ? finU : paid ? provU : 0;
@@ -121,22 +126,21 @@
         }
         var assess = hasFinal ? effA : provA, balance = Math.max(0, assess - pay);
         var status = pay >= assess && assess > 0 ? 'recovered' : pay > 0 ? 'partial' : !hasFinal ? 'pending_final' : 'unpaid';
-        var type = String(r['Case Type'] || 'FIR').trim().toUpperCase();
-        var insp = String(r['Inspection Date'] || '').trim(), prov = String(r['Provsnl Bill Date'] || '').trim();
+        var type = (r.case_type || 'FIR').toUpperCase();
+        var insp = dots(r, 'inspection_date'), prov = dots(r, 'provsnl_bill_date');
         var ym = prov.match(/(\d{4})$/) || insp.match(/(\d{4})$/);
-        var d = dmy(insp); if (d) { if (!lo || d < lo) lo = d; if (!hi || d > hi) hi = d; }
+        var d = dmy(insp);
         return {
-          id: i, con: String(r['Consumer ID'] || '').trim(), loc: loc,
-          _region: o.region || pre[0], _divn: o.division || pre[1], _supp: o.ccc || cccName(r['CCC Name']), CCC_CODE: loc,
-          insp: insp, inspD: d, provNo: String(r['Provsnl Bill No'] || '').trim(), provDate: prov, provU: provU, provA: provA,
-          finNo: String(r['Final Print Doc No'] || '').trim(), finDate: String(r['Final Billing Date'] || '').trim(), finU: effU, finA: effA,
+          con: r.consumer_id, loc: loc,
+          _region: r._region || 'Unknown', _divn: r._division || 'Unknown', _supp: r._ccc || cccName(r.ccc_name), CCC_CODE: loc,
+          insp: insp, inspD: d, provNo: r.provsnl_bill_no, provDate: prov, provU: provU, provA: provA,
+          finNo: r.final_print_doc_no, finDate: dots(r, 'final_billing_date'), finU: effU, finA: effA,
           hasFinal: hasFinal, paidAsFinal: !explicitFinal && paid, cut: cut, cutPct: cutPct, bucket: bucket,
-          payDate: String(r['PAYMENT DT'] || '').trim(), pay: pay, assess: assess, balance: balance, status: status,
-          fir: type.indexOf('NOT') === -1 && type.indexOf('FIR') !== -1, firDetails: String(r['FIR DETAILS'] || '').trim(),
-          police: String(r['POLICE STATION'] || '').trim(), slp: String(r['S&LP UNIT'] || '').trim(), year: ym ? ym[1] : ''
+          payDate: dots(r, 'payment_dt'), pay: pay, assess: assess, balance: balance, status: status,
+          fir: type.indexOf('NOT') === -1 && type.indexOf('FIR') !== -1, firDetails: r.fir_details,
+          police: r.police_station, slp: r.s_lp_unit, year: ym ? ym[1] : ''
         };
       });
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       $('meta').textContent = (lo && hi ? 'Inspections ' + UI.fmtDate(lo) + ' – ' + UI.fmtDate(hi) + ' · ' : '') + UI.n(all.length) + ' cases';
       fillFilters();
     }
@@ -289,12 +293,12 @@
         { key: 'fir', label: 'FIR', csv: function (r) { return r.fir ? 'Yes' : 'No'; } }, { key: 'firDetails', label: 'FIR details' }, { key: 'police', label: 'Police station' }
       ], window.__view || []);
     });
-    UI.refresh('refreshBtn', KEY, function (t) { prepare(t); render(); });
+    MzoRows.refresh('refreshBtn', KEY, function (t) { prepare(t); render(); });
 
     var first = true;
-    UI.load(KEY, function (text, info) {
-      if (!text) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('caseTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
-      prepare(text);
+    MzoRows.load(KEY, function (t, info) {
+      if (!t) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('caseTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      prepare(t);
       if (first) {
         first = false;
         if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';
