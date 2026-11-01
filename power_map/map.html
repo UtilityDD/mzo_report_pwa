@@ -1873,6 +1873,7 @@
     </div>
 
     <script src="../mzo_data_hub.js?v=91"></script>
+    <script src="/mzo_rows.js?v=6" defer></script>
     <script>
         function formatSubstationFieldLabel(column) {
             const labels = {
@@ -3175,48 +3176,69 @@ out geom;`;
             return `${hemisphere}${degrees}°${formattedMinutes}'`;
         }
 
-        // Fetch and parse CSV data
+        // The columns of the substations CSV /api/power-map/data builds (server.js), in its order: the page's
+        // entries carry exactly these, from the CSV here or from the table's snapshot on the VM.
+        const SUBSTATION_COLUMNS = ['Region', 'Division', 'Substation', 'MVA', 'LATITUDE', 'LONGITUDE', 'Connected to', 'Colour', 'RL', 'LineStyle',
+            'Para-1', 'Para-2', 'Para-3', 'Comment', 'Symbol', 'SymbolSize', 'LegendText', 'LegendSymbol', 'LegendColour', 'Remarks', 'ConductorSize', 'PeakLoad'];
+
+        // Uniform rows → the page's entries, keyed by the sheet's headers, values as text.
+        function toEntries(t, headers) {
+            const field = {};
+            t.columns.forEach(c => { if (c.source_name && !c.raw_of && c.name.charAt(0) !== '_') field[c.source_name] = c.name; });
+            const keys = headers || Object.keys(field);
+            return t.rows.map(d => {
+                const entry = {};
+                keys.forEach(h => { const v = field[h] ? d[field[h]] : ''; entry[h] = v == null ? '' : String(v); });
+                return entry;
+            });
+        }
+
+        // Substations: uniform rows of schema/power_map_substations.json (CACHE_POWER_MAP, the CSV of
+        // /api/power-map/data, checked by its version as before; on the VM the rows built from the table).
+        // Taps: schema/power_map_taps.json, checked against the sheet on every open as before. The page has
+        // no login scope (edit rights only), so the rows are not scoped. When no rows can be had, the sheet
+        // or API is read directly as before (fetchCSVDirect), which also sends a signed-out session to login.
         async function fetchCSV(url) {
+            const key = url === csvUrl ? 'power_map_substations' : 'power_map_taps';
+            showStatus("Fetching substation data...", 0, 10); // 10% progress
+            let t = null;
             try {
-                showStatus("Fetching substation data...", 0, 10); // 10% progress
-                let rawText = '';
-                let loadedFromHub = false;
-                if (url === csvUrl && typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.retryDataset === 'function') {
-                    try {
-                        await mzoDataHub.retryDataset('CACHE_POWER_MAP');
-                        const cached = await mzoDataHub.get('CACHE_POWER_MAP');
-                        if (cached && typeof cached === 'string' && cached.trim()) {
-                            rawText = cached;
-                            loadedFromHub = true;
-                        }
-                    } catch (hubErr) {
-                        console.warn('[Power Map] DataHub cache skipped:', hubErr && hubErr.message);
-                    }
+                t = await MzoRows.get(key, { scope: false, forceCheck: key === 'power_map_taps' });
+            } catch (rowsErr) {
+                console.warn('[Power Map] uniform rows unavailable for ' + key + ':', rowsErr && rowsErr.message);
+                return fetchCSVDirect(url);
+            }
+            showStatus("Processing substation data...", 0, 25); // 25% progress
+            const entries = toEntries(t, key === 'power_map_substations' ? SUBSTATION_COLUMNS : null);
+            if (!entries.length) {
+                console.error("CSV parsing returned no data");
+                showStatus("Error: No data found in CSV", 5000, 40);
+            }
+            return entries;
+        }
+
+        // The direct read (no rows): the API / sheet body, parsed here.
+        async function fetchCSVDirect(url) {
+            try {
+                const response = await (window.mzoMirror ? mzoMirror.fetch : fetch)(url, {
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'text/csv, application/json;q=0.9, */*;q=0.8' }
+                });
+                const rawText = await response.text();
+
+                if (response.status === 401) {
+                    showStatus("Session expired — redirecting to login…", 2500, 0);
+                    setTimeout(() => { window.location.href = '/login.html'; }, 600);
+                    throw new Error('Unauthorized — please sign in again');
                 }
-                if (!loadedFromHub) {
-                    const response = await (window.mzoMirror ? mzoMirror.fetch : fetch)(url, {
-                        credentials: 'same-origin',
-                        headers: { 'Accept': 'text/csv, application/json;q=0.9, */*;q=0.8' }
-                    });
-                    rawText = await response.text();
 
-                    if (response.status === 401) {
-                        showStatus("Session expired — redirecting to login…", 2500, 0);
-                        setTimeout(() => { window.location.href = '/login.html'; }, 600);
-                        throw new Error('Unauthorized — please sign in again');
-                    }
-
-                    if (!response.ok) {
-                        let detail = `HTTP ${response.status}`;
-                        try {
-                            const errJson = JSON.parse(rawText);
-                            if (errJson && errJson.message) detail = errJson.message;
-                        } catch (_) {}
-                        throw new Error(`Failed to fetch CSV: ${detail}`);
-                    }
-                    if (url === csvUrl && typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.set === 'function') {
-                        try { await mzoDataHub.set('CACHE_POWER_MAP', rawText); } catch (_) {}
-                    }
+                if (!response.ok) {
+                    let detail = `HTTP ${response.status}`;
+                    try {
+                        const errJson = JSON.parse(rawText);
+                        if (errJson && errJson.message) detail = errJson.message;
+                    } catch (_) {}
+                    throw new Error(`Failed to fetch CSV: ${detail}`);
                 }
 
                 const trimmed = (rawText || '').trim();
@@ -4507,8 +4529,10 @@ out geom;`;
                     try {
                         let rawData = await fetchCSV(csvUrl); // Fetch raw data
 
-                        // Filter for entries with valid coordinates before storing
+                        // Filter for entries with valid coordinates before storing (and a name: the server's CSV
+                        // has only those, the VM's table snapshot has every row)
                         allData = rawData.filter(entry =>
+                            entry.Substation && entry.Substation.trim() &&
                             entry.LATITUDE &&
                             entry.LONGITUDE &&
                             !isNaN(dmsToDecimal(entry.LATITUDE)) &&
