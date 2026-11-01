@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=3" defer></script>
   <style>
     .dd-notes { padding: 4px 20px 24px; }
     .dd-notes h4 { margin: 8px 0 10px; font-size: 13px; font-weight: 600; }
@@ -106,23 +107,31 @@
 
     function ymd(s) { s = String(s || '').trim(); if (!/^\d{8}$/.test(s)) return null; var d = new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)); return isNaN(d) ? null : d; }
 
-    // Only the fields this page shows are kept (the sheet also carries Aadhaar, PAN, email).
-    function prepare(text) {
+    // The sheet also carries Aadhaar, PAN and email: it is not mirrored, and only the fields this page
+    // shows become rows (schema/upcoming_dd.json pins them). The sheet is read without any cache, as
+    // before, and the rows are built here (a worker) and not stored on the device.
+    function rowsOf(text) {
+      return fetch('/schema/upcoming_dd.json', { cache: 'no-cache', credentials: 'same-origin' }).then(function (r) { if (!r.ok) throw new Error('schema ' + r.status); return r.json(); })
+        .then(function (schema) { return MzoRows._compute(text, { key: 'upcoming_dd', version: '', format: 'csv', schema: schema }); })
+        .then(function (out) { return MzoRows.fromDoc('upcoming_dd', JSON.parse(out.json), 'local'); });
+    }
+
+    // t.rows: uniform rows (outstanding as a number, canonical _region/_division/_ccc), scoped to the login.
+    function prepare(t) {
       var today = new Date(); today.setHours(0, 0, 0, 0);
-      all = UI.csv(text).map(function (r) {
-        var code = String(r.CCC_CODE || r.OFFICE_CODE || '').trim(), o = UI.office(code), osd = parseFloat(r.OUTSTANDING) || 0;
-        var dis = ymd(r.DISCON_DT), due = dis ? new Date(dis.getTime() + 180 * 864e5) : null, days = due ? Math.ceil((due - today) / 864e5) : null;
+      all = t.rows.map(function (d) {
+        var code = d.ccc_code, osd = d.outstanding || 0;
+        var dis = ymd(d.discon_dt), due = dis ? new Date(dis.getTime() + 180 * 864e5) : null, days = due ? Math.ceil((due - today) / 864e5) : null;
         var b = 'CLEARED';
         if (osd > 0) b = days == null || days < 0 ? 'OVERDUE' : days === 0 ? 'TODAY' : days <= 7 ? '7D' : days <= 15 ? '15D' : days <= 30 ? '30D' : 'FUTURE';
         return {
-          con: String(r.CON_ID || r.CONSUMER_ID || '').trim(), name: UI.title(r.NAME || r.CONSUMER_NAME || ''), mobile: UI.blank(r.REG_MOB_NO) ? '' : String(r.REG_MOB_NO).trim(),
-          address: r.ADDRESS, cls: String(r.BASE_CLASS || '').trim() || 'Other', phase: String(r.CONN_PHASE || '1').trim(),
-          govt: /^(y|yes|govt)/i.test(String(r.GOVT_STAT || '')) ? 'Y' : 'N', load: r.CONN_LOAD, meter: r.METER_NO,
-          code: code, CCC_CODE: code, _region: o.region, _divn: o.division, _supp: o.ccc, osd: osd, dis: dis, due: due, days: days, bucket: b
+          con: d.con_id, name: UI.title(d.name), mobile: UI.blank(d.reg_mob_no) ? '' : d.reg_mob_no,
+          address: d.address, cls: d.base_class || 'Other', phase: d.conn_phase || '1',
+          govt: /^(y|yes|govt)/i.test(d.govt_stat) ? 'Y' : 'N', load: d.conn_load, meter: d.meter_no,
+          code: code, CCC_CODE: code, _region: d._region, _divn: d._division, _supp: d._ccc, osd: osd, dis: dis, due: due, days: days, bucket: b
         };
       }).filter(function (r) { return r.con; });
       all.forEach(function (r) { r.search = (r.con + ' ' + r.name + ' ' + r.mobile + ' ' + r._supp).toLowerCase(); });
-      if (window.MzoScope) all = MzoScope.filterRows(all);
       var dues = all.filter(function (r) { return r.due; }).map(function (r) { return r.due.getTime(); });
       $('meta').textContent = 'Disconnection date + 180 days' + (dues.length ? ' · ' + UI.fmtDate(new Date(Math.min.apply(null, dues))) + ' – ' + UI.fmtDate(new Date(Math.max.apply(null, dues))) : '') + ' · ' + UI.n(all.length) + ' consumers';
       UI.fill('classFilter', uniq(all, 'cls').map(function (c) { return { value: c, label: CLASS[c] || c }; }), 'All classes');
@@ -286,7 +295,7 @@
     function load() {
       var b = $('refreshBtn'); b.classList.add('spin');
       (window.mzoMirror ? mzoMirror.fetch : fetch)(CSV_URL, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
-        .then(function (t) { prepare(t); render(); })
+        .then(rowsOf).then(function (t) { prepare(t); render(); })
         .catch(function () { $('meta').textContent = 'Could not load the DD sheet'; $('listTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; })
         .then(function () { b.classList.remove('spin'); });
     }
