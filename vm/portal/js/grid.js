@@ -473,6 +473,30 @@
     }
 
     /* export */
+    // Custom sort: plain pages. Source order: walk by (_row_no, id) instead of page offsets, so the
+    // last pages of a large table cost PocketBase as little as the first.
+    function exportPages(vis, onPage, signal) {
+      var filter = build(), fields = fieldsParam(vis);
+      if (st.sort) return P.api.all(coll, { sort: sortParam(), filter: filter, fields: fields }, onPage, signal);
+      var got = 0, last = null;
+      function next() {
+        var f = filter;
+        if (last) {
+          var k = '(_row_no > ' + last.n + ' || (_row_no = ' + last.n + ' && id > ' + P.q(last.id) + '))';
+          f = f ? '(' + f + ') && ' + k : k;
+        }
+        return P.api.list(coll, { page: 1, perPage: 1000, sort: '_row_no,id', filter: f, fields: fields, skipTotal: true }, signal).then(function (r) {
+          var items = (r && r.items) || [];
+          got += items.length;
+          if (!items.length) return got;
+          var tail = items[items.length - 1];
+          last = { n: Number(tail._row_no) || 0, id: String(tail.id) };
+          if (onPage(items, got) === false || items.length < 1000) return got;
+          return next();
+        });
+      }
+      return next();
+    }
     function exportCsv() {
       if (exporting) { exporting.abort(); return; }
       if (!total) { P.toast('Nothing to export.'); return; }
@@ -483,7 +507,7 @@
       label.textContent = 'Exporting…';
       exportBtn.title = 'Click to cancel';
       var want = total;
-      P.api.all(coll, { sort: sortParam(), filter: build(), fields: fieldsParam(vis) }, function (rows, got) {
+      exportPages(vis, function (rows, got) {
         rows.forEach(function (r) { lines.push(vis.map(function (c) { return csvCell(csvVal(c, r[c.name]), c.type === 'text' || c.type === 'json'); }).join(',')); });
         label.textContent = 'Cancel · ' + Math.min(100, Math.round(got / Math.max(1, want) * 100)) + '%';
         return !exp.signal.aborted;

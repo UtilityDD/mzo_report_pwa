@@ -216,7 +216,23 @@ async function clearFilters(page) {
     const csvPath = await dl.path();
     const csv = fs.readFileSync(csvPath, 'utf8').replace(/^﻿/, '').trim().split(/\r\n/);
     check('CSV export of the current filter', csv.length === both + 1 && csv[0].startsWith('Application No,Applicant Name'), (csv.length - 1) + ' rows, file ' + dl.suggestedFilename());
+    // Same filter, sorted by a column (paged export path), plus a full 50,000-row export in source order.
+    await page.click('.pt-table thead th:has-text("Days Pending") button');
+    await gridReady(page);
+    const [dl2] = await Promise.all([page.waitForEvent('download'), page.click('.pt-tools button:has-text("Export CSV")')]);
+    const csv2 = fs.readFileSync(await dl2.path(), 'utf8').replace(/^\ufeff/, '').trim().split(/\r\n/);
+    const dpCol = csv2[0].split(',').indexOf('Days Pending');
+    const dps = csv2.slice(1).map((l) => Number(l.split(',')[dpCol]));
+    check('CSV export with a sort', csv2.length === both + 1 && dps.every((v, i) => i === 0 || v >= dps[i - 1]), (csv2.length - 1) + ' rows');
+    await page.click('.pt-table thead th:has-text("Days Pending") button');
+    await page.click('.pt-table thead th:has-text("Days Pending") button');
+    await gridReady(page);
     await clearFilters(page);
+    const t0 = Date.now();
+    const [dl3] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), page.click('.pt-tools button:has-text("Export CSV")')]);
+    const csv3 = fs.readFileSync(await dl3.path(), 'utf8').replace(/^\ufeff/, '').trim().split(/\r\n/);
+    const keys = new Set(csv3.slice(1).map((l) => l.split(',')[0]));
+    check('CSV export of all 50,000 rows (source order, no gaps or repeats)', csv3.length === 50001 && keys.size === 50000, ((Date.now() - t0) / 1000).toFixed(1) + ' s');
 
     for (const [label, probe] of [['quote', "O'Brien & Sons \"quoted\""], ['backslash', 'Back\\slash \\ path'], ['percent', '50% load_factor'], ['markup', '<img src=x onerror="window.__xss=1">']]) {
       await addFilter(page, 'Applicant Name', 'eq', probe);
