@@ -2,12 +2,17 @@
 // Pass 2 of a sync: read the spool, build typed records, and write only the difference:
 // insert rows with a new _row_key, update rows whose _hash or _row_no changed, delete rows that
 // are gone from the source. Record ids derive from _row_key, so no id lookups are needed.
+// Values are converted a chunk of rows at a time by lib/uniform.js (infer.js Converter).
 // Memory: per row one Map entry (15-char id → slot) plus 13 bytes in typed arrays (hash prefix,
 // row number, seen flag): about 60 bytes a row, ~15 MB for the 240k-row meter dump.
 
 const { sha1, recordId, stableStringify, pbDate } = require('./util');
 const { readSpool } = require('./spool');
 const { PbError } = require('./pb');
+const { Converter } = require('./infer');
+const { NULLS_FIELD } = require('./collections');
+
+const CHUNK_ROWS = 500; // rows per conversion
 
 /** id → { 52-bit hash prefix, row number, seen in this run } without an object per row. */
 class RowIndex {
@@ -51,7 +56,9 @@ function rowKeyFn(columns, primaryKey, warnings) {
         }
         pkIdx.push(col.index);
     }
-    const keptIdx = columns.map((c) => c.index);
+    // Over the columns that have a header or a value: a header-less source's all-empty columns
+    // (kept as fields, as lib/uniform.js keeps them) do not change its row keys.
+    const keptIdx = columns.filter((c) => c.source_name !== '' || c.non_empty !== 0).map((c) => c.index);
     const rowHash = (values) => sha1(stableStringify(keptIdx.map((i) => (values[i] === undefined || values[i] === null ? '' : values[i]))));
     if (!pkIdx.length) return { usesPk: false, key: rowHash };
     return {
@@ -68,9 +75,13 @@ function rowKeyFn(columns, primaryKey, warnings) {
 }
 
 /**
+ * @param writeName  column name → the field to write it to (a staging field while a column's type
+ *                   changes, collections.js); default: the column name
+ * @param force      write every row, even when its _hash is unchanged (a field was added that the
+ *                   existing rows have no value in yet)
  * @returns {Promise<{total, inserted, updated, deleted, unchanged, failed, failures: string[], batches, writeMs}>}
  */
-async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batchSize, syncedAt, signal, warnings, log, enrich }) {
+async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batchSize, syncedAt, signal, warnings, log, enrich, writeName, force }) {
     const stats = { total: 0, inserted: 0, updated: 0, deleted: 0, unchanged: 0, failed: 0, failures: [], batches: 0, writeMs: 0, loadMs: 0, duplicateKeys: 0 };
     const base = `/api/collections/${collection}/records`;
     const t0 = Date.now();
@@ -100,58 +111,84 @@ async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batch
         if (signal && signal.aborted) throw signal.reason || new Error('Aborted');
     };
 
+    const conv = new Converter(columns);
+    const target = columns.map((c) => (writeName ? writeName(c.name) : c.name));
+    const rawTarget = columns.map((c) => (c.raw_name ? (writeName ? writeName(c.raw_name) : c.raw_name) : null));
+    const rawSlot = new Array(columns.length); // column → its index in Converter's raw list, or -1
+    for (let i = 0, k = 0; i < columns.length; i++) rawSlot[i] = columns[i].raw_name ? k++ : -1;
+
     let rowNo = 0;
+    const writeChunk = async (chunk) => {
+        const cv = conv.convert(chunk);
+        for (let r = 0; r < chunk.length; r++) {
+            const values = chunk[r];
+            rowNo++;
+            const baseKey = keyer.key(values);
+            let key = baseKey;
+            let id = recordId(key);
+            if (isSeen(id)) stats.duplicateKeys++;
+            for (let occ = 2; isSeen(id); occ++) {
+                key = baseKey + ':' + occ; // exact duplicate (or repeated key): occurrence index
+                id = recordId(key);
+            }
+            const record = {};
+            const typed = [];
+            for (let ci = 0; ci < columns.length; ci++) {
+                const v = cv.values[ci][r];
+                record[target[ci]] = v;
+                typed.push(v);
+                if (rawSlot[ci] >= 0) {
+                    const raw = cv.raw[rawSlot[ci]];
+                    const rawText = raw ? raw[r] : '';
+                    record[rawTarget[ci]] = rawText;
+                    typed.push(rawText);
+                }
+            }
+            if (enrich) { // extra fields computed from the row (office_enrich.js); part of the row hash
+                const extra = enrich(values);
+                for (const k of Object.keys(extra)) {
+                    record[writeName ? writeName(k) : k] = extra[k];
+                    typed.push(extra[k]);
+                }
+            }
+            // Empty numbers and bools (stored as 0 / false). Only a row that has some changes its
+            // hash, so a row without any keeps the hash it had before _nulls existed.
+            const nulls = cv.nulls[r];
+            record[NULLS_FIELD] = nulls;
+            if (nulls) typed.push(nulls);
+            const hash = sha1(stableStringify(typed));
+            const hashNum = RowIndex.hashNum(hash);
+            let slot = index.map.get(id);
+            const isNew = slot === undefined;
+            if (isNew) slot = index.add(id, hashNum, rowNo, true);
+            else index.seen[slot] = 1;
+            if (!isNew && !force && index.hash[slot] === hashNum && index.row[slot] === rowNo) {
+                stats.unchanged++;
+                continue;
+            }
+            record._row_no = rowNo;
+            record._row_key = key;
+            record._hash = hash;
+            record._synced_at = syncedAtStr;
+            if (isNew) {
+                record.id = id;
+                queue.push({ kind: 'inserted', req: { method: 'POST', url: base + '?fields=id', body: record } });
+            } else {
+                queue.push({ kind: 'updated', req: { method: 'PATCH', url: `${base}/${id}?fields=id`, body: record } });
+            }
+            if (queue.length >= batchSize) await flush();
+        }
+    };
+
+    let chunk = [];
     for await (const values of readSpool(spoolFile)) {
-        rowNo++;
-        const baseKey = keyer.key(values);
-        let key = baseKey;
-        let id = recordId(key);
-        if (isSeen(id)) stats.duplicateKeys++;
-        for (let occ = 2; isSeen(id); occ++) {
-            key = baseKey + ':' + occ; // exact duplicate (or repeated key): occurrence index
-            id = recordId(key);
+        chunk.push(values);
+        if (chunk.length >= CHUNK_ROWS) {
+            await writeChunk(chunk);
+            chunk = [];
         }
-        const record = {};
-        const typed = [];
-        for (const c of columns) {
-            const raw = values[c.index];
-            const [v, rawText] = c.convert(raw === undefined || raw === null ? '' : raw);
-            record[c.name] = v;
-            typed.push(v);
-            if (c.raw_name) {
-                record[c.raw_name] = rawText;
-                typed.push(rawText);
-            }
-        }
-        if (enrich) { // extra fields computed from the row (office_enrich.js); part of the row hash
-            const extra = enrich(values);
-            for (const k of Object.keys(extra)) {
-                record[k] = extra[k];
-                typed.push(extra[k]);
-            }
-        }
-        const hash = sha1(stableStringify(typed));
-        const hashNum = RowIndex.hashNum(hash);
-        let slot = index.map.get(id);
-        const isNew = slot === undefined;
-        if (isNew) slot = index.add(id, hashNum, rowNo, true);
-        else index.seen[slot] = 1;
-        if (!isNew && index.hash[slot] === hashNum && index.row[slot] === rowNo) {
-            stats.unchanged++;
-            continue;
-        }
-        record._row_no = rowNo;
-        record._row_key = key;
-        record._hash = hash;
-        record._synced_at = syncedAtStr;
-        if (isNew) {
-            record.id = id;
-            queue.push({ kind: 'inserted', req: { method: 'POST', url: base + '?fields=id', body: record } });
-        } else {
-            queue.push({ kind: 'updated', req: { method: 'PATCH', url: `${base}/${id}?fields=id`, body: record } });
-        }
-        if (queue.length >= batchSize) await flush();
     }
+    if (chunk.length) await writeChunk(chunk);
     stats.total = rowNo;
     await flush();
 

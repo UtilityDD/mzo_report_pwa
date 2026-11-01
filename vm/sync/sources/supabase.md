@@ -105,7 +105,7 @@ All four readers are capped at 1000 rows by Supabase's max-rows, including `limi
 
 **Tables.** Pages of 1000 rows (`limit`), ordered by the primary key, using keyset paging (`pk=gt.<last>`). A table without a key is ordered by `order` (`created_at` for the empty powermap tables) and paged with `offset`. The first page asks `Prefer: count=exact`, and paging continues until the exact count has arrived, so a lower server row cap cannot cut a table short. Rows are yielded as PostgREST returns them: numbers, booleans and json values (objects) stay typed, and timestamps are ISO strings such as `2026-07-27T05:39:57.785703+00:00`.
 
-**CSVs.** The body is streamed into `csv-parse` and never held whole. Each row becomes an object keyed by the original header. A blank header becomes `Column <n>` and a repeated one `<name> (2)`, because object keys must be unique (the disconnection sheet has four blank headers). Rows where every cell is blank are skipped. Values stay as raw strings for sync-core to type.
+**CSVs.** The body is streamed into `csv-parse` and never held whole. The header row and then each row's cells are handed to the sync as arrays, so the sync names the columns exactly as `lib/uniform.js` does from the same bytes: a blank header with no values is padding and dropped (the disconnection sheet has four), a blank header with values becomes `col_<letter>`, a repeated one `<name>_2`. Rows where every cell is blank are skipped. Values stay as raw strings for sync-core to type.
 
 **version().**
 

@@ -6,10 +6,11 @@
 const { collectionName } = require('./normalise');
 const { spool, removeFile } = require('./spool');
 const { buildColumns, fieldList } = require('./schema');
-const { ensureCollection } = require('./collections');
+const { ensureCollection, NULLS_FIELD } = require('./collections');
 const { writeRows } = require('./upsert');
 const officeEnrich = require('./office_enrich'); // dq-offices: canonical _region/_division/_ccc_code/_ccc
 const { makeSourceFetch } = require('./http');
+const { VERSION: UNIFORM_VERSION } = require('../../../lib/uniform.js');
 const { parsePbDate } = require('./schedule');
 const { removeSnapshot } = require('./snapshot');
 const { stableStringify, pbDate, fmtMs, log, errMessage, SkipError } = require('./util');
@@ -25,7 +26,9 @@ function phase(key, what, t0) {
 }
 
 // Bump when type inference or row hashing changes: every source is then re-read in full once.
-const LOGIC_VERSION = 'mzo-sync/1';
+// mzo-sync/2: names, types and values by lib/uniform.js; empty numbers and bools listed in _nulls.
+// lib/uniform.js's own VERSION is part of the content salt too, so a change there re-reads every source.
+const LOGIC_VERSION = 'mzo-sync/2';
 const DEFAULT_TIMEOUT_MS = { frequent: 4 * 60000, hourly: 10 * 60000, daily: 30 * 60000 };
 const DEFAULT_MAX_SKIP_HOURS = 24;
 
@@ -136,8 +139,10 @@ async function syncSource(src, env) {
             }
         }
 
-        const collExists = !dryRun && !!(await pb.getCollection(collection));
-        const healthy = !!(ds && collExists && (ds.last_status === 'ok' || ds.last_status === 'unchanged'));
+        const coll = dryRun ? null : await pb.getCollection(collection);
+        // A collection from before _nulls (mzo-sync/1) is rebuilt by the next run, whatever its version says.
+        const layoutCurrent = !!(coll && coll.fields.some((f) => f.name === NULLS_FIELD));
+        const healthy = !!(ds && layoutCurrent && (ds.last_status === 'ok' || ds.last_status === 'unchanged'));
         const fetchedAt = ds ? parsePbDate(ds.last_fetched_at) : NaN;
         const maxSkipMs = (src.maxSkipHours || DEFAULT_MAX_SKIP_HOURS) * 3600000;
         const fetchedRecently = Number.isFinite(fetchedAt) && Date.now() - fetchedAt < maxSkipMs;
@@ -151,9 +156,11 @@ async function syncSource(src, env) {
 
         const salt = LOGIC_VERSION + stableStringify({
             offices: officeEnrich.VERSION, // a new office list rewrites the office fields
+            uniform: UNIFORM_VERSION, // names, types and values come from lib/uniform.js
             pk: src.primaryKey || null,
             types: src.columnTypes || null,
-            order: src.dateOrder || null
+            order: src.dateOrder || null,
+            header: src.header === false ? false : null
         });
         sp = await spool(src, ctx, { tmpDir, salt, snapshotDir: wantSnap && !dryRun ? snapshotDir : null });
         phase(key, `spooled ${sp.rows} rows`, t0);
@@ -217,10 +224,15 @@ async function syncSource(src, env) {
             signal: ac.signal,
             warnings,
             log: ctx.log,
-            enrich: oe ? oe.enrich : null
+            enrich: oe ? oe.enrich : null,
+            writeName: ens.writeName,
+            force: ens.force
         });
         if (oe) summary.officeIssues = oe.issues(); // read by the quality hook (vm/quality)
         phase(key, 'rows written', t0);
+        // Every row has its new values: swap retyped fields in, drop the columns the source lost.
+        const fin = await ens.finish();
+        if (fin.altered) phase(key, 'fields swapped', t0);
         Object.assign(summary, { inserted: w.inserted, updated: w.updated, deleted: w.deleted });
         summary.writeMs = w.writeMs;
         summary.loadMs = w.loadMs;
@@ -228,7 +240,9 @@ async function syncSource(src, env) {
         const tableRows = w.existingBefore + w.inserted - w.deleted;
         const parts = [`${w.total} rows: +${w.inserted} ~${w.updated} -${w.deleted} (unchanged ${w.unchanged})`];
         if (ens.created) parts.push('collection created');
-        else if (ens.altered) parts.push('collection altered');
+        else if (ens.altered || fin.altered) parts.push('collection altered');
+        if (ens.staged.length) parts.push(`retyped ${ens.staged.join(', ')}`);
+        if (ens.dropped.length) parts.push(`dropped ${ens.dropped.join(', ')}`);
         if (w.failed) parts.push(`${w.failed} rows failed: ${w.failures.join(' | ')}`);
         if (summary.snapshotChanged) parts.push('snapshot written');
         if (warnings.length) parts.push(warnings.join('; '));
