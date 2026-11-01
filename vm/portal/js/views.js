@@ -27,9 +27,11 @@
   // Simple client-sorted table. cols: [{ label, num, get(row) → sort value, cell(row) → node|string, cls }]
   function table(cols, rows, opts) {
     opts = opts || {};
-    var st = { i: opts.sortIndex != null ? opts.sortIndex : -1, dir: opts.sortDir || 'asc' };
+    // opts.state keeps the sort across rebuilds; opts.cards turns rows into cards on phones.
+    var st = opts.state || {};
+    if (st.i == null) { st.i = opts.sortIndex != null ? opts.sortIndex : -1; st.dir = opts.sortDir || 'asc'; }
     var thead = h('thead'), tbody = h('tbody');
-    var wrap = h('div', { class: 'ui-table-wrap' + (opts.wrapCls ? ' ' + opts.wrapCls : '') }, h('table', { class: 'ui-table' + (opts.cls ? ' ' + opts.cls : '') }, thead, tbody));
+    var wrap = h('div', { class: 'ui-table-wrap' + (opts.wrapCls ? ' ' + opts.wrapCls : '') }, h('table', { class: 'ui-table' + (opts.cls ? ' ' + opts.cls : '') + (opts.cards ? ' pt-cards' : '') }, thead, tbody));
     function draw() {
       P.clear(thead); P.clear(tbody);
       var tr = h('tr');
@@ -55,7 +57,7 @@
       if (!list.length) tbody.appendChild(h('tr', null, h('td', { colspan: cols.length }, h('div', { class: 'ui-empty', text: opts.empty || 'Nothing to show.' }))));
       list.forEach(function (r) {
         var row = h('tr', { class: opts.onRow ? 'click' : null, tabindex: opts.onRow ? '0' : null });
-        cols.forEach(function (c) { row.appendChild(h('td', { class: (c.num ? 'num ' : '') + (c.cls || '') + (c.hideSm ? ' hide-sm' : '') }, c.cell ? c.cell(r) : String(c.get(r) == null ? '—' : c.get(r)))); });
+        cols.forEach(function (c) { row.appendChild(h('td', { class: (c.num ? 'num ' : '') + (c.cls || '') + (c.hideSm ? ' hide-sm' : '') + (c.main ? ' pt-card-main' : ''), 'data-label': opts.cards ? c.label : null }, c.cell ? c.cell(r) : String(c.get(r) == null ? '—' : c.get(r)))); });
         if (opts.onRow) {
           row.addEventListener('click', function (e) { if (!e.target.closest('a')) opts.onRow(r); });
           row.addEventListener('keydown', function (e) { if (e.key === 'Enter') opts.onRow(r); });
@@ -118,6 +120,8 @@
     stats.appendChild(stat('bad', 'Errors', P.n(fr.error || 0), null, 'error'));
     stats.appendChild(stat('', 'Not mirrored', P.n((fr.skipped || 0) + (fr.never || 0)), null, 'other'));
     host.appendChild(stats);
+    var dq = P.quality ? P.quality.overviewCard(ctx) : null;
+    if (dq) host.appendChild(dq.el);
 
     // By source type + Needs attention
     var bySrc = {};
@@ -169,7 +173,7 @@
     host.appendChild(panel('All datasets', ovFilter ? P.n(shown.length) + ' of ' + P.n(list.length) : P.n(list.length), tableHost,
       ovFilter ? h('button', { type: 'button', class: 'ui-btn sm ghost', text: 'Show all', on: { click: function () { ovFilter = ''; P.clear(host); overview(host, ctx); } } }) : null));
 
-    return { dispose: function () { ac.abort(); } };
+    return { dispose: function () { ac.abort(); if (dq) dq.dispose(); } };
   }
   function share(v, total, max) {
     var pct = total ? v / total * 100 : 0;
@@ -209,7 +213,7 @@
   }
 
   /* ---------- Dataset page ---------- */
-  var TABS = [['data', 'Data'], ['schema', 'Schema'], ['source', 'Source'], ['history', 'Sync history']];
+  var TABS = [['data', 'Data'], ['schema', 'Schema'], ['source', 'Source'], ['history', 'Sync history'], ['quality', 'Quality']];
   function dataset(host, ds, tab, ctx) {
     var f = P.freshness(ds), src = P.source(ds.source_type);
     var meta = [
@@ -228,6 +232,7 @@
     if (tab === 'schema') return schemaTab(body, ds);
     if (tab === 'source') return sourceTab(body, ds);
     if (tab === 'history') return historyTab(body, ds, ctx);
+    if (tab === 'quality') return P.quality.datasetTab(body, ds, ctx);
     if (!ds.collection) {
       body.appendChild(h('section', { class: 'ui-panel' }, h('div', { class: 'ui-empty' },
         h('p', { text: ds.last_status === 'skipped' ? 'This dataset is not mirrored.' : 'No rows mirrored yet.' }),
@@ -377,6 +382,7 @@
     if (cb) cb();
   }
 
-  P.views = { overview: overview, dataset: dataset };
+  P.views = { overview: overview, dataset: dataset,
+    _: { head: head, panel: panel, relTime: relTime, srcLink: srcLink, table: table, loading: loading, errorBox: errorBox } };
   P.drawer = { open: openDrawer, close: closeDrawer, isOpen: function () { return !!dr && !dr.el.hidden; } };
 })(window);

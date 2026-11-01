@@ -28,6 +28,22 @@ A read-only admin console for the PocketBase data mirror on the VM: every mirror
   - **Source:** source type, reference, a link to the source, schedule, last version, status and the last error.
   - **Sync history:** the runs for that dataset.
 
+## Data quality
+
+The checks in `vm/quality` run after every sync and write `sys_quality_scores` (one score, 0–100, per dataset) and `sys_quality_issues` (one row per dataset, check and column). See `docs/data-quality.md`. The portal shows them read-only:
+
+- **Overview card:** average score, datasets per band (below 80, 80–94, 95 and above), open errors / warnings / notes, last checked, and a link to the page.
+- **Data quality page** (`#/quality`):
+  - **Tiles:** average score, datasets below 80, open errors, warnings and notes, last checked. The severity tiles and "Below 80" filter the lists.
+  - **Filters:** one row above the lists, so the wide tables keep their width (on phones they open in a drawer from **Filters**). Search, status (open, or resolved in the last 7 days), severity, check family, report area, and "fix in the sheet only".
+  - **By dataset:** score with a bar coloured by band (`--mzo-ok-mark`, `--mzo-warn-mark`, `--mzo-bad-mark`), counts, rows, the worst issue and when it was checked. Sorted by score, lowest first; a row opens the dataset's Quality tab.
+  - **Owner action list** (`#/quality/actions`): open issues that need a fix in the source, grouped by source sheet. A Storage snapshot compared with its Google sheet is listed under that sheet. Each sheet has **Open sheet** and **Copy**; the whole list can be copied as plain text or exported as CSV.
+  - **All issues** (`#/quality/issues`): dataset, severity, check, column, count, % of rows, first and last seen, status.
+  - **Issue drawer:** the full hint, the examples (a table when they share a shape, a key/value list when they do not), and Open sheet / Open data.
+- **Dataset page, Quality tab:** the score, the open issues and the last 20 resolved.
+
+Check ids are shown by friendly name (`freshness.stale` is "Report out of date", `key.duplicate` is "Repeated key"); the test fails if vm/quality gains an id without one. Severity is sorted in the page (error, warning, note), because PocketBase sorts select fields alphabetically. Dates are IST, dd/mm/yyyy. The samples are masked by vm/quality and are still shown as text only. Before the first run, every quality view says "Results appear after the next sync".
+
 ## Security
 
 - All data is treated as untrusted. It reaches the page only through `textContent` and attributes, never as markup. Links are opened only if they are `http(s)`. The code has no `innerHTML` and no inline scripts or handlers.
@@ -65,12 +81,13 @@ You need Node 22 or later. From the repo root:
 
 1. Download the PocketBase darwin build, the version in `vm/pocketbase/VERSION`, into `vm/portal/dev/pb/`. That folder is git-ignored.
 2. Run `vm/portal/dev/pb/pocketbase serve --dir vm/portal/dev/pb/data --http 127.0.0.1:8093`.
-3. Run `node vm/portal/dev/seed.js`. It creates the contract collections and a test account, and fills about 15 fake datasets, including two with 50,000 rows, an erroring one, a stale one and one that is not mirrored, plus their sync runs. The test logins are written to `vm/portal/dev/pb/dev-credentials.json`, which is git-ignored.
+3. Run `node vm/portal/dev/seed.js`. It creates the contract collections and a test account, and fills about 15 fake datasets, including two with 50,000 rows, an erroring one, a stale one and one that is not mirrored, plus their sync runs and data quality results (scores from vm/quality's own formula, open and resolved issues, a Storage snapshot compared with its sheet). The test logins are written to `vm/portal/dev/pb/dev-credentials.json`, which is git-ignored.
 4. Run `node vm/portal/dev/serve.js` and open http://127.0.0.1:3300. It serves `vm/portal`, maps `/kit/*` to the repo-root kit files, and proxies `/api/*` and `/_/*` to `:8093`.
 5. Run `node vm/portal/dev/test.js [screenshots-dir]` for the browser test. It needs `playwright-core` (from `node_modules` or `NODE_PATH`) and Google Chrome. It covers:
    - sign-in, the overview and a 50,000-row dataset (sort, filters, paging, drawer, export);
    - the Schema and Source tabs and token expiry;
-   - markup probes, which must render as text;
+   - markup probes, which must render as text (also in quality samples and hints);
+   - the Data quality card, page, filters, owner action list (copy and CSV), issue drawer and dataset Quality tab, checked against the API, plus the empty state;
    - light and dark themes at desktop width and at 390px.
 
    Only GET requests and the two local sign-in POSTs are allowed. The run fails on any other request and on any console error.

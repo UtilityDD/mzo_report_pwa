@@ -143,6 +143,7 @@
     var s = $('dsSearch').value.trim().toLowerCase();
     var here = current && current.key;
     nav.appendChild(h('a', { class: 'pt-ni pt-ni-top', href: '#/', 'aria-current': current && current.name === 'overview' ? 'page' : null }, icon('grid'), h('span', { class: 'lbl', text: 'Overview' })));
+    nav.appendChild(h('a', { class: 'pt-ni', href: '#/quality', 'aria-current': current && current.name === 'quality' ? 'page' : null }, icon('check'), h('span', { class: 'lbl', text: 'Data quality' })));
     if (!loaded) { nav.appendChild(h('div', { class: 'pt-nav-load' }, h('span', { class: 'ui-skel' }), h('span', { class: 'ui-skel' }), h('span', { class: 'ui-skel' }))); return; }
     var list = datasets.filter(function (d) {
       if (!s) return true;
@@ -172,8 +173,10 @@
 
   /* ---------- routes ---------- */
   function parse() {
-    var m = /^#\/d\/([^/?#]+)(?:\/(data|schema|source|history))?\/?$/.exec(location.hash || '');
+    var m = /^#\/d\/([^/?#]+)(?:\/(data|schema|source|history|quality))?\/?$/.exec(location.hash || '');
     if (m) { var k; try { k = decodeURIComponent(m[1]); } catch (e) { k = ''; } return { name: 'dataset', key: k, tab: m[2] || 'data' }; }
+    var qm = /^#\/quality(?:\/(actions|issues))?\/?$/.exec(location.hash || '');
+    if (qm) return { name: 'quality', view: qm[1] || 'datasets' };
     return { name: 'overview' };
   }
   function route() {
@@ -203,6 +206,11 @@
       var handle = P.views.dataset(page, ds, r.tab, ctx);
       if (r.tab === 'data') view.classList.add('pt-view-fill');
       current = { name: 'dataset', key: ds.key, tab: r.tab, dispose: handle && handle.dispose };
+    } else if (r.name === 'quality') {
+      document.title = 'Data quality · MZO Data';
+      crumbs.appendChild(h('span', { class: 'c-p', text: 'Data quality' }));
+      var qh = P.quality.page(page, ctx, r.view);
+      current = { name: 'quality', dispose: qh && qh.dispose };
     } else {
       document.title = 'Overview · MZO Data';
       crumbs.appendChild(h('span', { class: 'c-p', text: 'Overview' }));
@@ -227,6 +235,7 @@
   $('reloadBtn').addEventListener('click', function () {
     var b = $('reloadBtn');
     b.classList.add('spin');
+    if (P.quality) P.quality.invalidate();
     loadDatasets().then(route).then(function () { setTimeout(function () { b.classList.remove('spin'); }, 300); });
   });
   function paintTheme() {
