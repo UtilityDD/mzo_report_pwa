@@ -483,21 +483,23 @@ function uniqueHeaders(cells) {
     });
 }
 
-/** Parses a CSV byte stream and yields one object per data row, keyed by the original headers. */
+/**
+ * Parses a CSV byte stream and yields the header row, then one array of cells per data row. The
+ * framework names the columns from the header exactly as lib/uniform.js names them from the same
+ * bytes (blank headers, duplicates, padding columns), so the mirror and the uniform rows agree.
+ */
 async function* csvRows(stream) {
     const parser = parse({ bom: true, relax_column_count: true, relax_quotes: true, skip_empty_lines: true });
     pipeline(stream, parser, () => { /* errors surface in the loop below */ });
-    let header = null;
+    let header = false;
     for await (const rec of parser) {
         if (!header) {
-            header = uniqueHeaders(rec);
+            header = true;
+            yield rec.map((v) => (v == null ? '' : v));
             continue;
         }
         if (rec.every((v) => v === '' || v == null || !String(v).trim())) continue;
-        if (rec.length > header.length) header = uniqueHeaders([...header, ...new Array(rec.length - header.length).fill('')]);
-        const o = {};
-        for (let i = 0; i < header.length; i++) o[header[i]] = rec[i] == null ? '' : rec[i];
-        yield o;
+        yield rec.map((v) => (v == null ? '' : v));
     }
 }
 
