@@ -12,6 +12,11 @@
  * timing: first data paint (stat values and a real table row on screen), cold (empty storage)
  * and warm (second load), median of --runs, live sources unless --snap is given.
  *
+ * --profiles admin,region,division,ccc picks the logins (default admin,division). A page entry can
+ * name its own selectors: `asOn` (header text), `tables` (containers whose tables are recorded),
+ * `rows` (the clickable rows a drill walks), `fdp` (the table whose first row marks the first data
+ * paint), `clicks` (extra buttons to press, each recorded as a state).
+ *
  * Safety: every request that is not GET/HEAD is aborted, and Apps Script is never called.
  * Session: the forged local test cookie (JWT secret: env QA_JWT_SECRET or the dev fallback).
  */
@@ -31,7 +36,9 @@ function loadPlaywright() {
 
 const PROFILES = {
   admin: { Username: 'local-preview', Name: 'Local Preview', role: 'admin', office_level: 'CE' },
-  division: { Username: 'qa-gazole', Name: 'QA Gazole', role: 'user', division_code: 'Gazole' }
+  division: { Username: 'qa-gazole', Name: 'QA Gazole', role: 'user', division_code: 'Gazole' },
+  region: { Username: 'qa-raiganj', Name: 'QA Raiganj', role: 'user', region_code: 'Raiganj' },
+  ccc: { Username: 'qa-fulbari', Name: 'QA Fulbari', role: 'user', ccc_code: '6611108' }
 };
 function cookie(profile) {
   const secret = process.env.QA_JWT_SECRET || 'mzo-portal-super-secret-key-123456';
@@ -48,6 +55,40 @@ const PAGES = {
   nsc: {
     url: 'nsc.html', key: 'nsc_pending', stats: '#kpis .ui-stat', tabs: '#tabs .ui-drill-tab',
     deep: ['?region=Raiganj', '?division=Gazole', '?ccc=Kaliyaganj', '?q=6000188039', '?kpi=delay30', '?kpi=pole', '?kpi=nonpole', '?kpi=withheld', '?kpi=ind', '?kpi=procb', '?kpi=com3', '?followups=1']
+  },
+  // Batch D (wave-d)
+  cmo: {
+    url: 'cmo.html', key: 'cmo_grievances', stats: '#stats .ui-stat', tabs: '#groupTabs .ui-tab', asOn: '#meta',
+    tables: ['groupTable', 'listTable'], rows: '#groupTable tbody tr.click', fdp: '#listTable', deep: []
+  },
+  safety: {
+    url: 'safety_inspection.html', key: 'safety_inspection', stats: '#stats button.ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta',
+    tables: ['officeTable', 'listTable'], rows: '#officeTable tbody tr.click', fdp: '#listTable', clicks: ['#countBy button:nth-child(2)'], deep: []
+  },
+  feeder: {
+    url: 'feeder_outage.html', key: 'feeder_outage', stats: '#concernStat', tabs: '#levelTabs .ui-tab', asOn: '#meta',
+    tables: ['feederTable'], rows: '#feederTable tbody tr.click', fdp: '#feederTable', deep: []
+  },
+  pmsgy: {
+    url: 'pmsgy.html', key: 'pmsgy_malda', stats: '#stats .ui-stat', tabs: '#tabs .ui-tab', asOn: '#meta',
+    tables: ['breakdown', 'appTable', 'gapTable'], rows: '#breakdown tbody tr.click', fdp: '#appTable', deep: []
+  },
+  capex: {
+    url: 'capex_all.html', key: 'capex_details', stats: '#stats .ui-stat', tabs: '#dimTabs .ui-tab', asOn: '#meta',
+    tables: ['dimTable', 'ageTable', 'listTable'], rows: '#dimTable tbody tr.click', fdp: '#listTable', deep: []
+  },
+  onm: {
+    url: 'advance_onm.html', key: 'onm_advance', stats: '#stats .ui-stat', tabs: '#dimTabs .ui-tab', asOn: '#meta',
+    tables: ['dimTable', 'ageTable', 'listTable'], rows: '#dimTable tbody tr.click', fdp: '#listTable', deep: []
+  },
+  defective: {
+    url: 'consumer/defective_meter.html', key: 'defective_summary', stats: '.ui-stat[data-m]', tabs: '#levelTabs .ui-tab', asOn: '#meta',
+    tables: ['officeTable', 'namesTable'], rows: '#officeTable tbody tr.click', fdp: '#officeTable',
+    deep: ['?kpi=over10', '?kpi=ph3', '?kpi=smart', '?kpi=load_gt6', '?kpi=agri', '?division=Gazole', '?kpi=industrial&division=Raiganj']
+  },
+  important: {
+    url: 'important_sheets.html', key: '', stats: '.none', tabs: '.none', asOn: '#unbilled', tables: [], rows: '.none', fdp: '', deep: [], ready: 'badges',
+    texts: ['#unbilled', '#billing', '#rem']
   }
 };
 
@@ -78,20 +119,21 @@ async function newContext(browser, base, profile, route, opts) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await ctx.addCookies([{ name: 'mzo_session', value: cookie(profile), domain: new URL(base).hostname, path: '/', httpOnly: true, sameSite: 'Lax' }]);
   const version = await fetch(base + '/version.json').then((r) => r.json()).then((j) => j.version).catch(() => '');
-  await ctx.addInitScript(({ profile, version }) => {
+  const fdpTable = (opts && opts.fdp) || '#table';
+  await ctx.addInitScript(({ profile, version, fdpTable }) => {
     try { localStorage.setItem('mzo_user_profile', JSON.stringify(profile)); localStorage.setItem('mzo_authenticated', 'true'); if (version) localStorage.setItem('mzo_app_version', version); } catch (_) {}
     window.__fdp = null;
     const t = () => {
       if (window.__fdp != null) return;
       const vs = document.querySelectorAll('.ui-stat .v');
-      const row = document.querySelector('#table tbody tr td:not([colspan])');
-      const empty = document.querySelector('#table tbody .ui-empty');
+      const row = document.querySelector(fdpTable + ' tbody tr td:not([colspan])');
+      const empty = document.querySelector(fdpTable + ' tbody .ui-empty') || document.querySelector(fdpTable + ' > .ui-empty');
       const shown = row || (empty && !/loading/i.test(empty.textContent)); // a real row, or a real "nothing matches"
       if (vs.length && ![].some.call(vs, (v) => v.querySelector('.ui-skel') || !/\d/.test(v.textContent)) && shown) { window.__fdp = performance.now(); window.__fdpRow = !!row; return; }
       requestAnimationFrame(t);
     };
     requestAnimationFrame(t);
-  }, { profile, version });
+  }, { profile, version, fdpTable });
   const stats = { requests: 0, bytes: {}, blocked: [] };
   await ctx.route('**/*', async (r) => {
     const req = r.request(), url = req.url();
@@ -106,14 +148,27 @@ async function newContext(browser, base, profile, route, opts) {
   return ctx;
 }
 
-async function settle(page, ms) {
-  await page.waitForFunction(() => window.__fdp != null, null, { timeout: ms || 120000 }).catch(() => {});
+async function settle(page, ms, cfg) {
+  if (cfg && cfg.ready === 'badges') // a page of live cells: every badge has its value
+    await page.waitForFunction(() => document.querySelectorAll('.ui-badge').length && ![].some.call(document.querySelectorAll('.ui-badge'), (b) => /…/.test(b.textContent)), null, { timeout: ms || 120000 }).catch(() => {});
+  else await page.waitForFunction(() => window.__fdp != null, null, { timeout: ms || 120000 }).catch(() => {});
   await page.waitForTimeout(600);
 }
 
-function snapshot() {
+function snapshot(cfg) {
+  cfg = cfg || {};
   const txt = (el) => (el ? String(el.textContent || '').replace(/\s+/g, ' ').trim() : '');
-  const out = { asOn: txt(document.getElementById('asOn')) };
+  const out = { asOn: txt(document.querySelector(cfg.asOn || '#asOn')) };
+  // Every table / histogram the page names, and its other header texts.
+  (cfg.tables || []).forEach((id) => {
+    const host = document.getElementById(id); if (!host) return;
+    const tb = host.querySelector('table');
+    out['table:' + id] = tb ? { head: [].map.call(tb.querySelectorAll('thead th'), txt), rows: tb.tBodies[0] ? tb.tBodies[0].rows.length : 0,
+      first: [].slice.call(tb.tBodies[0] ? tb.tBodies[0].rows : [], 0, 8).map((r) => [].map.call(r.cells, txt).join(' | ')), foot: tb.tFoot ? txt(tb.tFoot) : '', more: txt(host.querySelector('.ui-panel-f, .ui-more')) } : txt(host);
+  });
+  out.hists = [].map.call(document.querySelectorAll('.ui-hist'), (h) => (h.id || '') + ':' + txt(h));
+  out.heads = [].map.call(document.querySelectorAll('.ui-panel-h h2, .ui-panel-h .ui-note, [id$="Count"], [id$="Title"], .dm-names-note:not([hidden])'), txt).filter(Boolean);
+  (cfg.texts || []).forEach((sel) => { out['text:' + sel] = txt(document.querySelector(sel)); });
   out.stats = [].map.call(document.querySelectorAll('.ui-stat'), (s) => [txt(s.querySelector('.k')), txt(s.querySelector('.v')), txt(s.querySelector('.s')), s.getAttribute('aria-pressed')]);
   out.facets = [].map.call(document.querySelectorAll('.ui-opts'), (g) => (g.id || '') + ':' + [].map.call(g.querySelectorAll('.ui-opt'), (o) => txt(o.querySelector('span')) + '=' + txt(o.querySelector('small')) + (o.getAttribute('aria-checked') === 'true' ? '*' : '')).join('|'));
   out.tabs = [].map.call(document.querySelectorAll('.ui-drill-tab'), (t) => txt(t) + (t.getAttribute('aria-selected') === 'true' ? '*' : ''));
@@ -134,38 +189,45 @@ function snapshot() {
 
 async function walk(page, cfg, base) {
   const states = {};
-  const shot = async (label) => { await page.waitForTimeout(150); states[label] = await page.evaluate(snapshot); };
+  // A control the login cannot use (a level tab hidden for a locked scope) is skipped, not waited for.
+  const click = async (loc) => { try { await loc.click({ timeout: 4000 }); return true; } catch (_) { return false; } };
+  const shot = async (label) => { await page.waitForTimeout(150); states[label] = await page.evaluate(snapshot, { asOn: cfg.asOn, tables: cfg.tables, texts: cfg.texts }); };
   await page.goto(base + '/' + cfg.url, { waitUntil: 'domcontentloaded' });
-  await settle(page);
+  await settle(page, 0, cfg);
   await shot('load');
   // stat cards (each toggles a filter; click again to clear)
   const nStats = await page.locator(cfg.stats).count();
   for (let i = 0; i < nStats; i++) {
-    await page.locator(cfg.stats).nth(i).click();
+    if (!(await click(page.locator(cfg.stats).nth(i)))) { states['stat#' + i] = 'not clickable'; continue; }
     await shot('stat#' + i);
-    await page.locator(cfg.stats).nth(i).click();
+    await click(page.locator(cfg.stats).nth(i));
   }
   // every analysis / level tab
   const nTabs = await page.locator(cfg.tabs).count();
   for (let i = 0; i < nTabs; i++) {
     const tab = page.locator(cfg.tabs).nth(i);
     const label = (await tab.getAttribute('data-t')) || (await tab.getAttribute('data-k')) || ((await tab.textContent()) + '#' + i);
-    await tab.click();
+    if (!(await click(tab))) { states['tab:' + label] = 'not clickable'; continue; }
     await shot('tab:' + label);
   }
   // drill: back to the first tab, then open the first row at every level down to the list
-  await page.locator(cfg.tabs).first().click();
+  if (nTabs) await click(page.locator(cfg.tabs).first());
   for (let level = 0; level < 4; level++) {
-    const row = page.locator('#table tbody tr.click').first();
+    const row = page.locator(cfg.rows || '#table tbody tr.click').first();
     if (!(await row.count())) break;
     const name = ((await row.locator('td').first().textContent()) || '').trim();
-    await row.click();
+    if (!(await click(row))) break;
     await shot('drill' + level + ':' + name.slice(0, 30));
     if (await page.locator('#ui-drawer:not([hidden])').count()) { await page.keyboard.press('Escape'); break; }
   }
+  for (const sel of cfg.clicks || []) {
+    await page.goto(base + '/' + cfg.url, { waitUntil: 'domcontentloaded' });
+    await settle(page, 0, cfg);
+    if (await page.locator(sel).count() && await click(page.locator(sel).first())) await shot('click:' + sel);
+  }
   for (const q of cfg.deep) {
     await page.goto(base + '/' + cfg.url + q, { waitUntil: 'domcontentloaded' });
-    await settle(page);
+    await settle(page, 0, cfg);
     await shot('deep' + q);
   }
   return states;
@@ -190,10 +252,10 @@ async function parity(pw) {
   const browser = await pw.chromium.launch({ channel: process.env.QA_CHANNEL || 'chrome', headless: true });
   const summary = [];
   for (const p of pages) {
-    for (const prof of Object.keys(PROFILES)) {
+    for (const prof of String(arg('profiles', 'admin,division')).split(',')) {
       const runs = {};
       for (const base of [oldBase].concat(newBases)) {
-        const ctx = await newContext(browser, base, PROFILES[prof], route);
+        const ctx = await newContext(browser, base, PROFILES[prof], route, { fdp: PAGES[p].fdp });
         const page = await ctx.newPage();
         const errors = [];
         page.on('pageerror', (e) => errors.push(String(e.message || e).slice(0, 200)));
@@ -227,7 +289,7 @@ async function timing(pw) {
     for (const which of ['old', 'new']) {
       const cold = [], warm = [], bytes = [];
       for (let i = 0; i < runsN; i++) {
-        const ctx = await newContext(browser, bases[which], PROFILES.admin, route);
+        const ctx = await newContext(browser, bases[which], PROFILES[arg('profile', 'admin')], route, { fdp: PAGES[p].fdp });
         const page = await ctx.newPage();
         if (cpu > 1) { const cdp = await ctx.newCDPSession(page); await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu }); }
         let got = 0;
