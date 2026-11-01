@@ -74,7 +74,8 @@ function context(profile) {
   const ctx = { console, document, localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } }, Intl, Date, Math, JSON, Map, Set, Promise, setTimeout, clearTimeout };
   ctx.window = ctx; ctx.self = ctx; ctx.top = ctx;
   vm.createContext(ctx);
-  for (const f of ['mzo_scope.js', 'mzo_ui.js', 'mzo_rows.js']) vm.runInContext(fs.readFileSync(path.join(REPO, f), 'utf8'), ctx, { filename: f });
+  // as the pages load them: lib/offices.js first, so UI.office and MzoScope use the canonical list as in the browser
+  for (const f of ['lib/offices.js', 'mzo_scope.js', 'mzo_ui.js', 'mzo_rows.js']) vm.runInContext(fs.readFileSync(path.join(REPO, f), 'utf8'), ctx, { filename: f });
   ctx.UI.drill = () => ({ match: () => true }); // DOM-only helpers the parse regions set up
   ctx.UI.sidePanel = () => function () {};
   ctx.__text = {};
@@ -82,6 +83,7 @@ function context(profile) {
   ctx.render = ctx.clearAll = function () {}; // page functions the region refers to
   return ctx;
 }
+function stub(ctx, page) { (page.stubs || []).forEach((n) => { ctx[n] = function () {}; }); return ctx; }
 
 function region(src, page) {
   const a = src.indexOf(page.from), b = src.indexOf(page.to, a + 1);
@@ -117,7 +119,7 @@ function main() {
   const uniformRows = JSON.parse(U.stringify(res)); // what the page receives (cache, mirror or worker)
   let failed = 0;
   for (const p of PROFILES) {
-    const ctxOld = context(p.profile), ctxNew = context(p.profile);
+    const ctxOld = stub(context(p.profile), page), ctxNew = stub(context(p.profile), page);
     ctxOld.RAW = raw;
     ctxNew.ROWS = ctxNew.MzoRows.fromDoc(page.key, uniformRows, 'test', { scope: page.scope });
     const a = rowsOf(ctxOld, page, region(oldSrc, page), page.old);
