@@ -35,6 +35,8 @@ const POWER_MAP_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-
 // Distinct table names (do not use generic "substations" — may clash with other projects/tables)
 const POWER_MAP_TABLE = 'mzo_power_substations';
 const POWER_MAP_CORRECTIONS_TABLE = 'mzo_power_corrections';
+// CSV built from the table (mirror mode loads CACHE_POWER_MAP from here).
+const POWER_MAP_DATA_URL = '/api/power-map/data';
 // Portal login + activity logs live in mzo_insight (not Google Sheet)
 const PORTAL_USERS_SCHEMA = 'mzo_insight';
 const PORTAL_USERS_TABLE = 'portal_users';
@@ -1230,9 +1232,15 @@ function normalizeUnbilledPayload(body, { requireSort = false } = {}) {
 app.get('/api/important-sheets/unbilled', async (req, res) => {
     try {
         const includeAll = String(req.query.all || '') === '1' && canManageImportantSheets(req.user);
-        let path = `${UNBILLED_MONTHS_TABLE}?select=*&order=sort_order.asc,id.asc`;
-        if (!includeAll) path += '&active=eq.true';
-        const rows = await querySupabase(path, { schema: PORTAL_USERS_SCHEMA });
+        // Mirror: the snapshot is this query without the active filter, in the same order.
+        let rows = await mirror.readJson('important_unbilled_months');
+        if (Array.isArray(rows)) {
+            if (!includeAll) rows = rows.filter((r) => r && r.active === true);
+        } else {
+            let path = `${UNBILLED_MONTHS_TABLE}?select=*&order=sort_order.asc,id.asc`;
+            if (!includeAll) path += '&active=eq.true';
+            rows = await querySupabase(path, { schema: PORTAL_USERS_SCHEMA });
+        }
         const months = (Array.isArray(rows) ? rows : []).map(mapUnbilledMonthRow);
         res.json({ status: 'success', months });
     } catch (err) {
@@ -1689,14 +1697,18 @@ app.get('/api/power-map/data', async (req, res) => {
     const sendCsv = (csvBody) => sendDatasetCsv_(req, res, csvBody);
 
     try {
-        // Prefer Supabase when the table exists and has rows
-        let substations = null;
+        // Prefer Supabase when the table exists and has rows (mirror mode: its snapshot, the body of this same query)
+        let substations = await mirror.readJson('power_map_substations');
         let supabaseError = null;
-        try {
-            substations = await querySupabase(POWER_MAP_TABLE + '?select=*&limit=5000');
-        } catch (sbErr) {
-            supabaseError = sbErr;
-            console.warn('[Power Map Data] Supabase unavailable:', sbErr.message);
+        if (Array.isArray(substations)) {
+            res.setHeader('X-Mzo-Data', 'mirror');
+        } else {
+            try {
+                substations = await querySupabase(POWER_MAP_TABLE + '?select=*&limit=5000');
+            } catch (sbErr) {
+                supabaseError = sbErr;
+                console.warn('[Power Map Data] Supabase unavailable:', sbErr.message);
+            }
         }
 
         if (Array.isArray(substations) && substations.length > 0) {
@@ -1751,6 +1763,15 @@ app.get('/api/power-map/data', async (req, res) => {
 app.get('/api/power-map/meta', async (req, res) => {
     if (!req.user) {
         return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+    // Mirror mode: the manifest version of the table snapshot, and the CSV /api/power-map/data builds from it
+    // (live, csvUrl is the published Google Sheet, which lags the table that edits go to).
+    const pm = await mirror.entry('power_map_substations');
+    const pmRows = pm ? await mirror.readJson('power_map_substations') : null;
+    if (pm && Array.isArray(pmRows)) {
+        res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
+        res.setHeader('X-Mzo-Data', 'mirror');
+        return res.json({ status: 'success', version: pm.version, rows: pmRows.length, csvUrl: POWER_MAP_DATA_URL });
     }
     let version = '';
     let rows = 0;
@@ -2744,8 +2765,17 @@ async function migrateAllotmentsFromLegacy_() {
     };
 }
 
+let allotMirrorRows_ = { src: null, rows: null };
+
 async function loadAllotmentRowsCached_(force = false) {
     const now = Date.now();
+    // Mirror mode: the snapshot is the body of fetchAllotmentsFromSupabase_'s query (pages joined, same order).
+    // The view's refresh button (force) still reads live: allotments are also made on other hosts.
+    const mirrored = force ? null : await mirror.readJson('stock_allotments');
+    if (Array.isArray(mirrored)) {
+        if (allotMirrorRows_.src !== mirrored) allotMirrorRows_ = { src: mirrored, rows: mirrored.map(allotDbToClient_) };
+        return { rows: allotMirrorRows_.rows, source: 'supabase' };
+    }
     if (!force && allotListCache_.rows && now - allotListCache_.at < ALLOT_LIST_TTL_MS) {
         return { rows: allotListCache_.rows, source: allotListCache_.source || 'cache' };
     }
@@ -3085,6 +3115,13 @@ async function peekNscTodayFromSheet_() {
     return nscTodayPeekCache_.value || '';
 }
 
+/** TODAY of the NSC dump: in mirror mode from the snapshot's first row (no Google request), else the live peek. */
+async function nscToday_(nscEntry) {
+    const head = nscEntry ? await mirror.readHead(nscEntry.key, 64 * 1024) : null;
+    const today = head ? parseTodayFromPeekCsv_(head) : '';
+    return today || peekNscTodayFromSheet_();
+}
+
 function overlayLiveNscToday_(meta, liveToday) {
     const today = String(liveToday || '').trim();
     if (!today) return meta;
@@ -3179,8 +3216,14 @@ app.get('/api/nsc/meta', async (req, res) => {
     const user = await resolveFreshUser_(req);
     let meta = readLocalNscMeta_();
     let source = meta ? 'local' : 'google_sheet';
+    // Mirror mode: versions and CSV URLs from the manifest (the upload meta itself has no snapshot).
+    const [nscMirror, whMirror] = await Promise.all([
+        mirror.entryForDataHubKey('CACHE_NSC_v5'),
+        mirror.entryForDataHubKey('CACHE_WITHHELD_v4')
+    ]);
+    if (nscMirror || whMirror) res.setHeader('X-Mzo-Data', 'mirror');
     // Both helpers swallow their own errors.
-    const [sheetMeta, liveToday] = await Promise.all([fetchNscSheetMeta_(), peekNscTodayFromSheet_()]);
+    const [sheetMeta, liveToday] = await Promise.all([fetchNscSheetMeta_(), nscToday_(nscMirror)]);
     if (sheetMeta && (sheetMeta.reportDate || sheetMeta.uploadedAt || sheetMeta.publishedRows)) {
         meta = sheetMeta;
         source = 'google_sheet';
@@ -3197,12 +3240,12 @@ app.get('/api/nsc/meta', async (req, res) => {
         canUpload,
         isAdmin: isPortalAdmin_(user),
         meta,
-        version: snapshotVersion_(meta) || null,
-        withheldVersion: snapshotWithheldVersion_(meta) || null,
+        version: nscMirror ? nscMirror.version : (snapshotVersion_(meta) || null),
+        withheldVersion: whMirror ? whMirror.version : (snapshotWithheldVersion_(meta) || null),
         sheetScriptUrl: canUpload ? NSC_SHEET_SCRIPT_URL : '',
         withheldSheetScriptUrl: canUpload ? NSC_WITHHELD_SHEET_SCRIPT_URL : '',
-        csvUrl: NSC_SHEET_FALLBACK_URL,
-        withheldCsvUrl: NSC_WITHHELD_SHEET_FALLBACK_URL,
+        csvUrl: nscMirror ? mirror.hubUrl(nscMirror) : NSC_SHEET_FALLBACK_URL,
+        withheldCsvUrl: whMirror ? mirror.hubUrl(whMirror) : NSC_WITHHELD_SHEET_FALLBACK_URL,
         nscSheetEditUrl: canUpload ? `https://docs.google.com/spreadsheets/d/${NSC_WORKING_SPREADSHEET_ID}/edit` : '',
         withheldSheetEditUrl: canUpload ? `https://docs.google.com/spreadsheets/d/${NSC_WITHHELD_SPREADSHEET_ID}/edit` : '',
         nscSheetTab: 'nsc_working',
@@ -3385,6 +3428,16 @@ function writeLocalStockBackup_(csv, meta) {
     }
 }
 
+/** dd/mm/yyyy of the stock dump's Date column (written m/d/yyyy), from the mirror snapshot's first row. */
+async function stockCsvReportDate_(stockEntry) {
+    const head = stockEntry ? await mirror.readHead(stockEntry.key, 16 * 1024) : null;
+    const lines = String(head || '').replace(/^\uFEFF/, '').split(/\r?\n/);
+    if (lines.length < 2) return '';
+    const idx = parseCsvLine_(lines[0]).map((h) => h.trim()).indexOf('Date');
+    const m = idx < 0 ? null : String(parseCsvLine_(lines[1])[idx] || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    return m ? `${m[2].padStart(2, '0')}/${m[1].padStart(2, '0')}/${m[3]}` : '';
+}
+
 function stockMetaFromDb_(row) {
     if (!row) return null;
     return {
@@ -3513,7 +3566,16 @@ app.get('/api/stock/meta', async (req, res) => {
         if (hasLocal) source = 'local';
     }
     if (stockStorageOrigin_()) source = 'supabase_storage';
-    const version = snapshotVersion_(meta) || null;
+    // Mirror mode: the dump is the Storage snapshot; its version and URL come from the manifest and the
+    // as-on date from its Date column (this host may only see an older upload meta).
+    const stockMirror = await mirror.entryForDataHubKey('CACHE_STOCK');
+    if (stockMirror) {
+        res.setHeader('X-Mzo-Data', 'mirror');
+        const asOn = await stockCsvReportDate_(stockMirror);
+        if (asOn) meta = Object.assign({}, meta || {}, { reportDate: asOn, stats: Object.assign({}, (meta && meta.stats) || {}, { today: asOn }) });
+        if (stockMirror.sourceType === 'supabase_storage') source = 'supabase_storage';
+    }
+    const version = stockMirror ? stockMirror.version : (snapshotVersion_(meta) || null);
     let uploadUrl = '';
     if (stockStorageOrigin_() && canUpload) {
         try {
@@ -3533,7 +3595,7 @@ app.get('/api/stock/meta', async (req, res) => {
         version,
         sheetScriptUrl: canUpload && sheetMirror ? STOCK_SHEET_SCRIPT_URL : '',
         uploadUrl,
-        csvUrl: sheetMirror ? STOCK_SHEET_FALLBACK_URL : stockPublicCsvUrl_(version),
+        csvUrl: stockMirror ? mirror.hubUrl(stockMirror) : (sheetMirror ? STOCK_SHEET_FALLBACK_URL : stockPublicCsvUrl_(version)),
         source,
         setupHint:
             source === 'google_sheet_fallback'
@@ -3788,15 +3850,26 @@ function syncRoute_(routePath, { label, can, forbidden, run, meta, done, bareErr
     });
 }
 
-/** Common fields of the disconnection / pending MC / load extension meta responses. */
-function syncedMetaFields_(meta, fallbackCsvUrl) {
-    return {
+/**
+ * Common fields of the disconnection / pending MC / load extension meta responses. In mirror mode
+ * (an entry for the DataHub key) the version and CSV URL come from the manifest; the meta.json
+ * (report date, KPIs) is still read live.
+ */
+async function syncedMetaFields_(meta, fallbackCsvUrl, dataHubKey, res) {
+    const fields = {
         version: meta ? meta.version : null,
         reportDate: meta ? meta.reportDate : null,
         stats: meta ? meta.stats : null,
         csvUrl: (meta && meta.csvUrl) || fallbackCsvUrl,
         source: meta ? meta.source : 'google_sheet'
     };
+    const m = dataHubKey ? await mirror.entryForDataHubKey(dataHubKey) : null;
+    if (m) {
+        fields.version = m.version;
+        fields.csvUrl = mirror.hubUrl(m);
+        if (res) res.setHeader('X-Mzo-Data', 'mirror');
+    }
+    return fields;
 }
 
 // Defective meters
@@ -3820,6 +3893,13 @@ app.get('/api/defective/meta', async (req, res) => {
     const user = await resolveFreshUser_(req);
     const canUpload = canUploadDefective_(user);
     const meta = await DEFECTIVE_META.read();
+    // Mirror mode: CSV URLs from the manifest, and one version that changes when either file does.
+    const [sumMirror, detMirror] = await Promise.all([
+        mirror.entryForDataHubKey('CACHE_DEFECTIVE'),
+        mirror.entryForDataHubKey('CACHE_DEFECTIVE_DETAILS')
+    ]);
+    const mirrored = sumMirror && detMirror;
+    if (mirrored) res.setHeader('X-Mzo-Data', 'mirror');
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
     return res.json({
         status: 'success',
@@ -3828,9 +3908,9 @@ app.get('/api/defective/meta', async (req, res) => {
         isAdmin: isPortalAdmin_(user),
         sheetScriptUrl: canUpload && DEFECTIVE_SHEET_SCRIPT_URL ? DEFECTIVE_SHEET_SCRIPT_URL : '',
         spreadsheetId: DEFECTIVE_SPREADSHEET_ID,
-        summaryCsvUrl: (meta && meta.summaryCsvUrl) || defectiveExportCsvUrl_(DEFECTIVE_SUMMARY_GID),
-        detailsCsvUrl: (meta && meta.detailsCsvUrl) || defectiveExportCsvUrl_(DEFECTIVE_DETAILS_GID),
-        version: (meta && meta.version) || null,
+        summaryCsvUrl: mirrored ? mirror.hubUrl(sumMirror) : ((meta && meta.summaryCsvUrl) || defectiveExportCsvUrl_(DEFECTIVE_SUMMARY_GID)),
+        detailsCsvUrl: mirrored ? mirror.hubUrl(detMirror) : ((meta && meta.detailsCsvUrl) || defectiveExportCsvUrl_(DEFECTIVE_DETAILS_GID)),
+        version: mirrored ? `${sumMirror.version.slice(0, 20)}${detMirror.version.slice(0, 20)}` : ((meta && meta.version) || null),
         reportDate: (meta && meta.reportDate) || null,
         stats: (meta && meta.stats) || null,
         uploadMeta: (meta && meta.stats) || meta || null,
@@ -3871,7 +3951,7 @@ app.get('/api/disconnection/meta', async (req, res) => {
         canSync: canSyncDisconnection_(user),
         isAdmin: isPortalAdmin_(user),
         sheetScriptUrl: DISCONNECTION_FOLLOWUP_SCRIPT_URL,
-        ...syncedMetaFields_(meta, DISCONNECTION_SHEET_FALLBACK_URL)
+        ...(await syncedMetaFields_(meta, DISCONNECTION_SHEET_FALLBACK_URL, 'CACHE_DISCONNECTION', res))
     });
 });
 
@@ -3903,7 +3983,7 @@ app.get('/api/pending-mc/meta', async (req, res) => {
         status: 'success',
         canSync: canSyncPendingMc_(user),
         isAdmin: isPortalAdmin_(user),
-        ...syncedMetaFields_(meta, PENDING_MC_SHEET_FALLBACK_URL)
+        ...(await syncedMetaFields_(meta, PENDING_MC_SHEET_FALLBACK_URL, 'CACHE_PENDING_MC', res))
     });
 });
 
@@ -3934,7 +4014,7 @@ app.get('/api/load-extension/meta', async (req, res) => {
         status: 'success',
         canSync: canSyncLoadExt_(user),
         isAdmin: isPortalAdmin_(user),
-        ...syncedMetaFields_(meta, LOAD_EXT_SHEET_FALLBACK_URL)
+        ...(await syncedMetaFields_(meta, LOAD_EXT_SHEET_FALLBACK_URL, 'CACHE_LOAD_EXT', res))
     });
 });
 
@@ -4028,6 +4108,23 @@ app.get('/api/hub/versions', async (req, res) => {
             return parsed && parsed.versions;
         }
     };
+    // Mirror mode: every DataHub key in the manifest gets its version and URL from there, and the live
+    // read of a source runs only when the manifest lacks one of its keys (the Apps Script metadata always runs,
+    // for the datasets that have no snapshot).
+    const fromMirror = await mirror.dataHubEntries();
+    const mirrored = new Set(fromMirror.map((x) => x.dataHubKey));
+    const taskKeys = {
+        nsc: ['CACHE_NSC_v5', 'CACHE_WITHHELD_v4'],
+        stock: ['CACHE_STOCK'],
+        disconnection: ['CACHE_DISCONNECTION'],
+        defective: ['CACHE_DEFECTIVE', 'CACHE_DEFECTIVE_DETAILS'],
+        pendingMc: ['CACHE_PENDING_MC'],
+        loadExt: ['CACHE_LOAD_EXT'],
+        powerMap: ['CACHE_POWER_MAP']
+    };
+    Object.keys(taskKeys).forEach((n) => {
+        if (taskKeys[n].every((k) => mirrored.has(k))) delete tasks[n];
+    });
     const names = Object.keys(tasks);
     const results = await Promise.allSettled(names.map((n) => tasks[n]()));
     results.forEach((r, i) => {
@@ -4035,6 +4132,11 @@ app.get('/api/hub/versions', async (req, res) => {
     });
     const extra = results[names.indexOf('metadata')];
     if (extra.status === 'fulfilled' && extra.value) Object.assign(versions, extra.value);
+    fromMirror.forEach((x) => {
+        versions[x.dataHubKey] = x.version;
+        csvUrls[x.dataHubKey] = x.dataHubKey === 'CACHE_POWER_MAP' ? POWER_MAP_DATA_URL : x.url;
+    });
+    if (fromMirror.length) res.setHeader('X-Mzo-Data', 'mirror');
 
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
     return res.json({ status: 'success', versions, csvUrls });
