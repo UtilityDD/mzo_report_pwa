@@ -164,8 +164,7 @@
     const O = canon();
     if (O && raw != null && String(raw).trim()) {
       const r = O.parseRegion(raw);
-      if (r && r.level === 'region') return r.region;
-      if (r && r.level !== 'unknown') return '';
+      return r && r.level === 'region' ? r.region : '';
     }
     const n = norm(raw);
     if (!n) return '';
@@ -187,8 +186,7 @@
     if (O) {
       // "South Malda" / "North Malda" (old divisions), zone and region names are not one division.
       const d = O.parseDivision(raw);
-      if (d && d.level === 'division') return d.division;
-      if (d && d.level !== 'unknown') return '';
+      return d && d.level === 'division' ? d.division : '';
     }
     const s = String(raw).trim();
     if (CODE_TO_DIV[s]) return CODE_TO_DIV[s];
@@ -224,11 +222,12 @@
     const O = canon();
     if (O) {
       const c = O.parseCccName(s);
-      if (c && c.level === 'ccc') return c.ccc;
-      if (c && c.level !== 'unknown') return String(raw).trim(); // a division, zone or sub-station office
+      // Not a CCC (a division, region, zone, total or sub-station row, or an unknown name): kept as written.
+      return c && c.level === 'ccc' ? c.ccc : String(raw).trim();
     }
     const n = norm(raw);
     if (!n) return '';
+    if (/\btotal\b/i.test(String(raw))) return String(raw).trim();
 
     if (n === 'gazole' || n === 'gazol') return 'Gazole';
 
@@ -239,8 +238,7 @@
       for (let d = 0; d < dnames.length; d++) {
         const cccs = divs[dnames[d]].cccs;
         for (let c = 0; c < cccs.length; c++) {
-          const cnorm = norm(cccs[c]);
-          if (n === cnorm || n.indexOf(cnorm) !== -1 || (!O && n.length >= 4 && cnorm.indexOf(n) !== -1)) return cccs[c];
+          if (n === norm(cccs[c])) return cccs[c];
         }
       }
     }
@@ -251,6 +249,11 @@
     const s = String(raw == null ? '' : raw).trim();
     if (!s) return '';
     const division = divisionNameOf(divisionName) || divisionName;
+    const O = canon();
+    if (O) {
+      const c = O.parseCccName(s, division); // knows the short forms used inside one division ("Pa" = Pandua)
+      if (c && c.level === 'ccc') return c.ccc;
+    }
     const list = listCccs('', division);
     const n = norm(s);
     if (!n) return '';
@@ -497,6 +500,22 @@
     return false;
   }
 
+  /** Is a row's region / division / CCC value one of the scope's offices? Exact canonical names. */
+  function inScope(value, kind, scope) {
+    if (!value) return false;
+    const O = canon();
+    if (!O) return inSetNorm(value, kind === 'region' ? scope.regionNorms : kind === 'division' ? scope.divisionNorms : scope.cccNorms);
+    let name = '';
+    if (kind === 'region') name = regionNameOf(value);
+    else if (kind === 'division') name = divisionNameOf(value);
+    else {
+      const c = O.parseCccName(value);
+      name = c && c.level === 'ccc' ? c.ccc : '';
+    }
+    const set = kind === 'region' ? scope.regions : kind === 'division' ? scope.divisions : scope.cccs;
+    return !!name && set.has(name);
+  }
+
   function matchRow(row) {
     const scope = getScope();
     if (!scope || scope.unscoped) return true;
@@ -513,25 +532,25 @@
       const rawCode = codes[i];
       if (scope.codes.has(rawCode)) return true;
       const named = CODE_TO_CCC[rawCode];
-      if (named && inSetNorm(named, scope.cccNorms)) return true;
+      if (named && (canon() ? scope.cccs.has(named) : inSetNorm(named, scope.cccNorms))) return true;
       for (let p = 0; p < scope.prefixes.length; p++) {
         if (rawCode.indexOf(scope.prefixes[p]) === 0) return true;
       }
     }
 
     if (scope.level === 'ccc') {
-      if (inSetNorm(ccc, scope.cccNorms)) return true;
+      if (inScope(ccc, 'ccc', scope)) return true;
       return false;
     }
     if (scope.level === 'division' || scope.level === 'codes') {
-      if (inSetNorm(div, scope.divisionNorms)) return true;
-      if (inSetNorm(ccc, scope.cccNorms)) return true;
+      if (inScope(div, 'division', scope)) return true;
+      if (inScope(ccc, 'ccc', scope)) return true;
       return false;
     }
     if (scope.level === 'region') {
-      if (inSetNorm(region, scope.regionNorms)) return true;
-      if (inSetNorm(div, scope.divisionNorms)) return true;
-      if (inSetNorm(ccc, scope.cccNorms)) return true;
+      if (inScope(region, 'region', scope)) return true;
+      if (inScope(div, 'division', scope)) return true;
+      if (inScope(ccc, 'ccc', scope)) return true;
     }
     return false;
   }
