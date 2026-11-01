@@ -162,7 +162,7 @@
     costCentres();
     if (worker || workerBroken || typeof Worker === 'undefined') return;
     try {
-      worker = new Worker('/mzo_rows.js?v=4&worker=1');
+      worker = new Worker('/mzo_rows.js?v=5&worker=1');
     } catch (e) { workerBroken = true; return; }
     worker.onmessage = function (e) {
       var j = jobs[e.data.id]; if (!j) return;
@@ -404,8 +404,22 @@
     }).then(function () { return get(key, opts); });
   }
 
+  // Uniform rows from text the page fetched itself, with NOTHING stored: no IndexedDB, no DataHub.
+  // For sensitive sheets (Aadhaar, PAN, bank details) that must never be cached in the browser.
+  // build(key, text, { format?, scope? }) -> Promise<t> (the same t as load's render gets).
+  function build(key, text, opts) {
+    opts = opts || {};
+    return schema(key).then(function (sc) {
+      var src = sourceOf(sc, opts), t0 = now();
+      var input = typeof text === 'string' ? text : JSON.stringify(text);
+      var format = typeof text === 'string' ? (opts.format || src.format) : 'json';
+      return compute(input, { key: key, version: 'nostore:' + hash32(input.slice(0, 65536)) + ':' + input.length, format: format, schema: sc.doc })
+        .then(function (out) { return toT(key, out.json, 'nostore', opts, { build: out.ms, where: out.where, total: Math.round(now() - t0) }); });
+    });
+  }
+
   var MzoRows = {
-    load: load, get: get, refresh: refresh, reload: reload, scope: scopeRows,
+    load: load, get: get, refresh: refresh, reload: reload, scope: scopeRows, build: build,
     levels: [{ k: 'region', label: 'Region', field: '_region' }, { k: 'division', label: 'Division', field: '_division' }, { k: 'ccc', label: 'CCC', field: '_ccc' }],
     last: {},
     fromDoc: fromDoc, _code: CODE, _compute: compute, _manifest: manifest
