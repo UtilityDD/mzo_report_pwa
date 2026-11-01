@@ -235,6 +235,13 @@ async function main() {
     }
 
     manifest();
+    // Uniform rows next to the snapshots (docs/uniform-data.md): rebuild the stale ones in a child
+    // process with its own small heap, inside this run's lock. Never fails the sync.
+    if (snapshotDir && !args.dryRun) {
+        const rows = require('child_process').spawnSync(process.execPath, ['--max-old-space-size=256', '--max-semi-space-size=4',
+            path.join(__dirname, 'rows.js'), '--dir', snapshotDir, '--prune'], { stdio: 'inherit', timeout: 10 * 60000 });
+        if (rows.status) log('uniform rows: exit ' + rows.status);
+    }
     if (registry && results.length) {
         try {
             await registry.prune();

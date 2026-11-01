@@ -755,6 +755,12 @@ function refreshMirror(keys, reason) {
     return started;
 }
 mirror.mount(app);
+// Uniform rows next to the snapshots (docs/uniform-data.md); mirror mode only.
+if (String(process.env.MZO_DATA_MODE || '').toLowerCase() === 'mirror') {
+    try {
+        app.get('/api/data/rows/:key', require('./vm/sync/lib/rows').handler({ dir: mirror.dir, app: __dirname, on: mirror.on, manifest: mirror.manifest }));
+    } catch (err) { console.warn('[Mirror] uniform rows unavailable:', err.message); }
+}
 
 // --- Estimate structures (admin.html) ---
 const STRUCTURE_FILE = path.join(__dirname, 'data', 'structure.csv'); // literal path: Vercel bundles it with the function
