@@ -11,8 +11,11 @@
  * source with --live (GET only, kept in memory, never written); the mirror may then be a few
  * minutes older than the bytes compared, which the report says.
  * With a schema/<key>.json, the types it pins are compared with the mirror's too (pages' view).
+ * --values also compares every cell PocketBase holds with lib/uniform.js's value for the same
+ * bytes (a number or bool listed in _nulls is null; dates as instants: date-only = UTC midnight,
+ * a wall-clock time = India time, or UTC for a zone-less ISO timestamp), plus missing and extra rows.
  *
- *   node scripts/qa/mirror-types.js --snap <snapshotDir> --env <pb env file> [--live] [--only a,b] [--json out.json]
+ *   node scripts/qa/mirror-types.js --snap <snapshotDir> --env <pb env file> [--live] [--values] [--only a,b] [--json out.json]
  *
  * --env: PB_URL, PB_SUPERUSER_EMAIL, PB_SUPERUSER_PASSWORD (read only: GET requests). Without
  * --env only uniform vs sync is checked. Exit 1 when uniform and the mirror differ.
@@ -33,6 +36,8 @@ const officeEnrich = require(path.join(SYNC, 'lib', 'office_enrich'));
 const { makeSourceFetch } = require(path.join(SYNC, 'lib', 'http'));
 const { PocketBase } = require(path.join(SYNC, 'lib', 'pb'));
 const { SYSTEM_DEFS, STAGE } = require(path.join(SYNC, 'lib', 'collections'));
+const { stableStringify } = require(path.join(SYNC, 'lib', 'util'));
+const IST_MS = 330 * 60000;
 
 function arg(n, d) { const i = process.argv.indexOf('--' + n); return i > 0 ? process.argv[i + 1] : d; }
 const flag = (n) => process.argv.includes('--' + n);
@@ -105,6 +110,51 @@ function diff(a, b, opts) {
   return out;
 }
 
+/** A PocketBase value against lib/uniform.js's value for the same cell. */
+function sameValue(type, want, got, listedNull) {
+  if (type === 'number') return want === null ? listedNull && got === 0 : !listedNull && got === want;
+  if (type === 'bool') return want === null ? listedNull && got === false : !listedNull && got === want;
+  if (type === 'date') {
+    if (want === null) return got === '';
+    if (typeof got !== 'string' || !got) return false;
+    if (want.length === 10) return got === want + ' 00:00:00.000Z';
+    const ms = Date.parse(got.replace(' ', 'T'));
+    if (want.endsWith('Z')) return ms === Date.parse(want);
+    const wall = Date.parse(want + 'Z');
+    return ms === wall - IST_MS || ms === wall;
+  }
+  if (type === 'json') return stableStringify(want === undefined ? null : want) === stableStringify(got === undefined ? null : got);
+  return got === want;
+}
+
+/** Every record of the collection against the uniform rows of the same input (by _row_no). */
+async function compareValues(pb, collection, input, src, format) {
+  const res = U.build(input, { key: src.key, format, header: src.header !== false, dateOrder: src.dateOrder || null, columnTypes: typeOverrides(src) });
+  const cols = res.columns, n = res.stats.rows;
+  const out = { rows: n, records: 0, cells: 0, bad: 0, badColumns: {}, missingRows: 0, extraRecords: 0 };
+  const seen = new Uint8Array(n);
+  const fields = ['id', '_row_no', '_nulls'].concat(cols.map((c) => c.name)).join(',');
+  for await (const page of pb.pages(collection, { fields, perPage: 1000 })) {
+    for (const r of page) {
+      out.records++;
+      const k = r._row_no - 1;
+      if (!(k >= 0 && k < n) || seen[k]) { out.extraRecords++; continue; }
+      seen[k] = 1;
+      const nulls = Array.isArray(r._nulls) && r._nulls.length ? new Set(r._nulls) : null;
+      for (let ci = 0; ci < cols.length; ci++) {
+        const c = cols[ci];
+        out.cells++;
+        if (!sameValue(c.type, res.data[ci][k], r[c.name], !!(nulls && nulls.has(c.name)))) {
+          out.bad++;
+          out.badColumns[c.name] = (out.badColumns[c.name] || 0) + 1; // names and counts only, never values
+        }
+      }
+    }
+  }
+  for (let k = 0; k < n; k++) if (!seen[k]) out.missingRows++;
+  return out;
+}
+
 async function readAll(stream) {
   const chunks = [];
   for await (const c of stream) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
@@ -115,6 +165,7 @@ async function main() {
   const snap = arg('snap') ? path.resolve(arg('snap')) : null;
   const only = arg('only') ? new Set(arg('only').split(',')) : null;
   const live = flag('live');
+  const values = flag('values');
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mirror-types-'));
   let cc = [];
   try { cc = JSON.parse(fs.readFileSync(path.join(REPO, 'data', 'costcenter.json'), 'utf8')); } catch (_) { /* none */ }
@@ -134,7 +185,7 @@ async function main() {
 
   const keys = [...new Set([...sources.keys(), ...registry.keys()])].filter((k) => !only || only.has(k)).sort();
   const report = [];
-  const totals = { datasets: 0, columns: 0, mismatched: 0, codeDiff: 0, registryDiff: 0, pinDiff: 0, notCompared: [] };
+  const totals = { datasets: 0, columns: 0, valueCells: 0, valueBad: 0, missingRows: 0, extraRecords: 0, mismatched: 0, codeDiff: 0, registryDiff: 0, pinDiff: 0, notCompared: [] };
   for (const key of keys) {
     const src = sources.get(key);
     const ds = registry.get(key) || null;
@@ -193,6 +244,11 @@ async function main() {
         r.uniformVsMirror = diff(uni, mirror);
         r.registryVsFields = diff(regCols, fields.filter((f) => !/^_(region|division|ccc_code|ccc)$/.test(f.name)), { typesOnly: true });
         if (coll.fields.some((f) => f.name.startsWith(STAGE))) r.note = (r.note ? r.note + '; ' : '') + 'staging fields present (a migration did not finish)';
+        if (values) {
+          r.values = await compareValues(pb, coll.name, objects ? objects : bytes.toString('utf8'), src, objects ? 'json' : format);
+          totals.valueCells += r.values.cells; totals.valueBad += r.values.bad;
+          totals.missingRows += r.values.missingRows; totals.extraRecords += r.values.extraRecords;
+        }
         // pages' view: the types schema/<key>.json pins
         let schema = null;
         try { schema = JSON.parse(fs.readFileSync(path.join(REPO, 'schema', key + '.json'), 'utf8')); } catch (_) { /* none */ }
@@ -226,12 +282,17 @@ async function main() {
     if (r.uniformVsSync.length) parts.push('SYNC CODE: ' + r.uniformVsSync.map((d) => `${d.column} ${d.what} ${d.a}→${d.b}`).join(', '));
     if (r.registryVsFields.length) parts.push('registry: ' + r.registryVsFields.map((d) => `${d.column} ${d.what}`).join(', '));
     if (r.pins.length) parts.push('schema pins: ' + r.pins.map((d) => `${d.column} ${d.what} ${d.a}≠${d.b}`).join(', '));
+    if (r.values && (r.values.bad || r.values.missingRows || r.values.extraRecords)) {
+      parts.push(`values: ${r.values.bad} of ${r.values.cells} cells differ (${Object.entries(r.values.badColumns).map(([c, k]) => c + ' ×' + k).join(', ')}), ${r.values.missingRows} rows missing, ${r.values.extraRecords} extra records`);
+    }
     const status = !r.via ? 'skip' : parts.length ? 'DIFF' : 'same';
     console.log(`${status.padEnd(4)} ${r.key.padEnd(34)} ${(r.via || '').padEnd(8)} ${String(r.columns).padStart(4)} cols ${String(r.rows).padStart(7)} rows  ${parts.join(' | ')}${r.note ? '  [' + r.note + ']' : ''}`);
   }
   console.log(`[mirror-types] ${totals.datasets} datasets, ${totals.columns} columns compared: ` +
     `${totals.mismatched} columns differ between uniform and the mirror, ${totals.codeDiff} between uniform and the sync code, ` +
-    `${totals.registryDiff} registry/field differences, ${totals.pinDiff} schema-pin differences; not compared: ${totals.notCompared.length ? totals.notCompared.join(', ') : 'none'}`);
+    `${totals.registryDiff} registry/field differences, ${totals.pinDiff} schema-pin differences` +
+    (values ? `; values: ${totals.valueBad} of ${totals.valueCells} cells differ, ${totals.missingRows} rows missing, ${totals.extraRecords} extra records` : '') +
+    `; not compared: ${totals.notCompared.length ? totals.notCompared.join(', ') : 'none'}`);
   if (arg('json')) fs.writeFileSync(arg('json'), JSON.stringify({ totals, report }, null, 1));
   process.exit(pb && totals.mismatched ? 1 : 0);
 }

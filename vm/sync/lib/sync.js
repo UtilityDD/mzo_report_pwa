@@ -10,12 +10,17 @@ const { ensureCollection, NULLS_FIELD } = require('./collections');
 const { writeRows } = require('./upsert');
 const officeEnrich = require('./office_enrich'); // dq-offices: canonical _region/_division/_ccc_code/_ccc
 const { makeSourceFetch } = require('./http');
-const { VERSION: UNIFORM_VERSION } = require('../../../lib/uniform.js');
 const { parsePbDate } = require('./schedule');
 const { removeSnapshot } = require('./snapshot');
 const { stableStringify, pbDate, fmtMs, log, errMessage, SkipError } = require('./util');
 const fs = require('fs');
 const path = require('path');
+// Names, types and values come from lib/uniform.js: any change to that file (its rules, even
+// without a VERSION bump) changes every source's content hash, so the next run re-reads them all.
+const UNIFORM_CODE = (() => {
+    const file = path.join(__dirname, '..', '..', '..', 'lib', 'uniform.js');
+    return require(file).VERSION + ':' + require('crypto').createHash('sha1').update(fs.readFileSync(file)).digest('hex').slice(0, 12);
+})();
 
 // SYNC_DEBUG=1 logs each phase with its time and memory.
 const DEBUG = process.env.SYNC_DEBUG === '1';
@@ -27,7 +32,7 @@ function phase(key, what, t0) {
 
 // Bump when type inference or row hashing changes: every source is then re-read in full once.
 // mzo-sync/2: names, types and values by lib/uniform.js; empty numbers and bools listed in _nulls.
-// lib/uniform.js's own VERSION is part of the content salt too, so a change there re-reads every source.
+// lib/uniform.js (its VERSION and a hash of the file) is part of the content salt too.
 const LOGIC_VERSION = 'mzo-sync/2';
 const DEFAULT_TIMEOUT_MS = { frequent: 4 * 60000, hourly: 10 * 60000, daily: 30 * 60000 };
 const DEFAULT_MAX_SKIP_HOURS = 24;
@@ -156,7 +161,7 @@ async function syncSource(src, env) {
 
         const salt = LOGIC_VERSION + stableStringify({
             offices: officeEnrich.VERSION, // a new office list rewrites the office fields
-            uniform: UNIFORM_VERSION, // names, types and values come from lib/uniform.js
+            uniform: UNIFORM_CODE,
             pk: src.primaryKey || null,
             types: src.columnTypes || null,
             order: src.dateOrder || null,
