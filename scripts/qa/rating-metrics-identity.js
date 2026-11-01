@@ -3,7 +3,12 @@
  * scripts/rating/compute-metrics.js (raw snapshots), on the same snapshot folder.
  *
  *   node scripts/qa/rating-metrics-identity.js --snap <dir with manifest.json> [--schemas dir[,dir]]
- *        [--needs-only] [--as-of YYYY-MM-DD] [--out report.json] [--show 20]
+ *        [--needs-only | --exact [--vercel]] [--as-of YYYY-MM-DD] [--out report.json] [--show 20]
+ *
+ * --exact: the browser path as it is: schema files only, no added fields; a dataset without a
+ * schema file is built with no schema (keep all, inferred types), as MzoRows does on the VM.
+ * --vercel: as --exact, but a dataset without a schema file is unavailable (MzoRows has no
+ * source for it in original mode).
  *
  * 1. compute-metrics.js runs in its own process on the raw snapshot bytes (as it does on its own).
  * 2. Every dataset the module reads is turned into uniform rows the way the VM does it
@@ -12,6 +17,8 @@
  *    plus the fields lib/rating_metrics.js NEEDS (what docs/rating/schema-needs.md asks the owners
  *    to add); --needs-only uses only those fields. The rows go through stringify → JSON.parse, so
  *    the module sees exactly what /api/data/rows/<key> serves.
+ *    --needs-only (or --vm) builds them with MzoRatingMetrics.schemaFor(key) alone, as
+ *    vm/sync/rating.js does.
  * 3. Both documents are compared field by field (generatedAt and source.mode aside). Every
  *    difference must match an entry of KNOWN below, which says why it is right; anything else
  *    exits 1.
@@ -37,11 +44,30 @@ const KNOWN = [
             + 'Malda region and the zone keep the same totals.',
         match: (d) => d.metric === 'accidents_fatal_12m' && (d.office === '6610000' || d.office === '6612000') && ['value', 'numerator', 'inputs', 'ownLevel', 'quality'].includes(d.field),
         verify(A, B) {
+            if (!A.metrics.accidents_fatal_12m || !B.metrics.accidents_fatal_12m) return false;
             const a = (c) => A.offices[c].metrics.accidents_fatal_12m, b = (c) => B.offices[c].metrics.accidents_fatal_12m;
             const moved = own(a('6610000')) - own(b('6610000'));
             const movedAll = ((a('6610000').inputs || {}).allAccidents || 0) - ((b('6610000').inputs || {}).allAccidents || 0); // region totals equal
             return moved > 0 && movedAll === 0 && n0(a('6610000')) === n0(b('6610000')) && n0(b('6612000')) - n0(a('6612000')) === moved && n0(a('6600000')) === n0(b('6600000'));
         }
+    },
+    {
+        id: 'onm_advance_without_schema',
+        why: 'onm_advance has no schema file yet (batch D): lib/offices.js header rules see only Plant (old plant codes), not Resp. CCtr, so a few orders sit in another division; '
+            + 'the zone total is the same, and schema/onm_advance.json (offices: codes resp_cctr, divisions plant) restores the script\'s placement. Stale and not rated.',
+        when: (x) => x.info.onm_advance && x.info.onm_advance.schemaFile === false,
+        match: (d) => d.metric === 'onm_advance_aged_share' && /^66\d{2}000$/.test(d.office) && !/0000$/.test(d.office),
+        verify(A, B) {
+            const z = (D) => D.offices['6600000'].metrics.onm_advance_aged_share;
+            return !!(B.metrics.onm_advance_aged_share && Math.abs(z(A).denominator - z(B).denominator) < 0.01 && Math.abs(z(A).numerator - z(B).numerator) < 0.01);
+        }
+    },
+    {
+        id: 'vercel_no_schema',
+        why: 'on Vercel MzoRows has no source for a dataset without a schema file, so the metrics that read it are left out (errors: dataset missing); they come back when the owning batch merges its schema',
+        when: (x) => x.mode === 'vercel',
+        match: (d) => /^dataset missing/.test(String(d.b && d.b.error || d.b || '')) || (d.b === undefined || d.b === false || d.b === null) && (d.field === 'entry' || /^meta|^checks$/.test(d.field)) || d.field === 'metric order' || d.field === 'error',
+        verify: (A, B) => Object.values(B.errors).every((e) => /^dataset missing/.test(e))
     }
 ];
 
@@ -56,12 +82,14 @@ function args(argv) {
 }
 
 /** schema/<key>.json (first folder that has it) + the module's needed fields. */
-function schemaFor(key, dirs, needs, needsOnly) {
+function schemaFor(key, dirs, needs, needsOnly, exact) {
     let doc = null;
     for (const d of dirs) {
         const f = path.join(d, key + '.json');
         if (fs.existsSync(f)) { doc = JSON.parse(fs.readFileSync(f, 'utf8')); break; }
     }
+    if (exact) return { schema: doc, file: !!doc };
+    if (needsOnly) return { schema: require(path.join(APP, 'lib', 'rating_metrics.js')).schemaFor(key), file: !!doc }; // the VM precompute's rows
     const want = needs[key] || {};
     const out = doc ? JSON.parse(JSON.stringify(doc)) : { key, keep: 'pinned', fields: {} };
     if (needsOnly) out.fields = {};
@@ -75,7 +103,7 @@ function schemaFor(key, dirs, needs, needsOnly) {
     return { schema: out, file: !!doc };
 }
 
-function buildRows(snap, manifest, keys, dirs, needs, needsOnly) {
+function buildRows(snap, manifest, keys, dirs, needs, needsOnly, mode) {
     const U = require(path.join(APP, 'lib', 'uniform.js'));
     const offices = require(path.join(APP, 'lib', 'offices.js'));
     const cc = JSON.parse(fs.readFileSync(path.join(APP, 'data', 'costcenter.json'), 'utf8'));
@@ -86,13 +114,14 @@ function buildRows(snap, manifest, keys, dirs, needs, needsOnly) {
         if (!e) { info[key] = { missing: true }; continue; }
         const file = path.join(snap, e.file);
         if (!fs.existsSync(file)) { info[key] = { missing: true }; continue; }
-        const { schema, file: hasFile } = schemaFor(key, dirs, needs, needsOnly);
+        const { schema, file: hasFile } = schemaFor(key, dirs, needs, needsOnly, !!mode);
+        if (mode === 'vercel' && !hasFile) { info[key] = { schemaFile: false, unavailable: true }; continue; }
         const t0 = Date.now();
         const res = U.build(fs.readFileSync(file, 'utf8'), { key, version: e.version, format: path.extname(e.file).slice(1), schema });
         const json = U.stringify(res);
         docs[key] = JSON.parse(json);
         const issues = docs[key].issues.filter((i) => /^header\.|^type\.unparsed/.test(i.check)).map((i) => i.check + ':' + i.column + ':' + i.count);
-        info[key] = { rows: res.stats.rows, bytes: json.length, ms: Date.now() - t0, schemaFile: hasFile, fields: Object.keys(schema.fields).length, issues };
+        info[key] = { rows: res.stats.rows, bytes: json.length, ms: Date.now() - t0, schemaFile: hasFile, fields: schema ? Object.keys(schema.fields).length : 'all', issues };
     }
     return { docs, info };
 }
@@ -151,7 +180,8 @@ function main() {
 
     // 2. uniform rows, then the module
     t0 = Date.now();
-    const { docs, info } = buildRows(snap, manifest, M.DATASETS, dirs, M.NEEDS, !!a['needs-only']);
+    const mode = a.vercel ? 'vercel' : a.exact ? 'exact' : null;
+    const { docs, info } = buildRows(snap, manifest, M.DATASETS, dirs, M.NEEDS, !!(a['needs-only'] || a.vm), mode);
     const buildMs = Date.now() - t0;
     t0 = Date.now();
     const B = JSON.parse(JSON.stringify(M.computeSync(docs, { manifest, asOf, generatedAt, mode: 'snapshots' }))); // as served
@@ -161,7 +191,7 @@ function main() {
     // 3. compare
     const all = diff(A, B);
     const explained = [], open = [];
-    const holds = new Map(KNOWN.map((k) => [k.id, !k.verify || !!k.verify(A, B)]));
+    const holds = new Map(KNOWN.map((k) => [k.id, (!k.when || !!k.when({ info, mode })) && (!k.verify || !!k.verify(A, B))]));
     for (const d of all) {
         const k = KNOWN.find((x) => holds.get(x.id) && x.match(d));
         if (k) explained.push(Object.assign({ why: k.id }, d)); else open.push(d);
@@ -172,13 +202,14 @@ function main() {
     for (const o of Object.values(B.offices)) entries += Object.keys(o.metrics).length;
     const show = +a.show || 25;
     console.log('snapshots   ' + snap + ' (manifest ' + manifest.generatedAt + ', as of ' + asOf + ')');
-    console.log('schemas     ' + dirs.join(', ') + (a['needs-only'] ? ' (needed fields only)' : ' + needed fields'));
+    console.log('schemas     ' + dirs.join(', ') + (mode === 'vercel' ? ' as they are; no schema file = unavailable (Vercel)' : mode ? ' as they are; no schema file = keep all (VM browser path)' : a['needs-only'] || a.vm ? ' ignored: MzoRatingMetrics.schemaFor (the VM precompute)' : ' + needed fields'));
     console.log('datasets    ' + Object.keys(docs).length + ' built as uniform rows in ' + buildMs + ' ms; no schema file: ' + (Object.keys(info).filter((k) => info[k].schemaFile === false).join(', ') || 'none'));
     for (const k of Object.keys(info)) if (info[k].issues && info[k].issues.length) console.log('  ' + k + ': ' + info[k].issues.join(' '));
     console.log('script      ' + scriptMs + ' ms (own process, incl. reading the files)');
     console.log('module      ' + moduleMs + ' ms; ' + Object.keys(B.metrics).length + ' metrics, ' + Object.keys(B.offices).length + ' offices, ' + entries + ' office entries; errors: ' + (Object.keys(B.errors).map((k) => k + ' (' + B.errors[k] + ')').join('; ') || 'none'));
     console.log('differences ' + all.length + ' (' + explained.length + ' explained, ' + open.length + ' open)' + (all.length ? ' by metric: ' + JSON.stringify(byMetric) : ''));
     for (const k of KNOWN) { const n = explained.filter((d) => d.why === k.id).length; if (n) console.log('  explained ' + k.id + ': ' + n + ' — ' + k.why); }
+    if (Object.keys(B.errors).length) console.log('left out    ' + Object.keys(B.errors).length + ' metrics: ' + Object.keys(B.errors).map((k) => k + ' (' + B.errors[k].replace(/ \(add to schema.*$/, '') + ')').join('; '));
     for (const d of open.slice(0, show)) console.log('  OPEN ' + d.metric + ' @' + d.office + ' ' + d.field + ': script ' + JSON.stringify(d.a) + ' | module ' + JSON.stringify(d.b));
     if (open.length > show) console.log('  … ' + (open.length - show) + ' more');
     if (a.out) fs.writeFileSync(a.out, JSON.stringify({ snap, asOf, info, scriptMs, buildMs, moduleMs, explained, open }, null, 1) + '\n');

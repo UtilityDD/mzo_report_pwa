@@ -6,7 +6,8 @@
  * For each dataset in MzoRatingMetrics.NEEDS: the schema/<key>.json owner, the fields already
  * pinned, the fields to add (with the type to pin) and any type that differs from the one the
  * module reads (fine: the module reads typed values and raw text alike; listed for the record).
- * A schema with keep "all" carries every column. Exit 1 when a required field is missing.
+ * A schema with keep "all" carries every column. Exit 1 when a required field is missing or when
+ * the schema's office roles differ from the rating's own (MzoRatingMetrics.SCHEMA_OPTS).
  */
 'use strict';
 
@@ -46,7 +47,11 @@ function check(dir) {
             } else if (all && doc) have.push(name + ' (keep all)');
             else (spec.opt ? optional : add).push(name + ': ' + want);
         }
-        out.push({ key, owner: ownerOf(key), file: !!doc, have, add, optional, types });
+        // Office roles: the browser's rows (this schema) and the VM's (schemaFor) must place rows alike.
+        const mine = (M.SCHEMA_OPTS[key] || {}).offices, theirs = doc ? doc.offices : undefined;
+        const offices = doc && mine !== false && JSON.stringify(mine || null) !== JSON.stringify(theirs || null)
+            ? 'schema ' + JSON.stringify(theirs || 'header rules') + ' vs rating ' + JSON.stringify(mine || 'header rules') : '';
+        out.push({ key, owner: ownerOf(key), file: !!doc, have, add, optional, types, offices });
     }
     return out;
 }
@@ -61,10 +66,10 @@ function main() {
         console.log('|---|---|---|---|---|---|');
         for (const r of res) console.log('| `' + r.key + '` | ' + r.owner + (r.file ? '' : ' (no file yet)') + ' | ' + (r.have.join(', ') || '—') + ' | ' + (r.add.map((x) => '**' + x + '**').join(', ') || '—') + ' | ' + (r.optional.join(', ') || '—') + ' | ' + (r.types.join('; ') || '—') + ' |');
     } else {
-        for (const r of res) console.log((r.add.length ? 'MISSING ' : 'ok      ') + r.key + ' [' + r.owner + ']' + (r.file ? '' : ' no schema file') + (r.add.length ? ': add ' + r.add.join(', ') : '') + (r.optional.length ? '; optional ' + r.optional.join(', ') : '') + (r.types.length ? '; types: ' + r.types.join('; ') : ''));
+        for (const r of res) console.log((r.add.length ? 'MISSING ' : 'ok      ') + r.key + ' [' + r.owner + ']' + (r.file ? '' : ' no schema file') + (r.add.length ? ': add ' + r.add.join(', ') : '') + (r.optional.length ? '; optional ' + r.optional.join(', ') : '') + (r.types.length ? '; types: ' + r.types.join('; ') : '') + (r.offices ? '; OFFICE ROLES DIFFER: ' + r.offices : ''));
     }
-    const missing = res.filter((r) => r.add.length);
-    if (!a.includes('--markdown')) console.log(missing.length ? missing.length + ' datasets lack fields' : 'every needed field is pinned');
+    const missing = res.filter((r) => r.add.length || r.offices);
+    if (!a.includes('--markdown')) console.log(missing.length ? missing.length + ' datasets lack fields or differ in office roles' : 'every needed field is pinned');
     process.exitCode = missing.length ? 1 : 0;
 }
 
