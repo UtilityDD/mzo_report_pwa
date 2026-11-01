@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
 </head>
 <body>
   <main class="ui-page">
@@ -80,25 +81,19 @@
     function dim(m) { return new Date(+String(m).slice(0, 4), +String(m).slice(4, 6), 0).getDate() || 30; }
     function fmtH(n) { return isFinite(n) ? n.toFixed(1) + ' h' : '—'; }
     function fmtDaily(h) { if (!isFinite(h)) return '—'; var min = h * 60; return min >= 90 ? h.toFixed(1) + ' h' : Math.round(min) + ' min'; }
-    function pick(row, name) {
-      if (row[name] != null && String(row[name]).trim() !== '') return String(row[name]).trim();
-      var want = name.toLowerCase().replace(/[^a-z0-9]+/g, '');
-      for (var k in row) if (k.toLowerCase().replace(/[^a-z0-9]+/g, '') === want && String(row[k]).trim()) return String(row[k]).trim();
-      return '';
-    }
-
-    function normalize(raw) {
-      var month = pick(raw, 'REPORT MONTH').replace(/\D/g, '').slice(0, 6), feeder = pick(raw, 'FEEDER NAME');
+    // d: a uniform row of schema/feeder_outage.json (trimmed text, numbers, canonical _region /
+    // _division from CIRCLE NAME and DIVISION NAME; the sheet's own spelling when it is not an MZO office).
+    function normalize(d) {
+      var month = d.report_month.replace(/\D/g, '').slice(0, 6), feeder = d.feeder_name;
       if (month.length < 6 || !feeder) return null;
-      var circle = pick(raw, 'CIRCLE NAME'), divRaw = pick(raw, 'DIVISION NAME');
-      var region = (window.MzoScope && MzoScope.regionNameOf(circle)) || UI.title(circle);
-      var division = (window.MzoScope && MzoScope.divisionNameOf(divRaw)) || UI.title(divRaw);
-      var minutes = parseFloat(pick(raw, 'TOTAL DURATION OF OUTAGE OVER 5 MIN').replace(/,/g, '')) || 0;
-      var count = parseFloat(pick(raw, 'TOTAL COUNT OF OUTAGE OVER 5 MIN').replace(/,/g, '')) || 0;
-      var hours = minutes / 60, days = dim(month), ss = pick(raw, 'SUBSTATION NAME'), code = pick(raw, 'FEEDER CODE');
+      var region = d._region || UI.title(d.circle_name);
+      var division = d._division || UI.title(d.division_name);
+      var minutes = d.total_duration_of_outage_over_5_min || 0;
+      var count = d.total_count_of_outage_over_5_min || 0;
+      var hours = minutes / 60, days = dim(month), ss = d.substation_name, code = d.feeder_code;
       return {
-        month: month, feeder: feeder, substation: ss, code: code, category: pick(raw, 'FEEDER CATEGORY').toUpperCase(),
-        nature: pick(raw, 'NATURE OF FEEDER').toUpperCase(), scheme: pick(raw, 'FEEDER FLAG'),
+        month: month, feeder: feeder, substation: ss, code: code, category: d.feeder_category.toUpperCase(),
+        nature: d.nature_of_feeder.toUpperCase(), scheme: d.feeder_flag,
         region: region, division: division, REGION_NORM: region, DIVISION_NORM: division,
         count: count, hours: hours, days: days, daily: hours / days,
         search: (feeder + ' ' + ss + ' ' + code + ' ' + division).toLowerCase()
@@ -305,11 +300,11 @@
       render();
     }
 
-    function prepare(text) {
-      if (!/REPORT MONTH/i.test(String(text || '').slice(0, 2000))) { $('meta').textContent = 'Feeder outage sheet did not load'; return false; }
-      var rows = UI.csv(text).map(normalize).filter(Boolean);
-      if (window.MzoScope) { try { rows = MzoScope.filterRows(rows); } catch (e) {} }
-      all = rows;
+    // t.rows: already scoped to the login by MzoRows. A body without the REPORT MONTH header (a
+    // sign-in page, a renamed sheet) is not the outage sheet.
+    function prepare(t) {
+      if (!t.columns.some(function (c) { return c.name === 'report_month' && c.source_name; })) { $('meta').textContent = 'Feeder outage sheet did not load'; return false; }
+      all = t.rows.map(normalize).filter(Boolean);
       var ms = UI.uniq(all, 'month'), latest = ms[ms.length - 1];
       $('meta').textContent = 'Outages over 5 min · ' + (ms.length ? (ms.length === 1 ? mLabel(latest) : mLabel(ms[0]) + ' – ' + mLabel(latest)) : 'no rows in your scope');
       if (/^\d{6}$/.test(latest || '')) {
@@ -348,18 +343,16 @@
 
     // Google's published CSV has no ETag: always check so a same-day replace is picked up (docs/reports.md).
     function load(force) {
-      var hub = window.mzoDataHub, b = $('refreshBtn');
-      if (!hub) { $('meta').textContent = 'Data hub is not available'; return; }
+      var b = $('refreshBtn');
+      if (!window.MzoRows) { $('meta').textContent = 'Data hub is not available'; return; }
       b.classList.add('spin');
-      Promise.resolve(hub._peek('CACHE_FEEDER_OUTAGE')).catch(function () { return null; }).then(function (c) {
-        if (c && !force && prepare(c)) render();
-        return Promise.resolve(hub.waitForDataset('CACHE_FEEDER_OUTAGE', { forceCheck: true })).catch(function () {})
-          .then(function () { return hub._peek('CACHE_FEEDER_OUTAGE'); })
-          .then(function (f) {
-            if (f && (force || f !== c)) { if (prepare(f)) render(); }
-            else if (!f && !c) { $('meta').textContent = 'Could not load data'; $('feederTable').innerHTML = $('chart').innerHTML = '<div class="ui-empty">Could not load data.</div>'; }
-          });
-      }).then(function () { b.classList.remove('spin'); });
+      var done = force
+        ? MzoRows.get('feeder_outage', { forceCheck: true }).then(function (t) { if (prepare(t)) render(); }, function () {})
+        : MzoRows.load('feeder_outage', function (t, info) {
+          if (t) { if (prepare(t)) render(); }
+          else if (info && info.error) { $('meta').textContent = 'Could not load data'; $('feederTable').innerHTML = $('chart').innerHTML = '<div class="ui-empty">Could not load data.</div>'; }
+        }, { forceCheck: true });
+      Promise.resolve(done).catch(function () {}).then(function () { b.classList.remove('spin'); });
     }
     $('refreshBtn').addEventListener('click', function () { load(true); });
     load(false);

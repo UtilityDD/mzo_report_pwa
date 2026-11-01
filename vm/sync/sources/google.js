@@ -275,7 +275,11 @@ const SHEETS = [
     ].map(([key, label, id, gid, noExport]) => ({
         key, label, group: IMP, pages: ['important_sheets.html'],
         src: noExport ? gviz(id, { gid, headers: 0 }) : exportCsv(id, gid),
-        schedule: 'daily', header: false, urls: [], notes: REPORT_NOTE + (noExport ? GVIZ_NOTE : '')
+        // Export snapshots keep every cell in place, so important_sheets.html can read its cells from the
+        // mirror by position; gviz ones drop blank rows and odd-typed cells, so they are not offered.
+        schedule: 'daily', header: false,
+        urls: noExport ? [] : [`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`],
+        notes: REPORT_NOTE + (noExport ? GVIZ_NOTE : '')
     }))
 ];
 
