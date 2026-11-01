@@ -747,7 +747,13 @@ app.use(requireAuth);
 // VM mirror mode (MZO_DATA_MODE=mirror + MZO_SNAPSHOT_DIR): /api/data/* serve the sync's snapshots, report
 // reads below use them, and writes refresh them. Off on Vercel and by default (docs/architecture.md, "Mirror mode").
 const mirror = require('./lib/mirror').create({ appRoot: __dirname });
-const refreshMirror = mirror.refreshMirror;
+// Datasets whose writes also change the Briefing's inputs (report meta, NSC upload meta).
+const BRIEFING_MIRROR_KEYS = new Set(['nsc_pending', 'withheld', 'pending_mc', 'load_extension', 'disconnection', 'defective_summary', 'defective_details']);
+function refreshMirror(keys, reason) {
+    const started = mirror.refreshMirror(keys, reason);
+    if (mirror.on() && [].concat(keys || []).some((k) => BRIEFING_MIRROR_KEYS.has(k))) refreshBriefing_({ changed: true });
+    return started;
+}
 mirror.mount(app);
 
 // --- Estimate structures (admin.html) ---
@@ -4689,25 +4695,75 @@ function buildExecutiveBriefing_(meta) {
     };
 }
 
+/** The Briefing from its live inputs (the report meta.json files and the NSC upload meta). */
+async function computeExecutiveBriefing_() {
+    const [pendingMcMeta, loadExtMeta, disconMeta, defectiveMeta, nscMeta] = await Promise.all([
+        PENDING_MC_META.read().catch(() => null),
+        LOAD_EXT_META.read().catch(() => null),
+        DISCONNECTION_META.read().catch(() => null),
+        DEFECTIVE_META.read().catch(() => null),
+        // data/nsc_meta.json (with delayed30) when the briefing tool ran locally; else the Sheet's upload meta
+        Promise.resolve(readLocalNscMeta_() || fetchNscSheetMeta_()).catch(() => null)
+    ]);
+    return buildExecutiveBriefing_({
+        pendingMc: pendingMcMeta,
+        loadExt: loadExtMeta,
+        discon: disconMeta,
+        defective: defectiveMeta,
+        nsc: nscMeta
+    });
+}
+
+// Mirror mode (the VM): the Briefing is the home page and its inputs take 1-2 s to read live, so the last
+// one is kept and answered at once while under 10 min old, refreshed in the background once over 2 min
+// (one refresh at a time), and right after a write that changes its inputs.
+const BRIEFING_STALE_MS = 2 * 60 * 1000;
+const BRIEFING_MAX_AGE_MS = 10 * 60 * 1000;
+const briefingCache_ = { value: null, at: 0, pending: null, again: false };
+
+/** Start (or join) a refresh; `changed`: inputs changed during a running one, so run once more after it. */
+function refreshBriefing_({ changed = false } = {}) {
+    const c = briefingCache_;
+    if (c.pending) {
+        if (changed) c.again = true;
+        return c.pending;
+    }
+    c.pending = computeExecutiveBriefing_()
+        .then((briefing) => {
+            c.value = briefing;
+            c.at = Date.now();
+            return briefing;
+        })
+        .finally(() => {
+            c.pending = null;
+            if (c.again) {
+                c.again = false;
+                refreshBriefing_().catch((e) => console.warn('[Briefing] refresh failed:', e.message));
+            }
+        });
+    if (changed) c.pending.catch((e) => console.warn('[Briefing] refresh failed:', e.message));
+    return c.pending;
+}
+
+async function cachedExecutiveBriefing_() {
+    const c = briefingCache_;
+    const age = Date.now() - c.at;
+    if (c.value && age < BRIEFING_MAX_AGE_MS) {
+        if (age >= BRIEFING_STALE_MS) refreshBriefing_().catch((e) => console.warn('[Briefing] background refresh failed:', e.message));
+        return c.value;
+    }
+    try {
+        return await refreshBriefing_();
+    } catch (err) {
+        if (c.value) return c.value; // older than 10 min, but better than an error
+        throw err;
+    }
+}
+
 app.get('/api/executive/briefing', async (req, res) => {
     if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     try {
-        const [pendingMcMeta, loadExtMeta, disconMeta, defectiveMeta, nscMeta] = await Promise.all([
-            PENDING_MC_META.read().catch(() => null),
-            LOAD_EXT_META.read().catch(() => null),
-            DISCONNECTION_META.read().catch(() => null),
-            DEFECTIVE_META.read().catch(() => null),
-            // data/nsc_meta.json (with delayed30) when the briefing tool ran locally; else the Sheet's upload meta
-            Promise.resolve(readLocalNscMeta_() || fetchNscSheetMeta_()).catch(() => null)
-        ]);
-
-        const briefing = buildExecutiveBriefing_({
-            pendingMc: pendingMcMeta,
-            loadExt: loadExtMeta,
-            discon: disconMeta,
-            defective: defectiveMeta,
-            nsc: nscMeta
-        });
+        const briefing = mirror.on() ? await cachedExecutiveBriefing_() : await computeExecutiveBriefing_();
 
         res.setHeader('Cache-Control', 'private, max-age=30, must-revalidate');
         return res.json({ status: 'success', briefing });
