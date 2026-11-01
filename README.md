@@ -43,6 +43,7 @@ Optional `.env` (git-ignored, loaded by `npm run dev`): `ANTHROPIC_API_KEY` for 
 |---|---|
 | [AGENTS.md](AGENTS.md) | Rules for anyone (human or AI) changing this repo. Start here |
 | [docs/architecture.md](docs/architecture.md) | Pages, login and office scope, DataHub caching, service worker, server API |
+| [docs/uniform-data.md](docs/uniform-data.md) | Uniform rows (`MzoRows`, `lib/uniform.js`, `schema/`), converting a page; [page inventory](docs/uniform-data-inventory.md) |
 | [docs/design-system.md](docs/design-system.md) | The Graphite look, UI kit, workstation shell, building a report page |
 | [docs/reports.md](docs/reports.md) | Per-report rules (data sources, date cells, sync, follow-ups) |
 | [docs/database.md](docs/database.md) | Supabase schemas, SQL files, imports, login rules |

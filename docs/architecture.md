@@ -98,6 +98,8 @@ DataHub keys in use: `CACHE_NSC_v5`, `CACHE_WITHHELD_v4`, `CACHE_STOCK`, `CACHE_
 
 Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large dumps stay out of git (see `.gitignore` / `.vercelignore`).
 
+**Uniform rows.** Converted pages read `MzoRows.load('<dataset key>', render)` (`mzo_rows.js`) instead of a DataHub body: snake_case fields, numbers, ISO dates and the canonical office of every row, built by `lib/uniform.js` from the same DataHub body (or precomputed on the VM), described by `schema/<key>.json`. See [uniform-data.md](uniform-data.md); which pages read what: [uniform-data-inventory.md](uniform-data-inventory.md).
+
 ## Service worker
 
 `CACHE_NAME` in `sw.js` and `version` in `version.json` move together. **Increment both** whenever HTML/CSS/JS that users already cached must update. `version.json` `message` is the full-screen “App updated” notice: the highlighted note and a Reload button. It shows only in the top window, so a report inside the shell does not open a second notice. `mzo_app_update.js` fetches that file network-first and reloads desktop and the installed PWA. Do not add an install-app modal. The app-update banner is separate from dump `REPORT_AS_ON`. Do not intercept `*.supabase.co` in `sw.js` (same as Google Sheet CSVs). The network-first list (`isNetworkFirstPath`) covers the shell, the kit files and every rebuilt page. Precache is per file: one missing asset does not stop a new worker from installing. A network-first page is saved on a successful load (query string ignored). Offline navigation uses that saved page. `offline.html` is only for a page that was never saved. `/api/` stays a JSON 503 and is not cached.
