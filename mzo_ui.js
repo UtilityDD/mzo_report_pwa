@@ -272,7 +272,7 @@
     opts = opts || {};
     var max = Math.max.apply(null, rows.map(function (r) { return r.value; }).concat([0]));
     el.className = 'ui-hist';
-    el.style.setProperty('--bar', color(opts.tone) || 'var(--mzo-chart)');
+    if (opts.tone) el.style.setProperty('--bar', color(opts.tone)); else el.style.removeProperty('--bar');
     el.innerHTML = rows.map(function (r, i) {
       var on = opts.active != null && opts.active === r.key;
       return '<div class="row' + (opts.onClick ? ' click' : '') + (on ? ' on' : '') + '" data-i="' + i + '"><span title="' + esc(r.label) + '">' + esc(r.label) + '</span><i><b style="width:' + (max ? Math.max(r.value ? 1.5 : 0, (r.value / max) * 100) : 0) + '%' + (r.tone ? ';--bar:' + color(r.tone) : '') + '"></b></i><span>' + n(r.value) + '</span></div>';
