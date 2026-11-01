@@ -11,18 +11,17 @@ node scripts/rating/check-schema-needs.js --markdown # the table below
 
 A dataset whose rows lack a required field does not read zeros: the metrics that read it go to `errors` ("field missing: nsc_pending.delayinqtn (add to schema/<key>.json)") and the engine marks them n/a; the other metrics of that dataset still run. The loss targets are the one soft case: without the target sheet's MU columns AT&C and distribution loss are computed without targets and `warnings` says so. A pinned field whose header vanished from the sheet (`header.missing`) counts as missing too.
 
-## Status (1 Nov 2026, 14:45)
+## Status (1 Nov 2026, develop b017569)
 
-- **Merged batches (A, B) on develop:** done in commit "Schemas: fields the performance rating reads (additive)": `loss_targets` gained `cum_input_mu`, `cum_demand_mu`, `cum_collec_mu` (the target loss is recomputed from the target sheet's own MU, which also corrects Harirampur's typed 39.14 %, see data-map.md) and `weekly_report` gained `to_be_disposed_dom/com/ind`. `nsc_pending` already has `delayinqtn` and `delayinwo` from batch A. Nothing removed or renamed.
-- **Batches C, D, E (not merged yet):** their branches' schema files already pin every field below (checked against their worktrees at 14:45). After each merge, run `node scripts/rating/check-schema-needs.js`; it should print "every needed field is pinned". If a field went missing, add it from the table below.
-- **Created here** (no batch owns them): `schema/important_unbilled_3_months.json`, `schema/important_first_bill_pending.json`, `schema/important_rem_less_unit_billed.json` (report sheets read by position: `header: false`, `offices: { codes: ["col_d"] }`) and `schema/si_works.json` (Supabase prioritySI, VM mirror only; on Vercel `si_works_completed_share` is left out because the browser has no source for it).
-- `costcenter` needs no field: the old SAP cost centres are already applied to the canonical office fields when the rows are built (lib/uniform.js loads `data/costcenter.json`).
+Every batch has merged its schemas and `node scripts/rating/check-schema-needs.js` prints "every needed field is pinned" (office roles agree too). What the rating added to other owners' files, additively: `loss_targets` gained `cum_input_mu`, `cum_demand_mu`, `cum_collec_mu` (the target loss is recomputed from the target sheet's own MU, which also corrects Harirampur's typed 39.14 %, see data-map.md) and `weekly_report` gained `to_be_disposed_dom/com/ind`; `nsc_pending`'s `delayinqtn` and `delayinwo` came with batch A. Created here because no batch owns them: `schema/important_unbilled_3_months.json`, `schema/important_first_bill_pending.json`, `schema/important_rem_less_unit_billed.json` (report sheets read by position: `header: false`, `offices: { codes: ["col_d"] }`) and `schema/si_works.json` (Supabase prioritySI, VM mirror only; on Vercel `si_works_completed_share` is left out because the browser has no source for it). `costcenter` needs no field: the old SAP cost centres are applied to the canonical office fields when the rows are built (lib/uniform.js loads `data/costcenter.json`).
+
+When a schema changes, run the check: a field it no longer pins stops only the metrics that read it (in the browser) and is listed with the type to pin.
 
 The VM precompute (`vm/sync/rating.js`) does not use these files: it builds its own lean rows from the snapshots with `MzoRatingMetrics.schemaFor(key)` (the fields below, the owners' office roles). These page schemas matter for the browser path only.
 
 ## Every dataset
 
-The table is the check against develop plus the waves' branches (14:45). "Optional" fields are only used to recognise rows booked at the zone office itself when a row has no canonical office; leave them out of lean schemas. "Only for" fields are needed by those metrics alone (without them the rest of the dataset's metrics still run). "Pinned as another type" is fine: the module reads typed values and raw text alike (a typed `paid_discon_date` gives the same action dates, as every action date in the sheet is dd.mm.yyyy).
+The table is the check of develop b017569. "Optional" fields are only used to recognise rows booked at the zone office itself when a row has no canonical office; leave them out of lean schemas. "Only for" fields are needed by those metrics alone (without them the rest of the dataset's metrics still run). "Pinned as another type" is fine: the module reads typed values and raw text alike (a typed `paid_discon_date` gives the same action dates, as every action date in the sheet is dd.mm.yyyy).
 
 | Dataset | Owner | Already pinned | Add (type) | Optional | Pinned as another type |
 |---|---|---|---|---|---|
