@@ -70,7 +70,7 @@ function rowKeyFn(columns, primaryKey, warnings) {
 /**
  * @returns {Promise<{total, inserted, updated, deleted, unchanged, failed, failures: string[], batches, writeMs}>}
  */
-async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batchSize, syncedAt, signal, warnings, log }) {
+async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batchSize, syncedAt, signal, warnings, log, enrich }) {
     const stats = { total: 0, inserted: 0, updated: 0, deleted: 0, unchanged: 0, failed: 0, failures: [], batches: 0, writeMs: 0, loadMs: 0, duplicateKeys: 0 };
     const base = `/api/collections/${collection}/records`;
     const t0 = Date.now();
@@ -121,6 +121,13 @@ async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batch
             if (c.raw_name) {
                 record[c.raw_name] = rawText;
                 typed.push(rawText);
+            }
+        }
+        if (enrich) { // extra fields computed from the row (office_enrich.js); part of the row hash
+            const extra = enrich(values);
+            for (const k of Object.keys(extra)) {
+                record[k] = extra[k];
+                typed.push(extra[k]);
             }
         }
         const hash = sha1(stableStringify(typed));
