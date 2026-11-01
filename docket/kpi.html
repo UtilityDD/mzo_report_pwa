@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=3" defer></script>
   <style>.ui-grid > .ui-panel { margin-top: 0; }</style>
 </head>
 <body>
@@ -71,7 +72,6 @@
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var URL_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vThi-zr48XGYbnQO7YR8xmhVQZV2Wb3t05wTN2kqM254DXNOr5wfeBWNIhywNk2egvpYeSte2EWLLvD/pub?gid=0&single=true&output=csv';
     var BULK = { '6610000': 1, '6620000': 1, '6630000': 1 };
     var all = [], bulk = '', level = 'region', scope = null;
 
@@ -85,16 +85,17 @@
     }
     function agg(rows) { var n = 0, s = 0; rows.forEach(function (r) { n += r.n; s += r.sum; }); return { n: n, avg: n ? s / n : null }; }
 
-    function prepare(text) {
-      all = UI.csv(text).filter(function (d) { return d.ccc_code; }).map(function (d) {
-        var code = String(d.ccc_code).trim(), o = UI.office(code), isBulk = !!BULK[code];
+    // t.rows: uniform rows of schema/docket_kpi.json (counts and day sums as numbers, canonical
+    // _region/_division/_ccc), already scoped to the login by MzoRows.
+    function prepare(t) {
+      all = t.rows.filter(function (d) { return d.ccc_code; }).map(function (d) {
+        var code = d.ccc_code, isBulk = !!BULK[code];
         return {
-          tech: d.DESCRIPTION === 'B', prob: String(d.prob_type || '').trim(), code: code, bulk: isBulk,
-          n: Number(d['Count of doc_no']) || 0, sum: Number(d['Sum of Diff']) || 0,
-          _region: o.region, _divn: isBulk ? 'Bulk' : o.division, _supp: isBulk ? 'Bulk · ' + o.region : o.ccc, CCC_CODE: code
+          tech: d.description === 'B', prob: d.prob_type, code: code, bulk: isBulk,
+          n: d.count_of_doc_no || 0, sum: d.sum_of_diff || 0,
+          _region: d._region, _divn: isBulk ? 'Bulk' : d._division, _supp: isBulk ? 'Bulk · ' + d._region : d._ccc, CCC_CODE: code
         };
       });
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       var probs = {}; all.forEach(function (r) { if (r.prob) probs[r.prob] = 1; });
       UI.fill('probFilter', Object.keys(probs).sort(), 'All problems');
       fillOffices();
@@ -189,24 +190,20 @@
       UI.exportCsv('docket-closure-by-problem.csv', [{ key: 'prob', label: 'Problem' }, { key: 'tech', label: 'Type', csv: function (x) { return x.tech ? 'Technical' : 'Non-technical'; } }, { key: 'n', label: 'Dockets' }, { key: 'avg', label: 'Average closure (days)', csv: function (x) { return x.avg == null ? '' : x.avg.toFixed(3); } }], window.__probs || []);
     });
 
-    function load(force) {
-      var b = $('refreshBtn'); if (force) b.classList.add('spin');
-      return (window.mzoMirror ? mzoMirror.fetch : fetch)(URL_CSV, { cache: force ? 'no-store' : 'default' }).then(function (r) { if (!r.ok) throw new Error('Sheet HTTP ' + r.status); return r.text(); })
-        .then(function (t) {
-          prepare(t);
-          if (!load.done) {
-            load.done = true;
-            if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';
-            [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (x) { x.setAttribute('aria-selected', String(x.getAttribute('data-l') === level)); });
-            markAll();
-          }
-          render();
-        })
-        .catch(function (e) { if (!all.length) { $('officeTable').innerHTML = '<div class="ui-empty">' + UI.esc(e.message) + '</div>'; } else UI.toast(e.message); })
-        .then(function () { b.classList.remove('spin'); });
-    }
-    $('refreshBtn').addEventListener('click', function () { load(true); });
-    load(false);
+    MzoRows.refresh('refreshBtn', 'docket_kpi', function (t) { prepare(t); render(); });
+
+    var first = true;
+    MzoRows.load('docket_kpi', function (t, info) {
+      if (!t) { if (info && info.error && !all.length) $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; return; }
+      prepare(t);
+      if (first) {
+        first = false;
+        if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';
+        [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (x) { x.setAttribute('aria-selected', String(x.getAttribute('data-l') === level)); });
+        markAll();
+      }
+      render();
+    });
   });
   </script>
 </body>
