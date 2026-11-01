@@ -1,5 +1,4 @@
-const DATA_URL = '/api/stock/dataset';
-const METADATA_URL = 'https://docs.google.com/spreadsheets/d/1wDvPuAxNfdO9QzUaIUubg2JnkFM5ZleFNXQdi8s5uh0/export?format=csv&gid=696716331';
+// Data: schema/stock_snapshot.json (CACHE_STOCK) and schema/stock_materials.json (CACHE_STOCK_METADATA).
 
 const searchInput = document.getElementById('search-input');
 const chartHeader = document.getElementById('chart-header');
@@ -17,6 +16,7 @@ let currentSortColumn = null;
 let currentSortDirection = 'asc';
 let currentStoreTab = 'total'; // 'total', 'old', 'new'
 let currentFilteredData = []; 
+let controlsWired = false;
 
 const PLANT_MAP = {
     '3342': 'Malda (D) Division',
@@ -50,7 +50,9 @@ function formatStockDisplay(materialCode, stockMt, opts) {
 }
 
 function formatDate(dateString) {
-    const date = new Date(dateString);
+    // The rows' dates are ISO (YYYY-MM-DD): read them as local calendar days.
+    const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateString || ''));
+    const date = iso ? new Date(+iso[1], +iso[2] - 1, +iso[3]) : new Date(dateString);
     const day = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
@@ -591,125 +593,64 @@ function animatePlaceholder() {
     type();
 }
 
-function parseMetadata(csvData) {
-    if (!csvData) return;
-    const results = Papa.parse(csvData, {
-        header: true,
-        skipEmptyLines: true
-    });
-    results.data.forEach(row => {
-        const matCode = String(row['Mat Code'] || '').trim();
-        if (matCode) {
-            materialMetadata[matCode] = {
-                category: String(row['Category'] || '').trim().toUpperCase(),
-                desc: row['Mat Desc'],
-                uom: row['UOM'],
-                price: parseFloat(String(row['Material Price'] || '').replace(/,/g, '')) || 0
-            };
-        }
+// Materials sheet: uniform rows of schema/stock_materials.json. Only the category is used (after the fixed
+// list in stock_material_category.js and the stock row's own Category).
+function parseMetadata(t) {
+    if (!t) return;
+    t.rows.forEach(row => {
+        const matCode = row.mat_code;
+        if (matCode) materialMetadata[matCode] = { category: row.category.toUpperCase() };
     });
 }
 
-// Materials sheet straight from the network: the VM mirror copy when there is one, else Google.
-function fetchMetadataFromNetwork() {
-    const sheet = typeof mzoMirror !== 'undefined' ? mzoMirror.fetch(METADATA_URL) : fetch(METADATA_URL);
-    return sheet.then(res => {
-        if (!res.ok) throw new Error('Sheet HTTP ' + res.status);
-        return res.text();
-    }).then(text => new Promise((resolve, reject) => {
-        Papa.parse(text, {
-            header: true,
-            complete: function (results) {
-                results.data.forEach(row => {
-                    const matCode = String(row['Mat Code'] || '').trim();
-                    if (matCode) {
-                        materialMetadata[matCode] = {
-                            category: String(row['Category'] || '').trim().toUpperCase(),
-                            desc: row['Mat Desc'],
-                            uom: row['UOM'],
-                            price: parseFloat(String(row['Material Price'] || '').replace(/,/g, '')) || 0
-                        };
-                    }
-                });
-                resolve();
-            },
-            error: function (error) {
-                console.error('Error loading metadata from network:', error);
-                reject(error);
-            }
-        });
-    }));
-}
-
-// Initialize
-async function initDashboard() {
+// Stock rows: uniform rows of schema/stock_snapshot.json (CACHE_STOCK), painted from the cache at once and
+// again when newer rows arrive. The materials sheet only fills in categories, so the stock waits for its
+// first answer (cached or fresh, or none). Stock has no login scope: every login sees every store.
+function initDashboard() {
+    // After an upload on this device (stock/upload.html), read the stock afresh once.
+    let reload = Promise.resolve();
     try {
-        // After upload on this device, force a fresh stock dataset once
-        try {
-            if (localStorage.getItem('mzo_stock_pending_refresh') === '1') {
-                localStorage.removeItem('mzo_stock_pending_refresh');
-                if (typeof mzoDataHub !== 'undefined' && typeof mzoDataHub.refresh === 'function') {
-                    await mzoDataHub.refresh('CACHE_STOCK');
-                }
-            }
-        } catch (_) {}
+        if (localStorage.getItem('mzo_stock_pending_refresh') === '1') {
+            localStorage.removeItem('mzo_stock_pending_refresh');
+            reload = MzoRows.reload('stock_snapshot', { scope: false }).catch(function () {});
+        }
+    } catch (_) {}
 
-        let cachedData, cachedMetadata;
-        if (typeof mzoDataHub !== 'undefined') {
-            if (typeof mzoDataHub._peek === 'function') {
-                cachedData = await mzoDataHub._peek('CACHE_STOCK');
-                cachedMetadata = await mzoDataHub._peek('CACHE_STOCK_METADATA');
-            }
-            if (typeof mzoDataHub.waitForDataset === 'function') {
-                if (!cachedData) {
-                    try {
-                        await mzoDataHub.waitForDataset('CACHE_STOCK');
-                        cachedData = await mzoDataHub._peek('CACHE_STOCK');
-                    } catch (_) {}
-                } else {
-                    mzoDataHub.waitForDataset('CACHE_STOCK').then(async function (result) {
-                        if (result === 'updated') {
-                            const fresh = await mzoDataHub._peek('CACHE_STOCK');
-                            if (fresh) {
-                                const results = Papa.parse(fresh, { header: true, skipEmptyLines: true });
-                                handleResults(results.data);
-                            }
-                        }
-                    }).catch(function () {});
-                }
-                if (!cachedMetadata) {
-                    try {
-                        await mzoDataHub.waitForDataset('CACHE_STOCK_METADATA');
-                        cachedMetadata = await mzoDataHub._peek('CACHE_STOCK_METADATA');
-                    } catch (_) {}
-                } else {
-                    mzoDataHub.waitForDataset('CACHE_STOCK_METADATA').catch(function () {});
-                }
-            }
-        }
+    let metaDone;
+    const metaReady = new Promise(resolve => { metaDone = resolve; });
+    MzoRows.load('stock_materials', function (t, info) {
+        if (t) parseMetadata(t);
+        else if (info && info.error) console.error('Stock materials sheet could not be loaded.');
+        metaDone();
+    }, { scope: false });
 
-        if (cachedMetadata) {
-            parseMetadata(cachedMetadata);
-        } else {
-            await fetchMetadataFromNetwork().catch(console.error);
-        }
+    reload.then(function () {
+        MzoRows.load('stock_snapshot', function (t, info) {
+            if (!t) {
+                if (info && info.error) {
+                    console.error('Error loading stock data.');
+                    const cell = document.querySelector('.loader-cell');
+                    if (cell) cell.innerHTML = '<div class="no-data-message">Failed to load data from network.</div>';
+                }
+                return;
+            }
+            metaReady.then(function () { handleResults(toItems(t)); });
+        }, { scope: false });
+    });
+}
 
-        if (cachedData) {
-            const results = Papa.parse(cachedData, {
-                header: true,
-                skipEmptyLines: true
-            });
-            handleResults(results.data);
-        } else {
-            fetchFromNetwork();
-        }
-    } catch (e) {
-        console.error("DataHub fetch failed, falling back to network.", e);
-        if (Object.keys(materialMetadata).length === 0) {
-            await fetchMetadataFromNetwork().catch(console.error);
-        }
-        fetchFromNetwork();
-    }
+// Uniform rows → the page's items, keyed by the dump's headers (script.js, allotment.js and allotment_view.js
+// read them through window.allData): text as is, Unrestricted as a number, Date as YYYY-MM-DD.
+function toItems(t) {
+    const cols = t.columns.filter(c => c.source_name && !c.raw_of && c.name.charAt(0) !== '_');
+    return t.rows.map(d => {
+        const item = {};
+        cols.forEach(c => {
+            const v = d[c.name];
+            item[c.source_name] = v == null || v === '' ? (d[c.name + '_raw'] || '') : v;
+        });
+        return item;
+    });
 }
 
 function handleResults(data) {
@@ -773,6 +714,10 @@ function handleResults(data) {
     if (window.MzoAllotmentView && typeof window.MzoAllotmentView.init === 'function') {
         window.MzoAllotmentView.init();
     }
+
+    // The controls are wired once: newer rows re-render the page, they must not add a second set of listeners.
+    if (controlsWired) return;
+    controlsWired = true;
 
     storeFilter.addEventListener('change', function () {
         updateGroupFilter();
@@ -842,22 +787,9 @@ function handleResults(data) {
     downloadBtn.addEventListener('click', downloadTableAsCSV);
 }
 
-function fetchFromNetwork() {
-    Papa.parse(DATA_URL, {
-        download: true,
-        header: true,
-        complete: function (results) {
-            handleResults(results.data);
-        },
-        error: function (error) {
-            console.error('Error loading data from network:', error);
-            // Hide loader and show error if needed
-            document.querySelector('.loader-cell').innerHTML = '<div class="no-data-message">Failed to load data from network.</div>';
-        }
-    });
-}
-
-initDashboard();
+// Wait for mzo_rows.js (deferred) before loading.
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initDashboard);
+else initDashboard();
 
 function downloadTableAsCSV() {
     const table = document.getElementById('data-table');
