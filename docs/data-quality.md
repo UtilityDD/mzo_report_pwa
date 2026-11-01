@@ -7,7 +7,9 @@ The checks live in `vm/quality/` and run on the VM after every successful sync o
 - `sys_quality_issues`: one row per dataset, check and column, with severity, count, up to 10 masked examples, a plain-language hint, `source_fix` (the fix belongs in the source sheet), `first_seen`, `last_seen` and `status` (`open` or `resolved`).
 - `sys_quality_scores`: one row per dataset with its score (0–100), its open issue count and when it was checked.
 
-The findings below come from a full read of every source on **2026-11-01 around 12:00 IST**: 109 datasets, about 1.2 million rows. A second full read at 12:41–12:55 IST gave the same results. Both reads used GET requests only, through the same published-CSV, gviz and PostgREST URLs that the mirror uses. Examples are masked: names show their first letter, phone, e-mail, PIN, bank, Aadhaar and PAN values are hidden, and consumer, application and meter numbers keep only their first two and last two characters. Row numbers are sheet rows (row 1 is the header), so they lead straight to the cell.
+The findings below use dq-offices' canonical office list (`lib/offices.js`) for the `office.unknown_*`, `code_name_mismatch`, `parent_mismatch`, `legacy_division` and `outside_zone` checks, as the integrated sync will. Without that list, `vm/quality` falls back to its own checks against `mzo_scope.js`; these report about 20 more office warnings, mostly spellings that `mzo_scope.js` does not know (a local test sync on that path stored 256 open issues and an average score of 94).
+
+They come from a full read of every source on **2026-11-01 around 12:00 IST**: 109 datasets, about 1.2 million rows. A second full read at 12:41–12:55 IST gave the same results. Both reads used GET requests only, through the same published-CSV, gviz and PostgREST URLs that the mirror uses. Examples are masked: names show their first letter, phone, e-mail, PIN, bank, Aadhaar and PAN values are hidden, and consumer, application and meter numbers keep only their first two and last two characters. Row numbers are sheet rows (row 1 is the header), so they lead straight to the cell.
 
 ## Summary
 
