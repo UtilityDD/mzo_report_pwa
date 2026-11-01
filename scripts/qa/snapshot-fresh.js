@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /* Is each mirror snapshot still identical to its live source?
  *
- *   node scripts/qa/snapshot-fresh.js <snapshotDir> [--only a,b] [--out <file.json>]
+ *   node scripts/qa/snapshot-fresh.js <snapshotDir | manifest URL> [--only a,b] [--out <file.json>]
+ *   (a URL, e.g. https://<vm>/api/data/manifest, is read with QA_COOKIE or QA_COOKIE_FILE)
  *
  * For every manifest entry, GETs its first source URL (published CSV/TSV, export, gviz, public
  * Storage; never Apps Script) and compares the SHA-1 of the bytes with the snapshot file. A parity
@@ -18,7 +19,19 @@ async function main() {
   const outIdx = process.argv.indexOf('--out');
   const out = outIdx > 0 ? process.argv[outIdx + 1] : null;
   if (!dir) { console.error('usage: node scripts/qa/snapshot-fresh.js <snapshotDir> [--out file.json]'); process.exit(2); }
-  const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+  // A URL reads a served manifest (e.g. https://<vm>/api/data/manifest) with the QA session cookie;
+  // its version is the SHA-1 of the snapshot bytes.
+  const remote = /^https?:\/\//.test(dir);
+  let manifest;
+  if (remote) {
+    let cookie = process.env.QA_COOKIE || '';
+    if (!cookie && process.env.QA_COOKIE_FILE) cookie = fs.readFileSync(process.env.QA_COOKIE_FILE, 'utf8');
+    cookie = cookie.trim().replace(/^cookie:\s*/i, '').split(';')[0];
+    if (cookie && !/^mzo_session=/.test(cookie)) cookie = 'mzo_session=' + cookie;
+    const r = await fetch(dir, { headers: cookie ? { cookie } : {} });
+    if (!r.ok) { console.error('manifest HTTP ' + r.status); process.exit(1); }
+    manifest = await r.json();
+  } else manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
   const res = { checkedAt: new Date().toISOString(), manifestGeneratedAt: manifest.generatedAt, datasets: {} };
   const onlyIdx = process.argv.indexOf('--only');
   const only = onlyIdx > 0 ? new Set(process.argv[onlyIdx + 1].split(',')) : null;
@@ -27,10 +40,15 @@ async function main() {
   async function one([key, e]) {
     const r = { file: e.file, fetchedAt: e.fetchedAt || e.snapshotAt || '', dataHubKeys: e.dataHubKeys || [] };
     res.datasets[key] = r;
-    let snap;
-    try { snap = fs.readFileSync(path.join(dir, e.file)); } catch (err) { r.status = 'no-file'; return; }
-    r.snapshotSha1 = crypto.createHash('sha1').update(snap).digest('hex');
-    r.snapshotBytes = snap.length;
+    if (remote) {
+      r.snapshotSha1 = String(e.version || '').replace(/^v:/, '');
+      r.snapshotBytes = e.bytes;
+    } else {
+      let snap;
+      try { snap = fs.readFileSync(path.join(dir, e.file)); } catch (err) { r.status = 'no-file'; return; }
+      r.snapshotSha1 = crypto.createHash('sha1').update(snap).digest('hex');
+      r.snapshotBytes = snap.length;
+    }
     const url = (e.urls || []).find((u) => /^https?:\/\//.test(u) && !/script\.google(usercontent)?\.com/.test(u));
     if (!url) { r.status = 'no-public-url'; return; }
     r.url = url.replace(/([?&](apikey|key|token)=)[^&]*/gi, '$1<redacted>');
