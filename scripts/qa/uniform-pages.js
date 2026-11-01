@@ -59,6 +59,41 @@ const PAGES = {
     url: 'consumer/consumer.html', key: 'consumers', stats: '.ui-stats .ui-stat', tabs: '#none', asOn: '#meta', ready: '#pivot tbody tr td:not([colspan])',
     drill: '#pivot tbody tr.click', hists: true, deep: [],
     selects: { rowDim: ['_region', '_divn', '_supp', 'CONN_STAT', 'BASE_CLASS', 'CONN_PHASE', 'CATEGORY', 'GOVT_STAT', 'TYPE_OF_METER', 'CONN_BY', 'TIME_OF_DAY'], colDim: ['CONN_STAT', 'BASE_CLASS', 'CONN_PHASE', 'TYPE_OF_METER'], f_CONN_STAT: ['LIVE'], f_BASE_CLASS: ['D', 'A'], f_GOVT_STAT: ['YES'] }
+  },
+  docket: {
+    url: 'docket.html', key: 'docket_calls', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', ready: '#officeTable tbody tr td:not([colspan])',
+    drill: '#officeTable tbody tr.click', list: '#listTable tbody tr.click', hists: true, clock: '2026-11-01T12:00:00+05:30', deep: [],
+    selects: { ageFilter: ['24', '48', '168', '720'], probFilter: ['No power', 'Meter Burnt Problem', 'Problem in New Connection'] }
+  },
+  docket_kpi: {
+    url: 'docket/kpi.html', key: 'docket_kpi', stats: '.ui-stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', ready: '#officeTable tbody tr td:not([colspan])',
+    drill: '#officeTable tbody tr.click', list: '#probTable tbody tr.click', clicks: ['#bulk button'], deep: [],
+    selects: { probFilter: ['No power', 'Meter Burnt Problem', 'Abnormally high bill'] }
+  },
+  historical_nsc: {
+    url: 'historical_nsc.html', key: 'historical_nsc', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', ready: '#officeTable tbody tr td:not([colspan])',
+    drill: '#officeTable tbody tr.click', clicks: ['#period button'], deep: [],
+    selects: { yearFilter: ['2026', '2025', '2023', '2020'] }
+  },
+  upcoming_dd: {
+    url: 'dd/upcomingDD.html', key: 'upcoming_dd', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', ready: '#officeTable tbody tr td:not([colspan])',
+    drill: '#officeTable tbody tr.click', list: '#listTable tbody tr.click', hists: true, clock: '2026-11-01T12:00:00+05:30', deep: [],
+    selects: { phaseFilter: ['1', '3'], govtFilter: ['Y', 'N'], osdFilter: ['25000', '50000'], classFilter: ['D', 'C', 'A'] }
+  },
+  dd_visit: {
+    url: 'dd/dd_visit.html', key: 'dd_visit', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab, #listTabs .ui-tab', asOn: '#meta', ready: '#officeTable tbody tr td:not([colspan])',
+    drill: '#officeTable tbody tr.click', list: '#listTable tbody tr.click', hists: true, deep: [],
+    selects: { catFilter: ['R', 'U'], osdFilter: ['25000', '50000'], classFilter: ['D', 'C', 'A'] }
+  },
+  smart_meter: {
+    url: 'smart_meter/dashboard.html', key: 'smart_meter_status', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', ready: '#officeTable tbody tr td:not([colspan])',
+    drill: '#officeTable tbody tr.click', list: '#listTable tbody tr.click', hists: true, settle: 3000, deep: [],
+    selects: { typeFilter: ['10-60A', '5-30A'], lotFilter: ['1st lot', '4th lot'] }
+  },
+  meter_utilization: {
+    url: 'meter_utilization.html', key: 'meter_erp', stats: '#none', tabs: '#levelTabs .ui-tab', asOn: '#meta', ready: '#officeTable tbody tr td:not([colspan])',
+    drill: '#officeTable tbody tr.click', list: '#appTable tbody tr.click', hists: true, clicks: ['#phase button'], clock: '2026-11-01T12:00:00+05:30', settle: 1500, deep: [],
+    selects: { typeFilter: ['smart', 'normal'] }
   }
 };
 
@@ -118,6 +153,8 @@ async function newContext(browser, base, profile, route, opts) {
     return r.continue();
   });
   if (opts.cpu) ctx.__cpu = opts.cpu;
+  // pages that compute ages at load time (docket "open for", DD days to due): one fixed wall clock
+  if (opts.clock) await ctx.clock.setFixedTime(new Date(opts.clock));
   ctx.__stats = stats;
   return ctx;
 }
@@ -157,7 +194,9 @@ function snapshot(cfg) {
       out.tables[id] = { head: [].map.call(tb.querySelectorAll('thead th'), txt), rows: rows.length, first: rows.slice(0, 8).map((r) => [].map.call(r.cells, txt).join(' | ')), foot: tb.tFoot ? txt(tb.tFoot) : '', more: txt(pf) };
     });
     out.hists = [].map.call(document.querySelectorAll('main .ui-hist'), (h) => (h.id || '') + ':' + [].map.call(h.querySelectorAll('.row'), (r) => [].map.call(r.querySelectorAll('span'), txt).join('=') + (r.classList.contains('on') ? '*' : '')).join('|'));
-    out.values = [].map.call(document.querySelectorAll('main [id]'), (e) => e).filter((e) => !e.children.length && /^(s[A-Z]|c[A-Z]|listCount|appCount|meta)/.test(e.id)).map((e) => e.id + '=' + txt(e));
+    out.values = [].map.call(document.querySelectorAll('main [id]'), (e) => e).filter((e) => !e.children.length && /^(s[A-Z]|c[A-Z]|listCount|appCount|meta|axis|trend|period)/.test(e.id)).map((e) => e.id + '=' + txt(e));
+    // charts drawn by the page (historical NSC): the series behind the bars and the bar heights
+    out.charts = [].map.call(document.querySelectorAll('main .hs-chart'), (c) => (c.id || '') + ':' + (c.__series ? c.__series.map((x) => x.label + '=' + x.v).join('|') : '') + ' h:' + [].map.call(c.querySelectorAll('.col b'), (b) => b.style.height).join(','));
     const dr = document.querySelector('#ui-drawer:not([hidden])');
     out.drawer = dr ? txt(dr).slice(0, 1500) : '';
     out.clear = !!(document.getElementById('clearBtn') && !document.getElementById('clearBtn').hidden);
@@ -215,6 +254,12 @@ async function walk(page, cfg, base) {
     }
     await sel.selectOption(first);
   }
+  // buttons stepped through in order (segmented controls), then the first one again
+  for (const sel of cfg.clicks || []) {
+    const n = await page.locator(sel).count();
+    for (let i = 0; i < n; i++) { await page.locator(sel).nth(i).click(); await shot('click:' + sel + '#' + i); }
+    if (n) await page.locator(sel).first().click();
+  }
   // the first rows of the detail list open a drawer
   if (cfg.list) {
     for (let i = 0; i < 3; i++) {
@@ -269,7 +314,7 @@ async function parity(pw) {
     for (const prof of profiles) {
       const runs = {};
       for (const base of [oldBase].concat(newBases)) {
-        const ctx = await newContext(browser, base, PROFILES[prof], route, Object.assign({ ready: PAGES[p].ready }, look));
+        const ctx = await newContext(browser, base, PROFILES[prof], route, Object.assign({ ready: PAGES[p].ready, clock: PAGES[p].clock || arg('clock', '') }, look));
         const page = await ctx.newPage();
         const errors = [];
         page.on('pageerror', (e) => errors.push(String(e.message || e).slice(0, 200)));
