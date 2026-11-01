@@ -37,7 +37,7 @@ Metric ids the engine reads (all already in `sample-metrics.json`):
 |---|---|
 | Loss & revenue | `atc_loss`, `distribution_loss` (needs `target`), `collection_efficiency`, `receivable_days`, `atc_loss_change_yoy` (needs `inputs.current`, `inputs.yearEarlier`) |
 | Reliability | `dtr_weighted_outage_hours`, `feeder_outage_count` |
-| Connection services | `nsc_pending_over_30d_share`, `nsc_wo_delay_avg`, `load_ext_pending_over_90d_share`, `solar_pending_over_30d_share` |
+| Connection services | `nsc_pending_over_30d_share`, `nsc_wo_delay_avg`, `load_ext_pending_over_90d_share`, `pmsgy_net_metering_share` |
 | Metering & billing | `defective_meter_share`, `defective_over5y_share`, `unbilled_3m_per_10k`, `first_bill_pending_per_10k`, `mc_pending_over_30d_share` |
 | Faults & grievances | `fault_dockets_open_over_24h_per_10k`, `docket_open_per_10k`, `cmo_open_share` |
 | Penalties | `accidents_fatal_12m`, `safety_rectification_share`, `live_consumers` |
@@ -50,13 +50,17 @@ Rules the engine applies to each entry: `quality.status` `na` → n/a (level); `
 {
   engine: 'rating/1',
   generatedAt, referenceDate,
-  inputs: { metricsLogic, metricsGeneratedAt, source, asOn: { <metricId>: { asOn, period, stale } } },
+  inputs: { metricsLogic, metricsGeneratedAt, source,
+            asOn: { <metricId>: { asOn, period, stale, datasets: [ { key, label, page } ] } } },   // source dataset(s) of each metric:
+                                                 // mirror key, label (metricsDoc.datasets[key].label if given, else the engine's
+                                                 // list), and the page that shows the same figures
   bands:   [ { grade: 'A+', min: 90, label: 'Excellent' }, … { grade: 'D', min: null, label: 'Very poor' } ],
   pillars: [ { id, label, short, weight, basis } ],               // base weights, sum 100
   penaltyCap: 5,
   rules:   { linear, naParameter, naPillar, minRated, penalties, levels, ranks },   // plain-language strings
   sources: { <sourceKey>: 'document title' },
-  methodology: [ MethodRow ],                                    // the Methodology tab, one row per parameter and penalty
+  methodology: [ MethodRow ],                                    // one row per parameter and penalty (flat table)
+  method: Method,                                                // the full methodology as structured data (Methodology tab)
   zone: '6600000',
   levels: { zone|region|division|ccc: { order: [code, …] (rank order, unrated last), of: N (rated offices) } },
   offices: { <code>: Office }
@@ -71,6 +75,29 @@ Rules the engine applies to each entry: `quality.status` `na` → n/a (level); `
 ```
 
 `full` is the value that earns full marks (for a penalty: no deduction), `zero` the value that earns none (for a penalty: the full deduction). `ref` is the exact clause; `stretch` is the national 2024 timeline shown alongside but not scored.
+
+`Method` (everything `docs/rating/methodology.md` says, generated from the same data; the page renders it):
+
+```
+{ version, title,
+  intro: [paragraph], formula,                        // what this is, what it is modelled on, what is left out
+  bands: [ { grade, min, label } ], bandsNote,
+  pillars: [ { id, label, short, weight, national, basis,       // national = the national weights it is set against
+               params: [ { id, metric, label, unit, direction, max, formula, full, zero, fullDisplay, zeroDisplay,
+                           source: { key, label, url }, ref, stretch, levels: ['zone',…], notes: [string],
+                           datasets: [ { key, label, page } ] } ] } ],
+  penalties: [ { id, metric, label, unit, max, formula, none, worst, noneDisplay, worstDisplay, source, ref, levels } ], penaltyCap,
+  levelsRule: [paragraph], naRule: [paragraph], qualityRule: [paragraph], penaltyRule: [paragraph], rankRule, whyRule,
+  caveats: [ { id, text } ],                         // from this run's data: HT rows at regions, the swapped loss month,
+                                                     // reliability coverage, stale inputs, mixed dates
+  excluded: [ { item, reason } ], gaps: [string],
+  sources: [ { key, label, url, ref } ],
+  example: { code, name, level, score, grade, rank, of, penaltyTotal,             // one CCC (opts.example, else the median-ranked CCC)
+             pillars: [ { id, label, weight, max, marks, note,
+                          params: [ { id, label, display, full, zero, fraction, max, effMax, marks, status, naReason } ] } ] } }
+```
+
+`rate(doc, { example: '<code>' })` picks the worked-example office.
 
 `Office`:
 
@@ -106,7 +133,8 @@ Rules the engine applies to each entry: `quality.status` `na` → n/a (level); `
                                 rows: [ { code, name, value, display, excess, share, own? } ] } }
                                           // for the office's weak parameters (under half marks): each child's excess over the
                                           // full-marks level, in the numerator's unit; rows add up to parentExcess, with an
-                                          // 'own' row for inputs booked at the office itself (e.g. HT input at a region)
+                                          // 'own' row for inputs booked at the office itself (e.g. HT input at a region);
+                                          // share = the row's part of the positive excesses (0 for rows under the level)
 }
 ```
 
