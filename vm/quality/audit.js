@@ -120,7 +120,9 @@ async function offline(a) {
                 objectRows = m.sourceType === 'supabase_table' || m.sourceType === 'supabase_storage' || m.sourceType === 'json_file';
             }
             const res = await Q.analyse({
-                key, meta: m, rows, rawValues: true, objectRows, firstRowNo: objectRows ? 1 : (m.header === false ? 1 : 2)
+                key, meta: m, rows, rawValues: true, objectRows,
+                // Storage CSVs are copies of sheets: row numbers count the header like the sheet does.
+                firstRowNo: m.sourceType === 'supabase_storage' ? 2 : objectRows || m.header === false ? 1 : 2
             });
             facts[key] = res.facts;
             report.datasets[key] = {

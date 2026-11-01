@@ -91,6 +91,8 @@ const DATASETS = {
     dd_user_auth: { keys: ['username'], officeBlankOk: true },
     stock_materials: { keys: ['Mat Code'] },
     stock_allotments: { notKeys: ['allotment_no'], roles: { division: 'division', plant_code: 'plant', from_plant_code: 'plant!', from_store: 'none' } },
+    // The mirror keys these by content (sync-core), but each crossing should still have its own ID.
+    highway_crossings: { keys: ['ID'] },
     costcenter: { roles: { 'unit name': 'none', 'division name': 'division', 'cost cen_code': 'code' } },
     pmsgy_malda: { skipDataRows: 1 },
     pmsgy_uttar_dinajpur: { skipDataRows: 1 },
@@ -100,7 +102,9 @@ const DATASETS = {
 
 // Summary sheets (one row per office, category or month): their big values are totals, not outliers.
 const SUMMARY = new Set(['consumers', 'loss_report', 'loss_targets', 'weekly_report', 'defective_summary', 'collection_report', 'docket_kpi',
-    'jjm_connections', 'rem_osd', 'smart_meter_status', 'historical_nsc', 'x_defective_summary_google']);
+    'jjm_connections', 'rem_osd', 'historical_nsc', 'x_defective_summary_google']);
+// Per-meter or per-site lists whose quantity columns are naturally lumpy.
+const NO_OUTLIERS = new Set(['smart_meter_status']);
 
 function datasetRules(key, src) {
     const r = Object.assign({}, DATASETS[key] || {});
@@ -108,6 +112,7 @@ function datasetRules(key, src) {
         r.noOutliers = true;
         r.summary = true;
     }
+    if (NO_OUTLIERS.has(key)) r.noOutliers = true;
     if (src && src.header === false) r.layout = true;
     if (/^(puja_|important_(?!unbilled_months))/.test(key)) r.layout = true;
     return r;

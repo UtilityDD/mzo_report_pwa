@@ -71,7 +71,8 @@ const META_KEYS = new Set(['row', 'first_row', 'same_as_row', 'rows', 'count', '
     'max_age_days', 'values', 'difference', 'diff', 'ambiguous_rows', 'cell_row', 'storage_only', 'google_sheet_only', 'level',
     'format', 'reads_as', 'what', 'metric', 'change', 'from', 'to', 'header', 'columns', 'could_be', 'means', 'code_is',
     'ccc_belongs_to', 'division_belongs_to', 'as_on', 'shown_as_on', 'latest_row_date', 'date', 'summary_total', 'details_rows',
-    'summary', 'details', 'storage', 'google_sheet', 'meta_json', 'csv', 'compared_with', 'pending_nsc_as_on', 'withheld_as_on', 'appl_no']);
+    'summary', 'details', 'storage', 'google_sheet', 'meta_json', 'csv', 'compared_with', 'pending_nsc_as_on', 'withheld_as_on', 'appl_no',
+    'name', 'column', 'header', 'at']);
 
 /** Mask every data value in an issue sample (values under "value" use the issue's column rule). */
 function sanitizeSample(sample, column) {

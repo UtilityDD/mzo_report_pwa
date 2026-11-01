@@ -642,6 +642,8 @@ class Checker {
                 } else if (r.status === 'legacy') {
                     put('office.legacy_division', 'info', c, shown, n, firstRow, null,
                         `"${c.name}" uses division names from before the re-organisation (North / South Malda). They do not map onto today's divisions, so division totals cannot use this column. Use today's division names (Malda, Chanchal, Gazole, …).`);
+                } else if (r.status === 'non_ccc_unit' && (r.level === 'division' && /div/i.test(c.name) || r.level === 'region' && /reg|zone|circle/i.test(c.name))) {
+                    // A division code in a division-code column (DIV_CODE 6611000) is what the column should hold.
                 } else if (r.status === 'non_ccc_unit') {
                     put('office.non_ccc_unit', 'info', c, shown, n, firstRow, { level: r.level, division: r.division || undefined },
                         `Codes in "${c.name}" that belong to a ${r.level === 'unit' ? 'substation, store or other non-CCC unit' : r.level + ' office'}, not to a CCC. Pages that count by CCC leave these rows out (or under "unassigned"); that is expected only if the work really sits at that office.`);
