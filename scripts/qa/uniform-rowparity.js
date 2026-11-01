@@ -113,21 +113,25 @@ function main() {
   if (!page) { console.error('usage: uniform-rowparity.js <' + Object.keys(PAGES).join('|') + '> --snap <dir>'); process.exit(2); }
   const snap = arg('snap');
   const oldRev = arg('old', 'HEAD');
-  const file = fs.readdirSync(snap).find((f) => f.replace(/\.(csv|tsv|json)$/, '') === page.key && /\.(csv|tsv|json)$/.test(f));
-  const raw = fs.readFileSync(path.join(snap, file), 'utf8');
+  // page.keys ({ name: datasetKey }) for pages that combine datasets: RAW and ROWS are then objects by name.
+  const keys = page.keys || { _: page.key }, raws = {}, docs = {};
   const oldSrc = execFileSync('git', ['-C', REPO, 'show', oldRev + ':' + pageName], { encoding: 'utf8', maxBuffer: 64 << 20 });
   const newSrc = fs.readFileSync(path.join(REPO, pageName), 'utf8');
   const U = require(path.join(REPO, 'lib', 'uniform.js'));
   const offices = require(arg('offices', path.join(REPO, 'lib', 'offices.js')));
   U.useOffices(offices, JSON.parse(fs.readFileSync(path.join(REPO, 'data', 'costcenter.json'), 'utf8')));
-  const schema = JSON.parse(fs.readFileSync(path.join(REPO, 'schema', page.key + '.json'), 'utf8'));
-  const res = U.build(raw, { key: page.key, format: file.split('.').pop(), schema });
-  const uniformRows = JSON.parse(U.stringify(res)); // what the page receives (cache, mirror or worker)
+  for (const [n, key] of Object.entries(keys)) {
+    const file = fs.readdirSync(snap).find((f) => f.replace(/\.(csv|tsv|json)$/, '') === key && /\.(csv|tsv|json)$/.test(f));
+    raws[n] = fs.readFileSync(path.join(snap, file), 'utf8');
+    const schema = JSON.parse(fs.readFileSync(path.join(REPO, 'schema', key + '.json'), 'utf8'));
+    docs[n] = JSON.parse(U.stringify(U.build(raws[n], { key, format: file.split('.').pop(), schema }))); // what the page receives (cache, mirror or worker)
+  }
   let failed = 0;
   for (const p of PROFILES) {
     const ctxOld = stub(context(p.profile), page), ctxNew = stub(context(p.profile), page);
-    ctxOld.RAW = raw;
-    ctxNew.ROWS = ctxNew.MzoRows.fromDoc(page.key, uniformRows, 'test', { scope: page.scope });
+    const t = (n) => ctxNew.MzoRows.fromDoc(keys[n], docs[n], 'test', { scope: page.scope });
+    ctxOld.RAW = page.keys ? raws : raws._;
+    ctxNew.ROWS = page.keys ? Object.keys(keys).reduce((o, n) => { o[n] = t(n); return o; }, {}) : t('_');
     const a = rowsOf(ctxOld, page, region(oldSrc, page), page.old);
     const b = rowsOf(ctxNew, page, region(newSrc, page), page.new);
     const diffs = {}; let rowsDiff = 0;

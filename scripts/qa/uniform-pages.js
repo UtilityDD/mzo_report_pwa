@@ -58,7 +58,7 @@ const PAGES = {
   // Batch A (docs/uniform-data-inventory.md)
   nsc_kpi: {
     url: 'nsc/kpi.html', key: 'nsc_pending', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab:not([hidden])', asOn: '#meta', tables: ['#officeTable'],
-    selects: ['#classFilter'], deep: []
+    selects: ['#classFilter'], drillRows: '#officeTable tbody tr.click', deep: []
   },
   withheld: {
     url: 'withheld.html', key: 'withheld', stats: '#stats .ui-stat', tabs: '#drill .ui-drill-tab',
@@ -77,23 +77,23 @@ const PAGES = {
   },
   weekly: {
     url: 'weekly.html', key: 'weekly_report', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', tables: ['#officeTable', '#weekTable'],
-    extra: ['#chart', '#trendNote', '#officeNote', '#axisFrom', '#axisTo'], segments: ['#cat button'], selects: ['#weekFilter'], deep: []
+    extra: ['#chart', '#trendNote', '#officeNote', '#axisFrom', '#axisTo'], segments: ['#cat button'], selects: ['#weekFilter'], drillRows: '#officeTable tbody tr.click', deep: []
   },
   jjm: {
     url: 'jjm.html', key: 'jjm_connections', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', tables: ['#officeTable'],
-    extra: ['#mixHist', '#officeNote'], clicks: ['#mixHist .row'], deep: []
+    extra: ['#mixHist', '#officeNote'], clicks: ['#mixHist .row'], drillRows: '#officeTable tbody tr.click', deep: []
   },
   wridd: {
     url: 'wridd.html', key: 'wridd_schemes', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', tables: ['#officeTable', '#appTable'],
-    extra: ['#reasonHist', '#typeHist', '#appCount'], clicks: ['#reasonHist .row', '#typeHist .row'], deep: []
+    extra: ['#reasonHist', '#typeHist', '#appCount'], clicks: ['#reasonHist .row', '#typeHist .row'], drillRows: '#officeTable tbody tr.click', deep: []
   },
   bharatnet: {
     url: 'bharatnet.html', key: 'bharatnet_connections', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', tables: ['#officeTable', '#appTable'],
-    extra: ['#monthHist', '#appCount'], clicks: ['#monthHist .row'], deep: []
+    extra: ['#monthHist', '#appCount'], clicks: ['#monthHist .row'], drillRows: '#officeTable tbody tr.click', deep: []
   },
   icds: {
     url: 'icds.html', key: 'icds_a_plus', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', tables: ['#officeTable', '#appTable'],
-    extra: ['#poleHist', '#projectHist', '#appCount', '#officeNote'], clicks: ['#poleHist .row', '#projectHist .row'], segments: ['#prio button'], deep: []
+    extra: ['#poleHist', '#projectHist', '#appCount', '#officeNote'], clicks: ['#poleHist .row', '#projectHist .row'], segments: ['#prio button'], drillRows: '#officeTable tbody tr.click', deep: []
   }
 };
 
