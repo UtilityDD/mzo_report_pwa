@@ -692,6 +692,7 @@ table.dataTable.dtr-inline.collapsed>tbody>tr.parent>th.dtr-control:before {
 </style>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_data_hub.js?v=91" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
   <style id="mzo-skin">
 /* MZO tool skin: Bootstrap components on the design tokens (page-local, html.ui) */
 html.ui body { margin: 0; padding: 0 !important; font: 13px/1.5 var(--mzo-font); background: var(--mzo-bg); color: var(--mzo-text); --bs-body-bg: var(--mzo-bg); --bs-body-color: var(--mzo-text); --bs-border-color: var(--mzo-border); --bs-emphasis-color: var(--mzo-text); --bs-secondary-color: var(--mzo-muted); }
@@ -1077,56 +1078,40 @@ html.ui .dtr-data { color: var(--mzo-muted); }
 <script>
 const scriptUrl = "https://script.google.com/macros/s/AKfycbwzaD7imXDsD3gWhxRXf9kx01NHKrzyXZGsBg2-azotO26PjybS-3R07Vyuh7Wscy1UIw/exec";
 const updateDataSheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=1835924766&single=true&output=csv";
-// The sheet comes from the VM mirror when there is one. After a save: read the source until the copy has the
-// new row, and ask the server to sync it now (the write goes straight to Apps Script, so it cannot see it).
-function sheetFetch(url) { return window.mzoMirror ? mzoMirror.fetch(url) : fetch(url); }
+// The peak-load rows: uniform rows of schema/dtr_peak_load.json, checked for newer ones on every read (the
+// form and the confirmation decide what to write from them). They come from the VM mirror when there is one.
+// After a save: read the sheet itself until the mirror's copy has the new row (mzoMirror.fresh holds that URL,
+// and MzoRows honours the hold), and ask the server to sync it now (the write goes straight to Apps Script,
+// so it cannot see it).
+async function loadUpdateRows() {
+    const t = await MzoRows.get('dtr_peak_load', { forceCheck: true, scope: false });
+    return toRecords(t);
+}
 function sheetSaved() { if (window.mzoMirror) { mzoMirror.fresh(updateDataSheetUrl); mzoMirror.refresh(['dtr_peak_load'], 'DTR peak load saved'); } }
+
+/**
+ * Uniform rows → the page's records: keyed by the sheet's headers in sheet order, values as the sheet shows
+ * them (numbers as text, the measurement time as YYYY-MM-DD HH:mm).
+ */
+function toRecords(t) {
+    const cols = t.columns.filter(c => c.source_name && !c.raw_of && c.name.charAt(0) !== '_');
+    const show = (c, v) => {
+        if (v == null || v === '') return '';
+        if (c.type === 'date') return c.has_time ? v.slice(0, 10) + ' ' + v.slice(11, 16) + (v.slice(17, 19) && v.slice(17, 19) !== '00' ? ':' + v.slice(17, 19) : '') : v.slice(0, 10);
+        return String(v);
+    };
+    return t.rows.map(d => {
+        const record = {};
+        cols.forEach(c => { record[c.source_name] = show(c, d[c.name]) || d[c.name + '_raw'] || ''; });
+        return record;
+    });
+}
 
 // Global variables
 window.currentCode = null;
 window.isAuthenticated = false; // Tracks if PIN is successfully authenticated
 window.userAuthorizedDTRPrefix = null; // Stores the dtr-autho value for the logged-in user
 window.isReplacingData = false; // New flag to indicate if data is being replaced
-
-/**
- * Parses CSV text into an array of objects.
- * @param {string} csv - The CSV data as a string.
- * This parser correctly handles fields that are enclosed in double quotes
- * and may contain commas within them.
- * @returns {Array<Object>} An array of objects, where each object represents a row.
- */
-function parseCSV(csv) {
-    const lines = csv.split('\n').filter(line => line.trim() !== '');
-    if (lines.length < 2) return [];
-
-    // Regex to split a CSV row, handling quoted fields and escaped quotes ("").
-    const splitRow = (row) => {
-        const values = [];
-        const regex = /(?:"([^"]*(?:""[^"]*)*)"|([^,]*))(?:,|$)/g;
-        let match;
-        while (match = regex.exec(row)) {
-            let value = match[1] !== undefined ? match[1].replace(/""/g, '"') : match[2];
-            values.push(value.trim());
-            if (match[0].slice(-1) !== ',') break; // Stop if we're at the end of the line
-        }
-        return values;
-    };
-
-    const headers = splitRow(lines[0]);
-    const result = [];
-
-    for (let i = 1; i < lines.length; i++) {
-        const values = splitRow(lines[i]);
-        if (values.length >= headers.length) {
-            const obj = headers.reduce((acc, header, index) => {
-                acc[header.trim()] = values[index] || '';
-                return acc;
-            }, {});
-            result.push(obj);
-        }
-    }
-    return result;
-}
 
 /**
  * Shows a loading spinner and disables the target button.
@@ -1297,11 +1282,7 @@ function displayResults(data) {
 async function populateFormWithLastUpdate(code, masterData) {
     showLoading("Fetching last update...");
     try {
-        const response = await sheetFetch(updateDataSheetUrl);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        
-        const csvText = await response.text();
-        const updateData = parseCSV(csvText);
+        const updateData = await loadUpdateRows();
 
         // Find ALL updates for this DTR, sort them by date, and get the latest one.
         const allUpdatesForDTR = updateData
@@ -1533,12 +1514,7 @@ for (const field of requiredFields) {
   showLoading("Checking previous updates...");
 
   try {
-    const response = await sheetFetch(updateDataSheetUrl);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const csvText = await response.text();
-    const updateData = parseCSV(csvText);
+    const updateData = await loadUpdateRows();
 
     // Find the LATEST update for this DTR by sorting
     const allUpdatesForDTR = updateData
@@ -1820,11 +1796,7 @@ async function showAllLoadData() {
   showLoading("Fetching authorized load data...");
 
   try {
-    const res = await sheetFetch(updateDataSheetUrl);
-    if (!res.ok) throw new Error("Failed to fetch data");
-
-    const csvText = await res.text();
-    let data = parseCSV(csvText);
+    let data = await loadUpdateRows();
 
     // Filter to only authorized DTRs (support multiple prefixes)
     const prefixes = Array.isArray(window.userAuthorizedDTRPrefix)
