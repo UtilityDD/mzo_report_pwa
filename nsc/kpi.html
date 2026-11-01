@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
   <style>.rk { margin-left: 6px; font-size: 11.5px; color: var(--mzo-faint); }</style>
 </head>
 <body>
@@ -50,20 +51,20 @@
     var all = [], metric = 'conn', level = 'region';
     var LABEL = { qtn: 'Quotation', wo: 'Work order', conn: 'Connection' };
 
-    function prepare(text) {
+    // t.rows: uniform rows of schema/nsc_pending.json (snake_case, numbers, ISO dates, canonical
+    // _region/_division/_ccc). Loaded unscoped: the last row per application wins, then the login scope.
+    function prepare(t) {
       var map = new Map(), latest = 0;
-      UI.csv(text).forEach(function (d) { var a = String(d.APPL_NO || '').trim().toLowerCase(); if (a) map.set(a, d); }); // one row per application (last wins)
-      all = Array.from(map.values()).map(function (d) {
-        var t = UI.date(d.TODAY); if (t && t.getTime() > latest) latest = t.getTime();
-        var o = UI.office(d.CCC_CODE, d.SUPP_OFF);
+      t.rows.forEach(function (d) { var a = d.appl_no.toLowerCase(); if (a) map.set(a, d); }); // one row per application (last wins)
+      var rows = Array.from(map.values());
+      rows.forEach(function (d) { var dt = UI.date(d.today); if (dt && dt.getTime() > latest) latest = dt.getTime(); });
+      all = MzoRows.scope(rows).map(function (d) {
         return {
-          REGION: d.REGION, DIVN_NAME: d.DIVN_NAME, SUPP_OFF: d.SUPP_OFF, CCC_CODE: d.CCC_CODE,
-          region: o.region || UI.regionName(d.REGION), division: o.division || UI.title(String(d.DIVN_NAME || '').replace(/\s*div(ision)?\.?$/i, '')), ccc: o.ccc || UI.title(d.SUPP_OFF || d.CCC_CODE),
-          cls: String(d.CONN_CLASS || '').trim(),
-          qtn: parseInt(d.DelayInQtn, 10) || 0, wo: parseInt(d.DelayInWO, 10) || 0, conn: parseInt(d.DelayInSC, 10) || 0
+          region: d._region || UI.regionName(d.region), division: d._division || UI.title(d.divn_name.replace(/\s*div(ision)?\.?$/i, '')), ccc: d._ccc || UI.title(d.supp_off || d.ccc_code),
+          cls: d.conn_class,
+          qtn: Math.trunc(d.delayinqtn) || 0, wo: Math.trunc(d.delayinwo) || 0, conn: Math.trunc(d.delayinsc) || 0
         };
       });
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       $('meta').textContent = (latest ? 'Updated ' + UI.fmtDate(new Date(latest)) + ' · ' : '') + UI.n(all.length) + ' applications';
       var cls = {}; all.forEach(function (r) { if (r.cls) cls[r.cls] = 1; });
       UI.fill('classFilter', Object.keys(cls).sort(), 'All classes');
@@ -118,12 +119,12 @@
       render();
     });
 
-    UI.load('CACHE_NSC_v5', function (text, info) {
-      if (!text) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = '<div class="ui-empty">Could not load NSC data.</div>'; } return; }
-      prepare(text);
+    MzoRows.load('nsc_pending', function (t, info) {
+      if (!t) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = '<div class="ui-empty">Could not load NSC data.</div>'; } return; }
+      prepare(t);
       [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === level)); });
       render();
-    });
+    }, { scope: false });
   });
   </script>
 </body>

@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
   <style>
     /* Reasons are long: let them wrap instead of truncating */
     #fReason .ui-opt { height: auto; min-height: 27px; padding-block: 4px; align-items: flex-start; line-height: 1.35; }
@@ -71,7 +72,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var KEY = 'CACHE_WITHHELD_v4';
+    var ROWS = 'withheld';
     var CLASS = { D: 'Domestic', C: 'Commercial', A: 'Agriculture', I: 'Industrial', S: 'Street light', J: 'Public', P: 'Public', W: 'Water works', T: 'Temporary' };
     var INVALID = ['', 'Not Specified', 'LT Infrastructure required', 'Earthing Not Completed', 'WBSEDCL is unable to provide connection', 'n', 'N', 'NO', 'Y',
       'Dependent on other application', 'Particulars of capacitor bank(if installed) not Found', 'Meter and Main Switch should be separated', 'YES', 'y', 'no',
@@ -81,23 +82,24 @@
     var dr = UI.drill({ el: 'drill', root: 'Malda Zone', onChange: render });
     var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
 
-    function prepare(text) {
-      var rows = Array.isArray(text) ? text : UI.csv(text), today = null, seen = {};
+    // t.rows: uniform rows of schema/withheld.json (snake_case, ISO dates, IS_PORTAL_APPL as true/false,
+    // canonical _region/_division/_ccc). Loaded unscoped: the last row per application wins, then the login scope.
+    function prepare(t) {
+      var today = null, seen = {};
       all = [];
-      rows.forEach(function (d) {
-        var appl = String(d.APPL_NO || '').trim();
+      t.rows.forEach(function (d) {
+        var appl = d.appl_no;
         if (!appl) return;
-        var t = UI.date(d.TODAY); if (t && (!today || t > today)) today = t;
-        var reason = String(d.SCN_WITHELD_REASON || '').trim();
+        var td = UI.date(d.today); if (td && (!today || td > today)) today = td;
+        var reason = d.scn_witheld_reason;
         var invalid = INVALID.indexOf(reason) !== -1;
-        var o = UI.office(d.CCC_CODE, d.SUPP_OFF);
         var r = {
-          appl: appl, name: UI.blank(d.NAME) ? '' : UI.title(d.NAME), phone: UI.blank(d.PHONE_NO) ? '' : d.PHONE_NO,
-          _region: o.region || UI.regionName(d.REGION), _divn: o.division || UI.title(d.DIVN_NAME), _supp: o.ccc || UI.title(d.SUPP_OFF), CCC_CODE: String(d.CCC_CODE || '').trim(),
-          cls: String(d.CONN_CLASS || '').trim().toUpperCase(), phase: String(d.APPLIED_PHASE || '').trim().toUpperCase(),
-          paid: UI.date(d.COLL_DATE), withheld: UI.date(d.SCN_WITHELD_DATE),
+          appl: appl, name: UI.blank(d.name) ? '' : UI.title(d.name), phone: UI.blank(d.phone_no) ? '' : d.phone_no,
+          _region: d._region || UI.regionName(d.region), _divn: d._division || UI.title(d.divn_name), _supp: d._ccc || UI.title(d.supp_off), CCC_CODE: d.ccc_code,
+          cls: d.conn_class.toUpperCase(), phase: d.applied_phase.toUpperCase(),
+          paid: UI.date(d.coll_date), withheld: UI.date(d.scn_witheld_date),
           reason: reason || 'Not specified', invalid: invalid, group: invalid ? NO_REASON : reason,
-          portal: d.IS_PORTAL_APPL === 'Y' ? 'Y' : 'N'
+          portal: d.is_portal_appl === true ? 'Y' : 'N'
         };
         r.label = CLASS[r.cls] || r.cls || '—';
         r.year = r.withheld ? String(r.withheld.getFullYear()) : '';
@@ -220,7 +222,7 @@
         .concat([{ key: 'portal', label: 'Source', csv: function (r) { return r.portal === 'Y' ? 'Portal' : 'Offline'; } }]), window.__view || []);
     });
 
-    UI.refresh('refreshBtn', KEY, function (t) { prepare(t); render(); });
+    MzoRows.refresh('refreshBtn', ROWS, function (t) { prepare(t); render(); }, { scope: false });
 
     // A fresh NSC upload (nsc/upload.html) asks this page to reload its dump.
     try {
@@ -241,16 +243,16 @@
     var pending = false;
     try { pending = localStorage.getItem('mzo_withheld_pending_refresh') === '1'; } catch (e) {}
     var start = pending
-      ? Promise.resolve(window.mzoDataHub.refresh(KEY)).catch(function () {}).then(function () { try { localStorage.removeItem('mzo_withheld_pending_refresh'); } catch (e) {} })
+      ? MzoRows.reload(ROWS, { scope: false }).catch(function () {}).then(function () { try { localStorage.removeItem('mzo_withheld_pending_refresh'); } catch (e) {} })
       : Promise.resolve();
     start.then(function () {
-      UI.load(KEY, function (text, info) {
-        if (!text) { if (info && info.error) { $('asOn').textContent = 'No data'; $('table').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      MzoRows.load(ROWS, function (t, info) {
+        if (!t) { if (info && info.error) { $('asOn').textContent = 'No data'; $('table').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
         var firstPaint = !all.length;
-        prepare(text);
+        prepare(t);
         if (firstPaint) dr.fromParams(new URLSearchParams(location.search), all); // ?region= ?division= ?ccc=
         render();
-      });
+      }, { scope: false });
     });
   });
   </script>
