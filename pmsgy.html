@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=3" defer></script>
 </head>
 <body>
   <main class="ui-page">
@@ -84,8 +85,8 @@
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var MON = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
-    var JOBS = [['CACHE_PMSGY_MALDA', 'Malda'], ['CACHE_PMSGY_UD', 'Raiganj'], ['CACHE_PMSGY_DD', 'Balurghat']];
+    // One dataset per district tab; the tab says the region.
+    var JOBS = [['pmsgy_malda', 'Malda'], ['pmsgy_uttar_dinajpur', 'Raiganj'], ['pmsgy_dakshin_dinajpur', 'Balurghat']];
     var STEP = {
       vendor: { label: 'Vendor assigned', test: function (r) { return r.vendorSet; } },
       agreement: { label: 'Agreement', test: function (r) { return r.agreement; } },
@@ -94,18 +95,6 @@
     };
     var all = [], step = '', cat = '', tab = '', stageDrill = null, scope = null;
 
-    function pick(row, keys) {
-      var want = {}; keys.forEach(function (k) { want[k.toLowerCase()] = 1; });
-      for (var k in row) if (want[k.toLowerCase().trim()] && row[k] != null && String(row[k]).trim() !== '') return String(row[k]).trim();
-      return '';
-    }
-    function parseDate(raw) {
-      var s = String(raw || '').trim(), m = s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})/);
-      if (m && MON[m[2].toLowerCase()] != null) { var y = +m[3]; if (y < 100) y += 2000; return new Date(y, MON[m[2].toLowerCase()], +m[1]); }
-      m = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/);
-      if (m) { var y2 = +m[3]; if (y2 < 100) y2 += 2000; return new Date(y2, +m[2] - 1, +m[1]); }
-      return null;
-    }
     // Sheets sometimes turn masked numbers into 9.87E+09; keep the digits we have.
     function phone(raw) {
       var s = String(raw || '').trim(), m = s.match(/^(\d+)(?:\.(\d+))?[eE]\+(\d+)$/);
@@ -113,40 +102,46 @@
       var d = m[1] + (m[2] || ''), w = +m[3] + 1;
       return d.length >= w ? d.slice(0, w) : d + '•'.repeat(w - d.length);
     }
-    function category(row) {
-      var s = (pick(row, ['Consumer Category']) + ' ' + pick(row, ['Category'])).toLowerCase();
+    function category(d) {
+      var s = (d.consumer_category + ' ' + d.category).toLowerCase();
       return /welfare|rwa/.test(s) ? 'RWA' : /self/.test(s) ? 'Residential-Self' : 'Other';
     }
-    function office(row, region) {
-      var divRaw = pick(row, ['Division Name']), cccRaw = pick(row, ['Sub-Division Name']).replace(/\s*ccc\s*$/i, '').trim();
-      var division = divRaw, ccc = cccRaw, S = window.MzoScope;
-      if (S) {
-        var named = S.cccNameOf(cccRaw), parent = named ? S.parentOfCcc(named) : null;
-        if (parent) { division = parent.division; ccc = parent.ccc; }
-        else { division = S.divisionNameOf(divRaw) || divRaw; ccc = named || cccRaw; }
-      }
-      return { region: region, division: division || '', ccc: ccc || '' };
+    // Offices: the canonical CCC / division of the row; the region is the tab's when the row names
+    // none. A sub-division that is not an MZO office keeps its own text (portal rows from elsewhere).
+    function office(d, region) {
+      return { region: d._region || region, division: d._division || d.division_name, ccc: d._ccc || d.sub_division_name.replace(/\s*ccc\s*$/i, '').trim() };
     }
+    function isApplication(d) { var f = d.sl_no; return !!(f && !/^logic$/i.test(f) && d.application_number); } // not the glossary row
+    function isSheet(t) { return !!t && t.columns.some(function (c) { return c.name === 'application_number' && c.source_name; }); }
 
-    // Email and bank details stay off the page (docs/reports.md): only these fields are kept.
-    function ingest(csv, region) {
-      if (!/application number/i.test(String(csv || '').slice(0, 800))) return [];
-      return UI.csv(csv).filter(function (row) { var f = String(row[Object.keys(row)[0]] || '').trim(); return f && !/^logic$/i.test(f); }).map(function (row) {
-        var o = office(row, region), net = parseDate(pick(row, ['Net Metering Date']));
+    // t.rows: uniform rows of schema/pmsgy_*.json, already scoped to the login. Only the pinned
+    // fields reach the page, so email and bank details stay off it (docs/reports.md).
+    function ingest(t, region) {
+      if (!isSheet(t)) return [];
+      return t.rows.filter(isApplication).map(function (d) {
+        var o = office(d, region), net = UI.date(d.net_metering_date);
         var r = {
-          appl: pick(row, ['Application Number']), name: UI.title(pick(row, ['Consumer Name'])), con: pick(row, ['Consumer Number']),
-          mobile: phone(pick(row, ['Mobile (Masked)', 'Mobile Number', 'Mobile'])), category: category(row),
-          stage: pick(row, ['Current Stage']) || 'Blank', sub: pick(row, ['Sub Status of Current Stage']) || 'Blank',
-          phase: pick(row, ['Connection Phase']), vendor: pick(row, ['Vendor Name']), kw: parseFloat(pick(row, ['Installed Capacity (in kW)'])) || 0,
-          net: net, last: parseDate(pick(row, ['Last Action Date'])),
-          vendorSet: !!pick(row, ['Vendor Name']), agreement: !!parseDate(pick(row, ['Agreement Upload Date'])),
-          installed: /installation completed/i.test(pick(row, ['Installation Status'])), connected: !!net,
+          appl: d.application_number, name: UI.title(d.consumer_name), con: d.consumer_number,
+          mobile: phone(d.mobile_masked), category: category(d),
+          stage: d.current_stage || 'Blank', sub: d.sub_status_of_current_stage || 'Blank',
+          phase: d.connection_phase, vendor: d.vendor_name, kw: d.installed_capacity_in_kw || 0,
+          net: net, last: UI.date(d.last_action_date),
+          vendorSet: !!d.vendor_name, agreement: !!d.agreement_upload_date,
+          installed: /installation completed/i.test(d.installation_status), connected: !!net,
           REGION: o.region, DIVISION: o.division, 'CCC NAME': o.ccc, REGION_NORM: o.region, DIVISION_NORM: o.division, CCC_NORM: o.ccc
         };
         r.vendorLabel = r.vendor || 'No vendor';
         r.search = [r.appl, r.name, r.con, r.mobile, r.vendor, r.stage, r.sub, o.ccc, o.division].join(' ').toLowerCase();
         return r;
-      }).filter(function (r) { return r.appl; });
+      });
+    }
+    // The as-on date: the newest Last Action Date over every application, before the login scope.
+    function asOnOf(ts) {
+      var last = null;
+      ts.forEach(function (t) {
+        if (isSheet(t)) t.all.forEach(function (d) { var x = isApplication(d) ? UI.date(d.last_action_date) : null; if (x && (!last || x > last)) last = x; });
+      });
+      return last;
     }
 
     function fillFilters() {
@@ -308,24 +303,34 @@
     });
 
     // The three tabs are lazySync (multi-MB, no cheap version): refresh forces the check.
+    // ts: the three tabs' rows (null where one failed).
+    function paint(ts) {
+      var rows = [];
+      ts.forEach(function (t, i) { rows = rows.concat(ingest(t, JOBS[i][1])); });
+      var last = asOnOf(ts);
+      all = rows;
+      if (!all.length) { $('meta').textContent = 'Could not load PM Surya Ghar'; $('appTable').innerHTML = $('breakdown').innerHTML = '<div class="ui-empty">No data.</div>'; return; }
+      $('meta').textContent = (last ? 'As on ' + UI.fmtDate(last) + ' · ' : '') + UI.n(all.length) + ' applications';
+      fillFilters(); render();
+    }
     function load(force) {
-      var hub = window.mzoDataHub, b = $('refreshBtn');
-      if (!hub) { $('meta').textContent = 'Data hub is not available'; return; }
+      var b = $('refreshBtn');
+      if (!window.MzoRows) { $('meta').textContent = 'Data hub is not available'; return; }
       b.classList.add('spin');
-      Promise.all(JOBS.map(function (j) { return Promise.resolve(hub.waitForDataset(j[0], force ? { forceCheck: true } : undefined)).catch(function () {}); }))
-        .then(function () { return Promise.all(JOBS.map(function (j) { return hub._peek(j[0]); })); })
-        .then(function (csvs) {
-          var rows = [];
-          csvs.forEach(function (c, i) { rows = rows.concat(ingest(c || '', JOBS[i][1])); });
-          var last = rows.reduce(function (a, r) { return r.last && r.last > a ? r.last : a; }, null);
-          if (window.MzoScope) rows = MzoScope.filterRows(rows);
-          all = rows;
-          if (!all.length) { $('meta').textContent = 'Could not load PM Surya Ghar'; $('appTable').innerHTML = $('breakdown').innerHTML = '<div class="ui-empty">No data.</div>'; return; }
-          $('meta').textContent = (last ? 'As on ' + UI.fmtDate(last) + ' · ' : '') + UI.n(all.length) + ' applications';
-          fillFilters(); render();
-        })
-        .catch(function () { $('meta').textContent = 'Could not load PM Surya Ghar'; })
-        .then(function () { b.classList.remove('spin'); });
+      var done;
+      if (force) {
+        done = Promise.all(JOBS.map(function (j) { return MzoRows.get(j[0], { forceCheck: true }).catch(function () { return null; }); })).then(paint);
+      } else {
+        // Paint once every tab has rows (cached or fresh), and again when newer rows arrive.
+        var got = {};
+        done = Promise.all(JOBS.map(function (j) {
+          return MzoRows.load(j[0], function (t) {
+            got[j[0]] = t || got[j[0]] || null;
+            if (JOBS.every(function (x) { return x[0] in got; })) paint(JOBS.map(function (x) { return got[x[0]]; }));
+          });
+        }));
+      }
+      done.catch(function () { $('meta').textContent = 'Could not load PM Surya Ghar'; }).then(function () { b.classList.remove('spin'); });
     }
     $('refreshBtn').addEventListener('click', function () { load(true); });
     load(false);
