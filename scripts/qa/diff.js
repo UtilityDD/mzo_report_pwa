@@ -217,7 +217,7 @@ function main() {
   L.push('');
   const pagesWithMis = new Set(mismatches.map((m) => m.page));
   L.push('## Summary', '');
-  L.push(`- Pages compared: ${keys.length}. Pages identical on every compared field: ${keys.length - pagesWithMis.size - status.filter((s) => /missing/.test(s.note)).length}.`);
+  L.push(`- Pages compared: ${keys.length}. Pages with no real mismatch: ${keys.length - pagesWithMis.size - status.filter((s) => /missing/.test(s.note)).length}; pages identical on every compared field: ${keys.length - new Set([...mismatches, ...expectedHits, ...volatileHits].map((m) => m.page)).size - status.filter((s) => /missing/.test(s.note)).length}.`);
   L.push(`- **Real mismatches: ${mismatches.length}** on ${pagesWithMis.size} page(s): ${[...pagesWithMis].join(', ') || 'none'}.`);
   if (rules.length) L.push(`- Expected differences (known source switches, see below): ${expectedHits.length} on ${new Set(expectedHits.map((m) => m.page)).size} page(s).`);
   if (vols.length) L.push(`- Differences on fields that also moved between ${la} and ${vols.map((v) => v.label).join(', ')} (live data changing, not parity failures): ${volatileHits.length}.`);
