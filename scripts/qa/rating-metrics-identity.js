@@ -17,8 +17,9 @@
  *    plus the fields lib/rating_metrics.js NEEDS (what docs/rating/schema-needs.md asks the owners
  *    to add); --needs-only uses only those fields. The rows go through stringify → JSON.parse, so
  *    the module sees exactly what /api/data/rows/<key> serves.
- *    --needs-only (or --vm) builds them with MzoRatingMetrics.schemaFor(key) alone, as
- *    vm/sync/rating.js does.
+ *    --needs-only builds them with MzoRatingMetrics.schemaFor(key) alone; --vm does that through
+ *    vm/sync/lib/rating.js's leanBuild (the VM precompute's exact path), and --lean-check also
+ *    compares each lean build with the plain lib/uniform.js build.
  * 3. Both documents are compared field by field (generatedAt and source.mode aside). Every
  *    difference must match an entry of KNOWN below, which says why it is right; anything else
  *    exits 1.
@@ -103,7 +104,9 @@ function schemaFor(key, dirs, needs, needsOnly, exact) {
     return { schema: out, file: !!doc };
 }
 
-function buildRows(snap, manifest, keys, dirs, needs, needsOnly, mode) {
+const leanResults = {};
+function buildRows(snap, manifest, keys, dirs, needs, needsOnly, mode, vm, leanCheck) {
+    const VM = vm ? require(path.join(APP, 'vm', 'sync', 'lib', 'rating.js')) : null;
     const U = require(path.join(APP, 'lib', 'uniform.js'));
     const offices = require(path.join(APP, 'lib', 'offices.js'));
     const cc = JSON.parse(fs.readFileSync(path.join(APP, 'data', 'costcenter.json'), 'utf8'));
@@ -117,7 +120,17 @@ function buildRows(snap, manifest, keys, dirs, needs, needsOnly, mode) {
         const { schema, file: hasFile } = schemaFor(key, dirs, needs, needsOnly, !!mode);
         if (mode === 'vercel' && !hasFile) { info[key] = { schemaFile: false, unavailable: true }; continue; }
         const t0 = Date.now();
-        const res = U.build(fs.readFileSync(file, 'utf8'), { key, version: e.version, format: path.extname(e.file).slice(1), schema });
+        const text = fs.readFileSync(file, 'utf8'), format = path.extname(e.file).slice(1);
+        // --vm: exactly vm/sync/lib/rating.js's build (columns cut down before lib/uniform.js runs)
+        const res = vm ? VM.leanBuild({ U, O: offices, M: require(path.join(APP, 'lib', 'rating_metrics.js')) }, key, text, format, e.version) : U.build(text, { key, version: e.version, format, schema });
+        if (vm && leanCheck) {
+            const plain = U.build(text, { key, version: e.version, format, schema });
+            const names = Object.keys(schema.fields).concat(U.OFFICE_FIELDS);
+            const pick = (r) => { const o = {}; for (const n of names) { o[n] = r[n]; if (r[n + '_raw'] !== undefined) o[n + '_raw'] = r[n + '_raw']; } return o; };
+            const a = U.objects(plain).map(pick), b = U.objects(res).map(pick);
+            const same = JSON.stringify(a) === JSON.stringify(b) && JSON.stringify(plain.issues.filter((i) => i.check !== 'header.missing')) === JSON.stringify(res.issues.filter((i) => i.check !== 'header.missing'));
+            leanResults[key] = same ? 'same' : 'DIFFERENT';
+        }
         const json = U.stringify(res);
         docs[key] = JSON.parse(json);
         const issues = docs[key].issues.filter((i) => /^header\.|^type\.unparsed/.test(i.check)).map((i) => i.check + ':' + i.column + ':' + i.count);
@@ -181,7 +194,7 @@ function main() {
     // 2. uniform rows, then the module
     t0 = Date.now();
     const mode = a.vercel ? 'vercel' : a.exact ? 'exact' : null;
-    const { docs, info } = buildRows(snap, manifest, M.DATASETS, dirs, M.NEEDS, !!(a['needs-only'] || a.vm), mode);
+    const { docs, info } = buildRows(snap, manifest, M.DATASETS, dirs, M.NEEDS, !!(a['needs-only'] || a.vm), mode, !!a.vm, !!a['lean-check']);
     const buildMs = Date.now() - t0;
     t0 = Date.now();
     const B = JSON.parse(JSON.stringify(M.computeSync(docs, { manifest, asOf, generatedAt, mode: 'snapshots' }))); // as served
@@ -205,6 +218,7 @@ function main() {
     console.log('schemas     ' + dirs.join(', ') + (mode === 'vercel' ? ' as they are; no schema file = unavailable (Vercel)' : mode ? ' as they are; no schema file = keep all (VM browser path)' : a['needs-only'] || a.vm ? ' ignored: MzoRatingMetrics.schemaFor (the VM precompute)' : ' + needed fields'));
     console.log('datasets    ' + Object.keys(docs).length + ' built as uniform rows in ' + buildMs + ' ms; no schema file: ' + (Object.keys(info).filter((k) => info[k].schemaFile === false).join(', ') || 'none'));
     for (const k of Object.keys(info)) if (info[k].issues && info[k].issues.length) console.log('  ' + k + ': ' + info[k].issues.join(' '));
+    if (a['lean-check']) { const bad = Object.keys(leanResults).filter((k) => leanResults[k] !== 'same'); console.log('lean build  ' + (bad.length ? 'DIFFERS from the plain build for ' + bad.join(', ') : 'equal to the plain build for all ' + Object.keys(leanResults).length + ' datasets (pinned and office fields, issues)')); if (bad.length) process.exitCode = 1; }
     console.log('script      ' + scriptMs + ' ms (own process, incl. reading the files)');
     console.log('module      ' + moduleMs + ' ms; ' + Object.keys(B.metrics).length + ' metrics, ' + Object.keys(B.offices).length + ' offices, ' + entries + ' office entries; errors: ' + (Object.keys(B.errors).map((k) => k + ' (' + B.errors[k] + ')').join('; ') || 'none'));
     console.log('differences ' + all.length + ' (' + explained.length + ' explained, ' + open.length + ' open)' + (all.length ? ' by metric: ' + JSON.stringify(byMetric) : ''));
@@ -213,7 +227,7 @@ function main() {
     for (const d of open.slice(0, show)) console.log('  OPEN ' + d.metric + ' @' + d.office + ' ' + d.field + ': script ' + JSON.stringify(d.a) + ' | module ' + JSON.stringify(d.b));
     if (open.length > show) console.log('  … ' + (open.length - show) + ' more');
     if (a.out) fs.writeFileSync(a.out, JSON.stringify({ snap, asOf, info, scriptMs, buildMs, moduleMs, explained, open }, null, 1) + '\n');
-    process.exitCode = open.length ? 1 : 0;
+    process.exitCode = open.length || process.exitCode ? 1 : 0;
 }
 
 if (require.main === module) main();
