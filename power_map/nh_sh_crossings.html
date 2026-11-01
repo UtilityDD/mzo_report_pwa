@@ -10,8 +10,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" rel="stylesheet"/>
 
-    <!-- PapaParse for CSV parsing -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <!-- Font Awesome CDN for professional icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 
@@ -500,6 +498,7 @@
     </style>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_data_hub.js?v=91" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
   <style id="mzo-skin">
     /* Panels on the map: design-system surfaces (map tiles untouched) */
     #map-header, #filter-container, #search-container, #map-legend, #toggle-filter-container .toggle-icon {
@@ -621,7 +620,7 @@
 
 <script>
     // Global variables
-    const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQTy_LCddlFuzZx9ZyJQTLbqrQ8sb76DG4jyw8ys-s_w6LDxOYhnTTY49eddhqxb9RnTAbksh32y1bH/pub?gid=870376934&single=true&output=csv';
+    // The crossings sheet: schema/highway_crossings.json (source.url)
     const geojsonUrl = 'https://raw.githubusercontent.com/shuklaneerajdev/IndiaStateTopojsonFiles/master/WestBengal.geojson';
     let map, worldPolygon, stateLayer, maskLayer, allMarkersLayerGroup;
     let allData = [];
@@ -814,44 +813,39 @@
         return map;
     }
 
-    // Fetch and parse CSV data
-    async function fetchCSV(url) {
+    // Crossing rows: uniform rows of schema/highway_crossings.json, checked against the sheet on every open
+    // (forceCheck, as the page read the sheet on every open before). The page has no login scope (every
+    // login sees every crossing), so the rows are not scoped.
+    async function fetchCSV() {
         try {
             showStatus("Fetching data...", 10);
-            const response = await (window.mzoMirror ? mzoMirror.fetch : fetch)(url);
-            if (!response.ok) {
-                throw new Error(`Failed to fetch CSV: ${response.status}`);
-            }
-            
-            const csvText = await response.text();
+            const t = await MzoRows.get('highway_crossings', { scope: false, forceCheck: true });
             showStatus("Processing data...", 25);
-            
-            return new Promise((resolve) => {
-                Papa.parse(csvText, {
-                    header: true,
-                    dynamicTyping: true,
-                    skipEmptyLines: true,
-                    complete: (results) => {
-                        if (results.data && results.data.length > 0) {
-                            resolve(results.data);
-                        } else {
-                            console.error("CSV parsing returned no data");
-                            showStatus("Error: No data found in CSV");
-                            resolve([]);
-                        }
-                    },
-                    error: (error) => {
-                        console.error("CSV parsing error:", error);
-                        showStatus("Error parsing data");
-                        resolve([]);
-                    }
-                });
-            });
+            const entries = toEntries(t);
+            if (!entries.length) {
+                console.error("CSV parsing returned no data");
+                showStatus("Error: No data found in CSV");
+            }
+            return entries;
         } catch (error) {
             console.error("Error fetching CSV:", error);
             showStatus("Error loading data. Please check console.");
             return [];
         }
+    }
+
+    // Uniform rows → the page's entries, keyed by the sheet's headers in sheet order (the popup lists every
+    // column): numbers as numbers, text as text, a blank cell as null.
+    function toEntries(t) {
+        const cols = t.columns.filter(c => c.source_name && !c.raw_of && c.name.charAt(0) !== '_');
+        return t.rows.map(d => {
+            const entry = {};
+            cols.forEach(c => {
+                const v = d[c.name];
+                entry[c.source_name] = v === '' || v == null ? (d[c.name + '_raw'] || null) : v;
+            });
+            return entry;
+        });
     }
 
     // Load GeoJSON for West Bengal state boundary
@@ -1516,7 +1510,7 @@
             
             await loadStateGeoJSON();
             
-            allData = await fetchCSV(csvUrl);
+            allData = await fetchCSV();
             
             if (allData.length > 0) {
                 createAllMarkers(allData);
