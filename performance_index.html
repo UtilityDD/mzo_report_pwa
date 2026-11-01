@@ -193,6 +193,8 @@
     .pi-defs dd { margin: 0; color: var(--mzo-text-2); line-height: 1.45; word-break: break-word; }
     .pi-defs .ref { display: block; margin-top: 1px; }
     .pi-foot { margin-top: 18px; }
+    .pi-ex .ui-table { table-layout: fixed; }
+    .pi-ex .ui-table th:first-child { width: 40%; }
     @media (max-width: 720px) {
       .pi-defs { grid-template-columns: minmax(0, 1fr); gap: 0; }
       .pi-defs dt { margin-top: 5px; font-size: 11.5px; }
@@ -247,6 +249,7 @@
     var LEVELS = [{ k: 'region', label: 'Regions', one: 'region' }, { k: 'division', label: 'Divisions', one: 'division' }, { k: 'ccc', label: 'CCCs', one: 'CCC' }];
     var LEVEL_WORD = { zone: 'Zone', region: 'Region', division: 'Division', ccc: 'CCC' };
     var LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+    var HAS_BROWSER_METRICS = false; // true once lib/rating_metrics.js ships with this page
 
     /* ---------------- DOM: text only (no HTML strings from data) ---------------- */
     function h(tag, a, kids) {
@@ -976,7 +979,7 @@
       var sum = 0;
       (ex.pillars || []).forEach(function (p) {
         sum += p.marks || 0;
-        add(out, h('div', { class: 'pi-box' }, [
+        add(out, h('div', { class: 'pi-box pi-ex' }, [
           h('div', { class: 'pi-box-h' }, [h('b', { text: p.label }), h('span', { text: d1(p.marks) + ' of ' + d1(p.max) + (p.max !== p.weight ? ' (base ' + p.weight + ')' : '') })]),
           p.note ? h('div', { class: 'pi-box-n', text: p.note.charAt(0).toUpperCase() + p.note.slice(1) + '.' }) : null,
           h('div', { class: 'ui-table-wrap' }, h('table', { class: 'ui-table' }, [
@@ -1069,13 +1072,18 @@
     }
     // In-browser path (Vercel, or the VM before its precompute is ready): metrics from the app's own
     // datasets (lib/rating_metrics.js), then the engine (lib/rating.js). Both are loaded only when needed.
-    var BROWSER_METRICS = null; // set to the lib/rating_metrics.js URL once that file is in this build
-    function browserRating(force) {
-      if (!BROWSER_METRICS) return Promise.reject(new Error('The rating is not available here yet.'));
-      return Promise.all([script(BROWSER_METRICS), script('/lib/rating.js?v=1')]).then(function () {
+    // MzoRatingMetrics.compute(null) loads every dataset it needs through MzoRows (all offices: ranks need them all).
+    var BROWSER_SCRIPTS = HAS_BROWSER_METRICS ? ['/mzo_rows.js?v=6', '/lib/rating_metrics.js?v=1', '/lib/rating.js?v=1'] : null;
+    function browserRating() {
+      if (!BROWSER_SCRIPTS) return Promise.reject(new Error('The rating is not available here yet.'));
+      return Promise.all(BROWSER_SCRIPTS.map(script)).then(function () {
         var M = window.MzoRatingMetrics, E = window.MzoRating;
-        if (!M || typeof M.compute !== 'function' || !E) throw new Error('The rating engine did not load.');
-        return Promise.resolve(M.compute({ hub: window.mzoDataHub, offices: window.MzoOffices, forceCheck: !!force })).then(function (metrics) { return E.rate(metrics); });
+        if (!M || typeof M.compute !== 'function' || !E || typeof E.rate !== 'function') throw new Error('The rating engine did not load.');
+        // MzoRows.get checks each dataset's version (the refresh button resets DataHub's checks first).
+        return M.compute(null, {});
+      }).then(function (metrics) {
+        if (!metrics || !metrics.offices) throw new Error('The rating inputs could not be loaded.');
+        return window.MzoRating.rate(metrics);
       });
     }
     function load(force) {
@@ -1084,7 +1092,11 @@
       var p = new URLSearchParams(location.search), job;
       if (LOCAL && p.get('sample') === '1') job = getJson('/docs/rating/sample-rating.json', force).then(function (d) { return { doc: d, src: 'sample' }; });
       else job = mirrorOn(force).then(function (on) { return on ? getJson('/api/data/rating', force).catch(function () { return null; }) : null; })
-        .then(function (d) { return d && d.offices ? { doc: d, src: 'vm' } : browserRating(force).then(function (x) { return { doc: x, src: 'browser' }; }); });
+        .then(function (d) {
+          if (d && d.offices) return { doc: d, src: 'vm' };
+          if (!R && BROWSER_SCRIPTS) $('meta').textContent = 'Computing the rating from the report data in this browser…';
+          return browserRating().then(function (x) { return { doc: x, src: 'browser' }; });
+        });
       return job.then(function (r) {
         if (!r || !r.doc) throw new Error('The rating could not be loaded.');
         use(r.doc, r.src);

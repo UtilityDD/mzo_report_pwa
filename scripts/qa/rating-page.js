@@ -249,6 +249,36 @@ async function run() {
     }
   }
 
+  // Inside the workstation shell (app.html): the page loads in its frame, with no errors from that frame.
+  if (!ONLY.length || ONLY.includes('shell')) {
+    for (const vp of ['desktop', 'phone']) {
+      const ctx = await context(browser, 'ccc', vp, 'dark', docText);
+      const page = await ctx.newPage();
+      const errs = [];
+      page.on('console', (m) => { if (m.type() === 'error' && /performance_index/.test((m.location() || {}).url || '')) errs.push(m.text()); });
+      page.on('pageerror', (e) => { if (/performance_index/.test(e.stack || '')) errs.push(e.message); });
+      await page.goto(BASE + '/app.html#performance_index', { waitUntil: 'domcontentloaded' });
+      let frame = null;
+      for (let i = 0; i < 100 && !frame; i++) { frame = page.frames().find((f) => /performance_index\.html/.test(f.url())); if (!frame) await page.waitForTimeout(200); }
+      check('shell ' + vp + ' frame', !!frame);
+      if (frame) {
+        await frame.waitForSelector('#view tbody tr[data-code]', { timeout: 30000 }).catch(() => {});
+        const n = await frame.$$eval('#view tbody tr[data-code]', (r) => r.length).catch(() => 0);
+        check('shell ' + vp + ' ranking', n === nOf('ccc'), String(n));
+        const mineRow = await frame.$eval('#view tbody tr.mine', (r) => r.getAttribute('data-code')).catch(() => '');
+        check('shell ' + vp + ' own office', mineRow === '6613101', mineRow);
+        const inShell = await frame.evaluate(() => document.documentElement.classList.contains('mzo-in-shell'));
+        check('shell ' + vp + ' in shell', inShell);
+        await frame.click('#view tbody tr[data-code="6613101"]');
+        await frame.waitForSelector('#scorecard:not([hidden])').catch(() => {});
+        await page.waitForTimeout(200);
+        await shot(page, 'shell-' + vp + '-dark-scorecard', false);
+      }
+      check('shell ' + vp + ' no errors from the page', !errs.length, errs.join(' | '));
+      await ctx.close();
+    }
+  }
+
   // Dev sample flag (localhost only) and the no-data state.
   {
     const ctx = await context(browser, 'admin', 'desktop', 'light', null);
