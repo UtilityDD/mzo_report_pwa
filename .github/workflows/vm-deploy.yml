@@ -1,0 +1,63 @@
+name: VM deploy
+
+# The VM pulls develop by itself every 60 s (vm/deploy/deploy.sh); nothing here touches the VM.
+# This job only waits until the VM reports that it serves this commit, and fails if it never does.
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: vm-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  confirm:
+    if: github.repository == 'smartlinemanapp/mzo-reports'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Wait for the VM to deploy this commit
+        env:
+          SHA: ${{ github.sha }}
+          URL: https://130.210.43.11.sslip.io/deploy.json
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          deadline=$(( $(date +%s) + 300 ))
+          last=''
+          while :; do
+            body=$(curl -fsS --max-time 15 "$URL?t=$(date +%s)" 2>/dev/null || true)
+            commit=$(jq -r '.commit // empty' <<<"$body" 2>/dev/null || true)
+            status=$(jq -r '.status // empty' <<<"$body" 2>/dev/null || true)
+            failed=$(jq -r '.failedCommit // empty' <<<"$body" 2>/dev/null || true)
+            now="${commit:0:7} ${status:-unreachable}"
+            [ "$now" != "$last" ] && echo "$(date -u +%T) VM: $now" && last=$now
+
+            if [ "$commit" = "$SHA" ] && [ "$status" = ok ]; then
+              jq -r '.warnings[]? | "::warning::VM deploy: \(.)"' <<<"$body"
+              echo "VM serves ${SHA:0:7} (version $(jq -r '.version' <<<"$body"))"
+              exit 0
+            fi
+            if [ "$failed" = "$SHA" ]; then
+              echo "::error::The VM rejected ${SHA:0:7} and stayed on ${commit:0:7} (status: $status). See journalctl -u mzo-deploy on the VM."
+              jq . <<<"$body"
+              exit 1
+            fi
+            # A newer push may have been deployed in one step; that includes this commit.
+            if [ -n "$commit" ] && [ "$commit" != "$SHA" ] && [ "$status" = ok ]; then
+              if [ "$(gh api "repos/$REPO/compare/$SHA...$commit" --jq .status 2>/dev/null)" = ahead ]; then
+                echo "VM serves ${commit:0:7}, which already contains ${SHA:0:7}"
+                exit 0
+              fi
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::The VM did not deploy ${SHA:0:7} within 5 minutes (it reports: $now)."
+              [ -n "$body" ] && jq . <<<"$body"
+              exit 1
+            fi
+            sleep 10
+          done

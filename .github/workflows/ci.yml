@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: JS syntax (files and inline scripts) and JSON
+        run: node scripts/tools/check_syntax.js
+
+      - name: vercel.json, version.json and manifest.json parse
+        run: |
+          node -e '
+            for (const f of ["vercel.json", "version.json", "manifest.json"]) {
+              JSON.parse(require("fs").readFileSync(f, "utf8"));
+              console.log("ok", f);
+            }'
+
+      - name: sw.js CACHE_NAME matches version.json cache
+        run: |
+          node -e '
+            const fs = require("fs");
+            const m = fs.readFileSync("sw.js", "utf8").match(/const CACHE_NAME = ["\x27]([^"\x27]+)["\x27]/);
+            const v = JSON.parse(fs.readFileSync("version.json", "utf8"));
+            if (!m) { console.error("::error file=sw.js::CACHE_NAME not found"); process.exit(1); }
+            if (m[1] !== v.cache) {
+              console.error(`::error file=sw.js::CACHE_NAME is ${m[1]} but version.json cache is ${v.cache}; bump both together`);
+              process.exit(1);
+            }
+            console.log("ok", m[1], "version", v.version);'
+
+      - name: VM shell scripts parse
+        run: for f in vm/deploy/*.sh; do bash -n "$f" && echo "ok $f"; done

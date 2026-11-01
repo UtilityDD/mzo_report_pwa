@@ -427,7 +427,7 @@ function showBreakdownModal(groupName) {
             <td>${item.store}</td>
             <td>${item.materialCode}</td>
             <td>${item.material}</td>
-            <td style="text-align: right;">${formatStockDisplay(item.materialCode, item.stock, { maximumFractionDigits: 3 })}</td>
+            <td style="text-align: right;">${isCriticallyLow(groupName, item.stock) ? LOW_DOT : ''}${formatStockDisplay(item.materialCode, item.stock, { maximumFractionDigits: 3 })}</td>
             <td>${item.unit}</td>
         `;
         storeSubtotal += item.stock; // Add current item's stock to the subtotal
@@ -447,6 +447,26 @@ function showBreakdownModal(groupName) {
     // Show the modal
     modal.style.display = 'block';
 }
+
+// Critically low stock, by material group (the Low Stock list and the red dot in the tables).
+function isCriticallyLow(group, stock) {
+    if (!(stock > 0)) return false; // Always exclude zero or negative stock
+    switch (group) {
+        case 'CONDUCTOR':
+            return stock < 10;
+        case 'SMART_MET':
+            return stock === 10;
+        case 'METER':
+            return stock < 100;
+        case 'MSANGLE':
+        case 'MSCHANNEL':
+        case 'MSFLAT':
+            return stock === 1;
+        default:
+            return stock <= 10; // Default threshold for other groups
+    }
+}
+const LOW_DOT = '<span class="ui-dot bad" title="Critically low" aria-label="Critically low" style="margin-right:6px;vertical-align:1px"></span>';
 
 function showLowStockModal() {
     const modal = document.getElementById('low-stock-modal');
@@ -471,28 +491,11 @@ function showLowStockModal() {
     });
 
     // Filter for items that are critically low based on group-specific thresholds
-    const lowStockItems = Object.values(aggregatedStock).filter(item => {
-        if (item.stock <= 0) return false; // Always exclude zero or negative stock
-
-        switch (item.group) {
-            case 'CONDUCTOR':
-                return item.stock < 10;
-            case 'SMART_MET':
-                return item.stock === 10;
-            case 'METER':
-                return item.stock < 100;
-            case 'MSANGLE':
-            case 'MSCHANNEL':
-            case 'MSFLAT':
-                return item.stock === 1;
-            default:
-                return item.stock <= 10; // Default threshold for other groups
-        }
-    });
+    const lowStockItems = Object.values(aggregatedStock).filter(item => isCriticallyLow(item.group, item.stock));
 
     if (lowStockItems.length === 0) {
         modalSubtitle.textContent = 'All stock levels are healthy.';
-        contentContainer.innerHTML = '<p style="text-align: center; color: #155724; background: #d4edda; padding: 15px; border-radius: 6px;">Good news! No critically low stock items found.</p>';
+        contentContainer.innerHTML = '<p style="text-align: center; color: var(--mzo-ok, #155724); background: var(--mzo-ok-soft, #d4edda); padding: 15px; border-radius: 6px;">Good news! No critically low stock items found.</p>';
     } else {
         // Group low stock items by store
         const itemsByStore = lowStockItems.reduce((acc, item) => {
@@ -912,6 +915,7 @@ function populateTable(data) {
                 store: displayStore,
                 materialCode: item['Material'],
                 material: item['Material Description'],
+                group: item['Material Group'],
                 stock: 0,
                 unit: item['Base Unit of Measure'] || ''
             };
@@ -968,7 +972,7 @@ function populateTable(data) {
             <td>${item.store}</td>
             <td>${materialCodeHTML}</td>
             <td>${materialDescHTML}</td>
-            <td style="text-align: right;">${formatStockDisplay(item.materialCode, item.stock, {
+            <td style="text-align: right;">${isCriticallyLow(item.group, item.stock) ? LOW_DOT : ''}${formatStockDisplay(item.materialCode, item.stock, {
                 minimumFractionDigits: 0,
                 maximumFractionDigits: 3
             })}</td>
