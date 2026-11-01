@@ -209,17 +209,29 @@ test('typed values, source text and "_raw" leftovers give the same numbers and d
     assert.strictEqual(M.date(20240101), '2024-01-01'); assert.strictEqual(M.date('(null)'), ''); assert.strictEqual(M.date('0'), '');
 });
 
-test('a needed field missing from the rows stops the metric instead of reading zeros', () => {
-    const t = targetRows().map((r) => { const o = Object.assign({}, r); delete o.cum_input_mu; return o; });
-    let doc = M.computeSync({ loss_report: lossRows(), loss_targets: t }, { asOf: '2026-11-01', only: ['atc_loss', 'collection_efficiency'] });
-    assert.ok(/^field missing: loss_targets\.cum_input_mu/.test(doc.errors.atc_loss), doc.errors.atc_loss);
-    assert.ok(!doc.metrics.atc_loss && doc.metrics.collection_efficiency); // collection efficiency does not read targets
+test('a needed field missing from the rows stops the metrics that read it, instead of reading zeros', () => {
+    const noQtn = nscRows().map((r) => { const o = Object.assign({}, r); delete o.delayinqtn; return o; });
+    let doc = M.computeSync({ nsc_pending: noQtn }, { asOf: '2026-11-01', only: ['nsc_pending_over_30d_share', 'nsc_qtn_delay_avg'] });
+    assert.ok(/^field missing: nsc_pending\.delayinqtn/.test(doc.errors.nsc_qtn_delay_avg), doc.errors.nsc_qtn_delay_avg);
+    assert.ok(doc.metrics.nsc_pending_over_30d_share && !doc.errors.nsc_pending_over_30d_share); // it does not read delayinqtn
     // a pinned field whose header vanished arrives empty with a header.missing issue: same rule
-    const tDoc = { all: targetRows(), columns: Object.keys(targetRows()[0]).map((name) => ({ name })), issues: [{ check: 'header.missing', column: 'cum_demand_mu', count: 2, sample: [] }] };
-    doc = M.computeSync({ loss_report: lossRows(), loss_targets: tDoc }, { asOf: '2026-11-01', only: ['atc_loss'] });
-    assert.ok(/loss_targets\.cum_demand_mu/.test(doc.errors.atc_loss));
+    const t = { all: nscRows(), columns: Object.keys(nscRows()[0]).map((name) => ({ name })), issues: [{ check: 'header.missing', column: 'today', count: 1, sample: [] }] };
+    doc = M.computeSync({ nsc_pending: t }, { asOf: '2026-11-01', only: ['nsc_pending_over_30d_share'] });
+    assert.ok(/nsc_pending\.today/.test(doc.errors.nsc_pending_over_30d_share));
     doc = M.computeSync({ loss_report: lossRows() }, { asOf: '2026-11-01', only: ['atc_loss'] });
     assert.strictEqual(doc.errors.atc_loss, 'dataset missing: loss_targets');
+});
+
+test('loss targets without their MU columns: AT&C is still computed, without targets, and a warning says so', () => {
+    const t = targetRows().map((r) => { const o = Object.assign({}, r); delete o.cum_input_mu; return o; });
+    const doc = M.computeSync({ loss_report: lossRows(), loss_targets: t }, { asOf: '2026-11-01', only: ['atc_loss', 'collection_efficiency'] });
+    assert.ok(!doc.errors.atc_loss);
+    close(entry(doc, 'atc_loss', MANIKCHAK).value, 24);
+    assert.strictEqual(entry(doc, 'atc_loss', MANIKCHAK).target, undefined);
+    assert.ok(/loss_targets\.cum_input_mu.*targets left out/.test(doc.warnings.atc_loss), JSON.stringify(doc.warnings));
+    assert.ok(!('collection_efficiency' in doc.warnings)); // it does not read targets
+    const full = M.computeSync({ loss_report: lossRows(), loss_targets: targetRows() }, { asOf: '2026-11-01', only: ['atc_loss'] });
+    assert.ok(!('warnings' in full));
 });
 
 // ---- input shapes, release, async ----------------------------------------------------------
