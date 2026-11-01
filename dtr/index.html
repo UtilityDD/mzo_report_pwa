@@ -111,6 +111,7 @@ html.ui .card { margin-bottom: 16px !important; }
 </style>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_data_hub.js?v=91" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
 </head>
 <body>
 
@@ -469,34 +470,21 @@ html.ui .card { margin-bottom: 16px !important; }
     renderDashboard();
   });
 
-  // Function to fetch and parse CSV data
-  async function fetchDTRData() {
+  // DTR rows: uniform rows of schema/dtr_records.json, painted from the cache at once and checked against the
+  // sheet on every open (forceCheck, as the page read the sheet on every open before). The page has no login
+  // scope (every login sees the whole zone), so the rows are not scoped.
+  function fetchDTRData() {
     startLoadingAnimation(); // Start animation
-    // Corrected CSV URL
-    const dtrCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV/pub?gid=2125422147&single=true&output=csv';
-
-    try {
-      const response = await (window.mzoMirror ? mzoMirror.fetch : fetch)(dtrCsvUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+    MzoRows.load('dtr_records', (t, info) => {
+      if (!t) {
+        if (!info || !info.error) return;
+        console.error('Error loading DTR data');
+        stopLoadingAnimation(); // Stop animation on error
+        // Display an error message to the user
+        document.getElementById('regionTable').innerHTML = '<tbody><tr><td colspan="6" class="text-center text-danger">Failed to load DTR data. Please check the source URL or your network connection.</td></tr></tbody>';
+        return;
       }
-      const csvText = await response.text();
-
-      const lines = csvText.split('\n').filter(line => line.trim() !== ''); // Filter out empty lines
-      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-      const parsedData = [];
-
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(',').map(c => c.trim().replace(/"/g, ''));
-        if (cols.length === headers.length) {
-          const record = {};
-          headers.forEach((header, index) => {
-            record[header] = cols[index];
-          });
-          parsedData.push(record);
-        }
-      }
-      dtrRawData = parsedData;
+      dtrRawData = toRecords(t);
 
       // Calculate overall totals once after fetching data
       overallTotals.dtr_count = dtrRawData.length;
@@ -507,13 +495,21 @@ html.ui .card { margin-bottom: 16px !important; }
 
       renderDashboard(); // Render dashboard after data is loaded
       stopLoadingAnimation(); // Stop animation on success
-    } catch (error) {
-      console.error('Error loading DTR data:', error);
-      stopLoadingAnimation(); // Stop animation on error
-      // Display an error message to the user
-      // Corrected colspan for error message in table
-      document.getElementById('regionTable').innerHTML = '<tbody><tr><td colspan="6" class="text-center text-danger">Failed to load DTR data. Please check the source URL or your network connection.</td></tr></tbody>';
-    }
+    }, { scope: false, forceCheck: true });
+  }
+
+  // The page drills and filters on the sheet's own column names and shows every column of a DTR:
+  // one uniform row → { REGION, 'DIVN NAME', SUPP_OFF, … } in sheet order, values as text.
+  function toRecords(t) {
+    const cols = t.columns.filter(c => c.source_name && !c.raw_of && c.name.charAt(0) !== '_');
+    return t.rows.map(d => {
+      const record = {};
+      cols.forEach(c => {
+        const v = d[c.name];
+        record[c.source_name] = v == null || v === '' ? (d[c.name + '_raw'] || '') : String(v);
+      });
+      return record;
+    });
   }
 
   // Helper function to format capacity into kVA or MVA
