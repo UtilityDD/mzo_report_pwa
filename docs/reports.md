@@ -78,3 +78,13 @@ Page: `pending_load_extension.html` (DataHub `CACHE_LOAD_EXT`). Uses `originHeav
 `apps-script/mzo_metadata_sync.gs` provides a standalone Apps Script template to aggregate report update dates from source Google Sheets (cells `N2`, `M2`, `J2`, or column dates) on a 15-minute background trigger.
 - Deploy the script as a Web App (Anyone access) and set `METADATA_SCRIPT_URL` in environment variables.
 - `GET /api/hub/versions` in `server.js` automatically merges the returned metadata payload, allowing `sheet_links.html` (`Updated`) to render report update dates in `< 50ms` without probing individual Google Sheets on demand.
+
+## Performance index
+
+Page: `performance_index.html` (NAV keys `performance_index` and `perf_index_imp`). A national-style rating of every office: the zone, 3 regions, 7 divisions and 41 CCCs, each graded A+ to D (CSRD bands) and ranked only among its own level. The method, the engine and the inputs are in `docs/rating/` (`engine-contract.md` is the interface); the page only renders the engine's `ratingDoc`.
+
+- **Where the rating comes from:** on the VM, `GET /api/data/rating` (precomputed after each sync; asked only when the mirror manifest exists, 204 when none). Otherwise the browser computes it: `lib/rating_metrics.js` (`MzoRatingMetrics.compute`) loads the datasets through `MzoRows`, then `lib/rating.js` (`MzoRating.rate`). `?sample=1` on localhost renders `docs/rating/sample-rating.json` for development, with a "Sample data, not live" badge; it never works on a real host.
+- **Scope:** everyone sees the full ranking. The signed-in office (from the login profile through `MzoScope`) is highlighted, with its parents at their levels, and the page opens at its level. The page owns the `#mzo-scope-banner` element, so the generic "Showing … set by admin" banner does not appear.
+- **Deep links:** `?level=region|division|ccc`, `&office=<7-digit code>` (opens the scorecard), `&within=<region or division code>`, `&q=`, `&tab=methodology`, `&param=<id>`; `#tab=method&param=<id>` is the anchor every scorecard parameter links to.
+- **Methodology tab:** rendered from `ratingDoc.method` (intro, grades, pillars and every parameter, levels, n/a and quality rules, safety penalties, data caveats, what is not scored, sources with their links, a worked example). `.md` files are not served, so the page never links to them.
+- **Rendering:** text only (`textContent`, no HTML from data). Checks: `node scripts/qa/rating-page.js --base http://127.0.0.1:<port>` against `scripts/qa/serve-local.sh <port>` (admin, region and CCC logins; desktop and phone; light and dark; every tab, deep links, CSV, an XSS document).
