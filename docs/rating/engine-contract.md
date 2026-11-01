@@ -109,7 +109,8 @@ Rules the engine applies to each entry: `quality.status` `na` → n/a (level); `
                                 rows: [ { code, name, value, display, excess, share, own? } ] } }
                                           // for the office's weak parameters (under half marks): each child's excess over the
                                           // full-marks level, in the numerator's unit; rows add up to parentExcess, with an
-                                          // 'own' row for inputs booked at the office itself (e.g. HT input at a region)
+                                          // 'own' row for inputs booked at the office itself (e.g. HT input at a region);
+                                          // share = the row's part of the positive excesses (0 for rows under the level)
 }
 ```
 

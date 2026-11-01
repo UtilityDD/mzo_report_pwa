@@ -235,7 +235,7 @@ test('each level is scored on its own summed inputs, not the average of its chil
     assert.equal(c.parentExcess, 6.6);
     const rows = Object.fromEntries(c.rows.map((r) => [r.own ? 'own' : r.code, r]));
     assert.equal(rows.B.excess, 2.5); assert.equal(rows.A.excess, -5); assert.equal(rows.own.excess, 9.1);
-    assert.equal(rows.A.share, 0); near(rows.B.share, 2.5 / 6.6, 0.001);
+    assert.equal(rows.A.share, 0); near(rows.B.share, 2.5 / 11.6, 0.001); near(rows.own.share, 9.1 / 11.6, 0.001);
     near(c.rows.reduce((s, r) => s + r.excess, 0), c.parentExcess, 1e-9);
 });
 
