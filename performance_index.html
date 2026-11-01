@@ -87,20 +87,20 @@
       { key: 'pendingMc', label: 'Master cards over 3 months', unit: '' }
     ];
     var DIVS = ['Malda', 'Chanchal', 'Gazole', 'Raiganj', 'Islampur', 'Balurghat', 'Buniadpur'];
-    var REGIONS = ['Malda', 'Uttar Dinajpur', 'Dakshin Dinajpur'];
+    var REGIONS = ['Malda', 'Raiganj', 'Balurghat'];
     var MON = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     var data = { region: [], division: [], ccc: [] }, level = 'region', mine = {};
 
     function normalizeRegion(reg, div) {
       if (reg) {
         var r = reg.toLowerCase();
-        if (r.indexOf('uttar') !== -1 || r.indexOf('u/d') !== -1 || r.indexOf('raiganj') !== -1) return 'Uttar Dinajpur';
-        if (r.indexOf('dakshin') !== -1 || r.indexOf('d/d') !== -1 || r.indexOf('balurghat') !== -1) return 'Dakshin Dinajpur';
+        if (r.indexOf('uttar') !== -1 || r.indexOf('u/d') !== -1 || r.indexOf('raiganj') !== -1) return 'Raiganj';
+        if (r.indexOf('dakshin') !== -1 || r.indexOf('d/d') !== -1 || r.indexOf('balurghat') !== -1) return 'Balurghat';
         if (r.indexOf('malda') !== -1) return 'Malda';
       }
       if (div) {
-        if (div === 'Raiganj' || div === 'Islampur') return 'Uttar Dinajpur';
-        if (div === 'Balurghat' || div === 'Buniadpur') return 'Dakshin Dinajpur';
+        if (div === 'Raiganj' || div === 'Islampur') return 'Raiganj';
+        if (div === 'Balurghat' || div === 'Buniadpur') return 'Balurghat';
         return 'Malda';
       }
       return 'Malda';
@@ -161,14 +161,18 @@
         kumarganj: ['kumargunj', 'kumarganj'], kusmandi: ['kushmundi', 'kusmandi']
       };
       var DIV_PAT = { Malda: [/^malda\s+div/i], Chanchal: [/^chanchal\s+div/i], Gazole: [/^gazole\s+div/i, /^gazol\s+div/i], Raiganj: [/^raiganj\s+div/i], Islampur: [/^islampur\s+div/i], Balurghat: [/^balurghat\s+div/i], Buniadpur: [/^buniadpur\s+div/i] };
-      var REG_PAT = { Malda: [/^malda\s+region$/i, /^malda$/i], 'Uttar Dinajpur': [/^u\/dinajpur\s+region$/i, /^uttar\s+dinajpur/i], 'Dakshin Dinajpur': [/^d\/dinajpur\s+region$/i, /^dakshin\s+dinajpur/i] };
+      var REG_PAT = { Malda: [/^malda\s+region$/i, /^malda$/i], Raiganj: [/^u\/dinajpur\s+region$/i, /^uttar\s+dinajpur/i], Balurghat: [/^d\/dinajpur\s+region$/i, /^dakshin\s+dinajpur/i] };
       var clean = function (s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
       function loss(name, type) {
         var row = null;
         if (type === 'ccc') {
-          var n = name.toLowerCase().trim(), al = ALIAS[n] || [n];
+          var n = name.toLowerCase().trim(), al = ALIAS[n] || [n], O = window.MzoOffices;
           row = latestLoss.filter(function (r) { return !/div\s+total/i.test(r.CCC) && !/region|zone/i.test(r.CCC); })
-            .filter(function (r) { var rn = String(r.CCC || '').toLowerCase().trim(); return al.some(function (a) { return rn === a || clean(rn) === clean(a); }); })[0];
+            .filter(function (r) {
+              var c = O && O.parseCccName(r.CCC);
+              if (c && c.level === 'ccc') return c.ccc === name;
+              var rn = String(r.CCC || '').toLowerCase().trim(); return al.some(function (a) { return rn === a || clean(rn) === clean(a); });
+            })[0];
         } else {
           var pats = (type === 'division' ? DIV_PAT : REG_PAT)[name] || [];
           row = latestLoss.filter(function (r) { return pats.some(function (p) { return p.test(r.CCC); }); })[0];
