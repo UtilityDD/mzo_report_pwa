@@ -13,7 +13,7 @@ app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // Server-side files are never served, locally or from the Vercel function.
-const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
+const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
 app.use((req, res, next) => (PRIVATE_PATH.test(req.path) ? res.status(404).end() : next()));
 // Old URLs (vercel.json has the same redirects): the retired phone home page, the NSC drafts and an extension-less report.
 app.get(['/', '/index.html'], (req, res) => res.redirect(302, '/app.html'));
@@ -31,6 +31,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'mzo-portal-super-secret-key-123456
 if (!process.env.JWT_SECRET && process.env.VERCEL) {
     console.warn('[Auth] JWT_SECRET is not set: sessions are signed with the development fallback. Set JWT_SECRET in the Vercel project.');
 }
+// VM-only admin accounts from MZO_LOCAL_ADMINS (set only in the VM's /etc/mzo/app.env). Unset: inactive.
+const localAdmins = require('./lib/local_admins').create({ secret: JWT_SECRET });
 const POWER_MAP_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT8hYE6YBbfVQDJhgB3cIWqrrGrjMQAQ22mcmCJTOa995gCH-xBAfsAPpBvNYS1KlYIFMRHM59iGB7K/pub?output=csv';
 // Distinct table names (do not use generic "substations" — may clash with other projects/tables)
 const POWER_MAP_TABLE = 'mzo_power_substations';
@@ -573,11 +575,16 @@ async function logActivity(activity) {
             details: clip(activity.details, 1000)
         };
 
-        // Source of truth: Supabase mzo_insight.activity_logs
-        try {
-            await insertActivityLogToSupabase(entry);
-        } catch (sbErr) {
-            console.error('[Activity Log] Supabase write failed:', sbErr.message);
+        // Source of truth: Supabase mzo_insight.activity_logs. A VM-only admin exists nowhere in
+        // Supabase, so its activity stays on this host (the journal and the local cache below).
+        if (localAdmins.isLocalUsername(entry.username)) {
+            if (entry.type !== 'page_visit') console.log(`[Activity] ${entry.username} ${entry.type}: ${entry.details}`);
+        } else {
+            try {
+                await insertActivityLogToSupabase(entry);
+            } catch (sbErr) {
+                console.error('[Activity Log] Supabase write failed:', sbErr.message);
+            }
         }
 
         if (globalCachedLogs === null) {
@@ -691,7 +698,13 @@ function readSession_(req) {
     if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
     try {
         const session = JSON.parse(Buffer.from(parts[0], 'base64').toString('utf-8'));
-        return session && Date.now() < session.expiry ? session.profile : null;
+        if (!(session && Date.now() < session.expiry)) return null;
+        // A VM-only admin's session lasts only while its MZO_LOCAL_ADMINS entry (and hash) is unchanged.
+        if (session.local !== undefined) {
+            if (!localAdmins.sessionValid(session)) return null;
+            req.localAdmin = true;
+        }
+        return session.profile;
     } catch (_) {
         return null;
     }
@@ -734,7 +747,13 @@ app.use(requireAuth);
 // VM mirror mode (MZO_DATA_MODE=mirror + MZO_SNAPSHOT_DIR): /api/data/* serve the sync's snapshots, report
 // reads below use them, and writes refresh them. Off on Vercel and by default (docs/architecture.md, "Mirror mode").
 const mirror = require('./lib/mirror').create({ appRoot: __dirname });
-const refreshMirror = mirror.refreshMirror;
+// Datasets whose writes also change the Briefing's inputs (report meta, NSC upload meta).
+const BRIEFING_MIRROR_KEYS = new Set(['nsc_pending', 'withheld', 'pending_mc', 'load_extension', 'disconnection', 'defective_summary', 'defective_details']);
+function refreshMirror(keys, reason) {
+    const started = mirror.refreshMirror(keys, reason);
+    if (mirror.on() && [].concat(keys || []).some((k) => BRIEFING_MIRROR_KEYS.has(k))) refreshBriefing_({ changed: true });
+    return started;
+}
 mirror.mount(app);
 
 // --- Estimate structures (admin.html) ---
@@ -784,10 +803,11 @@ app.post('/api/structures/update', requireAdmin, (req, res) => {
 });
 
 // Helper to issue signed stateless session cookie
-function issueSessionCookie(res, clientProfile) {
+function issueSessionCookie(res, clientProfile, extra) {
     const payload = {
         profile: clientProfile,
-        expiry: Date.now() + 24 * 60 * 60 * 1000
+        expiry: Date.now() + 24 * 60 * 60 * 1000,
+        ...(extra || {})
     };
     const payloadStr = Buffer.from(JSON.stringify(payload)).toString('base64');
     const signature = crypto.createHmac('sha256', JWT_SECRET).update(payloadStr).digest('base64');
@@ -828,6 +848,52 @@ async function googleTokenInfo_(kind, token) {
     return info;
 }
 
+/** Full admin profile: the Google root admin's, also used for VM-only admins (MZO_LOCAL_ADMINS). */
+function rootAdminProfile_({ Username, Name, email, auth_provider, approved_by }) {
+    return {
+        Username,
+        Name,
+        email,
+        auth_provider,
+        user_status: 'active',
+        role: 'admin',
+        office_level: 'CE',
+        sheets_autho: 'edit',
+        can_comment: true,
+        disconnection_sync_autho: 'Y',
+        pending_mc_sync_autho: 'Y',
+        load_ext_sync_autho: 'Y',
+        defective_upload_autho: 'Y',
+        nsc_upload_autho: 'Y',
+        stock_upload_autho: 'Y',
+        stock_allot_autho: 'Y',
+        stock_cancel_autho: 'Y',
+        upload_permissions: ['disconnection', 'pending_mc', 'load_ext', 'defective', 'nsc', 'stock', 'stock_allot', 'stock_cancel'],
+        requested_at: new Date().toISOString(),
+        approved_at: new Date().toISOString(),
+        approved_by
+    };
+}
+
+/** Sign-in of a VM-only admin: checked against its MZO_LOCAL_ADMINS hash only, never Supabase. */
+async function loginLocalAdmin_(req, res, admin, pin) {
+    if (!(await localAdmins.attempt(admin, String(pin).trim(), req))) {
+        return res.status(401).json({ status: 'error', message: 'Invalid Username or PIN.' });
+    }
+    const clientProfile = portalUserForClient(rootAdminProfile_({
+        Username: admin.username, Name: admin.name, email: '', auth_provider: 'local', approved_by: 'vm_local_admin'
+    }));
+    issueSessionCookie(res, clientProfile, { local: localAdmins.sessionKey(admin) });
+    console.log(`[Auth] VM-only admin logged in: ${admin.username} (${admin.name})`);
+    await logActivity({
+        username: admin.username,
+        name: admin.name,
+        type: 'login',
+        details: `Logged in as a VM-only admin from IP: ${req.ip || req.headers['x-forwarded-for'] || 'unknown'}`
+    });
+    return res.status(200).json({ status: 'success', profile: clientProfile });
+}
+
 // API endpoint for User Login (Username + PIN)
 app.post('/api/login', async (req, res) => {
     const { username, pin } = req.body;
@@ -835,6 +901,8 @@ app.post('/api/login', async (req, res) => {
     if (!username || !pin || !String(pin).trim()) {
         return res.status(400).json({ status: 'error', message: 'Username and PIN are required.' });
     }
+    const localAdmin = localAdmins.find(username);
+    if (localAdmin) return loginLocalAdmin_(req, res, localAdmin, pin);
 
     try {
         const users = await getLoginCredentials({ forceRefresh: true });
@@ -1030,34 +1098,18 @@ app.post('/api/auth/google', async (req, res) => {
         if (!baseUsername) baseUsername = 'user';
         let candidateUsername = baseUsername;
         let counter = 1;
-        while (users.some(u => String(u.Username).toLowerCase() === candidateUsername.toLowerCase())) {
+        while (users.some(u => String(u.Username).toLowerCase() === candidateUsername.toLowerCase()) || localAdmins.isLocalUsername(candidateUsername)) {
             candidateUsername = `${baseUsername}${counter++}`;
         }
 
         if (isRootAdmin) {
-            const rootAdminUser = {
+            const rootAdminUser = rootAdminProfile_({
                 Username: candidateUsername,
                 Name: name || 'Admin',
                 email: email,
                 auth_provider: 'google',
-                user_status: 'active',
-                role: 'admin',
-                office_level: 'CE',
-                sheets_autho: 'edit',
-                can_comment: true,
-                disconnection_sync_autho: 'Y',
-                pending_mc_sync_autho: 'Y',
-                load_ext_sync_autho: 'Y',
-                defective_upload_autho: 'Y',
-                nsc_upload_autho: 'Y',
-                stock_upload_autho: 'Y',
-                stock_allot_autho: 'Y',
-                stock_cancel_autho: 'Y',
-                upload_permissions: ['disconnection', 'pending_mc', 'load_ext', 'defective', 'nsc', 'stock', 'stock_allot', 'stock_cancel'],
-                requested_at: new Date().toISOString(),
-                approved_at: new Date().toISOString(),
                 approved_by: 'system_root'
-            };
+            });
 
             try {
                 const dbRow = clientUserToPortal(rootAdminUser);
@@ -1150,6 +1202,8 @@ app.get('/api/session-check', async (req, res) => {
     if (!req.user || !req.user.Username) {
         return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     }
+    // A VM-only admin is not in Supabase: its profile is the one it signed in with.
+    if (req.localAdmin) return res.status(200).json({ status: 'success', profile: req.user });
     try {
         const users = await getLoginCredentials({ forceRefresh: true });
         const key = String(req.user.Username).trim().toLowerCase();
@@ -2189,6 +2243,8 @@ function hasPermission_(user, flag, sheetsWords) {
 async function resolveFreshUser_(req, force = false) {
     const session = req.user || null;
     if (!session || !session.Username) return session;
+    // A VM-only admin is not in Supabase: never demoted, never replaced by a row of the same name.
+    if (req.localAdmin) return session;
     try {
         const users = await getLoginCredentials({ forceRefresh: force });
         const key = String(session.Username).trim().toLowerCase();
@@ -4639,25 +4695,75 @@ function buildExecutiveBriefing_(meta) {
     };
 }
 
+/** The Briefing from its live inputs (the report meta.json files and the NSC upload meta). */
+async function computeExecutiveBriefing_() {
+    const [pendingMcMeta, loadExtMeta, disconMeta, defectiveMeta, nscMeta] = await Promise.all([
+        PENDING_MC_META.read().catch(() => null),
+        LOAD_EXT_META.read().catch(() => null),
+        DISCONNECTION_META.read().catch(() => null),
+        DEFECTIVE_META.read().catch(() => null),
+        // data/nsc_meta.json (with delayed30) when the briefing tool ran locally; else the Sheet's upload meta
+        Promise.resolve(readLocalNscMeta_() || fetchNscSheetMeta_()).catch(() => null)
+    ]);
+    return buildExecutiveBriefing_({
+        pendingMc: pendingMcMeta,
+        loadExt: loadExtMeta,
+        discon: disconMeta,
+        defective: defectiveMeta,
+        nsc: nscMeta
+    });
+}
+
+// Mirror mode (the VM): the Briefing is the home page and its inputs take 1-2 s to read live, so the last
+// one is kept and answered at once while under 10 min old, refreshed in the background once over 2 min
+// (one refresh at a time), and right after a write that changes its inputs.
+const BRIEFING_STALE_MS = 2 * 60 * 1000;
+const BRIEFING_MAX_AGE_MS = 10 * 60 * 1000;
+const briefingCache_ = { value: null, at: 0, pending: null, again: false };
+
+/** Start (or join) a refresh; `changed`: inputs changed during a running one, so run once more after it. */
+function refreshBriefing_({ changed = false } = {}) {
+    const c = briefingCache_;
+    if (c.pending) {
+        if (changed) c.again = true;
+        return c.pending;
+    }
+    c.pending = computeExecutiveBriefing_()
+        .then((briefing) => {
+            c.value = briefing;
+            c.at = Date.now();
+            return briefing;
+        })
+        .finally(() => {
+            c.pending = null;
+            if (c.again) {
+                c.again = false;
+                refreshBriefing_().catch((e) => console.warn('[Briefing] refresh failed:', e.message));
+            }
+        });
+    if (changed) c.pending.catch((e) => console.warn('[Briefing] refresh failed:', e.message));
+    return c.pending;
+}
+
+async function cachedExecutiveBriefing_() {
+    const c = briefingCache_;
+    const age = Date.now() - c.at;
+    if (c.value && age < BRIEFING_MAX_AGE_MS) {
+        if (age >= BRIEFING_STALE_MS) refreshBriefing_().catch((e) => console.warn('[Briefing] background refresh failed:', e.message));
+        return c.value;
+    }
+    try {
+        return await refreshBriefing_();
+    } catch (err) {
+        if (c.value) return c.value; // older than 10 min, but better than an error
+        throw err;
+    }
+}
+
 app.get('/api/executive/briefing', async (req, res) => {
     if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     try {
-        const [pendingMcMeta, loadExtMeta, disconMeta, defectiveMeta, nscMeta] = await Promise.all([
-            PENDING_MC_META.read().catch(() => null),
-            LOAD_EXT_META.read().catch(() => null),
-            DISCONNECTION_META.read().catch(() => null),
-            DEFECTIVE_META.read().catch(() => null),
-            // data/nsc_meta.json (with delayed30) when the briefing tool ran locally; else the Sheet's upload meta
-            Promise.resolve(readLocalNscMeta_() || fetchNscSheetMeta_()).catch(() => null)
-        ]);
-
-        const briefing = buildExecutiveBriefing_({
-            pendingMc: pendingMcMeta,
-            loadExt: loadExtMeta,
-            discon: disconMeta,
-            defective: defectiveMeta,
-            nsc: nscMeta
-        });
+        const briefing = mirror.on() ? await cachedExecutiveBriefing_() : await computeExecutiveBriefing_();
 
         res.setHeader('Cache-Control', 'private, max-age=30, must-revalidate');
         return res.json({ status: 'success', briefing });

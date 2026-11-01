@@ -223,8 +223,9 @@ async function main() {
             onSnapshot: manifest
         });
         results.push(r);
-        if (r.status === 'ok' && !args.dryRun) {
-            // Data-quality checks (vm/quality, optional): never allowed to fail the sync.
+        if ((r.status === 'ok' || r.status === 'unchanged') && !args.dryRun) {
+            // Data-quality checks (vm/quality, optional): never allowed to fail the sync. On an unchanged
+            // source the check only re-ages its report date, once a day, without reading any data.
             try { await require('../quality').check(src.key, `ds_${src.key}`, { pb, registry, source: src, summary: r, before, snapshotDir, log }); } catch (e) { if (!(e.code === 'MODULE_NOT_FOUND' && String(e.message).includes("'../quality'"))) log(`[${src.key}] quality check failed: ${errMessage(e)}`); }
         }
         const counts = r.status === 'ok' && !args.dryRun ? ` +${r.inserted} ~${r.updated} -${r.deleted}` : '';
