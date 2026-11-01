@@ -144,7 +144,7 @@ function main() {
     const hashA = LA.hashPassword(ADMIN_PW);
     ok(/^scrypt\$32768\$8\$1\$[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+$/.test(hashA), 'hash format');
     ok(LA.parseHash(hashA), 'hash parses');
-    ['', 'scrypt$1$2', 'scrypt$1000$8$1$c2FsdHNhbHRzYWx0c2FsdA==$aGFzaA==', 'bcrypt$16384$8$1$a$b', hashA.replace('$8$', '$99$'), `${hashA}$x`]
+    ['', 'scrypt$1$2', 'scrypt$1000$8$1$c2FsdHNhbHRzYWx0c2FsdA==$aGFzaA==', 'bcrypt$16384$8$1$a$b', hashA.replace('$8$', '$99$'), hashA.replace('$32768$8$1$', '$1048576$32$1$'), `${hashA}$x`]
         .forEach((h) => ok(LA.parseHash(h) === null, `bad hash accepted: ${h.slice(0, 30)}`));
     const quiet = { log() {}, warn() {}, error() {} };
     const warns = [];
