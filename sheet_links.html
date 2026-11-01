@@ -197,7 +197,41 @@
       const row = rows.find(function (r) { return r.key === key; });
       if (!row || (row.updated && !force)) return;
       row.updated = text;
+      if (force) row.forced = true;
       paint();
+    }
+
+    // VM mirror: the hub stores content hashes as versions, so a date that today comes from the stored
+    // version is taken from where that version came from: the dataset's meta (report date or upload
+    // time), or the source's Last-Modified (manifest sourceModifiedAt). Same precedence as the stored
+    // version: it fills or replaces an unforced date; a forced one (report meta) still wins.
+    function mirrorDates() {
+      const hub = window.mzoDataHub;
+      if (!hub || typeof hub.mirrorManifest !== 'function') return;
+      hub.mirrorManifest(false).then(function (idx) {
+        if (!idx) return;
+        const metas = {};
+        rows.forEach(function (row) {
+          const d = datasets.find(function (x) { return x.key === row.key; });
+          const hit = d && idx.hub[d.key];
+          if (!hit || row.key === 'CACHE_JJM') return;
+          if (dateFromVersion(localStorage.getItem('mzo_hub_ver_' + d.key) || '')) return;
+          let when;
+          if (d.versionUrl) {
+            if (!metas[d.versionUrl]) {
+              metas[d.versionUrl] = fetch(d.versionUrl, { credentials: 'same-origin' })
+                .then(function (res) { return res.ok ? res.json() : null; }).catch(function () { return null; });
+            }
+            when = metas[d.versionUrl].then(function (m) {
+              const v = m && ((d.versionField && m[d.versionField]) || m.version);
+              return v ? dateFromVersion('v:' + v) : '';
+            });
+          } else {
+            when = Promise.resolve(hit.e.sourceModifiedAt ? formatWhen(hit.e.sourceModifiedAt) : '');
+          }
+          when.then(function (text) { if (text && !row.forced) { row.updated = text; paint(); } });
+        });
+      }).catch(function () {});
     }
 
     q.addEventListener('input', paint);
@@ -241,6 +275,7 @@
     function applyMeta(key, raw, force) {
       setUpdated(key, formatWhen(raw), force);
     }
+    mirrorDates();
 
     fetch('/api/hub/versions', { credentials: 'same-origin' })
       .then(function (res) { return res.ok ? res.json() : null; })
