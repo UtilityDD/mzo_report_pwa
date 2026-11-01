@@ -73,7 +73,9 @@
     }
     if (f !== '' || row.length) { row.push(f); rows.push(row); }
     if (!rows.length) return [];
-    var head = rows[0].map(function (h) { return h.trim(); }), out = new Array(rows.length - 1);
+    // A repeated header keeps both columns: the first keeps the name, later ones get _2, _3 (weekly has two
+    // "Division" columns, the solar sheet three "APPL_NO").
+    var seen = {}, head = rows[0].map(function (h) { h = h.trim(); var k = seen[h] = (seen[h] || 0) + 1; return k > 1 ? h + '_' + k : h; }), out = new Array(rows.length - 1);
     for (var r = 1; r < rows.length; r++) {
       var o = {}, cells = rows[r];
       for (var k = 0; k < head.length; k++) o[head[k]] = cells[k] != null ? cells[k] : '';
