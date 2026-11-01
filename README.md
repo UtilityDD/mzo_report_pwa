@@ -46,6 +46,7 @@ Optional `.env` (git-ignored, loaded by `npm run dev`): `ANTHROPIC_API_KEY` for 
 | [docs/design-system.md](docs/design-system.md) | The Graphite look, UI kit, workstation shell, building a report page |
 | [docs/reports.md](docs/reports.md) | Per-report rules (data sources, date cells, sync, follow-ups) |
 | [docs/database.md](docs/database.md) | Supabase schemas, SQL files, imports, login rules |
+| [docs/data-mirror.md](docs/data-mirror.md) | The VM's PocketBase copy of every dataset: sources, storage structure, schedules, raw snapshots, running a sync |
 | [docs/stock.md](docs/stock.md) | Stock dump, insight project, allotments |
 | [docs/apps-script.md](docs/apps-script.md) | Apps Script web apps behind the sheets |
 | [docs/assistant.md](docs/assistant.md) | Ask (Claude Haiku via `/api/assistant`) |
