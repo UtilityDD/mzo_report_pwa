@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
   <script src="/mzo_data_hub.js?v=91" defer></script>
+  <script src="/mzo_rows.js?v=3" defer></script>
   <style>
     .cmo-desc { max-width: 420px; white-space: normal; color: var(--mzo-text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   </style>
@@ -93,19 +94,20 @@
     function catLabel(c) { return CAT_SHORT[c] || c || 'Other'; }
     function clean(v) { return UI.blank(v) || /^none$|^not known$/i.test(String(v).trim()) ? '' : String(v).trim(); }
 
-    function prepare(text) {
-      var asOn = '';
-      all = UI.csv(text).filter(function (d) { return DISTRICTS.indexOf(String(d.District || '').trim()) !== -1; }).map(function (d) {
-        if (!asOn && d['Report Date']) asOn = d['Report Date'];
-        var owner = String(d['Pending With'] || '').trim(), days = parseInt(d['Grievance Since'], 10);
+    // t.rows: uniform rows of schema/cmo_grievances.json (snake_case fields, trimmed text, numbers).
+    // Every login sees all three districts, as before: the page does not scope (no mzo_scope.js).
+    function prepare(t) {
+      var asOn = t.first('report_date'); // one cell of the sheet (first data row)
+      all = t.rows.filter(function (d) { return DISTRICTS.indexOf(d.district) !== -1; }).map(function (d) {
+        var owner = d.pending_with, days = d.grievance_since == null ? null : Math.trunc(d.grievance_since);
         return {
-          district: String(d.District).trim(), ps: clean(d['Police Station']) || 'Not known', owner: owner,
-          disposed: owner === DISPOSED, days: isFinite(days) ? days : null,
-          name: clean(d.Name) || clean(String(d['Applicant Name & Mobile Number'] || '').replace(/[\d\s\-+]{8,}$/, '')),
-          phone: clean(d.Phone), applicant: d['Applicant Name & Mobile Number'], received: d['Received Date & Time'],
-          block: clean(d['Block/ Municipality']), gp: clean(d['GP/ Ward']), category: String(d['Grievance Category'] || '').trim(),
-          text: String(d['Grievance Description'] || '').replace(/\{#[^}]*#\}/g, '').replace(/_x000D_/g, ' ').replace(/[-=_]{4,}/g, ' ').replace(/\s+/g, ' ').trim(), state: d.Status, assign: d['Assign To'],
-          atn: d['Last ATN'], remarks: clean(d['Last ATN Remarks'])
+          district: d.district, ps: clean(d.police_station) || 'Not known', owner: owner,
+          disposed: owner === DISPOSED, days: days,
+          name: clean(d.name) || clean(d.applicant_name_mobile_number.replace(/[\d\s\-+]{8,}$/, '')),
+          phone: clean(d.phone), applicant: d.applicant_name_mobile_number, received: d.received_date_time,
+          block: clean(d.block_municipality), gp: clean(d.gp_ward), category: d.grievance_category,
+          text: d.grievance_description.replace(/\{#[^}]*#\}/g, '').replace(/_x000D_/g, ' ').replace(/[-=_]{4,}/g, ' ').replace(/\s+/g, ' ').trim(), state: d.status, assign: d.assign_to,
+          atn: d.last_atn, remarks: clean(d.last_atn_remarks)
         };
       });
       all.forEach(function (r) { r.search = (r.name + ' ' + r.phone + ' ' + r.ps + ' ' + r.text + ' ' + r.owner + ' ' + r.block).toLowerCase(); });
@@ -213,12 +215,12 @@
       UI.exportCsv('cmo-grievances.csv', [{ key: 'name', label: 'Applicant' }, { key: 'phone', label: 'Phone' }, { key: 'district', label: 'District' }, { key: 'ps', label: 'Police station' },
         { key: 'category', label: 'Category' }, { key: 'text', label: 'Grievance' }, { key: 'owner', label: 'Pending with' }, { key: 'days', label: 'Age (days)' }, { key: 'remarks', label: 'Last remarks' }], window.__view || []);
     });
-    UI.refresh('refreshBtn', 'CACHE_CMO', function (t) { prepare(t); render(); });
+    MzoRows.refresh('refreshBtn', 'cmo_grievances', function (t) { prepare(t); render(); }, { scope: false });
 
-    UI.load('CACHE_CMO', function (text, info) {
-      if (!text) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('groupTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
-      prepare(text); render();
-    });
+    MzoRows.load('cmo_grievances', function (t, info) {
+      if (!t) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('groupTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      prepare(t); render();
+    }, { scope: false });
   });
   </script>
 </body>
