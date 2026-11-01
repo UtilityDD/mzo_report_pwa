@@ -327,6 +327,7 @@ function sheetSource(def) {
         primaryKey: def.primaryKey || null,
         columnTypes: def.columnTypes,
         dateOrder: def.dateOrder,
+        header: def.header === false ? false : undefined, // no header row: columns col_a, col_b, … (lib/uniform.js header: false)
         notes: def.notes || '',
         timeoutMs: def.timeoutMs,
         maxSkipHours: def.maxSkipHours,

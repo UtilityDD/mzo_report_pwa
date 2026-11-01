@@ -41,6 +41,13 @@
   w.addEventListener('resize', closePop);
 
   /* ---------- cells ---------- */
+  // A column's value in a record. PocketBase stores an empty number as 0 and an empty yes/no as
+  // false; the sync lists those fields in the record's _nulls, and they show as empty here.
+  // (_nulls only ever means something for number and yes/no columns.)
+  function val(r, c) {
+    var n = r && r._nulls;
+    return n && n.length && (c.type === 'number' || c.type === 'bool') && n.indexOf(c.name) >= 0 ? null : r[c.name];
+  }
   function emptyCell(td) { td.classList.add('pt-nil'); td.textContent = '—'; return td; }
   function cell(c, v) {
     var td = document.createElement('td');
@@ -178,7 +185,7 @@
       return (st.sort.dir === 'desc' ? '-' : '') + st.sort.field + (st.sort.field !== '_row_no' ? ',_row_no' : '');
     }
     // Only the shown columns travel; with no column list yet, fetch whole records to learn them.
-    function fieldsParam(list) { return cols.length ? ['id', '_row_no'].concat(list.map(function (c) { return c.name; })).join(',') : null; }
+    function fieldsParam(list) { return cols.length ? ['id', '_row_no', '_nulls'].concat(list.map(function (c) { return c.name; })).join(',') : null; }
     function isFiltered() { return st.filters.length > 0 || !!st.q.trim(); }
 
     /* fetch */
@@ -206,8 +213,8 @@
     }
     // A dataset whose registry row has no column list yet: use the record's own keys.
     function inferCols(rec) {
-      var skip = { id: 1, collectionId: 1, collectionName: 1, created: 1, updated: 1, expand: 1, _row_key: 1, _row_no: 1, _synced_at: 1, _hash: 1 };
-      cols = Object.keys(rec).filter(function (k) { return !skip[k] && P.IDENT.test(k); }).map(function (k) {
+      var skip = { id: 1, collectionId: 1, collectionName: 1, created: 1, updated: 1, expand: 1, _row_key: 1, _row_no: 1, _synced_at: 1, _hash: 1, _nulls: 1 };
+      cols = Object.keys(rec).filter(function (k) { return !skip[k] && k.indexOf('_stage_') !== 0 && P.IDENT.test(k); }).map(function (k) {
         var v = rec[k];
         return { name: k, source_name: k, type: typeof v === 'number' ? 'number' : typeof v === 'boolean' ? 'bool' : v && typeof v === 'object' ? 'json' : 'text' };
       });
@@ -281,7 +288,7 @@
         var tr = h('tr', { class: 'click' + (i === sel ? ' sel' : ''), tabindex: '0', dataset: { i: i } });
         var rn = h('td', { class: 'rn num', text: r._row_no != null && r._row_no !== '' ? P.n(r._row_no) : '' });
         tr.appendChild(rn);
-        vis.forEach(function (c) { tr.appendChild(cell(c, r[c.name])); });
+        vis.forEach(function (c) { tr.appendChild(cell(c, val(r, c))); });
         frag.appendChild(tr);
       });
       tbody.appendChild(frag);
@@ -454,18 +461,18 @@
       cols.forEach(function (c) {
         known[c.name] = 1;
         dl.appendChild(h('dt', null, h('span', { text: c.source_name }), c.source_name !== c.name ? h('small', { class: 'pt-fname', text: c.name }) : null));
-        dl.appendChild(h('dd', null, fullValue(c, rec[c.name])));
+        dl.appendChild(h('dd', null, fullValue(c, val(rec, c))));
       });
-      var sysNames = { id: 1, _row_key: 1, _row_no: 1, _synced_at: 1, _hash: 1, collectionId: 1, collectionName: 1, created: 1, updated: 1, expand: 1 };
+      var sysNames = { id: 1, _row_key: 1, _row_no: 1, _synced_at: 1, _hash: 1, _nulls: 1, collectionId: 1, collectionName: 1, created: 1, updated: 1, expand: 1 };
       Object.keys(rec).forEach(function (k) {
-        if (known[k] || sysNames[k]) return;
+        if (known[k] || sysNames[k] || k.indexOf('_stage_') === 0) return; // _stage_: a type change in progress
         dl.appendChild(h('dt', null, h('span', { text: k })));
         dl.appendChild(h('dd', null, fullValue({ name: k, type: typeof rec[k] === 'object' ? 'json' : 'text' }, rec[k])));
       });
       var sys = h('dl', { class: 'ui-dl pt-dl pt-sys' });
-      ['id', '_row_key', '_row_no', '_synced_at', '_hash', 'created', 'updated', 'collectionName'].forEach(function (k) {
+      ['id', '_row_key', '_row_no', '_synced_at', '_hash', '_nulls', 'created', 'updated', 'collectionName'].forEach(function (k) {
         if (!(k in rec)) return;
-        var v = rec[k];
+        var v = k === '_nulls' ? (rec[k] && rec[k].length ? rec[k].join(', ') : '') : rec[k];
         sys.appendChild(h('dt', { text: k }));
         sys.appendChild(h('dd', { class: 'pt-mono' }, v === '' || v == null ? '—' : k === '_synced_at' || k === 'created' || k === 'updated' ? P.dateTime(v) + '  ·  ' + v : String(v)));
       });
@@ -508,7 +515,7 @@
       exportBtn.title = 'Click to cancel';
       var want = total;
       exportPages(vis, function (rows, got) {
-        rows.forEach(function (r) { lines.push(vis.map(function (c) { return csvCell(csvVal(c, r[c.name]), c.type === 'text' || c.type === 'json'); }).join(',')); });
+        rows.forEach(function (r) { lines.push(vis.map(function (c) { return csvCell(csvVal(c, val(r, c)), c.type === 'text' || c.type === 'json'); }).join(',')); });
         label.textContent = 'Cancel · ' + Math.min(100, Math.round(got / Math.max(1, want) * 100)) + '%';
         return !exp.signal.aborted;
       }, exp.signal).then(function (got) {

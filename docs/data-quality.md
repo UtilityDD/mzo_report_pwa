@@ -237,13 +237,14 @@ The mirror stores every value; these differences are smoothed out in the `ds_` c
 - **Spaces:** leading and trailing spaces in cells are trimmed (e.g. "MALDAH " in ICDS, "Hili " in office columns). Header spaces, line breaks and a byte-order mark are cleaned ("CCC CODE " becomes `ccc_code`).
 - **Empty rows and padding columns** are skipped (369 empty rows in ICDS A+, the empty columns of the disconnection sheet).
 - **Headers:** repeated headers become `name_2`, `name_3` (APPL_NO in solar, Division in weekly); empty headers become `col_<letter>`; "id" becomes `id_2`. The original header is kept in `sys_datasets.columns`.
-- **Numbers:** Indian and Western grouping commas are removed ("5,293.69" → 5293.69). A column is a number column only when 98 % of its cells are numbers; the other cells keep their exact text in a `<column>_raw` companion. Codes with leading zeros stay text.
+- **Numbers:** Indian and Western grouping commas are removed ("5,293.69" → 5293.69). A column is a number column only when 98 % of its cells are numbers; the other cells keep their exact text in a `<column>_raw` companion. Codes with leading zeros stay text, and so do identifier columns (`…_no`, `…_id`, `…_code`, phone, mobile, …) even when every value is digits. Types follow `lib/uniform.js`, so the portal and the pages agree ([data-mirror.md](data-mirror.md#columns)).
+- **Placeholders** ("(null)", "NA", "#N/A", "-", "NIL", …) count as empty in a number, date or yes/no column instead of turning it into text; in a text column they stay as written.
 - **Dates:** dd/mm/yyyy, dd.mm.yyyy, dd-mm-yyyy, yyyy-mm-dd, ISO and "1-Oct-2026" are read. The column's day/month order is detected (stock is m/d/yyyy), and date-only values are stored as UTC midnight. Values that do not parse go to `_raw`.
 - **Offices** (dq-offices, `lib/offices.js`): every row with office columns gets `_region`, `_division`, `_ccc_code` and `_ccc`. Known variants are mapped: Gazol/GAJOL/GAZOL CCC → Gazole, Kushmandi/KUSHMUNDI → Kusmandi, MALDA DIVISIOIN → Malda, U/DINAJPUR, U. DINAJPUR and DINAJPUR DAKSHIN → the region, "… CUSTOMER CARE CENTER" → the CCC, SAP cost centres C366111050 → 6611105, and old plant codes (3342, 3432, …) → their division.
 - **Repeated primary keys** are kept, with an occurrence suffix on the row key, so no row is lost (safety inspections, highway crossings).
 - **Supabase values:** json columns stay objects, microsecond timestamps are cut to milliseconds, and PINs and codes stay text (leading zeros kept).
 
-Not normalised on purpose (they are visible in the portal and listed above): "(null)", "-", "NA" and "#N/A" stay as text; a column with mixed day/month order is read with one order; total rows and duplicate rows stay rows.
+Not normalised on purpose (they are visible in the portal and listed above): "(null)", "-", "NA" and "#N/A" stay as text in text columns; a column with mixed day/month order is read with one order; total rows and duplicate rows stay rows.
 
 ## 3. App and page bugs (handed to dq-offices and the lead)
 
