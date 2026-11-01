@@ -32,7 +32,7 @@ function perfect() {
         nsc_pending_over_30d_share: e(10, { numerator: 10, denominator: 100 }),
         nsc_wo_delay_avg: e(3, { numerator: 300, denominator: 100 }),
         load_ext_pending_over_90d_share: e(10, { numerator: 1, denominator: 10 }),
-        solar_pending_over_30d_share: e(10, { numerator: 10, denominator: 100 }),
+        pmsgy_net_metering_share: e(100, { numerator: 50, denominator: 50 }),
         defective_meter_share: e(2, { numerator: 2000, denominator: 100000 }),
         defective_over5y_share: e(5, { numerator: 100, denominator: 2000 }),
         unbilled_3m_per_10k: e(0.5, { numerator: 5, denominator: 100000 }),
@@ -53,7 +53,8 @@ function worst() {
     Object.assign(m.collection_efficiency, { value: 90 }); Object.assign(m.receivable_days, { value: 200 });
     m.atc_loss_change_yoy.inputs = { current: 12, yearEarlier: 10 };
     Object.assign(m.dtr_weighted_outage_hours, { value: 40 }); Object.assign(m.feeder_outage_count, { value: 70 });
-    for (const k of ['nsc_pending_over_30d_share', 'load_ext_pending_over_90d_share', 'solar_pending_over_30d_share', 'defective_over5y_share']) m[k].value = 95;
+    for (const k of ['nsc_pending_over_30d_share', 'load_ext_pending_over_90d_share', 'defective_over5y_share']) m[k].value = 95;
+    m.pmsgy_net_metering_share.value = 40;
     m.nsc_wo_delay_avg.value = 60; m.defective_meter_share.value = 40; m.unbilled_3m_per_10k.value = 30; m.first_bill_pending_per_10k.value = 30;
     m.mc_pending_over_30d_share.value = 90; m.fault_dockets_open_over_24h_per_10k.value = 20; m.docket_open_per_10k.value = 90; m.cmo_open_share.value = 50;
     return m;

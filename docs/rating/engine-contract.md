@@ -37,7 +37,7 @@ Metric ids the engine reads (all already in `sample-metrics.json`):
 |---|---|
 | Loss & revenue | `atc_loss`, `distribution_loss` (needs `target`), `collection_efficiency`, `receivable_days`, `atc_loss_change_yoy` (needs `inputs.current`, `inputs.yearEarlier`) |
 | Reliability | `dtr_weighted_outage_hours`, `feeder_outage_count` |
-| Connection services | `nsc_pending_over_30d_share`, `nsc_wo_delay_avg`, `load_ext_pending_over_90d_share`, `solar_pending_over_30d_share` |
+| Connection services | `nsc_pending_over_30d_share`, `nsc_wo_delay_avg`, `load_ext_pending_over_90d_share`, `pmsgy_net_metering_share` |
 | Metering & billing | `defective_meter_share`, `defective_over5y_share`, `unbilled_3m_per_10k`, `first_bill_pending_per_10k`, `mc_pending_over_30d_share` |
 | Faults & grievances | `fault_dockets_open_over_24h_per_10k`, `docket_open_per_10k`, `cmo_open_share` |
 | Penalties | `accidents_fatal_12m`, `safety_rectification_share`, `live_consumers` |
