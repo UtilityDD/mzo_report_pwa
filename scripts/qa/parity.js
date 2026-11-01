@@ -8,7 +8,7 @@
  *   --no-warm              skip the warm (second) load
  *   --no-phone             skip the 390px pass
  *   --phone-pages a,b      keys for the 390px pass (default: briefing, nsc, loss, stock, disconnection, meter_utilization)
- *   --timeout 120          seconds to wait for one page to settle
+ *   --timeout 150          seconds to wait for one page to settle (pages with skeletons and open requests wait this long)
  *   --out <dir>            output root (default: <repo>/../agent-progress/parity, or env QA_OUT)
  *
  * Session: on localhost the harness forges the dev test cookie (secret: env QA_JWT_SECRET or the
@@ -229,7 +229,7 @@ function extractPage(opts) {
   while ((node = walker.nextNode()) && seen < 4000) {
     seen++;
     const t = String(node.nodeValue || '').replace(/\s+/g, ' ').trim();
-    if (t && t.length < 120 && /\b(as on|as of|data as|updated|till|upto|up to)\b/i.test(t) && /\d/.test(t)) {
+    if (t && t.length < 120 && /\b(as on|as of|data as|updated|up to \d{1,2} [A-Z][a-z]{2} \d{4})/i.test(t) && /\d/.test(t)) {
       const full = clip(txt(node.parentElement), 120);
       if (asOn.indexOf(full) < 0) asOn.push(full);
     }
@@ -400,7 +400,9 @@ function timingFrom(tlInfo, topOrigin, nav) {
   if (!tlInfo || !tlInfo.tl.length) return { firstDataMs: null, finalDataMs: null, settledMs: null, ...nav };
   const off = tlInfo.origin - topOrigin;
   const tl = tlInfo.tl;
-  const final = tl[tl.length - 1][1];
+  const last = tl[tl.length - 1];
+  if (last[3] > 0) return { firstDataMs: null, finalDataMs: null, settledMs: Math.round(last[0] + off), changes: tl.length, incomplete: true, ...nav };
+  const final = last[1];
   const firstData = tl.find((e) => e[2]);
   let firstFinal = null;
   for (const e of tl) if (e[1] === final) { firstFinal = e; break; }
@@ -471,7 +473,7 @@ async function loadOnce(ctx, base, p, o) {
     if (state.skel === 0 && quiet && sinceChange > 2500) { settledReason = 'stable+idle'; break; }
     if (state.skel === 0 && sinceChange > 8000 && elapsed > 12000) { settledReason = 'stable(busy network)'; break; }
     // Skeletons left: keep waiting while the page still has requests open (some sheets take over a minute).
-    if (sinceChange > 20000 && elapsed > 30000 && (inflight === 0 || elapsed > 100000)) { settledReason = 'stable(skeletons left)'; break; }
+    if (sinceChange > 20000 && elapsed > 30000 && inflight === 0) { settledReason = 'stable(skeletons left)'; break; }
   }
   const settleMs = Date.now() - t0;
 
@@ -522,7 +524,7 @@ async function main() {
   const outDir = path.join(outRoot, label);
   fs.mkdirSync(outDir, { recursive: true });
   const conc = Math.max(1, Number(args.concurrency || 3));
-  const timeoutMs = Number(args.timeout || 120) * 1000;
+  const timeoutMs = Number(args.timeout || 150) * 1000;
   const doWarm = args.warm !== false;
   const doPhone = args.phone !== false;
   const phoneKeys = String(args['phone-pages'] || DEFAULT_PHONE.join(',')).split(',').filter(Boolean);
@@ -533,6 +535,22 @@ async function main() {
   let mode = null;
   try { appVersion = (await (await fetch(base + '/version.json', { headers })).json()).version || ''; } catch (_) {}
   try { const r = await fetch(base + '/api/data/status', { headers }); mode = { status: r.status, body: r.ok ? await r.json() : (await r.text()).slice(0, 200) }; } catch (e) { mode = { error: String(e.message || e) }; }
+
+  // Where each server meta endpoint points the pages (host + path only), so a diff can tell a
+  // source switch (Google fallback vs Supabase Storage vs mirror) from a parity failure.
+  const sources = {};
+  if (sess) {
+    for (const ep of ['nsc', 'stock', 'defective', 'disconnection', 'pending-mc', 'load-extension', 'power-map']) {
+      try {
+        const r = await fetch(base + '/api/' + ep + '/meta', { headers, signal: AbortSignal.timeout(30000) });
+        const j = r.ok ? await r.json() : null;
+        const urls = {};
+        const walk = (o, pre) => { if (!o || typeof o !== 'object') return; for (const [k, v] of Object.entries(o)) { if (typeof v === 'string' && /^(https?:\/\/|\/api\/)/.test(v) && /url/i.test(k)) urls[pre + k] = v.replace(/\?.*$/, ''); else if (v && typeof v === 'object' && !Array.isArray(v)) walk(v, pre + k + '.'); } };
+        walk(j, '');
+        sources[ep] = { status: r.status, version: j && (j.version || j.withheldVersion || '') ? String(j.version || '').slice(0, 80) : '', urls };
+      } catch (e) { sources[ep] = { error: String(e.message || e).slice(0, 120) }; }
+    }
+  }
 
   let appHtml = '';
   if (sess) { try { const r = await fetch(base + '/app.html', { headers }); if (r.ok) appHtml = await r.text(); } catch (_) {} }
@@ -571,7 +589,7 @@ async function main() {
 
   const runInfo = {
     label, base, startedAt: new Date().toISOString(), host: os.hostname(), appVersion, navSource, mode,
-    session: sess ? sess.source : 'none', concurrency: conc, warm: doWarm, phone: doPhone ? phoneKeys : [],
+    session: sess ? sess.source : 'none', sources, concurrency: conc, warm: doWarm, phone: doPhone ? phoneKeys : [],
     pages: pages.map((p) => ({ key: p.key, url: p.url, aliases: p.aliases }))
   };
   console.log(`[parity] ${label}: ${pages.length} pages from ${base} (app ${appVersion || '?'}, ${navSource}, session ${runInfo.session}, concurrency ${conc})`);

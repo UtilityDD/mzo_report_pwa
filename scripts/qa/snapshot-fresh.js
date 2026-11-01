@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* Is each mirror snapshot still identical to its live source?
  *
- *   node scripts/qa/snapshot-fresh.js <snapshotDir> [--out <file.json>]
+ *   node scripts/qa/snapshot-fresh.js <snapshotDir> [--only a,b] [--out <file.json>]
  *
  * For every manifest entry, GETs its first source URL (published CSV/TSV, export, gviz, public
  * Storage; never Apps Script) and compares the SHA-1 of the bytes with the snapshot file. A parity
@@ -20,7 +20,9 @@ async function main() {
   if (!dir) { console.error('usage: node scripts/qa/snapshot-fresh.js <snapshotDir> [--out file.json]'); process.exit(2); }
   const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
   const res = { checkedAt: new Date().toISOString(), manifestGeneratedAt: manifest.generatedAt, datasets: {} };
-  const entries = Object.entries(manifest.datasets || {});
+  const onlyIdx = process.argv.indexOf('--only');
+  const only = onlyIdx > 0 ? new Set(process.argv[onlyIdx + 1].split(',')) : null;
+  const entries = Object.entries(manifest.datasets || {}).filter(([k]) => !only || only.has(k));
   let i = 0;
   async function one([key, e]) {
     const r = { file: e.file, fetchedAt: e.fetchedAt || e.snapshotAt || '', dataHubKeys: e.dataHubKeys || [] };

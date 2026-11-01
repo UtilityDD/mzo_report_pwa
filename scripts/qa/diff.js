@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 /* Compare two parity runs (scripts/qa/parity.js) and write a readable report.
  *
- *   node scripts/qa/diff.js <labelA> <labelB> [--volatile <labelC>[,<labelD>]] [--out <dir>]
+ *   node scripts/qa/diff.js <labelA> <labelB> [--volatile <labelC>[,<labelD>]] [--expected <rules.json>|none] [--out <dir>]
  *
  *   --volatile  runs of the same mode as A taken at another time: any field that differs between A
  *               and those runs is tagged "moves by itself" (live sheets changing), not a parity failure.
+ *
+ *   --expected  known source switches between the modes (default scripts/qa/expected.json): their
+ *               differences go to an "Expected differences" section, everything else is a real mismatch.
  *
  * Writes <out>/diff-<A>-<B>.md and <out>/diff-<A>-<B>.json.
  */
@@ -17,6 +20,12 @@ const REPO = path.resolve(__dirname, '..', '..');
 const KEY_PAGES = ['home', 'nsc', 'loss', 'stock', 'meter_utilization', 'defective_meter', 'disconnection', 'performance_index'];
 const GOOGLE = /(^|\.)(google\.com|googleusercontent\.com|gstatic\.com)$/i;
 const PHASES = [['desktop', 'cold'], ['desktop', 'warm'], ['phone', 'cold']];
+
+function defaultOut() {
+  let d = REPO;
+  for (let i = 0; i < 4; i++) { d = path.dirname(d); if (fs.existsSync(path.join(d, 'agent-progress'))) return path.join(d, 'agent-progress', 'parity'); }
+  return path.join(REPO, 'qa-out');
+}
 
 function parseArgs(argv) {
   const a = { _: [] };
@@ -96,9 +105,9 @@ function diffMaps(a, b) {
 }
 
 const md = (s) => String(s == null ? '' : s).replace(/\|/g, '\\|').replace(/\n/g, ' ').slice(0, 220);
-const ms = (x) => (x == null ? '–' : x >= 10000 ? (x / 1000).toFixed(1) + ' s' : x + ' ms');
-const ratio = (a, b) => (a && b ? (a / b).toFixed(1) + '×' : '–');
-const median = (xs) => { const v = xs.filter((x) => x != null).sort((p, q) => p - q); if (!v.length) return null; const m = v.length >> 1; return v.length % 2 ? v[m] : Math.round((v[m - 1] + v[m]) / 2); };
+const ms = (x) => (x == null ? '–' : x < 0 ? 'no data' : x >= 10000 ? (x / 1000).toFixed(1) + ' s' : x + ' ms');
+const ratio = (a, b) => (a > 0 && b > 0 ? (a / b).toFixed(1) + '×' : '–');
+const median = (xs) => { const v = xs.filter((x) => x != null && x >= 0).sort((p, q) => p - q); if (!v.length) return null; const m = v.length >> 1; return v.length % 2 ? v[m] : Math.round((v[m - 1] + v[m]) / 2); };
 function googleReqs(load) { if (!load || !load.net) return null; let n = 0; for (const [h, c] of Object.entries(load.net.byHost || {})) if (GOOGLE.test(h.replace(/:\d+$/, ''))) n += c; return n; }
 function bytesKB(load, onlyGoogle) { if (!load || !load.net) return null; let n = 0; for (const [h, c] of Object.entries(load.net.bytesByHost || {})) if (!onlyGoogle || GOOGLE.test(h.replace(/:\d+$/, ''))) n += c; return Math.round(n / 1024); }
 function errList(load) {
@@ -118,15 +127,33 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   const [la, lb] = args._;
   if (!la || !lb) { console.error('usage: node scripts/qa/diff.js <labelA> <labelB> [--volatile <labelC>]'); process.exit(2); }
-  const root = args.out || process.env.QA_OUT || path.resolve(REPO, '..', '..', 'agent-progress', 'parity');
+  const root = args.out || process.env.QA_OUT || defaultOut();
   const A = loadRun(root, la), B = loadRun(root, lb);
   const vols = args.volatile ? String(args.volatile).split(',').map((l) => loadRun(root, l)) : [];
+  const rulesFile = args.expected === 'none' ? null : (args.expected || path.join(__dirname, 'expected.json'));
+  const rules = rulesFile ? JSON.parse(fs.readFileSync(rulesFile, 'utf8')).rules || [] : [];
+  const hubKeys = (r) => { const s = new Set(); for (const [vp, ph] of PHASES) { const l = getLoad(r, vp, ph); if (l && l.data) Object.keys(l.data.hubVersions || {}).forEach((k) => s.add(k)); if (l && l.frameData) Object.keys(l.frameData.hubVersions || {}).forEach((k) => s.add(k)); } return s; };
+  const googleSource = (run, ep) => { const s = run.sources && run.sources[ep]; if (!s) return null; return Object.values(s.urls || {}).some((u) => /docs\.google\.com|googleusercontent\.com/.test(u)); };
+  // Rules that apply to page k, given A's flattened values.
+  function rulesFor(k, ra, rb, fa) {
+    const keysUsed = new Set([...hubKeys(ra), ...hubKeys(rb)]);
+    return rules.filter((r) => {
+      const hit = (r.pages || []).includes(k) || (r.datasets || []).some((d) => keysUsed.has(d));
+      if (!hit) return false;
+      if (r.requireA && !Object.entries(r.requireA).every(([f, v]) => fa[f] === v || fa['frame:' + f] === v)) return false;
+      if (r.requireAGoogleSource) {
+        const known = r.requireAGoogleSource.map((ep) => googleSource(A.run, ep));
+        if (known.every((x) => x === false)) return false; // A's run read none of them from Google
+      }
+      return true;
+    });
+  }
 
   const keys = [...new Set([...Object.keys(A.pages), ...Object.keys(B.pages)])];
   const order = (A.run.pages || B.run.pages || []).map((p) => p.key);
   keys.sort((x, y) => (order.indexOf(x) + 1 || 999) - (order.indexOf(y) + 1 || 999));
 
-  const mismatches = [], volatileHits = [], status = [], timing = [], errors = [], coldWarm = [];
+  const mismatches = [], volatileHits = [], expectedHits = [], status = [], timing = [], errors = [], coldWarm = [];
   for (const k of keys) {
     const ra = A.pages[k], rb = B.pages[k];
     const name = (ra || rb).name || k, url = (ra || rb).url;
@@ -142,9 +169,11 @@ function main() {
       for (const v of vols) { const lv = getLoad(v.pages[k], vp, ph) || getLoad(v.pages[k], 'desktop', 'cold'); if (lv) diffMaps(fa, flatten(lv)).forEach((d) => moving.add(d.field)); }
       // A's own cold vs warm loads (minutes apart) also show what moves.
       if (ph === 'warm' || vp === 'phone') { const lc = getLoad(ra, 'desktop', 'cold'); if (lc && lc !== a) diffMaps(flatten(lc), fa).forEach((d) => moving.add(d.field)); }
+      const exp = rulesFor(k, ra, rb, fa);
       for (const d of diffMaps(fa, fb)) {
         const item = { page: k, name, url, phase: vp + '/' + ph, field: d.field, a: d.a, b: d.b };
-        if (moving.has(d.field)) { item.volatile = true; volatileHits.push(item); pageVol++; } else { mismatches.push(item); pageMis++; }
+        if (exp.length) { item.expected = exp.map((r) => r.id); expectedHits.push(item); }
+        else if (moving.has(d.field)) { item.volatile = true; volatileHits.push(item); pageVol++; } else { mismatches.push(item); pageMis++; }
       }
     }
     for (const [lab, r] of [[la, ra], [lb, rb]]) {
@@ -153,7 +182,7 @@ function main() {
     }
     const ac = getLoad(ra, 'desktop', 'cold'), bc = getLoad(rb, 'desktop', 'cold'), aw = getLoad(ra, 'desktop', 'warm'), bw = getLoad(rb, 'desktop', 'warm');
     const ap = getLoad(ra, 'phone', 'cold'), bp = getLoad(rb, 'phone', 'cold');
-    const t = (l) => (l && l.timing ? l.timing.finalDataMs : null);
+    const t = (l) => (l && l.timing ? (l.timing.incomplete || (l.timing.finalDataMs == null && l.settledReason !== 'stable+idle') ? -1 : l.timing.finalDataMs) : null);
     timing.push({ key: k, name, aCold: t(ac), bCold: t(bc), aWarm: t(aw), bWarm: t(bw), aPhone: t(ap), bPhone: t(bp), aG: googleReqs(ac), bG: googleReqs(bc), aKB: bytesKB(ac), bKB: bytesKB(bc), aGKB: bytesKB(ac, true), bGKB: bytesKB(bc, true), aReq: ac && ac.net ? ac.net.total : null, bReq: bc && bc.net ? bc.net.total : null, mis: pageMis, vol: pageVol });
     for (const [vp, ph] of PHASES) {
       const a = getLoad(ra, vp, ph), b = getLoad(rb, vp, ph);
@@ -174,7 +203,9 @@ function main() {
   const pagesWithMis = new Set(mismatches.map((m) => m.page));
   L.push('## Summary', '');
   L.push(`- Pages compared: ${keys.length}. Pages identical on every compared field: ${keys.length - pagesWithMis.size - status.filter((s) => /missing/.test(s.note)).length}.`);
-  L.push(`- **Mismatches: ${mismatches.length}** on ${pagesWithMis.size} page(s)` + (vols.length ? `; plus ${volatileHits.length} difference(s) on fields that also moved between ${la} and ${vols.map((v) => v.label).join(', ')} (live data changing, not parity failures).` : '.'));
+  L.push(`- **Real mismatches: ${mismatches.length}** on ${pagesWithMis.size} page(s): ${[...pagesWithMis].join(', ') || 'none'}.`);
+  if (rules.length) L.push(`- Expected differences (known source switches, see below): ${expectedHits.length} on ${new Set(expectedHits.map((m) => m.page)).size} page(s).`);
+  if (vols.length) L.push(`- Differences on fields that also moved between ${la} and ${vols.map((v) => v.label).join(', ')} (live data changing, not parity failures): ${volatileHits.length}.`);
   const med = (f) => median(timing.map(f));
   L.push(`- Median time to final data paint, desktop cold: ${la} ${ms(med((t) => t.aCold))}, ${lb} ${ms(med((t) => t.bCold))}; warm: ${la} ${ms(med((t) => t.aWarm))}, ${lb} ${ms(med((t) => t.bWarm))}.`);
   const sumG = (f) => timing.reduce((s, t) => s + (f(t) || 0), 0);
@@ -184,13 +215,29 @@ function main() {
   if (status.length) { L.push('', '### Page status', ''); status.forEach((s) => L.push(`- \`${s.key}\` (${s.url}): ${md(s.note)}`)); }
   L.push('');
 
-  L.push('## Mismatches', '');
+  L.push('## Real mismatches', '', 'Not explained by a known source switch or by live data moving: each one is a parity failure to fix.', '');
   if (!mismatches.length) L.push('None.');
   else {
     L.push(`| Page | Phase | Field | ${la} | ${lb} |`, '|---|---|---|---|---|');
     mismatches.forEach((m) => L.push(`| ${md(m.page)} (${md(m.url)}) | ${m.phase} | ${md(m.field)} | ${md(m.a)} | ${md(m.b)} |`));
   }
   L.push('');
+  if (rules.length) {
+    L.push('## Expected differences', '', 'Known source switches between the two modes, listed by rule (`' + path.relative(REPO, rulesFile) + '`). These are not parity failures.', '');
+    const byRule = {};
+    expectedHits.forEach((m) => m.expected.forEach((id) => (byRule[id] = byRule[id] || []).push(m)));
+    if (!expectedHits.length) L.push('None.');
+    rules.forEach((r) => {
+      const hits = byRule[r.id];
+      if (!hits) return;
+      L.push(`### ${r.id}: ${hits.length} difference(s) on ${[...new Set(hits.map((m) => m.page))].join(', ')}`, '', r.reason, '');
+      L.push(`| Page | Phase | Field | ${la} | ${lb} |`, '|---|---|---|---|---|');
+      hits.filter((m) => m.expected[0] === r.id).slice(0, 40).forEach((m) => L.push(`| ${md(m.page)} | ${m.phase} | ${md(m.field)} | ${md(m.a)} | ${md(m.b)} |`));
+      const extra = hits.filter((m) => m.expected[0] === r.id).length - 40;
+      if (extra > 0) L.push('', `… and ${extra} more (full list in the .json).`);
+      L.push('');
+    });
+  }
   if (vols.length) {
     L.push(`## Differences on fields that move by themselves`, '', `These fields also differ between ${la} and ${vols.map((v) => v.label).join(', ')} (same mode, different time), so they are expected to drift.`, '');
     if (!volatileHits.length) L.push('None.');
@@ -226,8 +273,8 @@ function main() {
 
   const base = path.join(root, `diff-${la}-${lb}`);
   fs.writeFileSync(base + '.md', L.join('\n'));
-  fs.writeFileSync(base + '.json', JSON.stringify({ a: la, b: lb, volatile: vols.map((v) => v.label), mismatches, volatileHits, status, timing, errors, coldWarm }, null, 1));
-  console.log(`[diff] ${mismatches.length} mismatches on ${pagesWithMis.size} pages (${volatileHits.length} on moving fields) → ${base}.md`);
+  fs.writeFileSync(base + '.json', JSON.stringify({ a: la, b: lb, volatile: vols.map((v) => v.label), mismatches, expectedHits, volatileHits, status, timing, errors, coldWarm }, null, 1));
+  console.log(`[diff] ${mismatches.length} real mismatches on ${pagesWithMis.size} pages (${expectedHits.length} expected, ${volatileHits.length} on moving fields) → ${base}.md`);
 }
 
 main();
