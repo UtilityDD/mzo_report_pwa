@@ -330,3 +330,41 @@ test('the real sample: shape, levels and arithmetic', () => {
     // stale safety data: no office gets a penalty this month
     for (const o of Object.values(d.offices)) assert.equal(o.penaltyTotal, 0);
 });
+
+test('docs/rating/methodology.md is generated from the engine and is current', () => {
+    const gen = require(path.join(REPO, 'scripts', 'rating', 'methodology.js'));
+    const want = gen.build();
+    const have = require('fs').readFileSync(gen.OUT, 'utf8');
+    assert.equal(have, want, 'run: node scripts/rating/methodology.js');
+    // the page gets the same content: every parameter's formula and reference are in ratingDoc.method
+    const d = R.rate(SAMPLE);
+    for (const pl of d.method.pillars) for (const x of pl.params) {
+        assert.ok(have.includes(x.formula.replace(/\|/g, '\\|')), x.id + ' formula in the document');
+        assert.ok(x.source.label && (x.source.url || x.source.key === 'ZONE'), x.id + ' source with a link');
+    }
+    for (const c of d.method.caveats) assert.ok(have.includes(c.text), c.id + ' caveat in the document');
+    assert.equal(d.method.example.level, 'ccc');
+});
+
+test('isomorphic: the same file runs as a browser script (window.MzoRating) with the same output', () => {
+    const vm = require('vm');
+    const src = require('fs').readFileSync(path.join(REPO, 'lib', 'rating.js'), 'utf8');
+    const win = {};
+    win.self = win;
+    vm.createContext(win);
+    vm.runInContext(src, win, { filename: 'rating.js' });
+    assert.equal(typeof win.MzoRating.rate, 'function');
+    const doc = JSON.parse(JSON.stringify(SAMPLE));
+    const browser = vm.runInContext('JSON.stringify(MzoRating.rate(' + JSON.stringify(doc) + '))', win);
+    assert.equal(browser, JSON.stringify(R.rate(SAMPLE)));
+});
+
+test('a metric the metrics layer could not compute is n/a with its error as the reason', () => {
+    const m = perfect();
+    delete m.defective_meter_share;
+    const doc = docOf({ c: office('ccc', 'X', null, m) });
+    doc.errors = { defective_meter_share: 'dataset missing: defective_summary' };
+    const x = P(R.rate(doc).offices.c, 'defective_meters');
+    assert.equal(x.status, 'na'); assert.equal(x.naCode, 'missing');
+    assert.equal(x.naReason, 'not computed: dataset missing: defective_summary');
+});
