@@ -38,30 +38,44 @@ const ADMIN = 'Admin';
 const NETWORK = 'Substation & network';
 const IMPORTANT = 'Important';
 
+/** A PostgREST URL on the old project, as server.js builds it (`${url}/rest/v1/${apiPath}`). */
+const REST = (apiPath) => `${OLD.url}/rest/v1/${apiPath}`;
+
 /**
  * Old-project tables. key → ds_<key>. primaryKey = source column names.
  * order: sort columns when there is no single-column key (pages then use offset).
  * versionColumns: max() columns for version() on tables above DIGEST_MAX_ROWS.
+ * sensitive: PINs or personal data; never snapshotted, PocketBase only.
+ * raw: the server or a page reads this table, so it gets a .json snapshot. query is the
+ *   exact PostgREST query they send (same select and order, so the rows come in the same
+ *   order); paged = they page it with limit=1000&offset=N.
+ * urls: those exact request URLs. dataHubUrl: see power_map_substations.
  */
 const TABLES = [
     // mzo_insight: login, logs, stock ledger, SI works, important sheets
     { key: 'portal_users', schema: 'mzo_insight', table: 'portal_users', label: 'Portal users', group: ADMIN,
         pages: ['admin_users.html?tab=users', 'login.html'], schedule: 'hourly', primaryKey: ['id'],
-        notes: 'Login accounts and module flags, copied as-is including PIN.' },
+        sensitive: true, notes: 'Login accounts and module flags, copied as-is including PIN.' },
     { key: 'activity_logs', schema: 'mzo_insight', table: 'activity_logs', label: 'Activity logs', group: ADMIN,
         pages: ['admin_users.html?tab=activity'], schedule: 'hourly', primaryKey: ['id'], versionColumns: ['id'],
-        notes: 'Append-only portal activity log.' },
+        sensitive: true, notes: 'Append-only portal activity log (usernames, names, pages visited).' },
     { key: 'si_works', schema: 'mzo_insight', table: 'prioritySI', label: 'Priority SI works', group: IMPORTANT,
         pages: ['si-works/si.html'], schedule: 'hourly', primaryKey: ['id'],
-        notes: 'si-works/si.html reads and edits this table directly with the anon key.' },
+        raw: { query: 'select=*' }, urls: [REST('prioritySI?select=*')],
+        notes: 'si-works/si.html reads and edits this table directly with the anon key (supabase-js select).' },
     { key: 'stock_allotments', schema: 'mzo_insight', table: 'stock_allotments', label: 'Stock allotments', group: IMPORTANT,
         pages: ['stock/index.html'], schedule: 'hourly', primaryKey: ['id'],
-        notes: 'Allotment and diversion ledger (Allot Material / View Allotments).' },
+        raw: { query: 'select=*&order=date.desc,allotment_no.desc', paged: true },
+        urls: [REST('stock_allotments?select=*&order=date.desc,allotment_no.desc&limit=1000&offset=0')],
+        notes: 'Allotment and diversion ledger (Allot Material / View Allotments); /api/stock/allotment lists it.' },
     { key: 'stock_allot_seq', schema: 'mzo_insight', table: 'stock_allot_seq', label: 'Stock allotment number sequence', group: IMPORTANT,
         pages: ['stock/index.html'], schedule: 'hourly', primaryKey: ['year'],
         notes: 'Next MZO/ALT/YYYY/#### number per year.' },
     { key: 'important_unbilled_months', schema: 'mzo_insight', table: 'important_unbilled_months', label: 'Important sheets: unbilled months', group: IMPORTANT,
-        pages: ['important_sheets.html'], schedule: 'hourly', primaryKey: ['id'] },
+        pages: ['important_sheets.html'], schedule: 'hourly', primaryKey: ['id'],
+        raw: { query: 'select=*&order=sort_order.asc,id.asc' },
+        urls: [REST('important_unbilled_months?select=*&order=sort_order.asc,id.asc')],
+        notes: '/api/important-sheets/unbilled lists it (active rows only unless ?all=1).' },
     { key: 'stock_upload_meta', schema: 'mzo_insight', table: 'stock_upload_meta', label: 'Stock upload history (old database)', group: IMPORTANT,
         pages: ['stock/upload.html'], schedule: 'daily', primaryKey: ['id'],
         notes: 'Upload meta from before the dump moved to Storage (STOCK_USE_STORAGE); no longer written in production.' },
@@ -72,7 +86,10 @@ const TABLES = [
     // public: Power Map (current app) and legacy tables
     { key: 'power_map_substations', schema: 'public', table: 'mzo_power_substations', label: 'Power Map substations', group: NETWORK,
         pages: ['power_map/map.html', 'admin_users.html?tab=powermap'], schedule: 'hourly', primaryKey: ['id'],
-        notes: 'Substations, feeders and map styling for power_map/map.html.' },
+        raw: { query: 'select=*&limit=5000' }, urls: [REST('mzo_power_substations?select=*&limit=5000')],
+        // The snapshot is JSON; CACHE_POWER_MAP is the CSV /api/power-map/data builds from it.
+        dataHubKeys: ['CACHE_POWER_MAP'], dataHubUrl: '/api/power-map/data',
+        notes: 'Substations, feeders and map styling for power_map/map.html, served as CSV by /api/power-map/data.' },
     { key: 'power_map_corrections', schema: 'public', table: 'mzo_power_corrections', label: 'Power Map pending corrections', group: NETWORK,
         pages: ['admin_users.html?tab=corrections', 'power_map/map.html'], schedule: 'hourly', primaryKey: ['id'],
         notes: 'Edit suggestions awaiting admin approval.' },
@@ -80,7 +97,7 @@ const TABLES = [
         pages: [], schedule: 'daily', primaryKey: null,
         notes: 'Old Power Map corrections table, replaced by mzo_power_corrections. Empty.' },
     { key: 'dd_user_auth', schema: 'public', table: 'user_auth', label: 'DD visit logins (legacy)', group: ADMIN,
-        pages: [], schedule: 'daily', primaryKey: ['id'],
+        pages: [], schedule: 'daily', primaryKey: ['id'], sensitive: true,
         notes: 'Old Upcoming DD login table (office, PIN, dd_view/dd_edit); no page reads it now.' },
 
     // powermap: Power Map v2 data model (not read by this repo's pages)
@@ -99,13 +116,13 @@ const TABLES = [
     { key: 'powermap_voltage_levels', schema: 'powermap', table: 'voltage_levels', label: 'Power Map v2: voltage levels', group: NETWORK,
         pages: [], schedule: 'hourly', primaryKey: ['id'] },
     { key: 'powermap_org_units', schema: 'powermap', table: 'org_units', label: 'Power Map v2: offices', group: NETWORK,
-        pages: [], schedule: 'hourly', primaryKey: ['id'] },
+        pages: [], schedule: 'hourly', primaryKey: ['id'], sensitive: true, notes: 'Has staff names and phone numbers.' },
     { key: 'powermap_editors', schema: 'powermap', table: 'editors', label: 'Power Map v2: editors', group: NETWORK,
-        pages: [], schedule: 'hourly', primaryKey: null, order: ['created_at'], notes: 'Empty.' },
+        pages: [], schedule: 'hourly', primaryKey: null, order: ['created_at'], sensitive: true, notes: 'User accounts. Empty.' },
     { key: 'powermap_edit_suggestions', schema: 'powermap', table: 'edit_suggestions', label: 'Power Map v2: edit suggestions', group: NETWORK,
         pages: [], schedule: 'hourly', primaryKey: null, order: ['created_at'], notes: 'Empty.' },
     { key: 'powermap_profiles', schema: 'powermap', table: 'profiles', label: 'Power Map v2: profiles', group: NETWORK,
-        pages: [], schedule: 'hourly', primaryKey: null, order: ['created_at'], notes: 'Empty.' },
+        pages: [], schedule: 'hourly', primaryKey: null, order: ['created_at'], sensitive: true, notes: 'User accounts. Empty.' },
     { key: 'powermap_v_substations', schema: 'powermap', table: 'v_substations', label: 'Power Map v2: substations (view)', group: NETWORK,
         pages: [], schedule: 'hourly', primaryKey: ['id'], notes: 'Read-only view: substation assets with location, voltage and office names.' },
     { key: 'powermap_v_lines', schema: 'powermap', table: 'v_lines', label: 'Power Map v2: lines (view)', group: NETWORK,
@@ -133,25 +150,25 @@ const NOT_MIRRORED = [
     { schema: 'graphql_public', table: '*', reason: 'exposed schema with no tables (pg_graphql entry point only)' }
 ];
 
-/** New-project public Storage files. meta: reports/<folder>/meta.json field that holds the CSV URL. */
+/**
+ * New-project public Storage files. meta: reports/<folder>/meta.json field that holds the
+ * CSV URL. urls = the public object URL; the server and meta.json add ?v=<version>.
+ * These CSVs hold consumer names, addresses and phone numbers, but pages read them and
+ * they are public objects today, so they are not marked sensitive.
+ */
 const STORAGE = [
-    { key: 'stock_snapshot', label: 'Stock', group: IMPORTANT, pages: ['stock/index.html'], bucket: 'stock', path: 'snapshot.csv',
-        notes: 'DataHub CACHE_STOCK. Version: object ETag.' },
-    { key: 'defective_summary', label: 'Defective meter summary', group: 'Consumers & meters', pages: ['consumer/defective_meter.html'],
-        bucket: 'reports', path: 'defective/summary.csv', meta: { folder: 'defective', field: 'summaryCsvUrl' },
-        notes: 'DataHub CACHE_DEFECTIVE.' },
-    { key: 'defective_details', label: 'Defective meter details', group: 'Consumers & meters', pages: ['consumer/defective_meter.html'],
-        bucket: 'reports', path: 'defective/details.csv', meta: { folder: 'defective', field: 'detailsCsvUrl' },
-        notes: 'DataHub CACHE_DEFECTIVE_DETAILS.' },
-    { key: 'disconnection', label: 'Disconnection tracker', group: 'Revenue', pages: ['disconnection.html'],
-        bucket: 'reports', path: 'disconnection/snapshot.csv', meta: { folder: 'disconnection', field: 'csvUrl' },
-        notes: 'DataHub CACHE_DISCONNECTION.' },
-    { key: 'pending_mc', label: 'Pending master card', group: 'New service connection', pages: ['pending_mc.html'],
-        bucket: 'reports', path: 'pending_mc/snapshot.csv', meta: { folder: 'pending_mc', field: 'csvUrl' },
-        notes: 'DataHub CACHE_PENDING_MC.' },
-    { key: 'load_extension', label: 'Pending load extension', group: 'New service connection', pages: ['pending_load_extension.html'],
-        bucket: 'reports', path: 'load_extension/snapshot.csv', meta: { folder: 'load_extension', field: 'csvUrl' },
-        notes: 'DataHub CACHE_LOAD_EXT.' }
+    { key: 'stock_snapshot', dataHubKeys: ['CACHE_STOCK'], label: 'Stock', group: IMPORTANT, pages: ['stock/index.html'], bucket: 'stock', path: 'snapshot.csv',
+        notes: 'Version: object ETag.' },
+    { key: 'defective_summary', dataHubKeys: ['CACHE_DEFECTIVE'], label: 'Defective meter summary', group: 'Consumers & meters', pages: ['consumer/defective_meter.html'],
+        bucket: 'reports', path: 'defective/summary.csv', meta: { folder: 'defective', field: 'summaryCsvUrl' } },
+    { key: 'defective_details', dataHubKeys: ['CACHE_DEFECTIVE_DETAILS'], label: 'Defective meter details', group: 'Consumers & meters', pages: ['consumer/defective_meter.html'],
+        bucket: 'reports', path: 'defective/details.csv', meta: { folder: 'defective', field: 'detailsCsvUrl' } },
+    { key: 'disconnection', dataHubKeys: ['CACHE_DISCONNECTION'], label: 'Disconnection tracker', group: 'Revenue', pages: ['disconnection.html'],
+        bucket: 'reports', path: 'disconnection/snapshot.csv', meta: { folder: 'disconnection', field: 'csvUrl' } },
+    { key: 'pending_mc', dataHubKeys: ['CACHE_PENDING_MC'], label: 'Pending master card', group: 'New service connection', pages: ['pending_mc.html'],
+        bucket: 'reports', path: 'pending_mc/snapshot.csv', meta: { folder: 'pending_mc', field: 'csvUrl' } },
+    { key: 'load_extension', dataHubKeys: ['CACHE_LOAD_EXT'], label: 'Pending load extension', group: 'New service connection', pages: ['pending_load_extension.html'],
+        bucket: 'reports', path: 'load_extension/snapshot.csv', meta: { folder: 'load_extension', field: 'csvUrl' } }
 ];
 
 // ---------- helpers ----------
@@ -342,9 +359,40 @@ function defaultVersionColumns_(def) {
     return out.slice(0, 2);
 }
 
+/**
+ * The snapshot body of a table the server or a page reads: the exact PostgREST response
+ * to their query (def.raw.query), pages joined into one array the way PostgREST joins
+ * rows (", \n "). One page, the usual case, is byte-for-byte the response they get.
+ */
+async function rawTableBody_(get, key, def, log) {
+    const spec = def.raw;
+    if (!spec.paged) {
+        const { res, text } = await restGet_(get, key, def.schema, def.table, spec.query, { Prefer: 'count=exact' });
+        const rows = JSON.parse(text).length;
+        const total = totalFromRange_(res);
+        if (total != null && total > rows && log) {
+            log(`supabase: ${def.schema}.${def.table} has ${total} rows but its reader's query returns ${rows} (server row cap)`);
+        }
+        return { text, rows };
+    }
+    const parts = [];
+    let rows = 0;
+    for (;;) {
+        const { text } = await restGet_(get, key, def.schema, def.table, `${spec.query}&limit=${PAGE}&offset=${rows}`);
+        const page = JSON.parse(text);
+        if (!Array.isArray(page) || !page.length) break;
+        parts.push(text);
+        rows += page.length;
+        if (page.length < PAGE) break;
+    }
+    if (parts.length === 1) return { text: parts[0], rows };
+    const inner = parts.map((t) => t.trim().slice(1, -1).trim()).filter(Boolean);
+    return { text: `[${inner.join(', \n ')}]`, rows };
+}
+
 function tableSource(def, key) {
     let cached = null; // rows read by version() for small tables, reused once by rows()
-    return {
+    const src = {
         key: def.key,
         label: def.label,
         group: def.group,
@@ -356,6 +404,9 @@ function tableSource(def, key) {
         primaryKey: def.primaryKey || null,
         columnTypes: def.columnTypes || columnTypesFor(def.schema, def.table),
         notes: def.notes || '',
+        dataHubKeys: def.dataHubKeys || [],
+        urls: def.urls || [],
+        sensitive: !!def.sensitive,
 
         /**
          * Small tables (≤ DIGEST_MAX_ROWS): n:<count>|h:<sha1 of every row>, which also
@@ -383,7 +434,20 @@ function tableSource(def, key) {
             return parts.join('|');
         },
 
+        /**
+         * When the framework passes the raw() bytes as ctx.input (sources with raw()), the
+         * rows are parsed from them, in the reader's order. Otherwise rows are fetched.
+         */
         async *rows(ctx) {
+            if (ctx && ctx.input) {
+                cached = null;
+                const chunks = [];
+                for await (const c of ctx.input) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
+                const rows = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+                if (!Array.isArray(rows)) throw new Error(`${def.schema}.${def.table}: raw input is not a JSON array`);
+                yield* rows;
+                return;
+            }
             if (cached && Date.now() - cached.at < DIGEST_CACHE_MS) {
                 const rows = cached.rows;
                 cached = null;
@@ -395,6 +459,15 @@ function tableSource(def, key) {
             for await (const page of tablePages_(get, key, def)) yield* page.rows;
         }
     };
+    if (def.dataHubUrl) src.dataHubUrl = def.dataHubUrl;
+    if (def.raw && !def.sensitive) {
+        /** { contentType, stream, rows }: the JSON snapshot (see rawTableBody_). */
+        src.raw = async function raw(ctx) {
+            const { text, rows } = await rawTableBody_(httpGet_(ctx), key, def, ctx && ctx.log);
+            return { contentType: 'application/json', stream: Readable.from([Buffer.from(text, 'utf8')]), rows };
+        };
+    }
+    return src;
 }
 
 /** Header cells → unique, non-empty object keys (blank → "Column <n>", repeat → "<name> (2)"). */
@@ -410,10 +483,10 @@ function uniqueHeaders(cells) {
     });
 }
 
-/** Streams a CSV body and yields one object per data row, keyed by the original headers. */
-async function* csvRows(res) {
+/** Parses a CSV byte stream and yields one object per data row, keyed by the original headers. */
+async function* csvRows(stream) {
     const parser = parse({ bom: true, relax_column_count: true, relax_quotes: true, skip_empty_lines: true });
-    pipeline(Readable.fromWeb(res.body), parser, () => { /* errors surface in the loop below */ });
+    pipeline(stream, parser, () => { /* errors surface in the loop below */ });
     let header = null;
     for await (const rec of parser) {
         if (!header) {
@@ -468,6 +541,27 @@ function storageSource(def) {
         return null;
     }
 
+    /**
+     * { contentType, stream, url, etag, bytes }: the object's exact bytes as a Node
+     * stream, not buffered. Read it to the end or destroy it.
+     */
+    async function raw(ctx) {
+        const get = httpGet_(ctx);
+        const { url } = await resolve(get);
+        const res = await get(url, { Accept: 'text/csv' }, { timeoutMs: CSV_TIMEOUT_MS });
+        if (!res.ok) {
+            try { await res.body?.cancel(); } catch (_) { /* ignore */ }
+            throw new Error(`${def.bucket}/${def.path}: GET HTTP ${res.status}`);
+        }
+        return {
+            contentType: 'text/csv',
+            stream: Readable.fromWeb(res.body),
+            url,
+            etag: res.headers.get('etag'),
+            bytes: Number(res.headers.get('content-length')) || null
+        };
+    }
+
     return {
         key: def.key,
         label: def.label,
@@ -479,17 +573,20 @@ function storageSource(def) {
         schedule: 'frequent',
         primaryKey: null,
         notes: def.notes || '',
+        dataHubKeys: def.dataHubKeys || [],
+        urls: [plainUrl],
+        sensitive: false,
 
         async version(ctx) {
             return (await resolve(httpGet_(ctx))).version;
         },
 
+        raw,
+
+        /** Parses ctx.input (the raw() bytes, passed by the framework) or fetches on its own. */
         async *rows(ctx) {
-            const get = httpGet_(ctx);
-            const { url } = await resolve(get);
-            const res = await get(url, { Accept: 'text/csv' }, { timeoutMs: CSV_TIMEOUT_MS });
-            if (!res.ok) throw new Error(`${def.bucket}/${def.path}: GET HTTP ${res.status}`);
-            yield* csvRows(res);
+            const stream = ctx && ctx.input ? ctx.input : (await raw(ctx)).stream;
+            yield* csvRows(stream);
         }
     };
 }
@@ -534,8 +631,8 @@ async function openApiExtras_(get, key, log) {
             extras.push({
                 key: (schema === 'public' ? '' : snake_(schema) + '_') + snake_(table),
                 schema, table, label: `${schema}.${table}`, group: 'System', pages: [], schedule: 'daily',
-                primaryKey: pk.length ? pk : null, columnTypes,
-                notes: 'Found through the PostgREST OpenAPI root; not in the built-in table list.'
+                primaryKey: pk.length ? pk : null, columnTypes, sensitive: true,
+                notes: 'Found through the PostgREST OpenAPI root; not in the built-in table list. Marked sensitive until reviewed.'
             });
         }
     }
@@ -569,6 +666,7 @@ module.exports = {
     anonKey,
     fieldType,
     uniqueHeaders,
+    csvRows,
     httpGet: httpGet_,
     restHeaders: restHeaders_
 };

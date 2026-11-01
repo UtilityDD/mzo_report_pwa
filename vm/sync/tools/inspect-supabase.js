@@ -10,11 +10,15 @@
  *   node vm/sync/tools/inspect-supabase.js --full          # every row; counts, timings, key checks
  *   node vm/sync/tools/inspect-supabase.js --only portal_users,stock_snapshot
  *   node vm/sync/tools/inspect-supabase.js --json          # one JSON line per source
+ *   node vm/sync/tools/inspect-supabase.js --raw --only stock_snapshot,stock_allotments
+ *                                       # also read raw() snapshots: bytes, sha1, byte checks
  *   node vm/sync/tools/inspect-supabase.js --full --no-checks --only defective_details   # memory test
  *   node vm/sync/tools/inspect-supabase.js --discover      # re-probe column types → sources/supabase.columns.json
  *   node vm/sync/tools/inspect-supabase.js --discover --scan   # also look for tables not in the list (~1 min)
  */
 const fs = require('fs');
+const crypto = require('crypto');
+const { Readable, Transform, pipeline } = require('stream');
 const sb = require('../sources/supabase.js');
 
 const args = process.argv.slice(2);
@@ -27,7 +31,8 @@ const FULL = flag('--full');
 const LIMIT = FULL ? Infinity : Number(opt('--limit', 5));
 const ONLY = opt('--only', '').split(',').map((s) => s.trim()).filter(Boolean);
 const JSON_OUT = flag('--json');
-const CHECKS = !flag('--no-checks'); // --no-checks: skip key tracking (for memory measurements)
+const CHECKS = !flag('--no-checks');
+const RAW = flag('--raw'); // --no-checks: skip key tracking (for memory measurements)
 
 // ---------- masking ----------
 
@@ -175,6 +180,62 @@ async function inspectSource(src, ctx) {
     if (pkSeen) out.primaryKeyCheck = { unique: pkDupes === 0 && pkNulls === 0, duplicates: pkDupes, nulls: pkNulls };
     if (cand.length) out.keyCandidates = cand.map((c) => ({ columns: c.cols, duplicates: c.dupes, blanks: c.blanks, distinct: c.seen.size }));
     out.sample = sample ? maskRow(sample) : null;
+    out.mirror = { dataHubKeys: src.dataHubKeys, dataHubUrl: src.dataHubUrl, urls: src.urls, sensitive: src.sensitive, raw: typeof src.raw === 'function' };
+    if (RAW && src.raw) {
+        try {
+            out.rawCheck = await rawCheck(src, ctx);
+        } catch (e) {
+            out.rawCheck = { error: maskText(e.message) };
+        }
+    }
+    return out;
+}
+
+/**
+ * Reads raw() once and parses the rows with rows({ input }), as the sync does. CSV: hashes
+ * the bytes on the way through and compares the MD5 with the object ETag. JSON: compares
+ * the bytes with a direct GET of the reader's exact URL (urls[0]).
+ */
+async function rawCheck(src, ctx) {
+    const t0 = Date.now();
+    const r = await src.raw(ctx);
+    const sha1 = crypto.createHash('sha1');
+    const md5 = crypto.createHash('md5');
+    let bytes = 0;
+    const out = { contentType: r.contentType };
+    if (r.contentType === 'text/csv') {
+        const hashing = new Transform({
+            transform(chunk, _enc, cb) {
+                sha1.update(chunk); md5.update(chunk); bytes += chunk.length;
+                cb(null, chunk);
+            }
+        });
+        pipeline(r.stream, hashing, () => { /* errors surface in csvRows */ });
+        let rows = 0;
+        for await (const _row of src.rows({ ...ctx, input: hashing })) rows++;
+        const etag = String(r.etag || '').replace(/"/g, '');
+        Object.assign(out, {
+            bytes, rows, sha1: sha1.digest('hex').slice(0, 16),
+            contentLengthMatches: r.bytes == null ? null : r.bytes === bytes,
+            etagIsMd5: etag ? etag === md5.digest('hex') : null
+        });
+    } else {
+        const chunks = [];
+        for await (const c of r.stream) { chunks.push(c); sha1.update(c); bytes += c.length; }
+        const text = Buffer.concat(chunks).toString('utf8');
+        out.bytes = bytes;
+        out.rows = 0;
+        for await (const _row of src.rows({ ...ctx, input: Readable.from([Buffer.from(text, 'utf8')]) })) out.rows++;
+        out.rowsMatchArray = out.rows === JSON.parse(text).length;
+        out.sha1 = sha1.digest('hex').slice(0, 16);
+        if (src.urls && src.urls[0]) {
+            const key = sb.anonKey(process.env);
+            const res = await sb.httpGet(ctx)(src.urls[0], sb.restHeaders(key, src.sourceRef.schema));
+            const direct = await res.text();
+            out.sameBytesAsReaderQuery = res.ok ? direct === text : `HTTP ${res.status}`;
+        }
+    }
+    out.ms = Date.now() - t0;
     return out;
 }
 
@@ -195,6 +256,9 @@ function printHuman(r) {
     console.log(`   columns  ${cols.length}${cols.length ? ': ' + cols.join(', ') : ''}`);
     if (cols.some((c) => c.endsWith('*'))) console.log('            (* = inferred from the rows read; sync-core does its own inference)');
     console.log(`   sample   ${r.sample ? JSON.stringify(r.sample) : '(no rows)'}`);
+    const m = r.mirror;
+    console.log(`   mirror   sensitive=${m.sensitive} raw=${m.raw ? 'yes' : 'no'} dataHubKeys=${JSON.stringify(m.dataHubKeys)}${m.dataHubUrl ? ' dataHubUrl=' + m.dataHubUrl : ''} urls=${m.urls.length ? m.urls.join(' ') : '-'}`);
+    if (r.rawCheck) console.log(`   raw      ${JSON.stringify(r.rawCheck)}`);
 }
 
 async function runSources() {

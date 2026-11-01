@@ -64,6 +64,43 @@ Rows as of 2026-11-01. Schedules: `frequent` = every 15 min, `hourly`, `daily`.
 - These keys also exist in `mzo_data_hub.js` with Google Sheet fallback URLs. Mirror them only from here, not again from the Google adapter.
 - No primary key is set for CSVs. On the full read, these columns were unique: Plant+Material+Storage Location (stock), `CON_ID` (disconnection), `APPL_NO` (pending MC, load extension). `CON_ID` repeats in defective details (30,659 distinct in 55,997 rows).
 
+## Mirror mode: snapshots and the fields for them
+
+Each source carries the phase 2 fields (`agent-progress/CONTRACT-PHASE2.md`, "Snapshot store"):
+
+| Field | Set on |
+|---|---|
+| `sensitive: true` | `portal_users`, `dd_user_auth` (PINs), `activity_logs` (usernames, names, pages visited), `powermap_org_units` (staff names and phones), `powermap_editors` and `powermap_profiles` (user accounts, empty today), and any table found only through the OpenAPI root. They stay in PocketBase only. Everything else is `false`. |
+| `raw(ctx)` | the six Storage CSVs, plus the four tables the server or a page reads: `power_map_substations`, `stock_allotments`, `important_unbilled_months`, `si_works`. A source without `raw()` gets no snapshot. |
+| `dataHubKeys` | `stock_snapshot` → `CACHE_STOCK`, `defective_summary` → `CACHE_DEFECTIVE`, `defective_details` → `CACHE_DEFECTIVE_DETAILS`, `disconnection` → `CACHE_DISCONNECTION`, `pending_mc` → `CACHE_PENDING_MC`, `load_extension` → `CACHE_LOAD_EXT`, `power_map_substations` → `CACHE_POWER_MAP`. `[]` elsewhere. |
+| `dataHubUrl` | `power_map_substations` only: `/api/power-map/data`. Its snapshot is JSON, but `CACHE_POWER_MAP` holds the CSV that endpoint builds from it, so the DataHub must load the key from that URL, not from `/api/data/file/power_map_substations`. |
+| `urls` | Storage: the public object URL, e.g. `https://gmasnqebdogtavoudbke.supabase.co/storage/v1/object/public/stock/snapshot.csv`. The server (`stockPublicCsvUrl_`) and `meta.json` add `?v=<version>`, so matching must ignore `v`. Tables with `raw()`: the PostgREST URL their reader sends (below). `[]` elsewhere. |
+
+**`raw(ctx)`.**
+- Storage CSVs return `{ contentType: 'text/csv', stream, url, etag, bytes }`. The stream is a Node stream of the object's exact bytes, never buffered. The MD5 of the bytes equals the object's ETag, and `bytes` equals Content-Length.
+- Tables return `{ contentType: 'application/json', stream, rows }`: the exact PostgREST response to the reader's query. When the reader pages (allotments), the pages are joined the way PostgREST joins rows (`, \n `). With one page, the usual case, the bytes are identical to what the reader gets today; `inspect-supabase.js --raw` checks this.
+- The framework calls `raw()` once and passes the same bytes to `rows()` as `ctx.input`. `rows()` parses `ctx.input` when it is present (CSV rows, or the JSON array in the reader's order) and fetches on its own only when it is absent (the inspect tool, older callers). `csvRows(stream)` is exported as well.
+
+### What the VM server reads in mirror mode, and the snapshot shape it needs
+
+Each snapshot is the PostgREST JSON array, with every column, in the reader's order. The endpoint applies its usual mapping to it, so its response stays byte-for-byte the same.
+
+| Endpoint or page | Snapshot | Query it replaces (old project) | What the endpoint does with the array |
+|---|---|---|---|
+| `GET /api/power-map/data` (`CACHE_POWER_MAP`) | `power_map_substations.json` | `public.mzo_power_substations?select=*&limit=5000`. No `order`, so rows come in Postgres's natural order, which today equals `id` order. | Keep rows with non-blank `Substation`, `LATITUDE` and `LONGITUDE`. Emit a CSV with the 22 columns `Region, Division, Substation, MVA, LATITUDE, LONGITUDE, Connected to, Colour, RL, LineStyle, Para-1, Para-2, Para-3, Comment, Symbol, SymbolSize, LegendText, LegendSymbol, LegendColour, Remarks, ConductorSize, PeakLoad`: `null` becomes empty, a value with `,` `"` or a newline is quoted with `""`, lines are joined by `\n` with no trailing newline. Send it through `sendDatasetCsv_` (text/csv, body ETag). |
+| `GET /api/power-map/meta`, the Power Map entry of `/api/hub/versions` | same file | `?select=updated_at&order=updated_at.desc&limit=1` and `?select=Substation` | `version` = the largest `updated_at` string as PostgREST prints it (e.g. `2026-07-24T12:05:59.813168+00:00`), `rows` = array length. |
+| `GET /api/stock/allotment?action=listAllotments\|getAllotment` | `stock_allotments.json` | `mzo_insight.stock_allotments?select=*&order=date.desc,allotment_no.desc&limit=1000&offset=N`, all pages | Map each row with `allotDbToClient_`, then `filterAllotmentRowsLocal_` (list) or match `AllotmentNo` (get). Respond `{ status: 'success', rows, count, source: 'supabase' }` (get adds `allotmentNo`). Lines of one allotment share `date` and `allotment_no`; their relative order is whatever Postgres returns for this query, so the snapshot must come from this exact query, not from the id-ordered `rows()`. |
+| `GET /api/important-sheets/unbilled` | `important_unbilled_months.json` | `mzo_insight.important_unbilled_months?select=*&order=sort_order.asc,id.asc`, plus `&active=eq.true` unless a manager asks `?all=1` | Keep `active === true` rows unless `all=1`, map with `mapUnbilledMonthRow`, respond `{ status: 'success', months }`. |
+| `si-works/si.html` (browser, supabase-js) | `si_works.json` | `mzo_insight.prioritySI?select=*` (what `.from('prioritySI').select('*')` sends): natural order, at most 1000 rows | The page uses the array as-is. The page also writes straight to Supabase, so the VM's write-through never sees those edits. Keep this page on live Supabase, or refresh `si_works` more often than hourly. |
+
+All four readers are capped at 1000 rows by Supabase's max-rows, including `limit=5000`. `raw()` sends the same query and logs a warning when the table holds more rows than the query returns.
+
+### Found while mapping
+
+- **`CACHE_POWER_MAP` loads the Google Sheet today, not Supabase.** `/api/power-map/meta` returns `csvUrl: POWER_MAP_SHEET_CSV_URL`, and the DataHub (`originHeavy`) downloads that URL, so the map shows the published sheet. `/api/power-map/data` (Supabase) is used only when the DataHub fails. Edits go to Supabase, and the sheet already differs from the table in 3 values, with the same 98 substations. In mirror mode `/api/power-map/meta` should point `csvUrl` at `/api/power-map/data`. That fixes the stale values, but parity checks will show those 3 differences.
+- **Stock meta.** In production, `/api/stock/meta` reads `stock_upload_meta` from the new project with its service key, which the mirror cannot read. The old project's `stock_upload_meta` (`stock_upload_meta` here) stopped in August. The as-on date of the live dump is the `Date` column of `stock_snapshot`. The VM app, with no `.env`, currently serves the old project's stale meta and the Google stock sheet.
+- **Report meta files.** `reports/<folder>/meta.json` (version, report date, KPI stats) feeds the meta endpoints and `/api/executive/briefing`. It is not a source here: it is public and tiny, and `syncedMeta_` caches it for 60 s. If those endpoints must not touch Supabase in mirror mode, each could become a source with a JSON `raw()`.
+
 ## How it reads
 
 **Tables.** Pages of 1000 rows (`limit`), ordered by the primary key, using keyset paging (`pk=gt.<last>`). A table without a key is ordered by `order` (`created_at` for the empty powermap tables) and paged with `offset`. The first page asks `Prefer: count=exact`, and paging continues until the exact count has arrived, so a lower server row cap cannot cut a table short. Rows are yielded as PostgREST returns them: numbers, booleans and json values (objects) stay typed, and timestamps are ISO strings such as `2026-07-27T05:39:57.785703+00:00`.
@@ -106,11 +143,12 @@ node tools/inspect-supabase.js                  # every source, first 5 rows
 node tools/inspect-supabase.js --full           # every row, key checks, timings
 node tools/inspect-supabase.js --only portal_users,defective_details --limit 20
 node tools/inspect-supabase.js --full --no-checks --only defective_details   # memory test
+node tools/inspect-supabase.js --raw --limit 1  # read every raw() snapshot: bytes, sha1, ETag and query checks
 node tools/inspect-supabase.js --discover       # re-probe column types → supabase.columns.json
 node tools/inspect-supabase.js --discover --scan   # also look for tables not in the list (~1 min)
 ```
 
-It prints key, version, row count, columns with types (`*` = inferred from the rows read, as sync-core would) and one sample row. PIN, password, token, key-like, phone and email values are masked in everything it prints.
+It prints key, version, row count, columns with types (`*` = inferred from the rows read, as sync-core would), one sample row and the mirror fields. PIN, password, token, key-like, phone and email values are masked in everything it prints.
 
 Measured on 2026-11-01 from a laptop (Node 24):
 
@@ -121,4 +159,4 @@ Measured on 2026-11-01 from a laptop (Node 24):
 | `activity_logs` only | 4,247 | 1.1 s | 114 MB |
 | bare `node` | | | 49 MB |
 
-Every run also completes with `node --max-old-space-size=32`, so the JS heap stays small. Most of the RSS is Node, fetch and TLS overhead.
+Every run also completes with `node --max-old-space-size=32`, so the JS heap stays small. Most of the RSS is Node, fetch and TLS overhead. `raw()` of `defective_details`, hashed and parsed from the same stream: 2.3 s, 115 MB peak RSS with that heap cap.
