@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=3" defer></script>
   <style>
     .dv { padding: 4px 20px 28px; }
     .dv h4 { margin: 10px 0 10px; font-size: 13px; font-weight: 600; }
@@ -96,13 +97,14 @@
     var OUTCOMES = ['Found Live', 'Found Disconnected', 'Premises Not Found', 'Using Power form other source', 'Paid'];
     var OUT_LABEL = { 'Using Power form other source': 'Power from other source' };
     var HIST_LABEL = { 'Found Live': 'Found live', 'Found Disconnected': 'Disconnected', 'Premises Not Found': 'Not found', 'Using Power form other source': 'Other source', Paid: 'Paid' };
-    var all = [], visits = {}, stat = '', outcome = '', level = 'region', view = 'sheet', osdDate = '', scope = null;
+    var all = [], visits = {}, onSheet = {}, stat = '', outcome = '', level = 'region', view = 'sheet', osdDate = '', scope = null;
 
     function isAdmin() { try { var p = JSON.parse(localStorage.getItem('mzo_user_profile') || '{}') || {}; return String(p.role || p.Role || '').trim().toLowerCase() === 'admin'; } catch (e) { return false; } }
     function loadLocal() { try { visits = JSON.parse(localStorage.getItem(STORE) || '{}') || {}; } catch (e) { visits = {}; } }
     function saveLocal() { try { localStorage.setItem(STORE, JSON.stringify(visits)); } catch (e) {} }
     function ymd(s) { s = String(s || '').trim(); return /^\d{8}$/.test(s) ? new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)) : null; }
-    function osdOf(r) { return parseFloat(r.TOTAL_OSD || r.OUTSTANDING) || 0; }
+    function osdOf(d) { return d.total_osd != null ? d.total_osd : d.outstanding || 0; }
+    function text(v) { return v == null ? '' : String(v); }
 
     // Visit history: every record ever saved, newest timeline entry first. Older records have no history array.
     function history(rec) {
@@ -112,19 +114,23 @@
       return list;
     }
 
-    function prepare(text) {
-      all = UI.csv(text).map(function (r) {
-        var code = String(r.CCC_CODE || r.CCC || '').trim(), o = UI.office(code);
-        if (!osdDate && r.OSD_DATE) osdDate = r.OSD_DATE;
+    // t.rows: uniform rows of schema/dd_visit.json (amounts as numbers, canonical _region/_division/_ccc),
+    // scoped to the login by MzoRows. The sheet's PAN column is not pinned, so it is not in the rows.
+    function prepare(t) {
+      osdDate = t.first('osd_date') || ''; // one date for the whole sheet: read before the scope, every load
+      onSheet = {}; t.all.forEach(function (d) { if (d.con_id) onSheet[d.con_id] = 1; });
+      all = t.rows.map(function (d) {
+        var code = d.ccc_code;
         return {
-          raw: r, con: String(r.CON_ID || r.CONSUMER_ID || '').trim(), inst: r.INST_NO, name: UI.title(r.NAME || ''), address: r.ADDRESS || '',
-          mobile: UI.blank(r.REG_MOB_NO) ? '' : String(r.REG_MOB_NO).trim(), code: code, CCC_CODE: code, _region: o.region, _divn: o.division, _supp: o.ccc,
-          cat: String(r.CATEGORY || '').trim(), cls: String(r.BASE_CLASS || '').trim() || 'Other', osd: osdOf(r), load: r.CONN_LOAD,
-          dis: ymd(r.DISCON_DT || r.DISCONN_DATE)
+          // the sheet's own text, for the export and the visit record saved to the shared sheet
+          raw: { NAME: d.name, DISCON_DT: d.discon_dt, TOTAL_OSD: text(d.total_osd), OUTSTANDING: text(d.outstanding) },
+          con: d.con_id, inst: d.inst_no, name: UI.title(d.name), address: d.address,
+          mobile: UI.blank(d.reg_mob_no) ? '' : d.reg_mob_no, code: code, CCC_CODE: code, _region: d._region, _divn: d._division, _supp: d._ccc,
+          cat: d.category, cls: d.base_class || 'Other', osd: osdOf(d), load: d.conn_load,
+          dis: ymd(d.discon_dt)
         };
       }).filter(function (r) { return r.con; });
       all.forEach(function (r) { r.search = (r.con + ' ' + r.name + ' ' + r.mobile + ' ' + r.address).toLowerCase(); });
-      if (window.MzoScope) all = MzoScope.filterRows(all);
       var d = ymd(osdDate);
       $('meta').textContent = (d ? 'Outstanding as on ' + UI.fmtDate(d) + ' · ' : '') + UI.n(all.length) + ' consumers';
       UI.fill('classFilter', uniq(all, 'cls').map(function (c) { return { value: c, label: CLASS[c] || c }; }), 'All classes');
@@ -151,6 +157,13 @@
           (!cat || r.cat === cat) && r.osd >= min && (!q || r.search.indexOf(q) !== -1);
       });
     }
+    // Saved visits this login may see: the consumer's office (the CCC code saved with the visit) in scope.
+    function visitOffice(rec) { var o = UI.office(rec.cccCode); return { _region: o.region, _divn: o.division, _supp: o.ccc, CCC_CODE: String(rec.cccCode || '').trim() }; }
+    function myVisits() {
+      var S = window.MzoScope, keys = Object.keys(visits);
+      if (!S || !S.matchRow || S.isUnscoped()) return keys;
+      return keys.filter(function (k) { return S.matchRow(visitOffice(visits[k])); });
+    }
     function matchStat(r) {
       var rec = visits[r.con];
       if (stat === 'visited') return !!rec;
@@ -162,8 +175,8 @@
     function render() {
       var b = base(), rows = b.filter(function (r) { return matchStat(r) && (!outcome || (visits[r.con] && visits[r.con].status === outcome)); });
       var visited = b.filter(function (r) { return visits[r.con]; }), paid = visited.filter(function (r) { return visits[r.con].status === 'Paid'; });
-      var on = {}; all.forEach(function (r) { on[r.con] = 1; });
-      var off = Object.keys(visits).filter(function (k) { return !on[k]; });
+      var on = onSheet, mine = myVisits();
+      var off = mine.filter(function (k) { return !on[k]; });
       var set = function (k, v, s) { var el = document.querySelector('#stats [data-k="' + k + '"]'); el.querySelector('.v').textContent = v; el.querySelector('.s').textContent = s; el.setAttribute('aria-pressed', String(stat === k)); };
       set('', UI.n(b.length), UI.inr(b.reduce(function (a, r) { return a + r.osd; }, 0)) + ' outstanding');
       set('visited', UI.n(visited.length), UI.pct(visited.length, b.length) + ' coverage');
@@ -197,7 +210,7 @@
 
       // Visit history: every saved record (also consumers no longer on the sheet), matched on search and office filters.
       var q = $('q').value.trim().toLowerCase();
-      var hist = Object.keys(visits).map(function (k) { var rec = visits[k], o = UI.office(rec.cccCode); return { rec: rec, con: k, name: UI.title(rec.consumerName || ''), _region: o.region, _divn: o.division, _supp: o.ccc, off: !on[k], date: UI.date(rec.visitDate), osd: parseFloat(rec.totalOsd) || 0 }; })
+      var hist = mine.map(function (k) { var rec = visits[k], o = UI.office(rec.cccCode); return { rec: rec, con: k, name: UI.title(rec.consumerName || ''), _region: o.region, _divn: o.division, _supp: o.ccc, off: !on[k], date: UI.date(rec.visitDate), osd: parseFloat(rec.totalOsd) || 0 }; })
         .filter(function (h) {
           var reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value;
           return (!reg || h._region === reg) && (!div || h._divn === div) && (!ccc || h._supp === ccc) && (!outcome || h.rec.status === outcome) &&
@@ -353,15 +366,14 @@
     $('exportBtn').addEventListener('click', function () { var ex = window.__export; if (ex) UI.exportCsv('dd-visit-' + (view === 'history' ? 'history-' : '') + new Date().toISOString().slice(0, 10) + '.csv', ex.cols, ex.rows); });
     $('refreshBtn').addEventListener('click', function () {
       var bt = this; bt.classList.add('spin');
-      Promise.resolve(window.mzoDataHub.waitForDataset('CACHE_DD_VISIT', { forceCheck: true })).catch(function () {})
-        .then(function () { return window.mzoDataHub._peek('CACHE_DD_VISIT'); }).then(function (t) { if (t) { prepare(t); render(); } pullRemote(); })
-        .then(function () { bt.classList.remove('spin'); });
+      MzoRows.get('dd_visit', { forceCheck: true }).then(function (t) { prepare(t); render(); }, function () {})
+        .then(pullRemote).then(function () { bt.classList.remove('spin'); });
     });
 
     loadLocal();
-    UI.load('CACHE_DD_VISIT', function (text, info) {
-      if (!text) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
-      prepare(text); render();
+    MzoRows.load('dd_visit', function (t, info) {
+      if (!t) { if (info && info.error && !all.length) { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      prepare(t); render();
     }).then(pullRemote);
   });
   </script>
