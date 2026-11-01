@@ -1,0 +1,97 @@
+# MZO VM web front. Installed to /etc/caddy/Caddyfile by vm/deploy/provision.sh and,
+# after `caddy validate`, by deploy.sh whenever this file changes on develop.
+# Certificates come from Let's Encrypt automatically (sslip.io names resolve to the VM).
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "SAMEORIGIN"
+		-Server
+		-X-Powered-By
+	}
+}
+
+# The app (node server.js on :3000).
+130.210.43.11.sslip.io {
+	import security_headers
+
+	# Deploy record written by deploy.sh and polled by GitHub Actions (vm-deploy.yml).
+	handle /deploy.json {
+		root * /opt/mzo/state
+		rewrite * /deployed.json
+		header Cache-Control "no-store"
+		header Access-Control-Allow-Origin "*"
+		file_server
+	}
+
+	handle {
+		# During a deploy restart node needs ~2 s to listen again: wait for it instead of a 502.
+		reverse_proxy 127.0.0.1:3000 {
+			lb_try_duration 10s
+			lb_try_interval 250ms
+		}
+	}
+}
+
+# Static admin portal files: strict CSP (the portal loads only its own scripts and styles).
+(portal_headers) {
+	header {
+		Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		Cache-Control "no-cache"
+	}
+}
+
+# Data mirror: admin portal (static) and PocketBase (API and dashboard).
+data.130.210.43.11.sslip.io {
+	encode zstd gzip
+	header {
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+
+	# PocketBase keeps its own headers: the dashboard (/_/) sets what it needs.
+	@pb path /api/* /_/*
+	handle @pb {
+		header /api/* {
+			Cache-Control "no-store"
+			defer
+		}
+		reverse_proxy 127.0.0.1:8090
+	}
+
+	# The app's UI kit, so the portal looks like the app. Only these three files.
+	@kit path /kit/mzo_theme.css /kit/mzo_theme.js /kit/mzo_ui.js
+	handle @kit {
+		import portal_headers
+		uri strip_prefix /kit
+		root * /opt/mzo/app
+		file_server
+	}
+	handle /kit/* {
+		respond 404
+	}
+
+	# vm/portal/dev/ (local test data) and the README sit inside the served folder.
+	@hidden path /dev /dev/* *.md /.*
+	handle @hidden {
+		respond 404
+	}
+
+	handle {
+		import portal_headers
+		root * /opt/mzo/app/vm/portal
+		file_server {
+			hide .*
+		}
+	}
+}
+
+http://130.210.43.11 {
+	redir https://130.210.43.11.sslip.io{uri}
+}

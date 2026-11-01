@@ -50,3 +50,4 @@ Optional `.env` (git-ignored, loaded by `npm run dev`): `ANTHROPIC_API_KEY` for 
 | [docs/apps-script.md](docs/apps-script.md) | Apps Script web apps behind the sheets |
 | [docs/assistant.md](docs/assistant.md) | Ask (Claude Haiku via `/api/assistant`) |
 | [docs/deploy.md](docs/deploy.md) | Remotes, Vercel, environment variables, releasing |
+| [docs/vm.md](docs/vm.md) | The VM: auto-deploy from `develop`, rollback, PocketBase, timers, logs, GitHub Actions checks |

@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Pending NSC · MZO Reports</title>
   <script src="/mzo_theme.js?v=3"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=5" />
+  <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <!-- auth gate (loads auth.js), app-update check, service worker when opened on its own -->
   <script src="/mzo_presets_hub.js?v=88"></script>
-  <script src="/mzo_ui.js?v=4" defer></script>
+  <script src="/mzo_ui.js?v=5" defer></script>
   <script src="/mzo_data_hub.js?v=90" defer></script>
   <script src="/mzo_scope.js?v=14" defer></script>
   <style>
@@ -161,6 +161,9 @@
       return rows;
     }
 
+    // Delay status by DelaySerial (1 = 0–3 days … 8 = over a year): up to a month ok, up to six months warn, then bad.
+    function delayDot(serial) { return serial >= 7 ? 'bad' : serial >= 5 ? 'warn' : serial >= 1 ? 'ok' : ''; }
+    var DELAY_DOT = {};
     var DELAY2 = [
       ['Within 3 days', [1]], ['More than 3 days', [2, 3, 4, 5, 6, 7, 8]], ['More than 7 days', [3, 4, 5, 6, 7, 8]], ['More than 15 days', [4, 5, 6, 7, 8]],
       ['More than 1 month', [5, 6, 7, 8]], ['More than 2 months', [6, 7, 8]], ['More than 6 months', [7, 8]], ['More than 1 year', [8]]
@@ -185,14 +188,14 @@
     var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
     var SELECTS = ['regionFilter', 'divisionFilter', 'cccFilter', 'classFilter', 'agencyFilter'];
     var FACET_NAMES = ['agri', 'pole', 'wo', 'delay', 'delay2'];
-    FACETS.delay2 = DELAY2.map(function (d) { return [d[0], d[0], function (r) { return d[1].indexOf(r.delaySerial) !== -1; }]; });
+    FACETS.delay2 = DELAY2.map(function (d) { DELAY_DOT[d[0]] = delayDot(d[1][0]); return [d[0], d[0], function (r) { return d[1].indexOf(r.delaySerial) !== -1; }]; });
 
     function fillFilters() {
       UI.offices(all);
       UI.fill('agencyFilter', UI.uniq(all, 'agency').map(function (a) { return { value: a, label: UI.title(a) }; }), 'All agencies');
       UI.fill('classFilter', UI.uniq(all, 'cls').map(function (c) { return { value: c, label: CLASS[c] || c }; }), 'All classes');
       var ranges = {}; all.forEach(function (r) { if (r.delayRange) ranges[r.delayRange] = r.delaySerial; });
-      FACETS.delay = [].concat(Object.keys(ranges).sort(function (a, b) { return ranges[a] - ranges[b]; }).map(function (k) { return [k, k, function (r) { return r.delayRange === k; }]; }));
+      FACETS.delay = [].concat(Object.keys(ranges).sort(function (a, b) { return ranges[a] - ranges[b]; }).map(function (k) { DELAY_DOT[k] = delayDot(ranges[k]); return [k, k, function (r) { return r.delayRange === k; }]; }));
       if (!scope) scope = UI.lockScope();
       SELECTS.forEach(function (id) { UI.mark($(id)); });
     }
@@ -218,7 +221,7 @@
     function renderFacets() {
       [['agri', 'fAgri'], ['pole', 'fPole'], ['wo', 'fWo'], ['delay', 'fDelay'], ['delay2', 'fDelay2']].forEach(function (x) {
         var name = x[0], rows = filtered(name);
-        UI.facet(x[1], FACETS[name].map(function (o) { return { value: o[0], label: o[1], count: rows.filter(o[2]).length }; }), f[name], function (v) { f[name] = v; render(); });
+        UI.facet(x[1], FACETS[name].map(function (o) { return { value: o[0], label: o[1], count: rows.filter(o[2]).length, dot: /^delay/.test(name) ? DELAY_DOT[o[0]] : '' }; }), f[name], function (v) { f[name] = v; render(); });
       });
       var active = (f.q ? 1 : 0) + FACET_NAMES.filter(function (n) { return f[n]; }).length +
         SELECTS.filter(function (id) { return $(id).value && !$(id).disabled; }).length;
@@ -259,7 +262,7 @@
       renderTab(view, n);
     }
 
-    function groupTable(view, keyFn, label, order) {
+    function groupTable(view, keyFn, label, order, dots) {
       var groups = {}, total = view.length;
       view.forEach(function (r) { var k = keyFn(r); if (k == null) return; (Array.isArray(k) ? k : [k]).forEach(function (kk) { var g = groups[kk] || (groups[kk] = { name: kk, n: 0, poles: 0 }); g.n++; g.poles += r.poles; }); });
       var list = Object.keys(groups).map(function (k) { return groups[k]; });
@@ -269,7 +272,7 @@
       return {
         rows: list, sort: order ? null : { key: 'n', dir: 'desc' }, count: false, empty: 'Nothing pending for these filters.',
         columns: [
-          { key: 'name', label: label, fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
+          { key: 'name', label: label, fmt: function (v) { return (dots && dots[v] ? '<span class="ui-dot ' + dots[v] + '" style="margin-right:8px"></span>' : '') + '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
           { key: 'n', label: 'Count', num: true, fmt: UI.n },
           { key: 'poles', label: 'Pole count', num: true, fmt: UI.n },
           { key: 'pct', label: '%', sortVal: function (g) { return g.n; }, fmt: function (_, g) { return UI.bar(g.n, max, UI.pct(g.n, total)); }, width: '30%' }
@@ -284,8 +287,8 @@
       if (tab === 'region') { cfg = groupTable(view, function (r) { return r._region || 'Unmapped'; }, 'Region'); cfg.onRow = function (g) { $('regionFilter').value = g.name; fillFilters(); tab = 'division'; render(); }; }
       else if (tab === 'division') { cfg = groupTable(view, function (r) { return r._divn || 'Unmapped'; }, 'Division'); cfg.onRow = function (g) { $('divisionFilter').value = g.name; fillFilters(); tab = 'ccc'; render(); }; }
       else if (tab === 'ccc') { cfg = groupTable(view, function (r) { return r._supp || 'Unmapped'; }, 'CCC'); cfg.onRow = function (g) { $('cccFilter').value = g.name; fillFilters(); tab = 'consumer'; render(); }; }
-      else if (tab === 'delay') { var ord = {}; view.forEach(function (r) { if (r.delayRange) ord[r.delayRange] = r.delaySerial; }); cfg = groupTable(view, function (r) { return r.delayRange || null; }, 'Delay range', Object.keys(ord).sort(function (a, b) { return ord[a] - ord[b]; })); }
-      else if (tab === 'delay2') { cfg = groupTable(view, function (r) { return DELAY2.filter(function (d) { return d[1].indexOf(r.delaySerial) !== -1; }).map(function (d) { return d[0]; }); }, 'Delay (cumulative)', DELAY2.map(function (d) { return d[0]; })); }
+      else if (tab === 'delay') { var ord = {}; view.forEach(function (r) { if (r.delayRange) ord[r.delayRange] = r.delaySerial; }); cfg = groupTable(view, function (r) { return r.delayRange || null; }, 'Delay range', Object.keys(ord).sort(function (a, b) { return ord[a] - ord[b]; }), DELAY_DOT); }
+      else if (tab === 'delay2') { cfg = groupTable(view, function (r) { return DELAY2.filter(function (d) { return d[1].indexOf(r.delaySerial) !== -1; }).map(function (d) { return d[0]; }); }, 'Delay (cumulative)', DELAY2.map(function (d) { return d[0]; }), DELAY_DOT); }
       else if (tab === 'pole') cfg = groupTable(view, function (r) { return r.pole ? 'Pole case' : 'Non-pole case'; }, 'Pole');
       else if (tab === 'class') cfg = groupTable(view, function (r) { return r.clsLabel; }, 'Class');
       else if (tab === 'phase') cfg = groupTable(view, function (r) { return r.phase === 'III' ? 'Three phase' : 'Single phase'; }, 'Phase');
