@@ -57,6 +57,7 @@ Sheet links (sidebar **Important → Sheet links**) has its own rules: see [repo
 - Admin or empty jurisdiction → **unscoped** (all offices).
 - Grain: **CCC > division > region**.
 - `filterRows(rows)` after parse; `lockFilters()` after filling Region/Division/CCC `<select>`s.
+- A row whose usual office fields are empty is first resolved through every office-type column `lib/offices.js` knows (Office Code, Location Code, DISTRICT, CIRCLE NAME, Sub-Division Name, …). A row that still names no office is shown only to zone and admin logins.
 - Banner: “Showing {label} — set by admin”.
 - **Do not** add per-page “Office Prefs”. Scope comes from login only.
 

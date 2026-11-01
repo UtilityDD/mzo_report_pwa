@@ -526,7 +526,13 @@
     const ccc = pickField(row, CCC_KEYS);
     const codes = collectCodes(row);
 
-    if (!region && !div && !ccc && !codes.length) return true;
+    if (!region && !div && !ccc && !codes.length) {
+      // No office in the usual columns. Look through every office-type column lib/offices.js knows
+      // (Office Code, Location Code, DISTRICT, CIRCLE NAME, Sub-Division Name, …); a row that still
+      // names no office is shown only to zone and admin logins (they returned above, unscoped).
+      const found = officeOfRow(row);
+      return found ? matchRow(found) : false;
+    }
 
     for (let i = 0; i < codes.length; i++) {
       const rawCode = codes[i];
@@ -553,6 +559,22 @@
       if (inScope(ccc, 'ccc', scope)) return true;
     }
     return false;
+  }
+
+  /** A row's office through lib/offices.js, as { _region, _divn, _supp, CCC_CODE }, or null. */
+  function officeOfRow(row) {
+    const O = canon();
+    if (!O || !O.officeColumns || !O.resolve) return null;
+    const keys = Object.keys(row);
+    const roles = O.officeColumns('', keys.map(function (k, i) { return { source_name: k, index: i }; }));
+    if (!roles) return null;
+    const cells = {};
+    Object.keys(roles).forEach(function (role) {
+      cells[role] = roles[role].map(function (c) { return row[keys[c.index]]; });
+    });
+    const o = O.resolve(cells).office;
+    if (!o || !o.region) return null;
+    return { _region: o.region, _divn: o.division || '', _supp: o.ccc || '', CCC_CODE: o.ccc_code || '' };
   }
 
   function filterRows(rows) {
