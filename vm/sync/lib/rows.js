@@ -104,6 +104,9 @@ async function buildOne(dir, key, entry, opts) {
             params: {
                 [zlib.constants.BROTLI_PARAM_MODE]: zlib.constants.BROTLI_MODE_TEXT,
                 [zlib.constants.BROTLI_PARAM_QUALITY]: bytes > 1024 * 1024 ? 5 : 9,
+                // 1 MB window, as the snapshots use: the default 4 MB one took meter_master's rows build to
+                // ~370 MB RSS, over the sync service's 320 MB limit (152 MB with this; .br ~1% larger).
+                [zlib.constants.BROTLI_PARAM_LGWIN]: 20,
                 [zlib.constants.BROTLI_PARAM_SIZE_HINT]: bytes
             }
         }), fs.createWriteStream(tmp + '.br'));
