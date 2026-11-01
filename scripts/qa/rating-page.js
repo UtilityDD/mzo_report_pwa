@@ -46,9 +46,10 @@ function cookie(profile) {
 const results = [];
 function check(name, ok, detail) { results.push({ name, ok: !!ok, detail: detail || '' }); if (!ok) console.log('FAIL', name, detail || ''); }
 
-async function context(browser, who, vp, theme, docBody) {
+async function context(browser, who, vp, theme, docBody, opts) {
+  opts = opts || {};
   const ctx = await browser.newContext(Object.assign({ viewport: { width: VIEWPORTS[vp].width, height: VIEWPORTS[vp].height }, acceptDownloads: true, reducedMotion: 'reduce' }, vp === 'phone' ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}));
-  const host = new URL(BASE).hostname;
+  const host = new URL(opts.base || BASE).hostname;
   await ctx.addCookies([{ name: 'mzo_session', value: cookie(PROFILES[who]), domain: host, path: '/', httpOnly: true, sameSite: 'Lax' }]);
   const version = await fetch(BASE + '/version.json').then((r) => r.json()).then((j) => j.version).catch(() => '');
   await ctx.addInitScript(({ profile, version, theme }) => {
@@ -65,8 +66,10 @@ async function context(browser, who, vp, theme, docBody) {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method())) { bad.push(req.method() + ' ' + url); return r.abort('blockedbyclient'); }
     if (/script\.google(usercontent)?\.com/.test(url)) { bad.push('apps-script ' + url); return r.abort('blockedbyclient'); }
     const u = new URL(url);
-    if (u.origin === new URL(BASE).origin && u.pathname === '/api/data/manifest') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ generatedAt: '2026-11-01T08:30:00Z', datasets: {} }) });
-    if (u.origin === new URL(BASE).origin && u.pathname === '/api/data/rating') return docBody == null ? r.fulfill({ status: 204, body: '' }) : r.fulfill({ status: 200, contentType: 'application/json', body: docBody });
+    if (!opts.base && u.origin === new URL(BASE).origin && u.pathname === '/api/data/manifest') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ generatedAt: '2026-11-01T08:30:00Z', datasets: {} }) });
+    if (u.pathname === '/api/data/rating') return docBody == null ? r.fulfill({ status: 204, body: '' }) : r.fulfill({ status: 200, contentType: 'application/json', body: docBody });
+    if (opts.noEngine && u.pathname === '/lib/rating_metrics.js') return r.fulfill({ status: 200, contentType: 'text/javascript', body: '/* stub: no metrics layer */' });
+    if (opts.base && u.origin === new URL(opts.base).origin) return r.continue();
     if (u.origin !== new URL(BASE).origin) { bad.push('external ' + url); return r.abort('blockedbyclient'); }
     return r.continue();
   });
@@ -287,10 +290,42 @@ async function run() {
     check('sample no console errors', !p.__errors.length, p.__errors.join(' | '));
     await shot(p, 'admin-desktop-light-7-sample', false);
     await p.close();
-    p = await open(ctx, '');
-    const empty = await txt(p, '#view .ui-empty');
-    check('no precompute: a plain message, no sample', empty.length > 0 && !/Sample/.test(await txt(p, '.ui-head')), empty);
     await p.close();
+    await ctx.close();
+  }
+  // No precompute and no metrics layer: a plain message, never the sample, no console errors.
+  {
+    const ctx = await context(browser, 'admin', 'desktop', 'light', null, { noEngine: true });
+    const p = await open(ctx, '');
+    const empty = await txt(p, '#view .ui-empty');
+    check('no rating: a plain message, no sample', empty.length > 0 && !/Sample/.test(await txt(p, '.ui-head')) && !(await p.$('#view tbody tr[data-code]')), empty);
+    check('no rating: no console errors', !p.__errors.length, p.__errors.join(' | '));
+    await p.close();
+    await ctx.close();
+  }
+  // Computed in the browser (--compute <mirror-mode base>): no precompute, so the page rates the offices itself.
+  const COMPUTE = arg('compute', '');
+  if (COMPUTE) {
+    const ctx = await context(browser, 'ccc', 'desktop', 'light', null, { base: COMPUTE });
+    const page = await ctx.newPage();
+    const errors = [], dataLayer = [], http = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+    page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+    page.on('response', (r) => { if (r.status() >= 400) (/\/(schema\/|api\/data\/rows\/)/.test(r.url()) ? dataLayer : http).push(r.status() + ' ' + r.url()); });
+    const t0 = Date.now();
+    await page.goto(COMPUTE + '/performance_index.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#view tbody tr[data-code]', { timeout: 180000 }).catch(() => {});
+    const ms = Date.now() - t0;
+    const n = await page.$$eval('#view tbody tr[data-code]', (r) => r.length).catch(() => 0);
+    check('browser-computed: ranking (' + ms + ' ms)', n === 41, String(n));
+    check('browser-computed: says so', /computed in this browser/.test(await txt(page, '#meta')), await txt(page, '#meta'));
+    check('browser-computed: own office highlighted', (await page.$eval('#view tbody tr.mine', (r) => r.getAttribute('data-code')).catch(() => '')) === '6613101');
+    // 404s for schemas or rows files missing from this build belong to the data layer (MzoRows), not the page.
+    const own = errors.filter((e) => !/status of 404/.test(e));
+    const n404 = errors.length - own.length;
+    check('browser-computed: no errors outside the data layer', !own.length && !http.length && n404 <= dataLayer.length, own.concat(http).slice(0, 5).join(' | '));
+    if (dataLayer.length) console.log('INFO browser path: ' + dataLayer.length + ' data-layer 404s (schemas or rows not in this build): ' + dataLayer.slice(0, 6).join(', '));
+    await shot(page, 'ccc-desktop-light-9-browser-computed', false);
     await ctx.close();
   }
 
@@ -305,7 +340,15 @@ async function run() {
       Object.values(o.contributions || {}).forEach((c) => { c.label = bad; c.rows.forEach((r) => { r.name = bad; }); });
     });
     evil.methodology.forEach((m) => { m.label += bad; m.formula = bad; m.ref = bad; });
-    if (evil.method) evil.method.__evil = bad;
+    if (evil.method) {
+      const M = evil.method;
+      M.intro = (M.intro || []).concat([bad]); M.title = bad; M.formula = bad;
+      (M.pillars || []).forEach((p) => { p.label += bad; p.basis = bad; (p.params || []).forEach((x) => { x.label += bad; x.formula = bad; x.source = { key: 'X', label: bad, url: 'javascript:window.__xss=3' }; x.datasets = [{ key: 'k', label: bad, page: 'javascript:window.__xss=4' }]; x.notes = [bad]; }); });
+      (M.caveats || []).forEach((c) => { c.text = bad; });
+      (M.excluded || []).forEach((c) => { c.item = bad; c.reason = bad; });
+      (M.sources || []).forEach((s) => { s.label = bad; s.url = 'javascript:window.__xss=5'; });
+      if (M.example) { M.example.name = bad; (M.example.pillars || []).forEach((p) => (p.params || []).forEach((x) => { x.label = bad; x.display = bad; })); }
+    }
     Object.keys(evil.rules).forEach((k) => { evil.rules[k] += bad; });
     const ctx = await context(browser, 'admin', 'desktop', 'dark', JSON.stringify(evil));
     const p = await open(ctx, '?level=ccc&office=' + firstCcc);
@@ -314,8 +357,8 @@ async function run() {
     await p.keyboard.press('Escape');
     await p.click('#tabs [data-k="methodology"]');
     await p.waitForTimeout(150);
-    const injected = await p.evaluate(() => ({ xss: window.__xss || 0, imgs: document.querySelectorAll('img').length, scripts: [].filter.call(document.scripts, (s) => /__xss/.test(s.textContent)).length }));
-    check('xss: markup stays text', !injected.xss && !injected.imgs && !injected.scripts, JSON.stringify(injected));
+    const injected = await p.evaluate(() => ({ xss: window.__xss || 0, imgs: document.querySelectorAll('img').length, scripts: [].filter.call(document.scripts, (s) => /__xss/.test(s.textContent)).length, jsLinks: [].filter.call(document.querySelectorAll('a[href]'), (a) => /^\s*javascript:/i.test(a.getAttribute('href'))).length }));
+    check('xss: markup stays text', !injected.xss && !injected.imgs && !injected.scripts && !injected.jsLinks, JSON.stringify(injected));
     check('xss: names shown as text', /<img src=x/.test(await p.textContent('body')));
     await shot(p, 'admin-desktop-dark-8-xss', false);
     await p.close();
