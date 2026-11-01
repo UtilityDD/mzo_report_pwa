@@ -34,3 +34,5 @@ Login-gated pages cannot be checked with an anonymous `curl` of the HTML.
 ## Commits and releases
 
 Small, focused commits with a plain description of what changed and why. Production deploys from `main` on the `smartlinemanapp/mzo-reports` remote; see [docs/deploy.md](docs/deploy.md).
+
+**A push to `develop` goes live on the VM within a minute** (it rolls back if the app fails its health check), and `vm/` (the VM's deploy scripts, sync and portal) is never served by Vercel or `server.js`; see [docs/vm.md](docs/vm.md).
