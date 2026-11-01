@@ -59,7 +59,8 @@ Rules the engine applies to each entry: `quality.status` `na` → n/a (level); `
   penaltyCap: 5,
   rules:   { linear, naParameter, naPillar, minRated, penalties, levels, ranks },   // plain-language strings
   sources: { <sourceKey>: 'document title' },
-  methodology: [ MethodRow ],                                    // the Methodology tab, one row per parameter and penalty
+  methodology: [ MethodRow ],                                    // one row per parameter and penalty (flat table)
+  method: Method,                                                // the full methodology as structured data (Methodology tab)
   zone: '6600000',
   levels: { zone|region|division|ccc: { order: [code, …] (rank order, unrated last), of: N (rated offices) } },
   offices: { <code>: Office }
@@ -74,6 +75,29 @@ Rules the engine applies to each entry: `quality.status` `na` → n/a (level); `
 ```
 
 `full` is the value that earns full marks (for a penalty: no deduction), `zero` the value that earns none (for a penalty: the full deduction). `ref` is the exact clause; `stretch` is the national 2024 timeline shown alongside but not scored.
+
+`Method` (everything `docs/rating/methodology.md` says, generated from the same data; the page renders it):
+
+```
+{ version, title,
+  intro: [paragraph], formula,                        // what this is, what it is modelled on, what is left out
+  bands: [ { grade, min, label } ], bandsNote,
+  pillars: [ { id, label, short, weight, national, basis,       // national = the national weights it is set against
+               params: [ { id, metric, label, unit, direction, max, formula, full, zero, fullDisplay, zeroDisplay,
+                           source: { key, label, url }, ref, stretch, levels: ['zone',…], notes: [string],
+                           datasets: [ { key, label, page } ] } ] } ],
+  penalties: [ { id, metric, label, unit, max, formula, none, worst, noneDisplay, worstDisplay, source, ref, levels } ], penaltyCap,
+  levelsRule: [paragraph], naRule: [paragraph], qualityRule: [paragraph], penaltyRule: [paragraph], rankRule, whyRule,
+  caveats: [ { id, text } ],                         // from this run's data: HT rows at regions, the swapped loss month,
+                                                     // reliability coverage, stale inputs, mixed dates
+  excluded: [ { item, reason } ], gaps: [string],
+  sources: [ { key, label, url, ref } ],
+  example: { code, name, level, score, grade, rank, of, penaltyTotal,             // one CCC (opts.example, else the median-ranked CCC)
+             pillars: [ { id, label, weight, max, marks, note,
+                          params: [ { id, label, display, full, zero, fraction, max, effMax, marks, status, naReason } ] } ] } }
+```
+
+`rate(doc, { example: '<code>' })` picks the worked-example office.
 
 `Office`:
 
