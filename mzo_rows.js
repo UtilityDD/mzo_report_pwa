@@ -162,7 +162,7 @@
     costCentres();
     if (worker || workerBroken || typeof Worker === 'undefined') return;
     try {
-      worker = new Worker('/mzo_rows.js?v=5&worker=1');
+      worker = new Worker('/mzo_rows.js?v=6&worker=1');
     } catch (e) { workerBroken = true; return; }
     worker.onmessage = function (e) {
       var j = jobs[e.data.id]; if (!j) return;
@@ -356,23 +356,32 @@
 
   function load(key, render, opts) {
     opts = opts || {};
-    var t0 = now(), first = null;
-    // The cached rows are painted at once unless the page's schema changed since (a new field
-    // would be missing from them); offline (schema unreachable) they are painted anyway.
-    return Promise.all([idb('get', key), schema(key)]).then(function (r) {
-      var cached = r[0], sc = r[1];
+    var t0 = now(), first = null, seenKey = 'mzo_rows_schema_' + key, seen = null;
+    try { seen = localStorage.getItem(seenKey); } catch (e) {}
+    var scP = schema(key); // in parallel; memoised per page
+    function paint(cached, tIdb) {
+      try { first = toT(key, cached.json, 'cache', opts, { idb: tIdb, total: Math.round(now() - t0) }); render(first, { cached: true }); }
+      catch (e) { if (g.console) console.warn('[MzoRows] ' + key + ': cached rows unreadable', e); first = null; return false; }
+      return true;
+    }
+    return idb('get', key).then(function (cached) {
       var tIdb = Math.round(now() - t0);
-      if (cached && cached.json && cached.meta && cached.meta.schemaFile !== sc.hash && !sc.failed) cached = { meta: cached.meta };
-      if (cached && cached.json) {
-        try { first = toT(key, cached.json, 'cache', opts, { idb: tIdb, total: Math.round(now() - t0) }); render(first, { cached: true }); }
-        catch (e) { if (g.console) console.warn('[MzoRows] ' + key + ': cached rows unreadable', e); cached = null; first = null; }
-      }
-      return latest(key, cached, opts).then(function (r) {
-        if (r && r.json) { var t = toT(key, r.json, r.source, opts, Object.assign({ idb: tIdb }, r.ms)); t.ms.total = Math.round(now() - t0); render(t, { cached: false }); }
-        else if (!first) render(null, { error: true });
-      }, function (err) {
-        if (g.console) console.warn('[MzoRows] ' + key + ':', (err && err.message) || err);
-        if (!first) render(null, { error: true });
+      // Cached rows made for the schema this page saw last time are painted at once, with no
+      // network round trip; the schema is still checked, and changed rows re-render after.
+      if (cached && cached.json && cached.meta && seen && cached.meta.schemaFile === seen && !paint(cached, tIdb)) cached = null;
+      return scP.then(function (sc) {
+        if (sc.hash) { try { localStorage.setItem(seenKey, sc.hash); } catch (e) {} }
+        // Rows made for another schema are not shown (a new field would be missing), unless the
+        // schema is unreachable (offline): then they are painted anyway.
+        if (cached && cached.json && cached.meta && cached.meta.schemaFile !== sc.hash && !sc.failed) cached = { meta: cached.meta };
+        if (!first && cached && cached.json && !paint(cached, tIdb)) cached = null;
+        return latest(key, cached, opts).then(function (r) {
+          if (r && r.json) { var t = toT(key, r.json, r.source, opts, Object.assign({ idb: tIdb }, r.ms)); t.ms.total = Math.round(now() - t0); render(t, { cached: false }); }
+          else if (!first) render(null, { error: true });
+        }, function (err) {
+          if (g.console) console.warn('[MzoRows] ' + key + ':', (err && err.message) || err);
+          if (!first) render(null, { error: true });
+        });
       });
     });
   }
