@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=2" defer></script>
   <script src="/auth.js" defer></script>
   <style>
     .dc-base { padding: 10px 14px; font-size: 12px; line-height: 1.5; color: var(--mzo-muted); }
@@ -122,7 +123,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var HUB_KEY = 'CACHE_DISCONNECTION';
+    var ROWS = 'disconnection';
     var GOOGLE_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv';
     var STATUS = {
       'Fully Paid': { label: 'Fully paid', cls: 'ok' },
@@ -143,7 +144,7 @@
 
     /* ------------------------------------------------------------------ parsing */
 
-    // Google export sometimes prepends a blank comma-row before the real header.
+    // Google export sometimes prepends a blank comma-row before the real header (used by the fallback).
     function normalizeCsv(text) {
       text = String(text || '').replace(/^﻿/, '');
       var lines = text.split(/\r?\n/);
@@ -161,17 +162,6 @@
       }
       return 0;
     }
-    function csvLine(line) {
-      var out = [], cur = '', q = false;
-      for (var i = 0; i < line.length; i++) {
-        var ch = line[i];
-        if (ch === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q; }
-        else if (ch === ',' && !q) { out.push(cur); cur = ''; }
-        else cur += ch;
-      }
-      out.push(cur);
-      return out;
-    }
     function osdDate(raw) {
       var s = String(raw || '').trim();
       if (!s || /^#?n\/?a$/i.test(s) || s === '0') return '';
@@ -180,74 +170,74 @@
       var y = m[3]; if (y.length === 2) y = (parseInt(y, 10) > 50 ? '19' : '20') + y;
       return m[1].padStart(2, '0') + '.' + m[2].padStart(2, '0') + '.' + y;
     }
-    // DOM and IND/COM base OSD dates live on the first data row.
-    function baseDates(text) {
-      var lines = normalizeCsv(text).split(/\r?\n/).filter(function (l) { return l.trim(); });
-      if (lines.length < 2) return { dom: '', ind: '' };
-      var h = csvLine(lines[0]).map(function (x) { return String(x || '').replace(/\s+/g, ' ').trim(); });
-      var row = csvLine(lines[1]);
-      var v = h.findIndex(function (x) { return /^dom(\s|&)*com\s*base date$/i.test(x) || /^dom base date$/i.test(x); });
-      var w = h.findIndex(function (x) { return /^ind/i.test(x) && /base date/i.test(x); });
-      if (v < 0) v = 21; if (w < 0) w = 22;
-      var dom = osdDate(row[v]) || osdDate(row[21]), ind = osdDate(row[w]) || osdDate(row[22]);
+    // DOM and IND/COM base OSD dates live on the first data row (DOM BASE DATE, IND&COM BASE DATE):
+    // t.all, so a scoped login sees them too. Else the first and last date-like cells of that row.
+    function baseDates(t) {
+      var row = t.all[0];
+      if (!row) return { dom: '', ind: '' };
+      var dom = osdDate(row.dom_base_date), ind = osdDate(row.ind_com_base_date);
       if (!dom || !ind) {
-        var tail = row.map(osdDate).filter(Boolean);
+        var tail = t.columns.map(function (c) { return osdDate(row[c.name]); }).filter(Boolean);
         if (!dom && tail[0]) dom = tail[0];
         if (!ind && tail.length) ind = tail[tail.length - 1];
       }
       return { dom: dom, ind: ind };
     }
 
-    function office(code, unitName) {
-      var o = UI.office(code);
-      var c = String(code || '').trim();
-      if (o.region && !o.division && /0000$/.test(c)) return { region: o.region, division: 'Bulk', ccc: o.region + ' region bulk' };
-      if (!o.ccc && unitName) o = { region: o.region, division: o.division, ccc: UI.title(String(unitName).replace(/ CCC$/i, '').trim()) };
+    // Canonical office of the row; a region's 0000 code is its bulk account.
+    function office(row) {
+      var o = { region: row._region, division: row._division, ccc: row._ccc };
+      if (o.region && !o.division && /0000$/.test(row.ccc_code)) return { region: o.region, division: 'Bulk', ccc: o.region + ' region bulk' };
+      if (!o.ccc && row.unit_name) o.ccc = UI.title(String(row.unit_name).replace(/ CCC$/i, '').trim()); // only if the schema pins UNIT_NAME again
       return o;
     }
+    // A uniform value, or the cell text that did not parse (the old rules still apply to it).
+    function rawOf(row, k) { var v = row[k]; return v != null && v !== '' ? String(v) : row[k + '_raw'] || ''; }
 
-    function prepare(text) {
-      var base = baseDates(text), maxDate = null;
-      var rows = UI.csv(normalizeCsv(text));
-      all = rows.map(function (row, idx) {
-        var code = String(row.CCC_CODE || '').trim();
-        var o = office(code, row.UNIT_NAME);
-        var osd = parseAmount(row.NOTOSD, row.NOTOSD_UPD);
-        var paid = parseAmount(row['FINAL PAID AMOUNT']);
-        var dateStr = String(row['PAID/DISCON DATE'] || '').trim();
-        var hasDate = dateStr !== '' && dateStr.toLowerCase() !== '#n/a' && dateStr !== '0';
-        var dateObj = null;
-        if (hasDate) {
-          var p = dateStr.split('.');
-          if (p.length === 3) {
-            dateObj = new Date(parseInt(p[2], 10), parseInt(p[1], 10) - 1, parseInt(p[0], 10));
-            if (isNaN(dateObj.getTime())) { hasDate = false; dateObj = null; }
-            else if (!maxDate || dateObj > maxDate) maxDate = dateObj;
-          } else hasDate = false;
-        }
-        var paidStr = String(row['FINAL PAID AMOUNT'] || '').trim();
+    // PAID/DISCON DATE (dd.mm.yyyy in the sheet; blank, #N/A or 0: none) → { str, obj } or null.
+    function actionDate(row) {
+      var iso = row.paid_discon_date;
+      var dateStr = iso ? iso.slice(8, 10) + '.' + iso.slice(5, 7) + '.' + iso.slice(0, 4) : row.paid_discon_date_raw || '';
+      if (dateStr === '' || dateStr.toLowerCase() === '#n/a' || dateStr === '0') return null;
+      var p = dateStr.split('.');
+      if (p.length !== 3) return null;
+      var d = new Date(parseInt(p[2], 10), parseInt(p[1], 10) - 1, parseInt(p[0], 10));
+      return isNaN(d.getTime()) ? null : { str: dateStr, obj: d };
+    }
+
+    // t.rows: uniform rows of schema/disconnection.json, already scoped to the login by MzoRows.
+    function prepare(t) {
+      var base = baseDates(t), maxDate = null;
+      // "As on" is the latest action date in the whole sheet (t.all), as before, for every login.
+      t.all.forEach(function (row) { var a = actionDate(row); if (a && (!maxDate || a.obj > maxDate)) maxDate = a.obj; });
+      all = t.rows.map(function (row) {
+        var code = row.ccc_code;
+        var o = office(row);
+        var osd = row.notosd != null ? row.notosd : parseAmount(row.notosd_raw);
+        var paid = row.final_paid_amount != null ? row.final_paid_amount : parseAmount(row.final_paid_amount_raw);
+        var act = actionDate(row), hasDate = !!act, dateStr = act ? act.str : '', dateObj = act ? act.obj : null;
+        var paidStr = rawOf(row, 'final_paid_amount');
         var hasPaid = paidStr !== '' && paidStr.toLowerCase() !== '#n/a' && paidStr !== '0';
         var status = !hasDate ? 'No Action Taken' : !hasPaid ? 'Disconnected' : paid >= osd ? 'Fully Paid' : 'Partially Paid';
         return {
-          id: String(row.CON_ID || ('synthetic-' + idx)).trim(),
-          name: String(row.NAME || '').trim(),
-          display: UI.title(String(row.NAME || '').trim().replace(/,\s*$/, '')),
-          address: String(row.ADDRESS || '').trim(),
+          id: row.con_id || 'synthetic-' + t.all.indexOf(row),
+          name: row.name,
+          display: UI.title(row.name.replace(/,\s*$/, '')),
+          address: row.address,
           CCC_CODE: code, cccCode: code,
           _region: o.region || 'Unmapped', _divn: o.division || 'Unmapped', _supp: o.ccc || 'Unmapped',
           osd: osd, paid: paid,
           dateStr: hasDate ? dateStr : '', dateObj: dateObj,
-          remarks: String(row.REMARKS || '').trim(),
+          remarks: row.remarks || '', // no REMARKS / TARIFF CLASS column in the sheet today (schema notes)
           status: status,
-          classDesc: String(row.CLASS_DESC || '').trim(),
-          tariff: String(row['TARIFF CLASS'] || '').trim(),
-          meter: UI.blank(row.METER_NO) ? '' : String(row.METER_NO).trim(),
-          mru: UI.blank(row.MRU) ? '' : String(row.MRU).trim(),
-          dispute: UI.blank(row['BILL DISPUTE']) ? '' : String(row['BILL DISPUTE']).trim(),
-          govt: UI.blank(row['GOVT STAT']) ? '' : String(row['GOVT STAT']).trim()
+          classDesc: row.class_desc,
+          tariff: row.tariff_class || '',
+          meter: UI.blank(row.meter_no) ? '' : row.meter_no,
+          mru: UI.blank(row.mru) ? '' : row.mru,
+          dispute: UI.blank(row.bill_dispute) ? '' : row.bill_dispute,
+          govt: UI.blank(row.govt_stat) ? '' : row.govt_stat
         };
       });
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       haveData = true;
       $('asOn').textContent = maxDate ? 'As on ' + UI.fmtDate(maxDate) : UI.n(all.length) + ' consumers';
       var fmt = function (s) { return s ? UI.fmtDate(s) : '—'; };
@@ -381,10 +371,13 @@
     var noteCounts = {};
 
     var lastView = [];
+    function countNotes() {
+      var counts = {}, hidden = hiddenFollowupIds(), store = readFollowupStore();
+      Object.keys(store).forEach(function (k) { var n = (store[k] || []).filter(function (e) { return e && e.note && !hidden.has(e.id); }).length; if (n) counts[fuKey(k)] = n; });
+      return counts;
+    }
     function renderConsumers(view, keepPage) {
-      noteCounts = {};
-      var hidden = hiddenFollowupIds(), store = readFollowupStore();
-      Object.keys(store).forEach(function (k) { var n = (store[k] || []).filter(function (e) { return e && e.note && !hidden.has(e.id); }).length; if (n) noteCounts[fuKey(k)] = n; });
+      noteCounts = countNotes();
       UI.table('table', {
         rows: view, sort: { key: 'osd', dir: 'desc' }, limit: 50, resetPage: !keepPage,
         empty: 'No consumers match these filters.',
@@ -631,9 +624,13 @@
         .catch(function () {})
         .finally(function () { followupPulling = false; });
     }
-    // A pull refreshes the follow-up list only; it never reloads the consumer CSV.
+    // A pull merges the follow-up list into what is on screen (board, tab count, the list's notes
+    // column); it never reloads the consumer rows, so the numbers paint without waiting for it.
     function maybeRefreshFollowups() {
-      if (haveData) { renderFollowupBoard(lastView); renderStats(base()); }
+      if (haveData) {
+        if (dr.level() === 'list' && JSON.stringify(countNotes()) !== JSON.stringify(noteCounts)) renderConsumers(lastView, true);
+        renderFollowupBoard(lastView); renderStats(base());
+      }
       if (!openConsumerId || $('drawer').hidden) return;
       var fp = fuFingerprint(openConsumerId);
       if (fp === followupShownFp) return;
@@ -789,9 +786,9 @@
       ], lastView);
     });
 
-    function reparse(text) { if (!text) return; prepare(text); render({ keepPage: true }); refreshOpenDrawer(); }
+    function reparse(t) { if (!t || brokenHeader(t)) return; prepare(t); render({ keepPage: true }); refreshOpenDrawer(); }
 
-    UI.refresh('refreshBtn', HUB_KEY, reparse);
+    MzoRows.refresh('refreshBtn', ROWS, reparse);
 
     // Sync from the Google Sheet to the cloud cache (Admin, dm1, disconnection-sync-autho).
     metaP.then(function (m) { if (m && m.canSync) $('syncBtn').hidden = false; });
@@ -808,7 +805,7 @@
         })
         .then(function (d) {
           UI.toast(d.message || 'Synced from the sheet');
-          return window.mzoDataHub.refresh(HUB_KEY).then(function () { return window.mzoDataHub._peek(HUB_KEY); }).then(reparse);
+          return MzoRows.reload(ROWS).then(reparse);
         })
         .catch(function (e) { alert('Sync failed: ' + (e.message || e)); })
         .then(function () { b.disabled = false; b.classList.remove('spin'); });
@@ -828,9 +825,9 @@
 
     /* ------------------------------------------------------------------ boot */
 
-    var params = new URLSearchParams(location.search), first = true;
-    function onData(text) {
-      prepare(text);
+    var params = new URLSearchParams(location.search), first = true, rescued = false;
+    function onData(t) {
+      prepare(t);
       if (first) {
         first = false;
         dr.fromParams(params, all); // ?region= ?division= ?ccc=
@@ -845,19 +842,29 @@
         refreshOpenDrawer();
       }
     }
-    // Last resort when the hub has no body: meta csvUrl (Supabase Storage) or the published sheet.
+    // A blank row above the sheet's header leaves the rows without any of their columns.
+    function brokenHeader(t) {
+      var miss = {};
+      t.issues.forEach(function (x) { if (x.check === 'header.missing') miss[x.column] = 1; });
+      return !!(miss.con_id && miss.ccc_code);
+    }
+    // Last resort when no rows could be loaded (or their header was broken): meta csvUrl (Supabase
+    // Storage) or the published sheet, its header row found, turned into rows in this browser.
     function fallback() {
       return metaP.then(function (m) { return (window.mzoMirror ? mzoMirror.fetch : fetch)((m && m.csvUrl) || GOOGLE_CSV); })
         .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-        .then(onData)
+        .then(function (text) { return fetch('/schema/' + ROWS + '.json', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (schema) { return MzoRows._compute(normalizeCsv(text), { key: ROWS, version: 'fallback', format: 'csv', schema: schema }); }); })
+        .then(function (out) { var t = MzoRows.fromDoc(ROWS, JSON.parse(out.json), 'local'); if (brokenHeader(t)) throw new Error('no header'); onData(t); })
         .catch(function () {
+          if (haveData) return;
           $('asOn').textContent = 'No data';
           $('table').innerHTML = '<div class="ui-empty">Could not load data. <button type="button" class="ui-btn sm" onclick="location.reload()">Retry</button></div>';
         });
     }
-    UI.load(HUB_KEY, function (text, info) {
-      if (text) onData(text);
-      else if (info && info.error && !haveData) fallback();
+    MzoRows.load(ROWS, function (t, info) {
+      if (t && !brokenHeader(t)) onData(t);
+      else if (t && !rescued) { rescued = true; fallback(); }
+      else if (!t && info && info.error && !haveData) fallback();
     });
     startFollowupSync();
   });
