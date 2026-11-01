@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
   <script src="/lib/assistant_catalog.js?v=1" defer></script>
   <style>
     html.ui, html.ui body { height: 100%; }
@@ -158,45 +159,45 @@
     });
 
     /* ---------------- data for tools ---------------- */
+    // Ask counts the same uniform rows the report pages read (MzoRows, schema/<key>.json) and builds the
+    // same row values from them, with the same offices (_region/_division/_ccc) and login scope, as
+    // nsc.html parse(), pending_load_extension.html and solar.html prepare() and loss.html prepare(),
+    // so its numbers are the pages' numbers. The measures and views on top of them are Ask's own.
     var cache = {};
-    function dataset(key) {
-      var hub = window.mzoDataHub;
-      if (!hub) return Promise.resolve(null);
-      return Promise.resolve(hub._peek(key)).catch(function () { return null; }).then(function (t) {
-        if (t) { hub.waitForDataset(key).catch(function () {}); return t; }
-        return Promise.resolve(hub.waitForDataset(key)).catch(function () {}).then(function () { return hub._peek(key); });
+    // The rows of one report: this device's cached rows at once when it has them (as before), newer rows
+    // for the next question when they arrive.
+    function rowsFor(name, A) {
+      if (cache[name]) return cache[name];
+      var p = cache[name] = new Promise(function (resolve, reject) {
+        var got = false, fail = function () { if (!got) { got = true; if (cache[name] === p) delete cache[name]; reject(new Error('The ' + name + ' data could not be loaded.')); } };
+        if (!window.MzoRows) return fail();
+        MzoRows.load(A.rows, function (t) {
+          if (!t) return fail();
+          var rows = A.build(t);
+          if (!got) { got = true; resolve(rows); } else cache[name] = Promise.resolve(rows);
+        }, A.opts);
       });
-    }
-    function rowsFor(name, key, build) {
-      if (cache[name]) return Promise.resolve(cache[name]);
-      return dataset(key).then(function (text) {
-        if (!text) throw new Error('The ' + name + ' data could not be loaded.');
-        var rows = build(UI.csv(text));
-        if (window.MzoScope) rows = window.MzoScope.filterRows(rows);
-        cache[name] = rows;
-        return rows;
-      });
+      return p;
     }
     function median(nums) { if (!nums.length) return null; var s = nums.slice().sort(function (a, b) { return a - b; }); return s[Math.floor(s.length / 2)]; }
-    function officeRow(d, code, name, regionRaw, divRaw) {
-      var o = UI.office(code, name), S = window.MzoScope;
-      d._region = o.region || (S && regionRaw ? S.regionNameOf(regionRaw) : '') || '';
-      d._divn = o.division || (S && divRaw ? S.divisionNameOf(divRaw) : '') || '';
-      d._supp = o.ccc || '';
-      d.CCC_CODE = code || '';
-      return d;
-    }
 
     var ADAPTERS = {
       nsc: {
-        title: 'Pending NSC', key: 'CACHE_NSC_v5',
-        build: function (list) {
-          var by = new Map();
-          list.forEach(function (r) { var a = String(r.APPL_NO || '').trim().toLowerCase(); if (a) by.set(a, r); });
-          return Array.from(by.values()).map(function (r) {
-            var poles = parseInt(r.NO_OF_POLES, 10) || 0, w = String(r.SCN_WITHELD_DATE || '').trim(), delay = parseFloat(r.DelayInSC);
-            return officeRow({ delay: isNaN(delay) ? null : delay, poles: poles, pole: poles > 0, withheld: w !== '' && w !== '0', cls: String(r.CONN_CLASS || '').trim().toUpperCase(), phase: String(r.APPLIED_PHASE || '').trim().toUpperCase() }, r.CCC_CODE, r.SUPP_OFF, r.REGION, r.DIVN_NAME);
+        // nsc.html parse(): the last row per application over the whole sheet, then the login scope
+        title: 'Pending NSC', rows: 'nsc_pending', opts: { scope: false },
+        build: function (t) {
+          var by = new Map(), today = null, rows = [];
+          t.rows.forEach(function (d) { if (!d.appl_no) return; by.set(d.appl_no, d); if (!today && d.today) today = UI.date(d.today); });
+          by.forEach(function (d) {
+            var poles = Math.trunc(d.no_of_poles) || 0, paid = UI.date(d.coll_date), delay = d.delayinsc;
+            rows.push({
+              delay: delay == null ? (paid && today ? Math.max(0, Math.round((today - paid) / 864e5)) : null) : delay,
+              poles: poles, pole: poles > 0 || /^pole/i.test(d.polenonpole), withheld: d.scn_witheld_date !== '' && d.scn_witheld_date !== '0',
+              cls: d.conn_class.toUpperCase(), phase: d.applied_phase.toUpperCase(),
+              _region: d._region, _divn: d._division || d.divn_name, _supp: d._ccc || d.supp_off, CCC_CODE: d.ccc_code
+            });
           });
+          return window.MzoScope ? window.MzoScope.filterRows(rows) : rows;
         },
         views: { over_30_days: function (d) { return (d.delay || 0) > 30; }, pole_cases: function (d) { return d.pole; }, rescued_from_withheld: function (d) { return d.withheld; }, industrial: function (d) { return d.cls === 'I'; }, commercial_three_phase: function (d) { return d.cls === 'C' && d.phase === 'III'; } },
         measure: function (rows) {
@@ -204,13 +205,15 @@
         }
       },
       load_extension: {
-        title: 'Pending load extension', key: 'CACHE_LOAD_EXT',
-        build: function (list) {
-          var asOn = '';
-          return list.filter(function (r) { return r.APPL_NO || r.CON_ID; }).map(function (r) {
-            var applied = parseFloat(r.LOAD_APPLIED) || 0, curr = parseFloat(r.CURR_LOAD) || 0, age = parseInt(r.AGE_MONTHS, 10) || 0, cls = String(r.CONN_CLASS || '').trim().toUpperCase();
-            var rate = cls === 'I' ? 75 : (cls === 'C' || cls === 'A') ? 60 : 30;
-            return officeRow({ age: age, cls: cls, phase: String(r.CONN_PHASE || '').trim().toUpperCase(), applied: applied, loss: applied > curr ? Math.round(((applied - curr) * rate * age) / 850) : 0, asOn: r.report_date || asOn }, r['CCC CODE']);
+        // pending_load_extension.html prepare(): t.rows is already scoped to the login
+        title: 'Pending load extension', rows: 'load_extension',
+        build: function (t) {
+          return t.rows.filter(function (d) { return d.appl_no || d.con_id; }).map(function (d) {
+            var r = { age: Math.trunc(d.age_months) || 0, cls: d.conn_class.toUpperCase(), phase: d.conn_phase.toUpperCase(), applied: d.load_applied || 0, curr: d.curr_load || 0,
+              _region: d._region, _divn: d._division, _supp: d._ccc, CCC_CODE: d.ccc_code };
+            var rate = r.cls === 'I' ? 75 : (r.cls === 'C' || r.cls === 'A') ? 60 : 30;
+            r.loss = r.applied > r.curr ? Math.round(((r.applied - r.curr) * rate * r.age) / 850) : 0;
+            return r;
           });
         },
         views: { over_1_year: function (d) { return d.age >= 12; }, industrial: function (d) { return d.cls === 'I'; }, three_phase: function (d) { return d.phase === 'III'; }, above_10kw: function (d) { return d.applied > 10000; } },
@@ -219,13 +222,15 @@
         }
       },
       solar: {
-        title: 'Solar connections', key: 'CACHE_SOLAR',
-        build: function (list) {
-          return list.filter(function (r) { return r.SOLAR_APPL_NO || r.CON_ID; }).map(function (r) {
-            var s = String(r.REPLACE_STATUS || '').trim().toUpperCase();
+        // solar.html prepare(): t.rows is already scoped to the login
+        title: 'Solar connections', rows: 'solar_connections',
+        build: function (t) {
+          return t.rows.filter(function (d) { return d.solar_appl_no || d.con_id; }).map(function (d) {
+            var s = d.replace_status.toUpperCase();
             var st = (s === 'SUCCESS' || s === 'EFFECTED' || s === 'DONE') ? 'connected' : (!s || s === '(NULL)' || s === 'NOT YET' || s === 'PENDING') ? 'pending' : 'meter_issue';
-            var sch = String(r.REMARKS || '').trim().toUpperCase(); if (!sch || sch === 'OTHER' || sch === '(NULL)') sch = 'OTHERS';
-            return officeRow({ st: st, scheme: sch, days: st === 'connected' ? null : UI.days(r.CREATION_DATE) }, r['CCC CODE'], r.SUPP_OFF);
+            var sch = d.remarks.toUpperCase(); if (!sch || sch === 'OTHER' || sch === '(NULL)') sch = 'OTHERS';
+            return { st: st, scheme: sch, days: st === 'connected' ? null : UI.days(d.creation_date),
+              _region: d._region, _divn: d._division, _supp: d._ccc || UI.title(d.supp_off.replace(/\s*CCC.*$/i, '')), CCC_CODE: d.ccc_code };
           });
         },
         views: { connected: function (d) { return d.st === 'connected'; }, pending: function (d) { return d.st === 'pending'; }, meter_issue: function (d) { return d.st === 'meter_issue'; }, pm_surya_ghar: function (d) { return d.scheme === 'PMSGMBY'; } },
@@ -243,7 +248,7 @@
     function queryTable(input) {
       var A = ADAPTERS[input.report];
       if (!A) return Promise.reject(new Error('That report cannot be counted yet.'));
-      return rowsFor(input.report, A.key, A.build).then(function (all) {
+      return rowsFor(input.report, A).then(function (all) {
         var region = normRegion(input.region), division = clean(input.division), ccc = clean(input.ccc);
         var rows = all.filter(function (d) {
           return (!region || sameOffice(d._region, region)) && (!division || sameOffice(d._divn, division)) && (!ccc || sameOffice(d._supp, ccc));
@@ -268,36 +273,70 @@
       });
     }
 
-    /* Losses: the sheet already holds totals per office and month. */
+    /* Losses: the sheet already holds totals per office and month; offices and names as loss.html. */
     var LOSS_TREE = {
       Malda: { row: 'MALDA REGION', divs: { Malda: { row: 'Malda Div Total', cccs: ['RATHBARI', 'FULBARI', 'MOKDAMPUR', 'KALIACHAK', 'SUJAPUR', 'MOTHABARI', 'MATHURAPUR', 'BAISNABNAGAR', 'GOLAPGANJ'] }, Gazole: { row: 'Gazole Div Total', cccs: ['OLD MALDA', 'AIHO', 'GAZOLE', 'BAMANGOLA', 'PANDUA'] }, Chanchal: { row: 'Chanchal Div Total', cccs: ['SAMSI', 'PARANPUR', 'CHANCHAL', 'H.C. PUR', 'BHALUKA', 'MALATIPUR', 'KUSHIDA'] } } },
       Raiganj: { row: 'U/DINAJPUR REGION', divs: { Raiganj: { row: 'Raiganj Div Total', cccs: ['RAIGANJ', 'KALIAGANJ', 'HEMTABAD', 'BIRNAGAR', 'ITAHAR', 'KARANDEGHI'] }, Islampur: { row: 'Islampur Div Total', cccs: ['DALKHOLA', 'KANKI', 'GOALPOKHAR', 'ISLAMPUR', 'CHOPRA'] } } },
       Balurghat: { row: 'D/DINAJPUR REGION', divs: { Balurghat: { row: 'Balurghat Div Total', cccs: ['BALURGHAT', 'HILI', 'KUMARGUNJ', 'TAPAN', 'PATIRAM'] }, Buniadpur: { row: 'Buniadpur Div Total', cccs: ['BUNIADPUR', 'HARIRAMPUR', 'GANGARAMPUR', 'KUSHMUNDI'] } } }
     };
-    var LOSS_NAME = { 'H.C. PUR': 'Harishchandrapur', MOKDAMPUR: 'Mokdumpur', BAISNABNAGAR: 'Baishnabnagar', KARANDEGHI: 'Karandighi', KUMARGUNJ: 'Kumarganj', KUSHMUNDI: 'Kushmandi', BAMANGOLA: 'Bamongola', GOALPOKHAR: 'Goalpokher', KALIAGANJ: 'Kaliyaganj' };
-    var lossData = null;
-    function lossRows() {
-      if (lossData) return Promise.resolve(lossData);
-      return Promise.all([dataset('CACHE_LOSS'), dataset('CACHE_LOSS_TARGET')]).then(function (t) {
-        if (!t[0]) throw new Error('The loss data could not be loaded.');
-        var by = {}, periods = {}, pct = function (v) { var x = parseFloat(String(v || '').replace('%', '')); return isFinite(x) ? x : null; };
-        UI.csv(t[0]).forEach(function (r) {
-          var y = parseInt(r.YEAR, 10), m = parseInt(r.MONTH, 10), n = String(r.CCC || '').trim();
+    var LOSS_NAME = { 'H.C. PUR': 'Harishchandrapur', MOKDAMPUR: 'Mokdumpur', BAISNABNAGAR: 'Baishnabnagar', KARANDEGHI: 'Karandighi', KUMARGUNJ: 'Kumarganj', KUSHMUNDI: 'Kushmandi', BAMANGOLA: 'Bamongola', GOALPOKHAR: 'Goalpokhar' };
+    function cccLabel(raw) { var c = window.MzoOffices && window.MzoOffices.parseCccName(raw); return c && c.level === 'ccc' ? c.ccc : LOSS_NAME[raw] || UI.title(raw); }
+    function pctNum(v) { var x = parseFloat(String(v || '').replace('%', '')); return isFinite(x) ? x : null; }
+    var LOSS = {
+      // loss.html prepare(): every row of the sheet (zone, region, division-total and CCC rows); the scope is applied below
+      main: { title: 'Losses', rows: 'loss_report', opts: { scope: false, forceCheck: true }, build: function (t) {
+        var by = {}, periods = {};
+        t.all.forEach(function (r) {
+          var y = Math.trunc(r.year), m = Math.trunc(r.month), n = r.ccc;
           if (!y || !m || !n) return;
           periods[y * 100 + m] = 1;
-          (by[n] || (by[n] = {}))[y * 100 + m] = { atc_loss_pct: pct(r['CUM. AT&C LOSS']), dist_loss_pct: pct(r['CUM. DIST. LOSS']), collection_eff_pct: pct(r['COLL. EFF.']), input_mu: parseFloat(r['CUM. INPUT (MU)']) || null, collected_mu: parseFloat(r['CUM. COLLEC. (MU)']) || null };
+          (by[n] || (by[n] = {}))[y * 100 + m] = { atc_loss_pct: pctNum(r.cum_at_c_loss), dist_loss_pct: pctNum(r.cum_dist_loss), collection_eff_pct: pctNum(r.coll_eff), input_mu: r.cum_input_mu, collected_mu: r.cum_collec_mu };
         });
-        var targets = {};
-        UI.csv(t[1] || '').forEach(function (r) { var n = String(r.CCC || '').trim(); if (n) targets[n] = { atc_target_pct: pct(r['CUM. AT&C LOSS']), dist_target_pct: pct(r['CUM. DIST. LOSS']) }; });
-        lossData = { by: by, targets: targets, periods: Object.keys(periods).map(Number).sort(function (a, b) { return b - a; }) };
-        return lossData;
-      });
+        return { by: by, periods: Object.keys(periods).map(Number).sort(function (a, b) { return b - a; }) };
+      } },
+      targets: { title: 'Loss targets', rows: 'loss_targets', opts: { scope: false, forceCheck: true }, build: function (t) {
+        var out = {};
+        t.all.forEach(function (r) { if (r.ccc) out[r.ccc] = { atc_target_pct: pctNum(r.cum_at_c_loss), dist_target_pct: pctNum(r.cum_dist_loss) }; });
+        return out;
+      } }
+    };
+    function lossRows() {
+      return Promise.all([rowsFor('loss', LOSS.main), rowsFor('loss target', LOSS.targets).catch(function () { return {}; })])
+        .then(function (r) { return { by: r[0].by, periods: r[0].periods, targets: r[1] }; });
     }
-    function lossCccRaw(divNode, name) { return divNode.cccs.filter(function (c) { return sameOffice(c, name) || sameOffice(LOSS_NAME[c], name) || sameOffice(UI.title(c), name); })[0]; }
+    function lossCccRaw(divNode, name) {
+      var p = window.MzoOffices && window.MzoOffices.parseCccName(name), canon = p && p.level === 'ccc' ? p.ccc : '';
+      return divNode.cccs.filter(function (c) { return sameOffice(c, name) || sameOffice(cccLabel(c), name) || sameOffice(UI.title(c), name) || (canon && sameOffice(cccLabel(c), canon)); })[0];
+    }
+    // The login scope as loss.html applies it (UI.lockScope pins the office selects): a scoped login gets
+    // its own region, division or CCC, whatever office the question names; below the pinned level it may pick.
+    function lossPins() {
+      var S = window.MzoScope, sc = S && !S.isUnscoped() ? S.getScope() || {} : null;
+      if (!sc) return {};
+      var one = function (set) { return set && set.size === 1 ? Array.from(set)[0] : ''; };
+      return { region: sc.region || one(sc.regions), division: sc.division || one(sc.divisions), ccc: sc.ccc || (sc.level === 'ccc' ? one(sc.cccs) : '') };
+    }
+    // Where a division or CCC the question names sits in the tree: { region, division } and { cccRegion, cccDivision, raw }.
+    function lossFind(division, ccc) {
+      var hit = {};
+      Object.keys(LOSS_TREE).forEach(function (r) {
+        Object.keys(LOSS_TREE[r].divs).forEach(function (d) {
+          if (division && !hit.division && sameOffice(d, UI.title(division))) { hit.region = r; hit.division = d; }
+          var raw = ccc && !hit.raw && lossCccRaw(LOSS_TREE[r].divs[d], ccc);
+          if (raw) { hit.cccRegion = r; hit.cccDivision = d; hit.raw = raw; }
+        });
+      });
+      return hit;
+    }
     function queryLoss(input) {
       return lossRows().then(function (L) {
-        var region = normRegion(input.region), division = clean(input.division), ccc = clean(input.ccc);
-        if (!region && !division && scope && !scope.unscoped) { region = (scope.regions && scope.regions.size === 1) ? Array.from(scope.regions)[0] : ''; division = (scope.divisions && scope.divisions.size === 1) ? Array.from(scope.divisions)[0] : ''; }
+        var region = normRegion(input.region), division = clean(input.division), ccc = clean(input.ccc), pin = lossPins(), f = lossFind(division, ccc);
+        var outside = (!!pin.region && ((!!region && !sameOffice(region, pin.region)) || (!!f.region && f.region !== pin.region) || (!!f.cccRegion && f.cccRegion !== pin.region))) ||
+          (!!pin.division && ((!!f.division && f.division !== pin.division) || (!!f.cccDivision && f.cccDivision !== pin.division))) ||
+          (!!pin.ccc && !!f.raw && !sameOffice(cccLabel(f.raw), pin.ccc));
+        if (pin.region) region = pin.region;
+        if (pin.division) division = pin.division;
+        if (pin.ccc) ccc = pin.ccc;
         if (division && !region) Object.keys(LOSS_TREE).forEach(function (r) { if (LOSS_TREE[r].divs[UI.title(division)]) region = r; });
         division = division ? UI.title(division) : '';
         var sel = { row: 'MALDA ZONE', label: 'Malda Zone', kids: Object.keys(LOSS_TREE).map(function (r) { return { row: LOSS_TREE[r].row, label: r + ' region' }; }) };
@@ -306,9 +345,9 @@
           sel = { row: R.row, label: region + ' region', kids: Object.keys(R.divs).map(function (d) { return { row: R.divs[d].row, label: d + ' division' }; }) };
           if (division && R.divs[division]) {
             var D = R.divs[division];
-            sel = { row: D.row, label: division + ' division', kids: D.cccs.map(function (c) { return { row: c, label: (LOSS_NAME[c] || UI.title(c)) + ' CCC' }; }) };
+            sel = { row: D.row, label: division + ' division', kids: D.cccs.map(function (c) { return { row: c, label: cccLabel(c) + ' CCC' }; }) };
             var raw = ccc && lossCccRaw(D, ccc);
-            if (raw) sel = { row: raw, label: (LOSS_NAME[raw] || UI.title(raw)) + ' CCC', kids: [] };
+            if (raw) sel = { row: raw, label: cccLabel(raw) + ' CCC', kids: [] };
           }
         }
         var k = L.periods[0];
@@ -322,6 +361,7 @@
         var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         var out = { report: 'Losses', note: 'Values are cumulative from April of the financial year to the month shown.', office: sel.label, month: MON[m - 1] + ' ' + y, latest_month_available: MON[L.periods[0] % 100 - 1] + ' ' + Math.floor(L.periods[0] / 100), totals: pick(sel.row) };
         if (input.group_by && input.group_by !== 'none' && sel.kids.length) out.by_office = sel.kids.map(function (c) { var v = pick(c.row); v.office = c.label; return v; }).sort(function (a, b) { return (b.atc_loss_pct || 0) - (a.atc_loss_pct || 0); });
+        if (scopeLabel) out.scope = 'Only ' + scopeLabel + ' is visible to this user.' + (outside ? ' The office asked for is outside it; these figures are for ' + sel.label + '.' : '');
         return out;
       });
     }
