@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=3" defer></script>
   <style>
     .si-desc { max-width: 380px; white-space: normal; color: var(--mzo-text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   </style>
@@ -96,26 +97,27 @@
     }
     function monday(d) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); var day = x.getDay(); x.setDate(x.getDate() - day + (day === 0 ? -6 : 1)); return x; }
 
+    // raw: uniform rows of schema/safety_inspection.json, every row of the sheet (loaded with
+    // scope: false). The first row per "Count by" key is kept over the whole sheet, then the login
+    // scope applies (MzoRows.scope, on the canonical office of the Office code), as before.
     function build() {
-      var seen = {};
-      all = raw.filter(function (r) { var k = r[groupBy]; if (seen[k]) return false; seen[k] = 1; return true; }).map(function (r) {
-        var m = String(r.Office || '').match(/\((\d+)\)\s*$/), code = m ? m[1] : '';
-        var o = UI.office(code);
-        var done = UI.date(r['Rectification done on']);
+      var seen = {}, key = groupBy === 'Site ID' ? 'site_id' : 'inspection_id';
+      all = MzoRows.scope(raw.filter(function (r) { var k = r[key]; if (seen[k]) return false; seen[k] = 1; return true; })).map(function (r) {
+        var m = r.office.match(/\((\d+)\)\s*$/), code = m ? m[1] : '';
+        var done = UI.date(r.rectification_done_on);
         var x = {
-          office: UI.title(String(r.Office || '').replace(/\s*\(\d+\)\s*$/, '')), code: code,
-          _region: o.region, _divn: o.division, _supp: o.ccc, CCC_CODE: code,
-          location: String(r.Location || '').trim(), text: String(r.Description || '').trim(), cat: category(r.Description),
-          by: String(r['Inspection By'] || '').trim(), entered: UI.date(r['Entered on']), inspected: UI.date(r['Inspected on']),
-          doneBy: String(r['Rectification done by'] || '').trim(), doneOn: done, remarks: String(r.Remarks || '').trim(),
-          state: String(r.Status || '').trim(), site: r['Site ID'], insp: r['Inspection ID'], image: String(r.Image || '').trim()
+          office: UI.title(r.office.replace(/\s*\(\d+\)\s*$/, '')), code: code,
+          _region: r._region, _divn: r._division, _supp: r._ccc, CCC_CODE: code,
+          location: r.location, text: r.description, cat: category(r.description),
+          by: r.inspection_by, entered: UI.date(r.entered_on), inspected: UI.date(r.inspected_on),
+          doneBy: r.rectification_done_by, doneOn: done, remarks: r.remarks,
+          state: r.status, site: r.site_id, insp: r.inspection_id, image: r.image
         };
         x.done = !!done;
         x.days = x.done ? null : UI.days(x.entered);
         x.search = (x.location + ' ' + x.text + ' ' + x.by + ' ' + x.office).toLowerCase();
         return x;
       });
-      if (window.MzoScope) all = MzoScope.filterRows(all);
       var dates = [];
       all.forEach(function (x) { if (x.entered) dates.push(x.entered.getTime()); if (x.doneOn) dates.push(x.doneOn.getTime()); });
       var lo = dates.length ? Math.min.apply(null, dates) : 0, hi = dates.length ? Math.max.apply(null, dates) : 0;
@@ -268,12 +270,12 @@
       UI.exportCsv('safety-inspection.csv', [{ key: 'location', label: 'Location' }, { key: 'text', label: 'Issue' }, { key: 'cat', label: 'Issue type' }, { key: '_region', label: 'Region' }, { key: '_divn', label: 'Division' }, { key: 'office', label: 'Office' }, { key: 'by', label: 'Inspected by' }]
         .concat(COLS.slice(4)).concat([{ key: 'doneBy', label: 'Rectified by' }, { key: 'remarks', label: 'Remarks' }]), window.__view || []);
     });
-    UI.refresh('refreshBtn', 'CACHE_SAFETY_v2', function (t) { raw = UI.csv(t); build(); render(); });
+    MzoRows.refresh('refreshBtn', 'safety_inspection', function (t) { raw = t.rows; build(); render(); }, { scope: false });
 
-    UI.load('CACHE_SAFETY_v2', function (text, info) {
-      if (!text) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
-      raw = UI.csv(text); build(); render();
-    });
+    MzoRows.load('safety_inspection', function (t, info) {
+      if (!t) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      raw = t.rows; build(); render();
+    }, { scope: false });
   });
   </script>
 </body>
