@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
   <style>#probHist .row { grid-template-columns: minmax(120px, 44%) minmax(0, 1fr) 52px; }</style>
 </head>
 <body>
@@ -96,19 +97,20 @@
       return UI.age(Math.floor(h / 24));
     }
 
-    function prepare(text) {
+    // t.rows: uniform rows of schema/docket_calls.json (trimmed text, canonical _region/_division/_ccc),
+    // already scoped to the login by MzoRows. The "up to" time is the newest docket of the whole sheet.
+    function prepare(t) {
       var now = Date.now(); latest = null; repeat = {};
-      all = UI.csv(text).filter(function (d) { return d.doc_no; }).map(function (d) {
-        var o = UI.office(d.ccc_code), t = when(d.doc_crn_dt), prob = String(d.prob_type || '').trim();
-        if (t && (!latest || t > latest)) latest = t;
+      t.all.forEach(function (d) { var c = d.doc_no ? when(d.doc_crn_dt) : null; if (c && (!latest || c > latest)) latest = c; });
+      all = t.rows.filter(function (d) { return d.doc_no; }).map(function (d) {
+        var c = when(d.doc_crn_dt), prob = d.prob_type;
         return {
-          doc: d.doc_no, con: String(d.con_id || '').trim(), name: UI.blank(d.PARTY_NAME) ? '' : UI.title(d.PARTY_NAME), mobile: UI.blank(d.Mob_No) ? '' : d.Mob_No,
-          addr: d.addr, prob: prob, desc: d.DESCRIPTION, created: t, raw: d.doc_crn_dt, code: d.ccc_code,
-          hours: t ? (now - t.getTime()) / 36e5 : null, tech: TECH.indexOf(prob) !== -1,
-          _region: o.region, _divn: o.division, _supp: o.ccc || UI.title(String(d.ccc_name || d.ccc_code || '').replace(/\s*CCC.*$/i, '')), CCC_CODE: d.ccc_code
+          doc: d.doc_no, con: d.con_id, name: UI.blank(d.party_name) ? '' : UI.title(d.party_name), mobile: UI.blank(d.mob_no) ? '' : d.mob_no,
+          addr: d.addr, prob: prob, desc: d.description, created: c, raw: d.doc_crn_dt, code: d.ccc_code,
+          hours: c ? (now - c.getTime()) / 36e5 : null, tech: TECH.indexOf(prob) !== -1,
+          _region: d._region, _divn: d._division, _supp: d._ccc || UI.title((d.ccc_name || d.ccc_code).replace(/\s*CCC.*$/i, '')), CCC_CODE: d.ccc_code
         };
       });
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       all.forEach(function (r) { r.ageKey = r.hours == null ? '' : AGE.filter(function (a) { return r.hours < a.max; })[0].key; if (r.con) repeat[r.con] = (repeat[r.con] || 0) + 1; });
       $('meta').textContent = (latest ? 'Up to ' + UI.fmtDate(latest) + ', ' + latest.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) + ' · ' : '') + UI.n(all.length) + ' open';
       var probs = {}; all.forEach(function (r) { if (r.prob) probs[r.prob] = (probs[r.prob] || 0) + 1; });
@@ -233,12 +235,12 @@
     $('kpiLink').addEventListener('click', function (e) {
       if (window.parent !== window && typeof window.parent.openPage === 'function') { e.preventDefault(); window.parent.openPage('docket/kpi.html', 'Docket KPI'); }
     });
-    UI.refresh('refreshBtn', 'CACHE_DOCKET', function (t) { prepare(t); render(); });
+    MzoRows.refresh('refreshBtn', 'docket_calls', function (t) { prepare(t); render(); });
 
     var first = true;
-    UI.load('CACHE_DOCKET', function (text, info) {
-      if (!text) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
-      prepare(text);
+    MzoRows.load('docket_calls', function (t, info) {
+      if (!t) { if (info && info.error && !all.length) { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      prepare(t);
       if (first) {
         first = false;
         if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';

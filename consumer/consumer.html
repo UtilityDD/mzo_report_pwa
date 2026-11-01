@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
   <style>
     .cs-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--mzo-muted); }
   </style>
@@ -80,7 +81,6 @@
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var URL_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQT4ufTMHJGTUqNSqFSzz0q2x-ShM_WHlfSRxT4tVqA6GcaMK5g38PDLmcJR4JXuxLi-tKafW-Yxwdo/pub?gid=0&single=true&output=csv';
     var CLASS = { D: 'Domestic', C: 'Commercial', A: 'Agriculture', I: 'Industrial', W: 'Water works', H: 'Class H', S: 'Class S', O: 'Others' };
     var LABELS = {
       CONN_STAT: function (v) { return UI.title(v); },
@@ -99,22 +99,22 @@
     var FILTERS = { CONN_STAT: 'All statuses', BASE_CLASS: 'All classes', CONN_PHASE: 'Any phase', CATEGORY: 'Rural & urban', GOVT_STAT: 'Govt & private' };
     var rows = [], asOn = '', scope = null, hf = { TYPE_OF_METER: '', CONN_BY: '' };
     function lab(dim, v) { return LABELS[dim] ? LABELS[dim](v) : v; }
-    function num(v) { return Number(String(v == null ? '' : v).replace(/,/g, '')) || 0; }
 
     $('rowDim').innerHTML = DIMS.map(function (d) { return '<option value="' + d[0] + '">' + d[1] + '</option>'; }).join('');
     $('colDim').innerHTML = '<option value="">Nothing</option>' + DIMS.slice(3).map(function (d) { return '<option value="' + d[0] + '">' + d[1] + '</option>'; }).join('');
 
-    function prepare(text) {
-      asOn = '';
-      rows = UI.csv(text).filter(function (r) { return r.CCC_CODE; }).map(function (r) {
-        if (!asOn && r.Date) asOn = r.Date;
-        var o = UI.office(r.CCC_CODE);
-        r._region = o.region || 'Unmapped'; r._divn = o.division || 'Unmapped'; r._supp = o.ccc || String(r.CCC_CODE).trim();
-        r.COUNT = num(r.COUNT); r.LOAD = num(r.LOAD); r.SD_LAKH = num(r.SD_LAKH); r.OSD_LAKH = num(r.OSD_LAKH);
-        r.TIME_OF_DAY = r.TIME_OF_DAY || '';
-        return r;
+    // t.rows: uniform rows of schema/consumers.json (numbers, ISO date, canonical _region/_division/_ccc),
+    // already scoped to the login by MzoRows. Each row is a count for one combination of dimensions.
+    function prepare(t) {
+      asOn = t.first('date') || ''; // one date for the whole sheet: read it before the scope
+      rows = t.rows.filter(function (d) { return d.ccc_code; }).map(function (d) {
+        return {
+          CCC_CODE: d.ccc_code, _region: d._region || 'Unmapped', _divn: d._division || 'Unmapped', _supp: d._ccc || d.ccc_code,
+          COUNT: d.count || 0, LOAD: d.load || 0, SD_LAKH: d.sd_lakh || 0, OSD_LAKH: d.osd_lakh || 0,
+          CONN_STAT: d.conn_stat, BASE_CLASS: d.base_class, CONN_PHASE: d.conn_phase, CATEGORY: d.category, GOVT_STAT: d.govt_stat,
+          TYPE_OF_METER: d.type_of_meter, CONN_BY: d.conn_by, TIME_OF_DAY: d.time_of_day
+        };
       });
-      if (window.MzoScope) rows = window.MzoScope.filterRows(rows);
       fillFilters();
     }
     function fillFilters() {
@@ -210,24 +210,20 @@
     });
     $('exportBtn').addEventListener('click', function () { UI.exportCsv('consumers-' + $('rowDim').value.replace('_', '') + '.csv', last.cols, last.rows); });
 
-    function load(force) {
-      var b = $('refreshBtn'); if (force) b.classList.add('spin');
-      return (window.mzoMirror ? mzoMirror.fetch : fetch)(URL_CSV, { cache: force ? 'no-store' : 'default' }).then(function (r) { if (!r.ok) throw new Error('Sheet HTTP ' + r.status); return r.text(); })
-        .then(function (t) {
-          prepare(t);
-          if (!load.done) {
-            load.done = true;
-            if (scope && (scope.level === 'division' || scope.level === 'ccc')) $('rowDim').value = '_supp';
-            else if (scope && scope.level === 'region') $('rowDim').value = '_divn';
-            markAll();
-          }
-          render();
-        })
-        .catch(function (e) { if (!rows.length) { $('meta').textContent = 'Could not load data'; $('pivot').innerHTML = '<div class="ui-empty">' + UI.esc(e.message) + '</div>'; } else UI.toast(e.message); })
-        .then(function () { b.classList.remove('spin'); });
-    }
-    $('refreshBtn').addEventListener('click', function () { load(true); });
-    load(false);
+    MzoRows.refresh('refreshBtn', 'consumers', function (t) { prepare(t); render(); });
+
+    var first = true;
+    MzoRows.load('consumers', function (t, info) {
+      if (!t) { if (info && info.error && !rows.length) { $('meta').textContent = 'Could not load data'; $('pivot').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      prepare(t);
+      if (first) {
+        first = false;
+        if (scope && (scope.level === 'division' || scope.level === 'ccc')) $('rowDim').value = '_supp';
+        else if (scope && scope.level === 'region') $('rowDim').value = '_divn';
+        markAll();
+      }
+      render();
+    });
   });
   </script>
 </body>

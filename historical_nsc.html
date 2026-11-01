@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
   <style>
     .hs-chart { position: relative; display: flex; align-items: flex-end; gap: 2px; height: 200px; padding-left: 44px; }
     .hs-chart .col { position: relative; flex: 1 1 0; min-width: 1px; height: 100%; border-radius: 2px; }
@@ -93,7 +94,6 @@
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT1VYUaMC92oZPb3f452Q2b5WJf3Zhm02JdVq2Hsykt-_ipAcIIYaFdgYm4qZdZ8heGcrDon5eQA7nk/pub?gid=2021450441&single=true&output=csv';
     var CLASSES = ['D', 'C', 'I', 'A', 'O'];
     var CLASS = { D: 'Domestic', C: 'Commercial', I: 'Industrial', A: 'Agriculture', O: 'Other' };
     var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -114,19 +114,20 @@
       return { k: mon.getFullYear() + '-' + String(mon.getMonth() + 1).padStart(2, '0') + '-' + String(mon.getDate()).padStart(2, '0'), label: UI.fmtDate(mon) };
     }
 
-    function prepare(text) {
+    // t.rows: uniform rows of schema/historical_nsc.json (class counts as numbers, canonical
+    // _region/_division/_ccc), already scoped to the login by MzoRows.
+    function codeOf(d) { return d.ccc_code.replace(/\D/g, '').slice(-7); }
+    function prepare(t) {
       var min = null, max = null;
-      all = UI.csv(text).map(function (d) {
-        var code = String(d['CCC CODE'] || d.CCC_CODE || '').replace(/\D/g, '').slice(-7);
-        var dt = mdy(d.METER_INSTALL_DATE);
+      // the date range in the header is the whole sheet's (before the scope)
+      t.all.forEach(function (d) { var dt = codeOf(d) ? mdy(d.meter_install_date) : null; if (dt) { if (!min || dt < min) min = dt; if (!max || dt > max) max = dt; } });
+      all = t.rows.map(function (d) {
+        var code = codeOf(d), dt = mdy(d.meter_install_date);
         if (!code || !dt) return null;
-        var o = UI.office(code);
-        var r = { CCC_CODE: code, _region: o.region, _divn: o.division, _supp: o.ccc || code, date: dt };
-        CLASSES.forEach(function (c) { r[c] = Number(d[c]) || 0; });
-        if (!min || dt < min) min = dt; if (!max || dt > max) max = dt;
+        var r = { CCC_CODE: code, _region: d._region, _divn: d._division, _supp: d._ccc || code, date: dt };
+        CLASSES.forEach(function (c) { r[c] = d[c.toLowerCase()] || 0; });
         return r;
       }).filter(Boolean);
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       $('meta').textContent = 'Meters installed for new connections' + (min ? ' · ' + UI.fmtDate(min) + ' to ' + UI.fmtDate(max) : '');
       var years = {}; all.forEach(function (r) { years[r.date.getFullYear()] = 1; });
       UI.fill('yearFilter', Object.keys(years).sort().reverse(), 'All years');
@@ -271,20 +272,17 @@
     });
     $('exportBtn').addEventListener('click', function () { UI.exportCsv('historical-nsc-' + f.period + '.csv', PERIOD_COLS, window.__periods || []); });
 
-    function load(force) {
-      var b = $('refreshBtn'); b.classList.add('spin');
-      return (window.mzoMirror ? mzoMirror.fetch : fetch)(CSV_URL, force ? { cache: 'no-store' } : {})
-        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
-        .then(function (t) { prepare(t); return true; })
-        .catch(function () { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = $('periodTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; return false; })
-        .then(function (ok) { b.classList.remove('spin'); return ok; });
-    }
-    $('refreshBtn').addEventListener('click', function () { load(true).then(function (ok) { if (ok) render(); }); });
+    MzoRows.refresh('refreshBtn', 'historical_nsc', function (t) { prepare(t); render(); });
 
-    load(false).then(function (ok) {
-      if (!ok) return;
-      if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';
-      [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === level)); });
+    var first = true;
+    MzoRows.load('historical_nsc', function (t, info) {
+      if (!t) { if (info && info.error && !all.length) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = $('periodTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      prepare(t);
+      if (first) {
+        first = false;
+        if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';
+        [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (x) { x.setAttribute('aria-selected', String(x.getAttribute('data-l') === level)); });
+      }
       render();
     });
   });
