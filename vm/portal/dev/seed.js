@@ -424,6 +424,129 @@ function sourceUrl(ds) {
 }
 const STATUS_OF = (s) => (s.error ? 'error' : s.skipped ? 'skipped' : s.unchanged ? 'unchanged' : 'ok');
 
+/* ---------- data quality (sys_quality_issues / sys_quality_scores, as vm/quality writes them) ---------- */
+// Scores use vm/quality's own formula when the checkout has it.
+let qualityScore;
+try { qualityScore = require(path.join(__dirname, '..', '..', 'quality', 'lib', 'score.js')).score; } catch (e) {
+  qualityScore = (issues, rows) => {
+    const W = { error: [10, 20], warn: [3, 7], info: [0.5, 0.5] };
+    const by = new Map();
+    issues.filter((i) => i.status === 'open').forEach((i) => {
+      const w = W[i.severity] || W.info;
+      const share = /^(header\.|freshness\.|cross\.(count|total|report_date|snapshot))/.test(i.check) || !rows ? 1 : Math.min(1, i.count / rows);
+      by.set(i.check, (by.get(i.check) || []).concat(w[0] + w[1] * share));
+    });
+    let p = 0;
+    for (const l of by.values()) { l.sort((x, y) => y - x); p += l[0] + 0.25 * l.slice(1).reduce((a2, x) => a2 + x, 0); }
+    return Math.max(0, Math.round(100 - p));
+  };
+}
+const QID = (text) => { const b = crypto.createHash('sha1').update(text).digest(); let o = ''; for (let i = 0; i < 15; i++) o += 'abcdefghijklmnopqrstuvwxyz0123456789'[b[i] % 36]; return o; };
+
+// [dataset, check, severity, column, count, sample, hint, source_fix, extra]
+// extra: { status, seenAgo (last_seen, ms ago), firstAgo }
+const Q = [
+  ['nsc_pending', 'date.mixed_formats', 'warn', 'Survey Done On', 7, [{ row: 2904, value: '5-Feb-25', format: 'd-Mon-yy' }, { row: 2911, value: '13-Feb-25', format: 'd-Mon-yy' }, { row: 3120, value: '02/03/2025', format: 'dd/mm/yyyy' }],
+    'Some cells are written 5-Feb-25 and the rest dd/mm/yyyy. Use one format (dd/mm/yyyy) for the whole column.', true],
+  ['nsc_pending', 'value.whitespace', 'info', 'Applicant Name', 41, [{ row: 9, value: '"<img src=x onerror=\"window.__xss=6\"> "' }, { row: 15, value: '" S. D."' }],
+    'Cells start or end with spaces. <b>Trim</b> them in the sheet <img src=x onerror="window.__xss=8">; the mirror already trims them.', true],
+  ['nsc_pending', 'office.variant_spelling', 'info', 'CCC', 120, [{ value: 'GAZOL CCC', rows: 47, first_row: 812, means: 'Gazole' }, { value: 'Kushmandi', rows: 73, first_row: 1290, means: 'Kusmandi' }],
+    'These names mean a known CCC but are spelt differently. The mirror maps them; the standard spelling keeps exports consistent.', true],
+  ['withheld', 'cross.overlap', 'warn', 'APPL_NO', 12, [{ appl_no: '60······14' }, { appl_no: '60······15' }, { appl_no: '40······63' }, { compared_with: 'nsc_pending' }],
+    'These applications are in both Pending NSC (as on 30/10) and Withheld (as on 29/10). Upload one SAP file with both statuses so each application is in one list.', true],
+  ['withheld', 'date.too_old', 'warn', 'Withheld Since', 1, [{ row: 48211, value: '26/07/0201' }], 'A mistyped year in SAP. Correct the date in the source.', true],
+  ['loss_report', 'key.duplicate_row', 'warn', '', 60, [{ row: 567, same_as_row: 3 }, { row: 568, same_as_row: 4 }, { row: 569, same_as_row: 5 }, { row: 570, same_as_row: 6 }],
+    'A block of rows repeats earlier rows exactly, including MONTH and YEAR. Delete the copy.', true],
+  ['loss_report', 'row.total_row', 'warn', '', 23, [{ row: 13, cells: { CCC: 'South Malda Div Total', 'Input (MU)': 41.2 } }, { row: 31, cells: { CCC: '<script>window.__xss=7</script>', 'Input (MU)': 12.9 } }],
+    'Total rows sit inside the data. loss.html reads them by name, so keep each name exactly as the page lists it.', true],
+  ['loss_report', 'office.ambiguous_name', 'info', 'CCC', 9, [{ value: 'MALDA REGION', rows: 9, first_row: 31, could_be: ['Malda region', 'Old Malda'] }],
+    'The app reads "MALDA REGION" as the Old Malda CCC. Write the region total under its own label.', true],
+  ['collection', 'freshness.stale', 'error', 'Date', 1, [{ as_on: '2026-08-02', age_days: 91, expected_within_days: 10 }],
+    'The latest Date is 02/08/2026, 91 days old; this report should be at most 10 days old. Paste the current report.', true],
+  ['collection', 'value.sheet_error', 'warn', 'Mode', 6, [{ row: 45, value: '#N/A' }, { row: 71, value: '#N/A' }, { row: 230, value: '#N/A' }],
+    'The lookup behind this column does not find the value. Add it to the lookup range or wrap the formula in IFERROR(…, "").', true],
+  ['defective_meter', 'header.whitespace', 'info', '', 2, [{ header: 'Meter No ', column: 'D' }, { header: 'Defect  Type', column: 'E' }], 'Headers with extra spaces. Remove them.', true],
+  ['defective_meter', 'date.future', 'warn', 'Reported On', 1, [{ row: 2210, value: '27/09/2027' }], 'A report date in the future. Correct the year.', true],
+  ['meter_erp', 'key.duplicate_row', 'warn', '', 103, [{ row: 30238, same_as_row: 19460 }, { row: 30239, same_as_row: 19461 }], 'A block of meters was entered twice. Delete the repeated block.', true],
+  ['meter_erp', 'value.geo_out_of_area', 'warn', 'Latitude', 9, [{ row: 3278, value: 25636413 }, { row: 3327, value: 2563 }, { row: 73, value: 88.18 }],
+    'Latitudes outside the zone (24.3–26.8 °N): a lost decimal point or the longitude in the latitude column.', true],
+  ['meter_erp', 'value.geo_out_of_area', 'warn', 'Longitude', 8, [{ row: 4139, value: 88770708 }, { row: 30, value: 87 }], 'Longitudes outside the zone (87.3–89.4 °E).', true],
+  ['meter_erp', 'number.placeholder', 'info', 'Last Reading (kWh)', 212, [{ row: 50, value: 0 }, { row: 77, value: 0 }], 'Zero readings that look like placeholders.', false],
+  ['manpower', 'value.sheet_error', 'warn', 'Office', 6, [{ row: 234, value: '#N/A' }, { row: 450, value: '#N/A' }], 'Cost Center Name is #N/A: the cost centre is missing from the lookup.', true],
+  ['portal_users', 'cross.portal_unknown_office', 'warn', 'nsc_autho, si_divisions', 1, [{ value: '6622000', users: 1, level: 'division' }],
+    'One user is granted 6622000, the Islampur division office code, which matches no CCC rows. Use the CCC codes or the division (Admin → Users).', false],
+  ['stock_allotments', 'cross.unknown_material', 'warn', 'material', 3, [{ value: '10000123', rows: 2 }, { value: '10000456', rows: 1 }, { compared_with: 'stock_snapshot' }],
+    'Allotments name materials that are not in the stock list.', false],
+  ['power_map_substations', 'number.text_in_numeric', 'warn', 'voltage_kv', 9, [{ row: 12, value: '2x6.3' }, { row: 40, value: '1x6.3+1x10' }], 'The transformer layout is written in a number column. Keep the layout in its own column.', true],
+  ['defective_snapshot', 'cross.snapshot_mismatch', 'warn', '', 488, [{ what: 'report date', storage: '2026-10-28', google_sheet: '2026-10-30' }, { what: 'Consumer ID only in one copy', storage_only: 241, google_sheet_only: 247 }, { storage_only: '11······03' }, { google_sheet_only: '11······57' }, { compared_with: 'defective_meter' }],
+    'The copy in Supabase Storage (what the app reads) differs from its Google Sheet. The sheet is newer: press "Sync sheet" on the page so the app shows the latest report.', true],
+  ['defective_snapshot', 'freshness.mixed_as_on', 'warn', 'Snapshot Date', 700, [{ date: '2026-10-16', rows: 800 }, { date: '2026-10-23', rows: 700 }],
+    'Rows from two report dates are mixed. Publish the snapshot again from one dump.', true],
+  ['costcenter', 'office.unknown_code', 'warn', 'code', 1, [{ value: 'C366000100', rows: 1, first_row: 12 }], 'A cost centre code that matches no office.', true],
+  ['costcenter', 'office.outside_zone', 'info', 'cost_center', 4, [{ value: 'C334621020', rows: 4, first_row: 30 }], 'Cost centres of other zones.', false],
+  ['stock_snapshot', 'header.drift', 'info', '', 1, [{ change: 'renamed', from: 'Unrestricted', to: 'Unrestricted Qty' }], 'A column was renamed since the previous sync.', false],
+  // resolved within the last 7 days
+  ['nsc_pending', 'key.blank', 'error', 'Application No', 2, [{ row: 4410, cells: { 'Applicant Name': 'R. S.', CCC: 'Hili' } }], 'Rows without an application number.', true, { status: 'resolved', seenAgo: 2 * DAY }],
+  ['meter_erp', 'header.drift', 'warn', '', 2, [{ change: 'removed', header: 'Old Seal No' }, { change: 'added', header: 'Seal No' }], 'Columns changed since the previous sync.', true, { status: 'resolved', seenAgo: 3 * DAY }],
+  ['loss_report', 'freshness.stale', 'warn', 'Month', 1, [{ as_on: '2026-08-01', age_days: 60, expected_within_days: 45 }], 'The report is older than expected.', true, { status: 'resolved', seenAgo: 5 * DAY }],
+  ['collection', 'date.mixed_formats', 'info', 'Date', 3, [{ row: 4, value: '2026-10-01' }], 'Mixed date formats.', true, { status: 'resolved', seenAgo: DAY }],
+  // resolved long ago (dataset tab history only)
+  ['nsc_pending', 'row.ghost', 'warn', '', 3, [{ row: 50, cells: { CCC: 'Tapan' } }], 'Rows with a single value.', true, { status: 'resolved', seenAgo: 20 * DAY }],
+  ['nsc_pending', 'header.duplicate', 'warn', '', 1, [{ header: 'CCC', columns: ['E', 'P'] }], 'The same header twice.', true, { status: 'resolved', seenAgo: 25 * DAY }]
+];
+// Smaller notes and warnings across the other columns, as a real run produces.
+const FILLER = [['value.whitespace', 'info', 'Cells with leading or trailing spaces.'], ['office.variant_spelling', 'info', 'Office names spelt differently.'],
+  ['date.mixed_formats', 'warn', 'Dates in more than one format.'], ['value.outlier', 'info', 'Values far outside the column’s usual range.'],
+  ['key.not_unique', 'info', 'An ID-like column repeats in a few rows.'], ['number.text_in_numeric', 'warn', 'Text in a number column.'],
+  ['date.too_old', 'warn', 'Placeholder dates such as 12/12/1912.'], ['office.blank', 'info', 'Rows without an office.']];
+
+async function seedQuality(datasets, nowMs) {
+  const T = (n, max) => ({ name: n, type: 'text', max: max || 0 });
+  const AUTO = [{ name: 'created', type: 'autodate', onCreate: true, onUpdate: false }, { name: 'updated', type: 'autodate', onCreate: true, onUpdate: true }];
+  await pb('POST', '/api/collections', {
+    name: 'sys_quality_issues', type: 'base', listRule: RULE, viewRule: RULE, createRule: null, updateRule: null, deleteRule: null,
+    fields: [Object.assign(T('dataset', 64), { required: true }), Object.assign(T('check', 64), { required: true }),
+      { name: 'severity', type: 'select', required: true, maxSelect: 1, values: ['info', 'warn', 'error'] }, T('column', 500),
+      { name: 'count', type: 'number', onlyInt: true }, { name: 'sample', type: 'json', maxSize: 200000 },
+      { name: 'first_seen', type: 'date' }, { name: 'last_seen', type: 'date' },
+      { name: 'status', type: 'select', required: true, maxSelect: 1, values: ['open', 'resolved'] }, { name: 'source_fix', type: 'bool' }, T('hint', 2000)].concat(AUTO),
+    indexes: ['CREATE INDEX `idx_sys_quality_issues_dataset` ON `sys_quality_issues` (`dataset`, `status`)', 'CREATE INDEX `idx_sys_quality_issues_check` ON `sys_quality_issues` (`check`, `severity`)', 'CREATE INDEX `idx_sys_quality_issues_last_seen` ON `sys_quality_issues` (`last_seen`)']
+  });
+  await pb('POST', '/api/collections', {
+    name: 'sys_quality_scores', type: 'base', listRule: RULE, viewRule: RULE, createRule: null, updateRule: null, deleteRule: null,
+    fields: [Object.assign(T('dataset', 64), { required: true }), { name: 'score', type: 'number', min: 0, max: 100, onlyInt: true }, { name: 'issues_open', type: 'number', onlyInt: true }, { name: 'checked_at', type: 'date' }].concat(AUTO),
+    indexes: ['CREATE UNIQUE INDEX `idx_sys_quality_scores_dataset` ON `sys_quality_scores` (`dataset`)']
+  });
+  rnd = mulberry32(7331);
+  const mirrored = datasets.filter((d) => !d.noCollection);
+  const issues = Q.map(([dataset, check, severity, column, count, sample, hint, fix, x]) => {
+    x = x || {};
+    const seen = nowMs - (x.seenAgo != null ? x.seenAgo : int(5, 50) * MIN);
+    return { dataset, check, severity, column, count, sample, hint, source_fix: !!fix, status: x.status || 'open', last_seen: pbDate(seen), first_seen: pbDate(seen - int(1, 40) * DAY) };
+  });
+  mirrored.forEach((ds) => {
+    const cols = normalise(ds.columns).filter((c) => c.type === 'text' || c.type === 'date' || c.type === 'number');
+    cols.forEach((c, ci) => {
+      if (ds.key === 'activity_logs' || (ci + ds.key.length) % 3) return;
+      const f = FILLER[(ci + ds.key.length) % FILLER.length];
+      if (issues.some((i) => i.dataset === ds.key && i.check === f[0] && i.column === c.source_name)) return;
+      const seen = nowMs - int(5, 50) * MIN;
+      issues.push({ dataset: ds.key, check: f[0], severity: f[1], column: c.source_name, count: int(1, Math.max(2, Math.round(ds.rows * 0.01))),
+        sample: [{ row: int(2, ds.rows + 1), value: c.type === 'number' ? int(1, 9999) : 'Sample ' + (ci + 1) }, { row: int(2, ds.rows + 1), value: c.type === 'number' ? int(1, 9999) : 'Sample ' + (ci + 2) }],
+        hint: f[2], source_fix: f[1] === 'warn', status: 'open', last_seen: pbDate(seen), first_seen: pbDate(seen - int(1, 60) * DAY) });
+    });
+  });
+  issues.forEach((i) => { i.id = QID('sys_quality_issues:' + i.dataset + '|' + i.check + '|' + i.column); });
+  await batchInsert('sys_quality_issues', issues);
+  const scores = mirrored.map((ds) => {
+    const open = issues.filter((i) => i.dataset === ds.key && i.status === 'open');
+    const checked = nowMs - (ds.status.checkedAgo || 0) + int(5, 60) * 1000;
+    return { id: QID('sys_quality_scores:' + ds.key), dataset: ds.key, score: qualityScore(open, ds.rows), issues_open: open.length, checked_at: pbDate(Math.min(nowMs, checked)) };
+  });
+  await batchInsert('sys_quality_scores', scores);
+  console.log('sys_quality_issues', issues.length, '(' + issues.filter((i) => i.status === 'open').length + ' open) · scores', scores.map((s) => s.dataset + '=' + s.score).join(' '));
+}
+
 /* ---------- main ---------- */
 async function main() {
   const cred = credentials();
@@ -439,7 +562,7 @@ async function main() {
   });
 
   // Drop what this script created before, then recreate.
-  const existing = await pb('GET', '/api/collections?perPage=500&filter=' + encodeURIComponent('name ~ "ds_%" || name = "sys_datasets" || name = "sys_sync_runs" || name = "portal_users_auth"'));
+  const existing = await pb('GET', '/api/collections?perPage=500&filter=' + encodeURIComponent('name ~ "ds_%" || name = "sys_datasets" || name = "sys_sync_runs" || name ~ "sys_quality_%" || name = "portal_users_auth"'));
   for (const c of existing.items) await dropCollection(c.name);
 
   await pb('POST', '/api/collections', {
@@ -547,6 +670,7 @@ async function main() {
     }
   }
   await batchInsert('sys_sync_runs', runs);
+  await seedQuality(DATASETS, NOW);
   console.log('sys_datasets', DATASETS.length, '· sys_sync_runs', runs.length);
   console.log('Done. Portal test account and superuser are in', path.relative(process.cwd(), CRED_FILE));
 }
