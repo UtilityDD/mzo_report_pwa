@@ -34,6 +34,14 @@ const PAGES = {
   'nsc.html': {
     key: 'nsc_pending', from: '    var CLASS = {', to: '    var DELAY2 = [',
     old: 'parse(RAW)', new: 'parse(ROWS)', result: true, scope: false
+  },
+  'nsc/kpi.html': {
+    key: 'nsc_pending', from: '    var LABEL = {', to: '    function avg(rows, k)',
+    old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: false,
+    known: {
+      REGION: 'raw office cells were copied onto the row only for MzoScope; the login scope now runs on the uniform rows',
+      DIVN_NAME: 'as REGION', SUPP_OFF: 'as REGION', CCC_CODE: 'as REGION'
+    }
   }
 };
 const PROFILES = [
