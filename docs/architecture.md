@@ -142,9 +142,9 @@ On the VM the app serves report data from local copies instead of Google and Sup
 | `/api/power-map/data` | The same CSV, built from `power_map_substations.json` (the body of the same `select=*&limit=5000` query). Byte-identical. |
 | `/api/stock/allotment` list / get | The same rows from `stock_allotments.json` (the body of the server's own ordered query). Byte-identical. The view's refresh button (`force`) still reads live, because allotments are also made on other hosts. |
 | `/api/important-sheets/unbilled` | The same months from `important_unbilled_months.json`. Byte-identical. |
-| `/api/nsc/meta`, `/api/stock/meta`, `/api/defective/meta`, `/api/disconnection/meta`, `/api/pending-mc/meta`, `/api/load-extension/meta` | Same shape. `version` / `withheldVersion` are manifest versions and the CSV URLs are `/api/data/file/<key>`. NSC's TODAY comes from the snapshot's first row, the stock as-on date from the snapshot's `Date` column, and stock `source` is `supabase_storage`. The NSC upload meta (Apps Script) and the report `meta.json` files stay live. |
-| `/api/power-map/meta` | `version` = manifest version, `rows` from the snapshot, `csvUrl` = `/api/power-map/data` (live, `csvUrl` is the published sheet, which lags the table that edits go to). |
-| `/api/hub/versions` | Every DataHub key in the manifest gets its manifest version and URL; a live read runs only for a source whose keys the manifest lacks. The Apps Script metadata still runs for datasets without a snapshot. |
+| `/api/nsc/meta`, `/api/stock/meta`, `/api/defective/meta`, `/api/disconnection/meta`, `/api/pending-mc/meta`, `/api/load-extension/meta` | Same shape. `version` / `withheldVersion` are manifest versions and the CSV URLs are `/api/data/file/<key>`. NSC's TODAY comes from the snapshot's first row, the stock as-on date from the snapshot's `Date` column, and stock `source` is `supabase_storage`. The NSC upload meta (Apps Script) and the report `meta.json` files stay live. `liveVersions: { version, withheldVersion }` carries what the live response's version fields would be (they hold report dates and upload times, which Sheet links shows). |
+| `/api/power-map/meta` | `version` = manifest version, `rows` from the snapshot, `csvUrl` = `/api/power-map/data` (live, `csvUrl` is the published sheet, which lags the table that edits go to). `liveVersions.version` is the latest `updated_at`, from the snapshot. |
+| `/api/hub/versions` | Every DataHub key in the manifest gets its manifest version and URL. The live reads still run (cached; Power Map from its snapshot) and what they give for those keys is returned as `liveVersions: { <CACHE_KEY>: <version> }`; keys without a snapshot keep their live version. |
 | `/api/executive/briefing` | Unchanged: its inputs (report `meta.json`, NSC upload meta) have no snapshots. |
 
 Report `meta.json` files are read from `REPORTS_PUBLIC_BASE`, which defaults to the new project's public `reports` bucket when `INSIGHT_SUPABASE_URL` is unset (so localhost and the VM get real numbers too).
@@ -185,4 +185,6 @@ node vm/dev/make-snapshots.js --out /tmp/mzo-snapshots  # about 60 MB, 20 s; --o
 MZO_DATA_MODE=mirror MZO_SNAPSHOT_DIR=/tmp/mzo-snapshots PORT=3400 npm run dev
 ```
 
-Switched responses carry `X-Mzo-Data: mirror`.
+Switched responses carry `X-Mzo-Data: mirror`. `liveVersions` appears only in mirror mode; original-mode responses are unchanged.
+
+**Test.** `node vm/dev/test-mirror-server.js` runs `server.js` in both modes with every upstream request answered from fixtures (no network; any upstream write fails it) and checks the byte parity, the manifest versions, `liveVersions` and that original mode has no mirror fields.
