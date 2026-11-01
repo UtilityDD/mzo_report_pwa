@@ -66,7 +66,7 @@ const PAGES = {
     selects: { ageFilter: ['24', '48', '168', '720'], probFilter: ['No power', 'Meter Burnt Problem', 'Problem in New Connection'] }
   },
   docket_kpi: {
-    url: 'docket/kpi.html', key: 'docket_kpi', stats: '.ui-stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', ready: '#officeTable tbody tr td:not([colspan])',
+    url: 'docket/kpi.html', key: 'docket_kpi', stats: '.ui-stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', ready: '#officeTable tbody tr td:not([colspan])', readyStats: '#sN, #sAvg',
     drill: '#officeTable tbody tr.click', list: '#probTable tbody tr.click', clicks: ['#bulk button'], deep: [],
     selects: { probFilter: ['No power', 'Meter Burnt Problem', 'Abnormally high bill'] }
   },
@@ -126,7 +126,7 @@ async function newContext(browser, base, profile, route, opts) {
   const ctx = await browser.newContext({ viewport: { width, height: width < 600 ? 844 : 900 }, deviceScaleFactor: 1, isMobile: false });
   await ctx.addCookies([{ name: 'mzo_session', value: cookie(profile), domain: new URL(base).hostname, path: '/', httpOnly: true, sameSite: 'Lax' }]);
   const version = await fetch(base + '/version.json').then((r) => r.json()).then((j) => j.version).catch(() => '');
-  await ctx.addInitScript(({ profile, version, ready, theme }) => {
+  await ctx.addInitScript(({ profile, version, ready, readyStats, theme }) => {
     try {
       localStorage.setItem('mzo_user_profile', JSON.stringify(profile)); localStorage.setItem('mzo_authenticated', 'true'); if (version) localStorage.setItem('mzo_app_version', version);
       if (theme) ['theme', 'mzo_theme', 'collectionDashboardTheme'].forEach((k) => localStorage.setItem(k, theme));
@@ -134,7 +134,7 @@ async function newContext(browser, base, profile, route, opts) {
     window.__fdp = null;
     const t = () => {
       if (window.__fdp != null) return;
-      const vs = document.querySelectorAll('.ui-stat .v');
+      const vs = document.querySelectorAll(readyStats || '.ui-stat .v');
       const row = document.querySelector(ready || '#table tbody tr td:not([colspan])');
       const empty = document.querySelector((ready || '#table tbody tr td:not([colspan])').split(' tbody')[0] + ' tbody .ui-empty');
       const shown = row || (empty && !/loading/i.test(empty.textContent)); // a real row, or a real "nothing matches"
@@ -142,7 +142,7 @@ async function newContext(browser, base, profile, route, opts) {
       requestAnimationFrame(t);
     };
     requestAnimationFrame(t);
-  }, { profile, version, ready: opts.ready || '', theme: opts.theme || '' });
+  }, { profile, version, ready: opts.ready || '', readyStats: opts.readyStats || '', theme: opts.theme || '' });
   const stats = { requests: 0, bytes: {}, blocked: [] };
   await ctx.route('**/*', async (r) => {
     const req = r.request(), url = req.url();
@@ -314,7 +314,7 @@ async function parity(pw) {
     for (const prof of profiles) {
       const runs = {};
       for (const base of [oldBase].concat(newBases)) {
-        const ctx = await newContext(browser, base, PROFILES[prof], route, Object.assign({ ready: PAGES[p].ready, clock: PAGES[p].clock || arg('clock', '') }, look));
+        const ctx = await newContext(browser, base, PROFILES[prof], route, Object.assign({ ready: PAGES[p].ready, readyStats: PAGES[p].readyStats, clock: PAGES[p].clock || arg('clock', '') }, look));
         const page = await ctx.newPage();
         const errors = [];
         page.on('pageerror', (e) => errors.push(String(e.message || e).slice(0, 200)));
