@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
 </head>
 <body>
   <main class="ui-page">
@@ -75,43 +76,35 @@
     var all = [], f = { q: '', status: '', month: '' }, level = 'region', scope = null;
 
     function roman(s) { return String(s || '').replace(/\b(Ii|Iii|Iv|Vi|Vii)\b/g, function (m) { return m.toUpperCase(); }); }
-    function pick(row, keys) {
-      for (var i = 0; i < keys.length; i++) { var v = row[keys[i]]; if (v != null && String(v).trim() !== '') return String(v).trim(); }
-      return '';
-    }
 
-    // Cell N2 (UPADTE DATE / UPDATE DATE, dd.mm.yyyy) is the sheet's "as on" date.
-    function asOnOf(rows) {
-      var first = rows[0] || {}, key = Object.keys(first).filter(function (k) { return /upadte\s*date|update\s*date/i.test(k); })[0];
-      var raw = key ? String(first[key] || '').trim() : '';
+    // Cell N2 (UPADTE DATE / UPDATE DATE, dd.mm.yyyy) is the sheet's "as on" date: read from every row
+    // (t.first), so a scoped login that does not have the sheet's first row still sees it.
+    function asOnOf(t) {
+      var raw = t.first('upadte_date') || '';
       var m = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
       if (!m) return '';
       var pad = function (x) { return String(x).padStart(2, '0'); }, y = +m[3] < 100 ? 2000 + +m[3] : +m[3];
       return pad(+m[1]) + '/' + pad(+m[2]) + '/' + y;
     }
 
-    function prepare(text) {
-      var rows = UI.csv(text), asOn = asOnOf(rows);
-      all = rows.filter(function (d) { return pick(d, ['Appl No', 'Appl No.', 'APPLICATION NO']) || pick(d, ['Cont.Account', 'Cont Account']); }).map(function (d, i) {
-        var code = pick(d, ['CCC CODE', 'CCC_CODE']), name = pick(d, ['CCC NAME', 'CCC']);
-        var o = UI.office(code, name);
-        var meter = pick(d, ['METER NUMBER', 'Meter Number', 'METER']);
-        var moveIn = pick(d, ['MOVE IN DATE', 'Move In Date']);
-        var street = pick(d, ['Street']);
+    // t.rows: uniform rows of schema/bharatnet_connections.json (the sheet's header variants as one
+    // field each, canonical _region/_division/_ccc), already scoped to the login by MzoRows.
+    function prepare(t) {
+      var asOn = asOnOf(t);
+      all = t.rows.filter(function (d) { return d.appl_no || d.cont_account; }).map(function (d) {
         var r = {
-          id: i, appl: pick(d, ['Appl No', 'Appl No.', 'APPLICATION NO']), account: pick(d, ['Cont.Account', 'Cont Account', 'Account']),
-          name: [pick(d, ['First Name']), pick(d, ['Last Name'])].filter(Boolean).join(' ').replace(/,\s*$/, ''),
-          street: street, street3: pick(d, ['Street 3']), pin: pick(d, ['Postl Code', 'Postal Code', 'PIN']), phone: pick(d, ['Telephone']),
-          meter: meter, moveIn: UI.date(moveIn), code: code,
-          gp: roman(UI.title(street.replace(/^THE\s+PRADHAN\s+/i, '').replace(/\s+VILL.*$/i, ''))) || street,
-          _region: o.region, _divn: o.division, _supp: o.ccc || UI.title(name.replace(/\s+CCC$/i, '')), CCC_CODE: code, 'CCC NAME': name,
-          st: meter ? 'given' : 'pending'
+          appl: d.appl_no, account: d.cont_account,
+          name: [d.first_name, d.last_name].filter(Boolean).join(' ').replace(/,\s*$/, ''),
+          street: d.street, street3: d.street_3, pin: d.postl_code, phone: d.telephone,
+          meter: d.meter_number, moveIn: UI.date(d.move_in_date), code: d.ccc_code,
+          gp: roman(UI.title(d.street.replace(/^THE\s+PRADHAN\s+/i, '').replace(/\s+VILL.*$/i, ''))) || d.street,
+          _region: d._region, _divn: d._division, _supp: d._ccc || UI.title(d.ccc_name.replace(/\s+CCC$/i, '')), CCC_CODE: d.ccc_code,
+          st: d.meter_number ? 'given' : 'pending'
         };
         r.monthKey = r.moveIn ? r.moveIn.getFullYear() * 100 + r.moveIn.getMonth() : null;
         r.search = [r.gp, r.street, r.appl, r.account, r.name, r.meter, r.phone, r._supp, r._divn].join(' ').toLowerCase();
         return r;
       });
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       if (asOn) { try { localStorage.setItem('mzo_bharatnet_as_on', asOn); } catch (e) {} }
       $('meta').textContent = (asOn ? 'As on ' + UI.fmtDate(asOn.split('/').reverse().join('-')) + ' · ' : '') + UI.n(all.length) + ' applications';
       fillFilters();
@@ -225,12 +218,12 @@
     $('exportBtn').addEventListener('click', function () {
       UI.exportCsv('bharat-net.csv', [{ key: 'appl', label: 'Application' }, { key: 'gp', label: 'Gram panchayat' }, { key: 'account', label: 'Account' }, { key: '_region', label: 'Region' }, { key: '_divn', label: 'Division' }, { key: '_supp', label: 'CCC' }, { key: 'meter', label: 'Meter' }].concat(APP_COLS.slice(4)), window.__view || []);
     });
-    UI.refresh('refreshBtn', 'CACHE_BHARATNET', function (t) { prepare(t); render(); });
+    MzoRows.refresh('refreshBtn', 'bharatnet_connections', function (t) { prepare(t); render(); });
 
     var first = true;
-    UI.load('CACHE_BHARATNET', function (text, info) {
-      if (!text) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('appTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
-      prepare(text);
+    MzoRows.load('bharatnet_connections', function (t, info) {
+      if (!t) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('appTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      prepare(t);
       if (first) {
         first = false;
         if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';

@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
 </head>
 <body>
   <main class="ui-page">
@@ -74,25 +75,29 @@
     var CLASS_LABEL = { Total: 'All classes', DOM: 'Domestic', COM: 'Commercial', IND: 'Industrial', Others: 'Others' };
     var all = [], dates = [], cls = 'Total', metric = 'amt', level = 'region', scope = null;
 
-    function dmy(s) { var p = String(s || '').trim().split('/'); return p.length === 3 ? new Date(+p[2], +p[1] - 1, +p[0]) : null; }
+    // Notice and email dates are uniform dates (ISO); the select keeps them as its values.
+    function dmy(s) { return s ? UI.date(s) : null; }
     var lakh = function (v) { return UI.inr(v * 1e5); };
     // Short axis labels (the chart gutter is narrow).
     function axisL(v) { var r = v * 1e5, a = Math.abs(r); if (a >= 1e7) return +(r / 1e7).toFixed(a >= 1e9 ? 0 : 1) + ' Cr'; if (a >= 1e5) return +(r / 1e5).toFixed(a >= 1e6 ? 0 : 1) + ' L'; return UI.n(Math.round(r)); }
-    function cnt(r, c) { if (c === 'Total') { return CLASSES.reduce(function (a, k) { return a + (+r[k + '-Count'] || 0); }, 0) || (+r['Total-Count'] || 0); } return +r[c + '-Count'] || 0; }
-    function amt(r, c) { if (c === 'Total') { return CLASSES.reduce(function (a, k) { return a + (+r[k + '-Amount in Lakhs'] || 0); }, 0) || (+r['Total-Amount in Lakhs'] || 0); } return +r[c + '-Amount in Lakhs'] || 0; }
+    function cnt(r, c) { if (c === 'Total') { return CLASSES.reduce(function (a, k) { return a + (r.n[k] || 0); }, 0) || (r.n.Total || 0); } return r.n[c] || 0; }
+    function amt(r, c) { if (c === 'Total') { return CLASSES.reduce(function (a, k) { return a + (r.a[k] || 0); }, 0) || (r.a.Total || 0); } return r.a[c] || 0; }
 
-    function prepare(text) {
-      all = UI.csv(text).filter(function (r) { return r['Notice Due Date'] && (r['CCC Code'] || r['CCC name']); }).map(function (r) {
-        var code = String(r['CCC Code'] || '').trim(), o = UI.office(code, r['CCC name']);
-        r._region = o.region || UI.title(r['Region Name']);
-        r._divn = o.division || UI.title(r.Division);
-        r._supp = o.ccc || UI.title(r['CCC name']);
-        r.CCC_CODE = code;
-        r._due = String(r['Notice Due Date']).trim();
+    // t.rows: uniform rows of schema/rem_osd.json, already scoped to the login by MzoRows.
+    function prepare(t) {
+      all = t.rows.filter(function (d) { return (d.notice_due_date || d.notice_due_date_raw) && (d.ccc_code || d.ccc_name); }).map(function (d) {
+        var r = { n: {}, a: {} };
+        ['Total'].concat(CLASSES).forEach(function (k) { var f = k.toLowerCase(); r.n[k] = d[f + '_count']; r.a[k] = d[f + '_amount_in_lakhs']; });
+        r._region = d._region || UI.title(d.region_name);
+        r._divn = d._division || UI.title(d.division);
+        r._supp = d._ccc || UI.title(d.ccc_name);
+        r.CCC_CODE = d.ccc_code;
+        r._due = d.notice_due_date || d.notice_due_date_raw;
         r._dueD = dmy(r._due);
+        r.email = d.report_date_email_date;
+        r.remarks = d.remarks;
         return r;
       });
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       var seen = {};
       all.forEach(function (r) { if (r._dueD && !seen[r._due]) seen[r._due] = r; });
       dates = Object.keys(seen).sort(function (a, b) { return dmy(b) - dmy(a); });
@@ -116,7 +121,7 @@
       var idx = dates.indexOf(date), prevDate = idx >= 0 ? dates[idx + 1] : null;
       var o = offices(), now = o.filter(function (r) { return r._due === date; }), before = prevDate ? o.filter(function (r) { return r._due === prevDate; }) : [];
       var any = now[0] || {};
-      $('meta').textContent = 'Non-STW, non-govt. consumers' + (any['Report Date/Email Date'] ? ' · REM email ' + UI.fmtDate(dmy(any['Report Date/Email Date'])) : '');
+      $('meta').textContent = 'Non-STW, non-govt. consumers' + (any.email ? ' · REM email ' + UI.fmtDate(dmy(any.email)) : '');
 
       [].forEach.call(document.querySelectorAll('#stats .ui-stat'), function (el) {
         var c = el.getAttribute('data-c');
@@ -175,7 +180,7 @@
       UI.drawer(name, [first._divn, first._region].filter(Boolean).join(' · '), ['Total'].concat(CLASSES).map(function (c) {
         var n = rows.reduce(function (a, r) { return a + cnt(r, c); }, 0), a = rows.reduce(function (s, r) { return s + amt(r, c); }, 0);
         return [CLASS_LABEL[c], UI.n(n) + ' consumers · ' + lakh(a)];
-      }).concat([['Remarks', first.Remarks && first.Remarks !== 'Nil' ? first.Remarks : ''], ['CCC code', first.CCC_CODE]]));
+      }).concat([['Remarks', first.remarks && first.remarks !== 'Nil' ? first.remarks : ''], ['CCC code', first.CCC_CODE]]));
     }
 
     function drill(name) {
@@ -223,12 +228,12 @@
         { key: 'd', label: 'Change %', csv: function (x) { return x.d == null ? '' : x.d.toFixed(1); } }
       ], window.__rows || []);
     });
-    UI.refresh('refreshBtn', 'CACHE_REM_v2', function (t) { prepare(t); update(); });
+    MzoRows.refresh('refreshBtn', 'rem_osd', function (t) { prepare(t); update(); });
 
     var first = true;
-    UI.load('CACHE_REM_v2', function (text, info) {
-      if (!text) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = $('trend').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
-      prepare(text);
+    MzoRows.load('rem_osd', function (t, info) {
+      if (!t) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = $('trend').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      prepare(t);
       if (first) {
         first = false;
         if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';

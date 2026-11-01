@@ -2,6 +2,7 @@
 /* Browser parity and timing for pages converted to MzoRows.
  *
  *   node scripts/qa/uniform-pages.js parity --old <baseUrl> --new <baseUrl>[,<baseUrl>…] --snap <dir> [--pages solar,nsc] [--out <dir>]
+ *        [--profiles admin,division,region,ccc] [--theme dark|light] [--width 1280] [--quick]
  *   node scripts/qa/uniform-pages.js timing --old <baseUrl> --new <baseUrl> [--snap <dir>] [--runs 3] [--cpu 4]
  *
  * parity: every page is opened on each base with the same data (Google and Supabase Storage
@@ -9,6 +10,9 @@
  * what the page shows (stat cards, facet counts, level tabs, table rows and totals, the as-on
  * date) on load, after each stat card, each analysis tab, each drill level (first row opened at
  * every level) and each deep link, and compares the old base with every new base.
+ * Pages without the kit drill (#asOn, #drill, #table) name their own elements in PAGES: asOn,
+ * tables, tabs, drillRows, extra (charts / histograms), clicks (facets, histogram rows), selects
+ * and segments. --quick records the load and the stat cards only (phone width, other theme).
  * timing: first data paint (stat values and a real table row on screen), cold (empty storage)
  * and warm (second load), median of --runs, live sources unless --snap is given.
  *
@@ -31,7 +35,9 @@ function loadPlaywright() {
 
 const PROFILES = {
   admin: { Username: 'local-preview', Name: 'Local Preview', role: 'admin', office_level: 'CE' },
-  division: { Username: 'qa-gazole', Name: 'QA Gazole', role: 'user', division_code: 'Gazole' }
+  division: { Username: 'qa-gazole', Name: 'QA Gazole', role: 'user', division_code: 'Gazole' },
+  region: { Username: 'qa-raiganj', Name: 'QA Raiganj', role: 'user', region_code: 'Raiganj' },
+  ccc: { Username: 'qa-fulbari', Name: 'QA Fulbari', role: 'user', ccc_code: '6611108' }
 };
 function cookie(profile) {
   const secret = process.env.QA_JWT_SECRET || 'mzo-portal-super-secret-key-123456';
@@ -48,6 +54,46 @@ const PAGES = {
   nsc: {
     url: 'nsc.html', key: 'nsc_pending', stats: '#kpis .ui-stat', tabs: '#tabs .ui-drill-tab',
     deep: ['?region=Raiganj', '?division=Gazole', '?ccc=Kaliyaganj', '?q=6000188039', '?kpi=delay30', '?kpi=pole', '?kpi=nonpole', '?kpi=withheld', '?kpi=ind', '?kpi=procb', '?kpi=com3', '?followups=1']
+  },
+  // Batch A (docs/uniform-data-inventory.md)
+  nsc_kpi: {
+    url: 'nsc/kpi.html', key: 'nsc_pending', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab:not([hidden])', asOn: '#meta', tables: ['#officeTable'],
+    selects: ['#classFilter'], drillRows: '#officeTable tbody tr.click', deep: []
+  },
+  withheld: {
+    url: 'withheld.html', key: 'withheld', stats: '#stats .ui-stat', tabs: '#drill .ui-drill-tab',
+    clicks: ['#fSrc .ui-opt', '#fReason .ui-opt', '#fYear .ui-opt', '#fClass .ui-opt'],
+    deep: ['?region=Raiganj', '?division=Gazole', '?ccc=Kaliyaganj', '?region=Malda&division=Chanchal']
+  },
+  load_extension: {
+    url: 'pending_load_extension.html', key: 'load_extension', stats: '#stats .ui-stat', tabs: '#drill .ui-drill-tab',
+    clicks: ['#fPhase .ui-opt', '#fWo .ui-opt', '#fAge .ui-opt', '#fClass .ui-opt'],
+    deep: ['?region=Raiganj', '?division=Gazole', '?ccc=Kaliyaganj', '?kpi=y1', '?kpi=ind', '?kpi=ph3', '?kpi=big', '?q=6000', '?region=Malda&kpi=kpiAgeing1y']
+  },
+  pending_mc: {
+    url: 'pending_mc.html', key: 'pending_mc', stats: '#stats .ui-stat', tabs: '#drill .ui-drill-tab',
+    clicks: ['#fPhase .ui-opt', '#fAge .ui-opt', '#fClass .ui-opt'],
+    deep: ['?region=Raiganj', '?division=Gazole', '?ccc=Kaliyaganj', '?kpiFilter=WithinMonth', '?kpiFilter=Delayed', '?kpiFilter=Industrial', '?region=Malda&kpiFilter=Delayed']
+  },
+  weekly: {
+    url: 'weekly.html', key: 'weekly_report', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', tables: ['#officeTable', '#weekTable'],
+    extra: ['#chart', '#trendNote', '#officeNote', '#axisFrom', '#axisTo'], segments: ['#cat button'], selects: ['#weekFilter'], drillRows: '#officeTable tbody tr.click', deep: []
+  },
+  jjm: {
+    url: 'jjm.html', key: 'jjm_connections', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', tables: ['#officeTable'],
+    extra: ['#mixHist', '#officeNote'], clicks: ['#mixHist .row'], drillRows: '#officeTable tbody tr.click', deep: []
+  },
+  wridd: {
+    url: 'wridd.html', key: 'wridd_schemes', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', tables: ['#officeTable', '#appTable'],
+    extra: ['#reasonHist', '#typeHist', '#appCount'], clicks: ['#reasonHist .row', '#typeHist .row'], drillRows: '#officeTable tbody tr.click', deep: []
+  },
+  bharatnet: {
+    url: 'bharatnet.html', key: 'bharatnet_connections', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', tables: ['#officeTable', '#appTable'],
+    extra: ['#monthHist', '#appCount'], clicks: ['#monthHist .row'], drillRows: '#officeTable tbody tr.click', deep: []
+  },
+  icds: {
+    url: 'icds.html', key: 'icds_a_plus', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', tables: ['#officeTable', '#appTable'],
+    extra: ['#poleHist', '#projectHist', '#appCount', '#officeNote'], clicks: ['#poleHist .row', '#projectHist .row'], segments: ['#prio button'], drillRows: '#officeTable tbody tr.click', deep: []
   }
 };
 
@@ -75,23 +121,25 @@ function router(snap) {
 }
 
 async function newContext(browser, base, profile, route, opts) {
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  opts = opts || {};
+  const ctx = await browser.newContext({ viewport: { width: opts.width || 1280, height: 900 } });
   await ctx.addCookies([{ name: 'mzo_session', value: cookie(profile), domain: new URL(base).hostname, path: '/', httpOnly: true, sameSite: 'Lax' }]);
   const version = await fetch(base + '/version.json').then((r) => r.json()).then((j) => j.version).catch(() => '');
-  await ctx.addInitScript(({ profile, version }) => {
+  await ctx.addInitScript(({ profile, version, theme, ready }) => {
     try { localStorage.setItem('mzo_user_profile', JSON.stringify(profile)); localStorage.setItem('mzo_authenticated', 'true'); if (version) localStorage.setItem('mzo_app_version', version); } catch (_) {}
+    try { if (theme) localStorage.setItem('theme', theme); } catch (_) {}
     window.__fdp = null;
     const t = () => {
       if (window.__fdp != null) return;
       const vs = document.querySelectorAll('.ui-stat .v');
-      const row = document.querySelector('#table tbody tr td:not([colspan])');
-      const empty = document.querySelector('#table tbody .ui-empty');
+      const row = document.querySelector(ready + ' tbody tr td:not([colspan])');
+      const empty = document.querySelector(ready + ' tbody .ui-empty');
       const shown = row || (empty && !/loading/i.test(empty.textContent)); // a real row, or a real "nothing matches"
       if (vs.length && ![].some.call(vs, (v) => v.querySelector('.ui-skel') || !/\d/.test(v.textContent)) && shown) { window.__fdp = performance.now(); window.__fdpRow = !!row; return; }
       requestAnimationFrame(t);
     };
     requestAnimationFrame(t);
-  }, { profile, version });
+  }, { profile, version, theme: opts.theme || '', ready: opts.ready || '#table' });
   const stats = { requests: 0, bytes: {}, blocked: [] };
   await ctx.route('**/*', async (r) => {
     const req = r.request(), url = req.url();
@@ -101,40 +149,57 @@ async function newContext(browser, base, profile, route, opts) {
     if (hit) return r.fulfill({ status: 200, headers: { 'content-type': hit.type, 'access-control-allow-origin': '*' }, body: req.method() === 'HEAD' ? '' : fs.readFileSync(hit.file) });
     return r.continue();
   });
-  if (opts && opts.cpu) ctx.__cpu = opts.cpu;
+  if (opts.cpu) ctx.__cpu = opts.cpu;
   ctx.__stats = stats;
   return ctx;
 }
 
 async function settle(page, ms) {
   await page.waitForFunction(() => window.__fdp != null, null, { timeout: ms || 120000 }).catch(() => {});
+  // Side requests (report-date meta, live version checks) can land after the first paint and change
+  // the as-on date: compare the settled page, not whichever was faster.
+  await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
   await page.waitForTimeout(600);
 }
 
-function snapshot() {
+function snapshot(cfg) {
+  cfg = cfg || {};
   const txt = (el) => (el ? String(el.textContent || '').replace(/\s+/g, ' ').trim() : '');
-  const out = { asOn: txt(document.getElementById('asOn')) };
+  const out = { asOn: txt(document.querySelector(cfg.asOn || '#asOn')) };
   out.stats = [].map.call(document.querySelectorAll('.ui-stat'), (s) => [txt(s.querySelector('.k')), txt(s.querySelector('.v')), txt(s.querySelector('.s')), s.getAttribute('aria-pressed')]);
   out.facets = [].map.call(document.querySelectorAll('.ui-opts'), (g) => (g.id || '') + ':' + [].map.call(g.querySelectorAll('.ui-opt'), (o) => txt(o.querySelector('span')) + '=' + txt(o.querySelector('small')) + (o.getAttribute('aria-checked') === 'true' ? '*' : '')).join('|'));
   out.tabs = [].map.call(document.querySelectorAll('.ui-drill-tab'), (t) => txt(t) + (t.getAttribute('aria-selected') === 'true' ? '*' : ''));
   out.trail = txt(document.querySelector('.ui-trail nav'));
   out.hint = txt(document.getElementById('hint'));
-  const t = document.querySelector('#table table');
-  if (t) {
-    out.head = [].map.call(t.querySelectorAll('thead th'), txt);
+  const tableOf = (sel) => {
+    const t = document.querySelector(sel + ' table');
+    if (!t) return { empty: txt(document.querySelector(sel)) };
     const rows = [].slice.call(t.tBodies[0] ? t.tBodies[0].rows : []);
-    out.rows = rows.length;
-    out.first = rows.slice(0, 8).map((r) => [].map.call(r.cells, txt).join(' | '));
-    out.foot = t.tFoot ? txt(t.tFoot) : '';
+    return { head: [].map.call(t.querySelectorAll('thead th'), txt), rows: rows.length, first: rows.slice(0, 8).map((r) => [].map.call(r.cells, txt).join(' | ')), foot: t.tFoot ? txt(t.tFoot) : '', footer: txt(document.querySelector(sel + ' .ui-panel-f span')) };
+  };
+  if (!cfg.tables) {
+    const t = tableOf('#table');
+    if (t.head) { out.head = t.head; out.rows = t.rows; out.first = t.first; out.foot = t.foot; }
+    out.footer = t.footer || '';
+  } else {
+    out.tables = {};
+    cfg.tables.forEach((sel) => { out.tables[sel] = tableOf(sel); });
   }
-  out.footer = txt(document.querySelector('#table .ui-panel-f span'));
+  if (cfg.tabs && !/ui-drill-tab/.test(cfg.tabs)) out.levelTabs = [].map.call(document.querySelectorAll(cfg.tabs), (t) => txt(t) + (t.getAttribute('aria-selected') === 'true' ? '*' : ''));
+  (cfg.extra || []).forEach((sel) => {
+    const el = document.querySelector(sel);
+    if (!el) { out[sel] = null; return; }
+    const tips = [].map.call(el.querySelectorAll('[title]'), (x) => x.getAttribute('title') + ([].indexOf.call(x.classList, 'on') >= 0 ? '*' : ''));
+    out[sel] = el.classList.contains('ui-hist') ? [].map.call(el.querySelectorAll('.row'), (r) => txt(r) + (r.classList.contains('on') ? '*' : '')) : (tips.length ? tips : txt(el));
+  });
+  (cfg.segments || []).forEach((sel) => { out[sel] = [].map.call(document.querySelectorAll(sel), (b) => txt(b) + (b.getAttribute('aria-pressed') === 'true' ? '*' : '')); });
   out.selects = [].map.call(document.querySelectorAll('.ui-side select'), (s) => s.id + '=' + s.value + '/' + s.options.length + (s.disabled ? ' locked' : ''));
   return out;
 }
 
-async function walk(page, cfg, base) {
+async function walk(page, cfg, base, quick) {
   const states = {};
-  const shot = async (label) => { await page.waitForTimeout(150); states[label] = await page.evaluate(snapshot); };
+  const shot = async (label) => { await page.waitForTimeout(150); states[label] = await page.evaluate(snapshot, cfg); };
   await page.goto(base + '/' + cfg.url, { waitUntil: 'domcontentloaded' });
   await settle(page);
   await shot('load');
@@ -145,6 +210,30 @@ async function walk(page, cfg, base) {
     await shot('stat#' + i);
     await page.locator(cfg.stats).nth(i).click();
   }
+  if (quick) return states;
+  // facet options and histogram rows (each toggles; click again to clear), up to 8 per group
+  for (const sel of cfg.clicks || []) {
+    const n = Math.min(8, await page.locator(sel).count());
+    for (let i = 0; i < n; i++) {
+      const el = page.locator(sel).nth(i);
+      const label = ((await el.textContent()) || '').replace(/\s+/g, ' ').trim().slice(0, 30);
+      await el.dispatchEvent('click'); // also inside a collapsed panel section
+      await shot('click:' + sel + '#' + i + ':' + label);
+      if (await page.locator(sel).nth(i).count()) await page.locator(sel).nth(i).dispatchEvent('click');
+    }
+  }
+  // select boxes: the first options, then back to "all"
+  for (const sel of cfg.selects || []) {
+    const vals = await page.$$eval(sel + ' option', (os) => os.map((o) => o.value).filter(Boolean).slice(0, 4)).catch(() => []);
+    for (const v of vals) { await page.selectOption(sel, v); await shot('select:' + sel + '=' + v); }
+    if (vals.length) await page.selectOption(sel, '');
+  }
+  // segmented buttons (category, priority): each one, then back to the first
+  for (const sel of cfg.segments || []) {
+    const n = await page.locator(sel).count();
+    for (let i = 1; i < n; i++) { await page.locator(sel).nth(i).click(); await shot('segment:' + sel + '#' + i); }
+    if (n) await page.locator(sel).first().click();
+  }
   // every analysis / level tab
   const nTabs = await page.locator(cfg.tabs).count();
   for (let i = 0; i < nTabs; i++) {
@@ -154,9 +243,9 @@ async function walk(page, cfg, base) {
     await shot('tab:' + label);
   }
   // drill: back to the first tab, then open the first row at every level down to the list
-  await page.locator(cfg.tabs).first().click();
+  if (await page.locator(cfg.tabs).count()) await page.locator(cfg.tabs).first().click();
   for (let level = 0; level < 4; level++) {
-    const row = page.locator('#table tbody tr.click').first();
+    const row = page.locator((cfg.drillRows || '#table tbody tr.click')).first();
     if (!(await row.count())) break;
     const name = ((await row.locator('td').first().textContent()) || '').trim();
     await row.click();
@@ -184,34 +273,36 @@ function diffStates(a, b) {
 async function parity(pw) {
   const oldBase = arg('old'), newBases = String(arg('new')).split(','), snap = arg('snap');
   const pages = String(arg('pages', Object.keys(PAGES).join(','))).split(',');
+  const profiles = String(arg('profiles', 'admin,division')).split(',');
+  const look = { theme: arg('theme', ''), width: Number(arg('width', 1280)) }, quick = process.argv.includes('--quick');
   const outDir = arg('out', path.join(process.cwd(), 'uniform-parity'));
   fs.mkdirSync(outDir, { recursive: true });
   const route = router(snap);
   const browser = await pw.chromium.launch({ channel: process.env.QA_CHANNEL || 'chrome', headless: true });
   const summary = [];
   for (const p of pages) {
-    for (const prof of Object.keys(PROFILES)) {
+    for (const prof of profiles) {
       const runs = {};
       for (const base of [oldBase].concat(newBases)) {
-        const ctx = await newContext(browser, base, PROFILES[prof], route);
+        const ctx = await newContext(browser, base, PROFILES[prof], route, Object.assign({ ready: (PAGES[p].tables || ['#table'])[0] }, look));
         const page = await ctx.newPage();
         const errors = [];
         page.on('pageerror', (e) => errors.push(String(e.message || e).slice(0, 200)));
         page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 200)); });
-        runs[base] = { states: await walk(page, PAGES[p], base), errors, blocked: ctx.__stats.blocked };
+        runs[base] = { states: await walk(page, PAGES[p], base, quick), errors, blocked: ctx.__stats.blocked };
         await ctx.close();
       }
       const old = runs[oldBase];
       for (const nb of newBases) {
         const d = diffStates(old.states, runs[nb].states);
-        summary.push({ page: p, profile: prof, base: nb, states: Object.keys(old.states).length, differences: d.length, errors: runs[nb].errors.length, oldErrors: old.errors.length });
-        fs.writeFileSync(path.join(outDir, `${p}-${prof}-${new URL(nb).port}.json`), JSON.stringify({ old: oldBase, new: nb, differences: d, oldStates: old.states, newStates: runs[nb].states, errors: runs[nb].errors, oldErrorsList: old.errors, blocked: runs[nb].blocked }, null, 1));
-        console.log(`[parity] ${p} as ${prof}: ${new URL(nb).port} vs ${new URL(oldBase).port}: ${Object.keys(old.states).length} states, ${d.length} differences, console errors new ${runs[nb].errors.length} / old ${old.errors.length}`);
+        summary.push({ page: p, profile: prof, base: nb, theme: look.theme, width: look.width, states: Object.keys(old.states).length, differences: d.length, errors: runs[nb].errors.length, oldErrors: old.errors.length });
+        fs.writeFileSync(path.join(outDir, `${p}-${prof}-${new URL(nb).port}${look.theme ? '-' + look.theme : ''}${look.width !== 1280 ? '-' + look.width : ''}.json`), JSON.stringify({ old: oldBase, new: nb, differences: d, oldStates: old.states, newStates: runs[nb].states, errors: runs[nb].errors, oldErrorsList: old.errors, blocked: runs[nb].blocked }, null, 1));
+        console.log(`[parity] ${p} as ${prof}${look.theme ? ' ' + look.theme : ''}${look.width !== 1280 ? ' ' + look.width + 'px' : ''}: ${new URL(nb).port} vs ${new URL(oldBase).port}: ${Object.keys(old.states).length} states, ${d.length} differences, console errors new ${runs[nb].errors.length} / old ${old.errors.length}`);
         d.slice(0, 12).forEach((x) => console.log(`    ${x.state} · ${x.field}: ${JSON.stringify(x.old).slice(0, 160)}  →  ${JSON.stringify(x.new).slice(0, 160)}`));
       }
     }
   }
-  fs.writeFileSync(path.join(outDir, 'summary.json'), JSON.stringify(summary, null, 1));
+  fs.writeFileSync(path.join(outDir, 'summary' + (arg('tag') ? '-' + arg('tag') : '') + '.json'), JSON.stringify(summary, null, 1));
   await browser.close();
 }
 
@@ -227,7 +318,7 @@ async function timing(pw) {
     for (const which of ['old', 'new']) {
       const cold = [], warm = [], bytes = [];
       for (let i = 0; i < runsN; i++) {
-        const ctx = await newContext(browser, bases[which], PROFILES.admin, route);
+        const ctx = await newContext(browser, bases[which], PROFILES.admin, route, { ready: (PAGES[p].tables || ['#table'])[0] });
         const page = await ctx.newPage();
         if (cpu > 1) { const cdp = await ctx.newCDPSession(page); await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu }); }
         let got = 0;

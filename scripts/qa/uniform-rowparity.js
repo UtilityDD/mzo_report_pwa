@@ -34,6 +34,73 @@ const PAGES = {
   'nsc.html': {
     key: 'nsc_pending', from: '    var CLASS = {', to: '    var DELAY2 = [',
     old: 'parse(RAW)', new: 'parse(ROWS)', result: true, scope: false
+  },
+  'nsc/kpi.html': {
+    key: 'nsc_pending', from: '    var LABEL = {', to: '    function avg(rows, k)',
+    old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: false,
+    known: {
+      REGION: 'raw office cells were copied onto the row only for MzoScope; the login scope now runs on the uniform rows',
+      DIVN_NAME: 'as REGION', SUPP_OFF: 'as REGION', CCC_CODE: 'as REGION'
+    }
+  },
+  'withheld.html': {
+    key: 'withheld', from: '    var CLASS = {', to: '    var STAT = {',
+    old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: false,
+    known: {
+      withheld: 'application 4001062497 has SCN_WITHELD_DATE "26/07/0201" (a typo in the sheet): UI.date read it as the year 201, uniform rows leave it empty and keep the text in scn_witheld_date_raw',
+      year: 'as withheld (the "… and earlier" year facet counts one application less)', ago: 'as withheld (it was 666,663 days, in no stat card)'
+    }
+  },
+  'pending_load_extension.html': {
+    key: 'load_extension', from: '    var CLASS = {', to: '    var STAT = {',
+    old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true,
+    // COLLECTION_DATE is kept as text and shown through UI.fmtDate: compare what is shown.
+    display: { collected: (v, UI) => UI.fmtDate(v) }
+  },
+  'pending_mc.html': {
+    key: 'pending_mc', from: '    var CLASS = {', to: '    // Every panel filter;',
+    old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true,
+    display: { collected: (v, UI) => (UI.blank(v) ? '' : UI.fmtDate(v)) },
+    known: { docs: 'DOCS_SUNMITTED was read into the row but never shown; it is no longer loaded' }
+  },
+  'weekly.html': {
+    key: 'weekly_report', from: '    var METRIC = {', to: '    function fillOffices() {',
+    old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true, stubs: ['fillOffices'],
+    // r.raw is the sheet row (old: UI.csv object, new: uniform row): compare the 18 metric values the page reads from it.
+    display: {
+      raw: (v) => {
+        if (!v || typeof v !== 'object') return v;
+        const out = [];
+        for (const b of [['Pending as on Monday of Last Week', 'pending_as_on_monday_of_last_week'], ['Deposited in last week', 'deposited_in_last_week'], ['Conn. Eff.', 'conn_eff'], ['Withheld', 'withheld'], ['Total disposed', 'total_disposed'], ['Pending as on Monday of Current Week', 'pending_as_on_monday_of_current_week']]) {
+          for (const c of ['DOM', 'COM', 'IND']) out.push(b[1] + '_dom' in v ? Math.trunc(v[b[1] + '_' + c.toLowerCase()]) || 0 : parseInt(v[b[0] + ' (' + c + ')'], 10) || 0);
+        }
+        return JSON.stringify(out);
+      }
+    }
+  },
+  'jjm.html': {
+    key: 'jjm_connections', from: '    // Sheet columns', to: '    function fillFilters() {',
+    old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true, stubs: ['fillFilters'],
+    known: { sheetDivision: 'computed from DIVISION but never used; dropped' }
+  },
+  'wridd.html': {
+    key: 'wridd_schemes', from: '    var STATUS = {', to: '    function fillFilters() {',
+    old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true, stubs: ['fillFilters'],
+    known: { id: 'the sheet row index, never read; dropped' }
+  },
+  'bharatnet.html': {
+    key: 'bharatnet_connections', from: '    var STATUS = {', to: '    function fillFilters() {',
+    old: 'prepare(RAW)', new: 'prepare(ROWS)', rows: 'all', scope: true, stubs: ['fillFilters'],
+    known: { id: 'the row index, never read; dropped', 'CCC NAME': 'the raw CCC name was copied onto the row only for MzoScope; the login scope now runs on the uniform rows' }
+  },
+  'icds.html': {
+    keys: { ap: 'icds_a_plus', a: 'icds_a' }, from: '    var STATUS = {', to: '    function fillFilters() {',
+    old: '(texts = RAW, combine())', new: '(tables = ROWS, combine())', rows: 'all', scope: true, stubs: ['fillFilters', 'tabs'],
+    known: {
+      awc: 'sheet cells with a trailing space ("Laxmipur "): uniform values are trimmed', project: 'as awc ("Itahar " was a separate project in the histogram)',
+      ownership: 'as awc', search: 'as awc (one space less)',
+      code: '14 centres with the unknown code 662101040: the drawer shows the code as written instead of its first 7 digits (6621010, not a CCC either)'
+    }
   }
 };
 const PROFILES = [
@@ -52,7 +119,8 @@ function context(profile) {
   const ctx = { console, document, localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } }, Intl, Date, Math, JSON, Map, Set, Promise, setTimeout, clearTimeout };
   ctx.window = ctx; ctx.self = ctx; ctx.top = ctx;
   vm.createContext(ctx);
-  for (const f of ['mzo_scope.js', 'mzo_ui.js', 'mzo_rows.js']) vm.runInContext(fs.readFileSync(path.join(REPO, f), 'utf8'), ctx, { filename: f });
+  // as the pages load them: lib/offices.js first, so UI.office and MzoScope use the canonical list as in the browser
+  for (const f of ['lib/offices.js', 'mzo_scope.js', 'mzo_ui.js', 'mzo_rows.js']) vm.runInContext(fs.readFileSync(path.join(REPO, f), 'utf8'), ctx, { filename: f });
   ctx.UI.drill = () => ({ match: () => true }); // DOM-only helpers the parse regions set up
   ctx.UI.sidePanel = () => function () {};
   ctx.__text = {};
@@ -60,6 +128,7 @@ function context(profile) {
   ctx.render = ctx.clearAll = function () {}; // page functions the region refers to
   return ctx;
 }
+function stub(ctx, page) { (page.stubs || []).forEach((n) => { ctx[n] = function () {}; }); return ctx; }
 
 function region(src, page) {
   const a = src.indexOf(page.from), b = src.indexOf(page.to, a + 1);
@@ -83,21 +152,25 @@ function main() {
   if (!page) { console.error('usage: uniform-rowparity.js <' + Object.keys(PAGES).join('|') + '> --snap <dir>'); process.exit(2); }
   const snap = arg('snap');
   const oldRev = arg('old', 'HEAD');
-  const file = fs.readdirSync(snap).find((f) => f.replace(/\.(csv|tsv|json)$/, '') === page.key && /\.(csv|tsv|json)$/.test(f));
-  const raw = fs.readFileSync(path.join(snap, file), 'utf8');
+  // page.keys ({ name: datasetKey }) for pages that combine datasets: RAW and ROWS are then objects by name.
+  const keys = page.keys || { _: page.key }, raws = {}, docs = {};
   const oldSrc = execFileSync('git', ['-C', REPO, 'show', oldRev + ':' + pageName], { encoding: 'utf8', maxBuffer: 64 << 20 });
   const newSrc = fs.readFileSync(path.join(REPO, pageName), 'utf8');
   const U = require(path.join(REPO, 'lib', 'uniform.js'));
   const offices = require(arg('offices', path.join(REPO, 'lib', 'offices.js')));
   U.useOffices(offices, JSON.parse(fs.readFileSync(path.join(REPO, 'data', 'costcenter.json'), 'utf8')));
-  const schema = JSON.parse(fs.readFileSync(path.join(REPO, 'schema', page.key + '.json'), 'utf8'));
-  const res = U.build(raw, { key: page.key, format: file.split('.').pop(), schema });
-  const uniformRows = JSON.parse(U.stringify(res)); // what the page receives (cache, mirror or worker)
+  for (const [n, key] of Object.entries(keys)) {
+    const file = fs.readdirSync(snap).find((f) => f.replace(/\.(csv|tsv|json)$/, '') === key && /\.(csv|tsv|json)$/.test(f));
+    raws[n] = fs.readFileSync(path.join(snap, file), 'utf8');
+    const schema = JSON.parse(fs.readFileSync(path.join(REPO, 'schema', key + '.json'), 'utf8'));
+    docs[n] = JSON.parse(U.stringify(U.build(raws[n], { key, format: file.split('.').pop(), schema }))); // what the page receives (cache, mirror or worker)
+  }
   let failed = 0;
   for (const p of PROFILES) {
-    const ctxOld = context(p.profile), ctxNew = context(p.profile);
-    ctxOld.RAW = raw;
-    ctxNew.ROWS = ctxNew.MzoRows.fromDoc(page.key, uniformRows, 'test', { scope: page.scope });
+    const ctxOld = stub(context(p.profile), page), ctxNew = stub(context(p.profile), page);
+    const t = (n) => ctxNew.MzoRows.fromDoc(keys[n], docs[n], 'test', { scope: page.scope });
+    ctxOld.RAW = page.keys ? raws : raws._;
+    ctxNew.ROWS = page.keys ? Object.keys(keys).reduce((o, n) => { o[n] = t(n); return o; }, {}) : t('_');
     const a = rowsOf(ctxOld, page, region(oldSrc, page), page.old);
     const b = rowsOf(ctxNew, page, region(newSrc, page), page.new);
     const diffs = {}; let rowsDiff = 0;

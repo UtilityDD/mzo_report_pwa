@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
   <style>#projectHist .row { grid-template-columns: 150px minmax(0, 1fr) 56px; }</style>
 </head>
 <body>
@@ -88,7 +89,7 @@
       { key: 'p0', label: 'None' }, { key: 'p1', label: '1 pole' }, { key: 'p2', label: '2 poles' },
       { key: 'p3', label: '3 or more' }, { key: 'pn', label: 'Not assessed' }
     ];
-    var all = [], texts = {}, f = { q: '', prio: '', status: '', pole: '', project: '' }, level = 'region', scope = null, firstPaint = true;
+    var all = [], tables = {}, f = { q: '', prio: '', status: '', pole: '', project: '' }, level = 'region', scope = null, firstPaint = true;
 
     function blankish(v) { return !String(v == null ? '' : v).trim() || /^(0|na|n\.a\.?|nil|n\/a|-)$/i.test(String(v).trim()); }
     function district(raw) {
@@ -98,35 +99,30 @@
       if (u.indexOf('UTTAR') !== -1 || u.indexOf('NORTH') !== -1 || u === 'UD' || u.indexOf('RAIGANJ') !== -1) return 'Uttar Dinajpur';
       return UI.title(raw) || '';
     }
-    function cccCode(raw) {
-      var s = String(raw || '').trim().replace(/\.0+$/, '');
-      if (s === '66111609') return '6611109';
-      if (s === '66131101') return '6613101';
-      var m = s.match(/\b(66[123]\d{4})\b/);
-      if (m) return m[1];
-      var d = s.replace(/\D/g, '');
-      return d.length >= 7 && /^66[123]\d{4}$/.test(d.slice(0, 7)) ? d.slice(0, 7) : '';
-    }
-    // Cell M2 (UPDATE DATE, dd.mm.yyyy) is the sheet's "as on" date.
-    function asOnOf(rows) {
-      var raw = String((rows[0] || {})['UPDATE DATE'] || '').trim();
+    // Cell M2 (UPDATE DATE, dd.mm.yyyy) is the sheet's "as on" date: read from every row (t.first), so a
+    // scoped login that does not have the sheet's first row still sees it.
+    function asOnOf(t) {
+      var raw = (t && t.first('update_date')) || '';
       var m = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
       if (!m) return '';
       var pad = function (x) { return String(x).padStart(2, '0'); }, y = +m[3] < 100 ? 2000 + +m[3] : +m[3];
       return pad(+m[1]) + '/' + pad(+m[2]) + '/' + y;
     }
 
-    function ingest(list, prio) {
-      return list.map(function (d) {
-        var code = cccCode(d['CCC CODE']), o = code ? UI.office(code) : null, mapped = !!(o && o.ccc);
-        var meter = blankish(d['METER NUMBER']) ? '' : String(d['METER NUMBER']).trim();
-        var poles = String(d['NO OF POLE REQUIRED'] || '').trim(), pn = parseInt(poles, 10);
+    // t.rows: uniform rows of schema/icds_a_plus.json / icds_a.json, already scoped to the login by MzoRows.
+    // A centre has a CCC when its CCC CODE is a CCC of the canonical list (known typos and SAP forms
+    // included); a division-level or unknown code counts as no CCC. The district stays the page's region.
+    function ingest(t, prio) {
+      return (t ? t.rows : []).map(function (d) {
+        var mapped = !!d._ccc;
+        var meter = blankish(d.meter_number) ? '' : d.meter_number;
+        var poles = d.no_of_pole_required, pn = parseInt(poles, 10);
         var r = {
-          prio: prio, awc: UI.title(d['AWC NAME']), awcCode: String(d['AWC CODE'] || '').trim(), project: UI.title(d.PROJECT),
-          dist: district(d.DISTRICT), appl: blankish(d.APPL_NO) ? '' : String(d.APPL_NO).trim(), ownership: UI.title(d['BUILDING OWNERSHIP']),
-          poles: poles, poleKey: isNaN(pn) ? 'pn' : pn >= 3 ? 'p3' : 'p' + pn, poleDone: String(d['POLE ERECTION COMPLETED(Y/N)'] || '').trim(),
-          meter: meter, meterDate: d['METER INSTALL DATE'], remarks: String(d.REMARKS || '').trim(), code: code,
-          _region: district(d.DISTRICT), _divn: mapped ? o.division : '', _supp: mapped ? o.ccc : '', CCC_CODE: mapped ? code : ''
+          prio: prio, awc: UI.title(d.awc_name), awcCode: d.awc_code, project: UI.title(d.project),
+          dist: district(d.district), appl: blankish(d.appl_no) ? '' : d.appl_no, ownership: UI.title(d.building_ownership),
+          poles: poles, poleKey: isNaN(pn) ? 'pn' : pn >= 3 ? 'p3' : 'p' + pn, poleDone: d.pole_erection_completed_y_n,
+          meter: meter, meterDate: d.meter_install_date, remarks: d.remarks, code: d._ccc_code || d.ccc_code,
+          _region: district(d.district), _divn: mapped ? d._division : '', _supp: mapped ? d._ccc : '', CCC_CODE: mapped ? d._ccc_code : ''
         };
         r.st = meter ? 'meter' : mapped ? 'mapped' : 'nocc';
         r.search = [r.awc, r.awcCode, r.project, r.dist, r._divn, r._supp, r.appl].join(' ').toLowerCase();
@@ -135,12 +131,8 @@
     }
 
     function combine() {
-      // Parse each sheet once: ingest() and the "as on" cell both read it.
-      var ap = texts.ap ? UI.csv(texts.ap) : [], a = texts.a ? UI.csv(texts.a) : [];
-      var rows = ingest(ap, 'A+').concat(ingest(a, 'A'));
-      if (window.MzoScope) rows = window.MzoScope.filterRows(rows);
-      all = rows;
-      var asOn = asOnOf(ap) || asOnOf(a);
+      all = ingest(tables.ap, 'A+').concat(ingest(tables.a, 'A'));
+      var asOn = asOnOf(tables.ap) || asOnOf(tables.a);
       if (asOn) { try { localStorage.setItem('mzo_icds_as_on', asOn); } catch (e) {} }
       $('meta').textContent = (asOn ? 'As on ' + UI.fmtDate(asOn.split('/').reverse().join('-')) + ' · ' : '') + UI.n(all.length) + ' anganwadi centres';
       fillFilters();
@@ -162,7 +154,7 @@
     }
 
     function base() {
-      // Locked (login-scope) selects are already applied by MzoScope.filterRows; this sheet's district can differ from the CCC's region.
+      // Locked (login-scope) selects are already applied by the login scope (MzoRows); this sheet's district can differ from the CCC's region.
       var val = function (id) { return $(id).disabled ? '' : $(id).value; };
       var q = f.q.toLowerCase(), reg = val('regionFilter'), div = val('divisionFilter'), ccc = val('cccFilter');
       return all.filter(function (r) {
@@ -274,25 +266,24 @@
     $('exportBtn').addEventListener('click', function () {
       UI.exportCsv('icds-connections.csv', [{ key: 'awc', label: 'Centre' }, { key: 'awcCode', label: 'AWC code' }, { key: 'project', label: 'Project' }, { key: 'dist', label: 'District' }, { key: '_divn', label: 'Division' }, { key: '_supp', label: 'CCC' }, { key: 'prio', label: 'Priority' }, { key: 'appl', label: 'Application' }, { key: 'poles', label: 'Poles required' }, { key: 'meter', label: 'Meter number' }, COLS[5]], window.__view || []);
     });
+    var SHEETS = [['icds_a_plus', 'ap'], ['icds_a', 'a']];
     function reload(btn) {
       if (btn) btn.classList.add('spin');
-      var hub = window.mzoDataHub;
-      return Promise.all(['CACHE_ICDS_APLUS', 'CACHE_ICDS_A'].map(function (k) { return Promise.resolve(hub.waitForDataset(k, { forceCheck: true })).catch(function () {}); }))
-        .then(function () { return Promise.all([hub._peek('CACHE_ICDS_APLUS'), hub._peek('CACHE_ICDS_A')]); })
-        .then(function (t) { if (t[0] || t[1]) { texts.ap = t[0] || texts.ap; texts.a = t[1] || texts.a; combine(); } })
+      return Promise.all(SHEETS.map(function (k) { return MzoRows.get(k[0], { forceCheck: true }).catch(function () { return null; }); }))
+        .then(function (t) { if (t[0] || t[1]) { tables.ap = t[0] || tables.ap; tables.a = t[1] || tables.a; combine(); } })
         .then(function () { if (btn) btn.classList.remove('spin'); });
     }
     $('refreshBtn').addEventListener('click', function () { reload(this); });
 
     // Same-day sheet edits matter here: always check the version (forceCheck).
     var failed = 0;
-    [['CACHE_ICDS_APLUS', 'ap'], ['CACHE_ICDS_A', 'a']].forEach(function (k) {
-      UI.load(k[0], function (text, info) {
-        if (!text) {
+    SHEETS.forEach(function (k) {
+      MzoRows.load(k[0], function (t, info) {
+        if (!t) {
           if (info && info.error && ++failed === 2 && !all.length) { $('meta').textContent = 'Could not load data'; $('appTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; }
           return;
         }
-        texts[k[1]] = text; combine();
+        tables[k[1]] = t; combine();
       }, { forceCheck: true });
     });
   });

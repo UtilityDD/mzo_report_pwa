@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=6" defer></script>
   <style>
     .co-day { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--mzo-muted); }
     .co-day select { height: 28px; }
@@ -93,22 +94,22 @@
       return '<span class="ui-delta ' + (Math.abs(v) < 0.05 ? 'flat' : v > 0 ? 'ok' : 'bad') + '">' + (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(1) + '%</span>';
     }
 
-    function prepare(text) {
-      var rows = UI.csv(text);
+    // t.rows: uniform rows of schema/collection_report.json, already scoped to the login by MzoRows.
+    // PAYMENT_DT stays a yyyymmdd number; codes ending in 0000 are a region's bulk accounts.
+    function prepare(t) {
       all = [];
-      rows.forEach(function (r) {
-        var d = ymd(r.PAYMENT_DT), code = String(r.CCC_CODE || '').trim();
+      t.rows.forEach(function (r) {
+        var d = ymd(r.payment_dt == null ? '' : String(r.payment_dt)), code = r.ccc_code;
         if (!d || !code) return;
-        var o = UI.office(code), isBulk = /0000$/.test(code);
+        var isBulk = /0000$/.test(code);
         all.push({
           date: d, t: d.getTime(), code: code,
-          amount: (parseFloat(r['AMOUNT PAID']) || 0) * 1e5, // sheet is in lakhs
-          count: parseInt(r.COUNT, 10) || 0,
-          _region: o.region || 'Unmapped', _divn: isBulk ? (o.region || '') + ' bulk' : (o.division || 'Unmapped'),
-          _supp: isBulk ? (o.region || '') + ' bulk' : (o.ccc || code), CCC_CODE: code, bulk: isBulk
+          amount: (r.amount_paid || 0) * 1e5, // sheet is in lakhs
+          count: Math.trunc(r.count) || 0,
+          _region: r._region || 'Unmapped', _divn: isBulk ? r._region + ' bulk' : (r._division || 'Unmapped'),
+          _supp: isBulk ? r._region + ' bulk' : (r._ccc || code), CCC_CODE: code, bulk: isBulk
         });
       });
-      if (window.MzoScope) all = window.MzoScope.filterRows(all);
       var ts = all.map(function (r) { return r.t; });
       maxDate = ts.length ? new Date(Math.max.apply(null, ts)) : null;
       minDate = ts.length ? new Date(Math.min.apply(null, ts)) : null;
@@ -285,12 +286,12 @@
         { key: 'ly', label: 'Same month last year (Rs)', csv: r('ly') }, { key: 'yoy', label: 'Change vs last year %', csv: p('yoy') }
       ], window.__rows || []);
     });
-    UI.refresh('refreshBtn', 'CACHE_COLLECTION', function (t) { prepare(t); render(); });
+    MzoRows.refresh('refreshBtn', 'collection_report', function (t) { prepare(t); render(); });
 
     var first = true;
-    UI.load('CACHE_COLLECTION', function (text, info) {
-      if (!text) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = $('trend').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
-      prepare(text);
+    MzoRows.load('collection_report', function (t, info) {
+      if (!t) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = $('trend').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      prepare(t);
       if (first) {
         first = false;
         var d = new URLSearchParams(location.search).get('division');
