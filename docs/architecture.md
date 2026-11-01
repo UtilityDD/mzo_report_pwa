@@ -169,12 +169,18 @@ Not wired, on purpose: login and Google sign-in (PIN-hash upgrades and last-logi
 **On the VM.** The app unit (`mzo-reports.service`) needs:
 
 ```
-EnvironmentFile=/etc/mzo/pocketbase.env
+EnvironmentFile=-/etc/mzo/pocketbase.env
 Environment=MZO_DATA_MODE=mirror
-Environment=MZO_SNAPSHOT_DIR=/opt/mzo/data/snapshots
 ```
 
-`/opt/mzo/data/snapshots` must exist and be owned by `opc` (the sync writes it, the app reads it). `pocketbase.env` gives the write-through run its PocketBase login. A restart of the app also stops a write-through run in progress; the next scheduled sync catches up.
+and `/etc/mzo/pocketbase.env` (read by both the app and `mzo-sync.service`) gains:
+
+```
+MZO_SNAPSHOT_DIR=/opt/mzo/data/snapshots
+SYNC_TMP_DIR=/opt/mzo/data/sync-tmp
+```
+
+`/opt/mzo/data/snapshots` and `/opt/mzo/data/sync-tmp` must exist and be owned by `opc` (the sync writes them, the app reads the snapshots). `pocketbase.env` gives the write-through run its PocketBase login; one shared `SYNC_TMP_DIR` gives the timer's sync and the write-through sync one lock file across releases, so they never run at the same time. `MZO_DATA_MODE=off` in `/etc/mzo/app.env` turns mirror mode off without a commit (an `EnvironmentFile` value wins over `Environment=`). A restart of the app also stops a write-through run in progress; the next scheduled sync catches up.
 
 **Local test.** Build a snapshot folder from the live sources (GET only, never Apps Script), then run the app against it:
 
