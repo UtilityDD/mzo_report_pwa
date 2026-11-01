@@ -10,6 +10,7 @@
   <script src="/mzo_data_hub.js?v=91" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
+  <script src="/mzo_rows.js?v=5" defer></script>
   <style>.ui-grid > .ui-panel { margin-top: 0; }</style>
 </head>
 <body>
@@ -79,36 +80,29 @@
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var URLS = {
-      meters: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSWjwUI4EUgEABlcggpdOS-WSPKY8my-5T0cLxT4h8tNz_IreQy6jUYKBnB5yc0n-fcs8FpVbwo6Qay/pub?gid=327926255&single=true&output=tsv',
-      wo: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSWjwUI4EUgEABlcggpdOS-WSPKY8my-5T0cLxT4h8tNz_IreQy6jUYKBnB5yc0n-fcs8FpVbwo6Qay/pub?gid=958431052&single=true&output=tsv'
-    };
     var STATUS = { pushed: ['Pushed', 'ok'], unpushed: ['Not pushed', 'warn'], pending: ['Not installed', ''] };
     var meters = [], wos = [], woByMeter = {}, asOn = null, f = { q: '', stat: '' }, level = 'region', scope = null;
 
-    function tsv(text) {
-      var lines = String(text || '').replace(/^﻿/, '').split(/\r?\n/).filter(function (l) { return l.trim(); });
-      if (!lines.length) return [];
-      var head = lines[0].split('\t').map(function (h) { return h.trim(); });
-      return lines.slice(1).map(function (l) { var v = l.split('\t'), o = {}; head.forEach(function (h, i) { o[h] = v[i] ? v[i].trim() : ''; }); return o; });
-    }
-    function office(code) { var o = UI.office(code); return { _region: o.region, _divn: o.division, _supp: o.ccc || String(code || ''), CCC_CODE: code }; }
+    // Canonical office of a row (schema offices: ccc_final for meters, CCC_code for work orders).
+    function office(d, code) { return { _region: d._region, _divn: d._division, _supp: d._ccc || code, CCC_CODE: code }; }
 
-    function prepare(mText, wText) {
-      meters = tsv(mText).filter(function (r) { return r['Meter Supply  Qty.'] || r.con_id; }).map(function (r) {
-        var o = office(r.ccc_final), inst = !!r['Meter Installed Qty.  In Field_Active In Hes_'], push = !!r['Total Submit In Ami Portal'];
-        o.meter = r['Meter Supply  Qty.']; o.con = r.con_id || ''; o.type = r.meter_type || '—'; o.lot = r.Lot || '—'; o.lotDate = r.Lot_date;
-        o.installed = inst; o.pushed = push; o.st = push ? 'pushed' : inst ? 'unpushed' : 'pending'; o.remarks = r.Remarks; o.gen = r['GENERATION METER']; o.check = r['CHECKED METER'];
-        o.zone = r['Zone Name']; o.cccName = r['CCC Name'];
+    // mt, wt: uniform rows of schema/smart_meter_status.json and smart_meter_work_orders.json (wt may
+    // still be on its way), each scoped to the login by MzoRows (t.all: every row).
+    function prepare(mt, wt) {
+      meters = mt.rows.filter(function (d) { return d.meter_supply_qty || d.con_id; }).map(function (d) {
+        var o = office(d, d.ccc_final), inst = !!d.meter_installed_qty_in_field_active_in_hes, push = !!d.total_submit_in_ami_portal;
+        o.meter = d.meter_supply_qty; o.con = d.con_id; o.type = d.meter_type || '—'; o.lot = d.lot || '—'; o.lotDate = d.lot_date;
+        o.installed = inst; o.pushed = push; o.st = push ? 'pushed' : inst ? 'unpushed' : 'pending'; o.remarks = d.remarks; o.gen = d.generation_meter; o.check = d.checked_meter;
         return o;
       });
-      asOn = null;
-      wos = tsv(wText).filter(function (r) { return r.WORK_ORDER; }).map(function (r) {
-        if (!asOn && r.Date) asOn = UI.date(r.Date);
-        var o = office(r.CCC_code); o.wo = r.WORK_ORDER; o.raw = r; return o;
+      // The as-on date and the meter → work order join use every work order, before the scope.
+      asOn = null; woByMeter = {};
+      (wt ? wt.all : []).forEach(function (d) {
+        if (!d.work_order) return;
+        if (!asOn && d.date) asOn = UI.date(d.date);
+        if (d.new_meter_no) woByMeter[d.new_meter_no] = d;
       });
-      woByMeter = {}; wos.forEach(function (w) { if (w.raw.NEW_METER_NO) woByMeter[w.raw.NEW_METER_NO] = w.raw; });
-      if (window.MzoScope) { meters = window.MzoScope.filterRows(meters); wos = window.MzoScope.filterRows(wos); }
+      wos = (wt ? wt.rows : []).filter(function (d) { return d.work_order; }).map(function (d) { var o = office(d, d.ccc_code); o.wo = d.work_order; return o; });
       $('meta').textContent = (asOn ? 'As on ' + UI.fmtDate(asOn) + ' · ' : '') + UI.n(meters.length) + ' meters supplied';
       UI.fill('typeFilter', UI.uniq(meters, 'type'), 'All meter types');
       UI.fill('lotFilter', UI.uniq(meters, 'lot'), 'All lots');
@@ -195,8 +189,8 @@
       var w = woByMeter[r.meter] || {};
       var clean = function (v) { return UI.blank(v) ? '' : v; };
       UI.drawer('Meter ' + (r.meter || '—'), [r._supp, r._divn].filter(Boolean).join(' · '), [
-        ['Status', STATUS[r.st][0]], ['Consumer ID', r.con || clean(w.CONSUMER_ID)], ['Consumer', clean(w.CON_NAME)], ['Address', clean(w.CON_ADDR)],
-        ['Work order', clean(w.WORK_ORDER)], ['Work order date', clean(w.WORK_ORDER_DATE)], ['Old meter', clean(w.OLD_METER_NO)], ['Load (kW)', clean(w.CONN_LOAD)], ['Class', clean(w.CON_CLASS)],
+        ['Status', STATUS[r.st][0]], ['Consumer ID', r.con || clean(w.consumer_id)], ['Consumer', clean(w.con_name)], ['Address', clean(w.con_addr)],
+        ['Work order', clean(w.work_order)], ['Work order date', clean(w.work_order_date)], ['Old meter', clean(w.old_meter_no)], ['Load (kW)', clean(w.conn_load)], ['Class', clean(w.con_class)],
         ['Meter type', r.type], ['Lot', r.lot], ['Lot date', r.lotDate ? UI.fmtDate(r.lotDate) : ''],
         ['Generation meter', r.gen], ['Check meter', r.check], ['Remarks', r.remarks], ['CCC code', r.CCC_CODE]
       ]);
@@ -236,38 +230,37 @@
       UI.exportCsv('smart-meters.csv', [{ key: 'meter', label: 'Meter' }, { key: 'con', label: 'Consumer ID' }, { key: '_region', label: 'Region' }, { key: '_divn', label: 'Division' }, { key: '_supp', label: 'CCC' }, { key: 'type', label: 'Type' }, { key: 'lot', label: 'Lot' }, COLS[5]], window.__view || []);
     });
 
-    // These sheets export slowly from Google (over a minute). Keep the last good copy in the
-    // Cache API: paint from it at once, then replace it when the network copy arrives.
-    var CACHE = 'mzo-smart-meter-v1';
-    function cached(url) { return ('caches' in window) ? caches.open(CACHE).then(function (c) { return c.match(url); }).then(function (r) { return r ? r.text() : null; }).catch(function () { return null; }) : Promise.resolve(null); }
-    function keep(url, text) { if ('caches' in window && text) caches.open(CACHE).then(function (c) { return c.put(url, new Response(text, { headers: { 'Content-Type': 'text/plain' } })); }).catch(function () {}); }
-    function get(url) { return (window.mzoMirror ? mzoMirror.fetch : fetch)(url, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('Sheet HTTP ' + r.status); return r.text(); }).then(function (t) { keep(url, t); return t; }); }
-
-    var mText = null, wText = null, fresh = false;
+    // These sheets export slowly from Google (half a minute or more). MzoRows paints this device's
+    // last rows at once and replaces them when newer rows arrive (on the VM they come ready-made).
+    // The page's old copy in the Cache API is no longer read.
+    if ('caches' in window) caches.delete('mzo-smart-meter-v1').catch(function () {});
+    var mT = null, wT = null, fresh = false;
     function paint() {
-      prepare(mText, wText || '');
+      prepare(mT, wT);
       if (!paint.done) {
         paint.done = true;
         if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';
         [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (x) { x.setAttribute('aria-selected', String(x.getAttribute('data-l') === level)); });
       }
       render();
-      if (wText === null) $('sWo').innerHTML = '<span class="ui-skel"></span>';
+      if (wT === null) $('sWo').innerHTML = '<span class="ui-skel"></span>';
       if (!fresh) $('meta').textContent += ' · updating…';
     }
-    function load() {
+    function load(force) {
       var b = $('refreshBtn'); b.classList.add('spin'); fresh = false;
-      cached(URLS.meters).then(function (mc) {
-        return cached(URLS.wo).then(function (wc) { if (mc && mText === null) { mText = mc; wText = wc; paint(); } });
-      });
-      var done = 0, finish = function () { if (++done === 2) { fresh = true; if (mText !== null) paint(); b.classList.remove('spin'); } };
-      get(URLS.meters).then(function (t) { mText = t; paint(); })
-        .catch(function (e) { if (mText === null) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = '<div class="ui-empty">' + UI.esc(e.message) + '</div>'; } else UI.toast(e.message); })
-        .then(finish);
-      get(URLS.wo).then(function (t) { wText = t; if (mText !== null) paint(); }).catch(function () { if (wText === null) wText = ''; }).then(finish);
+      var done = 0, finish = function () { if (++done === 2) { fresh = true; if (mT) paint(); b.classList.remove('spin'); } };
+      var opts = force ? { forceCheck: true } : undefined;
+      MzoRows.load('smart_meter_status', function (t, info) {
+        if (t) { mT = t; paint(); return; }
+        if (info && info.error && !mT) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; }
+      }, opts).then(finish, finish);
+      MzoRows.load('smart_meter_work_orders', function (t) {
+        if (t) wT = t; else if (!wT) wT = { rows: [], all: [] };
+        if (mT) paint();
+      }, opts).then(finish, finish);
     }
-    $('refreshBtn').addEventListener('click', function () { if (!this.classList.contains('spin')) load(); });
-    load();
+    $('refreshBtn').addEventListener('click', function () { if (!this.classList.contains('spin')) load(true); });
+    load(false);
   });
   </script>
 </body>
