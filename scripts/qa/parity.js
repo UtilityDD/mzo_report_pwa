@@ -271,7 +271,8 @@ function extractPage(opts) {
   document.querySelectorAll('.ui-opts').forEach((g, gi) => {
     const gk = g.id || ('facet' + gi);
     g.querySelectorAll('.ui-opt').forEach((o) => {
-      const lab = txt(o.querySelector('span')) || o.getAttribute('data-v') || '?';
+      const labEl = o.querySelector('span[title]') || [].find.call(o.querySelectorAll('span'), (x) => txt(x));
+      const lab = txt(labEl) || o.getAttribute('data-v') || '?';
       facets[uniqKey(facets, gk + '/' + lab)] = txt(o.querySelector('small'));
     });
   });

@@ -108,6 +108,8 @@ const md = (s) => String(s == null ? '' : s).replace(/\|/g, '\\|').replace(/\n/g
 const ms = (x) => (x == null ? '–' : x < 0 ? 'no data' : x >= 10000 ? (x / 1000).toFixed(1) + ' s' : x + ' ms');
 const ratio = (a, b) => (a > 0 && b > 0 ? (a / b).toFixed(1) + '×' : '–');
 const median = (xs) => { const v = xs.filter((x) => x != null && x >= 0).sort((p, q) => p - q); if (!v.length) return null; const m = v.length >> 1; return v.length % 2 ? v[m] : Math.round((v[m - 1] + v[m]) / 2); };
+const SHEETS = /^(docs\.google\.com|doc-[\w-]+-sheets\.googleusercontent\.com)$/i;
+function sheetReqs(load) { if (!load || !load.net) return null; let n = 0; for (const [h, c] of Object.entries(load.net.byHost || {})) if (SHEETS.test(h.replace(/:\d+$/, ''))) n += c; return n; }
 function googleReqs(load) { if (!load || !load.net) return null; let n = 0; for (const [h, c] of Object.entries(load.net.byHost || {})) if (GOOGLE.test(h.replace(/:\d+$/, ''))) n += c; return n; }
 function bytesKB(load, onlyGoogle) { if (!load || !load.net) return null; let n = 0; for (const [h, c] of Object.entries(load.net.bytesByHost || {})) if (!onlyGoogle || GOOGLE.test(h.replace(/:\d+$/, ''))) n += c; return Math.round(n / 1024); }
 function errList(load) {
@@ -183,7 +185,7 @@ function main() {
     const ac = getLoad(ra, 'desktop', 'cold'), bc = getLoad(rb, 'desktop', 'cold'), aw = getLoad(ra, 'desktop', 'warm'), bw = getLoad(rb, 'desktop', 'warm');
     const ap = getLoad(ra, 'phone', 'cold'), bp = getLoad(rb, 'phone', 'cold');
     const t = (l) => (l && l.timing ? (l.timing.incomplete || (l.timing.finalDataMs == null && l.settledReason !== 'stable+idle') ? -1 : l.timing.finalDataMs) : null);
-    timing.push({ key: k, name, aCold: t(ac), bCold: t(bc), aWarm: t(aw), bWarm: t(bw), aPhone: t(ap), bPhone: t(bp), aG: googleReqs(ac), bG: googleReqs(bc), aKB: bytesKB(ac), bKB: bytesKB(bc), aGKB: bytesKB(ac, true), bGKB: bytesKB(bc, true), aReq: ac && ac.net ? ac.net.total : null, bReq: bc && bc.net ? bc.net.total : null, mis: pageMis, vol: pageVol });
+    timing.push({ key: k, name, aCold: t(ac), bCold: t(bc), aWarm: t(aw), bWarm: t(bw), aPhone: t(ap), bPhone: t(bp), aG: googleReqs(ac), bG: googleReqs(bc), aS: sheetReqs(ac), bS: sheetReqs(bc), aKB: bytesKB(ac), bKB: bytesKB(bc), aGKB: bytesKB(ac, true), bGKB: bytesKB(bc, true), aReq: ac && ac.net ? ac.net.total : null, bReq: bc && bc.net ? bc.net.total : null, mis: pageMis, vol: pageVol });
     for (const [vp, ph] of PHASES) {
       const a = getLoad(ra, vp, ph), b = getLoad(rb, vp, ph);
       const ea = errList(a), eb = errList(b);
@@ -210,6 +212,8 @@ function main() {
   L.push(`- Median time to final data paint, desktop cold: ${la} ${ms(med((t) => t.aCold))}, ${lb} ${ms(med((t) => t.bCold))}; warm: ${la} ${ms(med((t) => t.aWarm))}, ${lb} ${ms(med((t) => t.bWarm))}.`);
   const sumG = (f) => timing.reduce((s, t) => s + (f(t) || 0), 0);
   L.push(`- Requests to Google hosts on cold loads (all pages): ${la} ${sumG((t) => t.aG)}, ${lb} ${sumG((t) => t.bG)}. Bytes from Google: ${la} ${Math.round(sumG((t) => t.aGKB) / 1024)} MB, ${lb} ${Math.round(sumG((t) => t.bGKB) / 1024)} MB.`);
+  const stillSheets = timing.filter((t) => t.bS > 0).map((t) => t.key + ' (' + t.bS + ')');
+  L.push(`- Pages that still fetched Google Sheets in ${lb} (cold): ${stillSheets.length ? stillSheets.join(', ') : 'none'}.`);
   const newErr = errors.filter((e) => e.newInB.length);
   L.push(`- Pages with errors new in ${lb}: ${new Set(newErr.map((e) => e.page)).size}.`);
   if (status.length) { L.push('', '### Page status', ''); status.forEach((s) => L.push(`- \`${s.key}\` (${s.url}): ${md(s.note)}`)); }
@@ -245,10 +249,11 @@ function main() {
     L.push('');
   }
 
-  L.push('## Timing', '', 'Time from navigation start to the moment the page first shows its final numbers (stat cards, table counts, totals). Cold = fresh browser profile; warm = same profile, page opened again (IndexedDB and HTTP cache filled). Google = requests to Google hosts on the cold load.', '');
+  L.push('## Timing', '', 'Time from navigation start to the moment the page first shows its final numbers (stat cards, table counts, totals). Cold = fresh browser profile; warm = same profile, page opened again (IndexedDB and HTTP cache filled). Sheet req = requests to Google Sheets on the cold load; Google req = all Google hosts (also Apps Script, map tiles, embeds); KB = bytes received on the cold load.', '');
   const tableRows = (list) => {
-    L.push(`| Page | Cold ${la} | Cold ${lb} | Speed-up | Warm ${la} | Warm ${lb} | Speed-up | Phone ${la} | Phone ${lb} | Google req ${la}/${lb} | KB ${la}/${lb} |`, '|---|---|---|---|---|---|---|---|---|---|---|');
-    list.forEach((t) => L.push(`| ${md(t.key)} | ${ms(t.aCold)} | ${ms(t.bCold)} | ${ratio(t.aCold, t.bCold)} | ${ms(t.aWarm)} | ${ms(t.bWarm)} | ${ratio(t.aWarm, t.bWarm)} | ${ms(t.aPhone)} | ${ms(t.bPhone)} | ${t.aG == null ? '–' : t.aG}/${t.bG == null ? '–' : t.bG} | ${t.aKB == null ? '–' : t.aKB}/${t.bKB == null ? '–' : t.bKB} |`));
+    const n = (x) => (x == null ? '–' : x);
+    L.push(`| Page | Cold ${la} | Cold ${lb} | Speed-up | Warm ${la} | Warm ${lb} | Speed-up | Phone ${la} | Phone ${lb} | Sheet req | Google req | KB |`, '|---|---|---|---|---|---|---|---|---|---|---|---|');
+    list.forEach((t) => L.push(`| ${md(t.key)} | ${ms(t.aCold)} | ${ms(t.bCold)} | ${ratio(t.aCold, t.bCold)} | ${ms(t.aWarm)} | ${ms(t.bWarm)} | ${ratio(t.aWarm, t.bWarm)} | ${ms(t.aPhone)} | ${ms(t.bPhone)} | ${n(t.aS)} → ${n(t.bS)} | ${n(t.aG)} → ${n(t.bG)} | ${n(t.aKB)} → ${n(t.bKB)} |`));
   };
   L.push('### Key pages', '');
   tableRows(timing.filter((t) => KEY_PAGES.includes(t.key)).sort((x, y) => KEY_PAGES.indexOf(x.key) - KEY_PAGES.indexOf(y.key)));
