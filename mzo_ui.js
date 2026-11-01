@@ -4,7 +4,8 @@
  *   Format   UI.n / inr / pct / esc / blank / date / fmtDate / days / age / title
  *   Data     UI.csv(text) → row objects · UI.load(key, render) · UI.refresh(btn, key, onText) · UI.office(code, name) · UI.regionName(s)
  *   Filters  UI.fill(select, values, allLabel) / mark / uniq / offices(rows) / lockScope · UI.facet · UI.sidePanel · UI.drill
- *   Views    UI.table(el, cfg) · UI.bar · UI.hist(el, rows, { onClick, active }) · UI.line(el, cfg)
+ *   Views    UI.table(el, cfg) · UI.bar(v, max, label, tone) · UI.hist(el, rows, { onClick, active, tone }) · UI.line(el, cfg)
+ *   Colour   UI.color(tone): 1–6 → categorical --mzo-c1…c6 · 'ok' | 'warn' | 'bad' → status marks · 'accent' · 'muted'
  *   Misc     UI.exportCsv(name, columns, rows) · UI.toast · UI.debounce · UI.copy · UI.drawer · UI.icon
  */
 (function (w) {
@@ -247,27 +248,42 @@
     };
   }
 
-  function bar(v, max, label) {
-    var w2 = max > 0 ? Math.max(v > 0 ? 2 : 0, Math.round((v / max) * 100)) : 0;
-    return '<div class="ui-bar"><i><b style="width:' + w2 + '%"></b></i>' + (label != null ? '<span>' + esc(label) + '</span>' : '') + '</div>';
+  /* ---------- colour ----------
+   * One palette for every chart (tokens in mzo_theme.css). Categorical slots carry identity and are
+   * never cycled: past six a series goes muted. Status colours carry state and always sit beside a label. */
+  var SLOTS = 6;
+  function color(t) {
+    if (t == null || t === '') return '';
+    if (typeof t === 'number' || /^\d+$/.test(t)) { t = +t; return t >= 1 && t <= SLOTS ? 'var(--mzo-c' + t + ')' : 'var(--mzo-chart-muted)'; }
+    if (t === 'ok' || t === 'warn' || t === 'bad') return 'var(--mzo-' + t + '-mark)';
+    if (t === 'accent' || t === 'muted') return t === 'accent' ? 'var(--mzo-accent)' : 'var(--mzo-chart-muted)';
+    return String(t).replace(/[^#\w(),.%\s-]/g, '');
   }
 
-  // rows: [{ label, value, key }]
+  // Share / progress bar for a table cell. tone: see color() (default: slot 1).
+  function bar(v, max, label, tone) {
+    var w2 = max > 0 ? Math.max(v > 0 ? 2 : 0, Math.round((v / max) * 100)) : 0;
+    return '<div class="ui-bar"' + (tone ? ' style="--bar:' + color(tone) + '"' : '') + '><i><b style="width:' + w2 + '%"></b></i>' + (label != null ? '<span>' + esc(label) + '</span>' : '') + '</div>';
+  }
+
+  // rows: [{ label, value, key, tone }] · opts.tone colours every bar (default: slot 1)
   function hist(el, rows, opts) {
     if (typeof el === 'string') el = document.getElementById(el);
     opts = opts || {};
     var max = Math.max.apply(null, rows.map(function (r) { return r.value; }).concat([0]));
     el.className = 'ui-hist';
+    el.style.setProperty('--bar', color(opts.tone) || 'var(--mzo-chart)');
     el.innerHTML = rows.map(function (r, i) {
       var on = opts.active != null && opts.active === r.key;
-      return '<div class="row' + (opts.onClick ? ' click' : '') + (on ? ' on' : '') + '" data-i="' + i + '"><span title="' + esc(r.label) + '">' + esc(r.label) + '</span><i><b style="width:' + (max ? Math.max(r.value ? 1.5 : 0, (r.value / max) * 100) : 0) + '%"></b></i><span>' + n(r.value) + '</span></div>';
+      return '<div class="row' + (opts.onClick ? ' click' : '') + (on ? ' on' : '') + '" data-i="' + i + '"><span title="' + esc(r.label) + '">' + esc(r.label) + '</span><i><b style="width:' + (max ? Math.max(r.value ? 1.5 : 0, (r.value / max) * 100) : 0) + '%' + (r.tone ? ';--bar:' + color(r.tone) : '') + '"></b></i><span>' + n(r.value) + '</span></div>';
     }).join('');
     el.onclick = opts.onClick ? function (e) { var row = e.target.closest('.row'); if (row) opts.onClick(rows[+row.getAttribute('data-i')]); } : null;
   }
 
   /* ---------- filter side panel ----------
    * UI.facet(el, opts, value, onChange): toggle options with counts.
-   *   opts: [{ value, label, count }] — clicking the chosen option again clears it (onChange('')).
+   *   opts: [{ value, label, count, dot }] — clicking the chosen option again clears it (onChange('')).
+   *   dot: 'ok' | 'warn' | 'bad' | 'accent' | 'c1'…'c6' draws a small status / identity dot before the label.
    * UI.sidePanel({ side, toggle, label, count, clear, onClear }): wires the panel header,
    *   the narrow-screen toggle, and returns setActive(n) to show "n on". */
   function facet(el, opts, value, onChange) {
@@ -278,7 +294,7 @@
     var cur = value == null ? '' : String(value);
     el.innerHTML = opts.map(function (o) {
       var on = cur !== '' && cur === String(o.value);
-      return '<button type="button" class="ui-opt' + (o.count || on ? '' : ' zero') + '" role="radio" aria-checked="' + on + '" data-v="' + esc(o.value) + '"><i></i><span title="' + esc(o.label) + '">' + esc(o.label) + '</span>' + (o.count != null ? '<small>' + n(o.count) + '</small>' : '') + '</button>';
+      return '<button type="button" class="ui-opt' + (o.count || on ? '' : ' zero') + '" role="radio" aria-checked="' + on + '" data-v="' + esc(o.value) + '"><i></i>' + (o.dot ? '<span class="ui-dot ' + esc(o.dot) + '"></span>' : '') + '<span title="' + esc(o.label) + '">' + esc(o.label) + '</span>' + (o.count != null ? '<small>' + n(o.count) + '</small>' : '') + '</button>';
     }).join('');
     el.onclick = function (e) {
       var b = e.target.closest('.ui-opt'); if (!b) return;
@@ -412,8 +428,22 @@
   }
 
   /* ---------- line chart (inline SVG, no library) ----------
-   * series: [{ label, values: [number|null], strong: bool }]  labels: x labels
-   * fmt(v) formats tooltip/axis values. The strongest series draws in text colour. */
+   * series: [{ label, values: [number|null], strong: bool, color }]  labels: x labels
+   * fmt(v) formats tooltip/axis values.
+   * Colour follows the series, not its rank: se.color (slot 1–6, 'ok' | 'warn' | 'bad', or a CSS colour) wins;
+   * otherwise the strong series takes slot 1 and the others take 2, 3… counted back from the end (so the
+   * current year is always slot 1 and last year slot 2). With more than six series, or cfg.emphasis, only
+   * the strong series is coloured and the rest are muted grey. */
+  function lineColors(series, emphasis) {
+    var strong = series.some(function (se) { return se.strong; }), next = strong ? 2 : 1, out = new Array(series.length);
+    for (var k = 0; k < series.length; k++) {
+      var i = strong ? series.length - 1 - k : k, se = series[i];
+      if (se.color != null) out[i] = color(se.color);
+      else if (se.strong) out[i] = color(1);
+      else out[i] = emphasis ? '' : color(next++);
+    }
+    return out;
+  }
   function line(el, cfg) {
     if (typeof el === 'string') el = document.getElementById(el);
     // Draw at the element's real pixel width so text stays 11px; redraw on resize.
@@ -437,6 +467,7 @@
     var widest = 0;
     for (var gg = lo; gg <= hi + step / 2; gg += step) widest = Math.max(widest, String(cfg.axis ? cfg.axis(gg) : fmt(gg)).length);
     P.l = Math.max(36, Math.ceil(widest * 6.4) + 14);
+    var emphasis = !!cfg.emphasis || series.length > SLOTS, cols = lineColors(series, emphasis);
     var x = function (i) { return P.l + (labels.length < 2 ? 0 : i * (W - P.l - P.r) / (labels.length - 1)); };
     var y = function (v) { return P.t + (1 - (v - lo) / (hi - lo)) * (H - P.t - P.b); };
     var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" class="ui-chart" role="img" aria-label="' + esc(cfg.title || 'Trend') + '">';
@@ -450,14 +481,15 @@
     series.forEach(function (se, si) {
       var d = '', pen = false;
       se.values.forEach(function (v, i) { if (v == null || !isFinite(v)) { pen = false; return; } d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); pen = true; });
-      var op = se.strong ? 1 : Math.max(0.28, 0.75 - (series.length - 1 - si) * 0.18);
-      s += '<path d="' + d + '" class="ln' + (se.strong ? ' strong' : '') + '" style="opacity:' + op + '"/>';
-      if (se.strong) se.values.forEach(function (v, i) { if (v != null && isFinite(v)) s += '<circle cx="' + x(i) + '" cy="' + y(v) + '" r="2.6" class="pt"/>'; });
+      var c = cols[si], op = se.strong || c ? 1 : Math.max(0.28, 0.75 - (series.length - 1 - si) * 0.18);
+      s += '<path d="' + d + '" class="ln' + (se.strong ? ' strong' : '') + '" style="opacity:' + op + (c ? ';stroke:' + c : '') + '"/>';
+      if (se.strong) se.values.forEach(function (v, i) { if (v != null && isFinite(v)) s += '<circle cx="' + x(i) + '" cy="' + y(v) + '" r="2.6" class="pt"' + (c ? ' style="stroke:' + c + '"' : '') + '/>'; });
     });
     s += '<line class="guide" visibility="hidden" y1="' + P.t + '" y2="' + (H - P.b) + '" x1="0" x2="0"/>';
     labels.forEach(function (_, i) { var half = (W - P.l - P.r) / Math.max(1, labels.length - 1) / 2; s += '<rect class="hit" data-i="' + i + '" x="' + (x(i) - half) + '" y="0" width="' + half * 2 + '" height="' + H + '"/>'; });
     s += '</svg>';
-    var legend = '<div class="ui-legend">' + series.map(function (se, si) { var op = se.strong ? 1 : Math.max(0.28, 0.75 - (series.length - 1 - si) * 0.18); return '<span><i style="opacity:' + op + '" class="' + (se.strong ? 'strong' : '') + '"></i>' + esc(se.label) + '</span>'; }).join('') + '</div>';
+    var key = function (si) { var c = cols[si], op = series[si].strong || c ? 1 : Math.max(0.28, 0.75 - (series.length - 1 - si) * 0.18); return 'opacity:' + op + (c ? ';background:' + c : ''); };
+    var legend = '<div class="ui-legend">' + series.map(function (se, si) { return '<span><i style="' + key(si) + '" class="' + (se.strong ? 'strong' : '') + '"></i>' + esc(se.label) + '</span>'; }).join('') + '</div>';
     el.innerHTML = '<div class="ui-chart-wrap">' + s + '<div class="ui-tip" hidden></div></div>' + legend;
     var svg = el.querySelector('svg'), tip = el.querySelector('.ui-tip'), guide = el.querySelector('.guide');
     svg.addEventListener('pointermove', function (e) {
@@ -465,7 +497,7 @@
       if (!r) return;
       var i = +r.getAttribute('data-i');
       guide.setAttribute('x1', x(i)); guide.setAttribute('x2', x(i)); guide.setAttribute('visibility', 'visible');
-      tip.innerHTML = '<b>' + esc(cfg.tipLabels ? cfg.tipLabels[i] : labels[i]) + '</b>' + series.slice().reverse().map(function (se) { var v = se.values[i]; return '<div><span>' + esc(se.label) + '</span><span>' + (v == null ? '—' : esc(fmt(v))) + '</span></div>'; }).join('');
+      tip.innerHTML = '<b>' + esc(cfg.tipLabels ? cfg.tipLabels[i] : labels[i]) + '</b>' + series.map(function (se, si) { var v = se.values[i]; return '<div><span>' + (series.length > 1 ? '<i style="' + key(si) + '"></i>' : '') + esc(se.label) + '</span><span>' + (v == null ? '—' : esc(fmt(v))) + '</span></div>'; }).reverse().join('');
       tip.hidden = false;
       var box = svg.getBoundingClientRect(), px = (x(i) / W) * box.width;
       tip.style.left = Math.min(box.width - tip.offsetWidth - 4, Math.max(4, px + 12)) + 'px';
@@ -557,7 +589,7 @@
     n: n, inr: inr, pct: pct, esc: esc, blank: blank, date: date, fmtDate: fmtDate, days: days, age: age, title: title,
     csv: csv, office: office, regionName: regionName, load: load, refresh: refresh,
     fill: fill, mark: mark, uniq: uniq, offices: offices, lockScope: lockScope,
-    table: table, bar: bar, hist: hist, line: line, facet: facet, sidePanel: sidePanel, drill: drill,
+    table: table, bar: bar, hist: hist, line: line, color: color, facet: facet, sidePanel: sidePanel, drill: drill,
     exportCsv: exportCsv, toast: toast, debounce: debounce, copy: copy, drawer: drawer, icon: icon
   };
 })(window);
