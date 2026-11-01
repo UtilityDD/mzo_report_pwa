@@ -103,6 +103,41 @@ SSH: `ssh -i ssh-key-2026-11-01.key opc@130.210.43.11` (the key is not in the re
 
 PocketBase settings set by `pb-setup.sh`: batch API on, client IP from Caddy's `X-Forwarded-For`, rate limits on with 127.0.0.1 exempt (the sync talks to it directly), app URL `https://data.130.210.43.11.sslip.io`. Batch size, timeouts and log retention come from the settings migration in `vm/pocketbase/pb_migrations/`.
 
+## VM-only admin accounts
+
+Admin accounts that exist only on the VM: never in Supabase, never on Vercel. They are listed in `MZO_LOCAL_ADMINS` in `/etc/mzo/app.env`, which holds password hashes only (systemd reads the file as root, so `chmod 600` is enough). One entry per account, separated by `;`:
+
+```
+username|Display Name|scrypt$N$r$p$saltBase64$hashBase64
+```
+
+How they behave (`lib/local_admins.js`, tests in `vm/dev/test-local-admin.js`):
+
+- Sign in on the normal page with the username and the password in the PIN field. The username is case-insensitive.
+- Such a username is checked against its hash only, never against Supabase. A Supabase user with the same name cannot sign in on the VM, so pick a username that is not in `portal_users`.
+- The session carries the full admin profile (the same fields as the Google root admin) with `auth_provider: 'local'`. Session checks and permission checks never look it up in Supabase, so it is never demoted.
+- Five failed attempts for one username, or from one client IP, lock that username or IP for a minute. A locked attempt gets the ordinary "Invalid Username or PIN." answer; the journal records each failure and lockout (`journalctl -u mzo-reports | grep 'Local admin'`).
+- Its activity (sign-in, admin actions) goes to the journal (`grep Activity`), not to Supabase's activity log. What the admin changes (users, Power Map, uploads, syncs) still goes to production, like any admin's changes.
+- Changing or removing an entry ends that account's open sessions once the app restarts.
+
+**Add an account.** Hash the password (typed twice, never shown, never on the command line), add the entry, restart:
+
+```bash
+node /opt/mzo/app/scripts/tools/hash-password.js roumak "Roumak Das"   # or from a local checkout
+# → roumak|Roumak Das|scrypt$32768$8$1$…
+sudo vi /etc/mzo/app.env
+#   MZO_LOCAL_ADMINS='roumak|Roumak Das|scrypt$32768$8$1$…'
+#   (several: 'entry1;entry2'; keep the single quotes so nothing in the hash is expanded)
+sudo systemctl restart mzo-reports
+journalctl -u mzo-reports -n 30 | grep 'Local admin'   # "1 VM-only admin account(s): roumak"
+```
+
+A malformed entry is skipped with a warning that names its position, never its contents. The helper refuses passwords shorter than 10 characters or starting or ending with a space (the sign-in page trims what is typed).
+
+**Change a password.** Run the helper again for the same username, replace that entry in `/etc/mzo/app.env`, and run `sudo systemctl restart mzo-reports`. Sessions signed in with the old password end.
+
+**Remove an account.** Delete its entry (or the whole `MZO_LOCAL_ADMINS` line), then `sudo systemctl restart mzo-reports`. Its sessions end. With the variable unset the app behaves exactly as on Vercel.
+
 ## Logs
 
 ```bash
