@@ -5,7 +5,10 @@
  *
  * - Old project (unsmtschmcvftfqwabaq): every table the anon key can read, in the
  *   public, mzo_insight and powermap schemas, through PostgREST in 1000-row pages.
- * - New project (gmasnqebdogtavoudbke): the public Storage snapshot CSVs (no key).
+ * - New project (gmasnqebdogtavoudbke): the public Storage snapshot CSVs (no key), and,
+ *   when INSIGHT_LIVE is on with INSIGHT_SUPABASE_URL and INSIGHT_SUPABASE_KEY set (as the
+ *   app's server.js uses them), the mzo_insight tables marked `insight` below: production
+ *   reads logins, logs and the stock ledger from there. Still GET only.
  *
  * The anon key comes from env SUPABASE_ANON_KEY, else from SUPABASE_FALLBACK_ANON_KEY
  * in the repo's server.js, read at runtime.
@@ -41,6 +44,22 @@ const IMPORTANT = 'Important';
 /** A PostgREST URL on the old project, as server.js builds it (`${url}/rest/v1/${apiPath}`). */
 const REST = (apiPath) => `${OLD.url}/rest/v1/${apiPath}`;
 
+/** The Insight project when it is live (same rule as server.js), else null. Set by sources(). */
+let INSIGHT_ = null;
+function insightCfg(env) {
+    const on = /^(1|true|yes)$/i.test(String((env && env.INSIGHT_LIVE) || '').trim());
+    const url = String((env && env.INSIGHT_SUPABASE_URL) || '').trim().replace(/\/+$/, '');
+    const key = String((env && env.INSIGHT_SUPABASE_KEY) || '').trim();
+    if (!on || !url || !key) return null;
+    let ref = '';
+    try { ref = new URL(url).host.split('.')[0]; } catch (_) { throw new Error('INSIGHT_SUPABASE_URL is not a URL'); }
+    const p = jwtPayload_(key);
+    if (p && p.ref && ref && p.ref !== ref) throw new Error(`INSIGHT_SUPABASE_KEY is for project ${p.ref}, not ${ref}`);
+    return { url, key, ref: ref || NEW.ref };
+}
+/** The REST base for a key: the Insight project for its key, else the old project. */
+const baseFor_ = (key) => (INSIGHT_ && key === INSIGHT_.key ? INSIGHT_.url : OLD.url);
+
 /**
  * Old-project tables. key → ds_<key>. primaryKey = source column names.
  * order: sort columns when there is no single-column key (pages then use offset).
@@ -53,33 +72,33 @@ const REST = (apiPath) => `${OLD.url}/rest/v1/${apiPath}`;
  */
 const TABLES = [
     // mzo_insight: login, logs, stock ledger, SI works, important sheets
-    { key: 'portal_users', schema: 'mzo_insight', table: 'portal_users', label: 'Portal users', group: ADMIN,
+    { insight: true, key: 'portal_users', schema: 'mzo_insight', table: 'portal_users', label: 'Portal users', group: ADMIN,
         pages: ['admin_users.html?tab=users', 'login.html'], schedule: 'hourly', primaryKey: ['id'],
         sensitive: true, notes: 'Login accounts and module flags, copied as-is including PIN.' },
-    { key: 'activity_logs', schema: 'mzo_insight', table: 'activity_logs', label: 'Activity logs', group: ADMIN,
+    { insight: true, key: 'activity_logs', schema: 'mzo_insight', table: 'activity_logs', label: 'Activity logs', group: ADMIN,
         pages: ['admin_users.html?tab=activity'], schedule: 'hourly', primaryKey: ['id'], versionColumns: ['id'],
         sensitive: true, notes: 'Append-only portal activity log (usernames, names, pages visited).' },
     { key: 'si_works', schema: 'mzo_insight', table: 'prioritySI', label: 'Priority SI works', group: IMPORTANT,
         pages: ['si-works/si.html'], schedule: 'hourly', primaryKey: ['id'],
         raw: { query: 'select=*' }, urls: [REST('prioritySI?select=*')],
         notes: 'si-works/si.html reads and edits this table directly with the anon key (supabase-js select).' },
-    { key: 'stock_allotments', schema: 'mzo_insight', table: 'stock_allotments', label: 'Stock allotments', group: IMPORTANT,
+    { insight: true, key: 'stock_allotments', schema: 'mzo_insight', table: 'stock_allotments', label: 'Stock allotments', group: IMPORTANT,
         pages: ['stock/index.html'], schedule: 'frequent', primaryKey: ['id'],
         raw: { query: 'select=*&order=date.desc,allotment_no.desc', paged: true },
         urls: [REST('stock_allotments?select=*&order=date.desc,allotment_no.desc&limit=1000&offset=0')],
         notes: 'Allotment and diversion ledger (Allot Material / View Allotments); /api/stock/allotment lists it.' },
-    { key: 'stock_allot_seq', schema: 'mzo_insight', table: 'stock_allot_seq', label: 'Stock allotment number sequence', group: IMPORTANT,
+    { insight: true, key: 'stock_allot_seq', schema: 'mzo_insight', table: 'stock_allot_seq', label: 'Stock allotment number sequence', group: IMPORTANT,
         pages: ['stock/index.html'], schedule: 'hourly', primaryKey: ['year'],
         notes: 'Next MZO/ALT/YYYY/#### number per year.' },
-    { key: 'important_unbilled_months', schema: 'mzo_insight', table: 'important_unbilled_months', label: 'Important sheets: unbilled months', group: IMPORTANT,
+    { insight: true, key: 'important_unbilled_months', schema: 'mzo_insight', table: 'important_unbilled_months', label: 'Important sheets: unbilled months', group: IMPORTANT,
         pages: ['important_sheets.html'], schedule: 'frequent', primaryKey: ['id'],
         raw: { query: 'select=*&order=sort_order.asc,id.asc' },
         urls: [REST('important_unbilled_months?select=*&order=sort_order.asc,id.asc')],
         notes: '/api/important-sheets/unbilled lists it (active rows only unless ?all=1).' },
-    { key: 'stock_upload_meta', schema: 'mzo_insight', table: 'stock_upload_meta', label: 'Stock upload history (old database)', group: IMPORTANT,
+    { insight: true, key: 'stock_upload_meta', schema: 'mzo_insight', table: 'stock_upload_meta', label: 'Stock upload history', group: IMPORTANT,
         pages: ['stock/upload.html'], schedule: 'daily', primaryKey: ['id'],
-        notes: 'Upload meta from before the dump moved to Storage (STOCK_USE_STORAGE); no longer written in production.' },
-    { key: 'stock_snapshot_db', schema: 'mzo_insight', table: 'stock_snapshot', label: 'Stock snapshot (old database copy)', group: IMPORTANT,
+        notes: 'Stock dump uploads (who, when, row count). Written in the Insight project since the dump moved to Storage (STOCK_USE_STORAGE).' },
+    { insight: true, key: 'stock_snapshot_db', schema: 'mzo_insight', table: 'stock_snapshot', label: 'Stock snapshot (database copy)', group: IMPORTANT,
         pages: ['stock/index.html'], schedule: 'daily', primaryKey: ['id'],
         notes: 'Database copy of an older stock dump. The live dump is the stock_snapshot Storage CSV.' },
 
@@ -283,7 +302,7 @@ function restHeaders_(key, schema, extra) {
 }
 
 async function restGet_(get, key, schema, table, query, extra) {
-    const url = `${OLD.url}/rest/v1/${encodeURIComponent(table)}?${query}`;
+    const url = `${baseFor_(key)}/rest/v1/${encodeURIComponent(table)}?${query}`;
     const res = await get(url, restHeaders_(key, schema, extra));
     const text = await res.text();
     if (!res.ok) {
@@ -390,7 +409,7 @@ async function rawTableBody_(get, key, def, log) {
     return { text: `[${inner.join(', \n ')}]`, rows };
 }
 
-function tableSource(def, key) {
+function tableSource(def, key, proj) {
     let cached = null; // rows read by version() for small tables, reused once by rows()
     const src = {
         key: def.key,
@@ -398,14 +417,14 @@ function tableSource(def, key) {
         group: def.group,
         pages: def.pages || [],
         sourceType: 'supabase_table',
-        sourceRef: { project: OLD.ref, schema: def.schema, table: def.table },
-        sourceUrl: DASHBOARD_URL,
+        sourceRef: { project: proj ? proj.ref : OLD.ref, schema: def.schema, table: def.table },
+        sourceUrl: proj ? `https://supabase.com/dashboard/project/${proj.ref}/editor` : DASHBOARD_URL,
         schedule: def.schedule || 'hourly',
         primaryKey: def.primaryKey || null,
         columnTypes: def.columnTypes || columnTypesFor(def.schema, def.table),
         notes: def.notes || '',
         dataHubKeys: def.dataHubKeys || [],
-        urls: def.urls || [],
+        urls: (def.urls || []).map((u) => (proj ? String(u).replace(OLD.url, proj.url) : u)),
         sensitive: !!def.sensitive,
 
         /**
@@ -647,10 +666,12 @@ async function openApiExtras_(get, key, log) {
 /** All Supabase sources. ctx = { fetch, log, env, limits }. */
 async function sources(ctx = {}) {
     const key = anonKey(ctx.env || process.env);
+    INSIGHT_ = insightCfg(ctx.env || process.env);
+    if (INSIGHT_ && ctx.log) ctx.log(`Insight tables from project ${INSIGHT_.ref}`);
     const get = httpGet_(ctx);
     const extras = await openApiExtras_(get, key, ctx.log);
     return [
-        ...TABLES.concat(extras).map((def) => tableSource(def, key)),
+        ...TABLES.concat(extras).map((def) => (def.insight && INSIGHT_ ? tableSource(def, INSIGHT_.key, INSIGHT_) : tableSource(def, key))),
         ...STORAGE.map((def) => storageSource(def))
     ];
 }
@@ -666,6 +687,7 @@ module.exports = {
     NEW,
     COLUMNS_FILE,
     anonKey,
+    insightCfg,
     fieldType,
     uniqueHeaders,
     csvRows,

@@ -5,6 +5,7 @@
 | Project | What | Access |
 |---|---|---|
 | Old `unsmtschmcvftfqwabaq` | Tables in `public`, `mzo_insight` and `powermap`, through PostgREST | anon key: env `SUPABASE_ANON_KEY`, else `SUPABASE_FALLBACK_ANON_KEY` read from `server.js` at runtime. A key for another project is refused. |
+| New (Insight) `gmasnqebdogtavoudbke` | The `mzo_insight` tables marked `insight: true` (logins, activity logs, stock ledger and sequence, unbilled months, stock upload history and snapshot copy), when `INSIGHT_LIVE` is on and `INSIGHT_SUPABASE_URL` and `INSIGHT_SUPABASE_KEY` are set, the same switch `server.js` uses. Production runs this way, so the mirror follows it. `prioritySI` exists only on the old project and stays there. | `INSIGHT_SUPABASE_KEY` (service key, server side only, GET only; on the VM in `/etc/mzo/app.env`, root-only). A key for another project is refused. |
 | New `gmasnqebdogtavoudbke` | Public Storage snapshot CSVs | no key, public object URLs |
 
 ## Datasets
