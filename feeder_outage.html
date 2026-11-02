@@ -13,28 +13,46 @@
   <script src="/mzo_rows.js?v=6" defer></script>
 </head>
 <body>
-  <main class="ui-page">
-    <header class="ui-head">
-      <div>
-        <h1>Feeder outage</h1>
-        <p id="meta">Loading…</p>
-      </div>
-      <div class="ui-actions">
-        <span class="ui-select"><select id="monthPick" aria-label="Month"><option value="">All months</option></select></span>
-        <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
-      </div>
-    </header>
-
-    <div class="ui-filters">
+  <aside class="ui-side" id="side" aria-label="Filters">
+    <div class="ui-side-h">
+      <h2>Filters</h2>
+      <span class="ui-side-count" id="matchCount"></span>
+      <button type="button" class="ui-btn ghost sm" id="clearBtn" title="Clear all filters">Clear</button>
+    </div>
+    <div class="ui-side-sec ui-side-stack">
       <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Feeder, substation or code" autocomplete="off" /></label>
+      <span class="ui-select"><select id="monthPick" aria-label="Month"><option value="">All months</option></select></span>
       <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
       <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
       <span class="ui-select"><select id="ssFilter" aria-label="Substation"><option value="">All substations</option></select></span>
-      <span class="ui-select"><select id="catFilter" aria-label="Category"><option value="">All categories</option><option value="R">Rural</option><option value="U">Urban</option><option value="M">Mixed</option></select></span>
-      <span class="ui-select"><select id="natFilter" aria-label="Nature"><option value="">All natures</option><option value="A">Agri</option><option value="O">Others</option><option value="I">Industrial</option><option value="__blank">Not set</option></select></span>
-      <span class="ui-select"><select id="schemeFilter" aria-label="Scheme"><option value="">All schemes</option></select></span>
-      <button type="button" class="ui-btn ghost" id="clearBtn" hidden><svg class="ui-i"><use href="#ui-x"/></svg>Clear</button>
     </div>
+    <div class="ui-side-sec">
+      <div class="ui-side-sec-t">Category</div>
+      <div id="fCat"></div>
+    </div>
+    <div class="ui-side-sec">
+      <div class="ui-side-sec-t">Nature</div>
+      <div id="fNat"></div>
+    </div>
+    <div class="ui-side-sec">
+      <div class="ui-side-sec-t">Scheme</div>
+      <div id="fScheme"></div>
+    </div>
+  </aside>
+
+  <main class="ui-main">
+    <header class="ui-head">
+      <div class="ui-head-title">
+        <button type="button" class="ui-btn icon ui-side-toggle" id="sideToggle" aria-label="Toggle filters" aria-controls="side"><svg class="ui-i"><use href="#ui-filter"/></svg></button>
+        <div>
+          <h1>Feeder outage</h1>
+          <p id="meta">Loading…</p>
+        </div>
+      </div>
+      <div class="ui-actions">
+        <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
+      </div>
+    </header>
 
     <section class="ui-stats" style="--n:5" id="stats" aria-label="Summary">
       <div class="ui-stat"><div class="k">Feeders</div><div class="v" id="sFeeders"><span class="ui-skel"></span></div><div class="s" id="sFeedersS">&nbsp;</div></div>
@@ -49,10 +67,10 @@
         <h2 id="cutTitle">Outage hours per feeder</h2>
         <div class="ui-tabs" role="tablist" id="levelTabs">
           <button type="button" class="ui-tab" role="tab" data-l="all" aria-selected="true">All</button>
-            <button type="button" class="ui-tab" role="tab" data-l="region">Region</button>
-            <button type="button" class="ui-tab" role="tab" data-l="division">Division</button>
-            <button type="button" class="ui-tab" role="tab" data-l="ss">Substation</button>
-            <button type="button" class="ui-tab" role="tab" data-l="feeder">Feeder</button>
+          <button type="button" class="ui-tab" role="tab" data-l="region">Region</button>
+          <button type="button" class="ui-tab" role="tab" data-l="division">Division</button>
+          <button type="button" class="ui-tab" role="tab" data-l="ss">Substation</button>
+          <button type="button" class="ui-tab" role="tab" data-l="feeder">Feeder</button>
         </div>
       </div>
       <div class="ui-panel-b"><div id="chart"><div class="ui-empty">Loading…</div></div><p class="ui-note" id="chartNote" style="margin:8px 0 0"></p></div>
@@ -73,7 +91,19 @@
     var $ = function (id) { return document.getElementById(id); };
     var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     var CAT = { R: 'Rural', U: 'Urban', M: 'Mixed' }, NAT = { A: 'Agri', O: 'Others', I: 'Industrial' };
-    var all = [], monthPick = '', concernOnly = false, level = 'all', scope = null;
+    var all = [], f = { q: '', cat: '', nat: '', scheme: '' }, monthPick = '', concernOnly = false, level = 'all', scope = null;
+    var side = UI.sidePanel('side', {
+      countId: 'matchCount',
+      clearId: 'clearBtn',
+      toggleId: 'sideToggle',
+      onClear: function () {
+        f.q = ''; f.cat = ''; f.nat = ''; f.scheme = '';
+        concernOnly = false; monthPick = ''; $('monthPick').value = '';
+        $('q').value = '';
+        ['regionFilter', 'divisionFilter', 'ssFilter'].forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });
+        fillFilters(); setLevel('all');
+      }
+    });
 
     function mean(a) { if (!a.length) return 0; var s = 0; for (var i = 0; i < a.length; i++) s += a[i]; return s / a.length; }
     function mLabel(m) { return (MON[+String(m).slice(4, 6) - 1] || m) + ' ' + String(m).slice(0, 4); }
@@ -81,8 +111,7 @@
     function dim(m) { return new Date(+String(m).slice(0, 4), +String(m).slice(4, 6), 0).getDate() || 30; }
     function fmtH(n) { return isFinite(n) ? n.toFixed(1) + ' h' : '—'; }
     function fmtDaily(h) { if (!isFinite(h)) return '—'; var min = h * 60; return min >= 90 ? h.toFixed(1) + ' h' : Math.round(min) + ' min'; }
-    // d: a uniform row of schema/feeder_outage.json (trimmed text, numbers, canonical _region /
-    // _division from CIRCLE NAME and DIVISION NAME; the sheet's own spelling when it is not an MZO office).
+
     function normalize(d) {
       var month = d.report_month.replace(/\D/g, '').slice(0, 6), feeder = d.feeder_name;
       if (month.length < 6 || !feeder) return null;
@@ -107,22 +136,24 @@
       UI.fill('divisionFilter', UI.uniq(r1, 'division'), 'All divisions');
       var r2 = r1.filter(function (r) { return !div || r.division === div; });
       UI.fill('ssFilter', UI.uniq(r2, 'substation'), 'All substations');
-      UI.fill('schemeFilter', UI.uniq(all, 'scheme'), 'All schemes');
       if (!scope) scope = UI.lockScope();
-      ['regionFilter', 'divisionFilter', 'ssFilter', 'catFilter', 'natFilter', 'schemeFilter'].forEach(function (id) { UI.mark($(id)); });
+      ['regionFilter', 'divisionFilter', 'ssFilter'].forEach(function (id) { UI.mark($(id)); });
     }
 
-    function base() {
-      var reg = $('regionFilter').value, div = $('divisionFilter').value, ss = $('ssFilter').value,
-        cat = $('catFilter').value, nat = $('natFilter').value, sch = $('schemeFilter').value, q = $('q').value.trim().toLowerCase();
+    function base(skip) {
+      skip = skip || {};
+      var reg = $('regionFilter').value, div = $('divisionFilter').value, ss = $('ssFilter').value, q = f.q.toLowerCase();
       return all.filter(function (r) {
-        return (!reg || r.region === reg) && (!div || r.division === div) && (!ss || r.substation === ss) && (!cat || r.category === cat) &&
-          (nat === '__blank' ? !r.nature : (!nat || r.nature === nat)) && (!sch || r.scheme === sch) && (!q || r.search.indexOf(q) !== -1);
+        return (!reg || r.region === reg) && (!div || r.division === div) && (!ss || r.substation === ss) &&
+          (skip.cat || !f.cat || r.category === f.cat) &&
+          (skip.nat || !f.nat || (f.nat === '__blank' ? !r.nature : r.nature === f.nat)) &&
+          (skip.scheme || !f.scheme || r.scheme === f.scheme) &&
+          (!q || r.search.indexOf(q) !== -1);
       });
     }
 
     function feederKey(r) { return r.code || (r.feeder + '|' + r.substation + '|' + r.division); }
-    // One record per feeder with its months; concern judged on the last month in view.
+
     function feeders(rows) {
       var map = {};
       rows.forEach(function (r) {
@@ -195,7 +226,44 @@
     }
 
     function render() {
-      var b = base(), list = feeders(b);
+      var b = base({}), list = feeders(b);
+
+      // Facets
+      var forCat = base({ cat: true });
+      var catItems = [
+        { key: '', label: 'All categories', count: UI.uniq(forCat.map(feederKey)).length },
+        { key: 'R', label: 'Rural', count: UI.uniq(forCat.filter(function (r) { return r.category === 'R'; }).map(feederKey)).length },
+        { key: 'U', label: 'Urban', count: UI.uniq(forCat.filter(function (r) { return r.category === 'U'; }).map(feederKey)).length },
+        { key: 'M', label: 'Mixed', count: UI.uniq(forCat.filter(function (r) { return r.category === 'M'; }).map(feederKey)).length }
+      ];
+      UI.facet('fCat', catItems, {
+        active: f.cat,
+        onChange: function (key) { f.cat = key; render(); }
+      });
+
+      var forNat = base({ nat: true });
+      var natItems = [
+        { key: '', label: 'All natures', count: UI.uniq(forNat.map(feederKey)).length },
+        { key: 'A', label: 'Agri', count: UI.uniq(forNat.filter(function (r) { return r.nature === 'A'; }).map(feederKey)).length },
+        { key: 'I', label: 'Industrial', count: UI.uniq(forNat.filter(function (r) { return r.nature === 'I'; }).map(feederKey)).length },
+        { key: 'O', label: 'Others', count: UI.uniq(forNat.filter(function (r) { return r.nature === 'O'; }).map(feederKey)).length },
+        { key: '__blank', label: 'Not set', count: UI.uniq(forNat.filter(function (r) { return !r.nature; }).map(feederKey)).length }
+      ];
+      UI.facet('fNat', natItems, {
+        active: f.nat,
+        onChange: function (key) { f.nat = key; render(); }
+      });
+
+      var forScheme = base({ scheme: true });
+      var schemes = UI.uniq(all, 'scheme').filter(Boolean);
+      var schemeItems = [{ key: '', label: 'All schemes', count: UI.uniq(forScheme.map(feederKey)).length }].concat(schemes.map(function (s) {
+        return { key: s, label: s, count: UI.uniq(forScheme.filter(function (r) { return r.scheme === s; }).map(feederKey)).length };
+      }));
+      UI.facet('fScheme', schemeItems, {
+        active: f.scheme,
+        onChange: function (key) { f.scheme = key; render(); }
+      });
+
       // Stats
       var bMonths = UI.uniq(b, 'month');
       var stats = bMonths.map(function (m) { return mean(b.filter(function (r) { return r.month === m; }).map(function (r) { return r.hours; })); });
@@ -229,7 +297,6 @@
         var gs = Object.keys(by).map(function (k) { return { key: k, label: by[k].label, values: avgByMonth(by[k].rows, ms), score: mean(by[k].rows.map(function (r) { return r.hours; })) }; });
         gs.sort(function (a, c) { return c.score - a.score; });
         total = gs.length;
-        // Up to six lines: each office keeps its own colour (alphabetical slot), whatever its rank. More: UI.line greys all but the worst.
         var byKey = gs.map(function (g) { return g.key; }).sort();
         if (gs.length <= 6) gs.forEach(function (g) { g.color = byKey.indexOf(g.key) + 1; });
         var cap = level === 'ss' || level === 'feeder' ? 12 : gs.length;
@@ -274,7 +341,10 @@
       };
       UI.table('feederTable', cfg);
       window.__export = { cols: cols, rows: cutRows };
-      $('clearBtn').hidden = !($('q').value || concernOnly || monthPick || ['regionFilter', 'divisionFilter', 'ssFilter', 'catFilter', 'natFilter', 'schemeFilter'].some(function (id) { return $(id).value && !$(id).disabled; }));
+
+      var hasOffice = ['regionFilter', 'divisionFilter', 'ssFilter'].some(function (id) { return $(id).value && !$(id).disabled; });
+      side.setClear(Boolean(f.q || concernOnly || monthPick || f.cat || f.nat || f.scheme || hasOffice));
+      side.setCount(view.length, list.length);
     }
 
     function detail(f) {
@@ -300,8 +370,6 @@
       render();
     }
 
-    // t.rows: already scoped to the login by MzoRows. A body without the REPORT MONTH header (a
-    // sign-in page, a renamed sheet) is not the outage sheet.
     function prepare(t) {
       if (!t.columns.some(function (c) { return c.name === 'report_month' && c.source_name; })) { $('meta').textContent = 'Feeder outage sheet did not load'; return false; }
       all = t.rows.map(normalize).filter(Boolean);
@@ -318,7 +386,6 @@
       return true;
     }
 
-    /* events */
     ['regionFilter', 'divisionFilter', 'ssFilter'].forEach(function (id) {
       $(id).addEventListener('change', function () {
         if (id === 'regionFilter') { $('divisionFilter').value = ''; $('ssFilter').value = ''; }
@@ -326,22 +393,15 @@
         fillFilters(); render();
       });
     });
-    ['catFilter', 'natFilter', 'schemeFilter'].forEach(function (id) { $(id).addEventListener('change', function () { UI.mark(this); render(); }); });
     $('monthPick').addEventListener('change', function () { monthPick = this.value; UI.mark(this); render(); });
-    $('q').addEventListener('input', UI.debounce(render, 160));
+    $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim(); render(); }, 160));
     $('concernStat').addEventListener('click', function () { concernOnly = !concernOnly; render(); });
     $('levelTabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-tab'); if (t) setLevel(t.getAttribute('data-l')); });
-    $('clearBtn').addEventListener('click', function () {
-      $('q').value = ''; concernOnly = false; monthPick = ''; $('monthPick').value = ''; UI.mark($('monthPick'));
-      ['regionFilter', 'divisionFilter', 'ssFilter', 'catFilter', 'natFilter', 'schemeFilter'].forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });
-      fillFilters(); setLevel('all');
-    });
     $('exportBtn').addEventListener('click', function () {
       var ex = window.__export; if (!ex) return;
       UI.exportCsv('feeder-outage.csv', ex.cols.map(function (c) { return { key: c.key, label: c.label, csv: c.csv || function (r) { var v = r[c.key]; return typeof v === 'number' ? +v.toFixed(2) : v; } }; }), ex.rows);
     });
 
-    // Google's published CSV has no ETag: always check so a same-day replace is picked up (docs/reports.md).
     function load(force) {
       var b = $('refreshBtn');
       if (!window.MzoRows) { $('meta').textContent = 'Data hub is not available'; return; }

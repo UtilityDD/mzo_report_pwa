@@ -23,9 +23,9 @@ module.exports = {
     selectValues: { probFilter: ['No power', 'Meter Burnt Problem', 'Abnormally high bill'] }
   },
   historical_nsc: {
-    url: 'historical_nsc.html', key: 'historical_nsc', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', fdp: '#officeTable', record: MAIN,
-    drillRows: '#officeTable tbody tr.click', buttons: ['#period button'], deep: [],
-    selectValues: { yearFilter: ['2026', '2025', '2023', '2020'] }
+    url: 'historical_nsc.html', key: 'historical_nsc', stats: '#kpis .ui-stat', tabs: '#tabs .ui-drill-tab', asOn: '#asOn', fdp: '#table', record: MAIN,
+    drillRows: '#table tbody tr.click', buttons: ['#period button'],
+    deep: ['?region=Raiganj', '?division=Gazole', '?ccc=Kaliyaganj', '?year=2025', '?class=D', '?period=year&tab=periods', '?tab=season']
   },
   upcoming_dd: {
     url: 'dd/upcomingDD.html', key: 'upcoming_dd', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', fdp: '#officeTable', record: MAIN,
@@ -43,8 +43,8 @@ module.exports = {
     selectValues: { typeFilter: ['10-60A', '5-30A'], lotFilter: ['1st lot', '4th lot'] }
   },
   meter_utilization: {
-    url: 'meter_utilization.html', key: 'meter_erp', stats: '#none', tabs: '#levelTabs .ui-tab', asOn: '#meta', fdp: '#officeTable', record: MAIN,
-    drillRows: '#officeTable tbody tr.click', list: '#appTable tbody tr.click', hists: true, buttons: ['#phase button'], clock: CLOCK, settle: 1500, deep: [],
-    selectValues: { typeFilter: ['smart', 'normal'] }
+    url: 'meter_utilization.html', key: 'meter_erp', stats: '#kpis .ui-stat', tabs: '#tabs .ui-drill-tab', asOn: '#asOn', fdp: '#table', record: MAIN,
+    drillRows: '#table tbody tr.click', list: '#table tbody tr.click', clock: CLOCK, settle: 1500,
+    deep: ['?region=Raiganj', '?division=Gazole', '?ccc=Kaliyaganj', '?kpi=hand', '?kpi=old', '?kpi=nsc', '?kpi=rep', '?kpi=used']
   }
 };

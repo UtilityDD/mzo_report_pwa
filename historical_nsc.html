@@ -12,11 +12,21 @@
   <script src="/mzo_scope.js?v=17" defer></script>
   <script src="/mzo_rows.js?v=6" defer></script>
   <style>
-    .hs-chart { position: relative; display: flex; align-items: flex-end; gap: 2px; height: 200px; padding-left: 44px; }
+    .ui-head { align-items: center; }
+    .cl-kpis .ui-stat { padding: 13px 14px 14px; }
+    .cl-hint { padding: 8px 16px; color: var(--mzo-muted); font-size: 12.5px; border-bottom: 1px solid var(--mzo-border); }
+    .cl-hint:empty { display: none; }
+    .hs-side-seg { display: flex; }
+    .hs-side-seg button { flex: 1 1 0; }
+
+    /* Trend chart */
+    .hs-wrap { padding: 18px 16px 14px; }
+    .hs-chart { position: relative; display: flex; align-items: flex-end; gap: 2px; height: 240px; padding-left: 44px; }
     .hs-chart .col { position: relative; flex: 1 1 0; min-width: 1px; height: 100%; border-radius: 2px; }
     .hs-chart .col:hover { background: var(--mzo-row-hover); }
     .hs-chart .col b { position: absolute; left: 12%; right: 12%; bottom: 0; border-radius: 2px 2px 0 0; background: var(--mzo-chart); }
     .hs-chart .col:hover b { background: var(--mzo-text); }
+    .hs-avg { position: absolute; left: 44px; right: 0; border-top: 1px dashed var(--mzo-muted); pointer-events: none; }
     .hs-grid { position: absolute; left: 44px; right: 0; height: 1px; background: var(--mzo-border); pointer-events: none; }
     .hs-grid span { position: absolute; right: calc(100% + 8px); top: -7px; font-size: 11.5px; color: var(--mzo-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
     .hs-axis { display: flex; justify-content: space-between; margin: 8px 0 0 44px; font-size: 12px; color: var(--mzo-muted); }
@@ -29,63 +39,63 @@
   <main class="ui-page">
     <header class="ui-head">
       <div>
-        <h1>Historical analysis</h1>
-        <p id="meta">Loading…</p>
+        <h1>Historical analysis<span class="ui-badge ui-date" id="asOn">…</span></h1>
       </div>
       <div class="ui-actions">
-        <div class="ui-seg" id="period" role="group" aria-label="Period">
-          <button type="button" data-p="week" aria-pressed="false">Week</button>
-          <button type="button" data-p="month" aria-pressed="true">Month</button>
-          <button type="button" data-p="quarter" aria-pressed="false">Quarter</button>
-          <button type="button" data-p="year" aria-pressed="false">Year</button>
-        </div>
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
     </header>
 
-    <div class="ui-filters">
-      <span class="ui-select"><select id="yearFilter" aria-label="Year"><option value="">All years</option></select></span>
-      <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
-      <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
-      <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
-      <button type="button" class="ui-btn ghost" id="clearBtn" hidden><svg class="ui-i"><use href="#ui-x"/></svg>Clear</button>
-    </div>
-
-    <section class="ui-stats" style="--n:5" id="stats" aria-label="Summary">
-      <button type="button" class="ui-stat" data-c=""><div class="k"><span class="ui-dot c1"></span>Connections</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-c="D"><div class="k"><span class="ui-dot c2"></span>Domestic</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-c="C"><div class="k"><span class="ui-dot c3"></span>Commercial</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-c="I"><div class="k"><span class="ui-dot c4"></span>Industrial</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-c="A"><div class="k"><span class="ui-dot c5"></span>Agriculture</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-    </section>
-
-    <section class="ui-panel">
-      <div class="ui-panel-h"><h2 id="trendTitle">Connections per month</h2><span class="ui-note" id="trendNote"></span></div>
-      <div class="ui-panel-b">
-        <div class="hs-chart" id="chart"></div>
-        <div class="hs-axis"><span id="axisFrom"></span><span id="axisMid"></span><span id="axisTo"></span></div>
-      </div>
-    </section>
-
-    <div class="ui-grid">
-      <section class="ui-panel">
-        <div class="ui-panel-h">
-          <h2>By office</h2>
-          <div class="ui-tabs" role="tablist" id="levelTabs">
-            <button type="button" class="ui-tab" role="tab" data-l="region" aria-selected="true">Region</button>
-            <button type="button" class="ui-tab" role="tab" data-l="division">Division</button>
-            <button type="button" class="ui-tab" role="tab" data-l="ccc">CCC</button>
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h">
+          <h2>Filters<small id="activeLabel"></small></h2>
+          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
+        </div>
+        <div class="ui-side-sec ui-side-stack">
+          <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
+          <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
+          <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
+        </div>
+        <div class="ui-side-sec">
+          <div class="ui-seg hs-side-seg" id="period" role="group" aria-label="Period">
+            <button type="button" data-p="week" aria-pressed="false">Week</button>
+            <button type="button" data-p="month" aria-pressed="true">Month</button>
+            <button type="button" data-p="quarter" aria-pressed="false">Quarter</button>
+            <button type="button" data-p="year" aria-pressed="false">Year</button>
           </div>
         </div>
-        <div id="officeTable" style="--max-h:560px"><div class="ui-empty">Loading…</div></div>
-      </section>
-      <section class="ui-panel" style="margin-top:0">
-        <div class="ui-panel-h">
-          <h2 id="periodTitle">Months</h2>
-          <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
-        </div>
-        <div id="periodTable" style="--max-h:560px"><div class="ui-empty">Loading…</div></div>
-      </section>
+        <div class="ui-side-sec"><div aria-label="Year" id="fYear"></div></div>
+      </aside>
+
+      <div class="ui-main">
+        <section class="ui-stats cl-kpis" id="kpis" aria-label="Summary">
+          <button type="button" class="ui-stat" data-c=""><div class="k"><span class="ui-dot c1"></span>Connections</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-c="D"><div class="k"><span class="ui-dot c2"></span>Domestic</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-c="C"><div class="k"><span class="ui-dot c3"></span>Commercial</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-c="I"><div class="k"><span class="ui-dot c4"></span>Industrial</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-c="A"><div class="k"><span class="ui-dot c5"></span>Agriculture</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <div class="ui-stat" id="latest"><div class="k" id="latestK">Latest month</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></div>
+        </section>
+
+        <section class="ui-panel">
+          <div class="ui-panel-h">
+            <h2>Detailed analysis</h2>
+            <div class="ui-actions">
+              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+            </div>
+          </div>
+          <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
+          <div class="cl-hint" id="hint"></div>
+          <div class="hs-wrap" id="chartWrap" hidden>
+            <div class="hs-chart" id="chart"></div>
+            <div class="hs-axis"><span id="axisFrom"></span><span id="axisMid"></span><span id="axisTo"></span></div>
+          </div>
+          <div id="table"><div class="ui-empty">Loading…</div></div>
+        </section>
+      </div>
     </div>
   </main>
   <div class="hs-tip" id="tip" hidden></div>
@@ -96,9 +106,14 @@
     var $ = function (id) { return document.getElementById(id); };
     var CLASSES = ['D', 'C', 'I', 'A', 'O'];
     var CLASS = { D: 'Domestic', C: 'Commercial', I: 'Industrial', A: 'Agriculture', O: 'Other' };
+    var CLASS_DOT = { D: 'c2', C: 'c3', I: 'c4', A: 'c5', O: '' };
     var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     var PERIOD = { week: ['week', 'Weeks'], month: ['month', 'Months'], quarter: ['quarter', 'Quarters'], year: ['year', 'Years'] };
-    var all = [], f = { period: 'month', cls: '' }, level = 'region', scope = null;
+    var TABS = [['trend', 'Trend'], ['periods', 'Periods'], ['region', 'Region'], ['division', 'Division'], ['ccc', 'CCC'], ['class', 'Class'], ['season', 'Month of year']];
+    var all = [], f = { period: 'month', cls: '', year: '' }, tab = 'trend', renderedTab = '', scope = null, lastTable = null, first = true;
+    var SELECTS = ['regionFilter', 'divisionFilter', 'cccFilter'];
+    var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
 
     // The sheet writes dates as M/D/YY.
     function mdy(s) {
@@ -126,82 +141,110 @@
         if (!code || !dt) return null;
         var r = { CCC_CODE: code, _region: d._region, _divn: d._division, _supp: d._ccc || code, date: dt };
         CLASSES.forEach(function (c) { r[c] = d[c.toLowerCase()] || 0; });
+        r.total = r.D + r.C + r.I + r.A + r.O;
         return r;
       }).filter(Boolean);
-      $('meta').textContent = 'Meters installed for new connections' + (min ? ' · ' + UI.fmtDate(min) + ' to ' + UI.fmtDate(max) : '');
-      var years = {}; all.forEach(function (r) { years[r.date.getFullYear()] = 1; });
-      UI.fill('yearFilter', Object.keys(years).sort().reverse(), 'All years');
+      $('asOn').textContent = max ? UI.fmtDate(max) : '';
+      $('asOn').title = 'Meters installed for new connections' + (min ? ', ' + UI.fmtDate(min) + ' to ' + UI.fmtDate(max) : '');
       fillOffices();
     }
-
     function fillOffices() {
       UI.offices(all);
       if (!scope) scope = UI.lockScope();
-      UI.mark($('yearFilter'));
+      SELECTS.forEach(function (id) { UI.mark($(id)); });
     }
+    function set(id, v) { if (!$(id).disabled) $(id).value = v; }
 
-    function rows() {
-      var y = $('yearFilter').value, reg = $('regionFilter').value, div = $('divisionFilter').value, cc = $('cccFilter').value;
+    // Panel filters; skipYear leaves the year out so the Year facet can count its own options.
+    function rows(skipYear) {
+      var y = skipYear ? '' : f.year, reg = $('regionFilter').value, div = $('divisionFilter').value, cc = $('cccFilter').value;
       return all.filter(function (r) { return (!y || String(r.date.getFullYear()) === y) && (!reg || r._region === reg) && (!div || r._divn === div) && (!cc || r._supp === cc); });
     }
-    function val(r) { return f.cls ? r[f.cls] : r.D + r.C + r.I + r.A + r.O; }
+    function val(r) { return f.cls ? r[f.cls] : r.total; }
+    function sum(list) { return list.reduce(function (a, r) { return a + val(r); }, 0); }
     function periods(list, p) {
       var g = {};
       list.forEach(function (r) {
         var k = key(r.date, p), b = g[k.k] || (g[k.k] = { k: k.k, label: k.label, D: 0, C: 0, I: 0, A: 0, O: 0 });
         CLASSES.forEach(function (c) { b[c] += r[c]; });
       });
-      return Object.keys(g).sort().map(function (k) { var b = g[k]; b.total = b.D + b.C + b.I + b.A + b.O; b.v = f.cls ? b[f.cls] : b.total; return b; });
+      var out = Object.keys(g).sort().map(function (k) { var b = g[k]; b.total = b.D + b.C + b.I + b.A + b.O; b.v = f.cls ? b[f.cls] : b.total; return b; });
+      out.forEach(function (b, i) { b.chg = i && out[i - 1].v ? (b.v - out[i - 1].v) / out[i - 1].v : null; });
+      return out;
     }
     function count(list, p) { var s = {}; list.forEach(function (r) { s[key(r.date, p).k] = 1; }); return Object.keys(s).length || 1; }
+    function delta(c) { if (c == null || !isFinite(c)) return '—'; var p = Math.round(c * 100); return '<span class="ui-delta ' + (p > 0 ? 'ok' : p < 0 ? 'bad' : '') + '">' + (p > 0 ? '+' : '') + p + '%</span>'; }
+    function deltaText(c) { if (c == null || !isFinite(c)) return ''; var p = Math.round(c * 100); return (p > 0 ? '+' : '') + p + '%'; }
+
+    function renderFacets() {
+      var base = rows(true), ys = {};
+      base.forEach(function (r) { var y = r.date.getFullYear(); ys[y] = (ys[y] || 0) + r.total; });
+      UI.facet('fYear', Object.keys(ys).sort().reverse().map(function (y) { return { value: y, label: y, count: ys[y] }; }), f.year, function (v) { f.year = v; render(); });
+      setActive((f.year ? 1 : 0) + SELECTS.filter(function (id) { return $(id).value && !$(id).disabled; }).length);
+    }
 
     function render() {
-      var list = rows(), p = f.period, n = count(list, p), per = PERIOD[p][0];
+      renderFacets();
+      var list = rows(false), p = f.period, n = count(list, p), per = PERIOD[p][0];
+      // KPI analysis: total, average per period and share of each class.
       var tot = { D: 0, C: 0, I: 0, A: 0, O: 0 }; list.forEach(function (r) { CLASSES.forEach(function (c) { tot[c] += r[c]; }); });
       var all5 = tot.D + tot.C + tot.I + tot.A + tot.O;
-      [].forEach.call(document.querySelectorAll('#stats .ui-stat'), function (el) {
+      [].forEach.call(document.querySelectorAll('#kpis .ui-stat[data-c]'), function (el) {
         var c = el.getAttribute('data-c'), v = c ? tot[c] : all5;
         el.querySelector('.v').textContent = UI.n(v);
         el.querySelector('.s').textContent = UI.n(Math.round(v / n)) + ' per ' + per + (c ? ' · ' + UI.pct(v, all5) : '');
         el.setAttribute('aria-pressed', String(f.cls === c));
       });
+      // Latest period against the one before it (for the chosen class).
+      var series = periods(list, p), last = series[series.length - 1], prev = series[series.length - 2];
+      $('latestK').textContent = 'Latest ' + per;
+      $('latest').title = last ? last.label + (prev ? ' against ' + prev.label : '') : '';
+      $('latest').querySelector('.v').textContent = last ? UI.n(last.v) : '—';
+      $('latest').querySelector('.s').innerHTML = last ? UI.esc(last.label) + (prev ? ' · ' + delta(last.chg) + ' vs previous' : '') : '&nbsp;';
 
-      var series = periods(list, p);
-      $('trendTitle').textContent = (f.cls ? CLASS[f.cls] + ' connections' : 'Connections') + ' per ' + per;
-      $('trendNote').textContent = series.length ? 'Average ' + UI.n(Math.round(series.reduce(function (a, s) { return a + s.v; }, 0) / series.length)) + ' per ' + per : '';
-      // The bars wear the chosen class's colour (the dot on its stat), all connections slot 1.
-      $('chart').style.setProperty('--mzo-chart', 'var(--mzo-c' + ({ D: 2, C: 3, I: 4, A: 5 }[f.cls] || 1) + ')');
-      chart(series);
+      $('tabs').innerHTML = TABS.map(function (t) {
+        return '<button type="button" class="ui-drill-tab" role="tab" data-t="' + t[0] + '" aria-selected="' + (t[0] === tab) + '">' + t[1] + '</button>';
+      }).join('');
+      $('hint').textContent = (f.cls ? 'Showing ' + CLASS[f.cls].toLowerCase() + ' connections only. ' : '') +
+        (tab === 'trend' ? (series.length ? 'Average ' + UI.n(Math.round(sum(list) / series.length)) + ' per ' + per + ' (dashed line). Hover a bar for the class split.' : '')
+          : ['region', 'division', 'ccc'].indexOf(tab) !== -1 ? 'Click a row to open the next level.'
+          : tab === 'periods' ? 'Change is against the ' + per + ' before.'
+          : tab === 'season' ? 'Each calendar month across the years in view.' : '');
+      renderTab(list, series, n, per);
+    }
 
+    function officeTable(list, n, per, level) {
       var keyName = level === 'region' ? '_region' : level === 'division' ? '_divn' : '_supp', groups = {};
       list.forEach(function (r) {
         var name = r[keyName] || 'Unmapped';
         var g = groups[name] || (groups[name] = { name: name, parent: level === 'ccc' ? r._divn : level === 'division' ? r._region : '', total: 0, rows: [] });
         g.total += val(r); g.rows.push(r);
       });
-      var gl = Object.keys(groups).map(function (k) { var g = groups[k]; g.avg = g.total / count(g.rows, p); g.peryear = g.total / count(g.rows, 'year'); delete g.rows; return g; });
+      var gl = Object.keys(groups).map(function (k) { var g = groups[k]; g.avg = g.total / count(g.rows, f.period); g.peryear = g.total / count(g.rows, 'year'); delete g.rows; return g; });
       var max = Math.max.apply(null, gl.map(function (g) { return g.total; }).concat([0])), sumAll = gl.reduce(function (a, g) { return a + g.total; }, 0);
-      UI.table('officeTable', {
+      var label = level === 'ccc' ? 'CCC' : level === 'division' ? 'Division' : 'Region';
+      lastTable = { title: label, cols: [label, 'Connections', 'Per ' + per, 'Per year', 'Share'], rows: gl.slice().sort(function (a, b) { return b.total - a.total; }).map(function (g) { return [g.name, g.total, Math.round(g.avg), Math.round(g.peryear), UI.pct(g.total, sumAll)]; }) };
+      return {
         rows: gl, sort: { key: 'total', dir: 'desc' }, count: false, empty: 'No connections for these filters.',
         columns: [
-          { key: 'name', label: level === 'ccc' ? 'CCC' : level === 'division' ? 'Division' : 'Region', fmt: function (v, g) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.parent ? '<span class="sub">' + UI.esc(g.parent) + '</span>' : ''); } },
+          { key: 'name', label: label, fmt: function (v, g) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.parent ? '<span class="sub">' + UI.esc(g.parent) + '</span>' : ''); } },
           { key: 'total', label: 'Connections', num: true, fmt: UI.n },
           { key: 'avg', label: 'Per ' + per, num: true, fmt: function (v) { return UI.n(Math.round(v)); } },
           { key: 'peryear', label: 'Per year', num: true, hideSm: true, fmt: function (v) { return UI.n(Math.round(v)); } },
           { key: 'share', label: 'Share', sortVal: function (g) { return g.total; }, fmt: function (_, g) { return UI.bar(g.total, max, UI.pct(g.total, sumAll)); }, hideSm: true, width: '26%' }
         ],
         foot: gl.length > 1 ? { total: sumAll, avg: sumAll / n, peryear: sumAll / count(list, 'year') } : null,
-        onRow: level === 'ccc' ? null : function (g) { drill(g.name); }
-      });
+        onRow: function (g) { drill(level, g.name); },
+        selected: level === 'ccc' ? function (g) { return $('cccFilter').value === g.name; } : null
+      };
+    }
 
-      $('periodTitle').textContent = PERIOD[p][1];
-      var pl = series.slice().reverse();
-      UI.table('periodTable', {
-        rows: pl, sort: { key: 'k', dir: 'desc' }, limit: p === 'week' ? 52 : 36, resetPage: true, count: false, empty: 'No connections.',
-        columns: PERIOD_COLS
-      });
-      window.__periods = pl;
-      $('clearBtn').hidden = !(f.cls || $('yearFilter').value || ['regionFilter', 'divisionFilter', 'cccFilter'].some(function (id) { return $(id).value && !$(id).disabled; }));
+    function drill(level, name) {
+      if (name === 'Unmapped') return;
+      if (level === 'region') { set('regionFilter', name); set('divisionFilter', ''); set('cccFilter', ''); tab = 'division'; }
+      else if (level === 'division') { set('divisionFilter', name); set('cccFilter', ''); tab = 'ccc'; }
+      else { set('cccFilter', $('cccFilter').value === name ? '' : name); tab = 'trend'; }
+      fillOffices(); render();
     }
 
     var PERIOD_COLS = [
@@ -211,16 +254,75 @@
       { key: 'I', label: 'Ind.', num: true, fmt: UI.n, hideSm: true },
       { key: 'A', label: 'Agri.', num: true, fmt: UI.n, hideSm: true },
       { key: 'O', label: 'Other', num: true, fmt: UI.n, hideSm: true },
-      { key: 'total', label: 'Total', num: true, fmt: function (v) { return '<span class="ui-strong">' + UI.n(v) + '</span>'; }, csv: function (r) { return r.total; } }
+      { key: 'total', label: 'Total', num: true, fmt: function (v) { return '<span class="ui-strong">' + UI.n(v) + '</span>'; }, csv: function (r) { return r.total; } },
+      { key: 'chg', label: 'Change', num: true, sortVal: function (r) { return r.chg == null ? -Infinity : r.chg; }, fmt: function (v) { return delta(v); }, csv: function (r) { return deltaText(r.chg); } }
     ];
+
+    function renderTab(list, series, n, per) {
+      var cfg = null;
+      $('chartWrap').hidden = tab !== 'trend';
+      if (tab === 'trend') {
+        // The bars wear the chosen class's colour (the dot on its stat), all connections slot 1.
+        $('chart').style.setProperty('--mzo-chart', 'var(--mzo-c' + ({ D: 2, C: 3, I: 4, A: 5 }[f.cls] || 1) + ')');
+        chart(series);
+        lastTable = { title: PERIOD[f.period][1], cols: ['Period', 'Connections', 'Change'], rows: series.map(function (s) { return [s.label, s.v, deltaText(s.chg)]; }) };
+        $('table').innerHTML = ''; $('table').__ui = null; renderedTab = 'trend';
+        return;
+      }
+      if (tab === 'periods') {
+        var pl = series.slice().reverse();
+        lastTable = { title: PERIOD[f.period][1], cols: PERIOD_COLS.map(function (c) { return c.label; }), rows: pl.map(function (r) { return [r.label, r.D, r.C, r.I, r.A, r.O, r.total, deltaText(r.chg)]; }), csv: pl };
+        cfg = { rows: pl, sort: { key: 'k', dir: 'desc' }, limit: f.period === 'week' ? 52 : 36, resetPage: true, count: false, empty: 'No connections.', columns: PERIOD_COLS };
+      }
+      else if (tab === 'region' || tab === 'division' || tab === 'ccc') cfg = officeTable(list, n, per, tab);
+      else if (tab === 'class') {
+        var totAll = list.reduce(function (a, r) { return a + r.total; }, 0);
+        var cl = CLASSES.map(function (c) { var t = list.reduce(function (a, r) { return a + r[c]; }, 0); return { k: c, name: CLASS[c], total: t, avg: t / n }; }).filter(function (g) { return g.total; });
+        var cmax = Math.max.apply(null, cl.map(function (g) { return g.total; }).concat([0]));
+        lastTable = { title: 'Class', cols: ['Class', 'Connections', 'Per ' + per, 'Share'], rows: cl.map(function (g) { return [g.name, g.total, Math.round(g.avg), UI.pct(g.total, totAll)]; }) };
+        cfg = {
+          rows: cl, sort: { key: 'total', dir: 'desc' }, count: false, empty: 'No connections for these filters.',
+          columns: [
+            { key: 'name', label: 'Class', fmt: function (v, g) { return (CLASS_DOT[g.k] ? '<span class="ui-dot ' + CLASS_DOT[g.k] + '" style="margin-right:8px"></span>' : '') + '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
+            { key: 'total', label: 'Connections', num: true, fmt: UI.n },
+            { key: 'avg', label: 'Per ' + per, num: true, fmt: function (v) { return UI.n(Math.round(v)); } },
+            { key: 'share', label: 'Share', sortVal: function (g) { return g.total; }, fmt: function (_, g) { return UI.bar(g.total, cmax, UI.pct(g.total, totAll)); }, width: '30%' }
+          ],
+          foot: cl.length > 1 ? { total: totAll, avg: totAll / n } : null,
+          onRow: function (g) { f.cls = f.cls === g.k || g.k === 'O' ? '' : g.k; render(); }
+        };
+      }
+      else if (tab === 'season') {
+        var sm = MONTH.map(function (m, i) { return { i: i, name: m, total: 0, years: {} }; });
+        list.forEach(function (r) { var s = sm[r.date.getMonth()]; s.total += val(r); s.years[r.date.getFullYear()] = 1; });
+        sm.forEach(function (s) { s.ny = Object.keys(s.years).length; s.avg = s.ny ? s.total / s.ny : 0; });
+        var stot = sm.reduce(function (a, s) { return a + s.total; }, 0), amax = Math.max.apply(null, sm.map(function (s) { return s.avg; }).concat([0]));
+        lastTable = { title: 'Month of year', cols: ['Month', 'Connections', 'Years', 'Average per year', 'Share'], rows: sm.map(function (s) { return [s.name, s.total, s.ny, Math.round(s.avg), UI.pct(s.total, stot)]; }) };
+        cfg = {
+          rows: sm, sort: null, count: false, empty: 'No connections for these filters.',
+          columns: [
+            { key: 'name', label: 'Month', sortVal: function (s) { return s.i; }, fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
+            { key: 'total', label: 'Connections', num: true, fmt: UI.n },
+            { key: 'ny', label: 'Years', num: true, hideSm: true, fmt: UI.n },
+            { key: 'avg', label: 'Average per year', num: true, fmt: function (v) { return UI.n(Math.round(v)); } },
+            { key: 'share', label: 'Share', sortVal: function (s) { return s.total; }, fmt: function (_, s) { return UI.bar(s.avg, amax, UI.pct(s.total, stot)); }, hideSm: true, width: '26%' }
+          ],
+          foot: { total: stot }
+        };
+      }
+      var k = tab + ':' + f.period;
+      if (renderedTab !== k) { $('table').__ui = null; renderedTab = k; } // new columns: fresh sort and paging
+      UI.table('table', cfg);
+    }
 
     function nice(v) { if (v <= 0) return 1; var p = Math.pow(10, Math.floor(Math.log10(v))), m = v / p, steps = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]; for (var i = 0; i < steps.length; i++) if (m <= steps[i]) return steps[i] * p; return 10 * p; }
     function chart(series) {
       var max = nice(Math.max.apply(null, series.map(function (s) { return s.v; }).concat([0])));
+      var avg = series.length ? series.reduce(function (a, s) { return a + s.v; }, 0) / series.length : 0;
       var grid = [0, 0.5, 1].map(function (t) { return '<div class="hs-grid" style="bottom:' + (t * 100) + '%"><span>' + UI.n(Math.round(max * t)) + '</span></div>'; }).join('');
-      $('chart').innerHTML = grid + series.map(function (s, i) {
+      $('chart').innerHTML = grid + (avg ? '<div class="hs-avg" style="bottom:' + (avg / max * 100) + '%"></div>' : '') + (series.length ? series.map(function (s, i) {
         return '<div class="col" data-i="' + i + '"><b style="height:' + (s.v ? Math.max(0.6, (s.v / max) * 100) : 0) + '%"></b></div>';
-      }).join('');
+      }).join('') : '<div class="ui-empty" style="flex:1">No connections for these filters.</div>');
       $('axisFrom').textContent = series.length ? series[0].label : '';
       $('axisMid').textContent = series.length > 2 ? series[Math.floor(series.length / 2)].label : '';
       $('axisTo').textContent = series.length > 1 ? series[series.length - 1].label : '';
@@ -230,59 +332,65 @@
       var c = e.target.closest('.col'), tip = $('tip');
       if (!c) { tip.hidden = true; return; }
       var s = this.__series[+c.getAttribute('data-i')];
-      tip.innerHTML = '<b>' + UI.esc(s.label) + ' · ' + UI.n(s.v) + '</b>' + CLASSES.filter(function (k) { return s[k]; }).map(function (k) { return '<span>' + CLASS[k] + '</span> ' + UI.n(s[k]); }).join('<br>');
+      tip.innerHTML = '<b>' + UI.esc(s.label) + ' · ' + UI.n(s.v) + (s.chg != null ? ' (' + UI.esc(deltaText(s.chg)) + ')' : '') + '</b>' + CLASSES.filter(function (k) { return s[k]; }).map(function (k) { return '<span>' + CLASS[k] + '</span> ' + UI.n(s[k]); }).join('<br>');
       tip.hidden = false;
       var x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8);
       tip.style.left = x + 'px'; tip.style.top = Math.max(8, e.clientY - tip.offsetHeight - 10) + 'px';
     });
     $('chart').addEventListener('pointerleave', function () { $('tip').hidden = true; });
 
-    function setLevel(l) {
-      level = l;
-      [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === l)); });
-      render();
-    }
-    function drill(name) {
-      if (level === 'region') { $('regionFilter').value = name; $('divisionFilter').value = ''; level = 'division'; }
-      else { $('divisionFilter').value = name; level = 'ccc'; }
-      $('cccFilter').value = '';
-      fillOffices(); setLevel(level);
+    /* ---------- URL params (Ask, shared links) ---------- */
+    // ?region= ?division= ?ccc= ?year= ?class=D|C|I|A ?period=week|month|quarter|year ?tab=
+    function applyUrl() {
+      var p = new URLSearchParams(location.search), pick = function (id, v) {
+        var el = $(id); if (!v || el.disabled) return false;
+        var m = [].filter.call(el.options, function (o) { return o.value && o.value.toLowerCase() === String(v).trim().toLowerCase(); })[0];
+        if (m) { el.value = m.value; fillOffices(); return true; } return false;
+      };
+      pick('regionFilter', p.get('region')); pick('divisionFilter', p.get('division')); pick('cccFilter', p.get('ccc'));
+      if (/^\d{4}$/.test(p.get('year') || '')) f.year = p.get('year');
+      var c = String(p.get('class') || '').toUpperCase().charAt(0); if (CLASS_DOT[c]) f.cls = c;
+      if (PERIOD[p.get('period')]) setPeriod(p.get('period'));
+      if (TABS.some(function (t) { return t[0] === p.get('tab'); })) tab = p.get('tab');
     }
 
-    ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
+    /* ---------- events ---------- */
+    SELECTS.forEach(function (id) {
       $(id).addEventListener('change', function () {
-        if (id === 'regionFilter') $('divisionFilter').value = '';
-        if (id !== 'cccFilter') $('cccFilter').value = '';
+        if (id === 'regionFilter') set('divisionFilter', '');
+        if (id !== 'cccFilter') set('cccFilter', '');
         fillOffices(); render();
       });
     });
-    $('yearFilter').addEventListener('change', function () { UI.mark(this); render(); });
-    $('period').addEventListener('click', function (e) {
-      var b = e.target.closest('button'); if (!b) return;
-      f.period = b.getAttribute('data-p');
-      [].forEach.call(this.querySelectorAll('button'), function (x) { x.setAttribute('aria-pressed', String(x === b)); });
-      render();
-    });
-    $('stats').addEventListener('click', function (e) { var s = e.target.closest('.ui-stat'); if (!s) return; var c = s.getAttribute('data-c'); f.cls = f.cls === c ? '' : c; render(); });
-    $('levelTabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-tab'); if (t) setLevel(t.getAttribute('data-l')); });
-    $('clearBtn').addEventListener('click', function () {
-      f.cls = ''; $('yearFilter').value = '';
-      ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });
+    function setPeriod(v) {
+      f.period = v;
+      [].forEach.call($('period').querySelectorAll('button'), function (x) { x.setAttribute('aria-pressed', String(x.getAttribute('data-p') === v)); });
+    }
+    $('period').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; setPeriod(b.getAttribute('data-p')); render(); });
+    $('kpis').addEventListener('click', function (e) { var s = e.target.closest('.ui-stat[data-c]'); if (!s) return; var c = s.getAttribute('data-c'); f.cls = f.cls === c ? '' : c; render(); });
+    $('tabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-drill-tab'); if (t) { tab = t.getAttribute('data-t'); render(); } });
+    function clearAll() {
+      f.cls = ''; f.year = '';
+      SELECTS.forEach(function (id) { set(id, ''); });
       fillOffices(); render();
+    }
+    $('copyBtn').addEventListener('click', function () {
+      if (!lastTable) return;
+      var lines = ['*Historical analysis — ' + lastTable.title + '*' + (f.cls ? ' (' + CLASS[f.cls] + ')' : ''), lastTable.cols.join(' | ')].concat(lastTable.rows.slice(0, 60).map(function (r) { return r.map(function (c) { return typeof c === 'number' ? UI.n(Math.round(c)) : c; }).join(' | '); }));
+      UI.copy(lines.join('\n')).then(function () { UI.toast('Table copied'); });
     });
-    $('exportBtn').addEventListener('click', function () { UI.exportCsv('historical-nsc-' + f.period + '.csv', PERIOD_COLS, window.__periods || []); });
+    $('exportBtn').addEventListener('click', function () {
+      if (!lastTable) return;
+      if (lastTable.csv) { UI.exportCsv('historical-nsc-' + f.period + '.csv', PERIOD_COLS, lastTable.csv); return; }
+      UI.exportCsv('historical-nsc-' + lastTable.title.toLowerCase().replace(/\W+/g, '-') + '.csv', lastTable.cols.map(function (c, i) { return { key: i, label: c }; }), lastTable.rows.map(function (r) { var o = {}; r.forEach(function (c, i) { o[i] = c; }); return o; }));
+    });
 
     MzoRows.refresh('refreshBtn', 'historical_nsc', function (t) { prepare(t); render(); });
 
-    var first = true;
     MzoRows.load('historical_nsc', function (t, info) {
-      if (!t) { if (info && info.error && !all.length) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = $('periodTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      if (!t) { if (info && info.error && !all.length) { $('asOn').textContent = 'No data'; $('table').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
       prepare(t);
-      if (first) {
-        first = false;
-        if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';
-        [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (x) { x.setAttribute('aria-selected', String(x.getAttribute('data-l') === level)); });
-      }
+      if (first) { first = false; applyUrl(); }
       render();
     });
   });

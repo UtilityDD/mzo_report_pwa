@@ -11,79 +11,132 @@
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
   <script src="/mzo_rows.js?v=6" defer></script>
-  <style>#probHist .row { grid-template-columns: minmax(120px, 44%) minmax(0, 1fr) 52px; }</style>
+  <style>
+    .rem-hint {
+      padding: 8px 16px;
+      font-size: 12px;
+      color: var(--mzo-muted);
+      border-bottom: 1px solid var(--mzo-border);
+    }
+    .rd-copy { margin-left: auto; margin-right: 2px; }
+    .ui-stat .s { font-size: 11px; color: var(--mzo-muted); }
+  </style>
 </head>
 <body>
   <main class="ui-page">
     <header class="ui-head">
       <div>
-        <h1>Docket calls</h1>
+        <h1>Docket calls <span class="ui-badge ui-date" id="asOn"></span></h1>
         <p id="meta">Loading…</p>
       </div>
       <div class="ui-actions">
-        <a class="ui-btn" href="/docket/kpi.html" id="kpiLink">Closure KPI</a>
+        <a class="ui-btn sm" href="/docket/kpi.html" id="kpiLink">Closure KPI</a>
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
     </header>
 
-    <div class="ui-filters">
-      <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Docket, consumer ID, name or mobile" autocomplete="off" /></label>
-      <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
-      <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
-      <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
-      <span class="ui-select"><select id="probFilter" aria-label="Problem"><option value="">All problems</option></select></span>
-      <span class="ui-select"><select id="ageFilter" aria-label="Open for"><option value="">Any age</option><option value="24">Over 24 hours</option><option value="48">Over 48 hours</option><option value="168">Over 7 days</option><option value="720">Over 30 days</option></select></span>
-      <button type="button" class="ui-btn ghost" id="clearBtn" hidden><svg class="ui-i"><use href="#ui-x"/></svg>Clear</button>
-    </div>
-
-    <section class="ui-stats" style="--n:5" id="stats" aria-label="Summary">
-      <button type="button" class="ui-stat" data-k=""><div class="k">Open dockets</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="tech"><div class="k">Technical</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="nontech"><div class="k">Non-technical</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="old"><div class="k">Open over 48 hours</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="repeat"><div class="k">Repeat consumers</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-    </section>
-
-    <div class="ui-grid">
-      <section class="ui-panel">
-        <div class="ui-panel-h">
-          <h2>By office</h2>
-          <div class="ui-tabs" role="tablist" id="levelTabs">
-            <button type="button" class="ui-tab" role="tab" data-l="region" aria-selected="true">Region</button>
-            <button type="button" class="ui-tab" role="tab" data-l="division">Division</button>
-            <button type="button" class="ui-tab" role="tab" data-l="ccc">CCC</button>
-          </div>
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h">
+          <h2>Filters<small id="activeLabel"></small></h2>
+          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
         </div>
-        <div id="officeTable" style="--max-h:520px"><div class="ui-empty">Loading…</div></div>
-      </section>
-      <div>
-        <section class="ui-panel">
-          <div class="ui-panel-h"><h2>Open for</h2></div>
-          <div class="ui-panel-b"><div id="ageHist"></div></div>
+        <div class="ui-side-sec ui-side-stack">
+          <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Docket, consumer ID, name or mobile" autocomplete="off" aria-label="Search dockets" title="Search dockets" /></label>
+          <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
+          <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
+          <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Docket type" id="fType"></div>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Open duration" id="fAge"></div>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Top problems" id="fProb"></div>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Consumer multiplicity" id="fRep"></div>
+        </div>
+      </aside>
+
+      <div class="ui-main">
+        <section class="ui-stats" id="stats" aria-label="Summary">
+          <button type="button" class="ui-stat" data-k=""><div class="k">Open dockets</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="tech"><div class="k">Technical</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="nontech"><div class="k">Non-technical</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="old"><div class="k"><span class="ui-dot bad"></span>Open over 48 hours</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="repeat"><div class="k">Repeat consumers</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
         </section>
+
         <section class="ui-panel">
-          <div class="ui-panel-h"><h2>Top problems</h2></div>
-          <div class="ui-panel-b"><div id="probHist"></div></div>
+          <div class="ui-panel-h">
+            <h2 id="tableTitle">Detailed analysis</h2>
+            <div class="ui-actions">
+              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+            </div>
+          </div>
+          <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
+          <div class="rem-hint" id="hint"></div>
+          <div id="table"><div class="ui-empty">Loading…</div></div>
         </section>
       </div>
     </div>
-
-    <section class="ui-panel">
-      <div class="ui-panel-h">
-        <h2>Dockets <small id="listCount"></small></h2>
-        <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
-      </div>
-      <div id="listTable"><div class="ui-empty">Loading…</div></div>
-    </section>
   </main>
 
   <script>
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var TECH = ['Meter defective and No Power', 'Meter (Tampering)', 'Service (main) problem', 'Service (main) problem (UG cable)', 'Service(main) problem(OH Line)', 'Breakage or uprooting of pole', 'Flashing/Glowing', 'No power', 'Dis. transformer problem', 'Voltage fluctuation', 'Insulator break at pole', 'Earthing problem', 'Fuse problem', 'Alteration of Services', 'Load Shedding Problem', 'Bird fault', 'Conductor snap', 'LT wire problem', 'Sagging of wire', 'Single phasing', 'Voltage complaint', 'Cable fault', 'Cable fault where RMU exists', 'Cable fault where no RMU exists', 'Frequent tripping', 'Short circuit', 'Problem in Shifting of Meter'];
-    var AGE = [{ key: 'h0', label: 'Under 24 hours', max: 24 }, { key: 'h1', label: '1–2 days', max: 48 }, { key: 'h2', label: '2–7 days', max: 168 }, { key: 'h3', label: '7–30 days', max: 720 }, { key: 'h4', label: 'Over 30 days', max: Infinity }];
-    var all = [], f = { q: '', stat: '', age: '' }, level = 'region', scope = null, latest = null, repeat = {};
+    var TECH = [
+      'Meter defective and No Power', 'Meter (Tampering)', 'Service (main) problem', 'Service (main) problem (UG cable)',
+      'Service(main) problem(OH Line)', 'Breakage or uprooting of pole', 'Flashing/Glowing', 'No power',
+      'Dis. transformer problem', 'Voltage fluctuation', 'Insulator break at pole', 'Earthing problem',
+      'Fuse problem', 'Alteration of Services', 'Load Shedding Problem', 'Bird fault', 'Conductor snap',
+      'LT wire problem', 'Sagging of wire', 'Single phasing', 'Voltage complaint', 'Cable fault',
+      'Cable fault where RMU exists', 'Cable fault where no RMU exists', 'Frequent tripping', 'Short circuit',
+      'Problem in Shifting of Meter'
+    ];
+    var AGE = [
+      { key: 'h0', label: 'Under 24 hours', max: 24 },
+      { key: 'h1', label: '1–2 days', max: 48 },
+      { key: 'h2', label: '2–7 days', max: 168 },
+      { key: 'h3', label: '7–30 days', max: 720 },
+      { key: 'h4', label: 'Over 30 days', max: Infinity }
+    ];
+    var TABS = [
+      { id: 'region', label: 'Region' },
+      { id: 'division', label: 'Division' },
+      { id: 'ccc', label: 'CCC' },
+      { id: 'dockets', label: 'Dockets' },
+      { id: 'age', label: 'Aging Buckets' },
+      { id: 'problems', label: 'Problem Types' },
+      { id: 'repeat', label: 'Repeat Consumers' }
+    ];
+
+    var all = [], f = { q: '', stat: '', type: '', age: '', prob: '', rep: '' };
+    var tab = 'region', scope = null, latest = null, repeat = {};
+
+    var setActive = UI.sidePanel({
+      side: 'side',
+      toggle: 'sideToggle',
+      label: 'activeLabel',
+      count: 'activeCount',
+      clear: 'clearBtn',
+      onClear: function () {
+        f.q = ''; f.stat = ''; f.type = ''; f.age = ''; f.prob = ''; f.rep = '';
+        $('q').value = '';
+        ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
+          if (!$(id).disabled) $(id).value = '';
+        });
+        fillOffices(); markAll();
+        syncUrl();
+        render();
+      }
+    });
 
     // "dd/mm/yyyy hh:mm:ss" (seconds sometimes dotted: 22.44.30)
     function when(s) {
@@ -97,8 +150,6 @@
       return UI.age(Math.floor(h / 24));
     }
 
-    // t.rows: uniform rows of schema/docket_calls.json (trimmed text, canonical _region/_division/_ccc),
-    // already scoped to the login by MzoRows. The "up to" time is the newest docket of the whole sheet.
     function prepare(t) {
       var now = Date.now(); latest = null; repeat = {};
       t.all.forEach(function (d) { var c = d.doc_no ? when(d.doc_crn_dt) : null; if (c && (!latest || c > latest)) latest = c; });
@@ -111,15 +162,22 @@
           _region: d._region, _divn: d._division, _supp: d._ccc || UI.title((d.ccc_name || d.ccc_code).replace(/\s*CCC.*$/i, '')), CCC_CODE: d.ccc_code
         };
       });
-      all.forEach(function (r) { r.ageKey = r.hours == null ? '' : AGE.filter(function (a) { return r.hours < a.max; })[0].key; if (r.con) repeat[r.con] = (repeat[r.con] || 0) + 1; });
-      $('meta').textContent = (latest ? 'Up to ' + UI.fmtDate(latest) + ', ' + latest.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) + ' · ' : '') + UI.n(all.length) + ' open';
-      var probs = {}; all.forEach(function (r) { if (r.prob) probs[r.prob] = (probs[r.prob] || 0) + 1; });
-      UI.fill('probFilter', Object.keys(probs).sort(), 'All problems');
+      all.forEach(function (r) {
+        var match = AGE.filter(function (a) { return r.hours != null && r.hours < a.max; })[0];
+        r.ageKey = match ? match.key : 'h4';
+        if (r.con) repeat[r.con] = (repeat[r.con] || 0) + 1;
+      });
+      if (latest && $('asOn')) $('asOn').textContent = 'Up to ' + UI.fmtDate(latest) + ', ' + latest.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+      $('meta').textContent = (latest ? 'Up to ' + UI.fmtDate(latest) + ', ' + latest.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) + ' · ' : '') + UI.n(all.length) + ' open dockets';
       fillOffices();
     }
+
     function fillOffices() {
       UI.offices(all);
       if (!scope) scope = UI.lockScope();
+    }
+    function markAll() {
+      ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { UI.mark($(id)); });
     }
 
     var STAT = {
@@ -128,17 +186,46 @@
       old: function (r) { return r.hours != null && r.hours >= 48; },
       repeat: function (r) { return r.con && repeat[r.con] > 1; }
     };
-    function base(skipAge) {
-      var q = f.q.toLowerCase(), reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value, prob = $('probFilter').value, age = +$('ageFilter').value || 0;
+
+    function base(skip) {
+      skip = skip || {};
+      var q = f.q.toLowerCase(), reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value;
       return all.filter(function (r) {
-        return (!reg || r._region === reg) && (!div || r._divn === div) && (!ccc || r._supp === ccc) && (!prob || r.prob === prob) &&
-          (!age || (r.hours != null && r.hours >= age)) && (skipAge || !f.age || r.ageKey === f.age) &&
-          (!q || String(r.doc).indexOf(q) !== -1 || r.con.indexOf(q) !== -1 || r.name.toLowerCase().indexOf(q) !== -1 || String(r.mobile).indexOf(q) !== -1);
+        if (reg && r._region !== reg) return false;
+        if (div && r._divn !== div) return false;
+        if (ccc && r._supp !== ccc) return false;
+        if (!skip.type && f.type === 'tech' && !r.tech) return false;
+        if (!skip.type && f.type === 'nontech' && r.tech) return false;
+        if (!skip.age && f.age && r.ageKey !== f.age) return false;
+        if (!skip.prob && f.prob && r.prob !== f.prob) return false;
+        if (!skip.rep && f.rep === 'repeat' && (!r.con || repeat[r.con] <= 1)) return false;
+        if (q && String(r.doc).indexOf(q) === -1 && (r.con || '').indexOf(q) === -1 && r.name.toLowerCase().indexOf(q) === -1 && String(r.mobile || '').indexOf(q) === -1 && String(r._supp || '').toLowerCase().indexOf(q) === -1) return false;
+        return true;
       });
     }
 
+    function syncUrl() {
+      var p = new URLSearchParams();
+      if ($('regionFilter').value) p.set('region', $('regionFilter').value);
+      if ($('divisionFilter').value) p.set('division', $('divisionFilter').value);
+      if ($('cccFilter').value) p.set('ccc', $('cccFilter').value);
+      if (f.q) p.set('q', f.q);
+      if (f.stat) p.set('stat', f.stat);
+      if (f.type) p.set('type', f.type);
+      if (f.age) p.set('age', f.age);
+      if (f.prob) p.set('prob', f.prob);
+      if (f.rep) p.set('rep', f.rep);
+      if (tab !== 'region') p.set('tab', tab);
+      var qs = p.toString();
+      var url = location.pathname + (qs ? '?' + qs : '');
+      if (location.search !== (qs ? '?' + qs : '')) history.replaceState(null, '', url);
+    }
+
     function render() {
-      var b = base(false), view = f.stat ? b.filter(STAT[f.stat]) : b;
+      var b = base({});
+      var view = f.stat ? b.filter(STAT[f.stat]) : b;
+
+      // Update KPI stats
       [].forEach.call(document.querySelectorAll('#stats .ui-stat'), function (el) {
         var k = el.getAttribute('data-k'), rows = k ? b.filter(STAT[k]) : b;
         el.querySelector('.v').textContent = UI.n(rows.length);
@@ -147,105 +234,434 @@
         el.setAttribute('aria-pressed', String(f.stat === k));
       });
 
-      var key = level === 'region' ? '_region' : level === 'division' ? '_divn' : '_supp', g = {};
+      // Facets
+      var forType = base({ type: true }).filter(function (r) { return !f.stat || STAT[f.stat](r); });
+      var typeItems = [
+        { value: '', label: 'All docket types', count: forType.length },
+        { value: 'tech', label: 'Technical', count: forType.filter(function (r) { return r.tech; }).length },
+        { value: 'nontech', label: 'Non-technical', count: forType.filter(function (r) { return !r.tech; }).length }
+      ];
+      UI.facet($('fType'), typeItems, f.type, function (v) { f.type = v; syncUrl(); render(); });
+
+      var forAge = base({ age: true }).filter(function (r) { return !f.stat || STAT[f.stat](r); });
+      var ageItems = [{ value: '', label: 'Any age', count: forAge.length }].concat(AGE.map(function (a) {
+        return { value: a.key, label: a.label, count: forAge.filter(function (r) { return r.ageKey === a.key; }).length };
+      }));
+      UI.facet($('fAge'), ageItems, f.age, function (v) { f.age = v; syncUrl(); render(); });
+
+      var forProb = base({ prob: true }).filter(function (r) { return !f.stat || STAT[f.stat](r); });
+      var pc = {};
+      forProb.forEach(function (r) { if (r.prob) pc[r.prob] = (pc[r.prob] || 0) + 1; });
+      var topProbs = Object.keys(pc).sort(function (a, b) { return pc[b] - pc[a]; }).slice(0, 8);
+      if (f.prob && topProbs.indexOf(f.prob) === -1) topProbs.push(f.prob);
+      var probItems = [{ value: '', label: 'All problems', count: forProb.length }].concat(topProbs.map(function (p) {
+        return { value: p, label: p, count: pc[p] || 0 };
+      }));
+      UI.facet($('fProb'), probItems, f.prob, function (v) { f.prob = v; syncUrl(); render(); });
+
+      var forRep = base({ rep: true }).filter(function (r) { return !f.stat || STAT[f.stat](r); });
+      var repItems = [
+        { value: '', label: 'All consumers', count: forRep.length },
+        { value: 'repeat', label: 'Repeat consumers only', count: forRep.filter(function (r) { return r.con && repeat[r.con] > 1; }).length }
+      ];
+      UI.facet($('fRep'), repItems, f.rep, function (v) { f.rep = v; syncUrl(); render(); });
+
+      // Active filters count
+      var hasOffice = ['regionFilter', 'divisionFilter', 'cccFilter'].some(function (id) { return $(id).value && !$(id).disabled; });
+      var nActive = (f.q ? 1 : 0) + (f.stat ? 1 : 0) + (f.type ? 1 : 0) + (f.age ? 1 : 0) + (f.prob ? 1 : 0) + (f.rep ? 1 : 0) + (hasOffice ? 1 : 0);
+      setActive(nActive);
+
+      // Render Tabs
+      var tabsEl = $('tabs');
+      tabsEl.innerHTML = TABS.map(function (t) {
+        var count = '';
+        if (t.id === 'dockets') count = '<small>' + UI.n(view.length) + '</small>';
+        else if (t.id === 'repeat') {
+          var repCount = view.filter(function (r) { return r.con && repeat[r.con] > 1; }).length;
+          count = '<small>' + UI.n(repCount) + '</small>';
+        }
+        return '<button type="button" class="ui-drill-tab" role="tab" data-tab="' + t.id + '" aria-selected="' + String(tab === t.id) + '">' + t.label + count + '</button>';
+      }).join('');
+
+      var totTech = view.filter(STAT.tech).length;
+      var totOld = view.filter(STAT.old).length;
+      $('hint').innerHTML = '<span class="ui-strong">' + UI.n(view.length) + '</span> open dockets · Technical: <span class="ui-strong">' + UI.n(totTech) + '</span> (' + UI.pct(totTech, view.length) + ') · Over 48h: <span class="ui-strong">' + UI.n(totOld) + '</span> (' + UI.pct(totOld, view.length) + ')';
+
+      window.__view = view;
+
+      if (tab === 'region' || tab === 'division' || tab === 'ccc') {
+        renderOfficesTab(view);
+      } else if (tab === 'dockets') {
+        renderDocketsTab(view);
+      } else if (tab === 'age') {
+        renderAgeTab(view);
+      } else if (tab === 'problems') {
+        renderProblemsTab(view);
+      } else if (tab === 'repeat') {
+        renderRepeatTab(view);
+      }
+    }
+
+    function renderOfficesTab(view) {
+      var key = tab === 'region' ? '_region' : tab === 'division' ? '_divn' : '_supp', g = {};
       view.forEach(function (r) {
         var name = r[key] || 'Unmapped';
-        var o = g[name] || (g[name] = { name: name, parent: level === 'ccc' ? r._divn : level === 'division' ? r._region : '', n: 0, tech: 0, old: 0, oldest: 0 });
-        o.n++; if (r.tech) o.tech++; if (r.hours >= 48) o.old++; if (r.hours > o.oldest) o.oldest = r.hours;
+        var o = g[name] || (g[name] = { name: name, parent: tab === 'ccc' ? r._divn : tab === 'division' ? r._region : '', n: 0, tech: 0, old: 0, oldest: 0 });
+        o.n++;
+        if (r.tech) o.tech++;
+        if (r.hours >= 48) o.old++;
+        if (r.hours > o.oldest) o.oldest = r.hours;
       });
-      var list = Object.keys(g).map(function (k) { return g[k]; }), max = Math.max.apply(null, list.map(function (x) { return x.n; }).concat([0]));
-      UI.table('officeTable', {
-        rows: list, sort: { key: 'n', dir: 'desc' }, count: false, empty: 'No open dockets for these filters.',
+      var list = Object.keys(g).map(function (k) { return g[k]; });
+      var max = Math.max.apply(null, list.map(function (x) { return x.n; }).concat([0]));
+
+      UI.table('table', {
+        rows: list,
+        sort: { key: 'n', dir: 'desc' },
+        count: false,
+        empty: 'No open dockets for these filters.',
         columns: [
-          { key: 'name', label: level === 'ccc' ? 'CCC' : level === 'division' ? 'Division' : 'Region', fmt: function (v, x) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (x.parent ? '<span class="sub">' + UI.esc(x.parent) + '</span>' : ''); } },
+          {
+            key: 'name',
+            label: tab === 'ccc' ? 'CCC' : tab === 'division' ? 'Division' : 'Region',
+            fmt: function (v, x) {
+              return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (x.parent ? '<span class="sub">' + UI.esc(x.parent) + '</span>' : '');
+            }
+          },
           { key: 'n', label: 'Open', num: true, fmt: UI.n },
           { key: 'tech', label: 'Technical', num: true, fmt: UI.n, hideSm: true },
           { key: 'old', label: 'Over 48 h', num: true, fmt: UI.n },
           { key: 'oldest', label: 'Oldest', num: true, fmt: since, hideSm: true },
-          { key: 'share', label: 'Share', sortVal: function (x) { return x.n; }, fmt: function (_, x) { return UI.bar(x.n, max, UI.pct(x.n, view.length)); }, hideSm: true, width: '24%' }
+          {
+            key: 'share',
+            label: 'Share',
+            sortVal: function (x) { return x.n; },
+            fmt: function (_, x) { return UI.bar(x.n, max, UI.pct(x.n, view.length)); },
+            hideSm: true,
+            width: '24%'
+          }
         ],
         foot: list.length > 1 ? { n: view.length, tech: view.filter(STAT.tech).length, old: view.filter(STAT.old).length } : null,
-        onRow: level === 'ccc' ? function (x) { $('cccFilter').value = x.name; fillOffices(); markAll(); render(); } : function (x) { drill(x.name); }
+        onRow: function (x) {
+          if (tab === 'region') {
+            if ($('regionFilter').disabled) return;
+            $('regionFilter').value = x.name; $('divisionFilter').value = ''; $('cccFilter').value = '';
+            tab = 'division';
+          } else if (tab === 'division') {
+            if ($('divisionFilter').disabled) return;
+            $('divisionFilter').value = x.name; $('cccFilter').value = '';
+            tab = 'ccc';
+          } else {
+            $('cccFilter').value = x.name;
+            tab = 'dockets';
+          }
+          fillOffices(); markAll(); syncUrl(); render();
+        }
       });
-
-      var forAge = base(true).filter(function (r) { return !f.stat || STAT[f.stat](r); });
-      UI.hist('ageHist', AGE.map(function (a) { return { key: a.key, label: a.label, value: forAge.filter(function (r) { return r.ageKey === a.key; }).length }; }),
-        { active: f.age, onClick: function (row) { f.age = f.age === row.key ? '' : row.key; render(); } });
-      var pc = {}; view.forEach(function (r) { pc[r.prob || '—'] = (pc[r.prob || '—'] || 0) + 1; });
-      UI.hist('probHist', Object.keys(pc).sort(function (a, c) { return pc[c] - pc[a]; }).slice(0, 8).map(function (p) { return { key: p, label: p, value: pc[p] }; }),
-        { active: $('probFilter').value, onClick: function (row) { $('probFilter').value = $('probFilter').value === row.key ? '' : row.key; UI.mark($('probFilter')); render(); } });
-
-      $('listCount').textContent = UI.n(view.length);
-      window.__view = view;
-      UI.table('listTable', { rows: view, sort: { key: 'hours', dir: 'desc' }, limit: 50, resetPage: true, empty: 'No open dockets match these filters.', columns: COLS, onRow: detail });
-      $('clearBtn').hidden = !(f.q || f.stat || f.age || $('probFilter').value || $('ageFilter').value || ['regionFilter', 'divisionFilter', 'cccFilter'].some(function (id) { return $(id).value && !$(id).disabled; }));
     }
 
     var COLS = [
-      { key: 'doc', label: 'Docket', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v) + '</span><span class="sub">' + (r.tech ? 'Technical' : 'Non-technical') + '</span>'; } },
-      { key: 'name', label: 'Consumer', cls: 'wrap', fmt: function (v, r) { return UI.esc(v || '—') + (repeat[r.con] > 1 ? ' <span class="ui-badge warn">' + repeat[r.con] + ' open</span>' : '') + '<span class="sub">' + UI.esc(r.con || 'No consumer ID') + '</span>'; } },
-      { key: '_supp', label: 'CCC', fmt: function (v, r) { return UI.esc(v || r.code) + '<span class="sub">' + UI.esc(r._divn) + '</span>'; } },
+      {
+        key: 'doc',
+        label: 'Docket',
+        fmt: function (v, r) {
+          return '<span class="ui-strong">' + UI.esc(v) + '</span><span class="sub">' + (r.tech ? 'Technical' : 'Non-technical') + '</span>';
+        }
+      },
+      {
+        key: 'name',
+        label: 'Consumer',
+        cls: 'wrap',
+        fmt: function (v, r) {
+          return UI.esc(v || '—') + (repeat[r.con] > 1 ? ' <span class="ui-badge warn">' + repeat[r.con] + ' open</span>' : '') + '<span class="sub">' + UI.esc(r.con || 'No consumer ID') + '</span>';
+        }
+      },
+      {
+        key: '_supp',
+        label: 'CCC',
+        fmt: function (v, r) {
+          return UI.esc(v || r.code) + '<span class="sub">' + UI.esc(r._divn) + '</span>';
+        }
+      },
       { key: 'prob', label: 'Problem', cls: 'wrap', hideSm: true },
       { key: 'mobile', label: 'Mobile', hideSm: true },
-      { key: 'hours', label: 'Open for', num: true, sortVal: function (r) { return r.hours == null ? -1 : r.hours; }, fmt: function (v) { return since(v); }, csv: function (r) { return r.raw; } }
+      {
+        key: 'hours',
+        label: 'Open for',
+        num: true,
+        sortVal: function (r) { return r.hours == null ? -1 : r.hours; },
+        fmt: function (v, r) {
+          var dot = (r.hours != null && r.hours >= 48) ? '<span class="ui-dot bad"></span>' : '';
+          return dot + since(v);
+        },
+        csv: function (r) { return r.raw; }
+      }
     ];
+
+    function renderDocketsTab(view) {
+      UI.table('table', {
+        rows: view,
+        sort: { key: 'hours', dir: 'desc' },
+        limit: 50,
+        resetPage: true,
+        empty: 'No open dockets match these filters.',
+        columns: COLS,
+        onRow: detail
+      });
+    }
+
+    function renderAgeTab(view) {
+      var list = AGE.map(function (a) {
+        var sub = view.filter(function (r) { return r.ageKey === a.key; });
+        var techN = sub.filter(STAT.tech).length;
+        return {
+          key: a.key, label: a.label, n: sub.length, tech: techN,
+          pct: UI.pct(sub.length, view.length)
+        };
+      });
+      var maxN = Math.max.apply(null, list.map(function (x) { return x.n; }).concat([0]));
+
+      UI.table('table', {
+        rows: list,
+        sort: { key: 'n', dir: 'desc' },
+        count: false,
+        columns: [
+          { key: 'label', label: 'Aging Bucket', fmt: function (x) { return '<span class="ui-strong">' + UI.esc(x) + '</span>'; } },
+          { key: 'n', label: 'Dockets', num: true, fmt: UI.n },
+          { key: 'pct', label: '% Share', num: true },
+          { key: 'tech', label: 'Technical', num: true, fmt: UI.n, hideSm: true },
+          { key: 'share', label: 'Distribution', fmt: function (_, o) { return UI.bar(o.n, maxN, o.pct); }, width: '24%', hideSm: true }
+        ],
+        onRow: function (o) {
+          f.age = f.age === o.key ? '' : o.key;
+          syncUrl(); render();
+        }
+      });
+    }
+
+    function renderProblemsTab(view) {
+      var pc = {};
+      view.forEach(function (r) {
+        var k = r.prob || 'Unspecified';
+        var o = pc[k] || (pc[k] = { prob: k, tech: r.tech, n: 0, old: 0 });
+        o.n++;
+        if (r.hours >= 48) o.old++;
+      });
+      var list = Object.keys(pc).map(function (k) {
+        var o = pc[k];
+        o.pct = UI.pct(o.n, view.length);
+        return o;
+      });
+      var maxN = Math.max.apply(null, list.map(function (x) { return x.n; }).concat([0]));
+
+      UI.table('table', {
+        rows: list,
+        sort: { key: 'n', dir: 'desc' },
+        count: false,
+        columns: [
+          { key: 'prob', label: 'Problem Type', fmt: function (x) { return '<span class="ui-strong">' + UI.esc(x) + '</span>'; } },
+          { key: 'tech', label: 'Type', fmt: function (x) { return x ? '<span class="ui-badge">Technical</span>' : '<span class="ui-badge info">Non-technical</span>'; }, hideSm: true },
+          { key: 'n', label: 'Dockets', num: true, fmt: UI.n },
+          { key: 'pct', label: '% Share', num: true },
+          { key: 'old', label: 'Over 48h', num: true, fmt: UI.n },
+          { key: 'share', label: 'Distribution', fmt: function (_, o) { return UI.bar(o.n, maxN, o.pct); }, width: '24%', hideSm: true }
+        ],
+        onRow: function (o) {
+          f.prob = f.prob === o.prob ? '' : o.prob;
+          syncUrl(); render();
+        }
+      });
+    }
+
+    function renderRepeatTab(view) {
+      var repMap = {};
+      view.forEach(function (r) {
+        if (!r.con || repeat[r.con] <= 1) return;
+        var o = repMap[r.con] || (repMap[r.con] = {
+          con: r.con, name: r.name, _supp: r._supp, _divn: r._divn, mobile: r.mobile,
+          n: 0, probs: [], oldest: 0
+        });
+        o.n++;
+        if (r.prob && o.probs.indexOf(r.prob) === -1) o.probs.push(r.prob);
+        if (r.hours > o.oldest) o.oldest = r.hours;
+      });
+      var list = Object.keys(repMap).map(function (k) { return repMap[k]; });
+
+      UI.table('table', {
+        rows: list,
+        sort: { key: 'n', dir: 'desc' },
+        limit: 50,
+        resetPage: true,
+        empty: 'No repeat consumers matching these filters.',
+        columns: [
+          {
+            key: 'name',
+            label: 'Consumer',
+            fmt: function (v, r) {
+              return '<span class="ui-strong">' + UI.esc(v || r.con) + '</span><span class="sub">' + UI.esc(r.con) + '</span>';
+            }
+          },
+          {
+            key: '_supp',
+            label: 'CCC',
+            fmt: function (v, r) {
+              return UI.esc(v) + '<span class="sub">' + UI.esc(r._divn) + '</span>';
+            }
+          },
+          { key: 'n', label: 'Open Dockets', num: true, fmt: function (v) { return '<span class="ui-badge warn">' + v + ' dockets</span>'; } },
+          {
+            key: 'probs',
+            label: 'Problems',
+            cls: 'wrap',
+            fmt: function (x) { return UI.esc(x.join(', ')); },
+            hideSm: true
+          },
+          { key: 'oldest', label: 'Oldest', num: true, fmt: since, hideSm: true },
+          { key: 'mobile', label: 'Mobile', hideSm: true }
+        ],
+        onRow: function (r) {
+          f.q = r.con;
+          $('q').value = r.con;
+          tab = 'dockets';
+          syncUrl(); render();
+        }
+      });
+    }
+
     function detail(r) {
       var others = r.con ? all.filter(function (x) { return x.con === r.con && x !== r; }) : [];
-      UI.drawer('Docket ' + r.doc, [r._supp, r._divn].filter(Boolean).join(' · '), [
-        ['Problem', r.prob], ['Type', r.tech ? 'Technical' : 'Non-technical'], ['Description', r.desc], ['Consumer', r.name], ['Consumer ID', r.con], ['Mobile', r.mobile], ['Address', r.addr],
-        ['Created', r.created ? UI.fmtDate(r.created) + ', ' + r.created.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : r.raw], ['Open for', since(r.hours)],
-        ['Other open dockets', others.map(function (o) { return o.doc + ' (' + o.prob + ', ' + since(o.hours) + ')'; }).join('; ')]
-      ]);
+      var pairs = [
+        ['Docket number', r.doc], ['Problem', r.prob], ['Type', r.tech ? 'Technical' : 'Non-technical'],
+        ['Description', r.desc], ['Consumer', r.name], ['Consumer ID', r.con], ['Mobile', r.mobile], ['Address', r.addr],
+        ['CCC', r._supp], ['Division', r._divn], ['Region', r._region],
+        ['Created', r.created ? UI.fmtDate(r.created) + ', ' + r.created.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : r.raw],
+        ['Open for', since(r.hours)],
+        ['Other open dockets', others.map(function (o) { return o.doc + ' (' + o.prob + ', ' + since(o.hours) + ')'; }).join('; ') || 'None']
+      ];
+      UI.drawer('Docket ' + r.doc, [r._supp, r._divn].filter(Boolean).join(' · '), pairs);
+      var head = document.querySelector('#ui-drawer header'), btn = head ? head.querySelector('.rd-copy') : null;
+      if (head && !btn) {
+        btn = document.createElement('button'); btn.type = 'button'; btn.className = 'ui-btn sm rd-copy';
+        btn.innerHTML = UI.icon('copy') + 'Copy';
+        head.insertBefore(btn, head.lastElementChild);
+      }
+      if (btn) {
+        btn.onclick = function () {
+          var text = '*Docket Call*\n' + pairs.filter(function (p) { return !UI.blank(p[1]); }).map(function (p) { return '*' + p[0] + ':* ' + p[1]; }).join('\n');
+          UI.copy(text).then(function () { UI.toast('Details copied'); });
+        };
+      }
     }
 
-    function setLevel(l) {
-      level = l;
-      [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === l)); });
-      render();
-    }
-    function drill(name) {
-      if (level === 'region') { $('regionFilter').value = name; $('divisionFilter').value = ''; level = 'division'; }
-      else { $('divisionFilter').value = name; level = 'ccc'; }
-      $('cccFilter').value = '';
-      fillOffices(); markAll(); setLevel(level);
-    }
-    function markAll() { ['regionFilter', 'divisionFilter', 'cccFilter', 'probFilter', 'ageFilter'].forEach(function (id) { UI.mark($(id)); }); }
-
+    // Office filter change events
     ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
       $(id).addEventListener('change', function () {
         if (id === 'regionFilter') $('divisionFilter').value = '';
         if (id !== 'cccFilter') $('cccFilter').value = '';
-        fillOffices(); markAll(); render();
+        fillOffices(); markAll(); syncUrl(); render();
       });
     });
-    ['probFilter', 'ageFilter'].forEach(function (id) { $(id).addEventListener('change', function () { UI.mark(this); render(); }); });
-    $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim(); render(); }, 160));
-    $('stats').addEventListener('click', function (e) { var s = e.target.closest('.ui-stat'); if (!s) return; var k = s.getAttribute('data-k'); f.stat = f.stat === k ? '' : k; render(); });
-    $('levelTabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-tab'); if (t) setLevel(t.getAttribute('data-l')); });
-    $('clearBtn').addEventListener('click', function () {
-      f.q = ''; f.stat = ''; f.age = ''; $('q').value = '';
-      ['regionFilter', 'divisionFilter', 'cccFilter', 'probFilter', 'ageFilter'].forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });
-      fillOffices(); markAll();
-      setLevel(scope && (scope.level === 'division' || scope.level === 'ccc') ? 'ccc' : scope && scope.level === 'region' ? 'division' : 'region');
+
+    $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim(); syncUrl(); render(); }, 160));
+
+    // Stats click toggles status filter
+    $('stats').addEventListener('click', function (e) {
+      var s = e.target.closest('.ui-stat');
+      if (!s) return;
+      var k = s.getAttribute('data-k');
+      f.stat = f.stat === k ? '' : k;
+      syncUrl(); render();
     });
+
+    // Tab navigation
+    $('tabs').addEventListener('click', function (e) {
+      var b = e.target.closest('.ui-drill-tab');
+      if (!b) return;
+      tab = b.getAttribute('data-tab');
+      syncUrl(); render();
+    });
+
+    // Copy summary action
+    $('copyBtn').addEventListener('click', function () {
+      var b = base({});
+      var view = f.stat ? b.filter(STAT[f.stat]) : b;
+      var totTech = view.filter(STAT.tech).length;
+      var totOld = view.filter(STAT.old).length;
+      var text = 'Docket Calls — ' + ($('tableTitle').textContent || 'Summary') + '\n' +
+        'Open Dockets: ' + UI.n(view.length) + '\n' +
+        'Technical: ' + UI.n(totTech) + ' (' + UI.pct(totTech, view.length) + ')\n' +
+        'Over 48 hours: ' + UI.n(totOld) + ' (' + UI.pct(totOld, view.length) + ')\n' +
+        (f.stat ? 'Filter: ' + f.stat + '\n' : '') +
+        ($('regionFilter').value ? 'Region: ' + $('regionFilter').value + '\n' : '') +
+        ($('divisionFilter').value ? 'Division: ' + $('divisionFilter').value + '\n' : '') +
+        ($('cccFilter').value ? 'CCC: ' + $('cccFilter').value + '\n' : '');
+      UI.copy(text).then(function () { UI.toast('Summary copied to clipboard'); });
+    });
+
+    // Export CSV
     $('exportBtn').addEventListener('click', function () {
-      UI.exportCsv('open-dockets.csv', [{ key: 'doc', label: 'Docket' }, { key: 'con', label: 'Consumer ID' }, { key: 'name', label: 'Consumer' }, { key: 'mobile', label: 'Mobile' }, { key: '_region', label: 'Region' }, { key: '_divn', label: 'Division' }, { key: '_supp', label: 'CCC' }, { key: 'prob', label: 'Problem' }, { key: 'tech', label: 'Type', csv: function (r) { return r.tech ? 'Technical' : 'Non-technical'; } }, { key: 'addr', label: 'Address' }, { key: 'raw', label: 'Created' }], window.__view || []);
+      UI.exportCsv('open-dockets.csv', [
+        { key: 'doc', label: 'Docket' },
+        { key: 'con', label: 'Consumer ID' },
+        { key: 'name', label: 'Consumer' },
+        { key: 'mobile', label: 'Mobile' },
+        { key: '_region', label: 'Region' },
+        { key: '_divn', label: 'Division' },
+        { key: '_supp', label: 'CCC' },
+        { key: 'prob', label: 'Problem' },
+        { key: 'tech', label: 'Type', csv: function (r) { return r.tech ? 'Technical' : 'Non-technical'; } },
+        { key: 'addr', label: 'Address' },
+        { key: 'raw', label: 'Created' }
+      ], window.__view || []);
     });
+
     // Inside the workstation, open the KPI page as its own report.
     $('kpiLink').addEventListener('click', function (e) {
-      if (window.parent !== window && typeof window.parent.openPage === 'function') { e.preventDefault(); window.parent.openPage('docket/kpi.html', 'Docket KPI'); }
+      if (window.parent !== window && typeof window.parent.openPage === 'function') {
+        e.preventDefault();
+        window.parent.openPage('docket/kpi.html', 'Docket KPI');
+      }
     });
-    MzoRows.refresh('refreshBtn', 'docket_calls', function (t) { prepare(t); render(); });
+
+    MzoRows.refresh('refreshBtn', 'docket_calls', function (t) {
+      prepare(t);
+      render();
+    });
+
+    // Read deep link params on start
+    function initParams() {
+      var p = new URLSearchParams(location.search);
+      if (p.has('region')) $('regionFilter').value = p.get('region');
+      if (p.has('division')) $('divisionFilter').value = p.get('division');
+      if (p.has('ccc')) $('cccFilter').value = p.get('ccc');
+      if (p.has('q')) { f.q = p.get('q'); $('q').value = f.q; }
+      if (p.has('stat')) f.stat = p.get('stat');
+      if (p.has('type')) f.type = p.get('type');
+      if (p.has('age')) f.age = p.get('age');
+      if (p.has('prob')) f.prob = p.get('prob');
+      if (p.has('rep')) f.rep = p.get('rep');
+      if (p.has('tab')) tab = p.get('tab');
+    }
 
     var first = true;
     MzoRows.load('docket_calls', function (t, info) {
-      if (!t) { if (info && info.error && !all.length) { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      if (!t) {
+        if (info && info.error && !all.length) {
+          $('meta').textContent = 'Could not load data';
+          $('table').innerHTML = '<div class="ui-empty">Could not load data.</div>';
+        }
+        return;
+      }
       prepare(t);
       if (first) {
         first = false;
-        if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';
-        [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === level)); });
+        initParams();
+        if (!new URLSearchParams(location.search).has('tab')) {
+          if (scope && (scope.level === 'division' || scope.level === 'ccc')) tab = 'ccc';
+          else if (scope && scope.level === 'region') tab = 'division';
+        }
       }
+      markAll();
       render();
     });
   });

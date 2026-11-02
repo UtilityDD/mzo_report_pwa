@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Smart meters · MZO Reports</title>
+  <title>Smart meter utilization · MZO Reports</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -11,255 +11,733 @@
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
   <script src="/mzo_rows.js?v=6" defer></script>
-  <style>.ui-grid > .ui-panel { margin-top: 0; }</style>
+  <style>
+    .rem-hint {
+      padding: 8px 16px;
+      font-size: 12px;
+      color: var(--mzo-muted);
+      border-bottom: 1px solid var(--mzo-border);
+    }
+    .rd-copy { margin-left: auto; margin-right: 2px; }
+    .ui-stat .s { font-size: 11px; color: var(--mzo-muted); }
+  </style>
 </head>
 <body>
   <main class="ui-page">
     <header class="ui-head">
       <div>
-        <h1>Smart meters</h1>
-        <p id="meta">Loading…</p>
+        <h1>Smart meter utilization <span class="ui-badge ui-date" id="asOn"></span></h1>
+        <p id="meta">Supplied smart meters analysis</p>
       </div>
       <div class="ui-actions">
+        <a class="ui-btn sm" href="/meter_utilization.html" id="genMeterLink">All meters</a>
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
     </header>
 
-    <div class="ui-filters">
-      <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Meter number or consumer ID" autocomplete="off" /></label>
-      <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
-      <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
-      <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
-      <span class="ui-select"><select id="typeFilter" aria-label="Meter type"><option value="">All meter types</option></select></span>
-      <span class="ui-select"><select id="lotFilter" aria-label="Lot"><option value="">All lots</option></select></span>
-      <button type="button" class="ui-btn ghost" id="clearBtn" hidden><svg class="ui-i"><use href="#ui-x"/></svg>Clear</button>
-    </div>
-
-    <section class="ui-stats" style="--n:5" id="stats" aria-label="Summary">
-      <div class="ui-stat"><div class="k">Work orders</div><div class="v" id="sWo"><span class="ui-skel"></span></div><div class="s">Issued</div></div>
-      <button type="button" class="ui-stat" data-k=""><div class="k">Supplied</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="installed"><div class="k"><span class="ui-dot"></span>Installed</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="pushed"><div class="k"><span class="ui-dot ok"></span>Pushed to AMI</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="unpushed"><div class="k"><span class="ui-dot warn"></span>Installed, not pushed</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-    </section>
-
-    <div class="ui-grid">
-      <section class="ui-panel">
-        <div class="ui-panel-h">
-          <h2>By office</h2>
-          <div class="ui-tabs" role="tablist" id="levelTabs">
-            <button type="button" class="ui-tab" role="tab" data-l="region" aria-selected="true">Region</button>
-            <button type="button" class="ui-tab" role="tab" data-l="division">Division</button>
-            <button type="button" class="ui-tab" role="tab" data-l="ccc">CCC</button>
-          </div>
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h">
+          <h2>Filters<small id="activeLabel"></small></h2>
+          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
         </div>
-        <div id="officeTable" style="--max-h:560px"><div class="ui-empty">Loading…</div></div>
-      </section>
-      <div>
-        <section class="ui-panel">
-          <div class="ui-panel-h"><h2>Installed by meter type</h2></div>
-          <div id="typeTable"></div>
+        <div class="ui-side-sec ui-side-stack">
+          <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Search meter, consumer, WO" autocomplete="off" aria-label="Search meters" title="Search meters" /></label>
+          <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
+          <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
+          <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Installation status" id="fStat"></div>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Meter type" id="fType"></div>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Supply lot" id="fLot"></div>
+        </div>
+      </aside>
+
+      <div class="ui-main">
+        <section class="ui-stats" id="stats" aria-label="Summary">
+          <div class="ui-stat" id="cWo"><div class="k">Work orders</div><div class="v" id="sWo"><span class="ui-skel"></span></div><div class="s" id="sWoS">Issued</div></div>
+          <button type="button" class="ui-stat" data-k=""><div class="k">Supplied</div><div class="v" id="sN"><span class="ui-skel"></span></div><div class="s" id="sNS">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="installed"><div class="k"><span class="ui-dot"></span>Installed</div><div class="v" id="sInst"><span class="ui-skel"></span></div><div class="s" id="sInstS">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="pushed"><div class="k"><span class="ui-dot ok"></span>Pushed to AMI</div><div class="v" id="sPush"><span class="ui-skel"></span></div><div class="s" id="sPushS">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="unpushed"><div class="k"><span class="ui-dot warn"></span>Not pushed</div><div class="v" id="sUn"><span class="ui-skel"></span></div><div class="s" id="sUnS">&nbsp;</div></button>
         </section>
+
         <section class="ui-panel">
-          <div class="ui-panel-h"><h2>By lot</h2></div>
-          <div class="ui-panel-b"><div id="lotHist"></div></div>
+          <div class="ui-panel-h">
+            <h2 id="tableTitle">Detailed analysis</h2>
+            <div class="ui-actions">
+              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+            </div>
+          </div>
+          <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
+          <div class="rem-hint" id="hint"></div>
+          <div id="table"><div class="ui-empty">Loading…</div></div>
         </section>
       </div>
     </div>
-
-    <section class="ui-panel">
-      <div class="ui-panel-h">
-        <h2>Meters <small id="listCount"></small></h2>
-        <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
-      </div>
-      <div id="listTable"><div class="ui-empty">Loading…</div></div>
-    </section>
   </main>
 
   <script>
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var STATUS = { pushed: ['Pushed', 'ok'], unpushed: ['Not pushed', 'warn'], pending: ['Not installed', ''] };
-    var meters = [], wos = [], woByMeter = {}, asOn = null, f = { q: '', stat: '' }, level = 'region', scope = null;
+    var STATUS = {
+      pushed: ['Pushed to AMI', 'ok'],
+      unpushed: ['Installed, not pushed', 'warn'],
+      pending: ['Not installed', '']
+    };
+    var TABS = [
+      { id: 'region', label: 'Region' },
+      { id: 'division', label: 'Division' },
+      { id: 'ccc', label: 'CCC' },
+      { id: 'meters', label: 'Meter List' },
+      { id: 'lots', label: 'Supply Lots' },
+      { id: 'types', label: 'Meter Types' }
+    ];
 
-    // Canonical office of a row (schema offices: ccc_final for meters, CCC_code for work orders).
-    function office(d, code) { return { _region: d._region, _divn: d._division, _supp: d._ccc || code, CCC_CODE: code }; }
+    var meters = [], wos = [], woByMeter = {}, asOn = null;
+    var f = { q: '', stat: '', type: '', lot: '' };
+    var tab = 'region', scope = null;
 
-    // mt, wt: uniform rows of schema/smart_meter_status.json and smart_meter_work_orders.json (wt may
-    // still be on its way), each scoped to the login by MzoRows (t.all: every row).
+    var setActive = UI.sidePanel({
+      side: 'side',
+      toggle: 'sideToggle',
+      label: 'activeLabel',
+      count: 'activeCount',
+      clear: 'clearBtn',
+      onClear: function () {
+        f.q = ''; f.stat = ''; f.type = ''; f.lot = '';
+        $('q').value = '';
+        ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
+          if (!$(id).disabled) $(id).value = '';
+        });
+        fillOffices(); markAll();
+        syncUrl();
+        render();
+      }
+    });
+
+    function office(d, code) {
+      return { _region: d._region, _divn: d._division, _supp: d._ccc || code, CCC_CODE: code };
+    }
+
     function prepare(mt, wt) {
-      meters = mt.rows.filter(function (d) { return d.meter_supply_qty || d.con_id; }).map(function (d) {
-        var o = office(d, d.ccc_final), inst = !!d.meter_installed_qty_in_field_active_in_hes, push = !!d.total_submit_in_ami_portal;
-        o.meter = d.meter_supply_qty; o.con = d.con_id; o.type = d.meter_type || '—'; o.lot = d.lot || '—'; o.lotDate = d.lot_date;
-        o.installed = inst; o.pushed = push; o.st = push ? 'pushed' : inst ? 'unpushed' : 'pending'; o.remarks = d.remarks; o.gen = d.generation_meter; o.check = d.checked_meter;
+      meters = (mt ? mt.rows : []).filter(function (d) { return d.meter_supply_qty || d.con_id; }).map(function (d) {
+        var o = office(d, d.ccc_final);
+        var inst = !!d.meter_installed_qty_in_field_active_in_hes;
+        var push = !!d.total_submit_in_ami_portal;
+        o.meter = d.meter_supply_qty;
+        o.con = d.con_id || '';
+        o.type = d.meter_type || '—';
+        o.lot = d.lot || '—';
+        o.lotDate = d.lot_date;
+        o.installed = inst;
+        o.pushed = push;
+        o.st = push ? 'pushed' : inst ? 'unpushed' : 'pending';
+        o.remarks = d.remarks;
+        o.gen = d.generation_meter;
+        o.check = d.checked_meter;
         return o;
       });
-      // The as-on date and the meter → work order join use every work order, before the scope.
+
       asOn = null; woByMeter = {};
       (wt ? wt.all : []).forEach(function (d) {
         if (!d.work_order) return;
         if (!asOn && d.date) asOn = UI.date(d.date);
         if (d.new_meter_no) woByMeter[d.new_meter_no] = d;
       });
-      wos = (wt ? wt.rows : []).filter(function (d) { return d.work_order; }).map(function (d) { var o = office(d, d.ccc_code); o.wo = d.work_order; return o; });
-      $('meta').textContent = (asOn ? 'As on ' + UI.fmtDate(asOn) + ' · ' : '') + UI.n(meters.length) + ' meters supplied';
-      UI.fill('typeFilter', UI.uniq(meters, 'type'), 'All meter types');
-      UI.fill('lotFilter', UI.uniq(meters, 'lot'), 'All lots');
+      wos = (wt ? wt.rows : []).filter(function (d) { return d.work_order; }).map(function (d) {
+        var o = office(d, d.ccc_code);
+        o.wo = d.work_order;
+        return o;
+      });
+
+      if (asOn) {
+        $('asOn').textContent = 'As on ' + UI.fmtDate(asOn);
+        $('asOn').style.display = '';
+      } else {
+        $('asOn').style.display = 'none';
+      }
       fillOffices();
     }
+
     function fillOffices() {
       UI.offices(meters);
       if (!scope) scope = UI.lockScope();
     }
+
+    function markAll() {
+      ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { UI.mark($(id)); });
+    }
+
     function inOffice(r) {
       var reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value;
       return (!reg || r._region === reg) && (!div || r._divn === div) && (!ccc || r._supp === ccc);
     }
+
+    var STAT_TEST = {
+      installed: function (r) { return r.installed; },
+      pushed: function (r) { return r.pushed; },
+      unpushed: function (r) { return r.st === 'unpushed'; },
+      pending: function (r) { return r.st === 'pending'; }
+    };
+
     function base(skip) {
-      var q = f.q.toLowerCase(), t = $('typeFilter').value, lot = $('lotFilter').value;
+      var q = f.q.toLowerCase();
       return meters.filter(function (r) {
-        return inOffice(r) && (!t || r.type === t) && (skip === 'lot' || !lot || r.lot === lot) &&
-          (!q || String(r.meter).toLowerCase().indexOf(q) !== -1 || r.con.indexOf(q) !== -1);
+        if (!inOffice(r)) return false;
+        if (skip !== 'stat' && f.stat && !STAT_TEST[f.stat](r)) return false;
+        if (skip !== 'type' && f.type && r.type !== f.type) return false;
+        if (skip !== 'lot' && f.lot && r.lot !== f.lot) return false;
+        if (q) {
+          var m = String(r.meter || '').toLowerCase();
+          var c = String(r.con || '').toLowerCase();
+          var w = woByMeter[r.meter] || {};
+          var cn = String(w.con_name || '').toLowerCase();
+          var woNum = String(w.work_order || '').toLowerCase();
+          var om = String(w.old_meter_no || '').toLowerCase();
+          if (m.indexOf(q) === -1 && c.indexOf(q) === -1 && cn.indexOf(q) === -1 && woNum.indexOf(q) === -1 && om.indexOf(q) === -1) {
+            return false;
+          }
+        }
+        return true;
       });
     }
-    var STAT = { installed: function (r) { return r.installed; }, pushed: function (r) { return r.pushed; }, unpushed: function (r) { return r.st === 'unpushed'; } };
-    function counts(rows) { var c = { n: rows.length, inst: 0, push: 0, un: 0 }; rows.forEach(function (r) { if (r.installed) c.inst++; if (r.pushed) c.push++; if (r.st === 'unpushed') c.un++; }); return c; }
+
+    function counts(rows) {
+      var c = { n: rows.length, inst: 0, push: 0, un: 0, pend: 0 };
+      rows.forEach(function (r) {
+        if (r.installed) c.inst++;
+        if (r.pushed) c.push++;
+        if (r.st === 'unpushed') c.un++;
+        if (r.st === 'pending') c.pend++;
+      });
+      return c;
+    }
+
+    function syncUrl() {
+      var p = new URLSearchParams();
+      if ($('regionFilter').value) p.set('region', $('regionFilter').value);
+      if ($('divisionFilter').value) p.set('division', $('divisionFilter').value);
+      if ($('cccFilter').value) p.set('ccc', $('cccFilter').value);
+      if (f.q) p.set('q', f.q);
+      if (f.stat) p.set('stat', f.stat);
+      if (f.type) p.set('type', f.type);
+      if (f.lot) p.set('lot', f.lot);
+      if (tab !== 'region') p.set('tab', tab);
+      var qs = p.toString();
+      var url = location.pathname + (qs ? '?' + qs : '');
+      if (location.search !== (qs ? '?' + qs : '')) history.replaceState(null, '', url);
+    }
 
     function render() {
-      var b = base(), c = counts(b), view = f.stat ? b.filter(STAT[f.stat]) : b, wo = wos.filter(inOffice);
+      var b = base(), c = counts(b), wo = wos.filter(inOffice);
+      var view = b;
+
+      // KPI Strip update
       $('sWo').textContent = UI.n(wo.length);
+      $('sWoS').textContent = 'In scoped offices';
+
+      $('sN').textContent = UI.n(c.n);
+      $('sNS').textContent = UI.n(UI.uniq(b, '_supp').length) + ' CCCs';
+
+      $('sInst').textContent = UI.n(c.inst);
+      $('sInstS').textContent = UI.pct(c.inst, c.n) + ' of supplied';
+
+      $('sPush').textContent = UI.n(c.push);
+      $('sPushS').textContent = UI.pct(c.push, c.inst) + ' of installed';
+
+      $('sUn').textContent = UI.n(c.un);
+      $('sUnS').textContent = UI.pct(c.un, c.inst) + ' of installed';
+
       [].forEach.call(document.querySelectorAll('#stats button.ui-stat'), function (el) {
         var k = el.getAttribute('data-k');
-        var v = !k ? c.n : k === 'installed' ? c.inst : k === 'pushed' ? c.push : c.un;
-        var s = !k ? UI.n(UI.uniq(b, '_supp').length) + ' CCCs' : k === 'installed' ? UI.pct(c.inst, c.n) + ' of supplied' : k === 'pushed' ? UI.pct(c.push, c.inst) + ' of installed' : UI.pct(c.un, c.inst) + ' of installed';
-        el.querySelector('.v').textContent = UI.n(v); el.querySelector('.s').textContent = s;
         el.setAttribute('aria-pressed', String(f.stat === k));
       });
 
-      var key = level === 'region' ? '_region' : level === 'division' ? '_divn' : '_supp', g = {};
-      var row = function (name, r) { return g[name] || (g[name] = { name: name, parent: level === 'ccc' ? r._divn : level === 'division' ? r._region : '', wo: 0, n: 0, inst: 0, push: 0, un: 0 }); };
-      b.forEach(function (r) { var o = row(r[key] || 'Unmapped', r); o.n++; if (r.installed) o.inst++; if (r.pushed) o.push++; if (r.st === 'unpushed') o.un++; });
+      // Facets
+      var bForStat = base('stat');
+      var statCounts = counts(bForStat);
+      var statItems = [
+        { value: '', label: 'All statuses', count: statCounts.n },
+        { value: 'installed', label: 'Installed in field', count: statCounts.inst },
+        { value: 'pushed', label: 'Pushed to AMI', count: statCounts.push },
+        { value: 'unpushed', label: 'Installed, not pushed', count: statCounts.un },
+        { value: 'pending', label: 'Not installed', count: statCounts.pend }
+      ];
+      UI.facet($('fStat'), statItems, f.stat, function (v) { f.stat = v; syncUrl(); render(); });
+
+      var bForType = base('type');
+      var tg = {};
+      bForType.forEach(function (r) { tg[r.type] = (tg[r.type] || 0) + 1; });
+      var typeItems = [{ value: '', label: 'All meter types', count: bForType.length }].concat(Object.keys(tg).sort().map(function (k) {
+        return { value: k, label: k, count: tg[k] };
+      }));
+      UI.facet($('fType'), typeItems, f.type, function (v) { f.type = v; syncUrl(); render(); });
+
+      var bForLot = base('lot');
+      var lg = {};
+      bForLot.forEach(function (r) { lg[r.lot] = (lg[r.lot] || 0) + 1; });
+      var lotItems = [{ value: '', label: 'All lots', count: bForLot.length }].concat(Object.keys(lg).sort().map(function (k) {
+        return { value: k, label: k, count: lg[k] };
+      }));
+      UI.facet($('fLot'), lotItems, f.lot, function (v) { f.lot = v; syncUrl(); render(); });
+
+      // Active filters count
+      var hasOffice = ['regionFilter', 'divisionFilter', 'cccFilter'].some(function (id) { return $(id).value && !$(id).disabled; });
+      var nActive = (f.q ? 1 : 0) + (f.stat ? 1 : 0) + (f.type ? 1 : 0) + (f.lot ? 1 : 0) + (hasOffice ? 1 : 0);
+      setActive(nActive);
+
+      // Render Tabs
+      var tabsEl = $('tabs');
+      tabsEl.innerHTML = TABS.map(function (it) {
+        return '<button type="button" class="ui-drill-tab" role="tab" data-tab="' + it.id + '" aria-selected="' + String(tab === it.id) + '">' + it.label + '</button>';
+      }).join('');
+
+      $('hint').innerHTML = '<span class="ui-strong">' + UI.n(c.n) + '</span> supplied meters · <span class="ui-strong">' + UI.n(c.inst) + '</span> installed (' + UI.pct(c.inst, c.n) + ') · <span class="ui-strong">' + UI.n(c.push) + '</span> pushed to AMI (' + UI.pct(c.push, c.inst) + ') · <span class="ui-strong">' + UI.n(wo.length) + '</span> work orders';
+
+      window.__view = view;
+
+      if (tab === 'region' || tab === 'division' || tab === 'ccc') {
+        renderOfficesTab(b, c, wo);
+      } else if (tab === 'meters') {
+        renderMetersTab(view);
+      } else if (tab === 'lots') {
+        renderLotsTab(b, c);
+      } else if (tab === 'types') {
+        renderTypesTab(b, c);
+      }
+    }
+
+    function renderOfficesTab(b, c, wo) {
+      var key = tab === 'region' ? '_region' : tab === 'division' ? '_divn' : '_supp', g = {};
+      var row = function (name, r) {
+        return g[name] || (g[name] = {
+          name: name,
+          parent: tab === 'ccc' ? r._divn : tab === 'division' ? r._region : '',
+          wo: 0, n: 0, inst: 0, push: 0, un: 0, rows: []
+        });
+      };
+      b.forEach(function (r) {
+        var o = row(r[key] || 'Unmapped', r);
+        o.n++;
+        if (r.installed) o.inst++;
+        if (r.pushed) o.push++;
+        if (r.st === 'unpushed') o.un++;
+        o.rows.push(r);
+      });
       wo.forEach(function (r) { row(r[key] || 'Unmapped', r).wo++; });
       var list = Object.keys(g).map(function (k) { return g[k]; });
-      UI.table('officeTable', {
-        rows: list, sort: { key: 'n', dir: 'desc' }, count: false, empty: 'No meters for these filters.',
+
+      UI.table('table', {
+        rows: list,
+        sort: { key: 'n', dir: 'desc' },
+        count: false,
+        empty: 'No smart meters for these filters.',
         columns: [
-          { key: 'name', label: level === 'ccc' ? 'CCC' : level === 'division' ? 'Division' : 'Region', fmt: function (v, x) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (x.parent ? '<span class="sub">' + UI.esc(x.parent) + '</span>' : ''); } },
-          { key: 'wo', label: 'WO', num: true, fmt: UI.n, hideSm: true },
+          {
+            key: 'name',
+            label: tab === 'ccc' ? 'CCC' : tab === 'division' ? 'Division' : 'Region',
+            fmt: function (v, x) {
+              return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (x.parent ? '<span class="sub">' + UI.esc(x.parent) + '</span>' : '');
+            }
+          },
+          { key: 'wo', label: 'WOs', num: true, fmt: UI.n, hideSm: true },
           { key: 'n', label: 'Supplied', num: true, fmt: UI.n },
+          { key: 'inst', label: 'Installed', num: true, fmt: UI.n },
           { key: 'push', label: 'Pushed', num: true, fmt: UI.n, hideSm: true },
           { key: 'un', label: 'Not pushed', num: true, fmt: UI.n },
-          { key: 'rate', label: 'Installed', sortVal: function (x) { return x.n ? x.inst / x.n : 0; }, fmt: function (_, x) { return UI.bar(x.inst, x.n, UI.pct(x.inst, x.n), 2); }, width: '26%' }
+          {
+            key: 'rate',
+            label: 'Installation rate',
+            sortVal: function (x) { return x.n ? x.inst / x.n : 0; },
+            fmt: function (_, x) { return UI.bar(x.inst, x.n, UI.pct(x.inst, x.n)); },
+            width: '20%'
+          },
+          {
+            key: 'pushRate',
+            label: 'AMI Push rate',
+            sortVal: function (x) { return x.inst ? x.push / x.inst : 0; },
+            fmt: function (_, x) { return UI.bar(x.push, x.inst, UI.pct(x.push, x.inst)); },
+            width: '20%',
+            hideSm: true
+          }
         ],
-        foot: list.length > 1 ? { wo: wo.length, n: c.n, push: c.push, un: c.un } : null,
-        onRow: level === 'ccc' ? null : function (x) { drill(x.name); }
+        foot: list.length > 1 ? { wo: wo.length, n: c.n, inst: c.inst, push: c.push, un: c.un } : null,
+        onRow: function (x) {
+          if (tab === 'region') {
+            if ($('regionFilter').disabled) return;
+            $('regionFilter').value = x.name; $('divisionFilter').value = ''; $('cccFilter').value = '';
+            tab = 'division';
+          } else if (tab === 'division') {
+            if ($('divisionFilter').disabled) return;
+            $('divisionFilter').value = x.name; $('cccFilter').value = '';
+            tab = 'ccc';
+          } else {
+            showCccDrawer(x);
+            return;
+          }
+          fillOffices(); markAll(); syncUrl(); render();
+        }
       });
+    }
 
-      var tg = {}; b.forEach(function (r) { var o = tg[r.type] || (tg[r.type] = { type: r.type, n: 0, inst: 0, push: 0 }); o.n++; if (r.installed) o.inst++; if (r.pushed) o.push++; });
-      UI.table('typeTable', {
-        rows: Object.keys(tg).map(function (k) { return tg[k]; }), sort: { key: 'n', dir: 'desc' }, count: false,
-        selected: function (x) { return x.type === $('typeFilter').value; },
-        columns: [
-          { key: 'type', label: 'Type', fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
-          { key: 'n', label: 'Supplied', num: true, fmt: UI.n },
-          { key: 'rate', label: 'Installed', sortVal: function (x) { return x.n ? x.inst / x.n : 0; }, fmt: function (_, x) { return UI.bar(x.inst, x.n, UI.pct(x.inst, x.n), 2); }, width: '46%' }
-        ],
-        onRow: function (x) { $('typeFilter').value = $('typeFilter').value === x.type ? '' : x.type; UI.mark($('typeFilter')); render(); }
-      });
-      var lb = base('lot'), lg = {}; lb.forEach(function (r) { lg[r.lot] = (lg[r.lot] || 0) + 1; });
-      UI.hist('lotHist', Object.keys(lg).sort().map(function (k) { return { key: k, label: k, value: lg[k] }; }),
-        { active: $('lotFilter').value, onClick: function (x) { $('lotFilter').value = $('lotFilter').value === x.key ? '' : x.key; UI.mark($('lotFilter')); render(); } });
+    function showCccDrawer(x) {
+      var pairs = [
+        ['CCC Name', x.name],
+        ['Division', x.parent],
+        ['Work orders', UI.n(x.wo)],
+        ['Supplied smart meters', UI.n(x.n)],
+        ['Installed in field', UI.n(x.inst) + ' (' + UI.pct(x.inst, x.n) + ')'],
+        ['Pushed to AMI portal', UI.n(x.push) + ' (' + UI.pct(x.push, x.inst) + ')'],
+        ['Installed, not pushed', UI.n(x.un) + ' (' + UI.pct(x.un, x.inst) + ')'],
+        ['Pending installation', UI.n(x.n - x.inst)]
+      ];
 
-      $('listCount').textContent = UI.n(view.length);
-      window.__view = view;
-      UI.table('listTable', { rows: view, sort: { key: 'st', dir: 'desc' }, limit: 50, resetPage: true, empty: 'No meters match these filters.', columns: COLS, onRow: detail });
-      $('clearBtn').hidden = !(f.q || f.stat || $('typeFilter').value || $('lotFilter').value || ['regionFilter', 'divisionFilter', 'cccFilter'].some(function (id) { return $(id).value && !$(id).disabled; }));
+      var extraHtml = '<div style="margin-top:16px"><button type="button" class="ui-btn primary sm" id="drViewMetersBtn">View ' + UI.esc(x.name) + ' meters</button></div>';
+
+      UI.drawer(x.name, x.parent, pairs, extraHtml);
+
+      var btn = $('drViewMetersBtn');
+      if (btn) {
+        btn.onclick = function () {
+          $('cccFilter').value = x.name;
+          fillOffices(); markAll();
+          tab = 'meters';
+          syncUrl(); render();
+          var overlay = document.getElementById('ui-drawer-overlay');
+          if (overlay) overlay.click();
+        };
+      }
+
+      var head = document.querySelector('#ui-drawer header');
+      var copyBtn = head ? head.querySelector('.rd-copy') : null;
+      if (head && !copyBtn) {
+        copyBtn = document.createElement('button'); copyBtn.type = 'button'; copyBtn.className = 'ui-btn sm rd-copy';
+        copyBtn.innerHTML = UI.icon('copy') + 'Copy';
+        head.insertBefore(copyBtn, head.lastElementChild);
+      }
+      if (copyBtn) {
+        copyBtn.onclick = function () {
+          var text = '*Smart meter utilization: ' + x.name + '*\n' + pairs.map(function (p) { return '*' + p[0] + ':* ' + p[1]; }).join('\n');
+          UI.copy(text).then(function () { UI.toast('Details copied'); });
+        };
+      }
     }
 
     var COLS = [
-      { key: 'meter', label: 'Meter', fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v || '—') + '</span>'; } },
-      { key: 'con', label: 'Consumer ID' },
-      { key: '_supp', label: 'CCC', fmt: function (v, r) { return UI.esc(v || r.CCC_CODE) + '<span class="sub">' + UI.esc(r._divn) + '</span>'; } },
+      {
+        key: 'meter',
+        label: 'Meter',
+        fmt: function (v, r) {
+          var flags = '';
+          if (r.gen) flags += ' <span class="ui-badge">Gen</span>';
+          if (r.check) flags += ' <span class="ui-badge">Check</span>';
+          return '<span class="mono ui-strong">' + UI.esc(v || '—') + '</span>' + flags;
+        }
+      },
+      {
+        key: 'con',
+        label: 'Consumer ID',
+        fmt: function (v) { return v ? '<span class="mono">' + UI.esc(v) + '</span>' : '—'; }
+      },
+      {
+        key: 'con_name',
+        label: 'Consumer',
+        hideSm: true,
+        fmt: function (_, r) {
+          var w = woByMeter[r.meter] || {};
+          return w.con_name ? UI.esc(w.con_name) : '—';
+        }
+      },
+      {
+        key: '_supp',
+        label: 'CCC',
+        fmt: function (v, r) {
+          return UI.esc(v || r.CCC_CODE) + (r._divn ? '<span class="sub">' + UI.esc(r._divn) + '</span>' : '');
+        }
+      },
       { key: 'type', label: 'Type', hideSm: true },
       { key: 'lot', label: 'Lot', hideSm: true },
-      { key: 'st', label: 'Status', sortVal: function (r) { return r.st === 'unpushed' ? 3 : r.st === 'pending' ? 2 : 1; }, fmt: function (v) { return '<span class="ui-badge ' + STATUS[v][1] + '">' + STATUS[v][0] + '</span>'; }, csv: function (r) { return STATUS[r.st][0]; } }
+      {
+        key: 'st',
+        label: 'Status',
+        sortVal: function (r) { return r.st === 'unpushed' ? 3 : r.st === 'pending' ? 2 : 1; },
+        fmt: function (v) { return '<span class="ui-badge ' + STATUS[v][1] + '">' + STATUS[v][0] + '</span>'; },
+        csv: function (r) { return STATUS[r.st][0]; }
+      }
     ];
-    function detail(r) {
+
+    function renderMetersTab(view) {
+      UI.table('table', {
+        rows: view,
+        sort: { key: 'st', dir: 'desc' },
+        limit: 50,
+        resetPage: true,
+        empty: 'No meters match these filters.',
+        columns: COLS,
+        onRow: showMeterDrawer
+      });
+    }
+
+    function showMeterDrawer(r) {
       var w = woByMeter[r.meter] || {};
-      var clean = function (v) { return UI.blank(v) ? '' : v; };
-      UI.drawer('Meter ' + (r.meter || '—'), [r._supp, r._divn].filter(Boolean).join(' · '), [
-        ['Status', STATUS[r.st][0]], ['Consumer ID', r.con || clean(w.consumer_id)], ['Consumer', clean(w.con_name)], ['Address', clean(w.con_addr)],
-        ['Work order', clean(w.work_order)], ['Work order date', clean(w.work_order_date)], ['Old meter', clean(w.old_meter_no)], ['Load (kW)', clean(w.conn_load)], ['Class', clean(w.con_class)],
-        ['Meter type', r.type], ['Lot', r.lot], ['Lot date', r.lotDate ? UI.fmtDate(r.lotDate) : ''],
-        ['Generation meter', r.gen], ['Check meter', r.check], ['Remarks', r.remarks], ['CCC code', r.CCC_CODE]
-      ]);
+      var clean = function (v) { return UI.blank(v) ? '' : String(v); };
+      var pairs = [
+        ['Status', STATUS[r.st][0]],
+        ['Consumer ID', r.con || clean(w.consumer_id)],
+        ['Consumer name', clean(w.con_name)],
+        ['Address', clean(w.con_addr)],
+        ['Work order', clean(w.work_order)],
+        ['Work order date', clean(w.work_order_date)],
+        ['Old meter number', clean(w.old_meter_no)],
+        ['Connected load (kW)', clean(w.conn_load)],
+        ['Consumer class', clean(w.con_class)],
+        ['Meter type', r.type],
+        ['Supply lot', r.lot],
+        ['Lot date', r.lotDate ? UI.fmtDate(r.lotDate) : ''],
+        ['Generation meter', r.gen || 'No'],
+        ['Check meter', r.check || 'No'],
+        ['Remarks', clean(r.remarks)],
+        ['CCC', r._supp || ''],
+        ['Division', r._divn || ''],
+        ['Region', r._region || ''],
+        ['CCC code', r.CCC_CODE || '']
+      ];
+
+      UI.drawer('Meter ' + (r.meter || '—'), [r._supp, r._divn].filter(Boolean).join(' · '), pairs);
+
+      var head = document.querySelector('#ui-drawer header');
+      var copyBtn = head ? head.querySelector('.rd-copy') : null;
+      if (head && !copyBtn) {
+        copyBtn = document.createElement('button'); copyBtn.type = 'button'; copyBtn.className = 'ui-btn sm rd-copy';
+        copyBtn.innerHTML = UI.icon('copy') + 'Copy';
+        head.insertBefore(copyBtn, head.lastElementChild);
+      }
+      if (copyBtn) {
+        copyBtn.onclick = function () {
+          var text = '*Smart meter ' + (r.meter || '') + '*\n' + pairs.filter(function (p) { return p[1]; }).map(function (p) { return '*' + p[0] + ':* ' + p[1]; }).join('\n');
+          UI.copy(text).then(function () { UI.toast('Details copied'); });
+        };
+      }
     }
 
-    function setLevel(l) {
-      level = l;
-      [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === l)); });
-      render();
-    }
-    function drill(name) {
-      if (level === 'region') { $('regionFilter').value = name; $('divisionFilter').value = ''; level = 'division'; }
-      else { $('divisionFilter').value = name; level = 'ccc'; }
-      $('cccFilter').value = '';
-      fillOffices(); markAll(); setLevel(level);
-    }
-    function markAll() { ['regionFilter', 'divisionFilter', 'cccFilter', 'typeFilter', 'lotFilter'].forEach(function (id) { UI.mark($(id)); }); }
+    function renderLotsTab(b, c) {
+      var lg = {};
+      b.forEach(function (r) {
+        var o = lg[r.lot] || (lg[r.lot] = { lot: r.lot, lotDate: r.lotDate, n: 0, inst: 0, push: 0, un: 0 });
+        o.n++;
+        if (r.installed) o.inst++;
+        if (r.pushed) o.push++;
+        if (r.st === 'unpushed') o.un++;
+        if (!o.lotDate && r.lotDate) o.lotDate = r.lotDate;
+      });
+      var list = Object.keys(lg).map(function (k) { return lg[k]; });
 
+      UI.table('table', {
+        rows: list,
+        sort: { key: 'n', dir: 'desc' },
+        count: false,
+        columns: [
+          { key: 'lot', label: 'Supply Lot', fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
+          { key: 'lotDate', label: 'Lot date', fmt: function (v) { return v ? UI.fmtDate(v) : '—'; }, hideSm: true },
+          { key: 'n', label: 'Supplied', num: true, fmt: UI.n },
+          { key: 'inst', label: 'Installed', num: true, fmt: UI.n },
+          { key: 'push', label: 'Pushed', num: true, fmt: UI.n, hideSm: true },
+          { key: 'un', label: 'Not pushed', num: true, fmt: UI.n },
+          {
+            key: 'rate',
+            label: 'Installation rate',
+            sortVal: function (x) { return x.n ? x.inst / x.n : 0; },
+            fmt: function (_, x) { return UI.bar(x.inst, x.n, UI.pct(x.inst, x.n)); },
+            width: '24%'
+          },
+          {
+            key: 'pushRate',
+            label: 'AMI Push rate',
+            sortVal: function (x) { return x.inst ? x.push / x.inst : 0; },
+            fmt: function (_, x) { return UI.bar(x.push, x.inst, UI.pct(x.push, x.inst)); },
+            width: '24%',
+            hideSm: true
+          }
+        ],
+        foot: list.length > 1 ? { n: c.n, inst: c.inst, push: c.push, un: c.un } : null,
+        onRow: function (x) {
+          f.lot = f.lot === x.lot ? '' : x.lot;
+          tab = 'meters';
+          syncUrl(); render();
+        }
+      });
+    }
+
+    function renderTypesTab(b, c) {
+      var tg = {};
+      b.forEach(function (r) {
+        var o = tg[r.type] || (tg[r.type] = { type: r.type, n: 0, inst: 0, push: 0, un: 0 });
+        o.n++;
+        if (r.installed) o.inst++;
+        if (r.pushed) o.push++;
+        if (r.st === 'unpushed') o.un++;
+      });
+      var list = Object.keys(tg).map(function (k) { return tg[k]; });
+
+      UI.table('table', {
+        rows: list,
+        sort: { key: 'n', dir: 'desc' },
+        count: false,
+        columns: [
+          { key: 'type', label: 'Meter Type', fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
+          { key: 'n', label: 'Supplied', num: true, fmt: UI.n },
+          { key: 'inst', label: 'Installed', num: true, fmt: UI.n },
+          { key: 'push', label: 'Pushed', num: true, fmt: UI.n, hideSm: true },
+          { key: 'un', label: 'Not pushed', num: true, fmt: UI.n },
+          {
+            key: 'rate',
+            label: 'Installation rate',
+            sortVal: function (x) { return x.n ? x.inst / x.n : 0; },
+            fmt: function (_, x) { return UI.bar(x.inst, x.n, UI.pct(x.inst, x.n)); },
+            width: '24%'
+          },
+          {
+            key: 'pushRate',
+            label: 'AMI Push rate',
+            sortVal: function (x) { return x.inst ? x.push / x.inst : 0; },
+            fmt: function (_, x) { return UI.bar(x.push, x.inst, UI.pct(x.push, x.inst)); },
+            width: '24%',
+            hideSm: true
+          }
+        ],
+        foot: list.length > 1 ? { n: c.n, inst: c.inst, push: c.push, un: c.un } : null,
+        onRow: function (x) {
+          f.type = f.type === x.type ? '' : x.type;
+          tab = 'meters';
+          syncUrl(); render();
+        }
+      });
+    }
+
+    // Office change listeners
     ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
       $(id).addEventListener('change', function () {
         if (id === 'regionFilter') $('divisionFilter').value = '';
         if (id !== 'cccFilter') $('cccFilter').value = '';
-        fillOffices(); markAll(); render();
+        fillOffices(); markAll(); syncUrl(); render();
       });
     });
-    ['typeFilter', 'lotFilter'].forEach(function (id) { $(id).addEventListener('change', function () { UI.mark(this); render(); }); });
-    $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim(); render(); }, 160));
-    $('stats').addEventListener('click', function (e) { var s = e.target.closest('button.ui-stat'); if (!s) return; var k = s.getAttribute('data-k'); f.stat = f.stat === k ? '' : k; render(); });
-    $('levelTabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-tab'); if (t) setLevel(t.getAttribute('data-l')); });
-    $('clearBtn').addEventListener('click', function () {
-      f.q = ''; f.stat = ''; $('q').value = '';
-      ['regionFilter', 'divisionFilter', 'cccFilter', 'typeFilter', 'lotFilter'].forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });
-      fillOffices(); markAll();
-      setLevel(scope && (scope.level === 'division' || scope.level === 'ccc') ? 'ccc' : scope && scope.level === 'region' ? 'division' : 'region');
-    });
-    $('exportBtn').addEventListener('click', function () {
-      UI.exportCsv('smart-meters.csv', [{ key: 'meter', label: 'Meter' }, { key: 'con', label: 'Consumer ID' }, { key: '_region', label: 'Region' }, { key: '_divn', label: 'Division' }, { key: '_supp', label: 'CCC' }, { key: 'type', label: 'Type' }, { key: 'lot', label: 'Lot' }, COLS[5]], window.__view || []);
+
+    $('q').addEventListener('input', UI.debounce(function () {
+      f.q = this.value.trim();
+      syncUrl(); render();
+    }, 160));
+
+    $('stats').addEventListener('click', function (e) {
+      var s = e.target.closest('button.ui-stat');
+      if (!s) return;
+      var k = s.getAttribute('data-k');
+      f.stat = f.stat === k ? '' : k;
+      syncUrl(); render();
     });
 
-    // These sheets export slowly from Google (half a minute or more). MzoRows paints this device's
-    // last rows at once and replaces them when newer rows arrive (on the VM they come ready-made).
-    // The page's old copy in the Cache API is no longer read.
+    $('tabs').addEventListener('click', function (e) {
+      var t = e.target.closest('.ui-drill-tab');
+      if (t) {
+        tab = t.getAttribute('data-tab');
+        syncUrl(); render();
+      }
+    });
+
+    $('exportBtn').addEventListener('click', function () {
+      var exportCols = [
+        { key: 'meter', label: 'Meter' },
+        { key: 'con', label: 'Consumer ID' },
+        { key: 'con_name', label: 'Consumer Name', csv: function (r) { var w = woByMeter[r.meter] || {}; return w.con_name || ''; } },
+        { key: 'work_order', label: 'Work Order', csv: function (r) { var w = woByMeter[r.meter] || {}; return w.work_order || ''; } },
+        { key: '_region', label: 'Region' },
+        { key: '_divn', label: 'Division' },
+        { key: '_supp', label: 'CCC' },
+        { key: 'type', label: 'Type' },
+        { key: 'lot', label: 'Lot' },
+        { key: 'st', label: 'Status', csv: function (r) { return STATUS[r.st][0]; } }
+      ];
+      UI.exportCsv('smart-meters.csv', exportCols, window.__view || meters);
+    });
+
+    $('copyBtn').addEventListener('click', function () {
+      var b = window.__view || [];
+      var c = counts(b);
+      var text = '*Smart meter utilization: ' + (UI.summaryOffice ? UI.summaryOffice() : 'All') + '*\n' +
+        '*Supplied:* ' + UI.n(c.n) + '\n' +
+        '*Installed:* ' + UI.n(c.inst) + ' (' + UI.pct(c.inst, c.n) + ')\n' +
+        '*Pushed to AMI:* ' + UI.n(c.push) + ' (' + UI.pct(c.push, c.inst) + ')\n' +
+        '*Installed, not pushed:* ' + UI.n(c.un) + ' (' + UI.pct(c.un, c.inst) + ')\n' +
+        '*Not installed:* ' + UI.n(c.pend);
+      UI.copy(text).then(function () { UI.toast('Summary copied'); });
+    });
+
+    // URL parameter pre-fill
+    var p = new URLSearchParams(location.search);
+    if (p.get('region')) $('regionFilter').value = p.get('region');
+    if (p.get('division')) $('divisionFilter').value = p.get('division');
+    if (p.get('ccc')) $('cccFilter').value = p.get('ccc');
+    if (p.get('q')) { f.q = p.get('q'); $('q').value = f.q; }
+    if (p.get('stat')) f.stat = p.get('stat');
+    if (p.get('type')) f.type = p.get('type');
+    if (p.get('lot')) f.lot = p.get('lot');
+    if (p.get('tab') && TABS.some(function (t) { return t.id === p.get('tab'); })) tab = p.get('tab');
+
     if ('caches' in window) caches.delete('mzo-smart-meter-v1').catch(function () {});
     var mT = null, wT = null, fresh = false;
+
     function paint() {
       prepare(mT, wT);
       if (!paint.done) {
         paint.done = true;
-        if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';
-        [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (x) { x.setAttribute('aria-selected', String(x.getAttribute('data-l') === level)); });
+        if (!p.get('tab')) {
+          if (scope && (scope.level === 'division' || scope.level === 'ccc')) tab = 'ccc';
+          else if (scope && scope.level === 'region') tab = 'division';
+        }
       }
       render();
       if (wT === null) $('sWo').innerHTML = '<span class="ui-skel"></span>';
-      if (!fresh) $('meta').textContent += ' · updating…';
+      if (!fresh) $('meta').textContent = 'Updating…';
+      else $('meta').textContent = UI.n(meters.length) + ' meters supplied';
     }
+
     function load(force) {
       var b = $('refreshBtn'); b.classList.add('spin'); fresh = false;
-      var done = 0, finish = function () { if (++done === 2) { fresh = true; if (mT) paint(); b.classList.remove('spin'); } };
+      var done = 0, finish = function () {
+        if (++done === 2) {
+          fresh = true;
+          if (mT) paint();
+          b.classList.remove('spin');
+        }
+      };
       var opts = force ? { forceCheck: true } : undefined;
       MzoRows.load('smart_meter_status', function (t, info) {
         if (t) { mT = t; paint(); return; }
-        if (info && info.error && !mT) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; }
+        if (info && info.error && !mT) {
+          $('meta').textContent = 'Could not load data';
+          $('table').innerHTML = '<div class="ui-empty">Could not load data.</div>';
+        }
       }, opts).then(finish, finish);
+
       MzoRows.load('smart_meter_work_orders', function (t) {
         if (t) wT = t; else if (!wT) wT = { rows: [], all: [] };
         if (mT) paint();
       }, opts).then(finish, finish);
     }
-    $('refreshBtn').addEventListener('click', function () { if (!this.classList.contains('spin')) load(true); });
+
+    $('refreshBtn').addEventListener('click', function () {
+      if (!this.classList.contains('spin')) load(true);
+    });
+
     load(false);
   });
   </script>

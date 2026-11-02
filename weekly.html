@@ -12,16 +12,47 @@
   <script src="/mzo_scope.js?v=17" defer></script>
   <script src="/mzo_rows.js?v=6" defer></script>
   <style>
-    .wk-chart { position: relative; display: flex; align-items: stretch; gap: 2px; height: 180px; padding: 4px 0 0; }
-    .wk-chart .col { position: relative; flex: 1 1 0; min-width: 2px; cursor: pointer; border-radius: 2px; }
+    .ui-head { align-items: center; }
+    .cl-kpis .ui-stat { padding: 13px 14px 14px; }
+    .cl-hint { padding: 8px 16px; color: var(--mzo-muted); font-size: 12.5px; border-bottom: 1px solid var(--mzo-border); }
+    .cl-hint:empty { display: none; }
+
+    /* Enhanced trend chart */
+    .wk-wrap { padding: 16px 16px 12px; }
+    .wk-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 12px; }
+    .wk-head-title { font-size: 13.5px; font-weight: 600; color: var(--mzo-text); }
+    .wk-legend { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--mzo-muted); }
+    .wk-legend .ui-dot { margin-right: 4px; }
+    .wk-chart-box { position: relative; height: 230px; padding-left: 44px; margin-bottom: 6px; }
+    .wk-chart { position: relative; display: flex; align-items: flex-end; gap: 3px; height: 100%; width: 100%; }
+    .wk-chart .col { position: relative; flex: 1 1 0; min-width: 4px; height: 100%; cursor: pointer; border-radius: 3px; display: flex; align-items: flex-end; justify-content: center; gap: 1px; }
     .wk-chart .col:hover { background: var(--mzo-row-hover); }
-    .wk-chart .col b { position: absolute; left: 12%; right: 12%; border-radius: 2px; background: var(--mzo-chart); }
-    .wk-chart .col b.up { background: var(--mzo-bad-mark); opacity: .85; }
-    .wk-chart .col b.down { background: var(--mzo-ok-mark); opacity: .85; }
-    .wk-chart .col.on b { opacity: 1; background: var(--mzo-text); }
-    .wk-chart .base { position: absolute; left: 0; right: 0; height: 1px; background: var(--mzo-border-strong); pointer-events: none; }
-    .wk-axis { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--mzo-muted); }
-    .wk-legend { font-size: 12.5px; color: var(--mzo-muted); }
+    .wk-chart .col.on { background: var(--mzo-surface-2); box-shadow: inset 0 0 0 1px var(--mzo-accent); }
+    .wk-chart .col.on .bar { opacity: 1; filter: drop-shadow(0 0 1px var(--mzo-accent)); }
+
+    /* Paired bars in compare mode */
+    .wk-chart .bar { position: relative; width: 44%; max-width: 14px; border-radius: 2px 2px 0 0; min-height: 1px; transition: height .15s ease; }
+    .wk-chart .bar.dep { background: var(--mzo-c1); }
+    .wk-chart .bar.dis { background: var(--mzo-c2); }
+
+    /* Single / bipolar bar in net and pend mode */
+    .wk-chart .bar.single { width: 68%; max-width: 18px; position: absolute; left: 16%; }
+    .wk-chart .bar.up { background: var(--mzo-bad-mark); border-radius: 2px 2px 0 0; }
+    .wk-chart .bar.down { background: var(--mzo-ok-mark); border-radius: 0 0 2px 2px; }
+    .wk-chart .bar.pend { background: var(--mzo-chart); border-radius: 2px 2px 0 0; }
+
+    /* Gridlines & Axis */
+    .wk-grid { position: absolute; left: 44px; right: 0; height: 1px; background: var(--mzo-border); pointer-events: none; }
+    .wk-grid span { position: absolute; right: calc(100% + 8px); top: -7px; font-size: 11px; color: var(--mzo-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .wk-base-line { position: absolute; left: 44px; right: 0; height: 1px; background: var(--mzo-border-strong); pointer-events: none; }
+    .wk-axis { display: flex; justify-content: space-between; margin-left: 44px; font-size: 12px; color: var(--mzo-muted); }
+
+    /* Floating tooltip */
+    .wk-tip { position: fixed; z-index: 50; pointer-events: none; padding: 9px 12px; border-radius: 8px; background: var(--mzo-surface); color: var(--mzo-text); box-shadow: 0 0 0 1px var(--mzo-border), var(--mzo-shadow-pop); font-size: 12px; line-height: 1.55; font-variant-numeric: tabular-nums; min-width: 175px; }
+    .wk-tip b { display: block; font-weight: 600; font-size: 12.5px; margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px solid var(--mzo-border); }
+    .wk-tip-row { display: flex; justify-content: space-between; gap: 12px; }
+    .wk-tip-row span { color: var(--mzo-muted); }
+    .wk-tip-hint { margin-top: 5px; font-size: 11px; color: var(--mzo-accent); }
     .wk-up { color: var(--mzo-bad); }
     .wk-down { color: var(--mzo-ok); }
   </style>
@@ -30,63 +61,69 @@
   <main class="ui-page">
     <header class="ui-head">
       <div>
-        <h1>Weekly deposit vs disposal</h1>
-        <p id="meta">Loading…</p>
+        <h1>Weekly deposit vs disposal<span class="ui-badge ui-date" id="asOn">…</span></h1>
       </div>
       <div class="ui-actions">
-        <div class="ui-seg" id="cat" role="group" aria-label="Category">
-          <button type="button" data-c="ALL" aria-pressed="true">All</button>
-          <button type="button" data-c="DOM" aria-pressed="false">Domestic</button>
-          <button type="button" data-c="COM" aria-pressed="false">Commercial</button>
-          <button type="button" data-c="IND" aria-pressed="false">Industrial</button>
-        </div>
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
     </header>
 
-    <div class="ui-filters">
-      <span class="ui-select"><select id="weekFilter" aria-label="Week"><option value="">All weeks (average)</option></select></span>
-      <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
-      <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
-      <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
-      <button type="button" class="ui-btn ghost" id="clearBtn" hidden><svg class="ui-i"><use href="#ui-x"/></svg>Clear</button>
-    </div>
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h">
+          <h2>Filters<small id="activeLabel"></small></h2>
+          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
+        </div>
+        <div class="ui-side-sec ui-side-stack">
+          <span class="ui-select"><select id="weekFilter" aria-label="Week"><option value="">All weeks (average)</option></select></span>
+          <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
+          <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
+          <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Category" id="fCategory"></div>
+        </div>
+      </aside>
 
-    <section class="ui-stats" style="--n:5" id="stats" aria-label="Summary">
-      <button type="button" class="ui-stat" data-m="dep"><div class="k">Deposited</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-m="dis"><div class="k">Disposed</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-m="net"><div class="k">Backlog change</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-m="wit"><div class="k">Withheld</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-m="pend"><div class="k">Pending on Monday</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-    </section>
+      <div class="ui-main">
+        <section class="ui-stats cl-kpis" id="kpis" aria-label="Summary">
+          <button type="button" class="ui-stat" data-m="dep"><div class="k"><span class="ui-dot c1"></span>Deposited</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-m="dis"><div class="k"><span class="ui-dot c2"></span>Disposed</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-m="net"><div class="k">Backlog change</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-m="wit"><div class="k"><span class="ui-dot warn"></span>Withheld</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-m="pend"><div class="k">Pending on Monday</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+        </section>
 
-    <section class="ui-panel">
-      <div class="ui-panel-h"><h2 id="trendTitle">Backlog change by week</h2><span class="wk-legend" id="trendNote"></span></div>
-      <div class="ui-panel-b">
-        <div class="wk-chart" id="chart"></div>
-        <div class="wk-axis"><span id="axisFrom"></span><span id="axisTo"></span></div>
-      </div>
-    </section>
-
-    <div class="ui-grid">
-      <section class="ui-panel">
-        <div class="ui-panel-h">
-          <h2>By office <small id="officeNote"></small></h2>
-          <div class="ui-tabs" role="tablist" id="levelTabs">
-            <button type="button" class="ui-tab" role="tab" data-l="region" aria-selected="true">Region</button>
-            <button type="button" class="ui-tab" role="tab" data-l="division">Division</button>
-            <button type="button" class="ui-tab" role="tab" data-l="ccc">CCC</button>
+        <section class="ui-panel">
+          <div class="ui-panel-h">
+            <h2>Detailed analysis</h2>
+            <div class="ui-actions">
+              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+            </div>
           </div>
-        </div>
-        <div id="officeTable" style="--max-h:560px"><div class="ui-empty">Loading…</div></div>
-      </section>
-      <section class="ui-panel" style="margin-top:0">
-        <div class="ui-panel-h">
-          <h2>Weeks</h2>
-          <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
-        </div>
-        <div id="weekTable" style="--max-h:560px"><div class="ui-empty">Loading…</div></div>
-      </section>
+          <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
+          <div class="cl-hint" id="hint"></div>
+          <div class="wk-wrap" id="chartWrap" hidden>
+            <div class="wk-head">
+              <div class="wk-head-title" id="chartTitle">Deposit vs Disposal by week</div>
+              <div class="ui-seg sm" id="chartMode" role="group" aria-label="Chart mode">
+                <button type="button" data-m="compare" aria-pressed="true">Deposit vs Disposal</button>
+                <button type="button" data-m="net" aria-pressed="false">Net change</button>
+                <button type="button" data-m="pend" aria-pressed="false">Pending backlog</button>
+              </div>
+              <div class="wk-legend" id="chartLegend"></div>
+            </div>
+            <div class="wk-chart-box">
+              <div id="chartGrid"></div>
+              <div class="wk-chart" id="chart"></div>
+            </div>
+            <div class="wk-axis"><span id="axisFrom"></span><span id="axisMid"></span><span id="axisTo"></span></div>
+          </div>
+          <div id="table"><div class="ui-empty">Loading…</div></div>
+        </section>
+      </div>
     </div>
   </main>
 
@@ -102,7 +139,11 @@
       wit: { label: 'Withheld', title: 'Withheld by week' },
       pend: { label: 'Pending on Monday', title: 'Pending on Monday by week' }
     };
-    var all = [], weeks = [], f = { cat: 'ALL', metric: 'net' }, level = 'region', scope = null;
+    var CAT = { ALL: 'All classes', DOM: 'Domestic', COM: 'Commercial', IND: 'Industrial' };
+    var TABS = [['trend', 'Trend'], ['weeks', 'Weeks'], ['region', 'Region'], ['division', 'Division'], ['ccc', 'CCC'], ['category', 'Category']];
+    var all = [], weeks = [], f = { cat: 'ALL', metric: 'net' }, tab = 'trend', renderedTab = '', scope = null, lastTable = null, first = true;
+    var SELECTS = ['weekFilter', 'regionFilter', 'divisionFilter', 'cccFilter'];
+    var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
 
     // A metric of one category: <base>_dom / _com / _ind (e.g. deposited_in_last_week_dom); ALL is their sum.
     function num(row, base, cat) {
@@ -126,7 +167,8 @@
         };
       });
       weeks = Object.keys(seen).map(Number).sort(function (a, b) { return b - a; });
-      $('meta').textContent = weeks.length ? UI.n(weeks.length) + ' weeks · ' + UI.fmtDate(new Date(weeks[weeks.length - 1])) + ' to ' + UI.fmtDate(new Date(weeks[0])) : 'No weeks reported';
+      $('asOn').textContent = weeks.length ? UI.fmtDate(new Date(weeks[0])) : '';
+      $('asOn').title = weeks.length ? UI.n(weeks.length) + ' weeks reported: ' + UI.fmtDate(new Date(weeks[weeks.length - 1])) + ' to ' + UI.fmtDate(new Date(weeks[0])) : 'No weeks reported';
       UI.fill('weekFilter', weeks.map(function (w) { return { value: String(w), label: 'Week of ' + UI.fmtDate(new Date(w)) }; }), 'All weeks (average)');
       fillOffices();
     }
@@ -134,8 +176,9 @@
     function fillOffices() {
       UI.offices(all);
       if (!scope) scope = UI.lockScope();
-      UI.mark($('weekFilter'));
+      SELECTS.forEach(function (id) { UI.mark($(id)); });
     }
+    function set(id, v) { if (!$(id).disabled) $(id).value = v; }
 
     function officeRows() {
       var reg = $('regionFilter').value, div = $('divisionFilter').value, cc = $('cccFilter').value;
@@ -143,10 +186,11 @@
     }
 
     // Totals for a set of rows in the chosen category.
-    function sum(rows) {
+    function sum(rows, category) {
       var t = { last: 0, dep: 0, eff: 0, wit: 0, dis: 0, pend: 0 };
+      var c = category || f.cat;
       rows.forEach(function (r) {
-        var d = r.raw, c = f.cat;
+        var d = r.raw;
         t.last += num(d, 'pending_as_on_monday_of_last_week', c);
         t.dep += num(d, 'deposited_in_last_week', c);
         t.eff += num(d, 'conn_eff', c);
@@ -162,7 +206,22 @@
     function fmt(v, avg) { return avg ? (Math.abs(v) < 100 ? v.toFixed(1) : UI.n(Math.round(v))) : UI.n(v); }
     function signed(v, avg) { var s = fmt(Math.abs(v), avg); return v > 0 ? '+' + s : v < 0 ? '−' + s : '0'; }
 
+    function renderFacets() {
+      var rows = officeRows(), wk = $('weekFilter').value;
+      var inWeek = wk ? rows.filter(function (r) { return String(r.week) === wk; }) : rows;
+      var opts = [
+        { value: 'ALL', label: 'All classes', count: sum(inWeek, 'ALL').dep },
+        { value: 'DOM', label: 'Domestic', count: sum(inWeek, 'DOM').dep },
+        { value: 'COM', label: 'Commercial', count: sum(inWeek, 'COM').dep },
+        { value: 'IND', label: 'Industrial', count: sum(inWeek, 'IND').dep }
+      ];
+      UI.facet('fCategory', opts, f.cat, function (v) { f.cat = v || 'ALL'; render(); });
+      var active = (wk ? 1 : 0) + (f.cat !== 'ALL' ? 1 : 0) + ['regionFilter', 'divisionFilter', 'cccFilter'].filter(function (id) { return $(id).value && !$(id).disabled; }).length;
+      setActive(active);
+    }
+
     function render() {
+      renderFacets();
       var rows = officeRows(), wk = $('weekFilter').value, avg = !wk;
       var inWeek = wk ? rows.filter(function (r) { return String(r.week) === wk; }) : rows;
       var nWeeks = wk ? 1 : UI.uniq(rows.map(function (r) { return { w: r.week }; }), 'w').length || 1;
@@ -170,12 +229,12 @@
 
       var sub = {
         dep: avg ? 'Average per week' : 'In the week',
-        dis: 'Effected ' + fmt(t.eff, avg) + ' · withheld ' + fmt(t.wit, avg),
-        net: t.net > 0 ? 'Backlog grew' : t.net < 0 ? 'Backlog shrank' : 'No change',
+        dis: UI.pct(t.dis, t.dep) + ' disposal rate',
+        net: t.net > 0 ? 'Backlog grew by ' + fmt(Math.abs(t.net), avg) : t.net < 0 ? 'Backlog shrank by ' + fmt(Math.abs(t.net), avg) : 'Backlog balanced',
         wit: UI.pct(t.wit, t.dis) + ' of disposed',
-        pend: 'Last Monday ' + fmt(t.last, avg)
+        pend: (t.last ? (t.pend >= t.last ? '+' : '−') + fmt(Math.abs(t.pend - t.last), avg) + ' vs last Mon' : 'Current pending')
       };
-      [].forEach.call(document.querySelectorAll('#stats .ui-stat'), function (el) {
+      [].forEach.call(document.querySelectorAll('#kpis .ui-stat'), function (el) {
         var m = el.getAttribute('data-m'), v = el.querySelector('.v');
         v.textContent = m === 'net' ? signed(t.net, avg) : fmt(t[m], avg);
         v.className = 'v' + (m === 'net' && t.net > 0 ? ' wk-up' : m === 'net' && t.net < 0 ? ' wk-down' : '');
@@ -183,125 +242,338 @@
         el.setAttribute('aria-pressed', String(f.metric === m));
       });
 
-      // Trend: every week for the current offices.
+      // Trend series: every week for the current offices
       var byWeek = {};
       rows.forEach(function (r) { (byWeek[r.week] = byWeek[r.week] || []).push(r); });
       var series = weeks.slice().reverse().filter(function (w) { return byWeek[w]; }).map(function (w) { var s = sum(byWeek[w]); s.week = w; return s; });
-      chart(series, wk);
 
-      // Offices
-      var key = level === 'region' ? '_region' : level === 'division' ? '_divn' : '_supp', groups = {};
-      inWeek.forEach(function (r) { (groups[r[key] || 'Unmapped'] = groups[r[key] || 'Unmapped'] || { rows: [], parent: level === 'ccc' ? r._divn : level === 'division' ? r._region : '' }).rows.push(r); });
-      var list = Object.keys(groups).map(function (k) { var s = scale(sum(groups[k].rows), nWeeks); s.name = k; s.parent = groups[k].parent; return s; });
-      $('officeNote').textContent = avg ? 'average per week' : 'week of ' + UI.fmtDate(new Date(+wk));
-      var F = function (v) { return fmt(v, avg); };
-      UI.table('officeTable', {
-        rows: list, sort: { key: 'dep', dir: 'desc' }, count: false, empty: 'No reports for these filters.',
-        columns: [
-          { key: 'name', label: level === 'ccc' ? 'CCC' : level === 'division' ? 'Division' : 'Region', fmt: function (v, g) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.parent ? '<span class="sub">' + UI.esc(g.parent) + '</span>' : ''); } },
-          { key: 'dep', label: 'Deposited', num: true, fmt: F },
-          { key: 'dis', label: 'Disposed', num: true, fmt: F, hideSm: true },
-          { key: 'net', label: 'Change', num: true, fmt: function (v) { return '<span class="' + (v > 0 ? 'wk-up' : v < 0 ? 'wk-down' : '') + '">' + signed(v, avg) + '</span>'; } },
-          { key: 'wit', label: 'Withheld', num: true, fmt: F, hideSm: true },
-          { key: 'pend', label: 'Pending', num: true, fmt: F }
-        ],
-        foot: list.length > 1 ? (function () { var s = t; return { dep: s.dep, dis: s.dis, net: s.net, wit: s.wit, pend: s.pend }; })() : null,
-        onRow: level === 'ccc' ? null : function (g) { drill(g.name); }
-      });
+      $('tabs').innerHTML = TABS.map(function (t) {
+        return '<button type="button" class="ui-drill-tab" role="tab" data-t="' + t[0] + '" aria-selected="' + (t[0] === tab) + '">' + t[1] + '</button>';
+      }).join('');
 
-      // Week list
-      var wl = series.slice().reverse();
-      UI.table('weekTable', {
-        rows: wl, sort: { key: 'week', dir: 'desc' }, limit: 26, resetPage: true, count: false, empty: 'No weeks.',
-        selected: function (r) { return String(r.week) === wk; },
-        columns: WEEK_COLS,
-        onRow: function (r) { var s = $('weekFilter'); s.value = String(r.week) === wk ? '' : String(r.week); UI.mark(s); render(); }
-      });
-      window.__weeks = wl;
-      $('clearBtn').hidden = !(wk || f.cat !== 'ALL' || ['regionFilter', 'divisionFilter', 'cccFilter'].some(function (id) { return $(id).value && !$(id).disabled; }));
+      var catName = f.cat === 'ALL' ? '' : ' (' + CAT[f.cat] + ')';
+      $('hint').textContent = (f.cat !== 'ALL' ? 'Showing ' + CAT[f.cat].toLowerCase() + ' only. ' : '') +
+        (tab === 'trend' ? (METRIC[f.metric].title + catName + '. ' + (f.metric === 'net' ? 'Above the line: more deposited than disposed. ' : '') + 'Click a bar to filter to that week.')
+          : tab === 'weeks' ? 'Click any week to focus the report on that week.'
+          : ['region', 'division', 'ccc'].indexOf(tab) !== -1 ? 'Click a row to open the next level. ' + (avg ? 'Showing weekly average.' : 'Showing week of ' + UI.fmtDate(new Date(+wk)) + '.')
+          : 'Breakdown of deposits and disposals across consumer categories.');
+
+      renderTab(inWeek, series, rows, nWeeks, avg, wk);
+    }
+
+    function renderTab(inWeek, series, rows, nWeeks, avg, wk) {
+      $('chartWrap').hidden = tab !== 'trend';
+      lastTable = null;
+
+      if (tab === 'trend') {
+        chart(series, wk);
+        var m = f.metric;
+        lastTable = { title: METRIC[m].title, cols: ['Week of', METRIC[m].label, 'Deposited', 'Disposed'], rows: series.map(function (s) { return [UI.fmtDate(new Date(s.week)), s[m], s.dep, s.dis]; }) };
+        $('table').innerHTML = ''; $('table').__ui = null; renderedTab = 'trend';
+        return;
+      }
+
+      var cfg = null;
+      if (tab === 'weeks') {
+        var wl = series.slice().reverse();
+        lastTable = {
+          title: 'Weeks',
+          cols: ['Week of', 'Deposited', 'Effected', 'Withheld', 'Disposed', 'Change', 'Disposal rate', 'Pending'],
+          rows: wl.map(function (r) { return [UI.fmtDate(new Date(r.week)), r.dep, r.eff, r.wit, r.dis, r.net, UI.pct(r.dis, r.dep), r.pend]; }),
+          csv: wl
+        };
+        cfg = {
+          rows: wl, sort: { key: 'week', dir: 'desc' }, limit: 26, resetPage: true, count: false, empty: 'No weeks.',
+          selected: function (r) { return String(r.week) === wk; },
+          columns: WEEK_COLS,
+          onRow: function (r) { var s = $('weekFilter'); s.value = String(r.week) === wk ? '' : String(r.week); UI.mark(s); render(); }
+        };
+      }
+      else if (tab === 'region' || tab === 'division' || tab === 'ccc') {
+        var key = tab === 'region' ? '_region' : tab === 'division' ? '_divn' : '_supp', groups = {};
+        inWeek.forEach(function (r) {
+          var name = r[key] || 'Unmapped';
+          (groups[name] = groups[name] || { rows: [], parent: tab === 'ccc' ? r._divn : tab === 'division' ? r._region : '' }).rows.push(r);
+        });
+        var list = Object.keys(groups).map(function (k) {
+          var s = scale(sum(groups[k].rows), nWeeks);
+          s.name = k; s.parent = groups[k].parent;
+          return s;
+        });
+        var F = function (v) { return fmt(v, avg); };
+        var label = tab === 'ccc' ? 'CCC' : tab === 'division' ? 'Division' : 'Region';
+        var sumTot = scale(sum(inWeek), nWeeks);
+        lastTable = {
+          title: label,
+          cols: [label, 'Deposited', 'Disposed', 'Change', 'Withheld', 'Pending', 'Disposal %'],
+          rows: list.slice().sort(function (a, b) { return b.dep - a.dep; }).map(function (g) { return [g.name, F(g.dep), F(g.dis), signed(g.net, avg), F(g.wit), F(g.pend), UI.pct(g.dis, g.dep)]; })
+        };
+        cfg = {
+          rows: list, sort: { key: 'dep', dir: 'desc' }, count: false, empty: 'No reports for these filters.',
+          columns: [
+            { key: 'name', label: label, fmt: function (v, g) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.parent ? '<span class="sub">' + UI.esc(g.parent) + '</span>' : ''); } },
+            { key: 'dep', label: 'Deposited', num: true, fmt: F },
+            { key: 'dis', label: 'Disposed', num: true, fmt: F, hideSm: true },
+            { key: 'net', label: 'Change', num: true, fmt: function (v) { return '<span class="' + (v > 0 ? 'wk-up' : v < 0 ? 'wk-down' : '') + '">' + signed(v, avg) + '</span>'; } },
+            { key: 'wit', label: 'Withheld', num: true, fmt: F, hideSm: true },
+            { key: 'pend', label: 'Pending', num: true, fmt: F },
+            { key: 'rate', label: 'Disposed %', sortVal: function (g) { return g.dep ? g.dis / g.dep : 0; }, fmt: function (_, g) { return UI.bar(g.dis, g.dep, UI.pct(g.dis, g.dep), 2); }, width: '22%' }
+          ],
+          foot: list.length > 1 ? { dep: sumTot.dep, dis: sumTot.dis, net: sumTot.net, wit: sumTot.wit, pend: sumTot.pend } : null,
+          onRow: function (g) { drill(tab, g.name); },
+          selected: tab === 'ccc' ? function (g) { return $('cccFilter').value === g.name; } : null
+        };
+      }
+      else if (tab === 'category') {
+        var cats = ['DOM', 'COM', 'IND'];
+        var cl = cats.map(function (c) {
+          var s = scale(sum(inWeek, c), nWeeks);
+          s.key = c; s.name = CAT[c];
+          return s;
+        });
+        var F = function (v) { return fmt(v, avg); };
+        var totAll = scale(sum(inWeek, 'ALL'), nWeeks);
+        lastTable = {
+          title: 'Category',
+          cols: ['Category', 'Deposited', 'Effected', 'Withheld', 'Disposed', 'Change', 'Pending', 'Share'],
+          rows: cl.map(function (c) { return [c.name, F(c.dep), F(c.eff), F(c.wit), F(c.dis), signed(c.net, avg), F(c.pend), UI.pct(c.dep, totAll.dep)]; })
+        };
+        cfg = {
+          rows: cl, sort: null, count: false, empty: 'No data for categories.',
+          columns: [
+            { key: 'name', label: 'Category', fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
+            { key: 'dep', label: 'Deposited', num: true, fmt: F },
+            { key: 'eff', label: 'Effected', num: true, hideSm: true, fmt: F },
+            { key: 'wit', label: 'Withheld', num: true, hideSm: true, fmt: F },
+            { key: 'dis', label: 'Disposed', num: true, fmt: F },
+            { key: 'net', label: 'Change', num: true, fmt: function (v) { return '<span class="' + (v > 0 ? 'wk-up' : v < 0 ? 'wk-down' : '') + '">' + signed(v, avg) + '</span>'; } },
+            { key: 'pend', label: 'Pending', num: true, fmt: F },
+            { key: 'share', label: 'Deposit share', sortVal: function (c) { return c.dep; }, fmt: function (_, c) { return UI.bar(c.dep, totAll.dep, UI.pct(c.dep, totAll.dep)); }, width: '24%' }
+          ],
+          foot: { name: 'Total', dep: totAll.dep, eff: totAll.eff, wit: totAll.wit, dis: totAll.dis, net: totAll.net, pend: totAll.pend },
+          onRow: function (c) { f.cat = f.cat === c.key ? 'ALL' : c.key; render(); }
+        };
+      }
+
+      var k = tab + ':' + (avg ? 'avg' : wk);
+      if (renderedTab !== k) { $('table').__ui = null; renderedTab = k; }
+      UI.table('table', cfg);
     }
 
     var WEEK_COLS = [
       { key: 'week', label: 'Week of', fmt: function (v) { return '<span style="white-space:nowrap">' + UI.fmtDate(new Date(v)) + '</span>'; }, csv: function (r) { return UI.fmtDate(new Date(r.week)); } },
       { key: 'dep', label: 'Deposited', num: true, fmt: UI.n },
-      { key: 'dis', label: 'Disposed', num: true, fmt: UI.n, hideSm: true },
+      { key: 'eff', label: 'Effected', num: true, hideSm: true, fmt: UI.n },
+      { key: 'wit', label: 'Withheld', num: true, hideSm: true, fmt: UI.n },
+      { key: 'dis', label: 'Disposed', num: true, fmt: UI.n },
       { key: 'net', label: 'Change', num: true, fmt: function (v) { return '<span class="' + (v > 0 ? 'wk-up' : v < 0 ? 'wk-down' : '') + '">' + signed(v, false) + '</span>'; }, csv: function (r) { return r.net; } },
+      { key: 'rate', label: 'Disposed %', sortVal: function (r) { return r.dep ? r.dis / r.dep : 0; }, fmt: function (_, r) { return UI.bar(r.dis, r.dep, UI.pct(r.dis, r.dep), 2); }, width: '22%' },
       { key: 'pend', label: 'Pending', num: true, fmt: UI.n }
     ];
 
+    var chartView = 'compare';
+    function nice(v) {
+      if (v <= 0) return 1;
+      var p = Math.pow(10, Math.floor(Math.log10(v))), m = v / p;
+      var steps = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
+      for (var i = 0; i < steps.length; i++) if (m <= steps[i]) return steps[i] * p;
+      return 10 * p;
+    }
+
     function chart(series, wk) {
-      var m = f.metric, vals = series.map(function (s) { return s[m]; });
-      var maxPos = Math.max.apply(null, vals.concat([0])), maxNeg = Math.max.apply(null, vals.map(function (v) { return -v; }).concat([0]));
-      var range = (maxPos + maxNeg) || 1, base = (maxNeg / range) * 100;
-      $('trendTitle').textContent = METRIC[m].title;
-      $('trendNote').textContent = m === 'net' ? 'Above the line: more deposited than disposed' : (series.length ? 'Peak ' + UI.n(maxPos) : '');
-      $('chart').innerHTML = '<div class="base" style="bottom:' + base + '%"></div>' + series.map(function (s) {
-        var v = s[m], h = (Math.abs(v) / range) * 100, cls = m === 'net' ? (v > 0 ? 'up' : v < 0 ? 'down' : '') : '';
-        var pos = v >= 0 ? 'bottom:' + base + '%' : 'bottom:' + (base - h) + '%';
-        var tip = UI.fmtDate(new Date(s.week)) + ' — deposited ' + UI.n(s.dep) + ', disposed ' + UI.n(s.dis) + ' (effected ' + UI.n(s.eff) + ', withheld ' + UI.n(s.wit) + '), pending ' + UI.n(s.pend);
-        return '<div class="col' + (String(s.week) === wk ? ' on' : '') + '" data-w="' + s.week + '" title="' + UI.esc(tip) + '"><b class="' + cls + '" style="' + pos + ';height:' + Math.max(v ? 0.8 : 0, h) + '%"></b></div>';
-      }).join('');
+      var catName = f.cat === 'ALL' ? '' : ' (' + CAT[f.cat] + ')';
+      var titles = {
+        compare: 'Deposit vs Disposal by week' + catName,
+        net: 'Backlog change by week' + catName,
+        pend: 'Pending backlog volume by week' + catName
+      };
+      var legends = {
+        compare: '<span class="ui-dot c1"></span>Deposited <span class="ui-dot c2" style="margin-left:10px"></span>Disposed',
+        net: '<span class="ui-dot bad"></span>Backlog grew (+) <span class="ui-dot ok" style="margin-left:10px"></span>Backlog shrank (−)',
+        pend: '<span class="ui-dot" style="background:var(--mzo-chart)"></span>Pending applications'
+      };
+      $('chartTitle').textContent = titles[chartView];
+      $('chartLegend').innerHTML = legends[chartView];
+      [].forEach.call($('chartMode').querySelectorAll('button'), function (b) {
+        b.setAttribute('aria-pressed', String(b.getAttribute('data-m') === chartView));
+      });
+
+      if (!series.length) {
+        $('chartGrid').innerHTML = '';
+        $('chart').innerHTML = '<div class="ui-empty" style="flex:1">No weekly reports for these filters.</div>';
+        $('axisFrom').textContent = $('axisMid').textContent = $('axisTo').textContent = '';
+        return;
+      }
+
+      var gridHtml = '', colsHtml = '';
+      if (chartView === 'compare') {
+        var vals = [];
+        series.forEach(function (s) { vals.push(s.dep, s.dis); });
+        var max = nice(Math.max.apply(null, vals.concat([0])));
+        gridHtml = [0, 0.5, 1].map(function (t) {
+          return '<div class="wk-grid" style="bottom:' + (t * 100) + '%"><span>' + UI.n(Math.round(max * t)) + '</span></div>';
+        }).join('');
+        colsHtml = series.map(function (s, i) {
+          var hDep = Math.max(s.dep ? 0.6 : 0, (s.dep / max) * 100);
+          var hDis = Math.max(s.dis ? 0.6 : 0, (s.dis / max) * 100);
+          return '<div class="col' + (String(s.week) === wk ? ' on' : '') + '" data-w="' + s.week + '" data-i="' + i + '">' +
+            '<b class="bar dep" style="height:' + hDep + '%"></b>' +
+            '<b class="bar dis" style="height:' + hDis + '%"></b>' +
+            '</div>';
+        }).join('');
+      } else if (chartView === 'net') {
+        var pos = [], neg = [];
+        series.forEach(function (s) { if (s.net >= 0) pos.push(s.net); else neg.push(-s.net); });
+        var maxSpan = nice(Math.max.apply(null, pos.concat(neg).concat([0])));
+        var range = maxSpan * 2 || 1;
+        gridHtml = '<div class="wk-grid" style="bottom:100%"><span>+' + UI.n(maxSpan) + '</span></div>' +
+          '<div class="wk-base-line" style="bottom:50%"></div>' +
+          '<div class="wk-grid" style="bottom:50%"><span>0</span></div>' +
+          '<div class="wk-grid" style="bottom:0%"><span>−' + UI.n(maxSpan) + '</span></div>';
+        colsHtml = series.map(function (s, i) {
+          var v = s.net, h = Math.min(50, (Math.abs(v) / range) * 100);
+          var posCss = v >= 0 ? 'bottom:50%' : 'bottom:' + (50 - h) + '%';
+          return '<div class="col' + (String(s.week) === wk ? ' on' : '') + '" data-w="' + s.week + '" data-i="' + i + '">' +
+            '<b class="bar single ' + (v > 0 ? 'up' : 'down') + '" style="' + posCss + ';height:' + Math.max(v ? 0.8 : 0, h) + '%"></b>' +
+            '</div>';
+        }).join('');
+      } else {
+        var pends = series.map(function (s) { return s.pend; });
+        var maxP = nice(Math.max.apply(null, pends.concat([0])));
+        gridHtml = [0, 0.5, 1].map(function (t) {
+          return '<div class="wk-grid" style="bottom:' + (t * 100) + '%"><span>' + UI.n(Math.round(maxP * t)) + '</span></div>';
+        }).join('');
+        colsHtml = series.map(function (s, i) {
+          var h = Math.max(s.pend ? 0.6 : 0, (s.pend / maxP) * 100);
+          return '<div class="col' + (String(s.week) === wk ? ' on' : '') + '" data-w="' + s.week + '" data-i="' + i + '">' +
+            '<b class="bar single pend" style="bottom:0;height:' + h + '%"></b>' +
+            '</div>';
+        }).join('');
+      }
+
+      $('chartGrid').innerHTML = gridHtml;
+      $('chart').innerHTML = colsHtml;
+      $('chart').__series = series;
       $('axisFrom').textContent = series.length ? UI.fmtDate(new Date(series[0].week)) : '';
+      $('axisMid').textContent = series.length > 2 ? UI.fmtDate(new Date(series[Math.floor(series.length / 2)].week)) : '';
       $('axisTo').textContent = series.length ? UI.fmtDate(new Date(series[series.length - 1].week)) : '';
     }
 
-    function setLevel(l) {
-      level = l;
-      [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === l)); });
+    $('chart').addEventListener('pointermove', function (e) {
+      var c = e.target.closest('.col'), tip = $('tip');
+      if (!c || !this.__series) { tip.hidden = true; return; }
+      var s = this.__series[+c.getAttribute('data-i')];
+      if (!s) { tip.hidden = true; return; }
+      var wk = $('weekFilter').value;
+      tip.innerHTML = '<b>Week of ' + UI.fmtDate(new Date(s.week)) + '</b>' +
+        '<div class="wk-tip-row"><span>Deposited:</span> <strong>' + UI.n(s.dep) + '</strong></div>' +
+        '<div class="wk-tip-row"><span>Disposed:</span> <strong>' + UI.n(s.dis) + '</strong></div>' +
+        '<div class="wk-tip-row"><span>· Effected:</span> ' + UI.n(s.eff) + '</div>' +
+        '<div class="wk-tip-row"><span>· Withheld:</span> ' + UI.n(s.wit) + '</div>' +
+        '<div class="wk-tip-row"><span>Net change:</span> <strong class="' + (s.net > 0 ? 'wk-up' : s.net < 0 ? 'wk-down' : '') + '">' + signed(s.net, false) + '</strong></div>' +
+        '<div class="wk-tip-row"><span>Pending:</span> <strong>' + UI.n(s.pend) + '</strong></div>' +
+        '<div class="wk-tip-hint">' + (String(s.week) === wk ? 'Click to deselect week' : 'Click to inspect this week') + '</div>';
+      tip.hidden = false;
+      var x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 10);
+      tip.style.left = x + 'px';
+      tip.style.top = Math.max(10, e.clientY - tip.offsetHeight - 10) + 'px';
+    });
+    $('chart').addEventListener('pointerleave', function () { $('tip').hidden = true; });
+
+    $('chartMode').addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      chartView = b.getAttribute('data-m');
       render();
-    }
-    function drill(name) {
-      if (level === 'region') { $('regionFilter').value = name; $('divisionFilter').value = ''; level = 'division'; }
-      else { $('divisionFilter').value = name; level = 'ccc'; }
-      $('cccFilter').value = '';
-      fillOffices(); setLevel(level);
+    });
+
+    function drill(level, name) {
+      if (name === 'Unmapped') return;
+      if (level === 'region') { set('regionFilter', name); set('divisionFilter', ''); set('cccFilter', ''); tab = 'division'; }
+      else if (level === 'division') { set('divisionFilter', name); set('cccFilter', ''); tab = 'ccc'; }
+      else { set('cccFilter', $('cccFilter').value === name ? '' : name); tab = 'weeks'; }
+      fillOffices(); render();
     }
 
-    ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
+    /* ---------- URL params (Ask, shared links) ---------- */
+    // ?region= ?division= ?ccc= ?week= ?cat=ALL|DOM|COM|IND ?metric=net|dep|dis|wit|pend ?tab=
+    function applyUrl() {
+      var p = new URLSearchParams(location.search), pick = function (id, v) {
+        var el = $(id); if (!v || el.disabled) return false;
+        var m = [].filter.call(el.options, function (o) { return o.value && o.value.toLowerCase() === String(v).trim().toLowerCase(); })[0];
+        if (m) { el.value = m.value; fillOffices(); return true; } return false;
+      };
+      pick('regionFilter', p.get('region')); pick('divisionFilter', p.get('division')); pick('cccFilter', p.get('ccc'));
+      if (p.get('week')) pick('weekFilter', p.get('week'));
+      var c = String(p.get('cat') || '').toUpperCase(); if (CAT[c]) f.cat = c;
+      var m = String(p.get('metric') || '').toLowerCase();
+      if (METRIC[m]) {
+        f.metric = m;
+        if (m === 'dep' || m === 'dis' || m === 'wit') chartView = 'compare';
+        else if (m === 'net') chartView = 'net';
+        else if (m === 'pend') chartView = 'pend';
+      }
+      if (TABS.some(function (t) { return t[0] === p.get('tab'); })) tab = p.get('tab');
+    }
+
+    /* ---------- events ---------- */
+    SELECTS.forEach(function (id) {
       $(id).addEventListener('change', function () {
-        if (id === 'regionFilter') $('divisionFilter').value = '';
-        if (id !== 'cccFilter') $('cccFilter').value = '';
+        if (id === 'regionFilter') set('divisionFilter', '');
+        if (id !== 'cccFilter' && id !== 'weekFilter') set('cccFilter', '');
         fillOffices(); render();
       });
     });
-    $('weekFilter').addEventListener('change', function () { UI.mark(this); render(); });
     $('chart').addEventListener('click', function (e) {
       var c = e.target.closest('.col'); if (!c) return;
       var s = $('weekFilter'), w = c.getAttribute('data-w');
       s.value = s.value === w ? '' : w; UI.mark(s); render();
     });
-    $('cat').addEventListener('click', function (e) {
-      var b = e.target.closest('button'); if (!b) return;
-      f.cat = b.getAttribute('data-c');
-      [].forEach.call(this.querySelectorAll('button'), function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+    $('kpis').addEventListener('click', function (e) {
+      var s = e.target.closest('.ui-stat'); if (!s) return;
+      var m = s.getAttribute('data-m');
+      f.metric = m;
+      if (m === 'dep' || m === 'dis' || m === 'wit') chartView = 'compare';
+      else if (m === 'net') chartView = 'net';
+      else if (m === 'pend') chartView = 'pend';
       render();
     });
-    $('stats').addEventListener('click', function (e) { var s = e.target.closest('.ui-stat'); if (!s) return; f.metric = s.getAttribute('data-m'); render(); });
-    $('levelTabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-tab'); if (t) setLevel(t.getAttribute('data-l')); });
-    $('clearBtn').addEventListener('click', function () {
-      $('weekFilter').value = '';
-      ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });
+    $('tabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-drill-tab'); if (t) { tab = t.getAttribute('data-t'); render(); } });
+    function clearAll() {
       f.cat = 'ALL';
-      [].forEach.call(document.querySelectorAll('#cat button'), function (x) { x.setAttribute('aria-pressed', String(x.getAttribute('data-c') === 'ALL')); });
+      SELECTS.forEach(function (id) { set(id, ''); });
       fillOffices(); render();
+    }
+    $('copyBtn').addEventListener('click', function () {
+      if (!lastTable) return;
+      var lines = ['*Weekly deposit vs disposal — ' + lastTable.title + '*' + (f.cat !== 'ALL' ? ' (' + CAT[f.cat] + ')' : ''), lastTable.cols.join(' | ')].concat(lastTable.rows.slice(0, 60).map(function (r) { return r.map(function (c) { return typeof c === 'number' ? UI.n(Math.round(c)) : c; }).join(' | '); }));
+      UI.copy(lines.join('\n')).then(function () { UI.toast('Table copied'); });
     });
     $('exportBtn').addEventListener('click', function () {
-      UI.exportCsv('weekly-deposit-disposal.csv', [WEEK_COLS[0], { key: 'last', label: 'Pending last Monday' }, WEEK_COLS[1], { key: 'eff', label: 'Connections effected' }, { key: 'wit', label: 'Withheld' }, WEEK_COLS[2], WEEK_COLS[3], WEEK_COLS[4]], window.__weeks || []);
+      if (!lastTable) return;
+      if (lastTable.csv) {
+        UI.exportCsv('weekly-deposit-disposal.csv', [
+          WEEK_COLS[0], { key: 'dep', label: 'Deposited' }, { key: 'eff', label: 'Effected' }, { key: 'wit', label: 'Withheld' },
+          { key: 'dis', label: 'Total disposed' }, WEEK_COLS[5], { key: 'pend', label: 'Pending' }
+        ], lastTable.csv);
+        return;
+      }
+      UI.exportCsv('weekly-deposit-disposal-' + lastTable.title.toLowerCase().replace(/\W+/g, '-') + '.csv', lastTable.cols.map(function (c, i) { return { key: i, label: c }; }), lastTable.rows.map(function (r) { var o = {}; r.forEach(function (c, i) { o[i] = c; }); return o; }));
     });
+
     MzoRows.refresh('refreshBtn', ROWS, function (t) { prepare(t); render(); });
 
-    var first = true;
     MzoRows.load(ROWS, function (t, info) {
-      if (!t) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = $('weekTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      if (!t) { if (info && info.error && !all.length) { $('asOn').textContent = 'No data'; $('table').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
       prepare(t);
       if (first) {
         first = false;
-        if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';
-        [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === level)); });
+        if (scope && (scope.level === 'division' || scope.level === 'ccc')) tab = 'ccc'; else if (scope && scope.level === 'region') tab = 'division';
+        applyUrl();
       }
       render();
     });
   });
   </script>
+  <div class="wk-tip" id="tip" hidden></div>
 </body>
 </html>

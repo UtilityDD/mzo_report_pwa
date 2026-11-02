@@ -11,53 +11,87 @@
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
   <script src="/mzo_rows.js?v=6" defer></script>
+  <style>
+    .ui-head { align-items: center; }
+    .cl-kpis .ui-stat { padding: 13px 14px 14px; text-align: left; }
+    .cl-hint { padding: 8px 16px; color: var(--mzo-muted); font-size: 12.5px; border-bottom: 1px solid var(--mzo-border); }
+    .cl-hint:empty { display: none; }
+    .loss-chart-box { padding: 16px 16px 20px; border-bottom: 1px solid var(--mzo-border); }
+    .loss-chart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .loss-chart-head h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--mzo-text); }
+  </style>
 </head>
 <body>
   <main class="ui-page">
     <header class="ui-head">
       <div>
-        <h1>Losses</h1>
-        <p id="meta">Loading…</p>
+        <h1>Losses<span class="ui-badge ui-date" id="asOn">…</span></h1>
+        <p id="meta" style="display:none"></p>
       </div>
       <div class="ui-actions">
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
+        <div class="ui-seg" id="topMetric" role="group" aria-label="Metric">
+          <button type="button" data-m="atc" aria-pressed="true">AT&amp;C</button>
+          <button type="button" data-m="dist" aria-pressed="false">Dist. loss</button>
+          <button type="button" data-m="ce" aria-pressed="false">Coll. eff.</button>
+        </div>
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
     </header>
 
-    <div class="ui-filters">
-      <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">Malda Zone</option></select></span>
-      <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
-      <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
-      <span class="ui-select"><select id="period" aria-label="Month"><option>Month</option></select></span>
-    </div>
-
-    <section class="ui-stats" style="--n:5" id="stats" aria-label="Summary">
-      <div class="ui-stat"><div class="k">AT&amp;C loss</div><div class="v" id="sAtc"><span class="ui-skel"></span></div><div class="s" id="sAtcS">&nbsp;</div></div>
-      <div class="ui-stat"><div class="k">Distribution loss</div><div class="v" id="sDist"><span class="ui-skel"></span></div><div class="s" id="sDistS">&nbsp;</div></div>
-      <div class="ui-stat"><div class="k">Collection efficiency</div><div class="v" id="sCe"><span class="ui-skel"></span></div><div class="s" id="sCeS">&nbsp;</div></div>
-      <div class="ui-stat"><div class="k">Energy input</div><div class="v" id="sIn"><span class="ui-skel"></span></div><div class="s" id="sInS">&nbsp;</div></div>
-      <div class="ui-stat"><div class="k">Energy collected</div><div class="v" id="sCol"><span class="ui-skel"></span></div><div class="s" id="sColS">&nbsp;</div></div>
-    </section>
-
-    <section class="ui-panel">
-      <div class="ui-panel-h">
-        <h2 id="trendTitle">Trend</h2>
-        <div class="ui-seg" id="metric" role="group" aria-label="Metric">
-          <button type="button" data-m="atc" aria-pressed="true">AT&amp;C loss</button>
-          <button type="button" data-m="dist" aria-pressed="false">Distribution loss</button>
-          <button type="button" data-m="ce" aria-pressed="false">Collection eff.</button>
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h">
+          <h2>Filters<small id="activeLabel"></small></h2>
+          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
         </div>
-      </div>
-      <div class="ui-panel-b"><div id="trend"><div class="ui-empty">Loading…</div></div></div>
-    </section>
+        <div class="ui-side-sec ui-side-stack">
+          <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Search CCC or division" autocomplete="off" aria-label="Search offices" title="Search CCCs or divisions" /></label>
+          <span class="ui-select"><select id="period" aria-label="Month"><option>Month</option></select></span>
+          <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">Malda Zone</option></select></span>
+          <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
+          <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Metric" id="fMetric"></div>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Performance vs March" id="fPerf"></div>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Loss intensity" id="fBand"></div>
+        </div>
+      </aside>
 
-    <section class="ui-panel">
-      <div class="ui-panel-h">
-        <h2 id="tableTitle">Offices</h2>
-        <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+      <div class="ui-main">
+        <section class="ui-stats cl-kpis" id="kpis" aria-label="Summary">
+          <button type="button" class="ui-stat" data-m="atc"><div class="k">AT&amp;C loss</div><div class="v" id="sAtc"><span class="ui-skel"></span></div><div class="s" id="sAtcS">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-m="dist"><div class="k">Distribution loss</div><div class="v" id="sDist"><span class="ui-skel"></span></div><div class="s" id="sDistS">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-m="ce"><div class="k">Collection efficiency</div><div class="v" id="sCe"><span class="ui-skel"></span></div><div class="s" id="sCeS">&nbsp;</div></button>
+          <div class="ui-stat"><div class="k">Energy input</div><div class="v" id="sIn"><span class="ui-skel"></span></div><div class="s" id="sInS">&nbsp;</div></div>
+          <div class="ui-stat"><div class="k">Energy collected</div><div class="v" id="sCol"><span class="ui-skel"></span></div><div class="s" id="sColS">&nbsp;</div></div>
+        </section>
+
+        <section class="ui-panel">
+          <div class="ui-panel-h">
+            <h2 id="tableTitle">Detailed analysis</h2>
+            <div class="ui-actions">
+              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+            </div>
+          </div>
+          <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
+          <div class="cl-hint" id="hint"></div>
+          <div id="chartContainer" class="loss-chart-box" hidden>
+            <div class="loss-chart-head">
+              <h3 id="trendTitle">Trend</h3>
+            </div>
+            <div id="trendChart"></div>
+          </div>
+          <div id="table"><div class="ui-empty">Loading…</div></div>
+        </section>
       </div>
-      <div id="offices"><div class="ui-empty">Loading…</div></div>
-    </section>
+    </div>
   </main>
 
   <script>
@@ -112,7 +146,10 @@
       targets = {};
       (target ? target.all : []).forEach(function (r) { if (r.ccc) targets[r.ccc] = { atc: pctNum(r.cum_at_c_loss), dist: pctNum(r.cum_dist_loss) }; });
       var p = periods[0];
-      $('meta').textContent = (p ? 'Cumulative to ' + MON[p % 100 - 1] + ' ' + Math.floor(p / 100) : '') + (asOn ? ' · Updated ' + UI.fmtDate(asOn) : '');
+      var metaEl = $('meta');
+      if (metaEl) metaEl.textContent = (p ? 'Cumulative to ' + MON[p % 100 - 1] + ' ' + Math.floor(p / 100) : '') + (asOn ? ' · Updated ' + UI.fmtDate(asOn) : '');
+      var asOnEl = $('asOn');
+      if (asOnEl) asOnEl.textContent = asOn ? UI.fmtDate(asOn) : (p ? MON[p % 100 - 1] + ' ' + Math.floor(p / 100) : '…');
       $('period').innerHTML = periods.map(function (k) { return '<option value="' + k + '">' + MON[k % 100 - 1] + ' ' + Math.floor(k / 100) + '</option>'; }).join('');
       fillOffices();
     }
@@ -128,20 +165,64 @@
       $('cccFilter').parentNode.hidden = !div;
     }
 
+    var TABS = [
+      ['trend', 'Trend Chart'],
+      ['region', 'Region'],
+      ['division', 'Division'],
+      ['ccc', 'CCC'],
+      ['targets', 'Target Gap'],
+      ['energy', 'Energy Balance']
+    ];
+    var tab = 'trend', renderedTab = '', lastTable = null, lastRows = null, f = { q: '', perf: '', band: '' }, scope = null;
+    var SELECTS = ['regionFilter', 'divisionFilter', 'cccFilter'];
+    var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
+
+    function allRegions() {
+      return Object.keys(TREE).map(function (r) {
+        return { row: TREE[r].row, label: r, name: r, level: 'Region' };
+      });
+    }
+
+    function allDivisions() {
+      var list = [];
+      var selReg = $('regionFilter').value;
+      Object.keys(TREE).forEach(function (r) {
+        if (selReg && r !== selReg) return;
+        Object.keys(TREE[r].divs).forEach(function (d) {
+          list.push({ row: TREE[r].divs[d].row, label: d, name: d, region: r, level: 'Division' });
+        });
+      });
+      return list;
+    }
+
+    function allCccs() {
+      var list = [];
+      var selReg = $('regionFilter').value, selDiv = $('divisionFilter').value;
+      Object.keys(TREE).forEach(function (r) {
+        if (selReg && r !== selReg) return;
+        Object.keys(TREE[r].divs).forEach(function (d) {
+          if (selDiv && d !== selDiv) return;
+          TREE[r].divs[d].cccs.forEach(function (c) {
+            list.push({ row: c, label: cccLabel(c), name: cccLabel(c), ccc: c, region: r, division: d, level: 'CCC' });
+          });
+        });
+      });
+      return list;
+    }
+
     // Current selection → { row, label, children: [{ row, label, drill }] }
     function selection() {
       var reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value;
       if (ccc && reg && div && TREE[reg] && TREE[reg].divs[div]) {
-        // Scope locking may pin a canonical name (e.g. Mokdumpur); map it back to the sheet's row name.
         var raw = TREE[reg].divs[div].cccs.filter(function (c) { return c === ccc || cccLabel(c).toLowerCase() === ccc.toLowerCase(); })[0];
         if (raw) ccc = raw;
       } else ccc = '';
       if (ccc) {
-        return { row: ccc, label: cccLabel(ccc), level: 'CCC', childLevel: 'CCCs in ' + div, children: TREE[reg].divs[div].cccs.map(function (c) { return { row: c, label: cccLabel(c), sel: c === ccc }; }) };
+        return { row: ccc, label: cccLabel(ccc), level: 'CCC', childLevel: 'CCCs in ' + div, children: TREE[reg].divs[div].cccs.map(function (c) { return { row: c, label: cccLabel(c), sel: c === ccc, region: reg, division: div, level: 'CCC' }; }) };
       }
-      if (div) return { row: TREE[reg].divs[div].row, label: div + ' division', childLevel: 'CCCs', children: TREE[reg].divs[div].cccs.map(function (c) { return { row: c, label: cccLabel(c), drill: c }; }) };
-      if (reg) return { row: TREE[reg].row, label: reg + ' region', childLevel: 'Divisions', children: Object.keys(TREE[reg].divs).map(function (d) { return { row: TREE[reg].divs[d].row, label: d, drill: d }; }) };
-      return { row: 'MALDA ZONE', label: 'Malda Zone', childLevel: 'Regions', children: Object.keys(TREE).map(function (r) { return { row: TREE[r].row, label: r, drill: r }; }) };
+      if (div) return { row: TREE[reg].divs[div].row, label: div + ' division', level: 'Division', childLevel: 'CCCs in ' + div, children: TREE[reg].divs[div].cccs.map(function (c) { return { row: c, label: cccLabel(c), drill: c, region: reg, division: div, level: 'CCC' }; }) };
+      if (reg) return { row: TREE[reg].row, label: reg + ' region', level: 'Region', childLevel: 'Divisions in ' + reg, children: Object.keys(TREE[reg].divs).map(function (d) { return { row: TREE[reg].divs[d].row, label: d, drill: d, region: reg, division: d, level: 'Division' }; }) };
+      return { row: 'MALDA ZONE', label: 'Malda Zone', level: 'Zone', childLevel: 'Regions in Malda Zone', children: Object.keys(TREE).map(function (r) { return { row: TREE[r].row, label: r, drill: r, region: r, level: 'Region' }; }) };
     }
 
     function at(row, k) { return data[row] && data[row][k] || null; }
@@ -153,79 +234,539 @@
       if (Math.abs(d) < 0.005) return '<span class="ui-delta flat">0.00</span>';
       return '<span class="ui-delta ' + (good ? 'ok' : 'bad') + '">' + (d > 0 ? '+' : '−') + Math.abs(d).toFixed(2) + '</span>';
     }
+    function deltaNum(v) {
+      if (v == null) return '<span class="ui-muted">—</span>';
+      var good = v < 0;
+      return '<span class="ui-delta ' + (Math.abs(v) < 0.005 ? 'flat' : good ? 'ok' : 'bad') + '">' + (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(2) + '</span>';
+    }
+    function deltaText(now, then, lowerIsBetter) {
+      if (now == null || then == null) return '—';
+      var d = now - then, good = lowerIsBetter ? d < 0 : d > 0;
+      return (d > 0 ? '+' : '') + d.toFixed(2) + ' pts (' + (good ? 'Improved' : 'Deteriorated') + ')';
+    }
     function fmtPct(v) { return v == null ? '—' : v.toFixed(2) + '%'; }
 
-    function render() {
-      var k = +$('period').value || periods[0], sel = selection(), cur = at(sel.row, k);
-      var mar = at(sel.row, lastMarch(k)), ly = at(sel.row, lastYear(k)), tg = targets[sel.row] || {};
-      var set = function (id, v, sub) { $(id).textContent = v; $(id + 'S').innerHTML = sub; };
-      var monthLabel = MON[k % 100 - 1];
-      set('sAtc', fmtPct(cur && cur.atc), (tg.atc != null ? 'Target ' + tg.atc.toFixed(2) + '% · ' : '') + 'vs Mar ' + delta(cur && cur.atc, mar && mar.atc, true));
-      set('sDist', fmtPct(cur && cur.dist), (tg.dist != null ? 'Target ' + tg.dist.toFixed(2) + '% · ' : '') + 'vs Mar ' + delta(cur && cur.dist, mar && mar.dist, true));
-      set('sCe', fmtPct(cur && cur.ce), 'vs ' + monthLabel + ' last year ' + delta(cur && cur.ce, ly && ly.ce, false));
-      set('sIn', cur && cur.input != null ? UI.n(cur.input) + ' MU' : '—', cur && cur.demand != null ? 'Billed ' + UI.n(cur.demand) + ' MU' : '&nbsp;');
-      set('sCol', cur && cur.coll != null ? UI.n(cur.coll) + ' MU' : '—', ly && ly.coll != null ? monthLabel + ' last year ' + UI.n(ly.coll) + ' MU' : '&nbsp;');
-
-      // Trend: last three financial years, April → March
-      var fyNow = fy(Math.floor(k / 100), k % 100), series = [];
-      [fyNow - 2, fyNow - 1, fyNow].forEach(function (f) {
-        var vals = FY_MONTHS.map(function (_, i) { var m = (i + 3) % 12 + 1, y = m >= 4 ? f : f + 1, v = at(sel.row, pk(y, m)); return v ? v[metric] : null; });
-        if (vals.some(function (v) { return v != null; })) series.push({ label: 'FY ' + String(f).slice(2) + '–' + String(f + 1).slice(2), values: vals, strong: f === fyNow });
+    function renderFacets() {
+      // Metric facet
+      var mOpts = [
+        { value: 'atc', label: 'AT&C loss', dot: metric === 'atc' ? 'ok' : '' },
+        { value: 'dist', label: 'Distribution loss', dot: metric === 'dist' ? 'ok' : '' },
+        { value: 'ce', label: 'Collection efficiency', dot: metric === 'ce' ? 'ok' : '' }
+      ];
+      UI.facet('fMetric', mOpts, metric, function (v) {
+        if (!v) return;
+        metric = v;
+        syncMetricButtons();
+        render();
       });
-      var mLabel = { atc: 'AT&C loss', dist: 'Distribution loss', ce: 'Collection efficiency' }[metric];
-      $('trendTitle').textContent = mLabel + ' · ' + sel.label;
-      UI.line('trend', { labels: FY_MONTHS, series: series, fmt: fmtPct, axis: function (v) { return v.toFixed(0) + '%'; }, zero: false, title: mLabel });
 
-      // Offices one level down
-      $('tableTitle').textContent = sel.childLevel + ' · ' + monthLabel + ' ' + Math.floor(k / 100);
-      var rows = sel.children.map(function (c) {
-        var v = at(c.row, k) || {}, m = at(c.row, lastMarch(k)) || {}, l = at(c.row, lastYear(k)) || {}, t = targets[c.row] || {};
-        return { label: c.label, drill: c.drill, sel: c.sel, atc: v.atc, dMar: v.atc != null && m.atc != null ? v.atc - m.atc : null, dLy: v.atc != null && l.atc != null ? v.atc - l.atc : null, target: t.atc, dist: v.dist, ce: v.ce, input: v.input };
+      // Performance vs March facet (calculated on all CCCs)
+      var k = +$('period').value || periods[0];
+      var cccs = allCccs();
+      var cBetter = 0, cWorse = 0;
+      cccs.forEach(function (c) {
+        var cur = at(c.row, k), mar = at(c.row, lastMarch(k));
+        if (cur && mar && cur.atc != null && mar.atc != null) {
+          if (cur.atc <= mar.atc) cBetter++; else cWorse++;
+        }
       });
-      window.__rows = rows;
-      var d2 = function (v) { return v == null ? '<span class="ui-muted">—</span>' : '<span class="ui-delta ' + (Math.abs(v) < 0.005 ? 'flat' : v > 0 ? 'bad' : 'ok') + '">' + (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(2) + '</span>'; };
-      UI.table('offices', {
-        rows: rows, sort: { key: 'atc', dir: 'desc' }, count: false, empty: 'No data for this month.',
-        selected: function (r) { return r.sel; },
-        columns: [
-          { key: 'label', label: 'Office', fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
-          { key: 'atc', label: 'AT&C loss', num: true, fmt: fmtPct },
-          { key: 'dMar', label: 'vs Mar', num: true, fmt: d2 },
-          { key: 'dLy', label: 'vs last year', num: true, fmt: d2, hideSm: true },
-          { key: 'target', label: 'Target', num: true, fmt: fmtPct, hideSm: true },
-          { key: 'dist', label: 'Dist. loss', num: true, fmt: fmtPct },
-          { key: 'ce', label: 'Coll. eff.', num: true, fmt: fmtPct, hideSm: true },
-          { key: 'input', label: 'Input (MU)', num: true, fmt: function (v) { return v == null ? '—' : UI.n(v); }, hideSm: true }
-        ],
-        onRow: function (r) { if (r.drill) drill(r.drill); }
+      var perfOpts = [
+        { value: 'better', label: 'Improved vs March', count: cBetter, dot: 'ok' },
+        { value: 'worse', label: 'Deteriorated vs March', count: cWorse, dot: 'warn' }
+      ];
+      UI.facet('fPerf', perfOpts, f.perf, function (v) { f.perf = v; render(); });
+
+      // Loss intensity band facet
+      var bLow = 0, bMid = 0, bHigh = 0;
+      cccs.forEach(function (c) {
+        var cur = at(c.row, k);
+        if (cur && cur.atc != null) {
+          if (cur.atc < 15) bLow++;
+          else if (cur.atc <= 25) bMid++;
+          else bHigh++;
+        }
+      });
+      var bandOpts = [
+        { value: 'low', label: '< 15% (Low loss)', count: bLow, dot: 'ok' },
+        { value: 'mid', label: '15% – 25% (Moderate)', count: bMid },
+        { value: 'high', label: '> 25% (High hotspot)', count: bHigh, dot: 'warn' }
+      ];
+      UI.facet('fBand', bandOpts, f.band, function (v) { f.band = v; render(); });
+
+      var active = (f.q ? 1 : 0) + (f.perf ? 1 : 0) + (f.band ? 1 : 0) +
+        SELECTS.filter(function (id) { return $(id).value && !$(id).disabled; }).length;
+      setActive(active);
+    }
+
+    function syncMetricButtons() {
+      [].forEach.call(document.querySelectorAll('#topMetric button, #kpis .ui-stat[data-m]'), function (btn) {
+        btn.setAttribute('aria-pressed', String(btn.getAttribute('data-m') === metric));
       });
     }
 
-    function drill(name) {
-      if (!$('regionFilter').value) $('regionFilter').value = name;
-      else if (!$('divisionFilter').value) $('divisionFilter').value = name;
-      else $('cccFilter').value = name;
-      fillOffices(); ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { UI.mark($(id)); });
+    function render() {
+      renderFacets();
+      syncMetricButtons();
+
+      var k = +$('period').value || periods[0], sel = selection(), cur = at(sel.row, k);
+      var mar = at(sel.row, lastMarch(k)), ly = at(sel.row, lastYear(k)), tg = targets[sel.row] || {};
+      var setVal = function (id, v, sub) { var el = $(id); if (el) el.textContent = v; var sEl = $(id + 'S'); if (sEl) sEl.innerHTML = sub; };
+      var monthLabel = MON[k % 100 - 1] + ' ' + Math.floor(k / 100);
+
+      setVal('sAtc', fmtPct(cur && cur.atc), (tg.atc != null ? 'Target ' + tg.atc.toFixed(2) + '% · ' : '') + 'vs Mar ' + delta(cur && cur.atc, mar && mar.atc, true));
+      setVal('sDist', fmtPct(cur && cur.dist), (tg.dist != null ? 'Target ' + tg.dist.toFixed(2) + '% · ' : '') + 'vs Mar ' + delta(cur && cur.dist, mar && mar.dist, true));
+      setVal('sCe', fmtPct(cur && cur.ce), 'vs ' + MON[k % 100 - 1] + ' last year ' + delta(cur && cur.ce, ly && ly.ce, false));
+      setVal('sIn', cur && cur.input != null ? UI.n(cur.input) + ' MU' : '—', cur && cur.demand != null ? 'Billed ' + UI.n(cur.demand) + ' MU' : '&nbsp;');
+      setVal('sCol', cur && cur.coll != null ? UI.n(cur.coll) + ' MU' : '—', ly && ly.coll != null ? MON[k % 100 - 1] + ' last year ' + UI.n(ly.coll) + ' MU' : '&nbsp;');
+
+      var cccsList = allCccs();
+      var divsList = allDivisions();
+      $('tabs').innerHTML = TABS.map(function (t) {
+        var extra = '';
+        if (t[0] === 'ccc') extra = '<small>' + cccsList.length + '</small>';
+        else if (t[0] === 'division') extra = '<small>' + divsList.length + '</small>';
+        return '<button type="button" class="ui-drill-tab" role="tab" data-t="' + t[0] + '" aria-selected="' + (t[0] === tab) + '">' + t[1] + extra + '</button>';
+      }).join('');
+
+      var mLabel = { atc: 'AT&C loss', dist: 'Distribution loss', ce: 'Collection efficiency' }[metric];
+      var filterDesc = [f.perf ? (f.perf === 'better' ? 'Improved vs March' : 'Deteriorated vs March') : '', f.band ? (f.band === 'low' ? '<15% loss' : f.band === 'mid' ? '15-25% loss' : '>25% loss') : '', f.q ? 'Search: "' + f.q + '"' : ''].filter(Boolean).join(' · ');
+      var regVal = $('regionFilter').value, divVal = $('divisionFilter').value;
+      var officeScope = divVal ? divVal + ' division' : regVal ? regVal + ' region' : 'Malda Zone';
+
+      $('hint').textContent = (filterDesc ? 'Showing ' + filterDesc + ' · ' : '') +
+        (tab === 'trend' ? mLabel + ' multi-year trend for ' + sel.label + ' (April to March).'
+          : tab === 'region' ? 'Region comparison across Malda Zone. Click a region to drill down to its divisions.'
+          : tab === 'division' ? 'Division comparison for ' + officeScope + '. Click a division to drill down to its CCCs.'
+          : tab === 'ccc' ? 'CCC performance for ' + officeScope + '. Click any CCC to view full details and target gaps.'
+          : tab === 'targets' ? 'WBSEDCL approved target variance and gaps for ' + monthLabel + '.'
+          : 'Energy flow accounting in Million Units (MU): Input, Billing, Collection and Losses.');
+
+      renderTab(k, sel, mLabel, monthLabel);
+    }
+
+    function renderTab(k, sel, mLabel, monthLabel) {
+      lastTable = null;
+      lastRows = null;
+      var cfg = null;
+
+      if (tab === 'trend') {
+        $('chartContainer').hidden = false;
+        var fyNow = fy(Math.floor(k / 100), k % 100), series = [];
+        [fyNow - 2, fyNow - 1, fyNow].forEach(function (f) {
+          var vals = FY_MONTHS.map(function (_, i) {
+            var m = (i + 3) % 12 + 1, y = m >= 4 ? f : f + 1, v = at(sel.row, pk(y, m));
+            return v ? v[metric] : null;
+          });
+          if (vals.some(function (v) { return v != null; })) {
+            series.push({ label: 'FY ' + String(f).slice(2) + '–' + String(f + 1).slice(2), values: vals, strong: f === fyNow });
+          }
+        });
+        $('trendTitle').textContent = mLabel + ' · ' + sel.label + ' (FY ' + String(fyNow).slice(2) + '–' + String(fyNow + 1).slice(2) + ')';
+        UI.line('trendChart', { labels: FY_MONTHS, series: series, fmt: fmtPct, axis: function (v) { return v.toFixed(0) + '%'; }, zero: false, title: mLabel });
+
+        // Month-by-month table for the financial year
+        var monthRows = FY_MONTHS.map(function (monName, i) {
+          var m = (i + 3) % 12 + 1, yNow = m >= 4 ? fyNow : fyNow + 1, yPrev = yNow - 1;
+          var curVal = at(sel.row, pk(yNow, m)), prevVal = at(sel.row, pk(yPrev, m));
+          var vNow = curVal ? curVal[metric] : null, vPrev = prevVal ? prevVal[metric] : null;
+          var chg = vNow != null && vPrev != null ? vNow - vPrev : null;
+          return {
+            month: monName,
+            now: vNow,
+            prev: vPrev,
+            chg: chg,
+            input: curVal ? curVal.input : null,
+            demand: curVal ? curVal.demand : null,
+            coll: curVal ? curVal.coll : null
+          };
+        });
+
+        lastTable = {
+          title: sel.label + ' ' + mLabel + ' Trend',
+          cols: ['Month', 'FY ' + String(fyNow).slice(2) + '–' + String(fyNow + 1).slice(2), 'FY ' + String(fyNow - 1).slice(2) + '–' + String(fyNow).slice(2), 'Change vs Last Year', 'Input (MU)', 'Demand (MU)', 'Collected (MU)'],
+          rows: monthRows.map(function (r) {
+            return [r.month, fmtPct(r.now), fmtPct(r.prev), r.chg != null ? (r.chg > 0 ? '+' : '') + r.chg.toFixed(2) + ' pts' : '—', r.input != null ? UI.n(r.input) : '—', r.demand != null ? UI.n(r.demand) : '—', r.coll != null ? UI.n(r.coll) : '—'];
+          })
+        };
+
+        cfg = {
+          rows: monthRows, sort: null, count: false, empty: 'No trend data available.',
+          columns: [
+            { key: 'month', label: 'Month', fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
+            { key: 'now', label: 'FY ' + String(fyNow).slice(2) + '–' + String(fyNow + 1).slice(2), num: true, fmt: fmtPct },
+            { key: 'prev', label: 'FY ' + String(fyNow - 1).slice(2) + '–' + String(fyNow).slice(2), num: true, hideSm: true, fmt: fmtPct },
+            { key: 'chg', label: 'YoY Change', num: true, fmt: function (v) { return deltaNum(v); } },
+            { key: 'input', label: 'Input (MU)', num: true, hideSm: true, fmt: function (v) { return v == null ? '—' : UI.n(v); } },
+            { key: 'demand', label: 'Demand (MU)', num: true, hideSm: true, fmt: function (v) { return v == null ? '—' : UI.n(v); } },
+            { key: 'coll', label: 'Collected (MU)', num: true, fmt: function (v) { return v == null ? '—' : UI.n(v); } }
+          ]
+        };
+      }
+      else {
+        $('chartContainer').hidden = true;
+
+        if (tab === 'region') {
+          var rList = allRegions().map(function (r) {
+            var v = at(r.row, k) || {}, m = at(r.row, lastMarch(k)) || {}, l = at(r.row, lastYear(k)) || {}, t = targets[r.row] || {};
+            return {
+              row: r.row, label: r.label, name: r.label, level: 'Region',
+              atc: v.atc, dMar: v.atc != null && m.atc != null ? v.atc - m.atc : null, dLy: v.atc != null && l.atc != null ? v.atc - l.atc : null,
+              target: t.atc, dist: v.dist, ce: v.ce, input: v.input, demand: v.demand, coll: v.coll
+            };
+          });
+
+          var zVal = at('MALDA ZONE', k) || {}, zMar = at('MALDA ZONE', lastMarch(k)) || {}, zLy = at('MALDA ZONE', lastYear(k)) || {}, zTg = targets['MALDA ZONE'] || {};
+          lastRows = rList;
+          lastTable = {
+            title: 'Regions in Malda Zone (' + monthLabel + ')',
+            cols: ['Region', 'AT&C Loss %', 'Change vs Mar', 'Change vs Last Year', 'Target %', 'Dist. Loss %', 'Coll. Eff. %', 'Input (MU)'],
+            rows: rList.map(function (r) {
+              return [r.label, fmtPct(r.atc), r.dMar != null ? (r.dMar > 0 ? '+' : '') + r.dMar.toFixed(2) + ' pts' : '—', r.dLy != null ? (r.dLy > 0 ? '+' : '') + r.dLy.toFixed(2) + ' pts' : '—', fmtPct(r.target), fmtPct(r.dist), fmtPct(r.ce), r.input != null ? UI.n(r.input) : '—'];
+            })
+          };
+
+          cfg = {
+            rows: rList, sort: { key: 'atc', dir: 'desc' }, count: false, empty: 'No region data available.',
+            selected: function (r) { return $('regionFilter').value === r.label; },
+            columns: [
+              { key: 'label', label: 'Region', fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
+              { key: 'atc', label: 'AT&C loss', num: true, fmt: fmtPct },
+              { key: 'dMar', label: 'vs Mar', num: true, fmt: deltaNum },
+              { key: 'dLy', label: 'vs last year', num: true, hideSm: true, fmt: deltaNum },
+              { key: 'target', label: 'Target', num: true, hideSm: true, fmt: fmtPct },
+              { key: 'dist', label: 'Dist. loss', num: true, fmt: fmtPct },
+              { key: 'ce', label: 'Coll. eff.', num: true, fmt: fmtPct },
+              { key: 'input', label: 'Input (MU)', num: true, hideSm: true, fmt: function (v) { return v == null ? '—' : UI.n(v); } }
+            ],
+            foot: {
+              label: 'Malda Zone',
+              atc: zVal.atc,
+              dMar: zVal.atc != null && zMar.atc != null ? zVal.atc - zMar.atc : null,
+              dLy: zVal.atc != null && zLy.atc != null ? zVal.atc - zLy.atc : null,
+              target: zTg.atc,
+              dist: zVal.dist,
+              ce: zVal.ce,
+              input: zVal.input
+            },
+            onRow: function (r) { drill('region', r.label); }
+          };
+        }
+        else if (tab === 'division') {
+          var q = f.q.toLowerCase();
+          var dList = allDivisions().map(function (d) {
+            var v = at(d.row, k) || {}, m = at(d.row, lastMarch(k)) || {}, l = at(d.row, lastYear(k)) || {}, t = targets[d.row] || {};
+            return {
+              row: d.row, label: d.label, name: d.label, region: d.region, level: 'Division',
+              atc: v.atc, dMar: v.atc != null && m.atc != null ? v.atc - m.atc : null, dLy: v.atc != null && l.atc != null ? v.atc - l.atc : null,
+              target: t.atc, dist: v.dist, ce: v.ce, input: v.input, demand: v.demand, coll: v.coll
+            };
+          }).filter(function (r) {
+            if (q && r.label.toLowerCase().indexOf(q) === -1 && r.region.toLowerCase().indexOf(q) === -1) return false;
+            return true;
+          });
+
+          var curParentRow = $('regionFilter').value ? TREE[$('regionFilter').value].row : 'MALDA ZONE';
+          var pVal = at(curParentRow, k) || {}, pMar = at(curParentRow, lastMarch(k)) || {}, pLy = at(curParentRow, lastYear(k)) || {}, pTg = targets[curParentRow] || {};
+
+          lastRows = dList;
+          lastTable = {
+            title: 'Divisions (' + monthLabel + ')',
+            cols: ['Division', 'Region', 'AT&C Loss %', 'Change vs Mar', 'Change vs Last Year', 'Target %', 'Dist. Loss %', 'Coll. Eff. %', 'Input (MU)'],
+            rows: dList.map(function (r) {
+              return [r.label, r.region, fmtPct(r.atc), r.dMar != null ? (r.dMar > 0 ? '+' : '') + r.dMar.toFixed(2) + ' pts' : '—', r.dLy != null ? (r.dLy > 0 ? '+' : '') + r.dLy.toFixed(2) + ' pts' : '—', fmtPct(r.target), fmtPct(r.dist), fmtPct(r.ce), r.input != null ? UI.n(r.input) : '—'];
+            })
+          };
+
+          cfg = {
+            rows: dList, sort: { key: 'atc', dir: 'desc' }, count: false, empty: 'No division matches filters.',
+            selected: function (r) { return $('divisionFilter').value === r.label; },
+            columns: [
+              { key: 'label', label: 'Division', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v) + '</span><span class="sub">' + UI.esc(r.region) + '</span>'; } },
+              { key: 'atc', label: 'AT&C loss', num: true, fmt: fmtPct },
+              { key: 'dMar', label: 'vs Mar', num: true, fmt: deltaNum },
+              { key: 'dLy', label: 'vs last year', num: true, hideSm: true, fmt: deltaNum },
+              { key: 'target', label: 'Target', num: true, hideSm: true, fmt: fmtPct },
+              { key: 'dist', label: 'Dist. loss', num: true, fmt: fmtPct },
+              { key: 'ce', label: 'Coll. eff.', num: true, fmt: fmtPct },
+              { key: 'input', label: 'Input (MU)', num: true, hideSm: true, fmt: function (v) { return v == null ? '—' : UI.n(v); } }
+            ],
+            foot: dList.length > 1 ? {
+              label: $('regionFilter').value ? $('regionFilter').value + ' Region' : 'Malda Zone',
+              atc: pVal.atc,
+              dMar: pVal.atc != null && pMar.atc != null ? pVal.atc - pMar.atc : null,
+              dLy: pVal.atc != null && pLy.atc != null ? pVal.atc - pLy.atc : null,
+              target: pTg.atc,
+              dist: pVal.dist,
+              ce: pVal.ce,
+              input: pVal.input
+            } : null,
+            onRow: function (r) { drill('division', r.label); }
+          };
+        }
+        else if (tab === 'ccc') {
+          var q = f.q.toLowerCase();
+          var cList = allCccs().map(function (c) {
+            var v = at(c.row, k) || {}, m = at(c.row, lastMarch(k)) || {}, l = at(c.row, lastYear(k)) || {}, t = targets[c.row] || {};
+            return {
+              row: c.row, label: c.label, name: c.label, region: c.region, division: c.division, level: 'CCC',
+              atc: v.atc, dMar: v.atc != null && m.atc != null ? v.atc - m.atc : null, dLy: v.atc != null && l.atc != null ? v.atc - l.atc : null,
+              target: t.atc, gap: v.atc != null && t.atc != null ? v.atc - t.atc : null,
+              dist: v.dist, ce: v.ce, input: v.input, demand: v.demand, coll: v.coll
+            };
+          }).filter(function (r) {
+            if (q && r.label.toLowerCase().indexOf(q) === -1 && r.division.toLowerCase().indexOf(q) === -1 && r.region.toLowerCase().indexOf(q) === -1) return false;
+            if (f.perf === 'better' && (r.dMar == null || r.dMar > 0)) return false;
+            if (f.perf === 'worse' && (r.dMar == null || r.dMar <= 0)) return false;
+            if (f.band === 'low' && (r.atc == null || r.atc >= 15)) return false;
+            if (f.band === 'mid' && (r.atc == null || r.atc < 15 || r.atc > 25)) return false;
+            if (f.band === 'high' && (r.atc == null || r.atc <= 25)) return false;
+            return true;
+          });
+
+          lastRows = cList;
+          lastTable = {
+            title: 'CCCs (' + monthLabel + ')',
+            cols: ['CCC', 'Division', 'Region', 'AT&C Loss %', 'vs Mar', 'Target %', 'Dist. Loss %', 'Coll. Eff. %', 'Input (MU)'],
+            rows: cList.map(function (r) {
+              return [r.label, r.division, r.region, fmtPct(r.atc), r.dMar != null ? (r.dMar > 0 ? '+' : '') + r.dMar.toFixed(2) + ' pts' : '—', fmtPct(r.target), fmtPct(r.dist), fmtPct(r.ce), r.input != null ? UI.n(r.input) : '—'];
+            })
+          };
+
+          cfg = {
+            rows: cList, sort: { key: 'atc', dir: 'desc' }, count: false, limit: 50,
+            empty: 'No CCCs match the current filters.',
+            selected: function (r) { return $('cccFilter').value === r.row; },
+            columns: [
+              { key: 'label', label: 'CCC', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v) + '</span><span class="sub">' + UI.esc(r.division) + ' · ' + UI.esc(r.region) + '</span>'; } },
+              { key: 'atc', label: 'AT&C loss', num: true, fmt: function (v) { return '<span class="' + (v > 25 ? 'ui-badge warn' : v < 15 ? 'ui-badge ok' : '') + '">' + fmtPct(v) + '</span>'; } },
+              { key: 'dMar', label: 'vs Mar', num: true, fmt: deltaNum },
+              { key: 'target', label: 'Target', num: true, hideSm: true, fmt: fmtPct },
+              { key: 'dist', label: 'Dist. loss', num: true, hideSm: true, fmt: fmtPct },
+              { key: 'ce', label: 'Coll. eff.', num: true, fmt: fmtPct },
+              { key: 'input', label: 'Input (MU)', num: true, hideSm: true, fmt: function (v) { return v == null ? '—' : UI.n(v); } }
+            ],
+            onRow: detail
+          };
+        }
+        else if (tab === 'targets') {
+          var q = f.q.toLowerCase(), reg = $('regionFilter').value, div = $('divisionFilter').value;
+          var list = allCccs().map(function (c) {
+            var v = at(c.row, k) || {}, m = at(c.row, lastMarch(k)) || {}, t = targets[c.row] || {};
+            var gap = v.atc != null && t.atc != null ? v.atc - t.atc : null;
+            return {
+              row: c.row, label: c.label, region: c.region, division: c.division, level: 'CCC',
+              atc: v.atc, target: t.atc, gap: gap, dist: v.dist, distTarget: t.dist,
+              distGap: v.dist != null && t.dist != null ? v.dist - t.dist : null,
+              dMar: v.atc != null && m.atc != null ? v.atc - m.atc : null,
+              input: v.input
+            };
+          }).filter(function (r) {
+            if (reg && r.region !== reg) return false;
+            if (div && r.division !== div) return false;
+            if (q && (r.label.toLowerCase().indexOf(q) === -1 && r.division.toLowerCase().indexOf(q) === -1)) return false;
+            return true;
+          });
+
+          lastRows = list;
+          lastTable = {
+            title: 'Target Gap Analysis (' + monthLabel + ')',
+            cols: ['CCC', 'Division', 'Actual AT&C', 'Target AT&C', 'Variance (pts)', 'Actual Dist.', 'Target Dist.', 'Dist. Gap (pts)', 'vs March'],
+            rows: list.map(function (r) {
+              return [r.label, r.division, fmtPct(r.atc), fmtPct(r.target), r.gap != null ? (r.gap > 0 ? '+' : '') + r.gap.toFixed(2) + ' pts' : '—', fmtPct(r.dist), fmtPct(r.distTarget), r.distGap != null ? (r.distGap > 0 ? '+' : '') + r.distGap.toFixed(2) + ' pts' : '—', r.dMar != null ? (r.dMar > 0 ? '+' : '') + r.dMar.toFixed(2) + ' pts' : '—'];
+            })
+          };
+
+          cfg = {
+            rows: list, sort: { key: 'gap', dir: 'desc' }, count: false, limit: 50,
+            empty: 'No target data found.',
+            columns: [
+              { key: 'label', label: 'Office', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v) + '</span><span class="sub">' + UI.esc(r.division) + '</span>'; } },
+              { key: 'atc', label: 'Actual AT&C', num: true, fmt: fmtPct },
+              { key: 'target', label: 'Target', num: true, fmt: fmtPct },
+              { key: 'gap', label: 'Variance', num: true, fmt: deltaNum },
+              { key: 'dist', label: 'Actual Dist.', num: true, hideSm: true, fmt: fmtPct },
+              { key: 'distTarget', label: 'Target Dist.', num: true, hideSm: true, fmt: fmtPct },
+              { key: 'dMar', label: 'Trajectory vs Mar', num: true, fmt: deltaNum }
+            ],
+            onRow: detail
+          };
+        }
+        else if (tab === 'energy') {
+          var q = f.q.toLowerCase(), reg = $('regionFilter').value, div = $('divisionFilter').value;
+          var eList = (div ? allCccs().filter(function (c) { return c.division === div; }) : reg ? Object.keys(TREE[reg].divs).map(function (d) { return { row: TREE[reg].divs[d].row, label: d + ' Division', division: d, region: reg, level: 'Division' }; }) : Object.keys(TREE).map(function (r) { return { row: TREE[r].row, label: r + ' Region', region: r, level: 'Region' }; })).map(function (c) {
+            var v = at(c.row, k) || {};
+            var inMu = v.input || 0, demMu = v.demand || 0, colMu = v.coll || 0;
+            var distLossMu = inMu && demMu ? Math.max(0, inMu - demMu) : null;
+            var colLossMu = demMu && colMu ? Math.max(0, demMu - colMu) : null;
+            var totLossMu = inMu && colMu ? Math.max(0, inMu - colMu) : null;
+            var recovery = inMu ? (colMu / inMu) * 100 : null;
+            return {
+              row: c.row, label: c.label, region: c.region, division: c.division, level: c.level,
+              input: inMu, demand: demMu, coll: colMu,
+              distLoss: distLossMu, colLoss: colLossMu, totLoss: totLossMu, recovery: recovery
+            };
+          }).filter(function (r) {
+            if (q && r.label.toLowerCase().indexOf(q) === -1) return false;
+            return true;
+          });
+
+          var sumIn = 0, sumDem = 0, sumCol = 0;
+          eList.forEach(function (r) { sumIn += r.input; sumDem += r.demand; sumCol += r.coll; });
+          var totDistLoss = sumIn && sumDem ? sumIn - sumDem : 0;
+          var totColLoss = sumDem && sumCol ? sumDem - sumCol : 0;
+          var totLoss = sumIn && sumCol ? sumIn - sumCol : 0;
+
+          lastRows = eList;
+          lastTable = {
+            title: 'Energy Balance (' + monthLabel + ')',
+            cols: ['Office', 'Input (MU)', 'Billed (MU)', 'Collected (MU)', 'Dist Loss (MU)', 'Coll Loss (MU)', 'Total Lost (MU)', 'Recovery %'],
+            rows: eList.map(function (r) {
+              return [r.label, UI.n(r.input), UI.n(r.demand), UI.n(r.coll), r.distLoss != null ? UI.n(r.distLoss) : '—', r.colLoss != null ? UI.n(r.colLoss) : '—', r.totLoss != null ? UI.n(r.totLoss) : '—', fmtPct(r.recovery)];
+            })
+          };
+
+          cfg = {
+            rows: eList, sort: { key: 'input', dir: 'desc' }, count: false,
+            empty: 'No energy records for this month.',
+            columns: [
+              { key: 'label', label: 'Office', fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
+              { key: 'input', label: 'Input (MU)', num: true, fmt: UI.n },
+              { key: 'demand', label: 'Billed (MU)', num: true, fmt: UI.n },
+              { key: 'coll', label: 'Collected (MU)', num: true, fmt: UI.n },
+              { key: 'totLoss', label: 'Lost (MU)', num: true, hideSm: true, fmt: function (v) { return v ? UI.n(v) : '—'; } },
+              { key: 'recovery', label: 'Recovery %', sortVal: function (r) { return r.recovery || 0; }, fmt: function (v) { return v ? UI.bar(v, 100, v.toFixed(1) + '%', 1) : '—'; }, width: '22%' }
+            ],
+            foot: eList.length > 1 ? { input: sumIn, demand: sumDem, coll: sumCol, totLoss: totLoss, recovery: sumIn ? (sumCol / sumIn) * 100 : 0 } : null,
+            onRow: detail
+          };
+        }
+      }
+
+      var kState = tab + ':' + metric + ':' + f.perf + ':' + f.band + ':' + ($('period').value || '') + ':' + ($('regionFilter').value || '') + ':' + ($('divisionFilter').value || '') + ':' + ($('cccFilter').value || '');
+      if (renderedTab !== kState) { $('table').__ui = null; renderedTab = kState; }
+      UI.table('table', cfg);
+    }
+
+    function detail(r) {
+      var k = +$('period').value || periods[0];
+      var v = at(r.row, k) || {};
+      var m = at(r.row, lastMarch(k)) || {};
+      var l = at(r.row, lastYear(k)) || {};
+      var tg = targets[r.row] || {};
+      var monthLabel = MON[k % 100 - 1] + ' ' + Math.floor(k / 100);
+
+      var pairs = [
+        ['Office', r.label],
+        ['Level', r.level || 'CCC'],
+        ['Region', r.region || '—'],
+        ['Division', r.division || '—'],
+        ['Period', monthLabel],
+        ['Cumulative AT&C Loss', fmtPct(v.atc)],
+        ['AT&C Target', fmtPct(tg.atc)],
+        ['Target Gap', tg.atc != null && v.atc != null ? (v.atc - tg.atc > 0 ? '+' : '') + (v.atc - tg.atc).toFixed(2) + ' pts' : '—'],
+        ['Change vs March', deltaText(v.atc, m.atc, true)],
+        ['Change vs Last Year', deltaText(v.atc, l.atc, true)],
+        ['Distribution Loss', fmtPct(v.dist)],
+        ['Dist. Target', fmtPct(tg.dist)],
+        ['Collection Efficiency', fmtPct(v.ce)],
+        ['Energy Input', v.input != null ? UI.n(v.input) + ' MU' : '—'],
+        ['Energy Billed', v.demand != null ? UI.n(v.demand) + ' MU' : '—'],
+        ['Energy Collected', v.coll != null ? UI.n(v.coll) + ' MU' : '—']
+      ];
+
+      UI.drawer(r.label, 'Loss Analysis · ' + monthLabel, pairs, '', '<button type="button" class="ui-btn sm" data-copy-detail>Copy details</button>');
+      var copyBtn = document.querySelector('[data-copy-detail]');
+      if (copyBtn) {
+        copyBtn.onclick = function () {
+          var lines = [
+            'Office: ' + r.label + (r.division ? ' (' + r.division + ', ' + r.region + ')' : ''),
+            'Period: ' + monthLabel,
+            'AT&C Loss: ' + fmtPct(v.atc) + (tg.atc != null ? ' (Target: ' + fmtPct(tg.atc) + ')' : ''),
+            'Change vs March: ' + deltaText(v.atc, m.atc, true),
+            'Change vs Last Year: ' + deltaText(v.atc, l.atc, true),
+            'Distribution Loss: ' + fmtPct(v.dist),
+            'Collection Efficiency: ' + fmtPct(v.ce),
+            'Input: ' + (v.input != null ? UI.n(v.input) + ' MU' : '—') + ' · Billed: ' + (v.demand != null ? UI.n(v.demand) + ' MU' : '—') + ' · Collected: ' + (v.coll != null ? UI.n(v.coll) + ' MU' : '—')
+          ];
+          UI.copy(lines.join('\n')).then(function () { UI.toast('Office loss details copied'); });
+        };
+      }
+    }
+
+    function set(id, v) { if (!$(id).disabled) $(id).value = v; }
+
+    function drill(level, name) {
+      if (level === 'region') {
+        set('regionFilter', name);
+        set('divisionFilter', '');
+        set('cccFilter', '');
+        tab = 'division';
+      } else if (level === 'division') {
+        if (!$('regionFilter').value) {
+          Object.keys(TREE).forEach(function (r) {
+            if (TREE[r].divs[name]) set('regionFilter', r);
+          });
+        }
+        set('divisionFilter', name);
+        set('cccFilter', '');
+        tab = 'ccc';
+      } else {
+        set('cccFilter', $('cccFilter').value === name ? '' : name);
+      }
+      fillOffices();
+      ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { UI.mark($(id)); });
+      render();
+    }
+
+    function clearAll() {
+      f.q = ''; f.perf = ''; f.band = '';
+      $('q').value = '';
+      SELECTS.forEach(function (id) { set(id, ''); });
+      fillOffices();
+      ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { UI.mark($(id)); });
+      tab = scope && (scope.level === 'division' || scope.level === 'ccc') ? 'ccc' : scope && scope.level === 'region' ? 'division' : 'region';
       render();
     }
 
     ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
       $(id).addEventListener('change', function () {
-        if (id === 'regionFilter') $('divisionFilter').value = '';
-        if (id !== 'cccFilter') $('cccFilter').value = '';
+        if (id === 'regionFilter') set('divisionFilter', '');
+        if (id !== 'cccFilter') set('cccFilter', '');
         fillOffices(); ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (x) { UI.mark($(x)); });
         render();
       });
     });
     $('period').addEventListener('change', render);
-    $('metric').addEventListener('click', function (e) {
+    $('q').addEventListener('input', UI.debounce(function () {
+      f.q = this.value.trim();
+      if (f.q && tab !== 'ccc' && tab !== 'targets' && tab !== 'energy' && tab !== 'division') tab = 'ccc';
+      render();
+    }, 180));
+
+    $('topMetric').addEventListener('click', function (e) {
       var b = e.target.closest('button'); if (!b) return;
       metric = b.getAttribute('data-m');
-      [].forEach.call(this.querySelectorAll('button'), function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      syncMetricButtons();
       render();
     });
+    $('kpis').addEventListener('click', function (e) {
+      var b = e.target.closest('.ui-stat[data-m]'); if (!b) return;
+      metric = b.getAttribute('data-m');
+      syncMetricButtons();
+      render();
+    });
+    $('tabs').addEventListener('click', function (e) {
+      var t = e.target.closest('.ui-drill-tab'); if (t) { tab = t.getAttribute('data-t'); render(); }
+    });
+
+    $('copyBtn').addEventListener('click', function () {
+      if (!lastTable) return;
+      var lines = ['*Losses — ' + lastTable.title + '*', lastTable.cols.join(' | ')].concat(lastTable.rows.slice(0, 60).map(function (r) { return r.map(function (c) { return typeof c === 'number' ? UI.n(c) : c; }).join(' | '); }));
+      UI.copy(lines.join('\n')).then(function () { UI.toast('Table copied'); });
+    });
     $('exportBtn').addEventListener('click', function () {
-      UI.exportCsv('losses.csv', [{ key: 'label', label: 'Office' }, { key: 'atc', label: 'AT&C loss %' }, { key: 'dMar', label: 'Change vs March (pts)' }, { key: 'dLy', label: 'Change vs last year (pts)' }, { key: 'target', label: 'Target %' }, { key: 'dist', label: 'Distribution loss %' }, { key: 'ce', label: 'Collection efficiency %' }, { key: 'input', label: 'Input (MU)' }], window.__rows || []);
+      if (!lastTable) return;
+      UI.exportCsv('losses-' + lastTable.title.toLowerCase().replace(/\W+/g, '-') + '.csv', lastTable.cols.map(function (c, i) { return { key: i, label: c }; }), lastTable.rows.map(function (r) { var o = {}; r.forEach(function (c, i) { o[i] = c; }); return o; }));
     });
 
     // Loss sheet is pasted by hand; always revalidate so a same-day paste shows (docs/reports.md).
@@ -235,7 +776,10 @@
     function load() {
       MzoRows.load('loss_report', function (t, info) {
         if (t) { main = t; paint(); }
-        else if (info && info.error && !main) { $('meta').textContent = 'Could not load data'; $('offices').innerHTML = $('trend').innerHTML = '<div class="ui-empty">Could not load data.</div>'; }
+        else if (info && info.error && !main) {
+          $('meta').textContent = 'Could not load data';
+          $('table').innerHTML = '<div class="ui-empty">Could not load data.</div>';
+        }
       }, ROWS);
       MzoRows.load('loss_targets', function (t) { if (t) { target = t; paint(); } }, ROWS);
     }
@@ -246,11 +790,13 @@
         .then(function (r) { if (r[0]) main = r[0]; if (r[1]) target = r[1]; paint(); })
         .then(function () { b.classList.remove('spin'); }, function () { b.classList.remove('spin'); });
     }
+
     // First paint: pin the login scope, then open ?region= / ?division= / ?ccc= (the deepest one wins).
     var locked = false;
     function scopeLock() {
       if (locked) return; locked = true;
-      if (UI.lockScope()) fillOffices();
+      scope = UI.lockScope();
+      if (scope) fillOffices();
       var params = new URLSearchParams(location.search);
       var want = function (k) { return String(params.get(k) || '').trim().toLowerCase().replace(/\s+(division|region)$/, ''); };
       var wr = want('region'), wd = want('division'), wc = want('ccc'), hit = null;
@@ -267,8 +813,24 @@
           fillOffices();
         });
       }
+      if (params.get('metric')) {
+        var m = params.get('metric').toLowerCase();
+        if (m === 'atc' || m === 'dist' || m === 'ce') metric = m;
+      }
+      if (params.get('period')) {
+        var p = +params.get('period');
+        if (periods.indexOf(p) !== -1) $('period').value = p;
+      }
+      if (TABS.some(function (t) { return t[0] === params.get('tab'); })) {
+        tab = params.get('tab');
+      } else {
+        if (scope && (scope.level === 'division' || scope.level === 'ccc')) tab = 'ccc';
+        else if (scope && scope.level === 'region') tab = 'division';
+        else tab = 'region';
+      }
       ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { UI.mark($(id)); });
     }
+
     $('refreshBtn').addEventListener('click', refresh);
     load();
   });

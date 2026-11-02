@@ -33,15 +33,18 @@ module.exports = {
     extra: ['#mixHist', '#officeNote'], clicks: ['#mixHist .row'], drillRows: '#officeTable tbody tr.click', deep: []
   },
   wridd: {
-    url: 'wridd.html', key: 'wridd_schemes', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', tables: ['#officeTable', '#appTable'], record: LEVEL,
-    extra: ['#reasonHist', '#typeHist', '#appCount'], clicks: ['#reasonHist .row', '#typeHist .row'], drillRows: '#officeTable tbody tr.click', deep: []
+    url: 'wridd.html', key: 'wridd_schemes', stats: '#kpis .ui-stat', tabs: '#tabs .ui-drill-tab', asOn: '#asOn', tables: ['#table'],
+    clicks: ['#fStatus .ui-opt', '#fType .ui-opt', '#fReason .ui-opt'], drillRows: '#table tbody tr.click',
+    deep: ['?region=Malda', '?status=meter', '?type=DTW', '?tab=schemes']
   },
   bharatnet: {
-    url: 'bharatnet.html', key: 'bharatnet_connections', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', tables: ['#officeTable', '#appTable'], record: LEVEL,
-    extra: ['#monthHist', '#appCount'], clicks: ['#monthHist .row'], drillRows: '#officeTable tbody tr.click', deep: []
+    url: 'bharatnet.html', key: 'bharatnet_connections', stats: '#kpis .ui-stat', tabs: '#tabs .ui-drill-tab', asOn: '#asOn', tables: ['#table'],
+    clicks: ['#fStatus .ui-opt', '#fMonth .ui-opt'], drillRows: '#table tbody tr.click',
+    deep: ['?region=Malda', '?status=given', '?status=pending', '?tab=applications']
   },
   icds: {
-    url: 'icds.html', key: 'icds_a_plus', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', asOn: '#meta', tables: ['#officeTable', '#appTable'], record: LEVEL,
-    extra: ['#poleHist', '#projectHist', '#appCount', '#officeNote'], clicks: ['#poleHist .row', '#projectHist .row'], segments: ['#prio button'], drillRows: '#officeTable tbody tr.click', deep: []
+    url: 'icds.html', key: 'icds_a_plus', stats: '#kpis .ui-stat', tabs: '#tabs .ui-drill-tab', asOn: '#asOn', tables: ['#table'],
+    clicks: ['#fPrio .ui-opt', '#fStatus .ui-opt', '#fPoles .ui-opt', '#fErection .ui-opt', '#fAppl .ui-opt'], drillRows: '#table tbody tr.click',
+    deep: ['?district=Malda', '?prio=A%2B', '?status=meter', '?status=nocc', '?tab=centres']
   }
 };

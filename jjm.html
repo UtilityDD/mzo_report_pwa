@@ -11,45 +11,62 @@
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
   <script src="/mzo_rows.js?v=6" defer></script>
+  <style>
+    .ui-head { align-items: center; }
+    .cl-kpis .ui-stat { padding: 13px 14px 14px; }
+    .cl-hint { padding: 8px 16px; color: var(--mzo-muted); font-size: 12.5px; border-bottom: 1px solid var(--mzo-border); }
+    .cl-hint:empty { display: none; }
+  </style>
 </head>
 <body>
   <main class="ui-page">
     <header class="ui-head">
       <div>
-        <h1>JJM connections</h1>
-        <p id="meta">Loading…</p>
+        <h1>JJM connections<span class="ui-badge ui-date" id="asOn">…</span></h1>
       </div>
       <div class="ui-actions">
-        <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
     </header>
 
-    <div class="ui-filters">
-      <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
-      <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
-      <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
-      <button type="button" class="ui-btn ghost" id="clearBtn" hidden><svg class="ui-i"><use href="#ui-x"/></svg>Clear</button>
-    </div>
-
-    <section class="ui-stats" style="--n:5" id="stats" aria-label="Summary"></section>
-
-    <div class="ui-grid">
-      <section class="ui-panel">
-        <div class="ui-panel-h">
-          <h2>By office <small id="officeNote"></small></h2>
-          <div class="ui-tabs" role="tablist" id="levelTabs">
-            <button type="button" class="ui-tab" role="tab" data-l="region" aria-selected="true">Region</button>
-            <button type="button" class="ui-tab" role="tab" data-l="division">Division</button>
-            <button type="button" class="ui-tab" role="tab" data-l="ccc">CCC</button>
-          </div>
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h">
+          <h2>Filters<small id="activeLabel"></small></h2>
+          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
         </div>
-        <div id="officeTable"><div class="ui-empty">Loading…</div></div>
-      </section>
-      <div>
+        <div class="ui-side-sec ui-side-stack">
+          <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Search CCC, division" autocomplete="off" aria-label="Search CCC or division" title="Search by CCC or division name" /></label>
+          <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
+          <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
+          <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Stage" id="fStatus"></div>
+        </div>
+      </aside>
+
+      <div class="ui-main">
+        <section class="ui-stats cl-kpis" id="kpis" aria-label="Summary">
+          <button type="button" class="ui-stat" data-k=""><div class="k">Deposited by PHE</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="done"><div class="k"><span class="ui-dot ok"></span>Connected</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="wip"><div class="k">Work in progress</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="notReady"><div class="k"><span class="ui-dot warn"></span>PHE not ready</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="blocked"><div class="k"><span class="ui-dot bad"></span>Blocked</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+        </section>
+
         <section class="ui-panel">
-          <div class="ui-panel-h"><h2>Where connections stand</h2></div>
-          <div class="ui-panel-b"><div id="mixHist"></div></div>
+          <div class="ui-panel-h">
+            <h2>Detailed analysis</h2>
+            <div class="ui-actions">
+              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+            </div>
+          </div>
+          <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
+          <div class="cl-hint" id="hint"></div>
+          <div id="table"><div class="ui-empty">Loading…</div></div>
         </section>
       </div>
     </div>
@@ -59,124 +76,268 @@
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    // Sheet columns: the uniform names of the long headers (letters A–F), schema/jjm_connections.json.
+    var ROWS = 'jjm_connections';
+    // Sheet columns: uniform names of the long headers (letters A–F), schema/jjm_connections.json.
     var M = [
       { k: 'total', label: 'Deposited by PHE', short: 'Deposited', f: 'total_no_connection_for_which_phe_deposited_charges_a_b_c_d', dot: '' },
       { k: 'done', label: 'Connected', short: 'Connected', f: 'connection_already_done_b', dot: 'ok' },
       { k: 'wip', label: 'Work in progress', short: 'In progress', f: 'work_in_progress', dot: '' },
       { k: 'notReady', label: 'PHE not ready', short: 'PHE not ready', f: 'wbsedcl_work_complete_but_phe_not_ready_c', dot: 'warn' },
-      { k: 'phe', label: 'PHE issue', short: 'PHE issue', f: 'work_could_not_be_done_due_to_issued_of_phe_pump_house_chang', dot: 'bad' },
-      { k: 'row', label: 'Right of way', short: 'Right of way', f: 'connection_could_not_be_given_due_to_objection_for_pole_erec', dot: 'bad' }
+      { k: 'phe', label: 'PHE pump house issue', short: 'PHE issue', f: 'work_could_not_be_done_due_to_issued_of_phe_pump_house_chang', dot: 'bad' },
+      { k: 'row', label: 'Right of way objection', short: 'Right of way', f: 'connection_could_not_be_given_due_to_objection_for_pole_erec', dot: 'bad' }
     ];
-    var all = [], level = 'region', f = { m: '' }, scope = null;
+    var STATUS_LABELS = {
+      done: 'Connected',
+      wip: 'Work in progress',
+      notReady: 'PHE not ready',
+      blocked: 'Blocked (PHE + ROW)',
+      phe: 'PHE issue',
+      row: 'Right of way'
+    };
+    var TABS = [['region', 'Region'], ['division', 'Division'], ['ccc', 'CCC'], ['status', 'Status breakdown']];
+    var all = [], tab = 'region', f = { q: '', status: '' }, renderedTab = '', scope = null, lastTable = null, first = true;
+    var SELECTS = ['regionFilter', 'divisionFilter', 'cccFilter'];
+    var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
 
     // t.rows: uniform rows (one per CCC; canonical _region/_division/_ccc from the CCC name, the
     // sheet's spellings included), already scoped to the login by MzoRows. Unmapped rows (BULK)
     // keep the sheet's names.
     function prepare(t) {
       all = t.rows.filter(function (d) { return d.ccc_name; }).map(function (d) {
-        var r = { _region: d._region || UI.title(d.region_name), _divn: d._division, _supp: d._ccc || UI.title(d.ccc_name) };
+        var r = {
+          _region: d._region || UI.title(d.region_name) || 'Unmapped',
+          _divn: d._division || 'Unmapped',
+          _supp: d._ccc || UI.title(d.ccc_name) || 'Unmapped'
+        };
         M.forEach(function (m) { r[m.k] = d[m.f] || 0; });
         r.blocked = r.phe + r.row;
         return r;
       });
-      $('meta').textContent = 'As updated by RMs · ' + UI.n(all.length) + ' CCCs';
+      $('asOn').textContent = UI.n(all.length) + ' CCCs';
+      $('asOn').title = 'As updated by RMs · ' + UI.n(all.length) + ' CCCs reported';
       fillFilters();
     }
 
     function fillFilters() {
       UI.offices(all);
       if (!scope) scope = UI.lockScope();
+      SELECTS.forEach(function (id) { UI.mark($(id)); });
     }
-    function base() {
-      var reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value;
-      return all.filter(function (r) { return (!reg || r._region === reg) && (!div || r._divn === div) && (!ccc || r._supp === ccc); });
-    }
-    function sum(rows, k) { return rows.reduce(function (a, r) { return a + r[k]; }, 0); }
+    function set(id, v) { if (!$(id).disabled) $(id).value = v; }
 
-    function render() {
-      var b = base(), tot = {};
+    function sum(rows, k) { return rows.reduce(function (a, r) { return a + (r[k] || 0); }, 0); }
+
+    function base(skipStatus) {
+      var q = f.q.toLowerCase(), reg = $('regionFilter').value, div = $('divisionFilter').value, cc = $('cccFilter').value;
+      var st = skipStatus ? '' : f.status;
+      return all.filter(function (r) {
+        if (reg && r._region !== reg) return false;
+        if (div && r._divn !== div) return false;
+        if (cc && r._supp !== cc) return false;
+        if (q && r._supp.toLowerCase().indexOf(q) === -1 && r._divn.toLowerCase().indexOf(q) === -1 && r._region.toLowerCase().indexOf(q) === -1) return false;
+        if (st && !(r[st] > 0)) return false;
+        return true;
+      });
+    }
+
+    function renderFacets() {
+      var b = base(true);
+      var tot = {};
       M.forEach(function (m) { tot[m.k] = sum(b, m.k); });
       tot.blocked = tot.phe + tot.row;
 
+      var opts = [
+        { value: 'done', label: 'Connected', count: tot.done, dot: 'ok' },
+        { value: 'wip', label: 'Work in progress', count: tot.wip },
+        { value: 'notReady', label: 'PHE not ready', count: tot.notReady, dot: 'warn' },
+        { value: 'blocked', label: 'Blocked (PHE + ROW)', count: tot.blocked, dot: 'bad' },
+        { value: 'phe', label: 'PHE pump house issue', count: tot.phe, dot: 'bad' },
+        { value: 'row', label: 'Right of way objection', count: tot.row, dot: 'bad' }
+      ];
+      UI.facet('fStatus', opts, f.status, function (v) { f.status = v; render(); });
+      var active = (f.q ? 1 : 0) + (f.status ? 1 : 0) + SELECTS.filter(function (id) { return $(id).value && !$(id).disabled; }).length;
+      setActive(active);
+    }
+
+    function render() {
+      renderFacets();
+      var bAll = base(true);
+      var tot = {};
+      M.forEach(function (m) { tot[m.k] = sum(bAll, m.k); });
+      tot.blocked = tot.phe + tot.row;
+
       var stats = [
-        { k: '', label: 'Deposited by PHE', v: tot.total, s: UI.n(b.length) + ' CCCs' },
-        { k: 'done', label: 'Connected', dot: 'ok', v: tot.done, s: UI.pct(tot.done, tot.total) + ' of deposited' },
+        { k: '', label: 'Deposited by PHE', v: tot.total, s: UI.n(bAll.length) + ' CCCs' },
+        { k: 'done', label: 'Connected', dot: 'ok', v: tot.done, s: UI.pct(tot.done, tot.total) + ' connection rate' },
         { k: 'wip', label: 'Work in progress', v: tot.wip, s: UI.pct(tot.wip, tot.total) + ' of deposited' },
         { k: 'notReady', label: 'PHE not ready', dot: 'warn', v: tot.notReady, s: 'WBSEDCL work complete' },
         { k: 'blocked', label: 'Blocked', dot: 'bad', v: tot.blocked, s: 'PHE ' + UI.n(tot.phe) + ' · Right of way ' + UI.n(tot.row) }
       ];
-      $('stats').innerHTML = stats.map(function (s) {
-        return '<button type="button" class="ui-stat" data-k="' + s.k + '" aria-pressed="' + (f.m === s.k) + '"><div class="k">' + (s.dot !== undefined ? '<span class="ui-dot ' + s.dot + '"></span>' : '') + UI.esc(s.label) + '</div><div class="v">' + UI.n(s.v) + '</div><div class="s">' + UI.esc(s.s) + '</div></button>';
+      [].forEach.call(document.querySelectorAll('#kpis .ui-stat'), function (el, i) {
+        var s = stats[i];
+        if (!s) return;
+        el.setAttribute('data-k', s.k);
+        el.querySelector('.v').textContent = UI.n(s.v);
+        el.querySelector('.s').textContent = s.s;
+        el.setAttribute('aria-pressed', String(f.status === s.k));
+      });
+
+      var view = base(false);
+      $('tabs').innerHTML = TABS.map(function (t) {
+        return '<button type="button" class="ui-drill-tab" role="tab" data-t="' + t[0] + '" aria-selected="' + (t[0] === tab) + '">' + t[1] + '</button>';
       }).join('');
 
-      var key = level === 'region' ? '_region' : level === 'division' ? '_divn' : '_supp', groups = {};
-      b.forEach(function (r) {
-        var name = r[key] || 'Other';
-        var g = groups[name] || (groups[name] = { name: name, parent: level === 'ccc' ? r._divn : level === 'division' ? r._region : '', total: 0, done: 0, wip: 0, notReady: 0, phe: 0, row: 0, blocked: 0 });
-        ['total', 'done', 'wip', 'notReady', 'phe', 'row', 'blocked'].forEach(function (k) { g[k] += r[k]; });
-      });
-      var list = Object.keys(groups).map(function (k) { return groups[k]; });
-      if (f.m) list = list.filter(function (g) { return g[f.m] > 0; });
-      $('officeNote').textContent = f.m ? 'with ' + (f.m === 'blocked' ? 'blocked connections' : M.filter(function (m) { return m.k === f.m; })[0].short.toLowerCase()) : '';
-      var el = $('officeTable');
-      if (el.__ui) el.__ui.sort = { key: f.m || 'total', dir: 'desc' };
-      var cnt = function (v) { return v ? UI.n(v) : '<span class="ui-muted">0</span>'; };
-      UI.table('officeTable', {
-        rows: list, sort: { key: f.m || 'total', dir: 'desc' }, count: false, empty: 'Nothing here for these filters.',
-        columns: [
-          { key: 'name', label: level === 'ccc' ? 'CCC' : level === 'division' ? 'Division' : 'Region', fmt: function (v, g) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.parent ? '<span class="sub">' + UI.esc(g.parent) + '</span>' : ''); } },
-          { key: 'total', label: 'Deposited', num: true, fmt: cnt },
-          { key: 'done', label: 'Connected', num: true, fmt: cnt },
-          { key: 'wip', label: 'In progress', num: true, fmt: cnt, hideSm: true },
-          { key: 'notReady', label: 'PHE not ready', num: true, fmt: cnt, hideSm: true },
-          { key: 'blocked', label: 'Blocked', num: true, fmt: cnt },
-          { key: 'rate', label: 'Done', hideSm: true, sortVal: function (g) { return g.total ? g.done / g.total : 0; }, fmt: function (_, g) { return UI.bar(g.done, g.total, UI.pct(g.done, g.total), 2); }, width: '22%' }
-        ],
-        foot: list.length > 1 ? (function () { var t = { rate: 0 }; ['total', 'done', 'wip', 'notReady', 'blocked'].forEach(function (k) { t[k] = list.reduce(function (a, g) { return a + g[k]; }, 0); }); return t; })() : null,
-        onRow: level === 'ccc' ? null : function (g) { drill(g.name); }
-      });
+      var stLabel = STATUS_LABELS[f.status] || f.status;
+      $('hint').textContent = (f.status ? 'Showing offices with ' + stLabel.toLowerCase() + ' only. ' : '') +
+        (['region', 'division', 'ccc'].indexOf(tab) !== -1 ? 'Click a row to open the next office level.' : 'Stage breakdown across all filtered connections.');
 
-      UI.hist('mixHist', M.slice(1).map(function (m) { return { key: m.k, label: m.short, value: tot[m.k], tone: m.dot || 'muted' }; }),
-        { active: f.m === 'blocked' ? null : f.m, onClick: function (row) { f.m = f.m === row.key ? '' : row.key; render(); } });
-      $('clearBtn').hidden = !(f.m || ($('regionFilter').value && !$('regionFilter').disabled) || ($('divisionFilter').value && !$('divisionFilter').disabled) || ($('cccFilter').value && !$('cccFilter').disabled));
-      window.__list = list;
+      renderTab(view, tot);
     }
 
-    function tabs() { [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === level)); }); }
-    function setLevel(l) { level = l; tabs(); render(); }
-    function markAll() { ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (x) { UI.mark($(x)); }); }
-    function set(id, v) { if (!$(id).disabled) $(id).value = v; }
-    function drill(name) {
-      if (level === 'region') { set('regionFilter', name); set('divisionFilter', ''); set('cccFilter', ''); level = 'division'; }
-      else { set('divisionFilter', name); set('cccFilter', ''); level = 'ccc'; }
-      fillFilters(); markAll(); setLevel(level);
+    function renderTab(view, tot) {
+      lastTable = null;
+      var cfg = null;
+
+      if (tab === 'region' || tab === 'division' || tab === 'ccc') {
+        var key = tab === 'region' ? '_region' : tab === 'division' ? '_divn' : '_supp', groups = {};
+        view.forEach(function (r) {
+          var name = r[key] || 'Unmapped';
+          var g = groups[name] || (groups[name] = {
+            name: name,
+            parent: tab === 'ccc' ? r._divn : tab === 'division' ? r._region : '',
+            total: 0, done: 0, wip: 0, notReady: 0, phe: 0, row: 0, blocked: 0
+          });
+          ['total', 'done', 'wip', 'notReady', 'phe', 'row', 'blocked'].forEach(function (k) { g[k] += r[k]; });
+        });
+        var list = Object.keys(groups).map(function (k) { return groups[k]; });
+        var label = tab === 'ccc' ? 'CCC' : tab === 'division' ? 'Division' : 'Region';
+        var sumTot = { total: sum(view, 'total'), done: sum(view, 'done'), wip: sum(view, 'wip'), notReady: sum(view, 'notReady'), blocked: sum(view, 'blocked') };
+        var cnt = function (v) { return v ? UI.n(v) : '<span class="ui-muted">0</span>'; };
+
+        lastTable = {
+          title: label,
+          cols: [label, 'Deposited', 'Connected', 'In progress', 'PHE not ready', 'Blocked', 'Done %'],
+          rows: list.slice().sort(function (a, b) { return b.total - a.total; }).map(function (g) {
+            return [g.name, g.total, g.done, g.wip, g.notReady, g.blocked, UI.pct(g.done, g.total)];
+          })
+        };
+
+        cfg = {
+          rows: list, sort: { key: f.status || 'total', dir: 'desc' }, count: false, empty: 'No connections for these filters.',
+          columns: [
+            { key: 'name', label: label, fmt: function (v, g) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.parent ? '<span class="sub">' + UI.esc(g.parent) + '</span>' : ''); } },
+            { key: 'total', label: 'Deposited', num: true, fmt: cnt },
+            { key: 'done', label: 'Connected', num: true, fmt: cnt },
+            { key: 'wip', label: 'In progress', num: true, fmt: cnt, hideSm: true },
+            { key: 'notReady', label: 'PHE not ready', num: true, fmt: cnt, hideSm: true },
+            { key: 'blocked', label: 'Blocked', num: true, fmt: cnt },
+            { key: 'rate', label: 'Done', hideSm: true, sortVal: function (g) { return g.total ? g.done / g.total : 0; }, fmt: function (_, g) { return UI.bar(g.done, g.total, UI.pct(g.done, g.total), 2); }, width: '22%' }
+          ],
+          foot: list.length > 1 ? { total: sumTot.total, done: sumTot.done, wip: sumTot.wip, notReady: sumTot.notReady, blocked: sumTot.blocked } : null,
+          onRow: tab === 'ccc' ? null : function (g) { drill(tab, g.name); },
+          selected: tab === 'ccc' ? function (g) { return $('cccFilter').value === g.name; } : null
+        };
+      }
+      else if (tab === 'status') {
+        var stages = [
+          { key: 'done', name: 'Connected', count: tot.done, dot: 'ok', desc: 'Meter installed and energized' },
+          { key: 'wip', name: 'Work in progress', count: tot.wip, dot: '', desc: 'Line / substation construction ongoing' },
+          { key: 'notReady', name: 'PHE not ready', count: tot.notReady, dot: 'warn', desc: 'WBSEDCL work complete, awaiting PHE readiness' },
+          { key: 'phe', name: 'PHE pump house issue', count: tot.phe, dot: 'bad', desc: 'Pump house change / site constraint' },
+          { key: 'row', name: 'Right of way objection', count: tot.row, dot: 'bad', desc: 'Objection for pole erection / conductor stringing' }
+        ];
+        var totalDep = tot.total || 1;
+        lastTable = {
+          title: 'Status breakdown',
+          cols: ['Stage', 'Connections', 'Share of deposited', 'Notes'],
+          rows: stages.map(function (s) { return [s.name, s.count, UI.pct(s.count, totalDep), s.desc]; })
+        };
+        cfg = {
+          rows: stages, sort: null, count: false, empty: 'No stage data.',
+          columns: [
+            { key: 'name', label: 'Stage', fmt: function (v, s) { return (s.dot ? '<span class="ui-dot ' + s.dot + '" style="margin-right:8px"></span>' : '') + '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
+            { key: 'count', label: 'Connections', num: true, fmt: UI.n },
+            { key: 'share', label: 'Share of deposited', sortVal: function (s) { return s.count; }, fmt: function (_, s) { return UI.bar(s.count, totalDep, UI.pct(s.count, totalDep), s.dot === 'ok' ? 2 : undefined); }, width: '26%' },
+            { key: 'desc', label: 'Notes', hideSm: true, cls: 'wrap' }
+          ],
+          foot: { name: 'Total deposited', count: tot.total },
+          onRow: function (s) { f.status = f.status === s.key ? '' : s.key; render(); }
+        };
+      }
+
+      var k = tab + ':' + f.status;
+      if (renderedTab !== k) { $('table').__ui = null; renderedTab = k; }
+      UI.table('table', cfg);
     }
 
-    ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
+    function drill(level, name) {
+      if (name === 'Unmapped' || name === 'Other') return;
+      if (level === 'region') { set('regionFilter', name); set('divisionFilter', ''); set('cccFilter', ''); tab = 'division'; }
+      else if (level === 'division') { set('divisionFilter', name); set('cccFilter', ''); tab = 'ccc'; }
+      else { set('cccFilter', $('cccFilter').value === name ? '' : name); }
+      fillFilters(); render();
+    }
+
+    /* ---------- URL params (Ask, shared links) ---------- */
+    // ?region= ?division= ?ccc= ?q= ?status=done|wip|notReady|blocked|phe|row ?tab=region|division|ccc|status
+    function applyUrl() {
+      var p = new URLSearchParams(location.search), pick = function (id, v) {
+        var el = $(id); if (!v || el.disabled) return false;
+        var m = [].filter.call(el.options, function (o) { return o.value && o.value.toLowerCase() === String(v).trim().toLowerCase(); })[0];
+        if (m) { el.value = m.value; fillFilters(); return true; } return false;
+      };
+      pick('regionFilter', p.get('region')); pick('divisionFilter', p.get('division')); pick('cccFilter', p.get('ccc'));
+      if (p.get('q')) { f.q = p.get('q').trim(); $('q').value = f.q; }
+      var st = String(p.get('status') || '').trim();
+      if (STATUS_LABELS[st] || st === 'blocked') f.status = st;
+      if (TABS.some(function (t) { return t[0] === p.get('tab'); })) tab = p.get('tab');
+    }
+
+    /* ---------- events ---------- */
+    SELECTS.forEach(function (id) {
       $(id).addEventListener('change', function () {
         if (id === 'regionFilter') set('divisionFilter', '');
         if (id !== 'cccFilter') set('cccFilter', '');
-        fillFilters(); markAll(); render();
+        fillFilters(); render();
       });
     });
-    $('stats').addEventListener('click', function (e) { var s = e.target.closest('.ui-stat'); if (!s) return; var k = s.getAttribute('data-k'); f.m = f.m === k ? '' : k; render(); });
-    $('levelTabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-tab'); if (t) setLevel(t.getAttribute('data-l')); });
-    $('clearBtn').addEventListener('click', function () { f.m = ''; ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { set(id, ''); }); fillFilters(); markAll(); render(); });
+    $('q').addEventListener('input', UI.debounce(function () {
+      f.q = this.value.trim();
+      render();
+    }, 200));
+    $('kpis').addEventListener('click', function (e) {
+      var s = e.target.closest('.ui-stat'); if (!s) return;
+      var k = s.getAttribute('data-k');
+      f.status = f.status === k ? '' : k;
+      render();
+    });
+    $('tabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-drill-tab'); if (t) { tab = t.getAttribute('data-t'); render(); } });
+    function clearAll() {
+      f.q = ''; f.status = '';
+      $('q').value = '';
+      SELECTS.forEach(function (id) { set(id, ''); });
+      tab = scope && (scope.level === 'division' || scope.level === 'ccc') ? 'ccc' : scope && scope.level === 'region' ? 'division' : 'region';
+      fillFilters(); render();
+    }
+    $('copyBtn').addEventListener('click', function () {
+      if (!lastTable) return;
+      var lines = ['*JJM connections — ' + lastTable.title + '*' + (f.status ? ' (' + (STATUS_LABELS[f.status] || f.status) + ')' : ''), lastTable.cols.join(' | ')].concat(lastTable.rows.slice(0, 60).map(function (r) { return r.map(function (c) { return typeof c === 'number' ? UI.n(c) : c; }).join(' | '); }));
+      UI.copy(lines.join('\n')).then(function () { UI.toast('Table copied'); });
+    });
     $('exportBtn').addEventListener('click', function () {
-      var rows = base();
+      var rows = base(false);
       UI.exportCsv('jjm-connections.csv', [{ key: '_region', label: 'Region' }, { key: '_divn', label: 'Division' }, { key: '_supp', label: 'CCC' }].concat(M.map(function (m) { return { key: m.k, label: m.label }; })), rows);
     });
-    MzoRows.refresh('refreshBtn', 'jjm_connections', function (t) { prepare(t); render(); });
 
-    var first = true;
-    MzoRows.load('jjm_connections', function (t, info) {
-      if (!t) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+    MzoRows.refresh('refreshBtn', ROWS, function (t) { prepare(t); render(); });
+
+    MzoRows.load(ROWS, function (t, info) {
+      if (!t) { if (info && info.error && !all.length) { $('asOn').textContent = 'No data'; $('table').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
       prepare(t);
       if (first) {
         first = false;
-        if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';
-        tabs();
+        if (scope && (scope.level === 'division' || scope.level === 'ccc')) tab = 'ccc'; else if (scope && scope.level === 'region') tab = 'division';
+        applyUrl();
       }
       render();
     });

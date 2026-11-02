@@ -11,87 +11,109 @@
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
   <script src="/mzo_rows.js?v=6" defer></script>
-  <style>#projectHist .row { grid-template-columns: 150px minmax(0, 1fr) 56px; }</style>
+  <style>
+    .ui-head { align-items: center; }
+    .cl-kpis .ui-stat { padding: 13px 14px 14px; }
+    .cl-hint { padding: 8px 16px; color: var(--mzo-muted); font-size: 12.5px; border-bottom: 1px solid var(--mzo-border); }
+    .cl-hint:empty { display: none; }
+  </style>
 </head>
 <body>
   <main class="ui-page">
     <header class="ui-head">
       <div>
-        <h1>ICDS connections</h1>
-        <p id="meta">Loading…</p>
+        <h1>ICDS connections<span class="ui-badge ui-date" id="asOn">…</span></h1>
       </div>
       <div class="ui-actions">
-        <div class="ui-seg" id="prio" role="group" aria-label="Priority">
-          <button type="button" data-p="" aria-pressed="true">All</button>
-          <button type="button" data-p="A+" aria-pressed="false">A+</button>
-          <button type="button" data-p="A" aria-pressed="false">A</button>
-        </div>
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
+        <button type="button" class="ui-btn" id="untaggedBtn">Untagged AWCs</button>
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
     </header>
 
-    <div class="ui-filters">
-      <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Centre, AWC code or project" autocomplete="off" /></label>
-      <span class="ui-select"><select id="regionFilter" aria-label="District"><option value="">All districts</option></select></span>
-      <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
-      <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
-      <button type="button" class="ui-btn ghost" id="clearBtn" hidden><svg class="ui-i"><use href="#ui-x"/></svg>Clear</button>
-    </div>
-
-    <section class="ui-stats" style="--n:4" id="stats" aria-label="Summary">
-      <button type="button" class="ui-stat" data-k=""><div class="k">Centres without supply</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="nocc"><div class="k"><span class="ui-dot warn"></span>No CCC yet</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="mapped"><div class="k"><span class="ui-dot"></span>With CCC</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="meter"><div class="k"><span class="ui-dot ok"></span>Meter given</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-    </section>
-
-    <div class="ui-grid">
-      <section class="ui-panel">
-        <div class="ui-panel-h">
-          <h2>By office <small id="officeNote"></small></h2>
-          <div class="ui-tabs" role="tablist" id="levelTabs">
-            <button type="button" class="ui-tab" role="tab" data-l="region" aria-selected="true">District</button>
-            <button type="button" class="ui-tab" role="tab" data-l="division">Division</button>
-            <button type="button" class="ui-tab" role="tab" data-l="ccc">CCC</button>
-          </div>
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h">
+          <h2>Filters<small id="activeLabel"></small></h2>
+          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
         </div>
-        <div id="officeTable" style="--max-h:520px"><div class="ui-empty">Loading…</div></div>
-      </section>
-      <div>
-        <section class="ui-panel">
-          <div class="ui-panel-h"><h2>Poles required</h2></div>
-          <div class="ui-panel-b"><div id="poleHist"></div></div>
+        <div class="ui-side-sec ui-side-stack">
+          <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Centre, code, project, application, meter" autocomplete="off" aria-label="Search centres" title="Search by centre name, AWC code, project, application or meter" /></label>
+          <span class="ui-select"><select id="regionFilter" aria-label="District"><option value="">All districts</option></select></span>
+          <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
+          <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Priority" id="fPrio"></div>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Tagging and connection stage" id="fStatus"></div>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Poles required" id="fPoles"></div>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Pole erection" id="fErection"></div>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Application status" id="fAppl"></div>
+        </div>
+      </aside>
+
+      <div class="ui-main">
+        <section class="ui-stats cl-kpis" id="kpis" aria-label="Summary">
+          <button type="button" class="ui-stat" data-k=""><div class="k">Centres</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="tagged"><div class="k"><span class="ui-dot"></span>CCC Tagged</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="nocc"><div class="k"><span class="ui-dot warn"></span>No CCC yet</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="appl"><div class="k">Applied</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="poles"><div class="k">Poles needed</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="meter"><div class="k"><span class="ui-dot ok"></span>Meter given</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
         </section>
+
         <section class="ui-panel">
-          <div class="ui-panel-h"><h2>Top projects</h2></div>
-          <div class="ui-panel-b"><div id="projectHist"></div></div>
+          <div class="ui-panel-h">
+            <h2>Detailed analysis</h2>
+            <div class="ui-actions">
+              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+            </div>
+          </div>
+          <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
+          <div class="cl-hint" id="hint"></div>
+          <div id="table"><div class="ui-empty">Loading…</div></div>
         </section>
       </div>
     </div>
-
-    <section class="ui-panel">
-      <div class="ui-panel-h">
-        <h2>Centres <small id="appCount"></small></h2>
-        <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
-      </div>
-      <div id="appTable"><div class="ui-empty">Loading…</div></div>
-    </section>
   </main>
 
   <script>
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var STATUS = { meter: { label: 'Meter given', cls: 'ok' }, mapped: { label: 'With CCC', cls: '' }, nocc: { label: 'No CCC yet', cls: 'warn' } };
-    // Login scope uses zone region names; this sheet is by district.
+    var STATUS = {
+      meter: { label: 'Meter given', cls: 'ok' },
+      mapped: { label: 'With CCC', cls: '' },
+      nocc: { label: 'No CCC yet', cls: 'warn' }
+    };
     var DISTRICT_OF = { Malda: 'Malda', Raiganj: 'Uttar Dinajpur', Balurghat: 'Dakshin Dinajpur' };
-    var POLES = [
-      { key: 'p0', label: 'None' }, { key: 'p1', label: '1 pole' }, { key: 'p2', label: '2 poles' },
-      { key: 'p3', label: '3 or more' }, { key: 'pn', label: 'Not assessed' }
+    var POLE_BUCKETS = [
+      { key: 'p0', label: 'None (0 poles)' },
+      { key: 'p1', label: '1 pole' },
+      { key: 'p2', label: '2 poles' },
+      { key: 'p3', label: '3 or more' },
+      { key: 'pn', label: 'Not assessed' }
     ];
-    var all = [], tables = {}, f = { q: '', prio: '', status: '', pole: '', project: '' }, level = 'region', scope = null, firstPaint = true;
+    var TABS = [
+      ['district', 'District'], ['division', 'Division'], ['ccc', 'CCC'],
+      ['centres', 'Centres'], ['poles', 'Poles & Infra'], ['projects', 'Projects']
+    ];
+    var all = [], tables = {}, f = { q: '', prio: '', status: '', pole: '', poleDone: '', appl: '', project: '' };
+    var tab = 'district', renderedTab = '', scope = null, lastTable = null, lastList = null, first = true;
+    var SELECTS = ['regionFilter', 'divisionFilter', 'cccFilter'];
+    var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
 
     function blankish(v) { return !String(v == null ? '' : v).trim() || /^(0|na|n\.a\.?|nil|n\/a|-)$/i.test(String(v).trim()); }
+
     function district(raw) {
       var u = String(raw || '').trim().toUpperCase();
       if (u.indexOf('DAKSHIN') !== -1 || u.indexOf('SOUTH') !== -1 || u === 'DD' || u.indexOf('BALURGHAT') !== -1) return 'Dakshin Dinajpur';
@@ -99,8 +121,7 @@
       if (u.indexOf('UTTAR') !== -1 || u.indexOf('NORTH') !== -1 || u === 'UD' || u.indexOf('RAIGANJ') !== -1) return 'Uttar Dinajpur';
       return UI.title(raw) || '';
     }
-    // Cell M2 (UPDATE DATE, dd.mm.yyyy) is the sheet's "as on" date: read from every row (t.first), so a
-    // scoped login that does not have the sheet's first row still sees it.
+
     function asOnOf(t) {
       var raw = (t && t.first('update_date')) || '';
       var m = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
@@ -109,23 +130,45 @@
       return pad(+m[1]) + '/' + pad(+m[2]) + '/' + y;
     }
 
-    // t.rows: uniform rows of schema/icds_a_plus.json / icds_a.json, already scoped to the login by MzoRows.
-    // A centre has a CCC when its CCC CODE is a CCC of the canonical list (known typos and SAP forms
-    // included); a division-level or unknown code counts as no CCC. The district stays the page's region.
+    function fmtMeterDate(d) {
+      if (!d || UI.blank(d)) return '';
+      var dt = UI.date(d);
+      return dt ? UI.fmtDate(dt) : String(d);
+    }
+
     function ingest(t, prio) {
       return (t ? t.rows : []).map(function (d) {
         var mapped = !!d._ccc;
         var meter = blankish(d.meter_number) ? '' : d.meter_number;
         var poles = d.no_of_pole_required, pn = parseInt(poles, 10);
+        var pdRaw = String(d.pole_erection_completed_y_n || '').trim();
+        var pd = /^(y|yes|done|completed)/i.test(pdRaw) ? 'Y' : /^(n|no|pending)/i.test(pdRaw) ? 'N' : pdRaw ? pdRaw.toUpperCase() : '';
+        var appl = blankish(d.appl_no) ? '' : d.appl_no;
         var r = {
-          prio: prio, awc: UI.title(d.awc_name), awcCode: d.awc_code, project: UI.title(d.project),
-          dist: district(d.district), appl: blankish(d.appl_no) ? '' : d.appl_no, ownership: UI.title(d.building_ownership),
-          poles: poles, poleKey: isNaN(pn) ? 'pn' : pn >= 3 ? 'p3' : 'p' + pn, poleDone: d.pole_erection_completed_y_n,
-          meter: meter, meterDate: d.meter_install_date, remarks: d.remarks, code: d._ccc_code || d.ccc_code,
-          _region: district(d.district), _divn: mapped ? d._division : '', _supp: mapped ? d._ccc : '', CCC_CODE: mapped ? d._ccc_code : ''
+          prio: prio,
+          awc: UI.title(d.awc_name),
+          awcCode: d.awc_code,
+          project: UI.title(d.project),
+          dist: district(d.district),
+          appl: appl,
+          ownership: UI.title(d.building_ownership),
+          poles: poles,
+          poleNum: isNaN(pn) ? -1 : pn,
+          poleKey: isNaN(pn) ? 'pn' : pn >= 3 ? 'p3' : 'p' + pn,
+          poleDone: pd,
+          meter: meter,
+          meterDate: d.meter_install_date,
+          remarks: d.remarks,
+          code: d._ccc_code || d.ccc_code,
+          _region: district(d.district),
+          _divn: mapped ? d._division : '',
+          _supp: mapped ? d._ccc : '',
+          CCC_CODE: mapped ? d._ccc_code : ''
         };
         r.st = meter ? 'meter' : mapped ? 'mapped' : 'nocc';
-        r.search = [r.awc, r.awcCode, r.project, r.dist, r._divn, r._supp, r.appl].join(' ').toLowerCase();
+        r.hasPoles = !isNaN(pn) && pn > 0;
+        r.hasAppl = !!appl;
+        r.search = [r.awc, r.awcCode, r.project, r.dist, r._divn, r._supp, r.appl, r.meter, r.ownership].join(' ').toLowerCase();
         return r;
       }).filter(function (r) { return r.awc || r.awcCode; });
     }
@@ -134,12 +177,15 @@
       all = ingest(tables.ap, 'A+').concat(ingest(tables.a, 'A'));
       var asOn = asOnOf(tables.ap) || asOnOf(tables.a);
       if (asOn) { try { localStorage.setItem('mzo_icds_as_on', asOn); } catch (e) {} }
-      $('meta').textContent = (asOn ? 'As on ' + UI.fmtDate(asOn.split('/').reverse().join('-')) + ' · ' : '') + UI.n(all.length) + ' anganwadi centres';
+      var dateStr = asOn ? UI.fmtDate(asOn.split('/').reverse().join('-')) : '';
+      $('asOn').textContent = dateStr || (UI.n(all.length) + ' AWCs');
+      $('asOn').title = (dateStr ? 'As on ' + dateStr + ' · ' : '') + UI.n(all.length) + ' Anganwadi centres';
       fillFilters();
-      if (firstPaint) {
-        firstPaint = false;
-        if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';
-        tabs();
+      if (first) {
+        first = false;
+        if (scope && (scope.level === 'division' || scope.level === 'ccc')) tab = 'ccc';
+        else if (scope && scope.level === 'region') tab = 'division';
+        applyUrl();
       }
       render();
     }
@@ -149,123 +195,440 @@
       if (!scope) {
         scope = UI.lockScope();
         var rf = $('regionFilter');
-        if (rf.disabled && DISTRICT_OF[rf.value]) { var dv = DISTRICT_OF[rf.value]; rf.innerHTML = '<option value="' + dv + '">' + dv + '</option>'; rf.value = dv; }
+        if (rf.disabled && DISTRICT_OF[rf.value]) {
+          var dv = DISTRICT_OF[rf.value];
+          rf.innerHTML = '<option value="' + dv + '">' + dv + '</option>';
+          rf.value = dv;
+        }
       }
+      SELECTS.forEach(function (id) { UI.mark($(id)); });
+    }
+    function set(id, v) { if (!$(id).disabled) $(id).value = v; }
+
+    function matchKpi(r, k) {
+      if (!k) return true;
+      if (k === 'tagged') return r.st !== 'nocc';
+      if (k === 'nocc') return r.st === 'nocc';
+      if (k === 'appl') return r.hasAppl;
+      if (k === 'poles') return r.hasPoles;
+      if (k === 'meter') return r.st === 'meter';
+      return r.st === k;
     }
 
-    function base() {
-      // Locked (login-scope) selects are already applied by the login scope (MzoRows); this sheet's district can differ from the CCC's region.
+    function filtered(skip) {
       var val = function (id) { return $(id).disabled ? '' : $(id).value; };
-      var q = f.q.toLowerCase(), reg = val('regionFilter'), div = val('divisionFilter'), ccc = val('cccFilter');
+      var q = f.q.toLowerCase(), reg = val('regionFilter'), div = val('divisionFilter'), cc = val('cccFilter');
       return all.filter(function (r) {
-        return (!f.prio || r.prio === f.prio) && (!reg || r._region === reg) && (!div || r._divn === div) && (!ccc || r._supp === ccc) && (!q || r.search.indexOf(q) !== -1);
+        if (reg && r._region !== reg) return false;
+        if (div && r._divn !== div) return false;
+        if (cc && r._supp !== cc) return false;
+        if (q && r.search.indexOf(q) === -1) return false;
+        if (skip !== 'prio' && f.prio && r.prio !== f.prio) return false;
+        if (skip !== 'status' && f.status && !matchKpi(r, f.status)) return false;
+        if (skip !== 'pole' && f.pole && r.poleKey !== f.pole) return false;
+        if (skip !== 'poleDone' && f.poleDone && r.poleDone !== f.poleDone) return false;
+        if (skip !== 'appl' && f.appl && (f.appl === 'y' ? !r.hasAppl : r.hasAppl)) return false;
+        if (skip !== 'project' && f.project && r.project !== f.project) return false;
+        return true;
       });
     }
-    function matchStatus(r, k) { return !k || (k === 'mapped' ? r.st !== 'nocc' : r.st === k); }
+
+    function renderFacets() {
+      // Priority facet
+      var bPrio = filtered('prio');
+      var prioOpts = [
+        { value: 'A+', label: 'A+ Priority', count: bPrio.filter(function (r) { return r.prio === 'A+'; }).length },
+        { value: 'A', label: 'A Priority', count: bPrio.filter(function (r) { return r.prio === 'A'; }).length }
+      ];
+      UI.facet('fPrio', prioOpts, f.prio, function (v) { f.prio = v; render(); });
+
+      // Stage / Status facet
+      var bStatus = filtered('status');
+      var stOpts = [
+        { value: 'meter', label: 'Meter given', count: bStatus.filter(function (r) { return r.st === 'meter'; }).length, dot: 'ok' },
+        { value: 'mapped', label: 'Tagged, meter pending', count: bStatus.filter(function (r) { return r.st === 'mapped'; }).length, dot: '' },
+        { value: 'nocc', label: 'No CCC yet (untagged)', count: bStatus.filter(function (r) { return r.st === 'nocc'; }).length, dot: 'warn' }
+      ];
+      UI.facet('fStatus', stOpts, f.status, function (v) { f.status = v; render(); });
+
+      // Poles required facet
+      var bPoles = filtered('pole');
+      var poleOpts = POLE_BUCKETS.map(function (p) {
+        return { value: p.key, label: p.label, count: bPoles.filter(function (r) { return r.poleKey === p.key; }).length };
+      });
+      UI.facet('fPoles', poleOpts, f.pole, function (v) { f.pole = v; render(); });
+
+      // Pole erection facet
+      var bErect = filtered('poleDone').filter(function (r) { return r.hasPoles; });
+      var erectOpts = [
+        { value: 'Y', label: 'Erection done (Y)', count: bErect.filter(function (r) { return r.poleDone === 'Y'; }).length, dot: 'ok' },
+        { value: 'N', label: 'Erection pending (N)', count: bErect.filter(function (r) { return r.poleDone === 'N'; }).length, dot: 'warn' }
+      ];
+      UI.facet('fErection', erectOpts, f.poleDone, function (v) { f.poleDone = v; render(); });
+
+      // Application facet
+      var bAppl = filtered('appl');
+      var applOpts = [
+        { value: 'y', label: 'Application submitted', count: bAppl.filter(function (r) { return r.hasAppl; }).length },
+        { value: 'n', label: 'No application yet', count: bAppl.filter(function (r) { return !r.hasAppl; }).length }
+      ];
+      UI.facet('fAppl', applOpts, f.appl, function (v) { f.appl = v; render(); });
+
+      var active = (f.q ? 1 : 0) + (f.prio ? 1 : 0) + (f.status ? 1 : 0) + (f.pole ? 1 : 0) +
+        (f.poleDone ? 1 : 0) + (f.appl ? 1 : 0) + (f.project ? 1 : 0) +
+        SELECTS.filter(function (id) { return $(id).value && !$(id).disabled; }).length;
+      setActive(active);
+    }
 
     function render() {
-      var b = base();
-      var view = b.filter(function (r) { return matchStatus(r, f.status) && (!f.pole || r.poleKey === f.pole) && (!f.project || r.project === f.project); });
+      renderFacets();
+      var b = filtered('all'); // panel filters only
+      var total = b.length;
+      var cTagged = b.filter(function (r) { return r.st !== 'nocc'; }).length;
+      var cNoCc = b.filter(function (r) { return r.st === 'nocc'; }).length;
+      var cAppl = b.filter(function (r) { return r.hasAppl; }).length;
+      var cPoles = b.filter(function (r) { return r.hasPoles; }).length;
+      var cErect = b.filter(function (r) { return r.poleDone === 'Y'; }).length;
+      var cMeter = b.filter(function (r) { return r.st === 'meter'; }).length;
 
-      [].forEach.call(document.querySelectorAll('#stats .ui-stat'), function (el) {
-        var k = el.getAttribute('data-k'), c = b.filter(function (r) { return matchStatus(r, k); }).length;
-        el.querySelector('.v').textContent = UI.n(c);
-        el.querySelector('.s').textContent = !k ? UI.n(b.filter(function (r) { return r.prio === 'A+'; }).length) + ' A+ · ' + UI.n(b.filter(function (r) { return r.prio === 'A'; }).length) + ' A'
-          : UI.pct(c, b.length) + ' of centres';
-        el.setAttribute('aria-pressed', String(f.status === k));
+      var stats = [
+        { k: '', label: 'Centres', v: total, s: UI.n(b.filter(function (r) { return r.prio === 'A+'; }).length) + ' A+ · ' + UI.n(b.filter(function (r) { return r.prio === 'A'; }).length) + ' A' },
+        { k: 'tagged', label: 'CCC Tagged', v: cTagged, s: UI.pct(cTagged, total) + ' mapped' },
+        { k: 'nocc', label: 'No CCC yet', dot: 'warn', v: cNoCc, s: UI.pct(cNoCc, total) + ' untagged' },
+        { k: 'appl', label: 'Applied', v: cAppl, s: UI.pct(cAppl, total) + ' of centres' },
+        { k: 'poles', label: 'Poles needed', v: cPoles, s: UI.n(cErect) + ' erected (' + UI.pct(cErect, cPoles || 1) + ')' },
+        { k: 'meter', label: 'Meter given', dot: 'ok', v: cMeter, s: UI.pct(cMeter, total) + ' connected' }
+      ];
+
+      [].forEach.call(document.querySelectorAll('#kpis .ui-stat'), function (el, i) {
+        var s = stats[i];
+        if (!s) return;
+        el.querySelector('.v').textContent = UI.n(s.v);
+        el.querySelector('.s').textContent = s.s;
+        el.setAttribute('aria-pressed', String(f.status === s.k));
       });
 
-      // Division and CCC count only centres with a mapped CCC code.
-      var key = level === 'region' ? '_region' : level === 'division' ? '_divn' : '_supp', groups = {};
-      var rows = level === 'region' ? view : view.filter(function (r) { return r._supp; });
-      rows.forEach(function (r) {
-        var name = r[key] || 'Unknown';
-        var g = groups[name] || (groups[name] = { name: name, parent: level === 'ccc' ? r._divn : level === 'division' ? r._region : '', n: 0, aplus: 0, mapped: 0, meter: 0 });
-        g.n++; if (r.prio === 'A+') g.aplus++; if (r.st !== 'nocc') g.mapped++; if (r.st === 'meter') g.meter++;
-      });
-      var list = Object.keys(groups).map(function (k) { return groups[k]; });
-      $('officeNote').textContent = level === 'region' ? '' : 'Centres with a CCC';
-      UI.table('officeTable', {
-        rows: list, sort: { key: 'n', dir: 'desc' }, count: false, empty: level === 'region' ? 'No centres for these filters.' : 'No centres with a CCC code here yet.',
-        columns: [
-          { key: 'name', label: level === 'ccc' ? 'CCC' : level === 'division' ? 'Division' : 'District', fmt: function (v, g) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.parent ? '<span class="sub">' + UI.esc(g.parent) + '</span>' : ''); } },
-          { key: 'n', label: 'Centres', num: true, fmt: UI.n },
-          { key: 'aplus', label: 'A+', num: true, fmt: UI.n, hideSm: true },
-          { key: 'meter', label: 'Meter given', num: true, fmt: UI.n },
-          { key: 'rate', label: 'With CCC', hideSm: true, sortVal: function (g) { return g.n ? g.mapped / g.n : 0; }, fmt: function (_, g) { return UI.bar(g.mapped, g.n, UI.pct(g.mapped, g.n), 2); }, width: '26%' }
-        ],
-        foot: list.length > 1 ? { n: rows.length, aplus: rows.filter(function (r) { return r.prio === 'A+'; }).length, meter: rows.filter(function (r) { return r.st === 'meter'; }).length, mapped: rows.filter(function (r) { return r.st !== 'nocc'; }).length, rate: 0 } : null,
-        onRow: function (g) { drill(g.name); }
-      });
+      var view = filtered(''); // all active filters combined
+      $('tabs').innerHTML = TABS.map(function (t) {
+        var extra = t[0] === 'centres' ? '<small>' + UI.n(view.length) + '</small>' : '';
+        return '<button type="button" class="ui-drill-tab" role="tab" data-t="' + t[0] + '" aria-selected="' + (t[0] === tab) + '">' + t[1] + extra + '</button>';
+      }).join('');
 
-      var hb = b.filter(function (r) { return matchStatus(r, f.status) && (!f.project || r.project === f.project); });
-      UI.hist('poleHist', POLES.map(function (p) { return { key: p.key, label: p.label, value: hb.filter(function (r) { return r.poleKey === p.key; }).length }; }),
-        { active: f.pole, onClick: function (row) { f.pole = f.pole === row.key ? '' : row.key; render(); } });
-      var pj = {};
-      b.filter(function (r) { return matchStatus(r, f.status) && (!f.pole || r.poleKey === f.pole); }).forEach(function (r) { if (r.project) pj[r.project] = (pj[r.project] || 0) + 1; });
-      UI.hist('projectHist', Object.keys(pj).sort(function (x, y) { return pj[y] - pj[x]; }).slice(0, 7).map(function (p) { return { key: p, label: p, value: pj[p] }; }),
-        { active: f.project, onClick: function (row) { f.project = f.project === row.key ? '' : row.key; render(); } });
+      var stTitle = f.status === 'meter' ? 'meter given' : f.status === 'mapped' ? 'tagged with CCC' : f.status === 'nocc' ? 'untagged (no CCC)' : f.status === 'tagged' ? 'tagged centres' : '';
+      var pTitle = f.prio ? 'Priority ' + f.prio : '';
+      var poleTitle = f.pole ? (POLE_BUCKETS.filter(function (p) { return p.key === f.pole; })[0] || {}).label || f.pole : '';
+      var projTitle = f.project ? 'Project ' + f.project : '';
+      var filterDesc = [pTitle, stTitle, poleTitle, projTitle].filter(Boolean).join(' · ');
 
-      $('appCount').textContent = UI.n(view.length);
-      UI.table('appTable', { rows: view, sort: { key: 'st', dir: 'asc' }, limit: 50, resetPage: true, empty: 'No centres match these filters.', columns: COLS, onRow: detail });
-      $('clearBtn').hidden = !(f.q || f.prio || f.status || f.pole || f.project || ($('regionFilter').value && !$('regionFilter').disabled) || ($('divisionFilter').value && !$('divisionFilter').disabled) || ($('cccFilter').value && !$('cccFilter').disabled));
-      window.__view = view;
+      $('hint').textContent = (filterDesc ? 'Showing ' + filterDesc + ' only. ' : '') +
+        (tab === 'district' ? 'Click a district to drill down to divisions. Tagging progress and meter connections highlighted.'
+          : tab === 'division' ? 'Click a division to drill down to CCCs.'
+          : tab === 'ccc' ? 'Click a CCC to view its centres list.'
+          : tab === 'centres' ? 'Click any centre to view full details, application, poles and meter number.'
+          : tab === 'poles' ? 'Click a pole requirement bucket to filter centres.'
+          : 'Click a project to filter centres under that ICDS project.');
+
+      renderTab(view, b);
+    }
+
+    function renderTab(view, b) {
+      lastTable = null;
+      lastList = null;
+      var cfg = null;
+
+      if (tab === 'district' || tab === 'division' || tab === 'ccc') {
+        var key = tab === 'district' ? '_region' : tab === 'division' ? '_divn' : '_supp', groups = {};
+        // Division and CCC rows count mapped centres; unmapped centres are grouped under "No CCC yet"
+        view.forEach(function (r) {
+          var name = (tab === 'district' ? r._region : r[key]) || (tab === 'ccc' ? 'No CCC yet' : 'Unmapped');
+          var g = groups[name] || (groups[name] = {
+            name: name,
+            parent: tab === 'ccc' ? r._divn : tab === 'division' ? r._region : '',
+            n: 0, aplus: 0, tagged: 0, poles: 0, meter: 0
+          });
+          g.n++;
+          if (r.prio === 'A+') g.aplus++;
+          if (r.st !== 'nocc') g.tagged++;
+          if (r.hasPoles) g.poles++;
+          if (r.st === 'meter') g.meter++;
+        });
+        var list = Object.keys(groups).map(function (k) { return groups[k]; });
+        var label = tab === 'ccc' ? 'CCC' : tab === 'division' ? 'Division' : 'District';
+        var sumN = view.length;
+        var sumAplus = view.filter(function (r) { return r.prio === 'A+'; }).length;
+        var sumTagged = view.filter(function (r) { return r.st !== 'nocc'; }).length;
+        var sumPoles = view.filter(function (r) { return r.hasPoles; }).length;
+        var sumMeter = view.filter(function (r) { return r.st === 'meter'; }).length;
+
+        lastTable = {
+          title: label,
+          cols: [label, 'Centres', 'A+ Priority', 'CCC Tagged', 'Tagging %', 'Poles Needed', 'Meter Given', 'Connected %'],
+          rows: list.slice().sort(function (x, y) { return y.n - x.n; }).map(function (g) {
+            return [g.name, g.n, g.aplus, g.tagged, UI.pct(g.tagged, g.n), g.poles, g.meter, UI.pct(g.meter, g.n)];
+          })
+        };
+
+        cfg = {
+          rows: list, sort: { key: 'n', dir: 'desc' }, count: false,
+          empty: 'No centres for these filters.',
+          columns: [
+            { key: 'name', label: label, fmt: function (v, g) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.parent ? '<span class="sub">' + UI.esc(g.parent) + '</span>' : ''); } },
+            { key: 'n', label: 'Centres', num: true, fmt: UI.n },
+            { key: 'aplus', label: 'A+', num: true, hideSm: true, fmt: UI.n },
+            { key: 'tagRate', label: 'CCC Tagged', hideSm: true, sortVal: function (g) { return g.n ? g.tagged / g.n : 0; }, fmt: function (_, g) { return UI.bar(g.tagged, g.n, UI.pct(g.tagged, g.n) + ' (' + UI.n(g.tagged) + ')', 2); }, width: '22%' },
+            { key: 'poles', label: 'Poles', num: true, hideSm: true, fmt: UI.n },
+            { key: 'meter', label: 'Meter given', num: true, fmt: UI.n },
+            { key: 'connRate', label: 'Connected', sortVal: function (g) { return g.n ? g.meter / g.n : 0; }, fmt: function (_, g) { return UI.bar(g.meter, g.n, UI.pct(g.meter, g.n), 1); }, width: '22%' }
+          ],
+          foot: list.length > 1 ? { n: sumN, aplus: sumAplus, tagRate: 0, poles: sumPoles, meter: sumMeter, connRate: 0 } : null,
+          onRow: function (g) {
+            if (g.name === 'No CCC yet' || g.name === 'Unmapped') {
+              f.status = 'nocc'; tab = 'centres'; render(); return;
+            }
+            drill(tab, g.name);
+          }
+        };
+      }
+      else if (tab === 'poles') {
+        var poleMap = {};
+        POLE_BUCKETS.forEach(function (p) {
+          poleMap[p.key] = { key: p.key, label: p.label, n: 0, done: 0, meter: 0 };
+        });
+        view.forEach(function (r) {
+          var g = poleMap[r.poleKey] || (poleMap[r.poleKey] = { key: r.poleKey, label: r.poleKey, n: 0, done: 0, meter: 0 });
+          g.n++;
+          if (r.poleDone === 'Y') g.done++;
+          if (r.st === 'meter') g.meter++;
+        });
+        var pList = POLE_BUCKETS.map(function (p) { return poleMap[p.key]; });
+        var totPoles = view.length || 1;
+        var maxPoles = Math.max.apply(null, pList.map(function (p) { return p.n; }).concat([0]));
+
+        lastTable = {
+          title: 'Poles & Infrastructure',
+          cols: ['Requirement', 'Centres', 'Share', 'Erection Completed', 'Meter Given', 'Connected %'],
+          rows: pList.map(function (p) {
+            return [p.label, p.n, UI.pct(p.n, totPoles), p.done, p.meter, UI.pct(p.meter, p.n)];
+          })
+        };
+
+        cfg = {
+          rows: pList, sort: null, count: false, empty: 'No centres with pole requirements.',
+          columns: [
+            { key: 'label', label: 'Requirement', fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
+            { key: 'n', label: 'Centres', num: true, fmt: UI.n },
+            { key: 'share', label: 'Share of total', sortVal: function (p) { return p.n; }, fmt: function (_, p) { return UI.bar(p.n, maxPoles, UI.pct(p.n, totPoles), 2); }, width: '28%' },
+            { key: 'done', label: 'Erection done (Y)', num: true, hideSm: true, fmt: UI.n },
+            { key: 'meter', label: 'Meter given', num: true, fmt: UI.n },
+            { key: 'rate', label: 'Connected', sortVal: function (p) { return p.n ? p.meter / p.n : 0; }, fmt: function (_, p) { return UI.pct(p.meter, p.n); } }
+          ],
+          foot: pList.length > 1 ? { label: 'Total', n: view.length, done: view.filter(function (r) { return r.poleDone === 'Y'; }).length, meter: view.filter(function (r) { return r.st === 'meter'; }).length } : null,
+          onRow: function (p) {
+            f.pole = f.pole === p.key ? '' : p.key;
+            render();
+          }
+        };
+      }
+      else if (tab === 'projects') {
+        var projMap = {};
+        view.forEach(function (r) {
+          var pName = r.project || 'Unspecified';
+          var g = projMap[pName] || (projMap[pName] = { name: pName, dist: r.dist, n: 0, aplus: 0, tagged: 0, poles: 0, meter: 0 });
+          g.n++;
+          if (r.prio === 'A+') g.aplus++;
+          if (r.st !== 'nocc') g.tagged++;
+          if (r.hasPoles) g.poles++;
+          if (r.st === 'meter') g.meter++;
+        });
+        var projList = Object.keys(projMap).map(function (k) { return projMap[k]; });
+
+        lastTable = {
+          title: 'ICDS Projects',
+          cols: ['Project', 'District', 'Centres', 'A+', 'CCC Tagged', 'Tagging %', 'Poles Needed', 'Meter Given', 'Connected %'],
+          rows: projList.slice().sort(function (a, b) { return b.n - a.n; }).map(function (g) {
+            return [g.name, g.dist, g.n, g.aplus, g.tagged, UI.pct(g.tagged, g.n), g.poles, g.meter, UI.pct(g.meter, g.n)];
+          })
+        };
+
+        cfg = {
+          rows: projList, sort: { key: 'n', dir: 'desc' }, count: false, empty: 'No projects match filters.',
+          columns: [
+            { key: 'name', label: 'Project', fmt: function (v, g) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.dist ? '<span class="sub">' + UI.esc(g.dist) + '</span>' : ''); } },
+            { key: 'n', label: 'Centres', num: true, fmt: UI.n },
+            { key: 'aplus', label: 'A+', num: true, hideSm: true, fmt: UI.n },
+            { key: 'tagRate', label: 'CCC Tagged', hideSm: true, sortVal: function (g) { return g.n ? g.tagged / g.n : 0; }, fmt: function (_, g) { return UI.bar(g.tagged, g.n, UI.pct(g.tagged, g.n) + ' (' + UI.n(g.tagged) + ')', 2); }, width: '22%' },
+            { key: 'poles', label: 'Poles', num: true, hideSm: true, fmt: UI.n },
+            { key: 'meter', label: 'Meter given', num: true, fmt: UI.n },
+            { key: 'connRate', label: 'Connected', sortVal: function (g) { return g.n ? g.meter / g.n : 0; }, fmt: function (_, g) { return UI.bar(g.meter, g.n, UI.pct(g.meter, g.n), 1); }, width: '22%' }
+          ],
+          foot: projList.length > 1 ? { n: view.length, aplus: view.filter(function (r) { return r.prio === 'A+'; }).length, poles: view.filter(function (r) { return r.hasPoles; }).length, meter: view.filter(function (r) { return r.st === 'meter'; }).length } : null,
+          onRow: function (g) {
+            f.project = f.project === g.name ? '' : g.name;
+            if (f.project) tab = 'centres';
+            render();
+          }
+        };
+      }
+      else {
+        // Centres list
+        lastList = view;
+        lastTable = {
+          title: 'Anganwadi Centres',
+          cols: ['Centre', 'AWC Code', 'Project', 'District', 'Division', 'CCC', 'Priority', 'Application', 'Poles', 'Pole Erection', 'Meter', 'Status'],
+          rows: view.map(function (r) {
+            return [r.awc, r.awcCode, r.project, r.dist, r._divn, r._supp, r.prio, r.appl || '', r.poles || '', r.poleDone || '', r.meter || '', STATUS[r.st].label];
+          })
+        };
+        cfg = {
+          rows: view, sort: { key: 'st', dir: 'desc' }, limit: 50, resetPage: true,
+          empty: 'No centres match these filters.',
+          columns: AWC_COLS,
+          onRow: detail
+        };
+      }
+
+      var k = tab + ':' + f.prio + ':' + f.status + ':' + f.pole + ':' + f.poleDone + ':' + f.appl + ':' + f.project;
+      if (renderedTab !== k) { $('table').__ui = null; renderedTab = k; }
+      UI.table('table', cfg);
     }
 
     var ORDER = { nocc: 0, mapped: 1, meter: 2 };
-    var COLS = [
+    var AWC_COLS = [
       { key: 'awc', label: 'Centre', cls: 'wrap', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v || '—') + '</span><span class="sub">' + UI.esc(r.awcCode) + '</span>'; } },
       { key: 'project', label: 'Project', hideSm: true },
-      { key: '_supp', label: 'CCC', fmt: function (v, r) { return v ? UI.esc(v) + '<span class="sub">' + UI.esc(r._divn) + '</span>' : '<span class="ui-muted">—</span><span class="sub">' + UI.esc(r.dist) + '</span>'; }, csv: function (r) { return r._supp; } },
+      {
+        key: '_supp', label: 'Office',
+        fmt: function (v, r) {
+          if (!v) return '<span class="ui-badge warn">No CCC yet</span><span class="sub">' + UI.esc(r.dist) + '</span>';
+          return UI.esc(v) + '<span class="sub">' + UI.esc(r._divn || r.dist) + '</span>';
+        },
+        csv: function (r) { return r._supp || 'No CCC yet'; }
+      },
       { key: 'prio', label: 'Priority', fmt: function (v) { return '<span class="ui-badge">' + UI.esc(v) + '</span>'; } },
-      { key: 'poles', label: 'Poles', num: true, hideSm: true, sortVal: function (r) { var n = parseInt(r.poles, 10); return isNaN(n) ? -1 : n; }, fmt: function (v) { return v && !isNaN(parseInt(v, 10)) ? UI.esc(v) : '<span class="ui-muted">—</span>'; } },
+      {
+        key: 'poles', label: 'Poles', num: true, hideSm: true,
+        sortVal: function (r) { return r.poleNum; },
+        fmt: function (v, r) {
+          if (!v || r.poleNum <= 0) return '<span class="ui-muted">None</span>';
+          return UI.esc(v) + ' pole' + (r.poleNum > 1 ? 's' : '') + (r.poleDone ? ' <span class="ui-badge sm ' + (r.poleDone === 'Y' ? 'ok' : 'warn') + '">' + r.poleDone + '</span>' : '');
+        }
+      },
+      { key: 'appl', label: 'Application', hideSm: true, fmt: function (v) { return v ? UI.esc(v) : '<span class="ui-muted">—</span>'; } },
+      { key: 'meter', label: 'Meter', hideSm: true, fmt: function (v) { return v ? UI.esc(v) : '<span class="ui-muted">—</span>'; } },
       { key: 'st', label: 'Status', sortVal: function (r) { return ORDER[r.st]; }, fmt: function (v) { return '<span class="ui-badge ' + STATUS[v].cls + '">' + STATUS[v].label + '</span>'; }, csv: function (r) { return STATUS[r.st].label; } }
     ];
 
     function detail(r) {
-      UI.drawer(r.awc || 'Centre ' + r.awcCode, [r.prio, STATUS[r.st].label, r._supp || r.dist].filter(Boolean).join(' · '), [
-        ['AWC code', r.awcCode], ['Project', r.project], ['District', r.dist], ['CCC', r._supp], ['Division', r._divn], ['CCC code', r.code],
-        ['Building', r.ownership], ['Application', r.appl], ['Poles required', r.poles], ['Pole erection', r.poleDone],
-        ['Meter number', r.meter], ['Meter installed', r.meterDate && !UI.blank(r.meterDate) ? UI.fmtDate(r.meterDate) : ''], ['Remarks', r.remarks]
-      ]);
+      UI.drawer(r.awc || 'AWC ' + r.awcCode, [r.prio, STATUS[r.st].label, r._supp || r.dist].filter(Boolean).join(' · '), [
+        ['Anganwadi Centre', r.awc], ['AWC code', r.awcCode], ['Priority', r.prio],
+        ['ICDS Project', r.project], ['District', r.dist],
+        ['CCC', r._supp || 'Not tagged (No CCC)'], ['Division', r._divn || '—'], ['CCC code', r.code || '—'],
+        ['Building ownership', r.ownership || '—'],
+        ['Application no.', r.appl || 'Not applied'],
+        ['Poles required', r.poles ? r.poles + ' pole(s)' : 'None'],
+        ['Pole erection', r.poleDone ? (r.poleDone === 'Y' ? 'Completed (Y)' : r.poleDone === 'N' ? 'Pending (N)' : r.poleDone) : '—'],
+        ['Meter number', r.meter || 'Not installed'],
+        ['Meter installed on', fmtMeterDate(r.meterDate) || (r.meter ? 'Installed' : 'Pending')],
+        ['Remarks', r.remarks || 'None']
+      ], '', '<button type="button" class="ui-btn sm" data-copy-detail>Copy details</button>');
+
+      var copyBtn = document.querySelector('[data-copy-detail]');
+      if (copyBtn) {
+        copyBtn.onclick = function () {
+          var lines = [
+            'ICDS Centre: ' + (r.awc || 'AWC ' + r.awcCode),
+            'AWC Code: ' + r.awcCode,
+            'Priority: ' + r.prio,
+            'Project: ' + r.project + ' (' + r.dist + ')',
+            'Tagging Status: ' + (r._supp ? 'Tagged to ' + r._supp + ' CCC (' + r._divn + ')' : 'No CCC Yet (Untagged)'),
+            'Application: ' + (r.appl || 'Pending'),
+            'Infrastructure: ' + (r.poles ? r.poles + ' pole(s)' : '0 poles') + (r.poleDone ? ' · Erection: ' + r.poleDone : ''),
+            'Meter Status: ' + (r.meter ? 'Installed (' + r.meter + ')' : 'Pending') + (r.meterDate ? ' on ' + fmtMeterDate(r.meterDate) : ''),
+            r.remarks ? 'Remarks: ' + r.remarks : ''
+          ].filter(Boolean);
+          UI.copy(lines.join('\n')).then(function () { UI.toast('Centre details copied'); });
+        };
+      }
     }
 
-    function tabs() { [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === level)); }); }
-    function setLevel(l) { level = l; tabs(); render(); }
-    function markAll() { ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (x) { UI.mark($(x)); }); }
-    function set(id, v) { if (!$(id).disabled) $(id).value = v; }
-    function drill(name) {
-      if (level === 'region') { set('regionFilter', name); set('divisionFilter', ''); set('cccFilter', ''); level = 'division'; }
-      else if (level === 'division') { set('divisionFilter', name); set('cccFilter', ''); level = 'ccc'; }
-      else set('cccFilter', $('cccFilter').value === name ? '' : name);
-      fillFilters(); markAll(); setLevel(level);
+    function drill(level, name) {
+      if (name === 'Unmapped' || name === 'No CCC yet') return;
+      if (level === 'district') { set('regionFilter', name); set('divisionFilter', ''); set('cccFilter', ''); tab = 'division'; }
+      else if (level === 'division') { set('divisionFilter', name); set('cccFilter', ''); tab = 'ccc'; }
+      else { set('cccFilter', $('cccFilter').value === name ? '' : name); tab = 'centres'; }
+      fillFilters(); render();
     }
 
-    ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
+    /* ---------- URL params (Ask, shared links) ---------- */
+    // ?district= ?region= ?division= ?ccc= ?q= ?prio=A+|A ?status=meter|mapped|nocc ?pole= ?project= ?tab=
+    function applyUrl() {
+      var p = new URLSearchParams(location.search), pick = function (id, v) {
+        var el = $(id); if (!v || el.disabled) return false;
+        var m = [].filter.call(el.options, function (o) { return o.value && o.value.toLowerCase() === String(v).trim().toLowerCase(); })[0];
+        if (m) { el.value = m.value; fillFilters(); return true; } return false;
+      };
+      pick('regionFilter', p.get('district') || p.get('region'));
+      pick('divisionFilter', p.get('division'));
+      pick('cccFilter', p.get('ccc'));
+      if (p.get('q')) { f.q = p.get('q').trim(); $('q').value = f.q; }
+      if (p.get('prio')) f.prio = p.get('prio').trim().toUpperCase();
+      if (p.get('status')) f.status = p.get('status').trim();
+      if (p.get('pole')) f.pole = p.get('pole').trim();
+      if (p.get('project')) f.project = p.get('project').trim();
+      if (TABS.some(function (t) { return t[0] === p.get('tab'); })) tab = p.get('tab');
+    }
+
+    /* ---------- events ---------- */
+    SELECTS.forEach(function (id) {
       $(id).addEventListener('change', function () {
         if (id === 'regionFilter') set('divisionFilter', '');
         if (id !== 'cccFilter') set('cccFilter', '');
-        fillFilters(); markAll(); render();
+        fillFilters(); render();
       });
     });
-    $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim(); render(); }, 160));
-    $('prio').addEventListener('click', function (e) {
-      var b = e.target.closest('button'); if (!b) return;
-      f.prio = b.getAttribute('data-p');
-      [].forEach.call(this.querySelectorAll('button'), function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+    $('q').addEventListener('input', UI.debounce(function () {
+      f.q = this.value.trim();
+      if (f.q && tab !== 'centres') tab = 'centres';
+      render();
+    }, 180));
+    $('kpis').addEventListener('click', function (e) {
+      var s = e.target.closest('.ui-stat[data-k]'); if (!s) return;
+      var k = s.getAttribute('data-k');
+      f.status = f.status === k ? '' : k;
       render();
     });
-    $('stats').addEventListener('click', function (e) { var s = e.target.closest('.ui-stat'); if (!s) return; var k = s.getAttribute('data-k'); f.status = f.status === k ? '' : k; render(); });
-    $('levelTabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-tab'); if (t) setLevel(t.getAttribute('data-l')); });
-    $('clearBtn').addEventListener('click', function () {
-      f.q = ''; f.status = ''; f.pole = ''; f.project = ''; f.prio = ''; $('q').value = '';
-      [].forEach.call(document.querySelectorAll('#prio button'), function (x) { x.setAttribute('aria-pressed', String(x.getAttribute('data-p') === '')); });
-      ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { set(id, ''); });
-      fillFilters(); markAll(); render();
+    $('tabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-drill-tab'); if (t) { tab = t.getAttribute('data-t'); render(); } });
+    $('untaggedBtn').addEventListener('click', function () {
+      tab = 'centres'; f.status = 'nocc'; renderedTab = ''; render();
+      $('table').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    function clearAll() {
+      f.q = ''; f.prio = ''; f.status = ''; f.pole = ''; f.poleDone = ''; f.appl = ''; f.project = '';
+      $('q').value = '';
+      SELECTS.forEach(function (id) { set(id, ''); });
+      tab = scope && (scope.level === 'division' || scope.level === 'ccc') ? 'ccc' : scope && scope.level === 'region' ? 'division' : 'district';
+      fillFilters(); render();
+    }
+    $('copyBtn').addEventListener('click', function () {
+      if (!lastTable) return;
+      var lines = ['*ICDS Connections — ' + lastTable.title + '*' + (f.prio ? ' (Priority ' + f.prio + ')' : '') + (f.status ? ' (' + (STATUS[f.status] ? STATUS[f.status].label : f.status) + ')' : ''), lastTable.cols.join(' | ')].concat(lastTable.rows.slice(0, 60).map(function (r) { return r.map(function (c) { return typeof c === 'number' ? UI.n(c) : c; }).join(' | '); }));
+      UI.copy(lines.join('\n')).then(function () { UI.toast('Table copied'); });
     });
     $('exportBtn').addEventListener('click', function () {
-      UI.exportCsv('icds-connections.csv', [{ key: 'awc', label: 'Centre' }, { key: 'awcCode', label: 'AWC code' }, { key: 'project', label: 'Project' }, { key: 'dist', label: 'District' }, { key: '_divn', label: 'Division' }, { key: '_supp', label: 'CCC' }, { key: 'prio', label: 'Priority' }, { key: 'appl', label: 'Application' }, { key: 'poles', label: 'Poles required' }, { key: 'meter', label: 'Meter number' }, COLS[5]], window.__view || []);
+      if (lastList) {
+        UI.exportCsv('icds-centres.csv', [
+          { key: 'awc', label: 'Centre' }, { key: 'awcCode', label: 'AWC Code' }, { key: 'project', label: 'Project' },
+          { key: 'dist', label: 'District' }, { key: '_divn', label: 'Division' }, { key: '_supp', label: 'CCC' },
+          { key: 'prio', label: 'Priority' }, { key: 'appl', label: 'Application' }, { key: 'poles', label: 'Poles Required' },
+          { key: 'poleDone', label: 'Pole Erection' }, { key: 'meter', label: 'Meter' },
+          { key: 'st', label: 'Status', csv: function (r) { return STATUS[r.st].label; } }
+        ], lastList);
+        return;
+      }
+      if (!lastTable) return;
+      UI.exportCsv('icds-' + lastTable.title.toLowerCase().replace(/\W+/g, '-') + '.csv', lastTable.cols.map(function (c, i) { return { key: i, label: c }; }), lastTable.rows.map(function (r) { var o = {}; r.forEach(function (c, i) { o[i] = c; }); return o; }));
     });
+
     var SHEETS = [['icds_a_plus', 'ap'], ['icds_a', 'a']];
     function reload(btn) {
       if (btn) btn.classList.add('spin');
@@ -275,12 +638,14 @@
     }
     $('refreshBtn').addEventListener('click', function () { reload(this); });
 
-    // Same-day sheet edits matter here: always check the version (forceCheck).
     var failed = 0;
     SHEETS.forEach(function (k) {
       MzoRows.load(k[0], function (t, info) {
         if (!t) {
-          if (info && info.error && ++failed === 2 && !all.length) { $('meta').textContent = 'Could not load data'; $('appTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; }
+          if (info && info.error && ++failed === 2 && !all.length) {
+            $('asOn').textContent = 'No data';
+            $('table').innerHTML = '<div class="ui-empty">Could not load data.</div>';
+          }
           return;
         }
         tables[k[1]] = t; combine();

@@ -12,18 +12,24 @@
   <script src="/mzo_scope.js?v=17" defer></script>
   <script src="/mzo_rows.js?v=6" defer></script>
   <style>
-    .co-day { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--mzo-muted); }
-    .co-day select { height: 28px; }
+    .ui-head { align-items: center; }
+    .cl-kpis .ui-stat { padding: 13px 14px 14px; text-align: left; }
+    .cl-hint { padding: 8px 16px; color: var(--mzo-muted); font-size: 12.5px; border-bottom: 1px solid var(--mzo-border); }
+    .cl-hint:empty { display: none; }
+    .co-chart-box { padding: 16px 16px 20px; border-bottom: 1px solid var(--mzo-border); }
+    .co-chart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .co-chart-head h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--mzo-text); }
   </style>
 </head>
 <body>
   <main class="ui-page">
     <header class="ui-head">
       <div>
-        <h1>Collection</h1>
-        <p id="meta">Loading…</p>
+        <h1>Collection<span class="ui-badge ui-date" id="asOn">…</span></h1>
+        <p id="meta" style="display:none"></p>
       </div>
       <div class="ui-actions">
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
         <div class="ui-seg" id="bulk" role="group" aria-label="Bulk consumers">
           <button type="button" data-b="with" aria-pressed="true">With bulk</button>
           <button type="button" data-b="without" aria-pressed="false">Without bulk</button>
@@ -32,48 +38,69 @@
       </div>
     </header>
 
-    <div class="ui-filters">
-      <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
-      <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
-      <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
-      <button type="button" class="ui-btn ghost" id="clearBtn" hidden><svg class="ui-i"><use href="#ui-x"/></svg>Clear</button>
-    </div>
-
-    <section class="ui-stats" style="--n:5" aria-label="Summary">
-      <div class="ui-stat"><div class="k" id="kFy">This financial year</div><div class="v" id="sFy"><span class="ui-skel"></span></div><div class="s" id="sFyS">&nbsp;</div></div>
-      <div class="ui-stat"><div class="k" id="kMonth">This month</div><div class="v" id="sMonth"><span class="ui-skel"></span></div><div class="s" id="sMonthS">&nbsp;</div></div>
-      <div class="ui-stat"><div class="k">This week</div><div class="v" id="sWeek"><span class="ui-skel"></span></div><div class="s" id="sWeekS">&nbsp;</div></div>
-      <div class="ui-stat"><div class="k" id="kDay">Latest day</div><div class="v" id="sDay"><span class="ui-skel"></span></div><div class="s" id="sDayS">&nbsp;</div></div>
-      <div class="ui-stat"><div class="k">Monthly average</div><div class="v" id="sAvg"><span class="ui-skel"></span></div><div class="s" id="sAvgS">&nbsp;</div></div>
-    </section>
-
-    <section class="ui-panel">
-      <div class="ui-panel-h">
-        <h2 id="trendTitle">Trend</h2>
-        <div class="ui-seg" id="scale" role="group" aria-label="Time scale">
-          <button type="button" data-s="month" aria-pressed="true">Monthly</button>
-          <button type="button" data-s="week" aria-pressed="false">Weekly</button>
-          <button type="button" data-s="day" aria-pressed="false">Daily</button>
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h">
+          <h2>Filters<small id="activeLabel"></small></h2>
+          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
         </div>
-      </div>
-      <div class="ui-panel-b"><div id="trend"><div class="ui-empty">Loading…</div></div></div>
-    </section>
+        <div class="ui-side-sec ui-side-stack">
+          <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Search CCC, division or region" autocomplete="off" aria-label="Search offices" title="Search offices" /></label>
+          <label class="ui-select" title="Compare up to day of month">
+            <select id="upto" aria-label="Compare up to day"></select>
+          </label>
+          <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
+          <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
+          <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Time scale" id="fScale"></div>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Bulk consumers" id="fBulk"></div>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Monthly growth trajectory" id="fGrowth"></div>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Collection volume tier" id="fTier"></div>
+        </div>
+      </aside>
 
-    <section class="ui-panel">
-      <div class="ui-panel-h">
-        <h2 id="tableTitle">Offices</h2>
-        <div class="ui-actions">
-          <div class="ui-tabs" role="tablist" id="levelTabs">
-            <button type="button" class="ui-tab" role="tab" data-l="region" aria-selected="true">Region</button>
-            <button type="button" class="ui-tab" role="tab" data-l="division">Division</button>
-            <button type="button" class="ui-tab" role="tab" data-l="ccc">CCC</button>
+      <div class="ui-main">
+        <section class="ui-stats cl-kpis" id="kpis" aria-label="Summary">
+          <div class="ui-stat"><div class="k" id="kFy">This financial year</div><div class="v" id="sFy"><span class="ui-skel"></span></div><div class="s" id="sFyS">&nbsp;</div></div>
+          <div class="ui-stat"><div class="k" id="kMonth">This month</div><div class="v" id="sMonth"><span class="ui-skel"></span></div><div class="s" id="sMonthS">&nbsp;</div></div>
+          <div class="ui-stat"><div class="k">This week</div><div class="v" id="sWeek"><span class="ui-skel"></span></div><div class="s" id="sWeekS">&nbsp;</div></div>
+          <div class="ui-stat"><div class="k" id="kDay">Latest day</div><div class="v" id="sDay"><span class="ui-skel"></span></div><div class="s" id="sDayS">&nbsp;</div></div>
+          <div class="ui-stat"><div class="k">Monthly average</div><div class="v" id="sAvg"><span class="ui-skel"></span></div><div class="s" id="sAvgS">&nbsp;</div></div>
+        </section>
+
+        <section class="ui-panel">
+          <div class="ui-panel-h">
+            <h2 id="tableTitle">Detailed analysis</h2>
+            <div class="ui-actions">
+              <div class="ui-seg" id="scale" role="group" aria-label="Time scale">
+                <button type="button" data-s="month" aria-pressed="true">Monthly</button>
+                <button type="button" data-s="week" aria-pressed="false">Weekly</button>
+                <button type="button" data-s="day" aria-pressed="false">Daily</button>
+              </div>
+              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+            </div>
           </div>
-          <label class="co-day ui-select">Up to day <select id="upto" aria-label="Compare up to day"></select></label>
-          <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
-        </div>
+          <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
+          <div class="cl-hint" id="hint"></div>
+          <div id="chartContainer" class="co-chart-box" hidden>
+            <div class="co-chart-head">
+              <h3 id="trendTitle">Trend</h3>
+            </div>
+            <div id="trendChart"></div>
+          </div>
+          <div id="table"><div class="ui-empty">Loading…</div></div>
+        </section>
       </div>
-      <div id="officeTable"><div class="ui-empty">Loading…</div></div>
-    </section>
+    </div>
   </main>
 
   <script>
@@ -82,7 +109,7 @@
     var $ = function (id) { return document.getElementById(id); };
     var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     var FY_MONTHS = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'];
-    var all = [], bulk = 'with', scale = 'month', level = 'region', scope = null, upto = 0, maxDate = null, minDate = null;
+    var all = [], bulk = 'with', scale = 'month', scope = null, upto = 0, maxDate = null, minDate = null;
 
     function ymd(s) { s = String(s || '').trim(); if (s.length < 8) return null; var d = new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)); return isNaN(d) ? null : d; }
     function fyStart(d) { return new Date(d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1, 3, 1); }
@@ -124,7 +151,20 @@
     function fillFilters() {
       UI.offices(all);
       if (!scope) scope = UI.lockScope();
+      SELECTS.forEach(function (id) { UI.mark($(id)); });
     }
+
+    var TABS = [
+      ['trend', 'Trend Chart'],
+      ['region', 'Region'],
+      ['division', 'Division'],
+      ['ccc', 'CCC'],
+      ['growth', 'Growth Ranking'],
+      ['daily', 'Daily History']
+    ];
+    var tab = 'trend', renderedTab = '', lastTable = null, lastRows = null, f = { q: '', growth: '', tier: '' };
+    var SELECTS = ['regionFilter', 'divisionFilter', 'cccFilter'];
+    var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
 
     function view() {
       var reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value;
@@ -132,19 +172,80 @@
         return (bulk === 'with' || !r.bulk) && (!reg || r._region === reg) && (!div || r._divn === div) && (!ccc || r._supp === ccc);
       });
     }
+
     var sum = function (rows) { var a = 0, c = 0; rows.forEach(function (r) { a += r.amount; c += r.count; }); return { amt: a, cnt: c }; };
     var inMonth = function (r, y, m, day) { return r.date.getFullYear() === y && r.date.getMonth() === m && (!day || r.date.getDate() <= day); };
 
-    // Latest day that has data in a month, capped at `limit` (matches the old "match days" rule).
     function lastDay(rows, y, m, limit) {
       var best = 0;
       rows.forEach(function (r) { if (r.date.getFullYear() === y && r.date.getMonth() === m) { var d = r.date.getDate(); if (d <= limit && d > best) best = d; } });
       return best || null;
     }
 
+    function renderFacets() {
+      var v = view();
+
+      // Time Scale facet
+      var scaleOpts = [
+        { value: 'month', label: 'Monthly' },
+        { value: 'week', label: 'Weekly' },
+        { value: 'day', label: 'Daily' }
+      ];
+      UI.facet('fScale', scaleOpts, scale, function (val) {
+        if (!val) return;
+        scale = val;
+        syncControls();
+        render();
+      });
+
+      // Bulk consumers facet
+      var bOpts = [
+        { value: 'with', label: 'With bulk' },
+        { value: 'without', label: 'Without bulk' }
+      ];
+      UI.facet('fBulk', bOpts, bulk, function (val) {
+        if (!val) return;
+        bulk = val;
+        syncControls();
+        render();
+      });
+
+      // Growth facet (MoM positive vs negative)
+      var gOpts = [
+        { value: 'pos', label: 'MoM Positive (> 0%)', dot: 'ok' },
+        { value: 'neg', label: 'MoM Negative (< 0%)', dot: 'warn' }
+      ];
+      UI.facet('fGrowth', gOpts, f.growth, function (val) { f.growth = val; render(); });
+
+      // Volume tier facet
+      var tOpts = [
+        { value: 'high', label: '> 1 Crore' },
+        { value: 'mid', label: '20 Lakh – 1 Cr' },
+        { value: 'low', label: '< 20 Lakh' }
+      ];
+      UI.facet('fTier', tOpts, f.tier, function (val) { f.tier = val; render(); });
+
+      var active = (f.q ? 1 : 0) + (f.growth ? 1 : 0) + (f.tier ? 1 : 0) +
+        (bulk !== 'with' ? 1 : 0) + (scale !== 'month' ? 1 : 0) +
+        SELECTS.filter(function (id) { return $(id).value && !$(id).disabled; }).length;
+      setActive(active);
+    }
+
+    function syncControls() {
+      [].forEach.call(document.querySelectorAll('#scale button'), function (b) {
+        b.setAttribute('aria-pressed', String(b.getAttribute('data-s') === scale));
+      });
+      [].forEach.call(document.querySelectorAll('#bulk button'), function (b) {
+        b.setAttribute('aria-pressed', String(b.getAttribute('data-b') === bulk));
+      });
+    }
+
     function render() {
+      renderFacets();
+      syncControls();
       var v = view();
       if (!maxDate) return;
+
       var latest = new Date(Math.max.apply(null, v.length ? v.map(function (r) { return r.t; }) : [maxDate.getTime()]));
       var fs = fyStart(latest), fy = sum(v.filter(function (r) { return r.date >= fs; }));
       var cy = latest.getFullYear(), cm = latest.getMonth();
@@ -158,6 +259,9 @@
       var months = {}; v.forEach(function (r) { months[r.date.getFullYear() * 12 + r.date.getMonth()] = 1; });
       var nMonths = Object.keys(months).length || 1;
 
+      $('asOn').textContent = UI.fmtDate(latest);
+      $('asOn').title = 'Latest payment ' + UI.fmtDate(latest) + ' · Total records ' + UI.n(all.length);
+
       $('kFy').textContent = fyLabel(fs.getFullYear());
       $('sFy').textContent = UI.inr(fy.amt); $('sFyS').textContent = UI.n(fy.cnt) + ' payments';
       $('kMonth').textContent = MON[cm] + ' to day ' + cDay;
@@ -167,137 +271,395 @@
       $('sDay').textContent = UI.inr(day.amt); $('sDayS').textContent = UI.n(day.cnt) + ' payments';
       $('sAvg').textContent = UI.inr(sum(v).amt / nMonths); $('sAvgS').textContent = 'Over ' + nMonths + ' months';
 
-      drawTrend(v, latest);
-      drawTable(v, latest, cDay);
-      $('clearBtn').hidden = !(($('regionFilter').value && !$('regionFilter').disabled) || ($('divisionFilter').value && !$('divisionFilter').disabled) || ($('cccFilter').value && !$('cccFilter').disabled));
-    }
+      // Count of CCCs in view
+      var cccCount = UI.uniq(v, '_supp').length;
+      var divCount = UI.uniq(v, '_divn').length;
+      $('tabs').innerHTML = TABS.map(function (t) {
+        var extra = '';
+        if (t[0] === 'ccc') extra = '<small>' + cccCount + '</small>';
+        else if (t[0] === 'division') extra = '<small>' + divCount + '</small>';
+        return '<button type="button" class="ui-drill-tab" role="tab" data-t="' + t[0] + '" aria-selected="' + (t[0] === tab) + '">' + t[1] + extra + '</button>';
+      }).join('');
 
-    function drawTrend(v, latest) {
+      var filterDesc = [
+        bulk === 'without' ? 'Without bulk consumers' : '',
+        f.growth === 'pos' ? 'MoM Positive (>0%)' : f.growth === 'neg' ? 'MoM Negative (<0%)' : '',
+        f.tier ? 'Tier: ' + f.tier : '',
+        f.q ? 'Search: "' + f.q + '"' : ''
+      ].filter(Boolean).join(' · ');
+
       var scopeLabel = $('cccFilter').value || ($('divisionFilter').value ? $('divisionFilter').value + ' division' : $('regionFilter').value ? $('regionFilter').value + ' region' : 'Malda Zone');
-      if (scale === 'month') {
-        var fyNow = fyStart(latest).getFullYear(), byM = {};
-        v.forEach(function (r) { var k = r.date.getFullYear() * 12 + r.date.getMonth(); byM[k] = (byM[k] || 0) + r.amount; });
-        var series = [];
-        [fyNow - 2, fyNow - 1, fyNow].forEach(function (f) {
-          var vals = FY_MONTHS.map(function (_, i) { var m = (i + 3) % 12, y = i < 9 ? f : f + 1, k = y * 12 + m; return byM[k] != null ? byM[k] : null; });
-          if (vals.some(function (x) { return x != null; })) series.push({ label: fyLabel(f), values: vals, strong: f === fyNow });
-        });
-        $('trendTitle').textContent = 'Monthly collection · ' + scopeLabel;
-        UI.line('trend', { labels: FY_MONTHS, series: series, fmt: UI.inr, axis: axis, title: 'Monthly collection' });
-        return;
-      }
-      var buckets = {}, labels = [], vals = [], n = scale === 'week' ? 26 : 60, step = scale === 'week' ? 7 : 1;
-      var end = new Date(latest); end.setHours(0, 0, 0, 0);
-      if (scale === 'week') end.setDate(end.getDate() - ((end.getDay() + 6) % 7));
-      v.forEach(function (r) {
-        var d = new Date(r.date); d.setHours(0, 0, 0, 0);
-        if (scale === 'week') d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-        buckets[d.getTime()] = (buckets[d.getTime()] || 0) + r.amount;
-      });
-      for (var i = n - 1; i >= 0; i--) {
-        var d = new Date(end); d.setDate(end.getDate() - i * step);
-        labels.push(d.getDate() + ' ' + MON[d.getMonth()]);
-        vals.push(buckets[d.getTime()] != null ? buckets[d.getTime()] : (scale === 'day' ? null : 0));
-      }
-      $('trendTitle').textContent = (scale === 'week' ? 'Weekly collection, last 26 weeks' : 'Daily collection, last 60 days') + ' · ' + scopeLabel;
-      // UI.line thins crowded axis labels itself; the tooltip keeps the full date.
-      UI.line('trend', { labels: labels, series: [{ label: scale === 'week' ? 'Week starting' : 'Day', values: vals, strong: true }], fmt: UI.inr, axis: axis, title: 'Collection' });
+      $('hint').textContent = (filterDesc ? 'Showing ' + filterDesc + ' · ' : '') +
+        (tab === 'trend' ? (scale === 'month' ? 'Monthly collection for ' + scopeLabel + ' across financial years.' : scale === 'week' ? 'Weekly collection for last 26 weeks.' : 'Daily collection for last 60 days.')
+          : tab === 'region' ? 'Region comparison across Malda Zone up to day ' + cDay + '. Click a region to drill down to its divisions.'
+          : tab === 'division' ? 'Division comparison for ' + scopeLabel + ' up to day ' + cDay + '. Click a division to drill down to its CCCs.'
+          : tab === 'ccc' ? 'CCC level performance for ' + scopeLabel + ' up to day ' + cDay + '. Click any CCC to view 12-month history.'
+          : tab === 'growth' ? 'Offices ranked by Month-over-Month and Year-over-Year revenue growth.'
+          : 'Daily collection breakdown for ' + MON[cm] + ' ' + cy + ' (Days 1–' + cDay + ').');
+
+      renderTab(v, latest, cDay, fs, cy, cm, pm, ly, scopeLabel);
     }
 
-    function drawTable(v, latest, cDay) {
-      var key = level === 'region' ? '_region' : level === 'division' ? '_divn' : '_supp';
-      var cy = latest.getFullYear(), cm = latest.getMonth(), pm = new Date(cy, cm - 1, 1), ly = new Date(cy - 1, cm, 1), fs = fyStart(latest);
-      var pDay = lastDay(v, pm.getFullYear(), pm.getMonth(), cDay), lDay = lastDay(v, ly.getFullYear(), ly.getMonth(), cDay);
-      var g = {};
-      v.forEach(function (r) {
-        var name = r[key] || 'Unmapped';
-        var o = g[name] || (g[name] = { name: name, parent: level === 'ccc' ? r._divn : level === 'division' ? r._region : '', fy: 0, cur: 0, prev: 0, ly: 0 });
-        if (r.date >= fs) o.fy += r.amount;
-        if (inMonth(r, cy, cm, cDay)) o.cur += r.amount;
-        if (inMonth(r, pm.getFullYear(), pm.getMonth(), pDay || cDay)) o.prev += r.amount;
-        if (inMonth(r, ly.getFullYear(), ly.getMonth(), lDay || cDay)) o.ly += r.amount;
-      });
-      var rows = Object.keys(g).map(function (k) { var o = g[k]; o.mom = pctChange(o.cur, o.prev); o.yoy = pctChange(o.cur, o.ly); return o; });
-      var tot = rows.reduce(function (a, o) { a.fy += o.fy; a.cur += o.cur; a.prev += o.prev; a.ly += o.ly; return a; }, { fy: 0, cur: 0, prev: 0, ly: 0 });
-      tot.mom = pctChange(tot.cur, tot.prev); tot.yoy = pctChange(tot.cur, tot.ly);
-      window.__rows = rows;
-      $('tableTitle').textContent = MON[cm] + ' 1–' + cDay + ' compared';
-      var amt = function (x) { return UI.inr(x); };
-      UI.table('officeTable', {
-        rows: rows, sort: { key: 'fy', dir: 'desc' }, count: false, empty: 'No collection for these filters.',
-        columns: [
-          { key: 'name', label: level === 'ccc' ? 'CCC' : level === 'division' ? 'Division' : 'Region', fmt: function (val, o) { return '<span class="ui-strong">' + UI.esc(val) + '</span>' + (o.parent ? '<span class="sub">' + UI.esc(o.parent) + '</span>' : ''); } },
-          { key: 'fy', label: fyLabel(fs.getFullYear()), num: true, fmt: amt },
-          { key: 'cur', label: MON[cm] + ' ' + cy, num: true, fmt: amt },
-          { key: 'prev', label: MON[pm.getMonth()] + ' ' + pm.getFullYear(), num: true, fmt: amt, hideSm: true },
-          { key: 'mom', label: 'vs last month', num: true, sortVal: function (o) { return o.mom == null ? -1e9 : o.mom; }, fmt: function (x) { return dpct(x); } },
-          { key: 'ly', label: MON[ly.getMonth()] + ' ' + ly.getFullYear(), num: true, fmt: amt, hideSm: true },
-          { key: 'yoy', label: 'vs last year', num: true, sortVal: function (o) { return o.yoy == null ? -1e9 : o.yoy; }, fmt: function (x) { return dpct(x); }, hideSm: true }
-        ],
-        foot: rows.length > 1 ? tot : null,
-        onRow: function (o) { if (level === 'ccc') monthly(o.name); else drill(o.name); }
-      });
+    function renderTab(v, latest, cDay, fs, cy, cm, pm, ly, scopeLabel) {
+      lastTable = null;
+      lastRows = null;
+      var cfg = null;
+
+      if (tab === 'trend') {
+        $('chartContainer').hidden = false;
+
+        if (scale === 'month') {
+          var fyNow = fyStart(latest).getFullYear(), byM = {};
+          v.forEach(function (r) { var k = r.date.getFullYear() * 12 + r.date.getMonth(); byM[k] = (byM[k] || 0) + r.amount; });
+          var series = [];
+          [fyNow - 2, fyNow - 1, fyNow].forEach(function (f) {
+            var vals = FY_MONTHS.map(function (_, i) { var m = (i + 3) % 12, y = i < 9 ? f : f + 1, k = y * 12 + m; return byM[k] != null ? byM[k] : null; });
+            if (vals.some(function (x) { return x != null; })) series.push({ label: fyLabel(f), values: vals, strong: f === fyNow });
+          });
+          $('trendTitle').textContent = 'Monthly collection · ' + scopeLabel;
+          UI.line('trendChart', { labels: FY_MONTHS, series: series, fmt: UI.inr, axis: axis, title: 'Monthly collection' });
+
+          var monthRows = FY_MONTHS.map(function (monName, i) {
+            var m = (i + 3) % 12, yNow = i < 9 ? fyNow : fyNow + 1, yPrev = yNow - 1;
+            var curAmt = byM[yNow * 12 + m], prevAmt = byM[yPrev * 12 + m];
+            var chg = pctChange(curAmt, prevAmt);
+            return {
+              month: monName,
+              now: curAmt,
+              prev: prevAmt,
+              yoy: chg
+            };
+          });
+
+          lastTable = {
+            title: 'Monthly Collection Trend · ' + scopeLabel,
+            cols: ['Month', fyLabel(fyNow), fyLabel(fyNow - 1), 'YoY Growth %'],
+            rows: monthRows.map(function (r) {
+              return [r.month, r.now != null ? UI.inr(r.now) : '—', r.prev != null ? UI.inr(r.prev) : '—', r.yoy != null ? r.yoy.toFixed(1) + '%' : '—'];
+            })
+          };
+
+          cfg = {
+            rows: monthRows, sort: null, count: false, empty: 'No collection data available.',
+            columns: [
+              { key: 'month', label: 'Month', fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
+              { key: 'now', label: fyLabel(fyNow), num: true, fmt: function (v) { return v != null ? UI.inr(v) : '—'; } },
+              { key: 'prev', label: fyLabel(fyNow - 1), num: true, hideSm: true, fmt: function (v) { return v != null ? UI.inr(v) : '—'; } },
+              { key: 'yoy', label: 'YoY Growth', num: true, fmt: dpct }
+            ]
+          };
+        }
+        else {
+          var buckets = {}, labels = [], vals = [], n = scale === 'week' ? 26 : 60, step = scale === 'week' ? 7 : 1;
+          var end = new Date(latest); end.setHours(0, 0, 0, 0);
+          if (scale === 'week') end.setDate(end.getDate() - ((end.getDay() + 6) % 7));
+          v.forEach(function (r) {
+            var d = new Date(r.date); d.setHours(0, 0, 0, 0);
+            if (scale === 'week') d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+            buckets[d.getTime()] = (buckets[d.getTime()] || 0) + r.amount;
+          });
+          for (var i = n - 1; i >= 0; i--) {
+            var d = new Date(end); d.setDate(end.getDate() - i * step);
+            labels.push(d.getDate() + ' ' + MON[d.getMonth()]);
+            vals.push(buckets[d.getTime()] != null ? buckets[d.getTime()] : (scale === 'day' ? null : 0));
+          }
+          $('trendTitle').textContent = (scale === 'week' ? 'Weekly collection, last 26 weeks' : 'Daily collection, last 60 days') + ' · ' + scopeLabel;
+          UI.line('trendChart', { labels: labels, series: [{ label: scale === 'week' ? 'Week starting' : 'Day', values: vals, strong: true }], fmt: UI.inr, axis: axis, title: 'Collection' });
+
+          var periodRows = labels.map(function (lbl, i) {
+            return { period: lbl, amt: vals[i] };
+          }).reverse();
+
+          lastTable = {
+            title: (scale === 'week' ? 'Weekly' : 'Daily') + ' Collection · ' + scopeLabel,
+            cols: ['Period', 'Collection Amount (Rs)'],
+            rows: periodRows.map(function (r) { return [r.period, r.amt != null ? UI.inr(r.amt) : '—']; })
+          };
+
+          cfg = {
+            rows: periodRows, sort: null, count: false, limit: 30, empty: 'No records available.',
+            columns: [
+              { key: 'period', label: scale === 'week' ? 'Week starting' : 'Date', fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
+              { key: 'amt', label: 'Amount', num: true, fmt: function (v) { return v != null ? UI.inr(v) : '—'; } }
+            ]
+          };
+        }
+      }
+      else {
+        $('chartContainer').hidden = true;
+
+        if (tab === 'region' || tab === 'division' || tab === 'ccc' || tab === 'growth') {
+          var key = (tab === 'region') ? '_region' : (tab === 'division') ? '_divn' : '_supp';
+          var pDay = lastDay(v, pm.getFullYear(), pm.getMonth(), cDay), lDay = lastDay(v, ly.getFullYear(), ly.getMonth(), cDay);
+          var g = {}, q = f.q.toLowerCase();
+
+          v.forEach(function (r) {
+            var name = r[key] || 'Unmapped';
+            var o = g[name] || (g[name] = {
+              name: name,
+              parent: key === '_supp' ? r._divn : key === '_divn' ? r._region : '',
+              region: r._region,
+              fy: 0, cur: 0, prev: 0, ly: 0, cnt: 0
+            });
+            if (r.date >= fs) o.fy += r.amount;
+            if (inMonth(r, cy, cm, cDay)) { o.cur += r.amount; o.cnt += r.count; }
+            if (inMonth(r, pm.getFullYear(), pm.getMonth(), pDay || cDay)) o.prev += r.amount;
+            if (inMonth(r, ly.getFullYear(), ly.getMonth(), lDay || cDay)) o.ly += r.amount;
+          });
+
+          var rows = Object.keys(g).map(function (k) {
+            var o = g[k];
+            o.mom = pctChange(o.cur, o.prev);
+            o.yoy = pctChange(o.cur, o.ly);
+            return o;
+          }).filter(function (r) {
+            if (q && r.name.toLowerCase().indexOf(q) === -1 && (r.parent && r.parent.toLowerCase().indexOf(q) === -1)) return false;
+            if (f.growth === 'pos' && (r.mom == null || r.mom <= 0)) return false;
+            if (f.growth === 'neg' && (r.mom == null || r.mom >= 0)) return false;
+            if (f.tier === 'high' && r.cur < 1e7) return false;
+            if (f.tier === 'mid' && (r.cur < 2e6 || r.cur >= 1e7)) return false;
+            if (f.tier === 'low' && r.cur >= 2e6) return false;
+            return true;
+          });
+
+          var tot = rows.reduce(function (a, o) { a.fy += o.fy; a.cur += o.cur; a.prev += o.prev; a.ly += o.ly; a.cnt += o.cnt; return a; }, { fy: 0, cur: 0, prev: 0, ly: 0, cnt: 0 });
+          tot.mom = pctChange(tot.cur, tot.prev); tot.yoy = pctChange(tot.cur, tot.ly);
+
+          lastRows = rows;
+          var levelTitle = (tab === 'region') ? 'Regions' : (tab === 'division') ? 'Divisions' : (tab === 'ccc') ? 'CCCs' : 'Growth Ranking';
+          var compareLabel = MON[cm] + ' 1–' + cDay + ' vs ' + MON[pm.getMonth()];
+          $('tableTitle').textContent = levelTitle + ' · ' + compareLabel;
+
+          var amtFmt = function (x) { return UI.inr(x); };
+          lastTable = {
+            title: levelTitle + ' (' + compareLabel + ')',
+            cols: ['Office', 'FY Collection (Rs)', MON[cm] + ' ' + cy, MON[pm.getMonth()] + ' ' + pm.getFullYear(), 'vs Last Month %', MON[ly.getMonth()] + ' ' + ly.getFullYear(), 'vs Last Year %', 'Payments'],
+            rows: rows.map(function (r) {
+              return [r.name, Math.round(r.fy), Math.round(r.cur), Math.round(r.prev), r.mom != null ? r.mom.toFixed(1) + '%' : '—', Math.round(r.ly), r.yoy != null ? r.yoy.toFixed(1) + '%' : '—', r.cnt];
+            })
+          };
+
+          var defaultSort = (tab === 'growth') ? { key: 'mom', dir: 'desc' } : { key: 'cur', dir: 'desc' };
+
+          cfg = {
+            rows: rows, sort: defaultSort, count: false, limit: (tab === 'ccc' || tab === 'growth') ? 50 : 0,
+            empty: 'No collection data matches current filters.',
+            columns: [
+              {
+                key: 'name',
+                label: (tab === 'region') ? 'Region' : (tab === 'division') ? 'Division' : 'Office',
+                fmt: function (val, o) {
+                  return '<span class="ui-strong">' + UI.esc(val) + '</span>' + (o.parent ? '<span class="sub">' + UI.esc(o.parent) + '</span>' : '');
+                }
+              },
+              { key: 'cur', label: MON[cm] + ' ' + cy, num: true, fmt: amtFmt },
+              { key: 'prev', label: MON[pm.getMonth()] + ' ' + pm.getFullYear(), num: true, hideSm: true, fmt: amtFmt },
+              { key: 'mom', label: 'vs last month', num: true, sortVal: function (o) { return o.mom == null ? -1e9 : o.mom; }, fmt: dpct },
+              { key: 'fy', label: fyLabel(fs.getFullYear()), num: true, fmt: amtFmt },
+              { key: 'ly', label: MON[ly.getMonth()] + ' ' + ly.getFullYear(), num: true, hideSm: true, fmt: amtFmt },
+              { key: 'yoy', label: 'vs last year', num: true, sortVal: function (o) { return o.yoy == null ? -1e9 : o.yoy; }, fmt: dpct, hideSm: true },
+              { key: 'cnt', label: 'Payments', num: true, hideSm: true, fmt: UI.n }
+            ],
+            foot: rows.length > 1 ? tot : null,
+            onRow: function (o) {
+              if (tab === 'region') drill('region', o.name);
+              else if (tab === 'division') drill('division', o.name);
+              else monthly(o.name);
+            }
+          };
+        }
+        else if (tab === 'daily') {
+          var dailyMap = {};
+          v.forEach(function (r) {
+            if (inMonth(r, cy, cm, cDay)) {
+              var dayNum = r.date.getDate();
+              var d = dailyMap[dayNum] || (dailyMap[dayNum] = { day: dayNum, date: r.date, amt: 0, cnt: 0 });
+              d.amt += r.amount;
+              d.cnt += r.count;
+            }
+          });
+
+          var dayList = Object.keys(dailyMap).map(Number).sort(function (a, b) { return a - b; }).map(function (k) { return dailyMap[k]; });
+          var totDayAmt = dayList.reduce(function (a, d) { return a + d.amt; }, 0) || 1;
+          var totDayCnt = dayList.reduce(function (a, d) { return a + d.cnt; }, 0);
+
+          lastRows = dayList;
+          lastTable = {
+            title: 'Daily Collection · ' + MON[cm] + ' ' + cy + ' (' + scopeLabel + ')',
+            cols: ['Date', 'Amount (Rs)', 'Share %', 'Payments', 'Avg / Payment (Rs)'],
+            rows: dayList.map(function (d) {
+              return [UI.fmtDate(d.date), Math.round(d.amt), UI.pct(d.amt, totDayAmt), d.cnt, Math.round(d.amt / (d.cnt || 1))];
+            })
+          };
+
+          cfg = {
+            rows: dayList, sort: { key: 'day', dir: 'desc' }, count: false,
+            empty: 'No daily records for this month.',
+            columns: [
+              { key: 'date', label: 'Date', fmt: function (v) { return '<span class="ui-strong">' + UI.fmtDate(v) + '</span>'; } },
+              { key: 'amt', label: 'Amount', num: true, fmt: function (v) { return UI.inr(v); } },
+              { key: 'share', label: 'Share', sortVal: function (d) { return d.amt; }, fmt: function (_, d) { return UI.bar(d.amt, totDayAmt, UI.pct(d.amt, totDayAmt), 1); }, width: '22%' },
+              { key: 'cnt', label: 'Payments', num: true, fmt: UI.n },
+              { key: 'avg', label: 'Avg / Payment', num: true, fmt: function (_, d) { return UI.inr(d.amt / (d.cnt || 1)); } }
+            ],
+            foot: dayList.length > 1 ? { date: 'Total to day ' + cDay, amt: totDayAmt, cnt: totDayCnt, share: 0, avg: totDayAmt / (totDayCnt || 1) } : null
+          };
+        }
+      }
+
+      var kState = tab + ':' + scale + ':' + bulk + ':' + upto + ':' + f.growth + ':' + f.tier + ':' + ($('regionFilter').value || '') + ':' + ($('divisionFilter').value || '') + ':' + ($('cccFilter').value || '');
+      if (renderedTab !== kState) { $('table').__ui = null; renderedTab = kState; }
+      UI.table('table', cfg);
     }
 
-    // Last 12 months for one CCC
     function monthly(name) {
       var rows = view().filter(function (r) { return r._supp === name; }), by = {};
-      rows.forEach(function (r) { var k = r.date.getFullYear() * 12 + r.date.getMonth(); var o = by[k] || (by[k] = { amt: 0, cnt: 0 }); o.amt += r.amount; o.cnt += r.count; });
+      rows.forEach(function (r) {
+        var k = r.date.getFullYear() * 12 + r.date.getMonth();
+        var o = by[k] || (by[k] = { amt: 0, cnt: 0 });
+        o.amt += r.amount;
+        o.cnt += r.count;
+      });
       var keys = Object.keys(by).map(Number).sort(function (a, b) { return b - a; }).slice(0, 12);
       var any = rows[0] || {};
-      UI.drawer(name, [any._divn, any._region].filter(Boolean).join(' · '), keys.map(function (k) { return [MON[k % 12] + ' ' + Math.floor(k / 12), UI.inr(by[k].amt) + '  ·  ' + UI.n(by[k].cnt) + ' payments']; }));
+      var pairs = keys.map(function (k) {
+        return [MON[k % 12] + ' ' + Math.floor(k / 12), UI.inr(by[k].amt) + '  ·  ' + UI.n(by[k].cnt) + ' payments'];
+      });
+
+      UI.drawer(name, [any._divn, any._region].filter(Boolean).join(' · '), pairs, '', '<button type="button" class="ui-btn sm" data-copy-detail>Copy details</button>');
+      var copyBtn = document.querySelector('[data-copy-detail]');
+      if (copyBtn) {
+        copyBtn.onclick = function () {
+          var lines = [
+            'Office: ' + name + (any._divn ? ' (' + any._divn + ', ' + any._region + ')' : ''),
+            'Collection History (Last 12 Months):'
+          ].concat(keys.map(function (k) {
+            return MON[k % 12] + ' ' + Math.floor(k / 12) + ': ' + UI.inr(by[k].amt) + ' (' + UI.n(by[k].cnt) + ' payments)';
+          }));
+          UI.copy(lines.join('\n')).then(function () { UI.toast('Collection history copied'); });
+        };
+      }
     }
 
-    function drill(name) {
-      if (level === 'region') { $('regionFilter').value = name; $('divisionFilter').value = ''; level = 'division'; }
-      else { $('divisionFilter').value = name; level = 'ccc'; }
-      $('cccFilter').value = '';
-      fillFilters(); marks(); setLevel(level);
-    }
-    function setLevel(l) {
-      level = l;
-      [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === l)); });
+    function set(id, v) { if (!$(id).disabled) $(id).value = v; }
+
+    function drill(targetLevel, name) {
+      if (targetLevel === 'region') {
+        set('regionFilter', name);
+        set('divisionFilter', '');
+        set('cccFilter', '');
+        tab = 'division';
+      } else if (targetLevel === 'division') {
+        if (!$('regionFilter').value) {
+          var match = all.filter(function (r) { return r._divn === name; })[0];
+          if (match && match._region) set('regionFilter', match._region);
+        }
+        set('divisionFilter', name);
+        set('cccFilter', '');
+        tab = 'ccc';
+      } else {
+        set('cccFilter', $('cccFilter').value === name ? '' : name);
+      }
+      fillFilters();
+      SELECTS.forEach(function (id) { UI.mark($(id)); });
       render();
     }
-    function marks() { ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { UI.mark($(id)); }); }
-    function seg(id, attr, val) { [].forEach.call(document.querySelectorAll('#' + id + ' button'), function (b) { b.setAttribute('aria-pressed', String(b.getAttribute(attr) === val)); }); }
 
-    ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
+    function clearAll() {
+      f.q = ''; f.growth = ''; f.tier = '';
+      $('q').value = '';
+      SELECTS.forEach(function (id) { set(id, ''); });
+      fillFilters();
+      SELECTS.forEach(function (id) { UI.mark($(id)); });
+      tab = scope && (scope.level === 'division' || scope.level === 'ccc') ? 'ccc' : scope && scope.level === 'region' ? 'division' : 'region';
+      render();
+    }
+
+    SELECTS.forEach(function (id) {
       $(id).addEventListener('change', function () {
-        if (id === 'regionFilter') $('divisionFilter').value = '';
-        if (id !== 'cccFilter') $('cccFilter').value = '';
-        fillFilters(); marks(); render();
+        if (id === 'regionFilter') set('divisionFilter', '');
+        if (id !== 'cccFilter') set('cccFilter', '');
+        fillFilters();
+        SELECTS.forEach(function (x) { UI.mark($(x)); });
+        render();
       });
     });
-    $('bulk').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; bulk = b.getAttribute('data-b'); seg('bulk', 'data-b', bulk); render(); });
-    $('scale').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; scale = b.getAttribute('data-s'); seg('scale', 'data-s', scale); render(); });
-    $('levelTabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-tab'); if (t) setLevel(t.getAttribute('data-l')); });
+
     $('upto').addEventListener('change', function () { upto = +this.value; render(); });
-    $('clearBtn').addEventListener('click', function () {
-      ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });
-      fillFilters(); marks(); setLevel(scope && (scope.level === 'division' || scope.level === 'ccc') ? 'ccc' : 'region');
+    $('q').addEventListener('input', UI.debounce(function () {
+      f.q = this.value.trim();
+      if (f.q && tab !== 'ccc' && tab !== 'growth' && tab !== 'division') tab = 'ccc';
+      render();
+    }, 180));
+
+    $('bulk').addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      bulk = b.getAttribute('data-b');
+      syncControls();
+      render();
     });
+
+    $('scale').addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      scale = b.getAttribute('data-s');
+      syncControls();
+      render();
+    });
+
+    $('tabs').addEventListener('click', function (e) {
+      var t = e.target.closest('.ui-drill-tab'); if (t) { tab = t.getAttribute('data-t'); render(); }
+    });
+
+    $('copyBtn').addEventListener('click', function () {
+      if (!lastTable) return;
+      var lines = ['*Collection — ' + lastTable.title + '*', lastTable.cols.join(' | ')].concat(lastTable.rows.slice(0, 60).map(function (r) { return r.map(function (c) { return typeof c === 'number' ? UI.n(c) : c; }).join(' | '); }));
+      UI.copy(lines.join('\n')).then(function () { UI.toast('Table copied'); });
+    });
+
     $('exportBtn').addEventListener('click', function () {
-      var r = function (k) { return function (o) { return Math.round(o[k]); }; };
-      var p = function (k) { return function (o) { return o[k] == null || !isFinite(o[k]) ? '' : o[k].toFixed(1); }; };
-      UI.exportCsv('collection-' + level + '.csv', [
-        { key: 'name', label: 'Office' }, { key: 'parent', label: 'Parent' }, { key: 'fy', label: 'FY collection (Rs)', csv: r('fy') },
-        { key: 'cur', label: 'This month (Rs)', csv: r('cur') }, { key: 'prev', label: 'Last month same days (Rs)', csv: r('prev') }, { key: 'mom', label: 'Change vs last month %', csv: p('mom') },
-        { key: 'ly', label: 'Same month last year (Rs)', csv: r('ly') }, { key: 'yoy', label: 'Change vs last year %', csv: p('yoy') }
-      ], window.__rows || []);
+      if (!lastTable) return;
+      UI.exportCsv('collection-' + lastTable.title.toLowerCase().replace(/\W+/g, '-') + '.csv', lastTable.cols.map(function (c, i) { return { key: i, label: c }; }), lastTable.rows.map(function (r) { var o = {}; r.forEach(function (c, i) { o[i] = c; }); return o; }));
     });
+
     MzoRows.refresh('refreshBtn', 'collection_report', function (t) { prepare(t); render(); });
 
     var first = true;
     MzoRows.load('collection_report', function (t, info) {
-      if (!t) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = $('trend').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
+      if (!t) {
+        if (info && info.error) {
+          $('meta').textContent = 'Could not load data';
+          $('table').innerHTML = '<div class="ui-empty">Could not load data.</div>';
+        }
+        return;
+      }
       prepare(t);
       if (first) {
         first = false;
-        var d = new URLSearchParams(location.search).get('division');
-        if (d && !$('divisionFilter').disabled) { var m = [].filter.call($('divisionFilter').options, function (o) { return o.value.toLowerCase() === d.toLowerCase(); })[0]; if (m) { $('divisionFilter').value = m.value; fillFilters(); marks(); level = 'ccc'; } }
-        if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';
-        [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === level)); });
+        var p = new URLSearchParams(location.search);
+        var d = p.get('division');
+        if (d && !$('divisionFilter').disabled) {
+          var m = [].filter.call($('divisionFilter').options, function (o) { return o.value.toLowerCase() === d.toLowerCase(); })[0];
+          if (m) { $('divisionFilter').value = m.value; fillFilters(); SELECTS.forEach(function (x) { UI.mark($(x)); }); tab = 'ccc'; }
+        }
+        if (p.get('scale')) {
+          var sc = p.get('scale').toLowerCase();
+          if (sc === 'month' || sc === 'week' || sc === 'day') scale = sc;
+        }
+        if (p.get('bulk')) {
+          var bk = p.get('bulk').toLowerCase();
+          if (bk === 'with' || bk === 'without') bulk = bk;
+        }
+        if (p.get('upto')) {
+          var u = +p.get('upto');
+          if (u >= 1 && u <= 31) { upto = u; $('upto').value = String(u); }
+        }
+        if (TABS.some(function (t) { return t[0] === p.get('tab'); })) {
+          tab = p.get('tab');
+        } else {
+          if (scope && (scope.level === 'division' || scope.level === 'ccc')) tab = 'ccc';
+          else if (scope && scope.level === 'region') tab = 'division';
+          else tab = 'trend';
+        }
       }
       render();
     });

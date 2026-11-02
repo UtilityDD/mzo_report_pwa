@@ -6,8 +6,8 @@
 const ALL = ['all'];
 module.exports = {
   loss: {
-    url: 'loss.html', key: 'loss_report', stats: '#stats .ui-stat-none', tabs: '#metric button', drillRows: '#offices tbody tr.click', fdp: '#offices', record: ALL,
-    texts: ['meta', 'trendTitle', 'tableTitle'],
+    url: 'loss.html', key: 'loss_report', stats: '#kpis .ui-stat', tabs: '#tabs .ui-drill-tab', drillRows: '#table tbody tr.click', fdp: '#table', record: ALL,
+    texts: ['trendTitle', 'tableTitle'],
     steps: async (page, shot, h) => {
       await h.selectAll('period', 6);
       await h.selectAll('regionFilter');
@@ -19,7 +19,7 @@ module.exports = {
     deep: ['?region=Raiganj', '?division=Gazole', '?ccc=Manikchak', '?ccc=MATHURAPUR', '?region=U/Dinajpur%20Region', '?division=Islampur%20Division&ccc=Goalpokher']
   },
   collection: {
-    url: 'collection.html', key: 'collection_report', stats: '#stats-none', tabs: '#levelTabs .ui-tab', drillRows: '#officeTable tbody tr.click', fdp: '#officeTable', record: ALL,
+    url: 'collection.html', key: 'collection_report', stats: '#kpis .ui-stat', tabs: '#tabs .ui-drill-tab', drillRows: '#table tbody tr.click', fdp: '#table', record: ALL,
     texts: ['meta', 'kFy', 'kMonth', 'kDay', 'trendTitle', 'tableTitle'],
     steps: async (page, shot, h) => {
       await h.clickAll('#scale button', 'scale');
@@ -47,7 +47,7 @@ module.exports = {
     deep: []
   },
   remosd: {
-    url: 'remosd5000.html', key: 'rem_osd', stats: '#stats .ui-stat', tabs: '#levelTabs .ui-tab', drillRows: '#officeTable tbody tr.click', fdp: '#officeTable', record: ALL,
+    url: 'remosd5000.html', key: 'rem_osd', stats: '#stats .ui-stat', tabs: '#tabs .ui-drill-tab', drillRows: '#table tbody tr.click', fdp: '#table', record: ALL,
     texts: ['meta', 'trendTitle', 'tableTitle'],
     steps: async (page, shot, h) => {
       await h.clickAll('#metric button', 'metric');

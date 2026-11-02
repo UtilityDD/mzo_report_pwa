@@ -24,15 +24,6 @@
     .dm-prog { height: 4px; border-radius: 2px; background: var(--mzo-chart-soft); overflow: hidden; margin-top: 6px; max-width: 420px; }
     .dm-prog b { display: block; height: 100%; width: 0; background: var(--mzo-text); transition: width .2s ease; }
     @media (min-width: 1101px) { #prioStats { --n: 7; } }
-    .dm-cols { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 64px); justify-content: start; gap: 6px; align-items: end; height: 170px; }
-    .dm-col { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-end; height: 100%; gap: 6px; cursor: pointer; min-width: 0; }
-    .dm-col .n { font-size: 11px; color: var(--mzo-muted); text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .dm-col i { display: block; border-radius: 4px 4px 2px 2px; background: var(--mzo-chart); min-height: 2px; transition: background-color .12s; }
-    .dm-col .y { font-size: 11.5px; color: var(--mzo-text-2); text-align: center; }
-    .dm-col:hover i { background: var(--mzo-text-2); }
-    .dm-col.on i { background: var(--mzo-text); }
-    .dm-col.on .y { color: var(--mzo-text); font-weight: 600; }
-    @media (max-width: 760px) { .dm-col .n { display: none; } .dm-col .y { font-size: 10px; } }
     @media (max-width: 1100px) and (min-width: 761px) { #prioStats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
   </style>
 </head>
@@ -40,10 +31,10 @@
   <main class="ui-page">
     <header class="ui-head">
       <div>
-        <h1>Defective meters</h1>
-        <p id="meta">Loading…</p>
+        <h1>Defective meters<span class="ui-badge ui-date" id="asOn">…</span></h1>
       </div>
       <div class="ui-actions">
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
         <button type="button" class="ui-btn" id="syncBtn" hidden><svg class="ui-i"><use href="#ui-sync"/></svg>Sync sheet</button>
         <button type="button" class="ui-btn" id="uploadBtn" hidden><svg class="ui-i"><use href="#ui-upload"/></svg>Upload dump</button>
         <input type="file" id="fileInput" accept=".csv,.txt,text/csv" hidden />
@@ -52,57 +43,49 @@
     </header>
     <div class="dm-status ui-note" id="status" hidden><span id="statusText"></span><div class="dm-prog"><b id="statusBar"></b></div></div>
 
-    <div class="ui-filters">
-      <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
-      <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
-      <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
-      <span class="ui-select"><select id="classFilter" aria-label="Class"><option value="">All classes</option></select></span>
-      <span class="ui-select"><select id="yearFilter" aria-label="Year reported"><option value="">Any year</option></select></span>
-      <button type="button" class="ui-btn ghost" id="clearBtn" hidden><svg class="ui-i"><use href="#ui-x"/></svg>Clear</button>
-    </div>
-
-    <div class="dm-band"><h2>All meters</h2><span>Counts only</span></div>
-    <section class="ui-stats" style="--n:5" id="countStats" aria-label="All meters"></section>
-    <div class="dm-band"><h2>Priority</h2><span>With consumer names</span></div>
-    <section class="ui-stats" style="--n:7" id="prioStats" aria-label="Priority meters"></section>
-
-    <div class="ui-grid">
-      <section class="ui-panel">
-        <div class="ui-panel-h">
-          <h2 id="officeTitle">By office</h2>
-          <div class="ui-tabs" role="tablist" id="levelTabs">
-            <button type="button" class="ui-tab" role="tab" data-l="region" aria-selected="true">Region</button>
-            <button type="button" class="ui-tab" role="tab" data-l="division">Division</button>
-            <button type="button" class="ui-tab" role="tab" data-l="ccc">CCC</button>
-          </div>
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h">
+          <h2>Filters<small id="activeLabel"></small></h2>
+          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
         </div>
-        <div id="officeTable" style="--max-h:560px"><div class="ui-empty">Loading…</div></div>
-      </section>
-      <div>
+        <div class="ui-side-sec ui-side-stack">
+          <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
+          <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
+          <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
+        </div>
+        <div class="ui-side-sec"><div aria-label="Class" id="fClass"></div></div>
+        <div class="ui-side-sec"><div aria-label="Year reported" id="fYear"></div></div>
+      </aside>
+
+      <div class="ui-main">
+        <div class="dm-band"><h2>All meters</h2><span>Counts only</span></div>
+        <section class="ui-stats" style="--n:5" id="countStats" aria-label="All meters"></section>
+        <div class="dm-band"><h2>Priority</h2><span>With consumer names</span></div>
+        <section class="ui-stats" style="--n:7" id="prioStats" aria-label="Priority meters"></section>
+
         <section class="ui-panel">
-          <div class="ui-panel-h"><h2>By class</h2></div>
-          <div class="ui-panel-b"><div id="classHist"></div></div>
+          <div class="ui-panel-h">
+            <h2 id="officeTitle">By office</h2>
+            <div class="ui-tabs" role="tablist" id="levelTabs">
+              <button type="button" class="ui-tab" role="tab" data-l="region" aria-selected="true">Region</button>
+              <button type="button" class="ui-tab" role="tab" data-l="division">Division</button>
+              <button type="button" class="ui-tab" role="tab" data-l="ccc">CCC</button>
+            </div>
+          </div>
+          <div id="officeTable" style="--max-h:560px"><div class="ui-empty">Loading…</div></div>
         </section>
-        <section class="ui-panel">
-          <div class="ui-panel-h"><h2>By phase</h2></div>
-          <div class="ui-panel-b"><div id="phaseHist"></div></div>
+
+        <section class="ui-panel" id="namesPanel" hidden>
+          <div class="ui-panel-h">
+            <h2 id="namesTitle">Consumers</h2>
+            <button type="button" class="ui-btn sm" id="exportBtn" hidden><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+          </div>
+          <p class="dm-names-note" id="namesNote" hidden></p>
+          <div id="namesTable"><div class="ui-empty">Pick a CCC to list its consumers.</div></div>
         </section>
       </div>
     </div>
-
-    <section class="ui-panel">
-      <div class="ui-panel-h"><h2>Reported defective in</h2><span class="ui-note">Click a year to filter</span></div>
-      <div class="ui-panel-b"><div id="yearHist" class="dm-cols"></div></div>
-    </section>
-
-    <section class="ui-panel" id="namesPanel" hidden>
-      <div class="ui-panel-h">
-        <h2 id="namesTitle">Consumers</h2>
-        <button type="button" class="ui-btn sm" id="exportBtn" hidden><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
-      </div>
-      <p class="dm-names-note" id="namesNote" hidden></p>
-      <div id="namesTable"><div class="ui-empty">Pick a CCC to list its consumers.</div></div>
-    </section>
   </main>
 
   <script>
@@ -121,14 +104,23 @@
     var CLASS = { D: 'Domestic', C: 'Commercial', A: 'Agriculture', I: 'Industrial', W: 'Water works', H: 'Class H' };
     var meta = { sheetScriptUrl: '', canUpload: false };
     var rows = [], details = null, detailsP = null, metric = 'total', level = 'region', namesCcc = '', scope = null, asOn = '';
+    var f = { class: '', year: '' };
+    var SELECTS = ['regionFilter', 'divisionFilter', 'cccFilter'];
+
+    var setActive = UI.sidePanel({
+      side: 'side',
+      toggle: 'sideToggle',
+      label: 'activeLabel',
+      count: 'activeCount',
+      clear: 'clearBtn',
+      onClear: clearAll
+    });
 
     function field(m) { return P ? P.kpiField(m) : 'total'; }
     function isPrio(m) { return !!(P && P.isPriorityMetric(m)); }
-    function sum(list, f) { var s = 0; for (var i = 0; i < list.length; i++) { var n = Number(list[i][f]); if (n) s += n; } return s; }
+    function sum(list, fld) { var s = 0; for (var i = 0; i < list.length; i++) { var n = Number(list[i][fld]); if (n) s += n; } return s; }
     function ymd(v) { var t = String(v || '').trim(); if (/^\d{8}$/.test(t)) return new Date(+t.slice(0, 4), +t.slice(4, 6) - 1, +t.slice(6, 8)); return UI.date(t); }
-    // t: uniform rows of schema/defective_summary.json or _details.json. The page keeps its own row
-    // shape (the published column names); offices are the canonical ones of CCC_CODE. As the
-    // pipeline did, TOTAL rows and rows with no consumer, CCC or meter are not rows.
+
     function isRow(d) {
       var id = (d.con_id || '').toUpperCase(), name = (d.name || '').toUpperCase(), ccc = (d.ccc_code || '').toUpperCase();
       if (id === 'TOTAL' || name === 'TOTAL' || ccc === 'TOTAL' || id === 'GRAND TOTAL') return false;
@@ -165,26 +157,76 @@
         var v = stats[STAT_KEY[m[0]]], el = document.querySelector('.ui-stat[data-m="' + m[0] + '"] .v');
         if (el && v != null) el.textContent = UI.n(v);
       });
-      if (stats.reportDate && !asOn) $('meta').textContent = 'As on ' + stats.reportDate;
+      if (stats.reportDate && !asOn) $('asOn').textContent = stats.reportDate;
     }
 
     /* ---------- filters ---------- */
     function fillFilters() {
       UI.offices(rows);
-      UI.fill('classFilter', UI.uniq(rows, 'BASE_CLASS').map(function (c) { return { value: c, label: CLASS[c] || c }; }), 'All classes');
-      UI.fill('yearFilter', UI.uniq(rows, 'DEFECT_YEAR').sort(function (a, b) { return b - a; }), 'Any year');
       if (!scope) scope = UI.lockScope();
+      SELECTS.forEach(function (id) { UI.mark($(id)); });
     }
-    function base() {
-      var reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value, cls = $('classFilter').value, yr = $('yearFilter').value;
+    function base(skip) {
+      var reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value;
       return rows.filter(function (r) {
-        return (!reg || r._region === reg) && (!div || r._divn === div) && (!ccc || r._supp === ccc) && (!cls || r.BASE_CLASS === cls) && (!yr || String(r.DEFECT_YEAR) === yr);
+        if ((reg && r._region !== reg) || (div && r._divn !== div) || (ccc && r._supp !== ccc)) return false;
+        if (skip !== 'class' && f.class && r.BASE_CLASS !== f.class) return false;
+        if (skip !== 'year' && f.year && String(r.DEFECT_YEAR) !== f.year) return false;
+        return true;
       });
+    }
+
+    function classFacetOpts() {
+      var b = base('class'), fld = field(metric);
+      var cl = {};
+      b.forEach(function (r) {
+        var n = Number(r[fld]) || 0;
+        if (n && r.BASE_CLASS) cl[r.BASE_CLASS] = (cl[r.BASE_CLASS] || 0) + n;
+      });
+      return Object.keys(cl).sort(function (a, b) { return cl[b] - cl[a]; }).map(function (c) {
+        return {
+          value: c,
+          label: CLASS[c] || c,
+          count: cl[c]
+        };
+      });
+    }
+
+    function yearFacetOpts() {
+      var b = base('year'), fld = field(metric);
+      var yr = {};
+      b.forEach(function (r) {
+        var n = Number(r[fld]) || 0;
+        if (n && r.DEFECT_YEAR) yr[r.DEFECT_YEAR] = (yr[r.DEFECT_YEAR] || 0) + n;
+      });
+      return Object.keys(yr).sort(function (a, b) { return Number(b) - Number(a); }).map(function (y) {
+        return {
+          value: y,
+          label: y,
+          count: yr[y]
+        };
+      });
+    }
+
+    function renderFacets() {
+      UI.facet('fClass', classFacetOpts(), f.class, function (v) { f.class = v; render(); });
+      UI.facet('fYear', yearFacetOpts(), f.year, function (v) { f.year = v; render(); });
+
+      var active = (f.class ? 1 : 0) + (f.year ? 1 : 0) +
+                   SELECTS.filter(function (id) { return $(id).value && !$(id).disabled; }).length;
+      setActive(active);
+    }
+
+    function clearAll() {
+      f.class = ''; f.year = ''; metric = 'total'; namesCcc = '';
+      SELECTS.forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });
+      fillFilters();
+      setLevel(scope && (scope.level === 'division' || scope.level === 'ccc') ? 'ccc' : scope && scope.level === 'region' ? 'division' : 'region');
     }
 
     /* ---------- render ---------- */
     function render() {
-      var b = base(), f = field(metric), tot = sum(b, 'total');
+      var b = base(), fld = field(metric), tot = sum(b, 'total');
       [].forEach.call(document.querySelectorAll('.ui-stat[data-m]'), function (el) {
         var m = el.getAttribute('data-m'), v = sum(b, field(m));
         el.querySelector('.v').textContent = UI.n(v);
@@ -192,15 +234,17 @@
         el.setAttribute('aria-pressed', String(m === metric));
       });
 
+      renderFacets();
+
       // Offices for the active metric
       var key = level === 'region' ? '_region' : level === 'division' ? '_divn' : '_supp', g = {};
       b.forEach(function (r) {
-        var n = Number(r[f]) || 0; if (!n) return;
+        var n = Number(r[fld]) || 0; if (!n) return;
         var name = r[key] || 'Unmapped';
         var o = g[name] || (g[name] = { name: name, code: r.CCC_CODE, parent: level === 'ccc' ? r._divn : level === 'division' ? r._region : '', n: 0 });
         o.n += n;
       });
-      var list = Object.keys(g).map(function (k) { return g[k]; }), total = sum(b, f), max = Math.max.apply(null, list.map(function (x) { return x.n; }).concat([0]));
+      var list = Object.keys(g).map(function (k) { return g[k]; }), total = sum(b, fld), max = Math.max.apply(null, list.map(function (x) { return x.n; }).concat([0]));
       var namesRow = level === 'ccc' && isPrio(metric);
       $('officeTitle').textContent = LABEL[metric] + ' by office';
       UI.table('officeTable', {
@@ -212,25 +256,8 @@
           { key: 'share', label: 'Share', sortVal: function (x) { return x.n; }, fmt: function (_, x) { return UI.bar(x.n, max, UI.pct(x.n, total)); }, width: '40%' }
         ],
         foot: list.length > 1 ? { n: total } : null,
-        // Count-only metrics never open names (docs/reports.md).
         onRow: level === 'ccc' ? (namesRow ? function (x) { showNames(x.name); } : null) : function (x) { drill(x.name); }
       });
-
-      // Distributions for the active metric (year ignores the year filter so it can be used to pick one)
-      var reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value, cls = $('classFilter').value;
-      var noYear = rows.filter(function (r) {
-        return (!reg || r._region === reg) && (!div || r._divn === div) && (!ccc || r._supp === ccc) && (!cls || r.BASE_CLASS === cls);
-      });
-      var yr = {}; noYear.forEach(function (r) { var n = Number(r[f]) || 0; if (n && r.DEFECT_YEAR) yr[r.DEFECT_YEAR] = (yr[r.DEFECT_YEAR] || 0) + n; });
-      var years = Object.keys(yr).sort(), ymax = Math.max.apply(null, years.map(function (y) { return yr[y]; }).concat([0])), ysel = $('yearFilter').value;
-      $('yearHist').innerHTML = years.length ? years.map(function (y) {
-        return '<div class="dm-col' + (ysel === y ? ' on' : '') + '" data-y="' + y + '" title="' + y + ': ' + UI.n(yr[y]) + '"><span class="n">' + UI.n(yr[y]) + '</span><i style="height:' + (ymax ? Math.max(1.5, yr[y] / ymax * 120) : 0) + 'px"></i><span class="y">' + (years.length > 12 ? "'" + y.slice(2) : y) + '</span></div>';
-      }).join('') : '<div class="ui-empty">No meters for these filters.</div>';
-      var cl = {}; b.forEach(function (r) { var n = Number(r[f]) || 0; if (n) cl[r.BASE_CLASS || '—'] = (cl[r.BASE_CLASS || '—'] || 0) + n; });
-      UI.hist('classHist', Object.keys(cl).sort(function (a, c) { return cl[c] - cl[a]; }).map(function (c) { return { key: c, label: CLASS[c] || c, value: cl[c] }; }),
-        { active: $('classFilter').value, onClick: function (row) { $('classFilter').value = $('classFilter').value === row.key ? '' : row.key; UI.mark($('classFilter')); render(); } });
-      // Phase split is stored on the summary for all meters (not per metric).
-      UI.hist('phaseHist', [{ key: '1', label: 'Single phase', value: sum(b, 'phase_1') }, { key: '3', label: 'Three phase', value: sum(b, 'phase_3') }, { key: 'o', label: 'Other', value: sum(b, 'phase_other') }].filter(function (x) { return x.value; }));
 
       var p = isPrio(metric);
       $('namesPanel').hidden = !p;
@@ -239,14 +266,12 @@
         if (ccc && ccc !== namesCcc) namesCcc = ccc;
         if (namesCcc) showNames(namesCcc, true); else { $('namesTitle').textContent = LABEL[metric] + ' · consumers'; $('exportBtn').hidden = true; $('namesNote').hidden = true; $('namesTable').innerHTML = '<div class="ui-empty">Pick a CCC in the table above to list its consumers.</div>'; }
       }
-      $('clearBtn').hidden = !(metric !== 'total' || $('classFilter').value || $('yearFilter').value || ['regionFilter', 'divisionFilter', 'cccFilter'].some(function (id) { return $(id).value && !$(id).disabled; }));
     }
 
     /* ---------- consumer names (priority metrics only) ---------- */
     function loadDetails() {
       if (details) return Promise.resolve(details);
       if (detailsP) return detailsP;
-      // Loaded on demand (only the priority metrics list names); already scoped by MzoRows.
       detailsP = MzoRows.get('defective_details')
         .then(function (t) { checkColumns(t); details = t.rows.filter(isRow).map(detailRow); detailsP = null; return details; })
         .catch(function (e) { detailsP = null; throw e; });
@@ -261,8 +286,7 @@
       { key: 'CONN_LOAD', label: 'Load (kW)', num: true, sortVal: function (r) { return parseFloat(r.CONN_LOAD) || 0; } },
       { key: 'MRU', label: 'MRU', hideSm: true }
     ];
-    // The names tab can hold more than one report (REPORT_AS_ON per row), and the counts come from
-    // the summary: say which reports the listed names come from when that is not the summary's date.
+
     function namesNote(list) {
       var seen = {}, dates = [];
       list.forEach(function (r) { var k = String(r.REPORT_AS_ON || ''); if (k && !seen[k]) { seen[k] = 1; dates.push(k); } });
@@ -280,13 +304,13 @@
       $('namesTitle').innerHTML = UI.esc(LABEL[metric]) + ' · ' + UI.esc(ccc);
       if (!details) $('namesTable').innerHTML = '<div class="ui-empty">Loading consumers…</div>';
       if (!quiet) $('namesPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      loadDetails().then(function (all) {
-        var cls = $('classFilter').value, yr = $('yearFilter').value;
+      loadDetails().then(function (allDetails) {
+        var cls = f.class, yr = f.year;
         var seen = {};
-        var list = all.filter(function (r) {
+        var list = allDetails.filter(function (r) {
           if (r._supp !== ccc || Number(r[flag]) !== 1) return false;
           var dk = (r.CON_ID || '') + '|' + (r.METER_NO || '');
-          if (seen[dk]) return false; // the names tab repeats some rows
+          if (seen[dk]) return false;
           seen[dk] = 1;
           if (cls && r.BASE_CLASS !== cls) return false;
           if (yr) { var d = ymd(r.FIRST_REPORTED_DEF_DT); if (!d || String(d.getFullYear()) !== yr) return false; }
@@ -321,9 +345,8 @@
       if (level === 'region') { $('regionFilter').value = name; $('divisionFilter').value = ''; level = 'division'; }
       else { $('divisionFilter').value = name; level = 'ccc'; }
       $('cccFilter').value = '';
-      fillFilters(); markAll(); setLevel(level);
+      fillFilters(); setLevel(level);
     }
-    function markAll() { ['regionFilter', 'divisionFilter', 'cccFilter', 'classFilter', 'yearFilter'].forEach(function (id) { UI.mark($(id)); }); }
     function setMetric(m) {
       metric = m; namesCcc = $('cccFilter').value || '';
       if (isPrio(m) && level !== 'ccc' && !$('cccFilter').value) level = 'ccc';
@@ -331,30 +354,19 @@
       render();
     }
 
-    ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
+    SELECTS.forEach(function (id) {
       $(id).addEventListener('change', function () {
         if (id === 'regionFilter') $('divisionFilter').value = '';
         if (id !== 'cccFilter') $('cccFilter').value = '';
         namesCcc = $('cccFilter').value || '';
-        fillFilters(); markAll(); render();
+        fillFilters(); render();
       });
     });
-    ['classFilter', 'yearFilter'].forEach(function (id) { $(id).addEventListener('change', function () { UI.mark(this); render(); }); });
     document.querySelector('main').addEventListener('click', function (e) {
       var s = e.target.closest('.ui-stat[data-m]');
       if (s) { var m = s.getAttribute('data-m'); setMetric(metric === m ? 'total' : m); }
     });
     $('levelTabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-tab'); if (t) setLevel(t.getAttribute('data-l')); });
-    $('yearHist').addEventListener('click', function (e) {
-      var c = e.target.closest('.dm-col'); if (!c) return;
-      var y = c.getAttribute('data-y');
-      $('yearFilter').value = $('yearFilter').value === y ? '' : y; UI.mark($('yearFilter')); render();
-    });
-    $('clearBtn').addEventListener('click', function () {
-      ['regionFilter', 'divisionFilter', 'cccFilter', 'classFilter', 'yearFilter'].forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });
-      namesCcc = ''; metric = 'total'; fillFilters(); markAll();
-      setLevel(scope && (scope.level === 'division' || scope.level === 'ccc') ? 'ccc' : scope && scope.level === 'region' ? 'division' : 'region');
-    });
     $('exportBtn').addEventListener('click', function () {
       UI.exportCsv('defective-' + metric + '-' + (namesCcc || 'ccc').toLowerCase().replace(/\s+/g, '-') + '.csv',
         [{ key: 'CON_ID', label: 'Consumer ID' }, { key: 'NAME', label: 'Name' }, { key: 'METER_NO', label: 'Meter' }, { key: 'FIRST_REPORTED_DEF_DT', label: 'Reported', csv: NAME_COLS[2].csv }, { key: 'BASE_CLASS', label: 'Class' }, { key: 'PHASE', label: 'Phase' }, { key: 'CONN_LOAD', label: 'Load (kW)' }, { key: 'MRU', label: 'MRU' }, { key: 'MOBILE_NO', label: 'Mobile' }, { key: 'ADDRESS', label: 'Address' }],
@@ -363,15 +375,13 @@
 
     /* ---------- data ---------- */
     var first = true;
-    // t.rows: the summary, already scoped to the login. The report date is one value of the sheet
-    // (t.first), so a login with no rows still sees it.
     function onSummary(t) {
       checkColumns(t);
       if (!t.all.some(function (d) { return isRow(d) && d.total != null; })) throw new Error('Summary is empty.');
       rows = t.rows.filter(isRow).map(summaryRow);
       var raw = t.first('report_as_on'), d = raw ? ymd(raw) : null;
       asOn = d ? UI.fmtDate(d) : raw || '';
-      $('meta').textContent = (asOn ? 'As on ' + asOn + ' · ' : '') + UI.n(sum(rows, 'total')) + ' meters';
+      $('asOn').textContent = asOn || '—';
       fillFilters();
       if (first) {
         first = false;
@@ -387,13 +397,12 @@
         if (isPrio(metric) || (scope && (scope.level === 'division' || scope.level === 'ccc'))) level = 'ccc';
         else if (scope && scope.level === 'region') level = 'division';
         [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === level)); });
-        markAll();
       }
       render();
     }
     function fail(msg) {
       if (rows.length) return;
-      $('meta').textContent = 'Could not load data';
+      $('asOn').textContent = 'Error';
       $('officeTable').innerHTML = '<div class="ui-empty">' + UI.esc(msg || 'Could not load data.') + '</div>';
     }
     function loadSummary(reload) {
@@ -442,7 +451,6 @@
         .catch(function (e) { status('Upload failed: ' + (e.message || e), 0); })
         .then(function () { btn.disabled = false; });
     });
-    // Same pipeline as before: process in the browser, publish summary + names to Apps Script.
     function publish(file) {
       var Mirror = window.MzoSheetMirror, url = meta.sheetScriptUrl || DEFAULTS.sheetScriptUrl;
       if (!P || !Mirror) return Promise.reject(new Error('Upload failed to load.'));
@@ -479,7 +487,6 @@
     });
 
     if (!P) { fail('Defective pipeline failed to load.'); return; }
-    // Meta first (it can point the hub at Supabase Storage); then the summary.
     Promise.race([metaP, new Promise(function (r) { setTimeout(r, 1500); })]).then(function () { return loadSummary(); });
   });
   </script>

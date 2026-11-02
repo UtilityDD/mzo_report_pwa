@@ -12,74 +12,74 @@
   <script src="/mzo_scope.js?v=17" defer></script>
   <script src="/mzo_rows.js?v=6" defer></script>
   <style>
+    .ui-head { align-items: center; }
     .mono { font-family: var(--mzo-mono); font-size: 12.5px; letter-spacing: .02em; }
-    #makeHist .row { grid-template-columns: 150px minmax(0, 1fr) 64px; }
+    .cl-kpis .ui-stat { padding: 13px 14px 14px; }
+    .cl-hint { padding: 8px 16px; color: var(--mzo-muted); font-size: 12.5px; border-bottom: 1px solid var(--mzo-border); }
+    .cl-hint:empty { display: none; }
   </style>
 </head>
 <body>
   <main class="ui-page">
     <header class="ui-head">
       <div>
-        <h1>Meter utilization</h1>
-        <p id="meta">Loading meters…</p>
+        <h1>Meter utilization<span class="ui-badge ui-date" id="asOn">…</span></h1>
       </div>
       <div class="ui-actions">
-        <div class="ui-seg" id="phase" role="group" aria-label="Phase">
-          <button type="button" data-p="" aria-pressed="true">All</button>
-          <button type="button" data-p="1PH" aria-pressed="false">1-phase</button>
-          <button type="button" data-p="3PH" aria-pressed="false">3-phase</button>
-        </div>
-        <button type="button" class="ui-btn sm" id="exportSummary"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
+        <button type="button" class="ui-btn" id="topBtn">Oldest in hand</button>
+        <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
     </header>
 
-    <div class="ui-filters">
-      <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Meter serial number (Enter to look up)" autocomplete="off" spellcheck="false" /></label>
-      <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
-      <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
-      <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
-      <span class="ui-select"><select id="typeFilter" aria-label="Meter type"><option value="">All meter types</option><option value="smart">Smart only</option><option value="normal">Non-smart only</option></select></span>
-      <button type="button" class="ui-btn ghost" id="clearBtn" hidden><svg class="ui-i"><use href="#ui-x"/></svg>Clear</button>
-    </div>
-
-    <section class="ui-stats" style="--n:4" id="stats" aria-label="Summary">
-      <div class="ui-stat"><div class="k">Issued</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></div>
-      <div class="ui-stat"><div class="k"><span class="ui-dot ok"></span>Used for new connections</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></div>
-      <div class="ui-stat"><div class="k"><span class="ui-dot ok"></span>Used for replacement</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></div>
-      <div class="ui-stat"><div class="k"><span class="ui-dot warn"></span>In hand</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></div>
-    </section>
-
-    <div class="ui-grid">
-      <section class="ui-panel">
-        <div class="ui-panel-h">
-          <h2>By office</h2>
-          <div class="ui-tabs" role="tablist" id="levelTabs">
-            <button type="button" class="ui-tab" role="tab" data-l="region" aria-selected="true">Region</button>
-            <button type="button" class="ui-tab" role="tab" data-l="division">Division</button>
-            <button type="button" class="ui-tab" role="tab" data-l="ccc">CCC</button>
-          </div>
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h">
+          <h2>Filters<small id="activeLabel"></small></h2>
+          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
         </div>
-        <div id="officeTable" style="--max-h:560px"><div class="ui-empty">Loading…</div></div>
-      </section>
-      <div>
-        <section class="ui-panel">
-          <div class="ui-panel-h"><h2>In hand for</h2></div>
-          <div class="ui-panel-b"><div id="ageHist"></div></div>
+        <div class="ui-side-sec ui-side-stack">
+          <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Meter serial number" autocomplete="off" spellcheck="false" aria-label="Meter serial number (Enter to look up)" title="Meter serial number (Enter to look up)" /></label>
+          <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
+          <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
+          <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
+        </div>
+        <div class="ui-side-sec"><div aria-label="Phase" id="fPhase"></div></div>
+        <div class="ui-side-sec"><div aria-label="Meter type" id="fType"></div></div>
+        <div class="ui-side-sec">
+          <div class="ui-seg ui-side-tabs" data-tabs role="tablist" aria-label="Received and make">
+            <button type="button" role="tab" data-pane="fAge" aria-pressed="true" aria-selected="true">Received</button>
+            <button type="button" role="tab" data-pane="fMake" aria-pressed="false" aria-selected="false">Make</button>
+          </div>
+          <div aria-label="Received" id="fAge"></div>
+          <div aria-label="Make" id="fMake" hidden></div>
+        </div>
+      </aside>
+
+      <div class="ui-main">
+        <section class="ui-stats cl-kpis" id="kpis" aria-label="Summary">
+          <button type="button" class="ui-stat" data-k=""><div class="k">Issued</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="used"><div class="k"><span class="ui-dot ok"></span>Used</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="nsc"><div class="k" title="Used for new connections">New connection</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="rep"><div class="k" title="Used for replacement">Replacement</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="hand"><div class="k"><span class="ui-dot warn"></span>In hand</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="old"><div class="k" title="In hand for over 6 months"><span class="ui-dot bad"></span>In hand 6m+</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
         </section>
+
         <section class="ui-panel">
-          <div class="ui-panel-h"><h2>In hand by make</h2></div>
-          <div class="ui-panel-b"><div id="makeHist"></div></div>
+          <div class="ui-panel-h">
+            <h2>Detailed analysis</h2>
+            <div class="ui-actions">
+              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+            </div>
+          </div>
+          <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
+          <div class="cl-hint" id="hint"></div>
+          <div id="table"><div class="ui-empty">Loading…</div></div>
         </section>
       </div>
     </div>
-
-    <section class="ui-panel">
-      <div class="ui-panel-h">
-        <h2>Meters in hand <small id="appCount"></small></h2>
-        <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
-      </div>
-      <div id="appTable"><div class="ui-empty">Loading…</div></div>
-    </section>
   </main>
 
   <script>
@@ -92,9 +92,9 @@
       { key: 'a0', label: 'Under a month', max: 30 }, { key: 'a1', label: '1–3 months', max: 91 }, { key: 'a2', label: '3–6 months', max: 182 },
       { key: 'a3', label: '6–12 months', max: 365 }, { key: 'a4', label: 'Over a year', max: Infinity }, { key: 'an', label: 'Date unknown', max: -1 }
     ];
+    var OLD_DAYS = 182;
 
     var T = {}, masterLookup = {}, replacementLookup = {}, dates = { erp: '', rep: '', nsc: '' };
-    var f = { q: '', phase: '', type: '', age: '', make: '' }, level = 'region', scope = null;
 
     // The cost centre as the drawer shows it: the 7-digit office code inside an SAP cost centre
     // (C366111050 → 6611105, C366110000 → 6611000).
@@ -127,207 +127,338 @@
         if (t === 'Meter Burnt Problem') maxRep = Math.max(maxRep, v);
         else if (t && t !== 'Load Enhancement') maxNsc = Math.max(maxNsc, v);
       });
-      var fmt = function (t) { if (!t) return 'N/A'; var d = new Date(t); return String(d.getDate()).padStart(2, '0') + '-' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()] + '-' + d.getFullYear(); };
-      dates = { erp: fmt(maxErp), rep: fmt(maxRep), nsc: fmt(maxNsc) };
+      dates = { erp: maxErp ? UI.fmtDate(new Date(maxErp)) : '', rep: maxRep ? UI.fmtDate(new Date(maxRep)) : '', nsc: maxNsc ? UI.fmtDate(new Date(maxNsc)) : '' };
     }
 
     /* ---------- view model ---------- */
-    var rows = [], makes = {};
+    var all = [], makes = {};
     // One view row per ERP meter in the login's scope. Offices are the canonical ones; a division
     // store (cost centre of a division) has no CCC.
     function prepare() {
       var now = Date.now();
-      rows = T.meter_erp.rows.map(function (d) {
+      all = T.meter_erp.rows.map(function (d) {
         var meter = d.serial_number, phase = d.phase;
         if (phase === '1') phase = '1PH'; if (phase === '3') phase = '3PH';
         var status = replacementLookup[meter] ? 'utilized-replacement' : masterLookup[meter] ? 'utilized-nsc' : 'meter-in-hand';
         var mk = d.meter_make || 'Unknown', make = makes[mk] || (makes[mk] = UI.title(mk).replace(/\s+/g, ' ').replace(/ Li Mited/, ' Limited'));
         var e = d.entry_date ? UI.date(d.entry_date) : null, days = e ? Math.max(0, Math.floor((now - e.getTime()) / 864e5)) : null;
+        var hand = status === 'meter-in-hand';
         return {
           src: { meter: meter, status: status, phase: phase || 'Unknown', cccCode: parseOfficeCode(d.cost_center), entryDate: d.entry_date || 'Unknown' },
-          meter: meter, status: status, phase: phase || 'Unknown', smart: d.meter_category.toUpperCase().indexOf('SMART METER') !== -1, make: make,
+          meter: meter, status: status, hand: hand, phase: phase || 'Unknown', smart: d.meter_category.toUpperCase().indexOf('SMART METER') !== -1, make: make,
           _region: d._region || 'Unknown', _divn: d._division, _supp: d._ccc,
-          entry: e, days: days, ageKey: days == null ? 'an' : AGE.filter(function (b) { return b.max >= 0 && days <= b.max; })[0].key
+          entry: e, days: days, handDays: hand ? days : null, old: hand && days != null && days > OLD_DAYS,
+          ageKey: days == null ? 'an' : AGE.filter(function (b) { return b.max >= 0 && days <= b.max; })[0].key
         };
       });
-      var meta = 'ERP stock to ' + (dates.erp || '—') + ' · replacements to ' + (dates.rep || '—') + ' · new connections to ' + (dates.nsc || '—');
-      $('meta').textContent = meta.replace(/-/g, ' ');
+      $('asOn').textContent = dates.erp || '';
+      $('asOn').title = 'ERP stock to ' + (dates.erp || '—') + ' · replacements to ' + (dates.rep || '—') + ' · new connections to ' + (dates.nsc || '—');
       fillFilters();
     }
 
+    var PHASE_LABEL = { '1PH': '1-phase', '3PH': '3-phase' };
+    var AGE_LABEL = {}; AGE.forEach(function (a) { AGE_LABEL[a.key] = a.label; });
+    var KPI = {
+      '': function () { return true; },
+      used: function (r) { return !r.hand; }, nsc: function (r) { return r.status === 'utilized-nsc'; }, rep: function (r) { return r.status === 'utilized-replacement'; },
+      hand: function (r) { return r.hand; }, old: function (r) { return r.old; }
+    };
+    // Facets shown as radio lists in the left panel: [value, label, test]
+    var FACETS = {
+      phase: [['1PH', '1-phase', function (r) { return r.phase === '1PH'; }], ['3PH', '3-phase', function (r) { return r.phase === '3PH'; }]],
+      type: [['smart', 'Smart meters', function (r) { return r.smart; }], ['normal', 'Non-smart meters', function (r) { return !r.smart; }]],
+      age: AGE.map(function (a) { return [a.key, a.label, function (r) { return r.ageKey === a.key; }]; }),
+      make: []  // filled from the data
+    };
+    var TABS = [
+      ['region', 'Region'], ['division', 'Division'], ['ccc', 'CCC'], ['meters', 'Meters'], ['status', 'Status'],
+      ['age', 'Received'], ['make', 'Make'], ['phase', 'Phase'], ['type', 'Meter type']
+    ];
+    var f = { q: '', kpi: '', phase: '', type: '', age: '', make: '' }, tab = 'region', renderedTab = '', scope = null, lastTable = null, lastList = null, firstData = true;
+    var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
+    var SELECTS = ['regionFilter', 'divisionFilter', 'cccFilter'];
+    var FACET_NAMES = ['phase', 'type', 'age', 'make'];
+
     function fillFilters() {
-      UI.offices(rows);
+      UI.offices(all);
+      var mk = {}; all.forEach(function (r) { mk[r.make] = (mk[r.make] || 0) + 1; });
+      FACETS.make = Object.keys(mk).sort(function (a, b) { return mk[b] - mk[a]; }).map(function (k) { return [k, k, function (r) { return r.make === k; }]; });
       if (!scope) scope = UI.lockScope();
+      SELECTS.forEach(function (id) { UI.mark($(id)); });
+    }
+    function set(id, v) { if (!$(id).disabled) $(id).value = v; }
+
+    function facetTest(name) { var v = f[name]; if (!v) return null; var o = FACETS[name].filter(function (x) { return x[0] === v; })[0]; return o ? o[2] : null; }
+
+    // All panel filters, optionally leaving one facet out (so that facet can count its own options).
+    function filtered(skip) {
+      var q = f.q.toUpperCase(), reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value;
+      var tests = FACET_NAMES.filter(function (n) { return n !== skip; }).map(facetTest).filter(Boolean);
+      return all.filter(function (r) {
+        if (reg && r._region !== reg) return false;
+        if (div && r._divn !== div) return false;
+        if (ccc && r._supp !== ccc) return false;
+        for (var i = 0; i < tests.length; i++) if (!tests[i](r)) return false;
+        if (q && String(r.meter).toUpperCase().indexOf(q) === -1) return false;
+        return true;
+      });
     }
 
-    function base() {
-      var reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value, out = [];
-      for (var i = 0; i < rows.length; i++) {
-        var r = rows[i];
-        if (reg && r._region !== reg) continue;
-        if (div && r._divn !== div) continue;
-        if (ccc && r._supp !== ccc) continue;
-        if (f.phase && r.phase !== f.phase) continue;
-        if (f.type === 'smart' && !r.smart) continue;
-        if (f.type === 'normal' && r.smart) continue;
-        out.push(r);
-      }
-      return out;
+    function renderFacets() {
+      [['phase', 'fPhase'], ['type', 'fType'], ['age', 'fAge'], ['make', 'fMake']].forEach(function (x) {
+        var name = x[0], rows = filtered(name);
+        var opts = FACETS[name].map(function (o) { return { value: o[0], label: o[1], count: rows.filter(o[2]).length }; });
+        if (name === 'age') opts = opts.filter(function (o) { return o.value !== 'an' || o.count || f.age === 'an'; });
+        UI.facet(x[1], opts, f[name], function (v) { f[name] = v; render(); });
+      });
+      var active = (f.q ? 1 : 0) + FACET_NAMES.filter(function (n) { return f[n]; }).length +
+        SELECTS.filter(function (id) { return $(id).value && !$(id).disabled; }).length;
+      setActive(active, { fAge: f.age, fMake: f.make });
     }
+
+    // Months between the earliest receipt and today (at least one): the base for "used / month".
+    function monthsSince(t) {
+      if (!t) return 1;
+      var a = new Date(t), n = new Date();
+      return Math.max(1, (n.getFullYear() - a.getFullYear()) * 12 + (n.getMonth() - a.getMonth()));
+    }
+    function tally(rows) {
+      var c = { issued: rows.length, nsc: 0, rep: 0, hand: 0, old: 0, first: 0 };
+      rows.forEach(function (r) {
+        if (r.status === 'utilized-nsc') c.nsc++; else if (r.status === 'utilized-replacement') c.rep++; else c.hand++;
+        if (r.old) c.old++;
+        if (r.entry && (!c.first || r.entry.getTime() < c.first)) c.first = r.entry.getTime();
+      });
+      c.used = c.nsc + c.rep;
+      c.perMonth = Math.round((c.used / monthsSince(c.first)) * 10) / 10;
+      c.rate = c.issued ? c.used / c.issued : 0;
+      return c;
+    }
+    function oneDec(v) { return UI.n(v >= 100 ? Math.round(v) : Math.round(v * 10) / 10); }
 
     function render() {
-      var b = base(), c = { nsc: 0, rep: 0, hand: 0 };
-      b.forEach(function (r) { if (r.status === 'utilized-nsc') c.nsc++; else if (r.status === 'utilized-replacement') c.rep++; else c.hand++; });
-      var stats = document.querySelectorAll('#stats .ui-stat');
-      var put = function (i, v, s) { stats[i].querySelector('.v').textContent = UI.n(v); stats[i].querySelector('.s').textContent = s; };
-      put(0, b.length, UI.pct(c.nsc + c.rep, b.length) + ' used');
-      put(1, c.nsc, UI.pct(c.nsc, b.length) + ' of issued');
-      put(2, c.rep, UI.pct(c.rep, b.length) + ' of issued');
-      put(3, c.hand, UI.pct(c.hand, b.length) + ' of issued');
+      var b = filtered(null), c = tally(b);
+      renderFacets();
+      // KPI analysis: shares, pace of use and how long the stock in hand lasts at that pace.
+      var cover = c.perMonth ? c.hand / c.perMonth : 0;
+      var sub = {
+        '': oneDec(c.perMonth) + ' used / month',
+        used: UI.pct(c.used, c.issued) + ' of issued',
+        nsc: UI.pct(c.nsc, c.used) + ' of used',
+        rep: UI.pct(c.rep, c.used) + ' of used',
+        hand: c.hand ? (c.perMonth ? '≈ ' + oneDec(cover) + ' months of use' : UI.pct(c.hand, c.issued) + ' of issued') : 'None in hand',
+        old: UI.pct(c.old, c.hand) + ' of in hand'
+      };
+      [].forEach.call(document.querySelectorAll('#kpis .ui-stat'), function (el) {
+        var k = el.getAttribute('data-k');
+        el.querySelector('.v').textContent = UI.n(k === '' ? c.issued : k === 'used' ? c.used : c[k]);
+        el.querySelector('.s').textContent = sub[k];
+        el.setAttribute('aria-pressed', String(f.kpi === k));
+      });
 
-      // Offices — division/region bookings are not CCCs, so the CCC tab skips them.
-      var key = level === 'region' ? '_region' : level === 'division' ? '_divn' : '_supp', groups = {}, now = Date.now();
-      b.forEach(function (r) {
-        var name = r[key]; if (!name) { if (level === 'ccc') return; name = 'Unmapped'; }
-        var g = groups[name] || (groups[name] = { name: name, parent: level === 'ccc' ? r._divn : level === 'division' ? r._region : '', issued: 0, nsc: 0, rep: 0, hand: 0, first: 0 });
-        g.issued++;
-        if (r.status === 'utilized-nsc') g.nsc++; else if (r.status === 'utilized-replacement') g.rep++; else g.hand++;
-        if (r.entry && (!g.first || r.entry.getTime() < g.first)) g.first = r.entry.getTime();
+      var view = b.filter(KPI[f.kpi]);
+      $('tabs').innerHTML = TABS.map(function (t) {
+        var extra = t[0] === 'meters' ? '<small>' + UI.n(view.length) + '</small>' : '';
+        return '<button type="button" class="ui-drill-tab" role="tab" data-t="' + t[0] + '" aria-selected="' + (t[0] === tab) + '">' + t[1] + extra + '</button>';
+      }).join('');
+      var kEl = f.kpi ? document.querySelector('#kpis [data-k="' + f.kpi + '"] .k') : null;
+      var kpiName = kEl ? kEl.getAttribute('title') || kEl.textContent : '';
+      $('hint').textContent = (kpiName ? 'Showing ' + kpiName.toLowerCase() + ' only. ' : '') +
+        (tab === 'ccc' ? 'Meters booked to a division store have no CCC and are left out here. ' : '') +
+        (['region', 'division', 'ccc'].indexOf(tab) !== -1 ? 'Click a row to open the next level.' : tab === 'age' ? 'Age since the meter was received in ERP.' : '');
+      renderTab(view);
+    }
+
+    // One row per group. With no KPI selected (and not on Status) the row is a utilization line
+    // (issued, used, in hand, used %); with a KPI selected it is a plain count and share.
+    function groupTable(view, keyFn, label, opts) {
+      opts = opts || {};
+      var util = !f.kpi && !opts.count, groups = {}, total = view.length;
+      view.forEach(function (r) {
+        var k = keyFn(r); if (k == null) return;
+        var g = groups[k] || (groups[k] = { name: k, parent: opts.parent ? opts.parent(r) || '' : '', rows: [] });
+        g.rows.push(r);
       });
-      var list = Object.keys(groups).map(function (k) {
-        var g = groups[k], months = 1;
-        if (g.first) { var a = new Date(g.first), t = new Date(now); months = Math.max(1, (t.getFullYear() - a.getFullYear()) * 12 + (t.getMonth() - a.getMonth())); }
-        g.used = g.nsc + g.rep; g.perMonth = Math.round((g.used / months) * 10) / 10; g.rate = g.issued ? g.used / g.issued : 0;
-        return g;
-      });
-      window.__summary = list;
-      var tot = list.reduce(function (t, g) { t.issued += g.issued; t.nsc += g.nsc; t.rep += g.rep; t.hand += g.hand; t.perMonth += g.perMonth; t.used += g.used; return t; }, { issued: 0, nsc: 0, rep: 0, hand: 0, perMonth: 0, used: 0 });
-      tot.perMonth = Math.round(tot.perMonth * 10) / 10; tot.rate = tot.issued ? tot.used / tot.issued : 0;
-      UI.table('officeTable', {
-        rows: list, sort: { key: 'hand', dir: 'desc' }, count: false, empty: 'No meters for these filters.',
+      var list = Object.keys(groups).map(function (k) { var g = groups[k], t = tally(g.rows); t.name = g.name; t.parent = g.parent; t.n = g.rows.length; return t; });
+      if (opts.order) list.sort(function (a, b) { return opts.order.indexOf(a.name) - opts.order.indexOf(b.name); });
+      var nameCol = { key: 'name', label: label, fmt: function (v, g) { return (opts.dots && opts.dots[v] ? '<span class="ui-dot ' + opts.dots[v] + '" style="margin-right:8px"></span>' : '') + '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.parent ? '<span class="sub">' + UI.esc(g.parent) + '</span>' : ''); } };
+      if (util) {
+        var tot = tally(view.filter(function (r) { return keyFn(r) != null; }));
+        lastTable = { title: label, cols: [label, 'Issued', 'New conn.', 'Replacement', 'Used / month', 'In hand', 'In hand 6m+', 'Used %'],
+          rows: list.map(function (g) { return [g.name, g.issued, g.nsc, g.rep, g.perMonth, g.hand, g.old, UI.pct(g.used, g.issued)]; }) };
+        return {
+          rows: list, sort: opts.order ? null : { key: 'hand', dir: 'desc' }, count: false, empty: 'No meters for these filters.',
+          columns: [
+            nameCol,
+            { key: 'issued', label: 'Issued', num: true, fmt: UI.n, hideSm: true },
+            { key: 'nsc', label: 'New conn.', num: true, fmt: UI.n, hideSm: true },
+            { key: 'rep', label: 'Replacement', num: true, fmt: UI.n, hideSm: true },
+            { key: 'perMonth', label: 'Used / month', num: true, fmt: oneDec, hideSm: true },
+            { key: 'hand', label: 'In hand', num: true, fmt: UI.n },
+            { key: 'old', label: '6m+', num: true, hideSm: true, fmt: function (v) { return v ? '<span class="ui-delta bad">' + UI.n(v) + '</span>' : '0'; } },
+            { key: 'rate', label: 'Used', fmt: function (_, g) { return UI.bar(g.used, g.issued, UI.pct(g.used, g.issued), 2); }, width: '20%' }
+          ],
+          foot: list.length > 1 ? tot : null
+        };
+      }
+      var max = Math.max.apply(null, list.map(function (g) { return g.n; }).concat([0]));
+      lastTable = { title: label, cols: [label, 'Count', '%'], rows: list.map(function (g) { return [g.name, g.n, UI.pct(g.n, total)]; }) };
+      return {
+        rows: list, sort: opts.order ? null : { key: 'n', dir: 'desc' }, count: false, empty: 'No meters for these filters.',
         columns: [
-          { key: 'name', label: level === 'ccc' ? 'CCC' : level === 'division' ? 'Division' : 'Region', fmt: function (v, g) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.parent ? '<span class="sub">' + UI.esc(g.parent) + '</span>' : ''); } },
-          { key: 'issued', label: 'Issued', num: true, fmt: UI.n, hideSm: true },
-          { key: 'nsc', label: 'New conn.', num: true, fmt: UI.n, hideSm: true },
-          { key: 'rep', label: 'Replacement', num: true, fmt: UI.n, hideSm: true },
-          { key: 'perMonth', label: 'Used / month', num: true, fmt: function (v) { return UI.n(v >= 100 ? Math.round(v) : v); }, hideSm: true },
-          { key: 'hand', label: 'In hand', num: true, fmt: UI.n },
-          { key: 'rate', label: 'Used', fmt: function (_, g) { return UI.bar(g.used, g.issued, UI.pct(g.used, g.issued), 2); }, width: '20%' }
+          nameCol,
+          { key: 'n', label: 'Count', num: true, fmt: UI.n },
+          { key: 'pct', label: '%', sortVal: function (g) { return g.n; }, fmt: function (_, g) { return UI.bar(g.n, max, UI.pct(g.n, total)); }, width: '30%' }
         ],
-        foot: list.length > 1 ? tot : null,
-        onRow: function (g) { drill(g.name); },
-        selected: function (g) { return level === 'ccc' && $('cccFilter').value === g.name; }
-      });
+        foot: list.length > 1 ? { n: list.reduce(function (a, g) { return a + g.n; }, 0), pct: 0 } : null
+      };
+    }
 
-      // In-hand meters
-      var hand = b.filter(function (r) { return r.status === 'meter-in-hand'; });
-      UI.hist('ageHist', AGE.map(function (a) { return { key: a.key, label: a.label, value: hand.filter(function (r) { return r.ageKey === a.key && (!f.make || r.make === f.make); }).length }; }).filter(function (x) { return x.key !== 'an' || x.value; }),
-        { active: f.age, onClick: function (row) { f.age = f.age === row.key ? '' : row.key; render(); } });
-      var mk = {};
-      hand.forEach(function (r) { if (!f.age || r.ageKey === f.age) mk[r.make] = (mk[r.make] || 0) + 1; });
-      UI.hist('makeHist', Object.keys(mk).sort(function (x, y) { return mk[y] - mk[x]; }).slice(0, 6).map(function (k) { return { key: k, label: k, value: mk[k] }; }),
-        { active: f.make, onClick: function (row) { f.make = f.make === row.key ? '' : row.key; render(); } });
+    function drill(level, name) {
+      if (name === 'Unmapped' || name === 'Unknown') return;
+      if (level === 'region') { set('regionFilter', name); set('divisionFilter', ''); set('cccFilter', ''); tab = 'division'; }
+      else if (level === 'division') { set('divisionFilter', name); set('cccFilter', ''); tab = 'ccc'; }
+      else { set('cccFilter', name); tab = 'meters'; }
+      fillFilters(); render();
+    }
 
-      var q = f.q.toUpperCase();
-      var view = hand.filter(function (r) { return (!f.age || r.ageKey === f.age) && (!f.make || r.make === f.make) && (!q || r.meter.toUpperCase().indexOf(q) !== -1); });
-      $('appCount').textContent = UI.n(view.length);
-      UI.table('appTable', { rows: view, sort: { key: 'days', dir: 'desc' }, limit: 50, resetPage: true, empty: 'No meters in hand for these filters.', columns: COLS, onRow: detail });
-      $('clearBtn').hidden = !(f.q || f.phase || f.type || f.age || f.make || ($('regionFilter').value && !$('regionFilter').disabled) || ($('divisionFilter').value && !$('divisionFilter').disabled) || ($('cccFilter').value && !$('cccFilter').disabled));
-      window.__view = view;
+    function renderTab(view) {
+      var cfg, mode = f.kpi ? 'count' : 'util';
+      lastList = null;
+      if (tab === 'region') { cfg = groupTable(view, function (r) { return r._region || 'Unmapped'; }, 'Region'); cfg.onRow = function (g) { drill('region', g.name); }; }
+      else if (tab === 'division') { cfg = groupTable(view, function (r) { return r._divn || 'Unmapped'; }, 'Division', { parent: function (r) { return r._region; } }); cfg.onRow = function (g) { drill('division', g.name); }; }
+      else if (tab === 'ccc') {
+        cfg = groupTable(view, function (r) { return r._supp || null; }, 'CCC', { parent: function (r) { return r._divn; } });
+        cfg.onRow = function (g) { drill('ccc', g.name); };
+        cfg.selected = function (g) { return $('cccFilter').value === g.name; };
+      }
+      else if (tab === 'status') { mode = 'count'; cfg = groupTable(view, function (r) { return STATUS[r.status].label; }, 'Status', { count: true, order: ['New connection', 'Replacement', 'In hand'], dots: { 'New connection': 'ok', 'Replacement': 'ok', 'In hand': 'warn' } }); }
+      else if (tab === 'age') cfg = groupTable(view, function (r) { return AGE_LABEL[r.ageKey]; }, 'Received', { order: AGE.map(function (a) { return a.label; }) });
+      else if (tab === 'make') cfg = groupTable(view, function (r) { return r.make; }, 'Make');
+      else if (tab === 'phase') cfg = groupTable(view, function (r) { return PHASE_LABEL[r.phase] || r.phase; }, 'Phase');
+      else if (tab === 'type') cfg = groupTable(view, function (r) { return r.smart ? 'Smart meter' : 'Non-smart meter'; }, 'Meter type');
+      else {
+        mode = 'list';
+        lastList = view;
+        lastTable = { title: 'Meters', cols: ['Meter', 'Status', 'Received', 'In hand (days)', 'CCC', 'Make', 'Phase'],
+          rows: view.slice().sort(function (x, y) { return (y.handDays == null ? -1 : y.handDays) - (x.handDays == null ? -1 : x.handDays); })
+            .map(function (r) { return [r.meter, STATUS[r.status].label, r.entry ? UI.fmtDate(r.entry) : '', r.handDays == null ? '' : r.handDays, r._supp || r._divn || '', r.make, PHASE_LABEL[r.phase] || r.phase]; }) };
+        cfg = { rows: view, sort: { key: 'handDays', dir: 'desc' }, limit: 50, empty: 'No meters for these filters.', columns: COLS, onRow: detail };
+      }
+      var key = tab + ':' + mode;
+      if (renderedTab !== key) { $('table').__ui = null; renderedTab = key; } // new columns: fresh sort and paging
+      UI.table('table', cfg);
     }
 
     var COLS = [
       { key: 'meter', label: 'Meter', fmt: function (v, r) { return '<span class="mono ui-strong">' + UI.esc(v) + '</span>' + (r.smart ? '<span class="sub">Smart meter</span>' : ''); } },
+      { key: 'status', label: 'Status', fmt: function (v) { var s = STATUS[v]; return '<span class="ui-badge ' + s.cls + '">' + UI.esc(s.label) + '</span>'; }, csv: function (r) { return STATUS[r.status].label; } },
       { key: 'entry', label: 'Received', num: true, hideSm: true, sortVal: function (r) { return r.entry ? r.entry.getTime() : 0; }, fmt: function (v) { return v ? UI.fmtDate(v) : '—'; }, csv: function (r) { return r.src.entryDate; } },
-      { key: 'days', label: 'In hand for', num: true, sortVal: function (r) { return r.days == null ? -1 : r.days; }, fmt: function (v) { return v == null ? '—' : UI.age(v); }, csv: function (r) { return r.days == null ? '' : r.days + ' days'; } },
+      { key: 'handDays', label: 'In hand for', num: true, sortVal: function (r) { return r.handDays == null ? -1 : r.handDays; }, fmt: function (v, r) { return v == null ? '<span class="ui-muted">—</span>' : '<span class="' + (r.old ? 'ui-delta bad' : '') + '">' + UI.esc(UI.age(v)) + '</span>'; }, csv: function (r) { return r.handDays == null ? '' : r.handDays + ' days'; } },
       { key: '_supp', label: 'CCC', fmt: function (v, r) { return UI.esc(v || r._divn || '—') + '<span class="sub">' + UI.esc(v ? r._divn : (r._divn ? 'Division store' : '')) + '</span>'; }, csv: function (r) { return r._supp || r._divn; } },
       { key: 'make', label: 'Make', hideSm: true, cls: 'wrap' },
-      { key: 'phase', label: 'Phase', fmt: function (v) { return '<span class="ui-badge">' + UI.esc(v === '1PH' ? '1-phase' : v === '3PH' ? '3-phase' : v) + '</span>'; } }
+      { key: 'phase', label: 'Phase', hideSm: true, fmt: function (v) { return '<span class="ui-badge">' + UI.esc(PHASE_LABEL[v] || v) + '</span>'; }, csv: function (r) { return PHASE_LABEL[r.phase] || r.phase; } }
     ];
 
+    /* ---------- detail drawer ---------- */
     function detail(r) {
       var d = r.src, s = STATUS[d.status] || STATUS['meter-in-hand'], c = d.status === 'utilized-nsc' ? masterLookup[d.meter] || {} : d.status === 'utilized-replacement' ? replacementLookup[d.meter] || {} : {};
       UI.drawer('Meter ' + d.meter, [s.label, r._supp || r._divn].filter(Boolean).join(' · '), [
         ['Status', s.label], ['Consumer ID', c.conId], ['Installation no.', c.instNo], ['Received on', r.entry ? UI.fmtDate(r.entry) : d.entryDate],
-        ['In hand for', d.status === 'meter-in-hand' && r.days != null ? UI.age(r.days) : ''], ['Region', r._region], ['Division', r._divn], ['CCC', r._supp],
-        ['Cost centre', d.cccCode], ['Make', r.make], ['Phase', d.phase === '1PH' ? '1-phase' : d.phase === '3PH' ? '3-phase' : d.phase], ['Smart meter', r.smart ? 'Yes' : 'No']
+        ['In hand for', r.handDays != null ? UI.age(r.handDays) : ''], ['Region', r._region], ['Division', r._divn], ['CCC', r._supp],
+        ['Cost centre', d.cccCode], ['Make', r.make], ['Phase', PHASE_LABEL[d.phase] || d.phase], ['Smart meter', r.smart ? 'Yes' : 'No']
       ]);
     }
     function lookup() {
       var q = $('q').value.trim().toUpperCase();
       if (!q) return;
-      var hit = rows.filter(function (r) { return r.meter.toUpperCase() === q; })[0];
+      var hit = all.filter(function (r) { return String(r.meter).toUpperCase() === q; })[0];
       if (hit) detail(hit); else UI.toast('Meter ' + q + ' is not in the ERP list');
     }
 
-    function tabs() { [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === level)); }); }
-    function setLevel(l) { level = l; tabs(); render(); }
-    function markAll() { ['regionFilter', 'divisionFilter', 'cccFilter', 'typeFilter'].forEach(function (x) { UI.mark($(x)); }); }
-    function set(id, v) { if (!$(id).disabled) $(id).value = v; }
-    function drill(name) {
-      if (name === 'Unmapped') return;
-      if (level === 'region') { set('regionFilter', name); set('divisionFilter', ''); set('cccFilter', ''); level = 'division'; }
-      else if (level === 'division') { set('divisionFilter', name); set('cccFilter', ''); level = 'ccc'; }
-      else set('cccFilter', $('cccFilter').value === name ? '' : name);
-      fillFilters(); markAll(); setLevel(level);
+    /* ---------- URL params (Ask, shared links) ---------- */
+    // ?region= ?division= ?ccc= ?q= ?kpi=used|nsc|rep|hand|old
+    function applyUrl() {
+      var p = new URLSearchParams(location.search), pick = function (id, v) {
+        var el = $(id); if (!v || el.disabled) return false;
+        var m = [].filter.call(el.options, function (o) { return o.value && o.value.toLowerCase() === String(v).trim().toLowerCase(); })[0];
+        if (m) { el.value = m.value; fillFilters(); return true; } return false;
+      };
+      if (pick('regionFilter', p.get('region'))) tab = 'division';
+      if (pick('divisionFilter', p.get('division'))) tab = 'ccc';
+      if (pick('cccFilter', p.get('ccc'))) tab = 'meters';
+      var k = String(p.get('kpi') || '').toLowerCase();
+      if (/old|6m|aged/.test(k)) f.kpi = 'old';
+      else if (/hand|stock/.test(k)) f.kpi = 'hand';
+      else if (/rep/.test(k)) f.kpi = 'rep';
+      else if (/nsc|new/.test(k)) f.kpi = 'nsc';
+      else if (/used|util/.test(k)) f.kpi = 'used';
+      if (p.get('q')) { f.q = p.get('q').trim(); $('q').value = f.q; tab = 'meters'; }
     }
 
-    ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
+    /* ---------- events ---------- */
+    SELECTS.forEach(function (id) {
       $(id).addEventListener('change', function () {
         if (id === 'regionFilter') set('divisionFilter', '');
         if (id !== 'cccFilter') set('cccFilter', '');
-        fillFilters(); markAll(); render();
+        fillFilters(); render();
       });
     });
-    $('typeFilter').addEventListener('change', function () { f.type = this.value; UI.mark(this); render(); });
-    $('phase').addEventListener('click', function (e) {
-      var b = e.target.closest('button'); if (!b) return;
-      f.phase = b.getAttribute('data-p');
-      [].forEach.call(this.querySelectorAll('button'), function (x) { x.setAttribute('aria-pressed', String(x === b)); });
-      render();
-    });
-    $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim(); render(); }, 200));
+    $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim(); if (f.q && tab !== 'meters') tab = 'meters'; render(); }, 200));
     $('q').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); lookup(); } });
-    $('levelTabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-tab'); if (t) setLevel(t.getAttribute('data-l')); });
-    $('clearBtn').addEventListener('click', function () {
-      f.q = ''; f.phase = ''; f.type = ''; f.age = ''; f.make = ''; $('q').value = ''; $('typeFilter').value = '';
-      [].forEach.call(document.querySelectorAll('#phase button'), function (x) { x.setAttribute('aria-pressed', String(x.getAttribute('data-p') === '')); });
-      ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { set(id, ''); });
-      fillFilters(); markAll(); render();
+    $('kpis').addEventListener('click', function (e) { var s = e.target.closest('.ui-stat'); if (!s) return; var k = s.getAttribute('data-k'); f.kpi = f.kpi === k ? '' : k; render(); });
+    $('tabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-drill-tab'); if (t) { tab = t.getAttribute('data-t'); render(); } });
+    function homeTab() { return scope && (scope.level === 'division' || scope.level === 'ccc' || scope.level === 'codes') ? 'ccc' : scope && scope.level === 'region' ? 'division' : 'region'; }
+    function clearAll() {
+      f = { q: '', kpi: '', phase: '', type: '', age: '', make: '' }; $('q').value = '';
+      SELECTS.forEach(function (id) { set(id, ''); });
+      tab = homeTab();
+      fillFilters(); render();
+    }
+    $('topBtn').addEventListener('click', function () { tab = 'meters'; f.kpi = 'hand'; renderedTab = ''; render(); $('table').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    $('copyBtn').addEventListener('click', function () {
+      if (!lastTable) return;
+      var lines = ['*Meter utilization — ' + lastTable.title + '*' + ($('asOn').textContent ? ' (ERP to ' + $('asOn').textContent + ')' : ''), lastTable.cols.join(' | ')].concat(lastTable.rows.slice(0, 60).map(function (r) { return r.map(function (c) { return typeof c === 'number' ? UI.n(c) : c; }).join(' | '); }));
+      UI.copy(lines.join('\n')).then(function () { UI.toast('Table copied'); });
     });
-    $('exportSummary').addEventListener('click', function () {
-      var stamp = new Date().toISOString().slice(0, 10), ph = f.phase === '1PH' ? '1Ph' : f.phase === '3PH' ? '3Ph' : 'Total';
-      UI.exportCsv('meter_utilization_' + level + '_' + ph + '_' + stamp + '.csv', [
-        { key: 'name', label: 'Name' }, { key: 'issued', label: 'Issued' }, { key: 'nsc', label: 'Utilized_NSC' }, { key: 'rep', label: 'Utilized_Rep' },
-        { key: 'perMonth', label: 'Avg_Monthly_Util' }, { key: 'hand', label: 'In_Hand' }, { key: 'rate', label: 'Utilization_Percent', csv: function (g) { return (g.rate * 100).toFixed(1) + '%'; } }
-      ], window.__summary || []);
-    });
+    // Meters exports every meter in view with its details; group tabs export the table.
     $('exportBtn').addEventListener('click', function () {
-      UI.exportCsv('meters_in_hand.csv', [{ key: 'meter', label: 'Meter_Number' }].concat(COLS.slice(1).map(function (c) { return { key: c.key, label: c.label, csv: c.csv }; })), window.__view || []);
+      if (lastList) {
+        UI.exportCsv('meter-utilization-meters.csv', [{ key: 'meter', label: 'Meter_Number' }].concat(COLS.slice(1).map(function (c) { return { key: c.key, label: c.label, csv: c.csv }; }),
+          [{ key: '_region', label: 'Region' }, { key: '_divn', label: 'Division' }, { key: 'smart', label: 'Smart meter', csv: function (r) { return r.smart ? 'Yes' : 'No'; } }]),
+          lastList.slice().sort(function (x, y) { return (y.handDays == null ? -1 : y.handDays) - (x.handDays == null ? -1 : x.handDays); }));
+        return;
+      }
+      if (!lastTable) return;
+      UI.exportCsv('meter-utilization-' + lastTable.title.toLowerCase().replace(/\W+/g, '-') + '.csv', lastTable.cols.map(function (c, i) { return { key: i, label: c }; }), lastTable.rows.map(function (r) { var o = {}; r.forEach(function (c, i) { o[i] = c; }); return o; }));
     });
 
     /* ---------- load: the four datasets through MzoRows (cached rows first) ---------- */
-    function fail() { $('meta').textContent = 'Could not load meter data'; $('officeTable').innerHTML = $('appTable').innerHTML = '<div class="ui-empty">Could not load meter data.</div>'; }
-    var shown = false, queued = false, failed = {};
+    function fail() { $('asOn').textContent = 'No data'; $('table').innerHTML = '<div class="ui-empty">Could not load meter data.</div>'; }
+    var queued = false, failed = {};
     // Paint when all four are in; newer rows of any of them repaint (once per batch of arrivals).
     function build() {
       queued = false;
       if (KEYS.some(function (k) { return !T[k]; })) return;
       if (!T.meter_erp.rows.length && failed.meter_erp) return fail();
       processData(); prepare();
-      if (!shown) {
-        shown = true;
-        if (scope && (scope.level === 'division' || scope.level === 'ccc')) level = 'ccc'; else if (scope && scope.level === 'region') level = 'division';
-        tabs();
-      }
+      if (firstData) { firstData = false; tab = homeTab(); applyUrl(); }
       render();
     }
+    function queue() { if (!queued) { queued = true; setTimeout(build, 0); } }
     KEYS.forEach(function (k) {
       MzoRows.load(k, function (t, info) {
         if (t) T[k] = t;
         else if (info && info.error && !T[k]) { failed[k] = true; T[k] = { rows: [], all: [] }; }
-        if (!queued) { queued = true; setTimeout(build, 0); }
+        queue();
       });
+    });
+    // Refresh: a forced version check of all four (reads only).
+    $('refreshBtn').addEventListener('click', function () {
+      var btn = this; btn.classList.add('spin');
+      Promise.all(KEYS.map(function (k) { return MzoRows.get(k, { forceCheck: true }).then(function (t) { if (t) T[k] = t; }, function () {}); }))
+        .then(function () { build(); UI.toast('Meter data is up to date'); })
+        .then(function () { btn.classList.remove('spin'); }, function () { btn.classList.remove('spin'); });
     });
     // The page used to keep its own parsed copy of the four sheets; MzoRows keeps the rows now.
     try { localStorage.removeItem('mzo_hub_ver_CACHE_METER_PARSED_v1'); } catch (e) {}
