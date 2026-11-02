@@ -10,7 +10,7 @@
 //   - Cache first for third-party CDNs (libraries, fonts).
 //   - Stale-while-revalidate for every other same-origin asset.
 //   - HTML responses get /mzo_present.js (desktop presentation zoom) injected after <head>.
-const CACHE_NAME = 'mzo-reports-cache-v296';
+const CACHE_NAME = 'mzo-reports-cache-v297';
 
 // Precached on install (not the data hub: it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -28,17 +28,12 @@ const PRECACHE_ASSETS = [
   'manifest.json',
   'manifest-legacy.json',
   'mzo_pwa_icons.js',
-  'icons/disha-utility-distribution-logo.png',
-  'icons/disha-icon.png',
-  'icons/disha-light.png',
-  'icons/disha-dark.png',
-  'icons/disha-logo.png',
-  'icons/disha-logo.jpg',
+  'icons/disha-logo-light.webp',
+  'icons/disha-logo-dark.webp',
   'icons/icon-192-v2.png',
   'icons/icon-512-v2.png',
   'icons/icon-192-dark.png',
   'icons/icon-512-dark.png',
-  'icons/glossy-disha-utility-logo.png',
   'icons/diya-cropped.svg',
   'auth.js',
   'mzo_present.js'
