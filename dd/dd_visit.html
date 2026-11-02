@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DD visit · MZO Reports</title>
+  <title>DD visit · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -86,12 +86,18 @@
         </section>
 
         <section class="ui-panel">
-          <div class="ui-panel-h">
-            <h2 id="tableTitle">Detailed analysis</h2>
-            <div class="ui-actions">
-              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
-              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title" id="tableTitle">Detailed analysis</h2>
+                <span class="rh-badge" id="rhCount">0</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+              </div>
             </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
           </div>
           <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
           <div class="rem-hint" id="hint"></div>
@@ -140,17 +146,19 @@
       label: 'activeLabel',
       count: 'activeCount',
       clear: 'clearBtn',
-      onClear: function () {
-        f.q = ''; f.stat = ''; f.outcome = ''; f.cls = ''; f.cat = ''; f.osd = '';
-        $('q').value = '';
-        ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
-          if (!$(id).disabled) $(id).value = '';
-        });
-        fillFilters(); marks();
-        syncUrl();
-        render();
-      }
+      onClear: clearAll
     });
+
+    function clearAll() {
+      f.q = ''; f.stat = ''; f.outcome = ''; f.cls = ''; f.cat = ''; f.osd = '';
+      $('q').value = '';
+      ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
+        if (!$(id).disabled) $(id).value = '';
+      });
+      fillFilters(); marks();
+      syncUrl();
+      render();
+    }
 
     function isAdmin() {
       try {
@@ -366,6 +374,10 @@
       window.__exportRows = tab === 'history' ? hist : rows;
       window.__exportCols = tab === 'history' ? EXPORT_HIST : EXPORT_SHEET;
 
+      var rhEl = $('rhCount');
+      if (rhEl) rhEl.textContent = UI.n(rows.length) + ' consumers · ' + UI.inr(totOsd) + ' OSD';
+      renderReportHead(rows);
+
       if (tab === 'region' || tab === 'division' || tab === 'ccc') {
         renderOfficesTab(b, visited, paid);
       } else if (tab === 'consumers') {
@@ -379,6 +391,57 @@
       } else if (tab === 'osd') {
         renderOsdTab(b);
       }
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(rows) {
+      var bar = $('rhFiltersBar');
+      if (!bar) return;
+      var active = [];
+      if (f.q) {
+        active.push({ key: 'q', label: 'Search: ' + f.q, clear: function () { f.q = ''; $('q').value = ''; syncUrl(); render(); } });
+      }
+      var rVal = $('regionFilter').value;
+      if (rVal) {
+        active.push({ key: 'region', label: 'Region: ' + rVal, clear: function () { $('regionFilter').value = ''; fillFilters(); marks(); syncUrl(); render(); } });
+      }
+      var dVal = $('divisionFilter').value;
+      if (dVal) {
+        active.push({ key: 'division', label: 'Division: ' + dVal, clear: function () { $('divisionFilter').value = ''; fillFilters(); marks(); syncUrl(); render(); } });
+      }
+      var cVal = $('cccFilter').value;
+      if (cVal) {
+        active.push({ key: 'ccc', label: 'CCC: ' + cVal, clear: function () { $('cccFilter').value = ''; marks(); syncUrl(); render(); } });
+      }
+      if (f.stat) {
+        var stLabel = f.stat === 'visited' ? 'Visited' : 'Not visited';
+        active.push({ key: 'stat', label: 'Status: ' + stLabel, clear: function () { f.stat = ''; syncUrl(); render(); } });
+      }
+      if (f.outcome) {
+        active.push({ key: 'outcome', label: 'Outcome: ' + (OUT_LABEL[f.outcome] || f.outcome), clear: function () { f.outcome = ''; syncUrl(); render(); } });
+      }
+      if (f.cls) {
+        active.push({ key: 'cls', label: 'Class: ' + (CLASS[f.cls] || f.cls), clear: function () { f.cls = ''; syncUrl(); render(); } });
+      }
+      if (f.osd) {
+        var oMatch = OSD_BUCKETS.filter(function (o) { return o.key === f.osd; })[0];
+        active.push({ key: 'osd', label: 'Outstanding: ' + (oMatch ? oMatch.label : f.osd), clear: function () { f.osd = ''; syncUrl(); render(); } });
+      }
+      if (f.cat) {
+        var catLabel = f.cat === 'R' ? 'Rural' : 'Urban';
+        active.push({ key: 'cat', label: 'Area: ' + catLabel, clear: function () { f.cat = ''; syncUrl(); render(); } });
+      }
+      currentActiveFilters = active;
+      if (!active.length) {
+        bar.innerHTML = '<span class="rh-all-clear"><svg class="ui-i" style="width:13px;height:13px;vertical-align:-2px"><use href="#ui-check"/></svg> Showing all DD consumers</span>';
+        return;
+      }
+      var html = '<div class="rh-filters">';
+      active.forEach(function (flt, idx) {
+        html += '<span class="rh-chip">' + UI.esc(flt.label) + '<button type="button" class="rh-chip-x" data-rh-clear="' + idx + '" aria-label="Remove filter">&times;</button></span>';
+      });
+      html += '<button type="button" class="rh-clear-btn" id="rhClearBtn">Reset all</button></div>';
+      bar.innerHTML = html;
     }
 
     function renderOfficesTab(b, visited, paid) {
@@ -774,6 +837,16 @@
       var rows = window.__exportRows || [];
       var cols = window.__exportCols || EXPORT_SHEET;
       UI.exportCsv('dd-visit-' + (tab === 'history' ? 'history-' : '') + new Date().toISOString().slice(0, 10) + '.csv', cols, rows);
+    });
+
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      if (e.target.closest('#rhClearBtn')) { clearAll(); return; }
+      var btn = e.target.closest('[data-rh-clear]');
+      if (!btn) return;
+      var idx = parseInt(btn.getAttribute('data-rh-clear'), 10);
+      if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+        currentActiveFilters[idx].clear();
+      }
     });
 
     function forgetStoredCopies() {

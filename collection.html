@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Collection · MZO Reports</title>
+  <title>Collection · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -77,17 +77,26 @@
         </section>
 
         <section class="ui-panel">
-          <div class="ui-panel-h">
-            <h2 id="tableTitle">Detailed analysis</h2>
-            <div class="ui-actions">
-              <div class="ui-seg" id="scale" role="group" aria-label="Time scale">
-                <button type="button" data-s="month" aria-pressed="true">Monthly</button>
-                <button type="button" data-s="week" aria-pressed="false">Weekly</button>
-                <button type="button" data-s="day" aria-pressed="false">Daily</button>
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title">
+                  <svg class="ui-i"><use href="#ui-panel"/></svg>
+                  <span id="rhTitle">Detailed Analysis</span>
+                </h2>
+                <span class="rh-badge" id="rhCount">…</span>
               </div>
-              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
-              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+              <div class="ui-actions">
+                <div class="ui-seg" id="scale" role="group" aria-label="Time scale">
+                  <button type="button" data-s="month" aria-pressed="true">Monthly</button>
+                  <button type="button" data-s="week" aria-pressed="false">Weekly</button>
+                  <button type="button" data-s="day" aria-pressed="false">Daily</button>
+                </div>
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+              </div>
             </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
           </div>
           <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
           <div class="cl-hint" id="hint"></div>
@@ -297,7 +306,56 @@
           : tab === 'growth' ? 'Offices ranked by Month-over-Month and Year-over-Year revenue growth.'
           : 'Daily collection breakdown for ' + MON[cm] + ' ' + cy + ' (Days 1–' + cDay + ').');
 
+      renderReportHead(v, scopeLabel);
       renderTab(v, latest, cDay, fs, cy, cm, pm, ly, scopeLabel);
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(v, scopeLabel) {
+      var tabObj = TABS.filter(function (t) { return t[0] === tab; })[0];
+      var tabLabel = tabObj ? tabObj[1] : 'Detailed Analysis';
+
+      $('rhTitle').textContent = tabLabel + ' · ' + scopeLabel;
+
+      var totAmt = sum(v).amt;
+      $('rhCount').innerHTML = 'Total: <b>' + UI.inr(totAmt) + '</b> · ' + UI.esc(scopeLabel);
+
+      currentActiveFilters = [];
+      if (f.q) {
+        currentActiveFilters.push({ label: 'Search', value: '"' + f.q + '"', clear: function () { f.q = ''; $('q').value = ''; } });
+      }
+      if ($('regionFilter').value && !$('regionFilter').disabled) {
+        currentActiveFilters.push({ label: 'Region', value: $('regionFilter').value, clear: function () { set('regionFilter', ''); set('divisionFilter', ''); set('cccFilter', ''); fillFilters(); } });
+      }
+      if ($('divisionFilter').value && !$('divisionFilter').disabled) {
+        currentActiveFilters.push({ label: 'Division', value: $('divisionFilter').value, clear: function () { set('divisionFilter', ''); set('cccFilter', ''); fillFilters(); } });
+      }
+      if ($('cccFilter').value && !$('cccFilter').disabled) {
+        currentActiveFilters.push({ label: 'CCC', value: $('cccFilter').value, clear: function () { set('cccFilter', ''); fillFilters(); } });
+      }
+      if (bulk === 'without') {
+        currentActiveFilters.push({ label: 'Bulk', value: 'Without bulk', clear: function () { bulk = 'with'; syncControls(); render(); } });
+      }
+      if (f.growth) {
+        currentActiveFilters.push({ label: 'Growth', value: f.growth === 'pos' ? 'MoM Growth (>0%)' : 'MoM Decline (<0%)', clear: function () { f.growth = ''; } });
+      }
+      if (f.tier) {
+        currentActiveFilters.push({ label: 'Collection tier', value: f.tier, clear: function () { f.tier = ''; } });
+      }
+
+      var bar = $('rhFiltersBar');
+      if (currentActiveFilters.length) {
+        var chips = currentActiveFilters.map(function (af, i) {
+          return '<span class="rh-chip"><strong>' + UI.esc(af.label) + ':</strong> ' + UI.esc(af.value) +
+            '<button type="button" class="rh-chip-x" data-rh-clear="' + i + '" title="Remove ' + UI.esc(af.label) + ' filter" aria-label="Remove filter">&times;</button></span>';
+        }).join('');
+        bar.innerHTML = '<div class="rh-filters"><span class="rh-filters-label"><svg class="ui-i sm"><use href="#ui-filter"/></svg>Applied:</span>' +
+          chips + '<button type="button" class="rh-clear-btn" id="rhClearBtn"><svg class="ui-i sm"><use href="#ui-reload"/></svg>Reset all</button></div>';
+      } else {
+        var sc = window.MzoScope && !window.MzoScope.isUnscoped() ? (window.MzoScope.getScope() || {}).label || '' : '';
+        bar.innerHTML = '<div class="rh-all-clear"><span class="ui-dot ok"></span><span>Showing full scope · No active filters</span>' +
+          (sc ? '<span class="rh-scope-pill">Scope: ' + UI.esc(sc) + '</span>' : '') + '</div>';
+      }
     }
 
     function renderTab(v, latest, cDay, fs, cy, cm, pm, ly, scopeLabel) {
@@ -566,7 +624,7 @@
     }
 
     function clearAll() {
-      f.q = ''; f.growth = ''; f.tier = '';
+      f.q = ''; f.growth = ''; f.tier = ''; bulk = 'with';
       $('q').value = '';
       SELECTS.forEach(function (id) { set(id, ''); });
       fillFilters();
@@ -574,6 +632,21 @@
       tab = scope && (scope.level === 'division' || scope.level === 'ccc') ? 'ccc' : scope && scope.level === 'region' ? 'division' : 'region';
       render();
     }
+
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-rh-clear]');
+      if (btn) {
+        var idx = parseInt(btn.getAttribute('data-rh-clear'), 10);
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+          currentActiveFilters[idx].clear();
+          render();
+        }
+        return;
+      }
+      if (e.target.closest('#rhClearBtn')) {
+        clearAll();
+      }
+    });
 
     SELECTS.forEach(function (id) {
       $(id).addEventListener('change', function () {

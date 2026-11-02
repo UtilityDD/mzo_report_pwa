@@ -10,7 +10,7 @@
 //   - Cache first for third-party CDNs (libraries, fonts).
 //   - Stale-while-revalidate for every other same-origin asset.
 //   - HTML responses get /mzo_present.js (desktop presentation zoom) injected after <head>.
-const CACHE_NAME = 'mzo-reports-cache-v282';
+const CACHE_NAME = 'mzo-reports-cache-v296';
 
 // Precached on install (not the data hub: it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -28,8 +28,17 @@ const PRECACHE_ASSETS = [
   'manifest.json',
   'manifest-legacy.json',
   'mzo_pwa_icons.js',
+  'icons/disha-utility-distribution-logo.png',
+  'icons/disha-icon.png',
+  'icons/disha-light.png',
+  'icons/disha-dark.png',
+  'icons/disha-logo.png',
+  'icons/disha-logo.jpg',
   'icons/icon-192-v2.png',
   'icons/icon-512-v2.png',
+  'icons/icon-192-dark.png',
+  'icons/icon-512-dark.png',
+  'icons/glossy-disha-utility-logo.png',
   'icons/diya-cropped.svg',
   'auth.js',
   'mzo_present.js'
@@ -111,7 +120,7 @@ const NETWORK_FIRST = new Set([
   '/docket.html', '/docket/kpi.html', '/smart_meter/dashboard.html',
   '/consumer/defective_meter.html', '/lib/defective_meter_pipeline.js', '/lib/sheet_mirror_client.js', '/lib/offices.js',
   '/stock/upload.html', '/stock/index.html', '/stock/script.js', '/stock/allotment.js',
-  '/stock/allotment_view.js', '/stock/style.css', '/capex_all.html', '/mzo_data_hub.js', '/mzo_theme.js',
+  '/stock/allotment_view.js', '/stock/style.css', '/capex_all.html', '/advance_onm.html', '/cmo.html', '/accident/accident.html', '/safety_inspection.html', '/dtr/index.html', '/mzo_data_hub.js', '/mzo_theme.js',
   '/mzo_theme.css', '/mzo_ui.js', '/mzo_presets_hub.js', '/mzo_scope.js',
   '/mzo_origin_redirect.js', '/mzo_pwa_icons.js', '/manifest.json', '/manifest-legacy.json',
   '/icons/icon-192-v2.png', '/icons/icon-512-v2.png', '/mzo_app_update.js', '/mzo_present.js',

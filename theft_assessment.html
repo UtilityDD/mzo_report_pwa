@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Theft assessment · MZO Reports</title>
+  <title>Theft assessment · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -71,9 +71,17 @@
         </section>
 
         <section class="ui-panel">
-          <div class="ui-panel-h">
-            <h2>Cases <small id="caseCount"></small></h2>
-            <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title">Cases</h2>
+                <span class="rh-badge" id="rhCount">0</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+              </div>
+            </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
           </div>
           <div id="caseTable"><div class="ui-empty">Loading…</div></div>
         </section>
@@ -283,9 +291,64 @@
         onRow: level === 'ccc' ? null : function (o) { drill(o.name); }
       });
 
-      $('caseCount').textContent = UI.n(v.length);
+      var totDue = v.reduce(function (sum, r) { return sum + (r.balance || 0); }, 0);
+      var rhEl = $('rhCount');
+      if (rhEl) rhEl.textContent = UI.n(v.length) + (totDue ? ' · ' + UI.inr(totDue) + ' due' : '');
+      renderReportHead(v);
       UI.table('caseTable', { rows: v, sort: { key: 'balance', dir: 'desc' }, limit: 50, resetPage: true, empty: 'No cases match these filters.', columns: CASE_COLS, onRow: detail });
       window.__view = v;
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(view) {
+      var bar = $('rhFiltersBar');
+      if (!bar) return;
+      var active = [];
+      if (f.q) {
+        active.push({ key: 'q', label: 'Search: ' + f.q, clear: function () { f.q = ''; $('q').value = ''; render(); } });
+      }
+      var rVal = $('regionFilter').value;
+      if (rVal) {
+        active.push({ key: 'region', label: 'Region: ' + rVal, clear: function () { $('regionFilter').value = ''; fillFilters(); render(); } });
+      }
+      var dVal = $('divisionFilter').value;
+      if (dVal) {
+        active.push({ key: 'division', label: 'Division: ' + dVal, clear: function () { $('divisionFilter').value = ''; fillFilters(); render(); } });
+      }
+      var cVal = $('cccFilter').value;
+      if (cVal) {
+        active.push({ key: 'ccc', label: 'CCC: ' + cVal, clear: function () { $('cccFilter').value = ''; render(); } });
+      }
+      if (f.stat) {
+        var statName = { final: 'Final assessment', cut: 'Cut at final', paid: 'Recovered', due: 'Outstanding' }[f.stat] || f.stat;
+        active.push({ key: 'stat', label: 'Stat: ' + statName, clear: function () { f.stat = ''; render(); } });
+      }
+      if (f.status) {
+        var stLabel = (STATUS[f.status] && STATUS[f.status][0]) || f.status;
+        active.push({ key: 'status', label: 'Status: ' + stLabel, clear: function () { f.status = ''; render(); } });
+      }
+      if (f.fir) {
+        var firLabel = f.fir === 'yes' ? 'FIR lodged' : f.fir === 'no' ? 'No FIR' : f.fir;
+        active.push({ key: 'fir', label: 'FIR: ' + firLabel, clear: function () { f.fir = ''; render(); } });
+      }
+      if (f.cut) {
+        var cMatch = CUT.filter(function (c) { return c.key === f.cut; })[0];
+        active.push({ key: 'cut', label: 'Cut: ' + (cMatch ? cMatch.label : f.cut), clear: function () { f.cut = ''; render(); } });
+      }
+      if (f.year) {
+        active.push({ key: 'year', label: 'Year: ' + f.year, clear: function () { f.year = ''; render(); } });
+      }
+      currentActiveFilters = active;
+      if (!active.length) {
+        bar.innerHTML = '<span class="rh-all-clear"><svg class="ui-i" style="width:13px;height:13px;vertical-align:-2px"><use href="#ui-check"/></svg> Showing all cases</span>';
+        return;
+      }
+      var html = '<div class="rh-filters">';
+      active.forEach(function (flt, idx) {
+        html += '<span class="rh-chip">' + UI.esc(flt.label) + '<button type="button" class="rh-chip-x" data-rh-clear="' + idx + '" aria-label="Remove filter">&times;</button></span>';
+      });
+      html += '<button type="button" class="rh-clear-btn" id="rhClearBtn">Reset all</button></div>';
+      bar.innerHTML = html;
     }
 
     var CASE_COLS = [
@@ -331,6 +394,17 @@
     $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim(); render(); }, 160));
     $('stats').addEventListener('click', function (e) { var s = e.target.closest('.ui-stat'); if (!s) return; var k = s.getAttribute('data-k'); f.stat = f.stat === k ? '' : k; render(); });
     $('levelTabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-tab'); if (t) setLevel(t.getAttribute('data-l')); });
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var clearBtn = e.target.closest('#rhClearBtn');
+      if (clearBtn) { clearAll(); return; }
+      var chipBtn = e.target.closest('[data-rh-clear]');
+      if (chipBtn) {
+        var idx = parseInt(chipBtn.getAttribute('data-rh-clear'), 10);
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+          currentActiveFilters[idx].clear();
+        }
+      }
+    });
     $('exportBtn').addEventListener('click', function () {
       UI.exportCsv('theft-assessment.csv', [
         { key: 'con', label: 'Consumer ID' }, { key: '_region', label: 'Region' }, { key: '_divn', label: 'Division' }, { key: '_supp', label: 'CCC' }, { key: 'loc', label: 'Location code' },

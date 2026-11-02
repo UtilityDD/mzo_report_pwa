@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Bharat Net · MZO Reports</title>
+  <title>Bharat Net · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -60,12 +60,18 @@
         </section>
 
         <section class="ui-panel">
-          <div class="ui-panel-h">
-            <h2>Detailed analysis</h2>
-            <div class="ui-actions">
-              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
-              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title">Detailed analysis</h2>
+                <span class="rh-badge" id="rhCount">0</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+              </div>
             </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
           </div>
           <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
           <div class="cl-hint" id="hint"></div>
@@ -228,7 +234,52 @@
           : tab === 'applications' ? 'Click any application to view full details and meter number.'
           : 'Monthly progression of GP energizations.');
 
+      var rhEl = $('rhCount');
+      if (rhEl) rhEl.textContent = UI.n(view.length) + ' applications · ' + UI.n(cGiven) + ' connected (' + UI.pct(cGiven, view.length || 1) + ')';
+      renderReportHead(view);
+
       renderTab(view, b);
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(view) {
+      var bar = $('rhFiltersBar');
+      if (!bar) return;
+      var active = [];
+      if (f.q) {
+        active.push({ key: 'q', label: 'Search: ' + f.q, clear: function () { f.q = ''; $('q').value = ''; render(); } });
+      }
+      var rVal = $('regionFilter').value;
+      if (rVal) {
+        active.push({ key: 'region', label: 'Region: ' + rVal, clear: function () { set('regionFilter', ''); set('divisionFilter', ''); set('cccFilter', ''); fillFilters(); render(); } });
+      }
+      var dVal = $('divisionFilter').value;
+      if (dVal) {
+        active.push({ key: 'division', label: 'Division: ' + dVal, clear: function () { set('divisionFilter', ''); set('cccFilter', ''); fillFilters(); render(); } });
+      }
+      var cVal = $('cccFilter').value;
+      if (cVal) {
+        active.push({ key: 'ccc', label: 'CCC: ' + cVal, clear: function () { set('cccFilter', ''); render(); } });
+      }
+      if (f.status) {
+        var stLabel = (STATUS[f.status] && STATUS[f.status].label) || f.status;
+        active.push({ key: 'status', label: 'Status: ' + stLabel, clear: function () { f.status = ''; render(); } });
+      }
+      if (f.month !== '') {
+        var mLabel = MON[f.month % 100] + ' ' + Math.floor(f.month / 100);
+        active.push({ key: 'month', label: 'Month: ' + mLabel, clear: function () { f.month = ''; render(); } });
+      }
+      currentActiveFilters = active;
+      if (!active.length) {
+        bar.innerHTML = '<span class="rh-all-clear"><svg class="ui-i" style="width:13px;height:13px;vertical-align:-2px"><use href="#ui-check"/></svg> Showing all applications</span>';
+        return;
+      }
+      var html = '<div class="rh-filters">';
+      active.forEach(function (flt, idx) {
+        html += '<span class="rh-chip">' + UI.esc(flt.label) + '<button type="button" class="rh-chip-x" data-rh-clear="' + idx + '" aria-label="Remove filter">&times;</button></span>';
+      });
+      html += '<button type="button" class="rh-clear-btn" id="rhClearBtn">Reset all</button></div>';
+      bar.innerHTML = html;
     }
 
     function renderTab(view, b) {
@@ -413,6 +464,17 @@
       tab = scope && (scope.level === 'division' || scope.level === 'ccc') ? 'ccc' : scope && scope.level === 'region' ? 'division' : 'region';
       fillFilters(); render();
     }
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var clearBtn = e.target.closest('#rhClearBtn');
+      if (clearBtn) { clearAll(); return; }
+      var chipBtn = e.target.closest('[data-rh-clear]');
+      if (chipBtn) {
+        var idx = parseInt(chipBtn.getAttribute('data-rh-clear'), 10);
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+          currentActiveFilters[idx].clear();
+        }
+      }
+    });
     $('copyBtn').addEventListener('click', function () {
       if (!lastTable) return;
       var lines = ['*Bharat Net — ' + lastTable.title + '*' + (f.status ? ' (' + STATUS[f.status].label + ')' : ''), lastTable.cols.join(' | ')].concat(lastTable.rows.slice(0, 60).map(function (r) { return r.map(function (c) { return typeof c === 'number' ? UI.n(c) : c; }).join(' | '); }));

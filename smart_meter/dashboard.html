@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Smart meter utilization · MZO Reports</title>
+  <title>Smart meter utilization · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -69,12 +69,18 @@
         </section>
 
         <section class="ui-panel">
-          <div class="ui-panel-h">
-            <h2 id="tableTitle">Detailed analysis</h2>
-            <div class="ui-actions">
-              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
-              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title" id="tableTitle">Detailed analysis</h2>
+                <span class="rh-badge" id="rhCount">0</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+              </div>
             </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
           </div>
           <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
           <div class="rem-hint" id="hint"></div>
@@ -112,17 +118,19 @@
       label: 'activeLabel',
       count: 'activeCount',
       clear: 'clearBtn',
-      onClear: function () {
-        f.q = ''; f.stat = ''; f.type = ''; f.lot = '';
-        $('q').value = '';
-        ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
-          if (!$(id).disabled) $(id).value = '';
-        });
-        fillOffices(); markAll();
-        syncUrl();
-        render();
-      }
+      onClear: clearAll
     });
+
+    function clearAll() {
+      f.q = ''; f.stat = ''; f.type = ''; f.lot = '';
+      $('q').value = '';
+      ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
+        if (!$(id).disabled) $(id).value = '';
+      });
+      fillOffices(); markAll();
+      syncUrl();
+      render();
+    }
 
     function office(d, code) {
       return { _region: d._region, _divn: d._division, _supp: d._ccc || code, CCC_CODE: code };
@@ -305,6 +313,10 @@
 
       window.__view = view;
 
+      var rhEl = $('rhCount');
+      if (rhEl) rhEl.textContent = UI.n(c.n) + ' supplied · ' + UI.n(c.inst) + ' installed (' + UI.pct(c.inst, c.n) + ')';
+      renderReportHead(c);
+
       if (tab === 'region' || tab === 'division' || tab === 'ccc') {
         renderOfficesTab(b, c, wo);
       } else if (tab === 'meters') {
@@ -314,6 +326,49 @@
       } else if (tab === 'types') {
         renderTypesTab(b, c);
       }
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(c) {
+      var bar = $('rhFiltersBar');
+      if (!bar) return;
+      var active = [];
+      if (f.q) {
+        active.push({ key: 'q', label: 'Search: ' + f.q, clear: function () { f.q = ''; $('q').value = ''; syncUrl(); render(); } });
+      }
+      var rVal = $('regionFilter').value;
+      if (rVal) {
+        active.push({ key: 'region', label: 'Region: ' + rVal, clear: function () { $('regionFilter').value = ''; fillOffices(); markAll(); syncUrl(); render(); } });
+      }
+      var dVal = $('divisionFilter').value;
+      if (dVal) {
+        active.push({ key: 'division', label: 'Division: ' + dVal, clear: function () { $('divisionFilter').value = ''; fillOffices(); markAll(); syncUrl(); render(); } });
+      }
+      var cVal = $('cccFilter').value;
+      if (cVal) {
+        active.push({ key: 'ccc', label: 'CCC: ' + cVal, clear: function () { $('cccFilter').value = ''; markAll(); syncUrl(); render(); } });
+      }
+      if (f.stat) {
+        var statLabel = { installed: 'Installed in field', pushed: 'Pushed to AMI', unpushed: 'Installed, not pushed', pending: 'Not installed' }[f.stat] || f.stat;
+        active.push({ key: 'stat', label: 'Status: ' + statLabel, clear: function () { f.stat = ''; syncUrl(); render(); } });
+      }
+      if (f.type) {
+        active.push({ key: 'type', label: 'Type: ' + f.type, clear: function () { f.type = ''; syncUrl(); render(); } });
+      }
+      if (f.lot) {
+        active.push({ key: 'lot', label: 'Lot: ' + f.lot, clear: function () { f.lot = ''; syncUrl(); render(); } });
+      }
+      currentActiveFilters = active;
+      if (!active.length) {
+        bar.innerHTML = '<span class="rh-all-clear"><svg class="ui-i" style="width:13px;height:13px;vertical-align:-2px"><use href="#ui-check"/></svg> Showing all smart meters</span>';
+        return;
+      }
+      var html = '<div class="rh-filters">';
+      active.forEach(function (flt, idx) {
+        html += '<span class="rh-chip">' + UI.esc(flt.label) + '<button type="button" class="rh-chip-x" data-rh-clear="' + idx + '" aria-label="Remove filter">&times;</button></span>';
+      });
+      html += '<button type="button" class="rh-clear-btn" id="rhClearBtn">Reset all</button></div>';
+      bar.innerHTML = html;
     }
 
     function renderOfficesTab(b, c, wo) {
@@ -667,6 +722,18 @@
         { key: 'st', label: 'Status', csv: function (r) { return STATUS[r.st][0]; } }
       ];
       UI.exportCsv('smart-meters.csv', exportCols, window.__view || meters);
+    });
+
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var clearBtn = e.target.closest('#rhClearBtn');
+      if (clearBtn) { clearAll(); return; }
+      var chipBtn = e.target.closest('[data-rh-clear]');
+      if (chipBtn) {
+        var idx = parseInt(chipBtn.getAttribute('data-rh-clear'), 10);
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+          currentActiveFilters[idx].clear();
+        }
+      }
     });
 
     $('copyBtn').addEventListener('click', function () {

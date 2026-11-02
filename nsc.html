@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Pending NSC · MZO Reports</title>
+  <title>Pending NSC · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <!-- auth gate (loads auth.js), app-update check, service worker when opened on its own -->
@@ -98,11 +98,19 @@
         </section>
 
         <section class="ui-panel">
-          <div class="ui-panel-h">
-            <h2>Detailed analysis</h2>
-            <div class="ui-actions">
-              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
-              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title"><svg class="ui-i"><use href="#ui-panel"/></svg><span id="rhTitle">Pending NSC Analysis</span></h2>
+                <span class="rh-badge" id="rhCount">Loading…</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+              </div>
+            </div>
+            <div class="rh-filters-bar" id="rhFiltersBar">
+              <!-- Dynamically populated filter chips / all-clear status -->
             </div>
           </div>
           <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
@@ -259,7 +267,80 @@
       }).join('');
       var kpiName = f.kpi ? document.querySelector('#kpis [data-k="' + f.kpi + '"] .k').getAttribute('title') || document.querySelector('#kpis [data-k="' + f.kpi + '"] .k').textContent : '';
       $('hint').textContent = (kpiName ? 'Showing ' + kpiName.toLowerCase() + ' only. ' : '') + (tab === 'delay2' ? 'Cumulative: an application can sit in more than one row.' : ['region', 'division', 'ccc'].indexOf(tab) !== -1 ? 'Click a row to open the next level.' : '');
+      renderReportHead(view);
       renderTab(view, n);
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(view) {
+      var tabObj = TABS.filter(function (t) { return t[0] === tab; })[0];
+      var tabLabel = tabObj ? tabObj[1] : 'Detailed Analysis';
+      var kpiBtn = f.kpi ? document.querySelector('#kpis [data-k="' + f.kpi + '"]') : null;
+      var kpiTitle = kpiBtn ? (kpiBtn.getAttribute('title') || kpiBtn.querySelector('.k').textContent) : '';
+
+      $('rhTitle').textContent = tabLabel + (kpiTitle ? ' · ' + kpiTitle : '');
+
+      if (view.length === all.length) {
+        $('rhCount').innerHTML = 'Showing all <b>' + UI.n(all.length) + '</b> applications';
+      } else {
+        $('rhCount').innerHTML = 'Showing <b>' + UI.n(view.length) + '</b> of ' + UI.n(all.length) + ' applications <span style="opacity:0.75;font-weight:400">(' + UI.pct(view.length, all.length) + ')</span>';
+      }
+
+      currentActiveFilters = [];
+      if (f.q) {
+        currentActiveFilters.push({ label: 'Search', value: '"' + f.q + '"', clear: function () { f.q = ''; $('q').value = ''; } });
+      }
+      if ($('regionFilter').value && !$('regionFilter').disabled) {
+        currentActiveFilters.push({ label: 'Region', value: $('regionFilter').value, clear: function () { $('regionFilter').value = ''; $('divisionFilter').value = ''; $('cccFilter').value = ''; fillFilters(); } });
+      }
+      if ($('divisionFilter').value && !$('divisionFilter').disabled) {
+        currentActiveFilters.push({ label: 'Division', value: $('divisionFilter').value, clear: function () { $('divisionFilter').value = ''; $('cccFilter').value = ''; fillFilters(); } });
+      }
+      if ($('cccFilter').value && !$('cccFilter').disabled) {
+        currentActiveFilters.push({ label: 'CCC', value: $('cccFilter').value, clear: function () { $('cccFilter').value = ''; fillFilters(); } });
+      }
+      if ($('classFilter').value && !$('classFilter').disabled) {
+        var clsVal = $('classFilter').value;
+        currentActiveFilters.push({ label: 'Class', value: CLASS[clsVal] || clsVal, clear: function () { $('classFilter').value = ''; UI.mark($('classFilter')); } });
+      }
+      if ($('agencyFilter').value && !$('agencyFilter').disabled) {
+        currentActiveFilters.push({ label: 'Agency', value: UI.title($('agencyFilter').value), clear: function () { $('agencyFilter').value = ''; UI.mark($('agencyFilter')); } });
+      }
+      if (f.agri) {
+        var ag = FACETS.agri.filter(function (x) { return x[0] === f.agri; })[0];
+        currentActiveFilters.push({ label: 'Agriculture', value: ag ? ag[1] : f.agri, clear: function () { f.agri = ''; } });
+      }
+      if (f.pole) {
+        var pl = FACETS.pole.filter(function (x) { return x[0] === f.pole; })[0];
+        currentActiveFilters.push({ label: 'Poles', value: pl ? pl[1] : f.pole, clear: function () { f.pole = ''; } });
+      }
+      if (f.wo) {
+        var wo = FACETS.wo.filter(function (x) { return x[0] === f.wo; })[0];
+        currentActiveFilters.push({ label: 'Work Order', value: wo ? wo[1] : f.wo, clear: function () { f.wo = ''; } });
+      }
+      if (f.delay) {
+        currentActiveFilters.push({ label: 'Delay range', value: f.delay, clear: function () { f.delay = ''; } });
+      }
+      if (f.delay2) {
+        currentActiveFilters.push({ label: 'Cumulative delay', value: f.delay2, clear: function () { f.delay2 = ''; } });
+      }
+      if (f.kpi) {
+        currentActiveFilters.push({ label: 'Focus KPI', value: kpiTitle, clear: function () { f.kpi = ''; } });
+      }
+
+      var bar = $('rhFiltersBar');
+      if (currentActiveFilters.length) {
+        var chips = currentActiveFilters.map(function (af, i) {
+          return '<span class="rh-chip"><strong>' + UI.esc(af.label) + ':</strong> ' + UI.esc(af.value) +
+            '<button type="button" class="rh-chip-x" data-rh-clear="' + i + '" title="Remove ' + UI.esc(af.label) + ' filter" aria-label="Remove filter">&times;</button></span>';
+        }).join('');
+        bar.innerHTML = '<div class="rh-filters"><span class="rh-filters-label"><svg class="ui-i sm"><use href="#ui-filter"/></svg>Applied:</span>' +
+          chips + '<button type="button" class="rh-clear-btn" id="rhClearBtn"><svg class="ui-i sm"><use href="#ui-reload"/></svg>Reset all</button></div>';
+      } else {
+        var sc = window.MzoScope && !window.MzoScope.isUnscoped() ? (window.MzoScope.getScope() || {}).label || '' : '';
+        bar.innerHTML = '<div class="rh-all-clear"><span class="ui-dot ok"></span><span>Showing full scope · No active filters</span>' +
+          (sc ? '<span class="rh-scope-pill">Scope: ' + UI.esc(sc) + '</span>' : '') + '</div>';
+      }
     }
 
     function groupTable(view, keyFn, label, order, dots) {
@@ -609,6 +690,20 @@
     $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim(); if (f.q && tab !== 'consumer') tab = 'consumer'; render(); }, 180));
     $('kpis').addEventListener('click', function (e) { var s = e.target.closest('.ui-stat'); if (!s) return; var k = s.getAttribute('data-k'); f.kpi = f.kpi === k ? '' : k; render(); });
     $('tabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-drill-tab'); if (t) { tab = t.getAttribute('data-t'); render(); } });
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var x = e.target.closest('[data-rh-clear]');
+      if (x) {
+        var idx = +x.getAttribute('data-rh-clear');
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+          currentActiveFilters[idx].clear();
+          render();
+        }
+        return;
+      }
+      if (e.target.closest('#rhClearBtn')) {
+        clearAll();
+      }
+    });
     function clearAll() {
       f = { q: '', kpi: '', agri: '', pole: '', wo: '', delay: '', delay2: '' }; $('q').value = '';
       SELECTS.forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });

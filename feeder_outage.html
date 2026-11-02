@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Feeder outage · MZO Reports</title>
+  <title>Feeder outage · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -77,9 +77,17 @@
     </section>
 
     <section class="ui-panel">
-      <div class="ui-panel-h">
-        <h2 id="tableTitle">Feeders</h2>
-        <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+      <div class="report-head" id="reportHead">
+        <div class="rh-top">
+          <div class="rh-title-wrap">
+            <h2 class="rh-title" id="tableTitle">Feeders</h2>
+            <span class="rh-badge" id="rhCount">0</span>
+          </div>
+          <div class="ui-actions">
+            <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+          </div>
+        </div>
+        <div class="rh-filters-bar" id="rhFiltersBar"></div>
       </div>
       <div id="feederTable"><div class="ui-empty">Loading…</div></div>
     </section>
@@ -96,14 +104,16 @@
       countId: 'matchCount',
       clearId: 'clearBtn',
       toggleId: 'sideToggle',
-      onClear: function () {
-        f.q = ''; f.cat = ''; f.nat = ''; f.scheme = '';
-        concernOnly = false; monthPick = ''; $('monthPick').value = '';
-        $('q').value = '';
-        ['regionFilter', 'divisionFilter', 'ssFilter'].forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });
-        fillFilters(); setLevel('all');
-      }
+      onClear: clearAll
     });
+
+    function clearAll() {
+      f.q = ''; f.cat = ''; f.nat = ''; f.scheme = '';
+      concernOnly = false; monthPick = ''; $('monthPick').value = '';
+      $('q').value = '';
+      ['regionFilter', 'divisionFilter', 'ssFilter'].forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });
+      fillFilters(); setLevel('all');
+    }
 
     function mean(a) { if (!a.length) return 0; var s = 0; for (var i = 0; i < a.length; i++) s += a[i]; return s / a.length; }
     function mLabel(m) { return (MON[+String(m).slice(4, 6) - 1] || m) + ' ' + String(m).slice(0, 4); }
@@ -342,9 +352,62 @@
       UI.table('feederTable', cfg);
       window.__export = { cols: cols, rows: cutRows };
 
+      var rhEl = $('rhCount');
+      if (rhEl) rhEl.textContent = UI.n(view.length) + ' feeders' + (concernOnly ? ' (concern)' : '');
+      renderReportHead(view);
+
       var hasOffice = ['regionFilter', 'divisionFilter', 'ssFilter'].some(function (id) { return $(id).value && !$(id).disabled; });
       side.setClear(Boolean(f.q || concernOnly || monthPick || f.cat || f.nat || f.scheme || hasOffice));
       side.setCount(view.length, list.length);
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(view) {
+      var bar = $('rhFiltersBar');
+      if (!bar) return;
+      var active = [];
+      if (f.q) {
+        active.push({ key: 'q', label: 'Search: ' + f.q, clear: function () { f.q = ''; $('q').value = ''; render(); } });
+      }
+      var mVal = $('monthPick').value;
+      if (mVal) {
+        active.push({ key: 'month', label: 'Month: ' + mLabel(mVal), clear: function () { $('monthPick').value = ''; monthPick = ''; render(); } });
+      }
+      var rVal = $('regionFilter').value;
+      if (rVal) {
+        active.push({ key: 'region', label: 'Region: ' + rVal, clear: function () { $('regionFilter').value = ''; $('divisionFilter').value = ''; $('ssFilter').value = ''; fillFilters(); render(); } });
+      }
+      var dVal = $('divisionFilter').value;
+      if (dVal) {
+        active.push({ key: 'division', label: 'Division: ' + dVal, clear: function () { $('divisionFilter').value = ''; $('ssFilter').value = ''; fillFilters(); render(); } });
+      }
+      var sVal = $('ssFilter').value;
+      if (sVal) {
+        active.push({ key: 'ss', label: 'Substation: ' + sVal, clear: function () { $('ssFilter').value = ''; render(); } });
+      }
+      if (f.cat) {
+        active.push({ key: 'cat', label: 'Category: ' + (CAT[f.cat] || f.cat), clear: function () { f.cat = ''; render(); } });
+      }
+      if (f.nat) {
+        active.push({ key: 'nat', label: 'Nature: ' + (NAT[f.nat] || f.nat), clear: function () { f.nat = ''; render(); } });
+      }
+      if (f.scheme) {
+        active.push({ key: 'scheme', label: 'Scheme: ' + f.scheme, clear: function () { f.scheme = ''; render(); } });
+      }
+      if (concernOnly) {
+        active.push({ key: 'concern', label: 'Concern feeders', clear: function () { concernOnly = false; render(); } });
+      }
+      currentActiveFilters = active;
+      if (!active.length) {
+        bar.innerHTML = '<span class="rh-all-clear"><svg class="ui-i" style="width:13px;height:13px;vertical-align:-2px"><use href="#ui-check"/></svg> Showing all feeders</span>';
+        return;
+      }
+      var html = '<div class="rh-filters">';
+      active.forEach(function (flt, idx) {
+        html += '<span class="rh-chip">' + UI.esc(flt.label) + '<button type="button" class="rh-chip-x" data-rh-clear="' + idx + '" aria-label="Remove filter">&times;</button></span>';
+      });
+      html += '<button type="button" class="rh-clear-btn" id="rhClearBtn">Reset all</button></div>';
+      bar.innerHTML = html;
     }
 
     function detail(f) {
@@ -397,6 +460,17 @@
     $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim(); render(); }, 160));
     $('concernStat').addEventListener('click', function () { concernOnly = !concernOnly; render(); });
     $('levelTabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-tab'); if (t) setLevel(t.getAttribute('data-l')); });
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var clearBtn = e.target.closest('#rhClearBtn');
+      if (clearBtn) { clearAll(); return; }
+      var chipBtn = e.target.closest('[data-rh-clear]');
+      if (chipBtn) {
+        var idx = parseInt(chipBtn.getAttribute('data-rh-clear'), 10);
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+          currentActiveFilters[idx].clear();
+        }
+      }
+    });
     $('exportBtn').addEventListener('click', function () {
       var ex = window.__export; if (!ex) return;
       UI.exportCsv('feeder-outage.csv', ex.cols.map(function (c) { return { key: c.key, label: c.label, csv: c.csv || function (r) { var v = r[c.key]; return typeof v === 'number' ? +v.toFixed(2) : v; } }; }), ex.rows);

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Consumers · MZO Reports</title>
+  <title>Consumers · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -70,14 +70,20 @@
         </section>
 
         <section class="ui-panel">
-          <div class="ui-panel-h">
-            <h2>Breakdown</h2>
-            <div class="cs-pick">
-              <span class="ui-select"><select id="rowDim" aria-label="Break down by"></select></span>
-              <span>split by</span>
-              <span class="ui-select"><select id="colDim" aria-label="Split by"></select></span>
-              <button type="button" class="ui-btn sm icon" id="exportBtn" aria-label="Export CSV" title="Export CSV"><svg class="ui-i"><use href="#ui-download"/></svg></button>
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title">Breakdown</h2>
+                <span class="rh-badge" id="rhCount">0</span>
+              </div>
+              <div class="cs-pick">
+                <span class="ui-select"><select id="rowDim" aria-label="Break down by"></select></span>
+                <span>split by</span>
+                <span class="ui-select"><select id="colDim" aria-label="Split by"></select></span>
+                <button type="button" class="ui-btn sm icon" id="exportBtn" aria-label="Export CSV" title="Export CSV"><svg class="ui-i"><use href="#ui-download"/></svg></button>
+              </div>
             </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
           </div>
           <div id="pivot" style="--max-h:640px"><div class="ui-empty">Loading…</div></div>
         </section>
@@ -234,8 +240,52 @@
       $('sGovt').textContent = UI.n(sum(govt, 'COUNT')); $('sGovtS').textContent = 'Outstanding ' + lakh(sum(govt, 'OSD_LAKH'));
       $('asOn').textContent = asOn ? UI.fmtDate(asOn) : '—';
 
+      var rhEl = $('rhCount');
+      if (rhEl) rhEl.textContent = UI.n(c) + ' consumers · ' + lakh(osd) + ' OSD';
+      renderReportHead(b);
+
       renderFacets();
       pivot(b);
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(b) {
+      var bar = $('rhFiltersBar');
+      if (!bar) return;
+      var active = [];
+      var rVal = $('regionFilter').value;
+      if (rVal) {
+        active.push({ key: 'region', label: 'Region: ' + rVal, clear: function () { $('regionFilter').value = ''; fillFilters(); render(); } });
+      }
+      var dVal = $('divisionFilter').value;
+      if (dVal) {
+        active.push({ key: 'division', label: 'Division: ' + dVal, clear: function () { $('divisionFilter').value = ''; fillFilters(); render(); } });
+      }
+      var cVal = $('cccFilter').value;
+      if (cVal) {
+        active.push({ key: 'ccc', label: 'CCC: ' + cVal, clear: function () { $('cccFilter').value = ''; fillFilters(); render(); } });
+      }
+      FACET_DIMS.forEach(function (k) {
+        if (f[k]) {
+          var dimLabel = (DIMS.filter(function (d) { return d[0] === k; })[0] || [k, k])[1];
+          active.push({
+            key: k,
+            label: dimLabel + ': ' + lab(k, f[k]),
+            clear: function () { f[k] = ''; render(); }
+          });
+        }
+      });
+      currentActiveFilters = active;
+      if (!active.length) {
+        bar.innerHTML = '<span class="rh-all-clear"><svg class="ui-i" style="width:13px;height:13px;vertical-align:-2px"><use href="#ui-check"/></svg> Showing all consumers</span>';
+        return;
+      }
+      var html = '<div class="rh-filters">';
+      active.forEach(function (flt, idx) {
+        html += '<span class="rh-chip">' + UI.esc(flt.label) + '<button type="button" class="rh-chip-x" data-rh-clear="' + idx + '" aria-label="Remove filter">&times;</button></span>';
+      });
+      html += '<button type="button" class="rh-clear-btn" id="rhClearBtn">Reset all</button></div>';
+      bar.innerHTML = html;
     }
 
     var last = { rows: [], cols: [] };
@@ -282,6 +332,16 @@
 
     ['rowDim', 'colDim'].forEach(function (id) { $(id).addEventListener('change', function () { $('pivot').__ui = null; render(); }); });
     $('exportBtn').addEventListener('click', function () { UI.exportCsv('consumers-' + $('rowDim').value.replace('_', '') + '.csv', last.cols, last.rows); });
+
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      if (e.target.closest('#rhClearBtn')) { clearAll(); return; }
+      var btn = e.target.closest('[data-rh-clear]');
+      if (!btn) return;
+      var idx = parseInt(btn.getAttribute('data-rh-clear'), 10);
+      if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+        currentActiveFilters[idx].clear();
+      }
+    });
 
     MzoRows.refresh('refreshBtn', 'consumers', function (t) { prepare(t); render(); });
 

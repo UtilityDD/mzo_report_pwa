@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>REM OSD over ₹5,000 · MZO Reports</title>
+  <title>REM OSD over ₹5,000 · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -75,12 +75,18 @@
         </section>
 
         <section class="ui-panel">
-          <div class="ui-panel-h">
-            <h2 id="tableTitle">Detailed analysis</h2>
-            <div class="ui-actions">
-              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
-              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title" id="tableTitle">Detailed analysis</h2>
+                <span class="rh-badge" id="rhCount">0</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+              </div>
             </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
           </div>
           <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
           <div class="cl-hint" id="hint"></div>
@@ -153,6 +159,17 @@
     var tab = 'trend', renderedTab = '', lastTable = null, lastRows = null, f = { q: '', traj: '', bracket: '' };
     var SELECTS = ['regionFilter', 'divisionFilter', 'cccFilter'];
     var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
+
+    function clearAll() {
+      cls = 'Total'; metric = 'amt';
+      f.q = ''; f.traj = ''; f.bracket = '';
+      $('q').value = '';
+      SELECTS.forEach(function (id) { if (!$(id).disabled) set(id, ''); });
+      fillFilters();
+      SELECTS.forEach(function (id) { UI.mark($(id)); });
+      syncControls();
+      render();
+    }
 
     function offices() {
       var reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value;
@@ -292,7 +309,60 @@
           : tab === 'classes' ? 'Breakdown across consumer classes (Domestic, Commercial, Industrial, Others).'
           : 'Top defaulting CCCs with highest outstanding debt.');
 
+      var totAmt = now.reduce(function (s, r) { return s + amt(r, cls); }, 0);
+      var totCnt = now.reduce(function (a, r) { return a + cnt(r, cls); }, 0);
+      var rhEl = $('rhCount');
+      if (rhEl) rhEl.textContent = lakh(totAmt) + ' · ' + UI.n(totCnt) + ' consumers';
+      renderReportHead(now);
+
       renderTab(date, prevDate, o, now, before, scopeLabel);
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(now) {
+      var bar = $('rhFiltersBar');
+      if (!bar) return;
+      var active = [];
+      if (f.q) {
+        active.push({ key: 'q', label: 'Search: ' + f.q, clear: function () { f.q = ''; $('q').value = ''; render(); } });
+      }
+      var rVal = $('regionFilter').value;
+      if (rVal) {
+        active.push({ key: 'region', label: 'Region: ' + rVal, clear: function () { set('regionFilter', ''); set('divisionFilter', ''); set('cccFilter', ''); fillFilters(); SELECTS.forEach(function (id) { UI.mark($(id)); }); render(); } });
+      }
+      var dVal = $('divisionFilter').value;
+      if (dVal) {
+        active.push({ key: 'division', label: 'Division: ' + dVal, clear: function () { set('divisionFilter', ''); set('cccFilter', ''); fillFilters(); SELECTS.forEach(function (id) { UI.mark($(id)); }); render(); } });
+      }
+      var cVal = $('cccFilter').value;
+      if (cVal) {
+        active.push({ key: 'ccc', label: 'CCC: ' + cVal, clear: function () { set('cccFilter', ''); UI.mark($('cccFilter')); render(); } });
+      }
+      if (cls && cls !== 'Total') {
+        active.push({ key: 'cls', label: 'Class: ' + (CLASS_LABEL[cls] || cls), clear: function () { cls = 'Total'; syncControls(); render(); } });
+      }
+      if (metric && metric !== 'amt') {
+        active.push({ key: 'metric', label: 'Measure: Consumers', clear: function () { metric = 'amt'; syncControls(); render(); } });
+      }
+      if (f.traj) {
+        var trLabel = f.traj === 'dec' ? 'Decreased OSD (<0%)' : 'Increased OSD (>0%)';
+        active.push({ key: 'traj', label: 'Trajectory: ' + trLabel, clear: function () { f.traj = ''; render(); } });
+      }
+      if (f.bracket) {
+        var brLabel = f.bracket === 'high' ? '> 50 Lakhs' : f.bracket === 'mid' ? '10 – 50 Lakhs' : '< 10 Lakhs';
+        active.push({ key: 'bracket', label: 'Bracket: ' + brLabel, clear: function () { f.bracket = ''; render(); } });
+      }
+      currentActiveFilters = active;
+      if (!active.length) {
+        bar.innerHTML = '<span class="rh-all-clear"><svg class="ui-i" style="width:13px;height:13px;vertical-align:-2px"><use href="#ui-check"/></svg> Showing all offices</span>';
+        return;
+      }
+      var html = '<div class="rh-filters">';
+      active.forEach(function (flt, idx) {
+        html += '<span class="rh-chip">' + UI.esc(flt.label) + '<button type="button" class="rh-chip-x" data-rh-clear="' + idx + '" aria-label="Remove filter">&times;</button></span>';
+      });
+      html += '<button type="button" class="rh-clear-btn" id="rhClearBtn">Reset all</button></div>';
+      bar.innerHTML = html;
     }
 
     function renderTab(date, prevDate, o, now, before, scopeLabel) {
@@ -612,6 +682,18 @@
 
     $('tabs').addEventListener('click', function (e) {
       var t = e.target.closest('.ui-drill-tab'); if (t) { tab = t.getAttribute('data-t'); render(); }
+    });
+
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var clearBtn = e.target.closest('#rhClearBtn');
+      if (clearBtn) { clearAll(); return; }
+      var chipBtn = e.target.closest('[data-rh-clear]');
+      if (chipBtn) {
+        var idx = parseInt(chipBtn.getAttribute('data-rh-clear'), 10);
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+          currentActiveFilters[idx].clear();
+        }
+      }
     });
 
     $('copyBtn').addEventListener('click', function () {

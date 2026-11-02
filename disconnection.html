@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Disconnection tracker · MZO Reports</title>
+  <title>Disconnection tracker · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -86,15 +86,24 @@
         </section>
 
         <section class="ui-panel">
-          <div class="ui-panel-h dc-list-h">
-            <h2>Detailed report</h2>
-            <div class="right">
-              <div class="ui-seg" id="fuRange" role="group" aria-label="Follow-up range" hidden>
-                <button type="button" data-r="recent" aria-pressed="false">Last 7 days</button>
-                <button type="button" data-r="all" aria-pressed="true">All</button>
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title">
+                  <svg class="ui-i"><use href="#ui-panel"/></svg>
+                  <span id="rhTitle">Detailed report</span>
+                </h2>
+                <span class="rh-badge" id="rhCount">…</span>
               </div>
-              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+              <div class="right" style="display:flex;align-items:center;gap:8px">
+                <div class="ui-seg" id="fuRange" role="group" aria-label="Follow-up range" hidden>
+                  <button type="button" data-r="recent" aria-pressed="false">Last 7 days</button>
+                  <button type="button" data-r="all" aria-pressed="true">All</button>
+                </div>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+              </div>
             </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
           </div>
           <div id="drill"></div>
           <div id="table"><div class="ui-empty">Loading…</div></div>
@@ -428,7 +437,54 @@
       renderReport(view, opts.keepPage);
       renderActivity(view);
       facets();
+      renderReportHead(view);
       renderFollowupBoard(view, true);
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(view) {
+      var lv = dr.level();
+      var label = lv === 'followups' ? 'Follow-up Board' : lv === 'list' ? 'Consumer list' : dr.label() + ' wise report';
+      var stLabel = f.status && f.status !== 'all' ? (STATUS[f.status] ? STATUS[f.status].label : f.status) : '';
+
+      $('rhTitle').textContent = label + (stLabel ? ' · ' + stLabel : '');
+
+      var viewOsd = view.reduce(function (s, c) { return s + (c.osd || 0); }, 0);
+      var allOsd = all.reduce(function (s, c) { return s + (c.osd || 0); }, 0);
+
+      if (view.length === all.length) {
+        $('rhCount').innerHTML = 'Showing all <b>' + UI.n(all.length) + '</b> · ' + rupees(allOsd);
+      } else {
+        $('rhCount').innerHTML = 'Showing <b>' + UI.n(view.length) + '</b> <span style="opacity:0.75;font-weight:400">(' + UI.pct(view.length, all.length) + ')</span> of ' + UI.n(all.length) + ' · ' + rupees(viewOsd);
+      }
+
+      currentActiveFilters = [];
+      if (f.q) {
+        currentActiveFilters.push({ label: 'Search', value: '"' + f.q + '"', clear: function () { f.q = ''; $('q').value = ''; } });
+      }
+      if (f.status && f.status !== 'all') {
+        currentActiveFilters.push({ label: 'Status', value: STATUS[f.status] ? STATUS[f.status].label : f.status, clear: function () { f.status = 'all'; } });
+      }
+      if (f.osd > 0) {
+        currentActiveFilters.push({ label: 'OSD threshold', value: '> ₹' + UI.n(f.osd), clear: function () { f.osd = 0; } });
+      }
+      if (f.cls) {
+        currentActiveFilters.push({ label: 'Class', value: UI.title(f.cls), clear: function () { f.cls = ''; } });
+      }
+
+      var bar = $('rhFiltersBar');
+      if (currentActiveFilters.length) {
+        var chips = currentActiveFilters.map(function (af, i) {
+          return '<span class="rh-chip"><strong>' + UI.esc(af.label) + ':</strong> ' + UI.esc(af.value) +
+            '<button type="button" class="rh-chip-x" data-rh-clear="' + i + '" title="Remove ' + UI.esc(af.label) + ' filter" aria-label="Remove filter">&times;</button></span>';
+        }).join('');
+        bar.innerHTML = '<div class="rh-filters"><span class="rh-filters-label"><svg class="ui-i sm"><use href="#ui-filter"/></svg>Applied:</span>' +
+          chips + '<button type="button" class="rh-clear-btn" id="rhClearBtn"><svg class="ui-i sm"><use href="#ui-reload"/></svg>Reset all</button></div>';
+      } else {
+        var sc = window.MzoScope && !window.MzoScope.isUnscoped() ? (window.MzoScope.getScope() || {}).label || '' : '';
+        bar.innerHTML = '<div class="rh-all-clear"><span class="ui-dot ok"></span><span>Showing full scope · No active filters</span>' +
+          (sc ? '<span class="rh-scope-pill">Scope: ' + UI.esc(sc) + '</span>' : '') + '</div>';
+      }
     }
 
     /* ------------------------------------------------------------------ follow-ups
@@ -775,6 +831,20 @@
       f.q = ''; f.status = 'all'; f.osd = 0; f.cls = ''; followupRecentOnly = false; $('q').value = '';
       render();
     }
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-rh-clear]');
+      if (btn) {
+        var idx = parseInt(btn.getAttribute('data-rh-clear'), 10);
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+          currentActiveFilters[idx].clear();
+          render();
+        }
+        return;
+      }
+      if (e.target.closest('#rhClearBtn')) {
+        clearAll();
+      }
+    });
     $('exportBtn').addEventListener('click', function () {
       if (!lastView.length) { UI.toast('Nothing to export'); return; }
       var where = dr.where();

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Meter utilization · MZO Reports</title>
+  <title>Meter utilization · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -67,12 +67,21 @@
         </section>
 
         <section class="ui-panel">
-          <div class="ui-panel-h">
-            <h2>Detailed analysis</h2>
-            <div class="ui-actions">
-              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
-              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title">
+                  <svg class="ui-i"><use href="#ui-panel"/></svg>
+                  <span id="rhTitle">Detailed Analysis</span>
+                </h2>
+                <span class="rh-badge" id="rhCount">…</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+              </div>
             </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
           </div>
           <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
           <div class="cl-hint" id="hint"></div>
@@ -266,7 +275,68 @@
       $('hint').textContent = (kpiName ? 'Showing ' + kpiName.toLowerCase() + ' only. ' : '') +
         (tab === 'ccc' ? 'Meters booked to a division store have no CCC and are left out here. ' : '') +
         (['region', 'division', 'ccc'].indexOf(tab) !== -1 ? 'Click a row to open the next level.' : tab === 'age' ? 'Age since the meter was received in ERP.' : '');
+      renderReportHead(view);
       renderTab(view);
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(view) {
+      var tabObj = TABS.filter(function (t) { return t[0] === tab; })[0];
+      var tabLabel = tabObj ? tabObj[1] : 'Detailed Analysis';
+      var kEl = f.kpi ? document.querySelector('#kpis [data-k="' + f.kpi + '"] .k') : null;
+      var kpiName = kEl ? kEl.getAttribute('title') || kEl.textContent : '';
+
+      $('rhTitle').textContent = tabLabel + (kpiName ? ' · ' + kpiName : '');
+
+      if (view.length === all.length) {
+        $('rhCount').innerHTML = 'Showing all <b>' + UI.n(all.length) + '</b> meters';
+      } else {
+        $('rhCount').innerHTML = 'Showing <b>' + UI.n(view.length) + '</b> <span style="opacity:0.75;font-weight:400">(' + UI.pct(view.length, all.length) + ')</span> of ' + UI.n(all.length) + ' meters';
+      }
+
+      currentActiveFilters = [];
+      if (f.q) {
+        currentActiveFilters.push({ label: 'Search', value: '"' + f.q + '"', clear: function () { f.q = ''; $('q').value = ''; } });
+      }
+      if ($('regionFilter').value && !$('regionFilter').disabled) {
+        currentActiveFilters.push({ label: 'Region', value: $('regionFilter').value, clear: function () { set('regionFilter', ''); set('divisionFilter', ''); set('cccFilter', ''); fillFilters(); } });
+      }
+      if ($('divisionFilter').value && !$('divisionFilter').disabled) {
+        currentActiveFilters.push({ label: 'Division', value: $('divisionFilter').value, clear: function () { set('divisionFilter', ''); set('cccFilter', ''); fillFilters(); } });
+      }
+      if ($('cccFilter').value && !$('cccFilter').disabled) {
+        currentActiveFilters.push({ label: 'CCC', value: $('cccFilter').value, clear: function () { set('cccFilter', ''); fillFilters(); } });
+      }
+      if (f.kpi && kpiName) {
+        currentActiveFilters.push({ label: 'KPI', value: kpiName, clear: function () { f.kpi = ''; } });
+      }
+      if (f.phase) {
+        currentActiveFilters.push({ label: 'Phase', value: f.phase === '1' ? 'Single phase' : 'Three phase', clear: function () { f.phase = ''; } });
+      }
+      if (f.type) {
+        currentActiveFilters.push({ label: 'Type', value: f.type === 'smart' ? 'Smart meter' : 'Normal meter', clear: function () { f.type = ''; } });
+      }
+      if (f.age) {
+        var ab = AGE.filter(function (x) { return x.key === f.age; })[0];
+        currentActiveFilters.push({ label: 'Received', value: ab ? ab.label : f.age, clear: function () { f.age = ''; } });
+      }
+      if (f.make) {
+        currentActiveFilters.push({ label: 'Make', value: f.make, clear: function () { f.make = ''; } });
+      }
+
+      var bar = $('rhFiltersBar');
+      if (currentActiveFilters.length) {
+        var chips = currentActiveFilters.map(function (af, i) {
+          return '<span class="rh-chip"><strong>' + UI.esc(af.label) + ':</strong> ' + UI.esc(af.value) +
+            '<button type="button" class="rh-chip-x" data-rh-clear="' + i + '" title="Remove ' + UI.esc(af.label) + ' filter" aria-label="Remove filter">&times;</button></span>';
+        }).join('');
+        bar.innerHTML = '<div class="rh-filters"><span class="rh-filters-label"><svg class="ui-i sm"><use href="#ui-filter"/></svg>Applied:</span>' +
+          chips + '<button type="button" class="rh-clear-btn" id="rhClearBtn"><svg class="ui-i sm"><use href="#ui-reload"/></svg>Reset all</button></div>';
+      } else {
+        var sc = window.MzoScope && !window.MzoScope.isUnscoped() ? (window.MzoScope.getScope() || {}).label || '' : '';
+        bar.innerHTML = '<div class="rh-all-clear"><span class="ui-dot ok"></span><span>Showing full scope · No active filters</span>' +
+          (sc ? '<span class="rh-scope-pill">Scope: ' + UI.esc(sc) + '</span>' : '') + '</div>';
+      }
     }
 
     // One row per group. With no KPI selected (and not on Status) the row is a utilization line
@@ -415,6 +485,20 @@
       tab = homeTab();
       fillFilters(); render();
     }
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-rh-clear]');
+      if (btn) {
+        var idx = parseInt(btn.getAttribute('data-rh-clear'), 10);
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+          currentActiveFilters[idx].clear();
+          render();
+        }
+        return;
+      }
+      if (e.target.closest('#rhClearBtn')) {
+        clearAll();
+      }
+    });
     $('topBtn').addEventListener('click', function () { tab = 'meters'; f.kpi = 'hand'; renderedTab = ''; render(); $('table').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     $('copyBtn').addEventListener('click', function () {
       if (!lastTable) return;

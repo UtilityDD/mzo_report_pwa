@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Upcoming DD · MZO Reports</title>
+  <title>Upcoming DD · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -87,12 +87,18 @@
         </section>
 
         <section class="ui-panel">
-          <div class="ui-panel-h">
-            <h2 id="tableTitle">Detailed analysis</h2>
-            <div class="ui-actions">
-              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
-              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title" id="tableTitle">Detailed analysis</h2>
+                <span class="rh-badge" id="rhCount">0</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+              </div>
             </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
           </div>
           <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
           <div class="rem-hint" id="hint"></div>
@@ -148,17 +154,19 @@
       label: 'activeLabel',
       count: 'activeCount',
       clear: 'clearBtn',
-      onClear: function () {
-        f.q = ''; f.stat = ''; f.bucket = ''; f.cls = ''; f.phase = ''; f.govt = ''; f.osd = '';
-        $('q').value = '';
-        ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
-          if (!$(id).disabled) $(id).value = '';
-        });
-        fillFilters(); marks();
-        syncUrl();
-        render();
-      }
+      onClear: clearAll
     });
+
+    function clearAll() {
+      f.q = ''; f.stat = ''; f.bucket = ''; f.cls = ''; f.phase = ''; f.govt = ''; f.osd = '';
+      $('q').value = '';
+      ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
+        if (!$(id).disabled) $(id).value = '';
+      });
+      fillFilters(); marks();
+      syncUrl();
+      render();
+    }
 
     function ymd(s) {
       s = String(s || '').trim();
@@ -310,9 +318,11 @@
       var totN = view.length;
       var avgDef = totN ? Math.round(totOsd / totN) : 0;
       var overdueN = view.filter(STAT.over).length;
-      $('hint').innerHTML = '<span class="ui-strong">' + UI.n(totN) + '</span> consumers · Outstanding: <span class="ui-strong">' + UI.inr(totOsd) + '</span> · Overdue: <span class="ui-strong">' + UI.n(overdueN) + '</span> · Avg default: <span class="ui-strong">' + UI.inr(avgDef) + '</span>';
-
       window.__view = view;
+
+      var rhEl = $('rhCount');
+      if (rhEl) rhEl.textContent = UI.n(totN) + ' consumers · ' + UI.inr(totOsd) + ' OSD';
+      renderReportHead(view);
 
       if (tab === 'region' || tab === 'division' || tab === 'ccc') {
         renderOfficesTab(view, totOsd, totN);
@@ -325,6 +335,60 @@
       } else if (tab === 'osd') {
         renderOsdTab(view, totOsd, totN);
       }
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(view) {
+      var bar = $('rhFiltersBar');
+      if (!bar) return;
+      var active = [];
+      if (f.q) {
+        active.push({ key: 'q', label: 'Search: ' + f.q, clear: function () { f.q = ''; $('q').value = ''; syncUrl(); render(); } });
+      }
+      var rVal = $('regionFilter').value;
+      if (rVal) {
+        active.push({ key: 'region', label: 'Region: ' + rVal, clear: function () { $('regionFilter').value = ''; fillFilters(); marks(); syncUrl(); render(); } });
+      }
+      var dVal = $('divisionFilter').value;
+      if (dVal) {
+        active.push({ key: 'division', label: 'Division: ' + dVal, clear: function () { $('divisionFilter').value = ''; fillFilters(); marks(); syncUrl(); render(); } });
+      }
+      var cVal = $('cccFilter').value;
+      if (cVal) {
+        active.push({ key: 'ccc', label: 'CCC: ' + cVal, clear: function () { $('cccFilter').value = ''; marks(); syncUrl(); render(); } });
+      }
+      if (f.stat) {
+        var statMap = { over: 'DD overdue', week: 'Due in 7 days', month: 'Due in 8–30 days', clear: 'Arrears cleared' };
+        active.push({ key: 'stat', label: 'Urgency: ' + (statMap[f.stat] || f.stat), clear: function () { f.stat = ''; syncUrl(); render(); } });
+      }
+      if (f.bucket) {
+        var bk = BUCKET.filter(function (b) { return b.key === f.bucket; })[0];
+        active.push({ key: 'bucket', label: 'Due: ' + (bk ? bk.label : f.bucket), clear: function () { f.bucket = ''; syncUrl(); render(); } });
+      }
+      if (f.cls) {
+        active.push({ key: 'cls', label: 'Class: ' + (CLASS[f.cls] || f.cls), clear: function () { f.cls = ''; syncUrl(); render(); } });
+      }
+      if (f.osd) {
+        var oMatch = OSD_BUCKETS.filter(function (o) { return o.key === f.osd; })[0];
+        active.push({ key: 'osd', label: 'Outstanding: ' + (oMatch ? oMatch.label : f.osd), clear: function () { f.osd = ''; syncUrl(); render(); } });
+      }
+      if (f.phase) {
+        active.push({ key: 'phase', label: 'Phase: ' + (f.phase === '1' ? 'Single phase' : 'Three phase'), clear: function () { f.phase = ''; syncUrl(); render(); } });
+      }
+      if (f.govt) {
+        active.push({ key: 'govt', label: 'Govt: ' + (f.govt === 'Y' ? 'Government' : 'Non-government'), clear: function () { f.govt = ''; syncUrl(); render(); } });
+      }
+      currentActiveFilters = active;
+      if (!active.length) {
+        bar.innerHTML = '<span class="rh-all-clear"><svg class="ui-i" style="width:13px;height:13px;vertical-align:-2px"><use href="#ui-check"/></svg> Showing all upcoming DD consumers</span>';
+        return;
+      }
+      var html = '<div class="rh-filters">';
+      active.forEach(function (flt, idx) {
+        html += '<span class="rh-chip">' + UI.esc(flt.label) + '<button type="button" class="rh-chip-x" data-rh-clear="' + idx + '" aria-label="Remove filter">&times;</button></span>';
+      });
+      html += '<button type="button" class="rh-clear-btn" id="rhClearBtn">Reset all</button></div>';
+      bar.innerHTML = html;
     }
 
     function renderOfficesTab(view, totOsd, totN) {
@@ -619,6 +683,16 @@
         { key: 'govt', label: 'Govt', csv: function (r) { return r.govt === 'Y' ? 'Yes' : 'No'; } },
         COLS[4], COLS[5], COLS[6], { key: 'bucket', label: 'Bucket' }
       ], window.__view || []);
+    });
+
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      if (e.target.closest('#rhClearBtn')) { clearAll(); return; }
+      var btn = e.target.closest('[data-rh-clear]');
+      if (!btn) return;
+      var idx = parseInt(btn.getAttribute('data-rh-clear'), 10);
+      if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+        currentActiveFilters[idx].clear();
+      }
     });
 
     // Read deep link params on start

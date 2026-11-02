@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Docket calls · MZO Reports</title>
+  <title>Consumer dockets · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -72,12 +72,21 @@
         </section>
 
         <section class="ui-panel">
-          <div class="ui-panel-h">
-            <h2 id="tableTitle">Detailed analysis</h2>
-            <div class="ui-actions">
-              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
-              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title">
+                  <svg class="ui-i"><use href="#ui-panel"/></svg>
+                  <span id="rhTitle">Detailed Analysis</span>
+                </h2>
+                <span class="rh-badge" id="rhCount">…</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+              </div>
             </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
           </div>
           <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
           <div class="rem-hint" id="hint"></div>
@@ -126,17 +135,19 @@
       label: 'activeLabel',
       count: 'activeCount',
       clear: 'clearBtn',
-      onClear: function () {
-        f.q = ''; f.stat = ''; f.type = ''; f.age = ''; f.prob = ''; f.rep = '';
-        $('q').value = '';
-        ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
-          if (!$(id).disabled) $(id).value = '';
-        });
-        fillOffices(); markAll();
-        syncUrl();
-        render();
-      }
+      onClear: clearAll
     });
+
+    function clearAll() {
+      f.q = ''; f.stat = ''; f.type = ''; f.age = ''; f.prob = ''; f.rep = '';
+      $('q').value = '';
+      ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
+        if (!$(id).disabled) $(id).value = '';
+      });
+      fillOffices(); markAll();
+      syncUrl();
+      render();
+    }
 
     // "dd/mm/yyyy hh:mm:ss" (seconds sometimes dotted: 22.44.30)
     function when(s) {
@@ -288,6 +299,7 @@
       $('hint').innerHTML = '<span class="ui-strong">' + UI.n(view.length) + '</span> open dockets · Technical: <span class="ui-strong">' + UI.n(totTech) + '</span> (' + UI.pct(totTech, view.length) + ') · Over 48h: <span class="ui-strong">' + UI.n(totOld) + '</span> (' + UI.pct(totOld, view.length) + ')';
 
       window.__view = view;
+      renderReportHead(view);
 
       if (tab === 'region' || tab === 'division' || tab === 'ccc') {
         renderOfficesTab(view);
@@ -299,6 +311,66 @@
         renderProblemsTab(view);
       } else if (tab === 'repeat') {
         renderRepeatTab(view);
+      }
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(view) {
+      var tabObj = TABS.filter(function (t) { return t.id === tab; })[0];
+      var tabLabel = tabObj ? tabObj.label : 'Detailed Analysis';
+      var kpiLabels = { tech: 'Technical', nontech: 'Non-technical', old: 'Open > 48 hours', repeat: 'Repeat consumers' };
+      var kpiLabel = f.stat && kpiLabels[f.stat] ? kpiLabels[f.stat] : '';
+
+      $('rhTitle').textContent = tabLabel + (kpiLabel ? ' · ' + kpiLabel : '');
+
+      if (view.length === all.length) {
+        $('rhCount').innerHTML = 'Showing all <b>' + UI.n(all.length) + '</b> open dockets';
+      } else {
+        $('rhCount').innerHTML = 'Showing <b>' + UI.n(view.length) + '</b> <span style="opacity:0.75;font-weight:400">(' + UI.pct(view.length, all.length) + ')</span> of ' + UI.n(all.length) + ' open dockets';
+      }
+
+      currentActiveFilters = [];
+      if (f.q) {
+        currentActiveFilters.push({ label: 'Search', value: '"' + f.q + '"', clear: function () { f.q = ''; $('q').value = ''; syncUrl(); } });
+      }
+      if ($('regionFilter').value && !$('regionFilter').disabled) {
+        currentActiveFilters.push({ label: 'Region', value: $('regionFilter').value, clear: function () { $('regionFilter').value = ''; $('divisionFilter').value = ''; $('cccFilter').value = ''; fillOffices(); markAll(); syncUrl(); } });
+      }
+      if ($('divisionFilter').value && !$('divisionFilter').disabled) {
+        currentActiveFilters.push({ label: 'Division', value: $('divisionFilter').value, clear: function () { $('divisionFilter').value = ''; $('cccFilter').value = ''; fillOffices(); markAll(); syncUrl(); } });
+      }
+      if ($('cccFilter').value && !$('cccFilter').disabled) {
+        currentActiveFilters.push({ label: 'CCC', value: $('cccFilter').value, clear: function () { $('cccFilter').value = ''; fillOffices(); markAll(); syncUrl(); } });
+      }
+      if (f.stat && kpiLabels[f.stat]) {
+        currentActiveFilters.push({ label: 'KPI', value: kpiLabels[f.stat], clear: function () { f.stat = ''; syncUrl(); } });
+      }
+      if (f.type) {
+        currentActiveFilters.push({ label: 'Type', value: f.type === 'tech' ? 'Technical' : 'Non-technical', clear: function () { f.type = ''; syncUrl(); } });
+      }
+      if (f.age) {
+        var ab = AGE.filter(function (x) { return x.key === f.age; })[0];
+        currentActiveFilters.push({ label: 'Age', value: ab ? ab.label : f.age, clear: function () { f.age = ''; syncUrl(); } });
+      }
+      if (f.prob) {
+        currentActiveFilters.push({ label: 'Problem', value: f.prob, clear: function () { f.prob = ''; syncUrl(); } });
+      }
+      if (f.rep) {
+        currentActiveFilters.push({ label: 'Repeat', value: 'Repeat consumers only', clear: function () { f.rep = ''; syncUrl(); } });
+      }
+
+      var bar = $('rhFiltersBar');
+      if (currentActiveFilters.length) {
+        var chips = currentActiveFilters.map(function (af, i) {
+          return '<span class="rh-chip"><strong>' + UI.esc(af.label) + ':</strong> ' + UI.esc(af.value) +
+            '<button type="button" class="rh-chip-x" data-rh-clear="' + i + '" title="Remove ' + UI.esc(af.label) + ' filter" aria-label="Remove filter">&times;</button></span>';
+        }).join('');
+        bar.innerHTML = '<div class="rh-filters"><span class="rh-filters-label"><svg class="ui-i sm"><use href="#ui-filter"/></svg>Applied:</span>' +
+          chips + '<button type="button" class="rh-clear-btn" id="rhClearBtn"><svg class="ui-i sm"><use href="#ui-reload"/></svg>Reset all</button></div>';
+      } else {
+        var sc = window.MzoScope && !window.MzoScope.isUnscoped() ? (window.MzoScope.getScope() || {}).label || '' : '';
+        bar.innerHTML = '<div class="rh-all-clear"><span class="ui-dot ok"></span><span>Showing full scope · No active filters</span>' +
+          (sc ? '<span class="rh-scope-pill">Scope: ' + UI.esc(sc) + '</span>' : '') + '</div>';
       }
     }
 
@@ -579,6 +651,21 @@
       if (!b) return;
       tab = b.getAttribute('data-tab');
       syncUrl(); render();
+    });
+
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-rh-clear]');
+      if (btn) {
+        var idx = parseInt(btn.getAttribute('data-rh-clear'), 10);
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+          currentActiveFilters[idx].clear();
+          render();
+        }
+        return;
+      }
+      if (e.target.closest('#rhClearBtn')) {
+        clearAll();
+      }
     });
 
     // Copy summary action

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Weekly deposit vs disposal · MZO Reports</title>
+  <title>Weekly deposit vs disposal · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -96,12 +96,18 @@
         </section>
 
         <section class="ui-panel">
-          <div class="ui-panel-h">
-            <h2>Detailed analysis</h2>
-            <div class="ui-actions">
-              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
-              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title">Detailed analysis</h2>
+                <span class="rh-badge" id="rhCount">0</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+              </div>
             </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
           </div>
           <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
           <div class="cl-hint" id="hint"></div>
@@ -258,7 +264,53 @@
           : ['region', 'division', 'ccc'].indexOf(tab) !== -1 ? 'Click a row to open the next level. ' + (avg ? 'Showing weekly average.' : 'Showing week of ' + UI.fmtDate(new Date(+wk)) + '.')
           : 'Breakdown of deposits and disposals across consumer categories.');
 
+      var badgeText = UI.n(Math.round(t.dep)) + ' dep · ' + UI.n(Math.round(t.dis)) + ' dis';
+      if (inWeek.length) badgeText += ' (' + UI.n(inWeek.length) + ' reports)';
+      var rhEl = $('rhCount');
+      if (rhEl) rhEl.textContent = badgeText;
+      renderReportHead();
+
       renderTab(inWeek, series, rows, nWeeks, avg, wk);
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead() {
+      var bar = $('rhFiltersBar');
+      if (!bar) return;
+      var active = [];
+      var wkVal = $('weekFilter').value;
+      if (wkVal) {
+        active.push({ key: 'week', label: 'Week: ' + UI.fmtDate(new Date(+wkVal)), clear: function () { $('weekFilter').value = ''; UI.mark($('weekFilter')); render(); } });
+      }
+      var rVal = $('regionFilter').value;
+      if (rVal) {
+        active.push({ key: 'region', label: 'Region: ' + rVal, clear: function () { $('regionFilter').value = ''; UI.mark($('regionFilter')); fillOffices(); render(); } });
+      }
+      var dVal = $('divisionFilter').value;
+      if (dVal) {
+        active.push({ key: 'division', label: 'Division: ' + dVal, clear: function () { $('divisionFilter').value = ''; UI.mark($('divisionFilter')); fillOffices(); render(); } });
+      }
+      var cVal = $('cccFilter').value;
+      if (cVal) {
+        active.push({ key: 'ccc', label: 'CCC: ' + cVal, clear: function () { $('cccFilter').value = ''; UI.mark($('cccFilter')); render(); } });
+      }
+      if (f.cat && f.cat !== 'ALL') {
+        active.push({ key: 'cat', label: 'Category: ' + (CAT[f.cat] || f.cat), clear: function () { f.cat = 'ALL'; render(); } });
+      }
+      if (f.metric && f.metric !== 'net') {
+        active.push({ key: 'metric', label: 'Metric: ' + (METRIC[f.metric] ? METRIC[f.metric].label : f.metric), clear: function () { f.metric = 'net'; render(); } });
+      }
+      currentActiveFilters = active;
+      if (!active.length) {
+        bar.innerHTML = '<span class="rh-all-clear"><svg class="ui-i" style="width:13px;height:13px;vertical-align:-2px"><use href="#ui-check"/></svg> Showing all reports</span>';
+        return;
+      }
+      var html = '<div class="rh-filters">';
+      active.forEach(function (flt, idx) {
+        html += '<span class="rh-chip">' + UI.esc(flt.label) + '<button type="button" class="rh-chip-x" data-rh-clear="' + idx + '" aria-label="Remove filter">&times;</button></span>';
+      });
+      html += '<button type="button" class="rh-clear-btn" id="rhClearBtn">Reset all</button></div>';
+      bar.innerHTML = html;
     }
 
     function renderTab(inWeek, series, rows, nWeeks, avg, wk) {
@@ -543,6 +595,17 @@
       SELECTS.forEach(function (id) { set(id, ''); });
       fillOffices(); render();
     }
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var clearBtn = e.target.closest('#rhClearBtn');
+      if (clearBtn) { clearAll(); return; }
+      var chipBtn = e.target.closest('[data-rh-clear]');
+      if (chipBtn) {
+        var idx = parseInt(chipBtn.getAttribute('data-rh-clear'), 10);
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+          currentActiveFilters[idx].clear();
+        }
+      }
+    });
     $('copyBtn').addEventListener('click', function () {
       if (!lastTable) return;
       var lines = ['*Weekly deposit vs disposal — ' + lastTable.title + '*' + (f.cat !== 'ALL' ? ' (' + CAT[f.cat] + ')' : ''), lastTable.cols.join(' | ')].concat(lastTable.rows.slice(0, 60).map(function (r) { return r.map(function (c) { return typeof c === 'number' ? UI.n(Math.round(c)) : c; }).join(' | '); }));

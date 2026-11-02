@@ -3,192 +3,719 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Safety inspection · MZO Reports</title>
+  <title>Safety inspection · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
+  <script src="/mzo_presets_hub.js?v=88"></script>
   <script src="/mzo_ui.js?v=6" defer></script>
   <script src="/mzo_data_hub.js?v=92" defer></script>
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
   <script src="/mzo_rows.js?v=6" defer></script>
   <style>
-    .si-desc { max-width: 380px; white-space: normal; color: var(--mzo-text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .ui-head { align-items: center; }
+    .cl-hint { padding: 8px 16px; color: var(--mzo-muted); font-size: 12.5px; border-bottom: 1px solid var(--mzo-border); }
+    .cl-hint:empty { display: none; }
+    .ui-side-sec-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--mzo-muted); margin-bottom: 6px; }
+    .ui-check-group { display: grid; gap: 3px; }
+    .ui-check-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--mzo-text-2);
+      cursor: pointer;
+      user-select: none;
+      padding: 4px 6px;
+      border-radius: 6px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .ui-check-label:hover {
+      background: var(--mzo-hover);
+      color: var(--mzo-text);
+    }
+    .ui-check-label input[type="checkbox"] {
+      accent-color: var(--mzo-accent);
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+      margin: 0;
+      flex: none;
+    }
+    .ui-check-label span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ui-check-label small { color: var(--mzo-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .sub { display: block; font-size: 11.5px; color: var(--mzo-muted); margin-top: 2px; }
+    .si-desc {
+      max-width: 380px;
+      white-space: normal;
+      color: var(--mzo-text-2);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      line-height: 1.4;
+    }
+
+    /* Executive overview cards */
+    .si-ov-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+      padding: 16px;
+    }
+    .si-card {
+      background: var(--mzo-surface-2);
+      border: 1px solid var(--mzo-border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .si-card-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--mzo-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .si-metric-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 4px 0;
+      border-bottom: 1px dashed var(--mzo-border);
+      font-size: 13px;
+    }
+    .si-metric-row:last-child {
+      border-bottom: none;
+    }
+    .si-metric-label {
+      color: var(--mzo-text-2);
+    }
+    .si-metric-val {
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--mzo-text);
+    }
+
+    /* Visual chart wrappers */
+    .si-chart-box {
+      padding: 0 16px 16px;
+    }
+    .si-chart-box-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--mzo-text);
+      margin: 0 0 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .si-office-subbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      background: var(--mzo-surface-2);
+      border-bottom: 1px solid var(--mzo-border);
+    }
+    .si-office-subbar span {
+      font-size: 12.5px;
+      color: var(--mzo-muted);
+      font-weight: 500;
+    }
   </style>
 </head>
 <body>
   <main class="ui-page">
     <header class="ui-head">
       <div>
-        <h1>Safety inspection</h1>
-        <p id="meta">Loading…</p>
+        <h1>Safety inspection<span class="ui-badge ui-date" id="asOn">…</span></h1>
       </div>
       <div class="ui-actions">
         <div class="ui-seg" id="countBy" role="group" aria-label="Count by">
           <button type="button" data-g="Site ID" aria-pressed="true">By site</button>
           <button type="button" data-g="Inspection ID" aria-pressed="false">By inspection</button>
         </div>
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
     </header>
 
-    <div class="ui-filters">
-      <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Location, issue or inspector" autocomplete="off" /></label>
-      <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
-      <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
-      <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
-      <span class="ui-select"><select id="catFilter" aria-label="Issue type"><option value="">All issue types</option></select></span>
-      <button type="button" class="ui-btn ghost" id="clearBtn" hidden><svg class="ui-i"><use href="#ui-x"/></svg>Clear</button>
-    </div>
-
-    <section class="ui-stats" style="--n:5" id="stats" aria-label="Summary">
-      <button type="button" class="ui-stat" data-k=""><div class="k">Inspected</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="done"><div class="k"><span class="ui-dot ok"></span>Rectified</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <button type="button" class="ui-stat" data-k="open"><div class="k"><span class="ui-dot warn"></span>Pending</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-      <div class="ui-stat"><div class="k">Per week</div><div class="v" id="sWeek"><span class="ui-skel"></span></div><div class="s" id="sWeekS">&nbsp;</div></div>
-      <div class="ui-stat"><div class="k">This week</div><div class="v" id="sNow"><span class="ui-skel"></span></div><div class="s" id="sNowS">&nbsp;</div></div>
-    </section>
-
-    <div class="ui-grid">
-      <section class="ui-panel">
-        <div class="ui-panel-h">
-          <h2>By office</h2>
-          <div class="ui-tabs" role="tablist" id="levelTabs">
-            <button type="button" class="ui-tab" role="tab" data-l="region" aria-selected="true">Region</button>
-            <button type="button" class="ui-tab" role="tab" data-l="division">Division</button>
-            <button type="button" class="ui-tab" role="tab" data-l="ccc">CCC</button>
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h">
+          <h2>Filters<small id="activeLabel"></small></h2>
+          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
+        </div>
+        <div class="ui-side-sec ui-side-stack">
+          <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Search location, issue or inspector" autocomplete="off" aria-label="Search location, issue or inspector" title="Location, issue or inspector" /></label>
+          <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
+          <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
+          <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
+          <span class="ui-select"><select id="catFilter" aria-label="Issue type"><option value="">All issue types</option></select></span>
+          <span class="ui-select"><select id="inspectorFilter" aria-label="Inspected by"><option value="">All inspectors</option></select></span>
+        </div>
+        <div class="ui-side-sec">
+          <div class="ui-side-sec-title">Quick filters</div>
+          <div class="ui-check-group">
+            <label class="ui-check-label"><input type="checkbox" id="chkOpen" /><span>Pending rectification</span><small id="cntOpen"></small></label>
+            <label class="ui-check-label"><input type="checkbox" id="chkDone" /><span>Rectified items</span><small id="cntDone"></small></label>
+            <label class="ui-check-label"><input type="checkbox" id="chkOver30" /><span>Over 30 days pending</span><small id="cntOver30"></small></label>
+            <label class="ui-check-label"><input type="checkbox" id="chkOver90" /><span>Over 90 days (critical)</span><small id="cntOver90"></small></label>
+            <label class="ui-check-label"><input type="checkbox" id="chkThisWeek" /><span>Entered this week</span><small id="cntThisWeek"></small></label>
+            <label class="ui-check-label"><input type="checkbox" id="chkHasPhoto" /><span>Has site photo</span><small id="cntHasPhoto"></small></label>
           </div>
         </div>
-        <div id="officeTable" style="--max-h:520px"><div class="ui-empty">Loading…</div></div>
-      </section>
-      <section class="ui-panel">
-        <div class="ui-panel-h"><h2>Pending by issue</h2></div>
-        <div class="ui-panel-b"><div id="catHist"></div></div>
-      </section>
-    </div>
+        <div class="ui-side-sec">
+          <div class="ui-seg ui-side-tabs" data-tabs role="tablist" aria-label="Facets">
+            <button type="button" role="tab" data-pane="fCat" aria-pressed="true" aria-selected="true">Issue type</button>
+            <button type="button" role="tab" data-pane="fAge" aria-pressed="false" aria-selected="false">Age bracket</button>
+            <button type="button" role="tab" data-pane="fInspector" aria-pressed="false" aria-selected="false">Inspector</button>
+          </div>
+          <div aria-label="Issue type" id="fCat"></div>
+          <div aria-label="Age bracket" id="fAge" hidden></div>
+          <div aria-label="Inspector" id="fInspector" hidden></div>
+        </div>
+      </aside>
 
-    <section class="ui-panel">
-      <div class="ui-panel-h"><h2>Monthly progress</h2><span class="ui-note" id="weekNote"></span></div>
-      <div class="ui-panel-b"><div id="weekChart"><div class="ui-empty">Loading…</div></div></div>
-    </section>
+      <div class="ui-main">
+        <section class="ui-stats" id="stats" aria-label="Summary"></section>
 
-    <section class="ui-panel">
-      <div class="ui-panel-h">
-        <h2 id="listTitle">Pending items <small id="listCount"></small></h2>
-        <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+        <section class="ui-panel">
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title">
+                  <svg class="ui-i"><use href="#ui-panel"/></svg>
+                  <span id="rhTitle">Detailed Analysis</span>
+                </h2>
+                <span class="rh-badge" id="rhCount">…</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+              </div>
+            </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
+          </div>
+          <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
+          <div class="cl-hint" id="hint"></div>
+          <div id="table"><div class="ui-empty">Loading…</div></div>
+        </section>
       </div>
-      <div id="listTable"><div class="ui-empty">Loading…</div></div>
-    </section>
+    </div>
   </main>
 
   <script>
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var raw = [], all = [], groupBy = 'Site ID', status = 'open', level = 'region', weeks = 1, scope = null;
+
+    var raw = [];
+    var all = [];
+    var groupBy = 'Site ID';
+    var level = 'region';
+    var tab = 'overview';
+    var weeks = 1;
+    var scope = null;
+    var lastTable = null;
+
+    var TABS = [
+      ['overview', 'Overview & Trend'],
+      ['office', 'By Office'],
+      ['issues', 'Issue Types'],
+      ['inspectors', 'Inspectors'],
+      ['aging', 'Aging & Delay'],
+      ['inspections', 'Inspections list']
+    ];
+
+    var KPI_STATS = [
+      { key: '', label: 'Total Inspected', dot: '' },
+      { key: 'open', label: 'Pending Rectification', dot: 'warn' },
+      { key: 'done', label: 'Rectified', dot: 'ok' },
+      { key: 'overdue30', label: 'Overdue (>30d)', dot: 'bad' },
+      { key: 'thisWeek', label: 'This Week', dot: 'c1' },
+      { key: 'velocity', label: 'Per Week Velocity', dot: 'c4' }
+    ];
+
+    var KPI_MAP = {
+      '': { label: 'All inspections', test: function () { return true; } },
+      'open': { label: 'Pending rectification', test: function (r) { return !r.done; } },
+      'done': { label: 'Rectified items', test: function (r) { return r.done; } },
+      'overdue30': { label: 'Overdue items (30d+)', test: function (r) { return !r.done && r.days != null && r.days >= 30; } },
+      'thisWeek': { label: 'Inspected this week', test: function (r) { return r.entered && r.entered >= thisMon && r.entered < nextMon; } },
+      'velocity': { label: 'Active items', test: function () { return true; } }
+    };
+
+    var AGE_BRACKETS = [
+      { key: 'fresh', label: '< 7 days', min: 0, max: 6, dot: 'ok' },
+      { key: 'open', label: '7 – 30 days', min: 7, max: 30, dot: 'warn' },
+      { key: 'overdue', label: '30 – 90 days', min: 31, max: 90, dot: 'bad' },
+      { key: 'critical', label: '> 90 days', min: 91, max: Infinity, dot: 'bad' }
+    ];
+
+    var f = {
+      q: '',
+      region: '',
+      division: '',
+      ccc: '',
+      cat: '',
+      inspector: '',
+      chkOpen: false,
+      chkDone: false,
+      chkOver30: false,
+      chkOver90: false,
+      chkThisWeek: false,
+      chkHasPhoto: false,
+      facetCat: '',
+      facetAge: '',
+      facetInspector: '',
+      kpi: 'open'
+    };
+
+    var SELECTS = ['regionFilter', 'divisionFilter', 'cccFilter', 'catFilter', 'inspectorFilter'];
+
+    var thisMon = monday(new Date());
+    var nextMon = new Date(thisMon.getTime() + 7 * 864e5);
+
+    function monday(d) {
+      var x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      var day = x.getDay();
+      x.setDate(x.getDate() - day + (day === 0 ? -6 : 1));
+      return x;
+    }
 
     function category(d) {
       var s = String(d || '').toLowerCase();
       if (s.indexOf('spacer') !== -1) return 'Spacer';
       if (s.indexOf('lt kiosk') !== -1) return 'LT kiosk';
-      if (s.indexOf('ht 11 kv') !== -1) return 'HT 11 kV';
-      if (s.indexOf('ht 33 kv') !== -1) return 'HT 33 kV';
+      if (s.indexOf('ht 11 kv') !== -1 || s.indexOf('11 kv') !== -1 || s.indexOf('11kv') !== -1) return 'HT 11 kV';
+      if (s.indexOf('ht 33 kv') !== -1 || s.indexOf('33 kv') !== -1 || s.indexOf('33kv') !== -1) return 'HT 33 kV';
       if (s.indexOf('lt') !== -1 || s.indexOf('low tension') !== -1) return 'Other LT';
       return 'Other';
     }
-    function monday(d) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); var day = x.getDay(); x.setDate(x.getDate() - day + (day === 0 ? -6 : 1)); return x; }
 
-    // raw: uniform rows of schema/safety_inspection.json, every row of the sheet (loaded with
-    // scope: false). The first row per "Count by" key is kept over the whole sheet, then the login
-    // scope applies (MzoRows.scope, on the canonical office of the Office code), as before.
+    var setActive = UI.sidePanel({
+      side: 'side',
+      toggle: 'sideToggle',
+      label: 'activeLabel',
+      count: 'activeCount',
+      clear: 'clearBtn',
+      onClear: clearAll
+    });
+
+    $('stats').innerHTML = KPI_STATS.map(function (o) {
+      return '<button type="button" class="ui-stat" data-k="' + o.key + '">' +
+        '<div class="k">' + (o.dot ? '<span class="ui-dot ' + o.dot + '"></span>' : '') + UI.esc(o.label) + '</div>' +
+        '<div class="v"><span class="ui-skel"></span></div>' +
+        '<div class="s">&nbsp;</div>' +
+        '</button>';
+    }).join('');
+
     function build() {
       var seen = {}, key = groupBy === 'Site ID' ? 'site_id' : 'inspection_id';
-      all = MzoRows.scope(raw.filter(function (r) { var k = r[key]; if (seen[k]) return false; seen[k] = 1; return true; })).map(function (r) {
-        var m = r.office.match(/\((\d+)\)\s*$/), code = m ? m[1] : '';
+      all = MzoRows.scope(raw.filter(function (r) {
+        var k = r[key];
+        if (!k || seen[k]) return false;
+        seen[k] = 1;
+        return true;
+      })).map(function (r) {
+        var m = (r.office || '').match(/\((\d+)\)\s*$/), code = m ? m[1] : '';
         var done = UI.date(r.rectification_done_on);
+        var ent = UI.date(r.entered_on);
+        var inspDate = UI.date(r.inspected_on);
+        var c = category(r.description);
         var x = {
-          office: UI.title(r.office.replace(/\s*\(\d+\)\s*$/, '')), code: code,
-          _region: r._region, _divn: r._division, _supp: r._ccc, CCC_CODE: code,
-          location: r.location, text: r.description, cat: category(r.description),
-          by: r.inspection_by, entered: UI.date(r.entered_on), inspected: UI.date(r.inspected_on),
-          doneBy: r.rectification_done_by, doneOn: done, remarks: r.remarks,
-          state: r.status, site: r.site_id, insp: r.inspection_id, image: r.image
+          office: UI.title((r.office || '').replace(/\s*\(\d+\)\s*$/, '')),
+          code: code,
+          _region: r._region,
+          _divn: r._division,
+          _supp: r._ccc,
+          CCC_CODE: code,
+          location: r.location || '',
+          text: r.description || '',
+          cat: c,
+          by: r.inspection_by || '',
+          entered: ent,
+          inspected: inspDate,
+          doneBy: r.rectification_done_by || '',
+          doneOn: done,
+          remarks: r.remarks || '',
+          state: r.status || '',
+          site: r.site_id || '',
+          insp: r.inspection_id || '',
+          image: r.image || ''
         };
         x.done = !!done;
         x.days = x.done ? null : UI.days(x.entered);
-        x.search = (x.location + ' ' + x.text + ' ' + x.by + ' ' + x.office).toLowerCase();
+        x.search = (x.location + ' ' + x.text + ' ' + x.by + ' ' + x.office + ' ' + (x._divn || '') + ' ' + (x._region || '') + ' ' + x.cat).toLowerCase();
         return x;
       });
+
       var dates = [];
-      all.forEach(function (x) { if (x.entered) dates.push(x.entered.getTime()); if (x.doneOn) dates.push(x.doneOn.getTime()); });
+      all.forEach(function (x) {
+        if (x.entered) dates.push(x.entered.getTime());
+        if (x.doneOn) dates.push(x.doneOn.getTime());
+      });
       var lo = dates.length ? Math.min.apply(null, dates) : 0, hi = dates.length ? Math.max.apply(null, dates) : 0;
       weeks = Math.max(1, (hi - lo) / 864e5 / 7);
-      $('meta').textContent = (lo ? UI.fmtDate(new Date(lo)) + ' – ' + UI.fmtDate(new Date(hi)) + ' · ' : '') + UI.n(all.length) + (groupBy === 'Site ID' ? ' sites' : ' inspections');
-      var cats = {}; all.forEach(function (x) { cats[x.cat] = 1; });
+
+      var cats = {};
+      var inspectors = {};
+      all.forEach(function (x) {
+        if (x.cat) cats[x.cat] = 1;
+        if (x.by) inspectors[x.by] = 1;
+      });
       UI.fill('catFilter', Object.keys(cats).sort(), 'All issue types');
+      UI.fill('inspectorFilter', Object.keys(inspectors).sort(), 'All inspectors');
+
       fillFilters();
     }
 
     function fillFilters() {
       UI.offices(all);
       if (!scope) scope = UI.lockScope();
-      ['regionFilter', 'divisionFilter', 'cccFilter', 'catFilter'].forEach(function (id) { UI.mark($(id)); });
+      SELECTS.forEach(function (id) { UI.mark($(id)); });
     }
 
-    function base() {
-      var q = $('q').value.trim().toLowerCase(), reg = $('regionFilter').value, div = $('divisionFilter').value, ccc = $('cccFilter').value, cat = $('catFilter').value;
+    function filtered(skip) {
+      var q = f.q.toLowerCase(), v = function (id) { return $(id).value; };
       return all.filter(function (r) {
-        return (!reg || r._region === reg) && (!div || r._divn === div) && (!ccc || r._supp === ccc) && (!cat || r.cat === cat) && (!q || r.search.indexOf(q) !== -1);
+        if (v('regionFilter') && r._region !== v('regionFilter')) return false;
+        if (v('divisionFilter') && r._divn !== v('divisionFilter')) return false;
+        if (v('cccFilter') && r._supp !== v('cccFilter')) return false;
+        if (v('catFilter') && r.cat !== v('catFilter')) return false;
+        if (v('inspectorFilter') && r.by !== v('inspectorFilter')) return false;
+
+        if (skip !== 'checkboxes') {
+          if (f.chkOpen && r.done) return false;
+          if (f.chkDone && !r.done) return false;
+          if (f.chkOver30 && (r.done || r.days == null || r.days < 30)) return false;
+          if (f.chkOver90 && (r.done || r.days == null || r.days < 90)) return false;
+          if (f.chkThisWeek && (!r.entered || r.entered < thisMon || r.entered >= nextMon)) return false;
+          if (f.chkHasPhoto && !r.image) return false;
+        }
+
+        if (skip !== 'cat' && f.facetCat && r.cat !== f.facetCat) return false;
+        if (skip !== 'age' && f.facetAge) {
+          if (f.facetAge === 'done' && !r.done) return false;
+          var ab = AGE_BRACKETS.filter(function (a) { return a.key === f.facetAge; })[0];
+          if (ab && (r.done || r.days == null || r.days < ab.min || r.days > ab.max)) return false;
+        }
+        if (skip !== 'inspector' && f.facetInspector && r.by !== f.facetInspector) return false;
+
+        if (q && r.search.indexOf(q) === -1) return false;
+
+        return true;
       });
     }
-    var STATUS = { '': function () { return true; }, done: function (r) { return r.done; }, open: function (r) { return !r.done; } };
+
+    function renderFacets() {
+      var bCat = filtered('cat');
+      var cats = {};
+      bCat.forEach(function (r) { if (r.cat) cats[r.cat] = (cats[r.cat] || 0) + 1; });
+      var catItems = Object.keys(cats).sort(function (a, b) { return cats[b] - cats[a]; }).map(function (c) {
+        return { value: c, label: c, count: cats[c] };
+      });
+      UI.facet($('fCat'), catItems, f.facetCat, function (val) {
+        f.facetCat = val;
+        render();
+      });
+
+      var bAge = filtered('age');
+      var ageItems = AGE_BRACKETS.map(function (ab) {
+        var count = bAge.filter(function (r) { return !r.done && r.days != null && r.days >= ab.min && r.days <= ab.max; }).length;
+        return { value: ab.key, label: ab.label, count: count, dot: ab.dot };
+      });
+      var doneCount = bAge.filter(function (r) { return r.done; }).length;
+      ageItems.push({ value: 'done', label: 'Rectified', count: doneCount, dot: 'ok' });
+      UI.facet($('fAge'), ageItems, f.facetAge, function (val) {
+        f.facetAge = val;
+        render();
+      });
+
+      var bInsp = filtered('inspector');
+      var inspectors = {};
+      bInsp.forEach(function (r) { if (r.by) inspectors[r.by] = (inspectors[r.by] || 0) + 1; });
+      var inspItems = Object.keys(inspectors).sort(function (a, b) { return inspectors[b] - inspectors[a]; }).slice(0, 15).map(function (i) {
+        return { value: i, label: i, count: inspectors[i] };
+      });
+      UI.facet($('fInspector'), inspItems, f.facetInspector, function (val) {
+        f.facetInspector = val;
+        render();
+      });
+    }
 
     function render() {
-      var b = base(), view = b.filter(STATUS[status]);
-      var thisMon = monday(new Date()), nextMon = new Date(thisMon.getTime() + 7 * 864e5);
-      [].forEach.call(document.querySelectorAll('#stats button.ui-stat'), function (el) {
-        var k = el.getAttribute('data-k'), c = b.filter(STATUS[k]).length;
-        el.querySelector('.v').textContent = UI.n(c);
-        el.querySelector('.s').textContent = k === 'done' ? UI.pct(c, b.length) + ' complete' : k === 'open' ? UI.pct(c, b.length) + ' still open' : (groupBy === 'Site ID' ? 'Unique sites' : 'All inspections');
-        el.setAttribute('aria-pressed', String(status === k));
-      });
-      var nowN = b.filter(function (r) { return r.entered && r.entered >= thisMon && r.entered < nextMon; }).length;
-      $('sWeek').textContent = (b.length / weeks).toFixed(1);
-      $('sWeekS').textContent = 'inspected · ' + (b.filter(STATUS.done).length / weeks).toFixed(1) + ' rectified';
-      $('sNow').textContent = UI.n(nowN);
-      $('sNowS').textContent = 'from ' + UI.fmtDate(thisMon);
+      thisMon = monday(new Date());
+      nextMon = new Date(thisMon.getTime() + 7 * 864e5);
 
-      // Offices
-      var key = level === 'region' ? '_region' : level === 'division' ? '_divn' : '_supp', g = {};
-      b.forEach(function (r) {
-        var name = r[key] || 'Unmapped';
-        var x = g[name] || (g[name] = { name: name, parent: level === 'ccc' ? r._divn : level === 'division' ? r._region : '', n: 0, done: 0, week: 0, last: null });
-        x.n++; if (r.done) x.done++;
-        if (r.entered) { if (r.entered >= thisMon && r.entered < nextMon) x.week++; if (!x.last || r.entered > x.last) x.last = r.entered; }
-      });
-      var list = Object.keys(g).map(function (k) { var x = g[k]; x.open = x.n - x.done; x.perWk = x.n / weeks; return x; });
-      var tot = { n: b.length, done: b.filter(STATUS.done).length, week: nowN };
-      tot.open = tot.n - tot.done;
-      UI.table('officeTable', {
-        rows: list, sort: { key: 'open', dir: 'desc' }, count: false, empty: 'No inspections for these filters.',
-        columns: [
-          { key: 'name', label: { region: 'Region', division: 'Division', ccc: 'CCC' }[level], fmt: function (v, x) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (x.parent ? '<span class="sub">' + UI.esc(x.parent) + '</span>' : ''); } },
-          { key: 'n', label: 'Inspected', num: true, fmt: UI.n },
-          { key: 'open', label: 'Pending', num: true, fmt: UI.n },
-          { key: 'rate', label: 'Rectified', sortVal: function (x) { return x.n ? x.done / x.n : 0; }, fmt: function (_, x) { return UI.bar(x.done, x.n, UI.pct(x.done, x.n, 0), 2); }, width: '24%' },
-          { key: 'week', label: 'This week', num: true, fmt: UI.n, hideSm: true },
-          { key: 'perWk', label: 'Per week', num: true, fmt: function (v) { return v.toFixed(1); }, hideSm: true },
-          { key: 'last', label: 'Last inspection', num: true, hideSm: true, sortVal: function (x) { return x.last ? x.last.getTime() : 0; }, fmt: function (v) { return v ? UI.fmtDate(v) : '—'; } }
-        ],
-        foot: list.length > 1 ? { n: tot.n, open: tot.open, done: tot.done, rate: 0, week: tot.week, perWk: tot.n / weeks, last: null } : null,
-        onRow: function (x) { drill(x.name); }
+      var b = filtered();
+
+      var nOn = (f.q ? 1 : 0) +
+        (f.chkOpen ? 1 : 0) + (f.chkDone ? 1 : 0) + (f.chkOver30 ? 1 : 0) + (f.chkOver90 ? 1 : 0) +
+        (f.chkThisWeek ? 1 : 0) + (f.chkHasPhoto ? 1 : 0) +
+        (f.facetCat ? 1 : 0) + (f.facetAge ? 1 : 0) + (f.facetInspector ? 1 : 0) + (f.kpi ? 1 : 0);
+      SELECTS.forEach(function (id) { if ($(id).value && !$(id).disabled) nOn++; });
+
+      setActive(nOn, {
+        fCat: !!f.facetCat,
+        fAge: !!f.facetAge,
+        fInspector: !!f.facetInspector
       });
 
-      var cats = {};
-      b.filter(STATUS.open).forEach(function (r) { cats[r.cat] = (cats[r.cat] || 0) + 1; });
-      UI.hist('catHist', Object.keys(cats).sort(function (a, c) { return cats[c] - cats[a]; }).map(function (k) { return { key: k, label: k, value: cats[k] }; }),
-        { active: $('catFilter').value, onClick: function (row) { $('catFilter').value = $('catFilter').value === row.key ? '' : row.key; UI.mark($('catFilter')); render(); } });
+      var bChk = filtered('checkboxes');
+      $('cntOpen').textContent = UI.n(bChk.filter(function (r) { return !r.done; }).length);
+      $('cntDone').textContent = UI.n(bChk.filter(function (r) { return r.done; }).length);
+      $('cntOver30').textContent = UI.n(bChk.filter(function (r) { return !r.done && r.days != null && r.days >= 30; }).length);
+      $('cntOver90').textContent = UI.n(bChk.filter(function (r) { return !r.done && r.days != null && r.days >= 90; }).length);
+      $('cntThisWeek').textContent = UI.n(bChk.filter(function (r) { return r.entered && r.entered >= thisMon && r.entered < nextMon; }).length);
+      $('cntHasPhoto').textContent = UI.n(bChk.filter(function (r) { return !!r.image; }).length);
 
-      // Monthly: inspected (by entry date) and rectified (by rectification date), whole span
+      renderFacets();
+
+      var tot = b.length;
+      var openN = b.filter(function (r) { return !r.done; }).length;
+      var doneN = b.filter(function (r) { return r.done; }).length;
+      var overdueN = b.filter(function (r) { return !r.done && r.days != null && r.days >= 30; }).length;
+      var thisWeekN = b.filter(function (r) { return r.entered && r.entered >= thisMon && r.entered < nextMon; }).length;
+      var perWk = (tot / weeks).toFixed(1);
+      var perWkDone = (doneN / weeks).toFixed(1);
+
+      [].forEach.call(document.querySelectorAll('#stats .ui-stat'), function (el) {
+        var k = el.getAttribute('data-k');
+        if (k === '') {
+          el.querySelector('.v').textContent = UI.n(tot);
+          el.querySelector('.s').textContent = groupBy === 'Site ID' ? 'Unique sites' : 'Inspections';
+        } else if (k === 'open') {
+          el.querySelector('.v').textContent = UI.n(openN);
+          el.querySelector('.s').textContent = UI.pct(openN, tot) + ' open backlog';
+        } else if (k === 'done') {
+          el.querySelector('.v').textContent = UI.n(doneN);
+          el.querySelector('.s').textContent = UI.pct(doneN, tot) + ' completed';
+        } else if (k === 'overdue30') {
+          el.querySelector('.v').textContent = UI.n(overdueN);
+          el.querySelector('.s').textContent = openN ? UI.pct(overdueN, openN) + ' of open' : 'None';
+        } else if (k === 'thisWeek') {
+          el.querySelector('.v').textContent = UI.n(thisWeekN);
+          el.querySelector('.s').textContent = 'from ' + UI.fmtDate(thisMon);
+        } else if (k === 'velocity') {
+          el.querySelector('.v').textContent = perWk;
+          el.querySelector('.s').textContent = perWkDone + ' rectified / wk';
+        }
+        el.setAttribute('aria-pressed', String(f.kpi === k));
+      });
+
+      if (all.length) {
+        var dates = all.map(function (x) { return x.entered ? x.entered.getTime() : null; }).filter(Boolean);
+        var lo = dates.length ? Math.min.apply(null, dates) : 0, hi = dates.length ? Math.max.apply(null, dates) : 0;
+        $('asOn').textContent = (lo ? UI.fmtDate(new Date(lo)) + ' – ' + UI.fmtDate(new Date(hi)) + ' · ' : '') + UI.n(all.length) + (groupBy === 'Site ID' ? ' sites' : ' inspections');
+      }
+
+      var view = f.kpi && KPI_MAP[f.kpi] ? b.filter(KPI_MAP[f.kpi].test) : b;
+
+      $('tabs').innerHTML = TABS.map(function (t) {
+        var extra = t[0] === 'inspections' ? '<small>' + UI.n(view.length) + '</small>' : '';
+        return '<button type="button" class="ui-drill-tab" role="tab" data-t="' + t[0] + '" aria-selected="' + (t[0] === tab) + '">' + t[1] + extra + '</button>';
+      }).join('');
+
+      var kpiTitle = f.kpi && KPI_MAP[f.kpi] ? KPI_MAP[f.kpi].label : '';
+      var hintText = (kpiTitle ? 'Showing ' + kpiTitle.toLowerCase() + '. ' : '') +
+        (tab === 'overview' ? 'Executive progress summary, monthly trend chart and issue type breakdown.' :
+         tab === 'office' ? 'Click a row to drill down into division or CCC.' :
+         tab === 'inspections' ? 'Click any inspection to view complete details, site photo and action history.' :
+         'Click any row to filter and drill down.');
+      $('hint').textContent = hintText;
+
+      renderReportHead(view);
+      renderTab(view, b);
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(view) {
+      var tabObj = TABS.filter(function (t) { return t[0] === tab; })[0];
+      var tabLabel = tabObj ? tabObj[1] : 'Detailed Analysis';
+      var kpiTitle = f.kpi && KPI_MAP[f.kpi] ? KPI_MAP[f.kpi].label : '';
+      var itemType = groupBy === 'Site ID' ? 'sites' : 'inspections';
+
+      $('rhTitle').textContent = tabLabel + (kpiTitle ? ' · ' + kpiTitle : '');
+
+      if (view.length === all.length) {
+        $('rhCount').textContent = 'Showing all ' + UI.n(all.length) + ' ' + itemType;
+      } else {
+        $('rhCount').innerHTML = 'Showing <b>' + UI.n(view.length) + '</b> <span style="opacity:0.75;font-weight:400">(' + UI.pct(view.length, all.length) + ')</span> of ' + UI.n(all.length) + ' ' + itemType;
+      }
+
+      currentActiveFilters = [];
+      if (f.q) {
+        currentActiveFilters.push({ label: 'Search', value: '"' + f.q + '"', clear: function () { f.q = ''; $('q').value = ''; } });
+      }
+      if ($('regionFilter').value && !$('regionFilter').disabled) {
+        currentActiveFilters.push({ label: 'Region', value: $('regionFilter').value, clear: function () { $('regionFilter').value = ''; $('divisionFilter').value = ''; $('cccFilter').value = ''; fillFilters(); } });
+      }
+      if ($('divisionFilter').value && !$('divisionFilter').disabled) {
+        currentActiveFilters.push({ label: 'Division', value: $('divisionFilter').value, clear: function () { $('divisionFilter').value = ''; $('cccFilter').value = ''; fillFilters(); } });
+      }
+      if ($('cccFilter').value && !$('cccFilter').disabled) {
+        currentActiveFilters.push({ label: 'CCC', value: $('cccFilter').value, clear: function () { $('cccFilter').value = ''; fillFilters(); } });
+      }
+      if ($('catFilter').value) {
+        currentActiveFilters.push({ label: 'Issue type', value: $('catFilter').value, clear: function () { $('catFilter').value = ''; fillFilters(); } });
+      }
+      if ($('inspectorFilter').value) {
+        currentActiveFilters.push({ label: 'Inspector', value: $('inspectorFilter').value, clear: function () { $('inspectorFilter').value = ''; fillFilters(); } });
+      }
+      if (f.chkOpen) {
+        currentActiveFilters.push({ label: 'Quick', value: 'Pending rectification', clear: function () { f.chkOpen = false; $('chkOpen').checked = false; } });
+      }
+      if (f.chkDone) {
+        currentActiveFilters.push({ label: 'Quick', value: 'Rectified', clear: function () { f.chkDone = false; $('chkDone').checked = false; } });
+      }
+      if (f.chkOver30) {
+        currentActiveFilters.push({ label: 'Quick', value: 'Pending > 30 days', clear: function () { f.chkOver30 = false; $('chkOver30').checked = false; } });
+      }
+      if (f.chkOver90) {
+        currentActiveFilters.push({ label: 'Quick', value: 'Critical > 90 days', clear: function () { f.chkOver90 = false; $('chkOver90').checked = false; } });
+      }
+      if (f.chkThisWeek) {
+        currentActiveFilters.push({ label: 'Quick', value: 'Entered this week', clear: function () { f.chkThisWeek = false; $('chkThisWeek').checked = false; } });
+      }
+      if (f.chkHasPhoto) {
+        currentActiveFilters.push({ label: 'Quick', value: 'Has site photo', clear: function () { f.chkHasPhoto = false; $('chkHasPhoto').checked = false; } });
+      }
+      if (f.facetCat) {
+        currentActiveFilters.push({ label: 'Issue facet', value: f.facetCat, clear: function () { f.facetCat = ''; } });
+      }
+      if (f.facetAge) {
+        var ab = AGE_BRACKETS.filter(function (x) { return x.key === f.facetAge; })[0];
+        currentActiveFilters.push({ label: 'Age facet', value: ab ? ab.label : f.facetAge, clear: function () { f.facetAge = ''; } });
+      }
+      if (f.facetInspector) {
+        currentActiveFilters.push({ label: 'Inspector facet', value: f.facetInspector, clear: function () { f.facetInspector = ''; } });
+      }
+      if (f.kpi && KPI_MAP[f.kpi]) {
+        currentActiveFilters.push({ label: 'KPI', value: KPI_MAP[f.kpi].label, clear: function () { f.kpi = ''; } });
+      }
+
+      var bar = $('rhFiltersBar');
+      if (currentActiveFilters.length) {
+        var chips = currentActiveFilters.map(function (af, i) {
+          return '<span class="rh-chip"><strong>' + UI.esc(af.label) + ':</strong> ' + UI.esc(af.value) +
+            '<button type="button" class="rh-chip-x" data-rh-clear="' + i + '" title="Remove ' + UI.esc(af.label) + ' filter" aria-label="Remove filter">&times;</button></span>';
+        }).join('');
+        bar.innerHTML = '<div class="rh-filters"><span class="rh-filters-label"><svg class="ui-i sm"><use href="#ui-filter"/></svg>Applied:</span>' +
+          chips + '<button type="button" class="rh-clear-btn" id="rhClearBtn"><svg class="ui-i sm"><use href="#ui-reload"/></svg>Reset all</button></div>';
+      } else {
+        var sc = window.MzoScope && !window.MzoScope.isUnscoped() ? (window.MzoScope.getScope() || {}).label || '' : '';
+        bar.innerHTML = '<div class="rh-all-clear"><span class="ui-dot ok"></span><span>Showing full scope · No active filters</span>' +
+          (sc ? '<span class="rh-scope-pill">Scope: ' + UI.esc(sc) + '</span>' : '') + '</div>';
+      }
+    }
+
+    function renderTab(view, b) {
+      var el = $('table');
+      if (tab === 'overview') {
+        renderOverview(view, b, el);
+      } else if (tab === 'office') {
+        renderOfficeTab(b, el);
+      } else if (tab === 'issues') {
+        UI.table(el, groupTable(b, function (r) { return r.cat; }, 'Issue Type', null, null, null, function (name) {
+          f.cat = name;
+          $('catFilter').value = name;
+          tab = 'inspections';
+          render();
+        }));
+      } else if (tab === 'inspectors') {
+        UI.table(el, groupTable(b, function (r) { return r.by || 'Unassigned'; }, 'Inspector / Officer', null, null, null, function (name) {
+          f.inspector = name;
+          $('inspectorFilter').value = name;
+          tab = 'inspections';
+          render();
+        }));
+      } else if (tab === 'aging') {
+        renderAgingTable(b, el);
+      } else if (tab === 'inspections') {
+        renderInspectionsList(view, el);
+      }
+    }
+
+    function renderOverview(view, b, el) {
+      var total = b.length;
+      if (total === 0) {
+        el.innerHTML = '<div class="ui-empty">No safety inspections match the selected filters.</div>';
+        lastTable = null;
+        return;
+      }
+
+      var doneN = b.filter(function (r) { return r.done; }).length;
+      var openN = total - doneN;
+      var overdueN = b.filter(function (r) { return !r.done && r.days != null && r.days >= 30; }).length;
+      var criticalN = b.filter(function (r) { return !r.done && r.days != null && r.days >= 90; }).length;
+
+      var daysArr = b.filter(function (r) { return !r.done && r.days != null; }).map(function (r) { return r.days; });
+      var avgDays = daysArr.length ? (daysArr.reduce(function (s, d) { return s + d; }, 0) / daysArr.length).toFixed(1) : '0';
+      var maxDays = daysArr.length ? Math.max.apply(null, daysArr) : 0;
+
+      var resArr = b.filter(function (r) { return r.done && r.entered && r.doneOn; }).map(function (r) {
+        return Math.max(0, Math.floor((r.doneOn - r.entered) / 864e5));
+      });
+      var avgResolution = resArr.length ? (resArr.reduce(function (s, d) { return s + d; }, 0) / resArr.length).toFixed(1) + ' days' : 'N/A';
+
+      var html = '<div class="si-ov-grid">';
+
+      // Card 1: Rectification & Progress
+      html += '<div class="si-card">' +
+        '<div class="si-card-title">Rectification Progress <span class="ui-dot ok"></span></div>' +
+        '<div class="si-metric-row"><span class="si-metric-label">Total inspected</span><span class="si-metric-val">' + UI.n(total) + '</span></div>' +
+        '<div class="si-metric-row"><span class="si-metric-label">Rectified items</span><span class="si-metric-val">' + UI.n(doneN) + ' (' + UI.pct(doneN, total) + ')</span></div>' +
+        '<div class="si-metric-row"><span class="si-metric-label">Pending rectification</span><span class="si-metric-val">' + UI.n(openN) + ' (' + UI.pct(openN, total) + ')</span></div>' +
+        '<div class="si-metric-row"><span class="si-metric-label">Average resolution time</span><span class="si-metric-val">' + avgResolution + '</span></div>' +
+        '<div class="si-metric-row"><span class="si-metric-label">Weekly rectification velocity</span><span class="si-metric-val">' + (doneN / weeks).toFixed(1) + ' / wk</span></div>' +
+        '</div>';
+
+      // Card 2: Aging & Backlog Risk
+      html += '<div class="si-card">' +
+        '<div class="si-card-title">Backlog &amp; Aging Health <span class="ui-dot warn"></span></div>' +
+        '<div class="si-metric-row"><span class="si-metric-label">Average pending age</span><span class="si-metric-val">' + avgDays + ' days</span></div>' +
+        '<div class="si-metric-row"><span class="si-metric-label">Overdue (>30 days)</span><span class="si-metric-val">' + UI.n(overdueN) + ' (' + (openN ? UI.pct(overdueN, openN) : '0%') + ')</span></div>' +
+        '<div class="si-metric-row"><span class="si-metric-label">Critical (>90 days)</span><span class="si-metric-val">' + UI.n(criticalN) + ' (' + (openN ? UI.pct(criticalN, openN) : '0%') + ')</span></div>' +
+        '<div class="si-metric-row"><span class="si-metric-label">Oldest pending item</span><span class="si-metric-val">' + (maxDays ? UI.n(maxDays) + ' days' : '—') + '</span></div>' +
+        '<div class="si-metric-row"><span class="si-metric-label">Entered this week</span><span class="si-metric-val">' + UI.n(b.filter(function (r) { return r.entered && r.entered >= thisMon && r.entered < nextMon; }).length) + '</span></div>' +
+        '</div>';
+
+      // Card 3: Site Inspection Coverage
+      var uniqueOffices = new Set(b.map(function (r) { return r._supp || r.office; }).filter(Boolean)).size;
+      var uniqueInspectors = new Set(b.map(function (r) { return r.by; }).filter(Boolean)).size;
+      html += '<div class="si-card">' +
+        '<div class="si-card-title">Field Inspection Coverage <span class="ui-dot c1"></span></div>' +
+        '<div class="si-metric-row"><span class="si-metric-label">Covered offices / CCCs</span><span class="si-metric-val">' + uniqueOffices + '</span></div>' +
+        '<div class="si-metric-row"><span class="si-metric-label">Active inspectors</span><span class="si-metric-val">' + uniqueInspectors + '</span></div>' +
+        '<div class="si-metric-row"><span class="si-metric-label">Inspection velocity</span><span class="si-metric-val">' + (total / weeks).toFixed(1) + ' / wk</span></div>' +
+        '<div class="si-metric-row"><span class="si-metric-label">With site photos</span><span class="si-metric-val">' + UI.n(b.filter(function (r) { return !!r.image; }).length) + ' (' + UI.pct(b.filter(function (r) { return !!r.image; }).length, total) + ')</span></div>' +
+        '<div class="si-metric-row"><span class="si-metric-label">Primary issue type</span><span class="si-metric-val">' + (topCategory(b) || '—') + '</span></div>' +
+        '</div>';
+
+      html += '</div>';
+
+      // Visuals: Monthly trend and Pending by category histogram
+      html += '<div class="si-chart-box">' +
+        '<div class="si-chart-box-title"><span>Monthly Inspection &amp; Rectification Progress</span><span class="ui-note" id="monthSpan"></span></div>' +
+        '<div id="ovLineChart" style="min-height:220px"></div>' +
+        '</div>';
+
+      html += '<div class="si-chart-box">' +
+        '<div class="si-chart-box-title"><span>Pending Issues by Category</span></div>' +
+        '<div id="ovCatHist"></div>' +
+        '</div>';
+
+      el.innerHTML = html;
+
+      // Render Monthly Progress Line Chart
       var w = {}, mk = function (d) { return d.getFullYear() * 100 + d.getMonth() + 1; };
       b.forEach(function (r) {
         if (r.entered) { var k1 = mk(r.entered); (w[k1] || (w[k1] = { i: 0, r: 0 })).i++; }
@@ -197,85 +724,647 @@
       var present = Object.keys(w).map(Number).sort(function (a, c) { return a - c; }), keys = [];
       if (present.length) for (var k = present[0]; k <= present[present.length - 1]; k = k % 100 === 12 ? k + 89 : k + 1) { keys.push(k); if (!w[k]) w[k] = { i: 0, r: 0 }; }
       var MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      var narrow = ($('weekChart').clientWidth || 900) < 560;
+      var narrow = ($('ovLineChart').clientWidth || 900) < 560;
       var lab = keys.map(function (k) { return MN[k % 100 - 1] + (narrow ? '' : ' ' + String(Math.floor(k / 100)).slice(2)); });
-      $('weekNote').textContent = keys.length ? keys.length + ' months' : '';
-      UI.line('weekChart', {
-        labels: lab, // UI.line thins crowded labels; blanking them here also blanked the tooltip
-        series: [{ label: 'Rectified', values: keys.map(function (k) { return w[k].r; }) }, { label: 'Inspected', values: keys.map(function (k) { return w[k].i; }), strong: true }],
-        fmt: UI.n, axis: function (v) { return UI.n(v); }, title: 'Monthly progress'
+      var spanEl = $('monthSpan');
+      if (spanEl) spanEl.textContent = keys.length ? keys.length + ' months span' : '';
+
+      UI.line('ovLineChart', {
+        labels: lab,
+        series: [
+          { label: 'Rectified', values: keys.map(function (k) { return w[k].r; }) },
+          { label: 'Inspected', values: keys.map(function (k) { return w[k].i; }), strong: true }
+        ],
+        fmt: UI.n,
+        axis: function (v) { return UI.n(v); },
+        title: 'Monthly progress'
       });
 
-      $('listTitle').firstChild.textContent = (status === 'open' ? 'Pending items ' : status === 'done' ? 'Rectified items ' : 'All items ');
-      $('listCount').textContent = UI.n(view.length);
-      UI.table('listTable', { rows: view, sort: status === 'done' ? { key: 'doneOn', dir: 'desc' } : { key: 'days', dir: 'desc' }, limit: 50, resetPage: true, empty: 'Nothing here.', columns: status === 'open' ? COLS.slice(0, 6) : COLS, onRow: detail });
-      window.__view = view;
-      $('clearBtn').hidden = !($('q').value || $('catFilter').value || status !== 'open' || ['regionFilter', 'divisionFilter', 'cccFilter'].some(function (id) { return $(id).value && !$(id).disabled; }));
+      // Render Issue Category Histogram
+      var cats = {};
+      b.filter(function (r) { return !r.done; }).forEach(function (r) { cats[r.cat] = (cats[r.cat] || 0) + 1; });
+      UI.hist('ovCatHist', Object.keys(cats).sort(function (a, c) { return cats[c] - cats[a]; }).map(function (k) {
+        return { key: k, label: k, value: cats[k] };
+      }), {
+        active: $('catFilter').value,
+        onClick: function (row) {
+          $('catFilter').value = $('catFilter').value === row.key ? '' : row.key;
+          UI.mark($('catFilter'));
+          render();
+        }
+      });
+
+      lastTable = {
+        title: 'Safety inspection executive summary',
+        cols: ['Metric', 'Value'],
+        rows: [
+          ['Total Inspected', total],
+          ['Rectified', doneN + ' (' + UI.pct(doneN, total) + ')'],
+          ['Pending Rectification', openN + ' (' + UI.pct(openN, total) + ')'],
+          ['Overdue (>30 days)', overdueN + ' (' + (openN ? UI.pct(overdueN, openN) : '0%') + ')'],
+          ['Critical Backlog (>90 days)', criticalN],
+          ['Average Pending Age', avgDays + ' days'],
+          ['Average Resolution Time', avgResolution],
+          ['Covered CCCs', uniqueOffices],
+          ['Active Inspectors', uniqueInspectors]
+        ]
+      };
     }
 
-    var COLS = [
-      { key: 'location', label: 'Location', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v || '—') + '</span><span class="sub">' + UI.esc(r.cat) + '</span>'; } },
-      { key: 'text', label: 'Issue', hideSm: true, fmt: function (v) { return '<div class="si-desc">' + UI.esc(v || '—') + '</div>'; } },
-      { key: 'office', label: 'Office', fmt: function (v, r) { return UI.esc(r._supp || v) + '<span class="sub">' + UI.esc(r._divn || r._region) + '</span>'; } },
-      { key: 'by', label: 'Inspected by', hideSm: true },
-      { key: 'entered', label: 'Entered', num: true, hideSm: true, sortVal: function (r) { return r.entered ? r.entered.getTime() : 0; }, fmt: function (v) { return v ? UI.fmtDate(v) : '—'; }, csv: function (r) { return r.entered ? UI.fmtDate(r.entered) : ''; } },
-      { key: 'days', label: 'Status', num: true, sortVal: function (r) { return r.done ? -1 : (r.days || 0); }, fmt: function (v, r) { return r.done ? '<span class="ui-badge ok">Rectified</span>' : '<span class="ui-badge ' + (v >= 30 ? 'bad' : 'warn') + '">' + UI.age(v) + '</span>'; }, csv: function (r) { return r.done ? 'Rectified' : 'Pending ' + r.days + ' days'; } },
-      { key: 'doneOn', label: 'Rectified on', num: true, hideSm: true, sortVal: function (r) { return r.doneOn ? r.doneOn.getTime() : 0; }, fmt: function (v) { return v ? UI.fmtDate(v) : '—'; }, csv: function (r) { return r.doneOn ? UI.fmtDate(r.doneOn) : ''; } }
-    ];
+    function topCategory(arr) {
+      var map = {};
+      arr.forEach(function (r) { if (r.cat) map[r.cat] = (map[r.cat] || 0) + 1; });
+      var top = Object.entries(map).sort(function (a, b) { return b[1] - a[1]; })[0];
+      return top ? top[0] + ' (' + top[1] + ')' : '';
+    }
 
-    function detail(r) {
-      UI.drawer(r.location || 'Inspection', [r._supp || r.office, r._divn].filter(Boolean).join(' · '), [
-        ['Status', r.done ? 'Rectified' : 'Pending for ' + UI.age(r.days)], ['Issue', r.text], ['Issue type', r.cat],
-        ['Inspected by', r.by], ['Inspected on', r.inspected ? UI.fmtDate(r.inspected) : ''], ['Entered on', r.entered ? UI.fmtDate(r.entered) : ''],
-        ['Rectified by', r.doneBy], ['Rectified on', r.doneOn ? UI.fmtDate(r.doneOn) : ''], ['Remarks', r.remarks], ['App status', r.state],
-        ['Site ID', r.site], ['Inspection ID', r.insp], ['Photo', r.image], ['Office', r.office]
-      ]);
+    function renderOfficeTab(b, el) {
+      var key = level === 'region' ? '_region' : level === 'division' ? '_divn' : '_supp', g = {};
+      b.forEach(function (r) {
+        var name = r[key] || 'Unmapped';
+        var x = g[name] || (g[name] = { name: name, parent: level === 'ccc' ? r._divn : level === 'division' ? r._region : '', n: 0, done: 0, week: 0, last: null });
+        x.n++;
+        if (r.done) x.done++;
+        if (r.entered) {
+          if (r.entered >= thisMon && r.entered < nextMon) x.week++;
+          if (!x.last || r.entered > x.last) x.last = r.entered;
+        }
+      });
+
+      var list = Object.keys(g).map(function (k) {
+        var x = g[k];
+        x.open = x.n - x.done;
+        x.perWk = x.n / weeks;
+        return x;
+      });
+      list.sort(function (a, b) { return b.open - a.open; });
+
+      var tot = { n: b.length, done: b.filter(function (r) { return r.done; }).length, week: b.filter(function (r) { return r.entered && r.entered >= thisMon && r.entered < nextMon; }).length };
+      tot.open = tot.n - tot.done;
+
+      var levelHtml = '<div class="si-office-subbar">' +
+        '<span>Hierarchy Level:</span>' +
+        '<div class="ui-seg" role="group" aria-label="Office level">' +
+        '<button type="button" data-l="region"' + (level === 'region' ? ' aria-pressed="true"' : '') + '>Region</button>' +
+        '<button type="button" data-l="division"' + (level === 'division' ? ' aria-pressed="true"' : '') + '>Division</button>' +
+        '<button type="button" data-l="ccc"' + (level === 'ccc' ? ' aria-pressed="true"' : '') + '>CCC</button>' +
+        '</div></div><div id="officeTableInner"></div>';
+
+      el.innerHTML = levelHtml;
+
+      el.querySelectorAll('.si-office-subbar button').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          level = this.getAttribute('data-l');
+          render();
+        });
+      });
+
+      lastTable = {
+        title: 'Office breakdown (' + level + ')',
+        cols: [{ region: 'Region', division: 'Division', ccc: 'CCC' }[level], 'Inspected', 'Pending', 'Rectified', 'Rectification %', 'This week', 'Per week', 'Last inspection'],
+        rows: list.map(function (x) {
+          return [
+            x.name + (x.parent ? ' (' + x.parent + ')' : ''),
+            x.n,
+            x.open,
+            x.done,
+            UI.pct(x.done, x.n),
+            x.week,
+            x.perWk.toFixed(1),
+            x.last ? UI.fmtDate(x.last) : '—'
+          ];
+        })
+      };
+
+      UI.table('officeTableInner', {
+        rows: list,
+        sort: { key: 'open', dir: 'desc' },
+        count: false,
+        empty: 'No inspections for these filters.',
+        columns: [
+          {
+            key: 'name',
+            label: { region: 'Region', division: 'Division', ccc: 'CCC' }[level],
+            fmt: function (v, x) {
+              return '<span class="ui-strong">' + UI.esc(v) + '</span>' +
+                (x.parent ? '<span class="sub">' + UI.esc(x.parent) + '</span>' : '');
+            }
+          },
+          { key: 'n', label: 'Inspected', num: true, fmt: UI.n },
+          {
+            key: 'open',
+            label: 'Pending',
+            num: true,
+            fmt: function (v) {
+              return v ? '<span class="ui-badge warn">' + UI.n(v) + '</span>' : '<span class="ui-badge ok">0</span>';
+            }
+          },
+          {
+            key: 'rate',
+            label: 'Rectified',
+            sortVal: function (x) { return x.n ? x.done / x.n : 0; },
+            fmt: function (_, x) { return UI.bar(x.done, x.n, UI.pct(x.done, x.n, 0), 2); },
+            width: '24%'
+          },
+          { key: 'week', label: 'This week', num: true, fmt: UI.n, hideSm: true },
+          { key: 'perWk', label: 'Per week', num: true, fmt: function (v) { return v.toFixed(1); }, hideSm: true },
+          {
+            key: 'last',
+            label: 'Last inspection',
+            num: true,
+            hideSm: true,
+            sortVal: function (x) { return x.last ? x.last.getTime() : 0; },
+            fmt: function (v) { return v ? UI.fmtDate(v) : '—'; }
+          }
+        ],
+        foot: list.length > 1 ? { n: tot.n, open: tot.open, done: tot.done, rate: 0, week: tot.week, perWk: tot.n / weeks, last: null } : null,
+        onRow: function (x) { drill(x.name); }
+      });
     }
 
     function drill(name) {
-      if (level === 'region') { if ($('regionFilter').disabled) return; $('regionFilter').value = name; $('divisionFilter').value = ''; $('cccFilter').value = ''; level = 'division'; }
-      else if (level === 'division') { if ($('divisionFilter').disabled) return; $('divisionFilter').value = name; $('cccFilter').value = ''; level = 'ccc'; }
-      else { if ($('cccFilter').disabled) return; $('cccFilter').value = $('cccFilter').value === name ? '' : name; }
-      fillFilters(); setLevel(level);
-    }
-    function setLevel(l) {
-      level = l;
-      [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === l)); });
+      if (level === 'region') {
+        if ($('regionFilter').disabled) return;
+        $('regionFilter').value = name;
+        $('divisionFilter').value = '';
+        $('cccFilter').value = '';
+        level = 'division';
+      } else if (level === 'division') {
+        if ($('divisionFilter').disabled) return;
+        $('divisionFilter').value = name;
+        $('cccFilter').value = '';
+        level = 'ccc';
+      } else {
+        if ($('cccFilter').disabled) return;
+        $('cccFilter').value = $('cccFilter').value === name ? '' : name;
+        tab = 'inspections';
+      }
+      fillFilters();
       render();
     }
+
+    function groupTable(b, keyFn, label, order, dots, subKeyFn, onRowAction) {
+      var groups = {}, total = b.length;
+      b.forEach(function (r) {
+        var k = keyFn(r);
+        if (k == null || k === '') k = 'Unknown';
+        (Array.isArray(k) ? k : [k]).forEach(function (kk) {
+          var g = groups[kk] || (groups[kk] = { name: kk, sub: subKeyFn ? subKeyFn(r) : '', n: 0, done: 0, open: 0, over30: 0, over90: 0 });
+          g.n++;
+          if (r.done) g.done++;
+          else {
+            g.open++;
+            if (r.days != null && r.days >= 30) g.over30++;
+            if (r.days != null && r.days >= 90) g.over90++;
+          }
+        });
+      });
+
+      var list = Object.keys(groups).map(function (k) { return groups[k]; });
+      if (order) {
+        list.sort(function (a, b) {
+          var ia = order.indexOf(a.name), ib = order.indexOf(b.name);
+          return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+        });
+      } else {
+        list.sort(function (a, b) { return b.open - a.open; });
+      }
+
+      var max = Math.max.apply(null, list.map(function (g) { return g.n; }).concat([0]));
+
+      lastTable = {
+        title: label,
+        cols: [label, 'Inspected', 'Pending', 'Rectified', 'Rectification %', 'Overdue (>30d)', 'Critical (>90d)', '% Share'],
+        rows: list.map(function (g) {
+          return [
+            g.name + (g.sub ? ' (' + g.sub + ')' : ''),
+            g.n,
+            g.open,
+            g.done,
+            UI.pct(g.done, g.n),
+            g.over30,
+            g.over90,
+            UI.pct(g.n, total)
+          ];
+        })
+      };
+
+      return {
+        rows: list,
+        sort: order ? null : { key: 'open', dir: 'desc' },
+        count: false,
+        empty: 'No items match these filters.',
+        columns: [
+          {
+            key: 'name',
+            label: label,
+            cls: 'wrap',
+            fmt: function (v, g) {
+              return '<span class="ui-strong">' + UI.esc(v) + '</span>' +
+                (g.sub ? '<span class="sub">' + UI.esc(g.sub) + '</span>' : '');
+            }
+          },
+          {
+            key: 'n',
+            label: 'Inspected',
+            num: true,
+            fmt: function (v) {
+              return '<span class="ui-strong">' + UI.n(v) + '</span>' + UI.bar(v, max, UI.pct(v, total));
+            }
+          },
+          {
+            key: 'open',
+            label: 'Pending',
+            num: true,
+            fmt: function (v) {
+              return v ? '<span class="ui-badge warn">' + UI.n(v) + '</span>' : '<span class="ui-badge ok">0</span>';
+            }
+          },
+          {
+            key: 'rate',
+            label: 'Rectified',
+            sortVal: function (g) { return g.n ? g.done / g.n : 0; },
+            fmt: function (_, g) { return UI.bar(g.done, g.n, UI.pct(g.done, g.n, 0), 2); },
+            width: '24%'
+          },
+          {
+            key: 'over30',
+            label: '> 30 days',
+            num: true,
+            hideSm: true,
+            fmt: function (v) {
+              return v ? '<span class="ui-badge bad">' + UI.n(v) + '</span>' : '<span class="ui-muted">0</span>';
+            }
+          },
+          {
+            key: 'over90',
+            label: '> 90 days',
+            num: true,
+            hideSm: true,
+            fmt: function (v) {
+              return v ? '<span class="ui-badge bad">' + UI.n(v) + '</span>' : '<span class="ui-muted">0</span>';
+            }
+          }
+        ],
+        onRow: onRowAction ? function (g) { onRowAction(g.name); } : null
+      };
+    }
+
+    function renderAgingTable(b, el) {
+      var total = b.length;
+      var list = AGE_BRACKETS.map(function (ab) {
+        var items = b.filter(function (r) { return !r.done && r.days != null && r.days >= ab.min && r.days <= ab.max; });
+        return {
+          name: ab.label,
+          key: ab.key,
+          dot: ab.dot,
+          n: items.length,
+          share: UI.pct(items.length, total),
+          status: 'Pending'
+        };
+      });
+
+      var doneItems = b.filter(function (r) { return r.done; });
+      list.push({
+        name: 'Rectified',
+        key: 'done',
+        dot: 'ok',
+        n: doneItems.length,
+        share: UI.pct(doneItems.length, total),
+        status: 'Completed'
+      });
+
+      var max = Math.max.apply(null, list.map(function (g) { return g.n; }).concat([0]));
+
+      lastTable = {
+        title: 'Aging & resolution delay',
+        cols: ['Age bracket', 'Status', 'Count', '% of total'],
+        rows: list.map(function (g) {
+          return [g.name, g.status, g.n, g.share];
+        })
+      };
+
+      UI.table(el, {
+        rows: list,
+        count: false,
+        empty: 'No items found.',
+        columns: [
+          {
+            key: 'name',
+            label: 'Age Bracket',
+            fmt: function (v, g) {
+              return '<span class="ui-dot ' + g.dot + '"></span><span class="ui-strong">' + UI.esc(v) + '</span>';
+            }
+          },
+          {
+            key: 'status',
+            label: 'Status',
+            fmt: function (v, g) {
+              return g.key === 'done' ? '<span class="ui-badge ok">Rectified</span>' : '<span class="ui-badge warn">Pending</span>';
+            }
+          },
+          {
+            key: 'n',
+            label: 'Volume',
+            num: true,
+            fmt: function (v) {
+              return '<span class="ui-strong">' + UI.n(v) + '</span>' + UI.bar(v, max, UI.pct(v, total));
+            }
+          },
+          {
+            key: 'share',
+            label: '% Share',
+            num: true,
+            fmt: function (v) { return v; }
+          }
+        ],
+        onRow: function (g) {
+          f.facetAge = g.key;
+          tab = 'inspections';
+          render();
+        }
+      });
+    }
+
+    function renderInspectionsList(view, el) {
+      lastTable = {
+        title: 'Inspections list',
+        cols: ['Location', 'Issue', 'Issue Type', 'Office', 'Division', 'Inspected By', 'Entered', 'Status', 'Days Pending', 'Rectified By', 'Rectified On', 'Site ID', 'Inspection ID'],
+        rows: view.map(function (r) {
+          return [
+            r.location,
+            r.text,
+            r.cat,
+            r.office,
+            r._divn || '',
+            r.by,
+            r.entered ? UI.fmtDate(r.entered) : '',
+            r.done ? 'Rectified' : 'Pending',
+            r.done ? '' : (r.days || 0),
+            r.doneBy || '',
+            r.doneOn ? UI.fmtDate(r.doneOn) : '',
+            r.site,
+            r.insp
+          ];
+        })
+      };
+
+      UI.table(el, {
+        rows: view,
+        sort: { key: 'entered', dir: 'desc' },
+        limit: 50,
+        resetPage: true,
+        empty: 'No inspections match these filters.',
+        columns: [
+          {
+            key: 'location',
+            label: 'Location & Issue',
+            cls: 'wrap',
+            fmt: function (v, r) {
+              return '<span class="ui-strong">' + UI.esc(v || '—') + '</span>' +
+                '<span class="sub">' + UI.esc(r.cat) + (r.image ? ' · <span style="color:var(--mzo-accent)">📷 Photo</span>' : '') + '</span>';
+            }
+          },
+          {
+            key: 'text',
+            label: 'Description',
+            hideSm: true,
+            fmt: function (v) {
+              return '<div class="si-desc">' + UI.esc(v || '—') + '</div>';
+            }
+          },
+          {
+            key: 'office',
+            label: 'Office & Division',
+            cls: 'wrap',
+            fmt: function (v, r) {
+              return UI.esc(r._supp || v) + '<span class="sub">' + UI.esc(r._divn || r._region) + '</span>';
+            }
+          },
+          {
+            key: 'by',
+            label: 'Inspected by',
+            hideSm: true,
+            fmt: function (v, r) {
+              return UI.esc(v || '—') + (r.inspected ? '<span class="sub">' + UI.fmtDate(r.inspected) : (r.entered ? '<span class="sub">' + UI.fmtDate(r.entered) : '')) + '</span>';
+            }
+          },
+          {
+            key: 'days',
+            label: 'Status',
+            num: true,
+            sortVal: function (r) { return r.done ? -1 : (r.days || 0); },
+            fmt: function (v, r) {
+              return r.done
+                ? '<span class="ui-badge ok">Rectified</span>'
+                : '<span class="ui-badge ' + (v >= 30 ? 'bad' : 'warn') + '">' + UI.age(v) + '</span>';
+            }
+          },
+          {
+            key: 'doneOn',
+            label: 'Rectified on',
+            num: true,
+            hideSm: true,
+            sortVal: function (r) { return r.doneOn ? r.doneOn.getTime() : 0; },
+            fmt: function (v) { return v ? UI.fmtDate(v) : '<span class="ui-muted">—</span>'; }
+          }
+        ],
+        onRow: detail
+      });
+    }
+
+    function detail(r) {
+      var pairs = [
+        ['Status', r.done ? 'Rectified' : 'Pending for ' + UI.age(r.days)],
+        ['Location', r.location || '—'],
+        ['Office', r.office || '—'],
+        ['Division', r._divn || '—'],
+        ['Region', r._region || '—'],
+        ['Issue Description', r.text || '—'],
+        ['Issue Category', r.cat || '—'],
+        ['Inspected by', r.by || '—'],
+        ['Inspected on', r.inspected ? UI.fmtDate(r.inspected) : '—'],
+        ['Entered on', r.entered ? UI.fmtDate(r.entered) : '—'],
+        ['Rectified by', r.doneBy || '—'],
+        ['Rectified on', r.doneOn ? UI.fmtDate(r.doneOn) : '—'],
+        ['Remarks', r.remarks || '—'],
+        ['App Status', r.state || '—'],
+        ['Site ID', r.site || '—'],
+        ['Inspection ID', r.insp || '—'],
+        ['Days Pending', r.done ? 'Completed' : (r.days != null ? r.days + ' days' : '—')]
+      ];
+
+      var extraHtml = '';
+      if (r.image) {
+        extraHtml += '<div style="margin-top:16px">' +
+          '<div style="font-size:12px;font-weight:600;color:var(--mzo-muted);text-transform:uppercase;margin-bottom:8px">Site Inspection Photo</div>' +
+          '<a href="' + UI.esc(r.image) + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:6px;background:var(--mzo-surface-2);border:1px solid var(--mzo-border);color:var(--mzo-accent);font-size:13px;text-decoration:none;font-weight:500">' +
+          '<svg class="ui-i"><use href="#ui-arrow"/></svg>View high-resolution site photo' +
+          '</a>' +
+          '</div>';
+      }
+
+      var actionsHtml = '<button type="button" class="ui-btn sm" id="copyInspectionBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy summary</button>';
+
+      UI.drawer(
+        r.location || 'Safety Inspection',
+        [r._supp || r.office, r._divn, r._region].filter(Boolean).join(' · '),
+        pairs,
+        extraHtml,
+        actionsHtml
+      );
+
+      var copyBtn = document.getElementById('copyInspectionBtn');
+      if (copyBtn) {
+        copyBtn.onclick = function () {
+          var summary = 'SAFETY INSPECTION - ' + (r.site || r.insp || '') + '\n' +
+            'Location: ' + (r.location || '—') + '\n' +
+            'Office: ' + (r._supp || r.office || '') + ' (' + (r._divn || '') + ')\n' +
+            'Issue (' + r.cat + '): ' + (r.text || '—') + '\n' +
+            'Inspected by: ' + (r.by || '—') + ' on ' + (r.entered ? UI.fmtDate(r.entered) : '') + '\n' +
+            'Status: ' + (r.done ? 'RECTIFIED on ' + UI.fmtDate(r.doneOn) + ' by ' + (r.doneBy || '') : 'PENDING for ' + UI.age(r.days));
+          UI.copy(summary).then(function () { UI.toast('Inspection summary copied'); });
+        };
+      }
+    }
+
+    function clearAll() {
+      f.q = '';
+      f.chkOpen = false;
+      f.chkDone = false;
+      f.chkOver30 = false;
+      f.chkOver90 = false;
+      f.chkThisWeek = false;
+      f.chkHasPhoto = false;
+      f.facetCat = '';
+      f.facetAge = '';
+      f.facetInspector = '';
+      f.kpi = 'open';
+      $('q').value = '';
+      $('chkOpen').checked = false;
+      $('chkDone').checked = false;
+      $('chkOver30').checked = false;
+      $('chkOver90').checked = false;
+      $('chkThisWeek').checked = false;
+      $('chkHasPhoto').checked = false;
+      SELECTS.forEach(function (id) {
+        if (!$(id).disabled) $(id).value = '';
+      });
+      fillFilters();
+      level = 'region';
+      render();
+    }
+
+    // Event listeners
+    $('q').addEventListener('input', UI.debounce(function () {
+      f.q = this.value.trim();
+      render();
+    }, 150));
 
     ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
       $(id).addEventListener('change', function () {
         if (id === 'regionFilter') { $('divisionFilter').value = ''; $('cccFilter').value = ''; }
         if (id === 'divisionFilter') $('cccFilter').value = '';
-        fillFilters(); render();
+        fillFilters();
+        render();
       });
     });
-    $('catFilter').addEventListener('change', function () { UI.mark(this); render(); });
-    $('q').addEventListener('input', UI.debounce(render, 160));
-    $('stats').addEventListener('click', function (e) { var s = e.target.closest('button.ui-stat'); if (s) { status = s.getAttribute('data-k'); render(); } });
-    $('levelTabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-tab'); if (t) setLevel(t.getAttribute('data-l')); });
+
+    ['catFilter', 'inspectorFilter'].forEach(function (id) {
+      $(id).addEventListener('change', function () {
+        SELECTS.forEach(function (selId) { UI.mark($(selId)); });
+        render();
+      });
+    });
+
+    ['chkOpen', 'chkDone', 'chkOver30', 'chkOver90', 'chkThisWeek', 'chkHasPhoto'].forEach(function (id) {
+      $(id).addEventListener('change', function () {
+        f[id] = this.checked;
+        render();
+      });
+    });
+
+    $('stats').addEventListener('click', function (e) {
+      var s = e.target.closest('.ui-stat');
+      if (!s) return;
+      var k = s.getAttribute('data-k');
+      f.kpi = f.kpi === k ? '' : k;
+      render();
+    });
+
+    $('tabs').addEventListener('click', function (e) {
+      var b = e.target.closest('.ui-drill-tab');
+      if (!b) return;
+      tab = b.getAttribute('data-t');
+      render();
+    });
+
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-rh-clear]');
+      if (btn) {
+        var idx = parseInt(btn.getAttribute('data-rh-clear'), 10);
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+          currentActiveFilters[idx].clear();
+          render();
+        }
+        return;
+      }
+      if (e.target.closest('#rhClearBtn')) {
+        clearAll();
+      }
+    });
+
     $('countBy').addEventListener('click', function (e) {
-      var bt = e.target.closest('button'); if (!bt) return;
+      var bt = e.target.closest('button');
+      if (!bt) return;
       groupBy = bt.getAttribute('data-g');
-      [].forEach.call(this.querySelectorAll('button'), function (x) { x.setAttribute('aria-pressed', String(x === bt)); });
-      build(); render();
+      [].forEach.call(this.querySelectorAll('button'), function (x) {
+        x.setAttribute('aria-pressed', String(x === bt));
+      });
+      build();
+      render();
     });
-    $('clearBtn').addEventListener('click', function () {
-      $('q').value = ''; $('catFilter').value = ''; status = 'open';
-      ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });
-      fillFilters(); setLevel('region');
+
+    $('copyBtn').addEventListener('click', function () {
+      if (!lastTable || !lastTable.rows.length) {
+        UI.toast('Nothing to copy');
+        return;
+      }
+      var t = lastTable.cols.join('\t') + '\n' +
+        lastTable.rows.map(function (r) { return r.join('\t'); }).join('\n');
+      UI.copy(t).then(function () { UI.toast(lastTable.title + ' copied'); });
     });
+
     $('exportBtn').addEventListener('click', function () {
-      UI.exportCsv('safety-inspection.csv', [{ key: 'location', label: 'Location' }, { key: 'text', label: 'Issue' }, { key: 'cat', label: 'Issue type' }, { key: '_region', label: 'Region' }, { key: '_divn', label: 'Division' }, { key: 'office', label: 'Office' }, { key: 'by', label: 'Inspected by' }]
-        .concat(COLS.slice(4)).concat([{ key: 'doneBy', label: 'Rectified by' }, { key: 'remarks', label: 'Remarks' }]), window.__view || []);
+      if (!lastTable || !lastTable.rows.length) {
+        UI.toast('Nothing to export');
+        return;
+      }
+      var cols = lastTable.cols.map(function (c, i) {
+        return { key: i, label: c };
+      });
+      UI.exportCsv('safety-inspection-' + tab + '.csv', cols, lastTable.rows);
     });
-    MzoRows.refresh('refreshBtn', 'safety_inspection', function (t) { raw = t.rows; build(); render(); }, { scope: false });
+
+    // Refresh & Initial Load
+    MzoRows.refresh('refreshBtn', 'safety_inspection', function (t) {
+      raw = t.rows;
+      build();
+      render();
+    }, { scope: false });
 
     MzoRows.load('safety_inspection', function (t, info) {
-      if (!t) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('listTable').innerHTML = $('officeTable').innerHTML = '<div class="ui-empty">Could not load data.</div>'; } return; }
-      raw = t.rows; build(); render();
+      if (!t) {
+        if (info && info.error) {
+          $('table').innerHTML = '<div class="ui-empty">Could not load safety inspection data. Please refresh.</div>';
+        }
+        return;
+      }
+      raw = t.rows;
+      build();
+      render();
     }, { scope: false });
+
   });
   </script>
 </body>

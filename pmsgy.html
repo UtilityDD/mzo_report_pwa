@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PM Surya Ghar · MZO Reports</title>
+  <title>PM Surya Ghar · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -72,9 +72,17 @@
         </section>
 
         <section class="ui-panel">
-          <div class="ui-panel-h">
-            <h2>Applications <small id="appCount"></small></h2>
-            <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title">Applications</h2>
+                <span class="rh-badge" id="rhCount">0</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+              </div>
+            </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
           </div>
           <div id="appTable"><div class="ui-empty">Loading…</div></div>
         </section>
@@ -308,9 +316,63 @@
         });
       }
 
-      $('appCount').textContent = UI.n(view.length);
+      var totKw = view.reduce(function (sum, r) { return sum + (r.kw || 0); }, 0);
+      var rhEl = $('rhCount');
+      if (rhEl) rhEl.textContent = UI.n(view.length) + (totKw ? ' · ' + UI.n(Math.round(totKw)) + ' kW' : '');
+      renderReportHead(view);
       UI.table('appTable', { rows: view, sort: { key: 'last', dir: 'desc' }, limit: 50, resetPage: true, empty: 'No applications in this view.', columns: COLS, onRow: detail });
       window.__view = view;
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(view) {
+      var bar = $('rhFiltersBar');
+      if (!bar) return;
+      var active = [];
+      if (f.q) {
+        active.push({ key: 'q', label: 'Search: ' + f.q, clear: function () { f.q = ''; $('q').value = ''; render(); } });
+      }
+      var rVal = $('regionFilter').value;
+      if (rVal) {
+        active.push({ key: 'region', label: 'Region: ' + rVal, clear: function () { $('regionFilter').value = ''; fillFilters(); render(); } });
+      }
+      var dVal = $('divisionFilter').value;
+      if (dVal) {
+        active.push({ key: 'division', label: 'Division: ' + dVal, clear: function () { $('divisionFilter').value = ''; fillFilters(); render(); } });
+      }
+      var cVal = $('cccFilter').value;
+      if (cVal) {
+        active.push({ key: 'ccc', label: 'CCC: ' + cVal, clear: function () { $('cccFilter').value = ''; render(); } });
+      }
+      if (f.cat) {
+        var cMatch = CATEGORIES.filter(function (c) { return c.key === f.cat; })[0];
+        active.push({ key: 'cat', label: 'Category: ' + (cMatch ? cMatch.label : f.cat), clear: function () { f.cat = ''; render(); } });
+      }
+      if (f.step) {
+        var sMatch = STEPS.filter(function (s) { return s.key === f.step; })[0];
+        active.push({ key: 'step', label: 'Stage: ' + (sMatch ? sMatch.label : f.step), clear: function () { f.step = ''; render(); } });
+      }
+      if (f.load) {
+        var lMatch = LOAD.filter(function (l) { return l.key === f.load; })[0];
+        active.push({ key: 'load', label: 'Capacity: ' + (lMatch ? lMatch.label : f.load), clear: function () { f.load = ''; render(); } });
+      }
+      if (f.vendor) {
+        active.push({ key: 'vendor', label: 'Vendor: ' + f.vendor, clear: function () { f.vendor = ''; render(); } });
+      }
+      if (stageDrill) {
+        active.push({ key: 'stageDrill', label: 'Drill: ' + stageDrill[0] + (stageDrill[1] && stageDrill[1] !== 'Blank' ? ' / ' + stageDrill[1] : ''), clear: function () { stageDrill = null; render(); } });
+      }
+      currentActiveFilters = active;
+      if (!active.length) {
+        bar.innerHTML = '<span class="rh-all-clear"><svg class="ui-i" style="width:13px;height:13px;vertical-align:-2px"><use href="#ui-check"/></svg> Showing all applications</span>';
+        return;
+      }
+      var html = '<div class="rh-filters">';
+      active.forEach(function (flt, idx) {
+        html += '<span class="rh-chip">' + UI.esc(flt.label) + '<button type="button" class="rh-chip-x" data-rh-clear="' + idx + '" aria-label="Remove filter">&times;</button></span>';
+      });
+      html += '<button type="button" class="rh-clear-btn" id="rhClearBtn">Reset all</button></div>';
+      bar.innerHTML = html;
     }
 
     function progress(r) { return r.connected ? ['ok', 'Connected'] : r.installed ? ['warn', 'Installed'] : r.agreement ? ['', 'Agreement'] : r.vendorSet ? ['', 'Vendor'] : ['', 'Applied']; }
@@ -359,6 +421,17 @@
       render();
     });
     $('tabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-tab'); if (t) { tab = t.getAttribute('data-t'); render(); } });
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var clearBtn = e.target.closest('#rhClearBtn');
+      if (clearBtn) { clearAll(); return; }
+      var chipBtn = e.target.closest('[data-rh-clear]');
+      if (chipBtn) {
+        var idx = parseInt(chipBtn.getAttribute('data-rh-clear'), 10);
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+          currentActiveFilters[idx].clear();
+        }
+      }
+    });
     $('exportBtn').addEventListener('click', function () {
       UI.exportCsv('pm-surya-ghar.csv', [{ key: 'appl', label: 'Application' }, { key: 'name', label: 'Consumer' }, { key: 'con', label: 'Consumer ID' }, { key: 'mobile', label: 'Mobile' },
         { key: 'REGION_NORM', label: 'Region' }, { key: 'DIVISION_NORM', label: 'Division' }, { key: 'CCC_NORM', label: 'CCC' }, { key: 'category', label: 'Category' },

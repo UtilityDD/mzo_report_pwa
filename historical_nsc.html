@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Historical analysis · MZO Reports</title>
+  <title>Historical analysis · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -80,12 +80,18 @@
         </section>
 
         <section class="ui-panel">
-          <div class="ui-panel-h">
-            <h2>Detailed analysis</h2>
-            <div class="ui-actions">
-              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
-              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title">Detailed analysis</h2>
+                <span class="rh-badge" id="rhCount">0</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+              </div>
             </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
           </div>
           <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
           <div class="cl-hint" id="hint"></div>
@@ -210,7 +216,51 @@
           : ['region', 'division', 'ccc'].indexOf(tab) !== -1 ? 'Click a row to open the next level.'
           : tab === 'periods' ? 'Change is against the ' + per + ' before.'
           : tab === 'season' ? 'Each calendar month across the years in view.' : '');
+      var totConn = list.reduce(function (a, r) { return a + val(r); }, 0);
+      var rhEl = $('rhCount');
+      if (rhEl) rhEl.textContent = UI.n(totConn) + ' connections (' + UI.n(list.length) + ' periods)';
+      renderReportHead(list);
+
       renderTab(list, series, n, per);
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(list) {
+      var bar = $('rhFiltersBar');
+      if (!bar) return;
+      var active = [];
+      var rVal = $('regionFilter').value;
+      if (rVal) {
+        active.push({ key: 'region', label: 'Region: ' + rVal, clear: function () { set('regionFilter', ''); set('divisionFilter', ''); set('cccFilter', ''); fillOffices(); render(); } });
+      }
+      var dVal = $('divisionFilter').value;
+      if (dVal) {
+        active.push({ key: 'division', label: 'Division: ' + dVal, clear: function () { set('divisionFilter', ''); set('cccFilter', ''); fillOffices(); render(); } });
+      }
+      var cVal = $('cccFilter').value;
+      if (cVal) {
+        active.push({ key: 'ccc', label: 'CCC: ' + cVal, clear: function () { set('cccFilter', ''); render(); } });
+      }
+      if (f.year) {
+        active.push({ key: 'year', label: 'Year: ' + f.year, clear: function () { f.year = ''; render(); } });
+      }
+      if (f.cls) {
+        active.push({ key: 'cls', label: 'Class: ' + (CLASS[f.cls] || f.cls), clear: function () { f.cls = ''; render(); } });
+      }
+      if (f.period && f.period !== 'month') {
+        active.push({ key: 'period', label: 'Period: ' + (PERIOD[f.period] ? PERIOD[f.period][1] : f.period), clear: function () { setPeriod('month'); render(); } });
+      }
+      currentActiveFilters = active;
+      if (!active.length) {
+        bar.innerHTML = '<span class="rh-all-clear"><svg class="ui-i" style="width:13px;height:13px;vertical-align:-2px"><use href="#ui-check"/></svg> Showing all connections</span>';
+        return;
+      }
+      var html = '<div class="rh-filters">';
+      active.forEach(function (flt, idx) {
+        html += '<span class="rh-chip">' + UI.esc(flt.label) + '<button type="button" class="rh-chip-x" data-rh-clear="' + idx + '" aria-label="Remove filter">&times;</button></span>';
+      });
+      html += '<button type="button" class="rh-clear-btn" id="rhClearBtn">Reset all</button></div>';
+      bar.innerHTML = html;
     }
 
     function officeTable(list, n, per, level) {
@@ -374,6 +424,17 @@
       SELECTS.forEach(function (id) { set(id, ''); });
       fillOffices(); render();
     }
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var clearBtn = e.target.closest('#rhClearBtn');
+      if (clearBtn) { clearAll(); return; }
+      var chipBtn = e.target.closest('[data-rh-clear]');
+      if (chipBtn) {
+        var idx = parseInt(chipBtn.getAttribute('data-rh-clear'), 10);
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+          currentActiveFilters[idx].clear();
+        }
+      }
+    });
     $('copyBtn').addEventListener('click', function () {
       if (!lastTable) return;
       var lines = ['*Historical analysis — ' + lastTable.title + '*' + (f.cls ? ' (' + CLASS[f.cls] + ')' : ''), lastTable.cols.join(' | ')].concat(lastTable.rows.slice(0, 60).map(function (r) { return r.map(function (c) { return typeof c === 'number' ? UI.n(Math.round(c)) : c; }).join(' | '); }));

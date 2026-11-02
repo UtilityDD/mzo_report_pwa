@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Docket closure KPI · MZO Reports</title>
+  <title>Docket closure KPI · DISHA</title>
   <script src="/mzo_theme.js?v=3"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=6" />
   <script src="/mzo_ui.js?v=6" defer></script>
@@ -75,12 +75,18 @@
         </section>
 
         <section class="ui-panel">
-          <div class="ui-panel-h">
-            <h2 id="tableTitle">Detailed analysis</h2>
-            <div class="ui-actions">
-              <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
-              <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title" id="tableTitle">Detailed analysis</h2>
+                <span class="rh-badge" id="rhCount">0</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+              </div>
             </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
           </div>
           <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
           <div class="rem-hint" id="hint"></div>
@@ -120,18 +126,20 @@
       label: 'activeLabel',
       count: 'activeCount',
       clear: 'clearBtn',
-      onClear: function () {
-        fType = ''; fBracket = ''; q = ''; bulk = '';
-        $('q').value = ''; $('probFilter').value = '';
-        ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
-          if (!$(id).disabled) $(id).value = '';
-        });
-        setBulk('', true);
-        fillOffices(); markAll();
-        syncUrl();
-        render();
-      }
+      onClear: clearAll
     });
+
+    function clearAll() {
+      fType = ''; fBracket = ''; q = ''; bulk = '';
+      $('q').value = ''; $('probFilter').value = '';
+      ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
+        if (!$(id).disabled) $(id).value = '';
+      });
+      setBulk('', true);
+      fillOffices(); markAll();
+      syncUrl();
+      render();
+    }
 
     // Closure time in days → "35h 39m" or "4d 6h"
     function dur(days) {
@@ -283,6 +291,10 @@
 
       window.__view = b;
 
+      var rhEl = $('rhCount');
+      if (rhEl) rhEl.textContent = UI.n(t.n) + ' dockets · ' + dur(t.avg) + ' avg';
+      renderReportHead(b);
+
       if (tab === 'region' || tab === 'division' || tab === 'ccc') {
         renderOfficesTab(b, t, te, nt);
       } else if (tab === 'problems') {
@@ -292,6 +304,55 @@
       } else if (tab === 'extremes') {
         renderExtremesTab(b);
       }
+    }
+
+    var currentActiveFilters = [];
+    function renderReportHead(b) {
+      var bar = $('rhFiltersBar');
+      if (!bar) return;
+      var active = [];
+      if (q) {
+        active.push({ key: 'q', label: 'Search: ' + q, clear: function () { q = ''; $('q').value = ''; syncUrl(); render(); } });
+      }
+      var rVal = $('regionFilter').value;
+      if (rVal) {
+        active.push({ key: 'region', label: 'Region: ' + rVal, clear: function () { $('regionFilter').value = ''; fillOffices(); markAll(); syncUrl(); render(); } });
+      }
+      var dVal = $('divisionFilter').value;
+      if (dVal) {
+        active.push({ key: 'division', label: 'Division: ' + dVal, clear: function () { $('divisionFilter').value = ''; fillOffices(); markAll(); syncUrl(); render(); } });
+      }
+      var cVal = $('cccFilter').value;
+      if (cVal) {
+        active.push({ key: 'ccc', label: 'CCC: ' + cVal, clear: function () { $('cccFilter').value = ''; markAll(); syncUrl(); render(); } });
+      }
+      var prVal = $('probFilter').value;
+      if (prVal) {
+        active.push({ key: 'prob', label: 'Problem: ' + prVal, clear: function () { $('probFilter').value = ''; UI.mark($('probFilter')); syncUrl(); render(); } });
+      }
+      if (fType) {
+        var tLabel = fType === 'tech' ? 'Technical' : 'Non-technical';
+        active.push({ key: 'type', label: 'Type: ' + tLabel, clear: function () { fType = ''; syncUrl(); render(); } });
+      }
+      if (fBracket) {
+        var bkMatch = BRACKETS.filter(function (bk) { return bk.key === fBracket; })[0];
+        active.push({ key: 'bracket', label: 'Speed: ' + (bkMatch ? bkMatch.label : fBracket), clear: function () { fBracket = ''; syncUrl(); render(); } });
+      }
+      if (bulk) {
+        var bLabel = bulk === 'ex' ? 'Excl. bulk' : 'Bulk only';
+        active.push({ key: 'bulk', label: 'Bulk: ' + bLabel, clear: function () { setBulk('', true); syncUrl(); render(); } });
+      }
+      currentActiveFilters = active;
+      if (!active.length) {
+        bar.innerHTML = '<span class="rh-all-clear"><svg class="ui-i" style="width:13px;height:13px;vertical-align:-2px"><use href="#ui-check"/></svg> Showing all closed dockets</span>';
+        return;
+      }
+      var html = '<div class="rh-filters">';
+      active.forEach(function (flt, idx) {
+        html += '<span class="rh-chip">' + UI.esc(flt.label) + '<button type="button" class="rh-chip-x" data-rh-clear="' + idx + '" aria-label="Remove filter">&times;</button></span>';
+      });
+      html += '<button type="button" class="rh-clear-btn" id="rhClearBtn">Reset all</button></div>';
+      bar.innerHTML = html;
     }
 
     var dcol = function (key, label, hide) {
@@ -565,6 +626,18 @@
       if (!b) return;
       tab = b.getAttribute('data-tab');
       syncUrl(); render();
+    });
+
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var clearBtn = e.target.closest('#rhClearBtn');
+      if (clearBtn) { clearAll(); return; }
+      var chipBtn = e.target.closest('[data-rh-clear]');
+      if (chipBtn) {
+        var idx = parseInt(chipBtn.getAttribute('data-rh-clear'), 10);
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+          currentActiveFilters[idx].clear();
+        }
+      }
     });
 
     // Copy summary action
