@@ -13,6 +13,8 @@ A small Oracle Cloud VM runs a second copy of the app and the data mirror (Pocke
 | https://data.130.210.43.11.sslip.io | Admin portal: static files from `vm/portal/` of the live release |
 | https://data.130.210.43.11.sslip.io/api/, `/_/` | PocketBase API and dashboard (127.0.0.1:8090) |
 | https://data.130.210.43.11.sslip.io/kit/ | Only `mzo_theme.css`, `mzo_theme.js` and `mzo_ui.js` from the app, so the portal uses the same UI kit |
+| https://data.130.210.43.11.sslip.io/#/server | The portal's Server page: the same view as the stats site, from `/vmstats/` on this host |
+| https://stats.130.210.43.11.sslip.io | VM stats, public, no sign-in: CPU, memory, swap, disk, network, services and processes, live every 5 s with 1 hour / 24 hours / 7 days charts (`vm/stats/`) |
 
 Certificates are issued by Let's Encrypt automatically (sslip.io names resolve to the IP in them). The data site returns 404 for `/dev`, `*.md` and dot-files, and serves the portal with a strict CSP; PocketBase's own headers are left alone. Only ports 22, 80 and 443 are open in firewalld.
 
@@ -48,7 +50,8 @@ In the repo, `vm/` holds everything the VM runs; none of it is served by Vercel 
 | `mzo-reports.service` | The app, as `opc`, from `/opt/mzo/app`, env from `/etc/mzo/app.env` |
 | `pocketbase.service` | `pocketbase serve --http=127.0.0.1:8090`, data in `/opt/mzo/pocketbase/pb_data`, migrations from `/opt/mzo/app/vm/pocketbase/pb_migrations` (applied at start), `--automigrate=false` so dashboard or API schema changes never write migration files |
 | `mzo-deploy.timer` → `mzo-deploy.service` | Runs `/opt/mzo/bin/deploy.sh` 60 s after the previous run finished |
-| `mzo-sync.timer` → `mzo-sync.service` | Every 15 min: `node vm/sync/run.js --due` as `opc` with `/etc/mzo/pocketbase.env`. Skipped (condition not met, not failed) while `vm/sync/run.js` is not deployed |
+| `mzo-sync.timer` → `mzo-sync.service` | Every 5 min: `node vm/sync/run.js --due` as `opc` with `/etc/mzo/pocketbase.env`. Skipped (condition not met, not failed) while `vm/sync/run.js` is not deployed |
+| `mzo-stats.service` | `python3 vm/stats/sampler.py` (stdlib only, about 12 MB): every 5 s it reads `/proc`, the services' cgroups and `systemctl show`, and writes `now.json`, `hour.json`, `day.json` and `week.json` to `/run/mzo-stats`, which Caddy serves to the stats site and the portal. History survives restarts in `/var/lib/mzo-stats/history.json`. Runs as a throwaway `DynamicUser` with only `CAP_DAC_READ_SEARCH` (to size PocketBase's folder), `MemoryMax=48M`. Deploys start it the first time and restart it when `sampler.py` or the unit changes. Only numbers, unit names and process names are published: no command lines, logs, settings or IPs |
 
 ## How a deploy works
 
@@ -141,7 +144,7 @@ A malformed entry is skipped with a warning that names its position, never its c
 ## Logs
 
 ```bash
-journalctl -u mzo-deploy -u mzo-reports -u pocketbase -u mzo-sync -f
+journalctl -u mzo-deploy -u mzo-reports -u pocketbase -u mzo-sync -u mzo-stats -f
 journalctl -t mzo-deploy          # also includes deploy.sh runs started by hand
 cat /opt/mzo/state/deployed.json
 systemctl list-timers 'mzo-*'
@@ -154,7 +157,7 @@ The VM has 1 GB of RAM and about 3.4 GB of swap. On 2026-11-01 a `dnf install` u
 - Nothing on the VM uses dnf: deploys use GitHub tarballs instead of git, and `provision.sh` stops if a tool is missing rather than installing it.
 - Performance Co-Pilot (`pmcd`, `pmlogger`, `pmie`, the `*_farm` services and their timers) is stopped and disabled: about 60 MB. `provision.sh --keep-pcp` leaves it alone.
 - kdump is disabled and `crashkernel=` is removed from the boot entries, `/etc/default/grub` and `/etc/kernel/cmdline` (`auto_reset_crashkernel no`): it reserved 448 MB at boot.
-- OOM order: sshd, Caddy and the app `OOMScoreAdjust=-500` (drop-ins in `vm/deploy/systemd/*.service.d/`); PocketBase `MemoryMax=200M`, `GOMEMLIMIT=150MiB`, `OOMScoreAdjust=100`; deploy `MemoryMax=350M`; the sync `MemoryMax=220M`, node heap 150 MB, `OOMScoreAdjust=500`, `Nice=10`, so it is the first thing to go.
+- OOM order: sshd, Caddy and the app `OOMScoreAdjust=-500` (drop-ins in `vm/deploy/systemd/*.service.d/`); PocketBase `MemoryMax=200M`, `GOMEMLIMIT=150MiB`, `OOMScoreAdjust=100`; deploy `MemoryMax=350M`; the sync `MemoryMax=400M`, node heap 160 MB, `OOMScoreAdjust=500`, `Nice=10`, so it is the first thing to go (with the stats sampler, `MemoryMax=48M`, `OOMScoreAdjust=600`).
 - Swap: `/swapfile` (2 GB), `/.swapfile` (0.5 GB) and `/swapfile2` (about 0.85 GB, added by provisioning).
 
 ## Re-provision

@@ -3,10 +3,12 @@
  *
  *   /kit/mzo_theme.css, /kit/mzo_theme.js, /kit/mzo_ui.js  → the three kit files at the repo root
  *   /api/*, /_/*                                         → PocketBase (default http://127.0.0.1:8093)
+ *   /vmstats/vmstats.js, /vmstats/vmstats.css            → vm/stats/www (the Server page)
+ *   /vmstats/data/{now,hour,day,week}.json               → $VMSTATS_DIR (sampler output; 404 when unset)
  *   /dev/*, *.md                                         → 404 (never served)
  *   everything else                                      → static files from vm/portal
  *
- *   node vm/portal/dev/serve.js        PORT=3300  PB_URL=http://127.0.0.1:8093
+ *   node vm/portal/dev/serve.js        PORT=3300  PB_URL=http://127.0.0.1:8093  VMSTATS_DIR=<dir>
  */
 'use strict';
 
@@ -71,6 +73,12 @@ http.createServer((req, res) => {
   if (pathname.startsWith('/api/') || pathname === '/_' || pathname.startsWith('/_/')) return proxy(req, res);
   if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed', { Allow: 'GET, HEAD' });
 
+  if (pathname.startsWith('/vmstats/')) {
+    const name = pathname.slice(9);
+    if (name === 'vmstats.js' || name === 'vmstats.css') return serveFile(res, path.join(REPO, 'vm', 'stats', 'www', name), req.method);
+    const m = /^data\/(now|hour|day|week)\.json$/.exec(name);
+    return m && process.env.VMSTATS_DIR ? serveFile(res, path.join(process.env.VMSTATS_DIR, m[1] + '.json'), req.method) : send(res, 404, 'Not found');
+  }
   if (pathname.startsWith('/kit/')) {
     const name = pathname.slice(5);
     return KIT[name] ? serveFile(res, path.join(REPO, name), req.method) : send(res, 404, 'Not found');

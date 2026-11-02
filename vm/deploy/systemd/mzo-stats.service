@@ -1,0 +1,39 @@
+[Unit]
+Description=MZO VM stats sampler (CPU, memory, disk, network, services every 5 s for the stats page)
+After=network-online.target
+
+[Service]
+Type=simple
+# python3 stdlib only; reads /proc, the cgroups and `systemctl show`, writes JSON that Caddy serves.
+ExecStart=/usr/bin/python3 -I /opt/mzo/app/vm/stats/sampler.py
+Restart=always
+RestartSec=5
+# Its own throwaway user. CAP_DAC_READ_SEARCH only lets it measure folder sizes it cannot open
+# (PocketBase data, logs); it reads nothing else and writes only its two folders.
+DynamicUser=yes
+AmbientCapabilities=CAP_DAC_READ_SEARCH
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+NoNewPrivileges=yes
+# /run/mzo-stats: the JSON Caddy serves (tmpfs, readable by Caddy). /var/lib/mzo-stats: history kept over restarts.
+RuntimeDirectory=mzo-stats
+RuntimeDirectoryMode=0755
+StateDirectory=mzo-stats
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+# Small and unimportant next to the app: it goes first when memory runs out.
+MemoryMax=48M
+Nice=5
+OOMScoreAdjust=600
+
+[Install]
+WantedBy=multi-user.target

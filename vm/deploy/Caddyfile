@@ -77,6 +77,25 @@ data.130.210.43.11.sslip.io {
 		respond 404
 	}
 
+	# The Server page: the VM stats JSON from vm/stats/sampler.py and the page's script and styles.
+	@vmdata path /vmstats/data/now.json /vmstats/data/hour.json /vmstats/data/day.json /vmstats/data/week.json
+	handle @vmdata {
+		uri strip_prefix /vmstats/data
+		root * /run/mzo-stats
+		header Cache-Control "no-store"
+		file_server
+	}
+	@vmui path /vmstats/vmstats.js /vmstats/vmstats.css
+	handle @vmui {
+		import portal_headers
+		uri strip_prefix /vmstats
+		root * /opt/mzo/app/vm/stats/www
+		file_server
+	}
+	handle /vmstats/* {
+		respond 404
+	}
+
 	# vm/portal/dev/ (local test data) and the README sit inside the served folder.
 	@hidden path /dev /dev/* *.md /.*
 	handle @hidden {
@@ -89,6 +108,49 @@ data.130.210.43.11.sslip.io {
 		file_server {
 			hide .*
 		}
+	}
+}
+
+# VM stats (vm/stats): public, no sign-in. Read-only numbers (CPU, memory, disk, network, services),
+# written every 5 s by mzo-stats.service into /run/mzo-stats. Only the listed files are served.
+stats.130.210.43.11.sslip.io {
+	encode zstd gzip
+	header {
+		Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+
+	@data path /data/now.json /data/hour.json /data/day.json /data/week.json
+	handle @data {
+		uri strip_prefix /data
+		root * /run/mzo-stats
+		header Cache-Control "no-store"
+		file_server
+	}
+
+	# The app's UI kit, so the page looks like the app. Only these three files.
+	@kit path /kit/mzo_theme.css /kit/mzo_theme.js /kit/mzo_ui.js
+	handle @kit {
+		uri strip_prefix /kit
+		root * /opt/mzo/app
+		header Cache-Control "no-cache"
+		file_server
+	}
+
+	@site path / /index.html /vmstats.js /vmstats.css /boot.js /main.js /favicon.svg /robots.txt
+	handle @site {
+		root * /opt/mzo/app/vm/stats/www
+		header Cache-Control "no-cache"
+		file_server
+	}
+
+	handle {
+		respond 404
 	}
 }
 

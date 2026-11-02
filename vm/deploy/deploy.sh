@@ -15,8 +15,8 @@
 #
 # New commit: unpack, link packages, switch the symlink, install changed systemd units, restart
 # the app, health-check it, and switch back on failure. After a good deploy: apply a changed
-# Caddyfile (after caddy validate), restart PocketBase when its migrations changed, refresh the
-# pinned copy of this script, and prune old releases.
+# Caddyfile (after caddy validate), restart PocketBase when its migrations changed, start or restart
+# the stats sampler (vm/stats), refresh the pinned copy of this script, and prune old releases.
 # The result goes to /opt/mzo/state/deployed.json, served as /deploy.json.
 #
 # Optional env (/etc/mzo/deploy.env or the command line):
@@ -53,6 +53,7 @@ BRANCH=${MZO_BRANCH:-develop}
 TEST_FAIL=${MZO_DEPLOY_TEST_FAIL:-0}
 WARN=()
 PB_UNIT_CHANGED=0
+STATS_UNIT_CHANGED=0
 
 log() {
   echo "$*"
@@ -216,6 +217,7 @@ apply_units() { # apply_units SHA: install the release's changed unit files and 
     install -D -m 644 "$f" "$UNIT_DIR/$name" || return 1
     list+=("$name")
     [ "$name" = pocketbase.service ] && PB_UNIT_CHANGED=1
+    [ "$name" = mzo-stats.service ] && STATS_UNIT_CHANGED=1
   done
   if [ ${#list[@]} -gt 0 ]; then
     log "installed units: ${list[*]}"
@@ -266,6 +268,18 @@ after_pocketbase() { # after_pocketbase FROM TO
   # Accounts that need collections from the migrations (the portal admin) are created once they exist.
   if [ ! -f /etc/mzo/portal-admin.txt ] && [ -f "$(rel "$2")/vm/deploy/pb-setup.sh" ]; then
     bash "$(rel "$2")/vm/deploy/pb-setup.sh" --quiet || warn "pb-setup.sh failed (run it by hand: sudo bash $APP_LINK/vm/deploy/pb-setup.sh)"
+  fi
+}
+
+after_stats() { # after_stats FROM TO: start the stats sampler once; restart it when its code or unit changed
+  [ -f "$UNIT_DIR/mzo-stats.service" ] || return 0
+  if ! systemctl is-enabled -q mzo-stats.service 2>/dev/null; then
+    if systemctl enable --now mzo-stats.service; then log "started mzo-stats"; else warn "could not start mzo-stats (journalctl -u mzo-stats)"; fi
+    return 0
+  fi
+  if [ "$STATS_UNIT_CHANGED" = 1 ] || changed "$1" "$2" vm/stats/sampler.py; then
+    log "restarting mzo-stats (sampler or unit changed)"
+    systemctl restart mzo-stats.service || warn "could not restart mzo-stats (journalctl -u mzo-stats)"
   fi
 }
 
@@ -336,6 +350,7 @@ deploy() { # deploy CURRENT TARGET
   if start_release "$cur" "$target" && health "$TEST_FAIL"; then
     apply_caddyfile "$target"
     after_pocketbase "$cur" "$target"
+    after_stats "$cur" "$target"
     pin_self "$target"
     write_record ok "$target" "$previous"
     prune "$target" "$previous"

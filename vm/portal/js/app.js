@@ -1,5 +1,5 @@
 /* Portal shell: sign-in, sidebar (datasets by source type or report area), routes, account menu.
- * Routes: #/ overview · #/d/<key> data · #/d/<key>/schema|source|history
+ * Routes: #/ overview · #/d/<key> data · #/d/<key>/schema|source|history · #/quality · #/server
  */
 (function (w) {
   'use strict';
@@ -144,6 +144,7 @@
     var here = current && current.key;
     nav.appendChild(h('a', { class: 'pt-ni pt-ni-top', href: '#/', 'aria-current': current && current.name === 'overview' ? 'page' : null }, icon('grid'), h('span', { class: 'lbl', text: 'Overview' })));
     nav.appendChild(h('a', { class: 'pt-ni', href: '#/quality', 'aria-current': current && current.name === 'quality' ? 'page' : null }, icon('check'), h('span', { class: 'lbl', text: 'Data quality' })));
+    nav.appendChild(h('a', { class: 'pt-ni', href: '#/server', 'aria-current': current && current.name === 'server' ? 'page' : null }, icon('monitor'), h('span', { class: 'lbl', text: 'Server' })));
     if (!loaded) { nav.appendChild(h('div', { class: 'pt-nav-load' }, h('span', { class: 'ui-skel' }), h('span', { class: 'ui-skel' }), h('span', { class: 'ui-skel' }))); return; }
     var list = datasets.filter(function (d) {
       if (!s) return true;
@@ -177,6 +178,7 @@
     if (m) { var k; try { k = decodeURIComponent(m[1]); } catch (e) { k = ''; } return { name: 'dataset', key: k, tab: m[2] || 'data' }; }
     var qm = /^#\/quality(?:\/(actions|issues))?\/?$/.exec(location.hash || '');
     if (qm) return { name: 'quality', view: qm[1] || 'datasets' };
+    if (/^#\/server\/?$/.test(location.hash || '')) return { name: 'server' };
     return { name: 'overview' };
   }
   function route() {
@@ -211,6 +213,11 @@
       crumbs.appendChild(h('span', { class: 'c-p', text: 'Data quality' }));
       var qh = P.quality.page(page, ctx, r.view);
       current = { name: 'quality', dispose: qh && qh.dispose };
+    } else if (r.name === 'server') {
+      document.title = 'Server · MZO Data';
+      crumbs.appendChild(h('span', { class: 'c-p', text: 'Server' }));
+      var sh = P.server.page(page);
+      current = { name: 'server', dispose: sh && sh.dispose };
     } else {
       document.title = 'Overview · MZO Data';
       crumbs.appendChild(h('span', { class: 'c-p', text: 'Overview' }));
