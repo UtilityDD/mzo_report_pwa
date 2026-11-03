@@ -22,7 +22,7 @@ Unauthenticated HTML requests redirect to `/login.html`. Use a real portal user 
 | Path | Role |
 |------|------|
 | `server.js` | Auth cookie, `/api/*`, static hosting |
-| `login.html` | Login; a signed-in user goes straight to `app.html` |
+| `login.html` | Google sign-in page with DISHA app icon and theme switcher; a signed-in user goes straight to `app.html` |
 | `app.html` | The app: sidebar (a drawer on phones), ⌘K search, report pages in keep-alive iframes. `/` and the old `/index.html` home redirect here (`server.js` and `vercel.json`). See **Workstation shell** in [design-system.md](design-system.md) |
 | `mzo_theme.css` / `mzo_theme.js` | Design system: tokens, UI kit (`ui-*`), legacy-page overlay, theme controller. See **Design system** |
 | `mzo_ui.js` | `window.UI` helpers for kit pages (CSV, formatting, offices, tables, charts, drawer) |
@@ -40,7 +40,7 @@ Unauthenticated HTML requests redirect to `/login.html`. Use a real portal user 
 
 ## Auth and office scope
 
-**Server:** `requireAuth` in `server.js`. Session cookie `mzo_session` (HMAC-SHA256 with `JWT_SECRET`, 24h; the server warns on Vercel when `JWT_SECRET` is missing). Login reads **Supabase** `mzo_insight.portal_users` (not a live Google Sheet): Username + PIN, or Google sign-in verified against `GOOGLE_CLIENT_ID` and matched by saved email (details in [database.md](database.md#login-rules)). The local test sign-in only works on localhost. On the VM only, `MZO_LOCAL_ADMINS` adds admin accounts that exist in no database (see [vm.md](vm.md#vm-only-admin-accounts)).
+**Server:** `requireAuth` in `server.js`. Session cookie `mzo_session` (HMAC-SHA256 with `JWT_SECRET`, 24h; the server warns on Vercel when `JWT_SECRET` is missing). Login reads **Supabase** `mzo_insight.portal_users` (not a live Google Sheet) via Google sign-in verified against `GOOGLE_CLIENT_ID` and matched by saved email (details in [database.md](database.md#login-rules)). Legacy PIN and localhost demo sign-in options have been retired.
 
 Production stays on the **old** Supabase project (`unsmtschmcvftfqwabaq`) for login until `INSIGHT_LIVE=1`. Power Map always uses that old project. Stock dump + authorized upload use the new project when `STOCK_USE_STORAGE=1` and `INSIGHT_SUPABASE_URL` / `INSIGHT_SUPABASE_KEY` are set. Then DataHub `CACHE_STOCK` uses Storage `csvUrl`; users with **Stock Raw Upload** (or admin) `PUT` the cleaned CSV with a signed URL that **upserts** `stock/snapshot.csv` (bytes do not go through Vercel). The signed path Supabase returns is `/object/upload/sign/...`; prefix it with `/storage/v1` or the browser PUT 404s. If a publish still posts CSV to `/api/stock/publish`, the server also overwrites that Storage object so the dashboard date cannot lag the upload meta. Do not set `INSIGHT_LIVE` until `npm run copy:insight` has copied `portal_users` and you are ready to switch login. Copy from `scripts/supabase_config.example.json` into gitignored `data/supabase_config.json`. Never put the service_role key in HTML or git.
 
@@ -153,7 +153,7 @@ Add new/changed report URLs to `isNetworkFirstPath()` so an online load still re
 
 ## APIs (server.js)
 
-Typical prefixes: `/api/login`, `/api/auth/google`, `/api/session-check`, `/api/logout`, `/api/admin/*`, `/api/nsc/*`, `/api/stock/*`, `/api/withheld/*`, `/api/power-map/*`, `/api/defective/meta`, `/api/hub/versions`. Unauthenticated `/api` returns **401 JSON**, not a login HTML redirect. Do **not** add new `/api/.../dataset` routes that pull a Google sheet through Vercel — put the published CSV URL in `DATASETS` instead (see Bharat Net). `GET /api/hub/versions` returns tiny `{ versions, csvUrls }` for NSC, Withheld, Stock, Defective, and Power Map. `GET /api/power-map/meta` is the Power Map version (Supabase `updated_at`). On the VM in mirror mode these and the other meta endpoints take versions and CSV URLs from the snapshot manifest, and `/api/data/*` serves the snapshots (see **Mirror mode** below). Every report API, including `/api/executive/briefing`, needs a session. `POST /api/dtr/verify-pin` checks a DTR PIN on the server (rate-limited); PINs never reach the browser.
+Typical prefixes: `/api/auth/google`, `/api/session-check`, `/api/logout`, `/api/admin/*`, `/api/nsc/*`, `/api/stock/*`, `/api/withheld/*`, `/api/power-map/*`, `/api/defective/meta`, `/api/hub/versions`. Unauthenticated `/api` returns **401 JSON**, not a login HTML redirect. Do **not** add new `/api/.../dataset` routes that pull a Google sheet through Vercel — put the published CSV URL in `DATASETS` instead (see Bharat Net). `GET /api/hub/versions` returns tiny `{ versions, csvUrls }` for NSC, Withheld, Stock, Defective, and Power Map. `GET /api/power-map/meta` is the Power Map version (Supabase `updated_at`). On the VM in mirror mode these and the other meta endpoints take versions and CSV URLs from the snapshot manifest, and `/api/data/*` serves the snapshots (see **Mirror mode** below). Every report API, including `/api/executive/briefing`, needs a session.
 
 **Not served:** the server and Vercel routes return 404 for `server.js`, `package*.json`, `scripts/`, `apps-script/`, server-only `lib/` files, `data/` (except `costcenter.json`) and `.md/.gs/.sql/.py` files. Browser-loaded `lib/` files are listed in `vercel.json` builds; add a new one there and to the allow-list in `server.js`.
 

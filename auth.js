@@ -12,7 +12,7 @@
         if (async) s.async = true;
         document.head.appendChild(s);
     }
-    loadScript('__mzoAppUpdateScript', '/mzo_app_update.js?v=87', true);
+    loadScript('__mzoAppUpdateScript', '/mzo_app_update.js?v=88', true);
     if (!window.__mzoRetiredNotice) loadScript('__mzoRetiredNoticeScript', '/mzo_origin_redirect.js', false);
 
     function clearSession() {
@@ -53,7 +53,7 @@
                 'background:var(--mzo-surface,#fff);color:var(--mzo-text,#18181b);border:1px solid var(--mzo-border,#e7e7e5);' +
                 'box-shadow:0 16px 40px rgba(0,0,0,.18);font:14px/1.45 var(--mzo-font,system-ui,-apple-system,sans-serif)">' +
                 '<h3 id="mzo-logout-t" style="margin:0 0 6px;font-size:16px;font-weight:600">Sign out</h3>' +
-                '<p style="margin:0 0 16px;font-size:13px;color:var(--mzo-muted,#71717a)">Sign out of MZO Reports on this device?</p>' +
+                '<p style="margin:0 0 16px;font-size:13px;color:var(--mzo-muted,#71717a)">Sign out of DISHA on this device?</p>' +
                 '<div style="display:flex;gap:8px;justify-content:flex-end">' +
                 '<button type="button" data-v="0" style="height:34px;padding:0 14px;border-radius:8px;border:1px solid var(--mzo-border-strong,#d4d4d2);' +
                 'background:var(--mzo-surface,#fff);color:inherit;font:inherit;cursor:pointer">Cancel</button>' +

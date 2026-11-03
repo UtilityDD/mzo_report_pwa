@@ -48,7 +48,7 @@
       '#mzo-app-update-card button:hover{opacity:.9}' +
       '</style>' +
       '<div id="mzo-app-update-card">' +
-      '<p class="mzo-update-k">MZO Reports</p>' +
+      '<p class="mzo-update-k">DISHA · Distribution Insights</p>' +
       '<h3>App updated</h3>' +
       '<div class="mzo-update-note"></div>' +
       '<button type="button">Reload</button>' +

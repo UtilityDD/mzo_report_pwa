@@ -675,19 +675,6 @@ async function getLoginCredentials(options = {}) {
     return [];
 }
 
-function matchLoginUser(users, username, pin) {
-    const userKey = String(username || '').trim().toLowerCase();
-    const pinKey = String(pin || '').trim();
-    if (!userKey || !pinKey) return null;
-
-    return (users || []).find(u => {
-        if (!u || !u.Username) return false;
-        const storedPin = String(u.PIN || '').trim();
-        if (!storedPin) return false; // users with blank PIN cannot log in
-        return String(u.Username).trim().toLowerCase() === userKey && verifyPin(pinKey, storedPin);
-    }) || null;
-}
-
 /** Profile from a valid, unexpired mzo_session cookie, else null. */
 function readSession_(req) {
     const token = parseCookies(req.headers.cookie).mzo_session;
@@ -713,7 +700,7 @@ function readSession_(req) {
 // Reachable without a session (static files are already served above).
 const PUBLIC_PATHS = new Set([
     '/login.html', '/offline.html', '/sw.js', '/manifest.json',
-    '/api/login', '/api/auth/google', '/api/auth/pending-status', '/api/auth/config', '/api/news'
+    '/api/auth/google', '/api/auth/pending-status', '/api/auth/config', '/api/news'
 ]);
 const PUBLIC_ASSET = /^\/(icons|assets)\/|\.(css|js|png|json|ico)$/i;
 
@@ -833,11 +820,6 @@ function googleClientId_() {
     return String(process.env.GOOGLE_CLIENT_ID || fileConfig.googleClientId || '').trim();
 }
 
-/** Local test sign-in (email only) is for a developer machine, never a deployment. */
-function isLocalRequest_(req) {
-    return !process.env.VERCEL && (req.hostname === 'localhost' || req.hostname === '127.0.0.1');
-}
-
 /**
  * Google checks the token's signature and expiry; we check it was issued to this app's
  * client ID for a verified email. kind: 'id_token' (Sign-In button) or 'access_token' (popup).
@@ -885,114 +867,17 @@ function rootAdminProfile_({ Username, Name, email, auth_provider, approved_by }
     };
 }
 
-/** Sign-in of a VM-only admin: checked against its MZO_LOCAL_ADMINS hash only, never Supabase. */
-async function loginLocalAdmin_(req, res, admin, pin) {
-    if (!(await localAdmins.attempt(admin, String(pin).trim(), req))) {
-        return res.status(401).json({ status: 'error', message: 'Invalid Username or PIN.' });
-    }
-    const clientProfile = portalUserForClient(rootAdminProfile_({
-        Username: admin.username, Name: admin.name, email: '', auth_provider: 'local', approved_by: 'vm_local_admin'
-    }));
-    issueSessionCookie(res, clientProfile, { local: localAdmins.sessionKey(admin) });
-    console.log(`[Auth] VM-only admin logged in: ${admin.username} (${admin.name})`);
-    await logActivity({
-        username: admin.username,
-        name: admin.name,
-        type: 'login',
-        details: `Logged in as a VM-only admin from IP: ${req.ip || req.headers['x-forwarded-for'] || 'unknown'}`
-    });
-    return res.status(200).json({ status: 'success', profile: clientProfile });
-}
-
-// API endpoint for User Login (Username + PIN)
-app.post('/api/login', async (req, res) => {
-    const { username, pin } = req.body;
-
-    if (!username || !pin || !String(pin).trim()) {
-        return res.status(400).json({ status: 'error', message: 'Username and PIN are required.' });
-    }
-    const localAdmin = localAdmins.find(username);
-    if (localAdmin) return loginLocalAdmin_(req, res, localAdmin, pin);
-
-    try {
-        const users = await getLoginCredentials({ forceRefresh: true });
-        const matchedUser = matchLoginUser(users, username, pin);
-
-        if (matchedUser) {
-            const status = String(matchedUser.user_status || 'active').toLowerCase();
-            if (status === 'pending') {
-                return res.status(403).json({
-                    status: 'pending',
-                    message: 'Your account is pending administrator approval. Please check back later.'
-                });
-            }
-            if (status === 'rejected') {
-                return res.status(403).json({
-                    status: 'rejected',
-                    message: 'Your account access request has been declined by an administrator.'
-                });
-            }
-            if (status === 'suspended') {
-                return res.status(403).json({
-                    status: 'suspended',
-                    message: 'Your account has been deactivated. Contact an administrator.'
-                });
-            }
-
-            if (!isPinHash(matchedUser.PIN)) {
-                try {
-                    const hashed = hashPin(pin);
-                    await querySupabase(
-                        `${PORTAL_USERS_TABLE}?username=eq.${encodeURIComponent(matchedUser.Username)}`,
-                        {
-                            schema: PORTAL_USERS_SCHEMA,
-                            method: 'PATCH',
-                            body: { pin: hashed, updated_at: new Date().toISOString() },
-                            prefer: 'return=minimal'
-                        }
-                    );
-                    matchedUser.PIN = hashed;
-                } catch (hashErr) {
-                    console.warn('[Auth] PIN hash upgrade failed:', hashErr.message);
-                }
-            }
-            const clientProfile = portalUserForClient(matchedUser);
-            issueSessionCookie(res, clientProfile);
-            
-            console.log(`[Auth] User logged in: ${matchedUser.Username} (${matchedUser.Name || 'No Name'})`);
-            
-            await logActivity({
-                username: matchedUser.Username,
-                name: matchedUser.Name || 'No Name',
-                type: 'login',
-                details: `Logged in with PIN from IP: ${req.ip || req.headers['x-forwarded-for'] || 'unknown'}`
-            });
-            
-            return res.status(200).json({
-                status: 'success',
-                profile: clientProfile
-            });
-        } else {
-            return res.status(401).json({ status: 'error', message: 'Invalid Username or PIN.' });
-        }
-    } catch (err) {
-        console.error("[Auth] Login error:", err.message);
-        return res.status(500).json({ status: 'error', message: 'Internal Server Error during validation.' });
-    }
-});
-
-// Public auth configuration (Google Client ID & test capabilities)
+// Public auth configuration (Google Client ID)
 app.get('/api/auth/config', (req, res) => {
     res.json({
-        googleClientId: googleClientId_(),
-        allowLocalTest: isLocalRequest_(req)
+        googleClientId: googleClientId_()
     });
 });
 
 // API endpoint for Google Sign-In & Registration
 app.post('/api/auth/google', async (req, res) => {
     try {
-        const { credential, accessToken, email: testEmail, name: testName, picture: testPicture } = req.body || {};
+        const { credential, accessToken } = req.body || {};
         let email = '';
         let name = '';
         let picture = '';
@@ -1029,10 +914,6 @@ app.post('/api/auth/google', async (req, res) => {
                 } catch (_) { /* profile is optional */ }
             }
             name = name || email.split('@')[0];
-        } else if (testEmail && isLocalRequest_(req)) {
-            email = String(testEmail).trim().toLowerCase();
-            name = String(testName || email.split('@')[0]).trim();
-            picture = testPicture || '';
         } else {
             return res.status(400).json({ status: 'error', message: 'Google authentication credential is required.' });
         }
@@ -1442,8 +1323,8 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
     try {
         const { Username, PIN, Name, role, ...otherFields } = req.body;
         
-        if (!Username || !PIN) {
-            return res.status(400).json({ status: 'error', message: 'Username and PIN are required.' });
+        if (!Username) {
+            return res.status(400).json({ status: 'error', message: 'Username is required.' });
         }
         
         const users = await getLoginCredentials({ forceRefresh: true });
@@ -1454,7 +1335,7 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
         
         const newUser = {
             Username: Username.trim(),
-            PIN: PIN.trim(),
+            PIN: PIN ? String(PIN).trim() : '',
             LastLogin: '',
             Name: Name ? Name.trim() : '',
             role: role ? role.trim() : '',
@@ -2185,33 +2066,6 @@ app.post('/api/admin/reject-correction', requireAdmin, async (req, res) => {
     } catch (err) {
         console.error("[Admin Reject] Error processing rejection:", err.message);
         return res.status(500).json({ status: 'error', message: err.message });
-    }
-});
-
-// DTR load page: check a PIN against users with DTR rights on the server (PINs never leave it).
-const dtrPinAttempts = new Map(); // username -> [timestamps] (best effort per instance)
-app.post('/api/dtr/verify-pin', async (req, res) => {
-    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    const who = String(req.user.Username || '').toLowerCase();
-    const now = Date.now();
-    const recent = (dtrPinAttempts.get(who) || []).filter((t) => now - t < 10 * 60 * 1000);
-    if (recent.length >= 20) {
-        return res.status(429).json({ status: 'error', message: 'Too many attempts. Try again in a few minutes.' });
-    }
-    recent.push(now);
-    dtrPinAttempts.set(who, recent);
-    const pin = String((req.body && req.body.pin) || '').trim();
-    if (!pin) return res.status(400).json({ status: 'error', message: 'Please enter a PIN.' });
-    try {
-        const users = await getLoginCredentials();
-        const match = users.find((u) => String(u['dtr-autho'] || '').trim() && verifyPin(pin, u.PIN));
-        if (!match) {
-            return res.status(401).json({ status: 'error', message: 'Invalid PIN or missing DTR authorization.' });
-        }
-        return res.json({ status: 'success', dtrAutho: String(match['dtr-autho']).trim(), name: match.Name || match.Username });
-    } catch (err) {
-        console.error('[DTR PIN] Error:', err.message);
-        return res.status(500).json({ status: 'error', message: 'Could not validate PIN.' });
     }
 });
 

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en" class="ui">
 <head>
-  <script src="/mzo_theme.js?v=3"></script>
+  <script src="/mzo_theme.js?v=4"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DTR Load Measurement</title>
@@ -690,7 +690,7 @@ table.dataTable.dtr-inline.collapsed>tbody>tr.parent>th.dtr-control:before {
   font-weight: 600;
 }
 </style>
-  <link rel="stylesheet" href="/mzo_theme.css?v=6" />
+  <link rel="stylesheet" href="/mzo_theme.css?v=7" />
   <script src="/mzo_data_hub.js?v=92" defer></script>
   <script src="/mzo_rows.js?v=6" defer></script>
   <style id="mzo-skin">
@@ -838,24 +838,7 @@ html.ui .dtr-data { color: var(--mzo-muted); }
 </head>
 <body>
 
-<!-- PIN Entry Modal -->
-<div id="pinModal" class="modal">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h5 class="modal-title">Enter PIN</h5>
-      <!-- No close button for PIN modal until authenticated -->
-    </div>
-    <div class="modal-body">
-      <input type="password" id="pinInput" class="form-control" placeholder="Enter PIN" maxlength="4">
-      <button class="btn btn-primary" id="submitPinBtn" onclick="validatePin()">
-        Submit PIN
-      </button>
-      <div id="pinError" class="error-msg" style="display:none;"></div>
-    </div>
-  </div>
-</div>
-
-<!-- Main Content Wrapper - Initially hidden -->
+<!-- Main Content Wrapper -->
 <div id="mainContentWrapper">
   <div class="container">
     <div class="main-card">
@@ -1109,86 +1092,46 @@ function toRecords(t) {
 
 // Global variables
 window.currentCode = null;
-window.isAuthenticated = false; // Tracks if PIN is successfully authenticated
-window.userAuthorizedDTRPrefix = null; // Stores the dtr-autho value for the logged-in user
+window.isAuthenticated = false; // Tracks if signed-in officer has DTR authorization
+window.userAuthorizedDTRPrefix = null; // Stores the dtr-autho prefixes for the logged-in user
 window.isReplacingData = false; // New flag to indicate if data is being replaced
 
-/**
- * Shows a loading spinner and disables the target button.
- * @param {HTMLElement} buttonElement - The button element to modify.
- * @param {string} originalText - The original text content of the button.
- */
-function showButtonLoading(buttonElement, originalText) {
-    buttonElement.dataset.originalText = originalText; // Store original text
-    buttonElement.innerHTML = `<span class="spinner"></span> Checking...`;
-    buttonElement.disabled = true;
-}
-
-/**
- * Hides the loading spinner and re-enables the target button.
- * @param {HTMLElement} buttonElement - The button element to modify.
- */
-function hideButtonLoading(buttonElement) {
-    buttonElement.innerHTML = buttonElement.dataset.originalText; // Restore original text
-    buttonElement.disabled = false;
-}
-
-/**
- * Checks the PIN on the server (POST /api/dtr/verify-pin) and unlocks the DTR prefixes in its dtr-autho.
- */
-async function validatePin() {
-    const pinInput = document.getElementById("pinInput");
-    const enteredPin = pinInput.value.trim();
-    const pinErrorDiv = document.getElementById("pinError");
-    const submitPinBtn = document.getElementById("submitPinBtn");
-
-    pinErrorDiv.style.display = "none"; // Hide previous errors
-    pinErrorDiv.textContent = "";
-
-    if (!enteredPin) {
-        pinErrorDiv.textContent = "Please enter a PIN.";
-        pinErrorDiv.style.display = "block";
-        return;
+function applyDtrProfileAuth(profile) {
+    if (!profile) return false;
+    const isAdmin = String(profile.role || '').trim().toLowerCase() === 'admin';
+    const rawAutho = String(profile['dtr-autho'] || profile.dtr_autho || '').trim();
+    if (isAdmin && (!rawAutho || /^(y|all|\*)$/i.test(rawAutho))) {
+        window.isAuthenticated = true;
+        window.userAuthorizedDTRPrefix = [''];
+        return true;
     }
+    if (rawAutho) {
+        window.isAuthenticated = true;
+        window.userAuthorizedDTRPrefix = /^(y|all|\*)$/i.test(rawAutho)
+            ? ['']
+            : rawAutho.split(',').map(s => s.trim()).filter(Boolean).map(s => s.toUpperCase());
+        return true;
+    }
+    window.isAuthenticated = false;
+    window.userAuthorizedDTRPrefix = null;
+    return false;
+}
 
-    showButtonLoading(submitPinBtn, 'Submit PIN'); // Show loading on button
-
+async function initDtrAuthorization() {
     try {
-        const response = await fetch('/api/dtr/verify-pin', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({ pin: enteredPin })
-        });
-        const result = await response.json().catch(() => ({}));
-
-        if (response.ok && result.status === 'success' && result.dtrAutho) {
-            window.isAuthenticated = true;
-            // dtr-autho may hold several comma-separated prefixes
-            window.userAuthorizedDTRPrefix = String(result.dtrAutho).split(',')
-                .map(s => s.trim())
-                .filter(Boolean)
-                .map(s => s.toUpperCase());
-            document.getElementById("pinModal").style.display = "none";
-            document.getElementById("mainContentWrapper").style.display = "block"; // Show main content
-            pinInput.value = ""; // Clear PIN input
-        } else {
-            window.isAuthenticated = false;
-            window.userAuthorizedDTRPrefix = null;
-            pinErrorDiv.textContent = response.status === 429
-                ? (result.message || "Too many attempts. Try again in a few minutes.")
-                : response.status === 401 && result.message === 'Unauthorized'
-                    ? "Your session has expired. Please sign in again."
-                    : "No authorization. Invalid PIN or missing DTR authorization.";
-            pinErrorDiv.style.display = "block";
+        const cached = JSON.parse(localStorage.getItem('mzo_user_profile') || 'null');
+        if (applyDtrProfileAuth(cached)) return;
+    } catch (_) {}
+    try {
+        const res = await fetch('/api/session-check', { credentials: 'same-origin' });
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.profile) {
+                try { localStorage.setItem('mzo_user_profile', JSON.stringify(data.profile)); } catch (_) {}
+                applyDtrProfileAuth(data.profile);
+            }
         }
-    } catch (error) {
-        console.error("Error validating PIN:", error);
-        pinErrorDiv.textContent = "Could not validate PIN. Please try again later.";
-        pinErrorDiv.style.display = "block";
-    } finally {
-        hideButtonLoading(submitPinBtn); // Hide loading on button
-    }
+    } catch (_) {}
 }
 
 /**
@@ -1204,7 +1147,7 @@ function searchDTR() {
 
 
   if (!window.isAuthenticated) {
-    showError("Please enter a valid PIN to access this functionality.");
+    showError("Your account does not have DTR authorization. Contact an administrator.");
     return;
   }
 
@@ -1662,7 +1605,7 @@ function submitData() {
   try {
     if (!window.isAuthenticated) {
       hideLoading();
-      showError('Unauthorized: Please enter a valid PIN before submitting.');
+      showError('Unauthorized: Your account is not authorized to submit DTR load measurements.');
       return;
     }
 
@@ -1742,14 +1685,6 @@ document.getElementById("searchCode").addEventListener("keypress", function(even
   }
 });
 
-// Event listener for PIN input
-document.getElementById("pinInput").addEventListener("keypress", function(event) {
-    if (event.key === "Enter") {
-        event.preventDefault();
-        validatePin();
-    }
-});
-
 // Close modal when clicking outside (only for confirmation modal and rejection modal)
 window.onclick = function(event) {
   const confirmationModal = document.getElementById("confirmationModal");
@@ -1762,10 +1697,10 @@ window.onclick = function(event) {
   }
 }
 
-// On page load, show the PIN modal and hide main content
+// On page load, authorize from signed-in Google session and show main content
 window.onload = function() {
-    document.getElementById("pinModal").style.display = "flex";
-    document.getElementById("mainContentWrapper").style.display = "none";
+    document.getElementById("mainContentWrapper").style.display = "block";
+    initDtrAuthorization();
 
     // Set min/max for DATE_OF_MEASUREMENT on load
     const dateInput = document.getElementById("DATE_OF_MEASUREMENT");
@@ -1785,7 +1720,7 @@ window.onload = function() {
 
 async function showAllLoadData() {
   if (!window.isAuthenticated) {
-    showError("Please enter a valid PIN to view data.");
+    showError("Your account does not have DTR authorization to view measurements.");
     return;
   }
   if (!window.userAuthorizedDTRPrefix) {
