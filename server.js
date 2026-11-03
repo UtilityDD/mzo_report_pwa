@@ -389,34 +389,6 @@ function hashPin(pin) {
     return `${PIN_HASH_PREFIX}${salt.toString('base64')}$${hash.toString('base64')}`;
 }
 
-function verifyPin(pin, stored) {
-    const plain = String(pin || '').trim();
-    const saved = String(stored || '').trim();
-    if (!plain || !saved) return false;
-    if (!isPinHash(saved)) return saved === plain;
-    const parts = saved.split('$');
-    let saltB64 = '';
-    let hashB64 = '';
-    if (parts.length === 3) {
-        saltB64 = parts[1];
-        hashB64 = parts[2];
-    } else if (parts.length === 4) {
-        saltB64 = parts[2];
-        hashB64 = parts[3];
-    } else {
-        return false;
-    }
-    try {
-        const salt = Buffer.from(saltB64, 'base64');
-        const expected = Buffer.from(hashB64, 'base64');
-        if (!salt.length || !expected.length) return false;
-        const actual = crypto.scryptSync(plain, salt, expected.length, { N: 16384, r: 8, p: 1 });
-        return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
-    } catch (err) {
-        return false;
-    }
-}
-
 /** Profile sent to browsers. PIN never leaves the server. */
 function portalUserForClient(user) {
     if (!user) return null;

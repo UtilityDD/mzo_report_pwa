@@ -46,7 +46,7 @@ Production stays on the **old** Supabase project (`unsmtschmcvftfqwabaq`) for lo
 
 Stock storage and the insight cutover: [stock.md](stock.md).
 
-**PINs:** stored as `scrypt$` hashes. A still-plain PIN is accepted once at login and then replaced with the hash. `GET /api/admin/users` does not include `PIN`. A blank PIN on user update keeps the current one. Remember me stores `mzo_saved_username` only and deletes `mzo_saved_pin`. `/server.js` and `/data/` are not served. Do not put the service role key in HTML.
+**Sign-in:** Google only (`POST /api/auth/google`); there is no username + PIN sign-in. A user signs in once an admin has saved their Google email. VM-only admin accounts (`MZO_LOCAL_ADMINS`, the VM only) sign in with a password through `POST /api/auth/local` ([vm.md](vm.md)). Old PINs stay in `portal_users` as `scrypt$` hashes and are never returned by `GET /api/admin/users`. `/server.js` and `/data/` are not served. Do not put the service role key in HTML.
 
 **Client profile:** `localStorage.mzo_user_profile` (PIN stripped). Scope fields: `role`, `zone_code`, `region_code`, `division_code`, `ccc_code`, plus module flags (`nsc-autho`, `nsc-upload-autho`, `defective-upload-autho`, `stock-upload-autho`, `si-autho`, `sheets-autho`, …). The shell's sidebar and account menu read this profile. After an admin changes a flag, the user must sign in again so the stored profile refreshes.
 
@@ -211,7 +211,7 @@ Report `meta.json` files are read from `REPORTS_PUBLIC_BASE`, which defaults to 
 | `POST /api/structures/update` | `structure` |
 | `POST /api/data/refresh` (browser writes through Apps Script) | the allow-listed keys |
 
-Not wired, on purpose: login and Google sign-in (PIN-hash upgrades and last-login updates in `portal_users`), activity logs (every page visit) and `POST /api/admin/sync` (a read). Writes that skip the app, such as `si-works/si.html` straight to Supabase or edits on Vercel, reach the mirror at the next scheduled sync.
+Not wired, on purpose: Google sign-in (last-login and email updates in `portal_users`), activity logs (every page visit) and `POST /api/admin/sync` (a read). Writes that skip the app, such as `si-works/si.html` straight to Supabase or edits on Vercel, reach the mirror at the next scheduled sync.
 
 **On the VM.** `provision.sh` creates `/opt/mzo/data/snapshots` (owner `opc`) and `mzo-sync.service` sets `MZO_SNAPSHOT_DIR`. The app unit (`mzo-reports.service`) also needs:
 

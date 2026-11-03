@@ -202,10 +202,10 @@ PAGES.dtr = {
   }
 };
 
-// dtr/load.html opens behind a PIN (POST /api/dtr/verify-pin, which the test blocks): the walk sets the
-// state a valid PIN leaves (authenticated, DTR prefixes) and calls the page's own read functions.
+// dtr/load.html authorizes from the signed-in profile's dtr-autho: the walk sets the state that leaves
+// (authenticated, DTR prefixes) and calls the page's own read functions.
 // Nothing is ever submitted (the Apps Script POST is blocked as well).
-const DTRLOAD_AUTH = "window.isAuthenticated = true; window.userAuthorizedDTRPrefix = ['7G', 'A3', '6R']; document.getElementById('pinModal').style.display = 'none'; document.getElementById('mainContentWrapper').style.display = 'block';";
+const DTRLOAD_AUTH = "window.isAuthenticated = true; window.userAuthorizedDTRPrefix = ['7G', 'A3', '6R']; document.getElementById('mainContentWrapper').style.display = 'block';";
 PAGES.dtrload = {
   url: 'dtr/load.html', nav: 'dtr_load',
   ready: "return document.readyState === 'complete' && !!window.MzoRows === !!document.querySelector('script[src*=\"mzo_rows\"]');",
