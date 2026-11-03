@@ -108,6 +108,28 @@
     .login-install-btn.hidden { display: none; }
     .login-install-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
+    /* VM-only admin sign-in (shown only when the server reports localSignIn) */
+    .local-signin { border-top: 1px solid var(--mzo-border); padding-top: 10px; }
+    .local-signin summary {
+      cursor: pointer; font-size: 12px; font-weight: 500; color: var(--mzo-muted);
+      text-align: center; list-style: none; padding: 2px 0;
+    }
+    .local-signin summary::-webkit-details-marker { display: none; }
+    .local-signin summary:hover { color: var(--mzo-text); }
+    .local-signin form { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    .local-signin input {
+      height: 38px; padding: 0 12px; border-radius: 8px;
+      border: 1px solid var(--input-border); background: var(--input-bg); color: var(--mzo-text);
+      font: 13.5px var(--mzo-font);
+    }
+    .local-signin input:focus { outline: 2px solid var(--mzo-accent); outline-offset: -1px; }
+    .local-signin button {
+      height: 38px; border-radius: 8px; border: 1px solid var(--mzo-border-strong);
+      background: var(--mzo-surface-2); color: var(--mzo-text); font: 600 13px var(--mzo-font); cursor: pointer;
+    }
+    .local-signin button:hover { background: var(--mzo-hover); }
+    .local-signin button:disabled { opacity: .6; cursor: default; }
+
     .login-footer {
       margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--mzo-border);
       text-align: center; font-size: 11.5px; color: var(--mzo-muted); line-height: 1.45;
@@ -246,6 +268,15 @@
       </button>
 
       <div class="error-msg" id="errorMsg" role="alert"></div>
+
+      <details class="local-signin" id="localSignIn" hidden>
+        <summary>Server admin sign-in</summary>
+        <form id="localSignInForm">
+          <input id="localUser" name="username" autocomplete="username" placeholder="Username" aria-label="Username" required />
+          <input id="localPass" name="password" type="password" autocomplete="current-password" placeholder="Password" aria-label="Password" required />
+          <button type="submit" id="localSignInBtn">Sign in</button>
+        </form>
+      </details>
 
       <button type="button" class="login-install-btn" id="loginInstallBtn" title="Install DISHA app">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
@@ -534,6 +565,8 @@
       .then(r => r.json())
       .then(cfg => {
         authConfig = cfg;
+        const local = document.getElementById('localSignIn');
+        if (local) local.hidden = !cfg.localSignIn;
         window.initGoogleIdentityServices();
       })
       .catch(() => {});
@@ -567,6 +600,40 @@
 
     // Google sign in button click
     document.getElementById('googleFallbackBtn')?.addEventListener('click', triggerGoogleSignIn);
+
+    // VM-only admin sign-in (the server answers 404 where it is off)
+    document.getElementById('localSignInForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('localSignInBtn');
+      const username = document.getElementById('localUser').value.trim();
+      const password = document.getElementById('localPass').value;
+      if (!username || !password.trim()) return;
+      errorMsg.textContent = '';
+      btn.disabled = true;
+      try {
+        const response = await fetch('/api/auth/local', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ username, password })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (response.ok && data.status === 'success') {
+          document.getElementById('localPass').value = '';
+          localStorage.setItem('mzo_authenticated', 'true');
+          localStorage.setItem('mzo_user_profile', JSON.stringify(data.profile));
+          showAuthTransition('Signing in to DISHA', 'Server admin account');
+          completeAuthTransition(data.profile?.Name || data.profile?.Username);
+          setTimeout(() => { window.location.href = '/app.html'; }, 680);
+        } else {
+          errorMsg.textContent = data.message || 'Sign-in failed.';
+        }
+      } catch (err) {
+        errorMsg.textContent = 'Connection error during sign-in.';
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     // Check if there was an active pending email in sessionStorage
     const lastPendingEmail = sessionStorage.getItem('mzo_pending_email');

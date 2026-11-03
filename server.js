@@ -641,7 +641,7 @@ function readUsersFromLocalFile() {
 
 /**
  * Login credentials source of truth is mzo_insight.portal_users (Supabase).
- * forceRefresh=true (used by /api/login) always re-queries so PIN changes apply immediately.
+ * forceRefresh=true (sign-in, admin edits) always re-queries so changes apply immediately.
  */
 async function getLoginCredentials(options = {}) {
     const forceRefresh = !!(options && options.forceRefresh);
@@ -700,7 +700,7 @@ function readSession_(req) {
 // Reachable without a session (static files are already served above).
 const PUBLIC_PATHS = new Set([
     '/login.html', '/offline.html', '/sw.js', '/manifest.json',
-    '/api/auth/google', '/api/auth/pending-status', '/api/auth/config', '/api/news'
+    '/api/auth/google', '/api/auth/local', '/api/auth/pending-status', '/api/auth/config', '/api/news'
 ]);
 const PUBLIC_ASSET = /^\/(icons|assets)\/|\.(css|js|png|json|ico)$/i;
 
@@ -867,11 +867,43 @@ function rootAdminProfile_({ Username, Name, email, auth_provider, approved_by }
     };
 }
 
-// Public auth configuration (Google Client ID)
+// Public auth configuration (Google Client ID; localSignIn only where MZO_LOCAL_ADMINS is set, i.e. the VM)
 app.get('/api/auth/config', (req, res) => {
     res.json({
-        googleClientId: googleClientId_()
+        googleClientId: googleClientId_(),
+        ...(localAdmins.enabled ? { localSignIn: true } : {})
     });
+});
+
+/**
+ * Sign-in of a VM-only admin (MZO_LOCAL_ADMINS): checked against its hash only, never Supabase.
+ * Everyone else signs in with Google; without MZO_LOCAL_ADMINS (Vercel, local default) this is 404.
+ */
+app.post('/api/auth/local', async (req, res) => {
+    if (!localAdmins.enabled) return res.status(404).json({ status: 'error', message: 'Not found.' });
+    const { username, password } = req.body || {};
+    if (!username || !password || !String(password).trim()) {
+        return res.status(400).json({ status: 'error', message: 'Username and password are required.' });
+    }
+    const WRONG = { status: 'error', message: 'Invalid username or password.' };
+    const admin = localAdmins.find(username);
+    // An unknown username costs the same time and counts against the client IP, like a wrong password.
+    const ok = admin
+        ? await localAdmins.attempt(admin, String(password).trim(), req)
+        : await localAdmins.reject(req);
+    if (!ok) return res.status(401).json(WRONG);
+    const clientProfile = portalUserForClient(rootAdminProfile_({
+        Username: admin.username, Name: admin.name, email: '', auth_provider: 'local', approved_by: 'vm_local_admin'
+    }));
+    issueSessionCookie(res, clientProfile, { local: localAdmins.sessionKey(admin) });
+    console.log(`[Auth] VM-only admin signed in: ${admin.username} (${admin.name})`);
+    await logActivity({
+        username: admin.username,
+        name: admin.name,
+        type: 'login',
+        details: `Signed in as a VM-only admin from IP: ${req.ip || req.headers['x-forwarded-for'] || 'unknown'}`
+    });
+    return res.status(200).json({ status: 'success', profile: clientProfile });
 });
 
 // API endpoint for Google Sign-In & Registration

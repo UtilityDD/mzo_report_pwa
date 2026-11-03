@@ -116,10 +116,10 @@ username|Display Name|scrypt$N$r$p$saltBase64$hashBase64
 
 How they behave (`lib/local_admins.js`, tests in `vm/dev/test-local-admin.js`):
 
-- Sign in on the normal page with the username and the password in the PIN field. The username is case-insensitive.
-- Such a username is checked against its hash only, never against Supabase. A Supabase user with the same name cannot sign in on the VM, so pick a username that is not in `portal_users`.
+- Everyone else signs in with Google. Where `MZO_LOCAL_ADMINS` is set, `/api/auth/config` reports `localSignIn: true` and the sign-in page shows **Server admin sign-in** under the Google button (username and password, `POST /api/auth/local`). Without the variable (Vercel, a local checkout) the link is hidden and the route answers 404. The username is case-insensitive.
+- Such a username is checked against its hash only, never against Supabase. Pick a username that is not in `portal_users`: a local admin and a Supabase user of the same name would be different people.
 - The session carries the full admin profile (the same fields as the Google root admin) with `auth_provider: 'local'`. Session checks and permission checks never look it up in Supabase, so it is never demoted.
-- Five failed attempts for one username, or from one client IP, lock that username or IP for a minute. A locked attempt gets the ordinary "Invalid Username or PIN." answer; the journal records each failure and lockout (`journalctl -u mzo-reports | grep 'Local admin'`).
+- Five failed attempts for one username, or from one client IP, lock that username or IP for a minute. An unknown username takes as long as a wrong password, gets the same "Invalid username or password." answer and counts against the IP. A locked attempt gets that answer too; the journal records each failure and lockout (`journalctl -u mzo-reports | grep 'Local admin'`).
 - Its activity (sign-in, admin actions) goes to the journal (`grep Activity`), not to Supabase's activity log. What the admin changes (users, Power Map, uploads, syncs) still goes to production, like any admin's changes.
 - Changing or removing an entry ends that account's open sessions once the app restarts.
 

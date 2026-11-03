@@ -6,11 +6,13 @@
 //   node vm/dev/test-local-admin.js
 //
 // It runs server.js in child processes (accounts set, password changed, variable unset) and checks:
-// the right password gives an admin session that passes the session check and an admin endpoint; a
-// wrong one gets the wrong-PIN answer; such a username never falls through to Supabase and is never
-// demoted by a Supabase row of the same name; the backoff (username and IP) locks silently; a session
-// ends when its entry is changed or removed; local admins cause no upstream write; with the variable
-// unset, Supabase users behave exactly as before. Also checks lib/local_admins.js and the hash helper.
+// POST /api/auth/local with the right password gives an admin session that passes the session check and
+// an admin endpoint; a wrong password and an unknown username (a Supabase user's PIN included) get the
+// same answer and never reach Supabase; a local admin is never demoted by a Supabase row of the same
+// name; the backoff (username and IP, unknown usernames counting against the IP) locks silently; a
+// session ends when its entry is changed or removed; local admins cause no upstream write; with the
+// variable unset the route is 404 and /api/auth/config does not offer it. Also checks
+// lib/local_admins.js and the hash helper.
 
 const fs = require('fs');
 const os = require('os');
@@ -82,7 +84,7 @@ async function child(out, cookieIn) {
         results[name] = { status: res.status, body: text, cookie: setCookie.split(';')[0], upstream: upstream.slice(before) };
         return results[name];
     };
-    const login = (name, username, pin, ip) => call(name, 'POST', '/api/login', { body: { username, pin }, ip });
+    const login = (name, username, password, ip) => call(name, 'POST', '/api/auth/local', { body: { username, password }, ip });
     const forge = (session) => {
         const payload = Buffer.from(JSON.stringify(session)).toString('base64');
         return `mzo_session=${encodeURIComponent(payload + '.' + crypto.createHmac('sha256', SECRET).update(payload).digest('base64'))}`;
@@ -92,19 +94,22 @@ async function child(out, cookieIn) {
     const B = '198.51.100.20';
     const C = '198.51.100.7';
 
+    await call('config', 'GET', '/api/auth/config');
     if (mode === 'set') {
         const ok = await login('local_ok', ' VMAdmin ', ADMIN_PW, B);
         await call('local_session_check', 'GET', '/api/session-check', { cookie: ok.cookie });
         await call('local_admin_users', 'GET', '/api/admin/users', { cookie: ok.cookie });
         await call('local_stock_meta', 'GET', '/api/stock/meta', { cookie: ok.cookie });
-        // Failures: vmadmin 1 (C, the same-name Supabase PIN is a wrong local password) + 3 (A); vmops 2 (A).
+        // Failures: vmadmin 1 (C, the same-name Supabase PIN is a wrong local password) + 3 (A);
+        // IP A: those 3, the unknown username clerk (with its right Supabase PIN) and vmops once = 5.
         await login('supabase_same_name', 'vmadmin', '1234', C);
         await login('local_wrong', 'vmadmin', 'wrong password', A);
-        await login('supabase_wrong', 'clerk', '0000', A);
+        await login('unknown_user', 'clerk', '5678', A);
+        await login('missing_password', 'vmadmin', '  ', A);
         for (let i = 2; i <= 3; i++) await login(`local_wrong_${i}`, 'vmadmin', 'wrong password ' + i, A);
-        for (let i = 1; i <= 2; i++) await login(`ops_wrong_${i}`, 'vmops', 'wrong password ' + i, A);
+        await login('ops_wrong_1', 'vmops', 'wrong password 1', A);
         await login('ops_locked_ip', 'vmops', OPS_PW, A); // IP A: 5 failures, locked
-        await login('clerk_from_locked_ip', 'clerk', '5678', A); // Supabase users are not affected
+        await login('unknown_locked_ip', 'clerk', '5678', A);
         await login('local_other_ip', 'vmadmin', ADMIN_PW, C); // vmadmin: 4 failures, not locked; resets
         for (let i = 1; i <= 5; i++) await login(`local_spread_${i}`, 'vmadmin', 'wrong password ' + i, `192.0.2.${10 + i}`);
         await login('local_locked_user', 'vmadmin', ADMIN_PW, '192.0.2.99'); // vmadmin: 5 failures from 5 IPs, locked
@@ -122,13 +127,7 @@ async function child(out, cookieIn) {
         await call('old_session_admin', 'GET', '/api/admin/users', { cookie: cookieIn });
         await login('supabase_same_name', 'vmadmin', '1234', C);
         await login('local_password', 'vmadmin', ADMIN_PW, C);
-        await login('supabase_wrong', 'clerk', '0000', A);
-        const clerk = await login('clerk_ok', 'clerk', '5678', A);
-        await call('clerk_session_check', 'GET', '/api/session-check', { cookie: clerk.cookie });
-    }
-    if (mode === 'set') {
-        const clerk = await login('clerk_ok', 'clerk', '5678', C);
-        await call('clerk_session_check', 'GET', '/api/session-check', { cookie: clerk.cookie });
+        await login('unknown_user', 'clerk', '5678', A);
     }
     srv.close();
     fs.writeFileSync(out, JSON.stringify({ results, upstream }));
@@ -209,8 +208,9 @@ function main() {
         const S = runMode('set', admins, tmp);
         const R = S.results;
         const body = (r) => JSON.parse(r.body);
-        const WRONG = { status: 'error', message: 'Invalid Username or PIN.' };
+        const WRONG = { status: 'error', message: 'Invalid username or password.' };
 
+        eq(body(R.config).localSignIn, true, 'set: /api/auth/config offers the local sign-in');
         eq(R.local_ok.status, 200, 'local admin: sign-in');
         const profile = body(R.local_ok).profile;
         eq(Object.keys(profile), ['Username', 'Name', 'email', 'auth_provider', 'user_status', 'role', 'office_level', 'sheets_autho', 'can_comment',
@@ -229,21 +229,20 @@ function main() {
         eq([R.supabase_same_name.status, body(R.supabase_same_name)], [401, WRONG], 'same-name Supabase user cannot sign in (no fall-through)');
         eq(R.supabase_same_name.upstream, [], 'no Supabase lookup for a local admin username');
         eq([R.local_wrong.status, body(R.local_wrong)], [401, WRONG], 'local admin: wrong password');
-        eq(R.local_wrong.body, R.supabase_wrong.body, 'local wrong password answers exactly like a wrong PIN');
-        eq([R.ops_locked_ip.status, R.ops_locked_ip.body], [401, R.supabase_wrong.body], 'backoff: IP with 5 failures locked, answered like a wrong PIN');
-        eq(R.clerk_from_locked_ip.status, 200, 'backoff does not touch Supabase users');
+        eq([R.unknown_user.status, R.unknown_user.body], [401, R.local_wrong.body], 'unknown username (a Supabase user with its PIN) answers exactly like a wrong password');
+        eq(R.unknown_user.upstream, [], 'unknown username: no Supabase lookup');
+        eq(R.missing_password.status, 400, 'blank password: 400');
+        eq([R.ops_locked_ip.status, R.ops_locked_ip.body], [401, R.local_wrong.body], 'backoff: IP with 5 failures (unknown usernames included) locked, answered like a wrong password');
+        eq([R.unknown_locked_ip.status, R.unknown_locked_ip.body], [401, R.local_wrong.body], 'backoff: locked IP, unknown username, same answer');
         eq(R.local_other_ip.status, 200, 'backoff: under 5 failures, the right password from another IP signs in');
-        eq([R.local_locked_user.status, R.local_locked_user.body], [401, R.supabase_wrong.body], 'backoff: username with 5 failures locked, from any IP');
+        eq([R.local_locked_user.status, R.local_locked_user.body], [401, R.local_wrong.body], 'backoff: username with 5 failures locked, from any IP');
         eq(R.ops_other_ip.status, 200, 'backoff: the other admin from an unlocked IP signs in');
         eq(R.forged_local_key.status, 401, 'a session with a wrong local key is refused');
         ok(body(R.forged_no_key_check).profile.role === 'viewer', 'auth_provider local without the signed key is an ordinary session');
         eq(R.forged_no_key_admin.status, 403, '… and gets no admin access');
         ok(!S.log.includes(ADMIN_PW) && !S.log.includes(entry.split('|')[2]), 'server log has neither password nor hash');
-        // The only upstream writes are the Supabase users' own activity rows (refused by the test).
-        const writes = S.upstream.filter((u) => u.method !== 'GET');
-        ok(writes.every((w) => w.method === 'POST' && w.url.endsWith('/activity_logs')), 'only activity-log writes');
-        ok(writes.every((w) => !/"username":"vm(admin|ops)"/i.test(w.body)), 'no upstream write mentions a local admin');
-        eq(writes.length, 2, 'one activity write per Supabase sign-in (clerk, twice)');
+        // Local admins' activity goes to the journal: no upstream write at all.
+        eq(S.upstream.filter((u) => u.method !== 'GET'), [], 'no upstream write');
 
         // Password changed / variable removed: the old session ends; Supabase users are untouched.
         const rot = runMode('rotated', `vmadmin|VM Admin|${LA.hashPassword('a different password')}`, tmp, R.cookieOut);
@@ -251,14 +250,15 @@ function main() {
         for (const [name, X] of [['rotated', rot], ['unset', un]]) {
             eq(X.results.old_session_check.status, 401, `${name}: old local admin session ends`);
             eq(X.results.old_session_admin.status, 401, `${name}: old local admin session has no admin access`);
-            eq(X.results.local_password.status, 401, `${name}: old local password no longer signs in`);
-            eq(X.results.clerk_ok.body, R.clerk_ok.body, `${name}: Supabase user sign-in unchanged`);
-            eq(X.results.clerk_session_check.body, R.clerk_session_check.body, `${name}: Supabase user session check unchanged`);
-            eq(X.results.supabase_wrong.body, R.supabase_wrong.body, `${name}: wrong PIN unchanged`);
         }
-        eq(rot.results.supabase_same_name.status, 401, 'rotated: same-name Supabase user still cannot sign in');
-        eq(un.results.supabase_same_name.status, 200, 'unset: the Supabase user vmadmin signs in as before');
-        eq(body(un.results.supabase_same_name).profile.role, 'viewer', 'unset: with its Supabase profile');
+        eq(rot.results.local_password.status, 401, 'rotated: old local password no longer signs in');
+        eq(rot.results.supabase_same_name.status, 401, 'rotated: same-name Supabase PIN still cannot sign in');
+        eq(rot.results.unknown_user.body, R.local_wrong.body, 'rotated: unknown username, same answer');
+        eq(body(rot.results.config).localSignIn, true, 'rotated: local sign-in still offered');
+        eq(body(un.results.config), { googleClientId: '' }, 'unset: /api/auth/config does not offer the local sign-in');
+        for (const k of ['local_password', 'supabase_same_name', 'unknown_user']) {
+            eq([un.results[k].status, un.results[k].upstream], [404, []], `unset: /api/auth/local is 404 (${k}), no upstream request`);
+        }
 
         fs.rmSync(tmp, { recursive: true, force: true });
         console.log(`local admin test: ${checks} checks passed`);
