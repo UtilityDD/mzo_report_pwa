@@ -4791,11 +4791,17 @@ function buildExecutiveBriefing_(meta) {
         total: items.length
     };
 
+    let cccs = [];
+    try {
+        cccs = JSON.parse(fs.readFileSync(path.join(__dirname, 'lib', 'briefing_cccs.json'), 'utf8'));
+    } catch (_) {}
+
     return {
         asOn,
         generatedAt: new Date().toISOString(),
         summaryCounts,
         items,
+        cccs,
         metaStats: {
             pendingMc,
             loadExt,
