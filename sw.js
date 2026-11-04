@@ -10,7 +10,7 @@
 //   - Cache first for third-party CDNs (libraries, fonts).
 //   - Stale-while-revalidate for every other same-origin asset.
 //   - HTML responses get /mzo_present.js (desktop presentation zoom) injected after <head>.
-const CACHE_NAME = 'mzo-reports-cache-v305';
+const CACHE_NAME = 'mzo-reports-cache-v307';
 
 // Precached on install (not the data hub: it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -117,7 +117,7 @@ const NETWORK_FIRST = new Set([
   '/meter_utilization.html', '/jjm.html', '/wridd.html', '/bharatnet.html', '/icds.html', '/pmsgy.html',
   '/solar.html', '/rem/defaulters.html', '/admin_users.html', '/admin.html',
   '/docket.html', '/docket/kpi.html', '/smart_meter/dashboard.html',
-  '/consumer/defective_meter.html', '/lib/defective_meter_pipeline.js', '/lib/sheet_mirror_client.js', '/lib/offices.js',
+  '/consumer/defective_meter.html', '/consumer/unbilled.html', '/unbilled.html', '/lib/defective_meter_pipeline.js', '/lib/sheet_mirror_client.js', '/lib/offices.js',
   '/stock/upload.html', '/stock/index.html', '/stock/script.js', '/stock/allotment.js',
   '/stock/allotment_view.js', '/stock/style.css', '/capex_all.html', '/advance_onm.html', '/cmo.html', '/accident/accident.html', '/safety_inspection.html', '/dtr/index.html', '/dtr/load.html', '/executive_briefing.html', '/mzo_data_hub.js', '/mzo_theme.js',
   '/mzo_theme.css', '/mzo_ui.js', '/mzo_presets_hub.js', '/mzo_scope.js',
