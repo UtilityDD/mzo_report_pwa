@@ -155,10 +155,15 @@ function toCsv(headers, rows) {
   return lines.join('\n');
 }
 
-async function run() {
-  const args = process.argv.slice(2);
-  const dryRun = args.includes('--dry-run');
-  const skipDb = args.includes('--skip-db');
+function isDbvisAvailable() {
+  return fs.existsSync(DBVIS_CMD_PATH);
+}
+
+async function run(options = {}) {
+  const args = process.argv ? process.argv.slice(2) : [];
+  const dryRun = options.dryRun !== undefined ? !!options.dryRun : args.includes('--dry-run');
+  const skipDb = options.skipDb !== undefined ? !!options.skipDb : args.includes('--skip-db');
+  const fresh = options.fresh !== undefined ? !!options.fresh : (args.includes('--fresh') || args.includes('--clean'));
   const fileIdx = args.indexOf('--file');
   const dirIdx = args.indexOf('--dir');
 
@@ -187,7 +192,7 @@ async function run() {
     // Automated 1-command extraction via DbVisualizer CLI
     if (!skipDb) {
       try {
-        runDbvisBatchExtraction(chunksDir);
+        runDbvisBatchExtraction(chunksDir, !fresh);
       } catch (err) {
         console.warn(`\n[${LABEL}] Automated database query notice: ${err.message}`);
         console.log(`[${LABEL}] Checking if existing division chunks can be ingested...`);
@@ -373,6 +378,6 @@ async function run() {
   return meta;
 }
 
-module.exports = { syncDefectiveFromCrm: run };
+module.exports = { syncDefectiveFromCrm: run, isDbvisAvailable };
 
 cli(module, run, LABEL);

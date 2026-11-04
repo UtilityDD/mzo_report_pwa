@@ -35,7 +35,8 @@
       </div>
       <div class="ui-actions">
         <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
-        <button type="button" class="ui-btn" id="syncBtn" hidden><svg class="ui-i"><use href="#ui-sync"/></svg>Sync sheet</button>
+        <button type="button" class="ui-btn" id="crmSyncBtn" hidden title="Direct CRM extraction via IBM DB2 (all 7 divisions)"><svg class="ui-i"><use href="#ui-sync"/></svg>Sync from CRM</button>
+        <button type="button" class="ui-btn" id="syncBtn" hidden title="Sync from Google Sheet"><svg class="ui-i"><use href="#ui-sync"/></svg>Sync sheet</button>
         <button type="button" class="ui-btn" id="uploadBtn" hidden><svg class="ui-i"><use href="#ui-upload"/></svg>Upload dump</button>
         <input type="file" id="fileInput" accept=".csv,.txt,text/csv" hidden />
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
@@ -482,13 +483,13 @@
         return String(p.Username || p.username || '').trim().toLowerCase() === 'dm1';
       } catch (e) { return false; }
     }
-    function permit(upload, sync) { meta.canUpload = !!upload; $('uploadBtn').hidden = !upload; $('syncBtn').hidden = !(sync || upload); }
+    function permit(upload, sync, crmSync) { meta.canUpload = !!upload; $('uploadBtn').hidden = !upload; $('syncBtn').hidden = !(sync || upload); if ($('crmSyncBtn')) $('crmSyncBtn').hidden = !(crmSync !== undefined ? crmSync : (sync || upload)); }
     permit(profileAllows(), profileAllows());
     var metaP = fetch('/api/defective/meta', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (m) {
       if (!m) return;
       meta.sheetScriptUrl = m.sheetScriptUrl || DEFAULTS.sheetScriptUrl;
       var up = !!m.canUpload || profileAllows();
-      permit(up, !!m.canSync || up);
+      permit(up, !!m.canSync || up, m.canCrmSync !== undefined ? m.canCrmSync : up);
       primeFromMeta(m.stats);
     }).catch(function () {});
 
@@ -528,6 +529,41 @@
         return Mirror.postScript(url, { action: 'savemeta', meta: { uploadedAt: new Date().toISOString(), originalName: file.name, sourceRows: built.sourceRows, summaryRows: built.summary.length, detailsRows: built.details.length, reportAsOn: built.reportAsOn } }).catch(function () {});
       }).then(function () {
         return MzoRows.reload('defective_details').catch(function () {});
+      });
+    }
+    if ($('crmSyncBtn')) {
+      $('crmSyncBtn').addEventListener('click', function () {
+        if (!confirm('Directly extract the latest defective meters from IBM DB2 across all 7 divisions?\n\nThis queries DB2 and updates DISHA directly in ~1-2 minutes.')) return;
+        var b = this; b.disabled = true; b.classList.add('spin');
+        status('Extracting 7 divisions from IBM DB2...', 15);
+        fetch('/api/defective/crm-sync', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
+        })
+          .then(function (r) {
+            return r.json().catch(function () {
+              throw new Error(r.status === 401 ? 'Session expired. Sign in again.' : 'HTTP ' + r.status);
+            }).then(function (d) {
+              if (!r.ok || d.status !== 'success') throw new Error(d.message || 'CRM Sync failed');
+              return d;
+            });
+          })
+          .then(function (d) {
+            status('Finalizing data…', 95);
+            details = null;
+            return MzoRows.reload('defective_details').catch(function () {}).then(function () {
+              return loadSummary(true);
+            }).then(function () {
+              status('');
+              UI.toast(d.message || 'CRM Defective Sync complete!');
+            });
+          })
+          .catch(function (e) {
+            status('');
+            UI.toast(e.message || 'CRM Sync failed');
+          })
+          .then(function () { b.disabled = false; b.classList.remove('spin'); });
       });
     }
     $('syncBtn').addEventListener('click', function () {

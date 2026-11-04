@@ -3868,6 +3868,27 @@
       }
     }
 
+    async function triggerDefectiveCrmSync(btn) {
+      if (!confirm('Run direct 1-click defective meter extraction from IBM DB2 across all 7 divisions?\n\nThis will extract ~255k+ meters and update Supabase Storage & DISHA in ~1-2 minutes.')) return;
+      const orig = btn ? btn.innerHTML : '';
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+      showToast('Extracting 7 divisions from IBM DB2 CRM database...', 'info');
+      try {
+        const res = await fetch('/api/defective/crm-sync', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
+        });
+        const d = await res.json();
+        if (!res.ok || d.status !== 'success') throw new Error(d.message || 'CRM Sync failed');
+        showToast(d.message || 'CRM Defective Sync complete!', 'success');
+      } catch (err) {
+        showToast(err.message || 'CRM Sync failed', 'error');
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+      }
+    }
+
     async function copySheetLink(raw) {
       const link = sheetCopyUrl(raw);
       if (!link) return;
@@ -3962,6 +3983,20 @@
         kind.textContent = row.kind;
         const side = document.createElement('span');
         side.className = 'src-side';
+        if (row.key === 'CACHE_DEFECTIVE') {
+          const crmBtn = document.createElement('button');
+          crmBtn.type = 'button';
+          crmBtn.className = 'src-open';
+          crmBtn.title = '1-click direct CRM extraction from IBM DB2';
+          crmBtn.setAttribute('aria-label', 'Sync from CRM DB2');
+          crmBtn.innerHTML = '<i class="fas fa-database"></i>';
+          crmBtn.style.color = 'var(--primary-color, #2563eb)';
+          crmBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            triggerDefectiveCrmSync(crmBtn);
+          });
+          side.appendChild(crmBtn);
+        }
         if (row.kind === 'Sheet' && sheetCopyUrl(row.sheet)) {
           const open = document.createElement('button');
           open.type = 'button';

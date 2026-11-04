@@ -7,7 +7,67 @@
   <script src="/mzo_theme.js?v=4"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=7" />
   <script src="/mzo_ui.js?v=6" defer></script>
+  <script src="/mzo_scope.js?v=17" defer></script>
   <style>
+    /* Clean Briefing Table Styling */
+    .bf-toolbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 10px 14px; background: var(--mzo-surface); border-bottom: 1px solid var(--mzo-border);
+      border-radius: 8px 8px 0 0;
+    }
+    .bf-tool-group { display: flex; align-items: center; gap: 8px; }
+    .bf-tool-label { font-size: 12px; font-weight: 600; color: var(--mzo-muted); }
+
+    .bf-rank {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 38px; height: 24px; padding: 0 7px; border-radius: 6px;
+      font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+      background: var(--mzo-surface-2); color: var(--mzo-text);
+      box-shadow: inset 0 0 0 1px var(--mzo-border);
+    }
+    .bf-rank.r1 { background: var(--mzo-ok-soft); color: var(--mzo-ok); box-shadow: none; }
+    .bf-rank.r2 { background: var(--mzo-surface-2); color: var(--mzo-text); }
+    .bf-rank.r-last { background: var(--mzo-bad-soft); color: var(--mzo-bad); box-shadow: none; }
+
+    .bf-pos-tag {
+      display: inline-block; font-size: 11px; font-weight: 500; color: var(--mzo-muted);
+      margin-left: 5px; font-variant-numeric: tabular-nums;
+    }
+    .bf-pos-tag.p1 { color: var(--mzo-ok); font-weight: 600; }
+    .bf-pos-tag.p-last { color: var(--mzo-bad); }
+
+    .bf-cell-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .bf-cell-sub { display: block; font-size: 11px; color: var(--mzo-muted); font-weight: 400; }
+
+    .bf-rep-link {
+      color: inherit; text-decoration: none; display: inline-block; padding: 2px 4px; border-radius: 4px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .bf-rep-link:hover { background: var(--mzo-surface-2); color: var(--mzo-accent); text-decoration: underline; }
+
+    .bf-scorecard-table {
+      width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums;
+      margin: 12px 0; border-top: 1px solid var(--mzo-border);
+    }
+    .bf-scorecard-table th {
+      padding: 9px 10px; text-align: left; font-size: 11.5px; font-weight: 600;
+      color: var(--mzo-muted); border-bottom: 1px solid var(--mzo-border); text-transform: uppercase;
+    }
+    .bf-scorecard-table td {
+      padding: 10px; border-bottom: 1px solid var(--mzo-border); vertical-align: middle;
+    }
+    .bf-scorecard-table td.num { text-align: right; }
+    .bf-scorecard-table tr:hover td { background: var(--mzo-row-hover); }
+
+    .bf-banner {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 12px 16px; border-radius: 8px; background: var(--mzo-surface-2);
+      border: 1px solid var(--mzo-border); margin-bottom: 14px;
+    }
+    .bf-banner-title { font-size: 13.5px; font-weight: 600; }
+    .bf-banner-sub { font-size: 12px; color: var(--mzo-muted); margin-top: 2px; }
+
+    /* Priority cards view */
     .bf-group { padding: 14px 16px 6px; font-size: 12px; font-weight: 500; color: var(--mzo-muted); display: flex; align-items: center; gap: 8px; }
     .bf-group:not(:first-child) { border-top: 1px solid var(--mzo-border); }
     .bf-row {
@@ -27,175 +87,877 @@
     .bf-clear .bf-row .d { display: none; }
     .bf-clear .bf-row .m { font-weight: 400; color: var(--mzo-muted); font-size: 13px; }
     .bf-skel { padding: 14px 16px; display: grid; gap: 14px; }
-    @media (max-width: 760px) { .bf-row { grid-template-columns: 10px minmax(0, 1fr) auto; } .bf-row > .ui-i { display: none; } }
   </style>
 </head>
 <body>
   <main class="ui-page">
     <header class="ui-head">
       <div>
-        <h1>Briefing</h1>
-        <p id="meta">Malda Zone</p>
+        <h1>Briefing <span class="ui-badge ui-date" id="asOn">Live</span></h1>
+        <p id="meta" class="ui-muted">Malda Zone · Cross-Report Office Ranking</p>
       </div>
       <div class="ui-actions">
-        <span class="ui-select" id="scopeWrap" hidden><select id="scope" aria-label="Division"></select></span>
-        <button type="button" class="ui-btn" id="copyBtn" disabled><svg class="ui-i"><use href="#ui-copy"/></svg>Copy summary</button>
-        <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
+        <div class="ui-seg" id="viewSeg" role="group" aria-label="View mode">
+          <button type="button" aria-pressed="true" data-v="matrix">Ranking Table</button>
+          <button type="button" aria-pressed="false" data-v="priorities">Priority Feed</button>
+        </div>
+        <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+        <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy summary</button>
+        <button type="button" class="ui-btn icon sm" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
+        <button type="button" class="ui-btn ui-side-toggle sm" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
       </div>
     </header>
 
-    <section class="ui-stats" style="--n:4" aria-label="Summary">
-      <div class="ui-stat"><div class="k"><span class="ui-dot bad"></span>Critical</div><div class="v" id="sCritical"><span class="ui-skel"></span></div></div>
-      <div class="ui-stat"><div class="k"><span class="ui-dot warn"></span>High priority</div><div class="v" id="sHigh"><span class="ui-skel"></span></div></div>
-      <div class="ui-stat"><div class="k"><span class="ui-dot"></span>Watch</div><div class="v" id="sWatch"><span class="ui-skel"></span></div></div>
-      <div class="ui-stat"><div class="k"><span class="ui-dot ok"></span>All clear</div><div class="v" id="sClear"><span class="ui-skel"></span></div></div>
+    <!-- Top Clean Stat Cards -->
+    <section class="ui-stats" style="--n:5" aria-label="Summary">
+      <div class="ui-stat">
+        <div class="k"><span class="ui-dot ok"></span>Rank #1 Leader</div>
+        <div class="v" id="sLeader"><span class="ui-skel"></span></div>
+        <div class="sub" id="sLeaderSub">Lowest avg position</div>
+      </div>
+      <div class="ui-stat">
+        <div class="k"><span class="ui-dot"></span>Best in MC >90d</div>
+        <div class="v" id="sBestMc"><span class="ui-skel"></span></div>
+        <div class="sub" id="sBestMcSub">Position #1</div>
+      </div>
+      <div class="ui-stat">
+        <div class="k"><span class="ui-dot"></span>Best in Disconnection</div>
+        <div class="v" id="sBestDiscon"><span class="ui-skel"></span></div>
+        <div class="sub" id="sBestDisconSub">Position #1</div>
+      </div>
+      <div class="ui-stat">
+        <div class="k"><span class="ui-dot"></span>Best in NSC >30d</div>
+        <div class="v" id="sBestNsc"><span class="ui-skel"></span></div>
+        <div class="sub" id="sBestNscSub">Position #1</div>
+      </div>
+      <div class="ui-stat">
+        <div class="k"><span class="ui-dot c1"></span>Reports Evaluated</div>
+        <div class="v">5</div>
+        <div class="sub">Direct verified sources</div>
+      </div>
     </section>
 
-    <section class="ui-panel">
-      <div class="ui-panel-h"><h2>Needs attention</h2><span class="ui-note" id="scopeNote"></span></div>
-      <div id="open"><div class="bf-skel"><span class="ui-skel" style="width:60%"></span><span class="ui-skel" style="width:45%"></span><span class="ui-skel" style="width:52%"></span></div></div>
-    </section>
+    <div class="ui-layout">
+      <!-- Side Filter Panel -->
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h">
+          <h2>Filters<small id="activeLabel"></small></h2>
+          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
+        </div>
+        <div class="ui-side-sec ui-side-stack">
+          <div class="ui-search">
+            <svg class="ui-i"><use href="#ui-search"/></svg>
+            <input type="search" id="qSearch" placeholder="Search office…" aria-label="Search office" />
+          </div>
+        </div>
+        <div class="ui-side-sec" id="secRegion">
+          <div class="ui-side-label" style="font-size:11px;font-weight:600;color:var(--mzo-muted);margin-bottom:6px;text-transform:uppercase;">Filter Region</div>
+          <div id="fRegion" aria-label="Region filter"></div>
+        </div>
+        <div class="ui-side-sec" id="secDivision" hidden>
+          <div class="ui-side-label" style="font-size:11px;font-weight:600;color:var(--mzo-muted);margin-bottom:6px;text-transform:uppercase;">Filter Division</div>
+          <div id="fDivision" aria-label="Division filter"></div>
+        </div>
+        <div class="ui-side-sec">
+          <div class="ui-side-label" style="font-size:11px;font-weight:600;color:var(--mzo-muted);margin-bottom:6px;text-transform:uppercase;">Ranking Methodology</div>
+          <div style="font-size:12px;color:var(--mzo-muted);line-height:1.5;">
+            Every office receives a <b>serial position (1 to N)</b> for each report parameter. The overall <b>Rank</b> is determined by the <b>average of these positions</b> (lowest average = Rank #1).
+          </div>
+        </div>
+      </aside>
 
-    <section class="ui-panel" id="clearPanel" hidden>
-      <div class="ui-panel-h"><h2>All clear</h2><span class="ui-note">Nothing outstanding</span></div>
-      <div id="clear" class="bf-clear"></div>
-    </section>
+      <!-- Main Content -->
+      <div class="ui-main">
+        <!-- Matrix View -->
+        <div id="matrixSection">
+          <div class="bf-toolbar">
+            <div class="bf-tool-group">
+              <span class="bf-tool-label">Compare Level:</span>
+              <div class="ui-seg" id="levelSeg" role="group" aria-label="Comparison level">
+                <button type="button" aria-pressed="false" data-v="region">Region (3)</button>
+                <button type="button" aria-pressed="true" data-v="division">Division (7)</button>
+                <button type="button" aria-pressed="false" data-v="ccc">CCC (42)</button>
+              </div>
+            </div>
+            <div style="font-size:12px;color:var(--mzo-muted);" id="levelSummary">
+              Comparing 7 Divisions across Malda Zone
+            </div>
+          </div>
+
+          <section class="ui-panel" style="border-top-left-radius:0;border-top-right-radius:0;margin-top:0;">
+            <div id="matrixTable">
+              <div class="bf-skel">
+                <span class="ui-skel" style="width:70%"></span>
+                <span class="ui-skel" style="width:85%"></span>
+                <span class="ui-skel" style="width:60%"></span>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Priority Feed View -->
+        <div id="prioritiesSection" hidden>
+          <section class="ui-panel">
+            <div class="ui-panel-h">
+              <h2>Needs attention</h2>
+              <span class="ui-note">Malda Zone</span>
+            </div>
+            <div id="open">
+              <div class="bf-skel">
+                <span class="ui-skel" style="width:60%"></span>
+                <span class="ui-skel" style="width:45%"></span>
+                <span class="ui-skel" style="width:52%"></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="ui-panel" id="clearPanel" hidden>
+            <div class="ui-panel-h">
+              <h2>All clear</h2>
+              <span class="ui-note">Nothing outstanding</span>
+            </div>
+            <div id="clear" class="bf-clear"></div>
+          </section>
+        </div>
+      </div>
+    </div>
   </main>
 
   <script>
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
-    var data = null, division = '';
-    var PRI = { critical: { label: 'Critical', dot: 'bad' }, high: { label: 'High priority', dot: 'warn' }, watch: { label: 'Watch', dot: '' } };
+
+    var rawData = null;
+    var state = {
+      view: 'matrix',       // 'matrix' | 'priorities'
+      level: 'division',    // 'region' | 'division' | 'ccc'
+      q: '',
+      region: '',
+      division: ''
+    };
+
+    var CANONICAL_DIVS = [
+      { name: 'Malda', region: 'Malda', cccCount: 9 },
+      { name: 'Chanchal', region: 'Malda', cccCount: 7 },
+      { name: 'Gazole', region: 'Malda', cccCount: 5 },
+      { name: 'Raiganj', region: 'Raiganj', cccCount: 6 },
+      { name: 'Islampur', region: 'Raiganj', cccCount: 5 },
+      { name: 'Balurghat', region: 'Balurghat', cccCount: 5 },
+      { name: 'Buniadpur', region: 'Balurghat', cccCount: 4 }
+    ];
+
+    var REGION_MAP = {
+      'Malda': 'Malda', 'Chanchal': 'Malda', 'Gazole': 'Malda',
+      'Raiganj': 'Raiganj', 'Islampur': 'Raiganj',
+      'Balurghat': 'Balurghat', 'Buniadpur': 'Balurghat'
+    };
+
+    var PRI = {
+      critical: { label: 'Critical', dot: 'bad' },
+      high: { label: 'High priority', dot: 'warn' },
+      watch: { label: 'Watch', dot: '' }
+    };
+
     var $ = function (id) { return document.getElementById(id); };
+    function norm(str) { return String(str || '').toLowerCase().trim(); }
 
-    function num(v) { return typeof v === 'number' ? v : (v && typeof v === 'object' ? (v.total || 0) : (Number(v) || 0)); }
-    function isZero(metric) { var d = String(metric == null ? '' : metric).replace(/[^\d.]/g, ''); return !d || Number(d) === 0; }
-    function divStat(item, div) {
-      if (!item.divisions || !div) return undefined;
-      if (item.divisions[div] !== undefined) return item.divisions[div];
-      var up = div.toUpperCase() + ' DIVISION';
-      return item.divisions[up];
-    }
-
-    // What one row shows, for the zone or for one division.
-    function view(item) {
-      if (!division) {
-        var hs = (item.hotspots || []).filter(function (h) { return h.count > 0; }).slice(0, 4);
-        return {
-          metric: item.metric,
-          zero: isZero(item.metric),
-          detail: hs.map(function (h) { return '<b>' + UI.esc(h.division) + '</b> ' + UI.n(h.count) + (h.amount ? ' · ₹' + UI.esc(h.amount) : ''); }).join(' &nbsp;·&nbsp; ')
-        };
+    function getDivKey(divName) {
+      if (!divName) return '';
+      var s = String(divName).trim().replace(/\s+division$/i, '');
+      for (var i = 0; i < CANONICAL_DIVS.length; i++) {
+        if (norm(CANONICAL_DIVS[i].name) === norm(s)) return CANONICAL_DIVS[i].name;
       }
-      var v = divStat(item, division), cccs = (item.divisionCccs && item.divisionCccs[division]) || [];
-      var metric, field = 'count';
-      if (item.id === 'discon-no-action') metric = UI.inr(v && v.osd || 0);
-      else if (item.id === 'defective-over-10m') { metric = UI.n(v && v.over10 || 0); field = 'over10'; }
-      else if (item.id === 'defective-3phase-ind') { metric = UI.n(v && v.ph3 || 0); field = 'ph3'; }
-      else if (v === undefined) metric = '—';
-      else metric = UI.n(num(v));
-      return {
-        metric: metric,
-        zero: metric === '—' || isZero(metric),
-        detail: cccs.slice(0, 4).map(function (c) { return '<b>' + UI.esc(c.name) + '</b> ' + UI.n(c[field] || c.count || 0); }).join(' &nbsp;·&nbsp; ')
+      return s;
+    }
+
+    /* ----------------- Data Extraction & Normalization ----------------- */
+
+    function buildDataModels(briefing) {
+      if (!briefing) return { regions: [], divisions: [], cccs: [] };
+
+      var items = briefing.items || [];
+      var getItem = function (id) {
+        return items.filter(function (it) { return it.id === id; })[0] || {};
       };
-    }
 
-    function row(item, v) {
-      var p = PRI[item.priority] || PRI.watch;
-      return '<div class="bf-row" role="link" tabindex="0" data-id="' + UI.esc(item.id) + '">' +
-        '<span class="ui-dot ' + (v.zero ? 'ok' : p.dot) + '"></span>' +
-        '<div><div class="t">' + UI.esc(item.title) + '</div><div class="d">' + (v.detail || UI.esc(item.domain)) + '</div></div>' +
-        '<div class="m">' + UI.esc(v.metric) + '</div>' +
-        '<svg class="ui-i"><use href="#ui-chev"/></svg></div>';
-    }
+      var mcItem = getItem('mc-delayed-90');
+      var disconItem = getItem('discon-no-action');
+      var defOver10Item = getItem('defective-over-10m');
+      var nscItem = getItem('nsc-delayed-30');
+      var loadExtItem = getItem('load-ext-ageing-1y');
 
-    function render() {
-      if (!data) return;
-      var items = data.items || [], open = '', clear = '', counts = { critical: 0, high: 0, watch: 0, clear: 0 };
-      ['critical', 'high', 'watch'].forEach(function (pri) {
-        var rows = '';
-        items.filter(function (i) { return i.priority === pri; }).forEach(function (item) {
-          var v = view(item);
-          if (v.zero) { counts.clear++; clear += row(item, v); }
-          else { counts[pri]++; rows += row(item, v); }
-        });
-        if (rows) open += '<div class="bf-group"><span class="ui-dot ' + PRI[pri].dot + '"></span>' + PRI[pri].label + '</div>' + rows;
+      // 1. Division Data
+      var divRows = CANONICAL_DIVS.map(function (cd) {
+        var dName = cd.name;
+        var reg = cd.region;
+
+        var mc = mcItem.divisions ? Number(mcItem.divisions[dName] || mcItem.divisions[dName + ' DIVISION'] || 0) : 0;
+
+        var discon = 0, disconOsd = 0;
+        if (disconItem.divisions) {
+          var dv = disconItem.divisions[dName] || disconItem.divisions[dName + ' DIVISION'];
+          if (dv && typeof dv === 'object') {
+            discon = Number(dv.noAction || dv.count || 0);
+            disconOsd = Number(dv.osd || 0);
+          } else if (dv) discon = Number(dv);
+        }
+
+        var def = 0;
+        if (defOver10Item.divisions) {
+          var df = defOver10Item.divisions[dName.toUpperCase() + ' DIVISION'] || defOver10Item.divisions[dName];
+          if (df && typeof df === 'object') def = Number(df.over10 || 0);
+          else if (df) def = Number(df);
+        }
+
+        var nsc = nscItem.divisions ? Number(nscItem.divisions[dName] || nscItem.divisions[dName + ' DIVISION'] || 0) : 0;
+        var load = loadExtItem.divisions ? Number(loadExtItem.divisions[dName] || loadExtItem.divisions[dName + ' DIVISION'] || 0) : 0;
+
+        return {
+          id: dName,
+          name: dName,
+          level: 'division',
+          region: reg,
+          cccCount: cd.cccCount,
+          mc: mc,
+          discon: discon,
+          disconOsd: disconOsd,
+          def: def,
+          nsc: nsc,
+          load: load
+        };
       });
-      $('sCritical').textContent = counts.critical;
-      $('sHigh').textContent = counts.high;
-      $('sWatch').textContent = counts.watch;
-      $('sClear').textContent = counts.clear;
-      $('open').innerHTML = open || '<div class="ui-empty">Nothing needs attention right now.</div>';
-      $('clear').innerHTML = clear;
-      $('clearPanel').hidden = !clear;
-      $('scopeNote').textContent = division ? division + ' division' : 'Malda Zone';
-      $('copyBtn').disabled = false;
+
+      // 2. Region Data (aggregated from divisions)
+      var regMap = {
+        'Malda': { name: 'Malda', level: 'region', mc: 0, discon: 0, disconOsd: 0, def: 0, nsc: 0, load: 0, divCount: 3 },
+        'Raiganj': { name: 'Raiganj', level: 'region', mc: 0, discon: 0, disconOsd: 0, def: 0, nsc: 0, load: 0, divCount: 2 },
+        'Balurghat': { name: 'Balurghat', level: 'region', mc: 0, discon: 0, disconOsd: 0, def: 0, nsc: 0, load: 0, divCount: 2 }
+      };
+
+      divRows.forEach(function (d) {
+        var r = regMap[d.region];
+        if (r) {
+          r.mc += d.mc;
+          r.discon += d.discon;
+          r.disconOsd += d.disconOsd;
+          r.def += d.def;
+          r.nsc += d.nsc;
+          r.load += d.load;
+        }
+      });
+      var regRows = Object.values(regMap);
+
+      // 3. CCC Data
+      var cccMap = {};
+      var getCcc = function (divName, cccName) {
+        var d = getDivKey(divName);
+        var k = d + '::' + cccName;
+        if (!cccMap[k]) {
+          cccMap[k] = {
+            id: k,
+            name: cccName,
+            division: d,
+            region: REGION_MAP[d] || 'Malda',
+            level: 'ccc',
+            mc: 0,
+            discon: 0,
+            disconOsd: 0,
+            def: 0,
+            nsc: 0,
+            load: 0
+          };
+        }
+        return cccMap[k];
+      };
+
+      var ingestCccs = function (item, field, extraField) {
+        if (!item || !item.divisionCccs) return;
+        Object.entries(item.divisionCccs).forEach(function (pair) {
+          var div = pair[0], list = pair[1] || [];
+          list.forEach(function (c) {
+            var o = getCcc(div, c.name);
+            o[field] = Number(c.count || c[field] || 0);
+            if (extraField && c[extraField] != null) o[extraField] = Number(c[extraField]);
+          });
+        });
+      };
+
+      ingestCccs(mcItem, 'mc');
+      ingestCccs(disconItem, 'discon', 'amountCr');
+      ingestCccs(nscItem, 'nsc');
+      ingestCccs(loadExtItem, 'load');
+      ingestCccs(defOver10Item, 'def');
+
+      var cccRows = Object.values(cccMap);
+
+      return { regions: regRows, divisions: divRows, cccs: cccRows };
     }
 
-    function setupScope() {
-      var divs = {};
-      (data.items || []).forEach(function (i) { Object.keys(i.divisions || {}).forEach(function (d) { divs[UI.title(d.replace(/\s+division$/i, ''))] = 1; }); });
-      var list = Object.keys(divs).sort();
-      $('scopeWrap').hidden = !list.length;
-      if (list.length) UI.fill('scope', list, 'All divisions');
+    /* ----------------- Position Ranking Engine ----------------- */
+
+    function rankOffices(rows, paramKeys) {
+      if (!rows || !rows.length) return [];
+
+      // 1. Assign serial/position for each parameter (ascending: lowest backlog = position 1)
+      paramKeys.forEach(function (p) {
+        var sorted = rows.slice().sort(function (a, b) {
+          return (a[p] || 0) - (b[p] || 0) || a.name.localeCompare(b.name);
+        });
+        sorted.forEach(function (r, idx) {
+          r[p + '_pos'] = idx + 1;
+        });
+      });
+
+      // 2. Average the parameter positions to get overall score
+      rows.forEach(function (r) {
+        var sum = 0;
+        paramKeys.forEach(function (p) { sum += (r[p + '_pos'] || 0); });
+        r.avgPos = Number((sum / paramKeys.length).toFixed(2));
+      });
+
+      // 3. Overall Rank based on lowest average position
+      rows.sort(function (a, b) {
+        return a.avgPos - b.avgPos || a.name.localeCompare(b.name);
+      });
+      rows.forEach(function (r, idx) {
+        r.rank = idx + 1;
+        r.totalOffices = rows.length;
+      });
+
+      return rows;
+    }
+
+    function getActiveRows(models) {
+      var level = state.level;
+      var rows = [];
+      var params = ['mc', 'discon', 'def', 'nsc', 'load'];
+
+      if (level === 'region') {
+        rows = models.regions.slice();
+      } else if (level === 'division') {
+        rows = models.divisions.slice();
+      } else {
+        // CCC level: evaluated on the 4 direct reports available per CCC
+        params = ['mc', 'discon', 'nsc', 'load'];
+        rows = models.cccs.slice();
+      }
+
+      // Automatically rank office against its peers at the same level
+      var ranked = rankOffices(rows, params);
+
+      // Filter by search or region/division if selected
+      return ranked.filter(function (r) {
+        if (state.region && norm(r.region) !== norm(state.region)) return false;
+        if (state.division && norm(r.division) !== norm(state.division)) return false;
+        if (state.q) {
+          var needle = norm(state.q);
+          var hay = norm(r.name) + ' ' + norm(r.region || '') + ' ' + norm(r.division || '');
+          if (hay.indexOf(needle) === -1) return false;
+        }
+        return true;
+      });
+    }
+
+    /* ----------------- Scorecard Drawer ----------------- */
+
+    function openScorecard(r) {
+      if (!r) return;
+
+      var isReg = r.level === 'region';
+      var isDiv = r.level === 'division';
+      var typeLabel = isReg ? 'Region' : (isDiv ? 'Division' : 'Customer Care Centre (CCC)');
+      var title = r.name + ' ' + typeLabel;
+      var sub = isReg ? '3 Regions across Malda Zone' : (isDiv ? r.region + ' Region · ' + r.cccCount + ' CCCs' : r.division + ' Division · ' + r.region + ' Region');
+
+      var pairs = [
+        ['Overall Rank', '#' + r.rank + ' of ' + r.totalOffices + ' ' + (isReg ? 'Regions' : (isDiv ? 'Divisions' : 'CCCs'))],
+        ['Average Position', r.avgPos.toFixed(2) + ' (across report parameters)'],
+        ['Office Level', typeLabel]
+      ];
+      if (!isReg) pairs.push(['Region', r.region + ' Region']);
+      if (!isReg && !isDiv) pairs.push(['Division', r.division + ' Division']);
+
+      var params = [
+        { label: 'Pending MC > 90d', val: r.mc, pos: r.mc_pos, report: 'pending_mc.html?kpiFilter=Delayed' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '') },
+        { label: 'Discon No-Action', val: r.discon, pos: r.discon_pos, extra: r.disconOsd ? ' (₹' + (r.disconOsd / 1e7).toFixed(2) + ' Cr)' : '', report: 'disconnection.html?status=noAction' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '') },
+        { label: 'Defective Meters > 10m', val: r.def, pos: r.def_pos, report: 'consumer/defective_meter.html?kpi=over10' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '') },
+        { label: 'Pending NSC Delayed > 30d', val: r.nsc, pos: r.nsc_pos, report: 'nsc.html' + (isDiv ? '?division=' + encodeURIComponent(r.name) : '') },
+        { label: 'Load Extension > 1y', val: r.load, pos: r.load_pos, report: 'pending_load_extension.html?kpi=kpiAgeing1y' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '') }
+      ];
+
+      var extraHtml = '<div class="bf-banner">' +
+        '<div><div class="bf-banner-title">Overall Rank: #' + r.rank + '</div>' +
+        '<div class="bf-banner-sub">Average Position: <b>' + r.avgPos.toFixed(2) + '</b> among ' + r.totalOffices + ' ' + (isReg ? 'regions' : (isDiv ? 'divisions' : 'CCCs')) + '</div></div>' +
+        '<span class="bf-rank ' + (r.rank === 1 ? 'r1' : (r.rank === r.totalOffices ? 'r-last' : '')) + '">#' + r.rank + '</span>' +
+      '</div>' +
+      '<div style="font-weight:600;font-size:12.5px;margin:12px 0 4px;color:var(--mzo-text);">Parameter Breakdown & Serials</div>' +
+      '<table class="bf-scorecard-table">' +
+        '<thead><tr><th>Parameter</th><th class="num">Backlog</th><th class="num">Position</th><th class="num">Action</th></tr></thead>' +
+        '<tbody>' +
+        params.map(function (p) {
+          if (p.pos == null && r.level === 'ccc') return '';
+          var posCls = p.pos === 1 ? 'p1' : (p.pos === r.totalOffices ? 'p-last' : '');
+          return '<tr>' +
+            '<td><b>' + UI.esc(p.label) + '</b>' + UI.esc(p.extra || '') + '</td>' +
+            '<td class="num"><b>' + UI.n(p.val || 0) + '</b></td>' +
+            '<td class="num"><span class="bf-pos-tag ' + posCls + '">#' + p.pos + '</span></td>' +
+            '<td class="num"><button type="button" class="ui-btn sm ghost" style="padding:2px 8px;font-size:11.5px;" onclick="window.__openRep(\'' + p.report + '\', \'' + UI.esc(p.label) + '\')">Open</button></td>' +
+          '</tr>';
+        }).join('') +
+        '</tbody>' +
+      '</table>';
+
+      // If Division: show child CCC breakdown
+      if (isDiv && rawData) {
+        var models = buildDataModels(rawData);
+        var divCccs = models.cccs.filter(function (c) { return norm(c.division) === norm(r.name); });
+        rankOffices(divCccs, ['mc', 'discon', 'nsc', 'load']);
+
+        if (divCccs.length) {
+          extraHtml += '<div style="font-weight:600;font-size:12.5px;margin:16px 0 4px;color:var(--mzo-text);">' + r.name + ' Division · CCC Ranking (Lowest to Highest Avg Position)</div>' +
+          '<table class="bf-scorecard-table">' +
+            '<thead><tr><th>Rank</th><th>CCC</th><th class="num">Avg Pos</th><th class="num">MC >90</th><th class="num">Discon</th><th class="num">NSC >30</th></tr></thead>' +
+            '<tbody>' +
+            divCccs.map(function (c) {
+              return '<tr>' +
+                '<td><span class="bf-rank ' + (c.rank === 1 ? 'r1' : '') + '">#' + c.rank + '</span></td>' +
+                '<td><b>' + UI.esc(c.name) + '</b></td>' +
+                '<td class="num"><b>' + c.avgPos.toFixed(2) + '</b></td>' +
+                '<td class="num">' + UI.n(c.mc) + '</td>' +
+                '<td class="num">' + UI.n(c.discon) + '</td>' +
+                '<td class="num">' + UI.n(c.nsc) + '</td>' +
+              '</tr>';
+            }).join('') +
+            '</tbody>' +
+          '</table>';
+        }
+      }
+
+      var actionsHtml = '<button type="button" class="ui-btn sm" onclick="window.__openRep(\'nsc.html' + (isDiv ? '?division=' + encodeURIComponent(r.name) : '') + '\')">Open Reports</button>';
+
+      UI.drawer(title, sub, pairs, extraHtml, actionsHtml);
+    }
+
+    window.__openRep = function (link, title) {
+      if (window.parent !== window && typeof window.parent.openPage === 'function') {
+        window.parent.openPage(link, title || 'Report');
+      } else {
+        location.href = link;
+      }
+    };
+
+    /* ----------------- Render Matrix Table ----------------- */
+
+    function renderMatrix(models) {
+      var rows = getActiveRows(models);
+      var container = $('matrixTable');
+      if (!container) return;
+
+      var level = state.level;
+      var isReg = level === 'region';
+      var isDiv = level === 'division';
+      var isCcc = level === 'ccc';
+
+      var cols = [
+        {
+          key: 'rank',
+          label: 'Rank',
+          num: true,
+          fmt: function (val, r) {
+            var cls = val === 1 ? 'r1' : (val === r.totalOffices ? 'r-last' : 'r2');
+            return '<span class="bf-rank ' + cls + '">#' + val + '</span>';
+          }
+        },
+        {
+          key: 'name',
+          label: isReg ? 'Region' : (isDiv ? 'Division' : 'CCC Office'),
+          fmt: function (val, r) {
+            var sub = isReg ? r.divCount + ' Divisions' : (isDiv ? r.region + ' Region · ' + r.cccCount + ' CCCs' : r.division + ' Div · ' + r.region);
+            return '<div><b>' + UI.esc(val) + '</b><span class="bf-cell-sub">' + UI.esc(sub) + '</span></div>';
+          }
+        },
+        {
+          key: 'avgPos',
+          label: 'Avg Pos',
+          num: true,
+          fmt: function (val) {
+            return '<span class="bf-cell-val" title="Average of parameter positions across reports">' + val.toFixed(2) + '</span>';
+          }
+        },
+        {
+          key: 'mc',
+          label: 'MC > 90d',
+          num: true,
+          fmt: function (val, r) {
+            var href = 'pending_mc.html?kpiFilter=Delayed' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '');
+            var pCls = r.mc_pos === 1 ? 'p1' : (r.mc_pos === r.totalOffices ? 'p-last' : '');
+            return '<a href="' + href + '" class="bf-rep-link" onclick="event.stopPropagation();window.__openRep(\'' + href + '\', \'Pending MC\');return false;">' +
+              '<span class="bf-cell-val">' + UI.n(val) + '</span><span class="bf-pos-tag ' + pCls + '">#' + r.mc_pos + '</span>' +
+            '</a>';
+          }
+        },
+        {
+          key: 'discon',
+          label: 'Discon No-Action',
+          num: true,
+          fmt: function (val, r) {
+            var href = 'disconnection.html?status=noAction' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '');
+            var pCls = r.discon_pos === 1 ? 'p1' : (r.discon_pos === r.totalOffices ? 'p-last' : '');
+            var osdStr = r.disconOsd ? '₹' + (r.disconOsd / 1e7).toFixed(2) + ' Cr' : '';
+            return '<a href="' + href + '" class="bf-rep-link" onclick="event.stopPropagation();window.__openRep(\'' + href + '\', \'Disconnection\');return false;">' +
+              '<span class="bf-cell-val">' + UI.n(val) + '</span><span class="bf-pos-tag ' + pCls + '">#' + r.discon_pos + '</span>' +
+              (osdStr ? '<span class="bf-cell-sub">' + osdStr + '</span>' : '') +
+            '</a>';
+          }
+        }
+      ];
+
+      if (!isCcc) {
+        cols.push({
+          key: 'def',
+          label: 'Defective > 10m',
+          num: true,
+          fmt: function (val, r) {
+            var href = 'consumer/defective_meter.html?kpi=over10' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '');
+            var pCls = r.def_pos === 1 ? 'p1' : (r.def_pos === r.totalOffices ? 'p-last' : '');
+            return '<a href="' + href + '" class="bf-rep-link" onclick="event.stopPropagation();window.__openRep(\'' + href + '\', \'Defective Meter\');return false;">' +
+              '<span class="bf-cell-val">' + UI.n(val) + '</span><span class="bf-pos-tag ' + pCls + '">#' + r.def_pos + '</span>' +
+            '</a>';
+          }
+        });
+      }
+
+      cols.push(
+        {
+          key: 'nsc',
+          label: 'NSC Delayed > 30d',
+          num: true,
+          fmt: function (val, r) {
+            var href = 'nsc.html' + (isDiv ? '?division=' + encodeURIComponent(r.name) : '');
+            var pCls = r.nsc_pos === 1 ? 'p1' : (r.nsc_pos === r.totalOffices ? 'p-last' : '');
+            return '<a href="' + href + '" class="bf-rep-link" onclick="event.stopPropagation();window.__openRep(\'' + href + '\', \'Pending NSC\');return false;">' +
+              '<span class="bf-cell-val">' + UI.n(val) + '</span><span class="bf-pos-tag ' + pCls + '">#' + r.nsc_pos + '</span>' +
+            '</a>';
+          }
+        },
+        {
+          key: 'load',
+          label: 'Load Ext > 1y',
+          num: true,
+          fmt: function (val, r) {
+            var href = 'pending_load_extension.html?kpi=kpiAgeing1y' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '');
+            var pCls = r.load_pos === 1 ? 'p1' : (r.load_pos === r.totalOffices ? 'p-last' : '');
+            return '<a href="' + href + '" class="bf-rep-link" onclick="event.stopPropagation();window.__openRep(\'' + href + '\', \'Load Extension\');return false;">' +
+              '<span class="bf-cell-val">' + UI.n(val) + '</span><span class="bf-pos-tag ' + pCls + '">#' + r.load_pos + '</span>' +
+            '</a>';
+          }
+        },
+        {
+          key: 'scorecard',
+          label: '',
+          num: true,
+          fmt: function () {
+            return '<button type="button" class="ui-btn sm ghost icon" title="View Scorecard"><svg class="ui-i"><use href="#ui-chev"/></svg></button>';
+          }
+        }
+      );
+
+      UI.table(container, {
+        columns: cols,
+        rows: rows,
+        sort: { key: 'rank', dir: 'asc' },
+        empty: 'No offices matched the active filters.',
+        onRow: function (row) {
+          openScorecard(row);
+        }
+      });
+
+      var levelTxt = isReg ? '3 Regions' : (isDiv ? '7 Divisions' : rows.length + ' CCCs');
+      $('levelSummary').textContent = 'Comparing ' + levelTxt + ' by average parameter position';
+    }
+
+    /* ----------------- Render Top Stats ----------------- */
+
+    function renderStats(models) {
+      var rows = getActiveRows(models);
+      if (!rows.length) return;
+
+      var leader = rows.filter(function (r) { return r.rank === 1; })[0] || rows[0];
+
+      $('sLeader').textContent = leader ? leader.name : '—';
+      $('sLeaderSub').textContent = leader ? 'Avg Position: ' + leader.avgPos.toFixed(2) : '';
+
+      var bestMc = rows.slice().sort(function (a, b) { return a.mc - b.mc; })[0];
+      $('sBestMc').textContent = bestMc ? bestMc.name : '—';
+      $('sBestMcSub').textContent = bestMc ? UI.n(bestMc.mc) + ' delayed' : '';
+
+      var bestDiscon = rows.slice().sort(function (a, b) { return a.discon - b.discon; })[0];
+      $('sBestDiscon').textContent = bestDiscon ? bestDiscon.name : '—';
+      $('sBestDisconSub').textContent = bestDiscon ? UI.n(bestDiscon.discon) + ' no-action' : '';
+
+      var bestNsc = rows.slice().sort(function (a, b) { return a.nsc - b.nsc; })[0];
+      $('sBestNsc').textContent = bestNsc ? bestNsc.name : '—';
+      $('sBestNscSub').textContent = bestNsc ? UI.n(bestNsc.nsc) + ' delayed' : '';
+    }
+
+    /* ----------------- Priorities Feed ----------------- */
+
+    function isZero(metric) {
+      var d = String(metric == null ? '' : metric).replace(/[^\d.]/g, '');
+      return !d || Number(d) === 0;
+    }
+
+    function renderPriorities(briefing) {
+      var items = (briefing && briefing.items) || [];
+      var openHtml = '', clearHtml = '';
+
+      ['critical', 'high', 'watch'].forEach(function (pri) {
+        var groupRows = '';
+        items.filter(function (i) { return i.priority === pri; }).forEach(function (item) {
+          var zero = isZero(item.metric);
+          var hs = (item.hotspots || []).filter(function (h) { return h.count > 0; }).slice(0, 4);
+          var detail = hs.map(function (h) {
+            return '<b>' + UI.esc(h.division) + '</b> ' + UI.n(h.count) + (h.amount ? ' · ₹' + UI.esc(h.amount) : '');
+          }).join(' &nbsp;·&nbsp; ');
+
+          var p = PRI[item.priority] || PRI.watch;
+          var rHtml = '<div class="bf-row" role="link" tabindex="0" data-link="' + UI.esc(item.deepLink || '') + '" data-title="' + UI.esc(item.title || '') + '">' +
+            '<span class="ui-dot ' + (zero ? 'ok' : p.dot) + '"></span>' +
+            '<div><div class="t">' + UI.esc(item.title) + '</div><div class="d">' + (detail || UI.esc(item.domain)) + '</div></div>' +
+            '<div class="m">' + UI.esc(item.metric) + '</div>' +
+            '<svg class="ui-i"><use href="#ui-chev"/></svg>' +
+          '</div>';
+
+          if (zero) clearHtml += rHtml;
+          else groupRows += rHtml;
+        });
+
+        if (groupRows) {
+          openHtml += '<div class="bf-group"><span class="ui-dot ' + PRI[pri].dot + '"></span>' + PRI[pri].label + '</div>' + groupRows;
+        }
+      });
+
+      $('open').innerHTML = openHtml || '<div class="ui-empty">Nothing needs attention right now.</div>';
+      $('clear').innerHTML = clearHtml;
+      $('clearPanel').hidden = !clearHtml;
+    }
+
+    /* ----------------- Setup Facets ----------------- */
+
+    function setupFacets(models) {
+      var isReg = state.level === 'region';
+      var isCcc = state.level === 'ccc';
+
+      $('secRegion').hidden = isReg;
+      $('secDivision').hidden = !isCcc;
+
+      if (!isReg) {
+        var regOpts = [
+          { value: '', label: 'All Regions' },
+          { value: 'Malda', label: 'Malda Region' },
+          { value: 'Raiganj', label: 'Raiganj Region' },
+          { value: 'Balurghat', label: 'Balurghat Region' }
+        ];
+        UI.facet('fRegion', regOpts, state.region, function (val) {
+          state.region = val;
+          renderAll();
+        });
+      }
+
+      if (isCcc) {
+        var divOpts = [{ value: '', label: 'All Divisions' }].concat(
+          CANONICAL_DIVS.map(function (d) { return { value: d.name, label: d.name + ' Div' }; })
+        );
+        UI.facet('fDivision', divOpts, state.division, function (val) {
+          state.division = val;
+          renderAll();
+        });
+      }
+
+      var active = 0;
+      if (state.region) active++;
+      if (state.division) active++;
+      if (state.q) active++;
+
+      $('activeLabel').textContent = active ? ' (' + active + ' active)' : '';
+      $('activeCount').textContent = active ? ' (' + active + ')' : '';
+    }
+
+    /* ----------------- Export & Copy ----------------- */
+
+    function exportCsvData(models) {
+      var rows = getActiveRows(models);
+      var level = state.level;
+      var filename = 'DISHA_Briefing_Ranking_' + level + '_' + new Date().toISOString().slice(0, 10) + '.csv';
+
+      var cols = [
+        { label: 'Rank', key: 'rank' },
+        { label: 'Office', key: 'name' },
+        { label: 'Average Position', key: 'avgPos' },
+        { label: 'Pending MC > 90d', key: 'mc' },
+        { label: 'MC Position', key: 'mc_pos' },
+        { label: 'Disconnection No-Action', key: 'discon' },
+        { label: 'Discon Position', key: 'discon_pos' },
+        { label: 'Pending NSC > 30d', key: 'nsc' },
+        { label: 'NSC Position', key: 'nsc_pos' },
+        { label: 'Load Extension > 1y', key: 'load' },
+        { label: 'Load Position', key: 'load_pos' }
+      ];
+      if (level !== 'ccc') {
+        cols.splice(7, 0, { label: 'Defective > 10m', key: 'def' }, { label: 'Defective Position', key: 'def_pos' });
+      }
+
+      UI.exportCsv(filename, cols, rows);
+    }
+
+    function getSummaryText(models) {
+      var rows = getActiveRows(models);
+      var levelTxt = state.level.toUpperCase();
+
+      var lines = [
+        '*DISHA Executive Briefing — ' + levelTxt + ' RANKING*',
+        UI.fmtDate(new Date()),
+        'Basis: Average serial position across reports (lowest = Rank #1)',
+        ''
+      ];
+
+      rows.forEach(function (r) {
+        lines.push('#' + r.rank + ' ' + r.name + ' · Avg Pos: ' + r.avgPos.toFixed(2) + ' (MC: #' + r.mc_pos + ', Discon: #' + r.discon_pos + ', NSC: #' + r.nsc_pos + ', Load: #' + r.load_pos + ')');
+      });
+
+      lines.push('');
+      lines.push('https://mzo-reports.vercel.app');
+      return lines.join('\n');
+    }
+
+    /* ----------------- Main Render Flow ----------------- */
+
+    function renderAll() {
+      if (!rawData) return;
+      var models = buildDataModels(rawData);
+
+      renderStats(models);
+      setupFacets(models);
+
+      if (state.view === 'matrix') {
+        $('matrixSection').hidden = false;
+        $('prioritiesSection').hidden = true;
+        renderMatrix(models);
+      } else {
+        $('matrixSection').hidden = true;
+        $('prioritiesSection').hidden = false;
+        renderPriorities(rawData);
+      }
     }
 
     function load(force) {
       var btn = $('refreshBtn');
       if (force) btn.classList.add('spin');
+
       fetch('/api/executive/briefing', { credentials: 'same-origin' })
         .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
         .then(function (j) {
-          data = j && j.briefing;
-          if (!data) throw new Error('empty');
-          var at = data.generatedAt ? new Date(data.generatedAt) : null;
-          $('meta').textContent = 'Malda Zone' + (at && !isNaN(at) ? ' · Updated ' + UI.fmtDate(at) + ', ' + at.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '');
-          setupScope();
-          render();
+          rawData = j && j.briefing;
+          if (!rawData) throw new Error('empty');
+
+          var at = rawData.generatedAt ? new Date(rawData.generatedAt) : new Date();
+          var asOnStr = rawData.asOn ? 'As on ' + UI.esc(rawData.asOn) : 'Updated ' + UI.fmtDate(at);
+          $('asOn').textContent = asOnStr;
+          $('meta').textContent = 'Malda Zone · Cross-Report Ranking · ' + at.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+
+          renderAll();
         })
-        .catch(function () {
-          $('open').innerHTML = '<div class="ui-empty">Could not load the briefing. <button type="button" class="ui-btn sm" onclick="location.reload()">Retry</button></div>';
-          ['sCritical', 'sHigh', 'sWatch', 'sClear'].forEach(function (id) { $(id).textContent = '—'; });
+        .catch(function (err) {
+          console.error('[Briefing load error]:', err);
+          $('matrixTable').innerHTML = '<div class="ui-empty">Could not load briefing. <button type="button" class="ui-btn sm" onclick="location.reload()">Retry</button></div>';
+          $('open').innerHTML = '<div class="ui-empty">Could not load priorities.</div>';
+          ['sLeader', 'sBestMc', 'sBestDiscon', 'sBestNsc'].forEach(function (id) { $(id).textContent = '—'; });
         })
-        .then(function () { btn.classList.remove('spin'); });
+        .then(function () {
+          btn.classList.remove('spin');
+        });
     }
 
-    function openItem(id) {
-      var item = (data.items || []).filter(function (i) { return i.id === id; })[0];
-      if (!item || !item.deepLink) return;
-      var link = item.deepLink;
-      if (division) link += (link.indexOf('?') === -1 ? '?' : '&') + 'division=' + encodeURIComponent(division);
-      if (window.parent !== window && typeof window.parent.openPage === 'function') window.parent.openPage(link, item.pageTitle || item.title);
-      else location.href = link;
-    }
-
-    function summary() {
-      var scope = division ? division.toUpperCase() + ' DIVISION' : 'MALDA ZONE';
-      var lines = ['*DISHA briefing — ' + scope + '*', UI.fmtDate(new Date()), ''];
-      ['critical', 'high', 'watch'].forEach(function (pri) {
-        var its = (data.items || []).filter(function (i) { return i.priority === pri; }).map(function (i) { return [i, view(i)]; }).filter(function (x) { return !x[1].zero; });
-        if (!its.length) return;
-        lines.push('*' + PRI[pri].label + '*');
-        its.forEach(function (x) { lines.push('• ' + x[0].title + ': ' + x[1].metric + (x[1].detail ? ' (' + x[1].detail.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ') + ')' : '')); });
-        lines.push('');
+    // View switch (Matrix vs Priorities)
+    $('viewSeg').addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      state.view = b.getAttribute('data-v');
+      $('viewSeg').querySelectorAll('button').forEach(function (btn) {
+        btn.setAttribute('aria-pressed', String(btn === b));
       });
-      lines.push('https://mzo-reports.vercel.app');
-      return lines.join('\n');
-    }
+      renderAll();
+    });
+
+    // Level switch (Region vs Division vs CCC)
+    $('levelSeg').addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      state.level = b.getAttribute('data-v');
+      state.region = '';
+      state.division = '';
+      $('levelSeg').querySelectorAll('button').forEach(function (btn) {
+        btn.setAttribute('aria-pressed', String(btn === b));
+      });
+      renderAll();
+    });
+
+    // Search input
+    $('qSearch').addEventListener('input', UI.debounce(function () {
+      state.q = this.value;
+      renderAll();
+    }, 200));
+
+    // Clear filters
+    $('clearBtn').addEventListener('click', function () {
+      state.q = '';
+      state.region = '';
+      state.division = '';
+      $('qSearch').value = '';
+      renderAll();
+    });
+
+    // Side panel toggle
+    UI.sidePanel({
+      side: 'side',
+      toggle: 'sideToggle',
+      label: 'activeLabel',
+      count: 'activeCount',
+      clear: 'clearBtn',
+      onClear: function () {
+        state.q = '';
+        state.region = '';
+        state.division = '';
+        $('qSearch').value = '';
+        renderAll();
+      }
+    });
+
+    // Export & Copy
+    $('exportBtn').addEventListener('click', function () {
+      if (!rawData) return;
+      exportCsvData(buildDataModels(rawData));
+      UI.toast('Ranking table exported to CSV');
+    });
+
+    $('copyBtn').addEventListener('click', function () {
+      if (!rawData) return;
+      var text = getSummaryText(buildDataModels(rawData));
+      UI.copy(text).then(function () {
+        UI.toast('Ranking summary copied to clipboard');
+      });
+    });
+
+    $('refreshBtn').addEventListener('click', function () { load(true); });
 
     document.addEventListener('click', function (e) {
       var r = e.target.closest('.bf-row');
-      if (r) openItem(r.getAttribute('data-id'));
+      if (r) {
+        var link = r.getAttribute('data-link');
+        var title = r.getAttribute('data-title');
+        if (link) window.__openRep(link, title);
+      }
     });
-    document.addEventListener('keydown', function (e) {
-      var r = e.target.closest && e.target.closest('.bf-row');
-      if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openItem(r.getAttribute('data-id')); }
-    });
-    $('scope').addEventListener('change', function () { division = this.value; UI.mark(this); render(); });
-    $('refreshBtn').addEventListener('click', function () { load(true); });
-    $('copyBtn').addEventListener('click', function () { UI.copy(summary()).then(function () { UI.toast('Summary copied'); }); });
 
     load(false);
   });

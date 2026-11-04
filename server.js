@@ -2,7 +2,207 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const http = require('http');
 const https = require('https');
+const { spawnSync } = require('child_process');
+
+/**
+ * Outbound fetch helper that respects HTTP_PROXY / HTTPS_PROXY (e.g. on corporate/office networks).
+ * When running in environments without a proxy (production on Vercel, cloud VM), or for bypassed hosts
+ * (localhost, NO_PROXY), delegates directly to globalThis.fetch().
+ */
+function proxyFetch_(urlStr, options = {}, redirectCount = 0) {
+    if (redirectCount > 5) return Promise.reject(new Error('Too many redirects'));
+
+    let target;
+    try {
+        target = new URL(urlStr);
+    } catch (_) {
+        return globalThis.fetch(urlStr, options);
+    }
+
+    const proxyUrlStr = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
+    const noProxyList = (process.env.NO_PROXY || process.env.no_proxy || '')
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+
+    const isBypassed = target.hostname === 'localhost' ||
+        target.hostname === '127.0.0.1' ||
+        noProxyList.some((np) => target.hostname.toLowerCase() === np || target.hostname.toLowerCase().endsWith('.' + np));
+
+    if (!proxyUrlStr || isBypassed) {
+        return globalThis.fetch(urlStr, options);
+    }
+
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        let timer = null;
+        let sReq = null;
+        let connectReq = null;
+
+        const cleanup = () => {
+            settled = true;
+            if (timer) clearTimeout(timer);
+            if (options.signal) options.signal.removeEventListener('abort', onAbort);
+        };
+
+        const done = (fn, arg) => {
+            if (!settled) {
+                cleanup();
+                fn(arg);
+            }
+        };
+
+        const onAbort = () => {
+            if (connectReq) try { connectReq.destroy(); } catch (_) {}
+            if (sReq) try { sReq.destroy(); } catch (_) {}
+            done(reject, options.signal?.reason || new Error('The operation was aborted.'));
+        };
+
+        if (options.signal?.aborted) return onAbort();
+        if (options.signal) options.signal.addEventListener('abort', onAbort, { once: true });
+
+        const timeoutMs = options.timeout || 15000;
+        timer = setTimeout(() => {
+            if (connectReq) try { connectReq.destroy(); } catch (_) {}
+            if (sReq) try { sReq.destroy(); } catch (_) {}
+            done(reject, new Error(`Request to ${target.hostname} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+
+        let pUrl;
+        try {
+            pUrl = new URL(proxyUrlStr);
+        } catch (_) {
+            return globalThis.fetch(urlStr, options).then(resolve, reject);
+        }
+
+        const handleResponse = (sRes) => {
+            const status = sRes.statusCode || 200;
+            if ([301, 302, 303, 307, 308].includes(status) && options.redirect !== 'manual' && sRes.headers.location) {
+                cleanup();
+                const nextUrl = new URL(sRes.headers.location, target).toString();
+                const nextOptions = { ...options };
+                if (status === 303 || ((status === 301 || status === 302) && options.method !== 'HEAD')) {
+                    nextOptions.method = 'GET';
+                    delete nextOptions.body;
+                }
+                return proxyFetch_(nextUrl, nextOptions, redirectCount + 1).then(resolve, reject);
+            }
+
+            const chunks = [];
+            sRes.on('data', (c) => chunks.push(c));
+            sRes.on('end', () => {
+                const bodyBuf = Buffer.concat(chunks);
+                const bodyText = bodyBuf.toString('utf8');
+                done(resolve, {
+                    ok: status >= 200 && status < 300,
+                    status,
+                    statusText: sRes.statusMessage || '',
+                    headers: {
+                        get(name) {
+                            return sRes.headers[String(name).toLowerCase()] || null;
+                        }
+                    },
+                    text: async () => bodyText,
+                    json: async () => JSON.parse(bodyText)
+                });
+            });
+        };
+
+        const bodyData = options.body
+            ? (typeof options.body === 'string' ? Buffer.from(options.body, 'utf8') : options.body)
+            : null;
+
+        if (target.protocol === 'http:') {
+            const reqHeaders = { Host: target.hostname, ...(options.headers || {}) };
+            if (bodyData && !reqHeaders['Content-Length'] && !reqHeaders['content-length']) {
+                reqHeaders['Content-Length'] = bodyData.length;
+            }
+            sReq = http.request({
+                host: pUrl.hostname,
+                port: pUrl.port || 80,
+                path: urlStr,
+                method: options.method || 'GET',
+                headers: reqHeaders
+            }, handleResponse);
+
+            sReq.on('error', (err) => done(reject, err));
+            if (bodyData) sReq.write(bodyData);
+            sReq.end();
+            return;
+        }
+
+        connectReq = http.request({
+            host: pUrl.hostname,
+            port: pUrl.port || 80,
+            method: 'CONNECT',
+            path: `${target.hostname}:${target.port || 443}`
+        });
+
+        connectReq.on('connect', (cRes, socket) => {
+            if (cRes.statusCode !== 200) {
+                socket.destroy();
+                return done(reject, new Error(`Proxy CONNECT error: ${cRes.statusCode}`));
+            }
+
+            const reqHeaders = { Host: target.hostname, ...(options.headers || {}) };
+            if (bodyData && !reqHeaders['Content-Length'] && !reqHeaders['content-length']) {
+                reqHeaders['Content-Length'] = bodyData.length;
+            }
+
+            sReq = https.request({
+                host: target.hostname,
+                port: target.port || 443,
+                path: target.pathname + target.search,
+                method: options.method || 'GET',
+                headers: reqHeaders,
+                socket,
+                agent: false
+            }, handleResponse);
+
+            sReq.on('error', (err) => done(reject, err));
+            if (bodyData) sReq.write(bodyData);
+            sReq.end();
+        });
+
+        connectReq.on('error', (err) => {
+            try {
+                const args = ['-s', '-i', '-X', options.method || 'GET'];
+                if (options.headers) {
+                    for (const [k, v] of Object.entries(options.headers)) {
+                        args.push('-H', `${k}: ${v}`);
+                    }
+                }
+                if (bodyData) {
+                    args.push('--data-binary', String(options.body));
+                }
+                args.push(urlStr);
+                const cr = spawnSync('curl.exe', args, { timeout: timeoutMs });
+                if (cr.status === 0 && cr.stdout && cr.stdout.length > 0) {
+                    const raw = cr.stdout.toString('utf8');
+                    const headerEnd = raw.indexOf('\r\n\r\n');
+                    const bodyText = headerEnd >= 0 ? raw.slice(headerEnd + 4) : raw;
+                    const statusMatch = raw.match(/HTTP\/[0-9.]+\s+(\d+)/);
+                    const status = statusMatch ? parseInt(statusMatch[1], 10) : 200;
+                    return done(resolve, {
+                        ok: status >= 200 && status < 300,
+                        status,
+                        statusText: '',
+                        headers: { get: () => null },
+                        text: async () => bodyText,
+                        json: async () => JSON.parse(bodyText)
+                    });
+                }
+            } catch (_) {}
+            done(reject, err);
+        });
+
+        connectReq.end();
+    });
+}
+
+const fetch = proxyFetch_;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -11,6 +211,12 @@ const DATA_DIR = path.join(__dirname, 'data');
 // Body parsers (limits raised for NSC/stock publish payloads)
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+
+// Cross-Origin-Opener-Policy so popups (Google Sign-In) communicate cleanly with opener
+app.use((req, res, next) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+    next();
+});
 
 // Server-side files are never served, locally or from the Vercel function.
 const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
@@ -3738,6 +3944,7 @@ app.post('/api/stock/publish', (req, res) => {
 // --- Synced report snapshots: defective meters, disconnection, pending master card, load extension ---
 // scripts/sync/* copy each Google Sheet to the Supabase 'reports' bucket with a meta.json (version + KPIs).
 const { syncDefectiveToSupabase } = require('./scripts/sync/sync_defective_to_supabase');
+const { syncDefectiveFromCrm, isDbvisAvailable } = require('./scripts/sync/sync_defective_from_crm');
 const { syncDisconnectionToSupabase } = require('./scripts/sync/sync_disconnection_to_supabase');
 const { syncPendingMcToSupabase } = require('./scripts/sync/sync_pending_mc_to_supabase');
 const { syncLoadExtToSupabase } = require('./scripts/sync/sync_load_ext_to_supabase');
@@ -3758,6 +3965,14 @@ function syncedMeta_(folder, localFile) {
         async read() {
             const now = Date.now();
             if (cached && now - at < 60000) return cached;
+            const localPath = path.join(DATA_DIR, localFile);
+            if (!process.env.VERCEL && fs.existsSync(localPath)) {
+                try {
+                    cached = JSON.parse(fs.readFileSync(localPath, 'utf8'));
+                    at = now;
+                    return cached;
+                } catch (_) {}
+            }
             if (REPORTS_PUBLIC_BASE) {
                 try {
                     const r = await fetch(`${REPORTS_PUBLIC_BASE}/${folder}/meta.json`, {
@@ -3771,7 +3986,9 @@ function syncedMeta_(folder, localFile) {
                 } catch (_) { /* fall back below */ }
             }
             try {
-                return JSON.parse(fs.readFileSync(path.join(DATA_DIR, localFile), 'utf8'));
+                cached = JSON.parse(fs.readFileSync(localPath, 'utf8'));
+                at = now;
+                return cached;
             } catch (_) {
                 return cached;
             }
@@ -3878,6 +4095,7 @@ app.get('/api/defective/meta', async (req, res) => {
         status: 'success',
         canUpload,
         canSync: canUpload,
+        canCrmSync: canUpload && isDbvisAvailable(),
         isAdmin: isPortalAdmin_(user),
         sheetScriptUrl: canUpload && DEFECTIVE_SHEET_SCRIPT_URL ? DEFECTIVE_SHEET_SCRIPT_URL : '',
         spreadsheetId: DEFECTIVE_SPREADSHEET_ID,
@@ -3903,6 +4121,24 @@ syncRoute_('/api/defective/sync', {
     done: (m) => ({
         log: `Synced Defective Meter: ${m.stats.totalDefective} meters (${m.stats.summaryRows} summary, ${m.stats.detailsRows} details)`,
         message: `Defective Meter sync complete! Total: ${m.stats.totalDefective} meters.`
+    })
+});
+
+syncRoute_('/api/defective/crm-sync', {
+    label: 'CRM Defective Sync',
+    can: canUploadDefective_,
+    forbidden: 'Not authorized to sync defective meter data from CRM. Ask an admin to grant permission.',
+    run: async () => {
+        if (!isDbvisAvailable()) {
+            throw new Error('DbVisualizer CLI is not available on this server. Direct CRM extraction must be run from an internal office workstation / VM connected to DB2.');
+        }
+        return await syncDefectiveFromCrm({ fresh: true });
+    },
+    meta: DEFECTIVE_META,
+    mirrorKeys: ['defective_summary', 'defective_details'],
+    done: (m) => ({
+        log: `CRM Synced Defective Meter: ${m.stats.totalDefective} meters (${m.stats.summaryRows} summary, ${m.stats.detailsRows} details)`,
+        message: `CRM Defective Meter sync complete! Total: ${m.stats.totalDefective} meters.`
     })
 });
 
@@ -4559,7 +4795,14 @@ function buildExecutiveBriefing_(meta) {
         asOn,
         generatedAt: new Date().toISOString(),
         summaryCounts,
-        items
+        items,
+        metaStats: {
+            pendingMc,
+            loadExt,
+            discon,
+            defective,
+            nsc
+        }
     };
 }
 
