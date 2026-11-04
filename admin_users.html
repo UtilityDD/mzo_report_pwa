@@ -3823,7 +3823,8 @@
       { name: 'Priority SI Works', kind: 'Supabase' },
       { name: 'Power News', kind: 'RSS' },
       { name: 'Important Sheets', kind: 'Sheet' },
-      { name: 'Portal users', kind: 'Supabase' }
+      { name: 'Portal users', kind: 'Supabase' },
+      { name: 'Unbilled Consumers', kind: 'CRM DB2', key: 'CRM_UNBILLED' }
     ];
     const SOURCE_KIND_ORDER = ['Supabase', 'Sheet', 'Script', 'JSON', 'CSV', 'RSS'];
     let sourceRows = [];
@@ -3865,6 +3866,27 @@
         return 'https://docs.google.com/spreadsheets/d/' + match[1] + '/edit' + (gid ? '#gid=' + gid : '');
       } catch (e) {
         return '';
+      }
+    }
+
+    async function triggerUnbilledCrmSync(btn) {
+      if (!confirm('Run direct 1-click unbilled & exceptions extraction from IBM DB2 across all 7 divisions?\n\nThis will extract billing outsorts, chronic unbilled (>=3m), and current month unbilled counts by MRU (~40 seconds).')) return;
+      const orig = btn ? btn.innerHTML : '';
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+      showToast('Extracting Unbilled data from IBM DB2 CRM database...', 'info');
+      try {
+        const res = await fetch('/api/unbilled/crm-sync', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
+        });
+        const d = await res.json();
+        if (!res.ok || d.status !== 'success') throw new Error(d.message || 'CRM Sync failed');
+        showToast(d.message || 'CRM Unbilled Sync complete!', 'success');
+      } catch (err) {
+        showToast(err.message || 'CRM Sync failed', 'error');
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = orig; }
       }
     }
 
@@ -3983,7 +4005,22 @@
         kind.textContent = row.kind;
         const side = document.createElement('span');
         side.className = 'src-side';
-        if (row.key === 'CACHE_DEFECTIVE') {
+        if (row.key === 'CRM_UNBILLED' || row.key === 'CACHE_DEFECTIVE') {
+          const isUnbilled = row.key === 'CRM_UNBILLED';
+          const crmBtn = document.createElement('button');
+          crmBtn.type = 'button';
+          crmBtn.className = 'src-open';
+          crmBtn.title = isUnbilled ? '1-click direct Unbilled CRM extraction from IBM DB2' : '1-click direct CRM extraction from IBM DB2';
+          crmBtn.setAttribute('aria-label', isUnbilled ? 'Sync Unbilled from CRM DB2' : 'Sync from CRM DB2');
+          crmBtn.innerHTML = '<i class="fas fa-database"></i>';
+          crmBtn.style.color = 'var(--primary-color, #2563eb)';
+          crmBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (isUnbilled) triggerUnbilledCrmSync(crmBtn);
+            else triggerDefectiveCrmSync(crmBtn);
+          });
+          side.appendChild(crmBtn);
+        } else if (false) {
           const crmBtn = document.createElement('button');
           crmBtn.type = 'button';
           crmBtn.className = 'src-open';

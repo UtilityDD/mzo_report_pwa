@@ -104,3 +104,12 @@ Page: `historical_nsc.html`. Currently tracks daily connection counts per CCC by
    - **Zero Consumer PII:** Client app only receives pre-aggregated summary counts and averages per unit/FY.
    - **DB2 Status:** Local DB2 table `ISUDATA.REP_BIZ_MASTER_DETAIL` is queryable by user `report` for connection pace (`DATE_OF_EFFECT`, `BASE_CLASS`). Turnaround delay tables (`ISUDATA.ZNCN_CRM_DETAILS`, `ISUDATA.CRM_APPL_LIST`) require DB2 user mapping on remote server `DP1_DB` or an offline aggregate sync from the CRM export dump (`.xlsb`/`.csv`).
 
+## Unbilled Consumers & Billing Exceptions
+
+Page: `consumer/unbilled.html` (with root redirect at `unbilled.html`). Direct 1-click sync from IBM DB2 (`10.251.64.65:60000 / db2_mig`).
+- **Data Sources:**
+  - `ISUDATA.OUTSORT_CURR_MON_UNBIL_REPORT`: Billing outsorts (meter readings blocked from invoicing by SAP validation checks: reset, implausible consumption, etc.).
+  - `ISUDATA.CURR_3MON_UNBIL_REPORT`: Chronic unbilled consumers ($\ge 3$ consecutive billing months without a bill).
+  - `ISUDATA.CURR_MON_UNBIL_REPORT`: Pre-aggregated summary by CCC, Class, and MRU to track active cycle completion.
+- **Sync Pipeline:** `npm run sync:unbilled:crm` (`scripts/sync/sync_unbilled_from_crm.js` executing `scripts/sql/unbilled_crm_batch.sql` via `dbviscmd.bat`).
+- **Backend API:** `GET /api/unbilled/meta`, `GET /api/unbilled/outsort`, `GET /api/unbilled/chronic`, `GET /api/unbilled/summary`, and `POST /api/unbilled/crm-sync`.

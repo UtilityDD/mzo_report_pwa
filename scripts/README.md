@@ -16,6 +16,7 @@ Node, SQL and Python tooling run by hand from the repo root. None of it is serve
 `common.js` holds the shared plumbing (fetch the published CSV, upload to Storage, write meta). Each `sync_*.js` adds the report's own summary numbers. Credentials come from env (`SUPABASE_*` / `INSIGHT_*`) or the git-ignored `data/supabase_config.json` (template: `supabase_config.example.json` in this folder).
 
 - `sync_defective_from_crm.js` (`npm run sync:defective:crm`): 100% automated division-by-division CRM sync from DB2 (`ibm db2` connection via `dbviscmd.bat`), processed through `lib/defective_meter_pipeline.js`, and uploaded directly to Supabase Storage, bypassing Google Sheets. For a new batch run from DB2, use `npm run sync:defective:crm -- --fresh`. Use `--dry-run` to test locally without uploading.
+- `sync_unbilled_from_crm.js` (`npm run sync:unbilled:crm`): Direct DB2 extraction for Billing Outsorts (`OUTSORT_CURR_MON_UNBIL_REPORT`), Chronic Unbilled $\ge 3$ Months (`CURR_3MON_UNBIL_REPORT`), and Current Month Unbilled MRU summary (`CURR_MON_UNBIL_REPORT`). Uploads snapshot CSVs and `meta.json` to Supabase Storage and `data/`. Supports `--dry-run` and `--skip-db`.
 
 ## migrate/
 

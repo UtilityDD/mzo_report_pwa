@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en" class="ui">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Unbilled &amp; Billing Exceptions · DISHA</title>
+  <script src="/mzo_theme.js?v=4"></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=7" />
+  <script src="/mzo_ui.js?v=6" defer></script>
+  <script src="/lib/offices.js?v=2" defer></script>
+  <script src="/mzo_scope.js?v=17" defer></script>
+  <style>
+    .ui-head { align-items: center; }
+    .ub-status { margin: 8px 16px 0; display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+    .ub-prog { width: 140px; height: 6px; background: var(--mzo-border); border-radius: 99px; overflow: hidden; }
+    .ub-prog b { display: block; height: 100%; width: 0; background: var(--mzo-brand); transition: width .3s ease; }
+    .rh-search-wrap { display: flex; align-items: center; gap: 8px; flex: 1; max-width: 320px; }
+    .rh-search-wrap input { width: 100%; height: 32px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--mzo-border); background: var(--mzo-surface); color: var(--mzo-text); font-size: 13px; }
+    .rh-search-wrap input:focus { outline: none; border-color: var(--mzo-brand); }
+    .ui-stat.active { outline: 2px solid var(--mzo-brand); outline-offset: -2px; }
+    .tag-outsort { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; background: rgba(220, 38, 38, 0.12); color: #dc2626; }
+    .tag-chronic { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; background: rgba(217, 119, 6, 0.12); color: #d97706; }
+    .tag-current { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; background: rgba(37, 99, 235, 0.12); color: #2563eb; }
+    .cell-sub { font-size: 11px; color: var(--mzo-muted); display: block; margin-top: 1px; }
+  </style>
+</head>
+<body>
+  <main class="ui-page">
+    <header class="ui-head">
+      <div>
+        <h1>Unbilled &amp; Billing Exceptions<span class="ui-badge ui-date" id="asOn">…</span></h1>
+      </div>
+      <div class="ui-actions">
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
+        <button type="button" class="ui-btn" id="crmSyncBtn" hidden title="Direct extraction from IBM DB2"><svg class="ui-i"><use href="#ui-sync"/></svg>Sync from DB2</button>
+        <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
+      </div>
+    </header>
+
+    <div class="ub-status ui-note" id="status" hidden><span id="statusText"></span><div class="ub-prog"><b id="statusBar"></b></div></div>
+
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h">
+          <h2>Filters<small id="activeLabel"></small></h2>
+          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
+        </div>
+        <div class="ui-side-sec ui-side-stack">
+          <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
+          <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
+          <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
+        </div>
+        <div class="ui-side-sec">
+          <label style="display:block;font-size:12px;font-weight:600;color:var(--mzo-muted);margin-bottom:6px">MRU Search</label>
+          <input type="text" id="mruInput" placeholder="Filter by MRU..." style="width:100%;height:30px;padding:0 8px;border-radius:6px;border:1px solid var(--mzo-border);background:var(--mzo-surface);color:var(--mzo-text);font-size:12.5px;" />
+        </div>
+        <div class="ui-side-sec"><div aria-label="Class" id="fClass"></div></div>
+      </aside>
+
+      <div class="ui-main">
+        <section class="ui-stats" style="--n:4" id="stats" aria-label="Summary">
+          <button type="button" class="ui-stat" data-tab="outsort"><div class="k"><span class="ui-dot c4"></span>Billing Outsorts</div><div class="v" id="statOutsort"><span class="ui-skel"></span></div><div class="s">Exceptions blocked from billing</div></button>
+          <button type="button" class="ui-stat" data-tab="chronic"><div class="k"><span class="ui-dot c3"></span>Chronic Unbilled (&ge;3m)</div><div class="v" id="statChronic"><span class="ui-skel"></span></div><div class="s">3 or more consecutive cycles</div></button>
+          <button type="button" class="ui-stat" data-tab="summary"><div class="k"><span class="ui-dot c1"></span>Current Month Unbilled</div><div class="v" id="statCurrent"><span class="ui-skel"></span></div><div class="s">Active cycle pending reading/bill</div></button>
+          <button type="button" class="ui-stat" data-tab="offices"><div class="k"><span class="ui-dot c2"></span>Offices Affected</div><div class="v" id="statOffices"><span class="ui-skel"></span></div><div class="s">CCCs with unbilled/outsorts</div></button>
+        </section>
+
+        <section class="ui-panel">
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title" id="rhTitle">Billing Outsorts</h2>
+                <span class="rh-badge" id="rhCount">0</span>
+              </div>
+              <div class="rh-search-wrap">
+                <input type="search" id="searchInput" placeholder="Search Consumer ID, Name, Meter, MRU..." />
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+              </div>
+            </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
+          </div>
+
+          <div class="ui-drill-tabs" role="tablist" id="tabs">
+            <button type="button" class="ui-drill-tab" role="tab" data-t="outsort" aria-selected="true">Billing Outsorts (Exceptions)</button>
+            <button type="button" class="ui-drill-tab" role="tab" data-t="chronic" aria-selected="false">Chronic Unbilled (&ge; 3 Months)</button>
+            <button type="button" class="ui-drill-tab" role="tab" data-t="summary" aria-selected="false">Current Month by MRU</button>
+            <button type="button" class="ui-drill-tab" role="tab" data-t="offices" aria-selected="false">Office Summary</button>
+          </div>
+
+          <div id="table"><div class="ui-empty">Loading unbilled datasets…</div></div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', function () {
+    'use strict';
+    var $ = function (id) { return document.getElementById(id); };
+
+    var currentTab = 'outsort';
+    var rawOutsort = [], rawChronic = [], rawSummary = [];
+    var scopedOutsort = [], scopedChronic = [], scopedSummary = [];
+    var f = { cls: '', mru: '', q: '' };
+    var scope = null;
+    var metaInfo = null;
+    var lastTable = null;
+
+    var SELECTS = ['regionFilter', 'divisionFilter', 'cccFilter'];
+    var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
+
+    function parseCsv(text) {
+      if (!text || !text.trim()) return [];
+      var lines = text.trim().split('\n');
+      if (lines.length <= 1) return [];
+      var sep = lines[0].indexOf('\t') !== -1 ? '\t' : ',';
+      var header = lines[0].split(sep).map(function (s) { return s.replace(/^"|"$/g, '').trim(); });
+      var rows = [];
+      for (var i = 1; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if (!line) continue;
+        var parts = line.split(sep).map(function (s) { return s.replace(/^"|"$/g, '').trim(); });
+        var row = {};
+        for (var j = 0; j < header.length; j++) {
+          row[header[j]] = parts[j] !== undefined ? parts[j] : '';
+        }
+        rows.push(row);
+      }
+      return rows;
+    }
+
+    function fmtYmd(ymd) {
+      if (!ymd || ymd.length !== 8) return ymd || '—';
+      return ymd.slice(6, 8) + '/' + ymd.slice(4, 6) + '/' + ymd.slice(0, 4);
+    }
+
+    function initOffices() {
+      var all = scopedSummary.length ? scopedSummary : rawSummary;
+      if (!all.length) all = rawOutsort.concat(rawChronic);
+      if (!all.length) {
+        var allCodes = [];
+        [rawOutsort, rawChronic, rawSummary].forEach(function (list) {
+          list.forEach(function (r) {
+            var c = String(r.CCC_CODE || '').replace(/\D/g, '').slice(-7);
+            if (c && allCodes.indexOf(c) === -1) allCodes.push(c);
+          });
+        });
+        all = allCodes.map(function (c) { return setOfficeFields({ CCC_CODE: c }); });
+      }
+      UI.offices(all);
+      if (!scope) scope = UI.lockScope();
+      SELECTS.forEach(function (id) { UI.mark($(id)); });
+    }
+
+    function setOfficeFields(row) {
+      var code = String(row.CCC_CODE || '').replace(/\D/g, '').slice(-7);
+      row.CCC_CODE = code;
+      var o = window.MzoOffices && typeof window.MzoOffices.parseCode === 'function' ? window.MzoOffices.parseCode(code) : null;
+      row._region = o && o.region ? o.region : (row.ZONE_CODE || 'Malda');
+      row._divn = o && o.division ? o.division : (row.DIV_CODE || '');
+      row._supp = o && o.ccc ? o.ccc : code;
+      return row;
+    }
+
+    function loadData() {
+      $('table').innerHTML = '<div class="ui-empty">Loading unbilled datasets from DB2…</div>';
+
+      fetch('/api/unbilled/meta', { credentials: 'same-origin' })
+        .then(function (r) {
+          if (r.status === 401) {
+            location.replace('/login.html');
+            return null;
+          }
+          return r.ok ? r.json() : null;
+        })
+        .then(function (m) {
+          if (!m) return;
+          metaInfo = m;
+          if (m.asOn) {
+            $('asOn').textContent = UI.fmtDate(new Date(m.asOn));
+            $('asOn').title = 'Baseline Date: ' + (m.baselineDate || m.asOn) + ' (' + m.source + ')';
+          }
+          if ($('crmSyncBtn')) {
+            $('crmSyncBtn').hidden = !m.canCrmSync;
+          }
+        }).catch(function () {});
+
+      Promise.all([
+        fetch('/api/unbilled/outsort', { credentials: 'same-origin' }).then(function (r) {
+          if (r.status === 401) { location.replace('/login.html'); throw new Error('Unauthorized'); }
+          if (!r.ok) throw new Error('HTTP ' + r.status + ' loading outsort data');
+          return r.text();
+        }),
+        fetch('/api/unbilled/chronic', { credentials: 'same-origin' }).then(function (r) {
+          if (r.status === 401) { location.replace('/login.html'); throw new Error('Unauthorized'); }
+          if (!r.ok) throw new Error('HTTP ' + r.status + ' loading chronic data');
+          return r.text();
+        }),
+        fetch('/api/unbilled/summary', { credentials: 'same-origin' }).then(function (r) {
+          if (r.status === 401) { location.replace('/login.html'); throw new Error('Unauthorized'); }
+          if (!r.ok) throw new Error('HTTP ' + r.status + ' loading summary data');
+          return r.text();
+        })
+      ]).then(function (results) {
+        rawOutsort = parseCsv(results[0]).map(setOfficeFields);
+        rawChronic = parseCsv(results[1]).map(setOfficeFields);
+        rawSummary = parseCsv(results[2]).map(setOfficeFields);
+
+        // Apply Login Scope
+        scopedOutsort = window.MzoScope && typeof window.MzoScope.filterRows === 'function' ? window.MzoScope.filterRows(rawOutsort) : rawOutsort;
+        scopedChronic = window.MzoScope && typeof window.MzoScope.filterRows === 'function' ? window.MzoScope.filterRows(rawChronic) : rawChronic;
+        scopedSummary = window.MzoScope && typeof window.MzoScope.filterRows === 'function' ? window.MzoScope.filterRows(rawSummary) : rawSummary;
+
+        initOffices();
+        render();
+      }).catch(function (err) {
+        console.error('Unbilled data load failed:', err);
+        $('table').innerHTML = '<div class="ui-empty">Could not load unbilled data. (' + UI.esc(err.message) + ')</div>';
+      });
+    }
+
+    function filterRows(list) {
+      var reg = $('regionFilter').value;
+      var div = $('divisionFilter').value;
+      var cc = $('cccFilter').value;
+      var q = f.q.toLowerCase().trim();
+      var mru = f.mru.toLowerCase().trim();
+
+      return list.filter(function (r) {
+        if (reg && r._region !== reg) return false;
+        if (div && r._divn !== div) return false;
+        if (cc && r._supp !== cc && r.CCC_CODE !== cc) return false;
+        if (f.cls && r.BASE_CLASS !== f.cls) return false;
+        if (mru && String(r.MRU || '').toLowerCase().indexOf(mru) === -1) return false;
+        if (q) {
+          var hay = [r.CON_ID, r.NAME, r.METER_NO, r.MRU, r.INST_NO, r._supp].join(' ').toLowerCase();
+          if (hay.indexOf(q) === -1) return false;
+        }
+        return true;
+      });
+    }
+
+    function renderFacets() {
+      var classes = {};
+      [scopedOutsort, scopedChronic, scopedSummary].forEach(function (list) {
+        list.forEach(function (r) {
+          if (r.BASE_CLASS) classes[r.BASE_CLASS] = (classes[r.BASE_CLASS] || 0) + (r.UNBILLED_COUNT ? +r.UNBILLED_COUNT : 1);
+        });
+      });
+      var clsItems = Object.keys(classes).sort().map(function (c) {
+        return { value: c, label: c + ' (' + UI.n(classes[c]) + ')', count: classes[c] };
+      });
+      UI.facet('fClass', clsItems, f.cls, function (v) { f.cls = v; render(); });
+      setActive((f.cls ? 1 : 0) + (f.mru ? 1 : 0) + SELECTS.filter(function (id) { return $(id).value && !$(id).disabled; }).length);
+    }
+
+    function renderStats() {
+      var outList = filterRows(scopedOutsort);
+      var chrList = filterRows(scopedChronic);
+      var sumList = filterRows(scopedSummary);
+
+      var totCurrent = sumList.reduce(function (a, r) { return a + (+r.UNBILLED_COUNT || 0); }, 0);
+      $('statOutsort').textContent = UI.n(outList.length);
+      $('statChronic').textContent = UI.n(chrList.length);
+      $('statCurrent').textContent = UI.n(totCurrent);
+
+      var affCccs = {};
+      outList.concat(chrList).forEach(function (r) { if (r.CCC_CODE) affCccs[r.CCC_CODE] = 1; });
+      $('statOffices').textContent = UI.n(Object.keys(affCccs).length);
+
+      [].forEach.call(document.querySelectorAll('#stats .ui-stat'), function (el) {
+        el.classList.toggle('active', el.getAttribute('data-tab') === currentTab);
+      });
+    }
+
+    function render() {
+      renderFacets();
+      renderStats();
+      renderActiveChips();
+
+      [].forEach.call(document.querySelectorAll('#tabs .ui-drill-tab'), function (btn) {
+        btn.setAttribute('aria-selected', String(btn.getAttribute('data-t') === currentTab));
+      });
+
+      if (currentTab === 'outsort') renderOutsortTable();
+      else if (currentTab === 'chronic') renderChronicTable();
+      else if (currentTab === 'summary') renderSummaryTable();
+      else if (currentTab === 'offices') renderOfficesTable();
+    }
+
+    function renderActiveChips() {
+      var bar = $('rhFiltersBar');
+      if (!bar) return;
+      var chips = [];
+      var reg = $('regionFilter').value; if (reg) chips.push({ label: 'Region: ' + reg, clear: function () { $('regionFilter').value = ''; initOffices(); render(); } });
+      var div = $('divisionFilter').value; if (div) chips.push({ label: 'Division: ' + div, clear: function () { $('divisionFilter').value = ''; initOffices(); render(); } });
+      var cc = $('cccFilter').value; if (cc) chips.push({ label: 'CCC: ' + cc, clear: function () { $('cccFilter').value = ''; render(); } });
+      if (f.cls) chips.push({ label: 'Class: ' + f.cls, clear: function () { f.cls = ''; render(); } });
+      if (f.mru) chips.push({ label: 'MRU: ' + f.mru, clear: function () { f.mru = ''; $('mruInput').value = ''; render(); } });
+      if (f.q) chips.push({ label: 'Search: ' + f.q, clear: function () { f.q = ''; $('searchInput').value = ''; render(); } });
+
+      if (!chips.length) {
+        bar.innerHTML = '<span class="rh-all-clear"><svg class="ui-i" style="width:13px;height:13px;vertical-align:-2px"><use href="#ui-check"/></svg> Showing all records</span>';
+        return;
+      }
+      var html = '<div class="rh-filters">';
+      chips.forEach(function (c, idx) {
+        html += '<span class="rh-chip">' + UI.esc(c.label) + '<button type="button" class="rh-chip-x" data-x="' + idx + '">&times;</button></span>';
+      });
+      html += '<button type="button" class="rh-clear-btn" id="resetChips">Reset all</button></div>';
+      bar.innerHTML = html;
+      bar.querySelector('#resetChips')?.addEventListener('click', clearAll);
+      [].forEach.call(bar.querySelectorAll('.rh-chip-x'), function (btn) {
+        btn.addEventListener('click', function () { chips[+this.getAttribute('data-x')].clear(); });
+      });
+    }
+
+    function renderOutsortTable() {
+      $('rhTitle').textContent = 'Billing Outsorts (Exceptions)';
+      var rows = filterRows(scopedOutsort);
+      $('rhCount').textContent = UI.n(rows.length);
+
+      var cols = [
+        { key: 'CON_ID', label: 'Consumer ID', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v) + '</span><span class="cell-sub">' + UI.esc(r.NAME || '') + '</span>'; } },
+        { key: '_supp', label: 'CCC', fmt: function (v, r) { return UI.esc(v || r.CCC_CODE) + (r._divn ? '<span class="cell-sub">' + UI.esc(r._divn) + '</span>' : ''); } },
+        { key: 'MRU', label: 'MRU', fmt: function (v) { return '<span class="tag-outsort">' + UI.esc(v) + '</span>'; } },
+        { key: 'SMRD', label: 'SMRD', fmt: fmtYmd },
+        { key: 'BASE_CLASS', label: 'Class', fmt: function (v) { return UI.esc(v || '—'); } },
+        { key: 'TARIFF_CLASS', label: 'Tariff', fmt: function (v) { return UI.esc(v || '—'); } },
+        { key: 'CONN_LOAD', label: 'Load', num: true, fmt: function (v) { return (+v ? (+v).toFixed(2) + ' kW' : '—'); } },
+        { key: 'METER_NO', label: 'Meter No', fmt: function (v) { return UI.esc(v || '—'); } },
+        { key: 'LAST_BILL_DATE', label: 'Last Bill', fmt: fmtYmd },
+        { key: 'UNIT_CONSUMP_LAST_BILL', label: 'Last Units', num: true, fmt: function (v) { return (+v ? UI.n(+v) : '0'); } }
+      ];
+
+      lastTable = { title: 'Billing Outsorts', cols: cols.map(function (c) { return c.label; }), rows: rows.map(function (r) { return [r.CON_ID, r._supp, r.MRU, fmtYmd(r.SMRD), r.BASE_CLASS, r.TARIFF_CLASS, r.CONN_LOAD, r.METER_NO, fmtYmd(r.LAST_BILL_DATE), r.UNIT_CONSUMP_LAST_BILL]; }) };
+
+      UI.table('table', {
+        rows: rows, sort: { key: 'SMRD', dir: 'desc' }, count: false, limit: 50, empty: 'No billing outsorts found for the selected filters.',
+        columns: cols
+      });
+    }
+
+    function renderChronicTable() {
+      $('rhTitle').textContent = 'Chronic Unbilled (≥ 3 Consecutive Months)';
+      var rows = filterRows(scopedChronic);
+      $('rhCount').textContent = UI.n(rows.length);
+
+      var cols = [
+        { key: 'CON_ID', label: 'Consumer ID', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v) + '</span><span class="cell-sub">' + UI.esc(r.NAME || '') + '</span>'; } },
+        { key: '_supp', label: 'CCC', fmt: function (v, r) { return UI.esc(v || r.CCC_CODE) + (r._divn ? '<span class="cell-sub">' + UI.esc(r._divn) + '</span>' : ''); } },
+        { key: 'MRU', label: 'MRU', fmt: function (v) { return '<span class="tag-chronic">' + UI.esc(v) + '</span>'; } },
+        { key: 'SMRD', label: 'SMRD', fmt: fmtYmd },
+        { key: 'BASE_CLASS', label: 'Class', fmt: function (v) { return UI.esc(v || '—'); } },
+        { key: 'CONN_LOAD', label: 'Load', num: true, fmt: function (v) { return (+v ? (+v).toFixed(2) + ' kW' : '—'); } },
+        { key: 'METER_NO', label: 'Meter No', fmt: function (v) { return UI.esc(v || '—'); } },
+        { key: 'LAST_BILL_DATE', label: 'Last Billed', fmt: fmtYmd },
+        { key: 'INV_PENDING_FLAG', label: 'Inv Pending', fmt: function (v) { return v === 'X' ? '<span class="tag-outsort">Pending</span>' : '—'; } }
+      ];
+
+      lastTable = { title: 'Chronic Unbilled', cols: cols.map(function (c) { return c.label; }), rows: rows.map(function (r) { return [r.CON_ID, r._supp, r.MRU, fmtYmd(r.SMRD), r.BASE_CLASS, r.CONN_LOAD, r.METER_NO, fmtYmd(r.LAST_BILL_DATE), r.INV_PENDING_FLAG]; }) };
+
+      UI.table('table', {
+        rows: rows, sort: { key: 'LAST_BILL_DATE', dir: 'asc' }, count: false, limit: 50, empty: 'No chronic unbilled consumers found for the selected filters.',
+        columns: cols
+      });
+    }
+
+    function renderSummaryTable() {
+      $('rhTitle').textContent = 'Current Month Unbilled by MRU';
+      var rows = filterRows(scopedSummary);
+      var tot = rows.reduce(function (a, r) { return a + (+r.UNBILLED_COUNT || 0); }, 0);
+      $('rhCount').textContent = UI.n(tot) + ' consumers across ' + UI.n(rows.length) + ' MRUs';
+
+      var cols = [
+        { key: '_supp', label: 'CCC', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v || r.CCC_CODE) + '</span>' + (r._divn ? '<span class="cell-sub">' + UI.esc(r._divn) + '</span>' : ''); } },
+        { key: 'MRU', label: 'MRU Portion', fmt: function (v) { return '<span class="tag-current">' + UI.esc(v) + '</span>'; } },
+        { key: 'BASE_CLASS', label: 'Class', fmt: function (v) { return UI.esc(v || '—'); } },
+        { key: 'UNBILLED_COUNT', label: 'Unbilled Consumers', num: true, fmt: UI.n }
+      ];
+
+      lastTable = { title: 'Current Month Unbilled MRUs', cols: cols.map(function (c) { return c.label; }), rows: rows.map(function (r) { return [r._supp, r.MRU, r.BASE_CLASS, r.UNBILLED_COUNT]; }) };
+
+      UI.table('table', {
+        rows: rows, sort: { key: 'UNBILLED_COUNT', dir: 'desc' }, count: false, limit: 50, empty: 'No MRU groups found for the selected filters.',
+        columns: cols
+      });
+    }
+
+    function renderOfficesTable() {
+      $('rhTitle').textContent = 'Office Breakdown (Unbilled & Exceptions)';
+      var map = {};
+
+      scopedSummary.forEach(function (r) {
+        var c = r.CCC_CODE || 'Unknown';
+        if (!map[c]) map[c] = { code: c, name: r._supp, divn: r._divn, reg: r._region, outsort: 0, chronic: 0, current: 0 };
+        map[c].current += (+r.UNBILLED_COUNT || 0);
+      });
+      scopedOutsort.forEach(function (r) {
+        var c = r.CCC_CODE || 'Unknown';
+        if (!map[c]) map[c] = { code: c, name: r._supp, divn: r._divn, reg: r._region, outsort: 0, chronic: 0, current: 0 };
+        map[c].outsort++;
+      });
+      scopedChronic.forEach(function (r) {
+        var c = r.CCC_CODE || 'Unknown';
+        if (!map[c]) map[c] = { code: c, name: r._supp, divn: r._divn, reg: r._region, outsort: 0, chronic: 0, current: 0 };
+        map[c].chronic++;
+      });
+
+      var reg = $('regionFilter').value;
+      var div = $('divisionFilter').value;
+      var rows = Object.values(map).filter(function (o) {
+        if (reg && o.reg !== reg) return false;
+        if (div && o.divn !== div) return false;
+        return true;
+      });
+
+      $('rhCount').textContent = UI.n(rows.length) + ' CCCs';
+
+      var cols = [
+        { key: 'name', label: 'CCC Name', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v || r.code) + '</span><span class="cell-sub">' + UI.esc(r.divn || '') + '</span>'; } },
+        { key: 'outsort', label: 'Billing Outsorts', num: true, fmt: function (v) { return v ? '<span class="tag-outsort">' + UI.n(v) + '</span>' : '0'; } },
+        { key: 'chronic', label: 'Chronic (≥3m)', num: true, fmt: function (v) { return v ? '<span class="tag-chronic">' + UI.n(v) + '</span>' : '0'; } },
+        { key: 'current', label: 'Current Cycle Unbilled', num: true, fmt: UI.n }
+      ];
+
+      lastTable = { title: 'Office Breakdown', cols: cols.map(function (c) { return c.label; }), rows: rows.map(function (r) { return [r.name, r.outsort, r.chronic, r.current]; }) };
+
+      UI.table('table', {
+        rows: rows, sort: { key: 'outsort', dir: 'desc' }, count: false, limit: 50, empty: 'No office data found.',
+        columns: cols,
+        onRow: function (r) {
+          $('cccFilter').value = r.name || r.code;
+          currentTab = 'outsort';
+          render();
+        }
+      });
+    }
+
+    function clearAll() {
+      f.cls = ''; f.mru = ''; f.q = '';
+      $('searchInput').value = '';
+      $('mruInput').value = '';
+      SELECTS.forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });
+      initOffices();
+      render();
+    }
+
+    /* ---------- Event Listeners ---------- */
+    SELECTS.forEach(function (id) {
+      $(id).addEventListener('change', function () {
+        if (id === 'regionFilter') $('divisionFilter').value = '';
+        if (id !== 'cccFilter') $('cccFilter').value = '';
+        initOffices();
+        render();
+      });
+    });
+
+    $('searchInput').addEventListener('input', function () {
+      f.q = this.value;
+      render();
+    });
+
+    $('mruInput').addEventListener('input', function () {
+      f.mru = this.value;
+      render();
+    });
+
+    $('stats').addEventListener('click', function (e) {
+      var btn = e.target.closest('.ui-stat[data-tab]');
+      if (!btn) return;
+      currentTab = btn.getAttribute('data-tab');
+      render();
+    });
+
+    $('tabs').addEventListener('click', function (e) {
+      var btn = e.target.closest('.ui-drill-tab');
+      if (!btn) return;
+      currentTab = btn.getAttribute('data-t');
+      render();
+    });
+
+    $('copyBtn').addEventListener('click', function () {
+      if (!lastTable) return;
+      var lines = ['*' + lastTable.title + '*', lastTable.cols.join('\t')].concat(
+        lastTable.rows.slice(0, 500).map(function (r) { return r.join('\t'); })
+      );
+      UI.copy(lines.join('\n')).then(function () { UI.toast('Copied table to clipboard'); });
+    });
+
+    $('exportBtn').addEventListener('click', function () {
+      if (!lastTable) return;
+      var cols = lastTable.cols.map(function (c, i) { return { key: i, label: c }; });
+      var rows = lastTable.rows.map(function (r) {
+        var obj = {}; r.forEach(function (v, i) { obj[i] = v; }); return obj;
+      });
+      UI.exportCsv('unbilled-' + currentTab + '.csv', cols, rows);
+    });
+
+    $('refreshBtn').addEventListener('click', function () {
+      loadData();
+    });
+
+    /* ---------- CRM 1-Click Sync ---------- */
+    if ($('crmSyncBtn')) {
+      $('crmSyncBtn').addEventListener('click', function () {
+        if (!confirm('Directly extract the latest Unbilled Consumers & Billing Exceptions from IBM DB2?\n\nThis queries DB2 and updates DISHA in ~30-40 seconds.')) return;
+        var b = this; b.disabled = true; b.classList.add('spin');
+        var st = $('status'), stText = $('statusText'), stBar = $('statusBar');
+        st.hidden = false; stText.textContent = 'Extracting unbilled tables from IBM DB2...'; stBar.style.width = '30%';
+
+        fetch('/api/unbilled/crm-sync', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+            b.disabled = false; b.classList.remove('spin');
+            if (res.status === 'success') {
+              stBar.style.width = '100%';
+              stText.textContent = res.message || 'Sync complete!';
+              UI.toast('Unbilled & Billing Exceptions updated from DB2!');
+              setTimeout(function () { st.hidden = true; loadData(); }, 1200);
+            } else {
+              st.hidden = true;
+              alert('DB2 Sync failed: ' + (res.message || 'Unknown error'));
+            }
+          })
+          .catch(function (err) {
+            b.disabled = false; b.classList.remove('spin');
+            st.hidden = true;
+            alert('DB2 Sync error: ' + err.message);
+          });
+      });
+    }
+
+    loadData();
+  });
+  </script>
+</body>
+</html>
+

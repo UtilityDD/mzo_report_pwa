@@ -3945,6 +3945,7 @@ app.post('/api/stock/publish', (req, res) => {
 // scripts/sync/* copy each Google Sheet to the Supabase 'reports' bucket with a meta.json (version + KPIs).
 const { syncDefectiveToSupabase } = require('./scripts/sync/sync_defective_to_supabase');
 const { syncDefectiveFromCrm, isDbvisAvailable } = require('./scripts/sync/sync_defective_from_crm');
+const { syncUnbilledFromCrm } = require('./scripts/sync/sync_unbilled_from_crm');
 const { syncDisconnectionToSupabase } = require('./scripts/sync/sync_disconnection_to_supabase');
 const { syncPendingMcToSupabase } = require('./scripts/sync/sync_pending_mc_to_supabase');
 const { syncLoadExtToSupabase } = require('./scripts/sync/sync_load_ext_to_supabase');
@@ -4004,6 +4005,7 @@ const DEFECTIVE_META = syncedMeta_('defective', 'defective_meta.json');
 const DISCONNECTION_META = syncedMeta_('disconnection', 'disconnection_meta.json');
 const PENDING_MC_META = syncedMeta_('pending_mc', 'pending_mc_meta.json');
 const LOAD_EXT_META = syncedMeta_('load_extension', 'load_ext_meta.json');
+const UNBILLED_META = syncedMeta_('unbilled', 'unbilled_meta.json');
 
 /** POST route that runs one sync job (one at a time per instance) and logs it. */
 function syncRoute_(routePath, { label, can, forbidden, run, meta, done, bareError, mirrorKeys }) {
@@ -4139,6 +4141,75 @@ syncRoute_('/api/defective/crm-sync', {
     done: (m) => ({
         log: `CRM Synced Defective Meter: ${m.stats.totalDefective} meters (${m.stats.summaryRows} summary, ${m.stats.detailsRows} details)`,
         message: `CRM Defective Meter sync complete! Total: ${m.stats.totalDefective} meters.`
+    })
+});
+
+// --- Unbilled Consumers & Billing Exceptions ---
+function canManageUnbilled_(user) {
+    return isPortalAdmin_(user) || hasPermission_(user, 'unbilled-sync-autho') || hasPermission_(user, 'defective-upload-autho');
+}
+
+app.get('/api/unbilled/meta', async (req, res) => {
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    const user = await resolveFreshUser_(req);
+    const canSync = canManageUnbilled_(user);
+    const meta = await UNBILLED_META.read();
+    res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
+    return res.json({
+        status: 'success',
+        canSync,
+        canCrmSync: canSync && isDbvisAvailable(),
+        isAdmin: isPortalAdmin_(user),
+        asOn: (meta && meta.asOn) || null,
+        baselineDate: (meta && meta.baselineDate) || null,
+        outsortCount: (meta && meta.outsortCount) || 0,
+        chronicCount: (meta && meta.chronicCount) || 0,
+        currentMonCount: (meta && meta.currentMonCount) || 0,
+        summaryGroups: (meta && meta.summaryGroups) || 0,
+        source: (meta && meta.source) || 'CRM DB2 (ISUDATA)',
+        uploadedAt: (meta && meta.uploadedAt) || null
+    });
+});
+
+app.get('/api/unbilled/outsort', (req, res) => {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    const f = path.join(__dirname, 'data/unbilled_outsort.csv');
+    if (fs.existsSync(f)) return fs.createReadStream(f).pipe(res);
+    return res.status(404).send('Not found');
+});
+
+app.get('/api/unbilled/chronic', (req, res) => {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    const f = path.join(__dirname, 'data/unbilled_chronic.csv');
+    if (fs.existsSync(f)) return fs.createReadStream(f).pipe(res);
+    return res.status(404).send('Not found');
+});
+
+app.get('/api/unbilled/summary', (req, res) => {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    const f = path.join(__dirname, 'data/unbilled_summary.csv');
+    if (fs.existsSync(f)) return fs.createReadStream(f).pipe(res);
+    return res.status(404).send('Not found');
+});
+
+syncRoute_('/api/unbilled/crm-sync', {
+    label: 'CRM Unbilled Sync',
+    can: canManageUnbilled_,
+    forbidden: 'Not authorized to sync unbilled data from CRM. Ask an admin to grant permission.',
+    run: async () => {
+        if (!isDbvisAvailable()) {
+            throw new Error('DbVisualizer CLI is not available on this server. Direct CRM extraction must be run from an internal office workstation / VM connected to DB2.');
+        }
+        return await syncUnbilledFromCrm({ fresh: true });
+    },
+    meta: UNBILLED_META,
+    mirrorKeys: ['unbilled_outsort', 'unbilled_chronic', 'unbilled_summary'],
+    done: (m) => ({
+        log: `CRM Synced Unbilled: ${m.outsortCount} outsorts, ${m.chronicCount} chronic, ${m.currentMonCount} current month`,
+        message: `Unbilled & Billing Exceptions sync complete! Outsorts: ${m.outsortCount}, Chronic (>=3m): ${m.chronicCount}.`
     })
 });
 
@@ -4549,6 +4620,43 @@ function formatLakh_(num) {
     return lk.toFixed(2) + ' L';
 }
 
+function cleanDivisionCccs_(divCccs) {
+    if (!divCccs || typeof divCccs !== 'object') return {};
+    const out = {};
+    for (const [div, list] of Object.entries(divCccs)) {
+        if (!Array.isArray(list)) continue;
+        const map = new Map();
+        for (const item of list) {
+            let name = String(item.name || '').trim();
+            const lower = name.toLowerCase();
+            if (lower === 'pa') name = 'Pandua';
+            else if (lower === 'gazol') name = 'Gazole';
+            else if (lower === 'h.c. pur' || lower === 'hc pur') name = 'Harishchandrapur';
+            else if (lower === 'baisnabnagar') name = 'Baishnabnagar';
+            else if (lower === 'kumargunj') name = 'Kumarganj';
+            else if (lower === 'kushmundi' || lower === 'kushmandi') name = 'Kusmandi';
+            else if (lower === 'karandeghi') name = 'Karandighi';
+            else if (lower === 'bamangola') name = 'Bamongola';
+            else if (lower === 'goalpokhar') name = 'Goalpokher';
+
+            if (!map.has(name)) {
+                map.set(name, { ...item, name });
+            } else {
+                const prev = map.get(name);
+                prev.count = (Number(prev.count) || 0) + (Number(item.count) || 0);
+                if (item.amountCr != null || prev.amountCr != null) {
+                    prev.amountCr = (Number(prev.amountCr) || 0) + (Number(item.amountCr) || 0);
+                }
+                if (item.osd != null || prev.osd != null) {
+                    prev.osd = (Number(prev.osd) || 0) + (Number(item.osd) || 0);
+                }
+            }
+        }
+        out[div] = Array.from(map.values()).sort((a, b) => (b.count || 0) - (a.count || 0));
+    }
+    return out;
+}
+
 // Numbers come from the sync jobs' meta; an item whose numbers are unavailable is left out (never guessed).
 function buildExecutiveBriefing_(meta) {
     const pendingMc = (meta && meta.pendingMc && meta.pendingMc.stats) || {};
@@ -4556,6 +4664,12 @@ function buildExecutiveBriefing_(meta) {
     const discon = (meta && meta.discon && meta.discon.stats) || {};
     const defective = (meta && meta.defective && meta.defective.stats) || {};
     const nsc = (meta && meta.nsc && meta.nsc.stats) || {};
+
+    const cleanPendingMcCccs = cleanDivisionCccs_(pendingMc.divisionCccs);
+    const cleanLoadExtCccs = cleanDivisionCccs_(loadExt.divisionCccs);
+    const cleanDisconCccs = cleanDivisionCccs_(discon.divisionCccs);
+    const cleanDefectiveCccs = cleanDivisionCccs_(defective.divisionCccs);
+    const cleanNscCccs = cleanDivisionCccs_(nsc.divisionCccs);
 
     const asOn = pendingMc.reportDate || pendingMc.asOnDate || loadExt.reportDate || discon.reportDate || 'Latest';
 
@@ -4582,7 +4696,7 @@ function buildExecutiveBriefing_(meta) {
             { division: 'Chanchal', count: mcDivs.Chanchal || 0 }
         ],
         divisions: mcDivs,
-        divisionCccs: pendingMc.divisionCccs || {},
+        divisionCccs: cleanPendingMcCccs,
         deepLink: 'pending_mc.html?kpiFilter=Delayed',
         pageTitle: 'Pending Master Card',
         datasetKey: 'CACHE_PENDING_MC'
@@ -4609,7 +4723,7 @@ function buildExecutiveBriefing_(meta) {
             { division: 'Buniadpur', count: (disconDivs.Buniadpur && disconDivs.Buniadpur.noAction) || 0, amount: formatCr_((disconDivs.Buniadpur && disconDivs.Buniadpur.osd) || 0) }
         ],
         divisions: disconDivs,
-        divisionCccs: discon.divisionCccs || {},
+        divisionCccs: cleanDisconCccs,
         deepLink: 'disconnection.html?status=noAction',
         pageTitle: 'Disconnection Tracker',
         datasetKey: 'CACHE_DISCONNECTION'
@@ -4636,7 +4750,7 @@ function buildExecutiveBriefing_(meta) {
             { division: 'Gazole', count: (defDivs['GAZOLE DIVISION'] && defDivs['GAZOLE DIVISION'].over10) || 0 }
         ],
         divisions: defDivs,
-        divisionCccs: defective.divisionCccs || {},
+        divisionCccs: cleanDefectiveCccs,
         deepLink: 'consumer/defective_meter.html?kpi=over10',
         pageTitle: 'Defective Meter Dashboard',
         datasetKey: 'CACHE_DEFECTIVE'
@@ -4659,7 +4773,7 @@ function buildExecutiveBriefing_(meta) {
             metric: `${nscDelayed30.toLocaleString()}`,
             hotspots: ['Raiganj', 'Islampur', 'Gazole', 'Buniadpur'].map((d) => ({ division: d, count: nscDivs[d] || 0 })),
             divisions: nscDivs,
-            divisionCccs: nsc.divisionCccs || {},
+            divisionCccs: cleanNscCccs,
             deepLink: 'nsc.html',
             pageTitle: 'Pending NSC',
             datasetKey: 'CACHE_NSC_v5'
@@ -4687,7 +4801,7 @@ function buildExecutiveBriefing_(meta) {
             { division: 'Balurghat', count: loadDivs.Balurghat || 0 }
         ],
         divisions: loadDivs,
-        divisionCccs: loadExt.divisionCccs || {},
+        divisionCccs: cleanLoadExtCccs,
         deepLink: 'pending_load_extension.html?kpi=kpiAgeing1y',
         pageTitle: 'Pending Load Extension',
         datasetKey: 'CACHE_LOAD_EXT'
@@ -4707,7 +4821,7 @@ function buildExecutiveBriefing_(meta) {
         metric: `${indMc}`,
         hotspots: [],
         divisions: mcDivs,
-        divisionCccs: pendingMc.divisionCccs || {},
+        divisionCccs: cleanPendingMcCccs,
         deepLink: 'pending_mc.html?kpiFilter=Industrial',
         pageTitle: 'Pending Master Card',
         datasetKey: 'CACHE_PENDING_MC'
@@ -4732,7 +4846,7 @@ function buildExecutiveBriefing_(meta) {
             { division: 'Gazole', count: (defDivs['GAZOLE DIVISION'] && defDivs['GAZOLE DIVISION'].ph3) || 0 }
         ],
         divisions: defDivs,
-        divisionCccs: defective.divisionCccs || {},
+        divisionCccs: cleanDefectiveCccs,
         deepLink: 'consumer/defective_meter.html?kpi=ph3',
         pageTitle: 'Defective Meter Dashboard',
         datasetKey: 'CACHE_DEFECTIVE'
@@ -4778,7 +4892,7 @@ function buildExecutiveBriefing_(meta) {
         metric: `₹${formatLakh_(partAmount)}`,
         hotspots: [],
         divisions: disconDivs,
-        divisionCccs: discon.divisionCccs || {},
+        divisionCccs: cleanDisconCccs,
         deepLink: 'disconnection.html?status=partiallyPaid',
         pageTitle: 'Disconnection Tracker',
         datasetKey: 'CACHE_DISCONNECTION'

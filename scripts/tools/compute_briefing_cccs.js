@@ -20,7 +20,7 @@ const CCC_MAP = {
   '6612106': 'Harishchandrapur',
   '6612107': 'Kushida',
   // Gazole Division (6613)
-  '6613101': 'Gazol',
+  '6613101': 'Gazole',
   '6613102': 'Aiho',
   '6613103': 'Pandua',
   '6613104': 'Bamongola',
@@ -96,6 +96,25 @@ function normalizeDivName(d) {
   return '';
 }
 
+function normalizeCccName(name, div) {
+  if (!name) return '';
+  const s = String(name).trim();
+  const lower = s.toLowerCase();
+  if (lower === 'pa') return 'Pandua';
+  if (lower === 'gazol') return 'Gazole';
+  if (lower === 'h.c. pur' || lower === 'hc pur') return 'Harishchandrapur';
+  if (lower === 'baisnabnagar') return 'Baishnabnagar';
+  if (lower === 'kumargunj') return 'Kumarganj';
+  if (lower === 'kushmundi' || lower === 'kushmandi') return 'Kusmandi';
+  if (lower === 'karandeghi') return 'Karandighi';
+  if (lower === 'bamangola') return 'Bamongola';
+  if (lower === 'goalpokhar') return 'Goalpokher';
+  for (const ccc of Object.values(CCC_MAP)) {
+    if (ccc.toLowerCase() === lower) return ccc;
+  }
+  return s;
+}
+
 async function run() {
   console.log('Calculating accurate CCC hotspots for all divisions...');
 
@@ -113,7 +132,7 @@ async function run() {
     for (let i = 1; i < lines.length; i++) {
       const parts = parseCsvLine(lines[i]);
       const div = normalizeDivName(parts[divIdx]);
-      const ccc = parts[cccIdx];
+      const ccc = normalizeCccName(parts[cccIdx], div);
       if (!div || !ccc) continue;
       if (!mcCccs[div]) mcCccs[div] = {};
       mcCccs[div][ccc] = (mcCccs[div][ccc] || 0) + 1;
@@ -295,7 +314,7 @@ async function run() {
         const parts = parseCsvLine(lines[i]);
         const divRaw = parts[divIdx];
         const div = normalizeDivName(divRaw);
-        const ccc = parts[cccIdx];
+        const ccc = normalizeCccName(parts[cccIdx], div);
         const delay = parseFloat(parts[delayIdx]) || 0;
         if (!div) continue;
         totalPending++;
