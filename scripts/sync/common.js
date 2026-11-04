@@ -8,6 +8,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const BUCKET = process.env.REPORTS_STORAGE_BUCKET || 'reports';
@@ -72,22 +73,58 @@ function storageConfigured() {
     return !!(storage.url && storage.key);
 }
 
-/** Upsert one object in the reports bucket; returns its public URL. Throws on an HTTP error. */
-async function upload(objectPath, body, contentType) {
-    const res = await fetch(`${storage.url}/storage/v1/object/${BUCKET}/${objectPath}`, {
-        method: 'POST',
-        headers: {
-            apikey: storage.key,
-            Authorization: 'Bearer ' + storage.key,
-            'Content-Type': contentType,
-            'x-upsert': 'true'
-        },
-        body
+function uploadViaCurl(objectPath, body, contentType) {
+    const targetUrl = `${storage.url}/storage/v1/object/${BUCKET}/${objectPath}`;
+    const res = spawnSync('curl.exe', [
+        '-s', '-X', 'POST', targetUrl,
+        '-H', `apikey: ${storage.key}`,
+        '-H', `Authorization: Bearer ${storage.key}`,
+        '-H', `Content-Type: ${contentType}`,
+        '-H', 'x-upsert: true',
+        '--data-binary', '@-'
+    ], {
+        input: body,
+        maxBuffer: 50 * 1024 * 1024
     });
-    if (!res.ok) {
-        throw new Error(`Upload ${objectPath} failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+
+    if (res.status !== 0) {
+        throw new Error(`curl upload ${objectPath} failed (exit ${res.status}): ${res.stderr ? res.stderr.toString() : ''}`);
+    }
+    const out = res.stdout ? res.stdout.toString() : '';
+    if (out.includes('"error"') || (out.includes('statusCode') && !out.includes('"Key"'))) {
+        throw new Error(`curl upload ${objectPath} returned error: ${out.slice(0, 300)}`);
     }
     return `${storage.url}/storage/v1/object/public/${BUCKET}/${objectPath}`;
+}
+
+/** Upsert one object in the reports bucket; returns its public URL. Throws on an HTTP error. */
+async function upload(objectPath, body, contentType) {
+    // When on an office network using HTTPS_PROXY, route via curl which respects the proxy
+    if (process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy) {
+        return uploadViaCurl(objectPath, body, contentType);
+    }
+
+    try {
+        const res = await fetch(`${storage.url}/storage/v1/object/${BUCKET}/${objectPath}`, {
+            method: 'POST',
+            headers: {
+                apikey: storage.key,
+                Authorization: 'Bearer ' + storage.key,
+                'Content-Type': contentType,
+                'x-upsert': 'true'
+            },
+            body
+        });
+        if (!res.ok) {
+            throw new Error(`Upload ${objectPath} failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+        }
+        return `${storage.url}/storage/v1/object/public/${BUCKET}/${objectPath}`;
+    } catch (err) {
+        if (err && (err.name === 'ConnectTimeoutError' || (err.message && err.message.includes('fetch failed')))) {
+            return uploadViaCurl(objectPath, body, contentType);
+        }
+        throw err;
+    }
 }
 
 /**
