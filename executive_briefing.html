@@ -94,11 +94,11 @@
     <header class="ui-head">
       <div>
         <h1>Briefing <span class="ui-badge ui-date" id="asOn">Live</span></h1>
-        <p id="meta" class="ui-muted">Malda Zone · Cross-Report Office Ranking</p>
+        <p id="meta" class="ui-muted">Malda Zone · Cross-Report Office Performance</p>
       </div>
       <div class="ui-actions">
         <div class="ui-seg" id="viewSeg" role="group" aria-label="View mode">
-          <button type="button" aria-pressed="true" data-v="matrix">Ranking Table</button>
+          <button type="button" aria-pressed="true" data-v="matrix">Comparison Table</button>
           <button type="button" aria-pressed="false" data-v="priorities">Priority Feed</button>
         </div>
         <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
@@ -111,19 +111,19 @@
     <!-- Top Clean Stat Cards -->
     <section class="ui-stats" style="--n:5" aria-label="Summary">
       <div class="ui-stat">
-        <div class="k"><span class="ui-dot ok"></span>Rank #1 Leader</div>
-        <div class="v" id="sLeader"><span class="ui-skel"></span></div>
-        <div class="sub" id="sLeaderSub">Lowest avg position</div>
+        <div class="k"><span class="ui-dot"></span>Best in Discon Dues</div>
+        <div class="v" id="sBestDues"><span class="ui-skel"></span></div>
+        <div class="sub" id="sBestDuesSub">Lowest OSD amount</div>
+      </div>
+      <div class="ui-stat">
+        <div class="k"><span class="ui-dot"></span>Best in Discon Pending</div>
+        <div class="v" id="sBestDiscon"><span class="ui-skel"></span></div>
+        <div class="sub" id="sBestDisconSub">Lowest no-action count</div>
       </div>
       <div class="ui-stat">
         <div class="k"><span class="ui-dot"></span>Best in MC >90d</div>
         <div class="v" id="sBestMc"><span class="ui-skel"></span></div>
         <div class="sub" id="sBestMcSub">Position #1</div>
-      </div>
-      <div class="ui-stat">
-        <div class="k"><span class="ui-dot"></span>Best in Disconnection</div>
-        <div class="v" id="sBestDiscon"><span class="ui-skel"></span></div>
-        <div class="sub" id="sBestDisconSub">Position #1</div>
       </div>
       <div class="ui-stat">
         <div class="k"><span class="ui-dot"></span>Best in NSC >30d</div>
@@ -133,7 +133,7 @@
       <div class="ui-stat">
         <div class="k"><span class="ui-dot c1"></span>Reports Evaluated</div>
         <div class="v">5</div>
-        <div class="sub">Direct verified sources</div>
+        <div class="sub">6 Tracked parameters</div>
       </div>
     </section>
 
@@ -159,9 +159,9 @@
           <div id="fDivision" aria-label="Division filter"></div>
         </div>
         <div class="ui-side-sec">
-          <div class="ui-side-label" style="font-size:11px;font-weight:600;color:var(--mzo-muted);margin-bottom:6px;text-transform:uppercase;">Ranking Methodology</div>
+          <div class="ui-side-label" style="font-size:11px;font-weight:600;color:var(--mzo-muted);margin-bottom:6px;text-transform:uppercase;">Performance Serials</div>
           <div style="font-size:12px;color:var(--mzo-muted);line-height:1.5;">
-            Every office receives a <b>serial position (1 to N)</b> for each report parameter. The overall <b>Rank</b> is determined by the <b>average of these positions</b> (lowest average = Rank #1).
+            Every office receives an independent <b>serial position (1 to N)</b> for each report parameter (lowest backlog or dues = Position #1). Click any column header to sort.
           </div>
         </div>
       </aside>
@@ -397,7 +397,15 @@
           list.forEach(function (c) {
             var o = getCcc(div, c.name);
             o[field] = Number(c.count || c[field] || 0);
-            if (extraField && c[extraField] != null) o[extraField] = Number(c[extraField]);
+            if (extraField && c[extraField] != null) {
+              if (extraField === 'amountCr') {
+                o.disconOsd = c.osd != null ? Number(c.osd) : (Number(c.amountCr || 0) * 1e7);
+              } else {
+                o[extraField] = Number(c[extraField]);
+              }
+            } else if (c.osd != null) {
+              o.disconOsd = Number(c.osd);
+            }
           });
         });
       };
@@ -415,10 +423,10 @@
 
     /* ----------------- Position Ranking Engine ----------------- */
 
-    function rankOffices(rows, paramKeys) {
+    function computePositions(rows, paramKeys) {
       if (!rows || !rows.length) return [];
 
-      // 1. Assign serial/position for each parameter (ascending: lowest backlog = position 1)
+      // Assign serial position for each parameter (ascending: lowest backlog/dues = Position #1)
       paramKeys.forEach(function (p) {
         var sorted = rows.slice().sort(function (a, b) {
           return (a[p] || 0) - (b[p] || 0) || a.name.localeCompare(b.name);
@@ -428,20 +436,13 @@
         });
       });
 
-      // 2. Average the parameter positions to get overall score
       rows.forEach(function (r) {
-        var sum = 0;
-        paramKeys.forEach(function (p) { sum += (r[p + '_pos'] || 0); });
-        r.avgPos = Number((sum / paramKeys.length).toFixed(2));
+        r.totalOffices = rows.length;
       });
 
-      // 3. Overall Rank based on lowest average position
+      // Default sort alphabetically by office name
       rows.sort(function (a, b) {
-        return a.avgPos - b.avgPos || a.name.localeCompare(b.name);
-      });
-      rows.forEach(function (r, idx) {
-        r.rank = idx + 1;
-        r.totalOffices = rows.length;
+        return a.name.localeCompare(b.name);
       });
 
       return rows;
@@ -450,23 +451,22 @@
     function getActiveRows(models) {
       var level = state.level;
       var rows = [];
-      var params = ['mc', 'discon', 'def', 'nsc', 'load'];
+      var params = ['discon', 'disconOsd', 'mc', 'def', 'nsc', 'load'];
 
       if (level === 'region') {
         rows = models.regions.slice();
       } else if (level === 'division') {
         rows = models.divisions.slice();
       } else {
-        // CCC level: evaluated on the 4 direct reports available per CCC
-        params = ['mc', 'discon', 'nsc', 'load'];
+        // CCC level: 5 direct operational parameters
+        params = ['discon', 'disconOsd', 'mc', 'nsc', 'load'];
         rows = models.cccs.slice();
       }
 
-      // Automatically rank office against its peers at the same level
-      var ranked = rankOffices(rows, params);
+      var computed = computePositions(rows, params);
 
       // Filter by search or region/division if selected
-      return ranked.filter(function (r) {
+      return computed.filter(function (r) {
         if (state.region && norm(r.region) !== norm(state.region)) return false;
         if (state.division && norm(r.division) !== norm(state.division)) return false;
         if (state.q) {
@@ -478,7 +478,7 @@
       });
     }
 
-    /* ----------------- Scorecard Drawer ----------------- */
+/* ----------------- Scorecard Drawer ----------------- */
 
     function openScorecard(r) {
       if (!r) return;
@@ -490,36 +490,34 @@
       var sub = isReg ? '3 Regions across Malda Zone' : (isDiv ? r.region + ' Region · ' + r.cccCount + ' CCCs' : r.division + ' Division · ' + r.region + ' Region');
 
       var pairs = [
-        ['Overall Rank', '#' + r.rank + ' of ' + r.totalOffices + ' ' + (isReg ? 'Regions' : (isDiv ? 'Divisions' : 'CCCs'))],
-        ['Average Position', r.avgPos.toFixed(2) + ' (across report parameters)'],
         ['Office Level', typeLabel]
       ];
       if (!isReg) pairs.push(['Region', r.region + ' Region']);
       if (!isReg && !isDiv) pairs.push(['Division', r.division + ' Division']);
 
       var params = [
-        { label: 'Pending MC > 90d', val: r.mc, pos: r.mc_pos, report: 'pending_mc.html?kpiFilter=Delayed' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '') },
-        { label: 'Discon No-Action', val: r.discon, pos: r.discon_pos, extra: r.disconOsd ? ' (₹' + (r.disconOsd / 1e7).toFixed(2) + ' Cr)' : '', report: 'disconnection.html?status=noAction' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '') },
-        { label: 'Defective Meters > 10m', val: r.def, pos: r.def_pos, report: 'consumer/defective_meter.html?kpi=over10' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '') },
-        { label: 'Pending NSC Delayed > 30d', val: r.nsc, pos: r.nsc_pos, report: 'nsc.html' + (isDiv ? '?division=' + encodeURIComponent(r.name) : '') },
-        { label: 'Load Extension > 1y', val: r.load, pos: r.load_pos, report: 'pending_load_extension.html?kpi=kpiAgeing1y' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '') }
+        { label: 'Discon Pending (No-Action)', val: UI.n(r.discon), pos: r.discon_pos, report: 'disconnection.html?status=noAction' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '') },
+        { label: 'Discon Pending Dues (OSD)', val: UI.inr(r.disconOsd), pos: r.disconOsd_pos, report: 'disconnection.html?status=noAction' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '') },
+        { label: 'Pending MC > 90d', val: UI.n(r.mc), pos: r.mc_pos, report: 'pending_mc.html?kpiFilter=Delayed' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '') },
+        { label: 'Defective Meters > 10m', val: UI.n(r.def), pos: r.def_pos, report: 'consumer/defective_meter.html?kpi=over10' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '') },
+        { label: 'Pending NSC Delayed > 30d', val: UI.n(r.nsc), pos: r.nsc_pos, report: 'nsc.html' + (isDiv ? '?division=' + encodeURIComponent(r.name) : '') },
+        { label: 'Load Extension > 1y', val: UI.n(r.load), pos: r.load_pos, report: 'pending_load_extension.html?kpi=kpiAgeing1y' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '') }
       ];
 
       var extraHtml = '<div class="bf-banner">' +
-        '<div><div class="bf-banner-title">Overall Rank: #' + r.rank + '</div>' +
-        '<div class="bf-banner-sub">Average Position: <b>' + r.avgPos.toFixed(2) + '</b> among ' + r.totalOffices + ' ' + (isReg ? 'regions' : (isDiv ? 'divisions' : 'CCCs')) + '</div></div>' +
-        '<span class="bf-rank ' + (r.rank === 1 ? 'r1' : (r.rank === r.totalOffices ? 'r-last' : '')) + '">#' + r.rank + '</span>' +
+        '<div><div class="bf-banner-title">' + UI.esc(r.name) + ' · Operational Matrix</div>' +
+        '<div class="bf-banner-sub">Serial positions across ' + r.totalOffices + ' ' + (isReg ? 'regions' : (isDiv ? 'divisions' : 'CCCs')) + ' (#1 = lowest backlog / dues)</div></div>' +
       '</div>' +
       '<div style="font-weight:600;font-size:12.5px;margin:12px 0 4px;color:var(--mzo-text);">Parameter Breakdown & Serials</div>' +
       '<table class="bf-scorecard-table">' +
-        '<thead><tr><th>Parameter</th><th class="num">Backlog</th><th class="num">Position</th><th class="num">Action</th></tr></thead>' +
+        '<thead><tr><th>Parameter</th><th class="num">Value</th><th class="num">Position</th><th class="num">Action</th></tr></thead>' +
         '<tbody>' +
         params.map(function (p) {
           if (p.pos == null && r.level === 'ccc') return '';
           var posCls = p.pos === 1 ? 'p1' : (p.pos === r.totalOffices ? 'p-last' : '');
           return '<tr>' +
-            '<td><b>' + UI.esc(p.label) + '</b>' + UI.esc(p.extra || '') + '</td>' +
-            '<td class="num"><b>' + UI.n(p.val || 0) + '</b></td>' +
+            '<td><b>' + UI.esc(p.label) + '</b></td>' +
+            '<td class="num"><b>' + UI.esc(p.val) + '</b></td>' +
             '<td class="num"><span class="bf-pos-tag ' + posCls + '">#' + p.pos + '</span></td>' +
             '<td class="num"><button type="button" class="ui-btn sm ghost" style="padding:2px 8px;font-size:11.5px;" onclick="window.__openRep(\'' + p.report + '\', \'' + UI.esc(p.label) + '\')">Open</button></td>' +
           '</tr>';
@@ -531,21 +529,20 @@
       if (isDiv && rawData) {
         var models = buildDataModels(rawData);
         var divCccs = models.cccs.filter(function (c) { return norm(c.division) === norm(r.name); });
-        rankOffices(divCccs, ['mc', 'discon', 'nsc', 'load']);
+        computePositions(divCccs, ['discon', 'disconOsd', 'mc', 'nsc', 'load']);
 
         if (divCccs.length) {
-          extraHtml += '<div style="font-weight:600;font-size:12.5px;margin:16px 0 4px;color:var(--mzo-text);">' + r.name + ' Division · CCC Ranking (Lowest to Highest Avg Position)</div>' +
+          extraHtml += '<div style="font-weight:600;font-size:12.5px;margin:16px 0 4px;color:var(--mzo-text);">' + r.name + ' Division · CCC Breakdown</div>' +
           '<table class="bf-scorecard-table">' +
-            '<thead><tr><th>Rank</th><th>CCC</th><th class="num">Avg Pos</th><th class="num">MC >90</th><th class="num">Discon</th><th class="num">NSC >30</th></tr></thead>' +
+            '<thead><tr><th>CCC</th><th class="num">Discon Pending</th><th class="num">Discon Dues</th><th class="num">MC >90</th><th class="num">NSC >30</th></tr></thead>' +
             '<tbody>' +
             divCccs.map(function (c) {
               return '<tr>' +
-                '<td><span class="bf-rank ' + (c.rank === 1 ? 'r1' : '') + '">#' + c.rank + '</span></td>' +
                 '<td><b>' + UI.esc(c.name) + '</b></td>' +
-                '<td class="num"><b>' + c.avgPos.toFixed(2) + '</b></td>' +
-                '<td class="num">' + UI.n(c.mc) + '</td>' +
-                '<td class="num">' + UI.n(c.discon) + '</td>' +
-                '<td class="num">' + UI.n(c.nsc) + '</td>' +
+                '<td class="num">' + UI.n(c.discon) + ' <small class="ui-muted">(#' + c.discon_pos + ')</small></td>' +
+                '<td class="num">' + UI.inr(c.disconOsd) + ' <small class="ui-muted">(#' + c.disconOsd_pos + ')</small></td>' +
+                '<td class="num">' + UI.n(c.mc) + ' <small class="ui-muted">(#' + c.mc_pos + ')</small></td>' +
+                '<td class="num">' + UI.n(c.nsc) + ' <small class="ui-muted">(#' + c.nsc_pos + ')</small></td>' +
               '</tr>';
             }).join('') +
             '</tbody>' +
@@ -553,7 +550,7 @@
         }
       }
 
-      var actionsHtml = '<button type="button" class="ui-btn sm" onclick="window.__openRep(\'nsc.html' + (isDiv ? '?division=' + encodeURIComponent(r.name) : '') + '\')">Open Reports</button>';
+      var actionsHtml = '<button type="button" class="ui-btn sm" onclick="window.__openRep(\'disconnection.html' + (isDiv ? '?division=' + encodeURIComponent(r.name) : '') + '\')">Open Reports</button>';
 
       UI.drawer(title, sub, pairs, extraHtml, actionsHtml);
     }
@@ -581,15 +578,6 @@
 
       var cols = [
         {
-          key: 'rank',
-          label: 'Rank',
-          num: true,
-          fmt: function (val, r) {
-            var cls = val === 1 ? 'r1' : (val === r.totalOffices ? 'r-last' : 'r2');
-            return '<span class="bf-rank ' + cls + '">#' + val + '</span>';
-          }
-        },
-        {
           key: 'name',
           label: isReg ? 'Region' : (isDiv ? 'Division' : 'CCC Office'),
           fmt: function (val, r) {
@@ -598,11 +586,29 @@
           }
         },
         {
-          key: 'avgPos',
-          label: 'Avg Pos',
+          key: 'discon',
+          label: 'Discon Pending',
           num: true,
-          fmt: function (val) {
-            return '<span class="bf-cell-val" title="Average of parameter positions across reports">' + val.toFixed(2) + '</span>';
+          fmt: function (val, r) {
+            var href = 'disconnection.html?status=noAction' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '');
+            var pCls = r.discon_pos === 1 ? 'p1' : (r.discon_pos === r.totalOffices ? 'p-last' : '');
+            return '<a href="' + href + '" class="bf-rep-link" onclick="event.stopPropagation();window.__openRep(\'" + href + "\', \'Disconnection\');return false;">' +
+              '<span class="bf-cell-val">' + UI.n(val) + '</span><span class="bf-pos-tag ' + pCls + '">#' + r.discon_pos + '</span>' +
+              '<span class="bf-cell-sub">No-action</span>' +
+            '</a>';
+          }
+        },
+        {
+          key: 'disconOsd',
+          label: 'Discon Dues',
+          num: true,
+          fmt: function (val, r) {
+            var href = 'disconnection.html?status=noAction' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '');
+            var pCls = r.disconOsd_pos === 1 ? 'p1' : (r.disconOsd_pos === r.totalOffices ? 'p-last' : '');
+            return '<a href="' + href + '" class="bf-rep-link" onclick="event.stopPropagation();window.__openRep(\'" + href + "\', \'Disconnection\');return false;">' +
+              '<span class="bf-cell-val">' + UI.inr(val) + '</span><span class="bf-pos-tag ' + pCls + '">#' + r.disconOsd_pos + '</span>' +
+              '<span class="bf-cell-sub">OSD arrears</span>' +
+            '</a>';
           }
         },
         {
@@ -612,22 +618,8 @@
           fmt: function (val, r) {
             var href = 'pending_mc.html?kpiFilter=Delayed' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '');
             var pCls = r.mc_pos === 1 ? 'p1' : (r.mc_pos === r.totalOffices ? 'p-last' : '');
-            return '<a href="' + href + '" class="bf-rep-link" onclick="event.stopPropagation();window.__openRep(\'' + href + '\', \'Pending MC\');return false;">' +
+            return '<a href="' + href + '" class="bf-rep-link" onclick="event.stopPropagation();window.__openRep(\'" + href + "\', \'Pending MC\');return false;">' +
               '<span class="bf-cell-val">' + UI.n(val) + '</span><span class="bf-pos-tag ' + pCls + '">#' + r.mc_pos + '</span>' +
-            '</a>';
-          }
-        },
-        {
-          key: 'discon',
-          label: 'Discon No-Action',
-          num: true,
-          fmt: function (val, r) {
-            var href = 'disconnection.html?status=noAction' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '');
-            var pCls = r.discon_pos === 1 ? 'p1' : (r.discon_pos === r.totalOffices ? 'p-last' : '');
-            var osdStr = r.disconOsd ? '₹' + (r.disconOsd / 1e7).toFixed(2) + ' Cr' : '';
-            return '<a href="' + href + '" class="bf-rep-link" onclick="event.stopPropagation();window.__openRep(\'' + href + '\', \'Disconnection\');return false;">' +
-              '<span class="bf-cell-val">' + UI.n(val) + '</span><span class="bf-pos-tag ' + pCls + '">#' + r.discon_pos + '</span>' +
-              (osdStr ? '<span class="bf-cell-sub">' + osdStr + '</span>' : '') +
             '</a>';
           }
         }
@@ -641,7 +633,7 @@
           fmt: function (val, r) {
             var href = 'consumer/defective_meter.html?kpi=over10' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '');
             var pCls = r.def_pos === 1 ? 'p1' : (r.def_pos === r.totalOffices ? 'p-last' : '');
-            return '<a href="' + href + '" class="bf-rep-link" onclick="event.stopPropagation();window.__openRep(\'' + href + '\', \'Defective Meter\');return false;">' +
+            return '<a href="' + href + '" class="bf-rep-link" onclick="event.stopPropagation();window.__openRep(\'" + href + "\', \'Defective Meter\');return false;">' +
               '<span class="bf-cell-val">' + UI.n(val) + '</span><span class="bf-pos-tag ' + pCls + '">#' + r.def_pos + '</span>' +
             '</a>';
           }
@@ -656,7 +648,7 @@
           fmt: function (val, r) {
             var href = 'nsc.html' + (isDiv ? '?division=' + encodeURIComponent(r.name) : '');
             var pCls = r.nsc_pos === 1 ? 'p1' : (r.nsc_pos === r.totalOffices ? 'p-last' : '');
-            return '<a href="' + href + '" class="bf-rep-link" onclick="event.stopPropagation();window.__openRep(\'' + href + '\', \'Pending NSC\');return false;">' +
+            return '<a href="' + href + '" class="bf-rep-link" onclick="event.stopPropagation();window.__openRep(\'" + href + "\', \'Pending NSC\');return false;">' +
               '<span class="bf-cell-val">' + UI.n(val) + '</span><span class="bf-pos-tag ' + pCls + '">#' + r.nsc_pos + '</span>' +
             '</a>';
           }
@@ -668,7 +660,7 @@
           fmt: function (val, r) {
             var href = 'pending_load_extension.html?kpi=kpiAgeing1y' + (isDiv ? '&division=' + encodeURIComponent(r.name) : '');
             var pCls = r.load_pos === 1 ? 'p1' : (r.load_pos === r.totalOffices ? 'p-last' : '');
-            return '<a href="' + href + '" class="bf-rep-link" onclick="event.stopPropagation();window.__openRep(\'' + href + '\', \'Load Extension\');return false;">' +
+            return '<a href="' + href + '" class="bf-rep-link" onclick="event.stopPropagation();window.__openRep(\'" + href + "\', \'Load Extension\');return false;">' +
               '<span class="bf-cell-val">' + UI.n(val) + '</span><span class="bf-pos-tag ' + pCls + '">#' + r.load_pos + '</span>' +
             '</a>';
           }
@@ -678,7 +670,7 @@
           label: '',
           num: true,
           fmt: function () {
-            return '<button type="button" class="ui-btn sm ghost icon" title="View Scorecard"><svg class="ui-i"><use href="#ui-chev"/></svg></button>';
+            return '<button type="button" class="ui-btn sm ghost icon" title="View Details"><svg class="ui-i"><use href="#ui-chev"/></svg></button>';
           }
         }
       );
@@ -686,7 +678,7 @@
       UI.table(container, {
         columns: cols,
         rows: rows,
-        sort: { key: 'rank', dir: 'asc' },
+        sort: { key: 'name', dir: 'asc' },
         empty: 'No offices matched the active filters.',
         onRow: function (row) {
           openScorecard(row);
@@ -694,34 +686,33 @@
       });
 
       var levelTxt = isReg ? '3 Regions' : (isDiv ? '7 Divisions' : rows.length + ' CCCs');
-      $('levelSummary').textContent = 'Comparing ' + levelTxt + ' by average parameter position';
+      $('levelSummary').textContent = 'Comparing ' + levelTxt + ' across 6 operational parameters';
     }
 
-    /* ----------------- Render Top Stats ----------------- */
+/* ----------------- Render Top Stats ----------------- */
 
     function renderStats(models) {
       var rows = getActiveRows(models);
       if (!rows.length) return;
 
-      var leader = rows.filter(function (r) { return r.rank === 1; })[0] || rows[0];
+      var bestDues = rows.slice().sort(function (a, b) { return (a.disconOsd || 0) - (b.disconOsd || 0); })[0];
+      $('sBestDues').textContent = bestDues ? bestDues.name : '—';
+      $('sBestDuesSub').textContent = bestDues ? UI.inr(bestDues.disconOsd) + ' dues' : '';
 
-      $('sLeader').textContent = leader ? leader.name : '—';
-      $('sLeaderSub').textContent = leader ? 'Avg Position: ' + leader.avgPos.toFixed(2) : '';
+      var bestDiscon = rows.slice().sort(function (a, b) { return (a.discon || 0) - (b.discon || 0); })[0];
+      $('sBestDiscon').textContent = bestDiscon ? bestDiscon.name : '—';
+      $('sBestDisconSub').textContent = bestDiscon ? UI.n(bestDiscon.discon) + ' pending' : '';
 
-      var bestMc = rows.slice().sort(function (a, b) { return a.mc - b.mc; })[0];
+      var bestMc = rows.slice().sort(function (a, b) { return (a.mc || 0) - (b.mc || 0); })[0];
       $('sBestMc').textContent = bestMc ? bestMc.name : '—';
       $('sBestMcSub').textContent = bestMc ? UI.n(bestMc.mc) + ' delayed' : '';
 
-      var bestDiscon = rows.slice().sort(function (a, b) { return a.discon - b.discon; })[0];
-      $('sBestDiscon').textContent = bestDiscon ? bestDiscon.name : '—';
-      $('sBestDisconSub').textContent = bestDiscon ? UI.n(bestDiscon.discon) + ' no-action' : '';
-
-      var bestNsc = rows.slice().sort(function (a, b) { return a.nsc - b.nsc; })[0];
+      var bestNsc = rows.slice().sort(function (a, b) { return (a.nsc || 0) - (b.nsc || 0); })[0];
       $('sBestNsc').textContent = bestNsc ? bestNsc.name : '—';
       $('sBestNscSub').textContent = bestNsc ? UI.n(bestNsc.nsc) + ' delayed' : '';
     }
 
-    /* ----------------- Priorities Feed ----------------- */
+/* ----------------- Priorities Feed ----------------- */
 
     function isZero(metric) {
       var d = String(metric == null ? '' : metric).replace(/[^\d.]/g, '');
@@ -809,24 +800,39 @@
     function exportCsvData(models) {
       var rows = getActiveRows(models);
       var level = state.level;
-      var filename = 'DISHA_Briefing_Ranking_' + level + '_' + new Date().toISOString().slice(0, 10) + '.csv';
+      var filename = 'DISHA_Briefing_' + level + '_' + new Date().toISOString().slice(0, 10) + '.csv';
 
       var cols = [
-        { label: 'Rank', key: 'rank' },
         { label: 'Office', key: 'name' },
-        { label: 'Average Position', key: 'avgPos' },
+        { label: 'Level', key: 'level' },
+        { label: 'Region', key: 'region' }
+      ];
+      if (level === 'ccc') {
+        cols.push({ label: 'Division', key: 'division' });
+      }
+
+      cols.push(
+        { label: 'Discon Pending (Count)', key: 'discon' },
+        { label: 'Discon Pending Position', key: 'discon_pos' },
+        { label: 'Discon Dues (Rs)', key: 'disconOsd' },
+        { label: 'Discon Dues Position', key: 'disconOsd_pos' },
         { label: 'Pending MC > 90d', key: 'mc' },
-        { label: 'MC Position', key: 'mc_pos' },
-        { label: 'Disconnection No-Action', key: 'discon' },
-        { label: 'Discon Position', key: 'discon_pos' },
+        { label: 'MC Position', key: 'mc_pos' }
+      );
+
+      if (level !== 'ccc') {
+        cols.push(
+          { label: 'Defective > 10m', key: 'def' },
+          { label: 'Defective Position', key: 'def_pos' }
+        );
+      }
+
+      cols.push(
         { label: 'Pending NSC > 30d', key: 'nsc' },
         { label: 'NSC Position', key: 'nsc_pos' },
         { label: 'Load Extension > 1y', key: 'load' },
         { label: 'Load Position', key: 'load_pos' }
-      ];
-      if (level !== 'ccc') {
-        cols.splice(7, 0, { label: 'Defective > 10m', key: 'def' }, { label: 'Defective Position', key: 'def_pos' });
-      }
+      );
 
       UI.exportCsv(filename, cols, rows);
     }
@@ -836,14 +842,25 @@
       var levelTxt = state.level.toUpperCase();
 
       var lines = [
-        '*DISHA Executive Briefing — ' + levelTxt + ' RANKING*',
+        '*DISHA Executive Briefing — ' + levelTxt + ' OPERATIONAL COMPARISON*',
         UI.fmtDate(new Date()),
-        'Basis: Average serial position across reports (lowest = Rank #1)',
+        'Basis: Independent serial position per parameter (1 = lowest backlog / dues)',
         ''
       ];
 
       rows.forEach(function (r) {
-        lines.push('#' + r.rank + ' ' + r.name + ' · Avg Pos: ' + r.avgPos.toFixed(2) + ' (MC: #' + r.mc_pos + ', Discon: #' + r.discon_pos + ', NSC: #' + r.nsc_pos + ', Load: #' + r.load_pos + ')');
+        var parts = [
+          'Discon Pending: ' + UI.n(r.discon) + ' (#' + r.discon_pos + ')',
+          'Discon Dues: ' + UI.inr(r.disconOsd) + ' (#' + r.disconOsd_pos + ')',
+          'MC >90d: ' + UI.n(r.mc) + ' (#' + r.mc_pos + ')'
+        ];
+        if (r.level !== 'ccc') {
+          parts.push('Defective >10m: ' + UI.n(r.def) + ' (#' + r.def_pos + ')');
+        }
+        parts.push('NSC >30d: ' + UI.n(r.nsc) + ' (#' + r.nsc_pos + ')');
+        parts.push('Load >1y: ' + UI.n(r.load) + ' (#' + r.load_pos + ')');
+
+        lines.push('*' + r.name + '* (' + (r.region || '') + '): ' + parts.join(' · '));
       });
 
       lines.push('');
@@ -851,7 +868,7 @@
       return lines.join('\n');
     }
 
-    /* ----------------- Main Render Flow ----------------- */
+/* ----------------- Main Render Flow ----------------- */
 
     function renderAll() {
       if (!rawData) return;
@@ -884,7 +901,7 @@
           var at = rawData.generatedAt ? new Date(rawData.generatedAt) : new Date();
           var asOnStr = rawData.asOn ? 'As on ' + UI.esc(rawData.asOn) : 'Updated ' + UI.fmtDate(at);
           $('asOn').textContent = asOnStr;
-          $('meta').textContent = 'Malda Zone · Cross-Report Ranking · ' + at.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+          $('meta').textContent = 'Malda Zone · Cross-Report Performance · ' + at.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
 
           renderAll();
         })
@@ -892,7 +909,7 @@
           console.error('[Briefing load error]:', err);
           $('matrixTable').innerHTML = '<div class="ui-empty">Could not load briefing. <button type="button" class="ui-btn sm" onclick="location.reload()">Retry</button></div>';
           $('open').innerHTML = '<div class="ui-empty">Could not load priorities.</div>';
-          ['sLeader', 'sBestMc', 'sBestDiscon', 'sBestNsc'].forEach(function (id) { $(id).textContent = '—'; });
+          ['sBestDues', 'sBestDiscon', 'sBestMc', 'sBestNsc'].forEach(function (id) { $(id).textContent = '—'; });
         })
         .then(function () {
           btn.classList.remove('spin');
@@ -960,14 +977,14 @@
     $('exportBtn').addEventListener('click', function () {
       if (!rawData) return;
       exportCsvData(buildDataModels(rawData));
-      UI.toast('Ranking table exported to CSV');
+      UI.toast('Comparison table exported to CSV');
     });
 
     $('copyBtn').addEventListener('click', function () {
       if (!rawData) return;
       var text = getSummaryText(buildDataModels(rawData));
       UI.copy(text).then(function () {
-        UI.toast('Ranking summary copied to clipboard');
+        UI.toast('Comparison summary copied to clipboard');
       });
     });
 
