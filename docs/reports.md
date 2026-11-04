@@ -88,3 +88,19 @@ Page: `performance_index.html` (NAV keys `performance_index` and `perf_index_imp
 - **Deep links:** `?level=region|division|ccc`, `&office=<7-digit code>` (opens the scorecard), `&within=<region or division code>`, `&q=`, `&tab=methodology`, `&param=<id>`; `#tab=method&param=<id>` is the anchor every scorecard parameter links to.
 - **Methodology tab:** rendered from `ratingDoc.method` (intro, grades, pillars and every parameter, levels, n/a and quality rules, safety penalties, data caveats, what is not scored, sources with their links, a worked example). `.md` files are not served, so the page never links to them.
 - **Rendering:** text only (`textContent`, no HTML from data). Checks: `node scripts/qa/rating-page.js --base http://127.0.0.1:<port>` against `scripts/qa/serve-local.sh <port>` (admin, region and CCC logins; desktop and phone; light and dark; every tab, deep links, CSV, an XSS document).
+
+## Historical NSC Analysis (Wishlist / Roadmap)
+
+Page: `historical_nsc.html`. Currently tracks daily connection counts per CCC by class (`d, c, i, a, o`) loaded via DataHub `historical_nsc` from a published Google Sheet CSV.
+
+**Future Upgrade Goals:**
+1. **Pace / Throughput:** Connection counts per week, month, quarter, and FY, broken down by CCC and Class, segmented by **Pole Case vs Non-Pole Case**.
+2. **Turnaround Delay Benchmarks (Overall per FY):**
+   - **Quotation Delay ($D_{\text{qtn}}$):** Application Date $\to$ Quotation Date (average days)
+   - **Work Order Delay ($D_{\text{wo}}$):** Payment Date $\to$ WO Creation Date (average days)
+   - **Connection Delay ($D_{\text{conn}}$):** Payment Date $\to$ Meter Installation Date (average days)
+   - **Overall Delay ($D_{\text{overall}}$):** Application Date $\to$ Meter Installation Date (average days)
+3. **Data Source & Privacy Architecture:**
+   - **Zero Consumer PII:** Client app only receives pre-aggregated summary counts and averages per unit/FY.
+   - **DB2 Status:** Local DB2 table `ISUDATA.REP_BIZ_MASTER_DETAIL` is queryable by user `report` for connection pace (`DATE_OF_EFFECT`, `BASE_CLASS`). Turnaround delay tables (`ISUDATA.ZNCN_CRM_DETAILS`, `ISUDATA.CRM_APPL_LIST`) require DB2 user mapping on remote server `DP1_DB` or an offline aggregate sync from the CRM export dump (`.xlsb`/`.csv`).
+
