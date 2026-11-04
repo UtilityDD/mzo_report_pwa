@@ -9,6 +9,23 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="DISHA" />
+  <script>
+    /* DISHA theme early paint (no flash) */
+    (function () {
+      var d = document.documentElement, pref = 'system', t;
+      try {
+        pref = localStorage.getItem('mzo_theme_pref') || '';
+        if (!pref) { t = localStorage.getItem('theme') || localStorage.getItem('mzo_theme'); pref = (t === 'light' || t === 'dark' || t === 'ppt') ? t : 'system'; }
+      } catch (e) {}
+      t = pref === 'system' ? (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : ((pref === 'dark' || pref === 'ppt') ? pref : 'light');
+      d.setAttribute('data-mzo-theme', t);
+      d.setAttribute('data-theme-pref', pref);
+      d.classList.toggle('dark-theme', t === 'dark');
+      d.classList.toggle('light-theme', t === 'light' || t === 'ppt');
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', t === 'dark' ? '#09090a' : '#f1f1f0');
+    })();
+  </script>
   <script src="/mzo_pwa_icons.js"></script>
   <script src="/mzo_theme.js?v=4"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=7" />
@@ -33,13 +50,14 @@
       display: flex; align-items: center; gap: 6px;
     }
     .theme-toggle-btn {
-      width: 34px; height: 34px; border-radius: 8px;
+      width: 36px; height: 36px; border-radius: 9px;
       border: 1px solid var(--mzo-border); background: var(--mzo-surface); color: var(--mzo-muted);
       display: grid; place-items: center; cursor: pointer;
-      transition: background-color .12s, color .12s, border-color .12s;
+      transition: background-color .14s, color .14s, border-color .14s;
+      user-select: none; -webkit-user-select: none;
     }
     .theme-toggle-btn:hover { background: var(--mzo-hover); color: var(--mzo-text); border-color: var(--mzo-border-strong); }
-    .theme-toggle-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .theme-toggle-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
     .theme-ico-sun { display: none; }
     .theme-ico-moon { display: block; }
     html[data-mzo-theme="dark"] .theme-ico-sun { display: block; }
@@ -304,15 +322,36 @@
     const authProgressBar = document.getElementById('authProgressBar');
 
     // Theme toggle on login screen
-    document.getElementById('loginThemeBtn')?.addEventListener('click', () => {
-      if (window.MzoTheme && typeof window.MzoTheme.toggle === 'function') {
-        window.MzoTheme.toggle();
-      } else {
-        const cur = document.documentElement.getAttribute('data-mzo-theme') === 'dark' ? 'light' : 'dark';
-        document.documentElement.setAttribute('data-mzo-theme', cur);
-        try { localStorage.setItem('mzo_theme', cur); localStorage.setItem('theme', cur); } catch (e) {}
+    function toggleLoginTheme() {
+      var html = document.documentElement;
+      var cur = html.getAttribute('data-mzo-theme') || (window.MzoTheme ? window.MzoTheme.get() : 'dark');
+      var next = cur === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-mzo-theme', next);
+      html.setAttribute('data-theme-pref', next);
+      html.setAttribute('data-bs-theme', next);
+      html.classList.toggle('light-theme', next === 'light');
+      html.classList.toggle('dark-theme', next === 'dark');
+      html.classList.toggle('light', next === 'light');
+      html.classList.toggle('dark', next === 'dark');
+      if (document.body) {
+        document.body.classList.toggle('light-theme', next === 'light');
+        document.body.classList.toggle('dark-theme', next === 'dark');
+        document.body.classList.toggle('light', next === 'light');
+        document.body.classList.toggle('dark', next === 'dark');
       }
-    });
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', next === 'dark' ? '#09090a' : '#f1f1f0');
+      try {
+        localStorage.setItem('theme', next);
+        localStorage.setItem('mzo_theme', next);
+        localStorage.setItem('mzo_theme_pref', next);
+        localStorage.setItem('collectionDashboardTheme', next);
+      } catch (e) {}
+      if (window.MzoTheme && typeof window.MzoTheme.apply === 'function') {
+        window.MzoTheme.apply(next);
+      }
+    }
+    document.getElementById('loginThemeBtn')?.addEventListener('click', toggleLoginTheme);
 
     // Clean up legacy saved PIN if any
     try { localStorage.removeItem('mzo_saved_pin'); } catch (e) {}

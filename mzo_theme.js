@@ -11,12 +11,20 @@
   var root = document.documentElement;
 
   function norm(v) {
+    if (v === 'system') {
+      try {
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+        return 'light';
+      } catch (e) {
+        return 'light';
+      }
+    }
     return (v === 'light' || v === 'ppt') ? v : 'dark';
   }
 
   function read() {
     var v = null;
-    try { v = localStorage.getItem('theme') || localStorage.getItem('mzo_theme') || localStorage.getItem('collectionDashboardTheme'); } catch (e) {}
+    try { v = localStorage.getItem('mzo_theme_pref') || localStorage.getItem('theme') || localStorage.getItem('mzo_theme') || localStorage.getItem('collectionDashboardTheme'); } catch (e) {}
     return norm(v);
   }
 
@@ -40,6 +48,10 @@
       b.classList.toggle('ppt-theme', isPpt);
       if (inShell) b.classList.add('in-workstation');
     }
+    try {
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', theme === 'dark' ? '#09090a' : (theme === 'ppt' ? '#0f172a' : '#f1f1f0'));
+    } catch (e) {}
   }
 
   function apply(theme) {
@@ -101,7 +113,10 @@
     set: set,
     apply: apply,
     inShell: inShell,
-    toggle: function () { return set(read() === 'light' ? 'dark' : 'light'); },
+    toggle: function () {
+      var cur = root.getAttribute('data-mzo-theme') || read();
+      return set(cur === 'light' ? 'dark' : 'light');
+    },
     togglePpt: togglePpt
   };
 
