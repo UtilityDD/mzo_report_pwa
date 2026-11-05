@@ -28,7 +28,7 @@
   <main class="ui-page">
     <header class="ui-head">
       <div>
-        <h1>Unbilled &amp; Billing Exceptions<span class="ui-badge ui-date" id="asOn">…</span></h1>
+        <h1>Unbilled &amp; Exceptions<span class="ui-badge" style="margin-left:8px;vertical-align:3px;" title="Updated weekly from CRM DB2 ISUDATA batch"><span class="ui-dot c1"></span>Weekly Update</span><span class="ui-badge ui-date" id="asOn">…</span></h1>
       </div>
       <div class="ui-actions">
         <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
@@ -45,6 +45,17 @@
           <h2>Filters<small id="activeLabel"></small></h2>
           <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
         </div>
+        <div class="ui-side-sec">
+          <label style="display:block;font-size:12px;font-weight:600;color:var(--mzo-muted);margin-bottom:6px">Unbilled Type</label>
+          <span class="ui-select" style="width:100%">
+            <select id="typeFilter" aria-label="Unbilled Type" style="width:100%">
+              <option value="">All Types</option>
+              <option value="outsort">Outsorts</option>
+              <option value="chronic">3M Unbilled</option>
+              <option value="current">Current Month Unbilled</option>
+            </select>
+          </span>
+        </div>
         <div class="ui-side-sec ui-side-stack">
           <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
           <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
@@ -60,16 +71,16 @@
       <div class="ui-main">
         <section class="ui-stats" style="--n:4" id="stats" aria-label="Summary">
           <button type="button" class="ui-stat" data-tab="outsort"><div class="k"><span class="ui-dot c4"></span>Billing Outsorts</div><div class="v" id="statOutsort"><span class="ui-skel"></span></div><div class="s">Exceptions blocked from billing</div></button>
-          <button type="button" class="ui-stat" data-tab="chronic"><div class="k"><span class="ui-dot c3"></span>Chronic Unbilled (&ge;3m)</div><div class="v" id="statChronic"><span class="ui-skel"></span></div><div class="s">3 or more consecutive cycles</div></button>
-          <button type="button" class="ui-stat" data-tab="summary"><div class="k"><span class="ui-dot c1"></span>Current Month Unbilled</div><div class="v" id="statCurrent"><span class="ui-skel"></span></div><div class="s">Active cycle pending reading/bill</div></button>
-          <button type="button" class="ui-stat" data-tab="offices"><div class="k"><span class="ui-dot c2"></span>Offices Affected</div><div class="v" id="statOffices"><span class="ui-skel"></span></div><div class="s">CCCs with unbilled/outsorts</div></button>
+          <button type="button" class="ui-stat" data-tab="chronic"><div class="k"><span class="ui-dot c3"></span>3 Month Unbilled</div><div class="v" id="statChronic"><span class="ui-skel"></span></div><div class="s">&ge; 3 consecutive cycles</div></button>
+          <button type="button" class="ui-stat" data-tab="mru"><div class="k"><span class="ui-dot c1"></span>Current Month Unbilled</div><div class="v" id="statCurrent"><span class="ui-skel"></span></div><div class="s">Active cycle pending reading/bill</div></button>
+          <button type="button" class="ui-stat" data-tab="ccc"><div class="k"><span class="ui-dot c2"></span>Offices Affected</div><div class="v" id="statOffices"><span class="ui-skel"></span></div><div class="s">CCCs with unbilled/outsorts</div></button>
         </section>
 
         <section class="ui-panel">
           <div class="report-head" id="reportHead">
             <div class="rh-top">
               <div class="rh-title-wrap">
-                <h2 class="rh-title" id="rhTitle">Billing Outsorts</h2>
+                <h2 class="rh-title" id="rhTitle">Region-wise Breakdown</h2>
                 <span class="rh-badge" id="rhCount">0</span>
               </div>
               <div class="rh-search-wrap">
@@ -84,10 +95,13 @@
           </div>
 
           <div class="ui-drill-tabs" role="tablist" id="tabs">
-            <button type="button" class="ui-drill-tab" role="tab" data-t="outsort" aria-selected="true">Billing Outsorts (Exceptions)</button>
-            <button type="button" class="ui-drill-tab" role="tab" data-t="chronic" aria-selected="false">Chronic Unbilled (&ge; 3 Months)</button>
-            <button type="button" class="ui-drill-tab" role="tab" data-t="summary" aria-selected="false">Current Month by MRU</button>
-            <button type="button" class="ui-drill-tab" role="tab" data-t="offices" aria-selected="false">Office Summary</button>
+            <button type="button" class="ui-drill-tab" role="tab" data-t="region" aria-selected="true">Region</button>
+            <button type="button" class="ui-drill-tab" role="tab" data-t="division" aria-selected="false">Division</button>
+            <button type="button" class="ui-drill-tab" role="tab" data-t="ccc" aria-selected="false">CCC</button>
+            <button type="button" class="ui-drill-tab" role="tab" data-t="class" aria-selected="false">Class</button>
+            <button type="button" class="ui-drill-tab" role="tab" data-t="mru" aria-selected="false">MRU</button>
+            <button type="button" class="ui-drill-tab" role="tab" data-t="outsort" aria-selected="false">Outsorts</button>
+            <button type="button" class="ui-drill-tab" role="tab" data-t="chronic" aria-selected="false">3M Unbilled</button>
           </div>
 
           <div id="table"><div class="ui-empty">Loading unbilled datasets…</div></div>
@@ -101,13 +115,28 @@
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
 
-    var currentTab = 'outsort';
+    var currentTab = 'region';
+    var renderedTab = null;
     var rawOutsort = [], rawChronic = [], rawSummary = [];
     var scopedOutsort = [], scopedChronic = [], scopedSummary = [];
-    var f = { cls: '', mru: '', q: '' };
+    var f = { type: '', cls: '', mru: '', q: '' };
     var scope = null;
     var metaInfo = null;
     var lastTable = null;
+    var firstData = true;
+
+    function getActiveOutsort() {
+      if (f.type && f.type !== 'outsort') return [];
+      return scopedOutsort;
+    }
+    function getActiveChronic() {
+      if (f.type && f.type !== 'chronic') return [];
+      return scopedChronic;
+    }
+    function getActiveSummary() {
+      if (f.type && f.type !== 'current') return [];
+      return scopedSummary;
+    }
 
     var SELECTS = ['regionFilter', 'divisionFilter', 'cccFilter'];
     var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
@@ -133,8 +162,23 @@
     }
 
     function fmtYmd(ymd) {
-      if (!ymd || ymd.length !== 8) return ymd || '—';
-      return ymd.slice(6, 8) + '/' + ymd.slice(4, 6) + '/' + ymd.slice(0, 4);
+      if (!ymd) return '—';
+      var s = String(ymd).replace(/\D/g, '');
+      if (s.length !== 8) return ymd || '—';
+      return s.slice(6, 8) + '/' + s.slice(4, 6) + '/' + s.slice(0, 4);
+    }
+
+    function updateDateBadge(dateVal) {
+      if (!dateVal) return;
+      var dStr = String(dateVal).trim();
+      if (/^\d{8}$/.test(dStr)) {
+        dStr = dStr.slice(0, 4) + '-' + dStr.slice(4, 6) + '-' + dStr.slice(6, 8);
+      }
+      var badge = $('asOn');
+      if (badge) {
+        badge.textContent = UI.fmtDate(dStr);
+        badge.title = 'Baseline Date: ' + dStr + ' (CRM DB2 ISUDATA Weekly Batch)';
+      }
     }
 
     function initOffices() {
@@ -170,22 +214,14 @@
 
       fetch('/api/unbilled/meta', { credentials: 'same-origin' })
         .then(function (r) {
-          if (r.status === 401) {
-            location.replace('/login.html');
-            return null;
-          }
+          if (r.status === 401) { location.replace('/login.html'); return null; }
           return r.ok ? r.json() : null;
         })
         .then(function (m) {
           if (!m) return;
           metaInfo = m;
-          if (m.asOn) {
-            $('asOn').textContent = UI.fmtDate(new Date(m.asOn));
-            $('asOn').title = 'Baseline Date: ' + (m.baselineDate || m.asOn) + ' (' + m.source + ')';
-          }
-          if ($('crmSyncBtn')) {
-            $('crmSyncBtn').hidden = !m.canCrmSync;
-          }
+          updateDateBadge(m.asOn || m.baselineDate);
+          if ($('crmSyncBtn')) $('crmSyncBtn').hidden = !m.canCrmSync;
         }).catch(function () {});
 
       Promise.all([
@@ -214,7 +250,21 @@
         scopedChronic = window.MzoScope && typeof window.MzoScope.filterRows === 'function' ? window.MzoScope.filterRows(rawChronic) : rawChronic;
         scopedSummary = window.MzoScope && typeof window.MzoScope.filterRows === 'function' ? window.MzoScope.filterRows(rawSummary) : rawSummary;
 
+        var bDate = (metaInfo && (metaInfo.asOn || metaInfo.baselineDate)) ||
+                    (rawOutsort[0] && rawOutsort[0].BASE_LINE_DATE) ||
+                    (rawChronic[0] && rawChronic[0].BASE_LINE_DATE) ||
+                    (rawSummary[0] && rawSummary[0].BASE_LINE_DATE);
+        updateDateBadge(bDate);
+
         initOffices();
+
+        if (firstData) {
+          firstData = false;
+          if (scope && scope.level === 'ccc') currentTab = 'outsort';
+          else if (scope && scope.level === 'division') currentTab = 'ccc';
+          else currentTab = 'region';
+        }
+
         render();
       }).catch(function (err) {
         console.error('Unbilled data load failed:', err);
@@ -236,7 +286,7 @@
         if (f.cls && r.BASE_CLASS !== f.cls) return false;
         if (mru && String(r.MRU || '').toLowerCase().indexOf(mru) === -1) return false;
         if (q) {
-          var hay = [r.CON_ID, r.NAME, r.METER_NO, r.MRU, r.INST_NO, r._supp].join(' ').toLowerCase();
+          var hay = [r.CON_ID, r.NAME, r.METER_NO, r.MRU, r.INST_NO, r._supp, r.CCC_CODE].join(' ').toLowerCase();
           if (hay.indexOf(q) === -1) return false;
         }
         return true;
@@ -245,16 +295,19 @@
 
     function renderFacets() {
       var classes = {};
-      [scopedOutsort, scopedChronic, scopedSummary].forEach(function (list) {
+      [getActiveOutsort(), getActiveChronic(), getActiveSummary()].forEach(function (list) {
         list.forEach(function (r) {
-          if (r.BASE_CLASS) classes[r.BASE_CLASS] = (classes[r.BASE_CLASS] || 0) + (r.UNBILLED_COUNT ? +r.UNBILLED_COUNT : 1);
+          if (r.BASE_CLASS) {
+            var c = String(r.BASE_CLASS).trim();
+            classes[c] = (classes[c] || 0) + (r.UNBILLED_COUNT ? +r.UNBILLED_COUNT : 1);
+          }
         });
       });
       var clsItems = Object.keys(classes).sort().map(function (c) {
-        return { value: c, label: c + ' (' + UI.n(classes[c]) + ')', count: classes[c] };
+        return { value: c, label: 'Class ' + c + ' (' + UI.n(classes[c]) + ')', count: classes[c] };
       });
       UI.facet('fClass', clsItems, f.cls, function (v) { f.cls = v; render(); });
-      setActive((f.cls ? 1 : 0) + (f.mru ? 1 : 0) + SELECTS.filter(function (id) { return $(id).value && !$(id).disabled; }).length);
+      setActive((f.type ? 1 : 0) + (f.cls ? 1 : 0) + (f.mru ? 1 : 0) + SELECTS.filter(function (id) { return $(id).value && !$(id).disabled; }).length);
     }
 
     function renderStats() {
@@ -285,16 +338,35 @@
         btn.setAttribute('aria-selected', String(btn.getAttribute('data-t') === currentTab));
       });
 
-      if (currentTab === 'outsort') renderOutsortTable();
+      if (renderedTab !== currentTab) {
+        $('table').__ui = null;
+        renderedTab = currentTab;
+      }
+
+      if (currentTab === 'region') renderRegionTable();
+      else if (currentTab === 'division') renderDivisionTable();
+      else if (currentTab === 'ccc') renderCccTable();
+      else if (currentTab === 'class') renderClassTable();
+      else if (currentTab === 'mru') renderMruTable();
+      else if (currentTab === 'outsort') renderOutsortTable();
       else if (currentTab === 'chronic') renderChronicTable();
-      else if (currentTab === 'summary') renderSummaryTable();
-      else if (currentTab === 'offices') renderOfficesTable();
     }
 
     function renderActiveChips() {
       var bar = $('rhFiltersBar');
       if (!bar) return;
       var chips = [];
+      if (f.type) {
+        var typeLabels = { outsort: 'Outsorts', chronic: '3M Unbilled', current: 'Current Month' };
+        chips.push({
+          label: 'Type: ' + (typeLabels[f.type] || f.type),
+          clear: function () {
+            f.type = '';
+            $('typeFilter').value = '';
+            render();
+          }
+        });
+      }
       var reg = $('regionFilter').value; if (reg) chips.push({ label: 'Region: ' + reg, clear: function () { $('regionFilter').value = ''; initOffices(); render(); } });
       var div = $('divisionFilter').value; if (div) chips.push({ label: 'Division: ' + div, clear: function () { $('divisionFilter').value = ''; initOffices(); render(); } });
       var cc = $('cccFilter').value; if (cc) chips.push({ label: 'CCC: ' + cc, clear: function () { $('cccFilter').value = ''; render(); } });
@@ -318,17 +390,330 @@
       });
     }
 
+    /* ---------------- office aggregations ---------------- */
+    function aggregateOffices(level) {
+      var fOut = filterRows(getActiveOutsort());
+      var fChr = filterRows(getActiveChronic());
+      var fSum = filterRows(getActiveSummary());
+
+      var map = {};
+      function getKey(r) {
+        if (level === 'region') return r._region || 'Unmapped';
+        if (level === 'division') return r._divn || 'Unmapped';
+        return r._supp || r.CCC_CODE || 'Unmapped';
+      }
+
+      function getEntry(r) {
+        var k = getKey(r);
+        if (!map[k]) {
+          map[k] = {
+            name: k,
+            code: r.CCC_CODE || '',
+            reg: r._region || '',
+            divn: r._divn || '',
+            outsort: 0,
+            chronic: 0,
+            current: 0,
+            total: 0
+          };
+        }
+        return map[k];
+      }
+
+      fSum.forEach(function (r) {
+        var e = getEntry(r);
+        var count = (+r.UNBILLED_COUNT || 0);
+        e.current += count;
+        e.total += count;
+      });
+
+      fOut.forEach(function (r) {
+        var e = getEntry(r);
+        e.outsort++;
+        e.total++;
+      });
+
+      fChr.forEach(function (r) {
+        var e = getEntry(r);
+        e.chronic++;
+        e.total++;
+      });
+
+      var list = Object.values(map);
+      var grandTotal = list.reduce(function (a, r) { return a + r.total; }, 0);
+      var max = Math.max.apply(null, list.map(function (r) { return r.total; }).concat([0]));
+      list.forEach(function (r) {
+        r.share = grandTotal ? (r.total / grandTotal * 100) : 0;
+      });
+      return { list: list, grandTotal: grandTotal, max: max };
+    }
+
+    /* ---------------- detail drawer ---------------- */
+    function showDetail(r, type) {
+      if (!r) return;
+      var title = (r.NAME ? r.NAME.trim() : 'Consumer') + ' (' + r.CON_ID + ')';
+      var sub = [r._supp, r._divn, r._region].filter(Boolean).join(' · ');
+      var pairs = [
+        ['Consumer ID', r.CON_ID],
+        ['Installation No', r.INST_NO],
+        ['Consumer Name', r.NAME],
+        ['Address', r.ADDRESS],
+        ['Pin Code', r.PIN_CODE || '—'],
+        ['CCC Office', r._supp + (r.CCC_CODE ? ' (' + r.CCC_CODE + ')' : '')],
+        ['Division', r._divn],
+        ['Region', r._region],
+        ['Tariff Class', (r.BASE_CLASS ? 'Class ' + r.BASE_CLASS : '—') + (r.TARIFF_CLASS ? ' · ' + r.TARIFF_CLASS : '') + (r.CATEGORY ? ' [' + r.CATEGORY + ']' : '')],
+        ['Connected Load', (+r.CONN_LOAD ? (+r.CONN_LOAD).toFixed(2) + ' kW' : '—')],
+        ['Supply Phase', r.CONN_PHASE ? (r.CONN_PHASE === '3' || r.CONN_PHASE === 'III' ? 'Three Phase' : 'Single Phase') : '—'],
+        ['Meter Number', r.METER_NO || '—'],
+        ['Meter Type', r.TYPE_OF_METER || '—'],
+        ['MRU Portion', r.MRU || '—'],
+        ['SMRD', fmtYmd(r.SMRD)],
+        ['Last Billed Date', fmtYmd(r.LAST_BILL_DATE)],
+        ['Last Consumption', r.UNIT_CONSUMP_LAST_BILL ? UI.n(+r.UNIT_CONSUMP_LAST_BILL) + ' units' : '—'],
+        ['Investigation Status', r.INV_PENDING_FLAG === 'X' ? 'Investigation Pending' : 'Normal'],
+        ['Baseline Date', fmtYmd(r.BASE_LINE_DATE)],
+        ['Category Status', type === 'outsort' ? 'Billing Outsort (Exception in SAP)' : '3 Month Unbilled (≥ 3 Months)']
+      ];
+
+      var copyBtn = '<button type="button" class="ui-btn sm" id="copyConsumerBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy Details</button>';
+      var d = UI.drawer(title, sub, pairs, '', copyBtn);
+      var copyEl = d.querySelector('#copyConsumerBtn');
+      if (copyEl) {
+        copyEl.onclick = function () {
+          var text = pairs.map(function (p) { return p[0] + ': ' + p[1]; }).join('\n');
+          UI.copy(text).then(function () { UI.toast('Consumer details copied'); });
+        };
+      }
+    }
+
+    function renderRegionTable() {
+      $('rhTitle').textContent = 'Region-wise Breakdown';
+      var data = aggregateOffices('region');
+      $('rhCount').textContent = UI.n(data.grandTotal) + ' total unbilled across ' + data.list.length + ' Regions';
+
+      var cols = [
+        { key: 'name', label: 'Region', fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
+        { key: 'outsort', label: 'Outsorts', num: true, fmt: function (v) { return v ? '<span class="tag-outsort">' + UI.n(v) + '</span>' : '0'; } },
+        { key: 'chronic', label: '3M Unbilled', num: true, fmt: function (v) { return v ? '<span class="tag-chronic">' + UI.n(v) + '</span>' : '0'; } },
+        { key: 'current', label: 'Current Month', num: true, fmt: UI.n },
+        { key: 'total', label: 'Total Unbilled', num: true, fmt: function (v) { return '<strong>' + UI.n(v) + '</strong>'; } },
+        { key: 'share', label: 'Share %', sortVal: function (r) { return r.total; }, fmt: function (_, r) { return UI.bar(r.total, data.max, r.share.toFixed(1) + '%'); }, width: '25%' }
+      ];
+
+      lastTable = {
+        title: 'Region-wise Breakdown',
+        cols: cols.map(function (c) { return c.label; }),
+        rows: data.list.map(function (r) { return [r.name, r.outsort, r.chronic, r.current, r.total, r.share.toFixed(1) + '%']; })
+      };
+
+      var totalOut = data.list.reduce(function (a, r) { return a + r.outsort; }, 0);
+      var totalChr = data.list.reduce(function (a, r) { return a + r.chronic; }, 0);
+      var totalCur = data.list.reduce(function (a, r) { return a + r.current; }, 0);
+
+      UI.table('table', {
+        rows: data.list,
+        sort: { key: 'total', dir: 'desc' },
+        count: false,
+        empty: 'No unbilled data found for the selected filters.',
+        columns: cols,
+        foot: data.list.length > 1 ? { name: 'Total', outsort: totalOut, chronic: totalChr, current: totalCur, total: data.grandTotal, share: 0 } : null,
+        onRow: function (g) {
+          $('regionFilter').value = g.name;
+          initOffices();
+          currentTab = 'division';
+          render();
+        }
+      });
+    }
+
+    function renderDivisionTable() {
+      $('rhTitle').textContent = 'Division-wise Breakdown';
+      var data = aggregateOffices('division');
+      $('rhCount').textContent = UI.n(data.grandTotal) + ' total unbilled across ' + data.list.length + ' Divisions';
+
+      var cols = [
+        { key: 'name', label: 'Division', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (r.reg ? '<span class="cell-sub">' + UI.esc(r.reg) + '</span>' : ''); } },
+        { key: 'outsort', label: 'Outsorts', num: true, fmt: function (v) { return v ? '<span class="tag-outsort">' + UI.n(v) + '</span>' : '0'; } },
+        { key: 'chronic', label: '3M Unbilled', num: true, fmt: function (v) { return v ? '<span class="tag-chronic">' + UI.n(v) + '</span>' : '0'; } },
+        { key: 'current', label: 'Current Month', num: true, fmt: UI.n },
+        { key: 'total', label: 'Total Unbilled', num: true, fmt: function (v) { return '<strong>' + UI.n(v) + '</strong>'; } },
+        { key: 'share', label: 'Share %', sortVal: function (r) { return r.total; }, fmt: function (_, r) { return UI.bar(r.total, data.max, r.share.toFixed(1) + '%'); }, width: '25%' }
+      ];
+
+      lastTable = {
+        title: 'Division-wise Breakdown',
+        cols: cols.map(function (c) { return c.label; }),
+        rows: data.list.map(function (r) { return [r.name + (r.reg ? ' (' + r.reg + ')' : ''), r.outsort, r.chronic, r.current, r.total, r.share.toFixed(1) + '%']; })
+      };
+
+      var totalOut = data.list.reduce(function (a, r) { return a + r.outsort; }, 0);
+      var totalChr = data.list.reduce(function (a, r) { return a + r.chronic; }, 0);
+      var totalCur = data.list.reduce(function (a, r) { return a + r.current; }, 0);
+
+      UI.table('table', {
+        rows: data.list,
+        sort: { key: 'total', dir: 'desc' },
+        count: false,
+        empty: 'No division data found for the selected filters.',
+        columns: cols,
+        foot: data.list.length > 1 ? { name: 'Total', outsort: totalOut, chronic: totalChr, current: totalCur, total: data.grandTotal, share: 0 } : null,
+        onRow: function (g) {
+          $('divisionFilter').value = g.name;
+          initOffices();
+          currentTab = 'ccc';
+          render();
+        }
+      });
+    }
+
+    function renderCccTable() {
+      $('rhTitle').textContent = 'CCC-wise Breakdown';
+      var data = aggregateOffices('ccc');
+      $('rhCount').textContent = UI.n(data.grandTotal) + ' total unbilled across ' + data.list.length + ' CCC Offices';
+
+      var cols = [
+        { key: 'name', label: 'CCC Office', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (r.divn ? '<span class="cell-sub">' + UI.esc(r.divn) + (r.code ? ' · Code ' + UI.esc(r.code) : '') + '</span>' : ''); } },
+        { key: 'outsort', label: 'Outsorts', num: true, fmt: function (v) { return v ? '<span class="tag-outsort">' + UI.n(v) + '</span>' : '0'; } },
+        { key: 'chronic', label: '3M Unbilled', num: true, fmt: function (v) { return v ? '<span class="tag-chronic">' + UI.n(v) + '</span>' : '0'; } },
+        { key: 'current', label: 'Current Month', num: true, fmt: UI.n },
+        { key: 'total', label: 'Total Unbilled', num: true, fmt: function (v) { return '<strong>' + UI.n(v) + '</strong>'; } },
+        { key: 'share', label: 'Share %', sortVal: function (r) { return r.total; }, fmt: function (_, r) { return UI.bar(r.total, data.max, r.share.toFixed(1) + '%'); }, width: '20%' }
+      ];
+
+      lastTable = {
+        title: 'CCC-wise Breakdown',
+        cols: cols.map(function (c) { return c.label; }),
+        rows: data.list.map(function (r) { return [r.name + (r.divn ? ' (' + r.divn + ')' : ''), r.outsort, r.chronic, r.current, r.total, r.share.toFixed(1) + '%']; })
+      };
+
+      var totalOut = data.list.reduce(function (a, r) { return a + r.outsort; }, 0);
+      var totalChr = data.list.reduce(function (a, r) { return a + r.chronic; }, 0);
+      var totalCur = data.list.reduce(function (a, r) { return a + r.current; }, 0);
+
+      UI.table('table', {
+        rows: data.list,
+        sort: { key: 'total', dir: 'desc' },
+        count: false,
+        limit: 50,
+        empty: 'No CCC data found for the selected filters.',
+        columns: cols,
+        foot: data.list.length > 1 ? { name: 'Total', outsort: totalOut, chronic: totalChr, current: totalCur, total: data.grandTotal, share: 0 } : null,
+        onRow: function (g) {
+          $('cccFilter').value = g.name;
+          currentTab = 'outsort';
+          render();
+        }
+      });
+    }
+
+    function renderClassTable() {
+      $('rhTitle').textContent = 'Class-wise Breakdown';
+      var map = {};
+      var fOut = filterRows(getActiveOutsort());
+      var fChr = filterRows(getActiveChronic());
+      var fSum = filterRows(getActiveSummary());
+
+      fSum.forEach(function (r) {
+        var c = (r.BASE_CLASS || '').trim() || 'Other';
+        if (!map[c]) map[c] = { name: c, outsort: 0, chronic: 0, current: 0, total: 0 };
+        map[c].current += (+r.UNBILLED_COUNT || 0);
+        map[c].total += (+r.UNBILLED_COUNT || 0);
+      });
+      fOut.forEach(function (r) {
+        var c = (r.BASE_CLASS || '').trim() || 'Other';
+        if (!map[c]) map[c] = { name: c, outsort: 0, chronic: 0, current: 0, total: 0 };
+        map[c].outsort++;
+        map[c].total++;
+      });
+      fChr.forEach(function (r) {
+        var c = (r.BASE_CLASS || '').trim() || 'Other';
+        if (!map[c]) map[c] = { name: c, outsort: 0, chronic: 0, current: 0, total: 0 };
+        map[c].chronic++;
+        map[c].total++;
+      });
+
+      var rows = Object.values(map);
+      var grandTotal = rows.reduce(function (a, r) { return a + r.total; }, 0);
+      var max = Math.max.apply(null, rows.map(function (r) { return r.total; }).concat([0]));
+      rows.forEach(function (r) {
+        r.share = grandTotal ? (r.total / grandTotal * 100) : 0;
+      });
+
+      $('rhCount').textContent = UI.n(grandTotal) + ' total unbilled across ' + rows.length + ' classes';
+
+      var cols = [
+        { key: 'name', label: 'Class', fmt: function (v) { return '<span class="ui-strong">Class ' + UI.esc(v) + '</span>'; } },
+        { key: 'outsort', label: 'Outsorts', num: true, fmt: function (v) { return v ? '<span class="tag-outsort">' + UI.n(v) + '</span>' : '0'; } },
+        { key: 'chronic', label: '3M Unbilled', num: true, fmt: function (v) { return v ? '<span class="tag-chronic">' + UI.n(v) + '</span>' : '0'; } },
+        { key: 'current', label: 'Current Month', num: true, fmt: UI.n },
+        { key: 'total', label: 'Total Unbilled', num: true, fmt: function (v) { return '<strong>' + UI.n(v) + '</strong>'; } },
+        { key: 'share', label: 'Share %', sortVal: function (r) { return r.total; }, fmt: function (_, r) { return UI.bar(r.total, max, r.share.toFixed(1) + '%'); }, width: '20%' }
+      ];
+
+      lastTable = { title: 'Class Breakdown', cols: cols.map(function (c) { return c.label; }), rows: rows.map(function (r) { return ['Class ' + r.name, r.outsort, r.chronic, r.current, r.total, r.share.toFixed(1) + '%']; }) };
+
+      var totalOut = rows.reduce(function (a, r) { return a + r.outsort; }, 0);
+      var totalChr = rows.reduce(function (a, r) { return a + r.chronic; }, 0);
+      var totalCur = rows.reduce(function (a, r) { return a + r.current; }, 0);
+
+      UI.table('table', {
+        rows: rows,
+        sort: { key: 'total', dir: 'desc' },
+        count: false,
+        empty: 'No class data found.',
+        columns: cols,
+        foot: rows.length > 1 ? { name: 'Total', outsort: totalOut, chronic: totalChr, current: totalCur, total: grandTotal, share: 0 } : null,
+        onRow: function (r) {
+          f.cls = r.name;
+          render();
+        }
+      });
+    }
+
+    function renderMruTable() {
+      $('rhTitle').textContent = 'MRU-wise Breakdown';
+      var rows = filterRows(getActiveSummary());
+      var tot = rows.reduce(function (a, r) { return a + (+r.UNBILLED_COUNT || 0); }, 0);
+      $('rhCount').textContent = UI.n(tot) + ' consumers across ' + UI.n(rows.length) + ' MRUs';
+
+      var cols = [
+        { key: '_supp', label: 'CCC', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v || r.CCC_CODE) + '</span>' + (r._divn ? '<span class="cell-sub">' + UI.esc(r._divn) + '</span>' : ''); } },
+        { key: 'MRU', label: 'MRU Portion', fmt: function (v) { return '<span class="tag-current">' + UI.esc(v) + '</span>'; } },
+        { key: 'BASE_CLASS', label: 'Class', fmt: function (v) { return UI.esc(v ? 'Class ' + v : '—'); } },
+        { key: 'UNBILLED_COUNT', label: 'Unbilled Consumers', num: true, fmt: UI.n }
+      ];
+
+      lastTable = { title: 'MRU-wise Breakdown', cols: cols.map(function (c) { return c.label; }), rows: rows.map(function (r) { return [r._supp, r.MRU, r.BASE_CLASS, r.UNBILLED_COUNT]; }) };
+
+      UI.table('table', {
+        rows: rows,
+        sort: { key: 'UNBILLED_COUNT', dir: 'desc' },
+        count: false,
+        limit: 50,
+        empty: 'No MRU groups found for the selected filters.',
+        columns: cols,
+        onRow: function (r) {
+          if (r.MRU) {
+            f.mru = r.MRU;
+            $('mruInput').value = r.MRU;
+            render();
+          }
+        }
+      });
+    }
+
     function renderOutsortTable() {
-      $('rhTitle').textContent = 'Billing Outsorts (Exceptions)';
-      var rows = filterRows(scopedOutsort);
-      $('rhCount').textContent = UI.n(rows.length);
+      $('rhTitle').textContent = 'Billing Outsorts';
+      var rows = filterRows(getActiveOutsort());
+      $('rhCount').textContent = UI.n(rows.length) + ' exception consumers';
 
       var cols = [
         { key: 'CON_ID', label: 'Consumer ID', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v) + '</span><span class="cell-sub">' + UI.esc(r.NAME || '') + '</span>'; } },
         { key: '_supp', label: 'CCC', fmt: function (v, r) { return UI.esc(v || r.CCC_CODE) + (r._divn ? '<span class="cell-sub">' + UI.esc(r._divn) + '</span>' : ''); } },
         { key: 'MRU', label: 'MRU', fmt: function (v) { return '<span class="tag-outsort">' + UI.esc(v) + '</span>'; } },
         { key: 'SMRD', label: 'SMRD', fmt: fmtYmd },
-        { key: 'BASE_CLASS', label: 'Class', fmt: function (v) { return UI.esc(v || '—'); } },
+        { key: 'BASE_CLASS', label: 'Class', fmt: function (v) { return UI.esc(v ? 'Class ' + v : '—'); } },
         { key: 'TARIFF_CLASS', label: 'Tariff', fmt: function (v) { return UI.esc(v || '—'); } },
         { key: 'CONN_LOAD', label: 'Load', num: true, fmt: function (v) { return (+v ? (+v).toFixed(2) + ' kW' : '—'); } },
         { key: 'METER_NO', label: 'Meter No', fmt: function (v) { return UI.esc(v || '—'); } },
@@ -339,109 +724,49 @@
       lastTable = { title: 'Billing Outsorts', cols: cols.map(function (c) { return c.label; }), rows: rows.map(function (r) { return [r.CON_ID, r._supp, r.MRU, fmtYmd(r.SMRD), r.BASE_CLASS, r.TARIFF_CLASS, r.CONN_LOAD, r.METER_NO, fmtYmd(r.LAST_BILL_DATE), r.UNIT_CONSUMP_LAST_BILL]; }) };
 
       UI.table('table', {
-        rows: rows, sort: { key: 'SMRD', dir: 'desc' }, count: false, limit: 50, empty: 'No billing outsorts found for the selected filters.',
-        columns: cols
+        rows: rows,
+        sort: { key: 'SMRD', dir: 'desc' },
+        count: false,
+        limit: 50,
+        empty: 'No billing outsorts found for the selected filters.',
+        columns: cols,
+        onRow: function (r) { showDetail(r, 'outsort'); }
       });
     }
 
     function renderChronicTable() {
-      $('rhTitle').textContent = 'Chronic Unbilled (≥ 3 Consecutive Months)';
-      var rows = filterRows(scopedChronic);
-      $('rhCount').textContent = UI.n(rows.length);
+      $('rhTitle').textContent = '3 Month Unbilled (≥ 3 Cycles)';
+      var rows = filterRows(getActiveChronic());
+      $('rhCount').textContent = UI.n(rows.length) + ' unbilled consumers (≥ 3 months)';
 
       var cols = [
         { key: 'CON_ID', label: 'Consumer ID', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v) + '</span><span class="cell-sub">' + UI.esc(r.NAME || '') + '</span>'; } },
         { key: '_supp', label: 'CCC', fmt: function (v, r) { return UI.esc(v || r.CCC_CODE) + (r._divn ? '<span class="cell-sub">' + UI.esc(r._divn) + '</span>' : ''); } },
         { key: 'MRU', label: 'MRU', fmt: function (v) { return '<span class="tag-chronic">' + UI.esc(v) + '</span>'; } },
         { key: 'SMRD', label: 'SMRD', fmt: fmtYmd },
-        { key: 'BASE_CLASS', label: 'Class', fmt: function (v) { return UI.esc(v || '—'); } },
+        { key: 'BASE_CLASS', label: 'Class', fmt: function (v) { return UI.esc(v ? 'Class ' + v : '—'); } },
         { key: 'CONN_LOAD', label: 'Load', num: true, fmt: function (v) { return (+v ? (+v).toFixed(2) + ' kW' : '—'); } },
         { key: 'METER_NO', label: 'Meter No', fmt: function (v) { return UI.esc(v || '—'); } },
         { key: 'LAST_BILL_DATE', label: 'Last Billed', fmt: fmtYmd },
         { key: 'INV_PENDING_FLAG', label: 'Inv Pending', fmt: function (v) { return v === 'X' ? '<span class="tag-outsort">Pending</span>' : '—'; } }
       ];
 
-      lastTable = { title: 'Chronic Unbilled', cols: cols.map(function (c) { return c.label; }), rows: rows.map(function (r) { return [r.CON_ID, r._supp, r.MRU, fmtYmd(r.SMRD), r.BASE_CLASS, r.CONN_LOAD, r.METER_NO, fmtYmd(r.LAST_BILL_DATE), r.INV_PENDING_FLAG]; }) };
+      lastTable = { title: '3 Month Unbilled', cols: cols.map(function (c) { return c.label; }), rows: rows.map(function (r) { return [r.CON_ID, r._supp, r.MRU, fmtYmd(r.SMRD), r.BASE_CLASS, r.CONN_LOAD, r.METER_NO, fmtYmd(r.LAST_BILL_DATE), r.INV_PENDING_FLAG]; }) };
 
       UI.table('table', {
-        rows: rows, sort: { key: 'LAST_BILL_DATE', dir: 'asc' }, count: false, limit: 50, empty: 'No chronic unbilled consumers found for the selected filters.',
-        columns: cols
-      });
-    }
-
-    function renderSummaryTable() {
-      $('rhTitle').textContent = 'Current Month Unbilled by MRU';
-      var rows = filterRows(scopedSummary);
-      var tot = rows.reduce(function (a, r) { return a + (+r.UNBILLED_COUNT || 0); }, 0);
-      $('rhCount').textContent = UI.n(tot) + ' consumers across ' + UI.n(rows.length) + ' MRUs';
-
-      var cols = [
-        { key: '_supp', label: 'CCC', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v || r.CCC_CODE) + '</span>' + (r._divn ? '<span class="cell-sub">' + UI.esc(r._divn) + '</span>' : ''); } },
-        { key: 'MRU', label: 'MRU Portion', fmt: function (v) { return '<span class="tag-current">' + UI.esc(v) + '</span>'; } },
-        { key: 'BASE_CLASS', label: 'Class', fmt: function (v) { return UI.esc(v || '—'); } },
-        { key: 'UNBILLED_COUNT', label: 'Unbilled Consumers', num: true, fmt: UI.n }
-      ];
-
-      lastTable = { title: 'Current Month Unbilled MRUs', cols: cols.map(function (c) { return c.label; }), rows: rows.map(function (r) { return [r._supp, r.MRU, r.BASE_CLASS, r.UNBILLED_COUNT]; }) };
-
-      UI.table('table', {
-        rows: rows, sort: { key: 'UNBILLED_COUNT', dir: 'desc' }, count: false, limit: 50, empty: 'No MRU groups found for the selected filters.',
-        columns: cols
-      });
-    }
-
-    function renderOfficesTable() {
-      $('rhTitle').textContent = 'Office Breakdown (Unbilled & Exceptions)';
-      var map = {};
-
-      scopedSummary.forEach(function (r) {
-        var c = r.CCC_CODE || 'Unknown';
-        if (!map[c]) map[c] = { code: c, name: r._supp, divn: r._divn, reg: r._region, outsort: 0, chronic: 0, current: 0 };
-        map[c].current += (+r.UNBILLED_COUNT || 0);
-      });
-      scopedOutsort.forEach(function (r) {
-        var c = r.CCC_CODE || 'Unknown';
-        if (!map[c]) map[c] = { code: c, name: r._supp, divn: r._divn, reg: r._region, outsort: 0, chronic: 0, current: 0 };
-        map[c].outsort++;
-      });
-      scopedChronic.forEach(function (r) {
-        var c = r.CCC_CODE || 'Unknown';
-        if (!map[c]) map[c] = { code: c, name: r._supp, divn: r._divn, reg: r._region, outsort: 0, chronic: 0, current: 0 };
-        map[c].chronic++;
-      });
-
-      var reg = $('regionFilter').value;
-      var div = $('divisionFilter').value;
-      var rows = Object.values(map).filter(function (o) {
-        if (reg && o.reg !== reg) return false;
-        if (div && o.divn !== div) return false;
-        return true;
-      });
-
-      $('rhCount').textContent = UI.n(rows.length) + ' CCCs';
-
-      var cols = [
-        { key: 'name', label: 'CCC Name', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v || r.code) + '</span><span class="cell-sub">' + UI.esc(r.divn || '') + '</span>'; } },
-        { key: 'outsort', label: 'Billing Outsorts', num: true, fmt: function (v) { return v ? '<span class="tag-outsort">' + UI.n(v) + '</span>' : '0'; } },
-        { key: 'chronic', label: 'Chronic (≥3m)', num: true, fmt: function (v) { return v ? '<span class="tag-chronic">' + UI.n(v) + '</span>' : '0'; } },
-        { key: 'current', label: 'Current Cycle Unbilled', num: true, fmt: UI.n }
-      ];
-
-      lastTable = { title: 'Office Breakdown', cols: cols.map(function (c) { return c.label; }), rows: rows.map(function (r) { return [r.name, r.outsort, r.chronic, r.current]; }) };
-
-      UI.table('table', {
-        rows: rows, sort: { key: 'outsort', dir: 'desc' }, count: false, limit: 50, empty: 'No office data found.',
+        rows: rows,
+        sort: { key: 'LAST_BILL_DATE', dir: 'asc' },
+        count: false,
+        limit: 50,
+        empty: 'No 3 month unbilled consumers found for the selected filters.',
         columns: cols,
-        onRow: function (r) {
-          $('cccFilter').value = r.name || r.code;
-          currentTab = 'outsort';
-          render();
-        }
+        onRow: function (r) { showDetail(r, 'chronic'); }
       });
     }
 
     function clearAll() {
-      f.cls = ''; f.mru = ''; f.q = '';
+      f.type = ''; f.cls = ''; f.mru = ''; f.q = '';
+      $('typeFilter').value = '';
       $('searchInput').value = '';
       $('mruInput').value = '';
       SELECTS.forEach(function (id) { if (!$(id).disabled) $(id).value = ''; });
@@ -450,6 +775,10 @@
     }
 
     /* ---------- Event Listeners ---------- */
+    $('typeFilter').addEventListener('change', function () {
+      f.type = this.value;
+      render();
+    });
     SELECTS.forEach(function (id) {
       $(id).addEventListener('change', function () {
         if (id === 'regionFilter') $('divisionFilter').value = '';
@@ -543,4 +872,3 @@
   </script>
 </body>
 </html>
-

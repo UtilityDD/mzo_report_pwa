@@ -229,12 +229,16 @@
     root.setAttribute('aria-label', 'Presentation controls');
     root.innerHTML =
       '<style>' +
-      '#mzo-present-zoom{position:fixed;right:16px;bottom:16px;z-index:2147482000;display:none;align-items:center;gap:3px;' +
+      '#mzo-present-zoom{position:fixed;right:16px;bottom:16px;z-index:2147482000;display:flex;align-items:center;gap:3px;' +
       'padding:4px 5px;border-radius:11px;background:var(--mzo-surface,#ffffff);color:var(--mzo-text,#0f172a);' +
       'border:1px solid var(--mzo-border-strong,#cbd5e1);box-shadow:0 10px 28px -4px rgba(15,23,42,.22),0 2px 6px rgba(15,23,42,.08);' +
       'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:12px;font-weight:600;' +
       'font-variant-numeric:tabular-nums;user-select:none;transition:opacity .15s,box-shadow .15s,transform .15s}' +
-      '@media (min-width:900px){#mzo-present-zoom{display:flex}}' +
+      '@media (max-width:899px){' +
+      '#mzo-present-zoom{right:12px;bottom:14px;padding:3px;border-radius:99px}' +
+      '#mzo-present-zoom [data-act="focus"],#mzo-present-zoom .mzo-pz-sep,#mzo-present-zoom [data-act="out"],#mzo-present-zoom [data-act="reset"],#mzo-present-zoom [data-act="in"]{display:none !important}' +
+      '#mzo-present-zoom button[data-act="ppt"]{height:30px;padding:0 10px;border-radius:99px;font-size:11.5px}' +
+      '}' +
       '#mzo-present-zoom[data-zoom="100"][data-ppt="0"][data-focus="0"]{opacity:.85}' +
       '#mzo-present-zoom:hover,#mzo-present-zoom:focus-within{opacity:1;transform:translateY(-1px)}' +
       '#mzo-present-zoom button{appearance:none;border:0;background:transparent;color:var(--mzo-text,#0f172a);font:inherit;cursor:pointer;' +

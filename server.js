@@ -3294,6 +3294,18 @@ function overlayLiveNscToday_(meta, liveToday) {
     const today = String(liveToday || '').trim();
     if (!today) return meta;
     const next = Object.assign({}, meta || {});
+    const prevDate = nscReportDateLabel_(meta);
+    if (prevDate && prevDate !== today) {
+        // The sheet has moved to a newer report date than this meta snapshot.
+        // Clear publishedRows so DataHub's truncation guard does not reject the fresh sheet
+        // if the new report happens to have fewer pending applications.
+        delete next.publishedRows;
+        if (next.stats) {
+            next.stats = Object.assign({}, next.stats);
+            delete next.stats.publishedRows;
+            delete next.stats.totalPending;
+        }
+    }
     next.reportDate = today;
     next.stats = Object.assign({}, next.stats || {}, { today });
     return next;

@@ -158,6 +158,12 @@ function doGet(e) {
       deletedIds: listed.deletedIds
     });
   }
+  if (e && e.parameter && String(e.parameter.meta) === '1') {
+    var raw = PropertiesService.getDocumentProperties().getProperty('nscUploadMeta') || '';
+    var meta = null;
+    try { meta = raw ? JSON.parse(raw) : null; } catch (err) { meta = null; }
+    return jsonOut_({ status: 'ok', meta: meta });
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   return jsonOut_({
     status: 'ok',
@@ -183,6 +189,12 @@ function doPost(e) {
     }
     if (ROLE === 'stock' && tab !== 'stock') {
       return jsonOut_({ status: 'error', message: 'This web app is Stock-only. Use NSC_SHEET_SCRIPT_URL.' });
+    }
+
+    if (action === 'savemeta' || action === 'setmeta') {
+      var meta = payload.meta || {};
+      PropertiesService.getDocumentProperties().setProperty('nscUploadMeta', JSON.stringify(meta));
+      return jsonOut_({ status: 'success', action: 'savemeta' });
     }
 
     if (action === 'begin') {
