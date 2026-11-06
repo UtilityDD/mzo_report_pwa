@@ -293,11 +293,11 @@ New pages also go into `isNetworkFirstPath` in `sw.js`; a new folder needs a sta
 
 <!-- handoff:wip:start — update this section when the features below are merged -->
 
-> **Status (6 Nov 2026):** the user system and the Sources tab are live on the VM (release 3.24). The data editor is still being built.
+> **Status (6 Nov 2026):** all three are live on the VM: the user system and the Sources tab since release 3.24, the data editor since 3.25.
 
 - **VM user system on PocketBase (live).** VM only, behind `MZO_USER_STORE=pocketbase` (set in `vm/deploy/systemd/mzo-reports.service`). A fresh start: no Supabase users were imported. The built-in admins (`lib/users_store.js`, or `MZO_ADMIN_EMAILS`) are seeded at every start. Everyone else signs in with Google, lands on the waiting-for-approval screen, and an admin approves them with a role, office scope and report list in Admin → Users. Vercel keeps the Supabase sign-in. Schema and flows: [users.md](users.md).
 - **Admin → Sources (live).** For every dataset and every menu report: where the data comes from, how often it refreshes, when it was last checked, copied and changed, whether it is overdue, and sync errors. Endpoint `GET /api/admin/sources-info` (`lib/sources_info.js`, live-only items in `lib/sources_live.js`). See [data-mirror.md](data-mirror.md).
-- **Data editor at `/editor/` (in progress).** View and edit datasets with per-user, per-dataset permissions, paste from Google Sheets with a preview, history and undo. Datasets are *mirror* (read-only, the master is the Google sheet or Supabase) until an admin switches one to *native* (the master copy lives in PocketBase and the sync stops refreshing it). See `docs/data-editor.md` once merged.
+- **Data editor at `/editor/` (live).** View and edit datasets with per-user, per-dataset permissions, paste from Google Sheets with a preview, history and undo. Datasets are *mirror* (read-only, the master is the Google sheet or Supabase) until an admin switches one to *native* (the master copy lives in PocketBase and the sync stops refreshing it). No dataset is native yet; an admin chooses which to take over. Limits, eligibility and architecture: [data-editor.md](data-editor.md).
 
 <!-- handoff:wip:end -->
 
