@@ -12,22 +12,18 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" rel="stylesheet" />
 
-    <!-- PapaParse for CSV parsing -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
-    <!-- Typed.js for animated text -->
-    <script src="https://unpkg.com/typed.js@2.1.0/dist/typed.umd.js"></script>
+    <!-- PapaParse for CSV parsing, Typed.js for animated text: first used at window.onload, so deferred -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js" defer></script>
+    <script src="https://unpkg.com/typed.js@2.1.0/dist/typed.umd.js" defer></script>
 
     <!-- Font Awesome CDN for professional icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 
     <!-- Leaflet.PolylineMeasure plugin -->
     <link rel="stylesheet" href="https://ppete2.github.io/Leaflet.PolylineMeasure/Leaflet.PolylineMeasure.css" />
-    <script src="https://cdn.jsdelivr.net/npm/leaflet.polylinemeasure@3.0.0/Leaflet.PolylineMeasure.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet.polylinemeasure@3.0.0/Leaflet.PolylineMeasure.js" defer></script>
 
-    <!-- jsPDF for Vector PDF generation -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <!-- html2canvas for map capture -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- jsPDF (PDF) and html2canvas (map capture) load when a map download starts: loadExportLibs() -->
 
     <style>
         :root {
@@ -1941,7 +1937,9 @@
         const csvUrl = '/api/power-map/data';
         const tapsCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT8hYE6YBbfVQDJhgB3cIWqrrGrjMQAQ22mcmCJTOa995gCH-xBAfsAPpBvNYS1KlYIFMRHM59iGB7K/pub?gid=2098159409&single=true&output=csv';
         const POWER_MAP_EDITABLE_SPREADSHEET_ID = '1nBLLL3zc3OjuJ6umq3uQVmjXCPhlVATYhQX1BlfqS2w';
-        const geojsonUrl = 'https://raw.githubusercontent.com/shuklaneerajdev/IndiaStateTopojsonFiles/master/WestBengal.geojson';
+        // West Bengal districts, a copy of shuklaneerajdev/IndiaStateTopojsonFiles WestBengal.geojson (unchanged bytes), served
+        // compressed and cached from this app; bump ?v= if the file changes.
+        const geojsonUrl = '/power_map/WestBengal.geojson?v=1';
         let map, worldPolygon, stateLayer, maskLayer;
         let selectedFilters = { Region: new Set(), Division: new Set(), Remarks: new Set() };
         let allData = []; // Store all data for filtering
@@ -4660,10 +4658,30 @@ out geom;`;
             });
         }
 
+        // The export libraries, loaded on the first download only (about 550 KB the map itself never needs).
+        let exportLibs = null;
+        function loadExportLibs() {
+            const load = (src) => new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = src; s.async = false;
+                s.onload = resolve; s.onerror = () => reject(new Error('Could not load ' + src));
+                document.head.appendChild(s);
+            });
+            if (!exportLibs) {
+                exportLibs = Promise.all([
+                    window.jspdf ? null : load('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
+                    window.html2canvas ? null : load('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js')
+                ]).catch((err) => { exportLibs = null; throw err; });
+            }
+            return exportLibs;
+        }
+
         async function downloadMapImage() {
             // Show download overlay
             const downloadOverlay = document.getElementById('download-overlay');
             downloadOverlay.style.display = 'flex';
+            const libs = loadExportLibs();
+            libs.catch(() => {}); // awaited (and reported) before the capture below
 
             // Small delay to ensure overlay is visible before heavy processing
             await new Promise(resolve => setTimeout(resolve, 100));
@@ -4786,6 +4804,7 @@ out geom;`;
 
                 // 6. Capture at 1.5x scale for optimal balance
                 showStatus("Capturing High-Resolution Map...", 60, 80);
+                await libs;
                 const canvas = await html2canvas(mapContainer, {
                     useCORS: true,
                     allowTaint: true,
