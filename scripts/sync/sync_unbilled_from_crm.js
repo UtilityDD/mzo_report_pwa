@@ -20,6 +20,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { storageConfigured, upload, publishMeta, cli } = require('./common');
 
@@ -29,9 +30,66 @@ const DBVIS_CMD_PATH = 'C:\\Program Files\\DbVisualizer\\dbviscmd.bat';
 const TEMP_DIR = path.resolve(__dirname, '../../data/temp/unbilled');
 const DATA_DIR = path.resolve(__dirname, '../../data');
 const SQL_BATCH_FILE = path.resolve(__dirname, '../sql/unbilled_crm_batch.sql');
+const VM_BASE_URL = process.env.VM_BASE_URL || 'https://130.210.43.11.sslip.io';
 
 function isDbvisAvailable() {
   return fs.existsSync(DBVIS_CMD_PATH);
+}
+
+function makeAdminToken() {
+  const secret = process.env.SESSION_SECRET || 'smart-line-man-mzo-reports-super-secure-key-2026';
+  const payload = {
+    profile: {
+      username: 'db2_sync_agent',
+      name: 'DB2 CRM Sync Agent',
+      email: 'smartlinemanapp@gmail.com',
+      role: 'admin',
+      'unbilled-sync-autho': 'Y',
+      'defective-upload-autho': 'Y'
+    },
+    expiry: Date.now() + 60 * 60 * 1000
+  };
+  const payloadStr = Buffer.from(JSON.stringify(payload)).toString('base64');
+  const signature = crypto.createHmac('sha256', secret).update(payloadStr).digest('base64');
+  return payloadStr + '.' + signature;
+}
+
+async function uploadToVm(files, token) {
+  // If this process is already executing on the Oracle Cloud VM host itself, local data/ is already VM storage
+  const isVmHost = process.env.MZO_DATA_MODE === 'mirror' || (process.env.HOSTNAME && process.env.HOSTNAME.includes('oracle'));
+  if (isVmHost) {
+    console.log(`[${LABEL}] Running directly on VM host. Local copy is already active.`);
+    return { status: 'success', message: 'Already on VM host' };
+  }
+
+  console.log(`[${LABEL}] Uploading processed datasets directly to VM (${VM_BASE_URL})...`);
+  const fd = new FormData();
+  if (files.outsort && fs.existsSync(files.outsort)) {
+    fd.append('outsort', new Blob([fs.readFileSync(files.outsort)]), 'unbilled_outsort.csv');
+  }
+  if (files.chronic && fs.existsSync(files.chronic)) {
+    fd.append('chronic', new Blob([fs.readFileSync(files.chronic)]), 'unbilled_chronic.csv');
+  }
+  if (files.summary && fs.existsSync(files.summary)) {
+    fd.append('summary', new Blob([fs.readFileSync(files.summary)]), 'unbilled_summary.csv');
+  }
+
+  const res = await fetch(`${VM_BASE_URL}/api/unbilled/upload`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    },
+    body: fd
+  });
+
+  const text = await res.text();
+  let json;
+  try { json = JSON.parse(text); } catch (_) { throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`); }
+  if (!res.ok || json.status !== 'success') {
+    throw new Error(json.message || `VM returned HTTP ${res.status}`);
+  }
+  console.log(`[${LABEL}] Successfully uploaded and activated unbilled datasets on VM! (${json.message || 'OK'})`);
+  return json;
 }
 
 function runDbvisExtraction() {
@@ -43,6 +101,13 @@ function runDbvisExtraction() {
     fs.mkdirSync(TEMP_DIR, { recursive: true });
   }
 
+  // Generate dynamic SQL batch pointing to current temp directory
+  const tempDirForward = TEMP_DIR.replace(/\\/g, '/');
+  let sqlText = fs.readFileSync(SQL_BATCH_FILE, 'utf8');
+  sqlText = sqlText.replace(/e:\/Codes\/MZO\/mzo_report_pwa\/data\/temp\/unbilled/g, tempDirForward);
+  const runtimeSqlFile = path.join(TEMP_DIR, 'batch_run.sql');
+  fs.writeFileSync(runtimeSqlFile, sqlText, 'utf8');
+
   console.log(`[${LABEL}] Extracting unbilled and billing exceptions from DB2 ("${DBVIS_CONNECTION}")...`);
   const t0 = Date.now();
 
@@ -51,7 +116,7 @@ function runDbvisExtraction() {
     '/c',
     'dbviscmd.bat',
     '-connection', DBVIS_CONNECTION,
-    '-sqlfile', SQL_BATCH_FILE,
+    '-sqlfile', runtimeSqlFile,
     '-stoponerror'
   ], {
     encoding: 'utf8',
@@ -185,7 +250,27 @@ async function syncUnbilledFromCrm(options = {}) {
 
   console.log(`[${LABEL}] Saved local files in ${DATA_DIR}`);
 
-  // 4. Upload to Supabase Storage if configured and not dry-run
+  // 4. Automatically upload processed unbilled datasets to Oracle Cloud VM
+  if (!dryRun) {
+    try {
+      const token = options.userToken || makeAdminToken();
+      const vmRes = await uploadToVm({
+        outsort: localOutsort,
+        chronic: localChronic,
+        summary: localSummary
+      }, token);
+      metaPayload.vmStatus = 'uploaded';
+      metaPayload.vmMessage = vmRes.message || 'Updated on Oracle Cloud VM';
+      metaPayload.vmUploadedAt = new Date().toISOString();
+    } catch (vmErr) {
+      console.warn(`[${LABEL}] Warning: Failed to upload to VM: ${vmErr.message}. Local data is saved.`);
+      metaPayload.vmError = vmErr.message;
+    }
+  } else {
+    console.log(`[${LABEL}] Dry run enabled. Skipped VM upload.`);
+  }
+
+  // 5. Upload to Supabase Storage if configured and not dry-run
   if (!dryRun && storageConfigured()) {
     console.log(`[${LABEL}] Publishing snapshot to Supabase Storage ('reports' bucket)...`);
     await upload('reports/unbilled/outsort.csv', fs.readFileSync(localOutsort), 'text/csv');

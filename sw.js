@@ -10,7 +10,7 @@
 //   - Cache first for third-party CDNs (libraries, fonts).
 //   - Stale-while-revalidate for every other same-origin asset.
 //   - HTML responses get /mzo_present.js (desktop presentation zoom) injected after <head>.
-const CACHE_NAME = 'mzo-reports-cache-v320';
+const CACHE_NAME = 'mzo-reports-cache-v321';
 
 // Precached on install (not the data hub: it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -207,7 +207,7 @@ function withPresentZoom(response, request, url) {
     if (!response || response.status !== 200 || !response.body) return response;
     if (!isAppHtmlRequest(request, url)) return response;
     let finalPath = '';
-    try { finalPath = new URL(response.url).pathname; } catch (e) {}
+    try { finalPath = new URL(response.url).pathname; } catch (e) { }
     if (skipPresentZoom(url.pathname) || skipPresentZoom(finalPath)) return response;
     const type = (response.headers.get('content-type') || '').toLowerCase();
     if (type && type.indexOf('text/html') === -1) return response;
@@ -305,7 +305,7 @@ self.addEventListener('fetch', (event) => {
         return withPresentZoom(res, request, url);
       });
       if (cached) {
-        refresh.catch(() => {}); // background refresh; the cached copy already answered
+        refresh.catch(() => { }); // background refresh; the cached copy already answered
         return withPresentZoom(cached, request, url);
       }
       return refresh.catch((err) => {

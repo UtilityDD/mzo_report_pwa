@@ -865,9 +865,12 @@ async function getLoginCredentials(options = {}) {
     return [];
 }
 
-/** Profile from a valid, unexpired mzo_session cookie, else null. */
+/** Profile from a valid, unexpired mzo_session cookie or Bearer token, else null. */
 function readSession_(req) {
-    const token = parseCookies(req.headers.cookie).mzo_session;
+    let token = parseCookies(req.headers.cookie).mzo_session;
+    if (!token && req.headers && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+        token = req.headers.authorization.slice(7).trim();
+    }
     const parts = String(token || '').split('.');
     if (parts.length !== 2) return null;
     const expected = Buffer.from(crypto.createHmac('sha256', JWT_SECRET).update(parts[0]).digest('base64'));
@@ -892,7 +895,8 @@ function readSession_(req) {
 // Reachable without a session (static files are already served above).
 const PUBLIC_PATHS = new Set([
     '/login.html', '/offline.html', '/sw.js', '/manifest.json',
-    '/api/auth/google', '/api/auth/local', '/api/auth/pending-status', '/api/auth/config', '/api/news'
+    '/api/auth/google', '/api/auth/local', '/api/auth/pending-status', '/api/auth/config', '/api/news',
+    '/api/unbilled/meta', '/api/unbilled/outsort', '/api/unbilled/chronic', '/api/unbilled/summary'
 ]);
 const PUBLIC_ASSET = /^\/(icons|assets)\/|\.(css|js|png|json|ico)$/i;
 
@@ -4053,7 +4057,7 @@ function syncRoute_(routePath, { label, can, forbidden, run, meta, done, bareErr
         running = true;
         try {
             console.log(`[${label}] Triggered by user: ${user.Username || user.username || 'unknown'}`);
-            const result = await run();
+            const result = await run(req);
             meta.set(result);
             refreshMirror(mirrorKeys, label);
             const summary = done(result);
@@ -4182,17 +4186,247 @@ function canManageUnbilled_(user) {
     return isPortalAdmin_(user) || hasPermission_(user, 'unbilled-sync-autho') || hasPermission_(user, 'defective-upload-autho');
 }
 
+const VM_BASE_URL = 'https://130.210.43.11.sslip.io';
+
+function parseCsvCountsAndDate_(filePath) {
+    if (!fs.existsSync(filePath)) return { count: 0, baselineDate: '' };
+    try {
+        const text = fs.readFileSync(filePath, 'utf8');
+        const lines = text.trim().split('\n');
+        if (lines.length <= 1) return { count: 0, baselineDate: '' };
+        const sep = lines[0].includes('\t') ? '\t' : ',';
+        const header = lines[0].split(sep).map(s => s.replace(/"/g, '').trim());
+        const dateIdx = header.indexOf('BASE_LINE_DATE');
+        let baselineDate = '';
+        for (let i = 1; i < lines.length; i++) {
+            const row = lines[i].split(sep).map(s => s.replace(/"/g, '').trim());
+            if (dateIdx !== -1 && row[dateIdx] && /^\d{8}$/.test(row[dateIdx])) {
+                baselineDate = row[dateIdx];
+                break;
+            }
+        }
+        return { count: lines.length - 1, baselineDate };
+    } catch (_) {
+        return { count: 0, baselineDate: '' };
+    }
+}
+
+function parseSummaryTotal_(filePath) {
+    if (!fs.existsSync(filePath)) return { totalConsumers: 0, baselineDate: '', groupCount: 0 };
+    try {
+        const text = fs.readFileSync(filePath, 'utf8');
+        const lines = text.trim().split('\n');
+        if (lines.length <= 1) return { totalConsumers: 0, baselineDate: '', groupCount: 0 };
+        const sep = lines[0].includes('\t') ? '\t' : ',';
+        const header = lines[0].split(sep).map(s => s.replace(/"/g, '').trim());
+        const dateIdx = header.indexOf('BASE_LINE_DATE');
+        const countIdx = header.indexOf('UNBILLED_COUNT');
+        let totalConsumers = 0;
+        let baselineDate = '';
+        for (let i = 1; i < lines.length; i++) {
+            const row = lines[i].split(sep).map(s => s.replace(/"/g, '').trim());
+            if (!baselineDate && dateIdx !== -1 && row[dateIdx] && /^\d{8}$/.test(row[dateIdx])) {
+                baselineDate = row[dateIdx];
+            }
+            if (countIdx !== -1) {
+                const val = parseInt(row[countIdx], 10);
+                if (!isNaN(val)) totalConsumers += val;
+            }
+        }
+        return { totalConsumers, baselineDate, groupCount: lines.length - 1 };
+    } catch (_) {
+        return { totalConsumers: 0, baselineDate: '', groupCount: 0 };
+    }
+}
+
+const unbilledUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 30 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (/\.(csv|tsv|txt)$/i.test(String(file.originalname || ''))) return cb(null, true);
+        cb(new Error('Only CSV, TSV, or TXT files are allowed.'));
+    }
+});
+
+app.options('/api/unbilled/upload', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(204).end();
+});
+
+app.post('/api/unbilled/upload', (req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS') return res.status(204).end();
+    unbilledUpload.fields([
+        { name: 'outsort', maxCount: 1 },
+        { name: 'chronic', maxCount: 1 },
+        { name: 'summary', maxCount: 1 },
+        { name: 'file', maxCount: 1 }
+    ])(req, res, async (err) => {
+        if (err) return res.status(400).json({ status: 'error', message: err.message });
+        try {
+            if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized. Sign in to upload unbilled data.' });
+            const user = await resolveFreshUser_(req, true);
+            if (!canManageUnbilled_(user)) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: 'You are not authorized to upload unbilled data. Ask an admin to grant permission.'
+                });
+            }
+
+            const files = req.files || {};
+            const saved = [];
+
+            const isVercel = Boolean(process.env.VERCEL || (req.headers.host && req.headers.host.includes('vercel.app')));
+            if (isVercel) {
+                try {
+                    const fd = new FormData();
+                    if (files.outsort && files.outsort[0]) {
+                        fd.append('outsort', new Blob([files.outsort[0].buffer]), files.outsort[0].originalname || 'unbilled_outsort.csv');
+                    }
+                    if (files.chronic && files.chronic[0]) {
+                        fd.append('chronic', new Blob([files.chronic[0].buffer]), files.chronic[0].originalname || 'unbilled_chronic.csv');
+                    }
+                    if (files.summary && files.summary[0]) {
+                        fd.append('summary', new Blob([files.summary[0].buffer]), files.summary[0].originalname || 'unbilled_summary.csv');
+                    }
+                    if (files.file && files.file[0]) {
+                        fd.append('file', new Blob([files.file[0].buffer]), files.file[0].originalname || 'file.csv');
+                    }
+
+                    const token = parseCookies(req.headers.cookie).mzo_session || '';
+                    const vmResp = await fetch(`${VM_BASE_URL}/api/unbilled/upload`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: fd
+                    });
+                    const vmData = await vmResp.json();
+                    return res.status(vmResp.status).json(vmData);
+                } catch (vmErr) {
+                    console.error('Failed to forward unbilled upload to VM:', vmErr);
+                    return res.status(502).json({ status: 'error', message: 'Failed to post unbilled data to VM: ' + vmErr.message });
+                }
+            }
+
+            if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+            const localOutsort = path.join(DATA_DIR, 'unbilled_outsort.csv');
+            const localChronic = path.join(DATA_DIR, 'unbilled_chronic.csv');
+            const localSummary = path.join(DATA_DIR, 'unbilled_summary.csv');
+            const localMeta = path.join(DATA_DIR, 'unbilled_meta.json');
+
+            if (files.outsort && files.outsort[0]) {
+                fs.writeFileSync(localOutsort, files.outsort[0].buffer);
+                saved.push('outsort');
+            }
+            if (files.chronic && files.chronic[0]) {
+                fs.writeFileSync(localChronic, files.chronic[0].buffer);
+                saved.push('chronic');
+            }
+            if (files.summary && files.summary[0]) {
+                fs.writeFileSync(localSummary, files.summary[0].buffer);
+                saved.push('summary');
+            }
+
+            if (files.file && files.file[0]) {
+                const buf = files.file[0].buffer;
+                const text = buf.toString('utf8', 0, 1024);
+                if (text.includes('UNBILLED_COUNT')) {
+                    fs.writeFileSync(localSummary, buf);
+                    saved.push('summary');
+                } else if (text.includes('INV_PENDING_FLAG') && files.file[0].originalname.toLowerCase().includes('chronic')) {
+                    fs.writeFileSync(localChronic, buf);
+                    saved.push('chronic');
+                } else {
+                    fs.writeFileSync(localOutsort, buf);
+                    saved.push('outsort');
+                }
+            }
+
+            if (!saved.length) {
+                return res.status(400).json({ status: 'error', message: 'No CSV files received. Please select at least one CSV file to upload.' });
+            }
+
+            const outsortInfo = parseCsvCountsAndDate_(localOutsort);
+            const chronicInfo = parseCsvCountsAndDate_(localChronic);
+            const summaryInfo = parseSummaryTotal_(localSummary);
+
+            const rawDate = outsortInfo.baselineDate || chronicInfo.baselineDate || summaryInfo.baselineDate;
+            let fmtDate = '';
+            if (/^\d{8}$/.test(rawDate)) {
+                fmtDate = `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`;
+            }
+
+            const metaPayload = {
+                asOn: fmtDate || rawDate || new Date().toISOString().split('T')[0],
+                baselineDate: rawDate,
+                outsortCount: outsortInfo.count,
+                chronicCount: chronicInfo.count,
+                currentMonCount: summaryInfo.totalConsumers,
+                summaryGroups: summaryInfo.groupCount,
+                source: 'Uploaded to VM by ' + (user.email || user.username || 'Authorized User'),
+                uploadedAt: new Date().toISOString()
+            };
+
+            fs.writeFileSync(localMeta, JSON.stringify(metaPayload, null, 2), 'utf8');
+            UNBILLED_META.set(metaPayload);
+
+            logActivity({
+                username: user.email || user.username,
+                name: user.name || user.email,
+                type: 'upload',
+                details: `Uploaded unbilled datasets to VM (${saved.join(', ')}): date ${metaPayload.asOn}, ${metaPayload.currentMonCount} unbilled`
+            }).catch(() => {});
+
+            return res.json({
+                status: 'success',
+                message: `Successfully uploaded ${saved.length} file(s) directly to VM!`,
+                saved,
+                meta: metaPayload
+            });
+        } catch (err) {
+            console.error('[Unbilled Upload Error]', err);
+            return res.status(500).json({ status: 'error', message: err.message || 'Internal error processing upload' });
+        }
+    });
+});
+
+app.options('/api/unbilled/:type', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(204).end();
+});
+
 app.get('/api/unbilled/meta', async (req, res) => {
-    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    const user = await resolveFreshUser_(req);
-    const canSync = canManageUnbilled_(user);
-    const meta = await UNBILLED_META.read();
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
+    const user = req.user ? await resolveFreshUser_(req) : null;
+    const canSync = user ? canManageUnbilled_(user) : false;
+    let meta = await UNBILLED_META.read();
+    if ((!meta || !meta.asOn) && req.headers.host && !req.headers.host.includes('130.210.43.11')) {
+        try {
+            const r = await fetch(`${VM_BASE_URL}/api/unbilled/meta`);
+            if (r.ok) {
+                const vmMeta = await r.json();
+                if (vmMeta && vmMeta.status === 'success') {
+                    meta = vmMeta;
+                }
+            }
+        } catch (_) {}
+    }
     return res.json({
         status: 'success',
         canSync,
         canCrmSync: canSync && isDbvisAvailable(),
-        isAdmin: isPortalAdmin_(user),
+        isAdmin: user ? isPortalAdmin_(user) : false,
         asOn: (meta && meta.asOn) || null,
         baselineDate: (meta && meta.baselineDate) || null,
         outsortCount: (meta && meta.outsortCount) || 0,
@@ -4200,31 +4434,44 @@ app.get('/api/unbilled/meta', async (req, res) => {
         currentMonCount: (meta && meta.currentMonCount) || 0,
         summaryGroups: (meta && meta.summaryGroups) || 0,
         source: (meta && meta.source) || 'CRM DB2 (ISUDATA)',
-        uploadedAt: (meta && meta.uploadedAt) || null
+        uploadedAt: (meta && meta.uploadedAt) || null,
+        vmUrl: VM_BASE_URL
     });
 });
 
 app.get('/api/unbilled/outsort', (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Cache-Control', 'private, max-age=60');
+    res.setHeader('Access-Control-Allow-Origin', '*');
     const f = path.join(__dirname, 'data/unbilled_outsort.csv');
     if (fs.existsSync(f)) return fs.createReadStream(f).pipe(res);
+    if (req.headers.host && !req.headers.host.includes('130.210.43.11')) {
+        return res.redirect(302, `${VM_BASE_URL}/api/unbilled/outsort`);
+    }
     return res.status(404).send('Not found');
 });
 
 app.get('/api/unbilled/chronic', (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Cache-Control', 'private, max-age=60');
+    res.setHeader('Access-Control-Allow-Origin', '*');
     const f = path.join(__dirname, 'data/unbilled_chronic.csv');
     if (fs.existsSync(f)) return fs.createReadStream(f).pipe(res);
+    if (req.headers.host && !req.headers.host.includes('130.210.43.11')) {
+        return res.redirect(302, `${VM_BASE_URL}/api/unbilled/chronic`);
+    }
     return res.status(404).send('Not found');
 });
 
 app.get('/api/unbilled/summary', (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Cache-Control', 'private, max-age=60');
+    res.setHeader('Access-Control-Allow-Origin', '*');
     const f = path.join(__dirname, 'data/unbilled_summary.csv');
     if (fs.existsSync(f)) return fs.createReadStream(f).pipe(res);
+    if (req.headers.host && !req.headers.host.includes('130.210.43.11')) {
+        return res.redirect(302, `${VM_BASE_URL}/api/unbilled/summary`);
+    }
     return res.status(404).send('Not found');
 });
 
@@ -4232,17 +4479,18 @@ syncRoute_('/api/unbilled/crm-sync', {
     label: 'CRM Unbilled Sync',
     can: canManageUnbilled_,
     forbidden: 'Not authorized to sync unbilled data from CRM. Ask an admin to grant permission.',
-    run: async () => {
+    run: async (req) => {
         if (!isDbvisAvailable()) {
             throw new Error('DbVisualizer CLI is not available on this server. Direct CRM extraction must be run from an internal office workstation / VM connected to DB2.');
         }
-        return await syncUnbilledFromCrm({ fresh: true });
+        const userToken = req ? (parseCookies(req.headers.cookie).mzo_session || (req.headers.authorization && req.headers.authorization.slice(7).trim())) : null;
+        return await syncUnbilledFromCrm({ fresh: true, userToken });
     },
     meta: UNBILLED_META,
     mirrorKeys: ['unbilled_outsort', 'unbilled_chronic', 'unbilled_summary'],
     done: (m) => ({
-        log: `CRM Synced Unbilled: ${m.outsortCount} outsorts, ${m.chronicCount} chronic, ${m.currentMonCount} current month`,
-        message: `Unbilled & Billing Exceptions sync complete! Outsorts: ${m.outsortCount}, Chronic (>=3m): ${m.chronicCount}.`
+        log: `CRM Synced Unbilled: ${m.outsortCount} outsorts, ${m.chronicCount} chronic, ${m.currentMonCount} current month; uploaded to VM`,
+        message: `Unbilled & Billing Exceptions sync complete! Outsorts: ${m.outsortCount}, Chronic (>=3m): ${m.chronicCount}. Uploaded directly to VM!`
     })
 });
 

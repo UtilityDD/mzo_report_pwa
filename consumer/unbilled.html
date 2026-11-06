@@ -22,6 +22,18 @@
     .tag-chronic { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; background: rgba(217, 119, 6, 0.12); color: #d97706; }
     .tag-current { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; background: rgba(37, 99, 235, 0.12); color: #2563eb; }
     .cell-sub { font-size: 11px; color: var(--mzo-muted); display: block; margin-top: 1px; }
+
+    /* Modal styling */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 1000; backdrop-filter: blur(2px); }
+    .modal-overlay.active { display: flex; }
+    .modal-card { width: min(520px, 100%); background: var(--mzo-surface); border: 1px solid var(--mzo-border); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); padding: 20px; }
+    .modal-h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .modal-h h3 { margin: 0; font-size: 16px; font-weight: 600; }
+    .modal-desc { font-size: 12.5px; color: var(--mzo-muted); margin-bottom: 16px; line-height: 1.45; }
+    .modal-field { margin-bottom: 14px; }
+    .modal-field label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+    .modal-field input[type="file"] { width: 100%; font-size: 12px; padding: 6px; border: 1px solid var(--mzo-border); border-radius: 6px; background: var(--mzo-bg); }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
   </style>
 </head>
 <body>
@@ -32,6 +44,7 @@
       </div>
       <div class="ui-actions">
         <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
+        <button type="button" class="ui-btn" id="uploadBtn" hidden title="Directly upload unbilled CSV data to the VM"><svg class="ui-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;vertical-align:-2px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Upload to VM</button>
         <button type="button" class="ui-btn" id="crmSyncBtn" hidden title="Direct extraction from IBM DB2"><svg class="ui-i"><use href="#ui-sync"/></svg>Sync from DB2</button>
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
@@ -109,6 +122,41 @@
       </div>
     </div>
   </main>
+
+  <div class="modal-overlay" id="uploadModal" role="dialog" aria-modal="true" aria-labelledby="upTitle">
+    <div class="modal-card">
+      <div class="modal-h">
+        <h3 id="upTitle">Upload Unbilled Data to VM</h3>
+        <button type="button" class="ui-btn ghost sm" id="modalCloseBtn" aria-label="Close">&times;</button>
+      </div>
+      <p class="modal-desc">
+        Select CSV reports extracted from CRM DB2 ISUDATA to upload directly to the Oracle Cloud VM. Once uploaded, all users will immediately view the updated unbilled baseline.
+      </p>
+      <form id="uploadForm">
+        <div class="modal-field">
+          <label for="fOutsort">Billing Outsorts CSV <span style="font-weight:normal;color:var(--mzo-muted)">(OUTSORT_CURR_MON_UNBIL_REPORT)</span></label>
+          <input type="file" id="fOutsort" name="outsort" accept=".csv,.txt" />
+        </div>
+        <div class="modal-field">
+          <label for="fChronic">3 Month Unbilled CSV <span style="font-weight:normal;color:var(--mzo-muted)">(CRONIC_UNBIL_REPORT)</span></label>
+          <input type="file" id="fChronic" name="chronic" accept=".csv,.txt" />
+        </div>
+        <div class="modal-field">
+          <label for="fSummary">Current Month Summary CSV <span style="font-weight:normal;color:var(--mzo-muted)">(OUTSORT_CURR_MON_UNBIL_SUM_REP)</span></label>
+          <input type="file" id="fSummary" name="summary" accept=".csv,.txt" />
+        </div>
+        <div class="modal-field" style="border-top:1px dashed var(--mzo-border);padding-top:10px;margin-top:12px;">
+          <label for="fAuto">Or Single / Auto-detect CSV <span style="font-weight:normal;color:var(--mzo-muted)">(Any one report)</span></label>
+          <input type="file" id="fAuto" name="file" accept=".csv,.txt" />
+        </div>
+        <div id="modalStatus" class="ui-note" style="margin-top:12px;font-size:12.5px;display:none;"></div>
+        <div class="modal-actions">
+          <button type="button" class="ui-btn ghost" id="modalCancelBtn">Cancel</button>
+          <button type="submit" class="ui-btn primary" id="modalSubmitBtn">Upload Files</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <script>
   document.addEventListener('DOMContentLoaded', function () {
@@ -209,8 +257,17 @@
       return row;
     }
 
+    var VM_ORIGIN = 'https://130.210.43.11.sslip.io';
+    function getApiBase() {
+      // Direct load from Oracle Cloud VM when deployed on Vercel
+      if (location.hostname.includes('vercel.app')) {
+        return VM_ORIGIN;
+      }
+      return '';
+    }
+
     function loadData() {
-      $('table').innerHTML = '<div class="ui-empty">Loading unbilled datasets from DB2…</div>';
+      $('table').innerHTML = '<div class="ui-empty">Loading unbilled datasets from VM…</div>';
 
       fetch('/api/unbilled/meta', { credentials: 'same-origin' })
         .then(function (r) {
@@ -222,20 +279,22 @@
           metaInfo = m;
           updateDateBadge(m.asOn || m.baselineDate);
           if ($('crmSyncBtn')) $('crmSyncBtn').hidden = !m.canCrmSync;
+          if ($('uploadBtn')) $('uploadBtn').hidden = !m.canSync;
         }).catch(function () {});
 
+      var base = getApiBase();
       Promise.all([
-        fetch('/api/unbilled/outsort', { credentials: 'same-origin' }).then(function (r) {
+        fetch(base + '/api/unbilled/outsort').then(function (r) {
           if (r.status === 401) { location.replace('/login.html'); throw new Error('Unauthorized'); }
           if (!r.ok) throw new Error('HTTP ' + r.status + ' loading outsort data');
           return r.text();
         }),
-        fetch('/api/unbilled/chronic', { credentials: 'same-origin' }).then(function (r) {
+        fetch(base + '/api/unbilled/chronic').then(function (r) {
           if (r.status === 401) { location.replace('/login.html'); throw new Error('Unauthorized'); }
           if (!r.ok) throw new Error('HTTP ' + r.status + ' loading chronic data');
           return r.text();
         }),
-        fetch('/api/unbilled/summary', { credentials: 'same-origin' }).then(function (r) {
+        fetch(base + '/api/unbilled/summary').then(function (r) {
           if (r.status === 401) { location.replace('/login.html'); throw new Error('Unauthorized'); }
           if (!r.ok) throw new Error('HTTP ' + r.status + ' loading summary data');
           return r.text();
@@ -836,10 +895,10 @@
     /* ---------- CRM 1-Click Sync ---------- */
     if ($('crmSyncBtn')) {
       $('crmSyncBtn').addEventListener('click', function () {
-        if (!confirm('Directly extract the latest Unbilled Consumers & Billing Exceptions from IBM DB2?\n\nThis queries DB2 and updates DISHA in ~30-40 seconds.')) return;
+        if (!confirm('Directly extract the latest Unbilled Consumers & Billing Exceptions from IBM DB2 and upload to VM?\n\nThis queries DB2 and publishes the updated baseline directly to the Oracle Cloud VM.')) return;
         var b = this; b.disabled = true; b.classList.add('spin');
         var st = $('status'), stText = $('statusText'), stBar = $('statusBar');
-        st.hidden = false; stText.textContent = 'Extracting unbilled tables from IBM DB2...'; stBar.style.width = '30%';
+        st.hidden = false; stText.textContent = 'Extracting unbilled tables from IBM DB2 and uploading to VM...'; stBar.style.width = '35%';
 
         fetch('/api/unbilled/crm-sync', {
           method: 'POST',
@@ -851,8 +910,8 @@
             b.disabled = false; b.classList.remove('spin');
             if (res.status === 'success') {
               stBar.style.width = '100%';
-              stText.textContent = res.message || 'Sync complete!';
-              UI.toast('Unbilled & Billing Exceptions updated from DB2!');
+              stText.textContent = res.message || 'Sync & VM upload complete!';
+              UI.toast('Unbilled data extracted from DB2 and uploaded to VM!');
               setTimeout(function () { st.hidden = true; loadData(); }, 1200);
             } else {
               st.hidden = true;
@@ -863,6 +922,95 @@
             b.disabled = false; b.classList.remove('spin');
             st.hidden = true;
             alert('DB2 Sync error: ' + err.message);
+          });
+      });
+    }
+
+    /* ---------- VM Upload Modal ---------- */
+    var uploadModal = $('uploadModal');
+    var uploadBtn = $('uploadBtn');
+    var modalCloseBtn = $('modalCloseBtn');
+    var modalCancelBtn = $('modalCancelBtn');
+    var uploadForm = $('uploadForm');
+    var modalStatus = $('modalStatus');
+    var modalSubmitBtn = $('modalSubmitBtn');
+
+    function openUploadModal() {
+      if (uploadModal) uploadModal.classList.add('active');
+      if (modalStatus) { modalStatus.style.display = 'none'; modalStatus.textContent = ''; }
+      if (uploadForm) uploadForm.reset();
+    }
+    function closeUploadModal() {
+      if (uploadModal) uploadModal.classList.remove('active');
+    }
+
+    if (uploadBtn) uploadBtn.addEventListener('click', openUploadModal);
+    if (modalCloseBtn) modalCloseBtn.addEventListener('click', closeUploadModal);
+    if (modalCancelBtn) modalCancelBtn.addEventListener('click', closeUploadModal);
+
+    if (uploadModal) {
+      uploadModal.addEventListener('click', function (e) {
+        if (e.target === uploadModal) closeUploadModal();
+      });
+    }
+
+    if (uploadForm) {
+      uploadForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var f1 = $('fOutsort').files[0];
+        var f2 = $('fChronic').files[0];
+        var f3 = $('fSummary').files[0];
+        var fAuto = $('fAuto').files[0];
+
+        if (!f1 && !f2 && !f3 && !fAuto) {
+          alert('Please select at least one CSV file to upload.');
+          return;
+        }
+
+        var formData = new FormData();
+        if (f1) formData.append('outsort', f1);
+        if (f2) formData.append('chronic', f2);
+        if (f3) formData.append('summary', f3);
+        if (fAuto) formData.append('file', fAuto);
+
+        modalSubmitBtn.disabled = true;
+        modalSubmitBtn.textContent = 'Uploading...';
+        modalStatus.style.display = 'block';
+        modalStatus.textContent = 'Uploading CSV files directly to Oracle Cloud VM...';
+
+        fetch('/api/unbilled/upload', {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: formData
+        })
+          .then(function (r) {
+            return r.json().then(function (data) {
+              return { ok: r.ok, status: r.status, data: data };
+            });
+          })
+          .then(function (res) {
+            modalSubmitBtn.disabled = false;
+            modalSubmitBtn.textContent = 'Upload Files';
+            if (res.ok && res.data.status === 'success') {
+              modalStatus.style.display = 'block';
+              modalStatus.textContent = res.data.message || 'Upload complete!';
+              UI.toast('Unbilled data uploaded directly to VM!');
+              setTimeout(function () {
+                closeUploadModal();
+                loadData();
+              }, 1200);
+            } else {
+              modalStatus.style.display = 'block';
+              modalStatus.textContent = 'Upload failed: ' + (res.data.message || 'HTTP ' + res.status);
+              alert('Upload failed: ' + (res.data.message || 'HTTP ' + res.status));
+            }
+          })
+          .catch(function (err) {
+            modalSubmitBtn.disabled = false;
+            modalSubmitBtn.textContent = 'Upload Files';
+            modalStatus.style.display = 'block';
+            modalStatus.textContent = 'Upload error: ' + err.message;
+            alert('Upload error: ' + err.message);
           });
       });
     }

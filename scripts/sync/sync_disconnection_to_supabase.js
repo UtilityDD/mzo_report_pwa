@@ -17,10 +17,10 @@ function parseAmount(val) {
   return isNaN(num) ? 0 : num;
 }
 
-function extractBaseDates(headerRow) {
+function extractBaseDates(headerLine, firstDataLine, colIndex) {
   let domCom = '';
   let ind = '';
-  const parts = headerRow.split(',');
+  const parts = parseCsvLine(headerLine);
   for (let i = 0; i < parts.length; i++) {
     const text = parts[i].trim();
     if (text.startsWith('DOM BASE DATE')) {
@@ -29,6 +29,18 @@ function extractBaseDates(headerRow) {
     } else if (text.startsWith('IND&COM BASE DATE')) {
       const segs = text.split(':');
       if (segs.length > 1) ind = segs[1].trim();
+    }
+  }
+  // Fallback: read from first data row under the base date columns
+  if ((!domCom || !ind) && firstDataLine && colIndex) {
+    const firstCols = parseCsvLine(firstDataLine);
+    const domIdx = colIndex['DOM BASE DATE'] ?? colIndex['DOM&COM BASE DATE'] ?? colIndex['DOM COM BASE DATE'];
+    const indIdx = colIndex['IND&COM BASE DATE'] ?? colIndex['IND BASE DATE'] ?? colIndex['IND & COM BASE DATE'];
+    if (!domCom && domIdx !== undefined && firstCols[domIdx]) {
+      domCom = firstCols[domIdx].trim();
+    }
+    if (!ind && indIdx !== undefined && firstCols[indIdx]) {
+      ind = firstCols[indIdx].trim();
     }
   }
   return { domCom, ind };
@@ -42,11 +54,11 @@ async function run() {
   if (lines.length < 2) throw new Error('CSV is empty or malformed.');
 
   const headerLine = lines[0];
-  const baseDates = extractBaseDates(headerLine);
-
   const rawHeaders = parseCsvLine(headerLine).map(h => h.trim());
   const colIndex = {};
   rawHeaders.forEach((h, i) => { if (h) colIndex[h] = i; });
+
+  const baseDates = extractBaseDates(headerLine, lines[1], colIndex);
 
   const cccIdx = colIndex['CCC_CODE'] ?? 0;
   const conIdIdx = colIndex['CON_ID'] ?? 2;
@@ -92,7 +104,8 @@ async function run() {
     const osd = parseAmount(cols[notosdIdx]);
     const paid = parseAmount(cols[finalPaidIdx]);
     const dateStr = (cols[paidDisconIdx] || '').trim();
-    const hasDate = dateStr !== '' && dateStr.toLowerCase() !== '#n/a' && dateStr !== '0';
+    const dateMatch = (dateStr !== '0' && dateStr.toLowerCase() !== '#n/a') ? dateStr.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/) : null;
+    const hasDate = !!dateMatch;
     const hasPaid = paid > 0;
 
     totalOSD += osd;
@@ -118,18 +131,16 @@ async function run() {
       partiallyPaidAmount += paid;
     }
 
-    if (hasDate) {
-      const dateParts = dateStr.split('.');
-      if (dateParts.length === 3) {
-        const d = parseInt(dateParts[0], 10);
-        const m = parseInt(dateParts[1], 10);
-        const y = parseInt(dateParts[2], 10);
-        if (y >= 2020 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-          const dt = new Date(y, m - 1, d);
-          if (!latestDateObj || dt > latestDateObj) {
-            latestDateObj = dt;
-            latestDateFormatted = `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
-          }
+    if (hasDate && dateMatch) {
+      const d = parseInt(dateMatch[1], 10);
+      const m = parseInt(dateMatch[2], 10);
+      let y = parseInt(dateMatch[3], 10);
+      if (dateMatch[3].length === 2) y = (y > 50 ? 1900 : 2000) + y;
+      if (y >= 2020 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+        const dt = new Date(y, m - 1, d);
+        if (!latestDateObj || dt > latestDateObj) {
+          latestDateObj = dt;
+          latestDateFormatted = `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
         }
       }
     }
