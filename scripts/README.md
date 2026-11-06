@@ -29,4 +29,5 @@ Only the insight-project copy is left. Earlier one-off imports (users, activity 
 | `generate_stock_material_category.js` (`npm run tools:stock-categories`) | Rebuilds `stock/stock_material_category.js` from the Local/Central material sheet |
 | `compute_briefing_cccs.js` (`npm run tools:briefing-cccs`) | Adds per-division CCC hotspots to the local `data/*_meta.json` files |
 | `generate_mzo_icons.py` | Draws the PWA icons in `icons/` (needs Pillow) |
+| `make_handoff.sh` (`scripts/tools/make_handoff.sh [ref]`) | Builds `vm-handoff.zip` next to the repo folder: the ref's tracked files plus `docs/HANDOFF.md` as `START_HERE.md`, after a secret scan (`--secrets-from <env file>` also checks for those values) |
 | `check_syntax.js` (`node scripts/tools/check_syntax.js`) | `node --check` on every JS file and inline `<script>`, JSON parse; CI runs it ([docs/vm.md](../docs/vm.md#github-actions)) |
