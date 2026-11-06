@@ -164,6 +164,8 @@ The VM has 1 GB of RAM and about 3.4 GB of swap. On 2026-11-01 a `dnf install` u
 - Performance Co-Pilot (`pmcd`, `pmlogger`, `pmie`, the `*_farm` services and their timers) is stopped and disabled: about 60 MB. `provision.sh --keep-pcp` leaves it alone.
 - kdump is disabled and `crashkernel=` is removed from the boot entries, `/etc/default/grub` and `/etc/kernel/cmdline` (`auto_reset_crashkernel no`): it reserved 448 MB at boot.
 - OOM order: sshd, Caddy and the app `OOMScoreAdjust=-500` (drop-ins in `vm/deploy/systemd/*.service.d/`); PocketBase `MemoryMax=200M`, `GOMEMLIMIT=150MiB`, `OOMScoreAdjust=100`; deploy `MemoryMax=350M`; the sync `MemoryMax=400M`, node heap 160 MB, `OOMScoreAdjust=500`, `Nice=10`, so it is the first thing to go (with the stats sampler, `MemoryMax=48M`, `OOMScoreAdjust=600`).
+- After each run the sync starts its child steps one at a time, each with its own heap cap, inside the 400 MB: uniform rows (`rows.js`, up to about 200 MB), the page views (`views.js`, one child per view; `meter_utilization` about 205–220 MB, the others under 170 MB) and the performance rating (`rating.js`, about 270 MB).
+- The app keeps compressed copies of static files in memory (`lib/static_cache.js`, at most 16 MB).
 - Swap: `/swapfile` (2 GB), `/.swapfile` (0.5 GB) and `/swapfile2` (about 0.85 GB, added by provisioning).
 
 ## Re-provision
