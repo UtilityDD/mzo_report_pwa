@@ -270,6 +270,7 @@ async function syncDisconnectionPayments(options = {}) {
     const cAmtIdx = chunkHeaders.indexOf('AMT');
     const cRcptIdx = chunkHeaders.indexOf('RECEIPT_NO');
     const cModeIdx = chunkHeaders.indexOf('MODE');
+    const cColTypeIdx = chunkHeaders.indexOf('COL_TYPE');
     const cClrIdx = chunkHeaders.indexOf('CLEARING_DOC');
 
     for (let j = 1; j < chunkLines.length; j++) {
@@ -308,6 +309,7 @@ async function syncDisconnectionPayments(options = {}) {
         amount: amt,
         receipt: (pCols[cRcptIdx] || '').trim(),
         mode: (pCols[cModeIdx] || '').trim(),
+        colType: cColTypeIdx !== -1 ? (pCols[cColTypeIdx] || '').trim() : '',
         clearingDoc: cClrIdx !== -1 ? (pCols[cClrIdx] || '').trim() : ''
       });
     }
