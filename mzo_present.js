@@ -253,6 +253,12 @@
       '#mzo-present-zoom button:focus-visible{outline:2px solid var(--mzo-accent,#0f766e);outline-offset:1px}' +
       '#mzo-present-zoom .mzo-pz-sep{width:1px;height:16px;background:var(--mzo-border-strong,#cbd5e1);margin:0 2px;flex:none}' +
       '#mzo-present-zoom svg{display:block;flex:none}' +
+      // PPT theme: selected buttons use the theme's solid primary, not the old blue-teal gradient.
+      'html[data-mzo-theme="ppt"] #mzo-present-zoom button[aria-pressed="true"],html[data-mzo-theme="ppt"] #mzo-present-zoom button[aria-pressed="true"]:hover{background:#1d4ed8 !important;box-shadow:none !important}' +
+      // In PPT inside the shell, the shell's top bar already shows the pressed PPT button: drop this copy
+      // (and the whole bar on narrow frames, where PPT is all it shows).
+      'html.mzo-in-shell[data-mzo-theme="ppt"] #mzo-present-zoom [data-act="ppt"]{display:none !important}' +
+      '@media (max-width:899px){html.mzo-in-shell[data-mzo-theme="ppt"] #mzo-present-zoom{display:none !important}}' +
       '@media print{#mzo-present-zoom{display:none !important}}' +
       '</style>' +
       '<button type="button" data-act="ppt" aria-pressed="false" title="Presentation theme (PPT slide mode · shortcut P)">' +

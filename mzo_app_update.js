@@ -33,7 +33,7 @@
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     var dark = false;
-    try { dark = (localStorage.getItem('theme') || localStorage.getItem('mzo_theme')) !== 'light'; } catch (e) {}
+    try { var t = localStorage.getItem('theme') || localStorage.getItem('mzo_theme'); dark = t !== 'light' && t !== 'ppt'; } catch (e) {}
     var c = dark
       ? { bg: '#09090a', card: '#161617', line: '#27272a', text: '#ececee', muted: '#8e8e96', ink: '#ececee', onInk: '#0f0f10', note: '#1c1c1e' }
       : { bg: '#f1f1f0', card: '#ffffff', line: '#e7e7e5', text: '#18181b', muted: '#71717a', ink: '#18181b', onInk: '#ffffff', note: '#f5f5f4' };

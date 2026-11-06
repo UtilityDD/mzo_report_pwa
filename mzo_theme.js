@@ -50,7 +50,7 @@
     }
     try {
       var meta = document.querySelector('meta[name="theme-color"]');
-      if (meta) meta.setAttribute('content', theme === 'dark' ? '#09090a' : (theme === 'ppt' ? '#0f172a' : '#f1f1f0'));
+      if (meta) meta.setAttribute('content', theme === 'dark' ? '#09090a' : (theme === 'ppt' ? '#e8edf6' : '#f1f1f0'));
     } catch (e) {}
   }
 
