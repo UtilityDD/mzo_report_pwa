@@ -130,13 +130,13 @@
     // Toolbar actions
     if (native && rights.add) acts.appendChild(Ed.btn('Add row', { icon: 'plus', on: function () { grid.addRows(1); grid.startEdit(null); } }));
     if (native && rights.delete) acts.appendChild(Ed.btn('Delete rows', { icon: 'trash', title: 'Mark the selected rows for deletion', on: function () { grid.deleteSelected(); } }));
-    if (native && rights.add) acts.appendChild(Ed.btn('Import file', { icon: 'upload', title: 'Add rows from a CSV or TSV file', on: function () { importFile(grid); } }));
-    if (native && (rights.add || rights.edit)) acts.appendChild(Ed.btn('Paste', { title: 'Paste with Ctrl+V / Cmd+V in the sheet, or here', on: function () { pasteButton(grid); } }));
+    if (native && rights.add) acts.appendChild(Ed.btn('Import file', { cls: 'sm hide-sm', icon: 'upload', title: 'Add rows from a CSV or TSV file', on: function () { importFile(grid); } }));
+    if (native && (rights.add || rights.edit)) acts.appendChild(Ed.btn('Paste', { cls: 'sm hide-sm', title: 'Paste with Ctrl+V / Cmd+V in the sheet, or here', on: function () { pasteButton(grid); } }));
     acts.appendChild(h('a', { class: 'ui-btn sm', href: '#', title: 'Download the rows that match the search and filters', on: { click: function (e) { e.preventDefault(); location.href = grid.exportUrl(); } } }, Ed.icon('download'), h('span', { text: 'Export CSV' })));
     acts.appendChild(Ed.btn('History', { icon: 'clock', on: function () { historyDrawer(ds, grid); } }));
     if (rights.admin && !ds.createdHere) {
-      acts.appendChild(native ? Ed.btn('Return to the original…', { on: function () { releaseDlg(ds); } })
-        : Ed.btn('Edit on the VM instead…', { title: 'Make the VM the source of this dataset (admins)', on: function () { takeoverDlg(ds); } }));
+      acts.appendChild(native ? Ed.btn('Return to the original…', { cls: 'sm hide-sm', on: function () { releaseDlg(ds); } })
+        : Ed.btn('Edit on the VM instead…', { cls: 'sm hide-sm', title: 'Make the VM the source of this dataset (admins)', on: function () { takeoverDlg(ds); } }));
     }
 
     q.addEventListener('input', debounce(function () { grid.query.q = q.value; grid.requery(); }, 300));

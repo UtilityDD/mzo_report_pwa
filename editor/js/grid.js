@@ -10,7 +10,7 @@
   var h = Ed.h;
   var ROW_H = 28;
   var HEAD_H = 40;
-  var RN_W = 58;
+  var RN_W = 70;
   var BLOCK = 100;
   var MAX_BLOCKS = 80;
   var MAX_PASTE = 5000;
@@ -79,14 +79,13 @@
     var raf = 0;
     this.scroll.addEventListener('scroll', function () { if (!raf) raf = requestAnimationFrame(function () { raf = 0; self.paint(); }); });
     this.scroll.addEventListener('mousedown', function (e) { self.onDown(e); });
-    this.scroll.addEventListener('dblclick', function (e) { var p = self.cellAt(e); if (p) self.startEdit(null); });
     this.scroll.addEventListener('mouseover', function (e) { if (self.dragging) { var p = self.cellAt(e); if (p) { self.sel.fr = p.r; self.sel.fc = p.c; self.paint(); } } });
     document.addEventListener('mouseup', function () { self.dragging = false; });
     this.sink.addEventListener('keydown', function (e) { self.onKey(e); });
     this.sink.addEventListener('paste', function (e) { e.preventDefault(); self.onPaste(e.clipboardData); });
     this.sink.addEventListener('copy', function (e) { self.onCopy(e); });
     this.sink.addEventListener('cut', function (e) { e.preventDefault(); });
-    this.scroll.addEventListener('click', function (e) { if (!self.editing) self.focus(); if (e.detail === 1 && narrow() && self.lastTap && self.lastTap.r === self.sel.fr && self.lastTap.c === self.sel.fc && Date.now() - self.lastTap.at < 1500) self.sheetEdit(); var p = self.cellAt(e); if (p) self.lastTap = { r: p.r, c: p.c, at: Date.now() }; });
+    this.scroll.addEventListener('click', function () { if (!self.editing) self.focus(); });
     w.addEventListener('resize', function () { self.paint(); });
   };
 
@@ -103,7 +102,16 @@
     if (e.button !== 0) return;
     var p = this.cellAt(e);
     if (!p) return;
+    if (this.editing && this.editing.sheet) return; // the phone cell editor is open
     if (this.editing) this.finishEdit(true);
+    // (Detected here, not on click: painting replaces the cell under the pointer.)
+    var again = this.sel.ar === p.r && this.sel.fr === p.r && this.sel.ac === p.c && this.sel.fc === p.c;
+    if (!e.shiftKey && again && (e.detail >= 2 || narrow())) {
+      e.preventDefault();
+      var self = this;
+      setTimeout(function () { self.startEdit(null); }, 0); // double-click; on phones a second tap
+      return;
+    }
     if (e.shiftKey) { this.sel.fr = p.r; this.sel.fc = p.c; }
     else this.sel = { ar: p.r, ac: p.c, fr: p.r, fc: p.c };
     this.dragging = !narrow();
@@ -345,7 +353,7 @@
 
   G.finishEdit = function (save) {
     var e = this.editing;
-    if (!e) return;
+    if (!e || !e.el) return;
     this.editing = null;
     var val = e.el.value;
     if (e.el.parentNode) e.el.parentNode.removeChild(e.el);
@@ -357,6 +365,7 @@
   /** Phones: a bottom sheet to edit one cell. */
   G.sheetEdit = function (initial) {
     var self = this;
+    if (this.editing) return;
     var r = this.sel.fr;
     var c = this.sel.fc;
     var why = this.canEditRow(r);
