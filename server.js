@@ -238,7 +238,7 @@ app.use((req, res, next) => {
 });
 
 // Server-side files are never served, locally or from the Vercel function.
-const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
+const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|static_cache)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
 const EDITOR_SERVER_PATH = /^\/lib\/editor(\/|$)/i; // the data editor's server code (docs/data-editor.md)
 /** True for a path that must not be served: checked on the decoded, normalised path, as the static server sees it. */
 function isPrivatePath_(rawPath) {
@@ -276,7 +276,10 @@ app.get('/performance_index', (req, res) => res.redirect(308, '/performance_inde
 // VM user store: a report page outside the signed-in user's modules is refused (docs/users.md).
 app.use((req, res, next) => reportPageGate_(req, res, next));
 // Static files are public, as on Vercel where the CDN serves them before this app; pages gate themselves with auth.js.
-app.use(express.static(__dirname));
+// Text files go out compressed (cached per file version); ?v= assets are immutable (lib/static_cache.js).
+const staticCache = require('./lib/static_cache').create({ root: __dirname });
+app.use(staticCache.middleware);
+app.use(express.static(__dirname, { cacheControl: false, setHeaders: staticCache.setHeaders }));
 
 // Session cookies are signed with JWT_SECRET; the fallback is for local development only.
 const JWT_SECRET = process.env.JWT_SECRET || 'mzo-portal-super-secret-key-123456';
