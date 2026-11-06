@@ -268,15 +268,15 @@ function compare(args) {
   const mb = (x) => (x == null ? '–' : (x / 1048576).toFixed(2));
   const s = (x) => (x == null ? '–' : (x / 1000).toFixed(1));
   const L = [`# Page speed: ${A} → ${B}`, '',
-    'Bytes over the network (MB) and requests on a cold load; time to settled content in seconds (cold / warm). Phone: 390 px, CPU 4× slower.', '',
-    '| Page | Desktop MB | Requests | Desktop cold s | Desktop warm s | Phone cold s | Phone warm s | Warm MB |', '|---|---|---|---|---|---|---|---|'];
+    'Bytes over the network (MB) and requests on a cold load; time to settled content in seconds (cold / warm); on a warm load, the bytes and the 304 revalidations. Phone: 390 px, CPU 4× slower.', '',
+    '| Page | Desktop MB | Requests | Desktop cold s | Desktop warm s | Phone cold s | Phone warm s | Warm MB | Warm 304s |', '|---|---|---|---|---|---|---|---|---|'];
   const P2 = ['', '## Number parity', '', '| Page | KPIs compared | Table rows compared | Cells | Result |', '|---|---|---|---|---|'];
   for (const k of keys) {
     const a = read(A, k), b = read(B, k);
-    if (!a || !b) { L.push(`| ${k} | missing | | | | | | |`); continue; }
+    if (!a || !b) { L.push(`| ${k} | missing | | | | | | | |`); continue; }
     const v = (r, pk, ph, f) => (r[pk] && r[pk][ph] ? r[pk][ph][f] : null);
     const pair = (fn, pk, ph, f) => `${fn(v(a, pk, ph, f))} → ${fn(v(b, pk, ph, f))}`;
-    L.push(`| ${k} | ${pair(mb, 'desktop', 'cold', 'bytes')} | ${pair(String, 'desktop', 'cold', 'requests')} | ${pair(s, 'desktop', 'cold', 'finalDataMs')} | ${pair(s, 'desktop', 'warm', 'finalDataMs')} | ${pair(s, 'phone', 'cold', 'finalDataMs')} | ${pair(s, 'phone', 'warm', 'finalDataMs')} | ${pair(mb, 'desktop', 'warm', 'bytes')} |`);
+    L.push(`| ${k} | ${pair(mb, 'desktop', 'cold', 'bytes')} | ${pair(String, 'desktop', 'cold', 'requests')} | ${pair(s, 'desktop', 'cold', 'finalDataMs')} | ${pair(s, 'desktop', 'warm', 'finalDataMs')} | ${pair(s, 'phone', 'cold', 'finalDataMs')} | ${pair(s, 'phone', 'warm', 'finalDataMs')} | ${pair(mb, 'desktop', 'warm', 'bytes')} | ${pair(String, 'desktop', 'warm', 'notModified')} |`);
     const results = [];
     for (const pk of ['desktop', 'phone']) for (const ph of ['cold', 'warm']) {
       const da = v(a, pk, ph, 'data'), db = v(b, pk, ph, 'data');
