@@ -351,6 +351,10 @@ function main() {
         eq(Y.csrf_get.status, 200, 'origin check: reads are not affected');
         for (const p of PRIVATE_PATHS) eq(Y[`private ${p}`].status, 404, `private path ${p}`);
         for (const p of PUBLIC_FILES) eq(Y[`public ${p}`].status, 200, `public file ${p}`);
+        // The pages' shared escaping helper (mzo_esc.js).
+        require(path.join(ROOT, 'mzo_esc.js'));
+        eq(globalThis.mzoEsc('<img src=x onerror="a(\'b\')">&`'), '&lt;img src=x onerror=&quot;a(&#39;b&#39;)&quot;&gt;&amp;&#96;', 'mzoEsc escapes markup and quotes');
+        eq([globalThis.mzoEsc(null), globalThis.mzoEsc(undefined), globalThis.mzoEsc(0), globalThis.mzoEsc('⬤')], ['', '', '0', '⬤'], 'mzoEsc: empty values, numbers, symbols');
         for (const [name, X] of [['short key', rot.results], ['unset', un.results]]) {
             eq(X.sync_unbilled.status, 401, `${name}: unbilled upload refused`);
             eq(X.sync_disconnection.status, 401, `${name}: disconnection upload refused`);

@@ -3,6 +3,7 @@
 
 <head>
   <script src="/mzo_theme.js?v=4"></script>
+  <script src="/mzo_esc.js?v=1"></script>
     <meta charset="UTF-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
     <title>Power Map</title>
@@ -1933,15 +1934,8 @@
             return labels[column] || column;
         }
 
-        function escapeHtml(str) {
-            if (!str) return '';
-            return String(str)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;');
-        }
+        // Sheet and table values go into popups, tooltips and icons as text (mzo_esc.js).
+        function escapeHtml(str) { return window.mzoEsc(str); }
 
         // Global variables
         const csvUrl = '/api/power-map/data';
@@ -2146,7 +2140,7 @@
             const okBtn = document.getElementById('custom-alert-ok-btn');
             
             titleEl.textContent = title;
-            bodyEl.innerHTML = body;
+            bodyEl.textContent = body;
             
             modal.classList.add('show');
             
@@ -4151,13 +4145,13 @@ out geom;`;
                         font-weight: bold; 
                         color: ${markerColor};
                         text-align: center;">
-                        ${symbol}
+                        ${escapeHtml(symbol)}
                     </div>`,
                             iconSize: iconSize,
                             iconAnchor: iconAnchor,
                         })
                     }).addTo(map)
-                        .bindTooltip(entry.Substation, { permanent: true, direction: "top", className: "leaflet-tooltip" })
+                        .bindTooltip(escapeHtml(entry.Substation), { permanent: true, direction: "top", className: "leaflet-tooltip" })
 
                     // Add a custom property to the marker for robust filtering
                     marker.options.substationName = entry.Substation.trim();
@@ -4214,7 +4208,7 @@ out geom;`;
                         ${suggestionsHtml}
                         ${canEdit ? `
                         <div style="margin-top: 8px; border-top: 1px dashed #ddd; padding-top: 6px; text-align: center;">
-                            <a href="#" onclick="openAddConnectionModal('${escapeHtml(entry.Substation)}'); return false;" style="color: #4f46e5; text-decoration: none; font-weight: 600; font-size: 11px;"><i class="fas fa-link"></i> Connect to another SS</a>
+                            <a href="#" class="add-conn-link" data-substation="${escapeHtml(entry.Substation)}" style="color: #4f46e5; text-decoration: none; font-weight: 600; font-size: 11px;"><i class="fas fa-link"></i> Connect to another SS</a>
                         </div>
                         ` : ''}
                     </div>`;
@@ -4358,7 +4352,7 @@ out geom;`;
                                         opacity: 1,
                                         interactive: false
                                     })
-                                        .setContent(routeLenDisplay)
+                                        .setContent(escapeHtml(routeLenDisplay))
                                         .setLatLng([midLat, midLng]);
 
                                     allLineLabels.push(labelTooltip);
@@ -5046,6 +5040,13 @@ out geom;`;
                     const container = e.popup.getElement();
                     if (!container) return;
                     
+                    container.querySelectorAll('.add-conn-link').forEach(link => {
+                        link.addEventListener('click', function (ev) {
+                            ev.preventDefault();
+                            openAddConnectionModal(this.getAttribute('data-substation'));
+                        });
+                    });
+
                     const editBtns = container.querySelectorAll('.edit-sub-field');
                     editBtns.forEach(btn => {
                         btn.addEventListener('click', function () {
