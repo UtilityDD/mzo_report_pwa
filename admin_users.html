@@ -3667,6 +3667,9 @@
     </div>
   </div>
 
+  <!-- VM user store additions to the user form and list (no-op unless the server says store: pocketbase) -->
+  <script src="admin_users_pb.js?v=1"></script>
+
   <!-- Delete Confirmation Modal -->
   <div id="deleteModal" class="modal-overlay" onclick="closeModalOnOverlay(event)">
     <div class="modal-card" style="max-width: 400px;">
@@ -4148,6 +4151,7 @@
         const data = await response.json();
         if (data.status === 'success') {
           usersData = data.users || [];
+          if (window.MzoUsersPb) MzoUsersPb.onList(data);
           filterUsers();
           renderApprovalsQueue();
           hideUsernameSuggestions();
@@ -4400,9 +4404,9 @@
         const isGoogle = user.auth_provider === 'google';
         const status = (user.user_status || 'active').toLowerCase();
 
-        const roleBadge = isAdmin
+        const roleBadge = (window.MzoUsersPb && MzoUsersPb.roleBadge(user)) || (isAdmin
           ? '<span class="badge badge-admin"><i class="fas fa-shield-halved"></i> Admin</span>'
-          : '<span class="badge badge-user"><i class="fas fa-user"></i> Standard</span>';
+          : '<span class="badge badge-user"><i class="fas fa-user"></i> Standard</span>');
 
         const statusBadge = status === 'pending'
           ? '<span class="badge badge-pending"><i class="fas fa-clock"></i> Pending</span>'
@@ -4474,6 +4478,7 @@
               <div class="ug-col-actions">
                 <div class="user-quick-actions">
                   <button type="button" class="btn-row-action" data-edit="${id}" title="Edit User"><i class="fas fa-pen"></i></button>
+                  ${window.MzoUsersPb ? MzoUsersPb.rowActions(user) : ''}
                   <button type="button" class="btn-row-action btn-row-del" data-delete="${id}" title="Delete User"><i class="fas fa-trash"></i></button>
                 </div>
                 <i class="fas fa-chevron-down user-chevron" aria-hidden="true" title="Click to view full user profile"></i>
@@ -5421,6 +5426,7 @@
       if (uploadListEl) uploadListEl.value = (sheetsVal === 'list' || sheetsVal === 'edit' || sheetsVal === 'y' || sheetsVal === 'all') ? 'list' : '';
       document.getElementById('zoneCodeInput').value = user.zone_code || '';
       setJurisdictionUI(user.zone_code, user.region_code, user.division_code, user.ccc_code);
+      if (window.MzoUsersPb) MzoUsersPb.fill(user);
       if (lockUsername) hideUsernameSuggestions();
     }
 
@@ -5545,6 +5551,7 @@
       const uploadListEl = document.getElementById('uploadListAuthInput');
       if (uploadListEl) uploadListEl.value = '';
       setJurisdictionUI('', '', '', '');
+      if (window.MzoUsersPb) MzoUsersPb.fill(null);
       ensureSsAuthListsReady();
       
       document.getElementById('userModal').classList.add('active');
@@ -5654,6 +5661,7 @@
         division_code: document.getElementById('divisionCodeInput').value.trim(),
         ccc_code: document.getElementById('cccCodeInput').value.trim()
       };
+      if (window.MzoUsersPb) Object.assign(userData, MzoUsersPb.extras());
 
       const url = mode === 'create' ? '/api/admin/users/create' : '/api/admin/users/update';
       
