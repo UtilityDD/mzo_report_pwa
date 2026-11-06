@@ -292,6 +292,10 @@
     body.in-workstation header {
       display: none;
     }
+    /* Data editor / Structure tabs: the embedded page gets the full width and the rest of the height */
+    .tab-content.embed-tab { padding: 0; }
+    .embed-frame { display: block; width: 100%; height: calc(100vh - 210px); height: calc(100dvh - 210px); min-height: 520px; border: 0; background: transparent; }
+    body.wide-tab .container { max-width: 100%; }
     body.in-workstation .container {
       max-width: 100%;
       padding: 12px 18px 24px;
@@ -2944,6 +2948,20 @@
         <button class="tab-btn" data-tab="correctionsTab" onclick="switchTab('correctionsTab')">
           <i class="fas fa-wrench"></i> Corrections
         </button>
+        <button class="tab-btn" data-tab="editorTab" onclick="switchTab('editorTab')">
+          <i class="fas fa-table-cells"></i> Data editor
+        </button>
+        <button class="tab-btn" data-tab="structureTab" onclick="switchTab('structureTab')">
+          <i class="fas fa-sitemap"></i> Structure
+        </button>
+      </div>
+
+      <!-- Data editor and Structure: their own pages, loaded on first open and kept while other tabs show -->
+      <div id="editorTab" class="tab-content embed-tab">
+        <iframe class="embed-frame" data-src="/editor/" title="Data editor"></iframe>
+      </div>
+      <div id="structureTab" class="tab-content embed-tab">
+        <iframe class="embed-frame" data-src="/admin.html" title="Estimate structures"></iframe>
       </div>
 
       <!-- Users Tab Content -->
@@ -3741,8 +3759,24 @@
         logs: 'logsTab',
         visitors: 'uniqueVisitorsTab',
         powermap: 'powerMapTab',
-        corrections: 'correctionsTab'
+        corrections: 'correctionsTab',
+        editor: 'editorTab',
+        structure: 'structureTab'
       };
+      // Opened from the app's Administration button (its own window): Exit closes the window.
+      if (window.name === 'mzo-admin' && window.self === window.top) {
+        const exitBtn = document.querySelector('.btn-exit');
+        if (exitBtn) {
+          exitBtn.title = 'Close the admin window';
+          exitBtn.querySelector('span').textContent = 'Close';
+          exitBtn.innerHTML = exitBtn.innerHTML.replace('fa-arrow-left', 'fa-xmark');
+          exitBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.close();
+            setTimeout(() => { location.href = '/app.html'; }, 300); // a window the browser will not close
+          });
+        }
+      }
       const tabId = tabAlias[String(requestedTab || '').toLowerCase()] || requestedTab;
       if (tabId && document.getElementById(tabId)) switchTab(tabId);
       loadUsers();
@@ -3772,6 +3806,22 @@
       }, 3500);
     }
 
+    // Open the Data editor tab at a route of its own (e.g. #/permissions?email=…).
+    function openEditorTab(hash) {
+      switchTab('editorTab');
+      const frame = document.querySelector('#editorTab iframe');
+      if (!frame) return;
+      const route = String(hash || '#/');
+      try {
+        if (frame.getAttribute('src') && frame.contentWindow && frame.contentWindow.location.pathname.indexOf('/editor/') === 0) {
+          frame.contentWindow.location.hash = route;
+          return;
+        }
+      } catch (e) {}
+      frame.setAttribute('src', '/editor/' + route);
+    }
+    window.openEditorTab = openEditorTab;
+
     // Switch between dashboard tabs
     function switchTab(tabId) {
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -3785,6 +3835,17 @@
       const panel = document.getElementById(tabId);
       if (panel) panel.classList.add('active');
       
+      const embed = panel && panel.classList.contains('embed-tab');
+      document.body.classList.toggle('wide-tab', !!embed);
+      if (embed) {
+        const frame = panel.querySelector('iframe');
+        if (frame && !frame.getAttribute('src')) frame.setAttribute('src', frame.getAttribute('data-src'));
+      }
+      // Keep the open tab in the address bar, so a reload or a shared link comes back to it.
+      const tabName = { usersTab: 'users', approvalsTab: 'approvals', sourcesTab: 'sources', logsTab: 'activity', uniqueVisitorsTab: 'visitors', powerMapTab: 'powermap', correctionsTab: 'corrections', editorTab: 'editor', structureTab: 'structure' }[tabId];
+      if (tabName && window.self === window.top) {
+        try { history.replaceState(null, '', location.pathname + '?tab=' + tabName); } catch (e) {}
+      }
       if (tabId === 'sourcesTab') {
         ensureSources();
       }

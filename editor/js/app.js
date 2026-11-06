@@ -207,7 +207,7 @@
       crumb ? h('span', { class: 'ed-crumb', text: '/ ' + crumb }) : null,
       h('span', { class: 'ed-sp' }),
       Ed.me && Ed.me.isAdmin ? h('a', { class: 'ui-btn ghost sm', href: '#/permissions', title: 'Who can edit what' }, icon('users'), h('span', { class: 'hide-sm', text: 'Permissions' })) : null,
-      h('a', { class: 'ui-btn ghost sm', href: '/app.html', title: 'Back to the reports' }, h('span', { text: 'Reports' })),
+      w.self === w.top ? h('a', { class: 'ui-btn ghost sm', href: '/app.html', title: 'Back to the reports' }, h('span', { text: 'Reports' })) : null, // inside the admin window: no way out of the frame
       themeBtn,
       Ed.me ? h('span', { class: 'ed-who', title: Ed.me.email || Ed.me.id, text: (Ed.me.name || Ed.me.id) + (Ed.me.isAdmin ? ' · admin' : '') }) : null);
     var page = h('div', { class: 'ed-page' });

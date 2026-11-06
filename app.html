@@ -1927,6 +1927,7 @@
             ['admin_visitors', 'Visitors', 'admin_users.html?tab=visitors', ''],
             ['admin_powermap', 'Power map edits', 'admin_users.html?tab=powermap', ''],
             ['admin_corrections', 'Corrections', 'admin_users.html?tab=corrections', ''],
+            ['admin_editor', 'Data editor', 'editor/', 'edit sheets datasets permissions paste'],
             ['admin_structure', 'Structure', 'admin.html', 'estimate']
           ]
         }
@@ -2092,7 +2093,13 @@
         h += '<div class="sec">Reports</div><div class="sec-gap"></div>';
         NAV.forEach(function (g) {
           if (!g.visible || !g.mods.length) return;
-          if (g.admin) h += '<div class="sec">Admin</div><div class="sec-gap"></div>';
+          if (g.admin) {
+            // Administration opens its own window (admin_users.html with every admin tool as a tab).
+            h += '<div class="sec">Admin</div><div class="sec-gap"></div>' +
+              '<div class="grp" data-g="' + g.id + '"><button type="button" class="ng" data-admin-open="1" title="Opens in a new window" data-rtip="' + esc(g.label) + ' (new window)">' +
+              icon(g.icon, 'gi') + '<span class="lbl">' + esc(g.label) + '</span>' + icon('ext', 'ic-sm chev') + '</button></div>';
+            return;
+          }
           h += '<div class="grp' + (openGroups[g.id] ? ' open' : '') + '" data-g="' + g.id + '"' + (g.hue ? ' style="--gc:var(--' + g.hue + ')"' : '') + '>' +
             '<button type="button" class="ng" aria-expanded="' + (!!openGroups[g.id]) + '" data-rtip="' + esc(g.label) + '">' + icon(g.icon, 'gi') +
             '<span class="lbl">' + esc(g.label) + '</span>' + icon('chev', 'ic-sm chev') + '</button><div class="sub">';
@@ -2136,6 +2143,7 @@
         if (addBtn) { e.preventDefault(); e.stopPropagation(); palOpen('favs'); return; }
         var favBtn = e.target.closest('[data-fav]');
         if (favBtn) { e.preventDefault(); e.stopPropagation(); toggleFav(favBtn.getAttribute('data-fav')); return; }
+        if (e.target.closest('[data-admin-open]')) { e.preventDefault(); if (isSmall()) drawer(false); hideFly(); if (!openAdmin('')) go('admin_users'); return; }
         var ng = e.target.closest('.ng');
         if (ng) {
           var gid = ng.parentNode.getAttribute('data-g');
@@ -2339,8 +2347,29 @@
         markActive(k);
       }
 
+      // The admin tools live in one separate window, named so that every admin link reuses it.
+      function adminTab(m) {
+        var u = String(m.u || '');
+        if (/^\/?editor\//.test(u)) return 'editor';
+        if (/^\/?admin\.html/.test(u)) return 'structure';
+        var t = /[?&]tab=([a-z]+)/i.exec(u);
+        return t ? t[1] : '';
+      }
+      function openAdmin(tab) {
+        var w = null;
+        try { w = window.open('/admin_users.html' + (tab ? '?tab=' + encodeURIComponent(tab) : ''), 'mzo-admin'); } catch (e) { }
+        if (!w) return false; // blocked: the caller shows it in the shell instead
+        try { w.focus(); } catch (e) { }
+        return true;
+      }
+
       function go(k, replace) {
         if (!MODS[k]) k = 'home';
+        if (MODS[k].gid === 'admin' && !replace && openAdmin(adminTab(MODS[k]))) {
+          if (isSmall()) drawer(false);
+          hideFly();
+          return;
+        }
         if (isSmall()) drawer(false);
         hideFly();
         if (k !== active) {

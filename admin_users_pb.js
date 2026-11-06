@@ -145,7 +145,9 @@
     rowActions: function (user) {
       if (!state.on || !user || !user.email) return '';
       var href = '/editor/#/permissions?email=' + encodeURIComponent(user.email);
-      return '<a class="btn-row-action" href="' + esc(href) + '" target="_blank" rel="noopener" title="Data permissions" onclick="event.stopPropagation()"><i class="fas fa-table-list"></i></a>';
+      // In the admin window this opens the Data editor tab; elsewhere a new browser tab.
+      return '<a class="btn-row-action" href="' + esc(href) + '" target="_blank" rel="noopener" title="Data permissions" data-ed-hash="' + esc(href.slice('/editor/'.length)) + '"' +
+        ' onclick="event.stopPropagation(); if (window.openEditorTab) { event.preventDefault(); window.openEditorTab(this.getAttribute(\'data-ed-hash\')); }"><i class="fas fa-table-list"></i></a>';
     },
     roleBadge: function (user) {
       if (!state.on || !user || user.role !== 'editor') return '';
