@@ -200,7 +200,10 @@ function buildOne(dir, name, opts) {
     return meta;
 }
 
-/** Rebuild every view whose inputs or code changed (or the `only` ones, or all with force). */
+/**
+ * Rebuild every view whose inputs or code changed (or the `only` ones, or all with force).
+ * planOnly: build nothing; out.built lists { name, planned } for the views that would be built.
+ */
 function buildAll(dir, opts) {
     const o = opts || {};
     const app = o.app || APP;
@@ -219,6 +222,7 @@ function buildAll(dir, opts) {
         const same = meta && meta.code === codeHash(app, name) && JSON.stringify(meta.inputs) === JSON.stringify(versions) &&
             Object.keys(meta.files || {}).every((p) => fs.existsSync(file(dir, name, p === 'main' ? '' : p)));
         if (same && !o.force) { out.fresh.push(name); continue; }
+        if (o.planOnly) { out.built.push({ name, planned: true }); continue; }
         try {
             const m = buildOne(dir, name, { app, manifest, rowsCode });
             out.built.push(m);

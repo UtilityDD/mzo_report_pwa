@@ -228,11 +228,9 @@ async function main() {
         const rows = require('child_process').spawnSync(process.execPath, ['--max-old-space-size=256', '--max-semi-space-size=4',
             path.join(__dirname, 'rows.js'), '--dir', snapshotDir, '--prune'], { stdio: 'inherit', timeout: 10 * 60000 });
         if (rows.status) log('uniform rows: exit ' + rows.status);
-        // Page views from those rows (vm/sync/lib/views.js), same rules: one child per view (each with its own
-        // capped heap, so the peak is the largest view's, about 220 MB), never failing the sync.
-        for (const name of require('./lib/views').VIEWS) {
-            if (require('child_process').spawnSync(process.execPath, ['--max-old-space-size=160', '--max-semi-space-size=4', path.join(__dirname, 'views.js'), '--dir', snapshotDir, '--only', name], { stdio: 'inherit', timeout: 10 * 60000 }).status) log(`page view ${name}: failed (see above)`);
-        }
+        // Page views from those rows (vm/sync/lib/views.js), same rules: views.js builds each stale view in a
+        // child of its own (capped heap, so the peak is the largest view's, about 220 MB); never fails the sync.
+        if (require('child_process').spawnSync(process.execPath, ['--max-old-space-size=160', '--max-semi-space-size=4', path.join(__dirname, 'views.js'), '--dir', snapshotDir], { stdio: 'inherit', timeout: 15 * 60000 }).status) log('page views: failed (see above)');
         // Performance rating from those snapshots (docs/rating/metrics-layer.md), same rules: own capped heap, never fails the sync.
         if (require('child_process').spawnSync(process.execPath, ['--max-old-space-size=160', '--max-semi-space-size=4', path.join(__dirname, 'rating.js'), '--dir', snapshotDir, '--min-minutes', '15'], { stdio: 'inherit', timeout: 10 * 60000 }).status) log('performance rating: failed (see above)');
     }
