@@ -408,10 +408,22 @@ async function syncDisconnectionPayments(options = {}) {
   console.log(`[${LABEL}] Updated ${localCsv} with latest payment statuses.`);
 
   // 5. Save detailed payment history to data/disconnection_payments.json
+  let latestPaymentDateDb2 = '';
+  let latestPaymentDateFormatted = '';
+  matchedPayments.forEach(p => {
+    if (p.lastDateDb2 && p.lastDateDb2 > latestPaymentDateDb2) {
+      latestPaymentDateDb2 = p.lastDateDb2;
+      latestPaymentDateFormatted = p.lastDateFormatted;
+    }
+  });
+
   const paymentsJsonPath = path.join(DATA_DIR, 'disconnection_payments.json');
   const paymentsObj = {
     generatedAt: new Date().toISOString(),
     cutoffDate: cutoffDateDb2,
+    cutoffDateFormatted: formatDateDb2ToDmy(cutoffDateDb2),
+    latestPaymentDate: latestPaymentDateFormatted,
+    latestPaymentDateDb2: latestPaymentDateDb2,
     totalMatched: totalMatchedCount,
     totalCollected: totalCollectionAmount,
     consumers: Object.fromEntries(matchedPayments)
@@ -428,6 +440,8 @@ async function syncDisconnectionPayments(options = {}) {
     stats: {
       totalConsumers: lines.length - 1,
       totalOSD: Math.round(totalOSD),
+      baseDate: formatDateDb2ToDmy(cutoffDateDb2),
+      lastPaymentDate: latestPaymentDateFormatted,
       fullyPaid: { count: fullyPaidCount, amount: Math.round(fullyPaidAmount) },
       partiallyPaid: { count: partiallyPaidCount, amount: Math.round(partiallyPaidAmount) },
       disconnected: { count: disconnectedCount, amount: Math.round(disconnectedOSD) },
