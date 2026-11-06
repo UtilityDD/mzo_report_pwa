@@ -155,7 +155,7 @@ One file per dataset that pages read through `MzoRows`, named by the mirror's da
 
 ## Page views
 
-Some pages join several whole datasets to show a handful of numbers. On the VM those joins run once per sync instead of in every browser: `vm/sync/views.js` (after `rows.js`, one child process per view, `--max-old-space-size=160`) reads the fresh `<key>.rows.json` files, streaming them row by row (`eachRow` in `vm/sync/lib/views.js`), and writes `<name>.view.json` (+ `.<part>.view.json`, each with `.gz`/`.br`) and `<name>.view.meta.json` next to the snapshots.
+Some pages join several whole datasets to show a handful of numbers. On the VM those joins run once per sync instead of in every browser: `vm/sync/views.js` (after `rows.js`, `--max-old-space-size=160`: it checks which views are stale and builds each in a child process of its own) reads the fresh `<key>.rows.json` files, streaming them row by row (`eachRow` in `vm/sync/lib/views.js`), and writes `<name>.view.json` (+ `.<part>.view.json`, each with `.gz`/`.br`) and `<name>.view.meta.json` next to the snapshots.
 
 | View | Page | Inputs | What the page gets instead of the datasets |
 |---|---|---|---|
@@ -168,6 +168,7 @@ Rules for a view:
 - It runs **the page's own rules** (copied with the same plain-object lookups and date handling, or evaluated from the page), and `scripts/qa/view-parity.js --snap <dir>` compares every number it feeds with the old page logic, row by row, as admin, a region and a CCC login. Office scope stays in the browser: a view holds every office's rows, like the rows cache, and the page scopes them with `MzoRows.scope`.
 - `GET /api/data/view/:name[?part=x]` (session required) serves it with an ETag, 304 and br/gzip **only while it is fresh**: every input's rows are current for the manifest and are the bytes it was built from, and its code (`vm/sync/lib/views.js`, the view's module and the files it names, e.g. the page) is the code the server runs. Otherwise, and on Vercel and locally without mirror mode, it answers 204 and the page loads and computes as before. A view with independent inputs (`partial`, the sheet links dates) is built from the inputs that are fresh; the page loads the others itself.
 - In the browser `mzo_view.js` (`MzoView.load(name, render, opts)`) paints the copy kept in IndexedDB (`MZOViews`), revalidates it by ETag and resolves `false` when the server has no view, so the page falls back.
+- A change to a view's code makes it stale until the next sync run rebuilds it (and a server started before that rebuild serves 204 for it), so after a deploy the page computes for itself for up to one sync interval.
 - Memory, measured on the 6 Nov 2026 snapshots: `meter_utilization` peaks at about 205–220 MB RSS (4.5 s), `sheet_links_dates` about 165 MB, `smart_meter` about 90 MB; the rating step stays the largest child of the sync.
 
 ## Performance budget
