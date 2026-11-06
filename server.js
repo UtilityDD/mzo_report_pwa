@@ -893,7 +893,8 @@ async function getLoginCredentials(options = {}) {
 // routes and only with that route's upload permission. Unset or shorter than 32 characters: off.
 const SYNC_UPLOAD_ROUTES = {
     '/api/unbilled/upload': { env: 'UNBILLED_SYNC_SECRET', perm: 'unbilled-sync-autho' },
-    '/api/disconnection/upload': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' }
+    '/api/disconnection/upload': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
+    '/api/disconnection/payments-upload': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' }
 };
 
 function syncKeyMatches_(given, envName) {
@@ -4030,6 +4031,7 @@ const { syncDefectiveFromCrm, isDbvisAvailable } = require('./scripts/sync/sync_
 const { syncUnbilledFromCrm } = require('./scripts/sync/sync_unbilled_from_crm');
 const { syncDisconnectionToSupabase } = require('./scripts/sync/sync_disconnection_to_supabase');
 const { syncDisconnectionFromCrm } = require('./scripts/sync/sync_disconnection_from_crm');
+const { syncDisconnectionPayments } = require('./scripts/sync/sync_disconnection_payments');
 const { syncPendingMcToSupabase } = require('./scripts/sync/sync_pending_mc_to_supabase');
 const { syncLoadExtToSupabase } = require('./scripts/sync/sync_load_ext_to_supabase');
 
@@ -4643,6 +4645,93 @@ app.post('/api/disconnection/upload', async (req, res) => {
             return res.status(500).json({ status: 'error', message: uploadErr.message });
         }
     });
+});
+
+app.options('/api/disconnection/payments', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(204).end();
+});
+
+app.get('/api/disconnection/payments', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Cache-Control', 'private, max-age=30');
+
+    const localFile = path.join(__dirname, 'data', 'disconnection_payments.json');
+    if (fs.existsSync(localFile)) {
+        return fs.createReadStream(localFile).pipe(res);
+    }
+
+    if (req.headers.host && !req.headers.host.includes('130.210.43.11')) {
+        return res.redirect(302, `${VM_BASE_URL}/api/disconnection/payments`);
+    }
+
+    res.json({ generatedAt: '', totalMatched: 0, totalCollected: 0, consumers: {} });
+});
+
+app.options('/api/disconnection/payments-upload', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-sync-key');
+    res.status(204).end();
+});
+
+app.post('/api/disconnection/payments-upload', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-sync-key');
+
+    const syncSecret = process.env.DISCONNECTION_SYNC_SECRET || 'mzo-crm-db2-sync-key-2026';
+    const headerKey = req.headers['x-sync-key'];
+    const authHeader = req.headers.authorization || '';
+    const bearerKey = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+
+    let isAuthorized = (headerKey && headerKey === syncSecret) || (bearerKey && bearerKey === syncSecret);
+    if (!isAuthorized) {
+        const user = readSession_(req);
+        if (user && canSyncDisconnection_(user)) isAuthorized = true;
+    }
+    if (!isAuthorized) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+
+    disconnectionUpload.single('file')(req, res, async (err) => {
+        if (err) return res.status(400).json({ status: 'error', message: err.message });
+        if (!req.file) return res.status(400).json({ status: 'error', message: 'No file uploaded' });
+
+        try {
+            const dataDir = path.join(__dirname, 'data');
+            fs.mkdirSync(dataDir, { recursive: true });
+            fs.writeFileSync(path.join(dataDir, 'disconnection_payments.json'), req.file.buffer);
+            return res.json({ status: 'success', message: 'Uploaded payment history directly to VM!' });
+        } catch (uploadErr) {
+            return res.status(500).json({ status: 'error', message: uploadErr.message });
+        }
+    });
+});
+
+syncRoute_('/api/disconnection/payment-sync', {
+    label: 'Disconnection Payment Sync',
+    can: canSyncDisconnection_,
+    forbidden: 'Not authorized to sync payment collections. Ask an admin to grant permission.',
+    run: async (req) => {
+        if (!isDbvisAvailable()) {
+            throw new Error('DbVisualizer CLI is not available on this server. Payment extraction must be run from an internal office workstation / VM connected to DB2.');
+        }
+        const userToken = req ? (parseCookies(req.headers.cookie).mzo_session || (req.headers.authorization && req.headers.authorization.slice(7).trim())) : null;
+        return await syncDisconnectionPayments({ fresh: true, userToken });
+    },
+    meta: DISCONNECTION_META,
+    mirrorKeys: ['disconnection'],
+    bareError: true,
+    done: (m) => ({
+        log: `Payment Synced Disconnection Tracker: ${m.matchedCount || 0} consumers matched (₹${Math.round(m.totalCollected || 0).toLocaleString('en-IN')})`,
+        message: m.message || 'Payment sync complete!'
+    })
 });
 
 syncRoute_('/api/disconnection/crm-sync', {

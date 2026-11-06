@@ -234,6 +234,8 @@
     .dc-status { margin: 8px 16px 0; display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
     .dc-prog { width: 140px; height: 6px; background: var(--mzo-border); border-radius: 99px; overflow: hidden; }
     .dc-prog b { display: block; height: 100%; width: 0; background: var(--mzo-brand); transition: width .3s ease; }
+    #table tbody tr { cursor: pointer; transition: background 0.15s; }
+    #table tbody tr:hover { background: var(--mzo-surface-sunken, rgba(0, 0, 0, 0.03)); }
   </style>
 </head>
 
@@ -249,9 +251,7 @@
             <use href="#ui-filter" />
           </svg>Filters<span id="activeCount"></span></button>
         <button type="button" class="ui-btn" id="crmSyncBtn" hidden title="Direct extraction from IBM DB2"><svg class="ui-i"><use href="#ui-sync"/></svg>Sync from DB2</button>
-        <button type="button" class="ui-btn" id="syncBtn" hidden><svg class="ui-i">
-            <use href="#ui-sync" />
-          </svg>Sync sheet</button>
+        <button type="button" class="ui-btn" id="crmPaySyncBtn" hidden title="Sync daily payment collections from IBM DB2"><svg class="ui-i"><use href="#ui-sync"/></svg>Sync Payments</button>
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg
             class="ui-i">
             <use href="#ui-refresh" />
@@ -384,7 +384,24 @@
         return '';
       }
       var GOOGLE_CSV = '/api/disconnection/dataset';
-      var GOOGLE_FALLBACK = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv';
+      var paymentsMap = {}, lastTableDoc = null;
+      function loadPayments() {
+        var base = getApiBase();
+        fetch((base ? base : '') + '/api/disconnection/payments')
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (json) {
+            if (json && json.consumers) {
+              paymentsMap = json.consumers;
+              if (lastTableDoc) {
+                prepare(lastTableDoc);
+                render({ keepPage: true });
+              }
+              refreshOpenDrawer();
+            }
+          })
+          .catch(function () {});
+      }
+      loadPayments();
       var STATUS = {
         'Fully Paid': { label: 'Fully paid', cls: 'ok' },
         'Partially Paid': { label: 'Part paid', cls: '' },
@@ -491,6 +508,20 @@
           var act = actionDate(row), hasDate = !!act, dateStr = act ? act.str : '', dateObj = act ? act.obj : null;
           var paidStr = rawOf(row, 'final_paid_amount');
           var hasPaid = paidStr !== '' && paidStr.toLowerCase() !== '#n/a' && paidStr !== '0';
+
+          var norm = String(row.con_id || '').replace(/^0+/, '');
+          var pInfo = paymentsMap && (paymentsMap[norm] || paymentsMap[row.con_id]);
+          if (pInfo && pInfo.totalPaid > 0) {
+            paid = pInfo.totalPaid;
+            hasPaid = true;
+            if (pInfo.lastDateFormatted) {
+              hasDate = true;
+              dateStr = pInfo.lastDateFormatted;
+              var pts = dateStr.split('.');
+              if (pts.length === 3) dateObj = new Date(parseInt(pts[2], 10), parseInt(pts[1], 10) - 1, parseInt(pts[0], 10));
+            }
+          }
+
           var status = !hasDate ? 'No Action Taken' : !hasPaid ? 'Disconnected' : paid >= osd ? 'Fully Paid' : 'Partially Paid';
           return {
             id: row.con_id || 'synthetic-' + t.all.indexOf(row),
@@ -500,6 +531,7 @@
             CCC_CODE: code, cccCode: code,
             _region: o.region || 'Unmapped', _divn: o.division || 'Unmapped', _supp: o.ccc || 'Unmapped',
             osd: osd, paid: paid,
+            balance: Math.max(0, osd - paid),
             dateStr: hasDate ? dateStr : '', dateObj: dateObj,
             remarks: row.remarks || '', // no REMARKS / TARIFF CLASS column in the sheet today (schema notes)
             status: status,
@@ -636,9 +668,18 @@
         { key: '_supp', label: 'CCC', fmt: function (v, c) { return UI.esc(v) + '<span class="sub">' + UI.esc(c._divn) + '</span>'; } },
         { key: 'classDesc', label: 'Class', hideSm: true, fmt: function (v) { return v ? UI.esc(UI.title(v)) : '—'; } },
         { key: 'osd', label: 'OSD', num: true, fmt: rupees },
-        { key: 'paid', label: 'Paid', num: true, hideSm: true, fmt: function (v) { return v > 0 ? rupees(v) : '<span class="ui-muted">—</span>'; } },
-        { key: 'dateStr', label: 'Action date', num: true, hideSm: true, sortVal: function (c) { return c.dateObj ? c.dateObj.getTime() : 0; }, fmt: function (_, c) { return c.dateObj ? UI.fmtDate(c.dateObj) : '<span class="ui-muted">—</span>'; } },
-        { key: 'status', label: 'Status', fmt: function (v) { return '<span class="ui-badge ' + STATUS[v].cls + '">' + STATUS[v].label + '</span>'; } },
+        { key: 'paid', label: 'Paid', num: true, hideSm: true, sortVal: function (c) { return c.paid || 0; }, fmt: function (v, c) {
+          if (!v || v <= 0) return '<span class="ui-muted">—</span>';
+          var isFull = c.status === 'Fully Paid' || v >= c.osd;
+          return '<span class="ui-badge sm ' + (isFull ? 'ok' : '') + '">' + rupees(v) + '</span>';
+        } },
+        { key: 'balance', label: 'Balance', num: true, hideSm: true, sortVal: function (c) { return c.balance != null ? c.balance : Math.max(0, c.osd - (c.paid || 0)); }, fmt: function (_, c) {
+          var bal = c.balance != null ? c.balance : Math.max(0, c.osd - (c.paid || 0));
+          if (c.status === 'Fully Paid' || bal === 0) return '<span class="ui-badge sm ok">₹0</span>';
+          return rupees(bal);
+        } },
+        { key: 'dateStr', label: 'Paid/action date', num: true, hideSm: true, sortVal: function (c) { return c.dateObj ? c.dateObj.getTime() : 0; }, fmt: function (_, c) { return c.dateObj ? UI.fmtDate(c.dateObj) : '<span class="ui-muted">—</span>'; } },
+        { key: 'status', label: 'Status', fmt: function (v) { return '<span class="ui-badge ' + (STATUS[v] ? STATUS[v].cls : '') + '">' + (STATUS[v] ? STATUS[v].label : v) + '</span>'; } },
         { key: 'notes', label: 'Notes', num: true, hideSm: true, sortVal: function (c) { return noteCounts[fuKey(c.id)] || 0; }, fmt: function (_, c) { var n = noteCounts[fuKey(c.id)]; return n ? UI.n(n) : ''; } }
       ];
       var noteCounts = {};
@@ -999,6 +1040,27 @@
         $('dTitle').textContent = c.display || c.id;
         $('dSub').textContent = c.id + ' · ' + [c._supp, c._divn].filter(function (x) { return x && x !== 'Unmapped'; }).join(', ');
         var exact = function (v) { return '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+        var normId = String(c.id || '').replace(/^0+/, '');
+        var payInfo = paymentsMap && (paymentsMap[normId] || paymentsMap[c.id]);
+        var paymentHistoryHtml = '';
+        if (payInfo && payInfo.items && payInfo.items.length) {
+          paymentHistoryHtml =
+            '<section style="margin:12px 20px 8px;padding:12px;border-radius:8px;background:var(--mzo-surface-sunken, #f8fafc);border:1px solid var(--mzo-border);">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+            '<h4 style="margin:0;font-size:12.5px;font-weight:600;">DB2 Collection History (' + payInfo.items.length + ')</h4>' +
+            '<span class="ui-badge ok" style="font-size:11px;">Total: ' + exact(payInfo.totalPaid) + '</span>' +
+            '</div>' +
+            '<div style="overflow-x:auto;">' +
+            '<table class="ui-table" style="font-size:11.5px;width:100%;">' +
+            '<thead><tr><th>Date</th><th>Amount</th><th>Receipt / Ref</th><th>Mode</th></tr></thead>' +
+            '<tbody>' +
+            payInfo.items.map(function (it) {
+              return '<tr><td>' + UI.esc(it.date || it.dateRaw) + '</td><td style="font-weight:600;">' + exact(it.amount) + '</td><td><small>' + UI.esc(it.receipt || '—') + '</small></td><td><span class="ui-badge sm">' + UI.esc(it.mode || 'Revenue') + '</span></td></tr>';
+            }).join('') +
+            '</tbody></table></div></section>';
+        }
+
+        var bal = Math.max(0, c.osd - (c.paid || 0));
         var pairs = [
           ['Address', c.address], ['Office', [c._region, c._divn, c._supp].join(' › ')], ['CCC code', c.cccCode],
           ['Class', c.classDesc ? UI.title(c.classDesc) : ''], ['Tariff', c.tariff], ['Meter', c.meter], ['MRU', c.mru],
@@ -1012,10 +1074,12 @@
           '<div class="dc-sum">' +
           '<div><div class="k">Status</div><div class="v"><span class="ui-badge ' + s.cls + '">' + s.label + '</span></div></div>' +
           '<div><div class="k">Outstanding</div><div class="v">' + exact(c.osd) + '</div></div>' +
-          '<div><div class="k">' + (c.status === 'Disconnected' ? 'Disconnected on' : 'Paid') + '</div><div class="v">' + (c.status === 'Disconnected' ? UI.esc(c.dateObj ? UI.fmtDate(c.dateObj) : '—') : (c.paid > 0 ? exact(c.paid) : '—')) + '</div></div>' +
+          '<div><div class="k">' + (c.status === 'Disconnected' ? 'Disconnected on' : 'Total Paid') + '</div><div class="v">' + (c.status === 'Disconnected' ? UI.esc(c.dateObj ? UI.fmtDate(c.dateObj) : '—') : (c.paid > 0 ? exact(c.paid) : '—')) + '</div></div>' +
+          (c.paid > 0 && bal > 0 ? '<div><div class="k">Balance Due</div><div class="v" style="color:var(--mzo-danger, #ef4444);">' + exact(bal) + '</div></div>' : '') +
           '</div>' +
-          (c.dateObj && c.status !== 'Disconnected' ? '<p class="ui-note" style="margin:8px 20px 0">Action date ' + UI.fmtDate(c.dateObj) + '</p>' : '') +
+          (c.dateObj && c.status !== 'Disconnected' ? '<p class="ui-note" style="margin:8px 20px 0">Latest Payment: ' + UI.fmtDate(c.dateObj) + '</p>' : '') +
           (opts.missing ? '<p class="ui-note" style="margin:8px 20px 0">This consumer number is not in the current file. Follow-ups stay with this number.</p>' : '') +
+          paymentHistoryHtml +
           '<dl class="ui-dl">' + pairs.map(function (p) { return '<dt>' + UI.esc(p[0]) + '</dt><dd>' + UI.esc(p[1]) + '</dd>'; }).join('') + '</dl>' +
           '<section class="dc-fu"><div class="dc-fu-h"><h4>Follow-ups <span class="ui-badge ok" id="fuUpdated" hidden>Updated</span></h4><span class="ui-note" id="fuCount">' + UI.esc(fuCountLabel(c.id)) + '</span></div>' +
           '<div class="dc-fu-list" id="fuList">' + fuListHtml(c.id) + '</div>' + composer + '</section>';
@@ -1127,8 +1191,8 @@
       // Sync buttons authorization
       metaP.then(function (m) {
         if (!m) return;
-        if (m.canSync) $('syncBtn').hidden = false;
         if ($('crmSyncBtn')) $('crmSyncBtn').hidden = !(m.canCrmSync || m.canSync);
+        if ($('crmPaySyncBtn')) $('crmPaySyncBtn').hidden = !(m.canCrmSync || m.canSync);
       });
 
       // Direct CRM Extraction & Sync from IBM DB2
@@ -1175,25 +1239,50 @@
         });
       }
 
-      // Sync from the Google Sheet to the cloud cache (Admin, dm1, disconnection-sync-autho).
-      $('syncBtn').addEventListener('click', function () {
-        if (!confirm('Sync the latest disconnection data from the Google Sheet to the cloud cache?\n\n(গুগল শিট থেকে ক্লাউড ক্যাশে নতুন ডেটা সিঙ্ক করবেন?)')) return;
-        var b = this; b.disabled = true; b.classList.add('spin');
-        fetch('/api/disconnection/sync', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' } })
-          .then(function (r) {
-            return r.text().then(function (t) {
-              var d; try { d = JSON.parse(t); } catch (e) { throw new Error(r.status === 401 ? 'Session expired. Please sign in again.' : 'Server returned HTTP ' + r.status); }
-              if (!r.ok || d.status !== 'success') throw new Error(d.message || 'HTTP ' + r.status);
-              return d;
+      // Direct Payment Collection Sync from IBM DB2 (ISUDATA.WBSEDCL_DAILY_COLLECTIONS)
+      if ($('crmPaySyncBtn')) {
+        $('crmPaySyncBtn').addEventListener('click', function () {
+          if (!confirm('Directly collect the latest daily payments from IBM DB2 and update payment status on the Oracle Cloud VM?\n\nThis queries DB2 daily collections across divisions and updates OSD balances directly on the VM.\n(সরাসরি IBM DB2 থেকে দৈনিক কালেকশন ডেটা নিয়ে VM-এ পেমেন্ট স্ট্যাটাস আপডেট করবেন?)')) return;
+          var b = this; b.disabled = true; b.classList.add('spin');
+          var st = $('status'), stText = $('statusText'), stBar = $('statusBar');
+          if (st) {
+            st.hidden = false;
+            stText.textContent = 'Querying daily collections from IBM DB2 across divisions and updating VM...';
+            stBar.style.width = '35%';
+          }
+
+          fetch('/api/disconnection/payment-sync', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
+          })
+            .then(function (r) {
+              return r.text().then(function (t) {
+                var d; try { d = JSON.parse(t); } catch (e) { throw new Error(r.status === 401 ? 'Session expired. Please sign in again.' : 'Server returned HTTP ' + r.status); }
+                if (!r.ok || d.status !== 'success') throw new Error(d.message || 'HTTP ' + r.status);
+                return d;
+              });
+            })
+            .then(function (res) {
+              b.disabled = false; b.classList.remove('spin');
+              if (st) {
+                stBar.style.width = '100%';
+                stText.textContent = res.message || 'Payment sync complete!';
+              }
+              UI.toast(res.message || 'Payments collected from DB2 and updated on VM!');
+              setTimeout(function () {
+                if (st) st.hidden = true;
+                loadPayments();
+                MzoRows.reload(ROWS).then(reparse);
+              }, 1200);
+            })
+            .catch(function (err) {
+              b.disabled = false; b.classList.remove('spin');
+              if (st) st.hidden = true;
+              alert('Payment Sync failed: ' + (err.message || err));
             });
-          })
-          .then(function (d) {
-            UI.toast(d.message || 'Synced from the sheet');
-            return MzoRows.reload(ROWS).then(reparse);
-          })
-          .catch(function (e) { alert('Sync failed: ' + (e.message || e)); })
-          .then(function () { b.disabled = false; b.classList.remove('spin'); });
-      });
+        });
+      }
 
       // Numbers from meta while the consumer file downloads.
       metaP.then(function (m) {
@@ -1211,6 +1300,7 @@
 
       var params = new URLSearchParams(location.search), first = true, rescued = false;
       function onData(t) {
+        lastTableDoc = t;
         prepare(t);
         if (first) {
           first = false;
@@ -1233,15 +1323,13 @@
         t.issues.forEach(function (x) { if (x.check === 'header.missing') miss[x.column] = 1; });
         return !!(miss.con_id && miss.ccc_code);
       }
-      // Last resort when no rows could be loaded (or their header was broken): meta csvUrl (VM snapshot / Supabase
-      // Storage) or the published sheet, its header row found, turned into rows in this browser.
+      // Direct load from Oracle Cloud VM dataset endpoint
       function fallback() {
         return metaP.then(function (m) {
-          var target = (m && m.csvUrl) || (getApiBase() ? getApiBase() + '/api/disconnection/dataset' : GOOGLE_CSV);
+          var target = getApiBase() ? (getApiBase() + '/api/disconnection/dataset') : ((m && m.datasetUrl) || (m && m.csvUrl) || GOOGLE_CSV);
           return (window.mzoMirror ? mzoMirror.fetch : fetch)(target)
             .then(function (r) {
               if (!r.ok && getApiBase()) return fetch(getApiBase() + '/api/disconnection/dataset');
-              if (!r.ok) return fetch(GOOGLE_FALLBACK);
               return r;
             });
         })
@@ -1251,7 +1339,7 @@
           .catch(function () {
             if (haveData) return;
             $('asOn').textContent = 'No data';
-            $('table').innerHTML = '<div class="ui-empty">Could not load data. <button type="button" class="ui-btn sm" onclick="location.reload()">Retry</button></div>';
+            $('table').innerHTML = '<div class="ui-empty">Could not load disconnection dataset from VM. <button type="button" class="ui-btn sm" onclick="location.reload()">Retry</button></div>';
           });
       }
       MzoRows.load(ROWS, function (t, info) {
