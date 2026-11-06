@@ -10,6 +10,8 @@
 #                            in the package; repeatable. Values are never printed, only their key.
 #   --allow-key KEY          with --secrets-from: report a match of this key's value instead of
 #                            failing (for values that are public by design); repeatable.
+#   --include-key FILE       add this ssh private key as access/vm-ssh.key, with access/README.md,
+#                            after the secret scan (the owner's choice to hand over VM access)
 #   --keep                   keep the staging folder and print its path
 #   -h, --help               this text
 #
@@ -21,6 +23,7 @@ ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 REF=develop
 OUT=""
 KEEP=0
+KEY_FILE=""
 SECRET_FILES=()
 ALLOW_KEYS=()
 
@@ -30,6 +33,7 @@ while [ $# -gt 0 ]; do
     -o|--out) OUT="${2:?--out needs a file}"; shift 2 ;;
     --secrets-from) SECRET_FILES+=("${2:?--secrets-from needs a file}"); shift 2 ;;
     --allow-key) ALLOW_KEYS+=("${2:?--allow-key needs a key name}"); shift 2 ;;
+    --include-key) KEY_FILE="${2:?--include-key needs a file}"; shift 2 ;;
     --keep) KEEP=1; shift ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -39,6 +43,10 @@ done
 [ -n "$OUT" ] || OUT="$(cd "$ROOT/.." && pwd)/vm-handoff.zip"
 case "$OUT" in /*) ;; *) OUT="$PWD/$OUT" ;; esac
 for f in ${SECRET_FILES[@]+"${SECRET_FILES[@]}"}; do [ -r "$f" ] || { echo "cannot read $f" >&2; exit 2; }; done
+if [ -n "$KEY_FILE" ]; then
+  [ -r "$KEY_FILE" ] || { echo "cannot read $KEY_FILE" >&2; exit 2; }
+  grep -q 'PRIVATE KEY-----' "$KEY_FILE" || { echo "$KEY_FILE is not a private key" >&2; exit 2; }
+fi
 for tool in git zip node; do command -v "$tool" >/dev/null || { echo "$tool is required" >&2; exit 2; }; done
 
 SHA="$(git -C "$ROOT" rev-parse --verify "$REF^{commit}")"
@@ -205,6 +213,31 @@ console.log('Secret scan clean.');
 JS
 then
   exit 1
+fi
+
+# 4b. VM access, only when asked for: the key goes in after the scan (the scan would refuse it).
+if [ -n "$KEY_FILE" ]; then
+  mkdir -p "$PKG/access"
+  cp "$KEY_FILE" "$PKG/access/vm-ssh.key"
+  chmod 600 "$PKG/access/vm-ssh.key"
+  cat > "$PKG/access/README.md" <<'MD'
+# VM access
+
+`vm-ssh.key` is the private ssh key for the VM's `opc` account (passwordless sudo, so full control
+of the VM, including `/etc/mzo` with the app's secrets). Keep it private and never commit it.
+
+```sh
+chmod 600 access/vm-ssh.key
+ssh -i access/vm-ssh.key opc@130.210.43.11
+```
+
+Before changing anything on the VM, read START_HERE.md, section "Hosting" (deploy flow, paths,
+units). Code reaches the VM by pushing to `develop`: the VM pulls it within about a minute and
+replaces `/opt/mzo/app`, so never edit files there by hand. Check https://130.210.43.11.sslip.io/deploy.json.
+Do not run `dnf` (the VM is short of memory).
+MD
+  { printf '> **VM access:** the ssh key is included in `access/` (see access/README.md).\n\n'; cat "$PKG/START_HERE.md"; } > "$STAGE/sh.md"
+  mv "$STAGE/sh.md" "$PKG/START_HERE.md"
 fi
 
 # 5. Zip: fixed timestamps (commit time), sorted names, no extra attributes.

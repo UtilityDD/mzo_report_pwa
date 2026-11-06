@@ -293,11 +293,11 @@ New pages also go into `isNetworkFirstPath` in `sw.js`; a new folder needs a sta
 
 <!-- handoff:wip:start — update this section when the features below are merged -->
 
-> **Status: landing now (November 2026).** Three features are being merged into `develop`. Once merged, their own docs describe them: `docs/users.md` (user system) and `docs/data-editor.md` (data editor). Until then, treat this section as a preview.
+> **Status (6 Nov 2026):** the user system and the Sources tab are live on the VM (release 3.24). The data editor is still being built.
 
-- **VM user system on PocketBase.** A new user system for the VM only, kept in PocketBase. It is a fresh start (no import of the Supabase users): an admin seeds the accounts, and users sign in with Google. Vercel keeps the existing Supabase sign-in. See `docs/users.md` once merged.
-- **Admin → Sources provenance tab.** An admin tab that shows, for each report, where its data comes from (the provenance described in section 3). See the admin docs once merged.
-- **Data editor at `/editor/`.** A website to view and edit datasets with per-dataset permissions, in two modes: *mirror* datasets (copies of a Google sheet or Supabase table) and *native* datasets (whose master copy lives in PocketBase). See `docs/data-editor.md` once merged.
+- **VM user system on PocketBase (live).** VM only, behind `MZO_USER_STORE=pocketbase` (set in `vm/deploy/systemd/mzo-reports.service`). A fresh start: no Supabase users were imported. The built-in admins (`lib/users_store.js`, or `MZO_ADMIN_EMAILS`) are seeded at every start. Everyone else signs in with Google, lands on the waiting-for-approval screen, and an admin approves them with a role, office scope and report list in Admin → Users. Vercel keeps the Supabase sign-in. Schema and flows: [users.md](users.md).
+- **Admin → Sources (live).** For every dataset and every menu report: where the data comes from, how often it refreshes, when it was last checked, copied and changed, whether it is overdue, and sync errors. Endpoint `GET /api/admin/sources-info` (`lib/sources_info.js`, live-only items in `lib/sources_live.js`). See [data-mirror.md](data-mirror.md).
+- **Data editor at `/editor/` (in progress).** View and edit datasets with per-user, per-dataset permissions, paste from Google Sheets with a preview, history and undo. Datasets are *mirror* (read-only, the master is the Google sheet or Supabase) until an admin switches one to *native* (the master copy lives in PocketBase and the sync stops refreshing it). See `docs/data-editor.md` once merged.
 
 <!-- handoff:wip:end -->
 
