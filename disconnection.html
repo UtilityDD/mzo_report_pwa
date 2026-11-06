@@ -377,13 +377,6 @@
       'use strict';
       var $ = function (id) { return document.getElementById(id); };
       var ROWS = 'disconnection';
-      var VM_ORIGIN = 'https://130.210.43.11.sslip.io';
-      function getApiBase() {
-        if (location.hostname.includes('vercel.app')) {
-          return VM_ORIGIN;
-        }
-        return '';
-      }
       var GOOGLE_CSV = '/api/disconnection/dataset';
       var paymentsMap = {}, lastTableDoc = null;
 
@@ -406,17 +399,9 @@
       }
 
       function loadPayments() {
-        var base = getApiBase();
-        var url = (base ? base : '') + '/api/disconnection/payments';
-        fetch(url, { headers: { Accept: 'application/json' } })
-          .then(function (r) {
-            if (r.ok) return r.json();
-            if (!base && VM_ORIGIN) {
-              return fetch(VM_ORIGIN + '/api/disconnection/payments', { headers: { Accept: 'application/json' } })
-                .then(function (r2) { return r2.ok ? r2.json() : null; });
-            }
-            return null;
-          })
+        // Same origin only: off the VM the server fetches the VM's copy itself.
+        fetch('/api/disconnection/payments', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+          .then(function (r) { return r.ok ? r.json() : null; })
           .then(function (json) {
             if (json) {
               if (json.consumers) paymentsMap = json.consumers;
@@ -449,20 +434,8 @@
       var followupRecentOnly = false, haveData = false;
 
       var metaP = fetch('/api/disconnection/meta', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-        .then(function (r) {
-          if (r.ok) return r.json();
-          if (getApiBase()) {
-            return fetch(getApiBase() + '/api/disconnection/meta', { headers: { Accept: 'application/json' } })
-              .then(function (r2) { return r2.ok ? r2.json() : null; });
-          }
-          return null;
-        }).catch(function () {
-          if (getApiBase()) {
-            return fetch(getApiBase() + '/api/disconnection/meta', { headers: { Accept: 'application/json' } })
-              .then(function (r2) { return r2.ok ? r2.json() : null; }).catch(function () { return null; });
-          }
-          return null;
-        });
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .catch(function () { return null; });
 
       /* ------------------------------------------------------------------ parsing */
 
@@ -1372,15 +1345,11 @@
         t.issues.forEach(function (x) { if (x.check === 'header.missing') miss[x.column] = 1; });
         return !!(miss.con_id && miss.ccc_code);
       }
-      // Direct load from Oracle Cloud VM dataset endpoint
+      // The server's dataset route (same origin; off the VM the server fetches the VM's copy)
       function fallback() {
         return metaP.then(function (m) {
-          var target = getApiBase() ? (getApiBase() + '/api/disconnection/dataset') : ((m && m.datasetUrl) || (m && m.csvUrl) || GOOGLE_CSV);
-          return (window.mzoMirror ? mzoMirror.fetch : fetch)(target)
-            .then(function (r) {
-              if (!r.ok && getApiBase()) return fetch(getApiBase() + '/api/disconnection/dataset');
-              return r;
-            });
+          var target = (m && m.datasetUrl) || (m && m.csvUrl) || GOOGLE_CSV;
+          return (window.mzoMirror ? mzoMirror.fetch : fetch)(target, { credentials: 'same-origin' });
         })
           .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
           .then(function (text) { return fetch('/schema/' + ROWS + '.json', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (schema) { return MzoRows._compute(normalizeCsv(text), { key: ROWS, version: 'fallback', format: 'csv', schema: schema }); }); })

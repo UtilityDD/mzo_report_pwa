@@ -51,6 +51,8 @@ async function child(out) {
     fs.writeFileSync = (p, ...a) => writeFileSync(inData(p) ? moved(p) : p, ...a);
     fs.mkdirSync = (p, ...a) => (inData(p) ? undefined : mkdirSync(p, ...a));
     fs.readFileSync = (p, ...a) => readFileSync(inData(p) && fs.existsSync(moved(p)) ? moved(p) : p, ...a);
+    // The server's data folder (uploaded datasets and their meta) is the empty sandbox, not a checkout's data/.
+    process.env.MZO_FILES_DIR = sandbox;
 
     // Simulated clock (minutes go by in milliseconds).
     let offset = 0;

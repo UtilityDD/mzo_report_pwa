@@ -206,7 +206,26 @@ const fetch = proxyFetch_;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DATA_DIR = path.join(__dirname, 'data');
+// Files the app writes and reads at run time (uploaded datasets, their meta, local caches).
+// MZO_FILES_DIR on the VM (/opt/mzo/data/files, set in mzo-reports.service) is outside the release
+// folder, so a deploy never replaces it; locally it defaults to the git-ignored data/ folder.
+// Repo lookups that ship with the code (data/costcenter.json, data/structure.csv) are not here.
+const DATA_DIR = path.resolve(process.env.MZO_FILES_DIR || path.join(__dirname, 'data'));
+
+/** Write a file in DATA_DIR atomically (temp file in the same folder, then rename), readable by the app user only. */
+function writeDataFile_(name, data) {
+    const file = path.join(DATA_DIR, name);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = `${file}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+    try {
+        fs.writeFileSync(tmp, data, { mode: 0o600 });
+        fs.renameSync(tmp, file);
+    } catch (err) {
+        try { fs.unlinkSync(tmp); } catch (_) { /* never written */ }
+        throw err;
+    }
+    return file;
+}
 
 // Body parsers (limits raised for NSC/stock publish payloads)
 app.use(express.json({ limit: '5mb' }));
@@ -811,7 +830,7 @@ async function logActivity(activity) {
             if (!fs.existsSync(dataDir)) {
                 fs.mkdirSync(dataDir, { recursive: true });
             }
-            fs.writeFileSync(LOGS_FILE, JSON.stringify(globalCachedLogs, null, 2), 'utf-8');
+            writeDataFile_(path.basename(LOGS_FILE), JSON.stringify(globalCachedLogs, null, 2));
         } catch (writeErr) {
             // Fail silently on read-only serverless filesystems
         }
@@ -904,9 +923,24 @@ function syncKeyMatches_(given, envName) {
     return crypto.timingSafeEqual(digest(given.trim()), digest(secret));
 }
 
-/** The upload identity for a valid x-sync-key on a sync upload route, else null. */
+// The same keys also read back the datasets those scripts upload (GET only, these routes only): the
+// payment sync reads the current disconnection list, and a non-VM server (Vercel, a workstation)
+// fetches the VM's copy server-side for its signed-in user (fromVm_ below).
+const SYNC_READ_ROUTES = {
+    '/api/disconnection/dataset': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
+    '/api/disconnection/payments': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
+    '/api/disconnection/meta': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
+    '/api/unbilled/outsort': { env: 'UNBILLED_SYNC_SECRET', perm: 'unbilled-sync-autho' },
+    '/api/unbilled/chronic': { env: 'UNBILLED_SYNC_SECRET', perm: 'unbilled-sync-autho' },
+    '/api/unbilled/summary': { env: 'UNBILLED_SYNC_SECRET', perm: 'unbilled-sync-autho' },
+    '/api/unbilled/meta': { env: 'UNBILLED_SYNC_SECRET', perm: 'unbilled-sync-autho' }
+};
+
+/** The upload identity for a valid x-sync-key on a sync upload (or read-back) route, else null. */
 function syncAgentFor_(req) {
-    const route = req.method === 'POST' ? SYNC_UPLOAD_ROUTES[req.path] : null;
+    let route = null;
+    if (req.method === 'POST') route = SYNC_UPLOAD_ROUTES[req.path];
+    else if (req.method === 'GET' || req.method === 'HEAD') route = SYNC_READ_ROUTES[req.path];
     if (!route || !syncKeyMatches_(req.headers['x-sync-key'], route.env)) return null;
     return { Username: 'db2_sync_agent', username: 'db2_sync_agent', Name: 'DB2 CRM sync', role: 'sync', [route.perm]: 'Y' };
 }
@@ -941,8 +975,7 @@ function readSession_(req) {
 // Reachable without a session (static files are already served above).
 const PUBLIC_PATHS = new Set([
     '/login.html', '/offline.html', '/sw.js', '/manifest.json',
-    '/api/auth/google', '/api/auth/local', '/api/auth/pending-status', '/api/auth/config', '/api/news',
-    '/api/disconnection/payments', '/api/disconnection/meta', '/api/disconnection/dataset'
+    '/api/auth/google', '/api/auth/local', '/api/auth/pending-status', '/api/auth/config', '/api/news'
 ]);
 const PUBLIC_ASSET = /^\/(icons|assets)\/|\.(css|js|png|json|ico)$/i;
 
@@ -3289,7 +3322,7 @@ function readLocalNscMeta_() {
 function writeLocalNscMeta_(meta) {
     try {
         ensureDataDir_();
-        fs.writeFileSync(NSC_META_FILE, JSON.stringify(meta, null, 2), 'utf8');
+        writeDataFile_(path.basename(NSC_META_FILE), JSON.stringify(meta, null, 2));
     } catch (e) {
         console.warn('[NSC] Local meta not saved:', e.message);
     }
@@ -3672,8 +3705,8 @@ function readLocalStockMeta_() {
 function writeLocalStockBackup_(csv, meta) {
     try {
         ensureDataDir_();
-        fs.writeFileSync(STOCK_CSV_FILE, csv, 'utf8');
-        fs.writeFileSync(STOCK_META_FILE, JSON.stringify(meta, null, 2), 'utf8');
+        writeDataFile_(path.basename(STOCK_CSV_FILE), csv);
+        writeDataFile_(path.basename(STOCK_META_FILE), JSON.stringify(meta, null, 2));
         return true;
     } catch (e) {
         if (e && (e.code === 'EROFS' || e.code === 'EACCES' || /read-only/i.test(e.message))) {
@@ -4236,6 +4269,43 @@ function canManageUnbilled_(user) {
 }
 
 const VM_BASE_URL = 'https://130.210.43.11.sslip.io';
+const isVmHost_ = (req) => Boolean(req.headers.host && req.headers.host.includes('130.210.43.11'));
+
+/**
+ * Off the VM (Vercel, a workstation) with no local copy: fetch the VM's copy of a sync dataset
+ * server-side with that route's sync key (SYNC_READ_ROUTES) and send it to this signed-in user.
+ * Resolves false (nothing sent) on the VM or when the key is not set here.
+ */
+async function fromVm_(req, res, route, contentType) {
+    const spec = SYNC_READ_ROUTES[route];
+    const key = spec ? String(process.env[spec.env] || '').trim() : '';
+    if (!key || isVmHost_(req) || mirror.on()) return false;
+    try {
+        const r = await fetch(`${VM_BASE_URL}${route}`, { headers: { 'x-sync-key': key, Accept: contentType }, timeout: 30000 });
+        if (!r.ok) {
+            res.status(r.status === 404 ? 404 : 502).json({ status: 'error', message: `The server copy answered ${r.status}` });
+            return true;
+        }
+        res.setHeader('Content-Type', r.headers.get('content-type') || contentType);
+        res.send(await r.text());
+    } catch (err) {
+        res.status(502).json({ status: 'error', message: 'The server copy is not reachable' });
+    }
+    return true;
+}
+
+/** JSON of the VM's copy (a meta route), fetched server-side with the sync key; null when unavailable. */
+async function vmJson_(route) {
+    const spec = SYNC_READ_ROUTES[route];
+    const key = spec ? String(process.env[spec.env] || '').trim() : '';
+    if (!key || mirror.on()) return null;
+    try {
+        const r = await fetch(`${VM_BASE_URL}${route}`, { headers: { 'x-sync-key': key, Accept: 'application/json' }, timeout: 8000 });
+        return r.ok ? await r.json() : null;
+    } catch (_) {
+        return null;
+    }
+}
 
 function parseCsvCountsAndDate_(filePath) {
     if (!fs.existsSync(filePath)) return { count: 0, baselineDate: '' };
@@ -4352,23 +4422,20 @@ app.post('/api/unbilled/upload', (req, res, next) => {
                 }
             }
 
-            if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-
             const localOutsort = path.join(DATA_DIR, 'unbilled_outsort.csv');
             const localChronic = path.join(DATA_DIR, 'unbilled_chronic.csv');
             const localSummary = path.join(DATA_DIR, 'unbilled_summary.csv');
-            const localMeta = path.join(DATA_DIR, 'unbilled_meta.json');
 
             if (files.outsort && files.outsort[0]) {
-                fs.writeFileSync(localOutsort, files.outsort[0].buffer);
+                writeDataFile_('unbilled_outsort.csv', files.outsort[0].buffer);
                 saved.push('outsort');
             }
             if (files.chronic && files.chronic[0]) {
-                fs.writeFileSync(localChronic, files.chronic[0].buffer);
+                writeDataFile_('unbilled_chronic.csv', files.chronic[0].buffer);
                 saved.push('chronic');
             }
             if (files.summary && files.summary[0]) {
-                fs.writeFileSync(localSummary, files.summary[0].buffer);
+                writeDataFile_('unbilled_summary.csv', files.summary[0].buffer);
                 saved.push('summary');
             }
 
@@ -4376,13 +4443,13 @@ app.post('/api/unbilled/upload', (req, res, next) => {
                 const buf = files.file[0].buffer;
                 const text = buf.toString('utf8', 0, 1024);
                 if (text.includes('UNBILLED_COUNT')) {
-                    fs.writeFileSync(localSummary, buf);
+                    writeDataFile_('unbilled_summary.csv', buf);
                     saved.push('summary');
                 } else if (text.includes('INV_PENDING_FLAG') && files.file[0].originalname.toLowerCase().includes('chronic')) {
-                    fs.writeFileSync(localChronic, buf);
+                    writeDataFile_('unbilled_chronic.csv', buf);
                     saved.push('chronic');
                 } else {
-                    fs.writeFileSync(localOutsort, buf);
+                    writeDataFile_('unbilled_outsort.csv', buf);
                     saved.push('outsort');
                 }
             }
@@ -4412,7 +4479,7 @@ app.post('/api/unbilled/upload', (req, res, next) => {
                 uploadedAt: new Date().toISOString()
             };
 
-            fs.writeFileSync(localMeta, JSON.stringify(metaPayload, null, 2), 'utf8');
+            writeDataFile_('unbilled_meta.json', JSON.stringify(metaPayload, null, 2));
             UNBILLED_META.set(metaPayload);
 
             logActivity({
@@ -4443,16 +4510,9 @@ app.get('/api/unbilled/meta', async (req, res) => {
     const user = await resolveFreshUser_(req);
     const canSync = user ? canManageUnbilled_(user) : false;
     let meta = await UNBILLED_META.read();
-    if ((!meta || !meta.asOn) && req.headers.host && !req.headers.host.includes('130.210.43.11')) {
-        try {
-            const r = await fetch(`${VM_BASE_URL}/api/unbilled/meta`);
-            if (r.ok) {
-                const vmMeta = await r.json();
-                if (vmMeta && vmMeta.status === 'success') {
-                    meta = vmMeta;
-                }
-            }
-        } catch (_) { }
+    if ((!meta || !meta.asOn) && !isVmHost_(req)) {
+        const vmMeta = await vmJson_('/api/unbilled/meta');
+        if (vmMeta && vmMeta.status === 'success') meta = vmMeta;
     }
     return res.json({
         status: 'success',
@@ -4471,39 +4531,39 @@ app.get('/api/unbilled/meta', async (req, res) => {
     });
 });
 
-app.get('/api/unbilled/outsort', (req, res) => {
+app.get('/api/unbilled/outsort', async (req, res) => {
     if (!req.user) return UNAUTHORIZED_(res);
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Cache-Control', 'private, max-age=60');
-    const f = path.join(__dirname, 'data/unbilled_outsort.csv');
-    if (fs.existsSync(f)) return fs.createReadStream(f).pipe(res);
-    if (req.headers.host && !req.headers.host.includes('130.210.43.11')) {
-        return res.redirect(302, `${VM_BASE_URL}/api/unbilled/outsort`);
+    const f = path.join(DATA_DIR, 'unbilled_outsort.csv');
+    if (fs.existsSync(f)) {
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        return fs.createReadStream(f).pipe(res);
     }
+    if (await fromVm_(req, res, '/api/unbilled/outsort', 'text/csv; charset=utf-8')) return;
     return res.status(404).send('Not found');
 });
 
-app.get('/api/unbilled/chronic', (req, res) => {
+app.get('/api/unbilled/chronic', async (req, res) => {
     if (!req.user) return UNAUTHORIZED_(res);
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Cache-Control', 'private, max-age=60');
-    const f = path.join(__dirname, 'data/unbilled_chronic.csv');
-    if (fs.existsSync(f)) return fs.createReadStream(f).pipe(res);
-    if (req.headers.host && !req.headers.host.includes('130.210.43.11')) {
-        return res.redirect(302, `${VM_BASE_URL}/api/unbilled/chronic`);
+    const f = path.join(DATA_DIR, 'unbilled_chronic.csv');
+    if (fs.existsSync(f)) {
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        return fs.createReadStream(f).pipe(res);
     }
+    if (await fromVm_(req, res, '/api/unbilled/chronic', 'text/csv; charset=utf-8')) return;
     return res.status(404).send('Not found');
 });
 
-app.get('/api/unbilled/summary', (req, res) => {
+app.get('/api/unbilled/summary', async (req, res) => {
     if (!req.user) return UNAUTHORIZED_(res);
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Cache-Control', 'private, max-age=60');
-    const f = path.join(__dirname, 'data/unbilled_summary.csv');
-    if (fs.existsSync(f)) return fs.createReadStream(f).pipe(res);
-    if (req.headers.host && !req.headers.host.includes('130.210.43.11')) {
-        return res.redirect(302, `${VM_BASE_URL}/api/unbilled/summary`);
+    const f = path.join(DATA_DIR, 'unbilled_summary.csv');
+    if (fs.existsSync(f)) {
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        return fs.createReadStream(f).pipe(res);
     }
+    if (await fromVm_(req, res, '/api/unbilled/summary', 'text/csv; charset=utf-8')) return;
     return res.status(404).send('Not found');
 });
 
@@ -4537,31 +4597,21 @@ const DISCONNECTION_FOLLOWUP_SCRIPT_URL = String(
 const canSyncDisconnection_ = (user) => hasPermission_(user, 'disconnection-sync-autho', ['discon', 'sync']);
 
 app.get('/api/disconnection/meta', async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (!req.user) return UNAUTHORIZED_(res);
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
 
-    const user = req.user ? await resolveFreshUser_(req) : null;
-    const canSync = user ? canSyncDisconnection_(user) : false;
-    const isAdmin = user ? isPortalAdmin_(user) : false;
+    const user = await resolveFreshUser_(req);
+    const canSync = canSyncDisconnection_(user);
+    const isAdmin = isPortalAdmin_(user);
 
     let meta = await DISCONNECTION_META.read();
-
-    if ((!meta || !meta.version) && req.headers.host && !req.headers.host.includes('130.210.43.11')) {
-        try {
-            const r = await fetch(`${VM_BASE_URL}/api/disconnection/meta`);
-            if (r.ok) {
-                const vmMeta = await r.json();
-                if (vmMeta && vmMeta.status === 'success') {
-                    meta = vmMeta;
-                }
-            }
-        } catch (_) {}
+    if ((!meta || !meta.version) && !isVmHost_(req)) {
+        const vmMeta = await vmJson_('/api/disconnection/meta');
+        if (vmMeta && vmMeta.status === 'success') meta = vmMeta;
     }
 
     const synced = await syncedMetaFields_(meta, DISCONNECTION_SHEET_FALLBACK_URL, 'CACHE_DISCONNECTION', res);
-    const isVm = Boolean(req.headers.host && req.headers.host.includes('130.210.43.11'));
+    const isVm = isVmHost_(req);
 
     return res.json({
         status: 'success',
@@ -4571,21 +4621,19 @@ app.get('/api/disconnection/meta', async (req, res) => {
         sheetScriptUrl: DISCONNECTION_FOLLOWUP_SCRIPT_URL,
         vmUrl: VM_BASE_URL,
         ...synced,
-        csvUrl: isVm ? '/api/disconnection/dataset' : (synced.csvUrl || `${VM_BASE_URL}/api/disconnection/dataset`),
-        datasetUrl: isVm ? '/api/disconnection/dataset' : `${VM_BASE_URL}/api/disconnection/dataset`
+        csvUrl: isVm ? '/api/disconnection/dataset' : (synced.csvUrl || '/api/disconnection/dataset'),
+        datasetUrl: '/api/disconnection/dataset'
     });
 });
 
 app.get('/api/disconnection/dataset', async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    if (!req.user) return UNAUTHORIZED_(res);
     res.setHeader('Cache-Control', 'private, max-age=60');
 
-    // 1. Local data/disconnection.csv on disk
-    const localFile = path.join(__dirname, 'data', 'disconnection.csv');
+    // 1. The uploaded list in the server's data folder (MZO_FILES_DIR on the VM)
+    const localFile = path.join(DATA_DIR, 'disconnection.csv');
     if (fs.existsSync(localFile)) {
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
         return fs.createReadStream(localFile).pipe(res);
     }
 
@@ -4593,18 +4641,17 @@ app.get('/api/disconnection/dataset', async (req, res) => {
     if (mirror.on() && mirror.dir) {
         const snapFile = path.join(mirror.dir, 'disconnection.csv');
         if (fs.existsSync(snapFile)) {
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
             return fs.createReadStream(snapFile).pipe(res);
         }
     }
 
-    // 3. If running on Vercel or non-VM host, redirect directly to the VM endpoint
-    if (req.headers.host && !req.headers.host.includes('130.210.43.11')) {
-        return res.redirect(302, `${VM_BASE_URL}/api/disconnection/dataset`);
-    }
+    // 3. Off the VM: the VM's copy, fetched server-side
+    if (await fromVm_(req, res, '/api/disconnection/dataset', 'text/csv; charset=utf-8')) return;
 
     // 4. Fallback to Supabase snapshot or Google Sheet CSV
     const meta = await DISCONNECTION_META.read().catch(() => null);
-    const targetUrl = (meta && meta.csvUrl) || DISCONNECTION_SHEET_FALLBACK_URL;
+    const targetUrl = (meta && /^https:\/\//i.test(String(meta.csvUrl || '')) && meta.csvUrl) || DISCONNECTION_SHEET_FALLBACK_URL;
     return res.redirect(302, targetUrl);
 });
 
@@ -4629,10 +4676,7 @@ app.post('/api/disconnection/upload', async (req, res) => {
         if (!req.file) return res.status(400).json({ status: 'error', message: 'No file uploaded' });
 
         try {
-            const csvText = req.file.buffer.toString('utf8');
-            const dataDir = path.join(__dirname, 'data');
-            fs.mkdirSync(dataDir, { recursive: true });
-            fs.writeFileSync(path.join(dataDir, 'disconnection.csv'), csvText, 'utf8');
+            writeDataFile_('disconnection.csv', req.file.buffer);
 
             refreshMirror(['disconnection'], 'direct disconnection VM upload');
             logActivity({
@@ -4652,67 +4696,72 @@ app.post('/api/disconnection/upload', async (req, res) => {
     });
 });
 
-app.options('/api/disconnection/payments', (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.status(204).end();
-});
-
 app.get('/api/disconnection/payments', async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    if (!req.user) return UNAUTHORIZED_(res);
     res.setHeader('Cache-Control', 'private, max-age=30');
 
-    const localFile = path.join(__dirname, 'data', 'disconnection_payments.json');
+    const localFile = path.join(DATA_DIR, 'disconnection_payments.json');
     if (fs.existsSync(localFile)) {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
         return fs.createReadStream(localFile).pipe(res);
     }
-
-    if (req.headers.host && !req.headers.host.includes('130.210.43.11')) {
-        return res.redirect(302, `${VM_BASE_URL}/api/disconnection/payments`);
-    }
+    if (await fromVm_(req, res, '/api/disconnection/payments', 'application/json; charset=utf-8')) return;
 
     res.json({ generatedAt: '', totalMatched: 0, totalCollected: 0, consumers: {} });
 });
 
-app.options('/api/disconnection/payments-upload', (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-sync-key');
-    res.status(204).end();
+const paymentsUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (/\.json$/i.test(String(file.originalname || ''))) return cb(null, true);
+        cb(new Error('Only JSON files are allowed.'));
+    }
 });
 
-app.post('/api/disconnection/payments-upload', (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-sync-key');
-
-    const syncSecret = process.env.DISCONNECTION_SYNC_SECRET || 'mzo-crm-db2-sync-key-2026';
-    const headerKey = req.headers['x-sync-key'];
-    const authHeader = req.headers.authorization || '';
-    const bearerKey = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-
-    let isAuthorized = (headerKey && headerKey === syncSecret) || (bearerKey && bearerKey === syncSecret);
-    if (!isAuthorized) {
-        const user = readSession_(req);
-        if (user && canSyncDisconnection_(user)) isAuthorized = true;
-    }
-    if (!isAuthorized) {
-        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+// Payment history from the DB2 payment sync (scripts/sync/sync_disconnection_payments.js): field "file"
+// is disconnection_payments.json and the optional field "meta" is disconnection_meta.json. The caller is
+// a signed-in user with the disconnection sync permission, or the script with x-sync-key (requireAuth,
+// SYNC_UPLOAD_ROUTES).
+app.post('/api/disconnection/payments-upload', async (req, res) => {
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    const user = await resolveFreshUser_(req);
+    if (!canSyncDisconnection_(user)) {
+        return res.status(403).json({ status: 'error', message: 'Not authorized to upload payment history. Ask an admin to grant permission.' });
     }
 
-    disconnectionUpload.single('file')(req, res, async (err) => {
+    paymentsUpload.fields([{ name: 'file', maxCount: 1 }, { name: 'meta', maxCount: 1 }])(req, res, async (err) => {
         if (err) return res.status(400).json({ status: 'error', message: err.message });
-        if (!req.file) return res.status(400).json({ status: 'error', message: 'No file uploaded' });
+        const file = req.files && req.files.file && req.files.file[0];
+        const metaFile = req.files && req.files.meta && req.files.meta[0];
+        if (!file) return res.status(400).json({ status: 'error', message: 'No file uploaded' });
 
         try {
-            const dataDir = path.join(__dirname, 'data');
-            fs.mkdirSync(dataDir, { recursive: true });
-            fs.writeFileSync(path.join(dataDir, 'disconnection_payments.json'), req.file.buffer);
-            return res.json({ status: 'success', message: 'Uploaded payment history directly to VM!' });
+            let payments, meta = null;
+            try {
+                payments = JSON.parse(file.buffer.toString('utf8'));
+                if (metaFile) meta = JSON.parse(metaFile.buffer.toString('utf8'));
+            } catch (_) {
+                return res.status(400).json({ status: 'error', message: 'The upload is not valid JSON' });
+            }
+            if (!payments || typeof payments !== 'object' || !payments.consumers || typeof payments.consumers !== 'object') {
+                return res.status(400).json({ status: 'error', message: 'Payment history has no consumers object' });
+            }
+            if (meta !== null && (typeof meta !== 'object' || Array.isArray(meta))) {
+                return res.status(400).json({ status: 'error', message: 'Meta must be a JSON object' });
+            }
+            writeDataFile_('disconnection_payments.json', file.buffer);
+            if (meta) {
+                writeDataFile_('disconnection_meta.json', JSON.stringify(meta, null, 2));
+                DISCONNECTION_META.set(meta);
+            }
+            logActivity({
+                username: user.email || user.username || user.Username,
+                name: user.name || user.Name || user.email,
+                type: 'upload',
+                details: `Uploaded disconnection payment history to VM (${(file.size / 1024).toFixed(1)} KB${meta ? ', with meta' : ''})`
+            }).catch(() => { });
+            return res.json({ status: 'success', message: 'Uploaded payment history directly to VM!', meta: Boolean(meta) });
         } catch (uploadErr) {
             return res.status(500).json({ status: 'error', message: uploadErr.message });
         }

@@ -121,6 +121,8 @@ install -d -m 750 -o pocketbase -g pocketbase "$PB_DIR/pb_data"
 # Raw snapshots written by the sync (opc) and served by the app in mirror mode.
 install -d -m 755 -o root -g root "$MZO/data"
 install -d -m 755 -o "$APP_USER" -g "$APP_USER" "$MZO/data/snapshots" "$MZO/data/sync-tmp" "$MZO/data/quality"
+# Uploaded datasets and the app's runtime files (MZO_FILES_DIR in mzo-reports.service): the app user only.
+install -d -m 700 -o "$APP_USER" -g "$APP_USER" "$MZO/data/files"
 if [ -e "$APP" ] && [ ! -L "$APP" ]; then
   mv "$APP" "$BACKUP/app-dir-$(date -u +%Y%m%dT%H%M%SZ)"
   echo "moved an old $APP folder into $BACKUP"

@@ -10,7 +10,8 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const DATA_DIR = path.join(__dirname, '..', '..', 'data');
+// The server's data folder (git-ignored data/ by default; MZO_FILES_DIR on the VM).
+const DATA_DIR = process.env.MZO_FILES_DIR ? path.resolve(process.env.MZO_FILES_DIR) : path.join(__dirname, '..', '..', 'data');
 const BUCKET = process.env.REPORTS_STORAGE_BUCKET || 'reports';
 
 const storage = (() => {

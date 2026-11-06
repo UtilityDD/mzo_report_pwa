@@ -28,7 +28,7 @@ const LABEL = 'Disconnection Payment Sync';
 const DBVIS_CONNECTION = 'ibm db2';
 const DBVIS_CMD_PATH = 'C:\\Program Files\\DbVisualizer\\dbviscmd.bat';
 const TEMP_DIR = path.resolve(__dirname, '../../data/temp/disconnection_payments');
-const DATA_DIR = path.resolve(__dirname, '../../data');
+const DATA_DIR = process.env.MZO_FILES_DIR ? path.resolve(process.env.MZO_FILES_DIR) : path.resolve(__dirname, '../../data'); // git-ignored; MZO_FILES_DIR on the VM
 const VM_BASE_URL = process.env.VM_BASE_URL || 'https://130.210.43.11.sslip.io';
 const SYNC_KEY_ENV = 'DISCONNECTION_SYNC_SECRET';
 
@@ -129,7 +129,7 @@ function runDivisionChunkExtraction(div, cutoffDateDb2) {
 }
 
 /** Upload files directly to the Oracle Cloud VM */
-async function uploadDirectToVm(csvFilePath, paymentsJsonPath, token) {
+async function uploadDirectToVm(csvFilePath, paymentsJsonPath, metaPath, token) {
   const isVmHost = process.env.MZO_DATA_MODE === 'mirror' || (process.env.HOSTNAME && process.env.HOSTNAME.includes('oracle'));
   if (isVmHost) {
     console.log(`[${LABEL}] Running directly on VM host. Local disk update is already active.`);
@@ -155,6 +155,7 @@ async function uploadDirectToVm(csvFilePath, paymentsJsonPath, token) {
     console.log(`[${LABEL}] Uploading payment history JSON directly to VM (${VM_BASE_URL})...`);
     const fd = new FormData();
     fd.append('file', new Blob([fs.readFileSync(paymentsJsonPath)]), 'disconnection_payments.json');
+    if (metaPath && fs.existsSync(metaPath)) fd.append('meta', new Blob([fs.readFileSync(metaPath)]), 'disconnection_meta.json');
 
     const res = await fetch(`${VM_BASE_URL}/api/disconnection/payments-upload`, {
       method: 'POST',
@@ -177,7 +178,7 @@ async function syncDisconnectionPayments(options = {}) {
   let localCsv = path.join(DATA_DIR, 'disconnection.csv');
   if (!fs.existsSync(localCsv)) {
     console.log(`[${LABEL}] Local data/disconnection.csv missing, fetching current baseline from VM...`);
-    const r = await fetch(`${VM_BASE_URL}/api/disconnection/dataset`);
+    const r = await fetch(`${VM_BASE_URL}/api/disconnection/dataset`, { headers: vmUploadHeaders(SYNC_KEY_ENV, userToken) });
     if (!r.ok) throw new Error(`Could not fetch baseline disconnection list from VM: HTTP ${r.status}`);
     const text = await r.text();
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -461,7 +462,7 @@ async function syncDisconnectionPayments(options = {}) {
   // 7. Direct VM Upload if run remotely
   let uploadResult = null;
   try {
-    uploadResult = await uploadDirectToVm(localCsv, paymentsJsonPath, userToken);
+    uploadResult = await uploadDirectToVm(localCsv, paymentsJsonPath, metaPath, userToken);
   } catch (err) {
     console.warn(`[${LABEL}] VM Direct Upload warning: ${err.message}`);
   }

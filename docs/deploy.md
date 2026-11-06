@@ -60,5 +60,6 @@ Set on Vercel (Smart Lineman project); locally in the git-ignored `.env`. `serve
 | `MZO_USER_STORE` | VM only, set in `mzo-reports.service`: `pocketbase` keeps users, sign-in and the activity log in the VM's PocketBase (needs `PB_URL`, `PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`). Never set on Vercel. See [users.md](users.md) |
 | `MZO_ADMIN_EMAILS`, `MZO_ACTIVITY_RETENTION_DAYS` | VM only, with the user store: built-in admin emails (comma-separated; replaces the default `dipnkr.das@gmail.com`, `ROOT_ADMIN_EMAILS` always added) and how long activity rows are kept (default 180 days) |
 | `MZO_DATA_MODE`, `MZO_SNAPSHOT_DIR` | VM only. `MZO_DATA_MODE=mirror` with an existing `MZO_SNAPSHOT_DIR` (default `/opt/mzo/data/snapshots`) serves report data from the sync's snapshots. Never set on Vercel. See **Mirror mode** in [architecture.md](architecture.md#mirror-mode-vm-only) |
+| `MZO_FILES_DIR` | The server's data folder: uploaded datasets (disconnection, payments, unbilled), their meta and local caches. Default: the git-ignored `data/` of the checkout. On the VM `/opt/mzo/data/files` (set in `mzo-reports.service`), outside the releases. Datasets never go into git (`scripts/tools/check_data_files.js` fails CI on one) |
 | `PORT` | Local port (default 3000) |
 

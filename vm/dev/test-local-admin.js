@@ -12,10 +12,11 @@
 // name; the backoff (username and IP, unknown usernames counting against the IP) locks silently; a
 // session ends when its entry is changed or removed; local admins cause no upstream write; with the
 // variable unset the route is 404 and /api/auth/config does not offer it. Also checks
-// lib/local_admins.js and the hash helper, and the CRM upload key (x-sync-key): accepted only on the two
-// upload routes and only when the variable holds 32+ characters; the unbilled and disconnection reads
-// need a session and send no CORS header; API writes need this host's Origin (or Referer); server-side
-// files stay hidden however their path is spelled.
+// lib/local_admins.js and the hash helper, and the CRM upload key (x-sync-key): accepted only on the
+// upload routes and their read-back GETs, and only when the variable holds 32+ characters (the old
+// built-in default never); the unbilled and disconnection reads need a session or the key, send no CORS
+// header, and read the data folder (MZO_FILES_DIR); the payment upload writes it atomically (mode 600);
+// API writes need this host's Origin (or Referer); server-side files stay hidden however their path is spelled.
 
 const fs = require('fs');
 const os = require('os');
@@ -34,9 +35,16 @@ const SYNC_KEY = crypto.randomBytes(32).toString('hex');
 const SHORT_KEY = 'k'.repeat(31);
 const PRIVATE_PATHS = ['/server.js', '/server%2ejs', '/%73erver.js', '/%2egit/HEAD', '/.git/HEAD', '/%64ata/activity_log.json', '/data/activity_log.json',
     '/lib/%65ditor/index.js', '/lib/editor/index.js', '/LIB/EDITOR/index.js', '/docs/HANDOFF%2emd', '/%73cripts/sync/common.js', '/%76m/sync/run.js',
-    '/%6eode_modules/express/package.json', '/assets/..%2fserver.js', '/assets/%2e%2e/server.js', '//server.js', '/x%5c..%5cserver.js', '/%E0%A4%A', '/server.js%00.html'];
+    '/%6eode_modules/express/package.json', '/data/disconnection.csv', '/data/disconnection_payments.json', '/data/disconnection_meta.json', '/data/unbilled_chronic.csv', '/assets/..%2fserver.js', '/assets/%2e%2e/server.js', '//server.js', '/x%5c..%5cserver.js', '/%E0%A4%A', '/server.js%00.html'];
 const PUBLIC_FILES = ['/login.html', '/version.json', '/data/costcenter.json', '/lib/offices.js'];
-const CONSUMER_READS = ['/api/unbilled/meta', '/api/unbilled/outsort', '/api/unbilled/chronic', '/api/unbilled/summary', '/api/disconnection/meta', '/api/disconnection/dataset'];
+const CONSUMER_READS = ['/api/unbilled/meta', '/api/unbilled/outsort', '/api/unbilled/chronic', '/api/unbilled/summary', '/api/disconnection/meta', '/api/disconnection/dataset', '/api/disconnection/payments'];
+const OLD_DEFAULT_KEY = 'mzo-crm-db2-sync-key-2026'; // a built-in fallback key in 3.37-3.42; must never work
+// Fixture files in the data folder (MZO_FILES_DIR): headers and made-up values only.
+const FIXTURES = {
+    'disconnection.csv': 'CCC_CODE,MRU,CON_ID,NOTOSD\n6611108,M1,100000001,5000\n',
+    'disconnection_payments.json': JSON.stringify({ generatedAt: 'fixture', totalMatched: 1, totalCollected: 10, consumers: { 100000001: { totalPaid: 10, items: [] } } }),
+    'unbilled_chronic.csv': 'CON_ID,INV_PENDING_FLAG\n100000001,Y\n'
+};
 
 /** Supabase-style PIN hash (scrypt$salt$hash), as server.js hashPin writes it. */
 function pinHash(pin) {
@@ -117,6 +125,9 @@ async function child(out, cookieIn) {
     if (mode === 'sync' || mode === 'rotated' || mode === 'unset') {
         await call('sync_unbilled', 'POST', '/api/unbilled/upload', { extra: key, origin: null });
         await call('sync_disconnection', 'POST', '/api/disconnection/upload', { extra: key, origin: null });
+        await call('sync_payments', 'POST', '/api/disconnection/payments-upload', { extra: key, origin: null });
+        await call('sync_payments_old_default', 'POST', '/api/disconnection/payments-upload', { extra: { 'x-sync-key': OLD_DEFAULT_KEY }, origin: null });
+        await call('sync_read_short', 'GET', '/api/disconnection/dataset', { extra: key });
     }
     if (mode === 'sync') {
         await call('sync_wrong_key', 'POST', '/api/unbilled/upload', { extra: { 'x-sync-key': syncKey.slice(0, -1) + (syncKey.endsWith('0') ? '1' : '0') } });
@@ -125,6 +136,38 @@ async function child(out, cookieIn) {
         await call('sync_admin_update', 'POST', '/api/admin/users/update', { extra: key, body: { Username: 'clerk', role: 'admin' } });
         await call('sync_session_check', 'GET', '/api/session-check', { extra: key });
         await call('sync_get_read', 'GET', '/api/unbilled/chronic', { extra: key });
+        await call('sync_get_dataset', 'GET', '/api/disconnection/dataset', { extra: key });
+        await call('sync_get_wrong_key', 'GET', '/api/disconnection/dataset', { extra: { 'x-sync-key': syncKey.slice(0, -1) + (syncKey.endsWith('0') ? '1' : '0') } });
+        await call('sync_get_other', 'GET', '/api/nsc/meta', { extra: key });
+        await call('viewer_dataset', 'GET', '/api/disconnection/dataset', { cookie: viewer });
+        await call('viewer_payments', 'GET', '/api/disconnection/payments', { cookie: viewer });
+        // Payment history upload (multipart, as scripts/sync/sync_disconnection_payments.js sends it).
+        const upload = async (name, headers, files) => {
+            const fd = new FormData();
+            for (const [field, fname, text] of files) fd.append(field, new Blob([text]), fname);
+            const res = await realFetch(base + '/api/disconnection/payments-upload', { method: 'POST', headers, body: fd });
+            results[name] = { status: res.status, body: await res.text(), acao: res.headers.get('access-control-allow-origin') };
+        };
+        const payJson = JSON.stringify({ generatedAt: 'upload', totalMatched: 2, totalCollected: 20, consumers: { 100000002: { totalPaid: 20, items: [] } } });
+        const metaJson = JSON.stringify({ version: 'v:test', stats: { totalConsumers: 1 } });
+        await upload('pay_key', key, [['file', 'disconnection_payments.json', payJson], ['meta', 'disconnection_meta.json', metaJson]]);
+        const filesDir = process.env.MZO_FILES_DIR;
+        const st = fs.statSync(path.join(filesDir, 'disconnection_payments.json'));
+        results.pay_written = {
+            same: readFileSync(path.join(filesDir, 'disconnection_payments.json'), 'utf8') === payJson,
+            meta: readFileSync(path.join(filesDir, 'disconnection_meta.json'), 'utf8').includes('v:test'),
+            mode: (st.mode & 0o777).toString(8),
+            leftovers: fs.readdirSync(filesDir).filter((f) => f.endsWith('.tmp'))
+        };
+        await call('viewer_payments_after', 'GET', '/api/disconnection/payments', { cookie: viewer });
+        await call('viewer_meta_after', 'GET', '/api/disconnection/meta', { cookie: viewer });
+        await upload('pay_old_default', { 'x-sync-key': OLD_DEFAULT_KEY }, [['file', 'disconnection_payments.json', payJson]]);
+        await upload('pay_bearer_key', { Authorization: `Bearer ${syncKey}` }, [['file', 'disconnection_payments.json', payJson]]);
+        await upload('pay_viewer', { Cookie: viewer, Origin: base }, [['file', 'disconnection_payments.json', payJson]]);
+        await upload('pay_csv_name', key, [['file', 'payments.csv', payJson]]);
+        await upload('pay_bad_json', key, [['file', 'disconnection_payments.json', '{not json']]);
+        await upload('pay_no_consumers', key, [['file', 'disconnection_payments.json', '{"generatedAt":"x"}']]);
+        results.pay_after_bad = readFileSync(path.join(filesDir, 'disconnection_payments.json'), 'utf8') === payJson;
         await call('sync_other_post', 'POST', '/api/disconnection/sync', { extra: key });
         await call('viewer_upload', 'POST', '/api/disconnection/upload', { cookie: viewer });
         for (const p of CONSUMER_READS) {
@@ -199,7 +242,9 @@ async function child(out, cookieIn) {
 
 function runMode(mode, admins, tmp, cookieIn, extraEnv) {
     const out = path.join(tmp, `${mode}.json`);
-    const env = Object.assign({ PATH: process.env.PATH, HOME: process.env.HOME, TZ: 'UTC', JWT_SECRET: SECRET, TEST_MODE: mode }, extraEnv || {});
+    const files = fs.mkdtempSync(path.join(tmp, `files-${mode}-`));
+    for (const [name, text] of Object.entries(FIXTURES)) fs.writeFileSync(path.join(files, name), text);
+    const env = Object.assign({ PATH: process.env.PATH, HOME: process.env.HOME, TZ: 'UTC', JWT_SECRET: SECRET, TEST_MODE: mode, MZO_FILES_DIR: files }, extraEnv || {});
     if (admins) env.MZO_LOCAL_ADMINS = admins;
     if (process.env.TEST_SERVER) env.TEST_SERVER = process.env.TEST_SERVER;
     const r = spawnSync(process.execPath, [__filename, '--child', out, cookieIn || ''], { env, encoding: 'utf8', timeout: 120000 });
@@ -332,7 +377,26 @@ function main() {
         eq(Y.sync_admin_users.status, 401, 'sync key: no admin user list');
         eq(Y.sync_admin_update.status, 401, 'sync key: no user changes');
         eq(Y.sync_session_check.status, 401, 'sync key: not a session');
-        eq(Y.sync_get_read.status, 401, 'sync key: not accepted on reads');
+        eq([Y.sync_get_read.status, Y.sync_get_read.body], [200, FIXTURES['unbilled_chronic.csv']], 'sync key: reads back the unbilled file from MZO_FILES_DIR');
+        eq([Y.sync_get_dataset.status, Y.sync_get_dataset.body], [200, FIXTURES['disconnection.csv']], 'sync key: reads back the disconnection list (payment sync)');
+        eq(Y.sync_get_wrong_key.status, 401, 'sync key: a wrong key is refused on reads');
+        eq(Y.sync_get_other.status, 401, 'sync key: not accepted on other reads');
+        eq([Y.viewer_dataset.status, Y.viewer_dataset.body], [200, FIXTURES['disconnection.csv']], 'signed-in user: dataset from MZO_FILES_DIR');
+        eq([Y.viewer_payments.status, JSON.parse(Y.viewer_payments.body).generatedAt], [200, 'fixture'], 'signed-in user: payments from MZO_FILES_DIR');
+        eq([Y.pay_key.status, Y.pay_key.acao], [200, null], 'payments upload: accepted with the key, no CORS header');
+        eq(Y.pay_written, { same: true, meta: true, mode: '600', leftovers: [] }, 'payments upload: file and meta written whole, mode 600, no temp files left');
+        eq(JSON.parse(Y.viewer_payments_after.body).generatedAt, 'upload', 'payments upload: served right after');
+        eq(JSON.parse(Y.viewer_meta_after.body).version, 'v:test', 'payments upload: meta served right after');
+        eq(Y.pay_old_default.status, 401, 'payments upload: the old built-in key is refused');
+        eq(Y.pay_bearer_key.status, 401, 'payments upload: the key is not accepted as a Bearer token');
+        eq(Y.pay_viewer.status, 403, 'payments upload: a viewer without the grant is refused');
+        eq(Y.pay_csv_name.status, 400, 'payments upload: only .json files');
+        eq(Y.pay_bad_json.status, 400, 'payments upload: invalid JSON refused');
+        eq(Y.pay_no_consumers.status, 400, 'payments upload: JSON without consumers refused');
+        eq(Y.pay_after_bad, true, 'payments upload: a refused upload leaves the file alone');
+        eq(Y.sync_payments.status, 400, 'sync key: payments upload accepted (no file sent)');
+        eq(Y.sync_payments_old_default.status, 401, 'sync key: the old built-in key is refused when a real key is set');
+        eq(Y.sync_read_short.status, 200, 'sync key: read-back accepted');
         eq(Y.sync_other_post.status, 401, 'sync key: not accepted on other writes');
         eq(Y.viewer_upload.status, 403, 'viewer without the grant cannot upload the disconnection dataset');
         for (const p of CONSUMER_READS) {
@@ -358,6 +422,9 @@ function main() {
         for (const [name, X] of [['short key', rot.results], ['unset', un.results]]) {
             eq(X.sync_unbilled.status, 401, `${name}: unbilled upload refused`);
             eq(X.sync_disconnection.status, 401, `${name}: disconnection upload refused`);
+            eq(X.sync_payments.status, 401, `${name}: payments upload refused`);
+            eq(X.sync_payments_old_default.status, 401, `${name}: the old built-in key is refused`);
+            eq(X.sync_read_short.status, 401, `${name}: read-back refused`);
         }
 
         fs.rmSync(tmp, { recursive: true, force: true });

@@ -21,7 +21,7 @@ const LABEL = 'CRM Disconnection Sync';
 const DBVIS_CONNECTION = 'ibm db2';
 const DBVIS_CMD_PATH = 'C:\\Program Files\\DbVisualizer\\dbviscmd.bat';
 const TEMP_DIR = path.resolve(__dirname, '../../data/temp/disconnection');
-const DATA_DIR = path.resolve(__dirname, '../../data');
+const DATA_DIR = process.env.MZO_FILES_DIR ? path.resolve(process.env.MZO_FILES_DIR) : path.resolve(__dirname, '../../data'); // git-ignored; MZO_FILES_DIR on the VM
 const SQL_BATCH_FILE = path.resolve(__dirname, '../sql/disconnection_crm_batch.sql');
 const VM_BASE_URL = process.env.VM_BASE_URL || 'https://130.210.43.11.sslip.io';
 

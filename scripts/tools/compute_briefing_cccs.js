@@ -1,4 +1,7 @@
 const fs = require('fs');
+const path = require('path');
+// The server's data folder (git-ignored data/ by default; MZO_FILES_DIR on the VM).
+const DATA_DIR = process.env.MZO_FILES_DIR ? path.resolve(process.env.MZO_FILES_DIR) : path.join(__dirname, '..', '..', 'data');
 
 const CCC_MAP = {
   // Malda Division (6611)
@@ -120,7 +123,7 @@ async function run() {
 
   // 1. Pending MC
   try {
-    const mcMeta = JSON.parse(fs.readFileSync('data/pending_mc_meta.json'));
+    const mcMeta = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'pending_mc_meta.json')));
     const res = await fetch(mcMeta.csvUrl);
     const csv = await res.text();
     const lines = csv.split('\n').filter(l => l.trim().length > 0);
@@ -145,7 +148,7 @@ async function run() {
         .sort((a, b) => b.count - a.count);
     }
     mcMeta.stats.divisionCccs = mcFormatted;
-    fs.writeFileSync('data/pending_mc_meta.json', JSON.stringify(mcMeta, null, 2));
+    fs.writeFileSync(path.join(DATA_DIR, 'pending_mc_meta.json'), JSON.stringify(mcMeta, null, 2));
     console.log('Updated pending_mc_meta.json with divisionCccs');
   } catch (e) {
     console.error('Pending MC error:', e.message);
@@ -153,7 +156,7 @@ async function run() {
 
   // 2. Load Extension
   try {
-    const loadMeta = JSON.parse(fs.readFileSync('data/load_ext_meta.json'));
+    const loadMeta = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'load_ext_meta.json')));
     const res = await fetch(loadMeta.csvUrl);
     const csv = await res.text();
     const lines = csv.split('\n').filter(l => l.trim().length > 0);
@@ -187,7 +190,7 @@ async function run() {
         .sort((a, b) => b.count - a.count);
     }
     loadMeta.stats.divisionCccs = loadFormatted;
-    fs.writeFileSync('data/load_ext_meta.json', JSON.stringify(loadMeta, null, 2));
+    fs.writeFileSync(path.join(DATA_DIR, 'load_ext_meta.json'), JSON.stringify(loadMeta, null, 2));
     console.log('Updated load_ext_meta.json with divisionCccs');
   } catch (e) {
     console.error('Load Ext error:', e.message);
@@ -195,7 +198,7 @@ async function run() {
 
   // 3. Disconnection
   try {
-    const disconMeta = JSON.parse(fs.readFileSync('data/disconnection_meta.json'));
+    const disconMeta = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'disconnection_meta.json')));
     const res = await fetch(disconMeta.csvUrl);
     const csv = await res.text();
     const lines = csv.split('\n').filter(l => l.trim().length > 0);
@@ -237,7 +240,7 @@ async function run() {
         .sort((a, b) => b.count - a.count);
     }
     disconMeta.stats.divisionCccs = disconFormatted;
-    fs.writeFileSync('data/disconnection_meta.json', JSON.stringify(disconMeta, null, 2));
+    fs.writeFileSync(path.join(DATA_DIR, 'disconnection_meta.json'), JSON.stringify(disconMeta, null, 2));
     console.log('Updated disconnection_meta.json with divisionCccs');
   } catch (e) {
     console.error('Disconnection error:', e.message);
@@ -245,7 +248,7 @@ async function run() {
 
   // 4. Defective Meter (from summaryCsvUrl)
   try {
-    const defMeta = JSON.parse(fs.readFileSync('data/defective_meta.json'));
+    const defMeta = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'defective_meta.json')));
     const res = await fetch(defMeta.summaryCsvUrl);
     const csv = await res.text();
     const lines = csv.split('\n').filter(l => l.trim().length > 0);
@@ -286,7 +289,7 @@ async function run() {
         .sort((a, b) => b.over10 - a.over10);
     }
     defMeta.stats.divisionCccs = defFormatted;
-    fs.writeFileSync('data/defective_meta.json', JSON.stringify(defMeta, null, 2));
+    fs.writeFileSync(path.join(DATA_DIR, 'defective_meta.json'), JSON.stringify(defMeta, null, 2));
     console.log('Updated defective_meta.json with divisionCccs');
   } catch (e) {
     console.error('Defective error:', e.message);
@@ -294,8 +297,8 @@ async function run() {
 
   // 5. Pending NSC Delayed > 30 Days (from data/nsc.csv)
   try {
-    const nscMetaPath = 'data/nsc_meta.json';
-    const nscCsvPath = 'data/nsc.csv';
+    const nscMetaPath = path.join(DATA_DIR, 'nsc_meta.json');
+    const nscCsvPath = path.join(DATA_DIR, 'nsc.csv');
     if (fs.existsSync(nscMetaPath) && fs.existsSync(nscCsvPath)) {
       const nscMeta = JSON.parse(fs.readFileSync(nscMetaPath, 'utf8'));
       const csv = fs.readFileSync(nscCsvPath, 'utf8');

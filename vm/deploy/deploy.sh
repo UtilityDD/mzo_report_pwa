@@ -188,14 +188,12 @@ link_deps() { # link_deps SHA SUBDIR NAME: node_modules -> deps/NAME-<hash of pa
   as_app ln -s "$target/node_modules" "$dir/node_modules"
 }
 
-prepare() { # prepare FROM TO: packages and runtime data for a fresh release
+prepare() { # prepare FROM TO: packages for a fresh release
   link_deps "$2" '' app || return 1
   link_deps "$2" vm/sync sync || return 1
-  # Files the app writes at run time under data/ (activity log cache, upload meta) carry over.
-  if [ -n "$1" ] && [ "$1" != "$2" ] && [ -d "$(rel "$1")/data" ]; then
-    as_app mkdir -p "$(rel "$2")/data"
-    as_app cp -an "$(rel "$1")/data/." "$(rel "$2")/data/" 2>/dev/null || true
-  fi
+  # Files the app writes at run time (uploaded datasets, their meta, the activity log cache) live in
+  # MZO_FILES_DIR=$MZO/data/files (mzo-reports.service), outside the releases, so nothing is copied.
+  install -d -m 700 -o "$APP_USER" -g "$APP_USER" "$MZO/data/files"
 }
 
 switch_to() { # point /opt/mzo/app at a release, atomically

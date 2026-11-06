@@ -28,6 +28,7 @@ Certificates are issued by Let's Encrypt automatically (sslip.io names resolve t
 | `/opt/mzo/deps/<app\|sync>-<hash>/node_modules` | Packages, one set per `package.json` + `package-lock.json` pair; each release's `node_modules` (and `vm/sync/node_modules`) links to its set |
 | `/opt/mzo/state/deployed.json` | The deploy record, served as `/deploy.json` |
 | `/opt/mzo/bin/deploy.sh` | The pinned deploy script the timer runs (`deploy.sh.prev` is the one before) |
+| `/opt/mzo/data/files/` | `MZO_FILES_DIR`: uploaded datasets (CRM extracts: `disconnection.csv`, `disconnection_payments.json`, `disconnection_meta.json`, `unbilled_*.csv`, `unbilled_meta.json`) and the app's runtime files. Outside the releases, so a deploy never replaces them. `opc` only (700, files 600). Never commit these to git |
 | `/opt/mzo/pocketbase/` | `pocketbase` binary (root-owned) and `pb_data/` (user `pocketbase`) |
 | `/opt/mzo/backup/` | Pre-provision tarball of the old 2.67 copy, old Caddyfiles, provision logs (root only) |
 | `/etc/mzo/` | Credentials and env files (below) |
@@ -60,7 +61,7 @@ Every 60 s `deploy.sh`:
 
 1. Reads the head of `develop` from GitHub's git ref list (`https://github.com/smartlinemanapp/mzo-reports.git/info/refs?service=git-upload-pack`; not rate-limited like the API). Nothing new: it exits quietly.
 2. Downloads `https://codeload.github.com/smartlinemanapp/mzo-reports/tar.gz/<sha>` into `/opt/mzo/releases/<sha>`.
-3. Links packages: `npm ci --omit=dev` runs only for a `package.json` + `package-lock.json` pair it has not seen (the app's, and `vm/sync/`'s). Runtime files the app wrote under `data/` are copied from the previous release.
+3. Links packages: `npm ci --omit=dev` runs only for a `package.json` + `package-lock.json` pair it has not seen (the app's, and `vm/sync/`'s). Nothing is copied from the previous release: runtime files live in `/opt/mzo/data/files` (`MZO_FILES_DIR`).
 4. Points `/opt/mzo/app` at the new release, installs changed units and drop-ins from `vm/deploy/systemd/` (after `systemd-analyze verify`) with a `daemon-reload`, and restarts the app. Caddy retries the upstream for up to 10 s, so the ~2 s restart shows as a short wait, not an error.
 5. Health check: `http://127.0.0.1:3000/login.html` and `/app.html` must both answer 200, twice in a row, within 40 s.
 6. Healthy: applies a changed `vm/deploy/Caddyfile` (only after `caddy validate`; a failed reload restores the old file), restarts PocketBase if its unit or `vm/pocketbase/pb_migrations` changed, creates the portal admin once its collection exists, refreshes the pinned `deploy.sh`, writes `status: ok` and prunes old releases.
