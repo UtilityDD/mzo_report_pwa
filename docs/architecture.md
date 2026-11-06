@@ -46,7 +46,9 @@ Production stays on the **old** Supabase project (`unsmtschmcvftfqwabaq`) for lo
 
 Stock storage and the insight cutover: [stock.md](stock.md).
 
-**Sign-in:** Google only (`POST /api/auth/google`); there is no username + PIN sign-in. A user signs in once an admin has saved their Google email. VM-only admin accounts (`MZO_LOCAL_ADMINS`, the VM only) sign in with a password through `POST /api/auth/local` ([vm.md](vm.md)). Old PINs stay in `portal_users` as `scrypt$` hashes and are never returned by `GET /api/admin/users`. `/server.js` and `/data/` are not served. Do not put the service role key in HTML.
+**On the VM** (`MZO_USER_STORE=pocketbase`) users, sign-in and the activity log live in the VM's PocketBase instead (`app_users`; the same profile fields, plus `email`, `isAdmin` and per-user report `modules`): see [users.md](users.md).
+
+**Sign-in:** Google only (`POST /api/auth/google`); there is no username + PIN sign-in. ID tokens are verified against Google's signing keys and access tokens through Google's tokeninfo (`lib/google_auth.js`). A user signs in once an admin has saved their Google email. VM-only admin accounts (`MZO_LOCAL_ADMINS`, the VM only) sign in with a password through `POST /api/auth/local` ([vm.md](vm.md)). Old PINs stay in `portal_users` as `scrypt$` hashes and are never returned by `GET /api/admin/users`. `/server.js` and `/data/` are not served. Do not put the service role key in HTML.
 
 **Client profile:** `localStorage.mzo_user_profile` (PIN stripped). Scope fields: `role`, `zone_code`, `region_code`, `division_code`, `ccc_code`, plus module flags (`nsc-autho`, `nsc-upload-autho`, `defective-upload-autho`, `stock-upload-autho`, `si-autho`, `sheets-autho`, …). The shell's sidebar and account menu read this profile. After an admin changes a flag, the user must sign in again so the stored profile refreshes.
 
@@ -207,7 +209,7 @@ Report `meta.json` files are read from `REPORTS_PUBLIC_BASE`, which defaults to 
 | Power Map: `edit-sheet-row`, `append-sheet-row`, `add-connection` (admin) | `power_map_substations` |
 | Power Map suggestions (non-admin), `reject-correction`; `approve-correction` | `power_map_corrections`; both |
 | `POST`/`PATCH`/`DELETE /api/important-sheets/unbilled` | `important_unbilled_months` |
-| `POST /api/admin/users/create`, `update`, `delete`, `approve`, `reject` | `portal_users` (PocketBase only) |
+| `POST /api/admin/users/create`, `update`, `delete`, `approve`, `reject` | `portal_users` (PocketBase only); not with `MZO_USER_STORE=pocketbase`, where users are in `app_users` ([users.md](users.md)) |
 | `POST /api/structures/update` | `structure` |
 | `POST /api/data/refresh` (browser writes through Apps Script) | the allow-listed keys |
 

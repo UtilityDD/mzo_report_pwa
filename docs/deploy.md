@@ -57,6 +57,8 @@ Set on Vercel (Smart Lineman project); locally in the git-ignored `.env`. `serve
 | `*_CSV_URL` (`DISCONNECTION_SHEET`, `PENDING_MC_SHEET`, `LOAD_EXT_SHEET`, `DEFECTIVE_SUMMARY`, `DEFECTIVE_DETAILS`, `STOCK_ALLOTMENTS`) | Override the published sheet a sync job or the allotment list reads |
 | `REPORTS_PUBLIC_BASE` | Public URL of the report snapshots bucket that `meta.json` is read from (GET only). Default: `<INSIGHT_SUPABASE_URL>/storage/v1/object/public/reports`, or the new project's bucket when that is unset |
 | `MZO_LOCAL_ADMINS` | VM only, in `/etc/mzo/app.env`: admin accounts that exist only on the VM (`username\|Name\|scrypt$…` entries from `scripts/tools/hash-password.js`). Never set on Vercel. See **VM-only admin accounts** in [vm.md](vm.md#vm-only-admin-accounts) |
+| `MZO_USER_STORE` | VM only, set in `mzo-reports.service`: `pocketbase` keeps users, sign-in and the activity log in the VM's PocketBase (needs `PB_URL`, `PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`). Never set on Vercel. See [users.md](users.md) |
+| `MZO_ADMIN_EMAILS`, `MZO_ACTIVITY_RETENTION_DAYS` | VM only, with the user store: built-in admin emails (comma-separated; replaces the default `dipnkr.das@gmail.com`, `ROOT_ADMIN_EMAILS` always added) and how long activity rows are kept (default 180 days) |
 | `MZO_DATA_MODE`, `MZO_SNAPSHOT_DIR` | VM only. `MZO_DATA_MODE=mirror` with an existing `MZO_SNAPSHOT_DIR` (default `/opt/mzo/data/snapshots`) serves report data from the sync's snapshots. Never set on Vercel. See **Mirror mode** in [architecture.md](architecture.md#mirror-mode-vm-only) |
 | `PORT` | Local port (default 3000) |
 
