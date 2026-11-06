@@ -247,6 +247,20 @@ Fields beyond the obvious ones:
 
 How the VM app serves the snapshots (`/api/data/manifest`, `/api/data/file/:key`) and how pages use them is described with the server and client changes.
 
+## Admin → Sources: where each dataset comes from
+
+`admin_users.html?tab=sources` (app menu → Administration → Sources) shows, for admins, where every dataset and live feature comes from, how it is refreshed and how fresh it is. It reads `GET /api/admin/sources-info` (admin only: 401 without a session, 403 for other users; a session with `role: admin` or `isAdmin: true` passes), built by `lib/sources_info.js` from:
+
+- the sync's inventory (`vm/sync/sources/*.js`, loaded without network): label, group, pages, schedule, link to the original, sensitive;
+- `manifest.json` (mirror mode): snapshot times, size and rows;
+- PocketBase `sys_datasets` and the latest `sys_sync_runs` per dataset, plus errors and skips of the last 7 days (`PB_URL`, `PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, which the app gets from `/etc/mzo/pocketbase.env`; GET requests and the superuser sign-in only). `sys_datasets.mode` (`native` = edited on the VM in the data editor, with `native_since`, `native_by`) is shown when present; a missing value means `mirror`;
+- `lib/sources_live.js`: what the mirror does not know about (Apps Script features, `data/unbilled_*.csv`, the precomputed rating, Storage meta files, news RSS, the Ask API, map layers, link-only pages) and corrections to the inventory's page lists (pages that read the original although a copy exists, links that are not reads). Keep it in step when a page changes what it reads;
+- the report list from the `app.html` NAV.
+
+The answer is kept 60 s (`?refresh=1` rebuilds it). **By dataset** has one row per source: category (VM copy of a Google Sheet / Supabase table / Supabase Storage file, VM only, live Google Sheet, live Supabase, live through Apps Script, external), source type and link, refresh schedule and next due time, last checked, last copied (full download) and last changed, rows and size, the last run and error, and the pages that use it. **By report** has one row per menu report: its categories, sources, worst status and the oldest last check of its copies. Status: *Overdue* when the sync has not checked a source by its due time plus 10 min (frequent), 20 min (hourly) or 3 h (daily); *Stale* when the last successful check is older than 30 min, 3 h or 30 h; *Error* / *Skipped* from the last attempt; *Missing* / *Not set up* for server files or keys this server lacks. Sensitive sources and copies kept only in PocketBase count as read live, since that is what the pages do. Times are shown in IST.
+
+Without mirror mode (Vercel, a local checkout) PocketBase is not read and every source shows as read live; the inventory, the descriptor and the reports still show. Tests: `node vm/dev/test-sources-info.js`.
+
 ## Running a sync by hand (VM)
 
 ```bash
