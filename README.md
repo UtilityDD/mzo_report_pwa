@@ -50,6 +50,7 @@ Optional `.env` (git-ignored, loaded by `npm run dev`): `ANTHROPIC_API_KEY` for 
 | [docs/database.md](docs/database.md) | Supabase schemas, SQL files, imports, login rules |
 | [docs/users.md](docs/users.md) | Users on the VM: the PocketBase user store (`app_users`, activity, audit), sign-in, built-in admins, modules |
 | [docs/data-mirror.md](docs/data-mirror.md) | The VM's PocketBase copy of every dataset: sources, storage structure, schedules, raw snapshots, running a sync |
+| [docs/data-editor.md](docs/data-editor.md) | The data editor at `/editor/` on the VM: editing, pasting and permissions; datasets the VM owns (native mode) |
 | [docs/data-quality.md](docs/data-quality.md) | Data quality checks on the mirror: findings, the owner action list per sheet, scores, how the checks work |
 | [docs/stock.md](docs/stock.md) | Stock dump, insight project, allotments |
 | [docs/apps-script.md](docs/apps-script.md) | Apps Script web apps behind the sheets |

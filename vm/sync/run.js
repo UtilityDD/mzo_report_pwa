@@ -41,6 +41,7 @@ const { makeSourceFetch } = require('./lib/http');
 const { snapshotDir: resolveSnapshotDir, writeManifest, cleanTemp } = require('./lib/snapshot');
 const { cleanSpool } = require('./lib/spool');
 const { log, fmtMs, errMessage, sleep } = require('./lib/util');
+const { takeLock } = require('./lib/lock');
 
 const SCHEDULES = new Set(['frequent', 'hourly', 'daily']);
 
@@ -102,29 +103,6 @@ async function loadSources() {
         }
     }
     return { sources: all, problems };
-}
-
-/** One sync at a time per machine: a lock file holding the PID. */
-function takeLock(dir) {
-    fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, 'sync.lock');
-    try {
-        const pid = Number(fs.readFileSync(file, 'utf8'));
-        if (pid && pid !== process.pid) {
-            try {
-                process.kill(pid, 0);
-                return null; // still running
-            } catch (_) { /* stale lock */ }
-        }
-    } catch (_) { /* no lock */ }
-    fs.writeFileSync(file, String(process.pid));
-    const release = () => {
-        try {
-            if (Number(fs.readFileSync(file, 'utf8')) === process.pid) fs.unlinkSync(file);
-        } catch (_) { /* gone */ }
-    };
-    process.on('exit', release);
-    return release;
 }
 
 function usage() {
@@ -205,7 +183,16 @@ async function main() {
             log('could not write manifest.json: ' + errMessage(err));
         }
     };
+    let native = 0;
     for (const src of chosen) {
+        // A native dataset is edited on the VM (lib/editor, docs/data-editor.md): the VM is its source,
+        // so the sync never reads the original again, nor touches its rows, snapshot or registry row.
+        const reg = registry && registry.get(src.key);
+        if (reg && reg.mode === 'native') {
+            native++;
+            if (args.mode !== 'due') log(`native    ${src.key.padEnd(30)} skipped: edited in the data editor, the VM is its source`);
+            continue;
+        }
         if (args.mode === 'due') {
             const d = isDue(registry && registry.get(src.key), src.schedule);
             if (!d.due) {
@@ -254,7 +241,7 @@ async function main() {
 
     const by = (st) => results.filter((r) => r.status === st).length;
     log(`done: ${results.length} checked (${by('ok')} ok, ${by('unchanged')} unchanged, ${by('skipped')} skipped, ${by('error')} error)` +
-        (notDue ? `, ${notDue} not due` : '') + ` in ${fmtMs(Date.now() - runStart)}; peak RSS ${Math.round(process.resourceUsage().maxRSS / 1024)} MB`);
+        (notDue ? `, ${notDue} not due` : '') + (native ? `, ${native} native (skipped)` : '') + ` in ${fmtMs(Date.now() - runStart)}; peak RSS ${Math.round(process.resourceUsage().maxRSS / 1024)} MB`);
     for (const r of results.filter((x) => x.status === 'error')) log(`  error ${r.key}: ${r.message}`);
     return args.strict && by('error') ? 1 : 0;
 }

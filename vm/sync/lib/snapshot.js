@@ -12,6 +12,7 @@ const crypto = require('crypto');
 const { once } = require('events');
 const { pipeline } = require('stream/promises');
 const { Transform } = require('stream');
+const { withManifestLock } = require('./lock');
 
 const DEFAULT_DIR = '/opt/mzo/data/snapshots';
 const CONTENT_TYPES = {
@@ -167,6 +168,34 @@ function isoOf(pbDateStr) {
     return Number.isFinite(t) ? new Date(t).toISOString() : null;
 }
 
+/** The manifest entry of one dataset: contract fields from the source, the rest from its registry row. */
+function entryFor(src, ds) {
+    const entry = {
+        version: ds.snapshot_sha1,
+        bytes: ds.snapshot_bytes || 0,
+        contentType: contentTypeFor(ds.snapshot_file),
+        file: ds.snapshot_file,
+        fetchedAt: isoOf(ds.last_fetched_at) || isoOf(ds.snapshot_at),
+        snapshotAt: isoOf(ds.snapshot_at),
+        checkedAt: isoOf(ds.last_checked_at),
+        sourceType: src.sourceType || 'other',
+        dataHubKeys: Array.isArray(src.dataHubKeys) ? src.dataHubKeys : [],
+        urls: Array.isArray(src.urls) ? src.urls : [],
+        sensitive: false,
+        label: src.label || src.key,
+        rows: ds.row_count || 0
+    };
+    // Optional: a same-origin URL the client should load this DataHub key from instead of
+    // /api/data/file/<key> (Power Map: /api/power-map/data).
+    if (src.dataHubUrl) entry.dataHubUrl = src.dataHubUrl;
+    // When the source itself says it last changed (HTTP Last-Modified or a report date it
+    // exposes). Google sheets send neither, except NSC/Withheld (their TODAY report date):
+    // for the rest, snapshotAt (when the mirror first saw these bytes) is the best "updated".
+    const modified = isoOf(ds.source_modified_at);
+    if (modified) entry.sourceModifiedAt = modified;
+    return entry;
+}
+
 /**
  * Write manifest.json from the registry rows and source definitions (contract fields plus
  * label, snapshotAt, checkedAt and rows).
@@ -174,37 +203,19 @@ function isoOf(pbDateStr) {
 function writeManifest(dir, sources, registry) {
     if (!dir) return null;
     fs.mkdirSync(dir, { recursive: true });
-    const datasets = {};
-    for (const src of [...sources].sort((a, b) => a.key.localeCompare(b.key))) {
-        if (src.sensitive) continue;
-        const ds = registry.get(src.key);
-        if (!ds || !ds.snapshot_file || !ds.snapshot_sha1) continue;
-        if (!fs.existsSync(path.join(dir, ds.snapshot_file))) continue;
-        datasets[src.key] = {
-            version: ds.snapshot_sha1,
-            bytes: ds.snapshot_bytes || 0,
-            contentType: contentTypeFor(ds.snapshot_file),
-            file: ds.snapshot_file,
-            fetchedAt: isoOf(ds.last_fetched_at) || isoOf(ds.snapshot_at),
-            snapshotAt: isoOf(ds.snapshot_at),
-            checkedAt: isoOf(ds.last_checked_at),
-            sourceType: src.sourceType || 'other',
-            dataHubKeys: Array.isArray(src.dataHubKeys) ? src.dataHubKeys : [],
-            urls: Array.isArray(src.urls) ? src.urls : [],
-            sensitive: false,
-            label: src.label || src.key,
-            rows: ds.row_count || 0
-        };
-        // Optional: a same-origin URL the client should load this DataHub key from instead of
-        // /api/data/file/<key> (Power Map: /api/power-map/data).
-        if (src.dataHubUrl) datasets[src.key].dataHubUrl = src.dataHubUrl;
-        // When the source itself says it last changed (HTTP Last-Modified or a report date it
-        // exposes). Google sheets send neither, except NSC/Withheld (their TODAY report date):
-        // for the rest, snapshotAt (when the mirror first saw these bytes) is the best "updated".
-        const modified = isoOf(ds.source_modified_at);
-        if (modified) datasets[src.key].sourceModifiedAt = modified;
+    return withManifestLock(dir, () => buildManifest(dir, sources, registry));
+}
+
+function readManifest(dir) {
+    try {
+        return JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+    } catch (_) {
+        return null;
     }
-    const manifest = { generatedAt: new Date().toISOString(), datasets };
+}
+
+/** Write manifest.json atomically (call inside withManifestLock). */
+function saveManifest(dir, manifest) {
     const final = path.join(dir, 'manifest.json');
     const tmp = path.join(dir, `.manifest.json.${process.pid}.tmp`);
     fs.writeFileSync(tmp, JSON.stringify(manifest, null, 1));
@@ -212,4 +223,40 @@ function writeManifest(dir, sources, registry) {
     return manifest;
 }
 
-module.exports = { snapshotDir, extFor, contentTypeFor, SnapshotWriter, teeInto, removeSnapshot, cleanTemp, writeManifest, CONTENT_TYPES };
+function buildManifest(dir, sources, registry) {
+    const datasets = {};
+    // Native datasets (mode 'native', written by the data editor in lib/editor) keep the entry the
+    // editor last wrote: this run's registry rows may be older than the editor's latest commit.
+    const onDisk = (readManifest(dir) || {}).datasets || {};
+    const nativeEntry = (key, ds) => {
+        const e = onDisk[key];
+        if (!ds || ds.mode !== 'native' || !e || !e.file || !fs.existsSync(path.join(dir, e.file))) return null;
+        return Object.assign({}, e);
+    };
+    const known = new Set();
+    for (const src of [...sources].sort((a, b) => a.key.localeCompare(b.key))) {
+        known.add(src.key);
+        if (src.sensitive) continue;
+        const ds = registry.get(src.key);
+        const kept = nativeEntry(src.key, ds);
+        if (kept) {
+            datasets[src.key] = kept;
+            continue;
+        }
+        if (!ds || !ds.snapshot_file || !ds.snapshot_sha1) continue;
+        if (!fs.existsSync(path.join(dir, ds.snapshot_file))) continue;
+        datasets[src.key] = entryFor(src, ds);
+    }
+    // Datasets created in the data editor have no source file: they are listed from the registry.
+    const byKey = registry && registry.byKey instanceof Map ? registry.byKey : new Map();
+    for (const [key, ds] of [...byKey.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+        if (known.has(key) || !ds || ds.mode !== 'native') continue;
+        const kept = nativeEntry(key, ds);
+        if (kept) datasets[key] = kept;
+    }
+    const sorted = {};
+    for (const key of Object.keys(datasets).sort()) sorted[key] = datasets[key];
+    return saveManifest(dir, { generatedAt: new Date().toISOString(), datasets: sorted });
+}
+
+module.exports = { snapshotDir, extFor, contentTypeFor, SnapshotWriter, teeInto, removeSnapshot, cleanTemp, writeManifest, readManifest, saveManifest, withManifestLock, isoOf, entryFor, CONTENT_TYPES };

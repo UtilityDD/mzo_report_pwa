@@ -221,6 +221,7 @@ app.use((req, res, next) => {
 // Server-side files are never served, locally or from the Vercel function.
 const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
 app.use((req, res, next) => (PRIVATE_PATH.test(req.path) ? res.status(404).end() : next()));
+app.use('/lib/editor', (req, res) => res.status(404).end()); // the data editor's server code (docs/data-editor.md)
 // Old URLs (vercel.json has the same redirects): the retired phone home page, the NSC drafts and an extension-less report.
 app.get(['/', '/index.html'], (req, res) => res.redirect(302, '/app.html'));
 // The three NSC drafts became the single Pending NSC page.
@@ -946,6 +947,8 @@ function refreshMirror(keys, reason) {
 mirror.mount(app);
 // Admin → Sources: where each dataset comes from, its schedule and freshness (lib/sources_info.js; docs/data-mirror.md).
 app.get('/api/admin/sources-info', require('./lib/sources_info').create({ appRoot: __dirname, mirror }).handler);
+// Data editor (/editor/, /api/editor/*; docs/data-editor.md): native datasets on the VM's PocketBase. Off without PocketBase credentials.
+require('./lib/editor').mount(app, { refreshMirror, isSensitive: (key) => require('./lib/mirror').isSensitive(key), onChanged: (keys) => { if (mirror.on() && keys.some((k) => BRIEFING_MIRROR_KEYS.has(k))) refreshBriefing_({ changed: true }); } });
 // Uniform rows next to the snapshots (docs/uniform-data.md); mirror mode only.
 if (String(process.env.MZO_DATA_MODE || '').toLowerCase() === 'mirror') {
     try {
