@@ -920,6 +920,8 @@ function refreshMirror(keys, reason) {
     return started;
 }
 mirror.mount(app);
+// Admin → Sources: where each dataset comes from, its schedule and freshness (lib/sources_info.js; docs/data-mirror.md).
+app.get('/api/admin/sources-info', require('./lib/sources_info').create({ appRoot: __dirname, mirror }).handler);
 // Uniform rows next to the snapshots (docs/uniform-data.md); mirror mode only.
 if (String(process.env.MZO_DATA_MODE || '').toLowerCase() === 'mirror') {
     try {

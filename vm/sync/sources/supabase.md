@@ -10,7 +10,7 @@
 
 ## Datasets
 
-Rows as of 2026-11-01. Schedules: `frequent` = every 15 min, `hourly`, `daily`.
+Rows as of 2026-11-01. Schedules: `frequent` = every 5 min, `hourly`, `daily` (`vm/sync/lib/schedule.js`).
 
 ### Old project tables (`sourceType: supabase_table`)
 

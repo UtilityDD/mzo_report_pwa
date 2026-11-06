@@ -137,7 +137,7 @@ Pages that read sheets through `mzoMirror.fetch`: accident, consumers, docket KP
 
 A repeated `_peek` of a large body within 15 s returns the same string without another IndexedDB read (UI.load reads, revalidates, reads again), as long as the stored version has not changed.
 
-DataHub keys in use: `CACHE_NSC_v5`, `CACHE_WITHHELD_v4`, `CACHE_STOCK`, `CACHE_POWER_MAP`, `CACHE_SOLAR`, `CACHE_JJM`, `CACHE_WRIDD`, `CACHE_BHARATNET`, `CACHE_METER_*`, `CACHE_DEFECTIVE`, `CACHE_DEFECTIVE_DETAILS`, plus collection/loss/weekly/docket/REM/capex/etc. in `DATASETS`. `window.MZO_DATASETS` is that same list. Admin → Sources classifies each report as Sheet, Supabase, JSON, Script, or RSS. Sheet rows have a small open control and a copy control for the spreadsheet link only. Stock’s label follows `/api/stock/meta` `source` (Supabase Storage vs Google Sheet).
+DataHub keys in use: `CACHE_NSC_v5`, `CACHE_WITHHELD_v4`, `CACHE_STOCK`, `CACHE_POWER_MAP`, `CACHE_SOLAR`, `CACHE_JJM`, `CACHE_WRIDD`, `CACHE_BHARATNET`, `CACHE_METER_*`, `CACHE_DEFECTIVE`, `CACHE_DEFECTIVE_DETAILS`, plus collection/loss/weekly/docket/REM/capex/etc. in `DATASETS`. `window.MZO_DATASETS` is that same list. Admin → Sources lists every dataset and live feature with its origin, refresh schedule and freshness, by dataset and by report (`GET /api/admin/sources-info`; see [data-mirror.md](data-mirror.md#admin--sources-where-each-dataset-comes-from)).
 
 Bump the **cache key** (`CACHE_FOO_v2`) if the stored row shape changes. Large dumps stay out of git (see `.gitignore` / `.vercelignore`).
 
