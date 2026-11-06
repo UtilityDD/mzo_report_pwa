@@ -9,6 +9,7 @@ A small Oracle Cloud VM runs a second copy of the app and the data mirror (Pocke
 | URL | Serves |
 |---|---|
 | https://130.210.43.11.sslip.io | The app (Caddy → `node server.js` on 127.0.0.1:3000). `http://130.210.43.11` redirects here |
+| https://130.210.43.11.sslip.io/editor/ | The data editor (served by the app; [data-editor.md](data-editor.md)) |
 | https://130.210.43.11.sslip.io/deploy.json | The deploy record (below); no cache, CORS `*` |
 | https://data.130.210.43.11.sslip.io | Admin portal: static files from `vm/portal/` of the live release |
 | https://data.130.210.43.11.sslip.io/api/, `/_/` | PocketBase API and dashboard (127.0.0.1:8090) |
