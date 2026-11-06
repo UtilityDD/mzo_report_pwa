@@ -941,7 +941,8 @@ function readSession_(req) {
 // Reachable without a session (static files are already served above).
 const PUBLIC_PATHS = new Set([
     '/login.html', '/offline.html', '/sw.js', '/manifest.json',
-    '/api/auth/google', '/api/auth/local', '/api/auth/pending-status', '/api/auth/config', '/api/news'
+    '/api/auth/google', '/api/auth/local', '/api/auth/pending-status', '/api/auth/config', '/api/news',
+    '/api/disconnection/payments', '/api/disconnection/meta', '/api/disconnection/dataset'
 ]);
 const PUBLIC_ASSET = /^\/(icons|assets)\/|\.(css|js|png|json|ico)$/i;
 
@@ -4536,12 +4537,14 @@ const DISCONNECTION_FOLLOWUP_SCRIPT_URL = String(
 const canSyncDisconnection_ = (user) => hasPermission_(user, 'disconnection-sync-autho', ['discon', 'sync']);
 
 app.get('/api/disconnection/meta', async (req, res) => {
-    if (!req.user) return UNAUTHORIZED_(res);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
 
-    const user = await resolveFreshUser_(req);
-    const canSync = canSyncDisconnection_(user);
-    const isAdmin = isPortalAdmin_(user);
+    const user = req.user ? await resolveFreshUser_(req) : null;
+    const canSync = user ? canSyncDisconnection_(user) : false;
+    const isAdmin = user ? isPortalAdmin_(user) : false;
 
     let meta = await DISCONNECTION_META.read();
 
@@ -4574,7 +4577,9 @@ app.get('/api/disconnection/meta', async (req, res) => {
 });
 
 app.get('/api/disconnection/dataset', async (req, res) => {
-    if (!req.user) return UNAUTHORIZED_(res);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Cache-Control', 'private, max-age=60');
 
