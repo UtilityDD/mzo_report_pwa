@@ -258,6 +258,8 @@ There is no single test command. What exists:
 | `cd vm/sync && npm ci && npm run check` | sync syntax | none |
 | `scripts/qa/parity.js`, `diff.js`, `timing.js`, `uniform-pages.js`, `legacy-pages.js`, `sheet-links-pages.js`, `rating-page.js` | browser parity of original vs mirror mode, page by page (Chrome and `playwright-core`) | GET only, against `serve-local.sh` instances |
 | `scripts/qa/mirror-types.js` | the mirror's column types match `lib/uniform.js` | needs a PocketBase env file |
+| `scripts/qa/speed.js <base>[,<base2>] <label>[,<label2>]`, `--compare <a> <b>` | page speed: cold and warm, 1440 px and 390 px with the CPU 4× slower, over an emulated VM link; bytes, requests, time to settled content, and whether the numbers shown are identical | GET only, against `serve-local.sh` instances |
+| `scripts/qa/view-parity.js --snap <dir>` | every number a page view (`vm/sync/lib/views`) feeds equals the old page logic, row by row, for three logins | none (a snapshot folder with views built) |
 
 Parity workflow and options: [vm.md → Parity checks](vm.md#parity-checks-mirror-mode-shows-the-same-numbers). By hand, for any page you change: load it signed in, light and dark, desktop and about 390 px wide, inside `app.html` and alone, with no new console errors (the checklist in the [repository rules](../AGENTS.md)).
 
