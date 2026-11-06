@@ -49,12 +49,20 @@
   });
   P.api.onSignOut(function (reason) { showLogin(reason); });
 
+  function cleanName(raw) {
+    if (!raw) return '';
+    var s = String(raw).trim();
+    s = s.replace(/^(?:(?:addl\.?|additional)\s+)?(?:chief\s+engineer|superintending\s+engineer|divisional\s+engineer|assistant\s+engineer|ce|se|de|ae|ee|ace)\b(?:\s*\([^)]*\)|[,\s\-\/]+(?:hq|mzo|zone))?[\s.,:\-\/]*/i, '').trim();
+    s = s.replace(/(?:[\s,:\-\/]*\((?:(?:addl\.?|additional)\s+)?(?:chief\s+engineer|superintending\s+engineer|divisional\s+engineer|assistant\s+engineer|ce|se|de|ae|ee|ace)\)|[,:\-\/]+\s*(?:(?:addl\.?|additional)\s+)?(?:chief\s+engineer|superintending\s+engineer|divisional\s+engineer|assistant\s+engineer|ce|se|de|ae|ee|ace)|\s+(?:chief\s+engineer|superintending\s+engineer|divisional\s+engineer|assistant\s+engineer|ce|se|ae|ee|ace))\s*$/i, '').trim();
+    return s || String(raw).trim();
+  }
+
   /* ---------- app ---------- */
   function startApp() {
     var s = P.api.session();
     $('login').hidden = true;
     $('app').hidden = false;
-    var who = s.name || s.email;
+    var who = cleanName(s.name) || s.name || s.email;
     $('meAv').textContent = (who || '?').trim().charAt(0).toUpperCase();
     $('meName').textContent = who;
     $('meSub').textContent = s.kind === 'superuser' ? 'Superuser' : 'Portal user';
