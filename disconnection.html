@@ -243,18 +243,8 @@
   <main class="ui-page">
     <header class="ui-head">
       <div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-          <h1 style="margin:0;">Disconnection tracker</h1>
-          <span class="ui-badge ui-date" id="asOn">…</span>
-        </div>
-        <div class="dc-meta-sub" id="headerSub" style="margin-top:6px;font-size:12px;color:var(--mzo-muted);display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-          <span class="ui-badge sm" id="baseDateBadge" title="OSD defaulter baseline date">
-            <strong style="color:var(--mzo-text)">OSD Base Date:</strong>&nbsp;<span id="baseDateVal">03.11.2026</span>
-          </span>
-          <span class="ui-badge sm ok" id="payUpdateBadge" title="Latest daily collections synced from IBM DB2 (ISUDATA.WBSEDCL_DAILY_COLLECTIONS)">
-            <span class="ui-dot c1"></span><strong style="color:var(--mzo-text)">DB2 Payments:</strong>&nbsp;<span id="payUpdateVal">Up to 05.11.2026</span>
-          </span>
-        </div>
+        <h1>Disconnection tracker<span class="ui-badge ui-date" id="asOn">…</span></h1>
+        <p id="headerSub">OSD baseline: <strong id="baseDateVal">3 Nov 2026</strong> &nbsp;·&nbsp; DB2 collections through: <strong id="payUpdateVal">5 Nov 2026</strong></p>
       </div>
       <div class="ui-actions">
         <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side"
@@ -396,6 +386,25 @@
       }
       var GOOGLE_CSV = '/api/disconnection/dataset';
       var paymentsMap = {}, lastTableDoc = null;
+
+      function formatCleanDate(val) {
+        if (!val) return '—';
+        if (val instanceof Date) return UI.fmtDate(val);
+        var s = String(val).trim();
+        if (/^\d{8}$/.test(s)) {
+          var y = parseInt(s.slice(0, 4), 10), m = parseInt(s.slice(4, 6), 10) - 1, d = parseInt(s.slice(6, 8), 10);
+          var dt = new Date(y, m, d);
+          return isNaN(dt.getTime()) ? s : UI.fmtDate(dt);
+        }
+        var p = s.split(/[./-]/);
+        if (p.length === 3 && p[0].length <= 2 && p[2].length === 4) {
+          var dt2 = new Date(parseInt(p[2], 10), parseInt(p[1], 10) - 1, parseInt(p[0], 10));
+          return isNaN(dt2.getTime()) ? s : UI.fmtDate(dt2);
+        }
+        var dt3 = new Date(s);
+        return isNaN(dt3.getTime()) ? s : UI.fmtDate(dt3);
+      }
+
       function loadPayments() {
         var base = getApiBase();
         var url = (base ? base : '') + '/api/disconnection/payments';
@@ -412,8 +421,9 @@
             if (json) {
               if (json.consumers) paymentsMap = json.consumers;
               var payDt = json.latestPaymentDate || json.lastPaymentDate;
-              if (payDt && $('payUpdateVal')) $('payUpdateVal').textContent = 'Up to ' + payDt;
-              if (json.cutoffDateFormatted && $('baseDateVal')) $('baseDateVal').textContent = json.cutoffDateFormatted;
+              if (payDt && $('payUpdateVal')) $('payUpdateVal').textContent = formatCleanDate(payDt);
+              var bDt = json.cutoffDate || json.cutoffDateFormatted;
+              if (bDt && $('baseDateVal')) $('baseDateVal').textContent = formatCleanDate(bDt);
               if (lastTableDoc) {
                 prepare(lastTableDoc);
                 render({ keepPage: true });
@@ -566,10 +576,11 @@
           };
         });
         haveData = true;
-        $('asOn').textContent = maxDate ? 'As on ' + UI.fmtDate(maxDate) : UI.n(all.length) + ' consumers';
-        var fmt = function (s) { return s ? UI.fmtDate(s) : '—'; };
+        $('asOn').textContent = UI.n(all.length) + ' consumers';
         if (base.dom || base.ind) {
-          var bStr = base.dom && base.ind && base.dom !== base.ind ? ('Dom ' + fmt(base.dom) + ', Ind ' + fmt(base.ind)) : fmt(base.dom || base.ind);
+          var domStr = formatCleanDate(base.dom);
+          var indStr = formatCleanDate(base.ind);
+          var bStr = domStr === indStr || !indStr ? domStr : ('Dom ' + domStr + ', Ind ' + indStr);
           if ($('baseDateVal')) $('baseDateVal').textContent = bStr;
         }
       }
@@ -1321,8 +1332,9 @@
       metaP.then(function (m) {
         var s = m && m.stats;
         if (s) {
-          if (s.baseDate && $('baseDateVal')) $('baseDateVal').textContent = s.baseDate;
-          if (s.lastPaymentDate && $('payUpdateVal')) $('payUpdateVal').textContent = 'Up to ' + s.lastPaymentDate;
+          if (s.baseDate && $('baseDateVal')) $('baseDateVal').textContent = formatCleanDate(s.baseDate);
+          if (s.lastPaymentDate && $('payUpdateVal')) $('payUpdateVal').textContent = formatCleanDate(s.lastPaymentDate);
+          if (s.totalConsumers && !haveData) $('asOn').textContent = UI.n(s.totalConsumers) + ' consumers';
         }
         if (haveData || !s || !(s.totalConsumers > 0)) return;
         var t = s.totalConsumers, map = { 'Fully Paid': s.fullyPaid, 'Partially Paid': s.partiallyPaid, 'Disconnected': s.disconnected, 'No Action Taken': s.noAction };
