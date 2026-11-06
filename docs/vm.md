@@ -106,6 +106,10 @@ SSH: `ssh -i ssh-key-2026-11-01.key opc@130.210.43.11` (the key is not in the re
 
 PocketBase settings set by `pb-setup.sh`: batch API on, client IP from Caddy's `X-Forwarded-For`, rate limits on with 127.0.0.1 exempt (the sync talks to it directly), app URL `https://data.130.210.43.11.sslip.io`. Batch size, timeouts and log retention come from the settings migration in `vm/pocketbase/pb_migrations/`.
 
+## Users on the VM
+
+The VM's app keeps its own users in PocketBase (`MZO_USER_STORE=pocketbase` in `mzo-reports.service`): Google sign-in, new emails wait for approval, built-in admins are seeded at start. Schema, rules and first deploy: [users.md](users.md). `MZO_ADMIN_EMAILS` and `MZO_ACTIVITY_RETENTION_DAYS` go in `/etc/mzo/app.env`.
+
 ## VM-only admin accounts
 
 Admin accounts that exist only on the VM: never in Supabase, never on Vercel. They are listed in `MZO_LOCAL_ADMINS` in `/etc/mzo/app.env`, which holds password hashes only (systemd reads the file as root, so `chmod 600` is enough). One entry per account, separated by `;`:
@@ -120,7 +124,7 @@ How they behave (`lib/local_admins.js`, tests in `vm/dev/test-local-admin.js`):
 - Such a username is checked against its hash only, never against Supabase. Pick a username that is not in `portal_users`: a local admin and a Supabase user of the same name would be different people.
 - The session carries the full admin profile (the same fields as the Google root admin) with `auth_provider: 'local'`. Session checks and permission checks never look it up in Supabase, so it is never demoted.
 - Five failed attempts for one username, or from one client IP, lock that username or IP for a minute. An unknown username takes as long as a wrong password, gets the same "Invalid username or password." answer and counts against the IP. A locked attempt gets that answer too; the journal records each failure and lockout (`journalctl -u mzo-reports | grep 'Local admin'`).
-- Its activity (sign-in, admin actions) goes to the journal (`grep Activity`), not to Supabase's activity log. What the admin changes (users, Power Map, uploads, syncs) still goes to production, like any admin's changes.
+- Its activity (sign-in, admin actions) goes to the journal (`grep Activity`), not to Supabase's activity log; with the user store on it also goes to `app_activity`. What the admin changes (users, Power Map, uploads, syncs) still goes to production, like any admin's changes.
 - Changing or removing an entry ends that account's open sessions once the app restarts.
 
 **Add an account.** Hash the password (typed twice, never shown, never on the command line), add the entry, restart:

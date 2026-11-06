@@ -219,7 +219,7 @@ app.use((req, res, next) => {
 });
 
 // Server-side files are never served, locally or from the Vercel function.
-const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
+const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
 app.use((req, res, next) => (PRIVATE_PATH.test(req.path) ? res.status(404).end() : next()));
 // Old URLs (vercel.json has the same redirects): the retired phone home page, the NSC drafts and an extension-less report.
 app.get(['/', '/index.html'], (req, res) => res.redirect(302, '/app.html'));
@@ -229,6 +229,8 @@ app.get(['/nsc_simple.html', '/nsc_pipeline.html', '/nsc_classic.html'], (req, r
     res.redirect(302, '/nsc.html' + (i === -1 ? '' : req.originalUrl.slice(i)));
 });
 app.get('/performance_index', (req, res) => res.redirect(308, '/performance_index.html'));
+// VM user store: a report page outside the signed-in user's modules is refused (docs/users.md).
+app.use((req, res, next) => reportPageGate_(req, res, next));
 // Static files are public, as on Vercel where the CDN serves them before this app; pages gate themselves with auth.js.
 app.use(express.static(__dirname));
 
@@ -239,6 +241,10 @@ if (!process.env.JWT_SECRET && process.env.VERCEL) {
 }
 // VM-only admin accounts from MZO_LOCAL_ADMINS (set only in the VM's /etc/mzo/app.env). Unset: inactive.
 const localAdmins = require('./lib/local_admins').create({ secret: JWT_SECRET });
+// VM user store (MZO_USER_STORE=pocketbase, the VM only): accounts, sign-in and activity in PocketBase
+// instead of Supabase portal_users / activity_logs (docs/users.md). Unset (Vercel, local): inactive.
+const userStore = require('./lib/users_store').create({ secret: JWT_SECRET, localAdmins, appRoot: __dirname });
+if (userStore.on) app.use(userStore.context);
 const POWER_MAP_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT8hYE6YBbfVQDJhgB3cIWqrrGrjMQAQ22mcmCJTOa995gCH-xBAfsAPpBvNYS1KlYIFMRHM59iGB7K/pub?output=csv';
 // Distinct table names (do not use generic "substations" — may clash with other projects/tables)
 const POWER_MAP_TABLE = 'mzo_power_substations';
@@ -742,6 +748,7 @@ async function fetchActivityLogsFromSupabase(limit = 2000, sinceIso) {
 }
 
 async function logActivity(activity) {
+    if (userStore.on) return userStore.logActivity(activity);
     try {
         // Some fields come from the request (page path, names, labels): keep them bounded.
         const clip = (v, max) => String(v == null ? '' : v).slice(0, max);
@@ -822,6 +829,10 @@ function readUsersFromLocalFile() {
  * forceRefresh=true (sign-in, admin edits) always re-queries so changes apply immediately.
  */
 async function getLoginCredentials(options = {}) {
+    if (userStore.on) {
+        await userStore.ready();
+        return userStore.legacyUsers();
+    }
     const forceRefresh = !!(options && options.forceRefresh);
     const now = Date.now();
     const cacheFresh = Array.isArray(globalCachedUsers)
@@ -869,6 +880,8 @@ function readSession_(req) {
             if (!localAdmins.sessionValid(session)) return null;
             req.localAdmin = true;
         }
+        // VM user store: the account's current profile, or null once it is disabled or its access changed.
+        if (userStore.on) return userStore.profileForSession(session, session.local !== undefined);
         return session.profile;
     } catch (_) {
         return null;
@@ -884,6 +897,7 @@ const PUBLIC_ASSET = /^\/(icons|assets)\/|\.(css|js|png|json|ico)$/i;
 
 async function requireAuth(req, res, next) {
     const pathName = req.path;
+    if (userStore.on) await userStore.ready();
     const profile = readSession_(req);
     if (profile) {
         req.user = profile;
@@ -908,6 +922,16 @@ async function requireAuth(req, res, next) {
 }
 
 app.use(requireAuth);
+
+async function reportPageGate_(req, res, next) {
+    if (!userStore.on || !/\.html$/i.test(req.path)) return next();
+    await userStore.ready();
+    const profile = readSession_(req);
+    if (profile && !userStore.pageAllowed(profile, req.path)) {
+        return res.status(403).type('text/plain').send('This report is not enabled for your account. Ask an administrator.');
+    }
+    return next();
+}
 
 // VM mirror mode (MZO_DATA_MODE=mirror + MZO_SNAPSHOT_DIR): /api/data/* serve the sync's snapshots, report
 // reads below use them, and writes refresh them. Off on Vercel and by default (docs/architecture.md, "Mirror mode").
@@ -994,30 +1018,22 @@ function issueSessionCookie(res, clientProfile, extra) {
 }
 
 const ROOT_ADMIN_EMAILS = ['smartlinemanapp@gmail.com'];
-const GOOGLE_ISSUERS = new Set(['accounts.google.com', 'https://accounts.google.com']);
+const googleAuth = require('./lib/google_auth');
 
 function googleClientId_() {
     return String(process.env.GOOGLE_CLIENT_ID || fileConfig.googleClientId || '').trim();
 }
 
+// The VM user store's sign-in, session check and user admin routes take precedence over the Supabase ones below.
+if (userStore.on) userStore.mount(app, { issueSessionCookie, requireAdmin, clientId: googleClientId_, fetch, rootAdmins: ROOT_ADMIN_EMAILS });
+
 /**
- * Google checks the token's signature and expiry; we check it was issued to this app's
- * client ID for a verified email. kind: 'id_token' (Sign-In button) or 'access_token' (popup).
+ * A Google token issued to this app's client ID for a verified email (lib/google_auth.js): an ID token
+ * (Sign-In button) is checked against Google's signing keys, an access token (popup) by Google's tokeninfo.
  * Returns the claims, or null when the token does not qualify. Throws if Google is unreachable.
  */
-async function googleTokenInfo_(kind, token) {
-    const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?${kind}=${encodeURIComponent(token)}`, {
-        signal: AbortSignal.timeout(8000)
-    });
-    if (!res.ok) return null;
-    const info = await res.json().catch(() => null);
-    if (!info || !info.email) return null;
-    const audience = kind === 'id_token' ? info.aud : (info.aud || info.azp);
-    if (audience !== googleClientId_()) return null;
-    if (kind === 'id_token' && !GOOGLE_ISSUERS.has(info.iss)) return null;
-    if (!(Number(info.exp) * 1000 > Date.now())) return null;
-    if (String(info.email_verified) !== 'true') return null;
-    return info;
+function googleTokenInfo_(kind, token) {
+    return googleAuth.tokenInfo(kind, token, { clientId: googleClientId_(), fetch });
 }
 
 /** Full admin profile: the Google root admin's, also used for VM-only admins (MZO_LOCAL_ADMINS). */
