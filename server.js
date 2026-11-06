@@ -219,7 +219,7 @@ app.use((req, res, next) => {
 });
 
 // Server-side files are never served, locally or from the Vercel function.
-const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
+const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins|google_auth)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
 app.use((req, res, next) => (PRIVATE_PATH.test(req.path) ? res.status(404).end() : next()));
 // Old URLs (vercel.json has the same redirects): the retired phone home page, the NSC drafts and an extension-less report.
 app.get(['/', '/index.html'], (req, res) => res.redirect(302, '/app.html'));
@@ -992,30 +992,19 @@ function issueSessionCookie(res, clientProfile, extra) {
 }
 
 const ROOT_ADMIN_EMAILS = ['smartlinemanapp@gmail.com'];
-const GOOGLE_ISSUERS = new Set(['accounts.google.com', 'https://accounts.google.com']);
+const googleAuth = require('./lib/google_auth');
 
 function googleClientId_() {
     return String(process.env.GOOGLE_CLIENT_ID || fileConfig.googleClientId || '').trim();
 }
 
 /**
- * Google checks the token's signature and expiry; we check it was issued to this app's
- * client ID for a verified email. kind: 'id_token' (Sign-In button) or 'access_token' (popup).
+ * A Google token issued to this app's client ID for a verified email (lib/google_auth.js): an ID token
+ * (Sign-In button) is checked against Google's signing keys, an access token (popup) by Google's tokeninfo.
  * Returns the claims, or null when the token does not qualify. Throws if Google is unreachable.
  */
-async function googleTokenInfo_(kind, token) {
-    const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?${kind}=${encodeURIComponent(token)}`, {
-        signal: AbortSignal.timeout(8000)
-    });
-    if (!res.ok) return null;
-    const info = await res.json().catch(() => null);
-    if (!info || !info.email) return null;
-    const audience = kind === 'id_token' ? info.aud : (info.aud || info.azp);
-    if (audience !== googleClientId_()) return null;
-    if (kind === 'id_token' && !GOOGLE_ISSUERS.has(info.iss)) return null;
-    if (!(Number(info.exp) * 1000 > Date.now())) return null;
-    if (String(info.email_verified) !== 'true') return null;
-    return info;
+function googleTokenInfo_(kind, token) {
+    return googleAuth.tokenInfo(kind, token, { clientId: googleClientId_(), fetch });
 }
 
 /** Full admin profile: the Google root admin's, also used for VM-only admins (MZO_LOCAL_ADMINS). */
