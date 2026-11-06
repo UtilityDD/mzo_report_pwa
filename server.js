@@ -865,22 +865,29 @@ async function getLoginCredentials(options = {}) {
     return [];
 }
 
-/** Profile from a valid, unexpired mzo_session cookie, Bearer token, or sync secret, else null. */
-function readSession_(req) {
-    const syncSecret = process.env.UNBILLED_SYNC_SECRET || 'mzo-crm-db2-sync-key-2026';
-    if (req && req.headers && (req.headers['x-sync-key'] === syncSecret || req.headers.authorization === `Bearer ${syncSecret}`)) {
-        req.localAdmin = true;
-        return {
-            Username: 'db2_sync_agent',
-            Name: 'DB2 CRM Sync Agent',
-            email: 'smartlinemanapp@gmail.com',
-            role: 'admin',
-            isAdmin: true,
-            'unbilled-sync-autho': 'Y',
-            'defective-upload-autho': 'Y'
-        };
-    }
+// CRM (DB2) upload scripts: a key from the environment in the x-sync-key header, accepted only on these
+// routes and only with that route's upload permission. Unset or shorter than 32 characters: off.
+const SYNC_UPLOAD_ROUTES = {
+    '/api/unbilled/upload': { env: 'UNBILLED_SYNC_SECRET', perm: 'unbilled-sync-autho' },
+    '/api/disconnection/upload': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' }
+};
 
+function syncKeyMatches_(given, envName) {
+    const secret = String(process.env[envName] || '').trim();
+    if (secret.length < 32 || typeof given !== 'string' || !given) return false;
+    const digest = (v) => crypto.createHash('sha256').update(v, 'utf8').digest();
+    return crypto.timingSafeEqual(digest(given.trim()), digest(secret));
+}
+
+/** The upload identity for a valid x-sync-key on a sync upload route, else null. */
+function syncAgentFor_(req) {
+    const route = req.method === 'POST' ? SYNC_UPLOAD_ROUTES[req.path] : null;
+    if (!route || !syncKeyMatches_(req.headers['x-sync-key'], route.env)) return null;
+    return { Username: 'db2_sync_agent', username: 'db2_sync_agent', Name: 'DB2 CRM sync', role: 'sync', [route.perm]: 'Y' };
+}
+
+/** Profile from a valid, unexpired mzo_session cookie or Bearer token, else null. */
+function readSession_(req) {
     let token = parseCookies(req.headers.cookie).mzo_session;
     if (!token && req.headers && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
         token = req.headers.authorization.slice(7).trim();
@@ -909,16 +916,16 @@ function readSession_(req) {
 // Reachable without a session (static files are already served above).
 const PUBLIC_PATHS = new Set([
     '/login.html', '/offline.html', '/sw.js', '/manifest.json',
-    '/api/auth/google', '/api/auth/local', '/api/auth/pending-status', '/api/auth/config', '/api/news',
-    '/api/unbilled/meta', '/api/unbilled/outsort', '/api/unbilled/chronic', '/api/unbilled/summary',
-    '/api/disconnection/meta', '/api/disconnection/dataset'
+    '/api/auth/google', '/api/auth/local', '/api/auth/pending-status', '/api/auth/config', '/api/news'
 ]);
 const PUBLIC_ASSET = /^\/(icons|assets)\/|\.(css|js|png|json|ico)$/i;
 
 async function requireAuth(req, res, next) {
     const pathName = req.path;
     if (userStore.on) await userStore.ready();
-    const profile = readSession_(req);
+    const syncAgent = syncAgentFor_(req);
+    if (syncAgent) req.syncAgent = true;
+    const profile = syncAgent || readSession_(req);
     if (profile) {
         req.user = profile;
         // Page visits feed Admin → Visitors.
@@ -2358,7 +2365,7 @@ async function resolveFreshUser_(req, force = false) {
     const session = req.user || null;
     if (!session || !session.Username) return session;
     // A VM-only admin is not in Supabase: never demoted, never replaced by a row of the same name.
-    if (req.localAdmin) return session;
+    if (req.localAdmin || req.syncAgent) return session;
     try {
         const users = await getLoginCredentials({ forceRefresh: force });
         const key = String(session.Username).trim().toLowerCase();
@@ -4263,18 +4270,8 @@ const unbilledUpload = multer({
     }
 });
 
-app.options('/api/unbilled/upload', (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.status(204).end();
-});
-
 app.post('/api/unbilled/upload', (req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    if (req.method === 'OPTIONS') return res.status(204).end();
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized. Sign in to upload unbilled data.' });
     unbilledUpload.fields([
         { name: 'outsort', maxCount: 1 },
         { name: 'chronic', maxCount: 1 },
@@ -4384,7 +4381,7 @@ app.post('/api/unbilled/upload', (req, res, next) => {
                 chronicCount: chronicInfo.count,
                 currentMonCount: summaryInfo.totalConsumers,
                 summaryGroups: summaryInfo.groupCount,
-                source: 'Uploaded to VM by ' + (user.email || user.username || 'Authorized User'),
+                source: 'Uploaded to VM by ' + (user.email || user.username || user.Username || 'Authorized User'),
                 uploadedAt: new Date().toISOString()
             };
 
@@ -4392,8 +4389,8 @@ app.post('/api/unbilled/upload', (req, res, next) => {
             UNBILLED_META.set(metaPayload);
 
             logActivity({
-                username: user.email || user.username,
-                name: user.name || user.email,
+                username: user.email || user.username || user.Username,
+                name: user.name || user.Name || user.email,
                 type: 'upload',
                 details: `Uploaded unbilled datasets to VM (${saved.join(', ')}): date ${metaPayload.asOn}, ${metaPayload.currentMonCount} unbilled`
             }).catch(() => { });
@@ -4411,19 +4408,12 @@ app.post('/api/unbilled/upload', (req, res, next) => {
     });
 });
 
-app.options('/api/unbilled/:type', (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.status(204).end();
-});
+const UNAUTHORIZED_ = (res) => res.status(401).json({ status: 'error', message: 'Unauthorized' });
 
 app.get('/api/unbilled/meta', async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (!req.user) return UNAUTHORIZED_(res);
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
-    const user = req.user ? await resolveFreshUser_(req) : null;
+    const user = await resolveFreshUser_(req);
     const canSync = user ? canManageUnbilled_(user) : false;
     let meta = await UNBILLED_META.read();
     if ((!meta || !meta.asOn) && req.headers.host && !req.headers.host.includes('130.210.43.11')) {
@@ -4455,9 +4445,9 @@ app.get('/api/unbilled/meta', async (req, res) => {
 });
 
 app.get('/api/unbilled/outsort', (req, res) => {
+    if (!req.user) return UNAUTHORIZED_(res);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Cache-Control', 'private, max-age=60');
-    res.setHeader('Access-Control-Allow-Origin', '*');
     const f = path.join(__dirname, 'data/unbilled_outsort.csv');
     if (fs.existsSync(f)) return fs.createReadStream(f).pipe(res);
     if (req.headers.host && !req.headers.host.includes('130.210.43.11')) {
@@ -4467,9 +4457,9 @@ app.get('/api/unbilled/outsort', (req, res) => {
 });
 
 app.get('/api/unbilled/chronic', (req, res) => {
+    if (!req.user) return UNAUTHORIZED_(res);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Cache-Control', 'private, max-age=60');
-    res.setHeader('Access-Control-Allow-Origin', '*');
     const f = path.join(__dirname, 'data/unbilled_chronic.csv');
     if (fs.existsSync(f)) return fs.createReadStream(f).pipe(res);
     if (req.headers.host && !req.headers.host.includes('130.210.43.11')) {
@@ -4479,9 +4469,9 @@ app.get('/api/unbilled/chronic', (req, res) => {
 });
 
 app.get('/api/unbilled/summary', (req, res) => {
+    if (!req.user) return UNAUTHORIZED_(res);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Cache-Control', 'private, max-age=60');
-    res.setHeader('Access-Control-Allow-Origin', '*');
     const f = path.join(__dirname, 'data/unbilled_summary.csv');
     if (fs.existsSync(f)) return fs.createReadStream(f).pipe(res);
     if (req.headers.host && !req.headers.host.includes('130.210.43.11')) {
@@ -4519,22 +4509,13 @@ const DISCONNECTION_FOLLOWUP_SCRIPT_URL = String(
 
 const canSyncDisconnection_ = (user) => hasPermission_(user, 'disconnection-sync-autho', ['discon', 'sync']);
 
-app.options('/api/disconnection/meta', (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.status(204).end();
-});
-
 app.get('/api/disconnection/meta', async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (!req.user) return UNAUTHORIZED_(res);
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
 
-    const user = req.user ? await resolveFreshUser_(req) : null;
-    const canSync = user ? canSyncDisconnection_(user) : false;
-    const isAdmin = user ? isPortalAdmin_(user) : false;
+    const user = await resolveFreshUser_(req);
+    const canSync = canSyncDisconnection_(user);
+    const isAdmin = isPortalAdmin_(user);
 
     let meta = await DISCONNECTION_META.read();
 
@@ -4566,17 +4547,10 @@ app.get('/api/disconnection/meta', async (req, res) => {
     });
 });
 
-app.options('/api/disconnection/dataset', (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.status(204).end();
-});
-
 app.get('/api/disconnection/dataset', async (req, res) => {
+    if (!req.user) return UNAUTHORIZED_(res);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Cache-Control', 'private, max-age=60');
-    res.setHeader('Access-Control-Allow-Origin', '*');
 
     // 1. Local data/disconnection.csv on disk
     const localFile = path.join(__dirname, 'data', 'disconnection.csv');
@@ -4612,35 +4586,11 @@ const disconnectionUpload = multer({
     }
 });
 
-app.options('/api/disconnection/upload', (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-sync-key');
-    res.status(204).end();
-});
-
-app.post('/api/disconnection/upload', (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-sync-key');
-
-    const syncSecret = process.env.DISCONNECTION_SYNC_SECRET || 'mzo-crm-db2-sync-key-2026';
-    const headerKey = req.headers['x-sync-key'];
-    const authHeader = req.headers.authorization || '';
-    const bearerKey = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-
-    let isAuthorized = (headerKey && headerKey === syncSecret) || (bearerKey && bearerKey === syncSecret);
-    let user = null;
-
-    if (!isAuthorized) {
-        user = readSession_(req);
-        if (user && canSyncDisconnection_(user)) {
-            isAuthorized = true;
-        }
-    }
-
-    if (!isAuthorized) {
-        return res.status(401).json({ status: 'error', message: 'Unauthorized to upload disconnection dataset to VM' });
+app.post('/api/disconnection/upload', async (req, res) => {
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized to upload disconnection dataset to VM' });
+    const user = await resolveFreshUser_(req);
+    if (!canSyncDisconnection_(user)) {
+        return res.status(403).json({ status: 'error', message: 'Not authorized to upload the disconnection dataset. Ask an admin to grant permission.' });
     }
 
     disconnectionUpload.single('file')(req, res, async (err) => {
@@ -4654,6 +4604,12 @@ app.post('/api/disconnection/upload', (req, res) => {
             fs.writeFileSync(path.join(dataDir, 'disconnection.csv'), csvText, 'utf8');
 
             refreshMirror(['disconnection'], 'direct disconnection VM upload');
+            logActivity({
+                username: user.email || user.username || user.Username,
+                name: user.name || user.Name || user.email,
+                type: 'upload',
+                details: `Uploaded disconnection dataset to VM (${(req.file.size / 1024).toFixed(1)} KB)`
+            }).catch(() => { });
 
             return res.json({
                 status: 'success',

@@ -158,4 +158,19 @@ function cli(mod, run, label) {
     });
 }
 
-module.exports = { DIV_BY_CODE, parseCsvLine, fetchCsv, storageConfigured, upload, publishMeta, cli };
+/**
+ * Headers for a CRM script's upload to the VM: the sync key from the environment variable envName
+ * (sent as x-sync-key; the VM's /etc/mzo/app.env holds the same value) and/or the signed-in user's
+ * session token when the server started the sync. Throws when neither is usable.
+ */
+function vmUploadHeaders(envName, userToken) {
+    const key = String(process.env[envName] || '').trim();
+    if (key && key.length < 32) throw new Error(`${envName} is too short: use the 32+ character value configured on the VM.`);
+    if (!key && !userToken) throw new Error(`${envName} is not set: set it to the VM's value to upload (or run with --dry-run).`);
+    const headers = {};
+    if (key) headers['x-sync-key'] = key;
+    if (userToken) headers.Authorization = `Bearer ${userToken}`;
+    return headers;
+}
+
+module.exports = { DIV_BY_CODE, parseCsvLine, fetchCsv, storageConfigured, upload, publishMeta, cli, vmUploadHeaders };

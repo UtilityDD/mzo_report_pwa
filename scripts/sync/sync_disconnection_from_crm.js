@@ -12,9 +12,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const { spawnSync } = require('child_process');
-const { parseCsvLine, fetchCsv, storageConfigured, upload, publishMeta, cli } = require('./common');
+const { parseCsvLine, fetchCsv, storageConfigured, upload, publishMeta, cli, vmUploadHeaders } = require('./common');
+
+const SYNC_KEY_ENV = 'DISCONNECTION_SYNC_SECRET';
 
 const LABEL = 'CRM Disconnection Sync';
 const DBVIS_CONNECTION = 'ibm db2';
@@ -48,15 +49,9 @@ async function uploadToVm(csvFilePath, token) {
   const fd = new FormData();
   fd.append('file', new Blob([fs.readFileSync(csvFilePath)]), 'disconnection.csv');
 
-  const syncSecret = process.env.DISCONNECTION_SYNC_SECRET || 'mzo-crm-db2-sync-key-2026';
-  const authToken = token || syncSecret;
-
   const res = await fetch(`${VM_BASE_URL}/api/disconnection/upload`, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${authToken}`,
-      'x-sync-key': syncSecret
-    },
+    headers: vmUploadHeaders(SYNC_KEY_ENV, token),
     body: fd
   });
 
@@ -121,6 +116,9 @@ async function syncDisconnectionFromCrm(options = {}) {
   const skipDb = options.skipDb ?? false;
   const fresh = options.fresh ?? true;
   const userToken = options.userToken || '';
+
+  // Check the upload credentials before the extraction, so a missing key fails at once.
+  if (!dryRun) vmUploadHeaders(SYNC_KEY_ENV, userToken);
 
   const tempFile = path.join(TEMP_DIR, 'discon_raw.csv');
 

@@ -20,9 +20,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const { spawnSync } = require('child_process');
-const { storageConfigured, upload, publishMeta, cli } = require('./common');
+const { storageConfigured, upload, publishMeta, cli, vmUploadHeaders } = require('./common');
+
+const SYNC_KEY_ENV = 'UNBILLED_SYNC_SECRET';
 
 const LABEL = 'CRM Unbilled Sync';
 const DBVIS_CONNECTION = 'ibm db2';
@@ -34,24 +35,6 @@ const VM_BASE_URL = process.env.VM_BASE_URL || 'https://130.210.43.11.sslip.io';
 
 function isDbvisAvailable() {
   return fs.existsSync(DBVIS_CMD_PATH);
-}
-
-function makeAdminToken() {
-  const secret = process.env.SESSION_SECRET || 'smart-line-man-mzo-reports-super-secure-key-2026';
-  const payload = {
-    profile: {
-      username: 'db2_sync_agent',
-      name: 'DB2 CRM Sync Agent',
-      email: 'smartlinemanapp@gmail.com',
-      role: 'admin',
-      'unbilled-sync-autho': 'Y',
-      'defective-upload-autho': 'Y'
-    },
-    expiry: Date.now() + 60 * 60 * 1000
-  };
-  const payloadStr = Buffer.from(JSON.stringify(payload)).toString('base64');
-  const signature = crypto.createHmac('sha256', secret).update(payloadStr).digest('base64');
-  return payloadStr + '.' + signature;
 }
 
 async function uploadToVm(files, token) {
@@ -74,15 +57,9 @@ async function uploadToVm(files, token) {
     fd.append('summary', new Blob([fs.readFileSync(files.summary)]), 'unbilled_summary.csv');
   }
 
-  const syncSecret = process.env.UNBILLED_SYNC_SECRET || 'mzo-crm-db2-sync-key-2026';
-  const authToken = token || syncSecret;
-
   const res = await fetch(`${VM_BASE_URL}/api/unbilled/upload`, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${authToken}`,
-      'x-sync-key': syncSecret
-    },
+    headers: vmUploadHeaders(SYNC_KEY_ENV, token),
     body: fd
   });
 
@@ -195,6 +172,9 @@ async function syncUnbilledFromCrm(options = {}) {
   const skipDb = options.skipDb ?? false;
   const fresh = options.fresh ?? true;
 
+  // Check the upload credentials before the extraction, so a missing key fails at once.
+  if (!dryRun) vmUploadHeaders(SYNC_KEY_ENV, options.userToken);
+
   const tempOutsort = path.join(TEMP_DIR, 'outsort.csv');
   const tempChronic = path.join(TEMP_DIR, 'chronic.csv');
   const tempSummary = path.join(TEMP_DIR, 'summary.csv');
@@ -257,7 +237,7 @@ async function syncUnbilledFromCrm(options = {}) {
   // 4. Automatically upload processed unbilled datasets to Oracle Cloud VM
   if (!dryRun) {
     try {
-      const token = options.userToken || makeAdminToken();
+      const token = options.userToken || '';
       const vmRes = await uploadToVm({
         outsort: localOutsort,
         chronic: localChronic,

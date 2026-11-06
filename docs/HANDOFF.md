@@ -187,7 +187,7 @@ Unit files and drop-ins are in `vm/deploy/systemd/`; deploys install changed one
 
 | File | Keys |
 |---|---|
-| `/etc/mzo/app.env` | `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `INSIGHT_SUPABASE_URL`, `INSIGHT_SUPABASE_KEY`, `INSIGHT_LIVE`, `STOCK_USE_STORAGE`, `MZO_LOCAL_ADMINS` |
+| `/etc/mzo/app.env` | `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `INSIGHT_SUPABASE_URL`, `INSIGHT_SUPABASE_KEY`, `INSIGHT_LIVE`, `STOCK_USE_STORAGE`, `MZO_LOCAL_ADMINS`, `UNBILLED_SYNC_SECRET` and `DISCONNECTION_SYNC_SECRET` (the CRM upload key, 32+ characters; the owner's `scripts/sync/sync_*_from_crm.js` set the same value; unset: off) |
 | `/etc/mzo/pocketbase.env` | `PB_URL`, `PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD` |
 | `/etc/mzo/portal-admin.txt` | the first data-portal account (root only) |
 | `/etc/mzo/deploy.env` | optional, `MZO_BRANCH` (not present: the VM follows `develop`) |

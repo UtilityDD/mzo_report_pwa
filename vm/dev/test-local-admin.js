@@ -12,7 +12,9 @@
 // name; the backoff (username and IP, unknown usernames counting against the IP) locks silently; a
 // session ends when its entry is changed or removed; local admins cause no upstream write; with the
 // variable unset the route is 404 and /api/auth/config does not offer it. Also checks
-// lib/local_admins.js and the hash helper.
+// lib/local_admins.js and the hash helper, and the CRM upload key (x-sync-key): accepted only on the two
+// upload routes and only when the variable holds 32+ characters; the unbilled and disconnection reads
+// need a session and send no CORS header.
 
 const fs = require('fs');
 const os = require('os');
@@ -27,6 +29,9 @@ const SECRET = 'test-secret-for-local-admins';
 const OLD = 'https://unsmtschmcvftfqwabaq.supabase.co/rest/v1/';
 const ADMIN_PW = 'correct horse battery';
 const OPS_PW = 'another long password';
+const SYNC_KEY = crypto.randomBytes(32).toString('hex');
+const SHORT_KEY = 'k'.repeat(31);
+const CONSUMER_READS = ['/api/unbilled/meta', '/api/unbilled/outsort', '/api/unbilled/chronic', '/api/unbilled/summary', '/api/disconnection/meta', '/api/disconnection/dataset'];
 
 /** Supabase-style PIN hash (scrypt$salt$hash), as server.js hashPin writes it. */
 function pinHash(pin) {
@@ -72,16 +77,17 @@ async function child(out, cookieIn) {
     const srv = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
     const base = `http://127.0.0.1:${srv.address().port}`;
     const results = {};
-    const call = async (name, method, p, { body, cookie, ip } = {}) => {
+    const call = async (name, method, p, { body, cookie, ip, extra } = {}) => {
         const headers = { Accept: 'application/json' };
         if (body) headers['Content-Type'] = 'application/json';
         if (cookie) headers.Cookie = cookie;
         if (ip) headers['X-Forwarded-For'] = ip;
+        Object.assign(headers, extra || {});
         const before = upstream.length;
-        const res = await realFetch(base + p, { method, headers, body: body ? JSON.stringify(body) : undefined });
+        const res = await realFetch(base + p, { method, headers, body: body ? JSON.stringify(body) : undefined, redirect: 'manual' });
         const text = await res.text();
         const setCookie = res.headers.get('set-cookie') || '';
-        results[name] = { status: res.status, body: text, cookie: setCookie.split(';')[0], upstream: upstream.slice(before) };
+        results[name] = { status: res.status, body: text, cookie: setCookie.split(';')[0], acao: res.headers.get('access-control-allow-origin'), upstream: upstream.slice(before) };
         return results[name];
     };
     const login = (name, username, password, ip) => call(name, 'POST', '/api/auth/local', { body: { username, password }, ip });
@@ -95,6 +101,34 @@ async function child(out, cookieIn) {
     const C = '198.51.100.7';
 
     await call('config', 'GET', '/api/auth/config');
+    // CRM upload key: the configured key ('sync') or keys the server must refuse ('rotated': short value set,
+    // 'unset': nothing set).
+    const syncKey = process.env.UNBILLED_SYNC_SECRET || ''; // the parent's random key (each process makes its own SYNC_KEY)
+    const key = { 'x-sync-key': mode === 'sync' ? syncKey : SHORT_KEY };
+    const viewer = forge({ profile: { Username: 'clerk', Name: 'Clerk', role: 'viewer', office_level: 'CCC', ccc_code: '6611108' }, expiry: Date.now() + 3600e3 });
+    if (mode === 'sync' || mode === 'rotated' || mode === 'unset') {
+        await call('sync_unbilled', 'POST', '/api/unbilled/upload', { extra: key });
+        await call('sync_disconnection', 'POST', '/api/disconnection/upload', { extra: key });
+    }
+    if (mode === 'sync') {
+        await call('sync_wrong_key', 'POST', '/api/unbilled/upload', { extra: { 'x-sync-key': syncKey.slice(0, -1) + (syncKey.endsWith('0') ? '1' : '0') } });
+        await call('sync_bearer', 'POST', '/api/unbilled/upload', { extra: { Authorization: `Bearer ${syncKey}` } });
+        await call('sync_admin_users', 'GET', '/api/admin/users', { extra: key });
+        await call('sync_admin_update', 'POST', '/api/admin/users/update', { extra: key, body: { Username: 'clerk', role: 'admin' } });
+        await call('sync_session_check', 'GET', '/api/session-check', { extra: key });
+        await call('sync_get_read', 'GET', '/api/unbilled/chronic', { extra: key });
+        await call('sync_other_post', 'POST', '/api/disconnection/sync', { extra: key });
+        await call('viewer_upload', 'POST', '/api/disconnection/upload', { cookie: viewer });
+        for (const p of CONSUMER_READS) {
+            await call(`anon ${p}`, 'GET', p);
+            await call(`viewer ${p}`, 'GET', p, { cookie: viewer });
+        }
+        await call('anon_options', 'OPTIONS', '/api/unbilled/chronic');
+        srv.close();
+        fs.writeFileSync(out, JSON.stringify({ results, upstream }));
+        fs.rmSync(sandbox, { recursive: true, force: true });
+        process.exit(0);
+    }
     if (mode === 'set') {
         const ok = await login('local_ok', ' VMAdmin ', ADMIN_PW, B);
         await call('local_session_check', 'GET', '/api/session-check', { cookie: ok.cookie });
@@ -135,9 +169,9 @@ async function child(out, cookieIn) {
     process.exit(0);
 }
 
-function runMode(mode, admins, tmp, cookieIn) {
+function runMode(mode, admins, tmp, cookieIn, extraEnv) {
     const out = path.join(tmp, `${mode}.json`);
-    const env = { PATH: process.env.PATH, HOME: process.env.HOME, TZ: 'UTC', JWT_SECRET: SECRET, TEST_MODE: mode };
+    const env = Object.assign({ PATH: process.env.PATH, HOME: process.env.HOME, TZ: 'UTC', JWT_SECRET: SECRET, TEST_MODE: mode }, extraEnv || {});
     if (admins) env.MZO_LOCAL_ADMINS = admins;
     if (process.env.TEST_SERVER) env.TEST_SERVER = process.env.TEST_SERVER;
     const r = spawnSync(process.execPath, [__filename, '--child', out, cookieIn || ''], { env, encoding: 'utf8', timeout: 120000 });
@@ -245,7 +279,8 @@ function main() {
         eq(S.upstream.filter((u) => u.method !== 'GET'), [], 'no upstream write');
 
         // Password changed / variable removed: the old session ends; Supabase users are untouched.
-        const rot = runMode('rotated', `vmadmin|VM Admin|${LA.hashPassword('a different password')}`, tmp, R.cookieOut);
+        const rot = runMode('rotated', `vmadmin|VM Admin|${LA.hashPassword('a different password')}`, tmp, R.cookieOut,
+            { UNBILLED_SYNC_SECRET: SHORT_KEY, DISCONNECTION_SYNC_SECRET: SHORT_KEY });
         const un = runMode('unset', '', tmp, R.cookieOut);
         for (const [name, X] of [['rotated', rot], ['unset', un]]) {
             eq(X.results.old_session_check.status, 401, `${name}: old local admin session ends`);
@@ -258,6 +293,29 @@ function main() {
         eq(body(un.results.config), { googleClientId: '' }, 'unset: /api/auth/config does not offer the local sign-in');
         for (const k of ['local_password', 'supabase_same_name', 'unknown_user']) {
             eq([un.results[k].status, un.results[k].upstream], [404, []], `unset: /api/auth/local is 404 (${k}), no upstream request`);
+        }
+
+        // ---- CRM upload key ----------------------------------------------------------------------------
+        const Y = runMode('sync', '', tmp, '', { UNBILLED_SYNC_SECRET: SYNC_KEY, DISCONNECTION_SYNC_SECRET: SYNC_KEY }).results;
+        eq([Y.sync_unbilled.status, body(Y.sync_unbilled).message], [400, 'No CSV files received. Please select at least one CSV file to upload.'], 'sync key: unbilled upload accepted (no files sent)');
+        eq([Y.sync_disconnection.status, body(Y.sync_disconnection).message], [400, 'No file uploaded'], 'sync key: disconnection upload accepted (no file sent)');
+        eq(Y.sync_wrong_key.status, 401, 'sync key: a wrong key is refused');
+        eq(Y.sync_bearer.status, 401, 'sync key: not accepted as a Bearer token');
+        eq(Y.sync_admin_users.status, 401, 'sync key: no admin user list');
+        eq(Y.sync_admin_update.status, 401, 'sync key: no user changes');
+        eq(Y.sync_session_check.status, 401, 'sync key: not a session');
+        eq(Y.sync_get_read.status, 401, 'sync key: not accepted on reads');
+        eq(Y.sync_other_post.status, 401, 'sync key: not accepted on other writes');
+        eq(Y.viewer_upload.status, 403, 'viewer without the grant cannot upload the disconnection dataset');
+        for (const p of CONSUMER_READS) {
+            eq(Y[`anon ${p}`].status, 401, `${p}: 401 without a session`);
+            ok(Y[`anon ${p}`].acao === null && Y[`viewer ${p}`].acao === null, `${p}: no CORS header`);
+            ok(Y[`viewer ${p}`].status !== 401, `${p}: a signed-in user gets past the session check (HTTP ${Y[`viewer ${p}`].status})`);
+        }
+        eq([Y.anon_options.status, Y.anon_options.acao], [401, null], 'OPTIONS: no CORS preflight answer');
+        for (const [name, X] of [['short key', rot.results], ['unset', un.results]]) {
+            eq(X.sync_unbilled.status, 401, `${name}: unbilled upload refused`);
+            eq(X.sync_disconnection.status, 401, `${name}: disconnection upload refused`);
         }
 
         fs.rmSync(tmp, { recursive: true, force: true });
