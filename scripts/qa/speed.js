@@ -2,6 +2,7 @@
 /* Page speed: cold and warm loads of report pages, desktop and phone, with the numbers each shows.
  *
  *   node scripts/qa/speed.js <baseUrl> <label> [--pages a,b] [--runs 1] [--no-phone] [--net vm|none] [--timeout 150] [--out dir]
+ *   node scripts/qa/speed.js <baseA>,<baseB> <labelA>,<labelB> …       both, interleaved page by page and run by run
  *   node scripts/qa/speed.js --compare <labelA> <labelB> [--out dir]      before/after table + number parity
  *
  * Per page and profile (desktop 1440×900; phone 390×844 with the CPU slowed 4×):
@@ -145,17 +146,13 @@ async function loadOnce(ctx, base, p, o) {
 }
 
 async function measure(args) {
-  const base = String(args._[0] || '').replace(/\/+$/, '');
-  const label = args._[1];
-  if (!base || !label) throw new Error('usage: node scripts/qa/speed.js <baseUrl> <label> [--pages a,b] [--runs n] [--no-phone]');
-  const outDir = path.join(args.out || process.env.QA_OUT || path.join(REPO, 'qa-out'), label);
-  fs.mkdirSync(outDir, { recursive: true });
+  // One or more targets, interleaved page by page and run by run, so machine noise hits them alike.
+  const bases = String(args._[0] || '').split(',').map((b) => b.replace(/\/+$/, '')).filter(Boolean);
+  const labels = String(args._[1] || '').split(',').filter(Boolean);
+  if (!bases.length || bases.length !== labels.length) throw new Error('usage: node scripts/qa/speed.js <baseUrl[,baseUrl2]> <label[,label2]> [--pages a,b] [--runs n] [--no-phone]');
+  const root = args.out || process.env.QA_OUT || path.join(REPO, 'qa-out');
   const runs = Math.max(1, Number(args.runs || 1));
   const timeoutMs = Number(args.timeout || 150) * 1000;
-  const sess = P.sessionFor(base);
-  const headers = sess ? { cookie: 'mzo_session=' + sess.value } : {};
-  let appVersion = '';
-  try { appVersion = (await (await fetch(base + '/version.json', { headers })).json()).version || ''; } catch (_) {}
   const pages = P.navFromHtml(fs.readFileSync(path.join(REPO, 'app.html'), 'utf8'));
   const want = String(args.pages || DEFAULT_PAGES.join(',')).split(',').filter(Boolean);
   const chosen = want.map((k) => pages.find((p) => p.key === k || p.aliases.includes(k))).filter(Boolean);
@@ -164,59 +161,80 @@ async function measure(args) {
   if (!(netName in NETS)) throw new Error('--net must be ' + Object.keys(NETS).join(' or '));
   const net = NETS[netName];
 
+  const targets = [];
+  for (let i = 0; i < bases.length; i++) {
+    const base = bases[i], label = labels[i];
+    const sess = P.sessionFor(base);
+    const headers = sess ? { cookie: 'mzo_session=' + sess.value } : {};
+    let appVersion = '';
+    try { appVersion = (await (await fetch(base + '/version.json', { headers })).json()).version || ''; } catch (_) {}
+    const outDir = path.join(root, label);
+    fs.mkdirSync(outDir, { recursive: true });
+    targets.push({ base, label, sess, appVersion, outDir, blocked: [],
+      summary: { label, base, appVersion, startedAt: new Date().toISOString(), runs, net: netName, pages: {} } });
+  }
+
   const pw = P.loadPlaywright();
   const browser = await pw.chromium.launch({ channel: process.env.QA_CHANNEL || 'chrome', headless: true });
-  const blocked = [];
-  async function newContext(prof) {
+  async function newContext(t, prof) {
     const ctx = await browser.newContext({
       viewport: prof.viewport, deviceScaleFactor: prof.phone ? 2 : 1, isMobile: prof.phone, hasTouch: prof.phone, serviceWorkers: 'block',
       userAgent: prof.phone ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' : undefined
     });
-    const host = new URL(base).hostname;
-    if (sess) await ctx.addCookies([{ name: 'mzo_session', value: sess.value, domain: host, path: '/', httpOnly: true, secure: base.startsWith('https'), sameSite: 'Lax' }]);
-    await ctx.addInitScript(P.initScript, { profile: sess ? sess.profile : null, appVersion, deep: true });
+    const host = new URL(t.base).hostname;
+    if (t.sess) await ctx.addCookies([{ name: 'mzo_session', value: t.sess.value, domain: host, path: '/', httpOnly: true, secure: t.base.startsWith('https'), sameSite: 'Lax' }]);
+    await ctx.addInitScript(P.initScript, { profile: t.sess ? t.sess.profile : null, appVersion: t.appVersion, deep: true });
     return ctx;
   }
 
-  console.log(`[speed] ${label}: ${chosen.length} pages × ${profiles.join('+')} × ${runs} run(s), link ${netName}, from ${base} (app ${appVersion || '?'})`);
-  const summary = { label, base, appVersion, startedAt: new Date().toISOString(), runs, net: netName, pages: {} };
+  console.log(`[speed] ${labels.join(' / ')}: ${chosen.length} pages × ${profiles.join('+')} × ${runs} run(s), link ${netName}, from ${bases.join(' / ')}`);
+  const f = (x) => `${x.finalDataMs == null ? '-' : x.finalDataMs + 'ms'} ${(x.bytes / 1048576).toFixed(2)}MB ${x.requests}req`;
   for (const p of chosen) {
-    const rec = { key: p.key, url: p.url };
+    const recs = targets.map(() => ({ key: p.key, url: p.url }));
     for (const pk of profiles) {
       const prof = PROFILES[pk];
-      const all = { cold: [], warm: [] };
+      const all = targets.map(() => ({ cold: [], warm: [] }));
       for (let r = 0; r < runs; r++) {
-        const ctx = await newContext(prof);
-        all.cold.push(await loadOnce(ctx, base, p, { timeoutMs, cpu: prof.cpu, net, blocked }));
-        all.warm.push(await loadOnce(ctx, base, p, { timeoutMs, cpu: prof.cpu, net, blocked }));
-        await ctx.close();
+        for (let i = 0; i < targets.length; i++) {
+          const t = targets[i];
+          const ctx = await newContext(t, prof);
+          all[i].cold.push(await loadOnce(ctx, t.base, p, { timeoutMs, cpu: prof.cpu, net, blocked: t.blocked }));
+          all[i].warm.push(await loadOnce(ctx, t.base, p, { timeoutMs, cpu: prof.cpu, net, blocked: t.blocked }));
+          await ctx.close();
+        }
       }
-      rec[pk] = {};
-      for (const ph of ['cold', 'warm']) {
-        const list = all[ph];
-        const last = list[list.length - 1];
-        rec[pk][ph] = Object.assign({}, last, {
-          finalDataMs: median(list.map((x) => x.finalDataMs)), runsMs: list.map((x) => x.finalDataMs),
-          bytes: median(list.map((x) => x.bytes)), requests: median(list.map((x) => x.requests))
-        });
+      targets.forEach((t, i) => {
+        recs[i][pk] = {};
+        for (const ph of ['cold', 'warm']) {
+          const list = all[i][ph];
+          const last = list[list.length - 1];
+          recs[i][pk][ph] = Object.assign({}, last, {
+            finalDataMs: median(list.map((x) => x.finalDataMs)), runsMs: list.map((x) => x.finalDataMs),
+            bytes: median(list.map((x) => x.bytes)), requests: median(list.map((x) => x.requests))
+          });
+        }
+      });
+    }
+    targets.forEach((t, i) => {
+      const rec = recs[i];
+      fs.writeFileSync(path.join(t.outDir, p.key + '.json'), JSON.stringify(rec, null, 1));
+      const s = {};
+      for (const pk of profiles) for (const ph of ['cold', 'warm']) {
+        const x = rec[pk][ph];
+        s[pk + '_' + ph] = { ms: x.finalDataMs, bytes: x.bytes, requests: x.requests, reason: x.settledReason, errors: x.errors.length };
       }
-    }
-    fs.writeFileSync(path.join(outDir, p.key + '.json'), JSON.stringify(rec, null, 1));
-    const s = {};
-    for (const pk of profiles) for (const ph of ['cold', 'warm']) {
-      const x = rec[pk][ph];
-      s[pk + '_' + ph] = { ms: x.finalDataMs, bytes: x.bytes, requests: x.requests, reason: x.settledReason, errors: x.errors.length };
-    }
-    summary.pages[p.key] = s;
-    const f = (x) => `${x.finalDataMs == null ? '-' : x.finalDataMs + 'ms'} ${(x.bytes / 1048576).toFixed(2)}MB ${x.requests}req`;
-    console.log(`[speed] ${p.key}: desktop cold ${f(rec.desktop.cold)} | warm ${f(rec.desktop.warm)}` +
-      (rec.phone ? ` || phone cold ${f(rec.phone.cold)} | warm ${f(rec.phone.warm)}` : ''));
+      t.summary.pages[p.key] = s;
+      console.log(`[speed] ${t.label} ${p.key}: desktop cold ${f(rec.desktop.cold)} | warm ${f(rec.desktop.warm)}` +
+        (rec.phone ? ` || phone cold ${f(rec.phone.cold)} | warm ${f(rec.phone.warm)}` : ''));
+    });
   }
   await browser.close();
-  summary.finishedAt = new Date().toISOString();
-  summary.blocked = blocked;
-  fs.writeFileSync(path.join(outDir, '_summary.json'), JSON.stringify(summary, null, 1));
-  console.log(`[speed] wrote ${outDir} (${blocked.length} non-GET requests blocked)`);
+  for (const t of targets) {
+    t.summary.finishedAt = new Date().toISOString();
+    t.summary.blocked = t.blocked;
+    fs.writeFileSync(path.join(t.outDir, '_summary.json'), JSON.stringify(t.summary, null, 1));
+    console.log(`[speed] wrote ${t.outDir} (${t.blocked.length} non-GET requests blocked)`);
+  }
 }
 
 /* ---------------- compare ---------------- */
