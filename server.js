@@ -55,8 +55,8 @@ function proxyFetch_(urlStr, options = {}, redirectCount = 0) {
         };
 
         const onAbort = () => {
-            if (connectReq) try { connectReq.destroy(); } catch (_) {}
-            if (sReq) try { sReq.destroy(); } catch (_) {}
+            if (connectReq) try { connectReq.destroy(); } catch (_) { }
+            if (sReq) try { sReq.destroy(); } catch (_) { }
             done(reject, options.signal?.reason || new Error('The operation was aborted.'));
         };
 
@@ -65,8 +65,8 @@ function proxyFetch_(urlStr, options = {}, redirectCount = 0) {
 
         const timeoutMs = options.timeout || 15000;
         timer = setTimeout(() => {
-            if (connectReq) try { connectReq.destroy(); } catch (_) {}
-            if (sReq) try { sReq.destroy(); } catch (_) {}
+            if (connectReq) try { connectReq.destroy(); } catch (_) { }
+            if (sReq) try { sReq.destroy(); } catch (_) { }
             done(reject, new Error(`Request to ${target.hostname} timed out after ${timeoutMs}ms`));
         }, timeoutMs);
 
@@ -194,7 +194,7 @@ function proxyFetch_(urlStr, options = {}, redirectCount = 0) {
                         json: async () => JSON.parse(bodyText)
                     });
                 }
-            } catch (_) {}
+            } catch (_) { }
             done(reject, err);
         });
 
@@ -426,10 +426,10 @@ const NEW_INSIGHT_URL = String(
 ).trim();
 const NEW_INSIGHT_KEY = String(
     process.env.INSIGHT_SUPABASE_KEY ||
-        process.env.SUPABASE_SERVICE_ROLE_KEY ||
-        fileConfig.insightKey ||
-        fileConfig.insightServiceKey ||
-        ''
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    fileConfig.insightKey ||
+    fileConfig.insightServiceKey ||
+    ''
 ).trim();
 
 const insightLiveFlag = String(
@@ -1572,17 +1572,17 @@ app.get('/api/admin/users', requireAdmin, async (req, res) => {
 app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
     try {
         const { Username, PIN, Name, role, ...otherFields } = req.body;
-        
+
         if (!Username) {
             return res.status(400).json({ status: 'error', message: 'Username is required.' });
         }
-        
+
         const users = await getLoginCredentials({ forceRefresh: true });
         const exists = users.some(u => u.Username && u.Username.toLowerCase() === Username.trim().toLowerCase());
         if (exists) {
             return res.status(400).json({ status: 'error', message: 'Username already exists.' });
         }
-        
+
         const newUser = {
             Username: Username.trim(),
             PIN: PIN ? String(PIN).trim() : '',
@@ -1616,17 +1616,17 @@ app.post('/api/admin/users/create', requireAdmin, async (req, res) => {
         const saved = Array.isArray(inserted) && inserted[0]
             ? portalUserToClient(inserted[0])
             : newUser;
-        
+
         await initializeLocalUsers();
         refreshMirror(['portal_users'], 'admin user change');
-        
+
         await logActivity({
             username: req.user.Username,
             name: req.user.Name,
             type: 'user_management',
             details: `Created user account: ${Username}`
         });
-        
+
         res.json({ status: 'success', message: 'User created successfully.', user: portalUserForClient(saved) });
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
@@ -1683,17 +1683,17 @@ app.post('/api/admin/users/update', requireAdmin, async (req, res) => {
     try {
         const updatedUser = req.body;
         const { Username } = updatedUser;
-        
+
         if (!Username) {
             return res.status(400).json({ status: 'error', message: 'Username is required.' });
         }
-        
+
         const users = await getLoginCredentials({ forceRefresh: true });
         const idx = users.findIndex(u => u.Username && u.Username.toLowerCase() === Username.trim().toLowerCase());
         if (idx === -1) {
             return res.status(404).json({ status: 'error', message: 'User not found.' });
         }
-        
+
         const incomingPin = String(updatedUser.PIN != null ? updatedUser.PIN : '').trim();
         const merged = {
             ...users[idx],
@@ -1705,17 +1705,17 @@ app.post('/api/admin/users/update', requireAdmin, async (req, res) => {
         const dbRow = clientUserToPortal(merged);
         delete dbRow.username; // do not patch username
         await patchPortalUserWithFallback(users[idx].Username, dbRow);
-        
+
         await initializeLocalUsers();
         refreshMirror(['portal_users'], 'admin user change');
-        
+
         await logActivity({
             username: req.user.Username,
             name: req.user.Name,
             type: 'user_management',
             details: `Updated user account: ${Username}`
         });
-        
+
         res.json({ status: 'success', message: 'User updated successfully.', user: portalUserForClient(merged) });
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
@@ -1726,14 +1726,14 @@ app.post('/api/admin/users/update', requireAdmin, async (req, res) => {
 app.post('/api/admin/users/delete', requireAdmin, async (req, res) => {
     try {
         const { Username } = req.body;
-        
+
         if (!Username) {
             return res.status(400).json({ status: 'error', message: 'Username is required.' });
         }
-        
+
         const users = await getLoginCredentials({ forceRefresh: true });
         const target = users.find(u => u.Username && u.Username.toLowerCase() === Username.trim().toLowerCase());
-        
+
         if (!target) {
             return res.status(404).json({ status: 'error', message: 'User not found.' });
         }
@@ -1746,17 +1746,17 @@ app.post('/api/admin/users/delete', requireAdmin, async (req, res) => {
                 prefer: 'return=minimal'
             }
         );
-        
+
         await initializeLocalUsers();
         refreshMirror(['portal_users'], 'admin user change');
-        
+
         await logActivity({
             username: req.user.Username,
             name: req.user.Name,
             type: 'user_management',
             details: `Deleted user account: ${Username}`
         });
-        
+
         res.json({ status: 'success', message: 'User deleted successfully.' });
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
@@ -2116,7 +2116,7 @@ app.post('/api/admin/append-sheet-row', async (req, res) => {
     if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     try {
         const { rowData } = req.body;
-        
+
         if (!rowData) {
             return res.status(400).json({ status: 'error', message: 'Missing rowData.' });
         }
@@ -2133,7 +2133,7 @@ app.post('/api/admin/append-sheet-row', async (req, res) => {
             refreshMirror(['power_map_corrections'], 'power map suggestion');
             return res.json({ status: 'success', isSuggestion: true, message: 'Substation creation submitted for Admin approval.' });
         }
-        
+
         // All 22 columns of the substations table
         const payload = {
             "Substation": rowData.Substation || '',
@@ -2165,7 +2165,7 @@ app.post('/api/admin/append-sheet-row', async (req, res) => {
             body: payload
         });
         refreshMirror(['power_map_substations'], 'power map substation added');
-        
+
         return res.json({ status: 'success', message: 'Substation appended successfully.' });
     } catch (err) {
         console.error("[Admin Add Substation] Error appending to Supabase:", err.message);
@@ -2237,14 +2237,14 @@ app.post('/api/admin/approve-correction', requireAdmin, async (req, res) => {
         if (!id) {
             return res.status(400).json({ status: 'error', message: 'Missing suggestion ID.' });
         }
-        
+
         // Fetch the correction details
         const corrections = await querySupabase(`${POWER_MAP_CORRECTIONS_TABLE}?id=eq.${id}&select=*`);
         if (!corrections || corrections.length === 0) {
             return res.status(404).json({ status: 'error', message: 'Suggested correction not found.' });
         }
         const proposal = corrections[0];
-        
+
         if (proposal.type === 'edit_substation') {
             let finalValue = proposal.proposed_value;
             if (proposal.connection_target) {
@@ -2267,7 +2267,7 @@ app.post('/api/admin/approve-correction', requireAdmin, async (req, res) => {
             method: 'DELETE'
         });
         refreshMirror(['power_map_substations', 'power_map_corrections'], 'power map correction approved');
-        
+
         // Log activity
         await logActivity({
             username: req.user.Username,
@@ -2275,7 +2275,7 @@ app.post('/api/admin/approve-correction', requireAdmin, async (req, res) => {
             type: 'approve_correction',
             details: `Approved proposed change by ${proposal.suggested_by_name} for ${proposal.substation}`
         });
-        
+
         return res.json({ status: 'success', message: 'Proposed correction approved successfully.' });
     } catch (err) {
         console.error("[Admin Approve] Error processing approval:", err.message);
@@ -2290,20 +2290,20 @@ app.post('/api/admin/reject-correction', requireAdmin, async (req, res) => {
         if (!id) {
             return res.status(400).json({ status: 'error', message: 'Missing suggestion ID.' });
         }
-        
+
         // Fetch suggestion to log it before deletion
         const corrections = await querySupabase(`${POWER_MAP_CORRECTIONS_TABLE}?id=eq.${id}&select=*`);
         if (!corrections || corrections.length === 0) {
             return res.status(404).json({ status: 'error', message: 'Suggested correction not found.' });
         }
         const proposal = corrections[0];
-        
+
         // Delete the suggestion
         await querySupabase(`${POWER_MAP_CORRECTIONS_TABLE}?id=eq.${id}`, {
             method: 'DELETE'
         });
         refreshMirror(['power_map_corrections'], 'power map correction rejected');
-        
+
         // Log activity
         await logActivity({
             username: req.user.Username,
@@ -2311,7 +2311,7 @@ app.post('/api/admin/reject-correction', requireAdmin, async (req, res) => {
             type: 'reject_correction',
             details: `Rejected proposed change by ${proposal.suggested_by_name} for ${proposal.substation}`
         });
-        
+
         return res.json({ status: 'success', message: 'Proposed correction rejected successfully.' });
     } catch (err) {
         console.error("[Admin Reject] Error processing rejection:", err.message);
@@ -3227,11 +3227,11 @@ const NSC_WITHHELD_SHEET_FALLBACK_URL =
 /** Web app /exec URLs from apps-script/sheet_mirror_publish.gs (one deploy per Google file). Env overrides if set. */
 const NSC_SHEET_SCRIPT_URL = String(
     process.env.NSC_SHEET_SCRIPT_URL ||
-        'https://script.google.com/macros/s/AKfycbwJj6lpOWN0a62jX51926FUQyzViLOiKA38f9yqSBSYbLMnpBPvOMZQh3gYu0b07L7MJw/exec'
+    'https://script.google.com/macros/s/AKfycbwJj6lpOWN0a62jX51926FUQyzViLOiKA38f9yqSBSYbLMnpBPvOMZQh3gYu0b07L7MJw/exec'
 ).trim();
 const NSC_WITHHELD_SHEET_SCRIPT_URL = String(
     process.env.NSC_WITHHELD_SHEET_SCRIPT_URL ||
-        'https://script.google.com/macros/s/AKfycbzTC3_lCHOBtbZGqeE1n6sE6K_MdheQc-RVlUHGhMrN568r5lXeoasIvwEktA-245unWg/exec'
+    'https://script.google.com/macros/s/AKfycbzTC3_lCHOBtbZGqeE1n6sE6K_MdheQc-RVlUHGhMrN568r5lXeoasIvwEktA-245unWg/exec'
 ).trim();
 const nscPendingMetaById_ = Object.create(null);
 
@@ -3574,15 +3574,14 @@ app.post('/api/nsc/publish/complete', async (req, res) => {
             : '';
         console.log(
             `[NSC publish/complete] ${baseMeta.uploadedBy} upload ${uploadId}: ` +
-                `pending=${baseMeta.publishedRows} withheld=${baseMeta.withheldRows}` +
-                (baseMeta.withheldKept ? ' (kept previous withheld)' : '')
+            `pending=${baseMeta.publishedRows} withheld=${baseMeta.withheldRows}` +
+            (baseMeta.withheldKept ? ' (kept previous withheld)' : '')
         );
 
         return res.json({
             status: 'success',
-            message: `Published ${baseMeta.publishedRows || 0} Working/Accepted and ${
-                baseMeta.withheldRows || 0
-            } Withheld rows.${keptNote} Refresh NSC and Withheld dashboards.`,
+            message: `Published ${baseMeta.publishedRows || 0} Working/Accepted and ${baseMeta.withheldRows || 0
+                } Withheld rows.${keptNote} Refresh NSC and Withheld dashboards.`,
             meta: baseMeta,
             version: snapshotVersion_(baseMeta) || String(uploadId),
             withheldVersion: snapshotWithheldVersion_(baseMeta) || String(uploadId),
@@ -3619,7 +3618,7 @@ const STOCK_SHEET_FALLBACK_URL =
 /** Web app /exec from apps-script/sheet_mirror_publish.gs (ROLE=stock) on the Stock workbook. */
 const STOCK_SHEET_SCRIPT_URL = String(
     process.env.STOCK_SHEET_SCRIPT_URL ||
-        'https://script.google.com/macros/s/AKfycbzM3EziyopjZW57OjhPW6cM3Wa2141hteRkKDxYDaoZXZSbLMgqH2fhEFLD_1bwLVJ5/exec'
+    'https://script.google.com/macros/s/AKfycbzM3EziyopjZW57OjhPW6cM3Wa2141hteRkKDxYDaoZXZSbLMgqH2fhEFLD_1bwLVJ5/exec'
 ).trim();
 const STOCK_INSERT_BATCH = 400;
 
@@ -3974,7 +3973,7 @@ app.post('/api/stock/publish', (req, res) => {
 
             console.log(
                 `[Stock publish] ${baseMeta.uploadedBy} published ${baseMeta.publishedRows} rows` +
-                    ` from ${originalName} (ok=${!!supabaseMeta})`
+                ` from ${originalName} (ok=${!!supabaseMeta})`
             );
 
             return res.json({
@@ -3999,6 +3998,7 @@ const { syncDefectiveToSupabase } = require('./scripts/sync/sync_defective_to_su
 const { syncDefectiveFromCrm, isDbvisAvailable } = require('./scripts/sync/sync_defective_from_crm');
 const { syncUnbilledFromCrm } = require('./scripts/sync/sync_unbilled_from_crm');
 const { syncDisconnectionToSupabase } = require('./scripts/sync/sync_disconnection_to_supabase');
+const { syncDisconnectionFromCrm } = require('./scripts/sync/sync_disconnection_from_crm');
 const { syncPendingMcToSupabase } = require('./scripts/sync/sync_pending_mc_to_supabase');
 const { syncLoadExtToSupabase } = require('./scripts/sync/sync_load_ext_to_supabase');
 
@@ -4007,7 +4007,7 @@ const { syncLoadExtToSupabase } = require('./scripts/sync/sync_load_ext_to_supab
 // never the old project's, which has no reports bucket.
 const REPORTS_PUBLIC_BASE = String(
     process.env.REPORTS_PUBLIC_BASE ||
-        `${String(NEW_INSIGHT_URL || 'https://gmasnqebdogtavoudbke.supabase.co').replace(/\/$/, '')}/storage/v1/object/public/reports`
+    `${String(NEW_INSIGHT_URL || 'https://gmasnqebdogtavoudbke.supabase.co').replace(/\/$/, '')}/storage/v1/object/public/reports`
 ).replace(/\/$/, '');
 
 /** A sync job's meta.json from the public reports bucket (cached 60 s); the local data/ copy as a fallback. */
@@ -4024,7 +4024,7 @@ function syncedMeta_(folder, localFile) {
                     cached = JSON.parse(fs.readFileSync(localPath, 'utf8'));
                     at = now;
                     return cached;
-                } catch (_) {}
+                } catch (_) { }
             }
             if (REPORTS_PUBLIC_BASE) {
                 try {
@@ -4125,7 +4125,7 @@ function defectiveExportCsvUrl_(gid) {
 }
 const DEFECTIVE_SHEET_SCRIPT_URL = String(
     process.env.DEFECTIVE_SHEET_SCRIPT_URL ||
-        'https://script.google.com/macros/s/AKfycbzULRzoJRMlt_x3nlEo6RLFVzELgwAD5Z7f8JuvqwxBgC6cpc0BF7dynKwBg0hNIkBn/exec'
+    'https://script.google.com/macros/s/AKfycbzULRzoJRMlt_x3nlEo6RLFVzELgwAD5Z7f8JuvqwxBgC6cpc0BF7dynKwBg0hNIkBn/exec'
 ).trim();
 
 function canUploadDefective_(user) {
@@ -4396,7 +4396,7 @@ app.post('/api/unbilled/upload', (req, res, next) => {
                 name: user.name || user.email,
                 type: 'upload',
                 details: `Uploaded unbilled datasets to VM (${saved.join(', ')}): date ${metaPayload.asOn}, ${metaPayload.currentMonCount} unbilled`
-            }).catch(() => {});
+            }).catch(() => { });
 
             return res.json({
                 status: 'success',
@@ -4435,7 +4435,7 @@ app.get('/api/unbilled/meta', async (req, res) => {
                     meta = vmMeta;
                 }
             }
-        } catch (_) {}
+        } catch (_) { }
     }
     return res.json({
         status: 'success',
@@ -4514,7 +4514,7 @@ const DISCONNECTION_SHEET_FALLBACK_URL =
     'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv';
 const DISCONNECTION_FOLLOWUP_SCRIPT_URL = String(
     process.env.DISCONNECTION_FOLLOWUP_SCRIPT_URL ||
-        'https://script.google.com/macros/s/AKfycbxaczauxohDew8CYAfus161TrdzJ0AG6lRvxmxjJyxqIyQwEUVtrNuXc9M3uHzon7CB/exec'
+    'https://script.google.com/macros/s/AKfycbxaczauxohDew8CYAfus161TrdzJ0AG6lRvxmxjJyxqIyQwEUVtrNuXc9M3uHzon7CB/exec'
 ).trim();
 
 const canSyncDisconnection_ = (user) => hasPermission_(user, 'disconnection-sync-autho', ['discon', 'sync']);
@@ -4538,7 +4538,6 @@ app.get('/api/disconnection/meta', async (req, res) => {
 
     let meta = await DISCONNECTION_META.read();
 
-    // If running on Vercel or remote host and local meta is missing/stale, attempt fetching from VM
     if ((!meta || !meta.version) && req.headers.host && !req.headers.host.includes('130.210.43.11')) {
         try {
             const r = await fetch(`${VM_BASE_URL}/api/disconnection/meta`);
@@ -4557,6 +4556,7 @@ app.get('/api/disconnection/meta', async (req, res) => {
     return res.json({
         status: 'success',
         canSync,
+        canCrmSync: canSync && isDbvisAvailable(),
         isAdmin,
         sheetScriptUrl: DISCONNECTION_FOLLOWUP_SCRIPT_URL,
         vmUrl: VM_BASE_URL,
@@ -4601,6 +4601,88 @@ app.get('/api/disconnection/dataset', async (req, res) => {
     const meta = await DISCONNECTION_META.read().catch(() => null);
     const targetUrl = (meta && meta.csvUrl) || DISCONNECTION_SHEET_FALLBACK_URL;
     return res.redirect(302, targetUrl);
+});
+
+const disconnectionUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (/\.(csv|tsv|txt)$/i.test(String(file.originalname || ''))) return cb(null, true);
+        cb(new Error('Only CSV, TSV, or TXT files are allowed.'));
+    }
+});
+
+app.options('/api/disconnection/upload', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-sync-key');
+    res.status(204).end();
+});
+
+app.post('/api/disconnection/upload', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-sync-key');
+
+    const syncSecret = process.env.DISCONNECTION_SYNC_SECRET || 'mzo-crm-db2-sync-key-2026';
+    const headerKey = req.headers['x-sync-key'];
+    const authHeader = req.headers.authorization || '';
+    const bearerKey = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+
+    let isAuthorized = (headerKey && headerKey === syncSecret) || (bearerKey && bearerKey === syncSecret);
+    let user = null;
+
+    if (!isAuthorized) {
+        user = readSession_(req);
+        if (user && canSyncDisconnection_(user)) {
+            isAuthorized = true;
+        }
+    }
+
+    if (!isAuthorized) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized to upload disconnection dataset to VM' });
+    }
+
+    disconnectionUpload.single('file')(req, res, async (err) => {
+        if (err) return res.status(400).json({ status: 'error', message: err.message });
+        if (!req.file) return res.status(400).json({ status: 'error', message: 'No file uploaded' });
+
+        try {
+            const csvText = req.file.buffer.toString('utf8');
+            const dataDir = path.join(__dirname, 'data');
+            fs.mkdirSync(dataDir, { recursive: true });
+            fs.writeFileSync(path.join(dataDir, 'disconnection.csv'), csvText, 'utf8');
+
+            refreshMirror(['disconnection'], 'direct disconnection VM upload');
+
+            return res.json({
+                status: 'success',
+                message: `Successfully uploaded disconnection dataset directly to VM (${(req.file.size / 1024).toFixed(1)} KB)!`
+            });
+        } catch (uploadErr) {
+            return res.status(500).json({ status: 'error', message: uploadErr.message });
+        }
+    });
+});
+
+syncRoute_('/api/disconnection/crm-sync', {
+    label: 'CRM Disconnection Sync',
+    can: canSyncDisconnection_,
+    forbidden: 'Not authorized to sync disconnection data from CRM. Ask an admin to grant permission.',
+    run: async (req) => {
+        if (!isDbvisAvailable()) {
+            throw new Error('DbVisualizer CLI is not available on this server. Direct CRM extraction must be run from an internal office workstation / VM connected to DB2.');
+        }
+        const userToken = req ? (parseCookies(req.headers.cookie).mzo_session || (req.headers.authorization && req.headers.authorization.slice(7).trim())) : null;
+        return await syncDisconnectionFromCrm({ fresh: true, userToken });
+    },
+    meta: DISCONNECTION_META,
+    mirrorKeys: ['disconnection'],
+    bareError: true,
+    done: (m) => ({
+        log: `CRM Synced Disconnection Tracker: ${m.stats ? m.stats.totalConsumers : 'complete'} rows`,
+        message: m.message || `CRM Disconnection sync complete! Successfully updated from IBM DB2.`
+    })
 });
 
 syncRoute_('/api/disconnection/sync', {
@@ -4683,7 +4765,7 @@ syncRoute_('/api/load-extension/sync', {
 
 const NSC_FOLLOWUP_SCRIPT_URL = String(
     process.env.NSC_FOLLOWUP_SCRIPT_URL ||
-        'https://script.google.com/macros/s/AKfycbwJj6lpOWN0a62jX51926FUQyzViLOiKA38f9yqSBSYbLMnpBPvOMZQh3gYu0b07L7MJw/exec'
+    'https://script.google.com/macros/s/AKfycbwJj6lpOWN0a62jX51926FUQyzViLOiKA38f9yqSBSYbLMnpBPvOMZQh3gYu0b07L7MJw/exec'
 ).trim();
 
 app.get('/api/nsc/followup-meta', (req, res) => {
@@ -4899,7 +4981,7 @@ function parseGoogleRssXml_(xml, category = 'national') {
         const lowerTitle = rawTitle.toLowerCase();
         const lowerSource = sourceName.toLowerCase();
 
-        if (lowerDesc === lowerTitle || 
+        if (lowerDesc === lowerTitle ||
             lowerDesc === (lowerTitle + ' ' + lowerSource) ||
             lowerDesc === (lowerTitle + ' - ' + lowerSource) ||
             lowerDesc.startsWith(lowerTitle)) {
@@ -5274,7 +5356,7 @@ function buildExecutiveBriefing_(meta) {
     let cccs = [];
     try {
         cccs = JSON.parse(fs.readFileSync(path.join(__dirname, 'lib', 'briefing_cccs.json'), 'utf8'));
-    } catch (_) {}
+    } catch (_) { }
 
     return {
         asOn,

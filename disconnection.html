@@ -231,6 +231,9 @@
         max-width: 220px;
       }
     }
+    .dc-status { margin: 8px 16px 0; display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+    .dc-prog { width: 140px; height: 6px; background: var(--mzo-border); border-radius: 99px; overflow: hidden; }
+    .dc-prog b { display: block; height: 100%; width: 0; background: var(--mzo-brand); transition: width .3s ease; }
   </style>
 </head>
 
@@ -245,6 +248,7 @@
           aria-expanded="false"><svg class="ui-i">
             <use href="#ui-filter" />
           </svg>Filters<span id="activeCount"></span></button>
+        <button type="button" class="ui-btn" id="crmSyncBtn" hidden title="Direct extraction from IBM DB2"><svg class="ui-i"><use href="#ui-sync"/></svg>Sync from DB2</button>
         <button type="button" class="ui-btn" id="syncBtn" hidden><svg class="ui-i">
             <use href="#ui-sync" />
           </svg>Sync sheet</button>
@@ -254,6 +258,8 @@
           </svg></button>
       </div>
     </header>
+
+    <div class="dc-status ui-note" id="status" hidden><span id="statusText"></span><div class="dc-prog"><b id="statusBar"></b></div></div>
 
     <div class="ui-layout">
       <aside class="ui-side" id="side" aria-label="Filters">
@@ -1118,8 +1124,58 @@
 
       MzoRows.refresh('refreshBtn', ROWS, reparse);
 
+      // Sync buttons authorization
+      metaP.then(function (m) {
+        if (!m) return;
+        if (m.canSync) $('syncBtn').hidden = false;
+        if ($('crmSyncBtn')) $('crmSyncBtn').hidden = !(m.canCrmSync || m.canSync);
+      });
+
+      // Direct CRM Extraction & Sync from IBM DB2
+      if ($('crmSyncBtn')) {
+        $('crmSyncBtn').addEventListener('click', function () {
+          if (!confirm('Directly extract the latest Disconnection Tracker list from IBM DB2 and update cloud VM cache?\n\nThis queries DB2 and publishes the updated baseline directly to the Oracle Cloud VM.\n(সরাসরি IBM DB2 থেকে ডিসকানেকশন ট্র্যাকার ডেটা এক্সট্র্যাক্ট করে ক্লাউড ক্যাশে আপডেট করবেন?)')) return;
+          var b = this; b.disabled = true; b.classList.add('spin');
+          var st = $('status'), stText = $('statusText'), stBar = $('statusBar');
+          if (st) {
+            st.hidden = false;
+            stText.textContent = 'Extracting disconnection records from IBM DB2 and uploading to VM...';
+            stBar.style.width = '35%';
+          }
+
+          fetch('/api/disconnection/crm-sync', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
+          })
+            .then(function (r) {
+              return r.text().then(function (t) {
+                var d; try { d = JSON.parse(t); } catch (e) { throw new Error(r.status === 401 ? 'Session expired. Please sign in again.' : 'Server returned HTTP ' + r.status); }
+                if (!r.ok || d.status !== 'success') throw new Error(d.message || 'HTTP ' + r.status);
+                return d;
+              });
+            })
+            .then(function (res) {
+              b.disabled = false; b.classList.remove('spin');
+              if (st) {
+                stBar.style.width = '100%';
+                stText.textContent = res.message || 'DB2 Sync complete!';
+              }
+              UI.toast(res.message || 'Disconnection data extracted from DB2 and updated!');
+              setTimeout(function () {
+                if (st) st.hidden = true;
+                MzoRows.reload(ROWS).then(reparse);
+              }, 1200);
+            })
+            .catch(function (err) {
+              b.disabled = false; b.classList.remove('spin');
+              if (st) st.hidden = true;
+              alert('DB2 Sync failed: ' + (err.message || err));
+            });
+        });
+      }
+
       // Sync from the Google Sheet to the cloud cache (Admin, dm1, disconnection-sync-autho).
-      metaP.then(function (m) { if (m && m.canSync) $('syncBtn').hidden = false; });
       $('syncBtn').addEventListener('click', function () {
         if (!confirm('Sync the latest disconnection data from the Google Sheet to the cloud cache?\n\n(গুগল শিট থেকে ক্লাউড ক্যাশে নতুন ডেটা সিঙ্ক করবেন?)')) return;
         var b = this; b.disabled = true; b.classList.add('spin');
