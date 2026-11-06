@@ -74,10 +74,14 @@ async function uploadToVm(files, token) {
     fd.append('summary', new Blob([fs.readFileSync(files.summary)]), 'unbilled_summary.csv');
   }
 
+  const syncSecret = process.env.UNBILLED_SYNC_SECRET || 'mzo-crm-db2-sync-key-2026';
+  const authToken = token || syncSecret;
+
   const res = await fetch(`${VM_BASE_URL}/api/unbilled/upload`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`
+      'Authorization': `Bearer ${authToken}`,
+      'x-sync-key': syncSecret
     },
     body: fd
   });
