@@ -171,6 +171,8 @@ function initScript(opts) {
       if (real) data++;
     });
     document.querySelectorAll('.ui-panel-f span, .ui-date, #asOn, .ui-hist .row span:last-child').forEach((e) => parts.push(txt(e)));
+    // opts.deep (scripts/qa/speed.js): the first rows' text too, so dates or cells filled in after the rows count.
+    if (opts.deep) document.querySelectorAll('table').forEach((t) => { for (let b = 0; b < t.tBodies.length; b++) for (let r = 0; r < Math.min(10, t.tBodies[b].rows.length); r++) parts.push(hash(txt(t.tBodies[b].rows[r]))); });
     // Legacy counters: id'd leaf elements showing a number.
     const ids = document.querySelectorAll('[id]');
     for (let i = 0; i < ids.length && i < 3000; i++) {
@@ -644,4 +646,6 @@ async function main() {
   if (aborted) process.exit(3);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+// Required by scripts/qa/speed.js for the same session, timeline and extraction code.
+if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });
+module.exports = { initScript, extractPage, timingFrom, timelineOf, pageReadyState, sessionFor, loadPlaywright, navFromHtml, redactUrl, SAFE_METHODS };
