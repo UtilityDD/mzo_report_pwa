@@ -8,7 +8,10 @@
 //     (NETWORK_FIRST); the last good copy is the offline fallback. /api/ answers are never cached here:
 //     the VM mirror's /api/data/* bodies live in IndexedDB (mzo_data_hub.js) and revalidate by ETag.
 //   - Cache first for third-party CDNs (libraries, fonts).
+//   - Cache first for same-origin assets with a ?v= version (immutable: a new version is a new URL).
 //   - Stale-while-revalidate for every other same-origin asset.
+//   Same-origin copies are keyed by path plus the ?v= version, so a bumped ?v= is never answered
+//   with the previous version's copy; only an offline fallback takes any version of the path.
 //   - HTML responses get /mzo_present.js (desktop presentation zoom) injected after <head>.
 const CACHE_NAME = 'mzo-reports-cache-v338';
 
@@ -48,7 +51,10 @@ const CDN_URLS = [
   'https://fonts.googleapis.com',
   'https://fonts.gstatic.com',
   'https://cdnjs.cloudflare.com',
-  'https://cdn.jsdelivr.net'
+  'https://cdn.jsdelivr.net',
+  'https://code.jquery.com',
+  'https://cdn.datatables.net',
+  'https://unpkg.com'
 ];
 
 function isGoogleSheetRequest(url) {
@@ -81,20 +87,30 @@ function safePut(cache, request, response) {
   });
 }
 
+/** The ?v= version of a same-origin asset ('' when it has none; HTML pages are never versioned here). */
+function assetVersion(url) {
+  if (/\.html?$/i.test(url.pathname)) return '';
+  return url.searchParams.get('v') || '';
+}
+
 function appShellKey(request) {
   try {
     const url = new URL(request.url);
     if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return null;
-    return new Request(url.origin + url.pathname, { method: 'GET' });
+    const v = assetVersion(url);
+    return new Request(url.origin + url.pathname + (v ? '?v=' + encodeURIComponent(v) : ''), { method: 'GET' });
   } catch (_) {
     return null;
   }
 }
 
-function readAppCache(request) {
+/** The saved copy of this path and version; anyVersion (offline fallback only): any saved version of the path. */
+function readAppCache(request, anyVersion) {
   const key = appShellKey(request);
   if (!key) return Promise.resolve(undefined);
-  return caches.open(CACHE_NAME).then((cache) => cache.match(key).then((hit) => hit || cache.match(request)));
+  return caches.open(CACHE_NAME).then((cache) => cache.match(key)
+    .then((hit) => hit || cache.match(request))
+    .then((hit) => hit || (anyVersion ? cache.match(key, { ignoreSearch: true }) : undefined)));
 }
 
 function writeAppCache(request, response) {
@@ -277,7 +293,7 @@ self.addEventListener('fetch', (event) => {
             { headers: { 'Content-Type': 'application/json' }, status: 503 }
           );
         }
-        return readAppCache(request).then((cached) => {
+        return readAppCache(request, true).then((cached) => {
           if (cached) return withPresentZoom(cached, request, url);
           return request.mode === 'navigate' ? offlinePage() : Response.error();
         });
@@ -293,6 +309,20 @@ self.addEventListener('fetch', (event) => {
         if (res && res.status === 200) caches.open(CACHE_NAME).then((cache) => safePut(cache, request, res.clone()));
         return res;
       }))
+    );
+    return;
+  }
+
+  // Versioned same-origin assets (?v=): the saved copy of that version is final.
+  if (assetVersion(url)) {
+    event.respondWith(
+      readAppCache(request).then((cached) => cached || fetch(request).then((res) => {
+        if (res && res.status === 200) writeAppCache(request, res.clone());
+        return res;
+      }).catch((err) => readAppCache(request, true).then((any) => {
+        if (any) return any;
+        throw err;
+      })))
     );
     return;
   }
