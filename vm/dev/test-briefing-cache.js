@@ -121,7 +121,7 @@ async function child(out) {
     let sync = null;
     if (process.env.MZO_DATA_MODE === 'mirror') {
         minutes(0.5);
-        const r = await realFetch(`${base}/api/pending-mc/sync`, { method: 'POST', headers: { Cookie: cookie, Accept: 'application/json' } });
+        const r = await realFetch(`${base}/api/pending-mc/sync`, { method: 'POST', headers: { Cookie: cookie, Accept: 'application/json', Origin: base } });
         sync = { status: r.status, body: await r.json() };
         await get('right-after-sync');
         await settle();

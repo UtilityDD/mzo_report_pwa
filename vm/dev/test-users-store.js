@@ -141,7 +141,7 @@ async function supabaseChild(out) {
     const srv = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
     const base = `http://127.0.0.1:${srv.address().port}`;
     const post = async (credential) => {
-        const r = await realFetch(base + '/api/auth/google', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential }) });
+        const r = await realFetch(base + '/api/auth/google', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base }, body: JSON.stringify({ credential }) });
         return { status: r.status, body: await r.json().catch(() => null) };
     };
     const res = {
@@ -224,6 +224,7 @@ async function run(tmp) {
 
     const call = async (method, p, { body, cookie, referer } = {}) => {
         const headers = { Accept: 'application/json', 'User-Agent': 'users-store-test' };
+        if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) headers.Origin = base; // API writes come from the app's own pages
         if (body) headers['Content-Type'] = 'application/json';
         if (cookie) headers.Cookie = cookie;
         if (referer) headers.Referer = referer;

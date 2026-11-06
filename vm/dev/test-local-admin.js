@@ -14,7 +14,8 @@
 // variable unset the route is 404 and /api/auth/config does not offer it. Also checks
 // lib/local_admins.js and the hash helper, and the CRM upload key (x-sync-key): accepted only on the two
 // upload routes and only when the variable holds 32+ characters; the unbilled and disconnection reads
-// need a session and send no CORS header.
+// need a session and send no CORS header; API writes need this host's Origin (or Referer); server-side
+// files stay hidden however their path is spelled.
 
 const fs = require('fs');
 const os = require('os');
@@ -31,6 +32,10 @@ const ADMIN_PW = 'correct horse battery';
 const OPS_PW = 'another long password';
 const SYNC_KEY = crypto.randomBytes(32).toString('hex');
 const SHORT_KEY = 'k'.repeat(31);
+const PRIVATE_PATHS = ['/server.js', '/server%2ejs', '/%73erver.js', '/%2egit/HEAD', '/.git/HEAD', '/%64ata/activity_log.json', '/data/activity_log.json',
+    '/lib/%65ditor/index.js', '/lib/editor/index.js', '/LIB/EDITOR/index.js', '/docs/HANDOFF%2emd', '/%73cripts/sync/common.js', '/%76m/sync/run.js',
+    '/%6eode_modules/express/package.json', '/assets/..%2fserver.js', '/assets/%2e%2e/server.js', '//server.js', '/x%5c..%5cserver.js', '/%E0%A4%A', '/server.js%00.html'];
+const PUBLIC_FILES = ['/login.html', '/version.json', '/data/costcenter.json', '/lib/offices.js'];
 const CONSUMER_READS = ['/api/unbilled/meta', '/api/unbilled/outsort', '/api/unbilled/chronic', '/api/unbilled/summary', '/api/disconnection/meta', '/api/disconnection/dataset'];
 
 /** Supabase-style PIN hash (scrypt$salt$hash), as server.js hashPin writes it. */
@@ -77,8 +82,11 @@ async function child(out, cookieIn) {
     const srv = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
     const base = `http://127.0.0.1:${srv.address().port}`;
     const results = {};
-    const call = async (name, method, p, { body, cookie, ip, extra } = {}) => {
+    const call = async (name, method, p, { body, cookie, ip, extra, origin } = {}) => {
         const headers = { Accept: 'application/json' };
+        // API writes come from the app's own pages; origin: null sends none, a string sends that one.
+        if (origin === undefined && !['GET', 'HEAD', 'OPTIONS'].includes(method)) headers.Origin = base;
+        else if (origin) headers.Origin = origin;
         if (body) headers['Content-Type'] = 'application/json';
         if (cookie) headers.Cookie = cookie;
         if (ip) headers['X-Forwarded-For'] = ip;
@@ -107,8 +115,8 @@ async function child(out, cookieIn) {
     const key = { 'x-sync-key': mode === 'sync' ? syncKey : SHORT_KEY };
     const viewer = forge({ profile: { Username: 'clerk', Name: 'Clerk', role: 'viewer', office_level: 'CCC', ccc_code: '6611108' }, expiry: Date.now() + 3600e3 });
     if (mode === 'sync' || mode === 'rotated' || mode === 'unset') {
-        await call('sync_unbilled', 'POST', '/api/unbilled/upload', { extra: key });
-        await call('sync_disconnection', 'POST', '/api/disconnection/upload', { extra: key });
+        await call('sync_unbilled', 'POST', '/api/unbilled/upload', { extra: key, origin: null });
+        await call('sync_disconnection', 'POST', '/api/disconnection/upload', { extra: key, origin: null });
     }
     if (mode === 'sync') {
         await call('sync_wrong_key', 'POST', '/api/unbilled/upload', { extra: { 'x-sync-key': syncKey.slice(0, -1) + (syncKey.endsWith('0') ? '1' : '0') } });
@@ -124,6 +132,26 @@ async function child(out, cookieIn) {
             await call(`viewer ${p}`, 'GET', p, { cookie: viewer });
         }
         await call('anon_options', 'OPTIONS', '/api/unbilled/chronic');
+        // Origin check on API writes (logout is a harmless write).
+        const admin = forge({ profile: { Username: 'boss', Name: 'Boss', role: 'admin', office_level: 'CE' }, expiry: Date.now() + 3600e3 });
+        const EVIL = 'https://evil.1.2.3.4.sslip.io';
+        await call('csrf_same_origin', 'POST', '/api/logout', { cookie: admin });
+        await call('csrf_same_referer', 'POST', '/api/logout', { cookie: admin, origin: null, extra: { Referer: base + '/app.html' } });
+        await call('csrf_evil_origin', 'POST', '/api/logout', { cookie: admin, origin: EVIL });
+        await call('csrf_evil_referer', 'POST', '/api/logout', { cookie: admin, origin: null, extra: { Referer: EVIL + '/x.html' } });
+        await call('csrf_none', 'POST', '/api/logout', { cookie: admin, origin: null });
+        await call('csrf_null_origin', 'POST', '/api/logout', { cookie: admin, origin: 'null' });
+        await call('csrf_upper_path', 'POST', '/API/logout', { cookie: admin, origin: EVIL });
+        await call('csrf_admin_update', 'POST', '/api/admin/users/update', { cookie: admin, origin: EVIL, body: { Username: 'clerk', role: 'admin' } });
+        await call('csrf_editor', 'POST', '/api/editor/datasets/x/commit', { cookie: admin, origin: EVIL, body: {} });
+        await call('csrf_cookie_upload', 'POST', '/api/unbilled/upload', { cookie: admin, origin: null });
+        await call('csrf_key_upload_evil', 'POST', '/api/unbilled/upload', { extra: key, origin: EVIL });
+        await call('csrf_bearer_upload', 'POST', '/api/disconnection/upload', { origin: null, extra: { Authorization: 'Bearer not-a-session' } });
+        await call('csrf_key_other_route', 'POST', '/api/disconnection/sync', { cookie: admin, origin: null, extra: key });
+        await call('csrf_get', 'GET', '/api/session-check', { cookie: admin, origin: EVIL });
+        // Paths that must never be served, however they are spelled.
+        for (const p of PRIVATE_PATHS) await call(`private ${p}`, 'GET', p);
+        for (const p of PUBLIC_FILES) await call(`public ${p}`, 'GET', p);
         srv.close();
         fs.writeFileSync(out, JSON.stringify({ results, upstream }));
         fs.rmSync(sandbox, { recursive: true, force: true });
@@ -313,6 +341,16 @@ function main() {
             ok(Y[`viewer ${p}`].status !== 401, `${p}: a signed-in user gets past the session check (HTTP ${Y[`viewer ${p}`].status})`);
         }
         eq([Y.anon_options.status, Y.anon_options.acao], [401, null], 'OPTIONS: no CORS preflight answer');
+        eq(Y.csrf_same_origin.status, 200, 'origin check: same Origin passes');
+        eq(Y.csrf_same_referer.status, 200, 'origin check: same-host Referer passes when there is no Origin');
+        for (const k of ['csrf_evil_origin', 'csrf_evil_referer', 'csrf_none', 'csrf_null_origin', 'csrf_upper_path', 'csrf_admin_update', 'csrf_editor', 'csrf_cookie_upload', 'csrf_key_other_route']) {
+            eq(Y[k].status, 403, `origin check: ${k} refused`);
+        }
+        eq(Y.csrf_key_upload_evil.status, 400, 'origin check: the upload key needs no Origin (accepted, no files sent)');
+        eq(Y.csrf_bearer_upload.status, 401, 'origin check: a Bearer token on an upload route skips the Origin check (then fails the session check)');
+        eq(Y.csrf_get.status, 200, 'origin check: reads are not affected');
+        for (const p of PRIVATE_PATHS) eq(Y[`private ${p}`].status, 404, `private path ${p}`);
+        for (const p of PUBLIC_FILES) eq(Y[`public ${p}`].status, 200, `public file ${p}`);
         for (const [name, X] of [['short key', rot.results], ['unset', un.results]]) {
             eq(X.sync_unbilled.status, 401, `${name}: unbilled upload refused`);
             eq(X.sync_disconnection.status, 401, `${name}: disconnection upload refused`);

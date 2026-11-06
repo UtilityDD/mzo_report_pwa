@@ -220,8 +220,32 @@ app.use((req, res, next) => {
 
 // Server-side files are never served, locally or from the Vercel function.
 const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
-app.use((req, res, next) => (PRIVATE_PATH.test(req.path) ? res.status(404).end() : next()));
-app.use('/lib/editor', (req, res) => res.status(404).end()); // the data editor's server code (docs/data-editor.md)
+const EDITOR_SERVER_PATH = /^\/lib\/editor(\/|$)/i; // the data editor's server code (docs/data-editor.md)
+/** True for a path that must not be served: checked on the decoded, normalised path, as the static server sees it. */
+function isPrivatePath_(rawPath) {
+    let p;
+    try { p = decodeURIComponent(String(rawPath || '')); } catch (_) { return true; }
+    if (/[\0\\]/.test(p)) return true;
+    p = path.posix.normalize(p);
+    return PRIVATE_PATH.test(p) || EDITOR_SERVER_PATH.test(p);
+}
+app.use((req, res, next) => (isPrivatePath_(req.path) ? res.status(404).end() : next()));
+// API writes come from this app's own pages: the Origin (or, without one, the Referer) must be this host.
+// The CRM upload scripts send a key or token header instead (SYNC_UPLOAD_ROUTES, below).
+function sameOriginRequest_(req) {
+    const host = String(req.headers.host || '').toLowerCase();
+    const from = req.headers.origin || req.headers.referer;
+    if (!host || !from || from === 'null') return false;
+    try { return new URL(from).host.toLowerCase() === host; } catch (_) { return false; }
+}
+app.use((req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+    if (!/^\/api(\/|$)/i.test(req.path)) return next();
+    if (sameOriginRequest_(req)) return next();
+    const tokenHeader = req.headers['x-sync-key'] || /^Bearer\s/i.test(String(req.headers.authorization || ''));
+    if (req.method === 'POST' && SYNC_UPLOAD_ROUTES[req.path] && tokenHeader) return next();
+    return res.status(403).json({ status: 'error', message: 'This request must come from the app.' });
+});
 // Old URLs (vercel.json has the same redirects): the retired phone home page, the NSC drafts and an extension-less report.
 app.get(['/', '/index.html'], (req, res) => res.redirect(302, '/app.html'));
 // The three NSC drafts became the single Pending NSC page.
@@ -1042,7 +1066,7 @@ function issueSessionCookie(res, clientProfile, extra) {
     const payloadStr = Buffer.from(JSON.stringify(payload)).toString('base64');
     const signature = crypto.createHmac('sha256', JWT_SECRET).update(payloadStr).digest('base64');
     const token = `${payloadStr}.${signature}`;
-    res.setHeader('Set-Cookie', `mzo_session=${token}; Path=/; HttpOnly; Max-Age=${24 * 60 * 60}; SameSite=Lax`);
+    res.setHeader('Set-Cookie', `mzo_session=${token}; Path=/; HttpOnly; Max-Age=${24 * 60 * 60}; SameSite=Strict`);
     return token;
 }
 
@@ -1368,7 +1392,7 @@ app.get('/api/session-check', async (req, res) => {
 // API endpoint for User Logout
 app.post('/api/logout', (req, res) => {
     // Invalidate session cookie
-    res.setHeader('Set-Cookie', 'mzo_session=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax');
+    res.setHeader('Set-Cookie', 'mzo_session=; Path=/; HttpOnly; Max-Age=0; SameSite=Strict');
     return res.status(200).json({ status: 'success', message: 'Logged out successfully.' });
 });
 
