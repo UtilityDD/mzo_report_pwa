@@ -582,7 +582,9 @@
     copy: '<rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 8.5V5.5a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/>',
     sync: '<path d="M4 12a8 8 0 0 1 13.7-5.6L20 9"/><path d="M20 4v5h-5"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 15"/><path d="M4 20v-5h5"/>',
     arrow: '<path d="M7 17 17 7"/><path d="M8 7h9v9"/>',
-    filter: '<path d="M4 5h16l-6 7.5V19l-4-2v-4.5z"/>'
+    filter: '<path d="M4 5h16l-6 7.5V19l-4-2v-4.5z"/>',
+    reload: '<path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5"/><path d="M3.5 3.5v5h5"/>',
+    check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>'
   };
   function icon(name) { return '<svg class="ui-i" aria-hidden="true"><use href="#ui-' + name + '"/></svg>'; }
   function sprite() {
