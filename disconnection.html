@@ -370,7 +370,15 @@
       'use strict';
       var $ = function (id) { return document.getElementById(id); };
       var ROWS = 'disconnection';
-      var GOOGLE_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv';
+      var VM_ORIGIN = 'https://130.210.43.11.sslip.io';
+      function getApiBase() {
+        if (location.hostname.includes('vercel.app')) {
+          return VM_ORIGIN;
+        }
+        return '';
+      }
+      var GOOGLE_CSV = '/api/disconnection/dataset';
+      var GOOGLE_FALLBACK = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkl9m38XuD5aewajE7Fc0hucP9DWz1UwEqJZeu5wELWZivSEEXWrhl7RiHFSezGeGiGdDB53s1bWit/pub?gid=0&single=true&output=csv';
       var STATUS = {
         'Fully Paid': { label: 'Fully paid', cls: 'ok' },
         'Partially Paid': { label: 'Part paid', cls: '' },
@@ -386,7 +394,20 @@
       var followupRecentOnly = false, haveData = false;
 
       var metaP = fetch('/api/disconnection/meta', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-        .then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+        .then(function (r) {
+          if (r.ok) return r.json();
+          if (getApiBase()) {
+            return fetch(getApiBase() + '/api/disconnection/meta', { headers: { Accept: 'application/json' } })
+              .then(function (r2) { return r2.ok ? r2.json() : null; });
+          }
+          return null;
+        }).catch(function () {
+          if (getApiBase()) {
+            return fetch(getApiBase() + '/api/disconnection/meta', { headers: { Accept: 'application/json' } })
+              .then(function (r2) { return r2.ok ? r2.json() : null; }).catch(function () { return null; });
+          }
+          return null;
+        });
 
       /* ------------------------------------------------------------------ parsing */
 
@@ -1156,10 +1177,18 @@
         t.issues.forEach(function (x) { if (x.check === 'header.missing') miss[x.column] = 1; });
         return !!(miss.con_id && miss.ccc_code);
       }
-      // Last resort when no rows could be loaded (or their header was broken): meta csvUrl (Supabase
+      // Last resort when no rows could be loaded (or their header was broken): meta csvUrl (VM snapshot / Supabase
       // Storage) or the published sheet, its header row found, turned into rows in this browser.
       function fallback() {
-        return metaP.then(function (m) { return (window.mzoMirror ? mzoMirror.fetch : fetch)((m && m.csvUrl) || GOOGLE_CSV); })
+        return metaP.then(function (m) {
+          var target = (m && m.csvUrl) || (getApiBase() ? getApiBase() + '/api/disconnection/dataset' : GOOGLE_CSV);
+          return (window.mzoMirror ? mzoMirror.fetch : fetch)(target)
+            .then(function (r) {
+              if (!r.ok && getApiBase()) return fetch(getApiBase() + '/api/disconnection/dataset');
+              if (!r.ok) return fetch(GOOGLE_FALLBACK);
+              return r;
+            });
+        })
           .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
           .then(function (text) { return fetch('/schema/' + ROWS + '.json', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (schema) { return MzoRows._compute(normalizeCsv(text), { key: ROWS, version: 'fallback', format: 'csv', schema: schema }); }); })
           .then(function (out) { var t = MzoRows.fromDoc(ROWS, JSON.parse(out.json), 'local'); if (brokenHeader(t)) throw new Error('no header'); onData(t); })

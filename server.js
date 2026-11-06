@@ -910,7 +910,8 @@ function readSession_(req) {
 const PUBLIC_PATHS = new Set([
     '/login.html', '/offline.html', '/sw.js', '/manifest.json',
     '/api/auth/google', '/api/auth/local', '/api/auth/pending-status', '/api/auth/config', '/api/news',
-    '/api/unbilled/meta', '/api/unbilled/outsort', '/api/unbilled/chronic', '/api/unbilled/summary'
+    '/api/unbilled/meta', '/api/unbilled/outsort', '/api/unbilled/chronic', '/api/unbilled/summary',
+    '/api/disconnection/meta', '/api/disconnection/dataset'
 ]);
 const PUBLIC_ASSET = /^\/(icons|assets)\/|\.(css|js|png|json|ico)$/i;
 
@@ -4439,7 +4440,7 @@ app.get('/api/unbilled/meta', async (req, res) => {
     return res.json({
         status: 'success',
         canSync,
-        canCrmSync: canSync && isDbvisAvailable(),
+        canCrmSync: canSync,
         isAdmin: user ? isPortalAdmin_(user) : false,
         asOn: (meta && meta.asOn) || null,
         baselineDate: (meta && meta.baselineDate) || null,
@@ -4518,18 +4519,88 @@ const DISCONNECTION_FOLLOWUP_SCRIPT_URL = String(
 
 const canSyncDisconnection_ = (user) => hasPermission_(user, 'disconnection-sync-autho', ['discon', 'sync']);
 
+app.options('/api/disconnection/meta', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(204).end();
+});
+
 app.get('/api/disconnection/meta', async (req, res) => {
-    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    const user = await resolveFreshUser_(req);
-    const meta = await DISCONNECTION_META.read();
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
+
+    const user = req.user ? await resolveFreshUser_(req) : null;
+    const canSync = user ? canSyncDisconnection_(user) : false;
+    const isAdmin = user ? isPortalAdmin_(user) : false;
+
+    let meta = await DISCONNECTION_META.read();
+
+    // If running on Vercel or remote host and local meta is missing/stale, attempt fetching from VM
+    if ((!meta || !meta.version) && req.headers.host && !req.headers.host.includes('130.210.43.11')) {
+        try {
+            const r = await fetch(`${VM_BASE_URL}/api/disconnection/meta`);
+            if (r.ok) {
+                const vmMeta = await r.json();
+                if (vmMeta && vmMeta.status === 'success') {
+                    meta = vmMeta;
+                }
+            }
+        } catch (_) {}
+    }
+
+    const synced = await syncedMetaFields_(meta, DISCONNECTION_SHEET_FALLBACK_URL, 'CACHE_DISCONNECTION', res);
+    const isVm = Boolean(req.headers.host && req.headers.host.includes('130.210.43.11'));
+
     return res.json({
         status: 'success',
-        canSync: canSyncDisconnection_(user),
-        isAdmin: isPortalAdmin_(user),
+        canSync,
+        isAdmin,
         sheetScriptUrl: DISCONNECTION_FOLLOWUP_SCRIPT_URL,
-        ...(await syncedMetaFields_(meta, DISCONNECTION_SHEET_FALLBACK_URL, 'CACHE_DISCONNECTION', res))
+        vmUrl: VM_BASE_URL,
+        ...synced,
+        csvUrl: isVm ? '/api/disconnection/dataset' : (synced.csvUrl || `${VM_BASE_URL}/api/disconnection/dataset`),
+        datasetUrl: isVm ? '/api/disconnection/dataset' : `${VM_BASE_URL}/api/disconnection/dataset`
     });
+});
+
+app.options('/api/disconnection/dataset', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(204).end();
+});
+
+app.get('/api/disconnection/dataset', async (req, res) => {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    // 1. Local data/disconnection.csv on disk
+    const localFile = path.join(__dirname, 'data', 'disconnection.csv');
+    if (fs.existsSync(localFile)) {
+        return fs.createReadStream(localFile).pipe(res);
+    }
+
+    // 2. Mirror snapshot directory
+    if (mirror.on() && mirror.dir) {
+        const snapFile = path.join(mirror.dir, 'disconnection.csv');
+        if (fs.existsSync(snapFile)) {
+            return fs.createReadStream(snapFile).pipe(res);
+        }
+    }
+
+    // 3. If running on Vercel or non-VM host, redirect directly to the VM endpoint
+    if (req.headers.host && !req.headers.host.includes('130.210.43.11')) {
+        return res.redirect(302, `${VM_BASE_URL}/api/disconnection/dataset`);
+    }
+
+    // 4. Fallback to Supabase snapshot or Google Sheet CSV
+    const meta = await DISCONNECTION_META.read().catch(() => null);
+    const targetUrl = (meta && meta.csvUrl) || DISCONNECTION_SHEET_FALLBACK_URL;
+    return res.redirect(302, targetUrl);
 });
 
 syncRoute_('/api/disconnection/sync', {

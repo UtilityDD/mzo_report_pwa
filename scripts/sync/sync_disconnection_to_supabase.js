@@ -3,6 +3,8 @@
  * Fetches Disconnection CSV from Google Sheets, generates pre-computed KPIs,
  * and uploads snapshot.csv to Supabase Storage ('reports' bucket).
  */
+const fs = require('fs');
+const path = require('path');
 const { parseCsvLine, fetchCsv, storageConfigured, upload, publishMeta, cli } = require('./common');
 
 const LABEL = 'Disconnection Sync';
@@ -192,6 +194,16 @@ async function run() {
     } catch (e) {
       console.warn(`[${LABEL}] Storage upload failed: ${e.message}`);
     }
+  }
+
+  // Save local copy on the VM for direct disk streaming
+  try {
+    const dataDir = path.join(__dirname, '..', '..', 'data');
+    fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(path.join(dataDir, 'disconnection.csv'), csvText, 'utf8');
+    console.log(`[${LABEL}] Saved local copy to data/disconnection.csv`);
+  } catch (e) {
+    console.warn(`[${LABEL}] Could not save local data/disconnection.csv: ${e.message}`);
   }
 
   const meta = {
