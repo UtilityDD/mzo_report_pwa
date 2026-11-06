@@ -62,6 +62,7 @@
   <script src="mzo_data_hub.js?v=92"></script>
   <script src="/mzo_ui.js?v=6"></script>
   <script src="/mzo_rows.js?v=6"></script>
+  <script src="/mzo_view.js?v=1"></script>
   <script>
     function allowed() {
       let profile = {};
@@ -406,14 +407,27 @@
     };
     // ---- end of as-on rules ----
 
-    Object.keys(AS_ON).forEach(function (key) {
-      if (!window.MzoRows || !rows.some(function (r) { return r.key === key; })) return;
-      MzoRows.load(AS_ON[key][0], function (t) {
-        const text = t ? AS_ON[key][1](t) : '';
-        offer(key, 'data', text);
-        if (key === 'CACHE_FEEDER_OUTAGE' && text) { try { localStorage.setItem('mzo_feeder_outage_as_on', text); } catch (e) {} }
-      }, { scope: false });
-    });
+    function offerData(key, text) {
+      offer(key, 'data', text);
+      if (key === 'CACHE_FEEDER_OUTAGE' && text) { try { localStorage.setItem('mzo_feeder_outage_as_on', text); } catch (e) {} }
+    }
+    function loadRows(keys) {
+      keys.forEach(function (key) {
+        if (!window.MzoRows || !rows.some(function (r) { return r.key === key; })) return;
+        MzoRows.load(AS_ON[key][0], function (t) { offerData(key, t ? AS_ON[key][1](t) : ''); }, { scope: false });
+      });
+    }
+    // VM: these same rules, run on the server once per sync (vm/sync/lib/views/sheet_links_dates.js), so
+    // the page downloads 15 dates instead of 15 datasets; a dataset the view lacks loads as before.
+    if (window.MzoView) {
+      let viewed = {};
+      MzoView.load('sheet_links_dates', function (v) {
+        viewed = v.dates || {};
+        Object.keys(viewed).forEach(function (key) { if (AS_ON[key]) offerData(key, viewed[key]); });
+      }).then(function (ok) {
+        loadRows(Object.keys(AS_ON).filter(function (key) { return !ok || !(key in viewed); }));
+      });
+    } else loadRows(Object.keys(AS_ON));
   </script>
 </body>
 </html>

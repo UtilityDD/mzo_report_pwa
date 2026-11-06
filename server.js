@@ -1047,6 +1047,11 @@ if (String(process.env.MZO_DATA_MODE || '').toLowerCase() === 'mirror') {
 let ratingRoute = (req, res) => (req.user ? res.status(204).end() : res.status(401).json({ status: 'error', message: 'Unauthorized' }));
 try { if (mirror.on() || String(process.env.MZO_DATA_MODE || '').toLowerCase() === 'mirror') ratingRoute = require('./vm/sync/lib/rating').handler({ dir: mirror.dir, app: __dirname, on: mirror.on }); } catch (err) { console.warn('[Mirror] rating unavailable:', err.message); }
 app.get('/api/data/rating', ratingRoute);
+// Page views precomputed after each sync (vm/sync/views.js; docs/uniform-data.md, "Page views"): 204 outside
+// mirror mode, on Vercel (no vm/) and while a view is not fresh, so the page computes it itself.
+let viewRoute = (req, res) => (req.user ? res.status(204).end() : res.status(401).json({ status: 'error', message: 'Unauthorized' }));
+try { if (mirror.on() || String(process.env.MZO_DATA_MODE || '').toLowerCase() === 'mirror') viewRoute = require('./vm/sync/lib/views').handler({ dir: mirror.dir, app: __dirname, on: mirror.on, manifest: mirror.manifest }); } catch (err) { console.warn('[Mirror] page views unavailable:', err.message); }
+app.get('/api/data/view/:name', viewRoute);
 
 // --- Estimate structures (admin.html) ---
 const STRUCTURE_FILE = path.join(__dirname, 'data', 'structure.csv'); // literal path: Vercel bundles it with the function

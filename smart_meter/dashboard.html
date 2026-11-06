@@ -11,6 +11,7 @@
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
   <script src="/mzo_rows.js?v=6" defer></script>
+  <script src="/mzo_view.js?v=1" defer></script>
   <style>
     .rem-hint {
       padding: 8px 16px;
@@ -156,16 +157,23 @@
       });
 
       asOn = null; woByMeter = {};
-      (wt ? wt.all : []).forEach(function (d) {
-        if (!d.work_order) return;
-        if (!asOn && d.date) asOn = UI.date(d.date);
-        if (d.new_meter_no) woByMeter[d.new_meter_no] = d;
-      });
-      wos = (wt ? wt.rows : []).filter(function (d) { return d.work_order; }).map(function (d) {
-        var o = office(d, d.ccc_code);
-        o.wo = d.work_order;
-        return o;
-      });
+      if (wt && wt.view) {
+        // The precomputed view (VM): the same three things, from vm/sync/lib/views/smart_meter.js.
+        asOn = wt.view.asOn ? UI.date(wt.view.asOn) : null;
+        woByMeter = wt.view.byMeter;
+        wos = wt.wos;
+      } else {
+        (wt ? wt.all : []).forEach(function (d) {
+          if (!d.work_order) return;
+          if (!asOn && d.date) asOn = UI.date(d.date);
+          if (d.new_meter_no) woByMeter[d.new_meter_no] = d;
+        });
+        wos = (wt ? wt.rows : []).filter(function (d) { return d.work_order; }).map(function (d) {
+          var o = office(d, d.ccc_code);
+          o.wo = d.work_order;
+          return o;
+        });
+      }
 
       if (asOn) {
         $('asOn').textContent = 'As on ' + UI.fmtDate(asOn);
@@ -795,10 +803,34 @@
         }
       }, opts).then(finish, finish);
 
-      MzoRows.load('smart_meter_work_orders', function (t) {
-        if (t) wT = t; else if (!wT) wT = { rows: [], all: [] };
-        if (mT) paint();
-      }, opts).then(finish, finish);
+      var loadSheet = function () {
+        return MzoRows.load('smart_meter_work_orders', function (t) {
+          if (t) wT = t; else if (!wT) wT = { rows: [], all: [] };
+          if (mT) paint();
+        }, opts);
+      };
+      // VM: the work orders the page needs, precomputed per sync (mzo_view.js); else the whole sheet.
+      if (window.MzoView) {
+        MzoView.load('smart_meter', function (v) {
+          wT = { view: v, wos: viewWos(v) };
+          if (mT) paint();
+        }, force ? { noPaint: true } : undefined).then(function (ok) {
+          if (ok) return;
+          if (wT && wT.view) wT = null;
+          return loadSheet();
+        }).then(finish, finish);
+      } else loadSheet().then(finish, finish);
+    }
+
+    // Work-order offices from the view, scoped to the login as MzoRows scopes the sheet's rows.
+    function viewWos(v) {
+      var groups = v.offices.map(function (g) { return { _region: g[0], _division: g[1], _ccc: g[2], _ccc_code: g[3], ccc_code: g[4], n: g[5] }; });
+      var out = [];
+      MzoRows.scope(groups).forEach(function (g) {
+        for (var i = 0; i < g.n; i++) out.push(office(g, g.ccc_code));
+      });
+      MzoRows.scope(v.rows).forEach(function (d) { out.push(office(d, d.ccc_code)); });
+      return out;
     }
 
     $('refreshBtn').addEventListener('click', function () {

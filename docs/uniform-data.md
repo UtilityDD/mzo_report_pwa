@@ -153,6 +153,23 @@ One file per dataset that pages read through `MzoRows`, named by the mirror's da
 
 **Header drift.** When a sheet renames a header, the field keeps its name if an alias matches (`header.alias` issue), else it arrives empty (`header.missing`): the page shows zeros or blanks and the console names the column, instead of breaking. The mirror's data-quality checks can report both from the rows meta (`issues`), next to `header.drift`.
 
+## Page views
+
+Some pages join several whole datasets to show a handful of numbers. On the VM those joins run once per sync instead of in every browser: `vm/sync/views.js` (after `rows.js`, one child process per view, `--max-old-space-size=160`) reads the fresh `<key>.rows.json` files, streaming them row by row (`eachRow` in `vm/sync/lib/views.js`), and writes `<name>.view.json` (+ `.<part>.view.json`, each with `.gz`/`.br`) and `<name>.view.meta.json` next to the snapshots.
+
+| View | Page | Inputs | What the page gets instead of the datasets |
+|---|---|---|---|
+| `meter_utilization` | `meter_utilization.html` | `meter_erp`, `meter_master`, `meter_crm`, `meter_isu` | the ERP rows (dictionary-coded), each meter's status and the three header dates (about 0.3 MB compressed instead of 4.7 MB); part `ids` (consumer and installation numbers) loads when the drawer first opens |
+| `smart_meter` | `smart_meter/dashboard.html` | `smart_meter_status`, `smart_meter_work_orders` | work orders per office, the work order of each supplied meter and the "As on" date (`smart_meter_status` still loads as rows) |
+| `sheet_links_dates` | `sheet_links.html` | the 15 datasets of its as-on rules | the 15 dates; the rules are the page's own block (between `---- as-on rules` and `---- end of as-on rules ----`), run with the real `mzo_ui.js` (`vm/sync/lib/views/ui.js`) |
+
+Rules for a view:
+
+- It runs **the page's own rules** (copied with the same plain-object lookups and date handling, or evaluated from the page), and `scripts/qa/view-parity.js --snap <dir>` compares every number it feeds with the old page logic, row by row, as admin, a region and a CCC login. Office scope stays in the browser: a view holds every office's rows, like the rows cache, and the page scopes them with `MzoRows.scope`.
+- `GET /api/data/view/:name[?part=x]` (session required) serves it with an ETag, 304 and br/gzip **only while it is fresh**: every input's rows are current for the manifest and are the bytes it was built from, and its code (`vm/sync/lib/views.js`, the view's module and the files it names, e.g. the page) is the code the server runs. Otherwise, and on Vercel and locally without mirror mode, it answers 204 and the page loads and computes as before. A view with independent inputs (`partial`, the sheet links dates) is built from the inputs that are fresh; the page loads the others itself.
+- In the browser `mzo_view.js` (`MzoView.load(name, render, opts)`) paints the copy kept in IndexedDB (`MZOViews`), revalidates it by ETag and resolves `false` when the server has no view, so the page falls back.
+- Memory, measured on the 6 Nov 2026 snapshots: `meter_utilization` peaks at about 205–220 MB RSS (4.5 s), `sheet_links_dates` about 165 MB, `smart_meter` about 90 MB; the rating step stays the largest child of the sync.
+
 ## Performance budget
 
 | | Budget | Measured (2026-11-01, M-series laptop, headless Chrome) |

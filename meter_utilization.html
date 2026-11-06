@@ -11,6 +11,7 @@
   <script src="/lib/offices.js?v=2" defer></script>
   <script src="/mzo_scope.js?v=17" defer></script>
   <script src="/mzo_rows.js?v=6" defer></script>
+  <script src="/mzo_view.js?v=1" defer></script>
   <style>
     .ui-head { align-items: center; }
     .mono { font-family: var(--mzo-mono); font-size: 12.5px; letter-spacing: .02em; }
@@ -138,6 +139,53 @@
       dates = { erp: maxErp ? UI.fmtDate(new Date(maxErp)) : '', rep: maxRep ? UI.fmtDate(new Date(maxRep)) : '', nsc: maxNsc ? UI.fmtDate(new Date(maxNsc)) : '' };
     }
 
+    /* ---------- the precomputed view (VM): the same rows and statuses, joined once per sync ---------- */
+    // vm/sync/lib/views/meter_utilization.js runs the joins above on the server: the page gets the
+    // meter_erp rows with each meter's status and the three dates, and the drawer's consumer ids
+    // when it first opens (the ids part). Anywhere else the four sheets load as before.
+    var VIEW = null, VIEW_STATUS = { n: 'utilized-nsc', r: 'utilized-replacement', h: 'meter-in-hand' }, idsP = null, idsReady = false;
+    function fromView(v) {
+      var all = new Array(v.rows), fields = v.fields, st = v.status;
+      // where each field comes from: -1 serial, -2 entry date, k ≥ 0 the row's tuple
+      var src = fields.map(function (name) { return name === 'serial_number' ? -1 : name === 'entry_date' ? -2 : v.columns.indexOf(name); });
+      for (var i = 0; i < v.rows; i++) {
+        var t = v.tuples[v.tuple[i]], d = {};
+        for (var k = 0; k < fields.length; k++) {
+          var at = src[k];
+          d[fields[k]] = at === -1 ? v.serial[i] : at === -2 ? v.entryDates[v.entry[i]] : at >= 0 ? t[at] : '';
+        }
+        d._mu_status = VIEW_STATUS[st.charAt(i)];
+        all[i] = d;
+      }
+      return { all: all, rows: MzoRows.scope(all) };
+    }
+    function processView() {
+      masterLookup = {}; replacementLookup = {}; idsP = null; idsReady = false;
+      var day = function (x) { return x ? UI.fmtDate(new Date(x[0], x[1] - 1, x[2])) : ''; };
+      dates = { erp: day(VIEW.dates.erp), rep: day(VIEW.dates.rep), nsc: day(VIEW.dates.nsc) };
+    }
+    // The drawer's consumer ids: the view's ids part, else the three lookup sheets as before.
+    function loadIds() {
+      if (idsP) return idsP;
+      idsP = MzoView.load('meter_utilization', function (x) {
+        masterLookup = {}; replacementLookup = {};
+        Object.keys(x.nsc).forEach(function (m) { masterLookup[m] = { conId: x.nsc[m][0], instNo: x.nsc[m][1] }; });
+        Object.keys(x.rep).forEach(function (m) { replacementLookup[m] = { conId: x.rep[m] }; });
+      }, { part: 'ids', noPaint: true }).then(function (ok) {
+        if (ok) return;
+        return Promise.all(KEYS.slice(1).map(function (k) { return MzoRows.get(k).then(function (t) { T[k] = t; }); })).then(function () {
+          masterLookup = {}; replacementLookup = {};
+          T.meter_master.all.forEach(function (d) { if (d.meter_no) masterLookup[d.meter_no] = { conId: d.con_id, instNo: d.inst_no }; });
+          T.meter_crm.all.forEach(function (d) { if (d.meter_number) replacementLookup[d.meter_number] = { conId: d.con_id }; });
+          T.meter_isu.all.forEach(function (d) {
+            if (d.meter_no) replacementLookup[d.meter_no] = { conId: d.con_id };
+            if (d.replaced_by) replacementLookup[d.replaced_by] = { conId: d.con_id };
+          });
+        });
+      }).then(function () { idsReady = true; }, function () { idsP = null; });
+      return idsP;
+    }
+
     /* ---------- view model ---------- */
     var all = [], makes = {};
     // One view row per ERP meter in the login's scope. Offices are the canonical ones; a division
@@ -147,7 +195,7 @@
       all = T.meter_erp.rows.map(function (d) {
         var meter = d.serial_number, phase = d.phase;
         if (phase === '1') phase = '1PH'; if (phase === '3') phase = '3PH';
-        var status = replacementLookup[meter] ? 'utilized-replacement' : masterLookup[meter] ? 'utilized-nsc' : 'meter-in-hand';
+        var status = d._mu_status || (replacementLookup[meter] ? 'utilized-replacement' : masterLookup[meter] ? 'utilized-nsc' : 'meter-in-hand');
         var mk = d.meter_make || 'Unknown', make = makes[mk] || (makes[mk] = UI.title(mk).replace(/\s+/g, ' ').replace(/ Li Mited/, ' Limited'));
         var e = d.entry_date ? UI.date(d.entry_date) : null, days = e ? Math.max(0, Math.floor((now - e.getTime()) / 864e5)) : null;
         var hand = status === 'meter-in-hand';
@@ -429,6 +477,10 @@
 
     /* ---------- detail drawer ---------- */
     function detail(r) {
+      if (VIEW && !idsReady) {
+        loadIds().then(function () { if (idsReady) detail(r); else UI.toast('Could not load meter data.'); });
+        return;
+      }
       var d = r.src, s = STATUS[d.status] || STATUS['meter-in-hand'], c = d.status === 'utilized-nsc' ? masterLookup[d.meter] || {} : d.status === 'utilized-replacement' ? replacementLookup[d.meter] || {} : {};
       UI.drawer('Meter ' + d.meter, [s.label, r._supp || r._divn].filter(Boolean).join(' · '), [
         ['Status', s.label], ['Consumer ID', c.conId], ['Installation no.', c.instNo], ['Received on', r.entry ? UI.fmtDate(r.entry) : d.entryDate],
@@ -520,23 +572,40 @@
     // Paint when all four are in; newer rows of any of them repaint (once per batch of arrivals).
     function build() {
       queued = false;
-      if (KEYS.some(function (k) { return !T[k]; })) return;
+      if (!VIEW && KEYS.some(function (k) { return !T[k]; })) return;
       if (!T.meter_erp.rows.length && failed.meter_erp) return fail();
-      processData(); prepare();
+      if (VIEW) processView(); else processData();
+      prepare();
       if (firstData) { firstData = false; tab = homeTab(); applyUrl(); }
       render();
     }
     function queue() { if (!queued) { queued = true; setTimeout(build, 0); } }
-    KEYS.forEach(function (k) {
-      MzoRows.load(k, function (t, info) {
-        if (t) T[k] = t;
-        else if (info && info.error && !T[k]) { failed[k] = true; T[k] = { rows: [], all: [] }; }
-        queue();
+    function loadSheets() {
+      KEYS.forEach(function (k) {
+        MzoRows.load(k, function (t, info) {
+          if (t) T[k] = t;
+          else if (info && info.error && !T[k]) { failed[k] = true; T[k] = { rows: [], all: [] }; }
+          queue();
+        });
       });
-    });
+    }
+    function useView(v) { VIEW = v; T = { meter_erp: fromView(v) }; queue(); }
+    if (window.MzoView) {
+      MzoView.load('meter_utilization', useView).then(function (ok) {
+        if (ok) return;
+        VIEW = null; T = {};
+        loadSheets();
+      });
+    } else loadSheets();
     // Refresh: a forced version check of all four (reads only).
     $('refreshBtn').addEventListener('click', function () {
       var btn = this; btn.classList.add('spin');
+      if (VIEW) {
+        MzoView.load('meter_utilization', function (v) { VIEW = v; T = { meter_erp: fromView(v) }; }, { noPaint: true })
+          .then(function () { build(); UI.toast('Meter data is up to date'); })
+          .then(function () { btn.classList.remove('spin'); }, function () { btn.classList.remove('spin'); });
+        return;
+      }
       Promise.all(KEYS.map(function (k) { return MzoRows.get(k, { forceCheck: true }).then(function (t) { if (t) T[k] = t; }, function () {}); }))
         .then(function () { build(); UI.toast('Meter data is up to date'); })
         .then(function () { btn.classList.remove('spin'); }, function () { btn.classList.remove('spin'); });
