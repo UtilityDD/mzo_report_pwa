@@ -437,7 +437,7 @@ const tmp = (name) => fs.mkdtempSync(path.join(os.tmpdir(), 'mzo-dq-' + name + '
         const by = (id) => a.findings.find((f) => f.id === id);
         assert.equal(a.findings.find((f) => /Raiganj/.test(f.title)).status, 'fixed');
         assert.equal(a.findings.find((f) => /partial copy/.test(f.title)).status, 'mitigated');
-        assert.equal(by('AF-02').status, 'open');
+        assert.equal(by('AF-02').status, 'fixed'); assert.equal(by('AF-02').fixed_in, '3.55');
     });
 
     await test('audit view: live state linked from quality.json (detected, sums, columns, by dataset, clear, not checked, unavailable)', () => {
