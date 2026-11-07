@@ -13,7 +13,7 @@
 //   Same-origin copies are keyed by path plus the ?v= version, so a bumped ?v= is never answered
 //   with the previous version's copy; only an offline fallback takes any version of the path.
 //   - HTML responses get /mzo_present.js (desktop presentation zoom) injected after <head>.
-const CACHE_NAME = 'mzo-reports-cache-v340';
+const CACHE_NAME = 'mzo-reports-cache-v341';
 
 // Precached on install (not the data hub: it changes with dataset keys)
 const PRECACHE_ASSETS = [
