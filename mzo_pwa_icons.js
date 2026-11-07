@@ -7,7 +7,7 @@
       var saved = localStorage.getItem('theme') || localStorage.getItem('mzo_theme');
       isDark = pref === 'system' ? matchMedia('(prefers-color-scheme: dark)').matches : (pref ? pref === 'dark' : saved === 'dark');
     } catch (e) {}
-    var iconHref = isDark ? '/icons/icon-192-dark.png?v=303' : '/icons/icon-192-v2.png?v=303';
+    var iconHref = isDark ? '/icons/icon-192-dark.png?v=304' : '/icons/icon-192-v2.png?v=304';
     function addLink(rel, href, attrs) {
       var el = document.createElement('link');
       el.rel = rel;
@@ -22,11 +22,11 @@
     }
     addLink('manifest', '/manifest.json');
     var favEl = addLink('icon', iconHref, { type: 'image/png' });
-    addLink('apple-touch-icon', '/icons/icon-192-v2.png?v=303');
+    addLink('apple-touch-icon', '/icons/icon-192-v2.png?v=304');
     if (favEl) {
       window.addEventListener('mzo-theme-change', function (ev) {
         var t = (ev && ev.detail && ev.detail.theme) || document.documentElement.getAttribute('data-mzo-theme');
-        favEl.href = t === 'dark' ? '/icons/icon-192-dark.png?v=303' : '/icons/icon-192-v2.png?v=303';
+        favEl.href = t === 'dark' ? '/icons/icon-192-dark.png?v=304' : '/icons/icon-192-v2.png?v=304';
       });
     }
   } catch (e) {}
