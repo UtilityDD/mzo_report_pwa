@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const OFFICES = require('./lib/offices.js');
 const http = require('http');
 const https = require('https');
 const { spawnSync } = require('child_process');
@@ -2131,8 +2132,10 @@ function appendConnection_(record, target, details) {
 function inJurisdiction_(user, division, region) {
     const userDiv = String(user.division_code || '').trim().toLowerCase();
     const userReg = String(user.region_code || '').trim().toLowerCase();
+    // Regions by canonical name (lib/offices.js): "Raiganj" and "Uttar Dinajpur" are the same region.
+    const regOf = (v) => (OFFICES.canonRegion(v) || String(v || '').trim()).toLowerCase();
     return (userDiv && String(division || '').trim().toLowerCase() === userDiv) ||
-        (userReg && String(region || '').trim().toLowerCase() === userReg);
+        (userReg && regOf(region) === regOf(user.region_code));
 }
 
 function suggestCorrection_(user, suggestion) {
@@ -5435,7 +5438,13 @@ function buildExecutiveBriefing_(meta) {
     // Withheld NSC applications (WATCH) — counts from the last NSC upload
     const withheldRows = Number(nsc.withheldRows || (nsc.statusCounts && nsc.statusCounts.Witheld) || 0);
     if (withheldRows) {
-        const regions = nsc.regionCounts || {};
+        // The upload counts regions as written in the sheet; spellings of one region (old names
+        // included) are summed under its canonical name.
+        const regions = {};
+        for (const [name, n] of Object.entries(nsc.regionCounts || {})) {
+            const r = OFFICES.canonRegion(name) || name;
+            regions[r] = (regions[r] || 0) + (Number(n) || 0);
+        }
         items.push({
             id: 'nsc-withheld',
             priority: 'watch',
