@@ -13,6 +13,7 @@ function makeSourceFetch({ timeoutMs = 300000, retries = 3, signal } = {}) {
         }
         const tries = opts.retries !== undefined ? opts.retries : retries;
         for (let attempt = 0; ; attempt++) {
+            if (signal && signal.aborted) throw signal.reason || new Error('Aborted');
             const signals = [AbortSignal.timeout(opts.timeoutMs || timeoutMs)];
             if (signal) signals.push(signal);
             if (opts.signal) signals.push(opts.signal);

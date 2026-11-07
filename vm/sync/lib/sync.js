@@ -83,6 +83,9 @@ async function syncSource(src, env) {
         limits: { maxRowsPerBatch: batchSize },
         signal: ac.signal
     };
+    // PocketBase work for this source stops at the same time limit as the download; the registry row
+    // and the run log (finish) still use the plain client, so a timed-out source is recorded.
+    const spb = pb && typeof pb.withSignal === 'function' ? pb.withSignal(ac.signal) : pb;
     let sp = null;
     let version = null;
     let snapFields = {};
@@ -148,7 +151,7 @@ async function syncSource(src, env) {
             }
         }
 
-        const coll = dryRun ? null : await pb.getCollection(collection);
+        const coll = dryRun ? null : await spb.getCollection(collection);
         // A collection from before _nulls (mzo-sync/1) is rebuilt by the next run, whatever its version says.
         const layoutCurrent = !!(coll && coll.fields.some((f) => f.name === NULLS_FIELD));
         const healthy = !!(ds && layoutCurrent && (ds.last_status === 'ok' || ds.last_status === 'unchanged'));
@@ -232,9 +235,9 @@ async function syncSource(src, env) {
         }
 
         const oe = officeEnrich.prepare(src, columns);
-        const ens = await ensureCollection(pb, collection, fieldList(columns).concat(oe ? oe.fields : []));
+        const ens = await ensureCollection(spb, collection, fieldList(columns).concat(oe ? oe.fields : []));
         const w = await writeRows({
-            pb,
+            pb: spb,
             collection,
             columns,
             primaryKey: src.primaryKey,
@@ -259,7 +262,7 @@ async function syncSource(src, env) {
         summary.loadMs = w.loadMs;
         summary.batches = w.batches;
         const tableRows = w.existingBefore + w.inserted - w.deleted;
-        const parts = [`${w.total} rows: +${w.inserted} ~${w.updated} -${w.deleted} (unchanged ${w.unchanged})`];
+        const parts = [`${w.total} rows: +${w.inserted} ~${w.updated} -${w.deleted} (unchanged ${w.unchanged}${w.moved ? `, ${w.moved} only moved` : ''})`];
         if (ens.created) parts.push('collection created');
         else if (ens.altered || fin.altered) parts.push('collection altered');
         if (ens.staged.length) parts.push(`retyped ${ens.staged.join(', ')}`);

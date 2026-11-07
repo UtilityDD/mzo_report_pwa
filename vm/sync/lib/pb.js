@@ -1,8 +1,28 @@
 'use strict';
 // Minimal PocketBase REST client on plain fetch (superuser only). Retries network errors and
 // 5xx responses, re-authenticates once on 401, and exposes the batch API.
+// A batch is never sent twice after a timeout or a dropped connection: it may have committed, and a
+// resend would fail on its fixed record ids (the caller checks what landed instead). withSignal(signal)
+// gives a client whose every request (and retry wait) also stops on that signal: the sync's per-source
+// time limit.
 
 const { sleep } = require('./util');
+
+/** Did the request certainly not reach PocketBase (so a resend cannot apply it twice)? */
+function neverSent(err) {
+    const code = err && err.cause && err.cause.code;
+    return code === 'ECONNREFUSED' || code === 'ENOTFOUND' || code === 'EAI_AGAIN';
+}
+
+function wait(ms, signal) {
+    if (!signal) return sleep(ms);
+    if (signal.aborted) return Promise.reject(signal.reason);
+    return new Promise((resolve, reject) => {
+        const t = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+        const onAbort = () => { clearTimeout(t); reject(signal.reason); };
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+}
 
 class PbError extends Error {
     constructor(status, data, what) {
@@ -27,8 +47,20 @@ class PocketBase {
         this.url = String(url).replace(/\/+$/, '');
         this.email = email;
         this.password = password;
-        this.token = '';
-        this.batchEnabled = true;
+        this.session = { token: '', batchEnabled: true }; // shared with the withSignal() views
+        this.signal = null;
+    }
+
+    get token() { return this.session.token; }
+    set token(v) { this.session.token = v; }
+    get batchEnabled() { return this.session.batchEnabled; }
+    set batchEnabled(v) { this.session.batchEnabled = v; }
+
+    /** The same client (one sign-in), but every request also stops when `signal` aborts. */
+    withSignal(signal) {
+        const view = Object.create(this);
+        view.signal = signal || null;
+        return view;
     }
 
     async auth() {
@@ -41,7 +73,12 @@ class PocketBase {
         return res;
     }
 
-    async req(method, path, { body, query, auth = true, timeoutMs = 120000, retries = 3 } = {}) {
+    /**
+     * @param resend  false: after a timeout or a dropped connection, do not send it again (it may have
+     *                been applied); only a request that certainly never arrived is retried
+     */
+    async req(method, path, { body, query, auth = true, timeoutMs = 120000, retries = 3, resend = true } = {}) {
+        const signal = this.signal;
         let url = this.url + path;
         if (query) {
             const qs = new URLSearchParams();
@@ -54,22 +91,27 @@ class PocketBase {
             const headers = { Accept: 'application/json' };
             if (body !== undefined) headers['Content-Type'] = 'application/json';
             if (auth && this.token) headers.Authorization = this.token;
+            if (signal && signal.aborted) throw signal.reason;
             let res;
+            let text;
             try {
                 res = await fetch(url, {
                     method,
                     headers,
                     body: body !== undefined ? JSON.stringify(body) : undefined,
-                    signal: AbortSignal.timeout(timeoutMs)
+                    signal: signal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), signal]) : AbortSignal.timeout(timeoutMs)
                 });
+                text = await res.text();
             } catch (err) {
-                if (attempt < retries) {
-                    await sleep(1000 * Math.pow(3, attempt));
+                if (signal && signal.aborted) throw signal.reason;
+                if (attempt < retries && (resend || neverSent(err))) {
+                    await wait(1000 * Math.pow(3, attempt), signal);
                     continue;
                 }
-                throw new Error(`PocketBase ${method} ${path} failed: ${err.message}`);
+                const e = new Error(`PocketBase ${method} ${path.split('?')[0]} failed: ${err.message}${err.cause && err.cause.code ? ' (' + err.cause.code + ')' : ''}`);
+                e.cause = err;
+                throw e;
             }
-            const text = await res.text();
             let data = null;
             if (text) {
                 try {
@@ -84,8 +126,9 @@ class PocketBase {
                 await this.auth();
                 continue;
             }
+            // A 5xx answer means PocketBase rolled the request back (a batch is one transaction): safe to resend.
             if (res.status >= 500 && attempt < retries) {
-                await sleep(1000 * Math.pow(3, attempt));
+                await wait(1000 * Math.pow(3, attempt), signal);
                 continue;
             }
             throw new PbError(res.status, data, `PocketBase ${method} ${path.split('?')[0]}`);
@@ -177,7 +220,7 @@ class PocketBase {
         if (!requests.length) return [];
         if (this.batchEnabled) {
             try {
-                return await this.req('POST', '/api/batch', { body: { requests }, timeoutMs: 300000 });
+                return await this.req('POST', '/api/batch', { body: { requests }, timeoutMs: 300000, resend: false });
             } catch (err) {
                 if (err.status !== 403) throw err;
                 this.batchEnabled = false;

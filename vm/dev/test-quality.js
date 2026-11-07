@@ -260,7 +260,7 @@ const tmp = (name) => fs.mkdtempSync(path.join(os.tmpdir(), 'mzo-dq-' + name + '
         const saves = [];
         const writes = [];
         const registry = { get: () => ds, save: async (k, v) => { saves.push(v); }, logRun: async () => {} };
-        const pb = new Proxy({}, { get: (t, prop) => (prop === 'getCollection' ? async () => ({ fields: [{ name: '_nulls' }] }) : async () => { writes.push(prop); throw new Error('no writes in this test'); }) });
+        const pb = new Proxy({}, { get: (t, prop) => (prop === 'withSignal' ? () => pb : prop === 'getCollection' ? async () => ({ fields: [{ name: '_nulls' }] }) : async () => { writes.push(prop); throw new Error('no writes in this test'); }) });
         let body = partial;
         const src = {
             key: 'zz_hold', schedule: 'frequent', sourceType: 'google_sheet', primaryKey: ['APPL_NO'],
