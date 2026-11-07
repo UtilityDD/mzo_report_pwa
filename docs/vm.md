@@ -30,7 +30,7 @@ Certificates are issued by Let's Encrypt automatically (sslip.io names resolve t
 | `/opt/mzo/bin/deploy.sh` | The pinned deploy script the timer runs (`deploy.sh.prev` is the one before) |
 | `/opt/mzo/data/files/` | `MZO_FILES_DIR`: uploaded datasets (CRM extracts: `disconnection.csv`, `disconnection_payments.json`, `disconnection_meta.json`, `unbilled_*.csv`, `unbilled_meta.json`) and the app's runtime files. Outside the releases, so a deploy never replaces them. `opc` only (700, files 600). Never commit these to git |
 | `/opt/mzo/pocketbase/` | `pocketbase` binary (root-owned) and `pb_data/` (user `pocketbase`) |
-| `/opt/mzo/backup/` | Pre-provision tarball of the old 2.67 copy, old Caddyfiles, provision logs (root only) |
+| `/opt/mzo/backup/` | Pre-provision tarball of the old 2.67 copy, old Caddyfiles, provision logs, and `pb_data.pre-deploy`: the copy of `pb_data` taken before the last deploy with new migrations (root only) |
 | `/etc/mzo/` | Credentials and env files (below) |
 | `/home/opc/mzo-reports` | Symlink to `/opt/mzo/app`; the old hand-copied 2.67 app is in `/home/opc/mzo-reports.old-2.67` |
 
@@ -61,13 +61,15 @@ Every 60 s `deploy.sh`:
 
 1. Reads the head of `develop` from GitHub's git ref list (`https://github.com/smartlinemanapp/mzo-reports.git/info/refs?service=git-upload-pack`; not rate-limited like the API). Nothing new: it exits quietly.
 2. Downloads `https://codeload.github.com/smartlinemanapp/mzo-reports/tar.gz/<sha>` into `/opt/mzo/releases/<sha>`.
-3. Links packages: `npm ci --omit=dev` runs only for a `package.json` + `package-lock.json` pair it has not seen (the app's, and `vm/sync/`'s). Nothing is copied from the previous release: runtime files live in `/opt/mzo/data/files` (`MZO_FILES_DIR`).
-4. Points `/opt/mzo/app` at the new release, installs changed units and drop-ins from `vm/deploy/systemd/` (after `systemd-analyze verify`) with a `daemon-reload`, and restarts the app. Caddy retries the upstream for up to 10 s, so the ~2 s restart shows as a short wait, not an error.
-5. Health check: `http://127.0.0.1:3000/login.html` and `/app.html` must both answer 200, twice in a row, within 40 s.
-6. Healthy: applies a changed `vm/deploy/Caddyfile` (only after `caddy validate`; a failed reload restores the old file), restarts PocketBase if its unit or `vm/pocketbase/pb_migrations` changed, creates the portal admin once its collection exists, refreshes the pinned `deploy.sh`, writes `status: ok` and prunes old releases.
-7. Unhealthy: points the symlink back to the previous release, restores its units, restarts and checks again. The record says `rolled_back` with `failedCommit`; that commit is not retried until a newer one arrives or someone runs `--force`.
+3. Links packages: `npm ci --omit=dev` runs only for a `package.json` + `package-lock.json` pair it has not seen (the app's, and `vm/sync/`'s). Nothing is copied from the previous release: runtime files live in `/opt/mzo/data/files` (`MZO_FILES_DIR`). A failure here (network, npm) changes nothing and is tried again next round; after 3 failures in a row the commit is marked failed.
+4. Points `/opt/mzo/app` at the new release and installs changed units and drop-ins from `vm/deploy/systemd/` (after `systemd-analyze verify`) with a `daemon-reload`.
+5. **PocketBase first:** if its unit or `vm/pocketbase/pb_migrations` changed, PocketBase is stopped, `pb_data` is copied to `/opt/mzo/backup/pb_data.pre-deploy` (only when the migrations changed; a reflink copy where the filesystem allows), and PocketBase restarts, which applies the new migrations. It must answer `/api/health` within about 60 s. A migration that throws makes PocketBase exit, so this step fails and the deploy rolls back before the new app ever runs.
+6. Restarts the app. Caddy retries the upstream for up to 10 s, so the ~2 s restart shows as a short wait, not an error.
+7. Health check, three good rounds in a row (about 3 s up) within 45 s: `/login.html`, `/app.html` and `/api/auth/config` answer 200; `/api/data/manifest` answers (401 without a session; a 404 or 5xx means the data API is broken); PocketBase's `/api/health` answers 200; and one data read: a page of `sys_datasets` with the superuser from `/etc/mzo/pocketbase.env`.
+8. Healthy: applies a changed `vm/deploy/Caddyfile` (only after `caddy validate`; a failed reload restores the old file), creates the portal admin once its collection exists, starts or restarts the stats sampler, applies `vm/deploy/journald.conf` (below), refreshes the pinned `deploy.sh`, writes `status: ok` and prunes old releases (not while a sync is running: it loads code from its release).
+9. Unhealthy: points the symlink back to the previous release, restores its units, restarts PocketBase on the old migrations if they differ (migrations already applied stay; PocketBase ignores the missing files), restarts the app and checks again. Only if PocketBase cannot start on the old release either is `pb_data` put back from the copy (the broken one is kept as `pb_data.failed`, and the record carries a warning). The record says `rolled_back` with `failedCommit`; that commit is not retried until a newer one arrives or someone runs `--force`.
 
-Runs never overlap (`flock` on `/run/lock/mzo-deploy.lock`). A failed download is retried next round.
+Runs never overlap (`flock` on `/run/lock/mzo-deploy.lock`). A failed download is retried next round. `vm/dev/test-deploy.sh` tests all of this offline (systemd, curl and the download stubbed), including the drill below.
 
 ### deploy.json
 
@@ -89,7 +91,7 @@ The timer never runs `deploy.sh` straight from the release it is deploying. It r
 sudo /opt/mzo/bin/deploy.sh               # same as the timer
 sudo /opt/mzo/bin/deploy.sh --force       # redeploy the head, even a commit marked failed
 sudo /opt/mzo/bin/deploy.sh --to <sha>    # deploy one exact commit (full sha; the timer moves back to the head next round)
-sudo /opt/mzo/bin/deploy.sh --rollback    # back to the previous release; holds the current commit until a newer one
+sudo /opt/mzo/bin/deploy.sh --rollback    # back to the previous release (PocketBase too); holds the current commit until a newer one
 sudo MZO_DEPLOY_TEST_FAIL=1 /opt/mzo/bin/deploy.sh --force   # rollback drill: the health check is reported as failed
 ```
 
@@ -149,6 +151,8 @@ A malformed entry is skipped with a warning that names its position, never its c
 
 ## Logs
 
+The journal is kept on disk, capped at 200 MB and 30 days (`vm/deploy/journald.conf`, installed by `deploy.sh` as `/etc/systemd/journald.conf.d/mzo.conf` together with `/var/log/journal`; before that it lived in `/run` and kept about 30 hours).
+
 ```bash
 journalctl -u mzo-deploy -u mzo-reports -u pocketbase -u mzo-sync -u mzo-stats -f
 journalctl -t mzo-deploy          # also includes deploy.sh runs started by hand
@@ -164,7 +168,7 @@ The VM has 1 GB of RAM and about 3.4 GB of swap. On 2026-11-01 a `dnf install` u
 - Performance Co-Pilot (`pmcd`, `pmlogger`, `pmie`, the `*_farm` services and their timers) is stopped and disabled: about 60 MB. `provision.sh --keep-pcp` leaves it alone.
 - kdump is disabled and `crashkernel=` is removed from the boot entries, `/etc/default/grub` and `/etc/kernel/cmdline` (`auto_reset_crashkernel no`): it reserved 448 MB at boot.
 - OOM order: sshd, Caddy and the app `OOMScoreAdjust=-500` (drop-ins in `vm/deploy/systemd/*.service.d/`); PocketBase `MemoryMax=200M`, `GOMEMLIMIT=150MiB`, `OOMScoreAdjust=100`; deploy `MemoryMax=350M`; the sync `MemoryMax=400M`, node heap 160 MB, `OOMScoreAdjust=500`, `Nice=10`, so it is the first thing to go (with the stats sampler, `MemoryMax=48M`, `OOMScoreAdjust=600`).
-- After each run the sync starts its child steps one at a time, each with its own heap cap, inside the 400 MB: uniform rows (`rows.js`, up to about 200 MB), the page views (`views.js`, one child per view; `meter_utilization` about 205–220 MB, the others under 170 MB), the data quality checks and the performance rating (`rating.js`, about 270 MB).
+- `run.js` syncs the sources in a child process (about 120 MB, the first full sync around 200 MB) and returns that memory when it exits. Its parent (about 45 MB) then takes the lock again and starts the derived steps one at a time, each with its own heap cap, inside the 400 MB: uniform rows (`rows.js`, up to about 200 MB), the page views (`views.js`, one child per view; `meter_utilization` about 205–220 MB, the others under 170 MB), the data quality checks and the performance rating (`rating.js`, about 270 MB). SIGTERM to the parent reaches the running child; the lock is freed.
 - Data quality (`quality.js`): a planner with a 64 MB heap (about 60 MB RSS) starts one child per changed dataset with `--max-old-space-size=96 --max-semi-space-size=4`. Each child streams one snapshot (two passes, no row arrays), so the peak is the largest dataset's: `meter_erp` about 165 MB RSS, `meter_master` about 145 MB, most datasets 50–100 MB. Measured on the 7 Nov 2026 snapshots: all 82 datasets in 13 s; a normal run checks only the datasets whose snapshot changed. A child is stopped after 3 minutes and the step after 10; it never fails the sync.
 - The app keeps compressed copies of static files in memory (`lib/static_cache.js`, at most 16 MB).
 - Swap: `/swapfile` (2 GB), `/.swapfile` (0.5 GB) and `/swapfile2` (about 0.85 GB, added by provisioning).
@@ -183,7 +187,7 @@ For a new VM, copy `vm/deploy/` (and `vm/pocketbase/VERSION`) over and run it fr
 
 | Workflow | Runs on | Checks |
 |---|---|---|
-| `.github/workflows/ci.yml` | push and PR to `develop` and `main` | `node scripts/tools/check_syntax.js` (`node --check` on every JS file and inline `<script>`, JSON parse), `vercel.json` / `version.json` / `manifest.json` parse, `sw.js` `CACHE_NAME` equals `version.json` `cache`, `bash -n` on `vm/deploy/*.sh` |
+| `.github/workflows/ci.yml` | push and PR to `develop` and `main` | `checks`: `node scripts/tools/check_syntax.js` (`node --check` on every JS file and inline `<script>`, JSON parse, no tracked dataset files, no PocketBase-generated migrations), `vercel.json` / `version.json` / `manifest.json` parse, `sw.js` `CACHE_NAME` equals `version.json` `cache`, `bash -n` on the VM scripts. `tests`: `npm test` (every offline suite). `pocketbase-tests`: the PocketBase suites on a throwaway PocketBase of the `vm/pocketbase/VERSION` release, and a check that no migration file appeared |
 | `.github/workflows/vm-deploy.yml` | push to `develop` (smartlinemanapp repo only) | Polls `/deploy.json` for up to 5 min until `commit` is this push and `status` is `ok`; fails at once if the VM rolled the commit back. A newer push cancels the older check |
 
 Actions never connect to the VM; the VM pulls. Run the syntax check locally with `node scripts/tools/check_syntax.js`. Pushing a change under `.github/workflows/` needs a GitHub token with the `workflow` scope.

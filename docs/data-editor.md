@@ -200,7 +200,11 @@ Then: give users rights on the Permissions page, and switch the first datasets t
 ## Testing
 
 ```bash
-# a local PocketBase with the repo's migrations (docs/data-mirror.md, "Running a sync by hand")
+# starts its own throwaway PocketBase (temp --dir, a copy of the migrations, --automigrate=false);
+# needs the binary in vm/pocketbase/local/ or PB_BIN. Also: npm test -- --pb
+node vm/dev/test-editor.js
+# or against a PocketBase you started yourself (local only): start it with --automigrate=false and a
+# COPY of vm/pocketbase/pb_migrations, never the repo folder, or the test's collections become migration files
 node vm/dev/test-editor.js --env <file with PB_URL, PB_SUPERUSER_EMAIL, PB_SUPERUSER_PASSWORD>
 # browser check: a local app in mirror mode on that PocketBase, with one native dataset
 QA_LOG_DIR=<dir> scripts/qa/serve-local.sh 3633 <snapshot dir>     # PB_URL etc. in the environment

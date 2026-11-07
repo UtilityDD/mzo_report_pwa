@@ -247,11 +247,11 @@ Signed-in pages cannot be checked with an anonymous `curl`; use a real account, 
 
 ## 7. Tests and QA
 
-There is no single test command. What exists:
+`npm test` runs every offline suite below in about a minute (`scripts/tools/run_tests.js`); `npm test -- --pb` adds the three that start a throwaway PocketBase (binary in `vm/pocketbase/local/` or `PB_BIN`). CI runs both on each push. What exists:
 
 | Command | Checks | Network |
 |---|---|---|
-| `node scripts/tools/check_syntax.js` | `node --check` on every JS file and inline `<script>`, JSON parse. CI runs it with `vercel.json`/`version.json`/`manifest.json` parsing, `sw.js` `CACHE_NAME` = `version.json` `cache`, and `bash -n` on `vm/deploy/*.sh` (`.github/workflows/ci.yml`) | none |
+| `node scripts/tools/check_syntax.js` | `node --check` on every JS file and inline `<script>`, JSON parse, no tracked dataset files, no PocketBase-generated migrations (`check_migrations.js`). CI runs it with `vercel.json`/`version.json`/`manifest.json` parsing, `sw.js` `CACHE_NAME` = `version.json` `cache`, and `bash -n` on `vm/deploy/*.sh` (`.github/workflows/ci.yml`) | none |
 | `node vm/dev/test-mirror-server.js` | the server in both modes with every upstream answered from fixtures; any upstream write fails it | none |
 | `node vm/dev/test-briefing-cache.js` | the Briefing cache in mirror mode | none |
 | `node vm/dev/test-local-admin.js` | VM-only admin accounts | none |
@@ -261,6 +261,9 @@ There is no single test command. What exists:
 | `node scripts/qa/assistant-live.js --env <file>` | Ask: tool-call accuracy and latency of the configured model on 15 typical questions, with made-up tool results only | the model API |
 | `node --test scripts/qa/uniform.test.js`, `node --test scripts/qa/rating.test.js`, `node scripts/qa/rating-metrics-test.js` | uniform rows, rating engine and metrics | none (`UNIFORM_SNAP` adds snapshot checks) |
 | `cd vm/sync && npm ci && npm run check` | sync syntax | none |
+| `node vm/dev/test-sync-lock.js` | the sync lock is exclusive: 2 and 6 processes at once, on a free and on a stale lock | none |
+| `bash vm/dev/test-deploy.sh` | `vm/deploy/deploy.sh` with systemd, curl and the download stubbed: deploy order (PocketBase before the app), health checks, rollback of the app and of a failing migration, the pb_data restore, the `MZO_DEPLOY_TEST_FAIL` drill, `--rollback`, npm retries | none |
+| `node vm/dev/test-users-store.js`, `test-sync-types.js`, `test-editor.js` | the VM user store, the sync's types and resumable migrations, the data editor; each starts a throwaway PocketBase (`vm/dev/lib/local-pb.js`) | PocketBase binary |
 | `scripts/qa/parity.js`, `diff.js`, `timing.js`, `uniform-pages.js`, `rating-page.js` | browser parity of original vs mirror mode, page by page (Chrome and `playwright-core`) | GET only, against `serve-local.sh` instances |
 | `scripts/qa/mirror-types.js` | the mirror's column types match `lib/uniform.js` | needs a PocketBase env file |
 | `scripts/qa/speed.js <base>[,<base2>] <label>[,<label2>]`, `--compare <a> <b>` | page speed: cold and warm, 1440 px and 390 px with the CPU 4× slower, over an emulated VM link; bytes, requests, time to settled content, and whether the numbers shown are identical | GET only, against `serve-local.sh` instances |
@@ -313,7 +316,7 @@ New pages also go into `isNetworkFirstPath` in `sw.js`; a new folder needs a sta
 - **Unbilled & exceptions is empty on the VM.** Its `data/unbilled_*.csv` files come from the owner's CRM (DB2) sync on an office machine and are not on the VM (nor in a Git-built Vercel deploy). Needs a decision: publish them to Supabase Storage and mirror them like the other synced reports, or drop the page from the VM.
 - **Ask does not work on the VM** until a key is in `/etc/mzo/app.env`: `GOEDEL_API_KEY` (DeepSeek V4.1 Flash on Gödel Machines) or `ANTHROPIC_API_KEY`. Without one it answers "not configured". A free Gödel key keeps prompts (aggregate numbers and questions) and may train on them; a paid key keeps nothing.
 - **Production is far behind `develop`** (2.66.1 vs 3.2x) and still serves pages `develop` removed; plan redirects before the next promotion (section 4).
-- **Stale numbers in the docs:** `vm/sync/sources/supabase.md` and a comment in `vm/sync/sources/google.js` say `frequent` is 15 minutes; the code (`vm/sync/lib/schedule.js`) and the timer run it every 5 minutes. [architecture.md](architecture.md) says Important data sheets have no mirror copy; the page now reads whole-tab copies on the VM. The repository rules say there are no automated tests; the tests in section 7 exist. [deploy.md](deploy.md) describes an older remote layout.
+- **Stale numbers in the docs:** [architecture.md](architecture.md) says Important data sheets have no mirror copy; the page now reads whole-tab copies on the VM. The repository rules say there are no automated tests; the tests in section 7 exist. [deploy.md](deploy.md) describes an older remote layout.
 - **Health check-up** is a placeholder and **Substation upkeeping** only links to a separate app.
 - The Power Map `powermap` schema (a second data model) is mirrored but no page reads it.
 - The DD visit and Durga Puja sheets, and Priority SI, bypass the mirror by design; their freshness on the VM is the source's.
