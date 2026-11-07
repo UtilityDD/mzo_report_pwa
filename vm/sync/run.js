@@ -16,10 +16,14 @@
 // exists), SYNC_TMP_DIR (spool files; default $CACHE_DIRECTORY or vm/sync/.tmp), SYNC_BATCH_SIZE.
 // Sources are loaded from every sources/*.js file; one broken file or source never stops the rest.
 
-// Memory: the VM has ~500 MB. Node's default young generation grows to tens of MB under the
-// sync's allocation rate, so the sync runs with a small one (measured: ~60 MB less peak RSS,
-// same speed). Started without these flags, run.js starts itself again with them; the systemd
-// unit passes them directly so that only one process runs.
+// Memory: the VM has 1 GB and the sync unit MemoryMax=400M, which counts every process of a run.
+// A run is two phases: the sources, in a child process (its memory goes back to the system when it
+// exits), then the derived files (uniform rows, page views, data quality, rating), each in a child of
+// its own, started by this small parent (about 40 MB). The sources phase alone peaks near 200 MB, the
+// largest derived child near 270 MB; in one process the two would add up past the cap.
+// Node's default young generation grows to tens of MB under the sync's allocation rate, so the sync
+// runs with a small one (measured: ~60 MB less peak RSS, same speed). Started without these flags,
+// run.js starts itself again with them (the systemd unit and the app pass them directly).
 const HEAP_FLAGS = ['--max-old-space-size=160', '--max-semi-space-size=4'];
 if (!process.execArgv.some((a) => a.startsWith('--max-semi-space-size')) && !process.env.MZO_SYNC_CHILD) {
     const { spawnSync } = require('child_process');
@@ -32,18 +36,15 @@ if (!process.execArgv.some((a) => a.startsWith('--max-semi-space-size')) && !pro
 
 const fs = require('fs');
 const path = require('path');
-const { PocketBase } = require('./lib/pb');
-const { Registry } = require('./lib/registry');
-const { syncSource } = require('./lib/sync');
-const { isDue } = require('./lib/schedule');
-const { validKey } = require('./lib/normalise');
-const { makeSourceFetch } = require('./lib/http');
-const { snapshotDir: resolveSnapshotDir, writeManifest, cleanTemp } = require('./lib/snapshot');
-const { cleanSpool } = require('./lib/spool');
+const { spawn } = require('child_process');
+const { snapshotDir: resolveSnapshotDir } = require('./lib/snapshot');
 const { log, fmtMs, errMessage, sleep } = require('./lib/util');
-const { takeLock } = require('./lib/lock');
+const { takeLock, lockHolder } = require('./lib/lock');
 
 const SCHEDULES = new Set(['frequent', 'hourly', 'daily']);
+const PHASE_ENV = 'MZO_SYNC_PHASE'; // set to "sources" in the child that syncs the sources
+const NOTHING = 3; // exit code of the sources phase: nothing was run (no known key, or another run holds the lock)
+const LOCK_BUSY = 75; // --only gave up waiting for the lock (EX_TEMPFAIL): the app reads those keys live a while
 
 function parseArgs(argv) {
     const a = { mode: null, only: [], dryRun: false, force: false, strict: false, list: false, batch: 0, reason: '' };
@@ -71,6 +72,8 @@ function parseArgs(argv) {
 }
 
 async function loadSources() {
+    const { validKey } = require('./lib/normalise');
+    const { makeSourceFetch } = require('./lib/http');
     const dir = path.join(__dirname, 'sources');
     const files = fs.readdirSync(dir).filter((f) => f.endsWith('.js')).sort();
     const ctx = { fetch: makeSourceFetch(), log: (m) => log('[sources]', m), env: process.env, limits: { maxRowsPerBatch: 500 } };
@@ -109,9 +112,86 @@ function usage() {
     console.log('Usage: node run.js (--due | --all | --only <key[,key]> | --list) [--dry-run] [--force] [--strict] [--batch n] [--reason text]');
 }
 
+let stopping = false; // SIGTERM/SIGINT arrived: finish the running child, start no other
+
+/** Run a child process; SIGTERM/SIGINT to this one reach it too, and it is stopped after timeoutMs. → exit code */
+function runChild(args, { env, timeoutMs } = {}) {
+    return new Promise((resolve) => {
+        const child = spawn(process.execPath, args, { stdio: 'inherit', env: env || process.env });
+        const kill = (sig) => { try { child.kill(sig); } catch (_) { /* gone */ } };
+        const forward = (sig) => { stopping = true; kill(sig); };
+        process.on('SIGTERM', forward);
+        process.on('SIGINT', forward);
+        const timer = timeoutMs ? setTimeout(() => kill('SIGKILL'), timeoutMs) : null;
+        const done = (code) => {
+            if (timer) clearTimeout(timer);
+            process.removeListener('SIGTERM', forward);
+            process.removeListener('SIGINT', forward);
+            resolve(code);
+        };
+        child.on('error', (err) => { log('could not start ' + path.basename(args[args.length - 1] || '') + ': ' + errMessage(err)); done(1); });
+        child.on('exit', (code, sig) => done(code === null ? (sig === 'SIGKILL' && timeoutMs ? 124 : 1) : code));
+    });
+}
+
+/** Derived files next to the snapshots, each step in a child with its own capped heap; never fails the sync. */
+async function derivedSteps(snapshotDir) {
+    const steps = [
+        // Uniform rows (docs/uniform-data.md): the stale ones, one dataset at a time.
+        ['uniform rows', ['--max-old-space-size=256', '--max-semi-space-size=4', path.join(__dirname, 'rows.js'), '--dir', snapshotDir, '--prune'], 10],
+        // Page views from those rows (lib/views.js): one child per stale view, so the peak is the largest view's (~220 MB).
+        ['page views', ['--max-old-space-size=160', '--max-semi-space-size=4', path.join(__dirname, 'views.js'), '--dir', snapshotDir], 15],
+        // Data quality (quality.js, Admin → Data quality): the datasets whose snapshot changed, one child each.
+        ['data quality', ['--max-old-space-size=64', '--max-semi-space-size=4', path.join(__dirname, 'quality.js'), '--dir', snapshotDir], 10],
+        // Performance rating (docs/rating/metrics-layer.md).
+        ['performance rating', ['--max-old-space-size=160', '--max-semi-space-size=4', path.join(__dirname, 'rating.js'), '--dir', snapshotDir, '--min-minutes', '15'], 10]
+    ];
+    for (const [name, args, minutes] of steps) {
+        if (stopping) return;
+        const code = await runChild(args, { timeoutMs: minutes * 60000 });
+        if (code) log(`${name}: ${code === 124 ? `stopped after ${minutes} min` : 'exit ' + code} (see above)`);
+    }
+}
+
 async function main() {
     const args = parseArgs(process.argv.slice(2));
     if (args.help) return usage(), 0;
+    if (args.list || args.dryRun || !args.mode || process.env[PHASE_ENV] === 'sources') return syncSources(args);
+
+    // The sources in a child process, then the derived files from this (small) one.
+    const t0 = Date.now();
+    const code = await runChild([...process.execArgv, __filename, ...process.argv.slice(2)],
+        { env: Object.assign({}, process.env, { [PHASE_ENV]: 'sources' }) });
+    if (code === NOTHING) return 0;
+    if (code === LOCK_BUSY || stopping) return code;
+    const snapshotDir = resolveSnapshotDir(process.env);
+    if (!snapshotDir) return code;
+    const tmpDir = process.env.SYNC_TMP_DIR || process.env.CACHE_DIRECTORY || path.join(__dirname, '.tmp');
+    const release = takeLock(tmpDir);
+    if (!release) {
+        // Another run took the lock between the two phases; it builds the derived files itself.
+        log(`derived files left to the run that holds the lock now (${lockHolder(tmpDir)})`);
+        return code;
+    }
+    try {
+        const t1 = Date.now();
+        await derivedSteps(snapshotDir);
+        log(`derived files checked in ${fmtMs(Date.now() - t1)}; whole run ${fmtMs(Date.now() - t0)}; this process peak RSS ${Math.round(process.resourceUsage().maxRSS / 1024)} MB`);
+    } finally {
+        release();
+    }
+    return code;
+}
+
+/** The sources phase (also --list and --dry-run): sync the chosen sources into PocketBase and the snapshots. */
+async function syncSources(args) {
+    const { PocketBase } = require('./lib/pb');
+    const { Registry } = require('./lib/registry');
+    const { syncSource } = require('./lib/sync');
+    const { isDue } = require('./lib/schedule');
+    const { writeManifest, cleanTemp } = require('./lib/snapshot');
+    const { cleanSpool } = require('./lib/spool');
+    const inPhase = process.env[PHASE_ENV] === 'sources';
     const { sources, problems } = await loadSources();
     for (const p of problems) log('SOURCE PROBLEM', p);
 
@@ -135,7 +215,7 @@ async function main() {
         chosen = sources.filter((s) => args.only.includes(s.key));
         if (!chosen.length) {
             log('no known source keys given; nothing to do');
-            return 0;
+            return inPhase ? NOTHING : 0;
         }
     }
 
@@ -147,9 +227,13 @@ async function main() {
         release = takeLock(tmpDir);
     }
     if (!release) {
-        log('another sync is still running; nothing to do');
-        return 0;
+        log(`another sync is still running (${lockHolder(tmpDir) || 'lock just released'}); nothing to do`);
+        // A write-through that waited 10 min in vain is a failure: the app then reads those keys live a while.
+        if (args.mode === 'only') return LOCK_BUSY;
+        return inPhase ? NOTHING : 0;
     }
+    // Stopped (systemd, the app's time limit, the parent passing it on): free the lock on the way out.
+    for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, () => { release(); process.exit(128 + (sig === 'SIGTERM' ? 15 : 2)); });
     cleanSpool(tmpDir);
     const snapshotDir = args.dryRun ? null : resolveSnapshotDir(process.env);
     if (snapshotDir) cleanTemp(snapshotDir);
@@ -164,7 +248,7 @@ async function main() {
         });
         await pb.auth();
         if (!(await pb.getCollection('sys_datasets')) || !(await pb.getCollection('sys_sync_runs'))) {
-            throw new Error('sys_datasets / sys_sync_runs are missing: start PocketBase with --migrationsDir vm/pocketbase/pb_migrations');
+            throw new Error('sys_datasets / sys_sync_runs are missing: start PocketBase with --migrationsDir <a copy of vm/pocketbase/pb_migrations> --automigrate=false');
         }
         registry = new Registry(pb);
         await registry.load();
@@ -222,21 +306,6 @@ async function main() {
     }
 
     manifest();
-    // Uniform rows next to the snapshots (docs/uniform-data.md): rebuild the stale ones in a child
-    // process with its own small heap, inside this run's lock. Never fails the sync.
-    if (snapshotDir && !args.dryRun) {
-        const rows = require('child_process').spawnSync(process.execPath, ['--max-old-space-size=256', '--max-semi-space-size=4',
-            path.join(__dirname, 'rows.js'), '--dir', snapshotDir, '--prune'], { stdio: 'inherit', timeout: 10 * 60000 });
-        if (rows.status) log('uniform rows: exit ' + rows.status);
-        // Page views from those rows (vm/sync/lib/views.js), same rules: views.js builds each stale view in a
-        // child of its own (capped heap, so the peak is the largest view's, about 220 MB); never fails the sync.
-        if (require('child_process').spawnSync(process.execPath, ['--max-old-space-size=160', '--max-semi-space-size=4', path.join(__dirname, 'views.js'), '--dir', snapshotDir], { stdio: 'inherit', timeout: 15 * 60000 }).status) log('page views: failed (see above)');
-        // Data quality (vm/sync/quality.js, Admin → Data quality): checks the datasets whose snapshot changed, each in a
-        // child of its own (96 MB heap, about 160 MB RSS for the largest), and writes quality.json; never fails the sync.
-        if (require('child_process').spawnSync(process.execPath, ['--max-old-space-size=64', '--max-semi-space-size=4', path.join(__dirname, 'quality.js'), '--dir', snapshotDir], { stdio: 'inherit', timeout: 10 * 60000 }).status) log('data quality: failed (see above)');
-        // Performance rating from those snapshots (docs/rating/metrics-layer.md), same rules: own capped heap, never fails the sync.
-        if (require('child_process').spawnSync(process.execPath, ['--max-old-space-size=160', '--max-semi-space-size=4', path.join(__dirname, 'rating.js'), '--dir', snapshotDir, '--min-minutes', '15'], { stdio: 'inherit', timeout: 10 * 60000 }).status) log('performance rating: failed (see above)');
-    }
     if (registry && results.length) {
         try {
             await registry.prune();
