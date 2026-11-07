@@ -199,7 +199,7 @@ test('offices: canonical _region/_division/_ccc_code/_ccc from codes and names',
   assert.deepEqual(r.columns.slice(-4).map((c) => c.name), ['_region', '_division', '_ccc_code', '_ccc']);
   const o = U.objects(r);
   assert.deepEqual([o[0]._region, o[0]._division, o[0]._ccc_code, o[0]._ccc], ['Malda', 'Malda', '6611103', 'Baishnabnagar']);
-  assert.deepEqual([o[1]._region, o[1]._ccc], ['Raiganj', 'Kaliyaganj']);
+  assert.deepEqual([o[1]._region, o[1]._ccc], ['Uttar Dinajpur', 'Kaliyaganj']);
   assert.equal(o[2]._ccc, 'Gangarampur');
   assert.deepEqual([o[3]._region, o[3]._ccc], ['', '']);
   assert.ok(r.issues.some((i) => i.check === 'office.unknown_ccc'));

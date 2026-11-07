@@ -40,7 +40,7 @@ function pageHtml(app) {
     const v = (f, re) => { const m = fs.readFileSync(path.join(app, 'nsc.html'), 'utf8').match(re); return m ? m[1] : '1'; };
     const rowsV = v('nsc.html', /mzo_rows\.js\?v=(\d+)/), hubV = v('nsc.html', /mzo_data_hub\.js\?v=(\d+)/), scopeV = v('nsc.html', /mzo_scope\.js\?v=(\d+)/);
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>rating bench</title>
-<script src="/mzo_data_hub.js?v=${hubV}" defer></script><script src="/lib/offices.js?v=2" defer></script>
+<script src="/mzo_data_hub.js?v=${hubV}" defer></script><script src="/lib/offices.js?v=3" defer></script>
 <script src="/mzo_scope.js?v=${scopeV}" defer></script><script src="/mzo_rows.js?v=${rowsV}" defer></script>
 <script src="/lib/rating_metrics.js?v=1" defer></script><script src="/lib/rating.js?v=1" defer></script></head><body>
 <script>

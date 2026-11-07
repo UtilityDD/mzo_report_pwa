@@ -379,8 +379,11 @@ async function run(tmp) {
     check('scope: validateScope normalises names and codes', () => {
         assert.deepStrictEqual(storeLib.validateScope('ccc', '', '', 'samsi ccc'), { scope_level: 'ccc', region: 'Malda', division: 'Chanchal', ccc_code: '6612102' });
         assert.deepStrictEqual(storeLib.validateScope('ccc', '', '', '6611108'), { scope_level: 'ccc', region: 'Malda', division: 'Malda', ccc_code: '6611108' });
-        assert.deepStrictEqual(storeLib.validateScope('division', '', 'Raigunj', ''), { scope_level: 'division', region: 'Raiganj', division: 'Raiganj', ccc_code: '' });
-        assert.deepStrictEqual(storeLib.validateScope('region', 'dakshin dinajpur', '', ''), { scope_level: 'region', region: 'Balurghat', division: '', ccc_code: '' });
+        assert.deepStrictEqual(storeLib.validateScope('division', '', 'Raigunj', ''), { scope_level: 'division', region: 'Uttar Dinajpur', division: 'Raiganj', ccc_code: '' });
+        assert.deepStrictEqual(storeLib.validateScope('region', 'dakshin dinajpur', '', ''), { scope_level: 'region', region: 'Dakshin Dinajpur', division: '', ccc_code: '' });
+        // Old region names are accepted and saved under the current name; the division keeps its name.
+        assert.deepStrictEqual(storeLib.validateScope('region', 'Balurghat Region', '', ''), { scope_level: 'region', region: 'Dakshin Dinajpur', division: '', ccc_code: '' });
+        assert.deepStrictEqual(storeLib.validateScope('division', 'Raiganj', 'Raiganj', ''), { scope_level: 'division', region: 'Uttar Dinajpur', division: 'Raiganj', ccc_code: '' });
         assert.deepStrictEqual(storeLib.validateScope('zone', '', '', ''), { scope_level: 'zone', region: '', division: '', ccc_code: '' });
         assert.throws(() => storeLib.validateScope('zone', 'Malda', '', ''), /zone scope takes no/);
         assert.throws(() => storeLib.validateScope('region', 'Atlantis', '', ''), /Unknown region/);
@@ -542,6 +545,7 @@ async function run(tmp) {
         assert.strictEqual(cp.Username, 'de_raiganj');
         assert.strictEqual(cp.Name, 'DE Raiganj');
         assert.strictEqual(cp.division_code, 'Raiganj');
+        assert.strictEqual(cp.region_code, 'Uttar Dinajpur'); // asked for as "Raiganj": the region's current name
         assert.strictEqual(cp.office_level, 'DE');
         assert.strictEqual(cp['si-autho'], 'edit');
         assert.strictEqual(scopeFor(cp).level, 'division');
