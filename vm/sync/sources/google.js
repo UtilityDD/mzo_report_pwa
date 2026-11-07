@@ -227,9 +227,7 @@ const SHEETS = [
         src: pub(PMSGY_PUB, 40136871), schedule: 'daily' },
     { key: 'accident_reports', label: 'Accident reports', group: IMP, pages: ['accident/accident.html', 'sheet_links.html'],
         src: pub('2PACX-1vRrrGeyElvh8i8QzTl25Ej7_RJZ9FJ0jicG3tAhguLEvky178oKZ8-QADKcBceUQ5CFjn7hd9eECVJ6'), schedule: 'hourly' },
-    { key: 'safety_inspection', label: 'Safety app inspections', group: IMP, cache: 'CACHE_SAFETY_v2', pages: ['safety_inspection.html'],
-        src: gviz('1A2fjKboWKnw10iaOs1wcXDrdg9jhhDGfzF9OagPjA5s'), schedule: 'daily',
-        notes: 'Inspection ID repeats (one inspection, several sites), so rows are keyed by content.' },
+    // safety_inspection moved to vm/sync/sources/files.js (direct VM storage / sync)
     { key: 'manpower_staff', label: 'Manpower: staff', group: IMP, pages: ['manpower.html'],
         src: pub(MANPOWER_PUB, 2110628491), schedule: 'hourly', primaryKey: ['Employee No'], sensitive: true,
         extraUrls: [MANPOWER_PAGE_URL + '2110628491'],

@@ -293,7 +293,7 @@ app.use((req, res, next) => {
     if (!/^\/api(\/|$)/i.test(req.path)) return next();
     if (sameOriginRequest_(req)) return next();
     const tokenHeader = req.headers['x-sync-key'] || /^Bearer\s/i.test(String(req.headers.authorization || ''));
-    if (req.method === 'POST' && SYNC_UPLOAD_ROUTES[req.path] && tokenHeader) return next();
+    if (req.method === 'POST' && (SYNC_UPLOAD_ROUTES[req.path] || req.path === '/api/safety/upload') && tokenHeader) return next();
     return res.status(403).json({ status: 'error', message: 'This request must come from the app.' });
 });
 // Old URLs (vercel.json has the same redirects): the retired phone home page, the NSC drafts and an extension-less report.
@@ -2524,6 +2524,50 @@ app.post('/api/admin/reject-correction', requireAdmin, async (req, res) => {
     }
 });
 
+// 6.51. Admin DB2 / Pipeline sync schedules
+const SYNC_SCHEDULES_FILE = path.join(DATA_DIR, 'sync_schedules.json');
+
+app.get('/api/admin/sync-schedules', requireAdmin, async (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, private');
+    let schedules = {};
+    try {
+        if (fs.existsSync(SYNC_SCHEDULES_FILE)) {
+            schedules = JSON.parse(fs.readFileSync(SYNC_SCHEDULES_FILE, 'utf8'));
+        }
+    } catch (_) {}
+    return res.json({ status: 'success', schedules });
+});
+
+app.post('/api/admin/sync-schedules', requireAdmin, async (req, res) => {
+    try {
+        const { key, schedule } = req.body || {};
+        if (!key || typeof schedule !== 'object') {
+            return res.status(400).json({ status: 'error', message: 'Invalid schedule payload' });
+        }
+        let current = {};
+        try {
+            if (fs.existsSync(SYNC_SCHEDULES_FILE)) {
+                current = JSON.parse(fs.readFileSync(SYNC_SCHEDULES_FILE, 'utf8'));
+            }
+        } catch (_) {}
+        current[key] = {
+            ...(current[key] || {}),
+            ...schedule,
+            updatedAt: new Date().toISOString(),
+            updatedBy: (req.user && (req.user.Username || req.user.Name)) || 'Admin'
+        };
+        try {
+            fs.mkdirSync(path.dirname(SYNC_SCHEDULES_FILE), { recursive: true });
+            fs.writeFileSync(SYNC_SCHEDULES_FILE, JSON.stringify(current, null, 2), 'utf8');
+        } catch (e) {
+            console.warn('[Sync Schedules] Could not write schedule file:', e.message);
+        }
+        return res.json({ status: 'success', schedules: current, message: 'Schedule updated successfully' });
+    } catch (err) {
+        return res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
 // Material Allotment → Google Apps Script (Allotments ledger tab)
 function stockAllotmentScriptUrl_() {
     return (
@@ -4161,6 +4205,7 @@ const DISCONNECTION_META = syncedMeta_('disconnection', 'disconnection_meta.json
 const PENDING_MC_META = syncedMeta_('pending_mc', 'pending_mc_meta.json');
 const LOAD_EXT_META = syncedMeta_('load_extension', 'load_ext_meta.json');
 const UNBILLED_META = syncedMeta_('unbilled', 'unbilled_meta.json');
+const SAFETY_META = syncedMeta_('safety', 'safety_inspection_meta.json');
 
 /** POST route that runs one sync job (one at a time per instance) and logs it. */
 function syncRoute_(routePath, { label, can, forbidden, run, meta, done, bareError, mirrorKeys }) {
@@ -4918,6 +4963,123 @@ syncRoute_('/api/load-extension/sync', {
     })
 });
 
+// Safety Inspection report (direct VM upload / bookmarklet sync)
+const SAFETY_SHEET_FALLBACK_URL =
+    'https://docs.google.com/spreadsheets/d/1A2fjKboWKnw10iaOs1wcXDrdg9jhhDGfzF9OagPjA5s/gviz/tq?tqx=out:csv';
+const { parseSafetyExcel } = require('./lib/safety_parser');
+
+const safetyUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 60 * 1024 * 1024 }
+});
+
+const canSyncSafety_ = (user) => isPortalAdmin_(user) || hasPermission_(user, 'safety-sync-autho', ['safety', 'sync']);
+
+app.get('/api/safety/meta', async (req, res) => {
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    const user = await resolveFreshUser_(req);
+    const meta = await SAFETY_META.read();
+    res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
+    const token = parseCookies(req.headers.cookie).mzo_session || '';
+    return res.json({
+        status: 'success',
+        canSync: canSyncSafety_(user),
+        isAdmin: isPortalAdmin_(user),
+        token,
+        ...(await syncedMetaFields_(meta, SAFETY_SHEET_FALLBACK_URL, 'CACHE_SAFETY_v2', res))
+    });
+});
+
+app.get('/api/safety/dataset', async (req, res) => {
+    const localFile = path.join(DATA_DIR, 'safety_inspection.csv');
+    if (fs.existsSync(localFile)) {
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Cache-Control', 'public, max-age=60');
+        return fs.createReadStream(localFile).pipe(res);
+    }
+    return res.redirect(302, SAFETY_SHEET_FALLBACK_URL);
+});
+
+app.options('/api/safety/upload', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Sync-Key');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    return res.status(204).end();
+});
+
+app.post('/api/safety/upload', (req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+    safetyUpload.single('file')(req, res, async (err) => {
+        if (err) return res.status(400).json({ status: 'error', message: err.message });
+        if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized. Please sign in to MZO.' });
+        const user = await resolveFreshUser_(req);
+        if (!canSyncSafety_(user)) {
+            return res.status(403).json({ status: 'error', message: 'Not authorized to sync Safety data. Admin permission required.' });
+        }
+        if (!req.file || !req.file.buffer) {
+            return res.status(400).json({ status: 'error', message: 'No file received.' });
+        }
+
+        try {
+            const buf = req.file.buffer;
+            const isXlsx = /\.(xlsx|xls)$/i.test(req.file.originalname || '') || (buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b);
+            let parsed;
+            if (isXlsx) {
+                parsed = parseSafetyExcel(buf);
+            } else {
+                const text = buf.toString('utf8');
+                const lines = text.trim().split(/\r?\n/);
+                let mzoRows = 0;
+                for (let i = 1; i < lines.length; i++) {
+                    if (lines[i].includes('(66')) mzoRows++;
+                }
+                parsed = {
+                    csv: text,
+                    totalRows: Math.max(0, lines.length - 1),
+                    mzoRows
+                };
+            }
+
+            writeDataFile_('safety_inspection.csv', Buffer.from(parsed.csv, 'utf8'));
+
+            const now = new Date();
+            const reportDate = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+            const meta = {
+                version: String(now.getTime()),
+                lastSync: now.toISOString(),
+                reportDate,
+                totalRows: parsed.totalRows,
+                mzoRows: parsed.mzoRows,
+                updatedBy: user.Username || user.username || user.Name || 'Admin',
+                csvUrl: '/api/safety/dataset'
+            };
+
+            writeDataFile_('safety_inspection_meta.json', Buffer.from(JSON.stringify(meta, null, 2), 'utf8'));
+
+            refreshMirror(['safety_inspection'], 'safety inspection upload');
+
+            await logActivity({
+                username: user.Username || user.username,
+                name: user.Name || user.name || 'Admin',
+                type: 'report_sync',
+                details: `Synced Safety Inspection data: ${parsed.totalRows} total rows (${parsed.mzoRows} Malda Zone rows)`
+            }).catch(() => {});
+
+            return res.json({
+                status: 'success',
+                message: `Successfully synced Safety Inspection with VM! ${parsed.totalRows.toLocaleString('en-IN')} total rows (${parsed.mzoRows.toLocaleString('en-IN')} Malda Zone).`,
+                meta
+            });
+        } catch (uploadErr) {
+            console.error('[Safety Upload] Error:', uploadErr);
+            return res.status(500).json({ status: 'error', message: 'Failed to process Safety report: ' + uploadErr.message });
+        }
+    });
+});
+
 const NSC_FOLLOWUP_SCRIPT_URL = String(
     process.env.NSC_FOLLOWUP_SCRIPT_URL ||
     'https://script.google.com/macros/s/AKfycbwJj6lpOWN0a62jX51926FUQyzViLOiKA38f9yqSBSYbLMnpBPvOMZQh3gYu0b07L7MJw/exec'
@@ -4980,6 +5142,7 @@ app.get('/api/hub/versions', async (req, res) => {
         },
         pendingMc: async () => synced(await PENDING_MC_META.read(), 'CACHE_PENDING_MC', PENDING_MC_SHEET_FALLBACK_URL),
         loadExt: async () => synced(await LOAD_EXT_META.read(), 'CACHE_LOAD_EXT', LOAD_EXT_SHEET_FALLBACK_URL),
+        safety: async () => synced(await SAFETY_META.read(), 'CACHE_SAFETY_v2', SAFETY_SHEET_FALLBACK_URL),
         powerMap: async () => {
             // Mirror mode: the same value from the table snapshot, without a Supabase request.
             const pmRows = mirror.on() ? await mirror.readJson('power_map_substations') : null;

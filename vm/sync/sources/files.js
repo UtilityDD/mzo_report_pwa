@@ -23,10 +23,13 @@ async function streamText(stream) {
 /** The file to read: the server data folder's copy of an editable file when there is one, else the repo's. */
 function resolve(file) {
     const dir = process.env.MZO_FILES_DIR;
-    if (dir && file === 'data/structure.csv') {
-        const own = path.join(dir, 'structure.csv');
+    const basename = path.basename(file);
+    if (dir) {
+        const own = path.join(dir, basename);
         if (fs.existsSync(own)) return own;
     }
+    const localData = path.join(REPO, 'data', basename);
+    if (fs.existsSync(localData)) return localData;
     return path.join(REPO, file);
 }
 
@@ -82,6 +85,30 @@ async function sources() {
             async *rows(ctx) {
                 const input = ctx && ctx.input ? ctx.input : fs.createReadStream(resolve('data/structure.csv'));
                 const parser = input.pipe(parse({ bom: true, relax_column_count: true }));
+                for await (const record of parser) yield record;
+            }
+        },
+        {
+            key: 'safety_inspection',
+            label: 'Safety app inspections',
+            group: 'Important',
+            pages: ['safety_inspection.html'],
+            sourceType: 'csv_file',
+            sourceRef: { file: 'safety_inspection.csv', cacheKey: 'CACHE_SAFETY_v2' },
+            sourceUrl: '/api/safety/dataset',
+            schedule: 'daily',
+            primaryKey: ['Inspection ID', 'Site ID'],
+            notes: 'Stored directly on VM; synced via admin upload or Chrome bookmarklet.',
+            dataHubKeys: ['CACHE_SAFETY_v2'],
+            urls: ['/api/safety/dataset'],
+            sensitive: false,
+            version: fileVersion('safety_inspection.csv'),
+            async raw() {
+                return { contentType: 'text/csv; charset=utf-8', stream: fs.createReadStream(resolve('safety_inspection.csv')) };
+            },
+            async *rows(ctx) {
+                const input = ctx && ctx.input ? ctx.input : fs.createReadStream(resolve('safety_inspection.csv'));
+                const parser = input.pipe(parse({ bom: true, relax_column_count: true, columns: true }));
                 for await (const record of parser) yield record;
             }
         }

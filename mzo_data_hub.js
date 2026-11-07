@@ -12,7 +12,7 @@ const DB_VERSION = 1;
 const STORE_NAME = 'datasets';
 
 const DATASETS = [
-    { key: 'CACHE_SAFETY_v2', label: 'Safety Inspection', url: 'https://docs.google.com/spreadsheets/d/1A2fjKboWKnw10iaOs1wcXDrdg9jhhDGfzF9OagPjA5s/gviz/tq?tqx=out:csv', type: 'csv', lazySync: true },
+    { key: 'CACHE_SAFETY_v2', label: 'Safety Inspection', url: '/api/safety/dataset', type: 'csv', originHeavy: true, versionUrl: '/api/safety/meta', csvUrlField: 'csvUrl', versionField: 'version', lazySync: true },
     { key: 'CACHE_DOCKET', label: 'Docket Calls', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTT56PULgjKw_-wu8lmMWNE6SC1KBDyAKxeHaMloZJWUQ9HQsJoqosYF33DrQK3NX9Bvfn0mjfx-dkP/pub?gid=1059428699&single=true&output=csv', type: 'csv' },
     // originHeavy: skip homepage sync unless meta.csvUrl points at Google or Supabase Storage
     { key: 'CACHE_NSC_v5', label: 'NSC Data', url: '/api/nsc/dataset', type: 'csv', originHeavy: true, versionUrl: '/api/nsc/meta', csvUrlField: 'csvUrl' },
