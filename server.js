@@ -269,7 +269,7 @@ app.use((req, res, next) => {
 });
 
 // Server-side files are never served, locally or from the Vercel function.
-const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|data_quality|static_cache|org_hierarchy|csv)\.js|lib\/briefing_cccs\.json$|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
+const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|data_quality|static_cache|org_hierarchy|csv|safety_parser|xlsx_lite)\.js|lib\/briefing_cccs\.json$|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
 const SERVER_LIB_PATH = /^\/lib\/(editor|assistant|quality)(\/|$)/i; // server code: the data editor (docs/data-editor.md), Ask's providers (docs/assistant.md), the audit findings (docs/data-quality.md)
 /** True for a path that must not be served: checked on the decoded, normalised path, as the static server sees it. */
 function isPrivatePath_(rawPath) {
@@ -288,12 +288,40 @@ function sameOriginRequest_(req) {
     if (!host || !from || from === 'null') return false;
     try { return new URL(from).host.toLowerCase() === host; } catch (_) { return false; }
 }
+// The Safety Inspection bookmarklet runs on the safety app's own site and posts the report here with a
+// short-lived upload token (never the session): only from these origins, only to this route, and without
+// cookies (no Access-Control-Allow-Credentials). SAFETY_UPLOAD_ORIGINS (comma-separated) replaces the list.
+const SAFETY_UPLOAD_PATH = '/api/safety/upload';
+const SAFETY_UPLOAD_ORIGINS = new Set(
+    String(process.env.SAFETY_UPLOAD_ORIGINS || 'https://safetyinsp.wbsedcl.in,http://safetyinsp.wbsedcl.in')
+        .split(',').map((o) => o.trim().replace(/\/+$/, '').toLowerCase()).filter((o) => /^https?:\/\/[^/]+$/.test(o))
+);
+const isSafetyUploadPath_ = (p) => String(p || '').toLowerCase().replace(/\/+$/, '') === SAFETY_UPLOAD_PATH;
+const safetyUploadOrigin_ = (req) => {
+    const o = String(req.headers.origin || '').toLowerCase();
+    return o && SAFETY_UPLOAD_ORIGINS.has(o) ? o : '';
+};
+app.use((req, res, next) => {
+    if (!isSafetyUploadPath_(req.path)) return next();
+    const origin = safetyUploadOrigin_(req);
+    res.setHeader('Vary', 'Origin');
+    if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', 'POST');
+        res.setHeader('Access-Control-Allow-Headers', 'Authorization');
+        res.setHeader('Access-Control-Max-Age', '600');
+    }
+    if (req.method === 'OPTIONS') return res.status(204).end(); // the preflight carries no credentials
+    return next();
+});
 app.use((req, res, next) => {
     if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
     if (!/^\/api(\/|$)/i.test(req.path)) return next();
     if (sameOriginRequest_(req)) return next();
     const tokenHeader = req.headers['x-sync-key'] || /^Bearer\s/i.test(String(req.headers.authorization || ''));
-    if (req.method === 'POST' && (SYNC_UPLOAD_ROUTES[req.path] || req.path === '/api/safety/upload') && tokenHeader) return next();
+    if (req.method === 'POST' && SYNC_UPLOAD_ROUTES[req.path] && tokenHeader) return next();
+    // The bookmarklet: an upload token (not a session) from an allowed origin; the route checks the token.
+    if (req.method === 'POST' && isSafetyUploadPath_(req.path) && safetyUploadOrigin_(req) && scopedTokenFromHeader_(req)) return next();
     return res.status(403).json({ status: 'error', message: 'This request must come from the app.' });
 });
 // Old URLs (vercel.json has the same redirects): the retired phone home page, the NSC drafts and an extension-less report.
@@ -991,8 +1019,13 @@ function readSession_(req) {
     const expected = Buffer.from(crypto.createHmac('sha256', JWT_SECRET).update(parts[0]).digest('base64'));
     const given = Buffer.from(parts[1]);
     if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
+    return profileFromSessionPayload_(parts[0], req);
+}
+
+/** The profile of a verified session payload (base64 JSON), or null once it expired or was revoked. */
+function profileFromSessionPayload_(payload, req) {
     try {
-        const session = JSON.parse(Buffer.from(parts[0], 'base64').toString('utf-8'));
+        const session = JSON.parse(Buffer.from(payload, 'base64').toString('utf-8'));
         if (!(session && Date.now() < session.expiry)) return null;
         // A VM-only admin's session lasts only while its MZO_LOCAL_ADMINS entry (and hash) is unchanged.
         if (session.local !== undefined) {
@@ -1005,6 +1038,55 @@ function readSession_(req) {
     } catch (_) {
         return null;
     }
+}
+
+// Single-purpose upload tokens (the Safety Inspection bookmarklet): "sut1.<body>.<sig>", an HMAC (a key
+// derived from JWT_SECRET, separate from the session signature) over { scope, exp, the session payload }.
+// Never a session: readSession_ refuses it (three parts), and it is accepted only by the route of its
+// scope, so a leaked token can upload one report for a few minutes, nothing else. It ends with the
+// session, and with the account (the session payload is checked the same way as a cookie's).
+const SCOPED_TOKEN_KEY = crypto.createHmac('sha256', JWT_SECRET).update('mzo:scoped-upload-token:v1').digest();
+const SAFETY_UPLOAD_SCOPE = 'safety-upload';
+const SAFETY_UPLOAD_TOKEN_MS = Math.min(720, Math.max(1, Number(process.env.SAFETY_UPLOAD_TOKEN_MINUTES) || 15)) * 60 * 1000;
+
+function scopedTokenFromHeader_(req) {
+    const m = /^Bearer\s+(sut1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\s*$/.exec(String((req.headers && req.headers.authorization) || ''));
+    return m ? m[1] : '';
+}
+
+/** A token for scope, tied to the request's session cookie (never to a Bearer or scoped token); '' without one. */
+function mintScopedToken_(req, scope, ttlMs) {
+    const parts = String(parseCookies(req.headers.cookie).mzo_session || '').split('.');
+    if (parts.length !== 2 || !readSession_({ headers: { cookie: req.headers.cookie } })) return { token: '', exp: 0 };
+    let sessionExpiry = 0;
+    try { sessionExpiry = Number(JSON.parse(Buffer.from(parts[0], 'base64').toString('utf-8')).expiry) || 0; } catch (_) { /* checked above */ }
+    const exp = Math.min(Date.now() + ttlMs, sessionExpiry);
+    const body = Buffer.from(JSON.stringify({ s: scope, exp, sp: parts[0] })).toString('base64url');
+    const sig = crypto.createHmac('sha256', SCOPED_TOKEN_KEY).update('sut1.' + body).digest('base64url');
+    return { token: `sut1.${body}.${sig}`, exp };
+}
+
+/** The profile behind a valid, unexpired token of this scope, else null. */
+function verifyScopedToken_(token, scope, req) {
+    const parts = String(token || '').split('.');
+    if (parts.length !== 3 || parts[0] !== 'sut1') return null;
+    const want = Buffer.from(crypto.createHmac('sha256', SCOPED_TOKEN_KEY).update('sut1.' + parts[1]).digest('base64url'));
+    const got = Buffer.from(parts[2]);
+    if (want.length !== got.length || !crypto.timingSafeEqual(want, got)) return null;
+    try {
+        const t = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
+        if (!t || t.s !== scope || !(Date.now() < Number(t.exp)) || typeof t.sp !== 'string') return null;
+        return profileFromSessionPayload_(t.sp, req);
+    } catch (_) {
+        return null;
+    }
+}
+
+/** The uploader for a POST to the Safety upload route with a valid upload token, else null. */
+function safetyUploadAgentFor_(req) {
+    if (req.method !== 'POST' || !isSafetyUploadPath_(req.path)) return null;
+    const token = scopedTokenFromHeader_(req);
+    return token ? verifyScopedToken_(token, SAFETY_UPLOAD_SCOPE, req) : null;
 }
 
 // Reachable without a session (static files are already served above).
@@ -1022,7 +1104,9 @@ async function requireAuth(req, res, next) {
     if (userStore.on) await userStore.ready();
     const syncAgent = syncAgentFor_(req);
     if (syncAgent) req.syncAgent = true;
-    const profile = syncAgent || readSession_(req);
+    const uploadAgent = syncAgent ? null : safetyUploadAgentFor_(req);
+    if (uploadAgent) req.scopedUpload = SAFETY_UPLOAD_SCOPE;
+    const profile = syncAgent || uploadAgent || readSession_(req);
     if (profile) {
         req.user = profile;
         return next();
@@ -4168,7 +4252,7 @@ const REPORTS_PUBLIC_BASE = String(
     `${String(NEW_INSIGHT_URL || 'https://gmasnqebdogtavoudbke.supabase.co').replace(/\/$/, '')}/storage/v1/object/public/reports`
 ).replace(/\/$/, '');
 
-/** A sync job's meta.json from the public reports bucket (cached 60 s); the local data/ copy as a fallback. */
+/** A sync job's meta.json from the public reports bucket (cached 60 s); the local data/ copy as a fallback (the only source when folder is null). */
 function syncedMeta_(folder, localFile) {
     let cached = null;
     let at = 0;
@@ -4184,7 +4268,7 @@ function syncedMeta_(folder, localFile) {
                     return cached;
                 } catch (_) { }
             }
-            if (REPORTS_PUBLIC_BASE) {
+            if (REPORTS_PUBLIC_BASE && folder) {
                 try {
                     const r = await fetch(`${REPORTS_PUBLIC_BASE}/${folder}/meta.json`, {
                         signal: AbortSignal.timeout(5000)
@@ -4216,7 +4300,8 @@ const DISCONNECTION_META = syncedMeta_('disconnection', 'disconnection_meta.json
 const PENDING_MC_META = syncedMeta_('pending_mc', 'pending_mc_meta.json');
 const LOAD_EXT_META = syncedMeta_('load_extension', 'load_ext_meta.json');
 const UNBILLED_META = syncedMeta_('unbilled', 'unbilled_meta.json');
-const SAFETY_META = syncedMeta_('safety', 'safety_inspection_meta.json');
+// Written only by the Safety upload (no sync job publishes it to the bucket), so it is read locally only.
+const SAFETY_META = syncedMeta_(null, 'safety_inspection_meta.json');
 
 /** POST route that runs one sync job (one at a time per instance) and logs it. */
 function syncRoute_(routePath, { label, can, forbidden, run, meta, done, bareError, mirrorKeys }) {
@@ -4975,13 +5060,18 @@ syncRoute_('/api/load-extension/sync', {
 });
 
 // Safety Inspection report (direct VM upload / bookmarklet sync)
+// An authorised user uploads the safety app's export (.xlsx or .csv) from the page, or from the safety
+// app's site with the bookmarklet and a short-lived upload token (SAFETY_UPLOAD_ORIGINS, above). The file
+// is read in a worker thread with memory and time limits (lib/safety_parser.js) and stored in the data
+// folder as canonical CSV; until the first upload the page reads the Google sheet.
 const SAFETY_SHEET_FALLBACK_URL =
     'https://docs.google.com/spreadsheets/d/1A2fjKboWKnw10iaOs1wcXDrdg9jhhDGfzF9OagPjA5s/gviz/tq?tqx=out:csv';
-const { parseSafetyExcel } = require('./lib/safety_parser');
+const { parseSafetyReportIsolated } = require('./lib/safety_parser');
+const SAFETY_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 
 const safetyUpload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 60 * 1024 * 1024 }
+    limits: { fileSize: SAFETY_UPLOAD_MAX_BYTES, files: 1, fields: 5, parts: 6 }
 });
 
 const canSyncSafety_ = (user) => isPortalAdmin_(user) || hasPermission_(user, 'safety-sync-autho', ['safety', 'sync']);
@@ -4990,103 +5080,97 @@ app.get('/api/safety/meta', async (req, res) => {
     if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     const user = await resolveFreshUser_(req);
     const meta = await SAFETY_META.read();
-    res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
-    const token = parseCookies(req.headers.cookie).mzo_session || '';
+    res.setHeader('Cache-Control', 'private, no-store');
+    const canSync = canSyncSafety_(user);
+    // The bookmarklet's upload token: only for a user who may upload, and only from a cookie session.
+    const upload = canSync ? mintScopedToken_(req, SAFETY_UPLOAD_SCOPE, SAFETY_UPLOAD_TOKEN_MS) : { token: '', exp: 0 };
     return res.json({
         status: 'success',
-        canSync: canSyncSafety_(user),
+        canSync,
         isAdmin: isPortalAdmin_(user),
-        token,
+        ...(upload.token ? { uploadToken: upload.token, uploadTokenExpires: new Date(upload.exp).toISOString() } : {}),
+        totalRows: meta && meta.totalRows != null ? meta.totalRows : null,
+        mzoRows: meta && meta.mzoRows != null ? meta.mzoRows : null,
+        lastSync: (meta && meta.lastSync) || null,
+        updatedBy: (meta && meta.updatedBy) || null,
         ...(await syncedMetaFields_(meta, SAFETY_SHEET_FALLBACK_URL, 'CACHE_SAFETY_v2', res))
     });
 });
 
 app.get('/api/safety/dataset', async (req, res) => {
-    const localFile = path.join(DATA_DIR, 'safety_inspection.csv');
-    if (fs.existsSync(localFile)) {
-        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        res.setHeader('Cache-Control', 'public, max-age=60');
-        return fs.createReadStream(localFile).pipe(res);
-    }
+    if (!req.user) return UNAUTHORIZED_(res);
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    if (await sendDataFile_(req, res, path.join(DATA_DIR, 'safety_inspection.csv'), 'text/csv; charset=utf-8')) return;
+    res.removeHeader('Cache-Control');
     return res.redirect(302, SAFETY_SHEET_FALLBACK_URL);
 });
 
-app.options('/api/safety/upload', (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Sync-Key');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    return res.status(204).end();
-});
-
-app.post('/api/safety/upload', (req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-
+let safetyUploadRunning = false;
+app.post('/api/safety/upload', (req, res) => {
+    // From the safety app's site only with an upload token; a session is never accepted as a Bearer token here.
+    if (!req.scopedUpload && /^Bearer\s/i.test(String(req.headers.authorization || ''))) {
+        return res.status(401).json({ status: 'error', message: 'This sync button has expired or is not valid. Open DISHA > Safety inspection > Sync Data and drag a fresh button to the bookmarks bar.' });
+    }
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized. Please sign in to DISHA.' });
+    if (safetyUploadRunning) return res.status(429).json({ status: 'error', message: 'Another Safety upload is being processed. Please try again in a minute.' });
+    safetyUploadRunning = true;
+    let released = false;
+    const release = () => { if (!released) { released = true; safetyUploadRunning = false; } };
+    res.on('close', release);
     safetyUpload.single('file')(req, res, async (err) => {
-        if (err) return res.status(400).json({ status: 'error', message: err.message });
-        if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized. Please sign in to MZO.' });
-        const user = await resolveFreshUser_(req);
-        if (!canSyncSafety_(user)) {
-            return res.status(403).json({ status: 'error', message: 'Not authorized to sync Safety data. Admin permission required.' });
-        }
-        if (!req.file || !req.file.buffer) {
-            return res.status(400).json({ status: 'error', message: 'No file received.' });
-        }
-
         try {
-            const buf = req.file.buffer;
-            const isXlsx = /\.(xlsx|xls)$/i.test(req.file.originalname || '') || (buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b);
-            let parsed;
-            if (isXlsx) {
-                parsed = parseSafetyExcel(buf);
-            } else {
-                const text = buf.toString('utf8');
-                const lines = text.trim().split(/\r?\n/);
-                let mzoRows = 0;
-                for (let i = 1; i < lines.length; i++) {
-                    if (lines[i].includes('(66')) mzoRows++;
-                }
-                parsed = {
-                    csv: text,
-                    totalRows: Math.max(0, lines.length - 1),
-                    mzoRows
-                };
+            if (err) {
+                const tooBig = err.code === 'LIMIT_FILE_SIZE';
+                return res.status(tooBig ? 413 : 400).json({ status: 'error', message: tooBig ? `The file is larger than ${SAFETY_UPLOAD_MAX_BYTES / 1024 / 1024} MB.` : 'The upload could not be read.' });
             }
+            const user = await resolveFreshUser_(req, true);
+            if (!canSyncSafety_(user)) {
+                return res.status(403).json({ status: 'error', message: 'Not authorized to sync Safety data. Admin permission required.' });
+            }
+            if (!req.file || !req.file.buffer || !req.file.buffer.length) {
+                return res.status(400).json({ status: 'error', message: 'No file received.' });
+            }
+            let parsed;
+            try {
+                parsed = await parseSafetyReportIsolated(req.file.buffer, req.file.originalname, { timeoutMs: 60000, maxMemoryMb: 384 });
+            } catch (parseErr) {
+                return res.status(400).json({ status: 'error', message: parseErr.message });
+            }
+            req.file.buffer = null;
 
             writeDataFile_('safety_inspection.csv', Buffer.from(parsed.csv, 'utf8'));
-
             const now = new Date();
-            const reportDate = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
             const meta = {
                 version: String(now.getTime()),
                 lastSync: now.toISOString(),
-                reportDate,
+                reportDate: now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }),
                 totalRows: parsed.totalRows,
                 mzoRows: parsed.mzoRows,
-                updatedBy: user.Username || user.username || user.Name || 'Admin',
-                csvUrl: '/api/safety/dataset'
+                updatedBy: user.Username || user.username || 'Admin',
+                csvUrl: '/api/safety/dataset',
+                source: 'upload'
             };
-
             writeDataFile_('safety_inspection_meta.json', Buffer.from(JSON.stringify(meta, null, 2), 'utf8'));
-
+            SAFETY_META.set(meta);
             refreshMirror(['safety_inspection'], 'safety inspection upload');
 
             await logActivity({
                 username: user.Username || user.username,
                 name: user.Name || user.name || 'Admin',
                 type: 'report_sync',
-                details: `Synced Safety Inspection data: ${parsed.totalRows} total rows (${parsed.mzoRows} Malda Zone rows)`
+                details: `Synced Safety Inspection data${req.scopedUpload ? ' (bookmarklet)' : ''}: ${parsed.totalRows} total rows (${parsed.mzoRows} Malda Zone rows)`
             }).catch(() => {});
 
             return res.json({
                 status: 'success',
-                message: `Successfully synced Safety Inspection with VM! ${parsed.totalRows.toLocaleString('en-IN')} total rows (${parsed.mzoRows.toLocaleString('en-IN')} Malda Zone).`,
+                message: `Successfully synced Safety Inspection. ${parsed.totalRows.toLocaleString('en-IN')} total rows (${parsed.mzoRows.toLocaleString('en-IN')} Malda Zone).`,
                 meta
             });
         } catch (uploadErr) {
-            console.error('[Safety Upload] Error:', uploadErr);
-            return res.status(500).json({ status: 'error', message: 'Failed to process Safety report: ' + uploadErr.message });
+            console.error('[Safety Upload] Error:', uploadErr.message);
+            if (!res.headersSent) return res.status(500).json({ status: 'error', message: 'The Safety report could not be saved.' });
+        } finally {
+            release();
         }
     });
 });

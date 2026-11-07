@@ -266,6 +266,7 @@
             </a>
             <div style="font-size: 11px; color: var(--mzo-muted); margin-top: 6px;">
               &uarr; <b>Drag this button</b> up to your browser Bookmarks Bar (press <code>Ctrl+Shift+B</code> if bar is hidden).
+              <span id="bookmarkletExpiry"></span>
             </div>
           </div>
           <ol style="margin: 0; padding-left: 20px; font-size: 11.5px; color: var(--mzo-muted); line-height: 1.5;">
@@ -1412,6 +1413,7 @@
 
     // Admin Sync & Bookmarklet Setup
     var currentMeta = null;
+    var uploadToken = '', uploadTokenExpires = '';
     var selectedFile = null;
 
     function updateSyncMetaUI(meta) {
@@ -1440,11 +1442,15 @@
         infoEl.textContent = 'No local snapshot yet on VM (using Google Sheet fallback).';
       }
 
-      // Generate bookmarklet code with the current origin and admin token
+      // Bookmarklet with the current origin and a short-lived upload token from /api/safety/meta
+      // (good only for this upload, never the sign-in session).
+      if (meta.uploadToken) { uploadToken = meta.uploadToken; uploadTokenExpires = meta.uploadTokenExpires || ''; }
       var origin = window.location.origin;
-      var token = meta.token || '';
+      var token = uploadToken;
+      var expEl = $('bookmarkletExpiry');
+      if (expEl) expEl.textContent = uploadTokenExpires ? 'This button works until ' + new Date(uploadTokenExpires).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) + '; after that, open this panel again and drag a fresh one.' : '';
       var bmScript = "javascript:(function(){" +
-        "var u='" + origin + "/api/safety/upload',t='" + token + "';" +
+        "var u=" + JSON.stringify(origin + '/api/safety/upload') + ",t=" + JSON.stringify(token) + ";" +
         "var box=document.getElementById('mzo-sync-box');" +
         "if(!box){" +
         "box=document.createElement('div');box.id='mzo-sync-box';" +
@@ -1455,7 +1461,7 @@
         "function send(f){" +
         "msg('⚡ Uploading to VM...','Sending '+f.name+' ('+(f.size/1024/1024).toFixed(1)+' MB)...');" +
         "var fd=new FormData();fd.append('file',f);" +
-        "fetch(u,{method:'POST',headers:{'Authorization':'Bearer '+t},body:fd})" +
+        "fetch(u,{method:'POST',credentials:'omit',headers:{'Authorization':'Bearer '+t},body:fd})" +
         ".then(function(r){return r.json();})" +
         ".then(function(res){" +
         "if(res.status==='success'){" +
@@ -1480,22 +1486,26 @@
       }
     }
 
-    fetch('/api/safety/meta', { credentials: 'same-origin' })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (m) {
-        if (!m) return;
-        currentMeta = m;
-        if (m.canSync || m.isAdmin) {
-          $('syncBtn').hidden = false;
-        }
-        updateSyncMetaUI(m);
-      }).catch(function () {});
+    function loadSafetyMeta() {
+      fetch('/api/safety/meta', { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (m) {
+          if (!m) return;
+          currentMeta = m;
+          if (m.canSync || m.isAdmin) {
+            $('syncBtn').hidden = false;
+          }
+          updateSyncMetaUI(m);
+        }).catch(function () {});
+    }
+    loadSafetyMeta();
 
     // Sync Drawer Toggle
     var syncDrawer = $('syncDrawer');
     if ($('syncBtn')) {
       $('syncBtn').addEventListener('click', function () {
         syncDrawer.hidden = false;
+        loadSafetyMeta(); // a fresh upload token for the bookmarklet
       });
     }
     if ($('syncCloseBtn')) {
