@@ -206,6 +206,25 @@ function proxyFetch_(urlStr, options = {}, redirectCount = 0) {
 const fetch = proxyFetch_;
 
 const app = express();
+// Express 4 ignores the promise an async handler returns: a rejection would go unhandled (and end the
+// process) and the request would hang. Every handler registered on `app` passes its rejection to next(),
+// which the JSON error handler at the end answers. Sub-apps, routers' own handlers and error handlers
+// (four arguments) are left as they are.
+function forwardRejections_(fn) {
+    if (typeof fn !== 'function' || fn.length >= 4 || fn.handle || fn.stack) return fn;
+    return function asyncSafe(req, res, next) {
+        const out = fn.call(this, req, res, next);
+        if (out && typeof out.then === 'function') out.then(null, (err) => next(err || new Error('Request failed')));
+        return out;
+    };
+}
+['use', 'get', 'post', 'put', 'patch', 'delete', 'all'].forEach((method) => {
+    const original = app[method].bind(app);
+    app[method] = (...args) => {
+        if (method === 'get' && args.length === 1) return original(...args); // app.get(setting)
+        return original(...args.map((a) => (Array.isArray(a) ? a.map(forwardRejections_) : forwardRejections_(a))));
+    };
+});
 const PORT = process.env.PORT || 3000;
 // Files the app writes and reads at run time (uploaded datasets, their meta, local caches).
 // MZO_FILES_DIR on the VM (/opt/mzo/data/files, set in mzo-reports.service) is outside the release
@@ -5664,7 +5683,25 @@ app.post('/api/assistant', async (req, res) => {
     }
 });
 
+// Last: errors passed to next() (body parser, multer, rejected async handlers) get a JSON answer, never
+// Express's HTML page (which shows a stack trace outside production).
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+    const status = err && Number.isInteger(err.status || err.statusCode) && (err.status || err.statusCode) >= 400 && (err.status || err.statusCode) < 600
+        ? (err.status || err.statusCode) : 500;
+    if (status >= 500) console.error(`[Server] ${req.method} ${req.path}:`, err && err.stack ? err.stack : err);
+    if (res.headersSent) { try { res.end(); } catch (_) { /* closed */ } return; }
+    const message = status === 413 ? 'The request is too large.'
+        : status === 400 ? 'The request could not be read.'
+            : status < 500 && err && err.expose && err.message ? err.message : 'Something went wrong on the server.';
+    return res.status(status).json({ status: 'error', message });
+});
+
 if ((process.env.NODE_ENV !== 'production' || !process.env.VERCEL) && require.main === module) {
+    // A stray rejection is logged, never fatal: one bad request must not take the app down for everyone.
+    process.on('unhandledRejection', (reason) => {
+        console.error('[Server] unhandled rejection:', reason && reason.stack ? reason.stack : reason);
+    });
     const server = app.listen(PORT, () => {
         console.log(`MZO Reports on http://localhost:${PORT} (workstation: /app.html)`);
     });
