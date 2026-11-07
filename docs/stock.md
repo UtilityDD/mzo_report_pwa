@@ -18,7 +18,7 @@ The new Supabase project (`gmasnqebdogtavoudbke`) already serves the stock dump 
 
 1. In the new project's SQL Editor run `scripts/sql/create_insight_project_gmasnqeb.sql`, then add `mzo_insight` to **Exposed schemas**.
 2. Copy `scripts/supabase_config.example.json` to the git-ignored `data/supabase_config.json` and fill the old and new keys. Keep `"insightLive": false`; set `"stockUseStorage": true`.
-3. Pause admin user edits, then `npm run copy:insight` (copies `portal_users`, logs, unbilled months, allotments and the snapshot; it does not switch production).
+3. Pause admin user edits and copy `portal_users`, logs, unbilled months, allotments and the snapshot (done once with `scripts/migrate/copy_insight_to_new_supabase.js`, since removed; git history has it).
 4. On Vercel set `INSIGHT_SUPABASE_URL`, `INSIGHT_SUPABASE_KEY`, `STOCK_USE_STORAGE=1`. Only set `INSIGHT_LIVE` when login should move.
 
 ## Allotments

@@ -261,7 +261,7 @@ There is no single test command. What exists:
 | `node scripts/qa/assistant-live.js --env <file>` | Ask: tool-call accuracy and latency of the configured model on 15 typical questions, with made-up tool results only | the model API |
 | `node --test scripts/qa/uniform.test.js`, `node --test scripts/qa/rating.test.js`, `node scripts/qa/rating-metrics-test.js` | uniform rows, rating engine and metrics | none (`UNIFORM_SNAP` adds snapshot checks) |
 | `cd vm/sync && npm ci && npm run check` | sync syntax | none |
-| `scripts/qa/parity.js`, `diff.js`, `timing.js`, `uniform-pages.js`, `legacy-pages.js`, `sheet-links-pages.js`, `rating-page.js` | browser parity of original vs mirror mode, page by page (Chrome and `playwright-core`) | GET only, against `serve-local.sh` instances |
+| `scripts/qa/parity.js`, `diff.js`, `timing.js`, `uniform-pages.js`, `rating-page.js` | browser parity of original vs mirror mode, page by page (Chrome and `playwright-core`) | GET only, against `serve-local.sh` instances |
 | `scripts/qa/mirror-types.js` | the mirror's column types match `lib/uniform.js` | needs a PocketBase env file |
 | `scripts/qa/speed.js <base>[,<base2>] <label>[,<label2>]`, `--compare <a> <b>` | page speed: cold and warm, 1440 px and 390 px with the CPU 4× slower, over an emulated VM link; bytes, requests, time to settled content, and whether the numbers shown are identical | GET only, against `serve-local.sh` instances |
 | `scripts/qa/view-parity.js --snap <dir>` | every number a page view (`vm/sync/lib/views`) feeds equals the old page logic, row by row, for three logins | none (a snapshot folder with views built) |

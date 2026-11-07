@@ -36,7 +36,7 @@ Run in the Supabase SQL Editor.
 
 ## Moving to the new insight project
 
-`npm run copy:insight` (`scripts/migrate/copy_insight_to_new_supabase.js`) copies users, logs, unbilled months, allotments and the stock snapshot into the new project without switching production; see [stock.md](stock.md#new-insight-project). The one-off imports from the old Google Sheets (users, activity logs, Power Map, stock) were run during earlier migrations and removed from the repo; git history has them.
+The copy of users, logs, unbilled months, allotments and the stock snapshot into the new project was done once with `scripts/migrate/copy_insight_to_new_supabase.js` (removed since; git history has it); see [stock.md](stock.md#new-insight-project). The one-off imports from the old Google Sheets (users, activity logs, Power Map, stock) were run during earlier migrations and removed from the repo; git history has them.
 
 ## Login rules
 

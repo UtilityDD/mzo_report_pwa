@@ -52,7 +52,7 @@ Set on Vercel (Smart Lineman project); locally in the git-ignored `.env`. `serve
 | `SUPABASE_URL`, `SUPABASE_KEY` / `SUPABASE_ANON_KEY` | Old project: login (until `INSIGHT_LIVE`), activity logs |
 | `POWERMAP_SUPABASE_URL`, `POWERMAP_SUPABASE_KEY` | Power Map tables (default to the old project) |
 | `INSIGHT_SUPABASE_URL`, `INSIGHT_SUPABASE_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | New insight project: stock Storage, allotments, report snapshots |
-| `INSIGHT_LIVE` | `1` moves login to the insight project. Leave unset until `npm run copy:insight` has run |
+| `INSIGHT_LIVE` | `1` moves login to the insight project. Set only once the insight project holds the users (copied once; see [stock.md](stock.md#new-insight-project)) |
 | `STOCK_USE_STORAGE`, `STOCK_STORAGE_BUCKET`, `STOCK_STORAGE_OBJECT` | Stock dump in Supabase Storage instead of the Google Sheet |
 | `REPORTS_STORAGE_BUCKET` | Bucket for the synced report snapshots (disconnection, defective, pending MC, load extension) |
 | `*_SCRIPT_URL` (`NSC_SHEET`, `NSC_WITHHELD_SHEET`, `NSC_FOLLOWUP`, `STOCK_SHEET`, `STOCK_ALLOTMENT`, `DEFECTIVE_SHEET`, `DISCONNECTION_FOLLOWUP`, `METADATA`) | Apps Script web apps, see [apps-script.md](apps-script.md) |

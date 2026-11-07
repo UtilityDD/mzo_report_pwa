@@ -91,7 +91,7 @@ Complexity: **S** one dataset, straight mapping · **M** several datasets, or cu
 | final (one person, after A–E) | assistant.html, sheet_links.html (+ dd_visit no-store, DTR drill, map pages on phones) | 4 | none (reads others' schemas; needed no new fields) |
 | later | prt-oil/index.html | 4 | prt_transformers, prt_oil_tests (its Map tab is only reachable through Apps Script, so it cannot be mirrored) |
 
-Parity entries ([uniform-data.md](uniform-data.md#parity-method)): the prototype pages and batches A–D are in `scripts/qa/uniform-rowparity/<batch>.js` and `scripts/qa/uniform-pages/<batch>.js` (`prototype`, `a-connections`, `b-revenue`, `c-meters`, `d-offices`), run by the one `uniform-rowparity.js` and `uniform-pages.js`. Batch E's pages are off the UI kit and have their own tools (`legacy-rowparity.js`, `legacy-pages.js`), as do the final step's (`sheet-links-rowparity.js`, `sheet-links-pages.js`, `assistant-rowparity.js`).
+Parity entries ([uniform-data.md](uniform-data.md#parity-method)): the prototype pages and batches A–D are in `scripts/qa/uniform-rowparity/<batch>.js` and `scripts/qa/uniform-pages/<batch>.js` (`prototype`, `a-connections`, `b-revenue`, `c-meters`, `d-offices`), run by the one `uniform-rowparity.js` and `uniform-pages.js`. Batch E's pages are off the UI kit and had their own one-off tools (`legacy-rowparity.js`, `legacy-pages.js`), as did the final step's (`sheet-links-rowparity.js`, `sheet-links-pages.js`); those compared against the pre-conversion pages and were removed once the conversions were merged (git history has them). `assistant-rowparity.js` remains.
 
 Rules that keep the batches independent:
 
