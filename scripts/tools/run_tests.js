@@ -20,6 +20,7 @@ const OFFLINE = [
     ['uniform and rating unit tests', node, ['--test', 'scripts/qa/uniform.test.js', 'scripts/qa/rating.test.js']],
     ['rating metrics', node, ['scripts/qa/rating-metrics-test.js']],
     ['mirror server', node, ['vm/dev/test-mirror-server.js']],
+    ['server robustness', node, ['vm/dev/test-server-robustness.js']],
     ['briefing cache', node, ['vm/dev/test-briefing-cache.js']],
     ['VM-only admins', node, ['vm/dev/test-local-admin.js']],
     ['Admin sources', node, ['vm/dev/test-sources-info.js']],

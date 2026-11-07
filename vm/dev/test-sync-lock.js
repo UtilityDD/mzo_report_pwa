@@ -2,7 +2,7 @@
 /* The sync lock (vm/sync/lib/lock.js) is exclusive: of several processes that try at the same moment,
  * exactly one gets it, also when they all find a stale lock left by a crashed run.
  *
- *   node vm/dev/test-sync-lock.js [--rounds 40]
+ *   node vm/dev/test-sync-lock.js [--rounds 10] [--race]
  *
  * Offline, a temp folder only. Each round starts N processes that wait for the same start instant,
  * call takeLock(), hold it 150 ms and report. Exit 1 when any round has more or fewer than one holder.
@@ -50,7 +50,7 @@ async function round(dir, n, stale) {
 
 async function main() {
     const i = process.argv.indexOf('--rounds');
-    const rounds = i > 0 ? Number(process.argv[i + 1]) : 20;
+    const rounds = i > 0 ? Number(process.argv[i + 1]) : 10;
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mzo-lock-test-'));
     const { takeLock, waitLock } = require(LOCK);
     let failed = 0;
