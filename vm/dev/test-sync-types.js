@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 /* The mirror's types follow lib/uniform.js, and a collection from the older sync (mzo-sync/1)
- * migrates without losing values or showing the portal an empty column. Against a local
- * PocketBase with the repo's migrations (never the VM):
+ * migrates without losing values or showing the portal an empty column.
  *
+ *   node vm/dev/test-sync-types.js            starts its own throwaway PocketBase (vm/dev/lib/local-pb.js:
+ *                                             temp --dir, a copy of the migrations, --automigrate=false)
  *   node vm/dev/test-sync-types.js --env <file with PB_URL, PB_SUPERUSER_EMAIL, PB_SUPERUSER_PASSWORD>
+ *                                             a PocketBase you started (local only; never the VM). Start it
+ *                                             with --automigrate=false and a copy of the migrations, or the
+ *                                             collections this test creates become migration files.
  *
  * 1. Builds ds_zz_sync_types_test as mzo-sync/1 left it: con_id a number, amount a number with an
  *    amount_raw companion for its one "(null)", flag text (its NA cells were not Y/N), no _nulls.
@@ -33,6 +37,7 @@ const { Registry } = require(path.join(SYNC, 'registry'));
 const { syncSource } = require(path.join(SYNC, 'sync'));
 const { rowKeyFn } = require(path.join(SYNC, 'upsert'));
 const { recordId, sha1, pbDate } = require(path.join(SYNC, 'util'));
+const localPb = require('./lib/local-pb');
 
 const KEY = 'zz_sync_types_test';
 const COLL = 'ds_' + KEY;
@@ -111,9 +116,23 @@ async function cleanup(pb) {
 
 async function main() {
   const i = process.argv.indexOf('--env');
-  if (i < 0) throw new Error('usage: node vm/dev/test-sync-types.js --env <pb env file>');
-  const env = readEnv(process.argv[i + 1]);
-  if (!/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(env.PB_URL || '')) throw new Error('PB_URL must be a local PocketBase');
+  let own = null;
+  let env;
+  if (i > 0) {
+    env = readEnv(process.argv[i + 1]);
+    localPb.assertLocal(env.PB_URL);
+  } else {
+    own = await localPb.start();
+    env = { PB_URL: own.url, PB_SUPERUSER_EMAIL: own.email, PB_SUPERUSER_PASSWORD: own.password };
+  }
+  try {
+    return await testAll(env);
+  } finally {
+    if (own) await own.stop();
+  }
+}
+
+async function testAll(env) {
   const pb = new PocketBase({ url: env.PB_URL, email: env.PB_SUPERUSER_EMAIL, password: env.PB_SUPERUSER_PASSWORD });
   await pb.auth();
   await cleanup(pb);
@@ -131,6 +150,7 @@ async function main() {
     // 2. a run that dies after its first write batch
     let batches = 0;
     const failing = new Proxy(pb, { get(t, p) {
+      if (p === 'withSignal') return () => failing; // keep the fault injection in the source's client
       if (p === 'batch') return async (reqs) => { if (++batches === 2) throw new Error('simulated crash'); return t.batch(reqs); };
       const v = t[p]; return typeof v === 'function' ? v.bind(t) : v;
     } });
@@ -191,6 +211,7 @@ async function main() {
     for (const k of [2, 30, 59]) ROWS[k][4] = 'edited';
     let count = ROWS.length, low = count, high = count, batchesSeen = 0;
     const counting = new Proxy(pb, { get(t, p) {
+      if (p === 'withSignal') return () => counting;
       if (p === 'batch') return async (reqs) => {
         const r = await t.batch(reqs);
         batchesSeen++;
@@ -216,6 +237,6 @@ async function main() {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
   console.log(ok ? 'PASS' : 'FAIL');
-  process.exit(ok ? 0 : 1);
+  return ok;
 }
-main().catch((e) => { console.error('FAIL', e && e.message ? e.message : e); process.exit(1); });
+main().then((ok) => { process.exitCode = ok ? 0 : 1; }).catch((e) => { console.error('FAIL', e && e.message ? e.message : e); process.exitCode = 1; });

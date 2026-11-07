@@ -1,8 +1,12 @@
 #!/usr/bin/env node
-/* The data editor (lib/editor, editor/, docs/data-editor.md) against a local PocketBase with the
- * repo's migrations (never the VM):
+/* The data editor (lib/editor, editor/, docs/data-editor.md) against a local PocketBase (never the VM):
  *
+ *   node vm/dev/test-editor.js            starts its own throwaway PocketBase (vm/dev/lib/local-pb.js:
+ *                                         temp --dir, a copy of the migrations, --automigrate=false)
  *   node vm/dev/test-editor.js --env <file with PB_URL, PB_SUPERUSER_EMAIL, PB_SUPERUSER_PASSWORD>
+ *                                         a PocketBase you started (local only). Start it with
+ *                                         --automigrate=false and a copy of the migrations, or the
+ *                                         collections this test creates become migration files.
  *
  * No network: the datasets come from fixture sources (zz_editor_pk keyed by APPL_NO with office
  * columns, zz_editor_nopk keyed by content), synced into PocketBase by the sync's own code. The
@@ -41,6 +45,7 @@ const { PocketBase } = require(path.join(SYNC, 'pb'));
 const { Registry } = require(path.join(SYNC, 'registry'));
 const { syncSource } = require(path.join(SYNC, 'sync'));
 const snapshot = require(path.join(SYNC, 'snapshot'));
+const localPb = require('./lib/local-pb');
 
 const KEY = 'zz_editor_pk';
 const KEY2 = 'zz_editor_nopk';
@@ -165,9 +170,25 @@ async function unitTests() {
 // ---- PocketBase tests ----
 async function main() {
     const i = process.argv.indexOf('--env');
-    if (i < 0) throw new Error('usage: node vm/dev/test-editor.js --env <pocketbase env file>');
-    const env = readEnv(process.argv[i + 1]);
-    if (!/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/.test(env.PB_URL || '')) throw new Error('PB_URL must be a local PocketBase');
+    let own = null;
+    let env;
+    if (i > 0) {
+        env = readEnv(process.argv[i + 1]);
+        localPb.assertLocal(env.PB_URL);
+    } else {
+        own = await localPb.start();
+        env = { PB_URL: own.url, PB_SUPERUSER_EMAIL: own.email, PB_SUPERUSER_PASSWORD: own.password };
+    }
+    try {
+        await testAll(env);
+    } finally {
+        if (own) await own.stop();
+    }
+}
+
+let structureExisted = true; // ds_structure was there before this run (then it is left alone)
+
+async function testAll(env) {
     await unitTests();
 
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mzo-editor-test-'));
@@ -178,8 +199,9 @@ async function main() {
     const pb = new PocketBase({ url: env.PB_URL, email: env.PB_SUPERUSER_EMAIL, password: env.PB_SUPERUSER_PASSWORD });
     await pb.auth();
     for (const c of ['app_dataset_permissions', 'app_edit_batches', 'app_edit_log']) {
-        if (!(await pb.getCollection(c))) throw new Error(`${c} is missing: start PocketBase with --migrationsDir vm/pocketbase/pb_migrations`);
+        if (!(await pb.getCollection(c))) throw new Error(`${c} is missing: start PocketBase with --migrationsDir <a copy of vm/pocketbase/pb_migrations> --automigrate=false`);
     }
+    structureExisted = !!(await pb.getCollection('ds_structure'));
     await cleanup(pb);
 
     // The fixtures, synced by the sync's own code (snapshot + rows + registry).
@@ -692,6 +714,13 @@ async function cleanup(pb) {
         const s = await pb.getRecord('sys_datasets', Registry.idFor('structure'));
         if (s.mode === 'native') await pb.updateRecord('sys_datasets', s.id, { mode: '' });
     } catch (_) { /* never synced here */ }
+    if (!structureExisted) { // the sync test synced `structure` here: remove what it created
+        const coll = await pb.getCollection('ds_structure');
+        if (coll) await pb.req('DELETE', '/api/collections/' + coll.id);
+        try { await pb.deleteRecord('sys_datasets', Registry.idFor('structure')); } catch (_) { /* none */ }
+        const runs = await pb.listRecords('sys_sync_runs', { perPage: 500, fields: 'id', filter: "dataset='structure'" });
+        if (runs.items.length) await pb.batch(runs.items.map((r) => ({ method: 'DELETE', url: `/api/collections/sys_sync_runs/records/${r.id}` })));
+    }
 }
 
 main().catch((err) => {
