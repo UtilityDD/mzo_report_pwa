@@ -4,9 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>REM defaulters · DISHA</title>
-  <script src="/mzo_theme.js?v=6"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=8" />
-  <script src="/mzo_ui.js?v=8" defer></script>
+  <script src="/mzo_theme.js?v=7"></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=9" />
+  <script src="/mzo_ui.js?v=9" defer></script>
   <script src="/mzo_data_hub.js?v=92" defer></script>
   <script src="/lib/offices.js?v=3" defer></script>
   <script src="/mzo_scope.js?v=18" defer></script>
@@ -211,6 +211,7 @@
         var match = OSD.filter(function (b) { return r.osd >= b.min && r.osd < b.max; })[0];
         r.osdKey = match ? match.key : 'o4';
       });
+      all.sort(function (a, b) { return b.osd - a.osd; });
       var upd = all.reduce(function (m, r) { return r.upd.length === 8 && r.upd > m ? r.upd : m; }, '');
       if (upd && $('asOn')) $('asOn').textContent = 'As on ' + UI.fmtDate(ymd(upd));
       var noAmounts = all.length && !all.some(function (r) { return r.osd; });
@@ -285,54 +286,56 @@
       if (location.search !== (qs ? '?' + qs : '')) history.replaceState(null, '', url);
     }
 
-    function render() {
-      var b = base('none');
-      var bType = base('type'), bOsd = base('osd'), bPay = base('pay'), bTag = base('tag');
+    function render(tabOnly) {
+      var b = (tabOnly && window.__view) ? window.__view : base('none');
+      if (!tabOnly || !window.__view) {
+        var bType = base('type'), bOsd = base('osd'), bPay = base('pay'), bTag = base('tag');
 
-      // Update KPI stats
-      [].forEach.call(document.querySelectorAll('#stats .ui-stat'), function (el) {
-        var t = el.getAttribute('data-t');
-        var rows = t ? bType.filter(function (r) { return r.type === t; }) : bType;
-        var amt = rows.reduce(function (a, r) { return a + r.osd; }, 0);
-        var n = rows.length;
-        var avg = n ? Math.round(amt / n) : 0;
-        el.querySelector('.v').textContent = UI.inr(amt);
-        el.querySelector('.s').textContent = UI.n(n) + ' cons · avg ' + UI.inr(avg);
-        el.setAttribute('aria-pressed', String(f.type === t));
-      });
+        // Update KPI stats
+        [].forEach.call(document.querySelectorAll('#stats .ui-stat'), function (el) {
+          var t = el.getAttribute('data-t');
+          var rows = t ? bType.filter(function (r) { return r.type === t; }) : bType;
+          var amt = rows.reduce(function (a, r) { return a + r.osd; }, 0);
+          var n = rows.length;
+          var avg = n ? Math.round(amt / n) : 0;
+          el.querySelector('.v').textContent = UI.inr(amt);
+          el.querySelector('.s').textContent = UI.n(n) + ' cons · avg ' + UI.inr(avg);
+          el.setAttribute('aria-pressed', String(f.type === t));
+        });
 
-      // Update side panel facets
-      var typeFacets = [
-        { value: '', label: 'All types', count: bType.length },
-        { value: 'DOM', label: 'Domestic', count: bType.filter(function (r) { return r.type === 'DOM'; }).length },
-        { value: 'COM', label: 'Commercial', count: bType.filter(function (r) { return r.type === 'COM'; }).length },
-        { value: 'IND', label: 'Industrial', count: bType.filter(function (r) { return r.type === 'IND'; }).length },
-        { value: 'AGRI', label: 'Agriculture', count: bType.filter(function (r) { return r.type === 'AGRI'; }).length }
-      ];
-      UI.facet($('fType'), typeFacets, f.type, function (v) { f.type = v; syncUrl(); render(); });
+        // Update side panel facets
+        var typeFacets = [
+          { value: '', label: 'All types', count: bType.length },
+          { value: 'DOM', label: 'Domestic', count: bType.filter(function (r) { return r.type === 'DOM'; }).length },
+          { value: 'COM', label: 'Commercial', count: bType.filter(function (r) { return r.type === 'COM'; }).length },
+          { value: 'IND', label: 'Industrial', count: bType.filter(function (r) { return r.type === 'IND'; }).length },
+          { value: 'AGRI', label: 'Agriculture', count: bType.filter(function (r) { return r.type === 'AGRI'; }).length }
+        ];
+        UI.facet($('fType'), typeFacets, f.type, function (v) { f.type = v; syncUrl(); render(); });
 
-      var osdFacets = [{ value: '', label: 'All sizes', count: bOsd.length }].concat(OSD.map(function (o) {
-        return { value: o.key, label: o.label, count: bOsd.filter(function (r) { return r.osdKey === o.key; }).length };
-      }));
-      UI.facet($('fOsd'), osdFacets, f.osd, function (v) { f.osd = v; syncUrl(); render(); });
+        var osdFacets = [{ value: '', label: 'All sizes', count: bOsd.length }].concat(OSD.map(function (o) {
+          return { value: o.key, label: o.label, count: bOsd.filter(function (r) { return r.osdKey === o.key; }).length };
+        }));
+        UI.facet($('fOsd'), osdFacets, f.osd, function (v) { f.osd = v; syncUrl(); render(); });
 
-      var payFacets = [{ value: '', label: 'All aging', count: bPay.length }].concat(PAY.map(function (p) {
-        return { value: p.key, label: p.label, count: bPay.filter(function (r) { return r.payKey === p.key; }).length };
-      }));
-      UI.facet($('fPay'), payFacets, f.pay, function (v) { f.pay = v; syncUrl(); render(); });
+        var payFacets = [{ value: '', label: 'All aging', count: bPay.length }].concat(PAY.map(function (p) {
+          return { value: p.key, label: p.label, count: bPay.filter(function (r) { return r.payKey === p.key; }).length };
+        }));
+        UI.facet($('fPay'), payFacets, f.pay, function (v) { f.pay = v; syncUrl(); render(); });
 
-      var tagFacets = [{ value: '', label: 'Any category', count: bTag.length }].concat(TAGS.map(function (t) {
-        return { value: t.key, label: t.label, count: bTag.filter(function (r) { return t.test(r); }).length };
-      }));
-      UI.facet($('fTag'), tagFacets, f.tag, function (v) { f.tag = v; syncUrl(); render(); });
+        var tagFacets = [{ value: '', label: 'Any category', count: bTag.length }].concat(TAGS.map(function (t) {
+          return { value: t.key, label: t.label, count: bTag.filter(function (r) { return t.test(r); }).length };
+        }));
+        UI.facet($('fTag'), tagFacets, f.tag, function (v) { f.tag = v; syncUrl(); render(); });
 
-      // Active filters counting
-      var nActive = (f.q ? 1 : 0) + (f.type ? 1 : 0) + (f.pay ? 1 : 0) + (f.osd ? 1 : 0) + (f.tag ? 1 : 0) +
-        ($('classFilter').value ? 1 : 0) +
-        ($('regionFilter').value && !$('regionFilter').disabled ? 1 : 0) +
-        ($('divisionFilter').value && !$('divisionFilter').disabled ? 1 : 0) +
-        ($('cccFilter').value && !$('cccFilter').disabled ? 1 : 0);
-      setActive(nActive);
+        // Active filters counting
+        var nActive = (f.q ? 1 : 0) + (f.type ? 1 : 0) + (f.pay ? 1 : 0) + (f.osd ? 1 : 0) + (f.tag ? 1 : 0) +
+          ($('classFilter').value ? 1 : 0) +
+          ($('regionFilter').value && !$('regionFilter').disabled ? 1 : 0) +
+          ($('divisionFilter').value && !$('divisionFilter').disabled ? 1 : 0) +
+          ($('cccFilter').value && !$('cccFilter').disabled ? 1 : 0);
+        setActive(nActive);
+      }
 
       // Render Drill Tabs
       var tabsEl = $('tabs');
@@ -342,16 +345,17 @@
         return '<button type="button" class="ui-drill-tab" role="tab" data-tab="' + t.id + '" aria-selected="' + String(tab === t.id) + '">' + t.label + count + '</button>';
       }).join('');
 
-      var totOsd = b.reduce(function (a, r) { return a + r.osd; }, 0);
+      var totOsd = (tabOnly && window.__totOsd != null) ? window.__totOsd : b.reduce(function (a, r) { return a + r.osd; }, 0);
       var totN = b.length;
       var avgDef = totN ? Math.round(totOsd / totN) : 0;
       $('hint').innerHTML = 'Total default: <span class="ui-strong">' + UI.inr(totOsd) + '</span> across <span class="ui-strong">' + UI.n(totN) + '</span> defaulters · Avg default: <span class="ui-strong">' + UI.inr(avgDef) + '</span>';
 
       window.__view = b;
+      window.__totOsd = totOsd;
 
       var rhEl = $('rhCount');
       if (rhEl) rhEl.textContent = UI.inr(totOsd) + ' · ' + UI.n(totN) + ' defaulters';
-      renderReportHead(b);
+      if (!tabOnly) renderReportHead(b);
 
       if (tab === 'region' || tab === 'division' || tab === 'ccc') {
         renderOfficesTab(b, totOsd, totN);
@@ -669,7 +673,7 @@
       var b = e.target.closest('.ui-drill-tab');
       if (!b) return;
       tab = b.getAttribute('data-tab');
-      syncUrl(); render();
+      syncUrl(); render(true);
     });
 
     $('rhFiltersBar').addEventListener('click', function (e) {

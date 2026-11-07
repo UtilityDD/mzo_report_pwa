@@ -51,7 +51,13 @@
     }
     try {
       var meta = document.querySelector('meta[name="theme-color"]');
-      if (meta) meta.setAttribute('content', theme === 'dark' ? '#09090a' : (theme === 'ppt' ? '#e8edf6' : '#f1f1f0'));
+      var tc = theme === 'dark' ? '#09090a' : (theme === 'ppt' ? '#e8edf6' : '#f1f1f0');
+      if (!meta && !inShell && document.head) {
+        meta = document.createElement('meta');
+        meta.name = 'theme-color';
+        document.head.appendChild(meta);
+      }
+      if (meta) meta.setAttribute('content', tc);
       if (!inShell && document.head && !document.querySelector('script[src*="mzo_theme.js"][src*="/kit/"]')) {
         var fav = document.querySelector('link[rel="icon"]');
         var wantHref = theme === 'dark' ? '/icons/icon-192-dark.png?v=304' : '/icons/icon-192-v2.png?v=304';

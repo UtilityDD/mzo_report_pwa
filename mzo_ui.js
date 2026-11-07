@@ -154,6 +154,7 @@
   function refresh(btn, key, onText) {
     if (typeof btn === 'string') btn = document.getElementById(btn);
     if (!btn) return;
+    ptrAdd(btn);
     btn.addEventListener('click', function () {
       var hub = w.mzoDataHub;
       if (!hub) return;
@@ -212,25 +213,90 @@
   // cfg: { columns: [{ key, label, num, fmt(v,row) → html, sortVal(row), cls, hideSm, width, csv(row) }],
   //        rows, sort: { key, dir }, limit, resetPage, onRow(row), selected(row), foot, empty, count }
   // Sort and paging live on the element (el.__ui); set el.__ui = null when the column set changes.
-  function table(el, cfg) {
+  function table(el, cfg, _appendFrom) {
     if (typeof el === 'string') el = document.getElementById(el);
-    var st = el.__ui || (el.__ui = { sort: cfg.sort || null, limit: cfg.limit || 0, shown: cfg.limit || 0 });
-    if (cfg.resetPage) st.shown = st.limit;
-    var cols = cfg.columns, rows = cfg.rows.slice();
-    if (st.sort) {
-      var c = cols.filter(function (x) { return x.key === st.sort.key; })[0];
-      if (c) {
-        var dir = st.sort.dir === 'asc' ? 1 : -1;
-        var val = c.sortVal || function (r) { return r[c.key]; };
-        rows.sort(function (a, b) {
-          var x = val(a), y = val(b);
-          if (typeof x === 'number' || typeof y === 'number') return ((x || 0) - (y || 0)) * dir;
-          return String(x || '').localeCompare(String(y || ''), 'en', { numeric: true }) * dir;
-        });
+    var cols = cfg.columns;
+    var colSig = cols.map(function (c) { return c.key; }).join('|');
+    var lim = cfg.limit || 0;
+    var st = el.__ui;
+    if (!st || st.colSig !== colSig) {
+      st = el.__ui = { colSig: colSig, sort: cfg.sort || null, limit: lim, shown: lim, rowsRef: null, sortedKey: '', sorted: null };
+    } else {
+      if (st.limit !== lim) { st.limit = lim; st.shown = lim; }
+      else if (cfg.resetPage) st.shown = st.limit;
+      if (st.sort && !cols.some(function (x) { return x.key === st.sort.key; })) st.sort = cfg.sort || null;
+    }
+    var sortKey = st.sort ? st.sort.key + ':' + st.sort.dir : '';
+    var rows;
+    if (st.rowsRef === cfg.rows && st.sortedKey === sortKey && st.sorted) {
+      rows = st.sorted;
+    } else {
+      rows = cfg.rows.slice();
+      if (st.sort) {
+        var c = cols.filter(function (x) { return x.key === st.sort.key; })[0];
+        if (c) {
+          var dir = st.sort.dir === 'asc' ? 1 : -1;
+          var val = c.sortVal || function (r) { return r[c.key]; };
+          if (c.num) {
+            rows.sort(function (a, b) { return ((Number(val(a)) || 0) - (Number(val(b)) || 0)) * dir; });
+          } else {
+            rows.sort(function (a, b) {
+              var x = val(a), y = val(b);
+              if (typeof x === 'number' || typeof y === 'number') return ((x || 0) - (y || 0)) * dir;
+              return String(x || '').localeCompare(String(y || ''), 'en', { numeric: true }) * dir;
+            });
+          }
+        }
       }
+      st.rowsRef = cfg.rows;
+      st.sortedKey = sortKey;
+      st.sorted = rows;
     }
     var total = rows.length, view = st.shown ? rows.slice(0, st.shown) : rows;
-    var h = '<div class="ui-table-wrap"><table class="ui-table"><thead><tr>';
+    var cards = cfg.cards !== false;
+    function rowHtml(r, i) {
+      var rh = '<tr' + (cfg.onRow ? ' class="click' + (cfg.selected && cfg.selected(r) ? ' sel' : '') + '" data-i="' + i + '" tabindex="0"' : '') + '>';
+      cols.forEach(function (c) {
+        var v = r[c.key];
+        rh += '<td class="' + (c.num ? 'num ' : '') + (c.cls || '') + (c.hideSm ? ' hide-sm' : '') + '"' + (cards ? ' data-l="' + esc(c.label) + '"' : '') + '>' + (c.fmt ? c.fmt(v, r) : esc(v == null || v === '' ? '—' : v)) + '</td>';
+      });
+      if (cfg.onRow) rh += '<td class="chev"><svg class="ui-i"><use href="#ui-chev"/></svg></td>';
+      return rh + '</tr>';
+    }
+    function footBarHtml() {
+      if (st.shown && total > st.shown) return '<div class="ui-panel-f" data-more-wrap><span>Showing ' + n(st.shown) + ' of ' + n(total) + '</span><button type="button" class="ui-btn sm" data-more>Show more</button></div>';
+      if (cfg.count !== false && total > 12) return '<div class="ui-panel-f"><span>' + n(total) + ' rows</span></div>';
+      return '';
+    }
+    st.view = view;
+    // Fast incremental append when scrolling or clicking "Show more": only render the new slice.
+    if (_appendFrom && _appendFrom > 0 && el.querySelector('tbody')) {
+      var tb = el.querySelector('tbody');
+      var addHtml = '';
+      for (var ai = _appendFrom; ai < view.length; ai++) addHtml += rowHtml(view[ai], ai);
+      tb.insertAdjacentHTML('beforeend', addHtml);
+      var oldFoot = el.querySelector('.ui-panel-f');
+      var newFoot = footBarHtml();
+      if (oldFoot) {
+        if (newFoot) oldFoot.outerHTML = newFoot; else oldFoot.remove();
+      } else if (newFoot) {
+        el.insertAdjacentHTML('beforeend', newFoot);
+      }
+      armLazy();
+      return;
+    }
+    if (st.io) { st.io.disconnect(); st.io = null; }
+    var h = '';
+    if (cards) {
+      var cur = st.sort && cols.some(function (x) { return x.key === st.sort.key; }) ? st.sort : null;
+      h += '<div class="ui-sortbar"><label class="ui-chip on"><span class="ui-sr">Sort by</span><select data-sortby aria-label="Sort by">' +
+        (cur ? '' : '<option value="">Sort: default</option>') +
+        cols.map(function (c) { return '<option value="' + esc(c.key) + '"' + (cur && cur.key === c.key ? ' selected' : '') + '>Sort: ' + esc(c.label) + '</option>'; }).join('') +
+        '</select></label>' +
+        (cur ? '<button type="button" class="ui-chip" data-sortdir aria-label="' + (cur.dir === 'asc' ? 'Ascending, tap for descending' : 'Descending, tap for ascending') + '">' + (cur.dir === 'asc' ? '↑ Low first' : '↓ High first') + '</button>' : '') +
+        '<span class="ui-sortbar-n">' + n(total) + (total === 1 ? ' row' : ' rows') + '</span></div>';
+    }
+    h += '<div class="ui-table-wrap"><table class="ui-table' + (cards ? ' ui-cardable' : '') + '"><thead><tr>';
     cols.forEach(function (c) {
       var s = st.sort && st.sort.key === c.key ? (st.sort.dir === 'asc' ? 'ascending' : 'descending') : '';
       h += '<th data-sort="' + c.key + '" tabindex="0" class="' + (c.num ? 'num ' : '') + (c.hideSm ? 'hide-sm' : '') + '"' + (s ? ' aria-sort="' + s + '"' : '') + (c.width ? ' style="width:' + c.width + '"' : '') + '>' + esc(c.label) + '</th>';
@@ -238,36 +304,53 @@
     if (cfg.onRow) h += '<th class="chev" aria-hidden="true"></th>';
     h += '</tr></thead><tbody>';
     if (!view.length) h += '<tr><td colspan="' + (cols.length + (cfg.onRow ? 1 : 0)) + '"><div class="ui-empty">' + esc(cfg.empty || 'Nothing to show.') + '</div></td></tr>';
-    view.forEach(function (r, i) {
-      h += '<tr' + (cfg.onRow ? ' class="click' + (cfg.selected && cfg.selected(r) ? ' sel' : '') + '" data-i="' + i + '" tabindex="0"' : '') + '>';
-      cols.forEach(function (c) {
-        var v = r[c.key];
-        h += '<td class="' + (c.num ? 'num ' : '') + (c.cls || '') + (c.hideSm ? ' hide-sm' : '') + '">' + (c.fmt ? c.fmt(v, r) : esc(v == null || v === '' ? '—' : v)) + '</td>';
-      });
-      if (cfg.onRow) h += '<td class="chev"><svg class="ui-i"><use href="#ui-chev"/></svg></td>';
-      h += '</tr>';
-    });
+    for (var vi = 0; vi < view.length; vi++) h += rowHtml(view[vi], vi);
     h += '</tbody>';
     if (cfg.foot && view.length) {
       h += '<tfoot><tr>';
-      cols.forEach(function (c, i) { var v = cfg.foot[c.key]; h += '<td class="' + (c.num ? 'num ' : '') + (c.hideSm ? 'hide-sm' : '') + '">' + (i === 0 && v == null ? 'Total' : v == null ? '' : (c.fmt ? c.fmt(v, cfg.foot) : esc(v))) + '</td>'; });
+      cols.forEach(function (c, i) { var v = cfg.foot[c.key]; h += '<td class="' + (c.num ? 'num ' : '') + (c.hideSm ? 'hide-sm' : '') + '"' + (cards && i ? ' data-l="' + esc(c.label) + '"' : '') + '>' + (i === 0 && v == null ? 'Total' : v == null ? '' : (c.fmt ? c.fmt(v, cfg.foot) : esc(v))) + '</td>'; });
       if (cfg.onRow) h += '<td></td>';
       h += '</tr></tfoot>';
     }
-    h += '</table></div>';
-    if (st.shown && total > st.shown) h += '<div class="ui-panel-f"><span>Showing ' + n(st.shown) + ' of ' + n(total) + '</span><button type="button" class="ui-btn sm" data-more>Show more</button></div>';
-    else if (cfg.count !== false && total > 12) h += '<div class="ui-panel-f"><span>' + n(total) + ' rows</span></div>';
+    h += '</table></div>' + footBarHtml();
     el.innerHTML = h;
+    function showMore() {
+      if (!st.shown || st.shown >= total) return;
+      var prev = st.shown;
+      st.shown = Math.min(total, st.shown + st.limit);
+      table(el, cfg, prev);
+    }
+    function armLazy() {
+      if (st.io) { st.io.disconnect(); st.io = null; }
+      if (!w.IntersectionObserver || !st.shown || total <= st.shown) return;
+      var target = el.querySelector('[data-more-wrap]');
+      if (!target) return;
+      st.io = new IntersectionObserver(function (entries) {
+        if (entries.some(function (en) { return en.isIntersecting; })) showMore();
+      }, { rootMargin: '280px 0px' });
+      st.io.observe(target);
+    }
+    armLazy();
+    el.onchange = function (e) {
+      var s = e.target.closest && e.target.closest('select[data-sortby]');
+      if (!s) return;
+      var col = cols.filter(function (x) { return x.key === s.value; })[0];
+      st.sort = col ? { key: col.key, dir: col.num ? 'desc' : 'asc' } : null;
+      if (st.limit) st.shown = st.limit;
+      table(el, cfg);
+    };
     el.onclick = function (e) {
+      if (e.target.closest('[data-sortdir]') && st.sort) { st.sort = { key: st.sort.key, dir: st.sort.dir === 'asc' ? 'desc' : 'asc' }; if (st.limit) st.shown = st.limit; table(el, cfg); return; }
       var th = e.target.closest('th[data-sort]');
       if (th) {
         var k = th.getAttribute('data-sort'), col = cols.filter(function (x) { return x.key === k; })[0];
         st.sort = st.sort && st.sort.key === k ? { key: k, dir: st.sort.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: col && col.num ? 'desc' : 'asc' };
+        if (st.limit) st.shown = st.limit;
         table(el, cfg); return;
       }
-      if (e.target.closest('[data-more]')) { st.shown += st.limit; table(el, cfg); return; }
+      if (e.target.closest('[data-more]')) { showMore(); return; }
       var tr = e.target.closest('tr[data-i]');
-      if (tr && cfg.onRow) cfg.onRow(view[+tr.getAttribute('data-i')], e);
+      if (tr && cfg.onRow && st.view) cfg.onRow(st.view[+tr.getAttribute('data-i')], e);
     };
     // Keyboard: Enter or Space on a focused header sorts it, on a focused row opens it.
     el.onkeydown = function (e) {
@@ -336,7 +419,26 @@
   function sidePanel(cfg) {
     var $id = function (x) { return typeof x === 'string' ? document.getElementById(x) : x; };
     var side = $id(cfg.side), toggle = $id(cfg.toggle), label = $id(cfg.label), count = $id(cfg.count), clear = $id(cfg.clear);
-    if (toggle) toggle.addEventListener('click', function () { var open = !side.classList.contains('open'); side.classList.toggle('open', open); toggle.setAttribute('aria-expanded', String(open)); });
+    // Phones: the panel is a bottom sheet (scrim, drag handle, "Show results", Android Back closes it).
+    // Wider screens keep the inline panel; the extra parts are hidden there by CSS.
+    side.classList.add('ui-sheet');
+    if (!side.querySelector(':scope > .ui-sheet-grab')) {
+      side.insertAdjacentHTML('afterbegin', '<div class="ui-sheet-grab" aria-hidden="true"><i></i></div>');
+      side.insertAdjacentHTML('beforeend', '<div class="ui-sheet-foot"><button type="button" class="ui-btn primary" data-sheet-done>Show results</button></div>');
+    }
+    function setOpen(open) {
+      if (open === side.classList.contains('open')) return;
+      side.classList.toggle('open', open);
+      if (toggle) toggle.setAttribute('aria-expanded', String(open));
+      var asSheet = phone();
+      if (open && !asSheet) return;
+      sheetOn(open ? side : null, function () { setOpen(false); });
+      if (open) { side.scrollTop = 0; backOpen(function () { setOpen(false); }); }
+      else { backDone(); if (asSheet && toggle && side.contains(document.activeElement)) try { toggle.focus({ preventScroll: true }); } catch (e) {} }
+    }
+    if (toggle) toggle.addEventListener('click', function () { setOpen(!side.classList.contains('open')); });
+    side.addEventListener('click', function (e) { if (e.target.closest('[data-sheet-done]')) setOpen(false); });
+    dragToClose(side, side.querySelectorAll(':scope > .ui-sheet-grab, :scope > .ui-side-h'), function () { return phone() && side.classList.contains('open'); }, function () { setOpen(false); });
     if (clear && cfg.onClear) clear.addEventListener('click', cfg.onClear);
     // Tabbed groups: <div class="ui-seg ui-side-tabs" data-tabs> <button data-pane="id">…
     [].forEach.call(side.querySelectorAll('[data-tabs]'), function (tabs) {
@@ -584,12 +686,16 @@
       var shut = function () {
         if (d.hidden) return;
         d.hidden = true;
+        document.documentElement.classList.remove('ui-sheet-on');
+        backDone();
         var back = d.__back; d.__back = null;
         if (back && back.focus && document.contains(back)) try { back.focus(); } catch (e) {}
       };
+      d.__shut = shut;
       d.addEventListener('click', function (e) { if (e.target === d || e.target.closest('[data-x]')) shut(); });
       d.addEventListener('keydown', trapFocus(d.querySelector('section')));
       document.addEventListener('keydown', function (e) { if (e.key === 'Escape') shut(); });
+      dragToClose(d.querySelector('section'), [d.querySelector('header')], function () { return phone() && !d.hidden; }, shut);
     }
     if (d.hidden) d.__back = document.activeElement;
     var act = d.querySelector('.ui-drawer-act');
@@ -599,12 +705,163 @@
     d.querySelector('p').textContent = sub || '';
     var dl = d.querySelector('dl'), extra = d.querySelector('.ui-drawer-x');
     if (!extra) { extra = document.createElement('div'); extra.className = 'ui-drawer-x'; dl.parentNode.appendChild(extra); }
-    dl.innerHTML = (pairs || []).filter(function (p) { return !blank(p[1]); }).map(function (p) { return '<dt>' + esc(p[0]) + '</dt><dd>' + esc(p[1]) + '</dd>'; }).join('');
+    var shown = (pairs || []).filter(function (p) { return !blank(p[1]); });
+    dl.innerHTML = shown.map(function (p) { return '<dt>' + esc(p[0]) + '</dt><dd>' + esc(p[1]) + '</dd>'; }).join('');
     extra.innerHTML = extraHtml || '';
+    // Phones with a share sheet: one Share button hands the details to WhatsApp, mail, etc.
+    var share = d.querySelector('.ui-drawer-share');
+    if (!share && navigator.share && touch()) {
+      share = document.createElement('button'); share.type = 'button'; share.className = 'ui-btn icon ghost ui-drawer-share';
+      share.setAttribute('aria-label', 'Share'); share.title = 'Share'; share.innerHTML = icon('share');
+      d.querySelector('header').insertBefore(share, d.querySelector('[data-x]'));
+    }
+    if (share) share.onclick = function () {
+      var text = titleText + (sub ? '\n' + sub : '') + '\n\n' + shown.map(function (p) { return p[0] + ': ' + p[1]; }).join('\n');
+      try { navigator.share({ title: titleText, text: text }).catch(function () {}); } catch (e) {}
+    };
     var wasHidden = d.hidden;
     d.hidden = false;
+    if (wasHidden && phone()) { document.documentElement.classList.add('ui-sheet-on'); backOpen(function () { d.__shut(); }); }
     if (wasHidden) try { d.querySelector('[data-x]').focus({ preventScroll: true }); } catch (e) {}
     return d;
+  }
+
+  /* ---------- phones: Android-style behaviour (sheets, Back, ripple, pull to refresh) ----------
+   * Everything here is inert on desktop: phone() is the kit's 760px breakpoint, touch() a coarse pointer. */
+  var phoneMq = w.matchMedia ? w.matchMedia('(max-width: 760px)') : null;
+  var touchMq = w.matchMedia ? w.matchMedia('(hover: none) and (pointer: coarse)') : null;
+  function phone() { return !!(phoneMq && phoneMq.matches); }
+  function touch() { return !!(touchMq && touchMq.matches); }
+  function haptic(ms) { try { if (navigator.vibrate) navigator.vibrate(ms || 8); } catch (e) {} }
+
+  // Android Back: an open sheet owns one history entry, so Back closes the sheet instead of leaving the
+  // report. Closing it any other way pops that entry again. The page's own replaceState URL (filters in
+  // the query string) is kept across the pop.
+  var backEntry = null, backSkip = 0, backKeep = '';
+  function backOpen(close) {
+    if (backEntry) { backEntry.close = close; return; }
+    backEntry = { close: close, keep: location.href };
+    try { history.pushState({ uiBack: 1 }, '', location.href); } catch (e) { backEntry = null; }
+  }
+  function backDone() {
+    if (!backEntry) return;
+    backKeep = location.href; backEntry = null; backSkip++;
+    try { history.back(); } catch (e) { backSkip--; }
+  }
+  if (w.addEventListener) w.addEventListener('popstate', function (e) {
+    var keep = '';
+    if (backSkip) { backSkip--; keep = backKeep; backKeep = ''; }
+    else if (backEntry) { var b = backEntry; backEntry = null; keep = b.keep; b.close(); }
+    else return;
+    e.stopImmediatePropagation();
+    if (keep && keep !== location.href) try { history.replaceState(history.state, '', keep); } catch (er) {}
+  });
+  ['click', 'change', 'input'].forEach(function (t) {
+    document.addEventListener(t, function () { if (backEntry) setTimeout(function () { if (backEntry) backEntry.keep = location.href; }, 0); }, true);
+  });
+
+  // One scrim behind whichever sheet is open; tapping it closes that sheet.
+  var scrimEl = null, scrimClose = null;
+  function sheetOn(el, close) {
+    if (!scrimEl) {
+      scrimEl = document.createElement('div'); scrimEl.className = 'ui-scrim';
+      scrimEl.addEventListener('click', function () { if (scrimClose) scrimClose(); });
+      document.body.appendChild(scrimEl);
+    }
+    scrimClose = el ? close : null;
+    scrimEl.classList.toggle('on', !!el);
+    document.documentElement.classList.toggle('ui-sheet-on', !!el);
+  }
+
+  // Drag a sheet down by its handle or header; past 90px (or a quick flick) it closes.
+  function dragToClose(box, handles, can, close) {
+    var y0 = null, dy = 0, t0 = 0;
+    [].forEach.call(handles, function (hd) {
+      if (!hd) return;
+      hd.addEventListener('touchstart', function (e) {
+        if (!can() || e.touches.length > 1 || e.target.closest('button, input, select, a')) return;
+        y0 = e.touches[0].clientY; dy = 0; t0 = Date.now();
+        box.style.transition = 'none';
+      }, { passive: true });
+      hd.addEventListener('touchmove', function (e) {
+        if (y0 == null) return;
+        dy = Math.max(0, e.touches[0].clientY - y0);
+        box.style.transform = dy ? 'translateY(' + dy + 'px)' : '';
+      }, { passive: true });
+      var end = function () {
+        if (y0 == null) return;
+        y0 = null; box.style.transition = ''; box.style.transform = '';
+        if (dy > 90 || (dy > 30 && Date.now() - t0 < 220)) close();
+      };
+      hd.addEventListener('touchend', end);
+      hd.addEventListener('touchcancel', end);
+    });
+  }
+
+  // Touch ripple (Material state layer) on kit and Bootstrap/custom controls.
+  var RIPPLE = '.ui-btn, .ui-stat, .ui-opt, .ui-drill-tab, .ui-chip, .ui-seg button, .ui-tab, .ui-cardable tr.click, .btn, .nav-link, .tab-link, .allot-btn, .alert-btn, .bf-row, .as-sug';
+  document.addEventListener('pointerdown', function (e) {
+    if (e.pointerType !== 'touch' || !e.target.closest) return;
+    var t = e.target.closest(RIPPLE);
+    if (!t || t.disabled || (t.tagName === 'TR' && !w.matchMedia('(max-width: 600px)').matches)) return;
+    if (w.getComputedStyle(t).position === 'static') t.style.position = 'relative';
+    var r = t.getBoundingClientRect(), s = Math.max(r.width, r.height) * 2.2;
+    var box = document.createElement('span'), dot = document.createElement('span');
+    box.className = 'ui-rpl'; box.setAttribute('aria-hidden', 'true');
+    dot.style.cssText = 'width:' + s + 'px;height:' + s + 'px;left:' + (e.clientX - r.left - s / 2) + 'px;top:' + (e.clientY - r.top - s / 2) + 'px';
+    box.appendChild(dot); t.appendChild(box);
+    setTimeout(function () { box.remove(); }, 650);
+  }, { passive: true });
+
+  // Pull to refresh: on touch screens, pulling down from the top of the page presses the page's
+  // UI.refresh button (only pages that registered one).
+  var ptrBtns = [], ptrEl = null;
+  function ptrAdd(btn) {
+    if (ptrBtns.indexOf(btn) < 0) ptrBtns.push(btn);
+    if (ptrBtns.length === 1 && touch()) ptrInit();
+  }
+  function ptrScrolled(node) {
+    if ((w.scrollY || document.documentElement.scrollTop) > 0) return true;
+    for (var n2 = node; n2 && n2 !== document.body && n2.nodeType === 1; n2 = n2.parentNode) if (n2.scrollTop > 0) return true;
+    return false;
+  }
+  function ptrInit() {
+    document.documentElement.style.overscrollBehaviorY = 'none';
+    var y0 = null, x0 = 0, pull = 0, armed = false, busy = false;
+    function el() {
+      if (!ptrEl) { ptrEl = document.createElement('div'); ptrEl.className = 'ui-ptr'; ptrEl.setAttribute('aria-hidden', 'true'); ptrEl.innerHTML = icon('refresh'); document.body.appendChild(ptrEl); }
+      return ptrEl;
+    }
+    function paint(p) { var x = el(); x.style.transform = 'translate(-50%,' + (p - 48) + 'px) rotate(' + (p * 4) + 'deg)'; x.style.opacity = Math.min(1, p / 40); x.classList.toggle('armed', p >= 64); }
+    function reset() { var x = el(); x.classList.remove('run', 'armed'); x.style.transition = 'transform .2s, opacity .2s'; x.style.transform = 'translate(-50%,-48px)'; x.style.opacity = '0'; setTimeout(function () { x.style.transition = ''; }, 220); }
+    document.addEventListener('touchstart', function (e) {
+      if (busy || e.touches.length > 1 || document.documentElement.classList.contains('ui-sheet-on') || ptrScrolled(e.target)) { y0 = null; return; }
+      y0 = e.touches[0].clientY; x0 = e.touches[0].clientX; pull = 0; armed = false;
+    }, { passive: true });
+    document.addEventListener('touchmove', function (e) {
+      if (y0 == null) return;
+      var dy = e.touches[0].clientY - y0, dx = Math.abs(e.touches[0].clientX - x0);
+      if (dy <= 0 || (pull === 0 && dx > dy)) { if (pull) reset(); y0 = null; pull = 0; return; }
+      pull = Math.min(110, dy * 0.5);
+      paint(pull);
+      if (pull >= 64 && !armed) { armed = true; haptic(10); } else if (pull < 64) armed = false;
+    }, { passive: true });
+    var end = function () {
+      if (y0 == null) return;
+      y0 = null;
+      var btn = ptrBtns.filter(function (b) { return document.contains(b) && !b.disabled; })[0];
+      if (!armed || !btn) { if (pull) reset(); pull = 0; return; }
+      busy = true; pull = 0;
+      var x = el(); x.classList.add('run'); x.style.transform = 'translate(-50%,16px)'; x.style.opacity = '1';
+      btn.click();
+      var started = Date.now();
+      (function wait() {
+        if ((btn.classList.contains('spin') && Date.now() - started < 20000) || Date.now() - started < 600) { setTimeout(wait, 150); return; }
+        busy = false; reset();
+      })();
+    };
+    document.addEventListener('touchend', end);
+    document.addEventListener('touchcancel', end);
   }
 
   /* ---------- icons (one sprite per page, injected once) ---------- */
@@ -620,7 +877,8 @@
     arrow: '<path d="M7 17 17 7"/><path d="M8 7h9v9"/>',
     filter: '<path d="M4 5h16l-6 7.5V19l-4-2v-4.5z"/>',
     reload: '<path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5"/><path d="M3.5 3.5v5h5"/>',
-    check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>'
+    check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+    share: '<circle cx="18" cy="5.5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="18.5" r="2.5"/><path d="m8.2 10.8 7.6-4.1M8.2 13.2l7.6 4.1"/>'
   };
   function icon(name) { return '<svg class="ui-i" aria-hidden="true"><use href="#ui-' + name + '"/></svg>'; }
   function sprite() {
