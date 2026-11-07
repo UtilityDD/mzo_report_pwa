@@ -25,6 +25,7 @@ const OFFLINE = [
     ['user store queue', node, ['vm/dev/test-users-queue.js']],
     ['briefing cache', node, ['vm/dev/test-briefing-cache.js']],
     ['VM-only admins', node, ['vm/dev/test-local-admin.js']],
+    ['Safety upload and token', node, ['vm/dev/test-safety-upload.js']],
     ['Admin sources', node, ['vm/dev/test-sources-info.js']],
     ['data quality', node, ['vm/dev/test-quality.js']],
     ['organisation API', node, ['vm/dev/test-org-api.js']],
