@@ -81,10 +81,11 @@ function rowKeyFn(columns, primaryKey, warnings) {
  *                   existing rows have no value in yet)
  * @param oldTypes   staged column → type of the old field the portal shows until the swap; _nulls
  *                   describes that field meanwhile (stats.provisional rows: the next run tidies them)
- * @returns {Promise<{total, inserted, updated, deleted, unchanged, failed, failures: string[], batches, writeMs}>}
+ * @returns {Promise<{total, inserted, updated, moved, deleted, unchanged, failed, failures: string[], batches, writeMs}>}
+ *   updated counts every PATCH; moved is the part of them that only changed _row_no
  */
 async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batchSize, syncedAt, signal, warnings, log, enrich, writeName, force, oldTypes }) {
-    const stats = { total: 0, inserted: 0, updated: 0, deleted: 0, unchanged: 0, failed: 0, failures: [], batches: 0, writeMs: 0, loadMs: 0, duplicateKeys: 0, provisional: 0 };
+    const stats = { total: 0, inserted: 0, updated: 0, moved: 0, deleted: 0, unchanged: 0, failed: 0, failures: [], batches: 0, writeMs: 0, loadMs: 0, duplicateKeys: 0, provisional: 0 };
     const base = `/api/collections/${collection}/records`;
     const t0 = Date.now();
 
@@ -186,8 +187,16 @@ async function writeRows({ pb, collection, columns, primaryKey, spoolFile, batch
             if (nulls) typed.push(nulls);
             const hash = sha1(stableStringify(typed));
             const hashNum = RowIndex.hashNum(hash);
-            if (!isNew && !force && index.hash[slot] === hashNum && index.row[slot] === rowNo) {
-                stats.unchanged++;
+            if (!isNew && !force && index.hash[slot] === hashNum) {
+                if (index.row[slot] === rowNo) {
+                    stats.unchanged++;
+                    continue;
+                }
+                // Same values, new position (a row above it was added or removed): move it only. A
+                // re-uploaded sheet shifts every row, and sending just these two fields is far cheaper.
+                stats.moved++;
+                queue.push({ kind: 'updated', req: { method: 'PATCH', url: `${base}/${id}?fields=id`, body: { _row_no: rowNo, _synced_at: syncedAtStr } } });
+                if (queue.length >= batchSize) await flush();
                 continue;
             }
             record._row_no = rowNo;
