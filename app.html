@@ -2635,7 +2635,13 @@
 
       function go(k, replace) {
         if (!MODS[k]) k = 'home';
+        // Picking a report from the phone drawer or search: that overlay owns a history entry. Reuse it for the
+        // new report (replaceState) instead of popping it with history.back(), which runs after our pushState
+        // and undid it (the hash went back to the old report and the next Back left the app).
+        var overlay = !!shellOverlay;
+        shellOverlay = '';
         if (MODS[k].gid === 'admin' && !replace && openAdmin(adminTab(MODS[k]))) {
+          if (overlay) { shellPopSkip++; try { history.back(); } catch (e) { shellPopSkip--; } }
           if (isSmall()) drawer(false);
           hideFly();
           return;
@@ -2649,7 +2655,8 @@
           remember(k);
         }
         var h = '#' + k;
-        if (location.hash !== h) history[replace ? 'replaceState' : 'pushState'](null, '', h);
+        if (location.hash !== h) history[replace || overlay ? 'replaceState' : 'pushState'](null, '', h);
+        else if (overlay && !replace) { shellPopSkip++; try { history.back(); } catch (e) { shellPopSkip--; } }
       }
 
       function fromHash() {
@@ -3037,10 +3044,10 @@
       function palRun(i, newTab) {
         var it = palItems[i];
         if (!it) return;
-        if (!newTab && !it.a && shellOverlay === 'pal') shellOverlay = '';
-        pal.close();
-        if (it.a) return runAction(it.a, it);
-        if (newTab) openTab(it); else go(it.k);
+        // Navigate first, while the search overlay still owns its history entry: go() reuses that entry. Closing
+        // first would pop it with history.back(), which lands after go()'s pushState and undoes it.
+        if (it.a) runAction(it.a, it); else if (newTab) openTab(it); else go(it.k);
+        if (pal.open) pal.close();
       }
       function runAction(a, it) {
         if (a === 'ask') { window.openPage('assistant.html?q=' + encodeURIComponent(it.q)); return; }
@@ -3108,8 +3115,9 @@
           if (!b) return;
           try { if (navigator.vibrate) navigator.vibrate(6); } catch (er) { }
           var act = b.getAttribute('data-bn');
-          if (act === 'home') { if (pal.open) { shellOverlay = ''; pal.close(); } go('home'); }
-          else if (act === 'ask') { if (pal.open) { shellOverlay = ''; pal.close(); } go('ask'); }
+          // go() first: it reuses the open search's history entry (see go); then close the search.
+          if (act === 'home') { go('home'); if (pal.open) pal.close(); }
+          else if (act === 'ask') { go('ask'); if (pal.open) pal.close(); }
           else if (act === 'search') { if (pal.open && palMode === 'search') pal.close(); else palOpen('search'); }
           else if (act === 'favs') { if (pal.open && palMode === 'favs') pal.close(); else palOpen('favs'); }
           else if (act === 'more') { if (pal.open) pal.close(); drawer(!root.classList.contains('drawer')); }
