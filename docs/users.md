@@ -31,7 +31,7 @@ All three are base collections with every API rule `null`: only the app reads an
 | `role` | select `admin` \| `editor` \| `viewer` | `editor` is for the data editor; in the report pages it behaves like `viewer` |
 | `status` | select `pending` \| `active` \| `disabled` \| `rejected` | Only `active` can sign in |
 | `scope_level` | select `zone` \| `region` \| `division` \| `ccc` | Empty while pending. Admins are always `zone` |
-| `region`, `division` | text | Canonical names from `lib/offices.js` (`Malda`, `Chanchal`, …) |
+| `region`, `division` | text | Canonical names from `lib/offices.js` (`Malda`, `Uttar Dinajpur`, `Dakshin Dinajpur`; `Chanchal`, …). A region saved under its old name (`Raiganj`, `Balurghat`) is shown and scoped under the current one; saving the user again stores the current name |
 | `ccc_code` | text | 7-digit CCC code (`6612102` = Samsi), only at `ccc` level |
 | `modules` | json | Report keys from `app.html`'s NAV the user may open; `null` = every report. Ignored for admins |
 | `feature_flags` | json | The per-feature grants the pages already read, by snake_case name: `nsc_autho`, `dd_autho`, `ss_autho`, `dtr_autho`, `nsc_upload_autho`, `stock_upload_autho`, `stock_allot_autho`, `stock_cancel_autho`, `defective_upload_autho`, `disconnection_sync_autho`, `pending_mc_sync_autho`, `load_ext_sync_autho`, `unbilled_sync_autho`, `si_autho`, `si_divisions`, `sheets_autho`, plus `can_comment` (bool). Admins get every upload flag regardless |

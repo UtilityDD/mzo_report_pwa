@@ -65,7 +65,7 @@ Sheet links (sidebar **Important → Sheet links**) has its own rules: see [repo
 
 Canonical names in `mzo_scope.js` `HIERARCHY`:
 
-- Regions: **Malda**, **Raiganj**, **Balurghat**
+- Regions: **Malda**, **Uttar Dinajpur**, **Dakshin Dinajpur** (named after their districts; the app used to call the last two the Raiganj and Balurghat regions)
 - Divisions: Malda, Chanchal, Gazole, Raiganj, Islampur, Balurghat, Buniadpur. Treat **Div** / **Div.** / **Division** as the same office; UI shows the name without that suffix.
 
 Office codes match `/66[123]\d{4}/` (e.g. `6611108`, `C366111080`). If a dataset’s office columns are missing from `REGION_KEYS` / `DIV_KEYS` / `CCC_KEYS` / `CODE_KEYS`, extend those lists. Names and codes resolve through `lib/offices.js` (see **Offices**); do not add a page-level alias table.
@@ -79,14 +79,15 @@ Office codes match `/66[123]\d{4}/` (e.g. `6611108`, `C366111080`). If a dataset
 | Level | Offices | Code |
 |---|---|---|
 | Zone | Malda Zone | `6600000` (plants `6600`, `7201`) |
-| Region (3) | Malda, Raiganj, Balurghat | `66R0000` (`6610000`…) |
+| Region (3) | Malda, Uttar Dinajpur, Dakshin Dinajpur | `66R0000` (`6610000`…) |
 | Division (7) | Malda, Chanchal, Gazole · Raiganj, Islampur · Balurghat, Buniadpur | `66RD000`, prefix `66RD` |
 | CCC (41) | listed in `CCCS` with their division | `66RD1CC` (`6611101` = Manikchak) |
 
 **Codes it reads:** `6611101`, `6611101.0`, ` 6611101 `; SAP cost centres `C3` + code + `0` (`C366111050` = Mothabari); 8-digit padded codes (`66211010` = Itahar); codes inside names (`SAMSI CCC-6612102`, `BALURGHAT CCC (6631101)`); division prefixes (`6611`) and old SAP plants (`3342` Malda, `3343` Chanchal, `3432` Raiganj, `3433` and `3461` Balurghat, `3434` Islampur, `3462` Buniadpur); division offices `66RD000` and their other units `66RD0xx`/`66RD3xx` (stores, sub-stations); old cost centres `C333…`/`C334…` through `data/costcenter.json` (`MzoOffices.addCostCentres(list)` in the browser); the known mistyped codes `66111609` and `66131101`.
 
 **Names it reads** (case, spaces, dots, `CCC`, `Customer Care Center/Centre`, `(D)`, `Division`/`Divisioin`/`Div`, `Region`, `(O&M)` and a trailing code are ignored):
-- Regions by district: Malda / Maldah / `MALDAH ` → Malda; Uttar Dinajpur / U. Dinajpur / U/Dinajpur / Dinajpur Uttar / Raigunj → Raiganj; Dakshin Dinajpur / Dakhsin / D. Dinajpur / Dinajpur Dakshin → Balurghat; LGD district codes 316 / 311 / 310.
+- Regions by district: Malda / Maldah / `MALDAH ` → Malda; Uttar Dinajpur / U. Dinajpur / U/Dinajpur / Dinajpur Uttar / Raiganj / Raigunj / `Raiganj (D) Region` / `Raiganj (R)` → Uttar Dinajpur; Dakshin Dinajpur / Dakhsin / D. Dinajpur / D/Dinajpur / Dinajpur Dakshin / Balurghat / `Balurghat Region` → Dakshin Dinajpur; region office codes `66R0000` and LGD district codes 316 / 311 / 310.
+- **Region names are canonical in one place.** `MzoOffices.canonRegion(value)` (and `MzoScope.canonRegion`, `UI.regionName` in pages) turns any region spelling or old name into `Malda`, `Uttar Dinajpur` or `Dakshin Dinajpur` ('' when it is not a region); `REGION_NAMES` is the list and order; `regionNames(name)` adds the legacy names (`Raiganj`, `Balurghat`) for matching data written before the rename. Use them only where a region is meant: **Raiganj and Balurghat are still division and CCC names**, and `parseDivision` / `parseCccName` keep them. A login scoped to an old name (`region_code` "Raiganj" or "Balurghat Region") sees exactly its region; the banner shows the current name. Records saved with an old name (PocketBase `app_users.region`, Supabase `portal_users.region_code`) are read alias-aware and were left as they are; re-saving the user in Admin → Users stores the current name.
 - Divisions: Raigunj and Uttar Dinajpur (D) Division → Raiganj; Dakshin Dinajpur (D) Division → Balurghat; Gazol / Gajol → Gazole. **North Malda** and **South Malda** are the two old Malda divisions; each covers parts of two current divisions, so a row with only that name keeps its region and takes the division from its CCC.
 - CCCs: Mathurapur = Manikchak; Mokdampur = Mokdumpur; Baisnabnagar = Baishnabnagar; H.C. Pur = Harishchandrapur; Gazol / Gajol = Gazole; Pandua-I = Pandua; Bamangola = Bamongola; Kaliaganj = Kaliyaganj; Karandeghi = Karandighi; Goalpokhar = Goalpokher; Kumargunj = Kumarganj; Kushmandi / Kushmundi = Kusmandi; Golapgang = Golapganj; Sujpur = Sujapur; `Pa` = Pandua inside Gazole division.
 - Statewide sheets (WRIDD, accidents, PM Surya Ghar) also hold other zones' offices; those are recognised as outside the zone, not as unknown MZO offices.

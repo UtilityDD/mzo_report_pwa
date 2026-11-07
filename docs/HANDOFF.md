@@ -322,7 +322,7 @@ New pages also go into `isNetworkFirstPath` in `sw.js`; a new folder needs a sta
 | Term | Meaning |
 |---|---|
 | WBSEDCL | West Bengal State Electricity Distribution Company Ltd |
-| MZO | Malda Zone (Office): the zone this app serves; regions Malda, Raiganj, Balurghat |
+| MZO | Malda Zone (Office): the zone this app serves; regions Malda, Uttar Dinajpur, Dakshin Dinajpur (formerly called Raiganj and Balurghat regions; those names are still divisions and CCCs) |
 | CE | Chief Engineer level, i.e. the whole zone |
 | Region / Division / CCC | the office hierarchy below the zone (3 regions, 7 divisions, 41 CCCs) |
 | CCC | Customer Care Centre, the local office that serves consumers; codes `66RD1CC` |
