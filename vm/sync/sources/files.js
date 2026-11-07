@@ -1,7 +1,10 @@
 'use strict';
 // Data files in the repo that the app reads: data/costcenter.json (served to the browser) and
-// data/structure.csv (estimate structures, server-only). They change only with a deploy, so the
-// version is the sha1 of the file and an unchanged file costs one small read.
+// data/structure.csv (estimate structures, server-only). The version is the sha1 of the file, so an
+// unchanged file costs one small read.
+// Structures edited on the VM (Admin > Structure) are kept in the server's data folder, outside the
+// releases, as <MZO_FILES_DIR>/structure.csv; once that copy exists it is the one read here (the app
+// reads it first too), so a deploy no longer brings back the repo's copy.
 
 const fs = require('fs');
 const path = require('path');
@@ -17,8 +20,18 @@ async function streamText(stream) {
     return Buffer.concat(chunks).toString('utf8'); // small repo file
 }
 
+/** The file to read: the server data folder's copy of an editable file when there is one, else the repo's. */
+function resolve(file) {
+    const dir = process.env.MZO_FILES_DIR;
+    if (dir && file === 'data/structure.csv') {
+        const own = path.join(dir, 'structure.csv');
+        if (fs.existsSync(own)) return own;
+    }
+    return path.join(REPO, file);
+}
+
 function fileVersion(file) {
-    return async () => 'sha1:' + sha1(fs.readFileSync(path.join(REPO, file)));
+    return async () => 'sha1:' + sha1(fs.readFileSync(resolve(file)));
 }
 
 async function sources() {
@@ -58,16 +71,16 @@ async function sources() {
             sourceUrl: GITHUB + 'data/structure.csv',
             schedule: 'daily',
             primaryKey: ['id'],
-            notes: 'Repo file (server-only); admin.html edits it locally, production changes only with a deploy.',
+            notes: 'Repo file (server-only); edits made in Admin on the VM are kept in the server data folder (MZO_FILES_DIR/structure.csv) and win over the repo copy.',
             dataHubKeys: [],
             urls: [],
             sensitive: false,
             version: fileVersion('data/structure.csv'),
             async raw() {
-                return { contentType: 'text/csv', stream: fs.createReadStream(path.join(REPO, 'data/structure.csv')) };
+                return { contentType: 'text/csv', stream: fs.createReadStream(resolve('data/structure.csv')) };
             },
             async *rows(ctx) {
-                const input = ctx && ctx.input ? ctx.input : fs.createReadStream(path.join(REPO, 'data/structure.csv'));
+                const input = ctx && ctx.input ? ctx.input : fs.createReadStream(resolve('data/structure.csv'));
                 const parser = input.pipe(parse({ bom: true, relax_column_count: true }));
                 for await (const record of parser) yield record;
             }
@@ -75,4 +88,4 @@ async function sources() {
     ];
 }
 
-module.exports = { sources };
+module.exports = { sources, resolve };
