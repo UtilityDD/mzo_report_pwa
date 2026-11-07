@@ -12,7 +12,7 @@
         if (async) s.async = true;
         document.head.appendChild(s);
     }
-    loadScript('__mzoAppUpdateScript', '/mzo_app_update.js?v=88', true);
+    loadScript('__mzoAppUpdateScript', '/mzo_app_update.js?v=89', true);
 
     function clearSession() {
         localStorage.removeItem('mzo_authenticated');

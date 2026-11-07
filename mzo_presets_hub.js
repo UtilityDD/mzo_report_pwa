@@ -21,7 +21,7 @@
     if (!window.__mzoAppUpdateScript) {
         window.__mzoAppUpdateScript = true;
         var update = document.createElement('script');
-        update.src = '/mzo_app_update.js?v=88';
+        update.src = '/mzo_app_update.js?v=89';
         update.async = true;
         document.head.appendChild(update);
     }

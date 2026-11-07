@@ -10,8 +10,9 @@
   var PREV_KEY = 'mzo_theme_prev';
   var root = document.documentElement;
 
+  // Nothing saved yet means 'system' (as in the shell and on login), not dark.
   function norm(v) {
-    if (v === 'system') {
+    if (v === 'system' || v == null || v === '') {
       try {
         if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
         return 'light';
