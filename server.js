@@ -1093,6 +1093,10 @@ app.get('/api/data/view/:name', viewRoute);
 
 // --- Estimate structures (admin.html) ---
 const STRUCTURE_FILE = path.join(__dirname, 'data', 'structure.csv'); // literal path: Vercel bundles it with the function
+// Admin edits go to the data folder (MZO_FILES_DIR on the VM, outside the release, so a deploy keeps them);
+// reads prefer that copy and fall back to the one in the repo. Locally both are data/structure.csv.
+const STRUCTURE_EDIT_FILE = path.join(DATA_DIR, 'structure.csv');
+function structureReadFile_() { try { if (fs.statSync(STRUCTURE_EDIT_FILE).size > 0) return STRUCTURE_EDIT_FILE; } catch (_) { /* no edited copy */ } return STRUCTURE_FILE; }
 const STRUCTURE_COLUMNS = ['id', 'name', 'description', 'voltage', 'materials', 'labour'];
 
 function parseStructuresCsv_(text) {
@@ -1111,14 +1115,14 @@ function parseStructuresCsv_(text) {
 
 app.get('/api/structures', (req, res) => {
     try {
-        res.json(parseStructuresCsv_(fs.readFileSync(STRUCTURE_FILE, 'utf-8')));
+        res.json(parseStructuresCsv_(fs.readFileSync(structureReadFile_(), 'utf-8')));
     } catch (error) {
         console.error('Error reading structure file:', error.message);
         res.status(500).json({ message: 'Error reading structure data.', details: error.message });
     }
 });
 
-// Writes data/structure.csv (works locally; the Vercel filesystem is read-only).
+// Writes the data folder's structure.csv (MZO_FILES_DIR on the VM; the Vercel filesystem is read-only).
 app.post('/api/structures/update', requireAdmin, (req, res) => {
     const structures = req.body;
     if (!Array.isArray(structures)) {
@@ -1129,10 +1133,11 @@ app.post('/api/structures/update', requireAdmin, (req, res) => {
             .concat(structures.map((s) => STRUCTURE_COLUMNS.map((k) => (k === 'id' ? s.id : `"${String(s[k] == null ? '' : s[k]).replace(/"/g, '""')}"`)).join(',')))
             .join('\n');
         // Temp file + rename: a reader never sees half a file.
-        const tmp = `${STRUCTURE_FILE}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+        fs.mkdirSync(path.dirname(STRUCTURE_EDIT_FILE), { recursive: true });
+        const tmp = `${STRUCTURE_EDIT_FILE}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
         try {
             fs.writeFileSync(tmp, csv, 'utf-8');
-            fs.renameSync(tmp, STRUCTURE_FILE);
+            fs.renameSync(tmp, STRUCTURE_EDIT_FILE);
         } catch (e) {
             try { fs.unlinkSync(tmp); } catch (_) { /* never written */ }
             throw e;
