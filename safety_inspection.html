@@ -142,6 +142,7 @@
           <button type="button" data-g="Inspection ID" aria-pressed="false">By inspection</button>
         </div>
         <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
+        <button type="button" class="ui-btn" id="syncBtn" hidden title="Sync safety data directly with VM"><svg class="ui-i"><use href="#ui-sync"/></svg>Sync Data</button>
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
     </header>
@@ -209,6 +210,70 @@
       </div>
     </div>
   </main>
+
+  <!-- Sync Drawer for Admin -->
+  <div class="ui-drawer" id="syncDrawer" hidden>
+    <section role="dialog" aria-modal="true" aria-labelledby="syncDrawerTitle" style="max-width: 540px;">
+      <header>
+        <div>
+          <h3 id="syncDrawerTitle">Sync Safety Inspection Data</h3>
+          <p id="syncDrawerSub">Update VM database directly</p>
+        </div>
+        <button type="button" class="ui-btn icon ghost" id="syncCloseBtn" aria-label="Close"><svg class="ui-i"><use href="#ui-x"/></svg></button>
+      </header>
+      <div class="ui-drawer-x" style="padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+        <!-- Status Banner -->
+        <div id="syncStatusBanner" style="padding: 12px 14px; border-radius: 8px; background: var(--mzo-surface-2); border: 1px solid var(--mzo-border); font-size: 13px;">
+          <div style="font-weight: 600; color: var(--mzo-text); margin-bottom: 4px;">Current VM Snapshot:</div>
+          <div id="syncMetaInfo" style="color: var(--mzo-muted); font-size: 12px;">Loading VM status…</div>
+        </div>
+
+        <!-- Method 1: Upload Downloaded File -->
+        <div style="border: 1px solid var(--mzo-border); border-radius: 10px; padding: 14px; background: var(--mzo-surface);">
+          <div style="font-size: 13px; font-weight: 600; color: var(--mzo-text); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+            <svg class="ui-i sm"><use href="#ui-download"/></svg> Method 1: Upload Downloaded Excel Report
+          </div>
+          <p style="font-size: 12px; color: var(--mzo-muted); margin: 0 0 12px;">
+            Download the report from <code>safetyinsp.wbsedcl.in</code> and drop the <code>.xlsx</code> file here:
+          </p>
+          <div id="dropZone" style="border: 2px dashed var(--mzo-border); border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s;">
+            <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display: none;" />
+            <div style="font-size: 13px; font-weight: 500; color: var(--mzo-text); margin-bottom: 4px;" id="dropLabel">
+              Drop Excel report here, or <span style="color: var(--mzo-accent); text-decoration: underline;">click to browse</span>
+            </div>
+            <div style="font-size: 11px; color: var(--mzo-muted);" id="dropSub">Supports .xlsx, .xls, .csv</div>
+          </div>
+          <div style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 8px;">
+            <button type="button" class="ui-btn primary sm" id="uploadBtn" disabled><svg class="ui-i sm"><use href="#ui-sync"/></svg> Upload to VM</button>
+          </div>
+          <div id="uploadFeedback" style="margin-top: 10px; font-size: 12.5px; display: none;"></div>
+        </div>
+
+        <!-- Method 2: Chrome Bookmarklet -->
+        <div style="border: 1px solid var(--mzo-border); border-radius: 10px; padding: 14px; background: var(--mzo-surface);">
+          <div style="font-size: 13px; font-weight: 600; color: var(--mzo-text); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+            <span style="color: #f59e0b;">⚡</span> Method 2: 1-Click Chrome Bookmarklet
+          </div>
+          <p style="font-size: 12px; color: var(--mzo-muted); margin: 0 0 10px;">
+            Install this bookmark button to sync directly while viewing the report on <code>safetyinsp.wbsedcl.in</code>:
+          </p>
+          <div style="padding: 10px; background: var(--mzo-surface-2); border-radius: 8px; border: 1px dashed var(--mzo-border); text-align: center; margin-bottom: 10px;">
+            <a href="#" id="bookmarkletLink" class="ui-btn primary sm" draggable="true" title="Drag this button to your Bookmarks Bar" style="cursor: grab; display: inline-flex; align-items: center; gap: 6px; text-decoration: none;">
+              ⚡ Sync Safety to VM
+            </a>
+            <div style="font-size: 11px; color: var(--mzo-muted); margin-top: 6px;">
+              &uarr; <b>Drag this button</b> up to your browser Bookmarks Bar (press <code>Ctrl+Shift+B</code> if bar is hidden).
+            </div>
+          </div>
+          <ol style="margin: 0; padding-left: 20px; font-size: 11.5px; color: var(--mzo-muted); line-height: 1.5;">
+            <li>Log into <code>safetyinsp.wbsedcl.in</code> and open the report page.</li>
+            <li>Click <b>⚡ Sync Safety to VM</b> in your Chrome bookmarks bar.</li>
+            <li>Select the downloaded report; it sends it straight to your VM!</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+  </div>
 
   <script>
   document.addEventListener('DOMContentLoaded', function () {
@@ -1338,6 +1403,175 @@
       });
       UI.exportCsv('safety-inspection-' + tab + '.csv', cols, lastTable.rows);
     });
+
+    // Admin Sync & Bookmarklet Setup
+    var currentMeta = null;
+    var selectedFile = null;
+
+    function updateSyncMetaUI(meta) {
+      if (!meta) return;
+      var infoEl = $('syncMetaInfo');
+      if (!infoEl) return;
+      if (meta.totalRows != null) {
+        infoEl.innerHTML = '<b>' + Number(meta.totalRows || 0).toLocaleString('en-IN') + '</b> total records (' +
+          '<b>' + Number(meta.mzoRows || 0).toLocaleString('en-IN') + '</b> Malda Zone)' +
+          (meta.lastSync ? '<br>Last synced: ' + new Date(meta.lastSync).toLocaleString('en-IN') : '') +
+          (meta.updatedBy ? ' by ' + UI.esc(meta.updatedBy) : '');
+      } else {
+        infoEl.textContent = 'No local snapshot yet on VM (using Google Sheet fallback).';
+      }
+
+      // Generate bookmarklet code with the current origin and admin token
+      var origin = window.location.origin;
+      var token = meta.token || '';
+      var bmScript = "javascript:(function(){" +
+        "var u='" + origin + "/api/safety/upload',t='" + token + "';" +
+        "var box=document.getElementById('mzo-sync-box');" +
+        "if(!box){" +
+        "box=document.createElement('div');box.id='mzo-sync-box';" +
+        "box.style.cssText='position:fixed;top:20px;right:20px;z-index:999999;background:#1e293b;color:#fff;padding:16px 20px;border-radius:10px;box-shadow:0 10px 25px rgba(0,0,0,0.5);font-family:sans-serif;font-size:13px;max-width:380px;border:2px solid #3b82f6;';" +
+        "document.body.appendChild(box);" +
+        "}" +
+        "function msg(h,m,c){box.innerHTML='<div style=\"font-weight:600;font-size:14px;color:'+(c||'#60a5fa')+';margin-bottom:6px;\">'+h+'</div><div style=\"font-size:12px;color:#cbd5e1;line-height:1.4;\">'+m+'</div>';}" +
+        "function send(f){" +
+        "msg('⚡ Uploading to VM...','Sending '+f.name+' ('+(f.size/1024/1024).toFixed(1)+' MB)...');" +
+        "var fd=new FormData();fd.append('file',f);" +
+        "fetch(u,{method:'POST',headers:{'Authorization':'Bearer '+t},body:fd})" +
+        ".then(function(r){return r.json();})" +
+        ".then(function(res){" +
+        "if(res.status==='success'){" +
+        "box.style.borderColor='#10b981';" +
+        "msg('✔ Synced to VM!',res.message+'<br><br><a href=\"" + origin + "/safety_inspection.html\" target=\"_blank\" style=\"color:#38bdf8;text-decoration:underline;font-weight:600;\">Open MZO Safety Page &rarr;</a>','#34d399');" +
+        "}else{" +
+        "box.style.borderColor='#ef4444';" +
+        "msg('✖ Upload Failed',res.message||'Server error','#f87171');" +
+        "}" +
+        "}).catch(function(err){box.style.borderColor='#ef4444';msg('✖ Error',err.message,'#f87171');});" +
+        "}" +
+        "msg('⚡ MZO Safety Sync','Select the downloaded Excel report (.xlsx) to send directly to VM:');" +
+        "var inp=document.createElement('input');inp.type='file';inp.accept='.xlsx,.xls,.csv';" +
+        "inp.style.cssText='margin-top:10px;display:block;width:100%;font-size:12px;color:#94a3b8;';" +
+        "inp.onchange=function(e){if(e.target.files&&e.target.files[0])send(e.target.files[0]);};" +
+        "box.appendChild(inp);" +
+        "})();";
+
+      var bmLink = $('bookmarkletLink');
+      if (bmLink) {
+        bmLink.setAttribute('href', bmScript);
+      }
+    }
+
+    fetch('/api/safety/meta', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (m) {
+        if (!m) return;
+        currentMeta = m;
+        if (m.canSync || m.isAdmin) {
+          $('syncBtn').hidden = false;
+        }
+        updateSyncMetaUI(m);
+      }).catch(function () {});
+
+    // Sync Drawer Toggle
+    var syncDrawer = $('syncDrawer');
+    if ($('syncBtn')) {
+      $('syncBtn').addEventListener('click', function () {
+        syncDrawer.hidden = false;
+      });
+    }
+    if ($('syncCloseBtn')) {
+      $('syncCloseBtn').addEventListener('click', function () {
+        syncDrawer.hidden = true;
+      });
+    }
+    syncDrawer.addEventListener('click', function (e) {
+      if (e.target === syncDrawer) syncDrawer.hidden = true;
+    });
+
+    // File Drag and Drop / Selection
+    var dropZone = $('dropZone');
+    var fileInput = $('fileInput');
+    var uploadBtn = $('uploadBtn');
+    var dropLabel = $('dropLabel');
+    var dropSub = $('dropSub');
+    var feedback = $('uploadFeedback');
+
+    if (dropZone) {
+      dropZone.addEventListener('click', function () { fileInput.click(); });
+      dropZone.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        dropZone.style.borderColor = 'var(--mzo-accent)';
+        dropZone.style.background = 'var(--mzo-hover)';
+      });
+      dropZone.addEventListener('dragleave', function () {
+        dropZone.style.borderColor = 'var(--mzo-border)';
+        dropZone.style.background = 'var(--mzo-surface)';
+      });
+      dropZone.addEventListener('drop', function (e) {
+        e.preventDefault();
+        dropZone.style.borderColor = 'var(--mzo-border)';
+        dropZone.style.background = 'var(--mzo-surface)';
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          handleFileSelect(e.dataTransfer.files[0]);
+        }
+      });
+    }
+    if (fileInput) {
+      fileInput.addEventListener('change', function (e) {
+        if (e.target.files && e.target.files[0]) {
+          handleFileSelect(e.target.files[0]);
+        }
+      });
+    }
+
+    function handleFileSelect(file) {
+      selectedFile = file;
+      dropLabel.textContent = file.name;
+      dropSub.textContent = (file.size / 1024 / 1024).toFixed(2) + ' MB';
+      uploadBtn.disabled = false;
+      feedback.style.display = 'none';
+    }
+
+    if (uploadBtn) {
+      uploadBtn.addEventListener('click', function () {
+        if (!selectedFile) return;
+        uploadBtn.disabled = true;
+        uploadBtn.classList.add('spin');
+        feedback.style.display = 'block';
+        feedback.style.color = 'var(--mzo-muted)';
+        feedback.textContent = 'Uploading and processing on VM… Please wait.';
+
+        var fd = new FormData();
+        fd.append('file', selectedFile);
+
+        fetch('/api/safety/upload', {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: fd
+        }).then(function (r) { return r.json(); })
+        .then(function (data) {
+          uploadBtn.classList.remove('spin');
+          if (data.status === 'success') {
+            feedback.style.color = 'var(--mzo-c3)';
+            feedback.textContent = '✔ ' + data.message;
+            if (data.meta) updateSyncMetaUI(data.meta);
+            setTimeout(function () {
+              syncDrawer.hidden = true;
+              MzoRows.reload('safety_inspection');
+            }, 1200);
+          } else {
+            uploadBtn.disabled = false;
+            feedback.style.color = 'var(--mzo-bad)';
+            feedback.textContent = '✖ ' + (data.message || 'Upload failed');
+          }
+        }).catch(function (err) {
+          uploadBtn.classList.remove('spin');
+          uploadBtn.disabled = false;
+          feedback.style.color = 'var(--mzo-bad)';
+          feedback.textContent = '✖ ' + err.message;
+        });
+      });
+    }
 
     // Refresh & Initial Load
     MzoRows.refresh('refreshBtn', 'safety_inspection', function (t) {
