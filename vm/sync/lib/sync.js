@@ -12,6 +12,7 @@ const officeEnrich = require('./office_enrich'); // dq-offices: canonical _regio
 const { makeSourceFetch } = require('./http');
 const { parsePbDate } = require('./schedule');
 const { removeSnapshot } = require('./snapshot');
+const holdback = require('./holdback'); // a new copy critically worse than the served one is held (docs/data-quality.md)
 const { stableStringify, pbDate, fmtMs, log, errMessage, SkipError } = require('./util');
 const fs = require('fs');
 const path = require('path');
@@ -94,6 +95,9 @@ async function syncSource(src, env) {
         message = summary.message;
         summary.ms = Date.now() - t0;
         if (dryRun || !registry) return summary;
+        if ((status === 'ok' || status === 'unchanged') && snapshotDir) {
+            try { holdback.clear(snapshotDir, key); } catch (err) { log(`[${key}] could not update ${holdback.FILE}: ${errMessage(err)}`); }
+        }
         const now = new Date();
         Object.assign(reg, meta, {
             last_status: status,
@@ -188,6 +192,16 @@ async function syncSource(src, env) {
             throw new Error(`source returned no rows (had ${ds.row_count}); kept the previous copy`);
         }
         if (!registryColumns.length && sp.rows > 0) throw new Error('source has rows but no columns');
+        // Hold-back: a copy with far fewer rows or a lost header (a sheet read mid-upload) is not published;
+        // the snapshot and rows stay as they are and the next run reads the source again (status error).
+        if (snapshotDir) {
+            const hb = holdback.decide({ dir: snapshotDir, key, ds, rows: sp.rows, columns: columns.map((c) => c.name), hash: sp.hash, force, optOut: src.holdBack === false });
+            if (hb.accepted) { ctx.log(hb.accepted); warnings.push(hb.accepted); }
+            if (hb.hold) {
+                ctx.log('HELD ' + hb.message);
+                throw new Error(hb.message);
+            }
+        }
 
         // The snapshot goes live before the database work: the app's copy does not wait on it.
         if (sp.snapshot) {
