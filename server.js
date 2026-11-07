@@ -1190,7 +1190,7 @@ function pendingEmailFrom_(req) {
     }
 }
 
-const ROOT_ADMIN_EMAILS = ['smartlinemanapp@gmail.com'];
+const ROOT_ADMIN_EMAILS = ['smartlinemanapp@gmail.com', 'dipnkr.das@gmail.com'];
 const googleAuth = require('./lib/google_auth');
 
 function googleClientId_() {
@@ -1506,6 +1506,11 @@ app.get('/api/session-check', async (req, res) => {
         const key = String(req.user.Username).trim().toLowerCase();
         const fresh = users.find((u) => u.Username && String(u.Username).trim().toLowerCase() === key);
         if (fresh) {
+            if (ROOT_ADMIN_EMAILS.includes(String(fresh.email || '').trim().toLowerCase())) {
+                fresh.role = 'admin';
+                fresh.user_status = 'active';
+                fresh.office_level = 'CE';
+            }
             return res.status(200).json({ status: 'success', profile: portalUserForClient(fresh) });
         }
     } catch (err) {

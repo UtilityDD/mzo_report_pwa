@@ -69,7 +69,7 @@
     }
     .login-header { display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 28px; }
     .login-app-icon {
-      width: 100%; max-width: 290px; height: auto;
+      width: 100%; max-width: 240px; height: auto;
       background: none; border: none; box-shadow: none;
       display: flex; align-items: center; justify-content: center;
       padding: 0;
@@ -211,8 +211,8 @@
   <div class="login-container" id="loginCard">
     <div class="login-header">
       <div class="login-app-icon" aria-hidden="true">
-        <img class="login-logo-light" src="/icons/disha-logo-light.svg?v=299" alt="DISHA" width="340" height="84" />
-        <img class="login-logo-dark" src="/icons/disha-logo-dark.svg?v=299" alt="DISHA" width="340" height="84" />
+        <img class="login-logo-light" src="/icons/disha-logo-light.png?v=301" alt="DISHA" width="560" height="185" />
+        <img class="login-logo-dark" src="/icons/disha-logo-dark.png?v=301" alt="DISHA" width="560" height="188" />
       </div>
     </div>
 
@@ -267,8 +267,8 @@
           <circle class="auth-ring-spin" cx="38" cy="38" r="35.5" />
         </svg>
         <div class="auth-orb-core" id="authOrbCore">
-          <img class="login-logo-light" src="/icons/disha-rail-light.svg?v=299" alt="DISHA" width="48" height="48" />
-          <img class="login-logo-dark" src="/icons/disha-rail-dark.svg?v=299" alt="DISHA" width="48" height="48" />
+          <img class="login-logo-light" src="/icons/disha-rail-light.png?v=302" alt="DISHA" width="48" height="48" />
+          <img class="login-logo-dark" src="/icons/disha-rail-dark.png?v=302" alt="DISHA" width="48" height="48" />
         </div>
         <span class="auth-check-badge" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
@@ -456,6 +456,7 @@
         const data = await response.json();
 
         if (response.ok && data.status === 'success') {
+          sessionStorage.removeItem('mzo_pending_email');
           localStorage.setItem('mzo_authenticated', 'true');
           localStorage.setItem('mzo_user_profile', JSON.stringify(data.profile));
           document.getElementById('loginInstallBtn')?.classList.add('hidden');
@@ -544,14 +545,35 @@
       }
     };
 
+    let authConfigLoaded = false;
+    let authConfigPromise = null;
+
+    function loadAuthConfig() {
+      if (authConfigLoaded && authConfig.googleClientId) {
+        return Promise.resolve(authConfig);
+      }
+      if (!authConfigPromise) {
+        authConfigPromise = fetch('/api/auth/config')
+          .then(r => r.json())
+          .then(cfg => {
+            if (cfg && typeof cfg === 'object') authConfig = cfg;
+            authConfigLoaded = true;
+            window.initGoogleIdentityServices();
+            return authConfig;
+          })
+          .catch(() => {
+            authConfigLoaded = true;
+            return authConfig;
+          })
+          .finally(() => {
+            authConfigPromise = null;
+          });
+      }
+      return authConfigPromise;
+    }
+
     // Load auth config on startup
-    fetch('/api/auth/config')
-      .then(r => r.json())
-      .then(cfg => {
-        authConfig = cfg;
-        window.initGoogleIdentityServices();
-      })
-      .catch(() => {});
+    loadAuthConfig();
 
     // Periodic check to ensure GIS mounts once script is cached
     window.addEventListener('load', () => {
@@ -559,12 +581,12 @@
       setTimeout(() => window.initGoogleIdentityServices(), 1200);
     });
 
-    function triggerGoogleSignIn() {
-      if (errorMsg) errorMsg.textContent = '';
+    function openGoogleSignInPrompt() {
+      window.initGoogleIdentityServices();
       if (googleTokenClient) {
         try {
           googleTokenClient.requestAccessToken({ prompt: 'select_account' });
-          return;
+          return true;
         } catch (err) {
           console.warn('[Google Auth] requestAccessToken error:', err);
         }
@@ -575,7 +597,26 @@
             errorMsg.textContent = 'Google sign-in did not open. Please allow pop-ups for this site and try again.';
           }
         });
-      } else if (errorMsg) {
+        return true;
+      }
+      return false;
+    }
+
+    async function triggerGoogleSignIn() {
+      if (errorMsg) errorMsg.textContent = '';
+      if (openGoogleSignInPrompt()) return;
+
+      await loadAuthConfig();
+      if (openGoogleSignInPrompt()) return;
+
+      if (!authConfig.googleClientId) {
+        if (errorMsg) {
+          errorMsg.textContent = 'Google Sign-In is not configured on this server (missing GOOGLE_CLIENT_ID).';
+        }
+        return;
+      }
+
+      if (!window.google?.accounts && errorMsg) {
         errorMsg.textContent = 'Google Identity Services is still loading. Please try again in a moment.';
       }
     }
