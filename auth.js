@@ -13,7 +13,6 @@
         document.head.appendChild(s);
     }
     loadScript('__mzoAppUpdateScript', '/mzo_app_update.js?v=88', true);
-    if (!window.__mzoRetiredNotice) loadScript('__mzoRetiredNoticeScript', '/mzo_origin_redirect.js', false);
 
     function clearSession() {
         localStorage.removeItem('mzo_authenticated');

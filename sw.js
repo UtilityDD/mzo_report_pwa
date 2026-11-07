@@ -29,18 +29,14 @@ const PRECACHE_ASSETS = [
   'wridd.html',
   'weekly.html',
   'manifest.json',
-  'manifest-legacy.json',
   'mzo_pwa_icons.js',
   'icons/disha-logo-light.svg',
   'icons/disha-logo-dark.svg',
   'icons/disha-rail-light.svg',
   'icons/disha-rail-dark.svg',
-  'icons/disha-logo-light.webp',
-  'icons/disha-logo-dark.webp',
   'icons/icon-192-v2.png',
   'icons/icon-512-v2.png',
   'icons/icon-192-dark.png',
-  'icons/icon-512-dark.png',
   'icons/diya-cropped.svg',
   'auth.js',
   'mzo_present.js'
@@ -137,7 +133,7 @@ const NETWORK_FIRST = new Set([
   '/stock/upload.html', '/stock/index.html', '/stock/script.js', '/stock/allotment.js',
   '/stock/allotment_view.js', '/stock/style.css', '/capex_all.html', '/advance_onm.html', '/cmo.html', '/accident/accident.html', '/safety_inspection.html', '/dtr/index.html', '/dtr/load.html', '/executive_briefing.html', '/mzo_data_hub.js', '/mzo_theme.js',
   '/mzo_theme.css', '/mzo_ui.js', '/mzo_esc.js', '/mzo_presets_hub.js', '/mzo_scope.js',
-  '/mzo_origin_redirect.js', '/mzo_pwa_icons.js', '/manifest.json', '/manifest-legacy.json',
+  '/mzo_pwa_icons.js', '/manifest.json',
   '/icons/icon-192-v2.png', '/icons/icon-512-v2.png', '/mzo_app_update.js', '/mzo_present.js',
   '/version.json', '/sw.js', '/mzo_rows.js', '/lib/uniform.js', '/lib/offices.js', '/lib/rating.js', '/lib/rating_metrics.js'
 ]);
