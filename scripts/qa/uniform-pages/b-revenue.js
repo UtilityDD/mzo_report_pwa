@@ -53,7 +53,7 @@ module.exports = {
       await h.clickAll('#metric button', 'metric');
       await h.selectAll('dateFilter', 8);
       await h.selectAll('regionFilter');
-      await h.pick('regionFilter', 'Raiganj');
+      await h.pick('regionFilter', 'Uttar Dinajpur');
       await h.selectAll('divisionFilter');
     },
     deep: []
