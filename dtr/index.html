@@ -175,8 +175,6 @@
         <div class="ui-side-sec">
           <div class="ui-side-sec-title">Quick filters</div>
           <div class="ui-check-group">
-            <label class="ui-check-label"><input type="checkbox" id="chkAgri" /><span>Agriculture (AG)</span><small id="cntAgri"></small></label>
-            <label class="ui-check-label"><input type="checkbox" id="chkInd" /><span>Industrial (IND)</span><small id="cntInd"></small></label>
             <label class="ui-check-label"><input type="checkbox" id="chkLarge" /><span>100 kVA &amp; above</span><small id="cntLarge"></small></label>
             <label class="ui-check-label"><input type="checkbox" id="chkMedium" /><span>63 kVA standard</span><small id="cntMedium"></small></label>
             <label class="ui-check-label"><input type="checkbox" id="chkSmall" /><span>25 kVA &amp; below</span><small id="cntSmall"></small></label>
@@ -268,8 +266,6 @@
       fdr: '',
       capa: '',
       cat: '',
-      chkAgri: false,
-      chkInd: false,
       chkLarge: false,
       chkMedium: false,
       chkSmall: false,
@@ -285,10 +281,22 @@
       return (str == null ? '' : String(str)).trim();
     }
 
+    // The sheet's CAT column is the area category (as on feeders): R rural, U urban, M mixed. Codes not
+    // listed here show as written.
+    var CAT_NAME = { R: 'Rural', U: 'Urban', M: 'Mixed' };
+    function catLabel(c) { return CAT_NAME[c] ? CAT_NAME[c] + ' (' + c + ')' : c || 'Not set'; }
+    // Categories in these rows, most DTRs first: [[code, count]] ('' = not set).
+    function catCounts(rows) {
+      var m = {};
+      rows.forEach(function (r) { m[r.cat] = (m[r.cat] || 0) + 1; });
+      return Object.keys(m).map(function (c) { return [c, m[c]]; }).sort(function (a, b) { return b[1] - a[1] || a[0].localeCompare(b[0]); });
+    }
+
     function fmtCapa(kva) {
       if (kva == null || isNaN(kva)) return '0 kVA';
       if (kva >= 1000) {
-        return (kva / 1000).toFixed(2) + ' MVA';
+        var mva = (kva / 1000).toFixed(2).split('.'); // toFixed keeps the old rounding; UI.n adds Indian grouping
+        return UI.n(+mva[0]) + '.' + mva[1] + ' MVA';
       }
       return UI.n(Math.round(kva)) + ' kVA';
     }
@@ -317,7 +325,7 @@
           dtrCode: clean(d.dtr_code),
           location: clean(d.loc_name),
           capa: capaVal,
-          cat: clean(d.cat) || 'ND',
+          cat: UI.blank(d.cat) ? '' : clean(d.cat),
           fdrName: clean(d.fdr_name),
           fdrCode: clean(d.fdr_code),
           ssName: clean(d.ss_name),
@@ -375,7 +383,7 @@
 
       var cats = {};
       all.forEach(function (r) { if (r.cat) cats[r.cat] = 1; });
-      UI.fill('catFilter', Object.keys(cats).sort(), 'All categories');
+      UI.fill('catFilter', Object.keys(cats).sort().map(function (c) { return { value: c, label: catLabel(c) }; }), 'All categories');
 
       SELECTS.forEach(function (id) { UI.mark($(id)); });
     }
@@ -392,8 +400,6 @@
         if (v('catFilter') && r.cat !== v('catFilter')) return false;
 
         if (skip !== 'checkboxes') {
-          if (f.chkAgri && r.cat !== 'AG') return false;
-          if (f.chkInd && r.cat !== 'IND') return false;
           if (f.chkLarge && r.capa < 100) return false;
           if (f.chkMedium && r.capa !== 63) return false;
           if (f.chkSmall && r.capa > 25) return false;
@@ -425,7 +431,7 @@
       var cats = {};
       bCat.forEach(function (r) { if (r.cat) cats[r.cat] = (cats[r.cat] || 0) + 1; });
       var catItems = Object.keys(cats).sort(function (a, b) { return cats[b] - cats[a]; }).map(function (c) {
-        return { value: c, label: c, count: cats[c] };
+        return { value: c, label: catLabel(c), count: cats[c] };
       });
       UI.facet($('fCat'), catItems, f.facetCat, function (val) {
         f.facetCat = val;
@@ -448,7 +454,7 @@
       var b = filtered();
 
       var nOn = (f.q ? 1 : 0) +
-        (f.chkAgri ? 1 : 0) + (f.chkInd ? 1 : 0) + (f.chkLarge ? 1 : 0) + (f.chkMedium ? 1 : 0) + (f.chkSmall ? 1 : 0) +
+        (f.chkLarge ? 1 : 0) + (f.chkMedium ? 1 : 0) + (f.chkSmall ? 1 : 0) +
         (f.facetCapa ? 1 : 0) + (f.facetCat ? 1 : 0) + (f.facetDivn ? 1 : 0) + (f.kpi ? 1 : 0);
       SELECTS.forEach(function (id) { if ($(id).value) nOn++; });
 
@@ -459,8 +465,6 @@
       });
 
       var bChk = filtered('checkboxes');
-      $('cntAgri').textContent = UI.n(bChk.filter(function (r) { return r.cat === 'AG'; }).length);
-      $('cntInd').textContent = UI.n(bChk.filter(function (r) { return r.cat === 'IND'; }).length);
       $('cntLarge').textContent = UI.n(bChk.filter(function (r) { return r.capa >= 100; }).length);
       $('cntMedium').textContent = UI.n(bChk.filter(function (r) { return r.capa === 63; }).length);
       $('cntSmall').textContent = UI.n(bChk.filter(function (r) { return r.capa <= 25; }).length);
@@ -556,13 +560,7 @@
         currentActiveFilters.push({ label: 'Capacity', value: $('capaFilter').value + ' kVA', clear: function () { $('capaFilter').value = ''; fillFilters(); } });
       }
       if ($('catFilter').value) {
-        currentActiveFilters.push({ label: 'Category', value: $('catFilter').value, clear: function () { $('catFilter').value = ''; fillFilters(); } });
-      }
-      if (f.chkAgri) {
-        currentActiveFilters.push({ label: 'Quick', value: 'Agriculture only', clear: function () { f.chkAgri = false; $('chkAgri').checked = false; } });
-      }
-      if (f.chkInd) {
-        currentActiveFilters.push({ label: 'Quick', value: 'Industrial only', clear: function () { f.chkInd = false; $('chkInd').checked = false; } });
+        currentActiveFilters.push({ label: 'Category', value: catLabel($('catFilter').value), clear: function () { $('catFilter').value = ''; fillFilters(); } });
       }
       if (f.chkLarge) {
         currentActiveFilters.push({ label: 'Quick', value: '≥ 100 kVA', clear: function () { f.chkLarge = false; $('chkLarge').checked = false; } });
@@ -660,8 +658,7 @@
       b.forEach(function (r) { capaMap[r.capa] = (capaMap[r.capa] || 0) + 1; });
       var sortedCapas = Object.entries(capaMap).map(function (e) { return [Number(e[0]), e[1]]; }).sort(function (a, b) { return a[0] - b[0]; });
 
-      var catMap = {};
-      b.forEach(function (r) { catMap[r.cat] = (catMap[r.cat] || 0) + 1; });
+      var catList = catCounts(b);
 
       var ssMap = {};
       b.forEach(function (r) {
@@ -691,19 +688,17 @@
         '<div class="dtr-card-title">Capacity Sizing Brackets <span class="ui-dot c2"></span></div>' +
         '<div class="dtr-metric-row"><span class="dtr-metric-label">Large (≥ 100 kVA)</span><span class="dtr-metric-val">' + UI.n(largeCount) + ' (' + UI.pct(largeCount, total) + ')</span></div>' +
         '<div class="dtr-metric-row"><span class="dtr-metric-label">Standard (63 kVA)</span><span class="dtr-metric-val">' + UI.n(medCount) + ' (' + UI.pct(medCount, total) + ')</span></div>' +
-        '<div class="dtr-metric-row"><span class="dtr-metric-label">Small / Rural (≤ 25 kVA)</span><span class="dtr-metric-val">' + UI.n(smallCount) + ' (' + UI.pct(smallCount, total) + ')</span></div>' +
+        '<div class="dtr-metric-row"><span class="dtr-metric-label">Small (≤ 25 kVA)</span><span class="dtr-metric-val">' + UI.n(smallCount) + ' (' + UI.pct(smallCount, total) + ')</span></div>' +
         '<div class="dtr-metric-row"><span class="dtr-metric-label">Most common rating</span><span class="dtr-metric-val">' + (sortedCapas.slice().sort(function (a, b) { return b[1] - a[1]; })[0] ? sortedCapas.slice().sort(function (a, b) { return b[1] - a[1]; })[0][0] + ' kVA' : '—') + '</span></div>' +
         '<div class="dtr-metric-row"><span class="dtr-metric-label">Largest rating</span><span class="dtr-metric-val">' + (sortedCapas[sortedCapas.length - 1] ? sortedCapas[sortedCapas.length - 1][0] + ' kVA' : '—') + '</span></div>' +
         '</div>';
 
-      // Card 3: Consumer Categories
+      // Card 3: area categories, as the sheet codes them
       html += '<div class="dtr-card">' +
-        '<div class="dtr-card-title">Load Category Mix <span class="ui-dot c4"></span></div>' +
-        '<div class="dtr-metric-row"><span class="dtr-metric-label">Non-Domestic / Mixed</span><span class="dtr-metric-val">' + UI.n(catMap.ND || 0) + ' (' + UI.pct(catMap.ND || 0, total) + ')</span></div>' +
-        '<div class="dtr-metric-row"><span class="dtr-metric-label">Agriculture (AG)</span><span class="dtr-metric-val">' + UI.n(catMap.AG || 0) + ' (' + UI.pct(catMap.AG || 0, total) + ')</span></div>' +
-        '<div class="dtr-metric-row"><span class="dtr-metric-label">Industrial (IND)</span><span class="dtr-metric-val">' + UI.n(catMap.IND || 0) + ' (' + UI.pct(catMap.IND || 0, total) + ')</span></div>' +
-        '<div class="dtr-metric-row"><span class="dtr-metric-label">Distribution Centre (DTC)</span><span class="dtr-metric-val">' + UI.n(catMap.DTC || 0) + '</span></div>' +
-        '<div class="dtr-metric-row"><span class="dtr-metric-label">Other categories</span><span class="dtr-metric-val">' + UI.n(total - (catMap.ND || 0) - (catMap.AG || 0) - (catMap.IND || 0) - (catMap.DTC || 0)) + '</span></div>' +
+        '<div class="dtr-card-title">Area Category Mix <span class="ui-dot c4"></span></div>' +
+        catList.map(function (c) {
+          return '<div class="dtr-metric-row"><span class="dtr-metric-label">' + UI.esc(catLabel(c[0])) + '</span><span class="dtr-metric-val">' + UI.n(c[1]) + ' (' + UI.pct(c[1], total) + ')</span></div>';
+        }).join('') +
         '</div>';
 
       html += '</div>';
@@ -758,10 +753,8 @@
           ['Large (≥100 kVA)', largeCount],
           ['Standard (63 kVA)', medCount],
           ['Small (≤25 kVA)', smallCount],
-          ['Substations Served', Object.keys(ssMap).length],
-          ['Agriculture (AG)', catMap.AG || 0],
-          ['Industrial (IND)', catMap.IND || 0]
-        ]
+          ['Substations Served', Object.keys(ssMap).length]
+        ].concat(catList.map(function (c) { return [catLabel(c[0]), c[1]]; }))
       };
     }
 
@@ -872,15 +865,26 @@
 
     function renderCapacityTable(b, el) {
       var groups = {}, totalCount = b.length, totalCapacity = b.reduce(function (s, r) { return s + r.capa; }, 0);
+      var cats = catCounts(b).slice(0, 4).map(function (c) { return c[0]; });
       b.forEach(function (r) {
         var k = r.capa || 0;
-        var g = groups[k] || (groups[k] = { capa: k, n: 0, cap: 0, ag: 0, ind: 0, nd: 0 });
+        var g = groups[k] || (groups[k] = { capa: k, n: 0, cap: 0, byCat: {} });
         g.n++;
         g.cap += k;
-        if (r.cat === 'AG') g.ag++;
-        else if (r.cat === 'IND') g.ind++;
-        else g.nd++;
+        g.byCat[r.cat] = (g.byCat[r.cat] || 0) + 1;
       });
+      var catCols = cats.map(function (c) {
+        return {
+          key: 'cat_' + c,
+          label: CAT_NAME[c] || catLabel(c),
+          num: true,
+          hideSm: true,
+          sortVal: function (g) { return g.byCat[c] || 0; },
+          fmt: function (_, g) { var v = g.byCat[c] || 0; return v ? UI.n(v) : '<span class="ui-muted">0</span>'; }
+        };
+      });
+      var foot = { capa: 'Total', n: totalCount, cap: totalCapacity, byCat: {} };
+      catCounts(b).forEach(function (c) { foot.byCat[c[0]] = c[1]; foot['cat_' + c[0]] = c[1]; });
 
       var list = Object.values(groups).sort(function (a, b) { return a.capa - b.capa; });
       var maxCount = Math.max.apply(null, list.map(function (g) { return g.n; }).concat([0]));
@@ -888,9 +892,9 @@
 
       lastTable = {
         title: 'Capacity rating breakdown',
-        cols: ['Rating (kVA)', 'DTR Count', 'Total Capacity (MVA)', '% Count Share', '% Capacity Share', 'Agri DTRs', 'Ind DTRs'],
+        cols: ['Rating (kVA)', 'DTR Count', 'Total Capacity (MVA)', '% Count Share', '% Capacity Share'].concat(cats.map(function (c) { return (CAT_NAME[c] || catLabel(c)) + ' DTRs'; })),
         rows: list.map(function (g) {
-          return [g.capa + ' kVA', g.n, fmtCapa(g.cap), UI.pct(g.n, totalCount), UI.pct(g.cap, totalCapacity), g.ag, g.ind];
+          return [g.capa + ' kVA', g.n, fmtCapa(g.cap), UI.pct(g.n, totalCount), UI.pct(g.cap, totalCapacity)].concat(cats.map(function (c) { return g.byCat[c] || 0; }));
         })
       };
 
@@ -902,7 +906,7 @@
           {
             key: 'capa',
             label: 'Rating',
-            fmt: function (v) { return '<span class="ui-strong">' + v + ' kVA</span>'; }
+            fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + (typeof v === 'number' ? ' kVA' : '') + '</span>'; }
           },
           {
             key: 'n',
@@ -920,28 +924,8 @@
               return '<span class="ui-strong">' + fmtCapa(v) + '</span>' + UI.bar(v, maxCap, UI.pct(v, totalCapacity), 2);
             }
           },
-          {
-            key: 'ag',
-            label: 'Agri (AG)',
-            num: true,
-            hideSm: true,
-            fmt: function (v) { return v ? UI.n(v) : '<span class="ui-muted">0</span>'; }
-          },
-          {
-            key: 'ind',
-            label: 'Ind (IND)',
-            num: true,
-            hideSm: true,
-            fmt: function (v) { return v ? UI.n(v) : '<span class="ui-muted">0</span>'; }
-          }
-        ],
-        foot: list.length > 1 ? {
-          capa: 'Total',
-          n: totalCount,
-          cap: totalCapacity,
-          ag: b.filter(function (r) { return r.cat === 'AG'; }).length,
-          ind: b.filter(function (r) { return r.cat === 'IND'; }).length
-        } : null,
+        ].concat(catCols),
+        foot: list.length > 1 ? foot : null,
         onRow: function (g) {
           f.capa = String(g.capa);
           $('capaFilter').value = String(g.capa);
@@ -960,7 +944,7 @@
             r.dtrCode,
             r.location,
             r.capa + ' kVA',
-            r.cat,
+            catLabel(r.cat),
             r.ccc,
             r.division,
             r.ssName,
@@ -991,7 +975,7 @@
             num: true,
             fmt: function (v, r) {
               return '<span class="ui-strong">' + v + ' kVA</span>' +
-                '<span class="sub">' + UI.esc(r.cat) + '</span>';
+                '<span class="sub">' + UI.esc(catLabel(r.cat)) + '</span>';
             }
           },
           {
@@ -1021,7 +1005,7 @@
         ['DTR Code', r.dtrCode || '—'],
         ['Location Name', r.location || '—'],
         ['Capacity Rating', r.capa + ' kVA'],
-        ['Consumer Category', r.cat || '—'],
+        ['Area category', r.cat ? catLabel(r.cat) : '—'],
         ['Substation Name', r.ssName || '—'],
         ['Substation Code', r.ssCode || '—'],
         ['11 kV Feeder Name', r.fdrName || '—'],
@@ -1063,8 +1047,6 @@
 
     function clearAll() {
       f.q = '';
-      f.chkAgri = false;
-      f.chkInd = false;
       f.chkLarge = false;
       f.chkMedium = false;
       f.chkSmall = false;
@@ -1073,8 +1055,6 @@
       f.facetDivn = '';
       f.kpi = '';
       $('q').value = '';
-      $('chkAgri').checked = false;
-      $('chkInd').checked = false;
       $('chkLarge').checked = false;
       $('chkMedium').checked = false;
       $('chkSmall').checked = false;
@@ -1107,7 +1087,7 @@
       });
     });
 
-    ['chkAgri', 'chkInd', 'chkLarge', 'chkMedium', 'chkSmall'].forEach(function (id) {
+    ['chkLarge', 'chkMedium', 'chkSmall'].forEach(function (id) {
       $(id).addEventListener('change', function () {
         f[id] = this.checked;
         render();
