@@ -12,7 +12,8 @@
 //
 // Google sends no ETag/Last-Modified for these URLs, so the change check is the sha1 of the
 // streamed body (done by the framework). NSC and Withheld have a cheap version: the first two
-// rows (they carry the TODAY report date), read through a gviz range query.
+// rows (they carry the TODAY report date), read through a gviz range query, plus the row count
+// (gviz `select count(A)`), so a copy cut short mid-upload is read at once, not up to 6 h later.
 //
 // Snapshots: raw() hands the framework the exact bytes, which become the snapshot the VM app
 // serves; rows() parses the same bytes from ctx.input, so each sheet is downloaded once.
@@ -51,13 +52,14 @@ function exportCsv(spreadsheetId, gid) {
     };
 }
 
-/** Link-shared spreadsheet through the gviz query endpoint (sheet name or gid; headers=0 keeps every row). */
-function gviz(spreadsheetId, { sheet, gid, headers, range } = {}) {
+/** Link-shared spreadsheet through the gviz query endpoint (sheet name or gid; headers=0 keeps every row; tq: a query). */
+function gviz(spreadsheetId, { sheet, gid, headers, range, tq } = {}) {
     let q = 'tqx=out:csv';
     if (headers !== undefined) q += `&headers=${headers}`;
     if (sheet) q += `&sheet=${encodeURIComponent(sheet)}`;
     if (gid !== undefined) q += `&gid=${gid}`;
     if (range) q += `&range=${range}`;
+    if (tq) q += `&tq=${encodeURIComponent(tq)}`;
     return {
         url: `${GS}${spreadsheetId}/gviz/tq?${q}`,
         format: 'csv',
@@ -67,7 +69,7 @@ function gviz(spreadsheetId, { sheet, gid, headers, range } = {}) {
 }
 
 // ---- Inventory -------------------------------------------------------------------------
-// group = sidebar group in app.html NAV. schedule: frequent (15 min) for small sheets clerks
+// group = sidebar group in app.html NAV. schedule: frequent (5 min) for small sheets clerks
 // edit during the day, hourly for mid-size ones, daily (after 02:00 IST) for multi-MB dumps.
 // cache = the DataHub key in mzo_data_hub.js, when the sheet is registered there.
 
@@ -104,6 +106,7 @@ const SHEETS = [
         pages: ['nsc.html', 'nsc/kpi.html', 'nsc/upload.html', 'performance_index.html', 'assistant.html', 'sheet_links.html'],
         src: gviz(NSC_ID, { sheet: 'nsc_working' }), schedule: 'frequent', primaryKey: ['APPL_NO'],
         peek: gviz(NSC_ID, { sheet: 'nsc_working', range: 'A1:AZ2' }).url, maxSkipHours: 6,
+        peekCount: gviz(NSC_ID, { sheet: 'nsc_working', tq: 'select count(A)' }).url,
         extraUrls: ['/api/nsc/dataset'],
         notes: 'The server fallback URL for /api/nsc/dataset (Google Sheet nsc_working, written by nsc/upload.html).' },
     { key: 'nsc_followups', label: 'NSC follow-ups', group: NSC,
@@ -113,6 +116,10 @@ const SHEETS = [
         pages: ['withheld.html', 'nsc/upload.html', 'sheet_links.html'],
         src: gviz(WITHHELD_ID, { sheet: 'Sheet1' }), schedule: 'frequent', primaryKey: ['APPL_NO'],
         peek: gviz(WITHHELD_ID, { sheet: 'Sheet1', range: 'A1:Z2' }).url, maxSkipHours: 6,
+        peekCount: gviz(WITHHELD_ID, { sheet: 'Sheet1', tq: 'select count(A)' }).url,
+        // About 67,000 rows through gviz: a re-upload that shifts every row rewrites them all, which takes
+        // the VM several minutes, so it gets more than a frequent source's 4 min.
+        timeoutMs: 10 * 60000,
         extraUrls: ['/api/withheld/dataset'],
         notes: 'The server fallback URL for /api/withheld/dataset.' },
     { key: 'historical_nsc', label: 'Historical NSC analysis', group: NSC, pages: ['historical_nsc.html'],
@@ -366,7 +373,19 @@ function sheetSource(def) {
             const res = await openCsv(ctx, def.peek);
             const text = await res.text();
             reportDate = reportDateFromPeek(text);
-            return text.trim() ? 'peek:' + sha1(text) : null;
+            if (!text.trim()) return null;
+            // The row count as well: a partial upload that keeps the header and the first row changes it.
+            // If the count cannot be read the version changes, so the sheet is read in full (the safe side).
+            let count = '';
+            if (def.peekCount) {
+                try {
+                    count = (await (await openCsv(ctx, def.peekCount)).text()).trim();
+                } catch (err) {
+                    if (err instanceof SkipError) throw err;
+                    count = 'unknown ' + Date.now();
+                }
+            }
+            return 'peek:' + sha1(count ? text + '\n' + count : text);
         };
     }
     return src;
