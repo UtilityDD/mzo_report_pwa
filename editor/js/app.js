@@ -139,11 +139,16 @@
       if (o.onClose) o.onClose();
       if (prevFocus && prevFocus.focus) try { prevFocus.focus(); } catch (e) {}
     }
-    function onKey(e) { if (e.key === 'Escape' && !o.noEsc) { e.stopPropagation(); close(); } }
+    var trap = w.UI && UI.trapFocus ? UI.trapFocus(dlg) : null;
+    function onKey(e) {
+      if (e.key === 'Escape' && !o.noEsc) { e.stopPropagation(); close(); return; }
+      if (trap) trap(e); // Tab stays inside the dialog
+    }
     closeBtn.addEventListener('click', close);
     wrap.addEventListener('mousedown', function (e) { if (e.target === wrap && !o.sticky) close(); });
     document.addEventListener('keydown', onKey, true);
     document.body.appendChild(wrap);
+    closeBtn.focus(); // callers move focus to their own first field after this
     return { el: dlg, body: body, foot: foot, close: close };
   }
   function confirmDlg(title, lines, okLabel, opts) {

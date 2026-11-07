@@ -6,7 +6,7 @@
  *   Filters  UI.fill(select, values, allLabel) / mark / uniq / offices(rows) / lockScope · UI.facet · UI.sidePanel · UI.drill
  *   Views    UI.table(el, cfg) · UI.bar(v, max, label, tone) · UI.hist(el, rows, { onClick, active, tone }) · UI.line(el, cfg)
  *   Colour   UI.color(tone): 1–6 → categorical --mzo-c1…c6 · 'ok' | 'warn' | 'bad' → status marks · 'accent' · 'muted'
- *   Misc     UI.exportCsv(name, columns, rows) · UI.toast · UI.debounce · UI.copy · UI.drawer · UI.icon
+ *   Misc     UI.exportCsv(name, columns, rows) · UI.toast · UI.debounce · UI.copy · UI.drawer · UI.trapFocus(box) · UI.icon
  */
 (function (w) {
   'use strict';
@@ -233,13 +233,13 @@
     var h = '<div class="ui-table-wrap"><table class="ui-table"><thead><tr>';
     cols.forEach(function (c) {
       var s = st.sort && st.sort.key === c.key ? (st.sort.dir === 'asc' ? 'ascending' : 'descending') : '';
-      h += '<th data-sort="' + c.key + '" class="' + (c.num ? 'num ' : '') + (c.hideSm ? 'hide-sm' : '') + '"' + (s ? ' aria-sort="' + s + '"' : '') + (c.width ? ' style="width:' + c.width + '"' : '') + '>' + esc(c.label) + '</th>';
+      h += '<th data-sort="' + c.key + '" tabindex="0" class="' + (c.num ? 'num ' : '') + (c.hideSm ? 'hide-sm' : '') + '"' + (s ? ' aria-sort="' + s + '"' : '') + (c.width ? ' style="width:' + c.width + '"' : '') + '>' + esc(c.label) + '</th>';
     });
     if (cfg.onRow) h += '<th class="chev" aria-hidden="true"></th>';
     h += '</tr></thead><tbody>';
     if (!view.length) h += '<tr><td colspan="' + (cols.length + (cfg.onRow ? 1 : 0)) + '"><div class="ui-empty">' + esc(cfg.empty || 'Nothing to show.') + '</div></td></tr>';
     view.forEach(function (r, i) {
-      h += '<tr' + (cfg.onRow ? ' class="click' + (cfg.selected && cfg.selected(r) ? ' sel' : '') + '" data-i="' + i + '"' : '') + '>';
+      h += '<tr' + (cfg.onRow ? ' class="click' + (cfg.selected && cfg.selected(r) ? ' sel' : '') + '" data-i="' + i + '" tabindex="0"' : '') + '>';
       cols.forEach(function (c) {
         var v = r[c.key];
         h += '<td class="' + (c.num ? 'num ' : '') + (c.cls || '') + (c.hideSm ? ' hide-sm' : '') + '">' + (c.fmt ? c.fmt(v, r) : esc(v == null || v === '' ? '—' : v)) + '</td>';
@@ -268,6 +268,14 @@
       if (e.target.closest('[data-more]')) { st.shown += st.limit; table(el, cfg); return; }
       var tr = e.target.closest('tr[data-i]');
       if (tr && cfg.onRow) cfg.onRow(view[+tr.getAttribute('data-i')], e);
+    };
+    // Keyboard: Enter or Space on a focused header sorts it, on a focused row opens it.
+    el.onkeydown = function (e) {
+      if ((e.key !== 'Enter' && e.key !== ' ') || !e.target.matches('th[data-sort], tr[data-i]')) return;
+      e.preventDefault();
+      var key = e.target.getAttribute('data-sort');
+      el.onclick({ target: e.target, metaKey: e.metaKey, ctrlKey: e.ctrlKey });
+      if (key) { var th = el.querySelector('th[data-sort="' + key + '"]'); if (th) th.focus(); }
     };
   }
 
@@ -553,16 +561,37 @@
     document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (e) {} ta.remove();
     return Promise.resolve();
   }
+  // Keyboard focus stays inside a dialog: returns a keydown handler that wraps Tab / Shift+Tab within `box`.
+  var FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+  function trapFocus(box) {
+    return function (e) {
+      if (e.key !== 'Tab') return;
+      var els = [].filter.call(box.querySelectorAll(FOCUSABLE), function (x) { return x.getClientRects().length; });
+      if (!els.length) { e.preventDefault(); return; }
+      var first = els[0], last = els[els.length - 1], cur = document.activeElement, inside = box.contains(cur);
+      if (e.shiftKey ? (cur === first || !inside) : (cur === last || !inside)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+    };
+  }
+
   // pairs: [[label, value]] (blank values are skipped); extraHtml goes under the list, actionsHtml in the header.
+  // Opening moves focus to Close and keeps it in the drawer; closing returns it to what had it before.
   function drawer(titleText, sub, pairs, extraHtml, actionsHtml) {
     var d = document.getElementById('ui-drawer');
     if (!d) {
       d = document.createElement('div'); d.id = 'ui-drawer'; d.className = 'ui-drawer'; d.hidden = true;
-      d.innerHTML = '<section role="dialog" aria-modal="true"><header><div><h3></h3><p></p></div><button type="button" class="ui-btn icon ghost" data-x aria-label="Close">' + icon('x') + '</button></header><dl class="ui-dl"></dl></section>';
+      d.innerHTML = '<section role="dialog" aria-modal="true" aria-labelledby="ui-drawer-t"><header><div><h3 id="ui-drawer-t"></h3><p></p></div><button type="button" class="ui-btn icon ghost" data-x aria-label="Close">' + icon('x') + '</button></header><dl class="ui-dl"></dl></section>';
       document.body.appendChild(d);
-      d.addEventListener('click', function (e) { if (e.target === d || e.target.closest('[data-x]')) d.hidden = true; });
-      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') d.hidden = true; });
+      var shut = function () {
+        if (d.hidden) return;
+        d.hidden = true;
+        var back = d.__back; d.__back = null;
+        if (back && back.focus && document.contains(back)) try { back.focus(); } catch (e) {}
+      };
+      d.addEventListener('click', function (e) { if (e.target === d || e.target.closest('[data-x]')) shut(); });
+      d.addEventListener('keydown', trapFocus(d.querySelector('section')));
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') shut(); });
     }
+    if (d.hidden) d.__back = document.activeElement;
     var act = d.querySelector('.ui-drawer-act');
     if (!act) { act = document.createElement('div'); act.className = 'ui-drawer-act'; d.querySelector('header').insertBefore(act, d.querySelector('[data-x]')); }
     act.innerHTML = actionsHtml || '';
@@ -572,7 +601,9 @@
     if (!extra) { extra = document.createElement('div'); extra.className = 'ui-drawer-x'; dl.parentNode.appendChild(extra); }
     dl.innerHTML = (pairs || []).filter(function (p) { return !blank(p[1]); }).map(function (p) { return '<dt>' + esc(p[0]) + '</dt><dd>' + esc(p[1]) + '</dd>'; }).join('');
     extra.innerHTML = extraHtml || '';
+    var wasHidden = d.hidden;
     d.hidden = false;
+    if (wasHidden) try { d.querySelector('[data-x]').focus({ preventScroll: true }); } catch (e) {}
     return d;
   }
 
@@ -615,6 +646,6 @@
     csv: csv, office: office, regionName: regionName, load: load, refresh: refresh,
     fill: fill, mark: mark, uniq: uniq, offices: offices, lockScope: lockScope,
     table: table, bar: bar, hist: hist, line: line, color: color, facet: facet, sidePanel: sidePanel, drill: drill,
-    exportCsv: exportCsv, toast: toast, debounce: debounce, copy: copy, drawer: drawer, icon: icon
+    exportCsv: exportCsv, toast: toast, debounce: debounce, copy: copy, drawer: drawer, trapFocus: trapFocus, icon: icon
   };
 })(window);
