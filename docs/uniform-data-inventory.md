@@ -59,7 +59,7 @@ Complexity: **S** one dataset, straight mapping · **M** several datasets, or cu
 | executive_briefing.html (home) | none in the page (server JSON from meta stats) | /api/executive/briefing | S | not converted (server) |
 | assistant.html (ask) | nsc_pending, load_extension, solar_connections, loss_report, loss_targets | DataHub `_peek`/`waitForDataset` | M | converted · final · 11e4a93 |
 | admin_users.html (6 tabs) | power_map_substations (one column) | Papa on /api/power-map/data | S | not converted |
-| admin.html | data/structure.csv via /api/structures, portal users | server JSON | S | not converted |
+| admin.html | data/structure.csv via /api/structures | server JSON | S | not converted |
 
 52 distinct pages (59 NAV entries: performance index and JJM are listed twice, Users/Sources/Activity/… are six tabs of admin_users.html). Converted: 41 (the 2 prototype pages, 36 in batches A–E, performance_index through the rating rebuild, the 2 of the final step). Not converted: 10, plus prt-oil later.
 
@@ -76,7 +76,7 @@ Complexity: **S** one dataset, straight mapping · **M** several datasets, or cu
 | media_news.html | no sheet data (server RSS JSON) |
 | executive_briefing.html | server JSON built from meta stats (`/api/executive/briefing`): a server-side job of its own, not a page conversion |
 | admin_users.html (6 tabs) | admin pages; one column of the Power Map CSV |
-| admin.html | admin page; server-parsed structure CSV and portal users |
+| admin.html | admin page; server-parsed structure CSV (users moved to Administration → Users) |
 | important_sheets.html | single cells, not rows; its cell reads were fixed in batch D (`4cac325`) |
 
 ## Batch plan (5 parallel conversions)
@@ -1441,25 +1441,24 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
   - `POST /api/admin/approve-correction`, `/api/admin/reject-correction`
   - client-side CSV downloads (logs, visitors)
 - **Quirks:**
-  - The Power map tab forms call `saveSubstation(event)` / `saveConnection(event)`, which are not defined on this page (only in power_map/map.html). Submitting them fails.
+  - The Power map tab forms (`saveSubstation` / `saveConnection`, since 2026-11-07) post the same requests as power_map/map.html: `/api/admin/append-sheet-row` and `/api/admin/add-connection`.
   - "Today" is the UTC date, so between 00:00 and 05:30 IST it is the previous day.
   - The admin gate reads the localStorage profile (`role !== 'admin'` redirects).
   - `sheetCopyUrl` is a near copy of sheet_links `sheetOpenUrl`; this one keeps the gid only via `#gid`.
 - **Complexity:** S for this refactor. Its only tabular read is one column (`Substation`) of `power_map_substations` via Papa.parse. The page itself is a very large legacy admin page with many writes, but those stay as they are.
 - **Uniform fields it would use:** `substation` (power_map_substations). Users, logs and corrections are server JSON and not applicable.
-- **Shared with:** no page-specific helper file. Code blocks: `EXTRA_SOURCES` / `sheetCopyUrl` ≈ sheet_links.html `extras` / `sheetOpenUrl`. power_map/map.html reads the same `/api/power-map/data` CSV and defines the missing `saveSubstation` / `saveConnection`. admin.html calls the same `/api/admin/users*` and `/api/admin/sync` endpoints.
+- **Shared with:** no page-specific helper file. Code blocks: `EXTRA_SOURCES` / `sheetCopyUrl` ≈ sheet_links.html `extras` / `sheetOpenUrl`. power_map/map.html reads the same `/api/power-map/data` CSV and posts the same add-substation / add-connection requests.
 
 ### admin.html  (NAV key: admin_structure)
-- **Status (2026-11-01):** not converted: admin page; server-parsed structure CSV and portal users.
+- **Status (2026-11-07):** not converted: admin page; server-parsed structure CSV. Its old free-text user editor was removed; a note links to Administration → Users.
 - **Kind:** legacy (669 lines; `html.ui` plus mzo_theme.css, no mzo_ui.js) · **Loads:** none besides `mzo_theme.js`
 - **Datasets:**
   - Estimate structures via `GET /api/structures` (server JSON). The server reads the repo file `data/structure.csv`, which is not in the mirror lists.
-  - `portal_users` via `GET /api/admin/users` (server JSON).
 - **Parser:** server JSON. The server parses `data/structure.csv` with `parseCsvLine_` (cells trimmed; rows whose cell count differs from the header are dropped; columns `id`, `name`, `description`, `voltage`, `materials`, `labour`). On the client, `materials` / `labour` are parsed from `"index:qty;index:qty"` with `split(';')` and `split(':')`, and `voltage` with `split('|')`.
-- **Raw columns read:** structures: `id`, `name`, `description`, `voltage`, `materials`, `labour`. Users: `Username`, `Name`, `role`, `ss-autho`, `dtr-autho`, `dd-autho`, `nsc-autho`, `nsc-upload-autho`, `si-autho`, `si-divisions`, `zone_code`, `region_code`, `division_code`, `ccc_code` (d).
+- **Raw columns read:** structures: `id`, `name`, `description`, `voltage`, `materials`, `labour`.
 - **Numbers:** materials and labour pairs use `parseInt(index,10)` and `parseFloat(qty)`, dropping NaN pairs.
 - **Dates:** none.
-- **Offices:** none. `division_code` / `ccc_code` are shown raw.
+- **Offices:** none.
 - **Row filters / dedupe / positional:** none beyond dropping invalid pairs.
 - **Aggregations:** none. It is an editor and a user table with text search.
 - **Deep links:** none.

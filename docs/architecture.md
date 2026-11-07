@@ -26,7 +26,7 @@ Unauthenticated HTML requests redirect to `/login.html`. Use a real portal user 
 | `app.html` | The app: sidebar (a drawer on phones), ⌘K search, report pages in keep-alive iframes. `/` and the old `/index.html` home redirect here (`server.js` and `vercel.json`). See **Workstation shell** in [design-system.md](design-system.md) |
 | `mzo_theme.css` / `mzo_theme.js` | Design system: tokens, UI kit (`ui-*`), legacy-page overlay, theme controller. See **Design system** |
 | `mzo_ui.js` | `window.UI` helpers for kit pages (CSV, formatting, offices, tables, charts, drawer) |
-| `admin_users.html` | Admin panel for portal users, sources, activity, visitors, Power Map, and corrections. Open a section with `?tab=users|sources|activity|visitors|powermap|corrections`. Each user row shows last use within 15 days (`GET /api/admin/logs?days=15`). The user form has **Sheet links** Yes/No for the **Sheet links** item in the sidebar. Structure editing stays on `admin.html`. |
+| `admin_users.html` | Admin panel for portal users, sources, activity, visitors, Power Map, and corrections. Open a section with `?tab=users|sources|activity|visitors|powermap|corrections`. Each user row shows last use within 15 days (`GET /api/admin/logs?days=15`). The user form has **Sheet links** Yes/No for the **Sheet links** item in the sidebar. Structure editing stays on `admin.html` (the Structure tab), which no longer has a user editor of its own. The window uses the UI kit (`<html class="ui">`, an `adminKit` style block mapping the older tabs onto the kit's tokens). |
 | `auth.js` | Client session check + logout |
 | `mzo_scope.js` | Login office scope (`window.MzoScope`) |
 | `mzo_data_hub.js` | Dataset registry + IndexedDB (`window.mzoDataHub`) |
