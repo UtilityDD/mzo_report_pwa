@@ -13,11 +13,14 @@
 # node_modules are shared per lock file in /opt/mzo/deps/<app|sync>-<hash> (npm ci runs only
 # for a new package.json + package-lock.json pair).
 #
-# New commit: unpack, link packages, switch the symlink, install changed systemd units, restart
-# the app, health-check it, and switch back on failure. After a good deploy: apply a changed
-# Caddyfile (after caddy validate), restart PocketBase when its migrations changed, start or restart
-# the stats sampler (vm/stats), refresh the pinned copy of this script, and prune old releases.
-# The result goes to /opt/mzo/state/deployed.json, served as /deploy.json.
+# New commit: unpack, link packages (a failure there is retried next round), switch the symlink,
+# install changed systemd units, restart PocketBase first when its unit or migrations changed
+# (migrations run at its start; pb_data is copied before), then restart the app and health-check
+# both: the app's pages and APIs, PocketBase's /api/health and one data read. On failure everything
+# switches back, PocketBase too (restored from the copy only if it cannot start on the old release
+# either). After a good deploy: apply a changed Caddyfile (after caddy validate), start or restart
+# the stats sampler (vm/stats), apply the journald settings, refresh the pinned copy of this script,
+# and prune old releases. The result goes to /opt/mzo/state/deployed.json, served as /deploy.json.
 #
 # Optional env (/etc/mzo/deploy.env or the command line):
 #   MZO_BRANCH=develop        branch to follow
@@ -41,8 +44,17 @@ UNIT_DIR=/etc/systemd/system
 CADDY=/usr/local/bin/caddy
 CADDYFILE=/etc/caddy/Caddyfile
 LOCK=/run/lock/mzo-deploy.lock
-HEALTH_URLS=(http://127.0.0.1:3000/login.html http://127.0.0.1:3000/app.html)
-PB_HEALTH=http://127.0.0.1:8090/api/health
+APP_URL=http://127.0.0.1:3000
+HEALTH_URLS=("$APP_URL/login.html" "$APP_URL/app.html" "$APP_URL/api/auth/config")
+PB_URL=http://127.0.0.1:8090
+PB_HEALTH=$PB_URL/api/health
+PB_UNIT=pocketbase.service
+PB_DATA=$MZO/pocketbase/pb_data
+PB_BACKUP=$BACKUP_DIR/pb_data.pre-deploy
+PB_ENV=/etc/mzo/pocketbase.env
+JOURNALD_DROPIN=/etc/systemd/journald.conf.d/mzo.conf
+JOURNAL_DIR=/var/log/journal
+PREPARE_TRIES=3
 PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin
 export PATH
 
@@ -54,6 +66,7 @@ TEST_FAIL=${MZO_DEPLOY_TEST_FAIL:-0}
 WARN=()
 PB_UNIT_CHANGED=0
 STATS_UNIT_CHANGED=0
+PB_RESTARTED=0
 
 log() {
   echo "$*"
@@ -107,7 +120,7 @@ write_record() {
 
 self_test() {
   local c
-  for c in curl jq tar gzip diff flock runuser systemctl systemd-analyze install cmp mktemp \
+  for c in curl jq tar gzip diff flock runuser systemctl systemd-analyze install cmp mktemp awk cp \
     logger sha256sum readlink "$CADDY"; do
     command -v "$c" >/dev/null 2>&1 || { echo "missing command: $c" >&2; return 1; }
   done
@@ -116,19 +129,71 @@ self_test() {
   echo ok
 }
 
-health() { # health [FORCE_FAIL]: two good rounds in a row within ~40 s
-  local i url='' code='' good=0
-  for i in $(seq 1 40); do
+http_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$1" 2>/dev/null; }
+
+pb_healthy() { [ "$(http_code "$PB_HEALTH")" = 200 ]; }
+
+wait_pb() { # up to ~60 s for PocketBase's /api/health after a restart
+  for _ in $(seq 1 30); do
+    systemctl is-active -q "$PB_UNIT" && pb_healthy && return 0
+    sleep 2
+  done
+  return 1
+}
+
+# pb_data_ok: one real read. With the superuser from $PB_ENV, a page of sys_datasets must come back;
+# without it, the collection must exist (200 or 403; 404 means the migrations did not run).
+pb_data_ok() {
+  local email='' pass='' token='' body code
+  if [ -r "$PB_ENV" ]; then
+    email=$(sed -n 's/^PB_SUPERUSER_EMAIL=//p' "$PB_ENV" | tail -n 1)
+    pass=$(sed -n 's/^PB_SUPERUSER_PASSWORD=//p' "$PB_ENV" | tail -n 1)
+  fi
+  if [ -n "$email" ] && [ -n "$pass" ]; then
+    token=$(jq -n --arg i "$email" --arg p "$pass" '{identity: $i, password: $p}' |
+      curl -fsS --max-time 10 -H 'Content-Type: application/json' --data-binary @- \
+        "$PB_URL/api/collections/_superusers/auth-with-password" 2>/dev/null | jq -r '.token // empty' 2>/dev/null)
+  fi
+  if [ -n "$token" ]; then
+    body=$(curl -fsS --max-time 10 -H "Authorization: $token" \
+      "$PB_URL/api/collections/sys_datasets/records?perPage=1&fields=id" 2>/dev/null) || return 1
+    jq -e '.items | type == "array"' >/dev/null 2>&1 <<<"$body"
+    return
+  fi
+  code=$(http_code "$PB_URL/api/collections/sys_datasets/records?perPage=1")
+  [ "$code" = 200 ] || [ "$code" = 403 ]
+}
+
+health() { # health [FORCE_FAIL]: three good rounds in a row (up for about 3 s) within ~45 s
+  local url code='' good=0 what=$APP_UNIT
+  for _ in $(seq 1 45); do
     code=''
+    what=$APP_UNIT
     if systemctl is-active -q "$APP_UNIT"; then
       for url in "${HEALTH_URLS[@]}"; do
-        code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$url" 2>/dev/null)
+        what=$url
+        code=$(http_code "$url")
         [ "$code" = 200 ] || break
       done
+      if [ "$code" = 200 ]; then
+        # The data API is mounted (401 without a session); 404, 5xx or no answer means it is broken.
+        what=$APP_URL/api/data/manifest
+        code=$(http_code "$what")
+        case "$code" in 200 | 204 | 401) code=200 ;; esac
+      fi
+      if [ "$code" = 200 ] && systemctl is-enabled -q "$PB_UNIT" 2>/dev/null; then
+        what=$PB_HEALTH
+        if ! pb_healthy; then
+          code=down
+        elif [ "$good" = 1 ] && ! pb_data_ok; then
+          what="PocketBase data read (sys_datasets)"
+          code=failed
+        fi
+      fi
     fi
     if [ "$code" = 200 ]; then
       good=$((good + 1))
-      if [ "$good" -ge 2 ]; then
+      if [ "$good" -ge 3 ]; then
         if [ "${1:-0}" = 1 ]; then
           log "health check passed, but MZO_DEPLOY_TEST_FAIL=1 reports it as failed (rollback drill)"
           return 1
@@ -140,7 +205,7 @@ health() { # health [FORCE_FAIL]: two good rounds in a row within ~40 s
     fi
     sleep 1
   done
-  log "health check failed: ${url:-$APP_UNIT} answered ${code:-nothing}"
+  log "health check failed: $what answered ${code:-nothing}"
   return 1
 }
 
@@ -251,21 +316,62 @@ apply_caddyfile() { # apply_caddyfile SHA
   fi
 }
 
-after_pocketbase() { # after_pocketbase FROM TO
-  local i
-  systemctl is-enabled -q pocketbase.service 2>/dev/null || return 0
-  if [ "$PB_UNIT_CHANGED" = 1 ] || changed "$1" "$2" vm/pocketbase/pb_migrations; then
-    log "restarting PocketBase (unit or migrations changed)"
-    systemctl restart pocketbase.service
-    for i in $(seq 1 30); do
-      curl -fs -o /dev/null --max-time 3 "$PB_HEALTH" && break
-      sleep 2
-    done
-    curl -fs -o /dev/null --max-time 3 "$PB_HEALTH" || { warn "PocketBase is not healthy after restart (journalctl -u pocketbase)"; return 0; }
+backup_pb() { # copy pb_data while PocketBase is stopped (a reflink copy where the filesystem has it)
+  local tmp=$PB_BACKUP.tmp
+  [ -d "$PB_DATA" ] || return 0
+  rm -rf "$tmp"
+  if cp -a --reflink=auto "$PB_DATA" "$tmp" 2>/dev/null || { rm -rf "$tmp"; cp -a "$PB_DATA" "$tmp"; }; then
+    rm -rf "$PB_BACKUP" && mv "$tmp" "$PB_BACKUP" && log "copied pb_data to $PB_BACKUP"
+  else
+    rm -rf "$tmp"
+    warn "could not copy pb_data before the new migrations"
   fi
-  # Accounts that need collections from the migrations (the portal admin) are created once they exist.
-  if [ ! -f /etc/mzo/portal-admin.txt ] && [ -f "$(rel "$2")/vm/deploy/pb-setup.sh" ]; then
-    bash "$(rel "$2")/vm/deploy/pb-setup.sh" --quiet || warn "pb-setup.sh failed (run it by hand: sudo bash $APP_LINK/vm/deploy/pb-setup.sh)"
+}
+
+restore_pb() { # put the pre-deploy copy of pb_data back (PocketBase must be stopped)
+  [ -d "$PB_BACKUP" ] || return 1
+  rm -rf "$PB_DATA.failed"
+  mv "$PB_DATA" "$PB_DATA.failed" || return 1
+  cp -a --reflink=auto "$PB_BACKUP" "$PB_DATA" 2>/dev/null || { rm -rf "$PB_DATA"; cp -a "$PB_BACKUP" "$PB_DATA"; }
+}
+
+# restart_pb FROM TO [backup]: restart PocketBase before the app when its unit or the migrations differ
+# between the two releases, so the new code never runs before its migrations. With "backup" and new
+# migrations, pb_data is copied first. Fails when PocketBase does not come back healthy.
+restart_pb() {
+  systemctl is-enabled -q "$PB_UNIT" 2>/dev/null || return 0
+  [ "$PB_UNIT_CHANGED" = 1 ] || changed "$1" "$2" vm/pocketbase/pb_migrations || return 0
+  PB_RESTARTED=1
+  if [ "${3:-}" = backup ] && changed "$1" "$2" vm/pocketbase/pb_migrations; then
+    log "stopping PocketBase to copy pb_data before the new migrations"
+    systemctl stop "$PB_UNIT"
+    backup_pb
+  fi
+  log "restarting PocketBase (unit or migrations changed)"
+  systemctl restart "$PB_UNIT"
+  wait_pb && return 0
+  log "PocketBase is not healthy after the restart (a failed migration? journalctl -u pocketbase)"
+  return 1
+}
+
+after_pocketbase() { # after_pocketbase TO: accounts that need collections from the migrations (portal admin)
+  systemctl is-enabled -q "$PB_UNIT" 2>/dev/null || return 0
+  if [ ! -f /etc/mzo/portal-admin.txt ] && [ -f "$(rel "$1")/vm/deploy/pb-setup.sh" ]; then
+    bash "$(rel "$1")/vm/deploy/pb-setup.sh" --quiet || warn "pb-setup.sh failed (run it by hand: sudo bash $APP_LINK/vm/deploy/pb-setup.sh)"
+  fi
+}
+
+apply_journald() { # apply_journald SHA: a persistent journal with a size cap (vm/deploy/journald.conf)
+  local src
+  src=$(rel "$1")/vm/deploy/journald.conf
+  [ -f "$src" ] || return 0
+  cmp -s "$src" "$JOURNALD_DROPIN" && [ -d "$JOURNAL_DIR" ] && return 0
+  install -D -m 644 "$src" "$JOURNALD_DROPIN" || { warn "could not install $JOURNALD_DROPIN"; return 0; }
+  install -d -m 2755 -g systemd-journal "$JOURNAL_DIR" 2>/dev/null || install -d -m 755 "$JOURNAL_DIR"
+  if systemctl restart systemd-journald && journalctl --flush >/dev/null 2>&1; then
+    log "journald: persistent journal settings applied ($JOURNALD_DROPIN)"
+  else
+    warn "journald did not restart cleanly with $JOURNALD_DROPIN (journalctl -u systemd-journald)"
   fi
 }
 
@@ -301,6 +407,8 @@ pin_self() { # refresh /opt/mzo/bin/deploy.sh from the release, only if it parse
 
 prune() { # keep the live and previous releases plus the newest few; drop unused package sets
   local keep=("$@") d n=0 name k used
+  # A running sync loads code lazily from the release it started in (rows.js, rating.js): prune later.
+  systemctl is-active -q mzo-sync.service 2>/dev/null && return 0
   for d in $(ls -1dt "$RELEASES"/*/ 2>/dev/null); do
     name=$(basename "$d")
     n=$((n + 1))
@@ -318,11 +426,45 @@ prune() { # keep the live and previous releases plus the newest few; drop unused
   done
 }
 
-start_release() { # start_release FROM TO: everything up to a running app on TO
+start_release() { # start_release FROM TO [backup]: everything up to a running app on TO
   prepare "$1" "$2" || return 1
   switch_to "$2" || return 1
   apply_units "$2" || return 1
+  restart_pb "$1" "$2" "${3:-}" || return 1
   systemctl restart "$APP_UNIT"
+}
+
+# back_to FAILED GOOD: run GOOD again after FAILED did not come up, PocketBase included, and check it.
+back_to() {
+  PB_UNIT_CHANGED=0
+  if start_release "$1" "$2"; then
+    health 0 && return 0
+  elif [ "$PB_RESTARTED" = 1 ] && [ -d "$PB_BACKUP" ] && ! pb_healthy; then
+    # PocketBase does not start on the old release either: put back the copy taken before the migrations.
+    log "PocketBase is not healthy on $(short "$2") either; restoring pb_data from $PB_BACKUP"
+    systemctl stop "$PB_UNIT"
+    if restore_pb; then
+      warn "pb_data was restored from the copy taken before the failed deploy (the broken one is in $PB_DATA.failed)"
+      systemctl restart "$PB_UNIT"
+      wait_pb && systemctl restart "$APP_UNIT" && health 0 && return 0
+    fi
+  fi
+  return 1
+}
+
+# prepared SHA: packages for a new release, before anything is switched. A failure (npm, network) is
+# tried again on the next rounds; only after PREPARE_TRIES failures in a row is the commit marked failed.
+prepared() {
+  local f=$STATE/prepare-failures n
+  if prepare '' "$1"; then
+    rm -f "$f"
+    return 0
+  fi
+  n=$(awk -v s="$1" '$1 == s { print $2 }' "$f" 2>/dev/null)
+  n=$((${n:-0} + 1))
+  printf '%s %s\n' "$1" "$n" >"$f"
+  [ "$n" -ge "$PREPARE_TRIES" ] && return 2
+  return 1
 }
 
 deploy() { # deploy CURRENT TARGET
@@ -344,11 +486,24 @@ deploy() { # deploy CURRENT TARGET
     write_record rolled_back "$cur" "$cur" "$target"
     return 1
   fi
+  prepared "$target"
+  rc=$?
+  if [ "$rc" = 1 ]; then
+    log "packages for $(short "$target") could not be installed; trying again next round"
+    if [ -n "$saved" ]; then printf '%s\n' "$saved" >"$RECORD.tmp" && mv -f "$RECORD.tmp" "$RECORD"; fi
+    return 0
+  fi
+  if [ "$rc" != 0 ]; then
+    warn "packages for $(short "$target") failed to install $PREPARE_TRIES times in a row (npm ci)"
+    write_record rolled_back "$cur" "$cur" "$target"
+    return 1
+  fi
 
-  if start_release "$cur" "$target" && health "$TEST_FAIL"; then
+  if start_release "$cur" "$target" backup && health "$TEST_FAIL"; then
     apply_caddyfile "$target"
-    after_pocketbase "$cur" "$target"
+    after_pocketbase "$target"
     after_stats "$cur" "$target"
+    apply_journald "$target"
     pin_self "$target"
     write_record ok "$target" "$previous"
     prune "$target" "$previous"
@@ -362,12 +517,12 @@ deploy() { # deploy CURRENT TARGET
     return 1
   fi
   log "deploy of $(short "$target") failed; rolling back to $(short "$cur")"
-  if start_release "$target" "$cur" && health 0; then
+  if back_to "$target" "$cur"; then
     write_record rolled_back "$cur" "$cur" "$target"
     log "rolled back to $(short "$cur"); $(short "$target") is skipped until a newer commit or --force"
   else
     write_record failed "$cur" "$cur" "$target"
-    log "ROLLBACK FAILED: the app is not healthy on $(short "$cur"); check journalctl -u $APP_UNIT"
+    log "ROLLBACK FAILED: $(short "$cur") is not healthy either; check journalctl -u $APP_UNIT -u $PB_UNIT"
   fi
   return 1
 }
@@ -385,7 +540,7 @@ rollback() { # manual: back to the previous release, and hold the current commit
     return 0
   fi
   log "the previous release is not healthy either; redeploying $(short "$cur")"
-  start_release "$prev" "$cur" && health 0 && write_record ok "$cur" "$prev"
+  back_to "$prev" "$cur" && write_record ok "$cur" "$prev"
   return 1
 }
 
@@ -428,4 +583,5 @@ main() {
   deploy "$cur" "$head"
 }
 
-main "$@"
+# Runs when executed (the timer, by hand, --self-test); vm/dev/test-deploy.sh sources it to test the functions.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then main "$@"; fi
