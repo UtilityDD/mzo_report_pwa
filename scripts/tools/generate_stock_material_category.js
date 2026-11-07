@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const XLSX = require('xlsx');
+// lib/csv.js: the server's CSV reader (the same header keys SheetJS's sheet_to_json gave).
+const { parseObjects } = require('../../lib/csv');
 
 const url =
   'https://docs.google.com/spreadsheets/d/1wDvPuAxNfdO9QzUaIUubg2JnkFM5ZleFNXQdi8s5uh0/export?format=csv&gid=696716331';
@@ -17,9 +18,7 @@ function normalizeCategory(v) {
   const res = await fetch(url);
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const text = await res.text();
-  const wb = XLSX.read(text, { type: 'string' });
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+  const rows = parseObjects(text);
 
   const map = {};
   let central = 0;
