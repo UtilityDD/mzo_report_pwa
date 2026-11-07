@@ -221,14 +221,18 @@
     var st = el.__ui;
     if (!st || st.colSig !== colSig) {
       st = el.__ui = { colSig: colSig, sort: cfg.sort || null, limit: lim, shown: lim, rowsRef: null, sortedKey: '', sorted: null };
-    } else {
+    } else if (!_appendFrom) {
+      // Not on the incremental append: resetPage would put st.shown back to the first page, so "Show more"
+      // and the scroll loader added nothing and the observer fired again forever.
       if (st.limit !== lim) { st.limit = lim; st.shown = lim; }
       else if (cfg.resetPage) st.shown = st.limit;
       if (st.sort && !cols.some(function (x) { return x.key === st.sort.key; })) st.sort = cfg.sort || null;
     }
     var sortKey = st.sort ? st.sort.key + ':' + st.sort.dir : '';
     var rows;
-    if (st.rowsRef === cfg.rows && st.sortedKey === sortKey && st.sorted) {
+    // The sorted copy is reused only by the incremental append (same rows, same sort). A full render always
+    // re-sorts, because a page may change its rows array in place between renders.
+    if (_appendFrom && st.rowsRef === cfg.rows && st.sortedKey === sortKey && st.sorted && st.sorted.length === cfg.rows.length) {
       rows = st.sorted;
     } else {
       rows = cfg.rows.slice();
@@ -237,7 +241,10 @@
         if (c) {
           var dir = st.sort.dir === 'asc' ? 1 : -1;
           var val = c.sortVal || function (r) { return r[c.key]; };
-          if (c.num) {
+          // Fast numeric path only when every value is a number or blank. Some num columns hold
+          // formatted strings ("9.5%", "1,234"); Number() of those is NaN, so they keep the generic compare.
+          var allNum = c.num && rows.every(function (r) { var v = val(r); return v == null || v === '' || typeof v === 'number'; });
+          if (allNum) {
             rows.sort(function (a, b) { return ((Number(val(a)) || 0) - (Number(val(b)) || 0)) * dir; });
           } else {
             rows.sort(function (a, b) {
@@ -277,7 +284,11 @@
       tb.insertAdjacentHTML('beforeend', addHtml);
       var oldFoot = el.querySelector('.ui-panel-f');
       var newFoot = footBarHtml();
-      if (oldFoot) {
+      var oldSpan = oldFoot && oldFoot.hasAttribute('data-more-wrap') && oldFoot.querySelector('span');
+      if (oldSpan && newFoot && newFoot.indexOf('data-more-wrap') >= 0) {
+        // Keep the same footer (and its "Show more" button) so a tap that lands mid-load still counts.
+        oldSpan.textContent = 'Showing ' + n(st.shown) + ' of ' + n(total);
+      } else if (oldFoot) {
         if (newFoot) oldFoot.outerHTML = newFoot; else oldFoot.remove();
       } else if (newFoot) {
         el.insertAdjacentHTML('beforeend', newFoot);
@@ -772,6 +783,16 @@
     scrimEl.classList.toggle('on', !!el);
     document.documentElement.classList.toggle('ui-sheet-on', !!el);
   }
+  // Rotating or widening past the phone breakpoint with a sheet open: wide screens have no sheet, so drop the
+  // scrim, the scroll lock and the Back entry (otherwise the page stays unscrollable behind an invisible lock).
+  function sheetsOff() {
+    if (phone()) return;
+    if (scrimEl) scrimEl.classList.remove('on');
+    scrimClose = null;
+    document.documentElement.classList.remove('ui-sheet-on');
+    if (backEntry) backDone();
+  }
+  if (phoneMq) { if (phoneMq.addEventListener) phoneMq.addEventListener('change', sheetsOff); else if (phoneMq.addListener) phoneMq.addListener(sheetsOff); }
 
   // Drag a sheet down by its handle or header; past 90px (or a quick flick) it closes.
   function dragToClose(box, handles, can, close) {
