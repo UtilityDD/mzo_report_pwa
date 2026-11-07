@@ -252,7 +252,8 @@ async function server() {
         eq(tokCookie.status, 401, 'token: not a session as the cookie');
         const tampered = token.slice(0, -2) + (token.slice(-2) === 'AA' ? 'BB' : 'AA');
         eq((await call('POST', '/api/safety/upload', { origin: ALLOWED, auth: 'Bearer ' + tampered, body: csvForm() })).status, 401, 'token: a tampered token is refused');
-        eq((await call('POST', '/api/safety/upload', { origin: ALLOWED, auth: 'Bearer ' + handToken(admin.payload, { exp: Date.now() - 1 }), body: csvForm() })).status, 401, 'token: an expired token is refused');
+        const expired = await call('POST', '/api/safety/upload', { origin: ALLOWED, auth: 'Bearer ' + handToken(admin.payload, { exp: Date.now() - 1 }), body: csvForm() });
+        ok(expired.status === 401 && /drag a fresh button/.test(expired.data.message) && expired.h('access-control-allow-origin') === ALLOWED, 'token: an expired token is refused, readable by the bookmarklet, with what to do');
         eq((await call('POST', '/api/safety/upload', { origin: ALLOWED, auth: 'Bearer ' + handToken(admin.payload, { scope: 'other' }), body: csvForm() })).status, 401, 'token: a token of another scope is refused');
         eq((await call('POST', '/api/safety/upload', { origin: ALLOWED, auth: 'Bearer ' + handToken(expiredAdmin.payload), body: csvForm() })).status, 401, 'token: ends with its session');
         const viewerTok = await call('POST', '/api/safety/upload', { origin: ALLOWED, auth: 'Bearer ' + handToken(viewer.payload), body: csvForm() });

@@ -1048,6 +1048,7 @@ function profileFromSessionPayload_(payload, req) {
 const SCOPED_TOKEN_KEY = crypto.createHmac('sha256', JWT_SECRET).update('mzo:scoped-upload-token:v1').digest();
 const SAFETY_UPLOAD_SCOPE = 'safety-upload';
 const SAFETY_UPLOAD_TOKEN_MS = Math.min(720, Math.max(1, Number(process.env.SAFETY_UPLOAD_TOKEN_MINUTES) || 15)) * 60 * 1000;
+const SAFETY_TOKEN_EXPIRED_MSG = 'This sync button has expired or is not valid. Open DISHA > Safety inspection > Sync Data and drag a fresh button to the bookmarks bar.';
 
 function scopedTokenFromHeader_(req) {
     const m = /^Bearer\s+(sut1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\s*$/.exec(String((req.headers && req.headers.authorization) || ''));
@@ -1113,6 +1114,10 @@ async function requireAuth(req, res, next) {
     }
     // An /api path is never a public asset, whatever it ends with (/api/data/file/x.json).
     if (PUBLIC_PATHS.has(pathName) || (!isApi && PUBLIC_ASSET.test(pathName))) return next();
+    // The bookmarklet with an expired or invalid upload token: say how to get a fresh one.
+    if (req.method === 'POST' && isSafetyUploadPath_(req.path) && scopedTokenFromHeader_(req)) {
+        return res.status(401).json({ status: 'error', message: SAFETY_TOKEN_EXPIRED_MSG });
+    }
     // API callers (CSV/JSON clients like Power Map) get 401, never an HTML redirect.
     if (isApi || req.xhr || String(req.headers.accept || '').includes('application/json')) {
         return res.status(401).json({ status: 'error', message: 'Unauthorized' });
@@ -5109,7 +5114,7 @@ let safetyUploadRunning = false;
 app.post('/api/safety/upload', (req, res) => {
     // From the safety app's site only with an upload token; a session is never accepted as a Bearer token here.
     if (!req.scopedUpload && /^Bearer\s/i.test(String(req.headers.authorization || ''))) {
-        return res.status(401).json({ status: 'error', message: 'This sync button has expired or is not valid. Open DISHA > Safety inspection > Sync Data and drag a fresh button to the bookmarks bar.' });
+        return res.status(401).json({ status: 'error', message: SAFETY_TOKEN_EXPIRED_MSG });
     }
     if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized. Please sign in to DISHA.' });
     if (safetyUploadRunning) return res.status(429).json({ status: 'error', message: 'Another Safety upload is being processed. Please try again in a minute.' });
