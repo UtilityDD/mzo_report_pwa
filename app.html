@@ -1961,7 +1961,9 @@
       /* ================= Session ================= */
       var profile = null;
       try { profile = JSON.parse(LS.get('mzo_user_profile') || 'null'); } catch (e) { }
-      if (!profile && LS.get('mzo_authenticated') !== 'true') { location.replace('/login.html'); return; }
+      // Signing in brings the user back to this report (login.html accepts only a same-origin path).
+      function toLogin() { location.replace('/login.html?next=' + encodeURIComponent('/app.html' + location.hash)); }
+      if (!profile && LS.get('mzo_authenticated') !== 'true') { toLogin(); return; }
 
       function isAdmin(p) { return !!p && String(p.role || '').toLowerCase() === 'admin'; }
       function canSheets(p) {
@@ -2298,7 +2300,7 @@
         var win = el.contentWindow, path = '', search = '';
         try { path = win.location.pathname; search = win.location.search; } catch (e) { }
         // Session ended inside the page → leave the shell for the login screen.
-        if (/\/login\.html$/i.test(path)) { location.replace('/login.html'); return; }
+        if (/\/login\.html$/i.test(path)) { toLogin(); return; }
         // A page linked back home (old hub URL, which now redirects here) → show Briefing, not a shell in a shell.
         if (path === '/' || /^\/(index|app)\.html$/i.test(path)) { el.remove(); delete frames[k]; go('home', true); return; }
         try {
@@ -2906,7 +2908,7 @@
       if (navigator.onLine !== false) {
         fetch('/api/session-check', { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
           .then(function (r) {
-            if (r.status === 401) { LS.del('mzo_authenticated'); LS.del('mzo_user_profile'); location.replace('/login.html'); return null; }
+            if (r.status === 401) { LS.del('mzo_authenticated'); LS.del('mzo_user_profile'); toLogin(); return null; }
             return r.ok ? r.json() : null;
           })
           .then(function (d) {

@@ -18,7 +18,12 @@
         localStorage.removeItem('mzo_authenticated');
         localStorage.removeItem('mzo_user_profile');
     }
-    function toLogin() { window.location.href = '/login.html'; }
+    // Back to this page after signing in (login.html accepts only a same-origin path). In a frame the shell
+    // owns the address, so the frame just goes to login and the shell follows it there.
+    function toLogin() {
+        var here = window.location.pathname + window.location.search + window.location.hash;
+        window.location.href = '/login.html' + (window.self === window.top ? '?next=' + encodeURIComponent(here) : '');
+    }
     function offlineGate() { if (localStorage.getItem('mzo_authenticated') !== 'true') toLogin(); }
 
     // Online: the server decides. Offline (or the check fails): the cached flag decides.

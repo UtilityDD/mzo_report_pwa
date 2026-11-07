@@ -460,7 +460,7 @@
           localStorage.setItem('mzo_user_profile', JSON.stringify(data.profile));
           document.getElementById('loginInstallBtn')?.classList.add('hidden');
           completeAuthTransition(data.profile?.Name || data.profile?.Username);
-          setTimeout(() => { window.location.href = '/app.html'; }, 680);
+          setTimeout(() => { window.location.href = nextUrl(); }, 680);
         } else if (data.status === 'pending') {
           hideAuthTransition();
           showPendingApproval(data.email, data.name, data.requested_at, data.message);
@@ -472,6 +472,21 @@
         hideAuthTransition();
         errorMsg.textContent = 'Connection error during Google Sign-In.';
       }
+    }
+
+    // Where to go after signing in: ?next= when it is a path on this site (never another origin, a
+    // protocol-relative //host, a backslash trick or the login page itself), else the shell.
+    function nextUrl() {
+      var n = new URLSearchParams(location.search).get('next') || '';
+      if (/^\/(?![\/\\])/.test(n)) {
+        try {
+          var u = new URL(n, location.origin);
+          // The absolute URL, not the path: a path such as /.//host normalises to //host, which a browser
+          // would read as another origin.
+          if (u.origin === location.origin && !/^\/login\.html$/i.test(u.pathname)) return u.href;
+        } catch (e) {}
+      }
+      return '/app.html';
     }
 
     // Google GIS Credential Handler (JWT One-Tap or GIS Button)
@@ -584,7 +599,7 @@
         .then((res) => {
           if (res.ok) {
             completeAuthTransition();
-            setTimeout(() => { window.location.href = '/app.html'; }, 320);
+            setTimeout(() => { window.location.href = nextUrl(); }, 320);
             return;
           }
           localStorage.removeItem('mzo_authenticated');
