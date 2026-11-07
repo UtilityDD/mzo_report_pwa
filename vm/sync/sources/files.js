@@ -101,6 +101,8 @@ async function sources() {
             schedule: 'daily',
             primaryKey: ['Inspection ID', 'Site ID'],
             notes: 'Stored directly on VM; synced via admin upload or Chrome bookmarklet.',
+            // Until the first upload there is no file: skip (the last snapshot, if any, stays).
+            skip: fs.existsSync(resolve('safety_inspection.csv')) ? undefined : 'no Safety report uploaded yet (POST /api/safety/upload)',
             dataHubKeys: ['CACHE_SAFETY_v2'],
             urls: ['/api/safety/dataset'],
             sensitive: false,
