@@ -231,6 +231,9 @@ async function main() {
         // Page views from those rows (vm/sync/lib/views.js), same rules: views.js builds each stale view in a
         // child of its own (capped heap, so the peak is the largest view's, about 220 MB); never fails the sync.
         if (require('child_process').spawnSync(process.execPath, ['--max-old-space-size=160', '--max-semi-space-size=4', path.join(__dirname, 'views.js'), '--dir', snapshotDir], { stdio: 'inherit', timeout: 15 * 60000 }).status) log('page views: failed (see above)');
+        // Data quality (vm/sync/quality.js, Admin → Data quality): checks the datasets whose snapshot changed, each in a
+        // child of its own (96 MB heap, about 160 MB RSS for the largest), and writes quality.json; never fails the sync.
+        if (require('child_process').spawnSync(process.execPath, ['--max-old-space-size=64', '--max-semi-space-size=4', path.join(__dirname, 'quality.js'), '--dir', snapshotDir], { stdio: 'inherit', timeout: 10 * 60000 }).status) log('data quality: failed (see above)');
         // Performance rating from those snapshots (docs/rating/metrics-layer.md), same rules: own capped heap, never fails the sync.
         if (require('child_process').spawnSync(process.execPath, ['--max-old-space-size=160', '--max-semi-space-size=4', path.join(__dirname, 'rating.js'), '--dir', snapshotDir, '--min-minutes', '15'], { stdio: 'inherit', timeout: 10 * 60000 }).status) log('performance rating: failed (see above)');
     }
