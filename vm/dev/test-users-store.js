@@ -92,7 +92,9 @@ global.fetch = async (input, opts) => {
 
 // ---- PocketBase --------------------------------------------------------------------------------------
 async function startPocketBase(dir) {
-    const mig = path.join(ROOT, 'vm', 'pocketbase', 'pb_migrations');
+    // A copy of the repo's migrations next to the throwaway data folder: nothing can be written into the repo.
+    const mig = path.join(path.dirname(dir), 'pb_migrations');
+    fs.cpSync(path.join(ROOT, 'vm', 'pocketbase', 'pb_migrations'), mig, { recursive: true });
     const up = spawnSync(PB_BIN, ['superuser', 'upsert', SU_EMAIL, SU_PASS, `--dir=${dir}`, `--migrationsDir=${mig}`, '--automigrate=false'], { encoding: 'utf8' });
     if (up.status !== 0) throw new Error('superuser upsert failed: ' + up.stderr + up.stdout);
     const proc = spawn(PB_BIN, ['serve', `--http=127.0.0.1:${PB_PORT}`, `--dir=${dir}`, `--migrationsDir=${mig}`, '--automigrate=false'], { stdio: ['ignore', 'pipe', 'pipe'] });

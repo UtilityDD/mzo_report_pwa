@@ -5698,6 +5698,19 @@ if ((process.env.NODE_ENV !== 'production' || !process.env.VERCEL) && require.ma
         }
         throw err;
     });
+    // systemd stops the app with SIGTERM on every deploy: write the queued activity and Ask usage rows
+    // first (at most 3 s), then exit as before.
+    const stop = (signal) => {
+        console.log(`[Server] ${signal}: finishing queued writes`);
+        server.close();
+        const flushes = [userStore.on && userStore.flush, assistantUsage.flush]
+            .filter((f) => typeof f === 'function')
+            .map((f) => Promise.resolve().then(f).catch(() => {}));
+        const limit = new Promise((resolve) => setTimeout(resolve, 3000).unref());
+        Promise.race([Promise.all(flushes), limit]).then(() => process.exit(0));
+    };
+    process.once('SIGTERM', () => stop('SIGTERM'));
+    process.once('SIGINT', () => stop('SIGINT'));
 }
 
 module.exports = app;
