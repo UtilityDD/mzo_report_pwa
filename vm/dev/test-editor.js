@@ -139,6 +139,12 @@ async function unitTests() {
         assert.deepEqual(m.unknown, ['Extra']);
         assert.equal(Clip.headerMatch(['A001', '12', 'x'], cols).isHeader, false);
     });
+    await t('filters: a date-time column\'s day is an India day; a date column\'s is UTC midnight', () => {
+        const Q = require(path.join(__dirname, '..', '..', 'lib', 'editor', 'query.js'));
+        assert.equal(Q.clause({ op: 'on', value: '2026-11-05' }, { name: 'd', type: 'date', has_time: true }), "(d >= '2026-11-04 18:30:00.000Z' && d < '2026-11-05 18:30:00.000Z')");
+        assert.equal(Q.clause({ op: 'on', value: '2026-11-05' }, { name: 'd', type: 'date' }), "(d >= '2026-11-05 00:00:00.000Z' && d < '2026-11-06 00:00:00.000Z')");
+        assert.equal(Q.clause({ op: 'after', value: '2026-11-05' }, { name: 'd', type: 'date', has_time: true }), "d >= '2026-11-04 18:30:00.000Z'");
+    });
     await t('format: Google pub CSV, gviz CSV, TSV, BOM and final line endings round-trip byte for byte', () => {
         const cases = [
             [TEXT1, 'csv', 'minimal'],
@@ -315,6 +321,13 @@ async function main() {
         };
         let rows = (await rowsOf(ADMIN, KEY)).rows;
         const byAppl = (list, appl) => list.find((r) => r.cells[0] === appl);
+
+        await t('export: the CSV has every row the grid has (keyset paging on _row_no and id)', async () => {
+            const res = await fetch(`http://127.0.0.1:${port}/api/editor/datasets/${KEY}/export.csv`, { headers: { 'x-test-user': JSON.stringify(ADMIN) } });
+            assert.equal(res.status, 200);
+            const lines = (await res.text()).replace(/^﻿/, '').split('\r\n').filter(Boolean);
+            assert.equal(lines.length - 1, rows.length);
+        });
 
         await t('permissions: no row → no access; can_view → read but no writes', async () => {
             let r = await call(VIEWER(), 'GET', `/datasets/${KEY}/rows`);
