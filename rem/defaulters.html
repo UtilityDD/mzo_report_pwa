@@ -176,7 +176,10 @@
         var txt = ((r.name || '') + ' ' + (r.address || '')).toLowerCase();
         var disc = String(r.disc_flag || '').trim().toUpperCase() === 'YES';
         var locked = Number(r.locked_osd) || 0;
-        var osd = Number(r.notosd_upd) || 0;
+        // NOTOSD_UPD is the notice amount brought up to UPD_DT, so it counts only when UPD_DT is set. The live
+        // sheets leave both 0; then the amount is OSD (outstanding on BDATE, the sheet's run date), else NOTOSD.
+        var updDt = Number(r.upd_dt) || 0;
+        var osd = updDt ? Number(r.notosd_upd) || 0 : r.osd != null ? Number(r.osd) || 0 : Number(r.notosd) || 0;
         return {
           raw: r, con: String(r.con_id || ''), name: UI.title(r.name), address: r.address || '', code: code,
           _region: r._region, _divn: r._division, _supp: r._ccc || code, CCC_CODE: code,
@@ -186,7 +189,7 @@
           payKey: (PAY.filter(function (p) { return p.test(m, days); })[0] || {}).key || 'p5',
           school: txt.indexOf('school') !== -1, party: txt.indexOf('party') !== -1,
           tower: ['indus', 'bharti', 'jio', 'bsnl', 'telecom'].some(function (k) { return txt.indexOf(k) !== -1; }),
-          upd: r.upd_dt == null ? '' : String(r.upd_dt)
+          upd: String(updDt || Number(r.bdate) || '')
         };
       });
     }
@@ -208,9 +211,11 @@
         var match = OSD.filter(function (b) { return r.osd >= b.min && r.osd < b.max; })[0];
         r.osdKey = match ? match.key : 'o4';
       });
-      var upd = all.reduce(function (m, r) { return r.upd && r.upd > m ? r.upd : m; }, '');
+      var upd = all.reduce(function (m, r) { return r.upd.length === 8 && r.upd > m ? r.upd : m; }, '');
       if (upd && $('asOn')) $('asOn').textContent = 'As on ' + UI.fmtDate(ymd(upd));
-      $('meta').textContent = UI.n(all.length) + ' consumers' + (parts.IC.length ? '' : ' · loading commercial and industrial…');
+      var noAmounts = all.length && !all.some(function (r) { return r.osd; });
+      if (noAmounts && window.console) console.warn('[REM defaulters] ' + all.length + ' rows but every outstanding amount is 0 (NOTOSD_UPD, OSD, NOTOSD)');
+      $('meta').textContent = UI.n(all.length) + ' consumers' + (noAmounts ? ' · the sheets give no outstanding amounts' : '') + (parts.IC.length ? '' : ' · loading commercial and industrial…');
       fillFilters();
     }
 
