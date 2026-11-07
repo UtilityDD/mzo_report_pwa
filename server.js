@@ -1506,12 +1506,11 @@ app.get('/api/session-check', async (req, res) => {
         const key = String(req.user.Username).trim().toLowerCase();
         const fresh = users.find((u) => u.Username && String(u.Username).trim().toLowerCase() === key);
         if (fresh) {
-            if (ROOT_ADMIN_EMAILS.includes(String(fresh.email || '').trim().toLowerCase())) {
-                fresh.role = 'admin';
-                fresh.user_status = 'active';
-                fresh.office_level = 'CE';
-            }
-            return res.status(200).json({ status: 'success', profile: portalUserForClient(fresh) });
+            // The root admins always see an admin profile (a copy: the cached row is left as it is).
+            const shown = ROOT_ADMIN_EMAILS.includes(String(fresh.email || '').trim().toLowerCase())
+                ? { ...fresh, role: 'admin', user_status: 'active', office_level: 'CE' }
+                : fresh;
+            return res.status(200).json({ status: 'success', profile: portalUserForClient(shown) });
         }
     } catch (err) {
         console.warn('[Auth] session-check profile refresh failed:', err.message);
@@ -2524,48 +2523,60 @@ app.post('/api/admin/reject-correction', requireAdmin, async (req, res) => {
     }
 });
 
-// 6.51. Admin DB2 / Pipeline sync schedules
-const SYNC_SCHEDULES_FILE = path.join(DATA_DIR, 'sync_schedules.json');
+// 6.51. Admin DB2 / Pipeline sync schedules (Admin > Data Sync). These are saved preferences only: nothing
+// on the server runs them (the CRM extractions need the office network and a DB2 client, which the VM does
+// not have), so "enabled" is off by default and only records what the admin chose.
+const SYNC_SCHEDULES_FILE = 'sync_schedules.json';
+const SYNC_SCHEDULE_KEYS = new Set(['defective', 'unbilled', 'disconnection', 'disconnection_payments']);
+const SYNC_SCHEDULE_DAYS = new Set(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
+const SYNC_SCHEDULE_FREQ = new Set(['daily', 'weekly', 'interval']);
+
+function readSyncSchedules_() {
+    try {
+        const v = JSON.parse(fs.readFileSync(path.join(DATA_DIR, SYNC_SCHEDULES_FILE), 'utf8'));
+        const out = {};
+        if (v && typeof v === 'object') for (const k of Object.keys(v)) if (SYNC_SCHEDULE_KEYS.has(k)) out[k] = v[k];
+        return out;
+    } catch (_) {
+        return {};
+    }
+}
+
+/** A clean schedule from the request body, or null when a field is missing or out of range. */
+function cleanSyncSchedule_(s) {
+    if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
+    const interval = Number(s.interval);
+    if (typeof s.enabled !== 'boolean' || !SYNC_SCHEDULE_FREQ.has(s.frequency)) return null;
+    if (typeof s.time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(s.time)) return null;
+    if (!SYNC_SCHEDULE_DAYS.has(s.day)) return null;
+    if (!Number.isInteger(interval) || interval < 1 || interval > 168) return null;
+    return { enabled: s.enabled, frequency: s.frequency, time: s.time, day: s.day, interval };
+}
 
 app.get('/api/admin/sync-schedules', requireAdmin, async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache, private');
-    let schedules = {};
-    try {
-        if (fs.existsSync(SYNC_SCHEDULES_FILE)) {
-            schedules = JSON.parse(fs.readFileSync(SYNC_SCHEDULES_FILE, 'utf8'));
-        }
-    } catch (_) {}
-    return res.json({ status: 'success', schedules });
+    return res.json({ status: 'success', schedules: readSyncSchedules_() });
 });
 
 app.post('/api/admin/sync-schedules', requireAdmin, async (req, res) => {
-    try {
-        const { key, schedule } = req.body || {};
-        if (!key || typeof schedule !== 'object') {
-            return res.status(400).json({ status: 'error', message: 'Invalid schedule payload' });
-        }
-        let current = {};
-        try {
-            if (fs.existsSync(SYNC_SCHEDULES_FILE)) {
-                current = JSON.parse(fs.readFileSync(SYNC_SCHEDULES_FILE, 'utf8'));
-            }
-        } catch (_) {}
-        current[key] = {
-            ...(current[key] || {}),
-            ...schedule,
-            updatedAt: new Date().toISOString(),
-            updatedBy: (req.user && (req.user.Username || req.user.Name)) || 'Admin'
-        };
-        try {
-            fs.mkdirSync(path.dirname(SYNC_SCHEDULES_FILE), { recursive: true });
-            fs.writeFileSync(SYNC_SCHEDULES_FILE, JSON.stringify(current, null, 2), 'utf8');
-        } catch (e) {
-            console.warn('[Sync Schedules] Could not write schedule file:', e.message);
-        }
-        return res.json({ status: 'success', schedules: current, message: 'Schedule updated successfully' });
-    } catch (err) {
-        return res.status(500).json({ status: 'error', message: err.message });
+    const { key, schedule } = req.body || {};
+    const clean = cleanSyncSchedule_(schedule);
+    if (typeof key !== 'string' || !SYNC_SCHEDULE_KEYS.has(key) || !clean) {
+        return res.status(400).json({ status: 'error', message: 'Invalid schedule payload' });
     }
+    const current = readSyncSchedules_();
+    current[key] = {
+        ...clean,
+        updatedAt: new Date().toISOString(),
+        updatedBy: String((req.user && (req.user.Username || req.user.username)) || 'Admin').slice(0, 80)
+    };
+    try {
+        writeDataFile_(SYNC_SCHEDULES_FILE, JSON.stringify(current, null, 2));
+    } catch (e) {
+        console.warn('[Sync Schedules] Could not write schedule file:', e.message);
+        return res.status(500).json({ status: 'error', message: 'The schedule could not be saved.' });
+    }
+    return res.json({ status: 'success', schedules: current, message: 'Schedule updated successfully' });
 });
 
 // Material Allotment → Google Apps Script (Allotments ledger tab)
