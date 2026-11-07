@@ -81,7 +81,7 @@ Page: `pending_load_extension.html` (DataHub `CACHE_LOAD_EXT`). Uses `originHeav
 
 ## Performance index
 
-Page: `performance_index.html` (NAV keys `performance_index` and `perf_index_imp`). A national-style rating of every office: the zone, 3 regions, 7 divisions and 41 CCCs, each graded A+ to D (CSRD bands) and ranked only among its own level. The method, the engine and the inputs are in `docs/rating/` (`engine-contract.md` is the interface); the page only renders the engine's `ratingDoc`.
+Page: `performance_index.html` (NAV key `performance_index`; the retired duplicate key `perf_index_imp` still opens it). A national-style rating of every office: the zone, 3 regions, 7 divisions and 41 CCCs, each graded A+ to D (CSRD bands) and ranked only among its own level. The method, the engine and the inputs are in `docs/rating/` (`engine-contract.md` is the interface); the page only renders the engine's `ratingDoc`.
 
 - **Where the rating comes from:** on the VM, `GET /api/data/rating` (precomputed after each sync; asked only when the mirror manifest exists, 204 when none). Otherwise the browser computes it: `lib/rating_metrics.js` (`MzoRatingMetrics.compute`) loads the datasets through `MzoRows`, then `lib/rating.js` (`MzoRating.rate`). `?sample=1` on localhost renders `docs/rating/sample-rating.json` for development, with a "Sample data, not live" badge; it never works on a real host.
 - **Scope:** everyone sees the full ranking. The signed-in office (from the login profile through `MzoScope`) is highlighted, with its parents at their levels, and the page opens at its level. The page owns the `#mzo-scope-banner` element, so the generic "Showing … set by admin" banner does not appear.

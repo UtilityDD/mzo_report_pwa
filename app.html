@@ -173,6 +173,28 @@
       text-decoration: none;
     }
 
+    /* [hidden] wins over the display rules below (palette parts, menus, the as-of label). */
+    [hidden] {
+      display: none !important;
+    }
+
+    .skip {
+      position: fixed;
+      z-index: 100;
+      top: 8px;
+      left: 8px;
+      padding: 8px 12px;
+      border-radius: var(--r-sm);
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: var(--shadow-pop);
+      transform: translateY(-200%);
+    }
+
+    .skip:focus {
+      transform: none;
+    }
+
     :focus-visible {
       outline: 2px solid var(--accent);
       outline-offset: 2px;
@@ -1671,6 +1693,7 @@
     </symbol>
   </svg>
 
+  <a class="skip" href="#stage">Skip to report</a>
   <div class="app">
     <aside class="sb" id="sb" aria-label="Workstation navigation">
       <div class="brand" title="DISHA · Distribution Insights for Swift &amp; Holistic Action">
@@ -1685,7 +1708,7 @@
         <img class="brand-rail-icon brand-rail-dark" src="/icons/disha-rail-dark.svg?v=299" alt="DISHA" width="48"
           height="48" />
       </div>
-      <button type="button" class="search" id="openPal" data-rtip="Search  ⌘K">
+      <button type="button" class="search" id="openPal" data-rtip="Search  ⌘K" aria-label="Search reports">
         <svg class="ic">
           <use href="#i-search" />
         </svg>
@@ -1694,7 +1717,7 @@
       </button>
       <nav class="nav" id="nav"></nav>
       <div class="foot">
-        <button type="button" class="me" id="meBtn" aria-haspopup="menu" aria-expanded="false" data-rtip="Account">
+        <button type="button" class="me" id="meBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="meMenu" data-rtip="Account">
           <span class="av" id="meAv">·</span>
           <span class="me-t"><b id="meName">Signed in</b><span id="meSub">&nbsp;</span></span>
           <svg class="ic ic-sm">
@@ -1704,10 +1727,10 @@
       </div>
     </aside>
 
-    <div class="main">
+    <main class="main">
       <section class="panel">
         <header class="bar">
-          <button type="button" class="ib" id="railBtn" data-tip="Toggle sidebar  ⌘B" aria-label="Toggle sidebar">
+          <button type="button" class="ib" id="railBtn" data-tip="Toggle sidebar  ⌘B" aria-label="Toggle sidebar" aria-controls="sb">
             <svg class="ic">
               <use href="#i-panel" />
             </svg>
@@ -1742,12 +1765,12 @@
               <use href="#i-moon" id="themeIco" />
             </svg></button>
         </header>
-        <div class="stage busy" id="stage" aria-live="polite">
+        <div class="stage busy" id="stage" tabindex="-1">
           <div class="prog"></div>
-          <div class="stage-msg" id="stageMsg">Loading…</div>
+          <div class="stage-msg" id="stageMsg" aria-live="polite">Loading…</div>
         </div>
       </section>
-    </div>
+    </main>
   </div>
   <div class="scrim" id="scrim"></div>
 
@@ -1881,7 +1904,6 @@
         },
         {
           id: 'important', label: 'Important', icon: 'mark', hue: 'warn-mark', items: [
-            ['perf_index_imp', 'Performance index', 'performance_index.html', 'ranking'],
             ['cmo', 'CMO grievance', 'cmo.html', 'complaint'],
             ['pmsgy', 'PM Surya Ghar', 'pmsgy.html', 'solar rooftop'],
             ['si_works', 'Priority SI works', 'si-works/si.html', 'safety inspection'],
@@ -1920,6 +1942,9 @@
           ]
         }
       ];
+      // Retired menu keys still reached by bookmarks (#key), favourites and recents.
+      var ALIAS = { perf_index_imp: 'performance_index' };
+      function canon(k) { return ALIAS[k] || k; }
       var HOME = { k: 'home', n: 'Briefing', u: 'executive_briefing.html', g: '', icon: 'home', kw: 'overview summary critical' };
       var ASK = { k: 'ask', n: 'Ask', u: 'assistant.html', g: '', icon: 'chat', kw: 'assistant ai question chat help' };
 
@@ -1959,7 +1984,7 @@
           g.items.forEach(function (it) {
             if (it[4] === 'sheets' && !canSheets(profile)) return;
             // VM user store: a user with a modules list sees only those reports (docs/users.md).
-            if (profile && Array.isArray(profile.modules) && !isAdmin(profile) && profile.modules.indexOf(it[0]) === -1) return;
+            if (profile && Array.isArray(profile.modules) && !isAdmin(profile) && profile.modules.map(canon).indexOf(it[0]) === -1) return;
             if (!g.visible) return;
             var m = { k: it[0], n: it[1], u: it[2], kw: it[3] || '', g: g.label, gid: g.id, icon: g.icon, hue: g.hue };
             add(m);
@@ -1976,7 +2001,7 @@
       var openGroups = {};
 
       function favs() {
-        try { return JSON.parse(LS.get(FAV_KEY) || '[]').filter(function (k) { return MODS[k] && k !== 'home' && k !== 'ask'; }); } catch (e) { return []; }
+        try { return JSON.parse(LS.get(FAV_KEY) || '[]').map(canon).filter(function (k, i, a) { return MODS[k] && k !== 'home' && k !== 'ask' && a.indexOf(k) === i; }); } catch (e) { return []; }
       }
       function isFav(k) {
         var baseK = (MODS[k] && MODS[k].base) || k;
@@ -2074,22 +2099,22 @@
       window.addEventListener('storage', function (e) { if (e.key === FAV_KEY) syncFavUI(); });
 
       function renderNav() {
-        var h = '<a class="ni" href="#home" data-k="home" data-rtip="' + HOME.n + '">' + icon('home') + '<span class="lbl">' + HOME.n + '</span></a>' +
-          '<a class="ni" href="#ask" data-k="ask" data-rtip="' + ASK.n + '">' + icon('chat') + '<span class="lbl">' + ASK.n + '</span></a>';
+        var h = '<a class="ni" href="#home" data-k="home" data-rtip="' + HOME.n + '" aria-label="' + HOME.n + '">' + icon('home') + '<span class="lbl">' + HOME.n + '</span></a>' +
+          '<a class="ni" href="#ask" data-k="ask" data-rtip="' + ASK.n + '" aria-label="' + ASK.n + '">' + icon('chat') + '<span class="lbl">' + ASK.n + '</span></a>';
         h += '<div class="fav-card" id="favCard">' + renderFavBox() + '</div>';
-        h += '<div class="grp fav-rail-grp" data-g="favs"><button type="button" class="ng fav-rail-btn" data-rtip="Favourites">' + icon('star-fill') + '</button></div>';
+        h += '<div class="grp fav-rail-grp" data-g="favs"><button type="button" class="ng fav-rail-btn" data-rtip="Favourites" aria-label="Favourites">' + icon('star-fill') + '</button></div>';
         h += '<div class="sec">Reports</div><div class="sec-gap"></div>';
         NAV.forEach(function (g) {
           if (!g.visible || !g.mods.length) return;
           if (g.admin) {
             // Administration opens its own window (admin_users.html with every admin tool as a tab).
             h += '<div class="sec">Admin</div><div class="sec-gap"></div>' +
-              '<div class="grp" data-g="' + g.id + '"><button type="button" class="ng" data-admin-open="1" title="Opens in a new window" data-rtip="' + esc(g.label) + ' (new window)">' +
+              '<div class="grp" data-g="' + g.id + '"><button type="button" class="ng" data-admin-open="1" title="Opens in a new window" data-rtip="' + esc(g.label) + ' (new window)" aria-label="' + esc(g.label) + ' (new window)">' +
               icon(g.icon, 'gi') + '<span class="lbl">' + esc(g.label) + '</span>' + icon('ext', 'ic-sm chev') + '</button></div>';
             return;
           }
           h += '<div class="grp' + (openGroups[g.id] ? ' open' : '') + '" data-g="' + g.id + '"' + (g.hue ? ' style="--gc:var(--' + g.hue + ')"' : '') + '>' +
-            '<button type="button" class="ng" aria-expanded="' + (!!openGroups[g.id]) + '" data-rtip="' + esc(g.label) + '">' + icon(g.icon, 'gi') +
+            '<button type="button" class="ng" aria-expanded="' + (!!openGroups[g.id]) + '" data-rtip="' + esc(g.label) + '" aria-label="' + esc(g.label) + '">' + icon(g.icon, 'gi') +
             '<span class="lbl">' + esc(g.label) + '</span>' + icon('chev', 'ic-sm chev') + '</button><div class="sub">';
           g.mods.forEach(function (m) { h += '<a class="ni" href="#' + m.k + '" data-k="' + m.k + '"><span class="lbl">' + esc(m.n) + '</span>' + favPinBtn(m.k) + '</a>'; });
           h += '</div></div>';
@@ -2103,7 +2128,6 @@
         el.classList.toggle('open', open);
         el.firstElementChild.setAttribute('aria-expanded', String(open));
         if (open) openGroups[gid] = 1; else delete openGroups[gid];
-        LS.set('mzo_ws_groups', JSON.stringify(openGroups));
       }
 
       function markActive(k) {
@@ -2324,7 +2348,7 @@
         LS.set(RECENT_KEY, JSON.stringify(r));
       }
       function recents() {
-        try { return JSON.parse(LS.get(RECENT_KEY) || '[]').filter(function (k) { return MODS[k]; }); } catch (e) { return []; }
+        try { return JSON.parse(LS.get(RECENT_KEY) || '[]').map(canon).filter(function (k, i, a) { return MODS[k] && a.indexOf(k) === i; }); } catch (e) { return []; }
       }
 
       function setChrome(k) {
@@ -2343,10 +2367,25 @@
         var t = /[?&]tab=([a-z]+)/i.exec(u);
         return t ? t[1] : '';
       }
+      // Tab names → admin_users.html panel ids (its tabAlias), so a loaded window switches in place.
+      var ADMIN_TABS = {
+        users: 'usersTab', approvals: 'approvalsTab', sources: 'sourcesTab', quality: 'qualityTab', activity: 'logsTab',
+        visitors: 'uniqueVisitorsTab', asks: 'asksTab', powermap: 'powerMapTab', org: 'orgTab',
+        corrections: 'correctionsTab', editor: 'editorTab', structure: 'structureTab'
+      };
       function openAdmin(tab) {
-        var w = null;
-        try { w = window.open('/admin_users.html' + (tab ? '?tab=' + encodeURIComponent(tab) : ''), 'mzo-admin'); } catch (e) { }
+        var url = '/admin_users.html' + (tab ? '?tab=' + encodeURIComponent(tab) : ''), w = null, live = false;
+        // An empty URL finds the named window without navigating it, so a loaded admin window (and any unsaved
+        // work in its Data editor) survives; only a new or foreign window is pointed at the admin page.
+        try { w = window.open('', 'mzo-admin'); } catch (e) { }
         if (!w) return false; // blocked: the caller shows it in the shell instead
+        try { live = w.location.pathname === '/admin_users.html' && typeof w.switchTab === 'function'; } catch (e) { }
+        if (live) {
+          var id = ADMIN_TABS[tab];
+          try { if (id && w.document.getElementById(id)) w.switchTab(id); } catch (e) { }
+        } else {
+          try { w.location.href = url; } catch (e) { try { w = window.open(url, 'mzo-admin') || w; } catch (er) { } }
+        }
         try { w.focus(); } catch (e) { }
         return true;
       }
@@ -2381,6 +2420,7 @@
           return 'home';
         }
         if (/^nsc_(simple|pipeline|classic)$/.test(h)) return 'nsc'; // retired NSC drafts
+        h = canon(h);
         return MODS[h] ? h : 'home';
       }
       window.addEventListener('popstate', function () { go(fromHash(), true); });
@@ -2460,10 +2500,30 @@
         root.classList.toggle('rail', on);
         LS.set('mzo_ws_rail', on ? '1' : '0');
         hideFly();
+        syncSidebar();
         // Keep groups collapsed by default when leaving rail
       }
-      function drawer(on) { root.classList.toggle('drawer', on); }
+      // Phones: the closed drawer is inert (off the Tab order); the toggle reports whether the sidebar shows.
+      function syncSidebar() {
+        var small = isSmall(), on = root.classList.contains('drawer');
+        $('sb').inert = small && !on;
+        $('railBtn').setAttribute('aria-expanded', String(small ? on : !root.classList.contains('rail')));
+      }
+      function drawer(on) {
+        var was = root.classList.contains('drawer');
+        root.classList.toggle('drawer', on);
+        syncSidebar();
+        if (on && !was) $('openPal').focus();
+        else if (!on && was && $('sb').contains(document.activeElement)) $('railBtn').focus();
+      }
+      var smallMq = matchMedia('(max-width: 900px)');
+      if (smallMq.addEventListener) smallMq.addEventListener('change', function () { if (!isSmall()) root.classList.remove('drawer'); syncSidebar(); });
       $('railBtn').addEventListener('click', function () { if (isSmall()) drawer(!root.classList.contains('drawer')); else rail(!root.classList.contains('rail')); });
+      document.querySelector('.skip').addEventListener('click', function (e) {
+        e.preventDefault(); // #stage is not a route
+        var f = frames[active];
+        if (f) f.el.focus(); else stage.focus();
+      });
       $('scrim').addEventListener('click', function () { drawer(false); });
 
       if ($('favPageBtn')) {
@@ -2492,13 +2552,16 @@
       /* Account menu */
       var menu = $('meMenu'), meBtn = $('meBtn');
       function menuOpen(on) {
+        var hadFocus = menu.contains(document.activeElement);
         menu.hidden = !on;
         meBtn.setAttribute('aria-expanded', String(on));
         if (on) {
           var r = meBtn.getBoundingClientRect();
           menu.style.left = Math.max(8, Math.min(r.left, innerWidth - menu.offsetWidth - 8)) + 'px';
           menu.style.top = Math.max(8, r.top - menu.offsetHeight - 6) + 'px';
-        }
+          var cur = menu.querySelector('.seg button[aria-pressed="true"]') || menu.querySelector('button');
+          if (cur) cur.focus();
+        } else if (hadFocus) meBtn.focus();
       }
       meBtn.addEventListener('click', function (e) { e.stopPropagation(); menuOpen(menu.hidden); });
       menu.addEventListener('click', function (e) {
@@ -2831,7 +2894,13 @@
       renderNav();
       renderUser();
       applyTheme(pref(), false);
+      syncSidebar();
       go(fromHash(), true);
+
+      // Signed-in users open the shell, not the login page, so the shell registers the service worker too.
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () { navigator.serviceWorker.register('/sw.js').catch(function () { }); });
+      }
 
       // Validate the session in the background; refresh the profile.
       if (navigator.onLine !== false) {
