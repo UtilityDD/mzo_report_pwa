@@ -45,4 +45,69 @@ jobs:
             console.log("ok", m[1], "version", v.version);'
 
       - name: VM shell scripts parse
-        run: for f in vm/deploy/*.sh; do bash -n "$f" && echo "ok $f"; done
+        run: for f in vm/deploy/*.sh vm/dev/*.sh; do bash -n "$f" && echo "ok $f"; done
+
+  # The offline test suites (scripts/tools/run_tests.js): fixtures, local mocks and temp folders only,
+  # no network to Google, Supabase or the VM. The migrations guard runs in check_syntax.js above.
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            vm/sync/package-lock.json
+
+      - name: Install packages (app and vm/sync)
+        run: |
+          npm ci --no-audit --no-fund --ignore-scripts
+          npm ci --no-audit --no-fund --ignore-scripts --prefix vm/sync
+
+      - name: npm test
+        run: npm test
+
+  # The suites that need PocketBase start their own throwaway one (vm/dev/lib/local-pb.js: temp --dir,
+  # a copy of the migrations, --automigrate=false) from the release in vm/pocketbase/VERSION.
+  pocketbase-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            vm/sync/package-lock.json
+
+      - name: Install packages (app and vm/sync)
+        run: |
+          npm ci --no-audit --no-fund --ignore-scripts
+          npm ci --no-audit --no-fund --ignore-scripts --prefix vm/sync
+
+      - name: PocketBase (vm/pocketbase/VERSION, checksum-verified)
+        run: |
+          v=$(tr -d '[:space:]' < vm/pocketbase/VERSION)
+          zip=pocketbase_${v}_linux_amd64.zip
+          base=https://github.com/pocketbase/pocketbase/releases/download/v$v
+          mkdir -p "$RUNNER_TEMP/pb" && cd "$RUNNER_TEMP/pb"
+          curl -fsSL -o "$zip" "$base/$zip"
+          curl -fsSL -o checksums.txt "$base/checksums.txt"
+          grep " $zip\$" checksums.txt | sha256sum -c -
+          unzip -q "$zip" pocketbase
+          echo "PB_BIN=$RUNNER_TEMP/pb/pocketbase" >> "$GITHUB_ENV"
+
+      - name: PocketBase suites (user store, sync types, data editor)
+        run: npm test -- --pb --only pocketbase
+
+      - name: No migration file was written into the repo
+        run: |
+          git status --porcelain vm/pocketbase/pb_migrations
+          test -z "$(git status --porcelain vm/pocketbase/pb_migrations)"

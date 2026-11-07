@@ -6,6 +6,7 @@
 //   non-JS types such as application/json are skipped; type="module" is checked as ESM)
 // - JSON.parse on every .json file
 // - no dataset files tracked in git (scripts/tools/check_data_files.js)
+// - only hand-written PocketBase migrations (scripts/tools/check_migrations.js)
 // Files come from `git ls-files` (tracked plus untracked, not ignored) when the folder is a
 // git checkout, else from a directory walk. Exit code 1 when anything fails.
 'use strict';
@@ -127,6 +128,7 @@ async function main() {
     fs.rmSync(tmp, { recursive: true, force: true });
 
     failures.push(...require('./check_data_files').checkTrackedData(ROOT));
+    failures.push(...require('./check_migrations').checkMigrations(ROOT));
 
     const jsFiles = jobs.length - blockCount;
     console.log(`Checked ${jsFiles} JS files, ${blockCount} inline scripts, ${jsonCount} JSON files.`);
