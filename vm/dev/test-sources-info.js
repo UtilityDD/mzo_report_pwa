@@ -151,7 +151,7 @@ function main() {
     const PBENV = { PB_URL: PB, PB_SUPERUSER_EMAIL: 'su@test', PB_SUPERUSER_PASSWORD: 'pw' };
 
     // ---- Static (no mirror): PocketBase configured but not read
-    const st = run('static', tmp, PBENV);
+    const st = run('static', tmp, Object.assign({ GOEDEL_API_KEY: 'test-key-not-real' }, PBENV));
     eq(st.problems, [], 'static: unexpected upstream requests');
     eq(st.pbCalls, [], 'static: PocketBase must not be read outside mirror mode');
     eq(st.results.anon.status, 401, 'static: no session');
@@ -167,6 +167,7 @@ function main() {
     eq(sd.nsc_pending.category, 'live_google', 'static: a sheet is read live');
     eq(sd.stock_snapshot.category, 'live_supabase', 'static: a Storage file is read live');
     eq(sd.costcenter.category, 'vm_only', 'static: a repo file');
+    eq(sd.ask_api.status, 'live', 'static: Ask is live with the Gödel key alone');
     eq(sd.nsc_pending.status, 'live', 'static: status');
     ok(sd.script_dd_visit && sd.script_dd_visit.category === 'live_script', 'static: descriptor rows');
     ok(!S.datasets.some((d) => /^vm_(google|supabase)/.test(d.category)), 'static: no VM copies');
@@ -203,7 +204,7 @@ function main() {
     eq(md.power_map_substations.category, 'vm_supabase_table', 'power_map_substations');
     eq([md.structure.category, md.structure.status], ['vm_only', 'ok'], 'structure');
     eq(md.consumers.status, 'never', 'consumers: not in the registry yet');
-    eq(md.ask_api.status, 'off', 'ask: no ANTHROPIC_API_KEY');
+    eq(md.ask_api.status, 'off', 'ask: no provider key');
     eq(md.crm_unbilled_files.category, 'vm_only', 'unbilled: server files');
     const R = Object.fromEntries(M.reports.map((r) => [r.page, r]));
     ok(R['nsc.html'].sources.includes('nsc_pending') && R['nsc.html'].sources.includes('script_nsc_followups') && !R['nsc.html'].sources.includes('nsc_followups'), 'report nsc.html: sources');

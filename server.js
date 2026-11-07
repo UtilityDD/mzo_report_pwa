@@ -1128,7 +1128,15 @@ app.post('/api/structures/update', requireAdmin, (req, res) => {
         const csv = [STRUCTURE_COLUMNS.join(',')]
             .concat(structures.map((s) => STRUCTURE_COLUMNS.map((k) => (k === 'id' ? s.id : `"${String(s[k] == null ? '' : s[k]).replace(/"/g, '""')}"`)).join(',')))
             .join('\n');
-        fs.writeFileSync(STRUCTURE_FILE, csv, 'utf-8');
+        // Temp file + rename: a reader never sees half a file.
+        const tmp = `${STRUCTURE_FILE}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+        try {
+            fs.writeFileSync(tmp, csv, 'utf-8');
+            fs.renameSync(tmp, STRUCTURE_FILE);
+        } catch (e) {
+            try { fs.unlinkSync(tmp); } catch (_) { /* never written */ }
+            throw e;
+        }
         refreshMirror(['structure'], 'structures update');
         res.status(200).json({ message: 'Structures updated successfully!' });
     } catch (error) {
@@ -3581,6 +3589,10 @@ app.post('/api/nsc/publish/begin', async (req, res) => {
                 statsBody.stats = {};
             }
         }
+        // A begin without a complete (closed tab, failed upload) leaves its meta behind: drop old ones.
+        for (const id of Object.keys(nscPendingMetaById_)) {
+            if (uploadId - Number(id) > 6 * 3600 * 1000) delete nscPendingMetaById_[id];
+        }
         nscPendingMetaById_[uploadId] = buildNscMeta_(uploadUser, statsBody, uploadId);
         const reportLabel = nscPendingMetaById_[uploadId].reportDate;
 
@@ -4236,7 +4248,7 @@ app.get('/api/defective/meta', async (req, res) => {
         spreadsheetId: DEFECTIVE_SPREADSHEET_ID,
         summaryCsvUrl: mirrored ? mirror.hubUrl(sumMirror) : ((meta && meta.summaryCsvUrl) || defectiveExportCsvUrl_(DEFECTIVE_SUMMARY_GID)),
         detailsCsvUrl: mirrored ? mirror.hubUrl(detMirror) : ((meta && meta.detailsCsvUrl) || defectiveExportCsvUrl_(DEFECTIVE_DETAILS_GID)),
-        version: mirrored ? `${sumMirror.version.slice(0, 20)}${detMirror.version.slice(0, 20)}` : ((meta && meta.version) || null),
+        version: mirrored ? `${String(sumMirror.version || '').slice(0, 20)}${String(detMirror.version || '').slice(0, 20)}` : ((meta && meta.version) || null),
         ...(mirrored ? { liveVersions: { version: (meta && meta.version) || null } } : {}),
         reportDate: (meta && meta.reportDate) || null,
         stats: (meta && meta.stats) || null,
@@ -5252,6 +5264,21 @@ function cleanDivisionCccs_(divCccs) {
     return out;
 }
 
+// lib/briefing_cccs.json (scripts/tools/compute_briefing_cccs.js), parsed again only when the file changes.
+const BRIEFING_CCCS_FILE = path.join(__dirname, 'lib', 'briefing_cccs.json');
+let briefingCccsCache_ = { mtimeMs: -1, value: [] };
+function briefingCccs_() {
+    try {
+        const st = fs.statSync(BRIEFING_CCCS_FILE);
+        if (st.mtimeMs !== briefingCccsCache_.mtimeMs) {
+            briefingCccsCache_ = { mtimeMs: st.mtimeMs, value: JSON.parse(fs.readFileSync(BRIEFING_CCCS_FILE, 'utf8')) };
+        }
+        return briefingCccsCache_.value;
+    } catch (_) {
+        return [];
+    }
+}
+
 // Numbers come from the sync jobs' meta; an item whose numbers are unavailable is left out (never guessed).
 function buildExecutiveBriefing_(meta) {
     const pendingMc = (meta && meta.pendingMc && meta.pendingMc.stats) || {};
@@ -5506,10 +5533,7 @@ function buildExecutiveBriefing_(meta) {
         total: items.length
     };
 
-    let cccs = [];
-    try {
-        cccs = JSON.parse(fs.readFileSync(path.join(__dirname, 'lib', 'briefing_cccs.json'), 'utf8'));
-    } catch (_) { }
+    const cccs = briefingCccs_();
 
     return {
         asOn,
