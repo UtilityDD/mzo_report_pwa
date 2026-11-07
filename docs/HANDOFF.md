@@ -135,7 +135,7 @@ NSC follow-ups list and posting, disconnection follow-ups, DD visit history and 
 ### Other
 
 - **Power news hub**: Google News RSS, fetched by the server (`/api/news`).
-- **Ask**: the server holds the key and calls the Anthropic Messages API (`ANTHROPIC_API_KEY`); tools run in the browser on already-scoped data. See [assistant.md](assistant.md).
+- **Ask**: the server holds the key and calls the model: Gödel Machines (DeepSeek V4.1 Flash, OpenAI-compatible, `GOEDEL_API_KEY`) or the Anthropic Messages API (Claude Haiku, `ANTHROPIC_API_KEY`), chosen by `ASSISTANT_PROVIDER` (`lib/assistant/`); tools run in the browser on already-scoped data. See [assistant.md](assistant.md).
 - **Substation upkeeping**: a link to a separate app (`mzowbsedcl-dev.github.io/Upkeeping`).
 - **Health check-up**: placeholder, no data yet.
 
@@ -237,7 +237,7 @@ A local snapshot folder for mirror mode: `node vm/dev/make-snapshots.js --out /t
 - Stock: `STOCK_USE_STORAGE`, `STOCK_STORAGE_BUCKET`, `STOCK_STORAGE_OBJECT`
 - Apps Script URLs: `NSC_SHEET_SCRIPT_URL`, `NSC_WITHHELD_SHEET_SCRIPT_URL`, `NSC_FOLLOWUP_SCRIPT_URL`, `STOCK_SHEET_SCRIPT_URL`, `STOCK_ALLOTMENT_SCRIPT_URL`, `DEFECTIVE_SHEET_SCRIPT_URL`, `DISCONNECTION_FOLLOWUP_SCRIPT_URL`, `METADATA_SCRIPT_URL`
 - Sheet overrides for sync jobs: `DISCONNECTION_SHEET_CSV_URL`, `PENDING_MC_SHEET_CSV_URL`, `LOAD_EXT_SHEET_CSV_URL`, `DEFECTIVE_SUMMARY_CSV_URL`, `DEFECTIVE_DETAILS_CSV_URL`, `STOCK_SHEET_CSV_URL`, `STOCK_ALLOTMENTS_CSV_URL`
-- Ask: `ANTHROPIC_API_KEY`
+- Ask: `ASSISTANT_PROVIDER` (`goedel` | `anthropic`; unset: goedel when its key is set, else anthropic), `GOEDEL_API_KEY` (`GODEL_API_KEY` also accepted), `ANTHROPIC_API_KEY`, `ASSISTANT_MODEL`, `ASSISTANT_BASE_URL`, `ASSISTANT_MAX_CONCURRENCY`. Switching provider is an env change and a restart; see [assistant.md](assistant.md#providers-libassistant)
 - VM / mirror: `MZO_DATA_MODE`, `MZO_SNAPSHOT_DIR`, `SYNC_TMP_DIR`, `MZO_QUALITY_STATE_DIR`, `PB_URL`, `PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `SYNC_BATCH_SIZE`, `SYNC_DEBUG`
 - QA: `QA_COOKIE`, `QA_COOKIE_FILE`, `QA_JWT_SECRET`, `QA_OUT`, `PLAYWRIGHT_CORE_PATH`, `UNIFORM_SNAP`
 - Other: `PORT`, `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`
@@ -254,6 +254,8 @@ There is no single test command. What exists:
 | `node vm/dev/test-mirror-server.js` | the server in both modes with every upstream answered from fixtures; any upstream write fails it | none |
 | `node vm/dev/test-briefing-cache.js` | the Briefing cache in mirror mode | none |
 | `node vm/dev/test-local-admin.js` | VM-only admin accounts | none |
+| `node vm/dev/test-assistant-provider.js` | Ask's provider layer: translation to and from the OpenAI format, retries, errors, the concurrency gate, env settings, the Anthropic path, `server.js` end to end against a local mock | none |
+| `node scripts/qa/assistant-live.js --env <file>` | Ask: tool-call accuracy and latency of the configured model on 15 typical questions, with made-up tool results only | the model API |
 | `node --test scripts/qa/uniform.test.js`, `node --test scripts/qa/rating.test.js`, `node scripts/qa/rating-metrics-test.js` | uniform rows, rating engine and metrics | none (`UNIFORM_SNAP` adds snapshot checks) |
 | `cd vm/sync && npm ci && npm run check` | sync syntax | none |
 | `scripts/qa/parity.js`, `diff.js`, `timing.js`, `uniform-pages.js`, `legacy-pages.js`, `sheet-links-pages.js`, `rating-page.js` | browser parity of original vs mirror mode, page by page (Chrome and `playwright-core`) | GET only, against `serve-local.sh` instances |
@@ -306,7 +308,7 @@ New pages also go into `isNetworkFirstPath` in `sw.js`; a new folder needs a sta
 ## 12. Known open issues
 
 - **Unbilled & exceptions is empty on the VM.** Its `data/unbilled_*.csv` files come from the owner's CRM (DB2) sync on an office machine and are not on the VM (nor in a Git-built Vercel deploy). Needs a decision: publish them to Supabase Storage and mirror them like the other synced reports, or drop the page from the VM.
-- **Ask does not work on the VM**: there is no `ANTHROPIC_API_KEY` in `/etc/mzo/app.env`, so it answers "not configured".
+- **Ask does not work on the VM** until a key is in `/etc/mzo/app.env`: `GOEDEL_API_KEY` (DeepSeek V4.1 Flash on Gödel Machines) or `ANTHROPIC_API_KEY`. Without one it answers "not configured". A free Gödel key keeps prompts (aggregate numbers and questions) and may train on them; a paid key keeps nothing.
 - **Production is far behind `develop`** (2.66.1 vs 3.2x) and still serves pages `develop` removed; plan redirects before the next promotion (section 4).
 - **Stale numbers in the docs:** `vm/sync/sources/supabase.md` and a comment in `vm/sync/sources/google.js` say `frequent` is 15 minutes; the code (`vm/sync/lib/schedule.js`) and the timer run it every 5 minutes. [architecture.md](architecture.md) says Important data sheets have no mirror copy; the page now reads whole-tab copies on the VM. The repository rules say there are no automated tests; the tests in section 7 exist. [deploy.md](deploy.md) describes an older remote layout.
 - **Health check-up** is a placeholder and **Substation upkeeping** only links to a separate app.

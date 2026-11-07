@@ -46,7 +46,8 @@ Set on Vercel (Smart Lineman project); locally in the git-ignored `.env`. `serve
 |---|---|
 | `JWT_SECRET` | Signs the session cookie. Required in production (the server logs a warning on Vercel when it is missing) |
 | `GOOGLE_CLIENT_ID` | Audience check for Google sign-in; without it `/api/auth/google` returns 503 |
-| `ANTHROPIC_API_KEY` | Ask (`/api/assistant`); without it Ask says it is not configured |
+| `GOEDEL_API_KEY` (or `GODEL_API_KEY`), `ANTHROPIC_API_KEY` | Ask (`/api/assistant`): the Gödel Machines key (DeepSeek V4.1 Flash) and/or the Anthropic key (Claude Haiku). With neither, Ask says it is not configured |
+| `ASSISTANT_PROVIDER`, `ASSISTANT_MODEL`, `ASSISTANT_BASE_URL`, `ASSISTANT_MAX_CONCURRENCY` | Ask: which provider (`goedel` / `anthropic`; default goedel when its key is set), a model override, the OpenAI-compatible base URL, calls in flight (default 2 for goedel). See [assistant.md](assistant.md#providers-libassistant) |
 | `SUPABASE_URL`, `SUPABASE_KEY` / `SUPABASE_ANON_KEY` | Old project: login (until `INSIGHT_LIVE`), activity logs |
 | `POWERMAP_SUPABASE_URL`, `POWERMAP_SUPABASE_KEY` | Power Map tables (default to the old project) |
 | `INSIGHT_SUPABASE_URL`, `INSIGHT_SUPABASE_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | New insight project: stock Storage, allotments, report snapshots |

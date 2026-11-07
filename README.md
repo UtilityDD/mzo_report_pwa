@@ -13,7 +13,7 @@ npm install
 npm run dev        # http://localhost:3000 (opens /app.html after sign-in)
 ```
 
-Optional `.env` (git-ignored, loaded by `npm run dev`): `ANTHROPIC_API_KEY` for **Ask**, plus any of the variables in [docs/deploy.md](docs/deploy.md#deploy).
+Optional `.env` (git-ignored, loaded by `npm run dev`): `GOEDEL_API_KEY` or `ANTHROPIC_API_KEY` for **Ask** (see [docs/assistant.md](docs/assistant.md)), plus any of the variables in [docs/deploy.md](docs/deploy.md#deploy).
 
 > There is no separate development database. A local server reads and **writes production** data (login, activity logs, uploads, syncs, follow-ups, allotments). Use a real portal account and do not save, upload, sync or delete anything while testing.
 
@@ -54,6 +54,6 @@ Optional `.env` (git-ignored, loaded by `npm run dev`): `ANTHROPIC_API_KEY` for 
 | [docs/data-quality.md](docs/data-quality.md) | Data quality checks on the mirror: findings, the owner action list per sheet, scores, how the checks work |
 | [docs/stock.md](docs/stock.md) | Stock dump, insight project, allotments |
 | [docs/apps-script.md](docs/apps-script.md) | Apps Script web apps behind the sheets |
-| [docs/assistant.md](docs/assistant.md) | Ask (Claude Haiku via `/api/assistant`) |
+| [docs/assistant.md](docs/assistant.md) | Ask (`/api/assistant`; DeepSeek V4.1 Flash on Gödel Machines or Claude Haiku, chosen by env) |
 | [docs/deploy.md](docs/deploy.md) | Remotes, Vercel, environment variables, releasing |
 | [docs/vm.md](docs/vm.md) | The VM: auto-deploy from `develop`, rollback, PocketBase, timers, logs, GitHub Actions checks |

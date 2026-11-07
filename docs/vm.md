@@ -99,7 +99,7 @@ Stop the timer (`sudo systemctl stop mzo-deploy.timer`) before a `--to` drill an
 
 | File | Holds | Mode |
 |---|---|---|
-| `/etc/mzo/app.env` | `JWT_SECRET` for the app's session cookies (random, generated once by provisioning; sessions on the VM are not valid on Vercel or locally) | 640 root:opc |
+| `/etc/mzo/app.env` | `JWT_SECRET` for the app's session cookies (random, generated once by provisioning; sessions on the VM are not valid on Vercel or locally). Ask's key goes here too: `GOEDEL_API_KEY` (or `ANTHROPIC_API_KEY` with `ASSISTANT_PROVIDER=anthropic`), then `sudo systemctl restart mzo-reports`; see [assistant.md](assistant.md#providers-libassistant) | 640 root:opc |
 | `/etc/mzo/pocketbase.env` | `PB_URL`, `PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD` (the PocketBase dashboard login) | 640 root:opc |
 | `/etc/mzo/portal-admin.txt` | The first portal account (`portal_users_auth`), created once the portal migrations are deployed | 600 root |
 | `/etc/mzo/deploy.env` | Optional, e.g. `MZO_BRANCH=develop` | |
