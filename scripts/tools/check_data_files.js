@@ -15,8 +15,9 @@ const path = require('path');
 
 // Small, non-personal lookups the app and the VM sync read from the release (vm/sync/sources/files.js):
 // data/costcenter.json is SAP cost centre -> office names (served to the browser), data/structure.csv
-// the estimate structures (server-only).
-const KEEP = new Set(['data/costcenter.json', 'data/structure.csv']);
+// the estimate structures (server-only), data/org/wbsedcl_hierarchy.json WBSEDCL's office hierarchy (names and
+// codes from public sources; served to admins by GET /api/admin/org).
+const KEEP = new Set(['data/costcenter.json', 'data/structure.csv', 'data/org/wbsedcl_hierarchy.json']);
 const TABLE = /\.(csv|tsv|xls|xlsx|xlsm|ods|parquet|sqlite3?|db)$/i;
 const MAX_JSON = 2 * 1024 * 1024;
 

@@ -3087,6 +3087,9 @@
         <button class="tab-btn" data-tab="correctionsTab" onclick="switchTab('correctionsTab')">
           <i class="fas fa-wrench"></i> Corrections
         </button>
+        <button class="tab-btn" data-tab="orgTab" onclick="switchTab('orgTab')">
+          <i class="fas fa-diagram-project"></i> Organisation
+        </button>
         <button class="tab-btn" data-tab="editorTab" onclick="switchTab('editorTab')">
           <i class="fas fa-table-cells"></i> Data editor
         </button>
@@ -3300,6 +3303,8 @@
           <div id="askUsers"></div>
         </section>
         <p class="ask-note" id="askNote"></p>
+      </div>
+
       <!-- Data quality: findings of the checks the VM sync runs after each run (GET /api/admin/data-quality) -->
       <div id="qualityTab" class="tab-content">
         <div class="src-head">
@@ -3327,6 +3332,8 @@
           <div id="dqTable"><div class="ui-empty">Loading…</div></div>
         </section>
       </div>
+      <!-- Organisation: WBSEDCL's office hierarchy (admin_org.js, loaded when the tab first opens) -->
+      <div id="orgTab" class="tab-content"><div class="ui-empty">Loading…</div></div>
 
       <!-- Power Map Tab Content -->
       <div id="powerMapTab" class="tab-content">
@@ -3971,6 +3978,9 @@
         visitors: 'uniqueVisitorsTab',
         powermap: 'powerMapTab',
         corrections: 'correctionsTab',
+        org: 'orgTab',
+        organisation: 'orgTab',
+        organization: 'orgTab',
         editor: 'editorTab',
         structure: 'structureTab'
       };
@@ -4066,6 +4076,11 @@
       if (tabId === 'qualityTab') {
         if (window.self === window.top) { try { history.replaceState(null, '', location.pathname + '?tab=quality'); } catch (e) {} }
         ensureQuality();
+      }
+      if (tabId === 'orgTab') {
+        document.body.classList.add('wide-tab');
+        if (window.self === window.top) { try { history.replaceState(null, '', location.pathname + '?tab=org'); } catch (e) {} }
+        ensureOrg();
       }
       if (tabId === 'approvalsTab') {
         renderApprovalsQueue();
@@ -4409,6 +4424,28 @@
         sc.onload = () => resolve();
         sc.onerror = () => reject(new Error('mzo_ui.js did not load'));
         document.head.appendChild(sc);
+      });
+    }
+
+    // Organisation tab: WBSEDCL's office hierarchy chart (admin_org.js + admin_org.css, GET /api/admin/org).
+    let orgLoading = null;
+    function ensureOrg() {
+      const host = document.getElementById('orgTab');
+      if (window.MzoOrg) { window.MzoOrg.mount(host); return; }
+      if (orgLoading) return;
+      const css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = '/admin_org.css?v=1';
+      document.head.appendChild(css);
+      orgLoading = new Promise((resolve, reject) => {
+        const sc = document.createElement('script');
+        sc.src = '/admin_org.js?v=1';
+        sc.onload = resolve;
+        sc.onerror = () => reject(new Error('admin_org.js did not load'));
+        document.head.appendChild(sc);
+      }).then(() => window.MzoOrg.mount(host)).catch((e) => {
+        orgLoading = null;
+        host.innerHTML = '<div class="ui-empty">Could not load the Organisation chart.</div>';
       });
     }
 

@@ -1039,6 +1039,8 @@ const sourcesInfo = require('./lib/sources_info').create({ appRoot: __dirname, m
 app.get('/api/admin/sources-info', sourcesInfo.handler);
 // Admin → Data quality: findings of the sync's checks (quality.json next to the snapshots; lib/data_quality.js, docs/data-quality.md).
 app.get('/api/admin/data-quality', require('./lib/data_quality').create({ mirror, sources: sourcesInfo }).handler);
+// Admin → Organisation: WBSEDCL's office hierarchy, with the zone this app covers marked live (lib/org_hierarchy.js; docs/org-hierarchy.md).
+app.get('/api/admin/org', require('./lib/org_hierarchy').create({ file: path.join(__dirname, 'data', 'org', 'wbsedcl_hierarchy.json') }).handler); // literal path: Vercel bundles it with the function
 // Data editor (/editor/, /api/editor/*; docs/data-editor.md): native datasets on the VM's PocketBase. Off without PocketBase credentials.
 require('./lib/editor').mount(app, { refreshMirror, isSensitive: (key) => require('./lib/mirror').isSensitive(key), onChanged: (keys) => { if (mirror.on() && keys.some((k) => BRIEFING_MIRROR_KEYS.has(k))) refreshBriefing_({ changed: true }); } });
 // Uniform rows next to the snapshots (docs/uniform-data.md); mirror mode only.

@@ -52,6 +52,7 @@ Optional `.env` (git-ignored, loaded by `npm run dev`): `GOEDEL_API_KEY` or `ANT
 | [docs/data-mirror.md](docs/data-mirror.md) | The VM's PocketBase copy of every dataset: sources, storage structure, schedules, raw snapshots, running a sync |
 | [docs/data-editor.md](docs/data-editor.md) | The data editor at `/editor/` on the VM: editing, pasting and permissions; datasets the VM owns (native mode) |
 | [docs/data-quality.md](docs/data-quality.md) | Data quality checks on the mirror: findings, the owner action list per sheet, scores, how the checks work |
+| [docs/org-hierarchy.md](docs/org-hierarchy.md) | Admin → Organisation: WBSEDCL's office hierarchy chart, its dataset and API, and what scaling beyond Malda Zone would change |
 | [docs/stock.md](docs/stock.md) | Stock dump, insight project, allotments |
 | [docs/apps-script.md](docs/apps-script.md) | Apps Script web apps behind the sheets |
 | [docs/assistant.md](docs/assistant.md) | Ask (`/api/assistant`; DeepSeek V4.1 Flash on Gödel Machines or Claude Haiku, chosen by env) |

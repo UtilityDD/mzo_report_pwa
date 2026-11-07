@@ -94,6 +94,8 @@ Office codes match `/66[123]\d{4}/` (e.g. `6611108`, `C366111080`). If a dataset
 
 **Adding an office or an alias:** add the spelling to that office's aliases in `lib/offices.js` (a new CCC also goes into `mzo_scope.js` `HIERARCHY` and `CODE_TO_CCC`, which must list the same 41 CCCs), bump `VERSION` there so the mirror rewrites its office fields, and bump `lib/offices.js?v=` on every page. The mirror's `dim_offices` collection is rewritten from the list on the next sync.
 
+**Other zones:** WBSEDCL's full hierarchy (6 zones, 23 regions, 79 divisions, about 500 CCCs from public sources) is a separate, admin-only dataset for Admin → Organisation (`data/org/wbsedcl_hierarchy.json`, `GET /api/admin/org`). It does not change scope or reports. Where zone sits in scope and data today, and what multi-zone support would need: [org-hierarchy.md](org-hierarchy.md#scaling-beyond-malda-zone).
+
 **In the mirror** every `ds_` collection with office columns gets `_region`, `_division`, `_ccc_code` and `_ccc` (empty when unknown), and unknown or contradictory values go to `sys_quality_issues` as `office.*` checks. Findings: [data-quality-offices.md](data-quality-offices.md).
 
 ## DataHub
