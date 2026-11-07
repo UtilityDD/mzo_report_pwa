@@ -9,6 +9,7 @@ On the VM, users, sign-in and the activity log live in the VM's own PocketBase i
 | `lib/google_auth.js` | Google token checks, shared with the Supabase path |
 | `lib/report_modules.js` | Report keys for `modules`, read from the NAV registry in `app.html` |
 | `vm/pocketbase/pb_migrations/1794000000`–`1794000002` | The three collections below |
+| `vm/pocketbase/pb_migrations/1794200000` | `app_assistant_usage`: Ask usage per model call (below; owned by `lib/assistant/usage.js`) |
 | `admin_users_pb.js` | Admin → Users additions (only active when the server says `store: pocketbase`) |
 | `vm/dev/test-users-store.js` | Tests against a throwaway local PocketBase |
 
@@ -53,6 +54,25 @@ Rows are queued and written in batches about once a second. Rows older than `MZO
 ### `app_user_audit`
 
 Every change to an account: `user_email`, `username`, `actor_email`, `actor_name`, `action` (`register`, `seed`, `create`, `approve`, `reject`, `update`, `disable`, `enable`, `delete`, `link_google`), `changes` (list of `{ field, from, to }`; feature flags as `feature_flags.<name>`), `reason`, `ip`, `created`. Never pruned. Shown as **Change history** in the user form (`GET /api/admin/users/audit?username=`).
+
+### `app_assistant_usage`
+
+One row per Ask model call (a question takes 2–4: the browser runs the tool loop and posts each turn), for **Admin → Ask usage** (`admin_users.html?tab=asks`, `GET /api/admin/assistant-usage`). Metadata only, never the question, the answer or tool results:
+
+| Field | Type | Notes |
+|---|---|---|
+| `user_email`, `user_name` | text | Who asked (snapshots, from the session) |
+| `provider`, `model` | text | `goedel` / `anthropic`, and the model the provider named |
+| `turn` | number | 0 for the call that starts a question, 1, 2… for the calls after its tool results. Questions = rows with `turn` 0 |
+| `input_tokens`, `cached_input_tokens` | number | Every input token (cached included) and the cached part; new input = the difference |
+| `output_tokens`, `reasoning_tokens` | number | Every output token (reasoning included) and the reasoning part when reported |
+| `latency_ms` | number | Time at the provider (queue wait excluded) |
+| `status` | text | `ok`, the provider's HTTP status (`401`, `402`, `429`, `502`…) or `timeout`, `network`, `queue` (the local queue was full: never reached the provider), `upstream`, `error` |
+| `tool_calls_count`, `retries` | number | Tool calls in the answer; retries after a 429 / 5xx (each is one more request against the RPM limit) |
+| `data_policy` | text | The provider's `X-Data-Policy` header (`retained` on a free Gödel key) |
+| `created` | autodate | Indexed, as is (`user_email`, `created`) |
+
+Written by the app (`PB_URL` and the superuser login, like the data editor) in small batches about once a second; a failed write is logged at most every 10 minutes and never affects Ask. Not pruned (a few thousand small rows a day). Without PocketBase the panel reads an in-memory ring buffer of the last 2,000 calls instead.
 
 Per-dataset edit rights for the data editor are a separate collection, `app_dataset_permissions`, owned by the data editor (`/editor/#/permissions?email=…`; the user row's **Data permissions** button links there).
 

@@ -5592,8 +5592,14 @@ app.get('/api/executive/briefing', async (req, res) => {
 // (GOEDEL_API_KEY / ANTHROPIC_API_KEY, ASSISTANT_PROVIDER, ...): see lib/assistant/index.js.
 const ASSISTANT_CATALOG = require('./lib/assistant_catalog.js');
 const assistantLib = require('./lib/assistant/index.js');
-const assistant = assistantLib.createAssistant({ env: process.env, fileConfig, catalog: ASSISTANT_CATALOG, fetch });
+// Ask usage (Admin -> Ask usage): one row per model call in PocketBase app_assistant_usage on the VM, an
+// in-memory ring buffer elsewhere; metadata only (lib/assistant/usage.js, docs/assistant.md).
+const assistantUsage = require('./lib/assistant/usage.js').create({ env: process.env });
+const assistant = assistantLib.createAssistant({ env: process.env, fileConfig, catalog: ASSISTANT_CATALOG, fetch, onUsage: assistantUsage.record });
 const assistantHits = new Map(); // username -> [timestamps] (best effort per instance)
+app.get('/api/admin/assistant-usage', assistantUsage.handler(() => ({
+    configured: assistant.configured, provider: assistant.provider, model: assistant.model, modelName: assistant.modelName, limits: assistant.limits
+})));
 
 app.post('/api/assistant', async (req, res) => {
     const user = req.user || {};
@@ -5622,7 +5628,8 @@ app.post('/api/assistant', async (req, res) => {
     const ctrl = new AbortController();
     res.on('close', () => { if (!res.writableEnded) ctrl.abort(); });
     try {
-        const response = await assistant.complete({ userNote, messages, signal: ctrl.signal });
+        const meta = { user_email: user.email || '', user_name: user.Name || user.Username || '', turn: assistantUsage.turnOf(messages) };
+        const response = await assistant.complete({ userNote, messages, signal: ctrl.signal, meta });
         return res.json({
             status: 'success',
             stop_reason: response.stop_reason,

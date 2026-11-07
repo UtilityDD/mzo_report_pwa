@@ -31,7 +31,7 @@ Read these next, in this order:
 | Substation & network | Power map (`power_map/map.html`), Line–highway crossings, PRT / transformer records (`prt-oil/`), Feeder outage |
 | Important | Performance index, CMO grievance, PM Surya Ghar, Priority SI works (`si-works/si.html`), JJM report, Accident reports, Safety app reports, Manpower report, Substation upkeeping, DTR records, Peak load measurements, Health check-up, Durga Puja 2026, Stock, Important data sheets, Sheet links |
 | Media | Power news hub |
-| Administration (admins only) | Users, Sources, Activity, Visitors, Power map edits, Corrections (all `admin_users.html?tab=…`), Structure (`admin.html`) |
+| Administration (admins only) | Users, Sources, Activity, Visitors, Ask usage, Power map edits, Corrections (all `admin_users.html?tab=…`), Structure (`admin.html`) |
 
 URLs are bookmarked and shared: never rename or move a served page; leave a redirect if one must move.
 
@@ -237,7 +237,7 @@ A local snapshot folder for mirror mode: `node vm/dev/make-snapshots.js --out /t
 - Stock: `STOCK_USE_STORAGE`, `STOCK_STORAGE_BUCKET`, `STOCK_STORAGE_OBJECT`
 - Apps Script URLs: `NSC_SHEET_SCRIPT_URL`, `NSC_WITHHELD_SHEET_SCRIPT_URL`, `NSC_FOLLOWUP_SCRIPT_URL`, `STOCK_SHEET_SCRIPT_URL`, `STOCK_ALLOTMENT_SCRIPT_URL`, `DEFECTIVE_SHEET_SCRIPT_URL`, `DISCONNECTION_FOLLOWUP_SCRIPT_URL`, `METADATA_SCRIPT_URL`
 - Sheet overrides for sync jobs: `DISCONNECTION_SHEET_CSV_URL`, `PENDING_MC_SHEET_CSV_URL`, `LOAD_EXT_SHEET_CSV_URL`, `DEFECTIVE_SUMMARY_CSV_URL`, `DEFECTIVE_DETAILS_CSV_URL`, `STOCK_SHEET_CSV_URL`, `STOCK_ALLOTMENTS_CSV_URL`
-- Ask: `ASSISTANT_PROVIDER` (`goedel` | `anthropic`; unset: goedel when its key is set, else anthropic), `GOEDEL_API_KEY` (`GODEL_API_KEY` also accepted), `ANTHROPIC_API_KEY`, `ASSISTANT_MODEL`, `ASSISTANT_BASE_URL`, `ASSISTANT_MAX_CONCURRENCY`. Switching provider is an env change and a restart; see [assistant.md](assistant.md#providers-libassistant)
+- Ask: `ASSISTANT_PROVIDER` (`goedel` | `anthropic`; unset: goedel when its key is set, else anthropic), `GOEDEL_API_KEY` (`GODEL_API_KEY` also accepted), `ANTHROPIC_API_KEY`, `ASSISTANT_MODEL`, `ASSISTANT_BASE_URL`, `ASSISTANT_MAX_CONCURRENCY`. Switching provider is an env change and a restart; see [assistant.md](assistant.md#providers-libassistant). Ask usage limits and paid prices (Admin → Ask usage; defaults per provider and key tier): `ASSISTANT_TIER`, `ASSISTANT_LIMIT_RPM`, `ASSISTANT_LIMIT_INPUT_MINUTE`, `ASSISTANT_LIMIT_INPUT_DAY`, `ASSISTANT_LIMIT_OUTPUT_DAY`, `ASSISTANT_PRICE_INPUT`, `ASSISTANT_PRICE_CACHED`, `ASSISTANT_PRICE_OUTPUT`, `ASSISTANT_PRICE_GST`; see [assistant.md](assistant.md#usage-tracking-admin--ask-usage)
 - VM / mirror: `MZO_DATA_MODE`, `MZO_SNAPSHOT_DIR`, `SYNC_TMP_DIR`, `MZO_QUALITY_STATE_DIR`, `PB_URL`, `PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `SYNC_BATCH_SIZE`, `SYNC_DEBUG`
 - QA: `QA_COOKIE`, `QA_COOKIE_FILE`, `QA_JWT_SECRET`, `QA_OUT`, `PLAYWRIGHT_CORE_PATH`, `UNIFORM_SNAP`
 - Other: `PORT`, `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`
@@ -255,6 +255,7 @@ There is no single test command. What exists:
 | `node vm/dev/test-briefing-cache.js` | the Briefing cache in mirror mode | none |
 | `node vm/dev/test-local-admin.js` | VM-only admin accounts | none |
 | `node vm/dev/test-assistant-provider.js` | Ask's provider layer: translation to and from the OpenAI format, retries, errors, the concurrency gate, env settings, the Anthropic path, `server.js` end to end against a local mock | none |
+| `node vm/dev/test-assistant-usage.js` | Ask usage tracking: token mapping for both providers, the ring buffer, limits and env overrides, the aggregation (daily-limit %, peak minute, cost), the admin route; with a PocketBase binary also the `app_assistant_usage` migration and the write/read path on a throwaway instance | PocketBase binary (optional) |
 | `node scripts/qa/assistant-live.js --env <file>` | Ask: tool-call accuracy and latency of the configured model on 15 typical questions, with made-up tool results only | the model API |
 | `node --test scripts/qa/uniform.test.js`, `node --test scripts/qa/rating.test.js`, `node scripts/qa/rating-metrics-test.js` | uniform rows, rating engine and metrics | none (`UNIFORM_SNAP` adds snapshot checks) |
 | `cd vm/sync && npm ci && npm run check` | sync syntax | none |

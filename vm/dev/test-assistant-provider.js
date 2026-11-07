@@ -12,7 +12,9 @@
 // errors and what the user is told; the concurrency gate (2 in flight, the rest queue); the env
 // settings (provider choice, GOEDEL_API_KEY / GODEL_API_KEY, model and base URL overrides); the
 // Anthropic path unchanged with a mocked client; and server.js end to end (POST /api/assistant and
-// /api/auth/config) with Gödel, with Anthropic (the real SDK pointed at the mock) and with no key.
+// /api/auth/config, and GET /api/admin/assistant-usage from the in-memory ring buffer) with Gödel,
+// with Anthropic (the real SDK pointed at the mock) and with no key. Usage capture in detail:
+// vm/dev/test-assistant-usage.js.
 
 const fs = require('fs');
 const os = require('os');
@@ -422,6 +424,13 @@ async function child() {
     ]);
     await post('invalid', [{ role: 'assistant', content: 'x' }]);
     if (process.env.TEST_MODE === 'goedel') await post('credit', [{ role: 'user', content: 'credit?' }]);
+    // Admin -> Ask usage: the ring buffer (no PocketBase here), admins only.
+    const viewerPayload = Buffer.from(JSON.stringify({ profile: { Username: 'viewer1', Name: 'Viewer', role: 'viewer', office_level: 'CE' }, expiry: Date.now() + 3600e3 })).toString('base64');
+    const viewerCookie = 'mzo_session=' + encodeURIComponent(viewerPayload + '.' + crypto.createHmac('sha256', SECRET).update(viewerPayload).digest('base64'));
+    const getUsage = async (c, q) => { const res = await realFetch(base + '/api/admin/assistant-usage' + (q || ''), { headers: Object.assign({ Accept: 'application/json' }, c ? { Cookie: c } : {}) }); return { status: res.status, body: await res.json().catch(() => null) }; };
+    out.usage = await getUsage(cookie, '?range=7d');
+    out.usageViewer = (await getUsage(viewerCookie)).status;
+    out.usageAnon = (await getUsage(null)).status;
     srv.close();
     console.log = origLog;
     fs.writeFileSync(process.env.TEST_OUT, JSON.stringify({ out, logs, upstream }));
@@ -432,7 +441,7 @@ async function child() {
 function runChild(env) {
     const out = path.join(os.tmpdir(), `mzo-test-assistant-${process.pid}-${env.TEST_MODE}.json`);
     const clean = Object.assign({}, process.env);
-    ['GOEDEL_API_KEY', 'GODEL_API_KEY', 'ANTHROPIC_API_KEY', 'ASSISTANT_PROVIDER', 'ASSISTANT_MODEL', 'ASSISTANT_BASE_URL', 'ASSISTANT_MAX_CONCURRENCY', 'ANTHROPIC_BASE_URL', 'MZO_DATA_MODE', 'MZO_USER_STORE', 'MZO_LOCAL_ADMINS', 'NODE_OPTIONS'].forEach((k) => delete clean[k]);
+    ['GOEDEL_API_KEY', 'GODEL_API_KEY', 'ANTHROPIC_API_KEY', 'ASSISTANT_PROVIDER', 'PB_URL', 'PB_SUPERUSER_EMAIL', 'PB_SUPERUSER_PASSWORD', 'ASSISTANT_TIER', 'ASSISTANT_MODEL', 'ASSISTANT_BASE_URL', 'ASSISTANT_MAX_CONCURRENCY', 'ANTHROPIC_BASE_URL', 'MZO_DATA_MODE', 'MZO_USER_STORE', 'MZO_LOCAL_ADMINS', 'NODE_OPTIONS'].forEach((k) => delete clean[k]);
     const sandboxFiles = fs.mkdtempSync(path.join(os.tmpdir(), 'mzo-test-files-'));
     return new Promise((resolve, reject) => {
         const p = spawn(process.execPath, [__filename, '--child'], { env: Object.assign(clean, { JWT_SECRET: SECRET, MZO_FILES_DIR: sandboxFiles, TEST_OUT: out, PORT: '0' }, env), stdio: ['ignore', 'pipe', 'pipe'] });
@@ -478,6 +487,19 @@ async function serverTests(mock) {
         assert.ok(r.logs.some((l) => /failed .*kind=credit status=402/.test(l)));
         assert.ok(!r.logs.join('\n').includes(FAKE_KEY) && !r.logs.join('\n').includes('What needs attention'), 'no key or content in logs');
         assert.deepStrictEqual(r.upstream.filter((u) => !u.startsWith('GET')), [], 'no upstream writes');
+        // Ask usage: one row per model call (the invalid conversation never reached the model)
+        assert.deepStrictEqual([r.out.usage.status, r.out.usageViewer, r.out.usageAnon], [200, 403, 401]);
+        const u = r.out.usage.body;
+        assert.strictEqual(u.source, 'memory');
+        assert.deepStrictEqual([u.totals.calls, u.totals.questions, u.totals.users, u.totals.errors], [3, 2, 1, 1]);
+        assert.deepStrictEqual([u.totals.input_tokens, u.totals.cached_input_tokens, u.totals.new_input_tokens, u.totals.output_tokens, u.totals.reasoning_tokens, u.totals.tool_calls], [2400, 2048, 352, 160, 80, 1]);
+        assert.deepStrictEqual(u.totals.errorsByCode, { 402: 1 });
+        assert.deepStrictEqual([u.provider.provider, u.provider.model, u.provider.tier, u.provider.dataPolicy], ['goedel', 'deepseek/deepseek-v4.1-flash', 'free', 'retained']);
+        assert.deepStrictEqual([u.today.newInput.used, u.today.newInput.limit, u.today.output.limit, u.today.rpm.limit], [352, 10000000, 1000000, 60]);
+        assert.strictEqual(u.topUsers[0].name, 'Tester');
+        assert.strictEqual(u.series.length, 7);
+        const text = JSON.stringify(u);
+        assert.ok(!text.includes('What needs attention') && !text.includes('Synthetic item') && !text.includes('credit?') && !text.includes(FAKE_KEY), 'no conversation or key in the usage report');
     });
 
     await test('server.js with Anthropic (real SDK against the mock)', async () => {
@@ -490,6 +512,10 @@ async function serverTests(mock) {
         assert.strictEqual(r.out.ask.status, 200);
         assert.deepStrictEqual(r.out.ask.body, { status: 'success', stop_reason: 'tool_use', content: [{ type: 'thinking', thinking: 't', signature: 's' }, { type: 'tool_use', id: 'toolu_1', name: 'get_briefing', input: {} }], usage: { input: 20, output: 6, cache_read: 7000 } });
         assert.strictEqual(r.out.loop.body.stop_reason, 'end_turn');
+        // Ask usage: Anthropic's input_tokens excludes the cache read, so input = 20 + 7000 per call
+        const u = r.out.usage.body;
+        assert.deepStrictEqual([u.totals.calls, u.totals.questions, u.totals.input_tokens, u.totals.cached_input_tokens, u.totals.output_tokens], [2, 1, 14040, 14000, 12]);
+        assert.deepStrictEqual([u.provider.provider, u.today.newInput.limit, u.today.rpm.limit, u.cost], ['anthropic', null, null, null]);
         const q = mock.requests[0];
         assert.strictEqual(q.url, '/v1/messages');
         assert.ok([q.headers['x-api-key'], q.headers.authorization].some((h) => String(h || '').includes('sk-ant-test-not-real')), 'the Anthropic key is sent');

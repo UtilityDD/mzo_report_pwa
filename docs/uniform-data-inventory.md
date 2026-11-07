@@ -1414,7 +1414,7 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 
 ## Administration
 
-### admin_users.html  (NAV keys: admin_users, admin_sources, admin_activity, admin_visitors, admin_powermap, admin_corrections; all `admin_users.html?tab=…`)
+### admin_users.html  (NAV keys: admin_users, admin_sources, admin_activity, admin_visitors, admin_asks, admin_powermap, admin_corrections; all `admin_users.html?tab=…`)
 - **Status (2026-11-01):** not converted: admin pages; reads one column of the Power Map CSV.
 - **Kind:** legacy (6374 lines; no `html.ui`; Font Awesome; own CSS plus mzo_theme.css) · **Loads:** `https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js`, `mzo_scope.js?v=14`, `mzo_data_hub.js?v=90` (used only for `window.MZO_DATASETS`). CSS: font-awesome 6.5.0 CDN.
 - **Datasets:**

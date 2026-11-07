@@ -48,6 +48,7 @@ Set on Vercel (Smart Lineman project); locally in the git-ignored `.env`. `serve
 | `GOOGLE_CLIENT_ID` | Audience check for Google sign-in; without it `/api/auth/google` returns 503 |
 | `GOEDEL_API_KEY` (or `GODEL_API_KEY`), `ANTHROPIC_API_KEY` | Ask (`/api/assistant`): the Gödel Machines key (DeepSeek V4.1 Flash) and/or the Anthropic key (Claude Haiku). With neither, Ask says it is not configured |
 | `ASSISTANT_PROVIDER`, `ASSISTANT_MODEL`, `ASSISTANT_BASE_URL`, `ASSISTANT_MAX_CONCURRENCY` | Ask: which provider (`goedel` / `anthropic`; default goedel when its key is set), a model override, the OpenAI-compatible base URL, calls in flight (default 2 for goedel). See [assistant.md](assistant.md#providers-libassistant) |
+| `ASSISTANT_TIER`, `ASSISTANT_LIMIT_RPM`, `ASSISTANT_LIMIT_INPUT_MINUTE`, `ASSISTANT_LIMIT_INPUT_DAY`, `ASSISTANT_LIMIT_OUTPUT_DAY`, `ASSISTANT_PRICE_INPUT`, `ASSISTANT_PRICE_CACHED`, `ASSISTANT_PRICE_OUTPUT`, `ASSISTANT_PRICE_GST` | Admin → Ask usage: the provider's limits and paid prices, overriding the defaults for the provider and key tier (`0` or `none` = no cap). See [assistant.md](assistant.md#usage-tracking-admin--ask-usage) |
 | `SUPABASE_URL`, `SUPABASE_KEY` / `SUPABASE_ANON_KEY` | Old project: login (until `INSIGHT_LIVE`), activity logs |
 | `POWERMAP_SUPABASE_URL`, `POWERMAP_SUPABASE_KEY` | Power Map tables (default to the old project) |
 | `INSIGHT_SUPABASE_URL`, `INSIGHT_SUPABASE_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | New insight project: stock Storage, allotments, report snapshots |
