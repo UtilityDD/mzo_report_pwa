@@ -31,7 +31,7 @@ Read these next, in this order:
 | Substation & network | Power map (`power_map/map.html`), Line–highway crossings, PRT / transformer records (`prt-oil/`), Feeder outage |
 | Important | Performance index, CMO grievance, PM Surya Ghar, Priority SI works (`si-works/si.html`), JJM report, Accident reports, Safety app reports, Manpower report, Substation upkeeping, DTR records, Peak load measurements, Health check-up, Durga Puja 2026, Stock, Important data sheets, Sheet links |
 | Media | Power news hub |
-| Administration (admins only) | Users, Sources, Activity, Visitors, Ask usage, Power map edits, Corrections (all `admin_users.html?tab=…`), Structure (`admin.html`) |
+| Administration (admins only) | Users, Sources, Data quality, Activity, Visitors, Ask usage, Power map edits, Corrections (all `admin_users.html?tab=…`), Structure (`admin.html`) |
 
 URLs are bookmarked and shared: never rename or move a served page; leave a redirect if one must move.
 
@@ -162,7 +162,7 @@ Oracle Cloud VM (Oracle Linux, 1 GB RAM plus swap, user `opc`). Everything it ru
 |---|---|
 | `mzo-reports.service` | the app: `node server.js` on 127.0.0.1:3000 as `opc`, from `/opt/mzo/app`, with `MZO_DATA_MODE=mirror`, `MZO_SNAPSHOT_DIR=/opt/mzo/data/snapshots`, `SYNC_TMP_DIR=/opt/mzo/data/sync-tmp`; env from `/etc/mzo/pocketbase.env` and `/etc/mzo/app.env` |
 | `pocketbase.service` | PocketBase 0.40.6 on 127.0.0.1:8090 as user `pocketbase`, data in `/opt/mzo/pocketbase/pb_data`, migrations from the live release, `--automigrate=false` |
-| `mzo-sync.timer` → `mzo-sync.service` | every 5 minutes: `node vm/sync/run.js --due` (each source's schedule decides if it is due), then the data quality checks and the rating |
+| `mzo-sync.timer` → `mzo-sync.service` | every 5 minutes: `node vm/sync/run.js --due` (each source's schedule decides if it is due), then uniform rows, page views, the data quality checks (`quality.json`, Admin → Data quality) and the rating |
 | `mzo-deploy.timer` → `mzo-deploy.service` | 60 s after the previous run finished: `/opt/mzo/bin/deploy.sh` |
 | `mzo-stats.service` | `vm/stats/sampler.py`: CPU, memory, disk, services every 5 s for the stats site |
 | `caddy.service` | Caddy with `/etc/caddy/Caddyfile` (from `vm/deploy/Caddyfile`): TLS for the three sslip.io names, reverse proxy to the app and PocketBase |
@@ -208,6 +208,7 @@ Full reference: [data-mirror.md](data-mirror.md), Supabase part [vm/sync/sources
 - **Snapshots**: the exact source bytes as `<key>.csv|tsv|json` plus `.gz`/`.br` in `/opt/mzo/data/snapshots`, with `manifest.json` (sha1 version, URLs, DataHub keys, times). The app serves them at `/api/data/manifest` and `/api/data/file/<key>` (session required).
 - **Fallbacks**: any failure in the browser (network, non-200, wrong type, short file) falls back to the original source for that dataset; a source that suddenly returns no rows, or stops being public, keeps its last copy. After a write the app does, a targeted "write-through" sync runs and the dataset is read live until it finishes.
 - **Sensitive sources never get a snapshot** and are not in the manifest: `manpower_staff`, `manpower_pins`, `upcoming_dd`, `dd_visit`, `portal_users`, `activity_logs`, `dd_user_auth` and some Power Map staff tables. They are only in PocketBase, behind the portal sign-in.
+- **Data quality** (Admin → Data quality, `admin_users.html?tab=quality`): after each run `vm/sync/quality.js` checks the datasets whose snapshot changed (row count against the last good copy, header changes, duplicate keys and rows, blank or unknown offices, scientific notation and text in number columns, impossible dates, negatives, columns that went to zero, sources old at the origin, plus the rules in `vm/sync/lib/quality/rules.js` for REM, Collection, Losses and map coordinates) and writes `quality.json` next to the manifest; `GET /api/admin/data-quality` serves it to the tab. Examples are row numbers or office codes, never personal data. **Hold-back:** a new copy with less than half the rows, a lost header, or lost columns and 20 % fewer rows is not published; the previous snapshot stays, the dataset shows as *Held* in Sources and Data quality, and the next run tries again (accepted after 24 h of identical copies, or with `run.js --only <key> --force`). Details: [data-quality.md → Admin → Data quality](data-quality.md#admin--data-quality).
 - **Running a sync by hand** on the VM: `sudo systemctl start mzo-sync`, or one source as `opc`: `cd /opt/mzo/app/vm/sync && node --env-file=/etc/mzo/pocketbase.env run.js --only <key>`. Locally against your own PocketBase: [data-mirror.md → Running a sync by hand](data-mirror.md#running-a-sync-by-hand-vm).
 
 ## 6. Running locally, safely
@@ -237,8 +238,8 @@ A local snapshot folder for mirror mode: `node vm/dev/make-snapshots.js --out /t
 - Stock: `STOCK_USE_STORAGE`, `STOCK_STORAGE_BUCKET`, `STOCK_STORAGE_OBJECT`
 - Apps Script URLs: `NSC_SHEET_SCRIPT_URL`, `NSC_WITHHELD_SHEET_SCRIPT_URL`, `NSC_FOLLOWUP_SCRIPT_URL`, `STOCK_SHEET_SCRIPT_URL`, `STOCK_ALLOTMENT_SCRIPT_URL`, `DEFECTIVE_SHEET_SCRIPT_URL`, `DISCONNECTION_FOLLOWUP_SCRIPT_URL`, `METADATA_SCRIPT_URL`
 - Sheet overrides for sync jobs: `DISCONNECTION_SHEET_CSV_URL`, `PENDING_MC_SHEET_CSV_URL`, `LOAD_EXT_SHEET_CSV_URL`, `DEFECTIVE_SUMMARY_CSV_URL`, `DEFECTIVE_DETAILS_CSV_URL`, `STOCK_SHEET_CSV_URL`, `STOCK_ALLOTMENTS_CSV_URL`
-- Ask: `ASSISTANT_PROVIDER` (`goedel` | `anthropic`; unset: goedel when its key is set, else anthropic), `GOEDEL_API_KEY` (`GODEL_API_KEY` also accepted), `ANTHROPIC_API_KEY`, `ASSISTANT_MODEL`, `ASSISTANT_BASE_URL`, `ASSISTANT_MAX_CONCURRENCY`. Switching provider is an env change and a restart; see [assistant.md](assistant.md#providers-libassistant). Ask usage limits and paid prices (Admin → Ask usage; defaults per provider and key tier): `ASSISTANT_TIER`, `ASSISTANT_LIMIT_RPM`, `ASSISTANT_LIMIT_INPUT_MINUTE`, `ASSISTANT_LIMIT_INPUT_DAY`, `ASSISTANT_LIMIT_OUTPUT_DAY`, `ASSISTANT_PRICE_INPUT`, `ASSISTANT_PRICE_CACHED`, `ASSISTANT_PRICE_OUTPUT`, `ASSISTANT_PRICE_GST`; see [assistant.md](assistant.md#usage-tracking-admin--ask-usage)
-- VM / mirror: `MZO_DATA_MODE`, `MZO_SNAPSHOT_DIR`, `SYNC_TMP_DIR`, `MZO_QUALITY_STATE_DIR`, `PB_URL`, `PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `SYNC_BATCH_SIZE`, `SYNC_DEBUG`
+- Ask: `ASSISTANT_PROVIDER` (`goedel` | `anthropic`; unset: goedel when its key is set, else anthropic), `GOEDEL_API_KEY` (`GODEL_API_KEY` also accepted), `ANTHROPIC_API_KEY`, `ASSISTANT_MODEL`, `ASSISTANT_BASE_URL`, `ASSISTANT_MAX_CONCURRENCY`. Switching provider is an env change and a restart; see [assistant.md](assistant.md#providers-libassistant)
+- VM / mirror: `MZO_DATA_MODE`, `MZO_SNAPSHOT_DIR`, `SYNC_TMP_DIR`, `MZO_QUALITY_STATE_DIR`, `MZO_QUALITY_FILE`, `PB_URL`, `PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `SYNC_BATCH_SIZE`, `SYNC_DEBUG`
 - QA: `QA_COOKIE`, `QA_COOKIE_FILE`, `QA_JWT_SECRET`, `QA_OUT`, `PLAYWRIGHT_CORE_PATH`, `UNIFORM_SNAP`
 - Other: `PORT`, `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`
 
@@ -254,6 +255,7 @@ There is no single test command. What exists:
 | `node vm/dev/test-mirror-server.js` | the server in both modes with every upstream answered from fixtures; any upstream write fails it | none |
 | `node vm/dev/test-briefing-cache.js` | the Briefing cache in mirror mode | none |
 | `node vm/dev/test-local-admin.js` | VM-only admin accounts | none |
+| `node vm/dev/test-quality.js` | data quality: every check and rule on synthetic data, the hold-back rule (also inside `syncSource`), `vm/sync/quality.js` end to end, `GET /api/admin/data-quality` and the Sources "Held" status | none |
 | `node vm/dev/test-assistant-provider.js` | Ask's provider layer: translation to and from the OpenAI format, retries, errors, the concurrency gate, env settings, the Anthropic path, `server.js` end to end against a local mock | none |
 | `node vm/dev/test-assistant-usage.js` | Ask usage tracking: token mapping for both providers, the ring buffer, limits and env overrides, the aggregation (daily-limit %, peak minute, cost), the admin route; with a PocketBase binary also the `app_assistant_usage` migration and the write/read path on a throwaway instance | PocketBase binary (optional) |
 | `node scripts/qa/assistant-live.js --env <file>` | Ask: tool-call accuracy and latency of the configured model on 15 typical questions, with made-up tool results only | the model API |

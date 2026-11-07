@@ -263,6 +263,8 @@ The answer is kept 60 s (`?refresh=1` rebuilds it). **By dataset** has one row p
 
 Without mirror mode (Vercel, a local checkout) PocketBase is not read and every source shows as read live; the inventory, the descriptor and the reports still show. Tests: `node vm/dev/test-sources-info.js`.
 
+A dataset whose last copy was held back by the sync (the new copy looked incomplete; `last_error` starts with `held:`) shows the status **Held** instead of Error: the pages keep the previous snapshot. Its findings, and those of every other dataset, are in the **Data quality** tab next to Sources ([data-quality.md](data-quality.md#admin--data-quality)); the dataset drawer links to it.
+
 ## Running a sync by hand (VM)
 
 ```bash

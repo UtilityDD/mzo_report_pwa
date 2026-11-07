@@ -286,3 +286,121 @@ node vm/quality/audit.js --pb [--only …]                                      
 `--sources` prints a score line per dataset and writes the full JSON report with `--out`. The hook needs no setup: after each successful sync, `run.js` calls `require('../quality').check(key, 'ds_' + key, ctx)`. It reads the dataset's raw snapshot, or the `ds_` records for sensitive datasets that have no snapshot. One pass keeps memory flat: the 282,000-row meter master runs in about 2 s with a peak of about 140 MB, and most datasets take well under a second. It writes the two collections, resolves issues that did not come back, and never fails the sync. When a source is unchanged, the hook only re-ages its stored report date, once a day, so a sheet that nobody updates still turns stale. That state, and the previous headers for `header.drift`, sit in `headers.json` under `MZO_QUALITY_STATE_DIR` (default: the service's cache directory, else `vm/quality/.state/`).
 
 **Masking.** `vm/quality/lib/mask.js` masks every sample before it is stored: PIN, password and token columns, phone, e-mail, bank, PAN and Aadhaar values, and person names and addresses. Consumer, application and meter numbers keep their first two and last two characters. Office names, codes, dates and amounts stay readable, because the sheet owner needs them to find the row.
+
+## Admin → Data quality
+
+A second, lighter set of checks runs on the **snapshots** after every sync run and feeds the **Data quality** tab of the Administration window (`admin_users.html?tab=quality`, palette entry "Data quality"), so admins see a broken copy within one sync interval without anyone running an audit. It was built from the findings of the 6 Nov 2026 data audit: withheld half-uploaded, REM outstanding all zero, Collection booked to region codes, the Loss roll-up gap, scientific notation, shifted rows, duplicates, impossible dates, negative loan balances, lost decimal points and sources months old at the origin. The PocketBase checks above (`vm/quality`, `sys_quality_*`) still run for the data portal.
+
+| File | What |
+|---|---|
+| `vm/sync/quality.js` | The step `run.js` runs after the page views. It checks every dataset whose snapshot version changed (all of them when the checking code changed), each in a child process of its own, then writes `quality.json` next to `manifest.json` |
+| `vm/sync/lib/quality/engine.js` | One dataset, in two streaming passes over the snapshot text. Pass 1 sums `lib/uniform.js` `stats()` per column, so every column gets exactly the type the uniform rows and the mirror give it (schema pins and aliases included). Pass 2 feeds each row, with its typed values, its office (`lib/offices.js`) and its row number, to the checks |
+| `vm/sync/lib/quality/checks.js` | The checks, one small function each, and the rule types |
+| `vm/sync/lib/quality/rules.js` | **The one config file**: thresholds, column roles, per-dataset facts (key columns, the "as on" column and its maximum age, columns that may not be negative, special date formats, report-style sheets) and the specific rules |
+| `vm/sync/lib/quality/store.js` | `quality.json`: merges a run into the previous state (first and last seen, resolved issues, staleness, summary) |
+| `vm/sync/lib/holdback.js` | The hold-back of bad copies (below), called by `vm/sync/lib/sync.js` |
+| `lib/data_quality.js` | `GET /api/admin/data-quality` |
+
+### Checks
+
+| Check | Severity | What |
+|---|---|---|
+| `rows.drop`, `rows.empty` | critical | More than 20 % fewer rows than the last good copy, or none. The baseline stays the last good copy. When the next copy has about as many rows, the drop is taken as real: the finding drops to info and that copy becomes the baseline |
+| `header.removed`, `header.added` | warning, or critical when `schema/<key>.json` lists the column (a page reads it); info | Columns gone or new against the last good copy |
+| `key.duplicate`, `row.duplicate` | warning | Repeated values in the key columns of `rules.js` (`keys`), and rows that are exact copies of an earlier row |
+| `office.blank`, `office.unknown`, `office.mismatch` | warning (blank: info under 10 % of rows) | No office at all; an office name or code not in `lib/offices.js`; a CCC code and a CCC name that point to different CCCs |
+| `number.scientific` | warning | `6.00E+09`-style cells in ID, amount and number columns. A sign must follow the E, so codes like `4E229` are not flagged |
+| `number.text` | warning in amount columns, else info | Text or formula errors in number columns: one finding per dataset that lists the columns |
+| `value.date_in_number` | warning | A yyyymmdd date in an amount column, more than 50 × the column's median: a shifted row |
+| `number.negative` | warning for counts and `nonNegative` columns, info for other amounts | Values below zero |
+| `date.impossible`, `date.future`, `date.too_old`, `date.placeholder` | warning, warning, warning, info | Impossible years (9982, 0204, 20256); dates more than 31 days ahead (due dates and targets excepted); dates before 1950; 1900–1912 placeholders. The date columns are the ones the uniform layer types as dates, plus text columns named like dates whose values are mostly dates, number columns named like dates (yyyymmdd, as in the REM dumps) and the `dateFormats` in `rules.js` |
+| `column.went_blank`, `column.went_zero` | warning, or critical when a page reads the column | A column that is blank, or 0, in every row but had values in the last good copy |
+| `source.stale` | warning; critical past 3 × the maximum age and 90 days | The newest "as on" date in the data against `maxAgeDays` (default by schedule: 14, 31 or 45 days). Judged on every run, without reading data |
+| `copy.held` | critical | The sync held the new copy back (below) |
+| `rem.osd_all_zero` | critical | REM defaulters: `NOTOSD_UPD`, the amount the page shows, is 0 in every row (two stray rows allowed) |
+| `collection.office_codes` | warning | Collection rows booked to region, division or zone office codes, with their ₹ share |
+| `loss.rollup` | warning | Loss report, latest month: the region rows' `cum_input_mu` is more than 2 % away from the sum of their CCC rows |
+| `geo.range` | warning | Map datasets: coordinates outside the zone (24.3–26.8 N, 87.3–89.4 E) or with the decimal point lost. Degrees-and-minutes cells (`N25°01.234'`) are read |
+
+A finding has the dataset, check id, column, severity, count, total, at most three examples, first and last seen, a plain-English message and a suggested fix. **Examples are row numbers** of the copied file (row 1 is the header; record numbers for Supabase tables). In datasets without personal columns they can also be office codes and names. A dataset with any column that names or reaches a person (`name`, `phone`, `address`, `con_id`, Aadhaar, PAN and so on; `COLUMN.personal` in `rules.js`) gets row numbers only. No other cell value is ever stored. Sensitive datasets have no snapshot and are never read.
+
+**Adding a rule.** Copy an entry of the same `type` in `RULES` (`notAllZero`, `officeLevel`, `rollup`, `geo`) and set its datasets, column, severity, message and fix. A new kind of rule needs a function in `RULE_TYPES` in `checks.js`. Per-dataset facts go in `DATASETS`. A change to `rules.js`, `checks.js`, `engine.js`, `lib/uniform.js` or `lib/offices.js` re-checks every dataset on the next run.
+
+### Hold-back of bad copies
+
+`vm/sync/lib/holdback.js` runs inside `syncSource` after the download, before the snapshot or the PocketBase rows change. Compared with the copy being served, a new copy is **held** when:
+
+1. it has less than half the rows (and the previous copy had at least 20); or
+2. the header is lost: none of the previous columns is left, or more than half of them are gone; or
+3. any previous column is gone and the rows fell by more than 20 %. This is the withheld copy read mid-upload on 6 Nov 2026: 45,600 of 66,760 rows, with `scn_witheld_date` gone.
+
+What happens then:
+
+- The snapshot and the rows stay as they are.
+- The run ends with status `error` and the message `held: new copy looks incomplete (…)`, so the next run reads the source in full again: frequent sources after 5 minutes, the others within the hour.
+- `quality-held.json` next to the snapshots records the hold (`since`, `attempts`, the reason), and the journal shows `[<key>] HELD held: new copy looks incomplete …`.
+- The Sources tab shows the dataset as **Held** instead of Error. The Data quality tab shows a banner and a `copy.held` finding.
+
+A good copy clears the hold. The rule only stops clearly broken copies. If the exact same bytes keep coming back for 24 hours, the copy is accepted, so a real shrink is never blocked for more than a day. `node vm/sync/run.js --only <key> --force` accepts it at once. A source can opt out with `holdBack: false`.
+
+### `quality.json`
+
+It sits next to `manifest.json` (`/opt/mzo/data/snapshots/quality.json` on the VM) and is never served as a file. It holds:
+
+- `summary`: critical, warning and info counts, datasets with a critical or warning finding, datasets checked, held copies;
+- `lastRun`: start, end, checked keys, failures, the largest child's RSS;
+- `datasets`: per key, the snapshot version checked, rows, the "as on" date and the baseline of the last good copy;
+- `findings` and `held`.
+
+A finding that is no longer found disappears. One that is still found keeps its `firstSeen`, and one that comes back within 14 days gets its old age back.
+
+### API and tab
+
+`GET /api/admin/data-quality` needs a session with role admin, the same check as `/api/admin/sources-info`. It returns:
+
+- `summary`, with `lastRun`;
+- `datasets`: each with its findings (worst first) and the menu reports that read it, taken from the Sources payload's report list;
+- `held`;
+- `reports`, for the report filter.
+
+Without a `quality.json` (Vercel, or a checkout without snapshots) it answers `available: false`. `MZO_QUALITY_FILE` points it at another file.
+
+The tab shows:
+
+- summary tiles: critical, warnings, info, datasets affected, held copies, last run;
+- a severity filter, a report filter and a search;
+- a table: the dataset and its reports, check, severity, count / total, examples, first seen and suggested fix.
+
+Clicking a row opens its message and details, with buttons for its reports and for the dataset in the Sources tab. The Sources drawer has a **Data quality** button that leads back. Export CSV saves the filtered findings.
+
+### Running it by hand
+
+```
+node vm/sync/quality.js --dir /opt/mzo/data/snapshots                  # what the sync runs (changed datasets only)
+node vm/sync/quality.js --dir <dir> --force --out /tmp/quality.json   # every dataset, results elsewhere
+node vm/sync/quality.js --dir <dir> --only withheld,solar_connections
+node vm/dev/test-quality.js                                           # the tests (synthetic data, no network)
+```
+
+Measured on a laptop with the VM snapshots of 7 Nov 2026 (82 datasets, about 1.1 million rows):
+
+- A full run takes 13.4 s.
+- The largest child is `meter_erp` (240,525 rows, 18.7 MB): about 163 MB RSS and 1.0 s. `meter_master` (288,888 rows) peaks at 143 MB and `withheld` at 128 MB.
+- Most datasets take under 100 ms and 50–100 MB.
+- A normal 5-minute run checks only the few datasets that changed.
+
+What it found in that copy:
+
+- REM outstanding is 0 in all three dumps (critical).
+- Sources old at the origin: accidents, DD summary, historical NSC, O&M, safety, smart meter work orders and weekly (critical); peak load and feeder outage (warning).
+- Collection: 1,845 rows (₹699 Cr) booked to region codes.
+- Loss: a roll-up gap of 725.39 MU.
+- Scientific notation in solar `APPLICATION_NO` (490 cells), theft `PAYMENT AMT` (6) and pending MC `LOAD` (1).
+- The shifted REM Ind/Com row (row 4430).
+- Meter master: 6,638 copied rows and 6,903 repeated `CON_ID`.
+- 245 repeated IDs in highway crossings; 1,951 repeated Inspection IDs (info) and 160 copied rows in safety.
+- Impossible dates in DD summary, ICDS A+ and SI works; 1900–1912 placeholders in the REM dumps.
+- 170 negative loan balances across the three PM Surya Ghar tabs.
+- 22 highway crossings off the map.
+
+A partial withheld copy, re-created from the full one, gave `rows.drop` and `header.removed` (both critical), and the hold-back rule held it. Not caught: Docket KPI's age (the sheet has no date column), Collection's same-day CCC duplicates (no composite key rule), and repeated `CON_ID` in `meter_isu` and `meter_crm` (no key configured for them).
