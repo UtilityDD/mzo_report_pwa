@@ -34,7 +34,7 @@ const OPS_PW = 'another long password';
 const SYNC_KEY = crypto.randomBytes(32).toString('hex');
 const SHORT_KEY = 'k'.repeat(31);
 const PRIVATE_PATHS = ['/server.js', '/server%2ejs', '/%73erver.js', '/%2egit/HEAD', '/.git/HEAD', '/%64ata/activity_log.json', '/data/activity_log.json',
-    '/lib/%65ditor/index.js', '/lib/editor/index.js', '/LIB/EDITOR/index.js', '/docs/HANDOFF%2emd', '/%73cripts/sync/common.js', '/%76m/sync/run.js',
+    '/lib/%65ditor/index.js', '/lib/quality/audit_findings.json', '/lib/editor/index.js', '/LIB/EDITOR/index.js', '/docs/HANDOFF%2emd', '/%73cripts/sync/common.js', '/%76m/sync/run.js',
     '/%6eode_modules/express/package.json', '/data/disconnection.csv', '/data/disconnection_payments.json', '/data/disconnection_meta.json', '/data/unbilled_chronic.csv', '/assets/..%2fserver.js', '/assets/%2e%2e/server.js', '//server.js', '/x%5c..%5cserver.js', '/%E0%A4%A', '/server.js%00.html'];
 const PUBLIC_FILES = ['/login.html', '/version.json', '/data/costcenter.json', '/lib/offices.js'];
 const CONSUMER_READS = ['/api/unbilled/meta', '/api/unbilled/outsort', '/api/unbilled/chronic', '/api/unbilled/summary', '/api/disconnection/meta', '/api/disconnection/dataset', '/api/disconnection/payments'];

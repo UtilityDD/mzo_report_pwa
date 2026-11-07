@@ -398,6 +398,165 @@ const tmp = (name) => fs.mkdtempSync(path.join(os.tmpdir(), 'mzo-dq-' + name + '
         fs.rmSync(dir, { recursive: true, force: true });
     });
 
+    // ---- 7. audit findings (lib/quality/audit_findings.json) ---------------------------------------------
+    await test('audit findings file: every item complete, enums valid, ids unique, auto_check ids exist, no personal data', () => {
+        const file = path.join(ROOT, 'lib/quality/audit_findings.json');
+        const text = fs.readFileSync(file, 'utf8');
+        const a = JSON.parse(text);
+        assert.ok(Array.isArray(a.findings) && a.findings.length >= 20, 'at least 20 findings');
+        // Every check id the automatic checks can produce: checks.js finding() calls, the rules' ids, and store.js's own.
+        const checksSrc = fs.readFileSync(path.join(ROOT, 'vm/sync/lib/quality/checks.js'), 'utf8');
+        const known = new Set([...checksSrc.matchAll(/finding\(ctx, '([a-z_]+\.[a-z_]+)'/g)].map((m) => m[1]));
+        require(path.join(ROOT, 'vm/sync/lib/quality/rules')).RULES.forEach((r) => known.add(r.id));
+        ['source.stale', 'copy.held'].forEach((c) => known.add(c));
+        const ids = new Set();
+        for (const f of a.findings) {
+            const where = f.id || JSON.stringify(f).slice(0, 60);
+            for (const k of ['id', 'title', 'severity', 'found', 'summary', 'evidence', 'impact', 'cause', 'owner', 'fix', 'status', 'status_note']) {
+                assert.ok(typeof f[k] === 'string' && f[k].trim(), `${where}: ${k} is set`);
+            }
+            assert.ok(Array.isArray(f.reports) && Array.isArray(f.datasets), `${where}: reports and datasets are lists`);
+            f.reports.forEach((r) => assert.ok(r.label, `${where}: report label`));
+            assert.ok(!ids.has(f.id), `${where}: unique id`);
+            ids.add(f.id);
+            assert.ok(['critical', 'high', 'medium', 'low'].includes(f.severity), `${where}: severity`);
+            assert.ok(['open', 'fixed', 'mitigated', 'monitoring'].includes(f.status), `${where}: status`);
+            assert.ok(['source sheet', 'app', 'sync'].includes(f.owner), `${where}: owner`);
+            assert.match(f.found, /^\d{4}-\d{2}-\d{2}$/, `${where}: found is a date`);
+            if (f.status === 'fixed') assert.match(String(f.fixed_in || ''), /^\d+\.\d+/, `${where}: a fixed finding names its release`);
+            const checks = [].concat(f.auto_check || []).filter(Boolean);
+            checks.forEach((c) => assert.ok(known.has(c), `${where}: auto_check ${c} is a real check`));
+            if (checks.length) assert.ok(f.datasets.length || (f.auto_datasets || []).length, `${where}: a linked check needs datasets`);
+            (f.auto_datasets || []).forEach((d) => assert.ok(f.datasets.includes(d), `${where}: auto_datasets ⊂ datasets`));
+            if (f.auto_count) assert.ok(['sum', 'datasets'].includes(f.auto_count), `${where}: auto_count`);
+        }
+        // Counts and office codes only: no long digit runs (consumer, application or phone numbers), no e-mail addresses.
+        assert.ok(!/\b\d{9,}\b/.test(text), 'no 9+ digit numbers');
+        assert.ok(!/[\w.+-]+@[\w-]+\.[\w.]+/.test(text), 'no e-mail addresses');
+        // The statuses this list was written against.
+        const by = (id) => a.findings.find((f) => f.id === id);
+        assert.equal(a.findings.find((f) => /Raiganj/.test(f.title)).status, 'fixed');
+        assert.equal(a.findings.find((f) => /partial copy/.test(f.title)).status, 'mitigated');
+        assert.equal(by('AF-02').status, 'open');
+    });
+
+    await test('audit view: live state linked from quality.json (detected, sums, columns, by dataset, clear, not checked, unavailable)', () => {
+        const iso = (t) => new Date(t).toISOString();
+        const fnd = (dataset, check, column, count, severity, extra) => Object.assign({ id: `${dataset}|${check}|${column}`, dataset, check, column, severity: severity || 'warning',
+            count, total: 1000, examples: [], message: 'm', fix: 'f', firstSeen: iso(NOW - 2 * DAY), lastSeen: iso(NOW) }, extra || {});
+        const q = {
+            generatedAt: iso(NOW),
+            datasets: {
+                rem_defaulters_dom: { label: 'REM dom', checkedAt: iso(NOW) }, rem_defaulters_agri: { label: 'REM agri', checkedAt: iso(NOW) },
+                pmsgy_malda: { label: 'PMSGY Malda', checkedAt: iso(NOW) }, highway_crossings: { label: 'Crossings', checkedAt: iso(NOW - DAY) },
+                weekly_report: { label: 'Weekly', checkedAt: iso(NOW) }, historical_nsc: { label: 'Historical', checkedAt: iso(NOW) }
+            },
+            findings: [
+                fnd('rem_defaulters_dom', 'rem.osd_all_zero', 'notosd_upd', 8107, 'critical'),
+                fnd('rem_defaulters_agri', 'rem.osd_all_zero', 'notosd_upd', 5624, 'critical', { firstSeen: iso(NOW - 3 * DAY) }),
+                fnd('rem_defaulters_ind_com', 'date.placeholder', 'date_of_co', 177, 'info'),
+                fnd('pmsgy_malda', 'number.negative', 'outstanding_amount_inr', 45),
+                fnd('pmsgy_malda', 'number.negative', 'sanctioned_amount_inr', 3),
+                fnd('weekly_report', 'source.stale', 'date_of_report_in_current_week', 257, 'critical'),
+                fnd('historical_nsc', 'source.stale', 'meter_install_date', 244, 'critical')
+            ],
+            resolved: { 'highway_crossings|geo.range|lat, long': { firstSeen: iso(NOW - 5 * DAY), resolvedAt: iso(NOW - DAY) } }
+        };
+        const file = { audit: 'Audit', audited: '2026-11-06', updated: '2026-11-07', findings: [
+            { id: 'A', title: 'REM zero', reports: [{ label: 'REM defaulters', page: 'rem/defaulters.html' }], datasets: ['rem_defaulters_dom', 'rem_defaulters_agri', 'rem_defaulters_ind_com'],
+                severity: 'critical', status: 'open', owner: 'app', auto_check: 'rem.osd_all_zero' },
+            { id: 'B', title: 'Negative loans', reports: [{ label: 'PM Surya Ghar', page: 'pmsgy.html' }], datasets: ['pmsgy_malda'], severity: 'medium', status: 'open',
+                owner: 'source sheet', auto_check: 'number.negative', auto_columns: ['outstanding_amount_inr'] },
+            { id: 'C', title: 'Stale', reports: [{ label: 'Weekly', page: 'weekly.html' }], datasets: ['weekly_report', 'historical_nsc', 'docket_kpi'], severity: 'medium', status: 'open',
+                owner: 'source sheet', auto_check: 'source.stale', auto_count: 'datasets', auto_unit: 'source|sources' },
+            { id: 'D', title: 'Coordinates', reports: [], datasets: ['highway_crossings'], severity: 'medium', status: 'open', owner: 'source sheet', auto_check: 'geo.range' },
+            { id: 'E', title: 'Never checked', reports: [], datasets: ['solar_connections'], severity: 'low', status: 'open', owner: 'source sheet', auto_check: 'number.scientific' },
+            { id: 'F', title: 'Fixed by hand', reports: [{ label: 'Performance index', page: 'performance_index.html' }], datasets: [], severity: 'low', status: 'fixed', fixed_in: '3.48', owner: 'app' },
+            { id: 'G', title: 'Bad enums fall back', datasets: [], severity: 'urgent', status: 'whatever', owner: 'someone' }
+        ] };
+        const v = dataQuality.auditView(file, q);
+        assert.equal(v.available, true);
+        assert.equal(v.summary.total, 7);
+        assert.deepEqual(v.summary.status, { open: 6, mitigated: 0, monitoring: 0, fixed: 1 });
+        assert.equal(v.summary.severity.critical.open, 1);
+        assert.equal(v.summary.severity.low.fixed, 1);
+        assert.equal(v.summary.owner['source sheet'], 4);
+        assert.equal(v.summary.detected, 3);
+        const get = (id) => v.findings.find((f) => f.id === id);
+        const a = get('A').live;
+        assert.equal(a.state, 'detected');
+        assert.equal(a.count, 8107 + 5624, 'counts summed across datasets');
+        assert.equal(a.matches.length, 2, 'only its own check (not date.placeholder in the same family)');
+        assert.equal(a.firstSeen, iso(NOW - 3 * DAY));
+        assert.equal(a.lastSeen, iso(NOW));
+        assert.equal(get('B').live.count, 45, 'auto_columns limits the match to one column');
+        const c = get('C').live;
+        assert.equal(c.count, 2, 'counted by dataset, not by days');
+        assert.equal(c.unit, 'source|sources');
+        const d = get('D').live;
+        assert.equal(d.state, 'clear');
+        assert.equal(d.count, 0);
+        assert.equal(d.resolvedAt, iso(NOW - DAY), 'a resolved finding gives the time it went away');
+        assert.equal(get('E').live.state, 'not_checked');
+        assert.equal(get('F').live, null, 'no auto_check: no live block');
+        assert.equal(get('F').fixedIn, '3.48');
+        assert.deepEqual([get('G').severity, get('G').status, get('G').owner], ['medium', 'open', 'app']);
+        assert.deepEqual(v.reports.map((r) => [r.label, r.findings]), [['Performance index', 1], ['PM Surya Ghar', 1], ['REM defaulters', 1], ['Weekly', 1]]);
+        // No quality.json: the list still comes, with live state 'unavailable'.
+        const none = dataQuality.auditView(file, null);
+        assert.equal(none.findings.find((f) => f.id === 'A').live.state, 'unavailable');
+        assert.equal(none.summary.detected, 0);
+        assert.equal(dataQuality.auditView(null, q).available, false);
+    });
+
+    await test('GET /api/admin/data-quality carries audit; GET /api/admin/data-quality/audit: admin gate and shape', async () => {
+        const dir = tmp('audit');
+        const qfile = path.join(dir, 'quality.json');
+        const state = store.merge(store.empty(), {
+            manifest: { rem_defaulters_dom: { version: 'a', label: 'REM dom' } },
+            results: { rem_defaulters_dom: { rows: 10, columns: [{ name: 'notosd_upd' }], findings: [{ check: 'rem.osd_all_zero', column: 'notosd_upd', severity: 'critical', count: 10, total: 10, examples: [], message: 'm', fix: 'f' }], baseline: { rows: 10, columns: ['notosd_upd'] } } },
+            now: NOW
+        });
+        store.write(dir, state, qfile);
+        const mk = (env, extra) => dataQuality.create(Object.assign({ env, log: { warn() {}, error() {} } }, extra || {}));
+        const call = async (api, fn, user) => {
+            const res = { code: 200, body: null, headers: {}, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; }, setHeader(k, v) { this.headers[k] = v; } };
+            await api[fn]({ user, query: {} }, res);
+            return res;
+        };
+        const api = mk({ MZO_QUALITY_FILE: qfile });
+        assert.equal((await call(api, 'auditHandler', null)).code, 401);
+        assert.equal((await call(api, 'auditHandler', { role: 'ccc' })).code, 403);
+        const main = await call(api, 'handler', { role: 'admin' });
+        assert.equal(main.code, 200);
+        assert.equal(main.body.audit.available, true);
+        const shipped = JSON.parse(fs.readFileSync(path.join(ROOT, 'lib/quality/audit_findings.json'), 'utf8'));
+        assert.equal(main.body.audit.findings.length, shipped.findings.length);
+        const rem = main.body.audit.findings.find((f) => f.autoCheck.includes('rem.osd_all_zero'));
+        assert.equal(rem.live.state, 'detected');
+        assert.equal(rem.live.count, 10);
+        const own = await call(api, 'auditHandler', { isAdmin: true });
+        assert.equal(own.code, 200);
+        assert.equal(own.headers['Cache-Control'], 'private, no-store');
+        assert.equal(own.body.status, 'success');
+        assert.equal(own.body.qualityAvailable, true);
+        for (const f of own.body.findings) {
+            for (const k of ['id', 'title', 'reports', 'datasets', 'severity', 'found', 'summary', 'evidence', 'impact', 'cause', 'owner', 'fix', 'status', 'statusNote', 'fixedIn', 'autoCheck', 'live']) {
+                assert.ok(k in f, `${f.id}: ${k} in the answer`);
+            }
+            if (f.autoCheck.length) assert.ok(f.live && ['detected', 'clear', 'not_checked'].includes(f.live.state), `${f.id}: live state`);
+            else assert.equal(f.live, null);
+        }
+        // No quality.json (Vercel): the audit list still comes, live 'unavailable'; a missing findings file: available false.
+        const bare = await call(mk({ MZO_QUALITY_FILE: path.join(dir, 'none.json') }), 'auditHandler', { role: 'admin' });
+        assert.equal(bare.body.qualityAvailable, false);
+        assert.ok(bare.body.findings.filter((f) => f.live).every((f) => f.live.state === 'unavailable'));
+        const noFile = await call(mk({ MZO_QUALITY_FILE: qfile }, { auditFile: path.join(dir, 'missing.json') }), 'handler', { role: 'admin' });
+        assert.equal(noFile.code, 200);
+        assert.equal(noFile.body.audit.available, false);
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+
     await test('Sources payload (GET /api/admin/sources-info) shows a held dataset as "held", not "error"', async () => {
         const pbDate = (t) => new Date(t).toISOString().replace('T', ' ');
         const now = Date.now();

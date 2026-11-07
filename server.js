@@ -240,7 +240,7 @@ app.use((req, res, next) => {
 
 // Server-side files are never served, locally or from the Vercel function.
 const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|data_quality|static_cache|org_hierarchy)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
-const SERVER_LIB_PATH = /^\/lib\/(editor|assistant)(\/|$)/i; // server code: the data editor (docs/data-editor.md), Ask's providers (docs/assistant.md)
+const SERVER_LIB_PATH = /^\/lib\/(editor|assistant|quality)(\/|$)/i; // server code: the data editor (docs/data-editor.md), Ask's providers (docs/assistant.md), the audit findings (docs/data-quality.md)
 /** True for a path that must not be served: checked on the decoded, normalised path, as the static server sees it. */
 function isPrivatePath_(rawPath) {
     let p;
@@ -1038,7 +1038,10 @@ mirror.mount(app);
 const sourcesInfo = require('./lib/sources_info').create({ appRoot: __dirname, mirror });
 app.get('/api/admin/sources-info', sourcesInfo.handler);
 // Admin → Data quality: findings of the sync's checks (quality.json next to the snapshots; lib/data_quality.js, docs/data-quality.md).
-app.get('/api/admin/data-quality', require('./lib/data_quality').create({ mirror, sources: sourcesInfo }).handler);
+const dataQuality = require('./lib/data_quality').create({ mirror, sources: sourcesInfo });
+app.get('/api/admin/data-quality', dataQuality.handler);
+// The 6 Nov 2026 audit's findings (lib/quality/audit_findings.json) with the live state of their automatic checks.
+app.get('/api/admin/data-quality/audit', dataQuality.auditHandler);
 // Admin → Organisation: WBSEDCL's office hierarchy, with the zone this app covers marked live (lib/org_hierarchy.js; docs/org-hierarchy.md).
 app.get('/api/admin/org', require('./lib/org_hierarchy').create({ file: path.join(__dirname, 'data', 'org', 'wbsedcl_hierarchy.json') }).handler); // literal path: Vercel bundles it with the function
 // Data editor (/editor/, /api/editor/*; docs/data-editor.md): native datasets on the VM's PocketBase. Off without PocketBase credentials.
