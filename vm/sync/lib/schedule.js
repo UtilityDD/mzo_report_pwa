@@ -15,6 +15,13 @@ function parsePbDate(s) {
     return Date.parse(String(s).replace(' ', 'T'));
 }
 
+/** The latest 02:00 IST at or before `now` (ms). */
+function lastDailyBoundary(now) {
+    const day = 24 * 60 * MIN;
+    const b = Math.floor((now + IST_MS) / day) * day - IST_MS + DAILY_HOUR_IST * 60 * MIN;
+    return b <= now ? b : b - day;
+}
+
 /** @returns {{due: boolean, reason: string}} */
 function isDue(ds, schedule, now = Date.now()) {
     const interval = INTERVAL_MS[schedule] || INTERVAL_MS.hourly;
@@ -27,15 +34,14 @@ function isDue(ds, schedule, now = Date.now()) {
         return { due: true, reason: 'retry after error' };
     }
     if (schedule === 'daily') {
-        const dayNow = Math.floor((now + IST_MS) / (24 * 60 * MIN));
-        const dayLast = Math.floor((last + IST_MS) / (24 * 60 * MIN));
-        const hourNow = ((now + IST_MS) % (24 * 60 * MIN)) / (60 * MIN);
-        if (dayNow > dayLast && hourNow >= DAILY_HOUR_IST) return { due: true, reason: 'daily run' };
+        // Due once the last check is older than the latest 02:00 IST: a check at 00:30 IST (a retry or a
+        // write-through) does not stand in for that night's run. lib/sources_info.js nextDue agrees.
+        if (last < lastDailyBoundary(now)) return { due: true, reason: 'daily run' };
         if (elapsed >= 26 * 60 * MIN) return { due: true, reason: 'over 26 h since last check' };
-        return { due: false, reason: 'checked today' };
+        return { due: false, reason: 'checked since 02:00 IST' };
     }
     if (elapsed >= interval - slackFor(interval)) return { due: true, reason: `${schedule} interval passed` };
     return { due: false, reason: `checked ${Math.round(elapsed / MIN)} min ago` };
 }
 
-module.exports = { INTERVAL_MS, isDue, parsePbDate };
+module.exports = { INTERVAL_MS, isDue, parsePbDate, lastDailyBoundary };
