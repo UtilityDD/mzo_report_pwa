@@ -55,7 +55,7 @@ function units() {
     ok(!berh.live && !berh.children[0].inApp, 'another zone is never live, nor its offices in the app');
     ok(malda.live === true, 'the app zone is live (by name)');
     eq(malda.children[0].inApp, { name: 'Malda', code: '6610000' }, 'region matched by code');
-    eq(malda.children[1].inApp, { name: 'Raiganj', code: '6620000' }, 'Uttar Dinajpur matched to the app region by alias');
+    eq(malda.children[1].inApp, { name: 'Uttar Dinajpur', code: '6620000' }, 'Uttar Dinajpur matched to the app region');
     eq(malda.children[0].children[0].children[1].inApp, { name: 'Manikchak', code: '6611101' }, 'a CCC alias (Mathurapur) matches');
     eq(malda.children[1].children[0].children[0].inApp.code, '6622104', 'Goalpokhar (alias) matched in Islampur');
     ok(!malda.children[1].children[1].inApp, 'an unknown division is not in the app');
