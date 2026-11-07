@@ -12,6 +12,17 @@ const { spawnSync } = require('child_process');
  * When running in environments without a proxy (production on Vercel, cloud VM), or for bypassed hosts
  * (localhost, NO_PROXY), delegates directly to globalThis.fetch().
  */
+// Outbound requests without their own signal give up after this long (options.timeout overrides it), so
+// a stalled Supabase or Apps Script cannot hold a request for undici's 5-minute default.
+const OUTBOUND_TIMEOUT_MS = Number(process.env.MZO_OUTBOUND_TIMEOUT_MS) > 0 ? Number(process.env.MZO_OUTBOUND_TIMEOUT_MS) : 30 * 1000;
+
+/** fetch() with a timeout: the caller's signal if it passed one, else options.timeout (default 30 s). */
+function fetchWithTimeout_(urlStr, options) {
+    const { timeout, ...init } = options || {};
+    if (!init.signal) init.signal = AbortSignal.timeout(timeout || OUTBOUND_TIMEOUT_MS);
+    return globalThis.fetch(urlStr, init);
+}
+
 function proxyFetch_(urlStr, options = {}, redirectCount = 0) {
     if (redirectCount > 5) return Promise.reject(new Error('Too many redirects'));
 
@@ -19,7 +30,7 @@ function proxyFetch_(urlStr, options = {}, redirectCount = 0) {
     try {
         target = new URL(urlStr);
     } catch (_) {
-        return globalThis.fetch(urlStr, options);
+        return fetchWithTimeout_(urlStr, options);
     }
 
     const proxyUrlStr = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
@@ -33,7 +44,7 @@ function proxyFetch_(urlStr, options = {}, redirectCount = 0) {
         noProxyList.some((np) => target.hostname.toLowerCase() === np || target.hostname.toLowerCase().endsWith('.' + np));
 
     if (!proxyUrlStr || isBypassed) {
-        return globalThis.fetch(urlStr, options);
+        return fetchWithTimeout_(urlStr, options);
     }
 
     return new Promise((resolve, reject) => {
@@ -64,7 +75,7 @@ function proxyFetch_(urlStr, options = {}, redirectCount = 0) {
         if (options.signal?.aborted) return onAbort();
         if (options.signal) options.signal.addEventListener('abort', onAbort, { once: true });
 
-        const timeoutMs = options.timeout || 15000;
+        const timeoutMs = options.timeout || OUTBOUND_TIMEOUT_MS;
         timer = setTimeout(() => {
             if (connectReq) try { connectReq.destroy(); } catch (_) { }
             if (sReq) try { sReq.destroy(); } catch (_) { }
@@ -75,7 +86,7 @@ function proxyFetch_(urlStr, options = {}, redirectCount = 0) {
         try {
             pUrl = new URL(proxyUrlStr);
         } catch (_) {
-            return globalThis.fetch(urlStr, options).then(resolve, reject);
+            return fetchWithTimeout_(urlStr, options).then(resolve, reject);
         }
 
         const handleResponse = (sRes) => {
@@ -603,7 +614,8 @@ async function putStockCsvToStorage_(csv) {
             'Content-Type': 'text/csv',
             'x-upsert': 'true'
         },
-        body
+        body,
+        timeout: 120 * 1000 // a multi-MB upload
     });
     const text = await res.text();
     if (!res.ok) {
@@ -3782,15 +3794,34 @@ function stockMetaFromDb_(row) {
     };
 }
 
+// The active upload meta is read by /api/stock/meta and /api/hub/versions on every page load: keep it a
+// minute and share one in-flight request (cleared by a publish from this instance).
+let stockMetaCache_ = { at: 0, row: undefined, pending: null };
+
+function invalidateStockMetaCache_() {
+    stockMetaCache_ = { at: 0, row: undefined, pending: null };
+}
+
 async function fetchActiveStockMeta_() {
-    const rows = await querySupabase(
+    const c = stockMetaCache_;
+    if (c.row !== undefined && Date.now() - c.at < 60 * 1000) return c.row;
+    if (c.pending) return c.pending;
+    const pending = querySupabase(
         `stock_upload_meta?is_active=eq.true&select=*&order=id.desc&limit=1`,
         { schema: PORTAL_USERS_SCHEMA }
-    );
-    return Array.isArray(rows) && rows[0] ? rows[0] : null;
+    ).then((rows) => {
+        const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+        if (stockMetaCache_.pending === pending) stockMetaCache_ = { at: Date.now(), row, pending: null };
+        return row;
+    }).finally(() => {
+        if (stockMetaCache_.pending === pending) stockMetaCache_.pending = null;
+    });
+    c.pending = pending;
+    return pending;
 }
 
 async function publishStockToSupabase_(publishedRows, metaInput) {
+    invalidateStockMetaCache_();
     try {
         await querySupabase(`stock_upload_meta?is_active=eq.true`, {
             schema: PORTAL_USERS_SCHEMA,
@@ -3849,6 +3880,7 @@ async function publishStockToSupabase_(publishedRows, metaInput) {
 }
 
 async function insertStockMetaOnly_(metaInput, publishedCount) {
+    invalidateStockMetaCache_();
     try {
         await querySupabase(`stock_upload_meta?is_active=eq.true`, {
             schema: PORTAL_USERS_SCHEMA,
@@ -4013,6 +4045,7 @@ app.post('/api/stock/publish', (req, res) => {
                     console.warn('[Stock publish] meta only:', e.message);
                     baseMeta.supabaseError = e.message;
                 }
+                invalidateStockMetaCache_();
                 refreshMirror(['stock_snapshot', 'stock_upload_meta'], 'stock publish');
                 return res.json({
                     status: 'success',
@@ -4067,6 +4100,7 @@ app.post('/api/stock/publish', (req, res) => {
                 baseMeta.supabaseUploadId = supabaseMeta && supabaseMeta.supabaseUploadId;
                 baseMeta.source = 'supabase';
                 writeLocalStockBackup_(csvOut, baseMeta);
+                invalidateStockMetaCache_();
                 refreshMirror(['stock_snapshot', 'stock_upload_meta', 'stock_snapshot_db'], 'stock publish');
             } catch (e) {
                 supabaseError = e.message;
@@ -4451,7 +4485,8 @@ app.post('/api/unbilled/upload', (req, res, next) => {
                         headers: {
                             'Authorization': `Bearer ${token}`
                         },
-                        body: fd
+                        body: fd,
+                        timeout: 120 * 1000 // up to 30 MB per file
                     });
                     const vmData = await vmResp.json();
                     return res.status(vmResp.status).json(vmData);
@@ -4543,6 +4578,27 @@ app.post('/api/unbilled/upload', (req, res, next) => {
 
 const UNAUTHORIZED_ = (res) => res.status(401).json({ status: 'error', message: 'Unauthorized' });
 
+/**
+ * Send a file from the server's data folder (or the snapshot folder) with an ETag and Last-Modified,
+ * answering 304 to a matching revalidation. Resolves true once handled, false when the file is not
+ * there (so the route can try its next source). A read error never escapes as an unhandled stream error.
+ */
+function sendDataFile_(req, res, file, contentType) {
+    return new Promise((resolve) => {
+        res.setHeader('Content-Type', contentType);
+        res.sendFile(file, { cacheControl: false, dotfiles: 'allow' }, (err) => {
+            if (!err) return resolve(true);
+            if (!res.headersSent && (err.code === 'ENOENT' || err.code === 'ENOTDIR' || err.status === 404)) {
+                res.removeHeader('Content-Type');
+                return resolve(false);
+            }
+            if (!res.headersSent) res.status(500).json({ status: 'error', message: 'The file could not be read' });
+            else if (err.code !== 'ECONNABORTED') res.destroy();
+            resolve(true);
+        });
+    });
+}
+
 app.get('/api/unbilled/meta', async (req, res) => {
     if (!req.user) return UNAUTHORIZED_(res);
     res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
@@ -4573,11 +4629,7 @@ app.get('/api/unbilled/meta', async (req, res) => {
 app.get('/api/unbilled/outsort', async (req, res) => {
     if (!req.user) return UNAUTHORIZED_(res);
     res.setHeader('Cache-Control', 'private, max-age=60');
-    const f = path.join(DATA_DIR, 'unbilled_outsort.csv');
-    if (fs.existsSync(f)) {
-        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        return fs.createReadStream(f).pipe(res);
-    }
+    if (await sendDataFile_(req, res, path.join(DATA_DIR, 'unbilled_outsort.csv'), 'text/csv; charset=utf-8')) return;
     if (await fromVm_(req, res, '/api/unbilled/outsort', 'text/csv; charset=utf-8')) return;
     return res.status(404).send('Not found');
 });
@@ -4585,11 +4637,7 @@ app.get('/api/unbilled/outsort', async (req, res) => {
 app.get('/api/unbilled/chronic', async (req, res) => {
     if (!req.user) return UNAUTHORIZED_(res);
     res.setHeader('Cache-Control', 'private, max-age=60');
-    const f = path.join(DATA_DIR, 'unbilled_chronic.csv');
-    if (fs.existsSync(f)) {
-        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        return fs.createReadStream(f).pipe(res);
-    }
+    if (await sendDataFile_(req, res, path.join(DATA_DIR, 'unbilled_chronic.csv'), 'text/csv; charset=utf-8')) return;
     if (await fromVm_(req, res, '/api/unbilled/chronic', 'text/csv; charset=utf-8')) return;
     return res.status(404).send('Not found');
 });
@@ -4597,11 +4645,7 @@ app.get('/api/unbilled/chronic', async (req, res) => {
 app.get('/api/unbilled/summary', async (req, res) => {
     if (!req.user) return UNAUTHORIZED_(res);
     res.setHeader('Cache-Control', 'private, max-age=60');
-    const f = path.join(DATA_DIR, 'unbilled_summary.csv');
-    if (fs.existsSync(f)) {
-        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        return fs.createReadStream(f).pipe(res);
-    }
+    if (await sendDataFile_(req, res, path.join(DATA_DIR, 'unbilled_summary.csv'), 'text/csv; charset=utf-8')) return;
     if (await fromVm_(req, res, '/api/unbilled/summary', 'text/csv; charset=utf-8')) return;
     return res.status(404).send('Not found');
 });
@@ -4670,20 +4714,10 @@ app.get('/api/disconnection/dataset', async (req, res) => {
     res.setHeader('Cache-Control', 'private, max-age=60');
 
     // 1. The uploaded list in the server's data folder (MZO_FILES_DIR on the VM)
-    const localFile = path.join(DATA_DIR, 'disconnection.csv');
-    if (fs.existsSync(localFile)) {
-        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        return fs.createReadStream(localFile).pipe(res);
-    }
+    if (await sendDataFile_(req, res, path.join(DATA_DIR, 'disconnection.csv'), 'text/csv; charset=utf-8')) return;
 
     // 2. Mirror snapshot directory
-    if (mirror.on() && mirror.dir) {
-        const snapFile = path.join(mirror.dir, 'disconnection.csv');
-        if (fs.existsSync(snapFile)) {
-            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-            return fs.createReadStream(snapFile).pipe(res);
-        }
-    }
+    if (mirror.on() && mirror.dir && await sendDataFile_(req, res, path.join(mirror.dir, 'disconnection.csv'), 'text/csv; charset=utf-8')) return;
 
     // 3. Off the VM: the VM's copy, fetched server-side
     if (await fromVm_(req, res, '/api/disconnection/dataset', 'text/csv; charset=utf-8')) return;
@@ -4739,11 +4773,7 @@ app.get('/api/disconnection/payments', async (req, res) => {
     if (!req.user) return UNAUTHORIZED_(res);
     res.setHeader('Cache-Control', 'private, max-age=30');
 
-    const localFile = path.join(DATA_DIR, 'disconnection_payments.json');
-    if (fs.existsSync(localFile)) {
-        res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        return fs.createReadStream(localFile).pipe(res);
-    }
+    if (await sendDataFile_(req, res, path.join(DATA_DIR, 'disconnection_payments.json'), 'application/json; charset=utf-8')) return;
     if (await fromVm_(req, res, '/api/disconnection/payments', 'application/json; charset=utf-8')) return;
 
     res.json({ generatedAt: '', totalMatched: 0, totalCollected: 0, consumers: {} });

@@ -90,6 +90,8 @@ async function main() {
     }
     ok(true, 'no unhandled error in the server log');
 
+    await supabasePath();
+
     // The safety net itself: an async handler that rejects answers 500 at once instead of hanging the
     // request (and, without a rejection handler, ending the process).
     delete process.env.MZO_USER_STORE;
@@ -105,6 +107,65 @@ async function main() {
         server.close();
     }
     console.log(`server robustness test: ${passed} checks passed`);
+}
+
+/** A session cookie as server.js issues it (HMAC with JWT_SECRET), for the Supabase-path store. */
+function sessionCookie(profile, secret) {
+    const payload = Buffer.from(JSON.stringify({ profile, expiry: Date.now() + 3600 * 1000 })).toString('base64');
+    const sig = require('crypto').createHmac('sha256', secret).update(payload).digest('base64');
+    return `mzo_session=${encodeURIComponent(payload + '.' + sig)}`;
+}
+
+/** A local "Supabase" that never answers: outbound requests must give up on their own. */
+function stallingServer() {
+    const http = require('http');
+    const sockets = new Set();
+    const srv = http.createServer(() => { /* never answer */ });
+    srv.on('connection', (s) => { sockets.add(s); s.on('close', () => sockets.delete(s)); });
+    srv.stop = () => { sockets.forEach((s) => s.destroy()); srv.close(); };
+    return srv;
+}
+
+async function supabasePath() {
+    const SECRET = 'robustness-test-secret';
+    const files = path.join(TMP, 'files');
+    fs.mkdirSync(files, { recursive: true });
+    fs.writeFileSync(path.join(files, 'disconnection.csv'), 'CCC_CODE,CON_ID\n6611108,100000001\n');
+    const stall = stallingServer();
+    await new Promise((r) => stall.listen(0, '127.0.0.1', r));
+    const child = start({
+        MZO_USER_STORE: '', PB_URL: '', SUPABASE_URL: `http://127.0.0.1:${stall.address().port}`, SUPABASE_KEY: 'test-anon-key',
+        MZO_OUTBOUND_TIMEOUT_MS: '1500'
+    });
+    try {
+        await waitUp();
+        const viewer = { Cookie: sessionCookie({ Username: 'viewer1', Name: 'Viewer', role: 'viewer' }, SECRET) };
+
+        // B3: data files go out with validators and revalidate to 304; a missing one is a 404, not a crash.
+        const d1 = await req('/api/disconnection/dataset', { headers: viewer });
+        const etag = d1.headers.get('etag');
+        ok(d1.status === 200 && (await d1.text()).includes('100000001'), 'disconnection list from the data folder: 200');
+        ok(!!etag && !!d1.headers.get('last-modified'), 'data file has an ETag and Last-Modified');
+        ok(/text\/csv/.test(d1.headers.get('content-type') || '') && d1.headers.get('cache-control') === 'private, max-age=60', 'data file keeps its type and Cache-Control');
+        const d2 = await req('/api/disconnection/dataset', { headers: Object.assign({ 'If-None-Match': etag, 'Cache-Control': 'max-age=0' }, viewer) });
+        // (an explicit Cache-Control: undici would otherwise add no-cache, as a forced reload does)
+        ok(d2.status === 304, `revalidation with the ETag: ${d2.status}`);
+        const miss = await req('/api/unbilled/outsort', { headers: viewer });
+        ok(miss.status === 404, `missing unbilled file: ${miss.status}`);
+        const anon = await req('/api/disconnection/dataset');
+        ok(anon.status === 401, `data file without a session: ${anon.status}`);
+
+        // B2: a stalled upstream gives up after the outbound timeout instead of 5 minutes.
+        const t0 = Date.now();
+        const pm = await req('/api/power-map/meta', { headers: viewer, signal: AbortSignal.timeout(10000) });
+        const took = Date.now() - t0;
+        ok(pm.status === 200 && took < 6000, `power map meta with a stalled Supabase answers in ${took} ms`);
+        ok(child.exitCode === null, 'the app is still running');
+    } finally {
+        child.kill('SIGTERM');
+        await child.exited;
+        stall.stop();
+    }
 }
 
 main().then(() => {
