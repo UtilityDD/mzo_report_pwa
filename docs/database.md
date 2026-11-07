@@ -44,5 +44,7 @@ These are the Supabase rules (Vercel, local). The VM signs users in from its own
 
 - Sign-in is Google only; the `pin` column is no longer used to sign in. Old PINs stay as `scrypt$` hashes, `GET /api/admin/users` never returns `PIN`, and a blank PIN on update keeps the current one.
 - Google sign-in verifies the ID token with Google (audience = `GOOGLE_CLIENT_ID`, issuer, expiry, verified email) and signs in the portal user whose `email` equals the token's email exactly. An email no user has registers a new account with `user_status = pending` until an admin approves it (root-admin emails are provisioned directly). A user without a saved email cannot sign in until an admin sets it in User Management; there is no match on the part before the @.
+- A pending sign-in sets an HttpOnly `mzo_pending` cookie (signed with `JWT_SECRET`, path `/api/auth`, as on the VM); `GET /api/auth/pending-status?email=` answers only for the email in that cookie, so it cannot be used to look up other accounts.
+- Admin APIs also check the user's current row (the user list is cached 2 minutes): an admin who has been demoted or suspended loses them without waiting for the 24-hour cookie to expire.
 - After an admin changes a module flag, the user signs in again so the stored profile refreshes.
 - Power Map tables and Priority SI data are untouched by the login import.

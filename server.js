@@ -269,7 +269,7 @@ app.use((req, res, next) => {
 });
 
 // Server-side files are never served, locally or from the Vercel function.
-const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|data_quality|static_cache|org_hierarchy)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
+const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|data_quality|static_cache|org_hierarchy|csv)\.js|lib\/briefing_cccs\.json$|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
 const SERVER_LIB_PATH = /^\/lib\/(editor|assistant|quality)(\/|$)/i; // server code: the data editor (docs/data-editor.md), Ask's providers (docs/assistant.md), the audit findings (docs/data-quality.md)
 /** True for a path that must not be served: checked on the decoded, normalised path, as the static server sees it. */
 function isPrivatePath_(rawPath) {
@@ -1014,29 +1014,23 @@ const PUBLIC_PATHS = new Set([
 ]);
 const PUBLIC_ASSET = /^\/(icons|assets)\/|\.(css|js|png|json|ico)$/i;
 
+// Static files (pages included) are served before this, so it guards the API and paths with no file.
+// Page visits are logged from /api/session-check by the VM user store.
 async function requireAuth(req, res, next) {
-    const pathName = req.path;
+    const pathName = req.path.toLowerCase(); // Express routes match case-insensitively
+    const isApi = pathName === '/api' || pathName.startsWith('/api/');
     if (userStore.on) await userStore.ready();
     const syncAgent = syncAgentFor_(req);
     if (syncAgent) req.syncAgent = true;
     const profile = syncAgent || readSession_(req);
     if (profile) {
         req.user = profile;
-        // Page visits feed Admin → Visitors.
-        const isHtml = path.extname(pathName).toLowerCase() === '.html';
-        if (isHtml && pathName !== '/login.html' && pathName !== '/admin_users.html') {
-            await logActivity({
-                username: req.user.Username,
-                name: req.user.Name || 'No Name',
-                type: 'page_visit',
-                details: `Visited page: ${pathName}`
-            });
-        }
         return next();
     }
-    if (PUBLIC_PATHS.has(pathName) || PUBLIC_ASSET.test(pathName)) return next();
+    // An /api path is never a public asset, whatever it ends with (/api/data/file/x.json).
+    if (PUBLIC_PATHS.has(pathName) || (!isApi && PUBLIC_ASSET.test(pathName))) return next();
     // API callers (CSV/JSON clients like Power Map) get 401, never an HTML redirect.
-    if (pathName.startsWith('/api/') || req.xhr || String(req.headers.accept || '').includes('application/json')) {
+    if (isApi || req.xhr || String(req.headers.accept || '').includes('application/json')) {
         return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     }
     return res.redirect('/login.html');
@@ -1045,10 +1039,14 @@ async function requireAuth(req, res, next) {
 app.use(requireAuth);
 
 async function reportPageGate_(req, res, next) {
-    if (!userStore.on || !/\.html$/i.test(req.path)) return next();
+    if (!userStore.on) return next();
+    // The decoded, normalised path, as express.static resolves it (/%6Esc.html serves nsc.html).
+    let pagePath;
+    try { pagePath = path.posix.normalize(decodeURIComponent(req.path)); } catch (_) { return next(); }
+    if (!/\.html$/i.test(pagePath)) return next();
     await userStore.ready();
     const profile = readSession_(req);
-    if (profile && !userStore.pageAllowed(profile, req.path)) {
+    if (profile && !userStore.pageAllowed(profile, pagePath)) {
         return res.status(403).type('text/plain').send('This report is not enabled for your account. Ask an administrator.');
     }
     return next();
@@ -1151,6 +1149,32 @@ function issueSessionCookie(res, clientProfile, extra) {
     const token = `${payloadStr}.${signature}`;
     res.setHeader('Set-Cookie', `mzo_session=${token}; Path=/; HttpOnly; Max-Age=${24 * 60 * 60}; SameSite=Strict`);
     return token;
+}
+
+// Pending registrations: /api/auth/pending-status answers only the browser that signed in (an HMAC ticket
+// in the mzo_pending cookie, the same format as the VM user store's), so it cannot be used to probe emails.
+const PENDING_COOKIE_ = 'mzo_pending';
+function pendingTicket_(email) {
+    const e = Buffer.from(String(email)).toString('base64url');
+    return `${e}.${crypto.createHmac('sha256', JWT_SECRET).update('pending:' + e).digest('base64url')}`;
+}
+function setPendingCookie_(res, email) {
+    res.setHeader('Set-Cookie', `${PENDING_COOKIE_}=${encodeURIComponent(pendingTicket_(email))}; Path=/api/auth; HttpOnly; Max-Age=${30 * 24 * 3600}; SameSite=Lax`);
+}
+/** The email of a valid mzo_pending ticket, else ''. Never throws. */
+function pendingEmailFrom_(req) {
+    try {
+        const raw = parseCookies(req.headers.cookie)[PENDING_COOKIE_];
+        if (!raw) return '';
+        const [e, sig] = String(raw).split('.');
+        if (!e || !sig) return '';
+        const want = Buffer.from(crypto.createHmac('sha256', JWT_SECRET).update('pending:' + e).digest('base64url'));
+        const got = Buffer.from(sig);
+        if (want.length !== got.length || !crypto.timingSafeEqual(want, got)) return '';
+        return Buffer.from(e, 'base64url').toString('utf8');
+    } catch (_) {
+        return '';
+    }
 }
 
 const ROOT_ADMIN_EMAILS = ['smartlinemanapp@gmail.com'];
@@ -1297,6 +1321,7 @@ app.post('/api/auth/google', async (req, res) => {
             } else {
                 const status = String(existing.user_status || 'active').toLowerCase();
                 if (status === 'pending') {
+                    setPendingCookie_(res, email);
                     return res.status(200).json({
                         status: 'pending',
                         email,
@@ -1416,6 +1441,7 @@ app.post('/api/auth/google', async (req, res) => {
             details: `New Google user requested registration: ${email}`
         });
 
+        setPendingCookie_(res, email);
         return res.status(200).json({
             status: 'pending',
             email,
@@ -1436,7 +1462,9 @@ app.get('/api/auth/pending-status', async (req, res) => {
         if (!email) {
             return res.status(400).json({ status: 'error', message: 'Email required.' });
         }
-        const users = await getLoginCredentials({ forceRefresh: true });
+        // Only the browser that registered may ask (signed ticket), so emails cannot be probed.
+        if (pendingEmailFrom_(req) !== email) return res.status(200).json({ status: 'not_found' });
+        const users = await getLoginCredentials();
         const user = users.find((u) => String(u.email || '').trim().toLowerCase() === email);
         if (!user) {
             return res.status(200).json({ status: 'not_found' });
@@ -1482,8 +1510,28 @@ app.post('/api/logout', (req, res) => {
 
 // --- Admin User Management & Logging Endpoints ---
 
-function requireAdmin(req, res, next) {
-    if (!req.user || req.user.role !== 'admin') {
+/**
+ * Supabase path only: false when the user's current portal row says they are no longer an active admin
+ * (demoted or suspended after the 24 h cookie was issued). The VM user store and VM-only admins already
+ * re-check every request. Fails open, as before, when the row cannot be read (Supabase down, no row).
+ */
+async function stillAdmin_(req) {
+    if (userStore.on || req.localAdmin || req.syncAgent) return true;
+    try {
+        const users = await getLoginCredentials(); // cached up to USERS_CACHE_TTL_MS
+        const key = String(req.user.Username || '').trim().toLowerCase();
+        const row = key && users.find((u) => u.Username && String(u.Username).trim().toLowerCase() === key);
+        if (!row) return true;
+        if (ROOT_ADMIN_EMAILS.includes(String(row.email || '').trim().toLowerCase())) return true;
+        const status = String(row.user_status || 'active').toLowerCase();
+        return String(row.role || '').toLowerCase() === 'admin' && status === 'active';
+    } catch (_) {
+        return true;
+    }
+}
+
+async function requireAdmin(req, res, next) {
+    if (!req.user || req.user.role !== 'admin' || !(await stillAdmin_(req))) {
         if (req.xhr || req.headers.accept?.includes('application/json')) {
             return res.status(403).json({ status: 'error', message: 'Forbidden: Admin access required.' });
         } else {
@@ -2042,12 +2090,7 @@ app.get('/api/power-map/data', async (req, res) => {
         }
 
         if (Array.isArray(substations) && substations.length > 0) {
-            const columns = [
-                "Region", "Division", "Substation", "MVA", "LATITUDE", "LONGITUDE",
-                "Connected to", "Colour", "RL", "LineStyle", "Para-1", "Para-2", "Para-3",
-                "Comment", "Symbol", "SymbolSize", "LegendText", "LegendSymbol",
-                "LegendColour", "Remarks", "ConductorSize", "PeakLoad"
-            ];
+            const columns = POWER_MAP_COLUMNS;
 
             const validSubstations = substations.filter(row =>
                 row.Substation &&
@@ -2132,6 +2175,28 @@ app.get('/api/power-map/meta', async (req, res) => {
 });
 
 // --- Power map edits ---
+// The substations table's columns (also the CSV /api/power-map/data builds). Edits may name only these.
+const POWER_MAP_COLUMNS = [
+    'Region', 'Division', 'Substation', 'MVA', 'LATITUDE', 'LONGITUDE',
+    'Connected to', 'Colour', 'RL', 'LineStyle', 'Para-1', 'Para-2', 'Para-3',
+    'Comment', 'Symbol', 'SymbolSize', 'LegendText', 'LegendSymbol',
+    'LegendColour', 'Remarks', 'ConductorSize', 'PeakLoad'
+];
+// Substation is the row key: renaming goes through an admin in Supabase, not a cell edit.
+const POWER_MAP_EDITABLE = new Set(POWER_MAP_COLUMNS.filter((c) => c !== 'Substation'));
+
+/** A correction id from the request: a positive integer, else null (never interpolated unchecked). */
+function correctionId_(raw) {
+    const n = Number(raw);
+    return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+/** The known columns of a substation row (a suggested new substation keeps nothing else). */
+function powerMapRowOnly_(row) {
+    const out = {};
+    if (row && typeof row === 'object') POWER_MAP_COLUMNS.forEach((c) => { if (row[c] !== undefined) out[c] = row[c]; });
+    return out;
+}
 // "Connected to", RL, ConductorSize and PeakLoad hold one " : "-separated entry per connection.
 async function fetchSubstation_(name) {
     const rows = await querySupabase(`${POWER_MAP_TABLE}?Substation=eq.${encodeURIComponent(name)}&select=*`);
@@ -2192,6 +2257,9 @@ app.post('/api/admin/edit-sheet-row', async (req, res) => {
         if (!rowKeyColumn || !rowKeyValue || !columnName) {
             return res.status(400).json({ status: 'error', message: 'Missing required parameters.' });
         }
+        if (!POWER_MAP_EDITABLE.has(String(columnName))) {
+            return res.status(400).json({ status: 'error', message: 'That column cannot be edited.' });
+        }
 
         if (req.user.role !== 'admin') {
             const record = await fetchSubstation_(rowKeyValue);
@@ -2245,7 +2313,7 @@ app.post('/api/admin/append-sheet-row', async (req, res) => {
             await suggestCorrection_(req.user, {
                 type: 'add_substation',
                 substation: rowData.Substation,
-                proposed_value: JSON.stringify(rowData)
+                proposed_value: JSON.stringify(powerMapRowOnly_(rowData))
             });
             refreshMirror(['power_map_corrections'], 'power map suggestion');
             return res.json({ status: 'success', isSuggestion: true, message: 'Substation creation submitted for Admin approval.' });
@@ -2350,7 +2418,7 @@ app.get('/api/admin/pending-corrections', requireAdmin, async (req, res) => {
 // 6.49. Approve a suggested correction
 app.post('/api/admin/approve-correction', requireAdmin, async (req, res) => {
     try {
-        const { id } = req.body;
+        const id = correctionId_(req.body && req.body.id);
         if (!id) {
             return res.status(400).json({ status: 'error', message: 'Missing suggestion ID.' });
         }
@@ -2363,6 +2431,8 @@ app.post('/api/admin/approve-correction', requireAdmin, async (req, res) => {
         const proposal = corrections[0];
 
         if (proposal.type === 'edit_substation') {
+            // Suggestions filed before the column check could name any column.
+            if (!POWER_MAP_EDITABLE.has(String(proposal.column_name))) throw new Error(`Column '${proposal.column_name}' cannot be edited.`);
             let finalValue = proposal.proposed_value;
             if (proposal.connection_target) {
                 const record = await fetchSubstation_(proposal.substation);
@@ -2372,7 +2442,7 @@ app.post('/api/admin/approve-correction', requireAdmin, async (req, res) => {
             }
             await patchSubstation_(proposal.substation, { [proposal.column_name]: finalValue });
         } else if (proposal.type === 'add_substation') {
-            await querySupabase(POWER_MAP_TABLE, { method: 'POST', body: JSON.parse(proposal.proposed_value) });
+            await querySupabase(POWER_MAP_TABLE, { method: 'POST', body: powerMapRowOnly_(JSON.parse(proposal.proposed_value)) });
         } else if (proposal.type === 'add_connection') {
             const record = await fetchSubstation_(proposal.substation);
             if (!record) throw new Error(`Source Substation '${proposal.substation}' not found.`);
@@ -2403,7 +2473,7 @@ app.post('/api/admin/approve-correction', requireAdmin, async (req, res) => {
 // 6.50. Reject a suggested correction
 app.post('/api/admin/reject-correction', requireAdmin, async (req, res) => {
     try {
-        const { id } = req.body;
+        const id = correctionId_(req.body && req.body.id);
         if (!id) {
             return res.status(400).json({ status: 'error', message: 'Missing suggestion ID.' });
         }
@@ -2500,11 +2570,8 @@ function canAccessStockAllotment_(user) {
     const username = String((user.Username || user.username) || '')
         .trim()
         .toLowerCase();
-    const name = String((user.Name || user.name) || '')
-        .trim()
-        .toLowerCase();
-    if (allowed.includes(username)) return true;
-    return allowed.some((u) => name === u || name.startsWith(u + ' ') || name.includes(' ' + u + ' '));
+    // By exact username only: display names come from the Google profile, which the user chooses.
+    return allowed.includes(username);
 }
 
 /** Soft-cancel allotments — separate from create (stock_cancel_autho; admin also allowed). */
@@ -5223,21 +5290,35 @@ async function fetchAllNewsFeeds_() {
     return unique;
 }
 
+let newsFetching_ = null; // one fetch of the feeds at a time, shared by every caller
+let lastNewsForceAt_ = 0;
+
+/** Refetch the feeds (joining a fetch already running); keeps the last good list when they come back empty. */
+function refreshNews_() {
+    if (!newsFetching_) {
+        newsFetching_ = fetchAllNewsFeeds_().then((items) => {
+            if (items.length > 0) {
+                cachedNewsItems_ = items;
+                lastNewsFetchTime_ = Date.now();
+            }
+            return cachedNewsItems_;
+        }).finally(() => { newsFetching_ = null; });
+    }
+    return newsFetching_;
+}
+
 app.get('/api/news', async (req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=300');
     try {
         const now = Date.now();
-        const force = req.query.force === '1' || req.query.force === 'true';
+        // The route is public: ?force=1 refetches only for a signed-in user, and at most once a minute.
+        const force = (req.query.force === '1' || req.query.force === 'true') && !!req.user && now - lastNewsForceAt_ > 60 * 1000;
+        if (force) lastNewsForceAt_ = now;
         if (!force && cachedNewsItems_.length > 0 && (now - lastNewsFetchTime_) < NEWS_CACHE_TTL_MS) {
             return res.json({ status: 'ok', items: cachedNewsItems_, cached: true });
         }
 
-        const items = await fetchAllNewsFeeds_();
-        if (items.length > 0) {
-            cachedNewsItems_ = items;
-            lastNewsFetchTime_ = now;
-        }
-
+        await refreshNews_();
         return res.json({ status: 'ok', items: cachedNewsItems_ });
     } catch (err) {
         console.error('[News API] Error:', err);

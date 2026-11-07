@@ -120,7 +120,17 @@ function sessionCookie(profile, secret) {
 function stallingServer() {
     const http = require('http');
     const sockets = new Set();
-    const srv = http.createServer(() => { /* never answer */ });
+    // Portal users (the Supabase path's user list) answer from a fixture; every other request hangs.
+    const srv = http.createServer((rq, rs) => {
+        if (/\/rest\/v1\/portal_users/.test(rq.url)) {
+            rs.writeHead(200, { 'Content-Type': 'application/json' });
+            rs.end(JSON.stringify([
+                { username: 'boss', role: 'admin', user_status: 'active', email: 'boss@example.com' },
+                { username: 'demoted', role: 'viewer', user_status: 'active', email: 'demoted@example.com' },
+                { username: 'suspended', role: 'admin', user_status: 'suspended', email: 'suspended@example.com' }
+            ]));
+        }
+    });
     srv.on('connection', (s) => { sockets.add(s); s.on('close', () => sockets.delete(s)); });
     srv.stop = () => { sockets.forEach((s) => s.destroy()); srv.close(); };
     return srv;
@@ -154,6 +164,42 @@ async function supabasePath() {
         ok(miss.status === 404, `missing unbilled file: ${miss.status}`);
         const anon = await req('/api/disconnection/dataset');
         ok(anon.status === 401, `data file without a session: ${anon.status}`);
+
+        // S1: an /api path is never a public asset, and the API is matched case-insensitively.
+        const asset = await req('/api/no-such-route.json');
+        ok(asset.status === 401, `/api/*.json without a session: ${asset.status}`);
+        const upper = await req('/API/admin/users');
+        ok(upper.status === 401, `/API/admin/users without a session: ${upper.status}`);
+        // S10: server-only files stay hidden.
+        ok((await req('/lib/briefing_cccs.json')).status === 404, 'lib/briefing_cccs.json is not served');
+        ok((await req('/lib/csv.js')).status === 404, 'lib/csv.js is not served');
+        ok((await req('/lib/offices.js')).status === 200, 'lib/offices.js is still served');
+
+        // S2: pending-status answers only the browser holding a signed ticket for that email.
+        const probe = await req('/api/auth/pending-status?email=demoted@example.com');
+        ok((await probe.json()).status === 'not_found', 'pending-status without a ticket: not_found (no role leak)');
+        const forged = await req('/api/auth/pending-status?email=demoted@example.com', { headers: { Cookie: 'mzo_pending=ZGVtb3RlZEBleGFtcGxlLmNvbQ.forged' } });
+        ok((await forged.json()).status === 'not_found', 'pending-status with a forged ticket: not_found');
+        const e = Buffer.from('demoted@example.com').toString('base64url');
+        const ticket = `${e}.${require('crypto').createHmac('sha256', SECRET).update('pending:' + e).digest('base64url')}`;
+        const real = await (await req('/api/auth/pending-status?email=demoted@example.com', { headers: { Cookie: `mzo_pending=${ticket}` } })).json();
+        ok(real.status === 'success' && real.role === 'viewer', `pending-status with its ticket: ${real.status}`);
+
+        // S3: an admin cookie is refused once the portal row is no longer an active admin.
+        const asAdmin = (u) => ({ Cookie: sessionCookie({ Username: u, Name: u, role: 'admin' }, SECRET), Accept: 'application/json' });
+        ok((await req('/api/admin/users', { headers: asAdmin('boss') })).status === 200, 'admin cookie, row still admin: 200');
+        ok((await req('/api/admin/users', { headers: asAdmin('demoted') })).status === 403, 'admin cookie, row demoted to viewer: 403');
+        ok((await req('/api/admin/users', { headers: asAdmin('suspended') })).status === 403, 'admin cookie, row suspended: 403');
+        ok((await req('/api/admin/users', { headers: asAdmin('ghost') })).status === 200, 'admin cookie with no row (not readable): 200, as before');
+
+        // S5: power map edits name known columns; correction ids are integers.
+        const post = (p, body) => req(p, { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, origin, asAdmin('boss')), body: JSON.stringify(body) });
+        const col = await post('/api/admin/edit-sheet-row', { rowKeyColumn: 'Substation', rowKeyValue: 'X', columnName: 'is_admin', newValue: '1' });
+        ok(col.status === 400, `power map edit of an unknown column: ${col.status}`);
+        const key = await post('/api/admin/edit-sheet-row', { rowKeyColumn: 'Substation', rowKeyValue: 'X', columnName: 'Substation', newValue: 'Y' });
+        ok(key.status === 400, `power map edit of the row key: ${key.status}`);
+        const badId = await post('/api/admin/approve-correction', { id: '1&status=eq.pending' });
+        ok(badId.status === 400, `approve-correction with a non-integer id: ${badId.status}`);
 
         // B2: a stalled upstream gives up after the outbound timeout instead of 5 minutes.
         const t0 = Date.now();
