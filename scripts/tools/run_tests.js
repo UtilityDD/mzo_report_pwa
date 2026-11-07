@@ -21,6 +21,8 @@ const OFFLINE = [
     ['rating metrics', node, ['scripts/qa/rating-metrics-test.js']],
     ['mirror server', node, ['vm/dev/test-mirror-server.js']],
     ['server robustness', node, ['vm/dev/test-server-robustness.js']],
+    ['CSV reader', node, ['vm/dev/test-csv.js']],
+    ['user store queue', node, ['vm/dev/test-users-queue.js']],
     ['briefing cache', node, ['vm/dev/test-briefing-cache.js']],
     ['VM-only admins', node, ['vm/dev/test-local-admin.js']],
     ['Admin sources', node, ['vm/dev/test-sources-info.js']],
