@@ -550,7 +550,7 @@ async function qualityTests(browser) {
     await page.waitForSelector('.pt-src-dl');
     const srcHref = await page.getAttribute('.pt-src-dl a.pt-link', 'href');
     const srcText = await page.textContent('.pt-src-dl');
-    check('source tab', /^https:\/\/docs\.google\.com\/spreadsheets\/d\//.test(srcHref) && srcText.includes('Every 15 minutes') && srcText.includes('Freshness') && srcText.includes('spreadsheetId'), srcHref);
+    check('source tab', /^https:\/\/docs\.google\.com\/spreadsheets\/d\//.test(srcHref) && srcText.includes('Every 5 minutes') && srcText.includes('Freshness') && srcText.includes('spreadsheetId'), srcHref);
     await shot(page, '06-source-light');
     await page.click('.pt-tabs a:has-text("Sync history")');
     await page.waitForSelector('.ui-panel:has(h2:has-text("Sync history")) tbody tr td .ui-badge');

@@ -235,10 +235,15 @@ def swap_files():
 
 def dir_size(path):
     total = 0
+    seen = set()  # (device, inode): a file with several hard links counts once
     for root, dirs, files in os.walk(path, onerror=lambda e: None):
         for name in files:
             try:
                 st = os.lstat(os.path.join(root, name))
+                if st.st_nlink > 1:
+                    if (st.st_dev, st.st_ino) in seen:
+                        continue
+                    seen.add((st.st_dev, st.st_ino))
                 total += st.st_blocks * 512
             except OSError:
                 pass
@@ -330,7 +335,9 @@ class Series:
             return
         keep = [i for i, t in enumerate(d['t']) if isinstance(t, (int, float)) and now - self.window < t <= now]
         for c in COLS:
-            src = d.get(c) or []
+            src = d.get(c)
+            if not isinstance(src, list):
+                src = []
             self.cols[c] = [src[i] if i < len(src) else None for i in keep]
 
 
@@ -374,13 +381,14 @@ class Sampler:
         c0, c1 = prev['cpu'], cur['cpu']
         dtot = max(1, c1['total'] - c0['total'])
         pct = lambda k: 100.0 * (c1[k] - c0[k]) / dtot
-        cpu = 100.0 - pct('idle') - pct('iowait')
+        cpu = 100.0 - pct('idle') - pct('iowait') - pct('steal')  # steal has its own line on the chart
         mem = meminfo()
-        rx = (cur['net'][0] - prev['net'][0]) / dt / 1024
-        tx = (cur['net'][1] - prev['net'][1]) / dt / 1024
-        dr = (cur['disk'][0] - prev['disk'][0]) / dt / 1024
-        dw = (cur['disk'][1] - prev['disk'][1]) / dt / 1024
-        busy = min(100.0, (cur['disk'][2] - prev['disk'][2]) / (dt * 10.0))
+        rate = lambda a, b: max(0, b - a) / dt / 1024  # a counter that went back (device reset) counts as 0
+        rx = rate(prev['net'][0], cur['net'][0])
+        tx = rate(prev['net'][1], cur['net'][1])
+        dr = rate(prev['disk'][0], cur['disk'][0])
+        dw = rate(prev['disk'][1], cur['disk'][1])
+        busy = min(100.0, max(0, cur['disk'][2] - prev['disk'][2]) / (dt * 10.0))
         load = [float(x) for x in read('/proc/loadavg', '0 0 0').split()[:3]]
         point = {'t': int(now), 'cpu': r1(max(0.0, cpu)), 'iow': r1(pct('iowait')), 'st': r1(pct('steal')),
                  'l1': round(load[0], 2), 'mu': r1(mem['used'] / MB), 'mc': r1(mem['cache'] / MB),
@@ -402,7 +410,7 @@ class Sampler:
             old = procs_prev.get(pid)
             cpu_p = 100.0 * (ticks - old[2]) / CLK / dt / NCPU if old and old[0] == name and ticks >= old[2] else None
             rows.append((rss, name, cpu_p))
-        rows.sort(reverse=True)
+        rows.sort(key=lambda r: r[0], reverse=True)
         top = [{'name': n, 'mem': r1(rss / MB), 'cpu': r1(c)} for rss, n, c in rows[:8]]
         vm0, vm1 = prev['vm'], cur['vm']
         self.latest = {
@@ -448,7 +456,7 @@ class Sampler:
             self.next['fs'] = now + 60
         if now >= self.next['dirs']:
             self.dirs, self.dirs_at = dir_sizes(), int(time.time())
-            self.next['dirs'] = now + 900
+            self.next['dirs'] = now + 3600  # the walk blocks sampling; folders grow slowly
 
     def roll(self, point):
         """5 s point -> hour; a finished minute -> day; a finished quarter hour -> week."""
@@ -474,6 +482,8 @@ class Sampler:
             with open(tmp, 'w') as f:
                 json.dump({'v': 1, 'hour': self.hour.dump(), 'day': self.day.dump(), 'week': self.week.dump()}, f,
                           separators=(',', ':'))
+                f.flush()
+                os.fsync(f.fileno())
             os.replace(tmp, os.path.join(STATE, 'history.json'))
         except OSError as e:
             print('history not saved: %s' % e, file=sys.stderr)
@@ -484,10 +494,14 @@ class Sampler:
                 d = json.load(f)
         except (OSError, ValueError):
             return
+        if not isinstance(d, dict):
+            return
         now = time.time()
-        self.hour.load(d.get('hour'), now)
-        self.day.load(d.get('day'), now)
-        self.week.load(d.get('week'), now)
+        for series, name in ((self.hour, 'hour'), (self.day, 'day'), (self.week, 'week')):
+            try:
+                series.load(d.get(name), now)
+            except Exception as e:  # a damaged history is dropped, never fatal
+                print('history %s not restored: %s' % (name, e), file=sys.stderr)
 
     def write_all(self):
         write_json('hour.json', self.hour.dump())

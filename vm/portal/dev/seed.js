@@ -651,7 +651,7 @@ async function main() {
     });
 
     // Run history: the latest run carries the dataset's current status.
-    const every = { frequent: 15 * MIN, hourly: HOUR, daily: DAY }[ds.schedule];
+    const every = { frequent: 5 * MIN, hourly: HOUR, daily: DAY }[ds.schedule];
     for (let k = 0; k < 14; k++) {
       const started = (checkedAt || NOW) - k * every - int(0, 40) * 1000;
       const dur = Math.max(200, Math.round((st.duration || 800) * (0.7 + rnd() * 0.6)));

@@ -15,7 +15,7 @@ A read-only admin console for the PocketBase data mirror on the VM: every mirror
 ## What it shows
 
 - **Sidebar:** every row of `sys_datasets`, grouped by source type or by report area (toggle), with row counts, a freshness dot and a search box (`/` focuses it). On screens narrower than 900px the sidebar becomes a drawer.
-- **Freshness:** red for an error and amber for stale. Green means checked within its schedule: 45 minutes for `frequent`, 3 hours for `hourly`, 30 hours for `daily`. Grey means not mirrored or never synced.
+- **Freshness:** red for an error and amber for stale. Green means checked within its schedule: 20 minutes for `frequent` (every 5 minutes), 3 hours for `hourly`, 30 hours for `daily`. Grey means not mirrored or never synced.
 - **Overview:**
   - totals, with Fresh, Stale and Errors filtering the dataset table;
   - datasets and rows by source type;

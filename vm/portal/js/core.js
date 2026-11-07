@@ -136,7 +136,7 @@
   // Sidebar order for report areas (the app's sidebar groups), then anything else A–Z.
   var AREAS = ['New service connection', 'Revenue', 'DD visit', 'Consumers & meters', 'Vendor advances', 'Substation & network', 'Important', 'Media', 'Admin', 'System'];
   var SCHEDULES = {
-    frequent: { label: 'Every 15 minutes', grace: 45 * MIN },
+    frequent: { label: 'Every 5 minutes', grace: 20 * MIN }, // vm/sync/lib/schedule.js, mzo-sync.timer *:0/5
     hourly: { label: 'Hourly', grace: 3 * HOUR },
     daily: { label: 'Daily', grace: 30 * HOUR }
   };

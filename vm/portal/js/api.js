@@ -134,7 +134,7 @@
 
   P.api = {
     load: load, signIn: signIn, signOut: signOut, onSignOut: onSignOut, refresh: refresh, expired: expired,
-    session: function () { return session; }, isSuperuser: function () { return !!session && session.kind === 'superuser'; },
+    session: function () { return session; },
     msLeft: function () { return session && session.exp ? session.exp * 1000 - Date.now() : 0; },
     get: get, list: list, one: one, all: all
   };
