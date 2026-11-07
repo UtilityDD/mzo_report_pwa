@@ -26,16 +26,18 @@
         Gazole: { prefix: '6613', cccs: ['Gazole', 'Aiho', 'Pandua', 'Bamongola', 'Old Malda'] }
       }
     },
-    Raiganj: {
-      aliases: ['raiganj', 'uttar dinajpur', 'u/dinajpur', 'ud', 'u/d', 'uttar dinajpur region', 'u/dinajpur region', 'u_dinajpur'],
+    // Region names and their order come from lib/offices.js (REGIONS); these aliases are only the
+    // fallback for a page without it. The old names (Raiganj, Balurghat) still match a region.
+    'Uttar Dinajpur': {
+      aliases: ['uttar dinajpur', 'raiganj', 'raigunj', 'u/dinajpur', 'ud', 'u/d', 'uttar dinajpur region', 'u/dinajpur region', 'u_dinajpur'],
       prefix: '662',
       divisions: {
         Raiganj: { prefix: '6621', cccs: ['Itahar', 'Hemtabad', 'Kaliyaganj', 'Raiganj', 'Birnagar', 'Karandighi'] },
         Islampur: { prefix: '6622', cccs: ['Islampur', 'Chopra', 'Dalkhola', 'Goalpokher', 'Kanki'] }
       }
     },
-    Balurghat: {
-      aliases: ['balurghat', 'dakshin dinajpur', 'd/dinajpur', 'dd', 'd/d', 'dakshin dinajpur region', 'd/dinajpur region', 'd_dinajpur'],
+    'Dakshin Dinajpur': {
+      aliases: ['dakshin dinajpur', 'balurghat', 'd/dinajpur', 'dd', 'd/d', 'dakshin dinajpur region', 'd/dinajpur region', 'd_dinajpur'],
       prefix: '663',
       divisions: {
         Balurghat: { prefix: '6631', cccs: ['Balurghat', 'Tapan', 'Kumarganj', 'Hili', 'Patiram'] },
@@ -160,9 +162,11 @@
     return codes;
   }
 
+  /** Any region spelling or old name ("Raiganj Region", "U/DINAJPUR", "Balurghat") → canonical region name, or ''. */
   function regionNameOf(raw) {
     const O = canon();
     if (O && raw != null && String(raw).trim()) {
+      if (O.canonRegion) return O.canonRegion(raw);
       const r = O.parseRegion(raw);
       return r && r.level === 'region' ? r.region : '';
     }
@@ -803,6 +807,7 @@
     listAllUnits: listAllUnits,
     unitDisplayName: unitDisplayName,
     regionNameOf: regionNameOf,
+    canonRegion: regionNameOf,
     divisionNameOf: divisionNameOf,
     cccNameOf: cccNameOf,
     cccNameInDivision: cccNameInDivision,

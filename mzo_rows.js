@@ -25,7 +25,7 @@
   'use strict';
 
   var UNIFORM_SRC = '/lib/uniform.js?v=2';
-  var OFFICES_SRC = '/lib/offices.js?v=2';
+  var OFFICES_SRC = '/lib/offices.js?v=3';
   var COSTCENTER_URL = '/data/costcenter.json';
   // Cached rows computed here are valid only for this code: bump with the ?v= values above.
   var CODE = UNIFORM_SRC + '|' + OFFICES_SRC;
@@ -162,7 +162,7 @@
     costCentres();
     if (worker || workerBroken || typeof Worker === 'undefined') return;
     try {
-      worker = new Worker('/mzo_rows.js?v=6&worker=1');
+      worker = new Worker('/mzo_rows.js?v=7&worker=1');
     } catch (e) { workerBroken = true; return; }
     worker.onmessage = function (e) {
       var j = jobs[e.data.id]; if (!j) return;

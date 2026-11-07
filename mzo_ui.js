@@ -86,7 +86,8 @@
   }
 
   /* ---------- offices ---------- */
-  var REGION_ALIAS = { 'malda': 'Malda', 'malda region': 'Malda', 'uttar dinajpur': 'Raiganj', 'uttar dinajpur region': 'Raiganj', 'raiganj': 'Raiganj', 'dakshin dinajpur': 'Balurghat', 'dakshin dinajpur region': 'Balurghat', 'dakhsin dinajpur': 'Balurghat', 'dakhsin dinajpur region': 'Balurghat', 'd/dinajpur region': 'Balurghat', 'u/dinajpur region': 'Raiganj', 'balurghat': 'Balurghat' };
+  // Region names: lib/offices.js canonRegion (Malda, Uttar Dinajpur, Dakshin Dinajpur; old names such as
+  // Raiganj / Balurghat region are accepted), else MzoScope's fallback list.
   var officeCache = {};
   function office(code, name) {
     var raw = String(code == null ? '' : code).trim();
@@ -117,7 +118,8 @@
         }
       }
       if (!o && key.length >= 3) {
-        var r3 = { '661': 'Malda', '662': 'Raiganj', '663': 'Balurghat' }[key.slice(0, 3)];
+        var r3 = '';
+        Object.keys(S.HIERARCHY || {}).forEach(function (r) { if (S.HIERARCHY[r].prefix === key.slice(0, 3)) r3 = r; });
         if (r3) o = { region: r3, division: '', ccc: '' };
       }
     }
@@ -125,9 +127,12 @@
     return (officeCache[ck] = o);
   }
   function regionName(s) {
-    var O = w.MzoOffices, r = O && s != null && String(s).trim() ? O.parseRegion(s) : null;
-    if (r && r.level === 'region') return r.region;
-    return REGION_ALIAS[String(s || '').trim().toLowerCase()] || title(s);
+    if (s == null || !String(s).trim()) return title(s);
+    var O = w.MzoOffices, S = w.MzoScope;
+    var r = O && O.canonRegion ? O.canonRegion(s) : '';
+    if (!r && O && !O.canonRegion) { var p = O.parseRegion(s); r = p && p.level === 'region' ? p.region : ''; }
+    if (!O && S && S.regionNameOf) r = S.regionNameOf(s);
+    return r || title(s);
   }
 
   /* ---------- data hub ---------- */
