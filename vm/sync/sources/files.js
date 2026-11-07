@@ -20,16 +20,18 @@ async function streamText(stream) {
     return Buffer.concat(chunks).toString('utf8'); // small repo file
 }
 
-/** The file to read: the server data folder's copy of an editable file when there is one, else the repo's. */
+// Files the app writes in its data folder (MZO_FILES_DIR on the VM, the git-ignored data/ elsewhere):
+// the edited structures and the uploaded Safety Inspection report. Other repo files are always the repo's.
+const DATA_FOLDER_FILES = new Set(['structure.csv', 'safety_inspection.csv']);
+
+/** The file to read: the server data folder's copy of an editable or uploaded file when there is one, else the repo's. */
 function resolve(file) {
-    const dir = process.env.MZO_FILES_DIR;
     const basename = path.basename(file);
-    if (dir) {
+    if (DATA_FOLDER_FILES.has(basename)) {
+        const dir = process.env.MZO_FILES_DIR || path.join(REPO, 'data');
         const own = path.join(dir, basename);
         if (fs.existsSync(own)) return own;
     }
-    const localData = path.join(REPO, 'data', basename);
-    if (fs.existsSync(localData)) return localData;
     return path.join(REPO, file);
 }
 
