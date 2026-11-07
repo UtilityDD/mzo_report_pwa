@@ -239,7 +239,7 @@ app.use((req, res, next) => {
 });
 
 // Server-side files are never served, locally or from the Vercel function.
-const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|static_cache)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
+const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|data_quality|static_cache)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
 const SERVER_LIB_PATH = /^\/lib\/(editor|assistant)(\/|$)/i; // server code: the data editor (docs/data-editor.md), Ask's providers (docs/assistant.md)
 /** True for a path that must not be served: checked on the decoded, normalised path, as the static server sees it. */
 function isPrivatePath_(rawPath) {
@@ -1035,7 +1035,10 @@ function refreshMirror(keys, reason) {
 }
 mirror.mount(app);
 // Admin → Sources: where each dataset comes from, its schedule and freshness (lib/sources_info.js; docs/data-mirror.md).
-app.get('/api/admin/sources-info', require('./lib/sources_info').create({ appRoot: __dirname, mirror }).handler);
+const sourcesInfo = require('./lib/sources_info').create({ appRoot: __dirname, mirror });
+app.get('/api/admin/sources-info', sourcesInfo.handler);
+// Admin → Data quality: findings of the sync's checks (quality.json next to the snapshots; lib/data_quality.js, docs/data-quality.md).
+app.get('/api/admin/data-quality', require('./lib/data_quality').create({ mirror, sources: sourcesInfo }).handler);
 // Data editor (/editor/, /api/editor/*; docs/data-editor.md): native datasets on the VM's PocketBase. Off without PocketBase credentials.
 require('./lib/editor').mount(app, { refreshMirror, isSensitive: (key) => require('./lib/mirror').isSensitive(key), onChanged: (keys) => { if (mirror.on() && keys.some((k) => BRIEFING_MIRROR_KEYS.has(k))) refreshBriefing_({ changed: true }); } });
 // Uniform rows next to the snapshots (docs/uniform-data.md); mirror mode only.
