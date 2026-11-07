@@ -299,7 +299,8 @@ A second, lighter set of checks runs on the **snapshots** after every sync run a
 | `vm/sync/lib/quality/rules.js` | **The one config file**: thresholds, column roles, per-dataset facts (key columns, the "as on" column and its maximum age, columns that may not be negative, special date formats, report-style sheets) and the specific rules |
 | `vm/sync/lib/quality/store.js` | `quality.json`: merges a run into the previous state (first and last seen, resolved issues, staleness, summary) |
 | `vm/sync/lib/holdback.js` | The hold-back of bad copies (below), called by `vm/sync/lib/sync.js` |
-| `lib/data_quality.js` | `GET /api/admin/data-quality` |
+| `lib/data_quality.js` | `GET /api/admin/data-quality` and `/api/admin/data-quality/audit` |
+| `lib/quality/audit_findings.json` | The 6 Nov 2026 audit's data issues, kept by hand ("Audit findings" below) |
 
 ### Checks
 
@@ -361,17 +362,55 @@ A finding that is no longer found disappears. One that is still found keeps its 
 - `summary`, with `lastRun`;
 - `datasets`: each with its findings (worst first) and the menu reports that read it, taken from the Sources payload's report list;
 - `held`;
-- `reports`, for the report filter.
+- `reports`, for the report filter;
+- `audit`: the audit findings with their live state (below). `GET /api/admin/data-quality/audit` returns the same block on its own, with the same admin check.
 
-Without a `quality.json` (Vercel, or a checkout without snapshots) it answers `available: false`. `MZO_QUALITY_FILE` points it at another file.
+Without a `quality.json` (Vercel, or a checkout without snapshots) it answers `available: false`. `MZO_QUALITY_FILE` points it at another file. The audit list is still returned then, with live state `unavailable`.
 
-The tab shows:
+The tab has two views, switched at the top: **Audit findings** (the default; `?tab=quality&view=audit`) and **Automatic checks** (`?tab=quality&view=checks`). The Sources drawer's **Data quality** button opens Automatic checks.
+
+The Automatic checks view shows:
 
 - summary tiles: critical, warnings, info, datasets affected, held copies, last run;
 - a severity filter, a report filter and a search;
 - a table: the dataset and its reports, check, severity, count / total, examples, first seen and suggested fix.
 
 Clicking a row opens its message and details, with buttons for its reports and for the dataset in the Sources tab. The Sources drawer has a **Data quality** button that leads back. Export CSV saves the filtered findings.
+
+### Audit findings
+
+The data issues found by the 6 Nov 2026 audit (the data, frontend and backend reports), kept by hand as a trackable list in `lib/quality/audit_findings.json`. The automatic checks find many of them again on every run; others (a page bug, a sync setting, a sheet that is empty on purpose) can only be tracked by hand. The file is small, holds counts, column names and office codes only, and is never served as a file (`lib/quality/` is private in `server.js`).
+
+Each item:
+
+| Field | What |
+|---|---|
+| `id`, `title` | `AF-nn` and a one-line name |
+| `reports` | `[{ label, page }]`, as in the app menu (an admin tab is `admin_users.html?tab=…`) |
+| `datasets` | Dataset keys (`vm/sync/sources/*.js`) |
+| `severity` | `critical`, `high`, `medium` or `low` |
+| `found` | `2026-11-06`, or the date a later audit found it |
+| `summary`, `evidence`, `impact`, `cause` | Plain English. Evidence is counts and identifiers such as office codes, row numbers and column names, never personal data |
+| `owner` | Who fixes it: `source sheet` (the people who keep the Google Sheet or export), `app` (a page or server change) or `sync` (the VM sync) |
+| `fix` | The suggested fix |
+| `status`, `status_note`, `fixed_in` | `open`, `mitigated`, `monitoring` or `fixed`; a note on what the code does today; the release that fixed it |
+| `auto_check` | The id of the matching automatic check (a string or a list), or `""` |
+| `auto_datasets`, `auto_columns` | Optional: narrow the match to some of the datasets, or to some columns |
+| `auto_count`, `auto_unit` | Optional: `datasets` counts matching datasets instead of summing the findings' counts; the unit shown, as `singular|plural` (default `row|rows`) |
+
+For each item with an `auto_check`, the API looks in `quality.json` for findings with that check in its datasets and attaches `live`: `state` is `detected` (with the count now, first and last seen, and each matching finding), `clear` (its datasets were checked and nothing matched; `resolvedAt` when a finding went away in the last 14 days), `not_checked` or `unavailable` (no `quality.json` on this server). So an admin can see whether an issue is still happening, without anyone editing the file.
+
+The view shows tiles for open, mitigated, monitoring and fixed (each split by severity), "still detected" and "fix in source sheet"; filters for status, severity, who fixes it and report, and a search; and a table with severity, title, report, status, the live state, who fixes it and the suggested fix. Clicking a row opens the summary, evidence, impact, cause, status note and the live matches, with buttons for its reports and for the automatic checks. Export CSV saves the filtered list.
+
+**Keeping it up to date.** Edit `lib/quality/audit_findings.json` in the same commit as the change it records:
+
+- A fix lands: set `status` to `fixed`, `fixed_in` to the release in `version.json` that ships it, and say what changed in `status_note`. When a linked automatic check stops finding the issue, the row shows "Not detected" by itself; that alone does not mark it fixed, because a source sheet can break again.
+- A safeguard limits the damage but the cause remains (for example the hold-back of partial copies): `mitigated`, with `fixed_in` set to the release of the safeguard.
+- Nothing to do now, but worth watching: `monitoring`.
+- A new automatic check covers an item: set `auto_check` (and `auto_columns` or `auto_datasets` if the check fires on other columns or datasets too).
+- A later audit: add items with new ids and their own `found` date, and bump `updated`.
+
+`node vm/dev/test-quality.js` checks the file: required fields, valid values, unique ids, `fixed_in` on fixed items, `auto_check` ids that exist in the checks, and no long digit runs or e-mail addresses. `node vm/dev/quality-ui-check.js http://localhost:<port> <dir>` is the browser check of both views (a local app from `scripts/qa/serve-local.sh`, with `MZO_QUALITY_FILE` set for live states).
 
 ### Running it by hand
 

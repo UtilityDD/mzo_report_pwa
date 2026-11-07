@@ -1471,6 +1471,31 @@
     #qualityTab .dq-btns { display: flex; flex-wrap: wrap; gap: 6px; }
     #qualityTab .ui-empty { padding: 28px 16px; text-align: center; color: var(--mzo-muted); }
     #qualityTab .dq-sm-only { display: none; }
+    /* The two views: Audit findings (the 6 Nov 2026 audit, lib/quality/audit_findings.json) and Automatic checks. */
+    #qualityTab .dq-views { margin: 0 0 14px; max-width: 100%; overflow-x: auto; }
+    #qualityTab .dq-views button { height: 30px; padding: 0 14px; font-size: 13px; }
+    #qualityTab .dq-vn { margin-left: 4px; color: var(--mzo-faint); font-variant-numeric: tabular-nums; font-weight: 400; }
+    #qualityTab .dq-views button[aria-pressed="true"] .dq-vn { color: inherit; opacity: .7; }
+    #qualityTab .af-title { font-weight: 500; }
+    #qualityTab .af-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--mzo-faint); font-weight: 400; margin-right: 4px; }
+    #qualityTab .af-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    #qualityTab .af-chips .ui-badge, #qualityTab .af-live .ui-badge, #qualityTab .af-own { white-space: nowrap; }
+    #qualityTab .dq-low { color: var(--mzo-muted); }
+    #qualityTab .af-own { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--mzo-text-2); }
+    #qualityTab .af-own b { font-weight: 500; color: var(--mzo-text); }
+    #qualityTab .af-chips.dq-sm-only { display: none; }
+    #qualityTab .af-table { table-layout: fixed; width: 100%; }
+    #qualityTab .af-table th:nth-child(1) { width: 30%; }
+    #qualityTab .af-table th:nth-child(2) { width: 92px; }
+    #qualityTab .af-table th:nth-child(3) { width: 118px; }
+    #qualityTab .af-table th:nth-child(4) { width: 19%; }
+    #qualityTab .af-table th:nth-child(5) { width: 150px; }
+    #qualityTab .af-table td { white-space: normal; overflow-wrap: anywhere; }
+    #qualityTab .af-table .dq-fix span { width: auto; }
+    #qualityTab .af-matches { margin: 0; padding-left: 16px; }
+    #qualityTab .af-matches li { margin: 0 0 2px; }
+    #qualityTab .af-note { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: var(--mzo-surface-2); color: var(--mzo-text-2); font-size: 12.5px; line-height: 1.5; }
+    #qualityTab .af-note b { color: var(--mzo-text); font-weight: 500; }
     @media (max-width: 768px) {
       #qualityTab .ui-table { display: table; table-layout: auto; }
       #qualityTab .ui-table thead { display: table-header-group; }
@@ -1498,6 +1523,15 @@
       #qualityTab .dq-count { margin-left: 0; }
       #qualityTab .dq-dl { grid-template-columns: minmax(0, 1fr); gap: 0 0; }
       #qualityTab .dq-dl dd { margin-bottom: 6px; }
+      #qualityTab .af-table { table-layout: fixed; width: 100%; }
+      #qualityTab .af-table th, #qualityTab .af-table td { border-left: 0 !important; border-right: 0 !important; overflow-wrap: anywhere; }
+      #qualityTab .af-table th:nth-child(1) { width: 64%; }
+      #qualityTab .af-table th:nth-child(4) { width: auto; }
+      #qualityTab .af-chips.dq-sm-only { display: flex; }
+      #qualityTab .af-table th:first-child, #qualityTab .af-table td:first-child { position: static; max-width: none; box-shadow: none; }
+      #qualityTab .af-table .af-chips .ui-badge { padding: 0 5px; }
+      #qualityTab .dq-views { display: flex; width: 100%; }
+      #qualityTab .dq-views button { flex: 1 1 0; padding: 0 8px; }
     }
 
     /* Pro Data Grid - Enterprise User Panel */
@@ -3307,32 +3341,71 @@
         <p class="ask-note" id="askNote"></p>
       </div>
 
-      <!-- Data quality: findings of the checks the VM sync runs after each run (GET /api/admin/data-quality) -->
+      <!-- Data quality (GET /api/admin/data-quality), two views:
+           Audit findings: the data issues the 6 Nov 2026 audit found, kept by hand in lib/quality/audit_findings.json,
+           each with the live state of its automatic check; Automatic checks: what the VM sync's checks find after each run. -->
       <div id="qualityTab" class="tab-content">
-        <div class="src-head">
-          <p class="src-meta" id="dqMeta">Loading data quality…</p>
-          <div class="src-actions">
-            <button type="button" class="ui-btn sm" id="dqToSources">Sources</button>
-            <button type="button" class="ui-btn sm" id="dqExport">Export CSV</button>
-            <button type="button" class="ui-btn sm" id="dqRefresh"><svg class="ui-i" aria-hidden="true"><use href="#ui-refresh"/></svg>Refresh</button>
-          </div>
+        <div class="ui-seg dq-views" id="dqView" role="group" aria-label="Data quality view">
+          <button type="button" data-view="audit" aria-pressed="true">Audit findings<span class="dq-vn" id="dqViewAuditN"></span></button>
+          <button type="button" data-view="checks" aria-pressed="false">Automatic checks<span class="dq-vn" id="dqViewChecksN"></span></button>
         </div>
-        <section class="ui-stats" id="dqStats" aria-label="Summary"></section>
-        <section class="ui-panel">
-          <div class="ui-panel-h dq-filters">
-            <div class="ui-seg" id="dqSev" role="group" aria-label="Severity">
-              <button type="button" data-sev="" aria-pressed="true">All</button>
-              <button type="button" data-sev="critical" aria-pressed="false">Critical</button>
-              <button type="button" data-sev="warning" aria-pressed="false">Warning</button>
-              <button type="button" data-sev="info" aria-pressed="false">Info</button>
+        <div id="dqAuditView">
+          <div class="src-head">
+            <p class="src-meta" id="afMeta">Loading audit findings…</p>
+            <div class="src-actions">
+              <button type="button" class="ui-btn sm" id="afExport">Export CSV</button>
+              <button type="button" class="ui-btn sm" id="afRefresh"><svg class="ui-i" aria-hidden="true"><use href="#ui-refresh"/></svg>Refresh</button>
             </div>
-            <label class="ui-select"><select id="dqReport" aria-label="Report"><option value="">All reports</option></select></label>
-            <label class="ui-search"><svg class="ui-i" aria-hidden="true"><use href="#ui-search"/></svg><input class="ui-input" id="dqSearch" type="search" placeholder="Search" aria-label="Search by dataset, check or text" autocomplete="off" /></label>
-            <span class="dq-count" id="dqCount"></span>
           </div>
-          <div id="dqHeld"></div>
-          <div id="dqTable"><div class="ui-empty">Loading…</div></div>
-        </section>
+          <section class="ui-stats" id="afStats" aria-label="Audit findings summary"></section>
+          <section class="ui-panel">
+            <div class="ui-panel-h dq-filters">
+              <div class="ui-seg" id="afStatus" role="group" aria-label="Status">
+                <button type="button" data-status="" aria-pressed="true">All</button>
+                <button type="button" data-status="open" aria-pressed="false">Open</button>
+                <button type="button" data-status="mitigated" aria-pressed="false">Mitigated</button>
+                <button type="button" data-status="monitoring" aria-pressed="false">Monitoring</button>
+                <button type="button" data-status="fixed" aria-pressed="false">Fixed</button>
+              </div>
+              <label class="ui-select"><select id="afSev" aria-label="Severity">
+                <option value="">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+              </select></label>
+              <label class="ui-select"><select id="afOwner" aria-label="Who fixes it">
+                <option value="">Anyone fixes</option><option value="source sheet">Fix in source sheet</option><option value="app">App bug</option><option value="sync">Sync (VM)</option>
+              </select></label>
+              <label class="ui-select"><select id="afReport" aria-label="Report"><option value="">All reports</option></select></label>
+              <label class="ui-search"><svg class="ui-i" aria-hidden="true"><use href="#ui-search"/></svg><input class="ui-input" id="afSearch" type="search" placeholder="Search" aria-label="Search audit findings" autocomplete="off" /></label>
+              <span class="dq-count" id="afCount"></span>
+            </div>
+            <div id="afTable"><div class="ui-empty">Loading…</div></div>
+          </section>
+        </div>
+        <div id="dqChecksView" hidden>
+          <div class="src-head">
+            <p class="src-meta" id="dqMeta">Loading data quality…</p>
+            <div class="src-actions">
+              <button type="button" class="ui-btn sm" id="dqToSources">Sources</button>
+              <button type="button" class="ui-btn sm" id="dqExport">Export CSV</button>
+              <button type="button" class="ui-btn sm" id="dqRefresh"><svg class="ui-i" aria-hidden="true"><use href="#ui-refresh"/></svg>Refresh</button>
+            </div>
+          </div>
+          <section class="ui-stats" id="dqStats" aria-label="Summary"></section>
+          <section class="ui-panel">
+            <div class="ui-panel-h dq-filters">
+              <div class="ui-seg" id="dqSev" role="group" aria-label="Severity">
+                <button type="button" data-sev="" aria-pressed="true">All</button>
+                <button type="button" data-sev="critical" aria-pressed="false">Critical</button>
+                <button type="button" data-sev="warning" aria-pressed="false">Warning</button>
+                <button type="button" data-sev="info" aria-pressed="false">Info</button>
+              </div>
+              <label class="ui-select"><select id="dqReport" aria-label="Report"><option value="">All reports</option></select></label>
+              <label class="ui-search"><svg class="ui-i" aria-hidden="true"><use href="#ui-search"/></svg><input class="ui-input" id="dqSearch" type="search" placeholder="Search" aria-label="Search by dataset, check or text" autocomplete="off" /></label>
+              <span class="dq-count" id="dqCount"></span>
+            </div>
+            <div id="dqHeld"></div>
+            <div id="dqTable"><div class="ui-empty">Loading…</div></div>
+          </section>
+        </div>
       </div>
       <!-- Organisation: WBSEDCL's office hierarchy (admin_org.js, loaded when the tab first opens) -->
       <div id="orgTab" class="tab-content"><div class="ui-empty">Loading…</div></div>
@@ -4076,7 +4149,7 @@
         ensureAskUsage();
       }
       if (tabId === 'qualityTab') {
-        if (window.self === window.top) { try { history.replaceState(null, '', location.pathname + '?tab=quality'); } catch (e) {} }
+        dqShowView(DQ.view);
         ensureQuality();
       }
       if (tabId === 'orgTab') {
@@ -4726,7 +4799,9 @@
     // ---- Data quality tab: findings of the checks the VM sync runs after each run (vm/sync/quality.js) ----
     // Data: GET /api/admin/data-quality (lib/data_quality.js). Uses the Sources tab's helpers (loadKit, srcAgo,
     // srcIst, srcOpenPage) and the UI kit; examples are row numbers or office codes, never personal data.
-    const DQ = { data: null, sev: '', report: '', q: '', open: new Set(), loading: false, ready: false };
+    // view: 'audit' (Audit findings, the default) or 'checks' (Automatic checks); ?tab=quality&view=audit|checks.
+    const DQ = { data: null, sev: '', report: '', q: '', open: new Set(), loading: false, ready: false,
+      view: new URLSearchParams(location.search).get('view') === 'checks' ? 'checks' : 'audit' };
     const DQ_SEV = { critical: { label: 'Critical', tone: 'bad', rank: 3 }, warning: { label: 'Warning', tone: 'warn', rank: 2 }, info: { label: 'Info', tone: '', rank: 1 } };
     const DQ_CHECK = {
       'rows.drop': 'Rows dropped', 'rows.empty': 'No rows', 'copy.held': 'Copy held back', 'header.removed': 'Columns removed', 'header.added': 'Columns added',
@@ -4746,12 +4821,29 @@
     async function ensureQuality() {
       if (!DQ.ready) {
         DQ.ready = true;
-        try { await loadKit(); } catch (e) { document.getElementById('dqMeta').textContent = 'Could not load the page kit.'; DQ.ready = false; return; }
+        try { await loadKit(); } catch (e) { document.getElementById('dqMeta').textContent = document.getElementById('afMeta').textContent = 'Could not load the page kit.'; DQ.ready = false; return; }
         wireQuality();
+        wireAudit();
         return loadQuality(false);
       }
       renderQuality();
     }
+
+    // Show one of the two views and keep it in the address bar (?tab=quality&view=…).
+    function dqShowView(view) {
+      DQ.view = view === 'checks' ? 'checks' : 'audit';
+      document.getElementById('dqAuditView').hidden = DQ.view !== 'audit';
+      document.getElementById('dqChecksView').hidden = DQ.view !== 'checks';
+      document.querySelectorAll('#dqView button[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.getAttribute('data-view') === DQ.view)));
+      const tab = document.getElementById('qualityTab');
+      if (tab && tab.classList.contains('active') && window.self === window.top) {
+        try { history.replaceState(null, '', location.pathname + '?tab=quality&view=' + DQ.view); } catch (e) {}
+      }
+    }
+    document.getElementById('dqView').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-view]');
+      if (b) dqShowView(b.getAttribute('data-view'));
+    });
 
     function wireQuality() {
       document.getElementById('dqRefresh').addEventListener('click', () => loadQuality(true));
@@ -4789,9 +4881,8 @@
     async function loadQuality(force) {
       if (DQ.loading) return;
       DQ.loading = true;
-      const btn = document.getElementById('dqRefresh');
-      btn.classList.add('spin');
-      btn.disabled = true;
+      const btns = [document.getElementById('dqRefresh'), document.getElementById('afRefresh')];
+      btns.forEach((b) => { b.classList.add('spin'); b.disabled = true; });
       try {
         const res = await fetch('/api/admin/data-quality' + (force ? '?refresh=1' : ''), { credentials: 'same-origin', headers: { Accept: 'application/json' } });
         const data = await res.json().catch(() => null);
@@ -4800,19 +4891,23 @@
         renderQuality();
       } catch (err) {
         document.getElementById('dqMeta').textContent = 'Data quality could not be loaded: ' + err.message;
-        if (!DQ.data) document.getElementById('dqTable').innerHTML = '<div class="ui-empty">Nothing to show.</div>';
+        document.getElementById('afMeta').textContent = 'Audit findings could not be loaded: ' + err.message;
+        if (!DQ.data) {
+          document.getElementById('dqTable').innerHTML = '<div class="ui-empty">Nothing to show.</div>';
+          document.getElementById('afTable').innerHTML = '<div class="ui-empty">Nothing to show.</div>';
+        }
       } finally {
         DQ.loading = false;
-        btn.classList.remove('spin');
-        btn.disabled = false;
+        btns.forEach((b) => { b.classList.remove('spin'); b.disabled = false; });
       }
     }
 
-    // Open the tab filtered to one dataset (from the Sources drawer).
+    // Open the tab's Automatic checks filtered to one dataset (from the Sources drawer) or a check id.
     function openQualityFor(key) {
       DQ.q = String(key || '').toLowerCase();
       DQ.sev = '';
       DQ.report = '';
+      DQ.view = 'checks';
       switchTab('qualityTab');
       const input = document.getElementById('dqSearch');
       if (input) input.value = key || '';
@@ -4889,7 +4984,9 @@
       document.getElementById('dqHeld').innerHTML = d.held.length ? '<p class="dq-held"><b>Held:</b> ' + d.held.map((h) =>
         UI.esc(h.label) + ' (' + UI.esc(h.reason) + ', since ' + UI.esc(srcIst(h.since)) + ' IST)').join('; ') +
         '. The pages keep the previous good copy and the sync tries again on every run.</p>' : '';
+      document.getElementById('dqViewChecksN').textContent = d.available ? ' ' + UI.n(dqRows().length) : '';
       renderQualityTable();
+      renderAudit();
     }
 
     function renderQualityTable() {
@@ -4953,6 +5050,233 @@
         { label: 'Message', csv: (r) => r.f.message },
         { label: 'Suggested fix', csv: (r) => r.f.fix }
       ], rows);
+    }
+
+    // ---- Data quality → Audit findings: the data issues of the 6 Nov 2026 audit (lib/quality/audit_findings.json) ----
+    // Data: the audit block of GET /api/admin/data-quality; each finding with an automatic check carries its live
+    // state from quality.json (live.state: detected | clear | not_checked | unavailable).
+    const AF = { status: '', sev: '', owner: '', report: '', q: '', open: new Set() };
+    const AF_SEV = { critical: { label: 'Critical', tone: 'bad', rank: 4 }, high: { label: 'High', tone: 'warn', rank: 3 }, medium: { label: 'Medium', tone: '', rank: 2 }, low: { label: 'Low', tone: '', rank: 1 } };
+    const AF_STATUS = {
+      open: { label: 'Open', dot: 'bad', rank: 4 }, mitigated: { label: 'Mitigated', dot: 'warn', rank: 3 },
+      monitoring: { label: 'Monitoring', dot: '', rank: 2 }, fixed: { label: 'Fixed', dot: 'ok', rank: 1 }
+    };
+    const AF_OWNER = {
+      'source sheet': { label: 'Fix in source sheet', short: 'Source sheet', dot: 'c2', who: 'The people who maintain the Google Sheet or export behind this report' },
+      app: { label: 'App bug', short: 'App', dot: 'c1', who: 'The app code (this repo): a page or server change' },
+      sync: { label: 'Sync (VM)', short: 'Sync', dot: 'c5', who: 'The VM sync (vm/sync): how and when the copies are made' }
+    };
+    const AF_ADMIN_TAB = { 'admin_users.html?tab=sources': 'sourcesTab', 'admin_users.html?tab=structure': 'structureTab', 'admin_users.html?tab=editor': 'editorTab' };
+
+    function afSevChip(sev) { const s = AF_SEV[sev] || { label: sev, tone: '' }; return '<span class="ui-badge' + (s.tone ? ' ' + s.tone : '') + (sev === 'low' ? ' dq-low' : '') + '">' + UI.esc(s.label) + '</span>'; }
+    function afStatusChip(f) {
+      const s = AF_STATUS[f.status] || { label: f.status, dot: '' };
+      return '<span class="ui-badge' + (f.status === 'fixed' ? ' ok' : '') + '">' + (f.status === 'fixed' ? '' : '<span class="ui-dot' + (s.dot ? ' ' + s.dot : '') + '"></span>') +
+        UI.esc(s.label) + (f.fixedIn ? ' · ' + UI.esc(f.fixedIn) : '') + '</span>';
+    }
+    function afOwnerHtml(owner, short) {
+      const o = AF_OWNER[owner] || { label: owner, short: owner, dot: '' };
+      return '<span class="af-own"><span class="ui-dot' + (o.dot ? ' ' + o.dot : '') + '"></span>' + UI.esc(short ? o.short : o.label) + '</span>';
+    }
+    function afNum(n) { return Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
+    function afUnit(live, n) { const u = String(live.unit || 'row|rows').split('|'); return n === 1 ? u[0] : (u[1] || u[0]); }
+    function afLiveHtml(f) {
+      const l = f.live;
+      if (!l) return '<span class="ui-muted">—</span><span class="sub">no automatic check</span>';
+      if (l.state === 'detected') {
+        return '<span class="ui-badge bad">Still detected</span><span class="sub"><b>' + UI.esc(afNum(l.count)) + '</b> ' + UI.esc(afUnit(l, l.count)) + ' (live)' +
+          (l.lastSeen ? ' · seen ' + UI.esc(srcAgo(l.lastSeen)) : '') + '</span>';
+      }
+      if (l.state === 'clear') {
+        return '<span class="ui-badge ok">Not detected</span><span class="sub">' + (l.resolvedAt ? 'gone since ' + UI.esc(srcIst(l.resolvedAt)) : 'checked ' + UI.esc(srcAgo(l.checkedAt) || '—')) + '</span>';
+      }
+      if (l.state === 'not_checked') return '<span class="ui-badge">Not checked yet</span><span class="sub">no check of its data so far</span>';
+      return '<span class="ui-badge">No live results</span><span class="sub">checks run on the VM only</span>';
+    }
+    function afLiveText(f) {
+      const l = f.live;
+      if (!l) return '';
+      if (l.state === 'detected') return 'still detected: ' + afNum(l.count) + ' ' + afUnit(l, l.count);
+      if (l.state === 'clear') return 'not detected' + (l.resolvedAt ? ' since ' + srcIst(l.resolvedAt) + ' IST' : '');
+      return l.state === 'not_checked' ? 'not checked yet' : 'no live results';
+    }
+
+    function wireAudit() {
+      document.getElementById('afRefresh').addEventListener('click', () => loadQuality(true));
+      document.getElementById('afExport').addEventListener('click', exportAudit);
+      document.getElementById('afStatus').addEventListener('click', (e) => { const b = e.target.closest('button[data-status]'); if (b) { AF.status = b.getAttribute('data-status'); renderAudit(); } });
+      document.getElementById('afSev').addEventListener('change', (e) => { AF.sev = e.target.value; renderAudit(); });
+      document.getElementById('afOwner').addEventListener('change', (e) => { AF.owner = e.target.value; renderAudit(); });
+      document.getElementById('afReport').addEventListener('change', (e) => { AF.report = e.target.value; renderAudit(); });
+      document.getElementById('afSearch').addEventListener('input', UI.debounce((e) => { AF.q = e.target.value.trim().toLowerCase(); renderAuditTable(); }, 150));
+      document.getElementById('afStats').addEventListener('click', (e) => {
+        const b = e.target.closest('.ui-stat[data-af]');
+        if (!b) return;
+        const [k, v] = b.getAttribute('data-af').split(':');
+        if (k === 'status') AF.status = AF.status === v ? '' : v;
+        if (k === 'owner') AF.owner = AF.owner === v ? '' : v;
+        renderAudit();
+      });
+      const table = document.getElementById('afTable');
+      table.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-af-page],[data-af-checks]');
+        if (btn) {
+          e.stopPropagation();
+          if (btn.hasAttribute('data-af-checks')) { openQualityFor(btn.getAttribute('data-af-checks')); return; }
+          const page = btn.getAttribute('data-af-page');
+          if (AF_ADMIN_TAB[page]) switchTab(AF_ADMIN_TAB[page]); else srcOpenPage(page, btn.textContent);
+          return;
+        }
+        const tr = e.target.closest('tr.af-row');
+        if (!tr) return;
+        const id = tr.getAttribute('data-id');
+        if (AF.open.has(id)) AF.open.delete(id); else AF.open.add(id);
+        renderAuditTable();
+      });
+      table.addEventListener('keydown', (e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('tr.af-row')) { e.preventDefault(); e.target.click(); }
+      });
+    }
+
+    function afList() { return (DQ.data && DQ.data.audit && DQ.data.audit.findings) || []; }
+    function afMatch(f) {
+      if (AF.status && f.status !== AF.status) return false;
+      if (AF.sev && f.severity !== AF.sev) return false;
+      if (AF.owner && f.owner !== AF.owner) return false;
+      if (AF.report && !f.reports.some((r) => (r.page || r.label) === AF.report)) return false;
+      if (AF.q) {
+        const hay = [f.id, f.title, f.summary, f.evidence, f.impact, f.cause, f.fix, f.statusNote, f.owner, (AF_OWNER[f.owner] || {}).label, f.datasets.join(' '),
+          f.autoCheck.join(' '), f.reports.map((r) => r.label).join(' ')].join(' ').toLowerCase();
+        if (hay.indexOf(AF.q) < 0) return false;
+      }
+      return true;
+    }
+
+    function renderAudit() {
+      if (!DQ.data || !window.UI) return;
+      const a = DQ.data.audit;
+      const meta = document.getElementById('afMeta');
+      document.getElementById('dqViewAuditN').textContent = a && a.available ? ' ' + UI.n(a.summary.total) : '';
+      if (!a || !a.available) {
+        meta.innerHTML = '<b>No audit findings</b> · ' + UI.esc((a && a.reason) || 'This server does not send them yet.');
+        document.getElementById('afStats').innerHTML = '';
+        document.getElementById('afTable').innerHTML = '<div class="ui-empty">Nothing to show.</div>';
+        return;
+      }
+      const s = a.summary;
+      const qAt = DQ.data.available ? (DQ.data.summary.lastRun || DQ.data.qualityAt) : null;
+      meta.innerHTML = '<b>' + UI.esc(a.audit || 'Data audit') + '</b> · ' + UI.n(s.total) + ' data issues, kept by hand' +
+        (a.updated ? ' · list updated ' + UI.esc(a.updated) : '') +
+        ' · ' + (qAt ? 'live state from the automatic checks of ' + UI.esc(srcAgo(qAt) || '—') : 'no live check results on this server');
+      const bySev = (status) => ['critical', 'high', 'medium', 'low'].filter((v) => s.severity[v][status]).map((v) => s.severity[v][status] + ' ' + v).join(' · ') || 'none';
+      const linked = afList().filter((f) => f.live).length;
+      const sheetOpen = afList().filter((f) => f.owner === 'source sheet' && f.status !== 'fixed').length;
+      const appOpen = afList().filter((f) => f.owner === 'app' && f.status !== 'fixed').length;
+      const syncOpen = afList().filter((f) => f.owner === 'sync' && f.status !== 'fixed').length;
+      const tiles = [
+        { af: 'status:open', label: 'Open', dot: 'bad', v: s.status.open, sub: bySev('open') },
+        { af: 'status:mitigated', label: 'Mitigated', dot: 'warn', v: s.status.mitigated, sub: bySev('mitigated') },
+        { af: 'status:monitoring', label: 'Monitoring', dot: '', v: s.status.monitoring, sub: bySev('monitoring') },
+        { af: 'status:fixed', label: 'Fixed', dot: 'ok', v: s.status.fixed, sub: bySev('fixed') },
+        { label: 'Still detected', dot: s.detected ? 'bad' : '', v: s.detected, sub: qAt ? 'of ' + linked + ' with an automatic check' : 'live results on the VM only' },
+        { af: 'owner:source sheet', label: 'Fix in source sheet', dot: 'c2', v: sheetOpen, sub: appOpen + ' app · ' + syncOpen + ' sync (not fixed)' }
+      ];
+      const pressed = (t) => { const [k, v] = t.af.split(':'); return (k === 'status' ? AF.status : AF.owner) === v; };
+      document.getElementById('afStats').innerHTML = tiles.map((t) => (t.af
+        ? '<button type="button" class="ui-stat" data-af="' + UI.esc(t.af) + '" aria-pressed="' + pressed(t) + '">'
+        : '<div class="ui-stat">') +
+        '<div class="k">' + (t.dot ? '<span class="ui-dot ' + t.dot + '"></span>' : '<span class="ui-dot"></span>') + UI.esc(t.label) + '</div><div class="v">' + UI.n(t.v) +
+        '</div><div class="s">' + UI.esc(t.sub) + '</div>' + (t.af ? '</button>' : '</div>')).join('');
+
+      document.querySelectorAll('#afStatus button[data-status]').forEach((b) => b.setAttribute('aria-pressed', String(b.getAttribute('data-status') === AF.status)));
+      const sevSel = document.getElementById('afSev'); sevSel.value = AF.sev; sevSel.classList.toggle('on', !!AF.sev);
+      const ownSel = document.getElementById('afOwner'); ownSel.value = AF.owner; ownSel.classList.toggle('on', !!AF.owner);
+      const sel = document.getElementById('afReport');
+      const opts = '<option value="">All reports</option>' + a.reports.map((r) => { const k = r.page || r.label; return '<option value="' + UI.esc(k) + '"' + (k === AF.report ? ' selected' : '') + '>' +
+        UI.esc(r.label) + ' (' + r.findings + ')</option>'; }).join('');
+      if (sel.__opts !== opts) { sel.innerHTML = opts; sel.__opts = opts; }
+      sel.value = AF.report;
+      sel.classList.toggle('on', !!AF.report);
+      renderAuditTable();
+    }
+
+    function renderAuditTable() {
+      const all = afList();
+      const rows = all.filter(afMatch);
+      document.getElementById('afCount').textContent = UI.n(rows.length) + ' of ' + UI.n(all.length) + ' findings';
+      const el = document.getElementById('afTable');
+      if (!rows.length) { el.innerHTML = '<div class="ui-empty">' + (all.length ? 'No findings match these filters.' : 'No audit findings.') + '</div>'; return; }
+      rows.sort((a, b) => ((AF_STATUS[b.status] || {}).rank - (AF_STATUS[a.status] || {}).rank) || ((AF_SEV[b.severity] || {}).rank - (AF_SEV[a.severity] || {}).rank) ||
+        ((b.live && b.live.state === 'detected') - (a.live && a.live.state === 'detected')) || a.id.localeCompare(b.id));
+      const html = ['<p class="af-note"><b>Who fixes it:</b> ' + afOwnerHtml('source sheet') + ' the people who keep the Google Sheet or export · ' + afOwnerHtml('app') +
+        ' a change to the pages or server · ' + afOwnerHtml('sync') + ' how the VM copies the data. <b>Still detected</b> is the live result of the matching automatic check.</p>' +
+        '<div class="ui-table-wrap"><table class="ui-table af-table"><thead><tr><th>Finding / report</th><th class="dq-sev-col">Severity</th><th class="dq-sm-hide">Status</th>' +
+        '<th>Live</th><th class="dq-sm-hide">Who fixes</th><th class="dq-sm-hide">Suggested fix</th></tr></thead><tbody>'];
+      rows.forEach((f) => {
+        const open = AF.open.has(f.id);
+        const rep = f.reports.map((r) => r.label).join(', ') || (f.datasets.join(', ') || '—');
+        html.push('<tr class="dq-row af-row' + (open ? ' open' : '') + '" data-id="' + UI.esc(f.id) + '" tabindex="0" aria-expanded="' + open + '">' +
+          '<td class="dq-ds"><span class="af-title"><span class="dq-chev" aria-hidden="true">›</span> <span class="af-id">' + UI.esc(f.id) + '</span>' + UI.esc(f.title) + '</span>' +
+          '<span class="sub">' + UI.esc(rep) + '</span>' +
+          '<span class="dq-sm-only af-chips">' + afSevChip(f.severity) + afStatusChip(f) + '<span class="ui-badge">' + UI.esc((AF_OWNER[f.owner] || {}).label || f.owner) + '</span></span></td>' +
+          '<td class="dq-sev-col">' + afSevChip(f.severity) + '</td>' +
+          '<td class="dq-sm-hide">' + afStatusChip(f) + '</td>' +
+          '<td class="af-live">' + afLiveHtml(f) + '</td>' +
+          '<td class="dq-sm-hide">' + afOwnerHtml(f.owner) + '</td>' +
+          '<td class="dq-sm-hide dq-fix" title="' + UI.esc(f.fix) + '"><span>' + UI.esc(f.fix) + '</span></td></tr>');
+        if (open) {
+          const l = f.live;
+          const liveDetail = !l ? '' : l.state === 'detected'
+            ? '<ul class="af-matches">' + l.matches.map((m) => '<li>' + UI.esc(m.label) + ': ' + UI.esc(dqCheckLabel(m.check)) + (m.column ? ' (' + UI.esc(m.column.length > 50 ? m.column.slice(0, 50) + '…' : m.column) + ')' : '') +
+              ', ' + UI.esc(afNum(m.count)) + (m.total ? ' of ' + UI.esc(afNum(m.total)) : '') + ' · ' + UI.esc((DQ_SEV[m.severity] || {}).label || m.severity) +
+              (m.firstSeen ? ' · first seen ' + UI.esc(srcIst(m.firstSeen)) + ' IST' : '') + (m.lastSeen ? ' · last seen ' + UI.esc(srcAgo(m.lastSeen)) : '') + '</li>').join('') + '</ul>'
+            : UI.esc(afLiveText(f) + (l.checkedAt ? ' · data last checked ' + srcIst(l.checkedAt) + ' IST' : ''));
+          const dl = [
+            ['Evidence', UI.esc(f.evidence)],
+            ['What users see', UI.esc(f.impact)],
+            ['Cause', UI.esc(f.cause)],
+            ['Who fixes it', afOwnerHtml(f.owner) + ' · ' + UI.esc((AF_OWNER[f.owner] || {}).who || '')],
+            ['Suggested fix', UI.esc(f.fix)],
+            ['Status', afStatusChip(f) + (f.statusNote ? ' ' + UI.esc(f.statusNote) : '')],
+            ['Severity', afSevChip(f.severity)],
+            ['Datasets', UI.esc(f.datasets.join(', '))],
+            ['Automatic check', UI.esc(f.autoCheck.map((c) => dqCheckLabel(c) + ' (' + c + ')').join(', ') || 'none: tracked by hand')],
+            ['Live now', liveDetail],
+            ['Found', UI.esc(f.found || '')]
+          ].filter((p) => p[1]);
+          const checksKey = l && l.matches.length ? (new Set(l.matches.map((m) => m.dataset)).size === 1 ? l.matches[0].dataset : l.checks[0]) : (f.autoCheck[0] || '');
+          html.push('<tr class="dq-detail"><td colspan="6"><p class="dq-msg">' + UI.esc(f.summary) + '</p><dl class="dq-dl">' +
+            dl.map((p) => '<dt>' + UI.esc(p[0]) + '</dt><dd>' + p[1] + '</dd>').join('') + '</dl><div class="dq-btns">' +
+            f.reports.filter((r) => r.page).map((r) => '<button type="button" class="ui-btn sm" data-af-page="' + UI.esc(r.page) + '">' + UI.esc(r.label) + '</button>').join('') +
+            (checksKey && DQ.data.available ? '<button type="button" class="ui-btn sm" data-af-checks="' + UI.esc(checksKey) + '">See in Automatic checks</button>' : '') +
+            '</div></td></tr>');
+        }
+      });
+      html.push('</tbody></table></div>');
+      el.innerHTML = html.join('');
+    }
+
+    function exportAudit() {
+      if (!DQ.data) return;
+      UI.exportCsv('mzo-audit-findings.csv', [
+        { label: 'ID', csv: (f) => f.id },
+        { label: 'Title', csv: (f) => f.title },
+        { label: 'Reports', csv: (f) => f.reports.map((r) => r.label).join('; ') },
+        { label: 'Datasets', csv: (f) => f.datasets.join('; ') },
+        { label: 'Severity', csv: (f) => f.severity },
+        { label: 'Status', csv: (f) => f.status },
+        { label: 'Fixed in', csv: (f) => f.fixedIn },
+        { label: 'Who fixes', csv: (f) => (AF_OWNER[f.owner] || {}).label || f.owner },
+        { label: 'Live', csv: (f) => afLiveText(f) },
+        { label: 'Automatic check', csv: (f) => f.autoCheck.join('; ') },
+        { label: 'Found', csv: (f) => f.found },
+        { label: 'Summary', csv: (f) => f.summary },
+        { label: 'Evidence', csv: (f) => f.evidence },
+        { label: 'Impact', csv: (f) => f.impact },
+        { label: 'Cause', csv: (f) => f.cause },
+        { label: 'Suggested fix', csv: (f) => f.fix },
+        { label: 'Status note', csv: (f) => f.statusNote }
+      ], afList().filter(afMatch));
     }
 
     function sheetCopyUrl(raw) {
