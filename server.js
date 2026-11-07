@@ -239,14 +239,14 @@ app.use((req, res, next) => {
 
 // Server-side files are never served, locally or from the Vercel function.
 const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|static_cache)\.js|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
-const EDITOR_SERVER_PATH = /^\/lib\/editor(\/|$)/i; // the data editor's server code (docs/data-editor.md)
+const SERVER_LIB_PATH = /^\/lib\/(editor|assistant)(\/|$)/i; // server code: the data editor (docs/data-editor.md), Ask's providers (docs/assistant.md)
 /** True for a path that must not be served: checked on the decoded, normalised path, as the static server sees it. */
 function isPrivatePath_(rawPath) {
     let p;
     try { p = decodeURIComponent(String(rawPath || '')); } catch (_) { return true; }
     if (/[\0\\]/.test(p)) return true;
     p = path.posix.normalize(p);
-    return PRIVATE_PATH.test(p) || EDITOR_SERVER_PATH.test(p);
+    return PRIVATE_PATH.test(p) || SERVER_LIB_PATH.test(p);
 }
 app.use((req, res, next) => (isPrivatePath_(req.path) ? res.status(404).end() : next()));
 // API writes come from this app's own pages: the Origin (or, without one, the Referer) must be this host.
@@ -1163,7 +1163,8 @@ function rootAdminProfile_({ Username, Name, email, auth_provider, approved_by }
 app.get('/api/auth/config', (req, res) => {
     res.json({
         googleClientId: googleClientId_(),
-        ...(localAdmins.enabled ? { localSignIn: true } : {})
+        ...(localAdmins.enabled ? { localSignIn: true } : {}),
+        ...(assistant.configured ? { assistantProvider: assistant.provider, assistantModel: assistant.modelName } : {})
     });
 });
 
@@ -5583,138 +5584,21 @@ app.get('/api/executive/briefing', async (req, res) => {
     }
 });
 
-// --- Assistant (Claude Haiku) ---------------------------------------------
+// --- Assistant (Ask) --------------------------------------------------------
 // The browser runs the tools against its own (already office-scoped) data and
-// posts tool results back; this route only holds the API key and calls Claude.
+// posts tool results back; this route only holds the API key and calls the model.
 // Only the conversation comes from the client — model, system prompt and tools
-// are fixed here. Set ANTHROPIC_API_KEY (or anthropicApiKey in data/supabase_config.json).
-const AnthropicSDK = require('@anthropic-ai/sdk');
-const Anthropic = AnthropicSDK.default || AnthropicSDK;
+// are fixed on the server. Provider, model and keys come from env settings
+// (GOEDEL_API_KEY / ANTHROPIC_API_KEY, ASSISTANT_PROVIDER, ...): see lib/assistant/index.js.
 const ASSISTANT_CATALOG = require('./lib/assistant_catalog.js');
-const ASSISTANT_MODEL = 'claude-haiku-5-5';
-let anthropicClient = null;
-
-function assistantClient() {
-    const key = String(process.env.ANTHROPIC_API_KEY || fileConfig.anthropicApiKey || '').trim();
-    if (!key) return null;
-    if (!anthropicClient) anthropicClient = new Anthropic({ apiKey: key, maxRetries: 2, timeout: 60 * 1000 });
-    return anthropicClient;
-}
-
-function assistantSystemPrompt() {
-    const C = ASSISTANT_CATALOG;
-    const offices = Object.keys(C.OFFICES).map((r) =>
-        `- ${r} region: ` + Object.keys(C.OFFICES[r]).map((d) => `${d} division (CCCs: ${C.OFFICES[r][d].join(', ')})`).join('; ')
-    ).join('\n');
-    const reports = C.REPORTS.map((r) => {
-        const bits = [`- ${r.key} — "${r.title}": ${r.about}`];
-        if (r.params && r.params.length) bits.push(`  link filters: ${r.params.join(', ')}`);
-        if (r.views) bits.push(`  views: ${Object.keys(r.views).join(', ')}`);
-        if (r.data) bits.push('  numbers available through query_report');
-        return bits.join('\n');
-    }).join('\n');
-    const glossary = Object.keys(C.GLOSSARY).map((k) => `${k} = ${C.GLOSSARY[k]}`).join('; ');
-    return [
-        'You are the assistant inside MZO Reports, the reporting app of WBSEDCL Malda Zone (an electricity distribution utility in West Bengal, India).',
-        'The people asking are distribution officers and office staff. Many are not technical. They want a straight answer and a link to the right report.',
-        '',
-        'What you can do:',
-        '1. Answer questions about the numbers. Use query_report for nsc, load_extension, solar and loss, and get_briefing for "what needs attention" questions. Every number you state must come from a tool result in this conversation. Never estimate or invent a number.',
-        '2. Open a report already filtered. When the user asks to see, open, show or list something, call open_report with the report, the office filters and a view when one fits. If they say "that" or "those" right after you named an office, filter the link to that office. The app shows the link as a button the user clicks (nothing opens by itself), so call it "the button" (no above/below) and do not paste URLs.',
-        '3. Explain what a report shows, where to find something, or what a term means.',
-        'For reports without query_report numbers, say you cannot read those numbers yet and offer the link.',
-        '',
-        'Office hierarchy (canonical names; use exactly these in tool inputs):',
-        offices,
-        'Officers often say "Uttar Dinajpur" for the Raiganj region and "Dakshin Dinajpur" for the Balurghat region. If an office name is ambiguous (Raiganj, Malda and Balurghat are each a region, a division and a CCC), choose the level that fits the question, and say which one you used.',
-        '',
-        'Reports:',
-        reports,
-        '',
-        `Terms: ${glossary}.`,
-        '',
-        'How to answer:',
-        '- Lead with the answer in one or two short sentences, then at most a few short bullet points if they help. Plain words, no jargon the user did not use, no emojis, no tables.',
-        '- Write numbers the Indian way (1,23,456; ₹4.5 L; ₹2.1 Cr). Say which office and date the numbers are for.',
-        '- If a tool result says the user only sees part of the zone, answer for that part and mention it once.',
-        '- If the question is unclear, ask one short question instead of guessing.',
-        '- If something is outside these reports, say so briefly.'
-    ].join('\n');
-}
-
-function assistantTools() {
-    const C = ASSISTANT_CATALOG;
-    const office = (desc) => ({ type: 'string', description: desc });
-    const allViews = [];
-    C.REPORTS.forEach((r) => Object.keys(r.views || {}).forEach((v) => { if (allViews.indexOf(v) === -1) allViews.push(v); }));
-    const dataReports = C.REPORTS.filter((r) => r.data).map((r) => r.key);
-    // Inputs are validated in the browser before a tool runs (unknown reports/views are rejected there).
-    return [
-        {
-            name: 'open_report',
-            description: 'Give the user a button that opens a report with filters applied. Use when the user wants to see, open, show or list something. Only use filters and views the report supports (see the report list); leave a field out when it does not apply.',
-            input_schema: {
-                type: 'object',
-                properties: {
-                    report: { type: 'string', enum: C.REPORTS.map((r) => r.key) },
-                    region: office('Region name'),
-                    division: office('Division name'),
-                    ccc: office('CCC name'),
-                    view: { type: 'string', enum: allViews, description: 'A preset view of that report' },
-                    search: { type: 'string', description: 'Application / consumer number or name to search for' },
-                    label: { type: 'string', description: 'Short button text, e.g. "Raiganj · pending over 30 days"' }
-                },
-                required: ['report', 'label'],
-                additionalProperties: false
-            }
-        },
-        {
-            name: 'query_report',
-            description: 'Count and summarise a report from the data already loaded in the user\'s browser (limited to the user\'s office scope). Returns totals and, with group_by, one row per office. nsc views: over_30_days, pole_cases, rescued_from_withheld, industrial, commercial_three_phase. load_extension views: over_1_year, industrial, three_phase, above_10kw. solar views: connected, pending, meter_issue, pm_surya_ghar. loss has no views; month is YYYY-MM (leave out for the latest).',
-            input_schema: {
-                type: 'object',
-                properties: {
-                    report: { type: 'string', enum: dataReports },
-                    region: office('Region name'),
-                    division: office('Division name'),
-                    ccc: office('CCC name'),
-                    view: { type: 'string', enum: allViews, description: 'Only count rows in this view' },
-                    group_by: { type: 'string', enum: ['none', 'region', 'division', 'ccc'] },
-                    month: { type: 'string', description: 'loss only: YYYY-MM' }
-                },
-                required: ['report', 'group_by'],
-                additionalProperties: false
-            }
-        },
-        {
-            name: 'get_briefing',
-            description: 'Get today\'s zone briefing: items needing attention (critical, high priority, watch) with their numbers and the most affected divisions.',
-            input_schema: { type: 'object', properties: {}, additionalProperties: false }
-        }
-    ];
-}
-
-const ASSISTANT_SYSTEM = assistantSystemPrompt();
-const ASSISTANT_TOOLS = assistantTools();
-const ASSISTANT_BLOCK_TYPES = new Set(['text', 'tool_use', 'tool_result', 'thinking', 'redacted_thinking']);
+const assistantLib = require('./lib/assistant/index.js');
+const assistant = assistantLib.createAssistant({ env: process.env, fileConfig, catalog: ASSISTANT_CATALOG, fetch });
 const assistantHits = new Map(); // username -> [timestamps] (best effort per instance)
-
-function assistantMessagesValid(messages) {
-    if (!Array.isArray(messages) || !messages.length || messages.length > 60) return false;
-    if (JSON.stringify(messages).length > 200000) return false;
-    if (messages[0].role !== 'user' || messages[messages.length - 1].role !== 'user') return false;
-    return messages.every((m) => {
-        if (!m || (m.role !== 'user' && m.role !== 'assistant')) return false;
-        if (typeof m.content === 'string') return m.content.length > 0 && m.content.length <= 4000;
-        return Array.isArray(m.content) && m.content.length > 0 && m.content.every((b) => b && ASSISTANT_BLOCK_TYPES.has(b.type));
-    });
-}
 
 app.post('/api/assistant', async (req, res) => {
     const user = req.user || {};
-    const client = assistantClient();
-    if (!client) {
-        return res.status(503).json({ status: 'error', code: 'not_configured', message: 'The assistant is not set up yet. Ask the administrator to add the Anthropic API key.' });
+    if (!assistant.configured) {
+        return res.status(503).json({ status: 'error', code: 'not_configured', message: 'The assistant is not set up yet. Ask the administrator to add the assistant API key.' });
     }
     const who = String(user.Username || 'anon').toLowerCase();
     const now = Date.now();
@@ -5726,54 +5610,33 @@ app.post('/api/assistant', async (req, res) => {
     assistantHits.set(who, recent);
 
     const { messages, context } = req.body || {};
-    if (!assistantMessagesValid(messages)) {
+    if (!assistantLib.messagesValid(messages)) {
         return res.status(400).json({ status: 'error', code: 'bad_request', message: 'That conversation could not be sent.' });
     }
-    // Volatile, per-user details go after the cached block.
+    // Volatile, per-user details go after the shared (cached) prompt.
     const scope = String((context && context.scope) || '').slice(0, 160);
     const today = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' });
     const userNote = `Today is ${today}. The signed-in user is ${String(user.Name || user.Username || 'an officer').slice(0, 80)} (${user.role === 'admin' ? 'administrator' : 'officer'}). Office scope: ${scope || 'whole zone'}.`;
 
+    // Stop waiting (queue or upstream) when the browser goes away.
+    const ctrl = new AbortController();
+    res.on('close', () => { if (!res.writableEnded) ctrl.abort(); });
     try {
-        const response = await client.messages.create({
-            model: ASSISTANT_MODEL,
-            max_tokens: 16000,
-            output_config: { effort: 'low' },
-            system: [
-                { type: 'text', text: ASSISTANT_SYSTEM, cache_control: { type: 'ephemeral' } },
-                { type: 'text', text: userNote }
-            ],
-            tools: ASSISTANT_TOOLS,
-            messages
-        });
+        const response = await assistant.complete({ userNote, messages, signal: ctrl.signal });
         return res.json({
             status: 'success',
             stop_reason: response.stop_reason,
             content: response.content,
             usage: {
-                input: response.usage && response.usage.input_tokens,
-                output: response.usage && response.usage.output_tokens,
-                cache_read: response.usage && response.usage.cache_read_input_tokens
+                input: response.usage && response.usage.input,
+                output: response.usage && response.usage.output,
+                cache_read: response.usage && response.usage.cache_read
             }
         });
     } catch (err) {
-        if (err instanceof Anthropic.RateLimitError) {
-            return res.status(429).json({ status: 'error', code: 'busy', message: 'The assistant is busy. Try again in a moment.' });
-        }
-        if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
-            console.error('[Assistant] API key rejected:', err.message);
-            return res.status(503).json({ status: 'error', code: 'not_configured', message: 'The assistant key is not valid. Ask the administrator to check it.' });
-        }
-        if (err instanceof Anthropic.BadRequestError) {
-            console.error('[Assistant] Bad request:', err.message);
-            return res.status(400).json({ status: 'error', code: 'bad_request', message: 'That question could not be processed. Start a new conversation and try again.' });
-        }
-        if (err instanceof Anthropic.APIError) {
-            console.error('[Assistant] API error', err.status, err.message);
-            return res.status(502).json({ status: 'error', code: 'upstream', message: 'The assistant could not answer right now. Try again.' });
-        }
-        console.error('[Assistant] Error:', err && err.message);
-        return res.status(500).json({ status: 'error', code: 'error', message: 'The assistant could not answer right now. Try again.' });
+        if (res.headersSent || ctrl.signal.aborted) return undefined;
+        const r = assistantLib.replyFor(err);
+        return res.status(r.status).json({ status: 'error', code: r.code, message: r.message });
     }
 });
 
