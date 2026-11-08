@@ -268,8 +268,9 @@ app.use((req, res, next) => {
     next();
 });
 
-// Server-side files are never served, locally or from the Vercel function.
-const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|data_quality|static_cache|org_hierarchy|csv|safety_parser|xlsx_lite)\.js|lib\/briefing_cccs\.json$|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
+// Server-side files are never served, locally or from the Vercel function. power_map/powermap-v2/ is the map's
+// source (data seed, import script, SQL); only its build in power_map/v2/ is served.
+const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|power_map\/powermap-v2(\/|$)|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|data_quality|static_cache|org_hierarchy|csv|safety_parser|xlsx_lite)\.js|lib\/briefing_cccs\.json$|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
 const SERVER_LIB_PATH = /^\/lib\/(editor|assistant|quality)(\/|$)/i; // server code: the data editor (docs/data-editor.md), Ask's providers (docs/assistant.md), the audit findings (docs/data-quality.md)
 /** True for a path that must not be served: checked on the decoded, normalised path, as the static server sees it. */
 function isPrivatePath_(rawPath) {
@@ -2218,8 +2219,9 @@ app.post('/api/admin/sync', requireAdmin, async (req, res) => {
 });
 
 // --- Power Map V2 (DISHA host for vendor/PowerMapV2) ---------------------------------
-// Credentials are handed to the signed-in browser only after a live probe succeeds.
-// Edit rights: portal admins are map "super"; everyone else is view-only for now.
+// The browser never gets a Supabase key: the map's client talks PostgREST to /api/powermap/rest/v1/*
+// (below), which checks the session, allows only the map's tables, and lets only portal admins write.
+// Edit rights: portal admins are map "super"; everyone else is view-only for now (docs/power-map-v2.md).
 
 async function probePowerMapLive_() {
     const tries = [
@@ -2240,35 +2242,22 @@ async function probePowerMapLive_() {
     return { ok: false, reason: lastReason };
 }
 
-function publicPowerMapConfig_() {
-    return {
-        url: POWERMAP_URL || null,
-        anonKey: POWERMAP_KEY || null,
-        schema: 'public',
-        configured: !!(POWERMAP_URL && POWERMAP_KEY)
-    };
-}
-
 app.get('/api/powermap/config', async (req, res) => {
     if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    const pub = publicPowerMapConfig_();
     let live = { ok: false, reason: 'not probed' };
     try {
         live = await probePowerMapLive_();
     } catch (e) {
         live = { ok: false, reason: e.message || 'probe failed' };
     }
-    const schema =
-        String(live.table || '').startsWith('powermap.') || String(live.table || '') === 'v_substations'
-            ? 'powermap'
-            : String(live.table || '').startsWith('pm_')
-                ? 'public'
-                : pub.schema;
+    const table = String(live.table || '');
+    const schema = table.startsWith('powermap.') || table === 'v_substations' ? 'powermap' : 'public';
     if (!live.ok) {
-        console.warn('[powermap/config] withholding credentials, probe failed:', live.reason);
-        return res.json({ url: null, anonKey: null, schema, configured: false, live });
+        console.warn('[powermap/config] map data unavailable, probe failed:', live.reason);
+        return res.json({ proxy: null, schema, configured: false, live: { ok: false } });
     }
-    return res.json({ ...pub, schema, live, configured: true });
+    // No URL or key: the client sends everything through POWERMAP_PROXY_BASE on this host, with the session cookie.
+    return res.json({ proxy: POWERMAP_PROXY_BASE, schema, configured: true, live: { ok: true, table } });
 });
 
 app.get('/api/powermap/me', async (req, res) => {
@@ -2276,7 +2265,7 @@ app.get('/api/powermap/me', async (req, res) => {
     const user = req.user;
     const username = String(user.Username || user.username || '').trim();
     const name = String(user.Name || user.name || username || 'User').trim();
-    const isAdmin = String(user.role || '').toLowerCase() === 'admin' || !!req.localAdmin;
+    const isAdmin = await powerMapAdmin_(req);
     const identity = {
         username: username || 'viewer',
         name: name || 'Viewer',
@@ -2307,6 +2296,128 @@ app.get('/api/powermap/me', async (req, res) => {
     }
     return res.json(identity);
 });
+
+// PostgREST proxy for the map (the supabase-js client in power_map/v2 points at POWERMAP_PROXY_BASE):
+//   GET/HEAD   any signed-in user, map read tables only (POWERMAP_PROXY_READ), with the read key;
+//   POST/PATCH/DELETE and /rpc/*: portal admins only (powerMapAdmin_), write tables / RPCs in the lists,
+//              with the write key (POWERMAP_SUPABASE_SERVICE_KEY; the read key until it is set).
+// The editor accounts and suggestions are admin-only both ways and pin_hash never leaves the server.
+// API writes already need this host's Origin (the middleware near the top). The client's apikey /
+// Authorization headers are ignored; nothing but the allow-listed headers is forwarded.
+const POWERMAP_PROXY_BASE = '/api/powermap';
+const POWERMAP_SERVICE_KEY = String(process.env.POWERMAP_SUPABASE_SERVICE_KEY || fileConfig.powermapServiceKey || '').trim();
+const POWERMAP_PROXY_READ = {
+    public: new Set(['pm_voltage_levels', 'pm_org_units', 'pm_assets', 'pm_substations', 'pm_transformers', 'pm_lines', 'pm_tap_nodes',
+        'pm_tap_laterals', 'pm_v_substations', 'pm_v_lines', 'pm_v_tap_nodes', 'pm_v_tap_laterals', 'pm_network_stamp']),
+    powermap: new Set(['voltage_levels', 'org_units', 'assets', 'substations', 'transformers', 'lines', 'tap_nodes', 'tap_laterals',
+        'v_substations', 'v_lines', 'v_tap_nodes', 'v_tap_laterals', 'v_network_stamp'])
+};
+const POWERMAP_PROXY_ADMIN_TABLES = {
+    public: new Set(['pm_editors', 'pm_edit_suggestions']),
+    powermap: new Set(['editors', 'edit_suggestions'])
+};
+const POWERMAP_PROXY_WRITE = {
+    public: new Set(['pm_org_units', 'pm_assets', 'pm_substations', 'pm_transformers', 'pm_lines', 'pm_tap_nodes', 'pm_tap_laterals',
+        'pm_editors', 'pm_edit_suggestions']),
+    powermap: new Set(['org_units', 'assets', 'substations', 'transformers', 'lines', 'tap_nodes', 'tap_laterals', 'editors', 'edit_suggestions'])
+};
+const POWERMAP_PROXY_RPC = {
+    public: new Set(['pm_admin_update_substation_bundle']),
+    powermap: new Set(['admin_update_substation_bundle'])
+};
+const POWERMAP_PROXY_METHODS = new Set(['GET', 'HEAD', 'POST', 'PATCH', 'DELETE']);
+
+/** A portal admin whose account is still an active admin (the same test as requireAdmin). */
+async function powerMapAdmin_(req) {
+    if (!req.user) return false;
+    const isAdmin = String(req.user.role || '').toLowerCase() === 'admin' || !!req.localAdmin;
+    return isAdmin && (await stillAdmin_(req));
+}
+
+function powerMapProxySchema_(req) {
+    const raw = String(req.headers['content-profile'] || req.headers['accept-profile'] || 'public').trim().toLowerCase();
+    return raw === 'public' || raw === 'powermap' ? raw : null;
+}
+
+/** Drops pin_hash from editor rows (a JSON array or object); other bodies are returned unchanged. */
+function stripPowerMapSecrets_(text) {
+    if (!text) return text;
+    try {
+        const data = JSON.parse(text);
+        const clean = (r) => { if (r && typeof r === 'object') delete r.pin_hash; return r; };
+        return JSON.stringify(Array.isArray(data) ? data.map(clean) : clean(data));
+    } catch (_) {
+        return text;
+    }
+}
+
+async function powerMapProxy_(req, res) {
+    const deny = (status, message) => res.status(status).json({ code: 'DISHA_' + status, message, details: null, hint: null });
+    if (!req.user) return deny(401, 'Unauthorized');
+    const method = String(req.method || 'GET').toUpperCase();
+    if (!POWERMAP_PROXY_METHODS.has(method)) return deny(405, 'Method not allowed.');
+    const schema = powerMapProxySchema_(req);
+    if (!schema) return deny(400, 'Unknown schema.');
+    const isRpc = !!req.params.fn;
+    const name = String(isRpc ? req.params.fn : req.params.rel || '');
+    const read = method === 'GET' || method === 'HEAD';
+    const adminTable = !isRpc && POWERMAP_PROXY_ADMIN_TABLES[schema].has(name);
+    let allowed;
+    if (isRpc) allowed = method === 'POST' && POWERMAP_PROXY_RPC[schema].has(name);
+    else if (read) allowed = POWERMAP_PROXY_READ[schema].has(name) || adminTable;
+    else allowed = POWERMAP_PROXY_WRITE[schema].has(name);
+    if (!allowed) return deny(404, 'Not available.');
+    if ((!read || isRpc || adminTable) && !(await powerMapAdmin_(req))) {
+        return deny(403, read ? 'Only portal admins can open this.' : 'Only portal admins can change the map.');
+    }
+    const qi = req.originalUrl.indexOf('?');
+    const query = qi === -1 ? '' : req.originalUrl.slice(qi);
+    // The map never filters or selects on the PIN hash, and a read of a map table never embeds the
+    // admin-only tables (select=*,pm_editors(*)), whichever key the server holds.
+    const q = decodeURIComponentSafe_(query);
+    if (/pin_hash/i.test(q) || (!adminTable && /editors|edit_suggestions|profiles/i.test(q))) return deny(400, 'Not available.');
+    if (!POWERMAP_URL || !POWERMAP_KEY) return deny(503, 'Power Map data is not configured.');
+    const key = read && !adminTable ? POWERMAP_KEY : (POWERMAP_SERVICE_KEY || POWERMAP_KEY);
+    const headers = { apikey: key, Authorization: `Bearer ${key}`, 'Accept-Profile': schema };
+    const accept = String(req.headers.accept || '');
+    headers.Accept = /^application\/(json|vnd\.pgrst\.object\+json)\b/i.test(accept) ? accept.split(',')[0].trim() : 'application/json';
+    const prefer = String(req.headers.prefer || '').split(',').map((p) => p.trim())
+        .filter((p) => /^(return=(minimal|representation|headers-only)|count=(exact|planned|estimated)|resolution=(merge|ignore)-duplicates|missing=default)$/.test(p));
+    if (prefer.length) headers.Prefer = prefer.join(',');
+    if (/^\d+-\d*$/.test(String(req.headers.range || ''))) { headers.Range = String(req.headers.range); headers['Range-Unit'] = 'items'; }
+    let body;
+    if (!read) {
+        headers['Content-Profile'] = schema;
+        headers['Content-Type'] = 'application/json';
+        if (method !== 'DELETE' && req.body !== undefined) body = JSON.stringify(req.body);
+    }
+    const target = isRpc ? `rpc/${encodeURIComponent(name)}` : encodeURIComponent(name);
+    let upstream;
+    try {
+        upstream = await fetch(`${POWERMAP_URL}/rest/v1/${target}${query}`, { method, headers, body });
+    } catch (e) {
+        console.warn('[powermap/rest] upstream failed:', e.message);
+        return deny(502, 'Power Map data is unreachable.');
+    }
+    if (!read) console.log(`[powermap/rest] ${method} ${schema}.${name} by ${String(req.user.Username || req.user.username || '?')} -> ${upstream.status}`);
+    res.status(upstream.status);
+    for (const h of ['content-type', 'content-range', 'preference-applied']) {
+        const v = upstream.headers.get(h);
+        if (v) res.setHeader(h, v);
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    if (method === 'HEAD') return res.end();
+    let text = await upstream.text();
+    if (adminTable) text = stripPowerMapSecrets_(text);
+    return res.send(text);
+}
+
+function decodeURIComponentSafe_(s) {
+    try { return decodeURIComponent(String(s).replace(/\+/g, ' ')); } catch (_) { return String(s); }
+}
+
+app.all(POWERMAP_PROXY_BASE + '/rest/v1/rpc/:fn', powerMapProxy_);
+app.all(POWERMAP_PROXY_BASE + '/rest/v1/:rel', powerMapProxy_);
 
 // 6.45. Expose endpoint to return substations CSV from Supabase (Google Sheet fallback)
 app.get('/api/power-map/data', async (req, res) => {
