@@ -53,6 +53,19 @@
     .home-cta:active { transform: scale(.98); }
     .home-cta .ui-i { width: 16px; height: 16px; }
 
+    .home-collect {
+      width: 100%; display: flex; align-items: center; gap: 10px;
+      padding: 12px 14px; border-radius: 12px; cursor: pointer; text-align: left;
+      border: 1px solid color-mix(in srgb, #b45309 35%, var(--mzo-border));
+      background: color-mix(in srgb, #b45309 12%, var(--mzo-surface));
+      color: #b45309; font-size: 13.5px; font-weight: 650;
+    }
+    .home-collect:hover { filter: brightness(1.03); }
+    .home-collect-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: #b45309; flex: none;
+    }
+    .home-collect-go { margin-left: auto; font-size: 12px; opacity: 0.85; }
+
     .home-sec {
       margin-bottom: 22px;
       opacity: 0;
@@ -199,10 +212,17 @@
       </button>
     </header>
 
+    <section class="home-sec" id="collectSec" hidden>
+      <button type="button" class="home-collect" id="collectBanner">
+        <span class="home-collect-dot" aria-hidden="true"></span>
+        <span id="collectBannerTxt">Collect due</span>
+        <span class="home-collect-go">Open ›</span>
+      </button>
+    </section>
+
     <section class="home-sec" aria-labelledby="spotH">
       <div class="home-sec-h">
         <h2 id="spotH">Reports</h2>
-        <span id="spotHint">Rotates while you stay</span>
       </div>
       <div class="home-mosaic" id="spotGrid"></div>
     </section>
@@ -524,10 +544,27 @@
         openKey(btn.getAttribute('data-k'));
       }
 
+      function paintCollect() {
+        var sec = document.getElementById('collectSec');
+        var txt = document.getElementById('collectBannerTxt');
+        fetch('/api/collect/status', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+          .then(function (r) { return r.json().catch(function () { return null; }); })
+          .then(function (d) {
+            var n = (d && d.available && Number(d.pending_count)) || 0;
+            if (!sec) return;
+            if (n > 0) {
+              sec.hidden = false;
+              if (txt) txt.textContent = n === 1 ? '1 Collect request due for your office' : (n + ' Collect requests due for your office');
+            } else sec.hidden = true;
+          })
+          .catch(function () { if (sec) sec.hidden = true; });
+      }
+
       function boot() {
         paintScope();
         paintSpot(true);
         paintLists();
+        paintCollect();
         var spot = document.getElementById('spotGrid');
         spot.addEventListener('click', onClick);
         ['pointerdown', 'touchstart', 'scroll'].forEach(function (ev) {
@@ -536,15 +573,12 @@
         document.getElementById('favList').addEventListener('click', onClick);
         document.getElementById('recList').addEventListener('click', onClick);
         document.getElementById('openBriefing').addEventListener('click', function () { openKey('briefing'); });
-        var small = matchMedia('(max-width: 900px)').matches;
-        var rotates = !reduceMotion && pool.length > shown.length;
-        document.getElementById('spotHint').textContent = small
-          ? (rotates ? 'Swipe · tiles rotate' : 'Swipe for more')
-          : (rotates ? 'Rotates while you stay' : '');
+        document.getElementById('collectBanner').addEventListener('click', function () { openKey('collect'); });
         document.addEventListener('visibilitychange', function () {
           if (document.hidden) stopRotate();
-          else startRotate();
+          else { startRotate(); paintCollect(); }
         });
+        setInterval(function () { if (!document.hidden) paintCollect(); }, 60000);
       }
 
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

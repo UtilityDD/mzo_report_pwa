@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en" class="ui">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>DISHA Collect</title>
+  <script src="/mzo_theme.js?v=8"></script>
+  <script src="/mzo_pwa_icons.js"></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=11" />
+  <script src="/auth.js" defer></script>
+  <style>
+    .col-page { max-width: 920px; margin: 0 auto; padding: 20px 20px 88px; }
+    .col-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+    .col-head h1 { margin: 0; font-size: 22px; font-weight: 750; letter-spacing: -0.02em; }
+    .col-head p { margin: 4px 0 0; font-size: 13px; color: var(--mzo-muted); max-width: 42ch; }
+    .col-tabs { display: flex; gap: 4px; margin-bottom: 14px; }
+    .col-tab {
+      border: 1px solid var(--mzo-border); background: var(--mzo-surface); color: var(--mzo-muted);
+      font-size: 13px; font-weight: 600; padding: 7px 12px; border-radius: 999px; cursor: pointer;
+    }
+    .col-tab.on { background: var(--mzo-fill); color: var(--mzo-on-fill); border-color: transparent; }
+    .col-list { display: grid; gap: 8px; }
+    .col-card {
+      display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; align-items: start;
+      padding: 14px; border-radius: 12px; border: 1px solid var(--mzo-border); background: var(--mzo-surface);
+    }
+    .col-card.due { border-color: color-mix(in srgb, var(--mzo-warn-mark) 45%, var(--mzo-border)); }
+    .col-card.locked { opacity: 0.85; }
+    .col-card h2 { margin: 0; font-size: 15px; font-weight: 650; }
+    .col-card .meta { margin-top: 4px; font-size: 12.5px; color: var(--mzo-muted); }
+    .col-card .stamp { margin-top: 6px; font-size: 11.5px; color: var(--mzo-faint); }
+    .col-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11.5px; font-weight: 650; padding: 4px 8px; border-radius: 999px;
+      background: var(--mzo-hover-soft); color: var(--mzo-muted); font-variant-numeric: tabular-nums;
+    }
+    .chip.clock { color: var(--mzo-text); }
+    .chip.late { background: color-mix(in srgb, var(--mzo-warn-mark) 18%, transparent); color: var(--mzo-warn-mark); }
+    .chip.locked { background: color-mix(in srgb, #b91c1c 14%, transparent); color: #b91c1c; }
+    .chip.ok { background: color-mix(in srgb, #15803d 14%, transparent); color: #15803d; }
+    .col-empty {
+      padding: 28px 16px; text-align: center; color: var(--mzo-muted); font-size: 14px;
+      border: 1px dashed var(--mzo-border); border-radius: 12px;
+    }
+    .col-form {
+      display: none; margin-bottom: 18px; padding: 14px; border-radius: 12px;
+      border: 1px solid var(--mzo-border); background: var(--mzo-surface);
+    }
+    .col-form.on { display: block; }
+    .col-form label { display: block; font-size: 12px; font-weight: 600; color: var(--mzo-muted); margin: 10px 0 4px; }
+    .col-form label:first-child { margin-top: 0; }
+    .col-form input[type="text"], .col-form input[type="datetime-local"], .col-form textarea {
+      width: 100%; box-sizing: border-box; border: 1px solid var(--mzo-border); border-radius: 8px;
+      background: var(--mzo-bg); color: var(--mzo-text); padding: 8px 10px; font: inherit; font-size: 13.5px;
+    }
+    .col-offices {
+      max-height: 220px; overflow: auto; border: 1px solid var(--mzo-border); border-radius: 8px; padding: 6px;
+    }
+    .col-offices label {
+      display: flex; align-items: center; gap: 8px; margin: 0; padding: 5px 6px; font-weight: 500; color: var(--mzo-text);
+      border-radius: 6px; cursor: pointer; font-size: 13px;
+    }
+    .col-offices label:hover { background: var(--mzo-hover-soft); }
+    .col-form-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+    .col-btn {
+      border: 0; border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 650; cursor: pointer;
+      background: var(--mzo-fill); color: var(--mzo-on-fill);
+    }
+    .col-btn.ghost { background: transparent; color: var(--mzo-muted); border: 1px solid var(--mzo-border); }
+    .col-btn:disabled { opacity: 0.5; cursor: default; }
+    .col-err { margin-top: 8px; font-size: 13px; color: #b91c1c; }
+    @media (max-width: 900px) {
+      .col-page { padding: 14px 12px 88px; }
+      .col-card { grid-template-columns: 1fr; }
+      .col-chips { justify-content: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <main class="ui-page col-page">
+    <header class="col-head">
+      <div>
+        <h1>DISHA Collect</h1>
+        <p>Reports requested from your office. Shared draft per office — last writer is stamped.</p>
+      </div>
+      <button type="button" class="col-btn" id="newBtn" hidden>+ New request</button>
+    </header>
+
+    <form class="col-form" id="newForm" autocomplete="off">
+      <label for="fTitle">Title</label>
+      <input id="fTitle" type="text" required maxlength="200" placeholder="e.g. Tribal villages to electrify" />
+      <label for="fDue">Submit by</label>
+      <input id="fDue" type="datetime-local" required />
+      <label for="fExt">Extend until (optional)</label>
+      <input id="fExt" type="datetime-local" />
+      <label>Offices</label>
+      <div class="col-offices" id="fOffices"></div>
+      <div class="col-form-actions">
+        <button type="submit" class="col-btn" id="fSave">Create request</button>
+        <button type="button" class="col-btn ghost" id="fCancel">Cancel</button>
+      </div>
+      <div class="col-err" id="fErr" hidden></div>
+    </form>
+
+    <div class="col-tabs" role="tablist">
+      <button type="button" class="col-tab on" data-tab="inbox" role="tab" aria-selected="true">Inbox</button>
+      <button type="button" class="col-tab" data-tab="mine" role="tab" aria-selected="false" id="mineTab" hidden>My requests</button>
+    </div>
+    <div class="col-list" id="list"></div>
+  </main>
+
+  <script>
+    (function () {
+      'use strict';
+      var tab = 'inbox';
+      var canCreate = false;
+      var officeOpts = [];
+
+      function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+        });
+      }
+      function fmtLeft(ms) {
+        if (ms == null) return '';
+        if (ms <= 0) return '0m';
+        var s = Math.floor(ms / 1000);
+        var d = Math.floor(s / 86400); s -= d * 86400;
+        var h = Math.floor(s / 3600); s -= h * 3600;
+        var m = Math.floor(s / 60);
+        if (d > 0) return d + 'd ' + h + 'h';
+        if (h > 0) return h + 'h ' + m + 'm';
+        return m + 'm';
+      }
+      function chips(timing, status) {
+        var h = '';
+        if (status === 'submitted') h += '<span class="chip ok">Submitted</span>';
+        else if (timing.locked) h += '<span class="chip locked">Locked</span>';
+        else if (timing.late) h += '<span class="chip late">Late window</span><span class="chip clock">' + esc(fmtLeft(timing.ms_left)) + ' left</span>';
+        else h += '<span class="chip clock">' + esc(fmtLeft(timing.ms_left)) + ' left</span>';
+        return h;
+      }
+      function cardClass(item) {
+        var c = 'col-card';
+        if (item.status === 'submitted') return c;
+        if (item.timing && item.timing.locked) return c + ' locked';
+        if (item.timing && (item.timing.late || (item.timing.ms_left != null && item.timing.ms_left < 86400000))) return c + ' due';
+        return c;
+      }
+
+      async function api(path, opts) {
+        var res = await fetch(path, Object.assign({ credentials: 'same-origin', headers: { 'Accept': 'application/json' } }, opts || {}));
+        var data = null;
+        try { data = await res.json(); } catch (e) { data = null; }
+        if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
+        return data;
+      }
+
+      function paintInbox(data) {
+        var el = document.getElementById('list');
+        var items = (data && data.items) || [];
+        if (!data || data.available === false) {
+          el.innerHTML = '<div class="col-empty">DISHA Collect runs on the VM. This host has no PocketBase store.</div>';
+          return;
+        }
+        if (!items.length) {
+          el.innerHTML = '<div class="col-empty">No Collect requests for your office right now.</div>';
+          return;
+        }
+        el.innerHTML = items.map(function (it) {
+          return '<article class="' + cardClass(it) + '">' +
+            '<div><h2>' + esc(it.title) + '</h2>' +
+            '<div class="meta">' + esc(it.office_label) + ' · ' + esc(it.status) + '</div>' +
+            (it.last_saved_by_name ? '<div class="stamp">Last saved by ' + esc(it.last_saved_by_name) + '</div>' : '') +
+            '</div><div class="col-chips">' + chips(it.timing || {}, it.status) + '</div></article>';
+        }).join('');
+      }
+
+      function paintMine(data) {
+        var el = document.getElementById('list');
+        var items = (data && data.items) || [];
+        if (!items.length) {
+          el.innerHTML = '<div class="col-empty">You have not opened any Collect requests yet.</div>';
+          return;
+        }
+        el.innerHTML = items.map(function (it) {
+          return '<article class="' + cardClass({ timing: it.timing, status: it.status === 'open' ? 'pending' : 'submitted' }) + '">' +
+            '<div><h2>' + esc(it.title) + '</h2>' +
+            '<div class="meta">' + esc(it.office_count) + ' office' + (it.office_count === 1 ? '' : 's') + ' · ' + esc(it.status) + '</div></div>' +
+            '<div class="col-chips">' + chips(it.timing || {}, it.status === 'closed' ? 'submitted' : 'pending') +
+            (it.status === 'open' ? '<button type="button" class="chip clock" data-extend="' + esc(it.id) + '">Extend</button>' : '') +
+            '</div></article>';
+        }).join('');
+      }
+
+      async function load() {
+        try {
+          if (tab === 'inbox') paintInbox(await api('/api/collect/inbox'));
+          else paintMine(await api('/api/collect/requests'));
+        } catch (err) {
+          document.getElementById('list').innerHTML = '<div class="col-empty">' + esc(err.message) + '</div>';
+        }
+      }
+
+      async function bootCreate() {
+        try {
+          var st = await api('/api/collect/status');
+          canCreate = !!(st && st.can_create && st.available !== false);
+          document.getElementById('newBtn').hidden = !canCreate;
+          document.getElementById('mineTab').hidden = !canCreate;
+          if (canCreate) {
+            var o = await api('/api/collect/offices');
+            officeOpts = (o && o.offices) || [];
+            document.getElementById('fOffices').innerHTML = officeOpts.map(function (x, i) {
+              return '<label><input type="checkbox" data-i="' + i + '" /> ' + esc(x.office_label) + '</label>';
+            }).join('') || '<div class="meta">No subordinate offices in your scope.</div>';
+          }
+        } catch (e) {
+          document.getElementById('newBtn').hidden = true;
+        }
+      }
+
+      document.querySelector('.col-tabs').addEventListener('click', function (e) {
+        var btn = e.target.closest('.col-tab');
+        if (!btn) return;
+        tab = btn.getAttribute('data-tab');
+        document.querySelectorAll('.col-tab').forEach(function (b) {
+          var on = b === btn;
+          b.classList.toggle('on', on);
+          b.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        load();
+      });
+
+      document.getElementById('newBtn').addEventListener('click', function () {
+        document.getElementById('newForm').classList.add('on');
+      });
+      document.getElementById('fCancel').addEventListener('click', function () {
+        document.getElementById('newForm').classList.remove('on');
+        document.getElementById('fErr').hidden = true;
+      });
+
+      document.getElementById('newForm').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var err = document.getElementById('fErr');
+        err.hidden = true;
+        var offices = [];
+        document.querySelectorAll('#fOffices input:checked').forEach(function (inp) {
+          var o = officeOpts[Number(inp.getAttribute('data-i'))];
+          if (o) offices.push(o);
+        });
+        var due = document.getElementById('fDue').value;
+        var ext = document.getElementById('fExt').value;
+        var body = {
+          title: document.getElementById('fTitle').value.trim(),
+          due_at: due ? new Date(due).toISOString() : '',
+          offices: offices,
+          schema: { fields: [] }
+        };
+        if (ext) body.extended_due_at = new Date(ext).toISOString();
+        var btn = document.getElementById('fSave');
+        btn.disabled = true;
+        try {
+          await api('/api/collect/requests', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify(body)
+          });
+          document.getElementById('newForm').classList.remove('on');
+          document.getElementById('fTitle').value = '';
+          tab = 'mine';
+          document.querySelectorAll('.col-tab').forEach(function (b) {
+            var on = b.getAttribute('data-tab') === 'mine';
+            b.classList.toggle('on', on);
+            b.setAttribute('aria-selected', on ? 'true' : 'false');
+          });
+          await load();
+        } catch (ex) {
+          err.textContent = ex.message;
+          err.hidden = false;
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+      document.getElementById('list').addEventListener('click', async function (e) {
+        var btn = e.target.closest('[data-extend]');
+        if (!btn) return;
+        var id = btn.getAttribute('data-extend');
+        var raw = prompt('Extend until (local time). Example: 2026-11-15 18:00');
+        if (!raw) return;
+        var d = new Date(raw.replace(' ', 'T'));
+        if (isNaN(d.getTime())) { alert('Could not parse that date'); return; }
+        try {
+          await api('/api/collect/requests/' + encodeURIComponent(id) + '/extend', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ extended_due_at: d.toISOString() })
+          });
+          await load();
+        } catch (ex) { alert(ex.message); }
+      });
+
+      bootCreate().then(load);
+      setInterval(function () { if (!document.hidden) load(); }, 60000);
+    })();
+  </script>
+</body>
+</html>

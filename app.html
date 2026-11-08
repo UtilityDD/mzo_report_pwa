@@ -954,6 +954,44 @@
       position: relative;
     }
 
+    .collect-pill {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 28px;
+      padding: 0 10px;
+      margin-right: 2px;
+      border-radius: 999px;
+      border: 1px solid color-mix(in srgb, #b45309 35%, var(--border));
+      background: color-mix(in srgb, #b45309 14%, var(--panel));
+      color: #b45309;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      font-variant-numeric: tabular-nums;
+    }
+    .collect-pill:hover { filter: brightness(1.05); }
+    .collect-pill-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: #b45309;
+      box-shadow: 0 0 0 0 color-mix(in srgb, #b45309 50%, transparent);
+      animation: collectPulse 1.6s ease-out infinite;
+    }
+    @keyframes collectPulse {
+      0% { box-shadow: 0 0 0 0 color-mix(in srgb, #b45309 45%, transparent); }
+      70% { box-shadow: 0 0 0 7px transparent; }
+      100% { box-shadow: 0 0 0 0 transparent; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .collect-pill-dot { animation: none; }
+    }
+    .ni .collect-nav-badge {
+      margin-left: auto;
+      min-width: 18px; height: 18px; padding: 0 5px;
+      border-radius: 999px; background: #b45309; color: #fff;
+      font-size: 10.5px; font-weight: 700; line-height: 18px; text-align: center;
+    }
+
     .ib {
       width: 32px;
       height: 32px;
@@ -1994,6 +2032,10 @@
             <span class="c-g" id="cG"></span><span class="c-s">/</span><span class="c-p" id="cP">Loading…</span>
           </div>
           <span class="asof hide-sm" id="asOf" hidden></span>
+          <button type="button" class="collect-pill" id="collectPill" hidden data-tip="DISHA Collect" aria-label="DISHA Collect">
+            <span class="collect-pill-dot" aria-hidden="true"></span>
+            <span id="collectPillTxt">Collect</span>
+          </button>
           <button type="button" class="ib fav-bar-btn" id="favPageBtn" data-tip="Add to Favourites" aria-pressed="false"
             aria-label="Toggle Favourite"><svg class="ic">
               <use href="#i-star" id="favPageIco" />
@@ -2199,6 +2241,11 @@
           ]
         },
         {
+          id: 'collect_group', label: 'DISHA Collect', icon: 'clip', hue: 'c6', items: [
+            ['collect', 'Collect', 'collect/', 'disha collect field report request deadline office']
+          ]
+        },
+        {
           id: 'media', label: 'Media', icon: 'news', items: [
             ['media_news', 'Power news hub', 'media_news.html', 'news']
           ]
@@ -2400,10 +2447,61 @@
           h += '<div class="grp' + (openGroups[g.id] ? ' open' : '') + '" data-g="' + g.id + '"' + (g.hue ? ' style="--gc:var(--' + g.hue + ')"' : '') + '>' +
             '<button type="button" class="ng" aria-expanded="' + (!!openGroups[g.id]) + '" data-rtip="' + esc(g.label) + '" aria-label="' + esc(g.label) + '">' + icon(g.icon, 'gi') +
             '<span class="lbl">' + esc(g.label) + '</span>' + icon('chev', 'ic-sm chev') + '</button><div class="sub">';
-          g.mods.forEach(function (m) { h += '<a class="ni" href="#' + m.k + '" data-k="' + m.k + '"><span class="lbl">' + esc(m.n) + '</span>' + favPinBtn(m.k) + '</a>'; });
+          g.mods.forEach(function (m) {
+            var badge = (m.k === 'collect' && collectPending > 0)
+              ? '<span class="collect-nav-badge" aria-label="' + collectPending + ' pending">' + collectPending + '</span>'
+              : '';
+            h += '<a class="ni" href="#' + m.k + '" data-k="' + m.k + '"><span class="lbl">' + esc(m.n) + '</span>' + badge + favPinBtn(m.k) + '</a>';
+          });
           h += '</div></div>';
         });
         $('nav').innerHTML = h;
+      }
+
+      var collectPending = 0;
+      function syncCollectBadge() {
+        var pill = $('collectPill');
+        var txt = $('collectPillTxt');
+        if (!pill) return;
+        if (collectPending > 0) {
+          pill.hidden = false;
+          if (txt) txt.textContent = collectPending === 1 ? '1 Collect due' : (collectPending + ' Collect due');
+          pill.setAttribute('aria-label', txt ? txt.textContent : 'DISHA Collect');
+        } else {
+          pill.hidden = true;
+        }
+        var badge = document.querySelector('#nav .ni[data-k="collect"] .collect-nav-badge');
+        var link = document.querySelector('#nav .ni[data-k="collect"]');
+        if (link) {
+          if (collectPending > 0) {
+            if (!badge) {
+              badge = document.createElement('span');
+              badge.className = 'collect-nav-badge';
+              var lbl = link.querySelector('.lbl');
+              if (lbl && lbl.nextSibling) link.insertBefore(badge, lbl.nextSibling);
+              else link.appendChild(badge);
+            }
+            badge.textContent = String(collectPending);
+            badge.setAttribute('aria-label', collectPending + ' pending');
+          } else if (badge) {
+            badge.remove();
+          }
+        }
+      }
+      function pollCollect() {
+        fetch('/api/collect/status', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+          .then(function (r) { return r.json().catch(function () { return null; }); })
+          .then(function (d) {
+            var n = (d && d.available && Number(d.pending_count)) || 0;
+            if (n !== collectPending) {
+              collectPending = n;
+              syncCollectBadge();
+            } else {
+              collectPending = n;
+              syncCollectBadge();
+            }
+          })
+          .catch(function () { /* Collect is VM-only; ignore on hosts without it */ });
       }
 
       function setGroup(gid, open) {
@@ -3300,6 +3398,14 @@
       applyTheme(pref(), false);
       syncSidebar();
       go(fromHash(), true);
+
+      var collectPillBtn = $('collectPill');
+      if (collectPillBtn) {
+        collectPillBtn.addEventListener('click', function () { go('collect'); });
+      }
+      pollCollect();
+      setInterval(function () { if (!document.hidden) pollCollect(); }, 60000);
+      document.addEventListener('visibilitychange', function () { if (!document.hidden) pollCollect(); });
 
       // Signed-in users open the shell, not the login page, so the shell registers the service worker too.
       if ('serviceWorker' in navigator) {

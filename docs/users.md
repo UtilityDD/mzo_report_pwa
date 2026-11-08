@@ -10,6 +10,7 @@ On the VM, users, sign-in and the activity log live in the VM's own PocketBase i
 | `lib/report_modules.js` | Report keys for `modules`, read from the NAV registry in `app.html` |
 | `vm/pocketbase/pb_migrations/1794000000`–`1794000002` | The three collections below |
 | `vm/pocketbase/pb_migrations/1794200000` | `app_assistant_usage`: Ask usage per model call (below; owned by `lib/assistant/usage.js`) |
+| `vm/pocketbase/pb_migrations/1794300000` | DISHA Collect collections (`app_collect_*`; [collect.md](collect.md), `lib/collect.js`) |
 | `admin_users_pb.js` | Admin → Users additions (only active when the server says `store: pocketbase`) |
 | `vm/dev/test-users-store.js` | Tests against a throwaway local PocketBase |
 

@@ -270,7 +270,7 @@ app.use((req, res, next) => {
 
 // Server-side files are never served, locally or from the Vercel function. power_map/powermap-v2/ is the map's
 // source (data seed, import script, SQL); only its build in power_map/v2/ is served.
-const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|power_map\/powermap-v2(\/|$)|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|data_quality|static_cache|org_hierarchy|csv|safety_parser|xlsx_lite)\.js|lib\/briefing_cccs\.json$|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
+const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|power_map\/powermap-v2(\/|$)|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|data_quality|static_cache|org_hierarchy|csv|safety_parser|xlsx_lite|collect)\.js|lib\/briefing_cccs\.json$|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
 const SERVER_LIB_PATH = /^\/lib\/(editor|assistant|quality)(\/|$)/i; // server code: the data editor (docs/data-editor.md), Ask's providers (docs/assistant.md), the audit findings (docs/data-quality.md)
 /** True for a path that must not be served: checked on the decoded, normalised path, as the static server sees it. */
 function isPrivatePath_(rawPath) {
@@ -1333,6 +1333,10 @@ function googleClientId_() {
 
 // The VM user store's sign-in, session check and user admin routes take precedence over the Supabase ones below.
 if (userStore.on) userStore.mount(app, { issueSessionCookie, requireAdmin, clientId: googleClientId_, fetch, rootAdmins: ROOT_ADMIN_EMAILS });
+
+// DISHA Collect (VM PocketBase): inbox, create request, extend deadline. Off without PB credentials.
+const collect = require('./lib/collect').create({ env: process.env, clientIp: require('./lib/local_admins').clientIp });
+collect.mount(app);
 
 /**
  * A Google token issued to this app's client ID for a verified email (lib/google_auth.js): an ID token
