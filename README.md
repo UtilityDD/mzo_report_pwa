@@ -51,6 +51,7 @@ Optional `.env` (git-ignored, loaded by `npm run dev`): `GOEDEL_API_KEY` or `ANT
 | [docs/users.md](docs/users.md) | Users on the VM: the PocketBase user store (`app_users`, activity, audit), sign-in, built-in admins, modules |
 | [docs/collect.md](docs/collect.md) | DISHA Collect: office report requests on the VM (PocketBase), inbox badges, deadlines |
 | [docs/data-mirror.md](docs/data-mirror.md) | The VM's PocketBase copy of every dataset: sources, storage structure, schedules, raw snapshots, running a sync |
+| [docs/cmo-upload.md](docs/cmo-upload.md) | The CMO grievance upload on the VM: the portal export, checks, preview/commit/undo, storage, first deploy |
 | [docs/data-editor.md](docs/data-editor.md) | The data editor at `/editor/` on the VM: editing, pasting and permissions; datasets the VM owns (native mode) |
 | [docs/data-quality.md](docs/data-quality.md) | Data quality checks on the mirror: findings, the owner action list per sheet, scores, how the checks work |
 | [docs/org-hierarchy.md](docs/org-hierarchy.md) | Admin → Organisation: WBSEDCL's office hierarchy chart, its dataset and API, and what scaling beyond Malda Zone would change |
