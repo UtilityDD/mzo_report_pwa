@@ -7,39 +7,45 @@ Not available on Vercel (needs PocketBase). Local checkouts without `PB_URL` + s
 | Where | What |
 |---|---|
 | `lib/collect.js` | PocketBase client, scope rules, `/api/collect/*` |
-| `collect/index.html` | Inbox, create request (P0), extend, countdown chips |
-| `vm/pocketbase/pb_migrations/1794300000_app_collect.js` | Collections below |
+| `collect/index.html` + `collect/collect_app.js` | Inbox, create (format builder + All RM/DM/SM), fill, hierarchy, export |
+| `vm/pocketbase/pb_migrations/1794300000_app_collect.js` | Collections |
+| `vm/dev/test-collect.js` | Timing/office unit tests; `--pb` live round-trip |
 | Shell | Top-bar pill + sidebar badge when `pending_count > 0`; Home strip |
 
-## Rules (product)
+## Rules
 
-1. **Create:** admin / zone, region, or division officer — offices only **under** their scope (`lib/offices.js`).
-2. **Assignment unit:** one assignment + one submission per office; any user at that office may edit.
-3. **Stamp** on every write: email, name, username, office, time, IP, `late` boolean.
-4. **Deadline:** `due_at` required; optional `extended_due_at` (> due). Locked when `now > due_at` and (no extension or `now > extended_due_at`). Late window: `due_at < now ≤ extended_due_at`.
-
-## Collections
-
-`app_collect_templates`, `app_collect_requests`, `app_collect_assignments`, `app_collect_submissions` — API rules all null (server superuser only).
+1. **Create:** admin / zone, region, or division officer — offices only **under** their scope.
+2. **Office picks:** All · Clear · **All RM** (regions) · **All DM** (divisions) · **All SM** (CCCs), plus individual ticks.
+3. **Assignment unit:** one assignment + one submission per office; any user at that office may edit.
+4. **Stamp** on every write: email, name, username, office, time, IP, `late` boolean.
+5. **Deadline:** locked when past `due_at` with no open `extended_due_at`; late window allows edit with `late` stamp.
+6. **Return:** requester can return a submitted assignment (only while still editable / extended) so the office can correct it.
 
 ## API
 
-| Route | Who | Purpose |
-|---|---|---|
-| `GET /api/collect/status` | signed in | `{ available, pending_count, can_create }` for the shell badge |
-| `GET /api/collect/inbox` | signed in | Assignments for **this** office + timing chips |
-| `GET /api/collect/requests` | creators | Requests I opened (admins: open requests) |
-| `POST /api/collect/requests` | creators | Create request + assignments + empty drafts |
-| `POST /api/collect/requests/:id/extend` | requester or admin | Set `extended_due_at` |
-| `GET /api/collect/offices` | creators | Offices under my scope (picker) |
+| Route | Purpose |
+|---|---|
+| `GET /api/collect/status` | Shell badge `{ available, pending_count, can_create }` |
+| `GET /api/collect/inbox` | Assignments for this office |
+| `GET/POST /api/collect/requests` | List mine / create |
+| `GET /api/collect/requests/:id` | Hierarchy for requester |
+| `GET /api/collect/requests/:id/export` | JSON export of nested answers |
+| `POST /api/collect/requests/:id/extend` | Set `extended_due_at` |
+| `POST /api/collect/requests/:id/offices` | Add offices |
+| `POST /api/collect/requests/:id/offices/remove` | Withdraw pending assignments |
+| `GET /api/collect/assignments/:id` | Schema + payload for fill |
+| `PUT /api/collect/assignments/:id/draft` | Save shared draft |
+| `POST /api/collect/assignments/:id/submit` | Submit |
+| `POST /api/collect/assignments/:id/return` | Unlock for correction |
+| `GET /api/collect/offices` | Offices under my scope |
 
-## Phases
+## Test
 
-- **P0 (this):** collections, inbox/status/create/extend, shell + Home badges, countdown / locked / late chips. Schema is empty (`{ fields: [] }`); fill UI comes next.
-- **P1:** template builder + draft save / submit with lock enforcement.
-- **P2:** nested groups (Block → Village → Para → Scheme) + hierarchy viewer + add/remove offices on a live request.
-- **P3:** return-for-correction, export, revision history.
+```
+node vm/dev/test-collect.js
+node vm/dev/test-collect.js --pb   # needs local PocketBase binary
+```
 
 ## Deploy
 
-Push to `develop` for the VM. PocketBase applies `1794300000` on deploy (PocketBase restart when migrations change). Confirm `/api/collect/status` returns `available: true` after sign-in.
+Push to `develop`. PocketBase applies `1794300000` when migrations change. Confirm `/api/collect/status` → `available: true` after sign-in on the VM.
