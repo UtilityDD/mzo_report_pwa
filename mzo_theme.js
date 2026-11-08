@@ -3,15 +3,22 @@
  * Storage keys kept in sync: theme, mzo_theme, collectionDashboardTheme ('light' | 'dark' | 'ppt').
  * The shell may also store mzo_theme_pref = 'system' | 'light' | 'dark' | 'ppt'; it then writes the
  * resolved value to the keys above.
- * PPT is desktop/projector only: at ≤900px a stored ppt pref paints as light (pref is kept).
+ * PPT is desktop/projector only: on a ≤900px screen a stored ppt pref paints as light (pref is kept).
+ * Inside the shell the test uses the shell's width, not the frame's (a 1024px desktop has a ~770px frame).
  */
 (function () {
   'use strict';
   var KEYS = ['theme', 'mzo_theme', 'collectionDashboardTheme'];
   var PREV_KEY = 'mzo_theme_prev';
   var root = document.documentElement;
+
+  // Running inside the workstation shell (app.html)?
+  var inShell = false;
+  try { inShell = window.self !== window.top && !!window.top.__MZO_SHELL__; } catch (e) {}
+  if (inShell) root.classList.add('mzo-in-shell');
+
   var phoneMq = null;
-  try { phoneMq = window.matchMedia('(max-width: 900px)'); } catch (e) {}
+  try { phoneMq = (inShell ? window.top : window).matchMedia('(max-width: 900px)'); } catch (e) {}
 
   function isPhone() {
     try { return !!(phoneMq && phoneMq.matches); } catch (e) { return false; }
@@ -139,16 +146,12 @@
     } catch (e) {}
   }
 
-  // Running inside the workstation shell (app.html)?
-  var inShell = false;
-  try { inShell = window.self !== window.top && !!window.top.__MZO_SHELL__; } catch (e) {}
-  if (inShell) root.classList.add('mzo-in-shell');
-
   window.MzoTheme = {
     get: read,
     set: set,
     apply: apply,
     inShell: inShell,
+    pptAllowed: function () { return !isPhone(); },
     toggle: function () {
       var cur = root.getAttribute('data-mzo-theme') || read();
       return set(cur === 'light' ? 'dark' : 'light');
@@ -162,7 +165,9 @@
   window.addEventListener('load', chartDefaults);
 
   // Phone ↔ desktop: re-paint so a stored ppt pref becomes light on phones and PPT again on desktop.
-  if (phoneMq) {
+  // In the shell, app.html re-applies the theme to its frames itself (and a listener on the shell's
+  // media query would outlive this frame).
+  if (phoneMq && !inShell) {
     var onPhoneChange = function () { apply(read()); };
     if (phoneMq.addEventListener) phoneMq.addEventListener('change', onPhoneChange);
     else if (phoneMq.addListener) phoneMq.addListener(onPhoneChange);

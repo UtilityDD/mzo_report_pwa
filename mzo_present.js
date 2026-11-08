@@ -33,6 +33,15 @@
     return window.matchMedia('(min-width: 900px)').matches;
   }
 
+  // PPT is desktop/projector only (mzo_theme.js): on a phone-sized screen the bar would show just a PPT
+  // button that does nothing, so hide it. In the shell the screen is the shell's width, not this frame's.
+  function pptAllowed() {
+    if (window.MzoTheme && typeof window.MzoTheme.pptAllowed === 'function') return window.MzoTheme.pptAllowed();
+    var w = window;
+    try { if (window.top !== window && window.top.__MZO_SHELL__) w = window.top; } catch (e) {}
+    try { return !w.matchMedia('(max-width: 900px)').matches; } catch (e) { return true; }
+  }
+
   function readPct() {
     try {
       var n = parseInt(localStorage.getItem(KEY), 10);
@@ -187,6 +196,7 @@
     applyFocus(foc);
     var root = document.getElementById('mzo-present-zoom');
     if (!root) return;
+    root.style.display = pptAllowed() ? '' : 'none';
     root.setAttribute('data-zoom', String(pct));
     root.setAttribute('data-ppt', ppt ? '1' : '0');
     root.setAttribute('data-focus', foc ? '1' : '0');
@@ -342,6 +352,11 @@
   var mq = window.matchMedia('(min-width: 900px)');
   if (mq.addEventListener) mq.addEventListener('change', sync);
   else if (mq.addListener) mq.addListener(sync);
+  // Outside the shell, crossing the 900px PPT line shows/hides the bar (the shell re-applies the theme
+  // to its frames, which fires mzo-theme-change).
+  var pptMq = window.matchMedia('(max-width: 900px)');
+  if (pptMq.addEventListener) pptMq.addEventListener('change', sync);
+  else if (pptMq.addListener) pptMq.addListener(sync);
 
   var shellTimer = 0;
   function scheduleSync() {
