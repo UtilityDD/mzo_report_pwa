@@ -19,7 +19,7 @@ Read these next, in this order:
 
 ### The main pages (the sidebar, `NAV` in `app.html`)
 
-`app.html` is the shell: sidebar (a drawer on phones), Ctrl/⌘K search, favourites, and report pages in keep-alive iframes. The home item is **Briefing** (`executive_briefing.html`); **Ask** (`assistant.html`) answers questions in plain language and opens filtered reports.
+`app.html` is the shell: sidebar (a drawer on phones), Ctrl/⌘K search, favourites, and report pages in keep-alive iframes. The home item is **Home** (`home.html`: DISHA mark, full name, clickable report tiles); **Briefing** (`executive_briefing.html`) is the detailed scorecard; **Ask** (`assistant.html`) answers questions in plain language and opens filtered reports.
 
 | Group | Pages |
 |---|---|
