@@ -14,13 +14,14 @@
   var fillState = null;
   var detailState = null;
   var TYPES = [
-    { v: 'text', n: 'Text' },
-    { v: 'number', n: 'Number' },
-    { v: 'checkbox', n: 'Yes / No' },
-    { v: 'date', n: 'Date' },
-    { v: 'textarea', n: 'Long text' },
-    { v: 'group', n: 'List' }
+    { v: 'text', n: 'Text', g: 'Aa' },
+    { v: 'number', n: 'Number', g: '#' },
+    { v: 'checkbox', n: 'Yes/No', g: '✓' },
+    { v: 'date', n: 'Date', g: 'D' },
+    { v: 'textarea', n: 'Long', g: '¶' },
+    { v: 'group', n: 'Table', g: '⊞' }
   ];
+  var TYPE_SHORT = { text: 'Text', number: 'Num', checkbox: 'Y/N', date: 'Date', textarea: 'Long', group: 'Table' };
 
   function $(id) { return document.getElementById(id); }
   function esc(s) {
@@ -162,7 +163,13 @@
     paintUserList();
   }
 
-  /* ===== simple question cards ===== */
+  /* ===== visual table / column builder ===== */
+  function colLetter(i) {
+    var s = '';
+    var n = i;
+    do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; } while (n >= 0);
+    return s;
+  }
   function findPath(list, id, path) {
     path = path || [];
     for (var i = 0; i < list.length; i++) {
@@ -184,28 +191,74 @@
     for (var j = 0; j < path.length - 1; j++) parent = path[j] === 'children' ? parent.children : parent[path[j]];
     return Array.isArray(parent) ? parent : parent.children;
   }
-  function paintQ(f, nested) {
-    var h = '<div class="q-card' + (nested ? ' nest' : '') + '" data-id="' + esc(f.id) + '">';
-    h += '<div class="q-card-top"><input type="text" data-act="label" placeholder="' +
-      (f.type === 'group' ? 'List name (e.g. Village)' : 'Question') + '" value="' + esc(f.label) + '" />';
-    h += '<button type="button" class="col-btn ghost sm" data-act="rm" title="Remove">✕</button></div>';
-    h += '<div class="q-types">';
+  function paintPreview() {
+    var el = $('fmtPreview');
+    if (!el) return;
+    if (!schemaFields.length) {
+      el.innerHTML = 'Header preview appears here as you add columns.';
+      return;
+    }
+    function bits(list, depth) {
+      var out = [];
+      list.forEach(function (f, i) {
+        if (i && depth === 0) out.push('<span class="sep">|</span>');
+        var name = (f.label || 'Untitled').trim() || 'Untitled';
+        if (f.type === 'group') {
+          out.push('<span class="ph tbl">' + esc(name) + ' ⊞</span>');
+          if (f.children && f.children.length) {
+            out.push('<span class="sep">›</span>');
+            out = out.concat(bits(f.children, depth + 1));
+          }
+        } else {
+          out.push('<span class="ph">' + esc(name) + ' <span class="sep">' + esc(TYPE_SHORT[f.type] || '') + '</span></span>');
+        }
+      });
+      return out;
+    }
+    el.innerHTML = bits(schemaFields, 0).join('');
+  }
+  function paintCol(f, index, depth) {
+    var isTable = f.type === 'group';
+    var h = '<div class="tbl-col' + (isTable ? ' is-table' : '') + '" data-id="' + esc(f.id) + '">';
+    h += '<div class="tbl-col-head">';
+    h += '<span class="letter" title="Column">' + esc(colLetter(index)) + '</span>';
+    h += '<input type="text" data-act="label" placeholder="' + (isTable ? 'Table name' : 'Column name') + '" value="' + esc(f.label) + '" />';
+    h += '<button type="button" class="ico" data-act="left" title="Move left">‹</button>';
+    h += '<button type="button" class="ico" data-act="right" title="Move right">›</button>';
+    h += '<button type="button" class="ico" data-act="rm" title="Remove">×</button>';
+    h += '</div>';
+    h += '<div class="tbl-types">';
     TYPES.forEach(function (t) {
-      h += '<button type="button" class="q-type' + (f.type === t.v ? ' on' : '') + '" data-act="type" data-type="' + t.v + '">' + esc(t.n) + '</button>';
+      h += '<button type="button" class="tbl-type' + (f.type === t.v ? ' on' : '') + '" data-act="type" data-type="' + t.v + '">' +
+        '<span class="glyph">' + esc(t.g) + '</span>' + esc(t.n) + '</button>';
     });
     h += '</div>';
-    if (f.type === 'group') {
-      h += '<div class="q-nest-label">Inside this list</div>';
-      (f.children || []).forEach(function (c) { h += paintQ(c, true); });
-      h += '<div class="q-actions"><button type="button" class="col-btn ghost sm" data-act="add-child">+ Add inside</button></div>';
+    if (isTable) {
+      h += '<div class="tbl-sub"><div class="tbl-sub-lab"><span>Sub-columns (one row each)</span></div>';
+      h += '<div class="tbl-row">';
+      (f.children || []).forEach(function (c, i) { h += paintCol(c, i, depth + 1); });
+      h += '<button type="button" class="tbl-add sm" data-act="add-child">+ Sub-column</button>';
+      h += '</div></div>';
     }
     h += '</div>';
     return h;
   }
   function paintSchema() {
-    $('schemaRoot').innerHTML = schemaFields.length
-      ? schemaFields.map(function (f) { return paintQ(f, false); }).join('')
-      : '<div class="col-empty">No questions yet — pick a template or add one.</div>';
+    var root = $('schemaRoot');
+    if (!schemaFields.length) {
+      root.innerHTML =
+        '<div class="tbl-board"><div class="tbl-row">' +
+        '<button type="button" class="tbl-add" id="addRootField">+ Column</button>' +
+        '</div></div>' +
+        '<div class="col-empty" style="margin-top:8px">Empty sheet — add a column, or use a template above.</div>';
+    } else {
+      root.innerHTML =
+        '<div class="tbl-board"><div class="tbl-row">' +
+        schemaFields.map(function (f, i) { return paintCol(f, i, 0); }).join('') +
+        '<button type="button" class="tbl-add" id="addRootField">+ Column</button>' +
+        '</div></div>';
+    }
+    paintPreview();
   }
   function exportSchema() {
     function walk(list) {
@@ -221,9 +274,9 @@
   }
   function seedSimple() {
     schemaFields = [
-      Object.assign(newField('text'), { label: 'Short description', required: true }),
+      Object.assign(newField('text'), { label: 'Description', required: true }),
       Object.assign(newField('number'), { label: 'Count' }),
-      Object.assign(newField('checkbox'), { label: 'Completed' })
+      Object.assign(newField('checkbox'), { label: 'Done' })
     ];
     paintSchema();
   }
@@ -523,29 +576,41 @@
 
   $('presetSimple').addEventListener('click', seedSimple);
   $('presetTribal').addEventListener('click', seedTribal);
-  $('addRootField').addEventListener('click', function () {
-    schemaFields.push(newField('text'));
-    paintSchema();
-  });
   $('schemaRoot').addEventListener('input', function (e) {
     if (e.target.getAttribute('data-act') !== 'label') return;
-    var card = e.target.closest('.q-card');
+    var card = e.target.closest('.tbl-col');
     if (!card) return;
     var path = findPath(schemaFields, card.getAttribute('data-id'));
     if (!path) return;
     atPath(schemaFields, path).label = e.target.value;
+    paintPreview();
   });
   $('schemaRoot').addEventListener('click', function (e) {
+    if (e.target.closest('#addRootField') || (e.target.id === 'addRootField')) {
+      schemaFields.push(newField('text', 'Column ' + (schemaFields.length + 1)));
+      paintSchema();
+      return;
+    }
     var btn = e.target.closest('[data-act]');
     if (!btn) return;
-    var card = btn.closest('.q-card');
+    var act = btn.getAttribute('data-act');
+    var card = btn.closest('.tbl-col');
     if (!card) return;
     var path = findPath(schemaFields, card.getAttribute('data-id'));
     if (!path) return;
     var f = atPath(schemaFields, path);
-    var act = btn.getAttribute('data-act');
+    var list = parentList(schemaFields, path);
+    var idx = path[path.length - 1];
     if (act === 'rm') {
-      parentList(schemaFields, path).splice(path[path.length - 1], 1);
+      list.splice(idx, 1);
+      paintSchema(); return;
+    }
+    if (act === 'left' && idx > 0) {
+      var a = list[idx - 1]; list[idx - 1] = list[idx]; list[idx] = a;
+      paintSchema(); return;
+    }
+    if (act === 'right' && idx < list.length - 1) {
+      var b = list[idx + 1]; list[idx + 1] = list[idx]; list[idx] = b;
       paintSchema(); return;
     }
     if (act === 'type') {
@@ -555,7 +620,7 @@
     }
     if (act === 'add-child') {
       if (!f.children) f.children = [];
-      f.children.push(newField('text'));
+      f.children.push(newField('text', 'Column ' + (f.children.length + 1)));
       paintSchema();
     }
   });
@@ -567,7 +632,7 @@
     var users = Object.keys(selectedUsers).map(function (k) { return selectedUsers[k]; });
     var schema = exportSchema();
     if (!offices.length) { err.textContent = 'Pick at least one office.'; err.hidden = false; setWizard(2); return; }
-    if (!schema.fields.length) { err.textContent = 'Add at least one question.'; err.hidden = false; return; }
+    if (!schema.fields.length) { err.textContent = 'Add at least one column.'; err.hidden = false; return; }
     var due = $('fDue').value;
     var ext = $('fExt').value;
     var body = {
