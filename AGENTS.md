@@ -8,7 +8,7 @@ Rules for anyone changing this repo, human or AI agent. Read this first, then th
 - **Commit secrets.** `.env` and `data/supabase_config.json` are git-ignored; keep keys (Supabase service role, Anthropic, session secret) in env vars. Never put a key in HTML or client JS.
 - **Rename or move a served page.** URLs are bookmarked, shared and linked from Ask; deleting or moving one breaks them. If a page must move, leave a redirect (see `/performance_index` in `vercel.json` and `server.js`).
 - **Send report data through Vercel.** Register the published CSV in `mzo_data_hub.js` `DATASETS` and let the browser fetch it. Only login, admin and tiny `/api/.../meta` JSON go through the server. The one exception is **mirror mode** on the VM (`MZO_DATA_MODE=mirror`), where `/api/data/*` serves the sync's local snapshots; it is never on for Vercel, and on Vercel this rule holds as before (see [architecture.md](docs/architecture.md#mirror-mode-vm-only)).
-- **Add a framework, build step or CSS library.** Pages are plain HTML/JS on the UI kit.
+- **Add a framework, build step or CSS library.** Pages are plain HTML/JS on the UI kit. Exception: Power Map V2 (`power_map/powermap-v2/`, docs in [docs/power-map-v2.md](docs/power-map-v2.md)) is a prebuilt React island; rebuild with Vite and commit `power_map/v2/`. Do not add other frameworks.
 - **Add per-page office preferences.** Office scope comes from the login only (`mzo_scope.js`).
 
 ## Always

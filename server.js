@@ -571,7 +571,48 @@ console.log('[Supabase] Stock dump origin:', stockStorageOrigin_() ? 'supabase s
 
 function isPowerMapPath_(apiPath) {
     const p = String(apiPath || '');
-    return p.startsWith(POWER_MAP_TABLE) || p.startsWith(POWER_MAP_CORRECTIONS_TABLE);
+    // Legacy flat table + public pm_* bridge views (Power Map V2). Schema `powermap`
+    // tables are queried through queryPowerMap_ so they do not collide with other names.
+    return p.startsWith(POWER_MAP_TABLE) ||
+        p.startsWith(POWER_MAP_CORRECTIONS_TABLE) ||
+        p.startsWith('pm_');
+}
+
+/** REST against POWERMAP_URL/KEY (old project), any schema. */
+async function queryPowerMap_(apiPath, options = {}) {
+    if (!POWERMAP_URL || !POWERMAP_KEY) {
+        throw new Error('Power Map Supabase credentials are not configured.');
+    }
+    const schema = options.schema || 'public';
+    const url = `${POWERMAP_URL}/rest/v1/${apiPath}`;
+    const headers = {
+        apikey: POWERMAP_KEY,
+        Authorization: `Bearer ${POWERMAP_KEY}`,
+        'Content-Type': 'application/json',
+        'Accept-Profile': schema,
+        ...options.headers
+    };
+    const method = (options.method || 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') {
+        headers.Prefer = options.prefer || 'return=representation';
+        headers['Content-Profile'] = schema;
+    }
+    const response = await fetch(url, {
+        method,
+        headers,
+        body: options.body ? JSON.stringify(options.body) : undefined
+    });
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Power Map REST HTTP ${response.status}: ${errText}`);
+    }
+    const text = await response.text();
+    if (!text || text.trim().length === 0) return null;
+    try {
+        return JSON.parse(text);
+    } catch (_) {
+        return text;
+    }
 }
 
 function isStockDumpPath_(apiPath) {
@@ -2174,6 +2215,97 @@ app.post('/api/admin/sync', requireAdmin, async (req, res) => {
     } catch (err) {
         res.status(500).json({ status: 'error', message: err.message });
     }
+});
+
+// --- Power Map V2 (DISHA host for vendor/PowerMapV2) ---------------------------------
+// Credentials are handed to the signed-in browser only after a live probe succeeds.
+// Edit rights: portal admins are map "super"; everyone else is view-only for now.
+
+async function probePowerMapLive_() {
+    const tries = [
+        { table: 'pm_v_substations', schema: 'public' },
+        { table: 'v_substations', schema: 'powermap' },
+        { table: 'pm_substations', schema: 'public' },
+        { table: 'substations', schema: 'powermap' }
+    ];
+    let lastReason = 'not probed';
+    for (const t of tries) {
+        try {
+            await queryPowerMap_(`${t.table}?select=id&limit=1`, { schema: t.schema });
+            return { ok: true, table: t.schema === 'powermap' ? `powermap.${t.table}` : t.table };
+        } catch (e) {
+            lastReason = e.message || 'probe failed';
+        }
+    }
+    return { ok: false, reason: lastReason };
+}
+
+function publicPowerMapConfig_() {
+    return {
+        url: POWERMAP_URL || null,
+        anonKey: POWERMAP_KEY || null,
+        schema: 'public',
+        configured: !!(POWERMAP_URL && POWERMAP_KEY)
+    };
+}
+
+app.get('/api/powermap/config', async (req, res) => {
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    const pub = publicPowerMapConfig_();
+    let live = { ok: false, reason: 'not probed' };
+    try {
+        live = await probePowerMapLive_();
+    } catch (e) {
+        live = { ok: false, reason: e.message || 'probe failed' };
+    }
+    const schema =
+        String(live.table || '').startsWith('powermap.') || String(live.table || '') === 'v_substations'
+            ? 'powermap'
+            : String(live.table || '').startsWith('pm_')
+                ? 'public'
+                : pub.schema;
+    if (!live.ok) {
+        console.warn('[powermap/config] withholding credentials, probe failed:', live.reason);
+        return res.json({ url: null, anonKey: null, schema, configured: false, live });
+    }
+    return res.json({ ...pub, schema, live, configured: true });
+});
+
+app.get('/api/powermap/me', async (req, res) => {
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    const user = req.user;
+    const username = String(user.Username || user.username || '').trim();
+    const name = String(user.Name || user.name || username || 'User').trim();
+    const isAdmin = String(user.role || '').toLowerCase() === 'admin' || !!req.localAdmin;
+    const identity = {
+        username: username || 'viewer',
+        name: name || 'Viewer',
+        role: isAdmin ? 'super' : null,
+        scopeId: null,
+        allowedSubstationIds: [],
+        allowedDistricts: [],
+        unrestricted: true
+    };
+    // Phase 1: non-admins stay view-only. Editor grants (pm_editors) come later.
+    if (identity.role !== 'editor') return res.json(identity);
+    try {
+        const rows = await queryPowerMap_(
+            'pm_editors?select=id,can_edit,allowed_substation_ids,allowed_districts' +
+                `&portal_username=eq.${encodeURIComponent(username)}&active=is.true&limit=1`,
+            { schema: 'public' }
+        );
+        const row = Array.isArray(rows) ? rows[0] : null;
+        if (row) {
+            if (row.can_edit === false) identity.role = null;
+            identity.scopeId = row.id;
+            identity.allowedSubstationIds = row.allowed_substation_ids || [];
+            identity.allowedDistricts = row.allowed_districts || [];
+            identity.unrestricted = false;
+        }
+    } catch (e) {
+        console.warn('[powermap/me] scope lookup failed:', e.message);
+    }
+    return res.json(identity);
 });
 
 // 6.45. Expose endpoint to return substations CSV from Supabase (Google Sheet fallback)

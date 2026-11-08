@@ -58,3 +58,4 @@ Optional `.env` (git-ignored, loaded by `npm run dev`): `GOEDEL_API_KEY` or `ANT
 | [docs/assistant.md](docs/assistant.md) | Ask (`/api/assistant`; DeepSeek V4.1 Flash on Gödel Machines or Claude Haiku, chosen by env) |
 | [docs/deploy.md](docs/deploy.md) | Remotes, Vercel, environment variables, releasing |
 | [docs/vm.md](docs/vm.md) | The VM: auto-deploy from `develop`, rollback, PocketBase, timers, logs, GitHub Actions checks |
+| [docs/power-map-v2.md](docs/power-map-v2.md) | Power Map V2 (DRO network GIS) hosted in DISHA: build, APIs, auth |
