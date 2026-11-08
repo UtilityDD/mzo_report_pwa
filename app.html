@@ -20,6 +20,8 @@
         if (!pref) { t = localStorage.getItem('theme') || localStorage.getItem('mzo_theme'); pref = (t === 'light' || t === 'dark' || t === 'ppt') ? t : 'system'; }
       } catch (e) { }
       t = pref === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : ((pref === 'dark' || pref === 'ppt') ? pref : 'light');
+      // PPT is desktop/projector only — paint light on phones (pref kept for desktop).
+      if (t === 'ppt' && matchMedia('(max-width: 900px)').matches) t = 'light';
       d.setAttribute('data-mzo-theme', t);
       d.setAttribute('data-theme-pref', pref);
       if (t === 'dark') {
@@ -1751,6 +1753,41 @@
         display: none !important;
       }
 
+      /* PPT is desktop/projector only */
+      .seg button[data-pref="ppt"] {
+        display: none !important;
+      }
+
+      .bar {
+        padding-top: env(safe-area-inset-top, 0px);
+        height: calc(52px + env(safe-area-inset-top, 0px));
+      }
+
+      .bar-compact .bar {
+        height: calc(40px + env(safe-area-inset-top, 0px));
+      }
+
+      .bnav {
+        min-height: calc(56px + env(safe-area-inset-bottom, 0px));
+        padding: 2px 4px calc(2px + env(safe-area-inset-bottom, 0px));
+      }
+
+      .bn {
+        font-size: 10.5px;
+        gap: 2px;
+        height: 48px;
+      }
+
+      .bn-pill {
+        width: 52px;
+        height: 26px;
+      }
+
+      .bn .ic {
+        width: 18px;
+        height: 18px;
+      }
+
       .search kbd {
         display: none;
       }
@@ -1973,7 +2010,7 @@
               class="ic">
               <use href="#i-max" id="fsIco" />
             </svg></button>
-          <button type="button" class="ib" id="pptBtn" data-tip="Presentation mode (PPT)"
+          <button type="button" class="ib hide-sm" id="pptBtn" data-tip="Presentation mode (PPT)"
             aria-label="Presentation mode (PPT)"><svg class="ic">
               <use href="#i-ppt" />
             </svg></button>
@@ -2727,13 +2764,19 @@
       var mq = matchMedia('(prefers-color-scheme: dark)');
       function pref() { return root.getAttribute('data-theme-pref') || 'system'; }
       function resolved(p) { return p === 'system' ? (mq.matches ? 'dark' : 'light') : ((p === 'dark' || p === 'ppt') ? p : 'light'); }
+      /** PPT paints as light on phones; stored pref stays ppt for desktop. */
+      function paintTheme(t) { return (t === 'ppt' && isSmall()) ? 'light' : t; }
       function applyTheme(p, persist) {
-        var t = resolved(p);
+        // Phones cannot save PPT; coerce the preference itself when persisting.
+        if (persist && p === 'ppt' && isSmall()) p = 'light';
+        var stored = resolved(p);
+        var t = paintTheme(stored);
         var prev = root.getAttribute('data-mzo-theme');
-        if (t === 'ppt' && prev && prev !== 'ppt') LS.set('mzo_theme_prev', prev);
+        if (stored === 'ppt' && prev && prev !== 'ppt') LS.set('mzo_theme_prev', prev);
         root.setAttribute('data-mzo-theme', t);
         root.setAttribute('data-theme-pref', p);
         if (persist) LS.set('mzo_theme_pref', p);
+        // Frames / pages read these keys: write the painted theme so phones never inherit ppt chrome.
         ['theme', 'mzo_theme', 'collectionDashboardTheme'].forEach(function (key) { LS.set(key, t); });
         document.body.classList.toggle('light-theme', t === 'light' || t === 'ppt');
         document.body.classList.toggle('dark-theme', t === 'dark');
@@ -2745,11 +2788,12 @@
         $('themeBtn').setAttribute('data-tip', t === 'dark' ? 'Light theme' : 'Dark theme');
         var pptBtn = $('pptBtn');
         if (pptBtn) {
-          pptBtn.setAttribute('aria-pressed', String(t === 'ppt'));
-          pptBtn.setAttribute('data-tip', t === 'ppt' ? 'Exit presentation mode (PPT)' : 'Presentation mode (PPT)');
+          pptBtn.setAttribute('aria-pressed', String(stored === 'ppt' && !isSmall()));
+          pptBtn.setAttribute('data-tip', stored === 'ppt' && !isSmall() ? 'Exit presentation mode (PPT)' : 'Presentation mode (PPT)');
         }
         var segs = document.querySelectorAll('.seg button');
-        for (var i = 0; i < segs.length; i++) segs[i].setAttribute('aria-pressed', String(segs[i].getAttribute('data-pref') === p));
+        var segP = (isSmall() && p === 'ppt') ? 'light' : p;
+        for (var i = 0; i < segs.length; i++) segs[i].setAttribute('aria-pressed', String(segs[i].getAttribute('data-pref') === segP));
         Object.keys(frames).forEach(function (k) {
           try {
             var w = frames[k].el.contentWindow;
@@ -2757,10 +2801,11 @@
           } catch (e) { }
         });
       }
-      mq.addEventListener && mq.addEventListener('change', function () { if (pref() === 'system') applyTheme('system'); });
-      $('themeBtn').addEventListener('click', function () { applyTheme(resolved(pref()) === 'dark' ? 'light' : 'dark', true); });
+      mq.addEventListener && mq.addEventListener('change', function () { if (pref() === 'system') applyTheme(pref()); });
+      $('themeBtn').addEventListener('click', function () { applyTheme(paintTheme(resolved(pref())) === 'dark' ? 'light' : 'dark', true); });
       if ($('pptBtn')) {
         $('pptBtn').addEventListener('click', function () {
+          if (isSmall()) return;
           if (resolved(pref()) === 'ppt') {
             var prev = LS.get('mzo_theme_prev');
             applyTheme((prev === 'dark' || prev === 'light') ? prev : 'light', true);
@@ -2797,7 +2842,12 @@
         syncBottomNav();
       }
       var smallMq = matchMedia('(max-width: 900px)');
-      if (smallMq.addEventListener) smallMq.addEventListener('change', function () { if (!isSmall()) { root.classList.remove('drawer', 'bar-compact'); } syncSidebar(); syncBottomNav(); });
+      if (smallMq.addEventListener) smallMq.addEventListener('change', function () {
+        if (!isSmall()) { root.classList.remove('drawer', 'bar-compact'); }
+        syncSidebar();
+        syncBottomNav();
+        applyTheme(pref(), false);
+      });
       $('railBtn').addEventListener('click', function () { if (isSmall()) drawer(!root.classList.contains('drawer')); else rail(!root.classList.contains('rail')); });
       document.querySelector('.skip').addEventListener('click', function (e) {
         e.preventDefault(); // #stage is not a route

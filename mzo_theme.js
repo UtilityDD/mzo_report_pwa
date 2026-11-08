@@ -3,12 +3,19 @@
  * Storage keys kept in sync: theme, mzo_theme, collectionDashboardTheme ('light' | 'dark' | 'ppt').
  * The shell may also store mzo_theme_pref = 'system' | 'light' | 'dark' | 'ppt'; it then writes the
  * resolved value to the keys above.
+ * PPT is desktop/projector only: at ≤900px a stored ppt pref paints as light (pref is kept).
  */
 (function () {
   'use strict';
   var KEYS = ['theme', 'mzo_theme', 'collectionDashboardTheme'];
   var PREV_KEY = 'mzo_theme_prev';
   var root = document.documentElement;
+  var phoneMq = null;
+  try { phoneMq = window.matchMedia('(max-width: 900px)'); } catch (e) {}
+
+  function isPhone() {
+    try { return !!(phoneMq && phoneMq.matches); } catch (e) { return false; }
+  }
 
   // Nothing saved yet means 'system' (as in the shell and on login), not dark.
   function norm(v) {
@@ -23,6 +30,12 @@
     return (v === 'light' || v === 'ppt') ? v : 'dark';
   }
 
+  /** Theme actually painted: ppt → light on phones. */
+  function paintTheme(theme) {
+    theme = norm(theme);
+    return (theme === 'ppt' && isPhone()) ? 'light' : theme;
+  }
+
   function read() {
     var v = null;
     try { v = localStorage.getItem('mzo_theme_pref') || localStorage.getItem('theme') || localStorage.getItem('mzo_theme') || localStorage.getItem('collectionDashboardTheme'); } catch (e) {}
@@ -30,7 +43,7 @@
   }
 
   function paint(theme) {
-    theme = norm(theme);
+    theme = paintTheme(theme);
     var isLightSurface = theme === 'light' || theme === 'ppt';
     var isPpt = theme === 'ppt';
     root.setAttribute('data-mzo-theme', theme);
@@ -75,15 +88,17 @@
   }
 
   function apply(theme) {
-    theme = norm(theme);
-    paint(theme);
+    var stored = norm(theme);
+    var painted = paintTheme(stored);
+    paint(stored);
     chartDefaults();
-    try { window.dispatchEvent(new CustomEvent('mzo-theme-change', { detail: { theme: theme } })); } catch (e) {}
-    return theme;
+    try { window.dispatchEvent(new CustomEvent('mzo-theme-change', { detail: { theme: painted } })); } catch (e) {}
+    return painted;
   }
 
   function set(theme) {
     theme = norm(theme);
+    if (theme === 'ppt' && isPhone()) theme = 'light';
     try {
       var cur = read();
       if (cur !== 'ppt' && theme === 'ppt') localStorage.setItem(PREV_KEY, cur);
@@ -94,6 +109,7 @@
   }
 
   function togglePpt() {
+    if (isPhone()) return apply(read());
     var cur = read();
     if (cur === 'ppt') {
       var prev = 'light';
@@ -144,6 +160,13 @@
   paint(read());
   document.addEventListener('DOMContentLoaded', function () { paint(read()); chartDefaults(); });
   window.addEventListener('load', chartDefaults);
+
+  // Phone ↔ desktop: re-paint so a stored ppt pref becomes light on phones and PPT again on desktop.
+  if (phoneMq) {
+    var onPhoneChange = function () { apply(read()); };
+    if (phoneMq.addEventListener) phoneMq.addEventListener('change', onPhoneChange);
+    else if (phoneMq.addListener) phoneMq.addListener(onPhoneChange);
+  }
 
   // Follow changes made by the shell or by another page's own toggle.
   window.addEventListener('storage', function (e) {
