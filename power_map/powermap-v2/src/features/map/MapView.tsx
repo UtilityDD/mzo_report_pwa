@@ -24,8 +24,9 @@ import {
 } from '@/lib/voltageCheck';
 import { useNetworkStore } from '@/store/networkStore';
 
-function escapeHtml(text: string) {
-  return text
+/** Leaflet tooltips and divIcons take HTML: every name or note from the database goes through this. */
+function escapeHtml(text: unknown) {
+  return String(text ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -476,7 +477,7 @@ export function MapView() {
               interactive: false,
               className: 'pm-snap-ring',
             })
-              .bindTooltip(`Snap · ${near.name}`, {
+              .bindTooltip(`Snap · ${escapeHtml(near.name)}`, {
                 permanent: true,
                 direction: 'top',
                 offset: [0, -14],
@@ -537,7 +538,7 @@ export function MapView() {
             className: 'pm-tip pm-tip-snap',
           })
             .setLatLng([near.lat, near.lng])
-            .setContent(`Snap · ${near.name} · ${km.toFixed(2)} km`)
+            .setContent(`Snap · ${escapeHtml(near.name)} · ${km.toFixed(2)} km`)
             .addTo(hints);
           state.setEditCursorHint(`Snap to ${near.name} · ${km.toFixed(2)} km — click to connect`);
         } else {
@@ -580,7 +581,7 @@ export function MapView() {
               className: 'pm-tip pm-tip-snap',
             })
               .setLatLng([onLine.lat, onLine.lng])
-              .setContent(`Snap · tap on ${onLine.name}`)
+              .setContent(`Snap · tap on ${escapeHtml(onLine.name)}`)
               .addTo(hints);
             state.setEditCursorHint(`Snap to feeder — click to start tap`);
           } else {
@@ -608,7 +609,7 @@ export function MapView() {
           };
           endLat = nearSs.lat;
           endLng = nearSs.lng;
-          tip = `Snap · ${nearSs.name}`;
+          tip = `Snap · ${escapeHtml(nearSs.name)}`;
           state.setEditCursorHint(`Snap to ${nearSs.name} — click to finish tap`);
         } else if (nearLine) {
           snapRef.current = {
@@ -619,7 +620,7 @@ export function MapView() {
           };
           endLat = nearLine.lat;
           endLng = nearLine.lng;
-          tip = `Snap · ${nearLine.name}`;
+          tip = `Snap · ${escapeHtml(nearLine.name)}`;
           state.setEditCursorHint(`Snap to feeder — click to finish line-to-line tap`);
         } else {
           state.setEditCursorHint('Snap to a substation or feeder to finish');
@@ -693,7 +694,7 @@ export function MapView() {
             className: 'pm-tip pm-tip-danger',
           })
             .setLatLng([nearSs.lat, nearSs.lng])
-            .setContent(`Delete · ${nearSs.name}`)
+            .setContent(`Delete · ${escapeHtml(nearSs.name)}`)
             .addTo(hints);
           state.setEditCursorHint(`Click ${nearSs.name} to delete`);
         } else if (nearLine) {
@@ -712,7 +713,7 @@ export function MapView() {
             className: 'pm-tip pm-tip-danger',
           })
             .setLatLng([nearLine.lat, nearLine.lng])
-            .setContent(`Delete · ${nearLine.name}`)
+            .setContent(`Delete · ${escapeHtml(nearLine.name)}`)
             .addTo(hints);
           state.setEditCursorHint(`Click feeder to delete`);
         } else {
@@ -925,11 +926,13 @@ export function MapView() {
           st.setSelection({ kind: 'line', id: line.id });
         });
         poly.bindTooltip(
-          tool === 'delete'
-            ? `Delete · ${lineDisplayLabel(line, sorted.length)}`
-            : tool === 'tap'
-              ? `Tap · ${lineDisplayLabel(line, sorted.length)}`
-              : lineDisplayLabel(line, sorted.length),
+          escapeHtml(
+            tool === 'delete'
+              ? `Delete · ${lineDisplayLabel(line, sorted.length)}`
+              : tool === 'tap'
+                ? `Tap · ${lineDisplayLabel(line, sorted.length)}`
+                : lineDisplayLabel(line, sorted.length),
+          ),
           {
             sticky: true,
             opacity: 0.9,
@@ -1064,7 +1067,7 @@ export function MapView() {
         }
         st.setSelection({ kind: 'tap_lateral', id: lat.id });
       });
-      poly.bindTooltip(lat.name, { sticky: true, className: 'pm-tip' });
+      poly.bindTooltip(escapeHtml(lat.name), { sticky: true, className: 'pm-tip' });
       layer.addLayer(poly);
     });
 
@@ -1091,7 +1094,7 @@ export function MapView() {
         }
         st.setSelection({ kind: 'tap_node', id: tap.id });
       });
-      marker.bindTooltip(tap.name, { direction: 'top', className: 'pm-tip' });
+      marker.bindTooltip(escapeHtml(tap.name), { direction: 'top', className: 'pm-tip' });
       layer.addLayer(marker);
     });
 
@@ -1181,15 +1184,17 @@ export function MapView() {
       }
 
       marker.bindTooltip(
-        tool === 'delete'
-          ? `Delete · ${ss.name}`
-          : tool === 'connect'
-            ? isConnectFrom
-              ? `From · ${ss.name}`
-              : `Connect · ${ss.name}`
-            : tool === 'move'
-              ? `Drag · ${ss.name}`
-              : ss.name,
+        escapeHtml(
+          tool === 'delete'
+            ? `Delete · ${ss.name}`
+            : tool === 'connect'
+              ? isConnectFrom
+                ? `From · ${ss.name}`
+                : `Connect · ${ss.name}`
+              : tool === 'move'
+                ? `Drag · ${ss.name}`
+                : ss.name,
+        ),
         {
           direction: 'top',
           offset: [0, -10],
@@ -1247,7 +1252,7 @@ export function MapView() {
           pane: calloutsPane,
           zIndexOffset: focused ? 200 : 100,
         });
-        marker.bindTooltip(label, {
+        marker.bindTooltip(escapeHtml(label), {
           permanent: focused,
           className: 'pm-tip pm-tip-suggestion',
         });
@@ -1294,7 +1299,7 @@ export function MapView() {
           pane: calloutsPane,
           zIndexOffset: focused ? 200 : 100,
         });
-        marker.bindTooltip(label, {
+        marker.bindTooltip(escapeHtml(label), {
           permanent: focused,
           className: 'pm-tip pm-tip-draft',
         });
@@ -1511,7 +1516,7 @@ export function MapView() {
         interactive: true,
         className: 'pm-voltage-check-hit',
       });
-      marker.bindTooltip(tip, {
+      marker.bindTooltip(escapeHtml(tip), {
         sticky: true,
         direction: 'top',
         offset: [0, -8],
