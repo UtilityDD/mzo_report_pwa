@@ -1335,7 +1335,22 @@ function googleClientId_() {
 if (userStore.on) userStore.mount(app, { issueSessionCookie, requireAdmin, clientId: googleClientId_, fetch, rootAdmins: ROOT_ADMIN_EMAILS });
 
 // DISHA Collect (VM PocketBase): inbox, create request, extend deadline. Off without PB credentials.
-const collect = require('./lib/collect').create({ env: process.env, clientIp: require('./lib/local_admins').clientIp });
+// Office scope comes from the signed-in user's current profile, never from the request body: the VM user
+// store re-reads the account on every request (null once disabled); without it the portal row is re-read
+// and a demoted or suspended admin loses Collect with the role.
+const collect = require('./lib/collect').create({
+    env: process.env,
+    clientIp: require('./lib/local_admins').clientIp,
+    currentUser: async (req) => {
+        if (!req.user || req.syncAgent || req.scopedUpload) return null;
+        if (userStore.on || req.localAdmin) return req.user;
+        const user = await resolveFreshUser_(req);
+        if (!user) return null;
+        if (String(user.user_status || 'active').toLowerCase() !== 'active') return null;
+        if (isPortalAdmin_(user) && !(await stillAdmin_(req))) return { ...user, role: 'viewer', isAdmin: false };
+        return user;
+    }
+});
 collect.mount(app);
 
 /**

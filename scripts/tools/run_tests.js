@@ -27,6 +27,7 @@ const OFFLINE = [
     ['VM-only admins', node, ['vm/dev/test-local-admin.js']],
     ['Safety upload and token', node, ['vm/dev/test-safety-upload.js']],
     ['CMO grievance upload', node, ['vm/dev/test-cmo-upload.js']],
+    ['DISHA Collect', node, ['vm/dev/test-collect.js']],
     ['Admin sources', node, ['vm/dev/test-sources-info.js']],
     ['data quality', node, ['vm/dev/test-quality.js']],
     ['organisation API', node, ['vm/dev/test-org-api.js']],
@@ -39,7 +40,8 @@ const OFFLINE = [
 const POCKETBASE = [
     ['user store (PocketBase)', node, ['vm/dev/test-users-store.js']],
     ['sync types (PocketBase)', node, ['vm/dev/test-sync-types.js']],
-    ['data editor (PocketBase)', node, ['vm/dev/test-editor.js']]
+    ['data editor (PocketBase)', node, ['vm/dev/test-editor.js']],
+    ['DISHA Collect (PocketBase)', node, ['vm/dev/test-collect.js', '--pb']]
 ];
 
 function run(cmd, args) {
