@@ -7,7 +7,8 @@ Not available on Vercel (needs PocketBase). Local checkouts without `PB_URL` + s
 | Where | What |
 |---|---|
 | `lib/collect.js` | PocketBase client, scope rules, `/api/collect/*` |
-| `collect/index.html` + `collect/collect_app.js` | Inbox, create (format builder + All RM/DM/SM), fill, hierarchy, export |
+| `collect/index.html` + `collect/collect_app.js` | Inbox, 3-step create (Basics → Who → Questions), fill, hierarchy, export |
+| `GET /api/collect/users` | Active users under the requester’s scope (for optional people pick) |
 | `vm/pocketbase/pb_migrations/1794300000_app_collect.js` | Collections |
 | `vm/dev/test-collect.js` | Timing/office unit tests; `--pb` live round-trip |
 | Shell | Top-bar pill + sidebar badge when `pending_count > 0`; Home strip |
