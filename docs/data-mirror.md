@@ -11,7 +11,7 @@ The mirror is read-only towards the sources: the sync only ever sends GET reques
 |---|---|
 | `vm/sync/` | The sync: `run.js`, `lib/` (framework), `sources/*.js` (one file per source family) |
 | `vm/sync/sources/google.js` | Every Google Sheet the app reads (this page) |
-| `vm/sync/sources/files.js` | `data/costcenter.json`, `data/structure.csv` |
+| `vm/sync/sources/files.js` | `data/costcenter.json`, `data/structure.csv`, and the files uploaded on the VM: `safety_inspection.csv`, `cmo_grievances.csv` ([cmo-upload.md](cmo-upload.md)) |
 | `vm/sync/sources/supabase.js` | Supabase tables and Storage files ([vm/sync/sources/supabase.md](../vm/sync/sources/supabase.md)) |
 | `vm/pocketbase/VERSION` | Pinned PocketBase version |
 | `vm/pocketbase/pb_migrations/` | System collections, settings and the portal sign-in collection |
@@ -68,7 +68,7 @@ How the VM, the timers and the URLs are set up is in [docs/vm.md](vm.md).
 | Substation & network | `prt_transformers` | PRT / power transformers | Sheet (pub) | 35 | 9 | frequent | csv |
 | Substation & network | `prt_oil_tests` | PRT oil test records | Sheet (pub) | 0 | 25 | frequent | csv |
 | Substation & network | `power_map_taps` | Power map tap points | Sheet (pub) | 7 | 7 | hourly | csv |
-| Important | `cmo_grievances` | CMO grievances | Sheet (pub) · `CACHE_CMO` | 280 | 17 | frequent | csv |
+| Important | `cmo_grievances` | CMO grievances | VM upload (`files.js`, [cmo-upload.md](cmo-upload.md)) · `CACHE_CMO`; a published sheet until 8 Nov 2026 | 280 | 17 | hourly + on upload | csv |
 | Important | `pmsgy_malda` | PM Surya Ghar: Malda | Sheet (pub) · `CACHE_PMSGY_MALDA` | 3,675 | 156 | daily | csv |
 | Important | `pmsgy_uttar_dinajpur` | PM Surya Ghar: Uttar Dinajpur | Sheet (pub) · `CACHE_PMSGY_UD` | 1,666 | 155 | daily | csv |
 | Important | `pmsgy_dakshin_dinajpur` | PM Surya Ghar: Dakshin Dinajpur | Sheet (pub) · `CACHE_PMSGY_DD` | 1,076 | 154 | daily | csv |
@@ -200,7 +200,7 @@ The systemd timer starts `run.js --due` every 5 minutes; each source's schedule 
 
 | Schedule | Runs | Used for |
 |---|---|---|
-| `frequent` | every 5 min | small sheets clerks edit during the day (dockets, losses, CMO, follow-ups, NSC/Withheld) |
+| `frequent` | every 5 min | small sheets clerks edit during the day (dockets, losses, follow-ups, NSC/Withheld) |
 | `hourly` | every hour | mid-size sheets (collection, solar, REM defaulters, accidents, smart meters) |
 | `daily` | once per India day, after 02:00 IST | multi-MB dumps (meter ERP/master/CRM/ISU, capex, DD lists, DTR, PM Surya Ghar) |
 
@@ -281,9 +281,9 @@ node --env-file=/etc/mzo/pocketbase.env run.js --list         # inventory: key, 
 node --env-file=/etc/mzo/pocketbase.env run.js --all          # everything now (slow: every dump)
 ```
 
-Native datasets (`mode = 'native'`, [data-editor.md](data-editor.md)) are skipped by `--due`, `--all` and `--only` alike. Options: `--due`, `--all`, `--only <key[,key]>`, `--list`, `--dry-run` (download and infer types only; no PocketBase, no snapshots), `--force` (rewrite even if unchanged), `--strict` (exit 1 if any source failed), `--batch <n>`, `--reason <text>`. `--only` always downloads (skips the cheap version check) and, if another sync is running, waits up to 10 minutes for it instead of giving up, which is what the app's write-through refresh relies on; an unknown key in its list is logged and skipped. Two runs never overlap (a lock file in the temp dir). `SYNC_DEBUG=1` logs each phase of each source with its time and memory.
+Native datasets (`mode = 'native'`, [data-editor.md](data-editor.md)) are skipped by `--due`, `--all` and `--only` alike. Options: `--due`, `--all`, `--only <key[,key]>`, `--now` (with `--only`: build the rating at once), `--list`, `--dry-run` (download and infer types only; no PocketBase, no snapshots), `--force` (rewrite even if unchanged), `--strict` (exit 1 if any source failed), `--batch <n>`, `--reason <text>`. `--only` always downloads (skips the cheap version check) and, if another sync is running, waits up to 10 minutes for it instead of giving up, which is what the app's write-through refresh relies on; an unknown key in its list is logged and skipped. Two runs never overlap (a lock file in the temp dir). `SYNC_DEBUG=1` logs each phase of each source with its time and memory.
 
-Keys the app's write-through should refresh after a write (the sheet the write lands in): NSC/Withheld publish → `nsc_pending`, `withheld`; NSC follow-ups → `nsc_followups`; DTR peak-load entry → `dtr_peak_load`; PRT new transformer → `prt_transformers`; PRT oil test → `prt_oil_tests`. DD visit saves go to a `DD_Visits` tab reachable only through Apps Script, which is not mirrored (`dd_visit` is the read-only consumer list), and disconnection follow-ups likewise. Supabase writes (stock, allotments, Power Map, important months) map to the keys in [supabase.md](../vm/sync/sources/supabase.md).
+Keys the app's write-through should refresh after a write (the sheet the write lands in): CMO upload or undo → `cmo_grievances` (with `--now`: the rating is rebuilt at once instead of at most every 15 minutes; [cmo-upload.md](cmo-upload.md)); Safety upload → `safety_inspection`; NSC/Withheld publish → `nsc_pending`, `withheld`; NSC follow-ups → `nsc_followups`; DTR peak-load entry → `dtr_peak_load`; PRT new transformer → `prt_transformers`; PRT oil test → `prt_oil_tests`. DD visit saves go to a `DD_Visits` tab reachable only through Apps Script, which is not mirrored (`dd_visit` is the read-only consumer list), and disconnection follow-ups likewise. Supabase writes (stock, allotments, Power Map, important months) map to the keys in [supabase.md](../vm/sync/sources/supabase.md).
 
 Other environment: `MZO_SNAPSHOT_DIR`, `SYNC_TMP_DIR` (spool files; default `$CACHE_DIRECTORY` from systemd, else `vm/sync/.tmp`), `SYNC_BATCH_SIZE`. The exit code is 0 unless the run itself failed (PocketBase unreachable, bad credentials, migrations missing); per-source failures are in `sys_datasets` and the log.
 

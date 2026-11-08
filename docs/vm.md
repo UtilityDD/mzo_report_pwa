@@ -28,7 +28,7 @@ Certificates are issued by Let's Encrypt automatically (sslip.io names resolve t
 | `/opt/mzo/deps/<app\|sync>-<hash>/node_modules` | Packages, one set per `package.json` + `package-lock.json` pair; each release's `node_modules` (and `vm/sync/node_modules`) links to its set |
 | `/opt/mzo/state/deployed.json` | The deploy record, served as `/deploy.json` |
 | `/opt/mzo/bin/deploy.sh` | The pinned deploy script the timer runs (`deploy.sh.prev` is the one before) |
-| `/opt/mzo/data/files/` | `MZO_FILES_DIR`: uploaded datasets (CRM extracts: `disconnection.csv`, `disconnection_payments.json`, `disconnection_meta.json`, `unbilled_*.csv`, `unbilled_meta.json`) and the app's runtime files. Outside the releases, so a deploy never replaces them. `opc` only (700, files 600). Never commit these to git |
+| `/opt/mzo/data/files/` | `MZO_FILES_DIR`: uploaded datasets (CRM extracts: `disconnection.csv`, `disconnection_payments.json`, `disconnection_meta.json`, `unbilled_*.csv`, `unbilled_meta.json`; page uploads: `safety_inspection.csv`, `cmo_grievances.csv` with `cmo_grievances_meta.json`, `cmo_versions/` and `cmo_upload_audit.jsonl`) and the app's runtime files. Outside the releases, so a deploy never replaces them. `opc` only (700, files 600). Never commit these to git |
 | `/opt/mzo/pocketbase/` | `pocketbase` binary (root-owned) and `pb_data/` (user `pocketbase`) |
 | `/opt/mzo/backup/` | Pre-provision tarball of the old 2.67 copy, old Caddyfiles, provision logs, and `pb_data.pre-deploy`: the copy of `pb_data` taken before the last deploy with new migrations (root only) |
 | `/etc/mzo/` | Credentials and env files (below) |
@@ -148,6 +148,10 @@ A malformed entry is skipped with a warning that names its position, never its c
 **Change a password.** Run the helper again for the same username, replace that entry in `/etc/mzo/app.env`, and run `sudo systemctl restart mzo-reports`. Sessions signed in with the old password end.
 
 **Remove an account.** Delete its entry (or the whole `MZO_LOCAL_ADMINS` line), then `sudo systemctl restart mzo-reports`. Its sessions end. With the variable unset the app behaves exactly as on Vercel.
+
+## CMO grievance upload
+
+The CMO grievances list (`cmo_grievances`) is uploaded on the VM from the CMO portal's export (`cmo.html` → **Upload**; admins and users with `cmo-upload-autho`): `POST /api/cmo/upload/preview`, then `/commit`; admins can `/undo` to any of the 5 kept versions. It is stored in `/opt/mzo/data/files` (above) and read by `vm/sync/sources/files.js`; the commit refreshes the mirror, the quality check and the rating at once. Off on Vercel. Nothing to set up: until the first upload the last Google copy stays served. Journal: `journalctl -u mzo-reports | grep 'CMO upload'` (counts only, never names). Details, checks and the first-deploy behaviour: [cmo-upload.md](cmo-upload.md).
 
 ## Logs
 

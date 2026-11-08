@@ -88,7 +88,6 @@ There are two hosts (section 4). **On Vercel every page reads the original sourc
 | Line–highway crossings | `highway_crossings` | hourly |
 | PRT records | `prt_transformers`, `prt_oil_tests` | 5 min |
 | Power map tap points | `power_map_taps` | hourly |
-| CMO grievances | `cmo_grievances` | 5 min |
 | PM Surya Ghar (3 districts) | `pmsgy_*` | daily |
 | Accident reports | `accident_reports` | hourly |
 | Safety app reports | `safety_inspection` | daily |
@@ -113,6 +112,7 @@ The report `meta.json` files next to the Storage CSVs (report date, KPIs) are st
 ### VM-only, repo files, and computed
 
 - **Uploaded datasets (unbilled & exceptions, disconnection list and payments)**: `/api/unbilled/*` and `/api/disconnection/{dataset,payments,meta}` serve `unbilled_outsort.csv`, `unbilled_chronic.csv`, `unbilled_summary.csv`, `disconnection.csv`, `disconnection_payments.json` and their meta from the server's data folder (`MZO_FILES_DIR`: `/opt/mzo/data/files` on the VM, outside the releases; the git-ignored `data/` locally). The owner's CRM (DB2) syncs write them and upload them to the VM with `x-sync-key` (`npm run sync:unbilled:crm`, the disconnection and payment syncs), which needs the office network. They need a signed-in session (or the sync key on these read routes) and are never in git. Off the VM, a server with the sync key fetches the VM's copy server-side; pages always call their own origin.
+- **CMO grievances (uploaded on the VM)**: since 8 Nov 2026 an admin, or a user with `cmo-upload-autho`, uploads the CMO portal's export on `cmo.html` (**Upload**: preview with checks and what changes, then confirm; admins can undo). The server derives Name, Phone, Pending With, Report Date and Grievance Since, keeps the list as `cmo_grievances.csv` in `MZO_FILES_DIR` with 5 previous versions and an audit trail, and refreshes `cmo_grievances` in the mirror at once. No Google sheet any more; until the first upload the last Google copy stays served. See [cmo-upload.md](cmo-upload.md).
 - **Repo files**: `data/structure.csv` (estimate structures) and `data/costcenter.json` (old cost centres), mirrored daily.
 - **Performance index**: on the VM the sync computes the rating from the snapshots after a run (at most every 15 minutes, `vm/sync/rating.js`) and serves it at `/api/data/rating`. Anywhere else, and as the VM's fallback, the browser computes it from the report data (`lib/rating_metrics.js`, `lib/rating.js`). See [reports.md → Performance index](reports.md#performance-index) and `docs/rating/`.
 
