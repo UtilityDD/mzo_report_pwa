@@ -318,18 +318,39 @@
       function lsJson(key) {
         try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { return []; }
       }
+      // Inside the shell, its module index is the truth: it applies the modules list, sheet access,
+      // admin-only groups and retired-key aliases. On its own, fall back to the profile's modules list.
+      function shellMods() {
+        try {
+          var m = window.parent !== window && window.parent.__MZO_MODS__;
+          return m && typeof m === 'object' ? m : null;
+        } catch (e) { return null; }
+      }
+      var ALIAS = { perf_index_imp: 'performance_index' };
       function allowedModules() {
         try {
           var p = JSON.parse(localStorage.getItem('mzo_user_profile') || 'null');
           if (!p || String(p.role || '').toLowerCase() === 'admin') return null;
-          if (Array.isArray(p.modules)) return p.modules;
+          if (Array.isArray(p.modules)) return p.modules.map(function (k) { return ALIAS[k] || k; });
         } catch (e) {}
         return null;
       }
       function canSee(k) {
+        var sm = shellMods();
+        if (sm) return !!sm[k];
+        if (/^admin_/.test(k) || k === 'sheet_links') return false;
         var mods = allowedModules();
         if (!mods) return true;
         return mods.indexOf(k) !== -1;
+      }
+      // Same name and group as the sidebar when the shell is there.
+      function label(k, fallback) {
+        var sm = shellMods();
+        return (sm && sm[k] && sm[k].n) || fallback || NAMES[k] || k;
+      }
+      function groupLabel(k, fallback) {
+        var sm = shellMods();
+        return (sm && sm[k] && sm[k].g) || fallback || '';
       }
 
       function paintScope() {
@@ -351,7 +372,7 @@
       }
 
       function tileInner(t) {
-        return '<div><div class="t">' + esc(t.n) + '</div><div class="g">' + esc(t.g) + '</div></div>' +
+        return '<div><div class="t">' + esc(label(t.k, t.n)) + '</div><div class="g">' + esc(groupLabel(t.k, t.g)) + '</div></div>' +
           '<div class="go">Open ›</div>';
       }
       function fillTile(el, t) {
@@ -368,7 +389,7 @@
 
       function rowHtml(k) {
         var hue = HUES[HUE_BY_KEY[k] || 'c1'] || HUES.c1;
-        var name = NAMES[k] || k;
+        var name = label(k);
         return '<button type="button" class="home-row" data-k="' + esc(k) + '" style="--tile:' + hue + '">' +
           '<span class="dot" aria-hidden="true"></span>' +
           '<span><span class="lbl">' + esc(name) + '</span></span>' +
@@ -435,10 +456,16 @@
         }, SWAP_OUT_MS);
       }
 
+      // Hold the tiles still while someone is using them: hover, keyboard focus on a tile, or a tap /
+      // swipe in the last few seconds (a tile must not change under a finger or a focused button).
+      var lastTouch = 0;
       function rotateOnce() {
         if (document.hidden) return;
         var grid = document.getElementById('spotGrid');
         if (!grid || grid.matches(':hover')) return;
+        if (!grid.offsetParent) return; // the shell keeps Home loaded but hidden behind another report
+        if (grid.contains(document.activeElement)) return;
+        if (Date.now() - lastTouch < 5000) return;
         var spare = waitingKeys();
         if (!spare.length || shown.length < 2) return;
         spare = shuffle(spare);
@@ -459,6 +486,9 @@
 
       function startRotate() {
         stopRotate();
+        // Reduced motion: no auto-changing content at all (content that changes on its own every few
+        // seconds with no pause control is the problem, not only the animation).
+        if (reduceMotion) return;
         if (pool.length <= shown.length) return;
         rotateTimer = setInterval(rotateOnce, ROTATE_MS);
       }
@@ -467,10 +497,11 @@
       }
 
       function paintLists() {
-        var fav = lsJson('mzo_ws_favs').filter(function (k, i, a) {
+        var canonK = function (k) { return ALIAS[k] || k; };
+        var fav = lsJson('mzo_ws_favs').map(canonK).filter(function (k, i, a) {
           return k && k !== 'home' && k !== 'ask' && k !== 'briefing' && canSee(k) && a.indexOf(k) === i;
         }).slice(0, 8);
-        var rec = lsJson('mzo_ws_recent').filter(function (k, i, a) {
+        var rec = lsJson('mzo_ws_recent').map(canonK).filter(function (k, i, a) {
           return k && k !== 'home' && k !== 'ask' && k !== 'briefing' && canSee(k) && a.indexOf(k) === i && fav.indexOf(k) === -1;
         }).slice(0, 6);
         var favSec = document.getElementById('favSec');
@@ -497,13 +528,19 @@
         paintScope();
         paintSpot(true);
         paintLists();
-        document.getElementById('spotGrid').addEventListener('click', onClick);
+        var spot = document.getElementById('spotGrid');
+        spot.addEventListener('click', onClick);
+        ['pointerdown', 'touchstart', 'scroll'].forEach(function (ev) {
+          spot.addEventListener(ev, function () { lastTouch = Date.now(); }, { passive: true });
+        });
         document.getElementById('favList').addEventListener('click', onClick);
         document.getElementById('recList').addEventListener('click', onClick);
         document.getElementById('openBriefing').addEventListener('click', function () { openKey('briefing'); });
-        if (matchMedia('(max-width: 900px)').matches) {
-          document.getElementById('spotHint').textContent = 'Swipe · tiles rotate';
-        }
+        var small = matchMedia('(max-width: 900px)').matches;
+        var rotates = !reduceMotion && pool.length > shown.length;
+        document.getElementById('spotHint').textContent = small
+          ? (rotates ? 'Swipe · tiles rotate' : 'Swipe for more')
+          : (rotates ? 'Rotates while you stay' : '');
         document.addEventListener('visibilitychange', function () {
           if (document.hidden) stopRotate();
           else startRotate();
