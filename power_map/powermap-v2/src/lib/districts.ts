@@ -8,18 +8,22 @@
  * The local file is extracted from OpenStreetMap admin_level=5 relations by
  * scripts/build-wb-districts.mjs, so the outlines sit on the borders drawn by
  * the OSM basemap rather than beside them.
- * The CDN copy is a much coarser fallback for when the asset is unavailable.
+ * The CDN copy is a much coarser fallback for when the asset is unavailable, and DISHA's own
+ * 2011-boundary copy (served for the legacy map) is the last resort when the CDN is blocked.
+ * Paths are under the app's base (/power_map/v2/ inside DISHA): the files live in public/geo/.
  */
+const GEO_BASE = `${import.meta.env.BASE_URL}geo/`;
 export const WB_DISTRICT_SOURCES = [
-  '/geo/wb-districts.geojson',
+  `${GEO_BASE}wb-districts.geojson`,
   'https://cdn.jsdelivr.net/gh/udit-001/india-maps-data@2884453/geojson/states/west-bengal.geojson',
+  '/power_map/WestBengal.geojson?v=1',
 ];
 
 /**
  * CD blocks (OSM admin_level=6). Only fetched when the sub-district layer is
  * switched on, since it is larger than the district file and rarely needed.
  */
-export const WB_BLOCK_SOURCES = ['/geo/wb-blocks.geojson'];
+export const WB_BLOCK_SOURCES = [`${GEO_BASE}wb-blocks.geojson`];
 
 async function fetchFirstAvailable<T>(urls: string[], label: string): Promise<T> {
   let lastErr: unknown;
@@ -51,7 +55,7 @@ let loadPromise: Promise<DistrictPoly[]> | null = null;
 
 function featureName(props: Record<string, unknown> | null | undefined): string {
   if (!props) return 'District';
-  const keys = ['district', 'DISTRICT', 'name', 'NAME', 'dtname', 'DTNAME'];
+  const keys = ['district', 'DISTRICT', 'name', 'NAME', 'dtname', 'DTNAME', 'Dist_Name'];
   for (const k of keys) {
     const v = props[k];
     if (typeof v === 'string' && v.trim()) return v.trim();

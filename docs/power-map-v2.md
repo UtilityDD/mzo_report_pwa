@@ -25,7 +25,9 @@ Build without `VITE_ADMIN_PIN` and `VITE_BUNDLE_LEGACY_SEED`: `power_map/v2/` is
 
 ## UI
 
-The host (`src/mzo-host.tsx`) hides the standalone Power Map chrome, maps `--mzo-*` tokens onto the map, and uses **Shift+/** for network search so shell ⌘K stays for reports.
+The host (`src/mzo-host.tsx`) hides the standalone Power Map chrome, maps `--mzo-*` tokens onto the map, and uses **Shift+/** for network search so shell ⌘K stays for reports. Phone rules (≤720px: slim scrolling tool rail, one-strip legend, three status KPIs) live in `src/styles/mzo-host.css`.
+
+District and block outlines load from `power_map/v2/geo/wb-districts.geojson` and `wb-blocks.geojson` (put them in `power_map/powermap-v2/public/geo/` before building). Until they are added, districts fall back to the jsDelivr copy, then DISHA's own `/power_map/WestBengal.geojson`; the sub-district (block) layer has no fallback.
 
 ## Auth
 
