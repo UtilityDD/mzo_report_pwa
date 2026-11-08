@@ -60,7 +60,7 @@
       if (meta) meta.setAttribute('content', tc);
       if (!inShell && document.head && !document.querySelector('script[src*="mzo_theme.js"][src*="/kit/"]')) {
         var fav = document.querySelector('link[rel="icon"]');
-        var wantHref = theme === 'dark' ? '/icons/icon-192-dark.png?v=304' : '/icons/icon-192-v2.png?v=304';
+        var wantHref = theme === 'dark' ? '/icons/icon-192-dark-v3.png?v=306' : '/icons/icon-192-v3.png?v=306';
         if (!fav) {
           fav = document.createElement('link');
           fav.rel = 'icon';

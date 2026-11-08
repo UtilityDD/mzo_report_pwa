@@ -13,7 +13,7 @@
 //   Same-origin copies are keyed by path plus the ?v= version, so a bumped ?v= is never answered
 //   with the previous version's copy; only an offline fallback takes any version of the path.
 //   - HTML responses get /mzo_present.js (desktop presentation zoom) injected after <head>.
-const CACHE_NAME = 'mzo-reports-cache-v361';
+const CACHE_NAME = 'mzo-reports-cache-v362';
 
 // Precached on install (not the data hub: it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -38,9 +38,10 @@ const PRECACHE_ASSETS = [
   'icons/disha-rail-dark.png',
   'icons/disha-rail-light.svg',
   'icons/disha-rail-dark.svg',
-  'icons/icon-192-v2.png',
-  'icons/icon-512-v2.png',
-  'icons/icon-192-dark.png',
+  'icons/icon-192-v3.png',
+  'icons/icon-512-v3.png',
+  'icons/icon-192-dark-v3.png',
+  'icons/icon-512-dark-v3.png',
   'icons/diya-cropped.svg',
   'auth.js',
   'mzo_present.js'
@@ -138,7 +139,7 @@ const NETWORK_FIRST = new Set([
   '/stock/allotment_view.js', '/stock/style.css', '/capex_all.html', '/advance_onm.html', '/cmo.html', '/accident/accident.html', '/safety_inspection.html', '/dtr/index.html', '/dtr/load.html', '/executive_briefing.html', '/mzo_data_hub.js', '/mzo_theme.js',
   '/mzo_theme.css', '/mzo_ui.js', '/mzo_esc.js', '/mzo_presets_hub.js', '/mzo_scope.js',
   '/mzo_pwa_icons.js', '/manifest.json',
-  '/icons/icon-192-v2.png', '/icons/icon-512-v2.png', '/mzo_app_update.js', '/mzo_present.js',
+  '/icons/icon-192-v3.png', '/icons/icon-512-v3.png', '/mzo_app_update.js', '/mzo_present.js',
   '/version.json', '/sw.js', '/mzo_rows.js', '/lib/uniform.js', '/lib/offices.js', '/lib/rating.js', '/lib/rating_metrics.js'
 ]);
 const NETWORK_FIRST_PREFIXES = ['/api/', '/nsc/', '/schema/'];
