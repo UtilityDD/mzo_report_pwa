@@ -80,6 +80,14 @@ async function main() {
         const big = await req('/api/auth/local', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, origin), body: JSON.stringify({ x: 'y'.repeat(6 * 1024 * 1024) }) });
         ok(big.status === 413 && /json/.test(big.headers.get('content-type') || ''), `oversized body: ${big.status} JSON`);
         ok(alive, 'the app is still running after the bad bodies');
+
+        // API writes from another site are refused before sign-in is even checked, whatever the method.
+        for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+            const r = await req('/api/collect/assignments/abcdefghijklmno/draft', { method, headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example' }, body: '{}' });
+            ok(r.status === 403, `cross-site ${method} to an API route: ${r.status}`);
+        }
+        const same = await req('/api/collect/assignments/abcdefghijklmno/draft', { method: 'PUT', headers: Object.assign({ 'Content-Type': 'application/json' }, origin), body: '{}' });
+        ok(same.status === 401, `same-origin PUT without a session: ${same.status}`);
     } finally {
         child.kill('SIGTERM');
         await child.exited;
