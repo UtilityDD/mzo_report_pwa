@@ -270,7 +270,7 @@ app.use((req, res, next) => {
 
 // Server-side files are never served, locally or from the Vercel function. power_map/powermap-v2/ is the map's
 // source (data seed, import script, SQL); only its build in power_map/v2/ is served.
-const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|power_map\/powermap-v2(\/|$)|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|data_quality|static_cache|org_hierarchy|csv|safety_parser|xlsx_lite)\.js|lib\/briefing_cccs\.json$|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
+const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|power_map\/powermap-v2(\/|$)|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|data_quality|static_cache|org_hierarchy|csv|safety_parser|xlsx_lite|cmo_upload|cmo_routes)\.js|lib\/briefing_cccs\.json$|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
 const SERVER_LIB_PATH = /^\/lib\/(editor|assistant|quality)(\/|$)/i; // server code: the data editor (docs/data-editor.md), Ask's providers (docs/assistant.md), the audit findings (docs/data-quality.md)
 /** True for a path that must not be served: checked on the decoded, normalised path, as the static server sees it. */
 function isPrivatePath_(rawPath) {
@@ -1191,8 +1191,8 @@ async function reportPageGate_(req, res, next) {
 const mirror = require('./lib/mirror').create({ appRoot: __dirname });
 // Datasets whose writes also change the Briefing's inputs (report meta, NSC upload meta).
 const BRIEFING_MIRROR_KEYS = new Set(['nsc_pending', 'withheld', 'pending_mc', 'load_extension', 'disconnection', 'defective_summary', 'defective_details']);
-function refreshMirror(keys, reason) {
-    const started = mirror.refreshMirror(keys, reason);
+function refreshMirror(keys, reason, opts) {
+    const started = mirror.refreshMirror(keys, reason, opts);
     if (mirror.on() && [].concat(keys || []).some((k) => BRIEFING_MIRROR_KEYS.has(k))) refreshBriefing_({ changed: true });
     return started;
 }
@@ -5433,6 +5433,23 @@ app.post('/api/safety/upload', (req, res) => {
         }
     });
 });
+
+// CMO grievances (cmo.html): the CMO portal's export is uploaded on the VM, checked, previewed and
+// committed by an admin or a user with cmo-upload-autho (lib/cmo_routes.js, lib/cmo_upload.js;
+// docs/cmo-upload.md). Off on Vercel: the list lives in the VM's data folder.
+require('./lib/cmo_routes').create({
+    dataDir: DATA_DIR,
+    enabled: !process.env.VERCEL,
+    multer,
+    mirror,
+    resolveFreshUser: resolveFreshUser_,
+    isPortalAdmin: isPortalAdmin_,
+    stillAdmin: stillAdmin_,
+    flagYes: flagAuthoYes_,
+    sendDataFile: sendDataFile_,
+    refreshMirror,
+    logActivity
+}).mount(app);
 
 const NSC_FOLLOWUP_SCRIPT_URL = String(
     process.env.NSC_FOLLOWUP_SCRIPT_URL ||

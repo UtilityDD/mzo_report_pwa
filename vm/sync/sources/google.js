@@ -217,8 +217,7 @@ const SHEETS = [
         notes: 'Tap points drawn on the Power Map; the substations themselves are mirrored from Supabase.' },
 
     // ---- Important
-    { key: 'cmo_grievances', label: 'CMO grievances', group: IMP, cache: 'CACHE_CMO', pages: ['cmo.html', 'sheet_links.html'],
-        src: pub('2PACX-1vS7GVh5HflVhouhVfFOEN2RuA1kCBedmD4Q0CJP02K61DAtWuo3P8XIS8CO7ocZQuJ20uCJBa9qsgZ6', 1066071765), schedule: 'frequent' },
+    // cmo_grievances moved to vm/sync/sources/files.js (uploaded on the VM from the CMO portal export; docs/cmo-upload.md)
     { key: 'pmsgy_malda', label: 'PM Surya Ghar: Malda', group: IMP, cache: 'CACHE_PMSGY_MALDA', pages: ['pmsgy.html', 'sheet_links.html'],
         src: pub(PMSGY_PUB, 1969412059), schedule: 'daily' },
     { key: 'pmsgy_uttar_dinajpur', label: 'PM Surya Ghar: Uttar Dinajpur', group: IMP, cache: 'CACHE_PMSGY_UD', pages: ['pmsgy.html', 'sheet_links.html'],

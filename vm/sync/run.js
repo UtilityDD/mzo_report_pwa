@@ -10,6 +10,7 @@
 //            --strict (exit 1 if any source failed), --batch <n> (rows per batch request),
 //            --reason <text> (kept in sys_sync_runs.message, e.g. "write-through: stock publish")
 //   --only always downloads (no cheap version shortcut) and waits up to 10 min for a running sync.
+//   --now (with --only): rebuild the rating at once instead of at most every 15 minutes (the CMO upload).
 //
 // Env: PB_URL, PB_SUPERUSER_EMAIL, PB_SUPERUSER_PASSWORD (e.g. node --env-file=/etc/mzo/pocketbase.env run.js --due).
 // Optional: MZO_SNAPSHOT_DIR (raw snapshots + manifest.json; default /opt/mzo/data/snapshots if it
@@ -47,7 +48,7 @@ const NOTHING = 3; // exit code of the sources phase: nothing was run (no known 
 const LOCK_BUSY = 75; // --only gave up waiting for the lock (EX_TEMPFAIL): the app reads those keys live a while
 
 function parseArgs(argv) {
-    const a = { mode: null, only: [], dryRun: false, force: false, strict: false, list: false, batch: 0, reason: '' };
+    const a = { mode: null, only: [], dryRun: false, force: false, strict: false, list: false, batch: 0, reason: '', now: false };
     for (let i = 0; i < argv.length; i++) {
         const arg = argv[i];
         if (arg === '--all') a.mode = 'all';
@@ -62,6 +63,7 @@ function parseArgs(argv) {
         else if (arg === '--force') a.force = true;
         else if (arg === '--strict') a.strict = true;
         else if (arg === '--list') a.list = true;
+        else if (arg === '--now') a.now = true;
         else if (arg === '--batch') a.batch = Number(argv[++i]) || 0;
         else if (arg === '--reason') a.reason = String(argv[++i] || '').trim().slice(0, 200);
         else if (arg.startsWith('--reason=')) a.reason = arg.slice(9).trim().slice(0, 200);
@@ -109,7 +111,7 @@ async function loadSources() {
 }
 
 function usage() {
-    console.log('Usage: node run.js (--due | --all | --only <key[,key]> | --list) [--dry-run] [--force] [--strict] [--batch n] [--reason text]');
+    console.log('Usage: node run.js (--due | --all | --only <key[,key]> | --list) [--dry-run] [--force] [--strict] [--batch n] [--reason text] [--now]');
 }
 
 let stopping = false; // SIGTERM/SIGINT arrived: finish the running child, start no other
@@ -134,8 +136,9 @@ function runChild(args, { env, timeoutMs } = {}) {
     });
 }
 
-/** Derived files next to the snapshots, each step in a child with its own capped heap; never fails the sync. */
-async function derivedSteps(snapshotDir) {
+/** Derived files next to the snapshots, each step in a child with its own capped heap; never fails the sync.
+ *  now: the rating is rebuilt even when the last build is under 15 minutes old (a write asked for it). */
+async function derivedSteps(snapshotDir, now) {
     const steps = [
         // Uniform rows (docs/uniform-data.md): the stale ones, one dataset at a time.
         ['uniform rows', ['--max-old-space-size=256', '--max-semi-space-size=4', path.join(__dirname, 'rows.js'), '--dir', snapshotDir, '--prune'], 10],
@@ -144,7 +147,7 @@ async function derivedSteps(snapshotDir) {
         // Data quality (quality.js, Admin → Data quality): the datasets whose snapshot changed, one child each.
         ['data quality', ['--max-old-space-size=64', '--max-semi-space-size=4', path.join(__dirname, 'quality.js'), '--dir', snapshotDir], 10],
         // Performance rating (docs/rating/metrics-layer.md).
-        ['performance rating', ['--max-old-space-size=160', '--max-semi-space-size=4', path.join(__dirname, 'rating.js'), '--dir', snapshotDir, '--min-minutes', '15'], 10]
+        ['performance rating', ['--max-old-space-size=160', '--max-semi-space-size=4', path.join(__dirname, 'rating.js'), '--dir', snapshotDir, '--min-minutes', now ? '0' : '15'], 10]
     ];
     for (const [name, args, minutes] of steps) {
         if (stopping) return;
@@ -175,7 +178,7 @@ async function main() {
     }
     try {
         const t1 = Date.now();
-        await derivedSteps(snapshotDir);
+        await derivedSteps(snapshotDir, args.now && args.mode === 'only');
         log(`derived files checked in ${fmtMs(Date.now() - t1)}; whole run ${fmtMs(Date.now() - t0)}; this process peak RSS ${Math.round(process.resourceUsage().maxRSS / 1024)} MB`);
     } finally {
         release();
