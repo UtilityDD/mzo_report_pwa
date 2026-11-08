@@ -526,6 +526,8 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 
 let POWERMAP_URL = process.env.POWERMAP_SUPABASE_URL || fileConfig.powermapUrl || SUPABASE_URL || SUPABASE_FALLBACK_URL;
 let POWERMAP_KEY = process.env.POWERMAP_SUPABASE_KEY || fileConfig.powermapKey || SUPABASE_KEY || SUPABASE_FALLBACK_ANON_KEY;
+// Power Map V2 writes and editor tables (server only, never sent to a browser): the project's service_role key.
+const POWERMAP_SERVICE_KEY = String(process.env.POWERMAP_SUPABASE_SERVICE_KEY || fileConfig.powermapServiceKey || '').trim();
 
 const NEW_INSIGHT_URL = String(
     process.env.INSIGHT_SUPABASE_URL || fileConfig.insightUrl || ''
@@ -579,16 +581,17 @@ function isPowerMapPath_(apiPath) {
         p.startsWith('pm_');
 }
 
-/** REST against POWERMAP_URL/KEY (old project), any schema. */
+/** REST against POWERMAP_URL/KEY (old project), any schema. options.key overrides the key (the service key). */
 async function queryPowerMap_(apiPath, options = {}) {
-    if (!POWERMAP_URL || !POWERMAP_KEY) {
+    const key = options.key || POWERMAP_KEY;
+    if (!POWERMAP_URL || !key) {
         throw new Error('Power Map Supabase credentials are not configured.');
     }
     const schema = options.schema || 'public';
     const url = `${POWERMAP_URL}/rest/v1/${apiPath}`;
     const headers = {
-        apikey: POWERMAP_KEY,
-        Authorization: `Bearer ${POWERMAP_KEY}`,
+        apikey: key,
+        Authorization: `Bearer ${key}`,
         'Content-Type': 'application/json',
         'Accept-Profile': schema,
         ...options.headers
@@ -2233,7 +2236,7 @@ async function probePowerMapLive_() {
     let lastReason = 'not probed';
     for (const t of tries) {
         try {
-            await queryPowerMap_(`${t.table}?select=id&limit=1`, { schema: t.schema });
+            await queryPowerMap_(`${t.table}?select=id&limit=1`, { schema: t.schema, key: powerMapReadKey_() });
             return { ok: true, table: t.schema === 'powermap' ? `powermap.${t.table}` : t.table };
         } catch (e) {
             lastReason = e.message || 'probe failed';
@@ -2281,7 +2284,7 @@ app.get('/api/powermap/me', async (req, res) => {
         const rows = await queryPowerMap_(
             'pm_editors?select=id,can_edit,allowed_substation_ids,allowed_districts' +
                 `&portal_username=eq.${encodeURIComponent(username)}&active=is.true&limit=1`,
-            { schema: 'public' }
+            { schema: 'public', key: POWERMAP_SERVICE_KEY || POWERMAP_KEY }
         );
         const row = Array.isArray(rows) ? rows[0] : null;
         if (row) {
@@ -2305,7 +2308,6 @@ app.get('/api/powermap/me', async (req, res) => {
 // API writes already need this host's Origin (the middleware near the top). The client's apikey /
 // Authorization headers are ignored; nothing but the allow-listed headers is forwarded.
 const POWERMAP_PROXY_BASE = '/api/powermap';
-const POWERMAP_SERVICE_KEY = String(process.env.POWERMAP_SUPABASE_SERVICE_KEY || fileConfig.powermapServiceKey || '').trim();
 const POWERMAP_PROXY_READ = {
     public: new Set(['pm_voltage_levels', 'pm_org_units', 'pm_assets', 'pm_substations', 'pm_transformers', 'pm_lines', 'pm_tap_nodes',
         'pm_tap_laterals', 'pm_v_substations', 'pm_v_lines', 'pm_v_tap_nodes', 'pm_v_tap_laterals', 'pm_network_stamp']),
@@ -2326,6 +2328,15 @@ const POWERMAP_PROXY_RPC = {
     powermap: new Set(['admin_update_substation_bundle'])
 };
 const POWERMAP_PROXY_METHODS = new Set(['GET', 'HEAD', 'POST', 'PATCH', 'DELETE']);
+
+/**
+ * Key for map reads: POWERMAP_SUPABASE_READ_KEY=service makes reads use the service key too, so the owner can
+ * also revoke SELECT from anon (the optional block at the end of migration 010); otherwise POWERMAP_SUPABASE_KEY.
+ */
+function powerMapReadKey_() {
+    const useService = String(process.env.POWERMAP_SUPABASE_READ_KEY || '').trim().toLowerCase() === 'service';
+    return useService && POWERMAP_SERVICE_KEY ? POWERMAP_SERVICE_KEY : POWERMAP_KEY;
+}
 
 /** A portal admin whose account is still an active admin (the same test as requireAdmin). */
 async function powerMapAdmin_(req) {
@@ -2377,7 +2388,7 @@ async function powerMapProxy_(req, res) {
     const q = decodeURIComponentSafe_(query);
     if (/pin_hash/i.test(q) || (!adminTable && /editors|edit_suggestions|profiles/i.test(q))) return deny(400, 'Not available.');
     if (!POWERMAP_URL || !POWERMAP_KEY) return deny(503, 'Power Map data is not configured.');
-    const key = read && !adminTable ? POWERMAP_KEY : (POWERMAP_SERVICE_KEY || POWERMAP_KEY);
+    const key = read && !adminTable ? powerMapReadKey_() : (POWERMAP_SERVICE_KEY || POWERMAP_KEY);
     const headers = { apikey: key, Authorization: `Bearer ${key}`, 'Accept-Profile': schema };
     const accept = String(req.headers.accept || '');
     headers.Accept = /^application\/(json|vnd\.pgrst\.object\+json)\b/i.test(accept) ? accept.split(',')[0].trim() : 'application/json';

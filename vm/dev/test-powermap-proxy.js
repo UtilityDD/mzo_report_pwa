@@ -106,6 +106,11 @@ async function main() {
         const pmSchema = await call('GET', R + 'v_substations?select=*', { who: VIEWER, extra: { 'Accept-Profile': 'powermap' } });
         eq([pmSchema.status, pmSchema.up[0] && pmSchema.up[0].headers['Accept-Profile']], [200, 'powermap'], 'powermap schema read');
 
+        process.env.POWERMAP_SUPABASE_READ_KEY = 'service';
+        const svc = await call('GET', R + 'pm_v_substations?select=id', { who: VIEWER });
+        eq([svc.status, svc.up[0] && svc.up[0].headers.apikey], [200, WRITE_KEY], 'POWERMAP_SUPABASE_READ_KEY=service: reads use the service key');
+        delete process.env.POWERMAP_SUPABASE_READ_KEY;
+
         // Viewer refused (nothing goes upstream).
         const refused = [
             ['GET', 'portal_users?select=*', 404, 'a table outside the map'],

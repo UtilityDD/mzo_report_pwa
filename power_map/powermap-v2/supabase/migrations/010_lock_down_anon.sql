@@ -151,6 +151,18 @@ notify pgrst, 'reload schema';
 --     and has_function_privilege('anon', p.oid, 'execute')
 --     and (n.nspname = 'powermap' or p.proname like 'pm\_%');
 --
+-- Optional, later: stop the public anon key reading the map at all (the network is then visible only
+-- through DISHA, to signed-in users). First set POWERMAP_SUPABASE_READ_KEY=service on the server (next to
+-- POWERMAP_SUPABASE_SERVICE_KEY) and restart it, check the map loads, then run:
+--   revoke select on all tables in schema powermap from anon, authenticated;
+--   do $$ declare r record; begin
+--     for r in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+--              where n.nspname = 'public' and c.relname like 'pm\_%' and c.relkind in ('r', 'v', 'm')
+--     loop execute format('revoke select on public.%I from anon, authenticated', r.relname); end loop;
+--   end $$;
+--   alter default privileges in schema powermap revoke select on tables from anon, authenticated;
+--   notify pgrst, 'reload schema';
+--
 -- Optional, for the rest of the project (003 once granted anon writes on every public table):
 -- public tables where anon still holds a write grant, with their RLS state. Review before revoking;
 -- other DISHA features use this project.

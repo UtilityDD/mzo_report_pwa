@@ -52,6 +52,7 @@ Set on Vercel (Smart Lineman project); locally in the git-ignored `.env`. `serve
 | `SUPABASE_URL`, `SUPABASE_KEY` / `SUPABASE_ANON_KEY` | Old project: login (until `INSIGHT_LIVE`), activity logs |
 | `POWERMAP_SUPABASE_URL`, `POWERMAP_SUPABASE_KEY` | Power Map tables (default to the old project). The key is the read key: the anon key is enough, and it never reaches the browser |
 | `POWERMAP_SUPABASE_SERVICE_KEY` | Power Map V2 writes (admin edits through `/api/powermap/rest/v1`) and the editor tables: the Power Map project's service_role key. Server only. Without it writes use the read key, which fails once `010_lock_down_anon.sql` has run. See [power-map-v2.md](power-map-v2.md#data-access) |
+| `POWERMAP_SUPABASE_READ_KEY` | `service` makes Power Map V2 reads use `POWERMAP_SUPABASE_SERVICE_KEY` too, so the anon key's SELECT can be revoked (optional block at the end of migration 010) |
 | `INSIGHT_SUPABASE_URL`, `INSIGHT_SUPABASE_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | New insight project: stock Storage, allotments, report snapshots |
 | `INSIGHT_LIVE` | `1` moves login to the insight project. Set only once the insight project holds the users (copied once; see [stock.md](stock.md#new-insight-project)) |
 | `STOCK_USE_STORAGE`, `STOCK_STORAGE_BUCKET`, `STOCK_STORAGE_OBJECT` | Stock dump in Supabase Storage instead of the Google Sheet |
