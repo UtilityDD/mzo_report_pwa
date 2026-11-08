@@ -14,14 +14,16 @@
   var fillState = null;
   var detailState = null;
   var TYPES = [
-    { v: 'text', n: 'Text', g: 'Aa' },
-    { v: 'number', n: 'Number', g: '#' },
-    { v: 'checkbox', n: 'Yes/No', g: '✓' },
-    { v: 'date', n: 'Date', g: 'D' },
-    { v: 'textarea', n: 'Long', g: '¶' },
-    { v: 'group', n: 'Table', g: '⊞' }
+    { v: 'text', n: 'Text' },
+    { v: 'number', n: 'Number' },
+    { v: 'checkbox', n: 'Yes/No' },
+    { v: 'date', n: 'Date' },
+    { v: 'textarea', n: 'Long text' },
+    { v: 'group', n: 'Table' }
   ];
-  var TYPE_SHORT = { text: 'Text', number: 'Num', checkbox: 'Y/N', date: 'Date', textarea: 'Long', group: 'Table' };
+  var TYPE_LABEL = { text: 'Text', number: 'Number', checkbox: 'Yes/No', date: 'Date', textarea: 'Long', group: 'Table' };
+  var openMenuId = null; // field id with open type/plus menu
+  var openMenuKind = null; // 'type' | 'plus'
 
   function $(id) { return document.getElementById(id); }
   function esc(s) {
@@ -163,13 +165,7 @@
     paintUserList();
   }
 
-  /* ===== visual table / column builder ===== */
-  function colLetter(i) {
-    var s = '';
-    var n = i;
-    do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; } while (n >= 0);
-    return s;
-  }
+  /* ===== simple column list: name · type · + ===== */
   function findPath(list, id, path) {
     path = path || [];
     for (var i = 0; i < list.length; i++) {
@@ -191,112 +187,76 @@
     for (var j = 0; j < path.length - 1; j++) parent = path[j] === 'children' ? parent.children : parent[path[j]];
     return Array.isArray(parent) ? parent : parent.children;
   }
-  function paintPreview() {
-    var el = $('fmtPreview');
-    if (!el) return;
-    if (!schemaFields.length) {
-      el.innerHTML = 'Header preview appears here as you add columns.';
-      return;
-    }
-    function bits(list, depth) {
-      var out = [];
-      list.forEach(function (f, i) {
-        if (i && depth === 0) out.push('<span class="sep">|</span>');
-        var name = (f.label || 'Untitled').trim() || 'Untitled';
-        if (f.type === 'group') {
-          out.push('<span class="ph tbl">' + esc(name) + ' ⊞</span>');
-          if (f.children && f.children.length) {
-            out.push('<span class="sep">›</span>');
-            out = out.concat(bits(f.children, depth + 1));
-          }
-        } else {
-          out.push('<span class="ph">' + esc(name) + ' <span class="sep">' + esc(TYPE_SHORT[f.type] || '') + '</span></span>');
-        }
-      });
-      return out;
-    }
-    el.innerHTML = bits(schemaFields, 0).join('');
+  function countFields(list) {
+    var n = 0;
+    (list || []).forEach(function (f) {
+      n += 1;
+      if (f.children && f.children.length) n += countFields(f.children);
+    });
+    return n;
   }
-  function paintCol(f, index, depth) {
-    var isTable = f.type === 'group';
-    var h = '<div class="tbl-col' + (isTable ? ' is-table' : '') + '" data-id="' + esc(f.id) + '">';
-    h += '<div class="tbl-col-head">';
-    h += '<span class="letter" title="Column">' + esc(colLetter(index)) + '</span>';
-    h += '<input type="text" data-act="label" placeholder="' + (isTable ? 'Table name' : 'Column name') + '" value="' + esc(f.label) + '" />';
-    h += '<button type="button" class="ico" data-act="left" title="Move left">‹</button>';
-    h += '<button type="button" class="ico" data-act="right" title="Move right">›</button>';
-    h += '<button type="button" class="ico" data-act="rm" title="Remove">×</button>';
-    h += '</div>';
-    h += '<div class="tbl-types">';
+  function nextColumnLabel() {
+    return 'Column' + (countFields(schemaFields) + 1);
+  }
+  function closeMenus() {
+    openMenuId = null;
+    openMenuKind = null;
+    document.querySelectorAll('.fmt-menu.on').forEach(function (el) { el.classList.remove('on'); });
+  }
+  function paintRow(f) {
+    var typeLab = TYPE_LABEL[f.type] || 'Text';
+    var typeOpen = openMenuId === f.id && openMenuKind === 'type';
+    var plusOpen = openMenuId === f.id && openMenuKind === 'plus';
+    var h = '<div class="fmt-row" data-id="' + esc(f.id) + '">';
+    h += '<input type="text" data-act="label" value="' + esc(f.label) + '" placeholder="Column name" />';
+    h += '<button type="button" class="fmt-type" data-act="open-type" title="Data type">' + esc(typeLab) + '</button>';
+    h += '<button type="button" class="fmt-plus" data-act="open-plus" title="Add column">+</button>';
+    if (countFields(schemaFields) > 1) {
+      h += '<button type="button" class="fmt-rm" data-act="rm" title="Remove">×</button>';
+    }
+    h += '<div class="fmt-menu' + (typeOpen ? ' on' : '') + '" data-menu="type">';
     TYPES.forEach(function (t) {
-      h += '<button type="button" class="tbl-type' + (f.type === t.v ? ' on' : '') + '" data-act="type" data-type="' + t.v + '">' +
-        '<span class="glyph">' + esc(t.g) + '</span>' + esc(t.n) + '</button>';
+      h += '<button type="button" class="' + (f.type === t.v ? 'on' : '') + '" data-act="set-type" data-type="' + t.v + '">' + esc(t.n) + '</button>';
     });
     h += '</div>';
-    if (isTable) {
-      h += '<div class="tbl-sub"><div class="tbl-sub-lab"><span>Sub-columns (one row each)</span></div>';
-      h += '<div class="tbl-row">';
-      (f.children || []).forEach(function (c, i) { h += paintCol(c, i, depth + 1); });
-      h += '<button type="button" class="tbl-add sm" data-act="add-child">+ Sub-column</button>';
-      h += '</div></div>';
-    }
+    h += '<div class="fmt-menu' + (plusOpen ? ' on' : '') + '" data-menu="plus">';
+    h += '<button type="button" data-act="add-under">Add column under this</button>';
+    h += '<button type="button" data-act="add-new">New column</button>';
     h += '</div>';
+    h += '</div>';
+    if (f.children && f.children.length) {
+      h += '<div class="fmt-kids">';
+      f.children.forEach(function (c) { h += paintRow(c); });
+      h += '</div>';
+    }
     return h;
   }
   function paintSchema() {
     var root = $('schemaRoot');
     if (!schemaFields.length) {
-      root.innerHTML =
-        '<div class="tbl-board"><div class="tbl-row">' +
-        '<button type="button" class="tbl-add" id="addRootField">+ Column</button>' +
-        '</div></div>' +
-        '<div class="col-empty" style="margin-top:8px">Empty sheet — add a column, or use a template above.</div>';
-    } else {
-      root.innerHTML =
-        '<div class="tbl-board"><div class="tbl-row">' +
-        schemaFields.map(function (f, i) { return paintCol(f, i, 0); }).join('') +
-        '<button type="button" class="tbl-add" id="addRootField">+ Column</button>' +
-        '</div></div>';
+      schemaFields = [newField('text', 'Column1')];
     }
-    paintPreview();
+    root.innerHTML = '<div class="fmt-tree">' + schemaFields.map(paintRow).join('') + '</div>';
   }
   function exportSchema() {
     function walk(list) {
       return list.map(function (f) {
         var label = String(f.label || '').trim() || 'Untitled';
         var id = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || f.id;
-        var out = { id: id, type: f.type, label: label, required: !!f.required };
-        if (f.type === 'group') { out.repeat = true; out.children = walk(f.children || []); }
+        var hasKids = f.children && f.children.length;
+        var type = hasKids ? 'group' : f.type;
+        var out = { id: id, type: type, label: label, required: !!f.required };
+        if (type === 'group') { out.repeat = true; out.children = walk(f.children || []); }
         return out;
       });
     }
     return { fields: walk(schemaFields) };
   }
-  function seedSimple() {
-    schemaFields = [
-      Object.assign(newField('text'), { label: 'Description', required: true }),
-      Object.assign(newField('number'), { label: 'Count' }),
-      Object.assign(newField('checkbox'), { label: 'Done' })
-    ];
-    paintSchema();
-  }
-  function seedTribal() {
-    var block = newField('group', 'Block');
-    var village = newField('group', 'Village');
-    var para = newField('group', 'Para');
-    var scheme = newField('group', 'Scheme');
-    scheme.children = [
-      Object.assign(newField('text'), { label: 'Scheme name', required: true }),
-      Object.assign(newField('number'), { label: 'Consumers' }),
-      Object.assign(newField('number'), { label: 'Poles needed' }),
-      Object.assign(newField('number'), { label: 'Scheme value (₹)' }),
-      Object.assign(newField('checkbox'), { label: 'Ready for work' })
-    ];
-    para.children = [Object.assign(newField('text'), { label: 'Para name', required: true }), scheme];
-    village.children = [Object.assign(newField('text'), { label: 'Village name', required: true }), para];
-    block.children = [Object.assign(newField('text'), { label: 'Block name', required: true }), village];
-    schemaFields = [block];
-    paintSchema();
+  function focusLabel(id) {
+    setTimeout(function () {
+      var row = document.querySelector('.fmt-row[data-id="' + id + '"] input[data-act="label"]');
+      if (row) { row.focus(); row.select(); }
+    }, 0);
   }
 
   /* ===== fill (unchanged behaviour) ===== */
@@ -503,7 +463,9 @@
 
   $('newBtn').addEventListener('click', function () {
     $('newForm').classList.add('on');
-    selectedOffices = {}; selectedUsers = {}; schemaFields = [];
+    selectedOffices = {}; selectedUsers = {};
+    schemaFields = [newField('text', 'Column1')];
+    openMenuId = null; openMenuKind = null;
     paintOfficeChips(); paintUserChips(); paintOfficeList(); paintUserList(); paintSchema();
     setWizard(1);
   });
@@ -574,55 +536,79 @@
     paintUserChips(); paintUserList();
   });
 
-  $('presetSimple').addEventListener('click', seedSimple);
-  $('presetTribal').addEventListener('click', seedTribal);
   $('schemaRoot').addEventListener('input', function (e) {
     if (e.target.getAttribute('data-act') !== 'label') return;
-    var card = e.target.closest('.tbl-col');
-    if (!card) return;
-    var path = findPath(schemaFields, card.getAttribute('data-id'));
+    var row = e.target.closest('.fmt-row');
+    if (!row) return;
+    var path = findPath(schemaFields, row.getAttribute('data-id'));
     if (!path) return;
     atPath(schemaFields, path).label = e.target.value;
-    paintPreview();
   });
   $('schemaRoot').addEventListener('click', function (e) {
-    if (e.target.closest('#addRootField') || (e.target.id === 'addRootField')) {
-      schemaFields.push(newField('text', 'Column ' + (schemaFields.length + 1)));
-      paintSchema();
+    var btn = e.target.closest('[data-act]');
+    if (!btn) {
+      if (!e.target.closest('.fmt-menu')) closeMenus();
       return;
     }
-    var btn = e.target.closest('[data-act]');
-    if (!btn) return;
     var act = btn.getAttribute('data-act');
-    var card = btn.closest('.tbl-col');
-    if (!card) return;
-    var path = findPath(schemaFields, card.getAttribute('data-id'));
+    var row = btn.closest('.fmt-row');
+    if (!row) return;
+    var id = row.getAttribute('data-id');
+    var path = findPath(schemaFields, id);
     if (!path) return;
     var f = atPath(schemaFields, path);
     var list = parentList(schemaFields, path);
     var idx = path[path.length - 1];
-    if (act === 'rm') {
-      list.splice(idx, 1);
-      paintSchema(); return;
+
+    if (act === 'open-type') {
+      if (openMenuId === id && openMenuKind === 'type') closeMenus();
+      else { openMenuId = id; openMenuKind = 'type'; paintSchema(); }
+      return;
     }
-    if (act === 'left' && idx > 0) {
-      var a = list[idx - 1]; list[idx - 1] = list[idx]; list[idx] = a;
-      paintSchema(); return;
+    if (act === 'open-plus') {
+      if (openMenuId === id && openMenuKind === 'plus') closeMenus();
+      else { openMenuId = id; openMenuKind = 'plus'; paintSchema(); }
+      return;
     }
-    if (act === 'right' && idx < list.length - 1) {
-      var b = list[idx + 1]; list[idx + 1] = list[idx]; list[idx] = b;
-      paintSchema(); return;
-    }
-    if (act === 'type') {
-      f.type = btn.getAttribute('data-type');
+    if (act === 'set-type') {
+      var nextType = btn.getAttribute('data-type');
+      if (f.children && f.children.length && nextType !== 'group') {
+        // Sub-columns stay — this row is a Table
+        nextType = 'group';
+      }
+      f.type = nextType;
       if (f.type === 'group' && !f.children) f.children = [];
-      paintSchema(); return;
+      closeMenus();
+      paintSchema();
+      return;
     }
-    if (act === 'add-child') {
+    if (act === 'add-under') {
       if (!f.children) f.children = [];
-      f.children.push(newField('text', 'Column ' + (f.children.length + 1)));
+      if (f.type !== 'group') f.type = 'group';
+      var child = newField('text', nextColumnLabel());
+      f.children.push(child);
+      closeMenus();
+      paintSchema();
+      focusLabel(child.id);
+      return;
+    }
+    if (act === 'add-new') {
+      var sib = newField('text', nextColumnLabel());
+      list.splice(idx + 1, 0, sib);
+      closeMenus();
+      paintSchema();
+      focusLabel(sib.id);
+      return;
+    }
+    if (act === 'rm') {
+      if (countFields(schemaFields) <= 1) return;
+      list.splice(idx, 1);
+      closeMenus();
       paintSchema();
     }
+  });
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('#schemaRoot')) closeMenus();
   });
 
   $('newForm').addEventListener('submit', async function (e) {
