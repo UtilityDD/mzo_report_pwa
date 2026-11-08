@@ -29,6 +29,7 @@ const OFFLINE = [
     ['Admin sources', node, ['vm/dev/test-sources-info.js']],
     ['data quality', node, ['vm/dev/test-quality.js']],
     ['organisation API', node, ['vm/dev/test-org-api.js']],
+    ['Power Map proxy', node, ['vm/dev/test-powermap-proxy.js']],
     ['Ask providers', node, ['vm/dev/test-assistant-provider.js']],
     ['Ask usage', node, ['vm/dev/test-assistant-usage.js']],
     ['sync lock', node, ['vm/dev/test-sync-lock.js']],

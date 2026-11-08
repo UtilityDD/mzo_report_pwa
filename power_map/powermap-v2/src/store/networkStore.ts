@@ -452,8 +452,9 @@ function writeAdminSession(session: AdminSession | null) {
   }
 }
 
+/** Standalone builds only: the super PIN must be set at build time; there is no default. */
 function expectedAdminPin(): string {
-  return (import.meta.env.VITE_ADMIN_PIN as string | undefined)?.trim() || 'powermap';
+  return (import.meta.env.VITE_ADMIN_PIN as string | undefined)?.trim() || '';
 }
 
 const initialSession = readAdminSession();
@@ -631,13 +632,19 @@ export const useNetworkStore = create<NetworkStore>((set, get) => ({
   },
 
   unlockAdmin: async (pin, name = '') => {
+    // Inside DISHA the portal session decides edit rights (GET /api/powermap/me); no PIN unlock.
+    if (get().portalManaged) {
+      get().flashStatus('Edit rights come from your portal account');
+      return false;
+    }
     const trimmedPin = pin.trim();
     if (!trimmedPin) {
       get().flashStatus('Enter your PIN');
       return false;
     }
 
-    if (trimmedPin === expectedAdminPin()) {
+    const superPin = expectedAdminPin();
+    if (superPin && trimmedPin === superPin) {
       const session: AdminSession = { role: 'super', name: 'Super Admin' };
       writeAdminSession(session);
       set({

@@ -25,7 +25,6 @@ import {
   getPowerMapTables,
   isPowerMapConfigured,
 } from '@/lib/supabase';
-import legacyNetwork from '@/data/legacyNetwork.json';
 
 /** Resolve via getters so DRO’s late-bound client (after /api/powermap/config) is seen. */
 function pmClient() {
@@ -161,10 +160,6 @@ async function loadCachedNetworkIfFresh(liveVersion: string): Promise<NetworkSta
   };
 }
 
-const LEGACY_SEED_REVISION =
-  typeof (legacyNetwork as { seedRevision?: number }).seedRevision === 'number'
-    ? (legacyNetwork as { seedRevision: number }).seedRevision
-    : 1;
 
 function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
@@ -179,9 +174,15 @@ function hasParallelCircuits(lines: TrunkLine[]) {
   return [...counts.values()].some((c) => c > 1);
 }
 
-/** Bundled existing network (same seed the other Power Map app uses locally). */
-function legacySeed(): NetworkState | null {
-  const data = legacyNetwork as {
+/**
+ * Bundled existing network (same seed the other Power Map app uses locally). Only standalone builds
+ * made with VITE_BUNDLE_LEGACY_SEED=1 carry it: the DISHA build in power_map/v2/ is a static file
+ * anyone can download, so it holds no network data; the live data needs the portal session.
+ */
+async function legacySeed(): Promise<{ state: NetworkState; revision: number } | null> {
+  if (import.meta.env.VITE_BUNDLE_LEGACY_SEED !== '1') return null;
+  const data = (await import('@/data/legacyNetwork.json')).default as {
+    seedRevision?: number;
     substations?: Substation[];
     lines?: TrunkLine[];
     tapNodes?: TapNode[];
@@ -190,13 +191,16 @@ function legacySeed(): NetworkState | null {
   };
   if (!data?.substations?.length) return null;
   return {
-    substations: data.substations,
-    lines: data.lines ?? [],
-    tapNodes: data.tapNodes ?? [],
-    tapLaterals: data.tapLaterals ?? [],
-    orgUnits: data.orgUnits?.length ? data.orgUnits : DEFAULT_ORG,
-    backend: 'local',
-    loaded: true,
+    revision: typeof data.seedRevision === 'number' ? data.seedRevision : 1,
+    state: {
+      substations: data.substations,
+      lines: data.lines ?? [],
+      tapNodes: data.tapNodes ?? [],
+      tapLaterals: data.tapLaterals ?? [],
+      orgUnits: data.orgUnits?.length ? data.orgUnits : DEFAULT_ORG,
+      backend: 'local',
+      loaded: true,
+    },
   };
 }
 
@@ -407,7 +411,9 @@ async function loadLocal(): Promise<NetworkState> {
     idbGetAll('orgUnits'),
   ]);
 
-  const imported = legacySeed();
+  const seed = await legacySeed();
+  const imported = seed?.state ?? null;
+  const LEGACY_SEED_REVISION = seed?.revision ?? 1;
   const appliedRevision = await idbGetMeta<number>('legacySeedRevision');
   const shouldUseImport =
     !!imported &&
@@ -432,15 +438,17 @@ async function loadLocal(): Promise<NetworkState> {
   }
 
   if (!substations.length && !lines.length) {
-    const seed = demoSeed();
+    // DISHA build: nothing saved on this device and no live data; show an empty map, not demo rows.
+    if (import.meta.env.VITE_BUNDLE_LEGACY_SEED !== '1') return { ...emptyNetwork(), loaded: true };
+    const demo = demoSeed();
     await idbReplaceAll({
-      substations: seed.substations,
-      lines: seed.lines,
-      tapNodes: seed.tapNodes,
-      tapLaterals: seed.tapLaterals,
-      orgUnits: seed.orgUnits,
+      substations: demo.substations,
+      lines: demo.lines,
+      tapNodes: demo.tapNodes,
+      tapLaterals: demo.tapLaterals,
+      orgUnits: demo.orgUnits,
     });
-    return seed;
+    return demo;
   }
 
   const cachedVersion = await idbGetMeta<string>(NETWORK_VERSION_META);

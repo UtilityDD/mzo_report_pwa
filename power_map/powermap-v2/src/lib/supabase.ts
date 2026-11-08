@@ -2,8 +2,13 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * Late-bound Power Map client for the DISHA host.
- * Credentials come from GET /api/powermap/config after login (never baked into the bundle).
+ * The browser holds no Supabase key: GET /api/powermap/config (after login) names the DISHA proxy
+ * (/api/powermap/rest/v1/*), and every read and write goes through it with the session cookie.
+ * The server checks the session, allows only the map's tables and lets only portal admins write.
  */
+
+/** Placeholder sent as apikey by supabase-js; the DISHA proxy ignores it. Not a secret. */
+const PROXY_PLACEHOLDER_KEY = 'disha-session';
 
 const T_PUBLIC = {
   voltageLevels: 'pm_voltage_levels',
@@ -63,7 +68,7 @@ function applyClient(url: string, key: string, schema = 'public') {
   const usePm = schema === 'powermap';
   T = usePm ? { ...T_POWERMAP } : { ...T_PUBLIC };
   supabase = createClient(url, key, {
-    auth: { persistSession: false },
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     db: { schema: usePm ? 'powermap' : 'public' },
   }) as unknown as SupabaseClient;
   supabaseConfigured = true;
@@ -84,14 +89,14 @@ export async function ensurePowerMapClient(): Promise<{
     }
     if (res.ok) {
       const cfg = (await res.json()) as {
-        url?: string | null;
-        anonKey?: string | null;
+        proxy?: string | null;
         schema?: string | null;
         configured?: boolean;
         live?: PowerMapLive;
       };
-      if (cfg.url && cfg.anonKey) {
-        applyClient(cfg.url, cfg.anonKey, cfg.schema || 'public');
+      // Same-origin path only: the session cookie must never go to another host.
+      if (cfg.configured && typeof cfg.proxy === 'string' && /^\/api\/[a-z0-9/_-]+$/i.test(cfg.proxy)) {
+        applyClient(new URL(cfg.proxy, window.location.origin).href, PROXY_PLACEHOLDER_KEY, cfg.schema || 'public');
       }
       return { configured: supabaseConfigured, live: cfg.live };
     }
