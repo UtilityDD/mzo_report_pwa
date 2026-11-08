@@ -1,14 +1,16 @@
-/* DISHA Collect client — simple wizard create, inbox fill, hierarchy. See docs/collect.md */
+/* DISHA Collect client — side nav + right work. See docs/collect.md */
 (function () {
   'use strict';
 
   var tab = 'inbox';
+  var mode = 'list'; // list | create | fill | detail
   var canCreate = false;
   var officeOpts = [];
   var userOpts = [];
-  var selectedOffices = {}; // key -> office
-  var selectedUsers = {}; // email -> user
+  var selectedOffices = {};
+  var selectedUsers = {};
   var schemaFields = [];
+  var selectedFieldId = null;
   var uid = 0;
   var wizStep = 1;
   var fillState = null;
@@ -22,8 +24,6 @@
     { v: 'group', n: 'Table' }
   ];
   var TYPE_LABEL = { text: 'Text', number: 'Number', checkbox: 'Yes/No', date: 'Date', textarea: 'Long', group: 'Table' };
-  var openMenuId = null; // field id with open type/plus menu
-  var openMenuKind = null; // 'type' | 'plus'
 
   function $(id) { return document.getElementById(id); }
   function esc(s) {
@@ -73,15 +73,31 @@
     if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
     return data;
   }
-  function showMain(show) {
-    $('mainHead').hidden = !show;
-    $('listWrap').hidden = !show;
-    if (!show) $('newForm').classList.remove('on');
-  }
-  function showFill(on) { $('fillPanel').classList.toggle('on', !!on); }
-  function showDetail(on) { $('detailPanel').classList.toggle('on', !!on); }
 
-  /* ===== wizard ===== */
+  function setWorkHead(title, sub) {
+    $('workTitle').textContent = title;
+    $('workSub').textContent = sub || '';
+  }
+  function paintMainNav() {
+    document.querySelectorAll('#mainNav [data-nav]').forEach(function (b) {
+      var n = b.getAttribute('data-nav');
+      var on = mode === 'list' && ((n === 'inbox' && tab === 'inbox') || (n === 'mine' && tab === 'mine'));
+      if (n === 'new') on = mode === 'create';
+      b.classList.toggle('on', on);
+    });
+  }
+  function showMode(next) {
+    mode = next;
+    $('listWrap').hidden = next !== 'list';
+    $('newForm').classList.toggle('on', next === 'create');
+    $('fillPanel').classList.toggle('on', next === 'fill');
+    $('detailPanel').classList.toggle('on', next === 'detail');
+    $('mainHead').hidden = next === 'fill' || next === 'detail';
+    $('wizNav').hidden = next !== 'create';
+    $('fmtTools').hidden = !(next === 'create' && wizStep === 3);
+    $('mainNav').hidden = next === 'fill' || next === 'detail';
+    paintMainNav();
+  }
   function setWizard(step) {
     wizStep = step;
     document.querySelectorAll('.wiz-step').forEach(function (el) {
@@ -90,9 +106,18 @@
     document.querySelectorAll('.wiz-pane').forEach(function (el) {
       el.classList.toggle('on', Number(el.getAttribute('data-pane')) === step);
     });
+    document.querySelectorAll('#wizNav [data-wiz]').forEach(function (b) {
+      b.classList.toggle('on', Number(b.getAttribute('data-wiz')) === step);
+    });
     $('wizBack').hidden = step === 1;
     $('wizNext').hidden = step === 3;
     $('fSave').hidden = step !== 3;
+    $('fmtTools').hidden = !(mode === 'create' && step === 3);
+    if (step === 3) {
+      if (!selectedFieldId && schemaFields[0]) selectedFieldId = schemaFields[0].id;
+      paintSchema();
+      paintFmtTools();
+    }
   }
 
   function paintOfficeChips() {
@@ -135,8 +160,6 @@
     var officeKeys = Object.keys(selectedOffices);
     var rows = userOpts.filter(function (u) {
       if (officeKeys.length) {
-        var uk = officeKey(u);
-        // user at selected office, or office under a selected region/division
         var hit = officeKeys.some(function (k) {
           var o = selectedOffices[k];
           if (officeKey(u) === k) return true;
@@ -165,7 +188,7 @@
     paintUserList();
   }
 
-  /* ===== simple column list: name · type · + ===== */
+  /* ===== format: columns on right, tools on left ===== */
   function findPath(list, id, path) {
     path = path || [];
     for (var i = 0; i < list.length; i++) {
@@ -198,31 +221,34 @@
   function nextColumnLabel() {
     return 'Column' + (countFields(schemaFields) + 1);
   }
-  function closeMenus() {
-    openMenuId = null;
-    openMenuKind = null;
-    document.querySelectorAll('.fmt-menu.on').forEach(function (el) { el.classList.remove('on'); });
+  function selectedField() {
+    if (!selectedFieldId) return null;
+    var path = findPath(schemaFields, selectedFieldId);
+    return path ? atPath(schemaFields, path) : null;
+  }
+  function paintFmtTools() {
+    var f = selectedField();
+    if (!f) {
+      $('fmtSelNote').textContent = 'Select a column on the right.';
+      $('fmtToolsBody').hidden = true;
+      return;
+    }
+    $('fmtSelNote').textContent = (f.label || 'Untitled') + ' — pick type or add below.';
+    $('fmtToolsBody').hidden = false;
+    $('sideTypes').innerHTML = TYPES.map(function (t) {
+      return '<button type="button" class="' + (f.type === t.v ? 'on' : '') + '" data-set-type="' + t.v + '">' + esc(t.n) + '</button>';
+    }).join('');
+    $('sideRemove').disabled = countFields(schemaFields) <= 1;
   }
   function paintRow(f) {
-    var typeLab = TYPE_LABEL[f.type] || 'Text';
-    var typeOpen = openMenuId === f.id && openMenuKind === 'type';
-    var plusOpen = openMenuId === f.id && openMenuKind === 'plus';
-    var h = '<div class="fmt-row" data-id="' + esc(f.id) + '">';
+    var on = selectedFieldId === f.id;
+    var h = '<div class="fmt-row' + (on ? ' on' : '') + '" data-id="' + esc(f.id) + '">';
     h += '<input type="text" data-act="label" value="' + esc(f.label) + '" placeholder="Column name" />';
-    h += '<button type="button" class="fmt-type" data-act="open-type" title="Data type">' + esc(typeLab) + '</button>';
-    h += '<button type="button" class="fmt-plus" data-act="open-plus" title="Add column">+</button>';
+    h += '<button type="button" class="fmt-type" data-act="pick" title="Data type">' + esc(TYPE_LABEL[f.type] || 'Text') + '</button>';
+    h += '<button type="button" class="fmt-plus" data-act="pick" title="Add / edit in side panel">+</button>';
     if (countFields(schemaFields) > 1) {
       h += '<button type="button" class="fmt-rm" data-act="rm" title="Remove">×</button>';
     }
-    h += '<div class="fmt-menu' + (typeOpen ? ' on' : '') + '" data-menu="type">';
-    TYPES.forEach(function (t) {
-      h += '<button type="button" class="' + (f.type === t.v ? 'on' : '') + '" data-act="set-type" data-type="' + t.v + '">' + esc(t.n) + '</button>';
-    });
-    h += '</div>';
-    h += '<div class="fmt-menu' + (plusOpen ? ' on' : '') + '" data-menu="plus">';
-    h += '<button type="button" data-act="add-under">Add column under this</button>';
-    h += '<button type="button" data-act="add-new">New column</button>';
-    h += '</div>';
     h += '</div>';
     if (f.children && f.children.length) {
       h += '<div class="fmt-kids">';
@@ -232,11 +258,12 @@
     return h;
   }
   function paintSchema() {
-    var root = $('schemaRoot');
-    if (!schemaFields.length) {
-      schemaFields = [newField('text', 'Column1')];
+    if (!schemaFields.length) schemaFields = [newField('text', 'Column1')];
+    if (!selectedFieldId || !findPath(schemaFields, selectedFieldId)) {
+      selectedFieldId = schemaFields[0].id;
     }
-    root.innerHTML = '<div class="fmt-tree">' + schemaFields.map(paintRow).join('') + '</div>';
+    $('schemaRoot').innerHTML = '<div class="fmt-tree">' + schemaFields.map(paintRow).join('') + '</div>';
+    paintFmtTools();
   }
   function exportSchema() {
     function walk(list) {
@@ -258,8 +285,12 @@
       if (row) { row.focus(); row.select(); }
     }, 0);
   }
+  function selectColumn(id) {
+    selectedFieldId = id;
+    paintSchema();
+  }
 
-  /* ===== fill (unchanged behaviour) ===== */
+  /* ===== fill ===== */
   function emptyItem(fields) {
     var o = {};
     (fields || []).forEach(function (f) {
@@ -340,7 +371,8 @@
     return group;
   }
   async function openFill(assignmentId) {
-    showMain(false); showDetail(false); showFill(true);
+    showMode('fill');
+    setWorkHead('Fill report', '');
     $('fillErr').hidden = true; $('fillOk').hidden = true;
     $('fillForm').innerHTML = '<div class="col-empty">Loading…</div>';
     try {
@@ -358,10 +390,12 @@
     }
   }
 
-  /* ===== detail ===== */
   async function openDetail(requestId) {
-    showMain(false); showFill(false); showDetail(true);
+    showMode('detail');
+    setWorkHead('Request', '');
     $('detailErr').hidden = true;
+    $('detailExtendErr').hidden = true;
+    $('detailExtendOk').hidden = true;
     $('detailTree').innerHTML = '<div class="col-empty">Loading…</div>';
     try {
       var d = await api('/api/collect/requests/' + encodeURIComponent(requestId));
@@ -370,7 +404,6 @@
       $('detailTitle').textContent = r.title;
       $('detailMeta').textContent = (r.created_by_name || r.created_by_email) + ' · ' + r.status + ' · ' + (d.assignments || []).length + ' offices';
       $('detailChips').innerHTML = chipsHtml(r.timing, r.status === 'closed' ? 'submitted' : 'pending');
-      // reuse office list for add
       var have = {};
       (d.assignments || []).forEach(function (a) {
         if (a.status !== 'withdrawn') have[[a.office_level, a.region, a.division, a.ccc_code].join('|')] = 1;
@@ -391,6 +424,16 @@
           (a.status !== 'withdrawn' ? '<button type="button" class="chip clock" data-open-asg="' + esc(a.id) + '">Open</button>' : '') +
           '</div></div>';
       }).join('') || '<div class="col-empty">No offices</div>';
+      if (r.extended_due_at) {
+        try {
+          var ed = new Date(r.extended_due_at);
+          if (!isNaN(ed.getTime())) {
+            var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+            $('detailExtendAt').value = ed.getFullYear() + '-' + pad(ed.getMonth() + 1) + '-' + pad(ed.getDate()) +
+              'T' + pad(ed.getHours()) + ':' + pad(ed.getMinutes());
+          }
+        } catch (e) { /* ignore */ }
+      }
     } catch (err) {
       $('detailTree').innerHTML = '<div class="col-empty">' + esc(err.message) + '</div>';
     }
@@ -423,19 +466,45 @@
   }
   async function loadList() {
     try {
-      if (tab === 'inbox') paintInbox(await api('/api/collect/inbox'));
-      else paintMine(await api('/api/collect/requests'));
+      if (tab === 'inbox') {
+        setWorkHead('Inbox', 'Reports for your office. Shared draft — last writer is stamped.');
+        paintInbox(await api('/api/collect/inbox'));
+      } else {
+        setWorkHead('My requests', 'Requests you created and their office status.');
+        paintMine(await api('/api/collect/requests'));
+      }
     } catch (err) {
       $('list').innerHTML = '<div class="col-empty">' + esc(err.message) + '</div>';
     }
+  }
+  function openCreate() {
+    selectedOffices = {}; selectedUsers = {};
+    schemaFields = [newField('text', 'Column1')];
+    selectedFieldId = schemaFields[0].id;
+    $('fTitle').value = '';
+    $('fDue').value = '';
+    $('fExt').value = '';
+    $('fDueOk').hidden = true;
+    $('fExtOk').hidden = true;
+    $('fErr').hidden = true;
+    paintOfficeChips(); paintUserChips(); paintOfficeList(); paintUserList();
+    showMode('create');
+    setWorkHead('New request', 'Basics, who fills it, then the report columns.');
+    setWizard(1);
+  }
+  function backToList() {
+    fillState = null;
+    detailState = null;
+    showMode('list');
+    loadList();
   }
 
   async function bootCreate() {
     try {
       var st = await api('/api/collect/status');
       canCreate = !!(st && st.can_create && st.available !== false);
-      $('newBtn').hidden = !canCreate;
-      $('mineTab').hidden = !canCreate;
+      $('newNav').hidden = !canCreate;
+      $('mineNav').hidden = !canCreate;
       if (canCreate) {
         var o = await api('/api/collect/offices');
         officeOpts = (o && o.offices) || [];
@@ -447,37 +516,74 @@
         paintUserList();
         paintOfficeChips();
         paintUserChips();
-        paintSchema();
       }
-    } catch (e) { $('newBtn').hidden = true; }
+    } catch (e) {
+      $('newNav').hidden = true;
+      $('mineNav').hidden = true;
+    }
   }
 
   /* ===== events ===== */
-  document.querySelector('.col-tabs').addEventListener('click', function (e) {
-    var btn = e.target.closest('.col-tab');
+  $('mainNav').addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-nav]');
     if (!btn) return;
-    tab = btn.getAttribute('data-tab');
-    document.querySelectorAll('.col-tab').forEach(function (b) { b.classList.toggle('on', b === btn); });
+    var n = btn.getAttribute('data-nav');
+    if (n === 'new') { openCreate(); return; }
+    tab = n === 'mine' ? 'mine' : 'inbox';
+    showMode('list');
     loadList();
   });
-
-  $('newBtn').addEventListener('click', function () {
-    $('newForm').classList.add('on');
-    selectedOffices = {}; selectedUsers = {};
-    schemaFields = [newField('text', 'Column1')];
-    openMenuId = null; openMenuKind = null;
-    paintOfficeChips(); paintUserChips(); paintOfficeList(); paintUserList(); paintSchema();
-    setWizard(1);
+  $('wizNav').addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-wiz]');
+    if (!btn || mode !== 'create') return;
+    var step = Number(btn.getAttribute('data-wiz'));
+    $('fErr').hidden = true;
+    if (step > wizStep) {
+      if (wizStep === 1 && (!$('fTitle').value.trim() || !$('fDue').value)) {
+        $('fErr').textContent = 'Enter a title and save the submit-by date.'; $('fErr').hidden = false; return;
+      }
+      if (step >= 2 && wizStep < 2 && !Object.keys(selectedOffices).length && step === 3) {
+        // going to format requires offices if jumping past who — require who first
+      }
+      if (step === 3 && !Object.keys(selectedOffices).length) {
+        $('fErr').textContent = 'Pick at least one office first.'; $('fErr').hidden = false;
+        setWizard(2); return;
+      }
+      if (step === 2 && (!$('fTitle').value.trim() || !$('fDue').value)) {
+        $('fErr').textContent = 'Enter a title and save the submit-by date.'; $('fErr').hidden = false;
+        setWizard(1); return;
+      }
+    }
+    setWizard(step);
   });
+
+  $('fDueSave').addEventListener('click', function () {
+    if (!$('fDue').value) {
+      $('fErr').textContent = 'Pick a submit-by date first.'; $('fErr').hidden = false; return;
+    }
+    $('fErr').hidden = true;
+    $('fDueOk').hidden = false;
+  });
+  $('fExtSave').addEventListener('click', function () {
+    if (!$('fExt').value) {
+      $('fExtOk').hidden = true; return;
+    }
+    $('fExtOk').hidden = false;
+  });
+
   $('fCancel').addEventListener('click', function () {
-    $('newForm').classList.remove('on'); $('fErr').hidden = true;
+    $('fErr').hidden = true;
+    tab = 'inbox';
+    showMode('list');
+    loadList();
   });
   $('wizNext').addEventListener('click', function () {
     $('fErr').hidden = true;
     if (wizStep === 1) {
       if (!$('fTitle').value.trim() || !$('fDue').value) {
-        $('fErr').textContent = 'Enter a title and submit-by time.'; $('fErr').hidden = false; return;
+        $('fErr').textContent = 'Enter a title and save the submit-by date.'; $('fErr').hidden = false; return;
       }
+      $('fDueOk').hidden = false;
       setWizard(2); return;
     }
     if (wizStep === 2) {
@@ -514,7 +620,6 @@
     if (selectedUsers[email]) delete selectedUsers[email];
     else {
       selectedUsers[email] = u;
-      // ensure their office is included
       var k = officeKey(u);
       if (u.level && u.level !== 'zone') {
         var o = officeOpts.find(function (x) { return officeKey(x) === k; });
@@ -543,72 +648,73 @@
     var path = findPath(schemaFields, row.getAttribute('data-id'));
     if (!path) return;
     atPath(schemaFields, path).label = e.target.value;
+    if (selectedFieldId === row.getAttribute('data-id')) paintFmtTools();
   });
   $('schemaRoot').addEventListener('click', function (e) {
-    var btn = e.target.closest('[data-act]');
-    if (!btn) {
-      if (!e.target.closest('.fmt-menu')) closeMenus();
-      return;
-    }
-    var act = btn.getAttribute('data-act');
-    var row = btn.closest('.fmt-row');
+    var row = e.target.closest('.fmt-row');
     if (!row) return;
     var id = row.getAttribute('data-id');
-    var path = findPath(schemaFields, id);
-    if (!path) return;
-    var f = atPath(schemaFields, path);
-    var list = parentList(schemaFields, path);
-    var idx = path[path.length - 1];
+    var actBtn = e.target.closest('[data-act]');
+    var act = actBtn ? actBtn.getAttribute('data-act') : 'pick';
 
-    if (act === 'open-type') {
-      if (openMenuId === id && openMenuKind === 'type') closeMenus();
-      else { openMenuId = id; openMenuKind = 'type'; paintSchema(); }
-      return;
-    }
-    if (act === 'open-plus') {
-      if (openMenuId === id && openMenuKind === 'plus') closeMenus();
-      else { openMenuId = id; openMenuKind = 'plus'; paintSchema(); }
-      return;
-    }
-    if (act === 'set-type') {
-      var nextType = btn.getAttribute('data-type');
-      if (f.children && f.children.length && nextType !== 'group') {
-        // Sub-columns stay — this row is a Table
-        nextType = 'group';
-      }
-      f.type = nextType;
-      if (f.type === 'group' && !f.children) f.children = [];
-      closeMenus();
-      paintSchema();
-      return;
-    }
-    if (act === 'add-under') {
-      if (!f.children) f.children = [];
-      if (f.type !== 'group') f.type = 'group';
-      var child = newField('text', nextColumnLabel());
-      f.children.push(child);
-      closeMenus();
-      paintSchema();
-      focusLabel(child.id);
-      return;
-    }
-    if (act === 'add-new') {
-      var sib = newField('text', nextColumnLabel());
-      list.splice(idx + 1, 0, sib);
-      closeMenus();
-      paintSchema();
-      focusLabel(sib.id);
-      return;
-    }
     if (act === 'rm') {
+      e.preventDefault();
       if (countFields(schemaFields) <= 1) return;
-      list.splice(idx, 1);
-      closeMenus();
+      var path = findPath(schemaFields, id);
+      if (!path) return;
+      parentList(schemaFields, path).splice(path[path.length - 1], 1);
+      if (selectedFieldId === id) selectedFieldId = schemaFields[0] ? schemaFields[0].id : null;
       paintSchema();
+      return;
     }
+
+    // type / + / row click → select and show tools in the side panel
+    selectColumn(id);
   });
-  document.addEventListener('click', function (e) {
-    if (!e.target.closest('#schemaRoot')) closeMenus();
+
+  $('sideTypes').addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-set-type]');
+    if (!btn) return;
+    var f = selectedField();
+    if (!f) return;
+    var nextType = btn.getAttribute('data-set-type');
+    if (f.children && f.children.length && nextType !== 'group') nextType = 'group';
+    f.type = nextType;
+    if (f.type === 'group' && !f.children) f.children = [];
+    paintSchema();
+  });
+  $('sideAddUnder').addEventListener('click', function () {
+    var f = selectedField();
+    if (!f) return;
+    if (!f.children) f.children = [];
+    f.type = 'group';
+    var child = newField('text', nextColumnLabel());
+    f.children.push(child);
+    selectedFieldId = child.id;
+    paintSchema();
+    focusLabel(child.id);
+  });
+  $('sideAddNew').addEventListener('click', function () {
+    var f = selectedField();
+    var sib = newField('text', nextColumnLabel());
+    if (!f) {
+      schemaFields.push(sib);
+    } else {
+      var path = findPath(schemaFields, f.id);
+      var list = parentList(schemaFields, path);
+      list.splice(path[path.length - 1] + 1, 0, sib);
+    }
+    selectedFieldId = sib.id;
+    paintSchema();
+    focusLabel(sib.id);
+  });
+  $('sideRemove').addEventListener('click', function () {
+    if (countFields(schemaFields) <= 1) return;
+    var path = findPath(schemaFields, selectedFieldId);
+    if (!path) return;
+    parentList(schemaFields, path).splice(path[path.length - 1], 1);
+    selectedFieldId = schemaFields[0] ? schemaFields[0].id : null;
+    paintSchema();
   });
 
   $('newForm').addEventListener('submit', async function (e) {
@@ -619,6 +725,7 @@
     var schema = exportSchema();
     if (!offices.length) { err.textContent = 'Pick at least one office.'; err.hidden = false; setWizard(2); return; }
     if (!schema.fields.length) { err.textContent = 'Add at least one column.'; err.hidden = false; return; }
+    if (!$('fDue').value) { err.textContent = 'Save a submit-by date on Basics.'; err.hidden = false; setWizard(1); return; }
     var due = $('fDue').value;
     var ext = $('fExt').value;
     var body = {
@@ -636,11 +743,8 @@
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(body)
       });
-      $('newForm').classList.remove('on');
       tab = 'mine';
-      document.querySelectorAll('.col-tab').forEach(function (b) {
-        b.classList.toggle('on', b.getAttribute('data-tab') === 'mine');
-      });
+      showMode('list');
       await loadList();
     } catch (ex) {
       err.textContent = ex.message; err.hidden = false;
@@ -655,8 +759,8 @@
     var req = e.target.closest('[data-open-req]');
     if (req) openDetail(req.getAttribute('data-open-req'));
   });
-  $('fillBack').addEventListener('click', function () { showFill(false); showMain(true); fillState = null; loadList(); });
-  $('detailBack').addEventListener('click', function () { showDetail(false); showMain(true); detailState = null; loadList(); });
+  $('fillBack').addEventListener('click', backToList);
+  $('detailBack').addEventListener('click', backToList);
 
   $('fillForm').addEventListener('click', function (e) {
     if (!fillState || !fillState.can_edit) return;
@@ -751,18 +855,25 @@
       openDetail(detailState.id);
     } catch (err) { $('detailErr').textContent = err.message; $('detailErr').hidden = false; }
   });
-  $('detailExtend').addEventListener('click', async function () {
+  $('detailExtendSave').addEventListener('click', async function () {
     if (!detailState) return;
-    var raw = prompt('Extend until (local). Example: 2026-11-20 18:00');
-    if (!raw) return;
-    var d = new Date(raw.replace(' ', 'T'));
-    if (isNaN(d.getTime())) { alert('Could not parse date'); return; }
+    $('detailExtendErr').hidden = true;
+    $('detailExtendOk').hidden = true;
+    var raw = $('detailExtendAt').value;
+    if (!raw) {
+      $('detailExtendErr').textContent = 'Pick a date first.'; $('detailExtendErr').hidden = false; return;
+    }
+    var d = new Date(raw);
+    if (isNaN(d.getTime())) {
+      $('detailExtendErr').textContent = 'Invalid date.'; $('detailExtendErr').hidden = false; return;
+    }
     try {
       await api('/api/collect/requests/' + encodeURIComponent(detailState.id) + '/extend', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ extended_due_at: d.toISOString() })
       });
+      $('detailExtendOk').hidden = false;
       openDetail(detailState.id);
-    } catch (err) { $('detailErr').textContent = err.message; $('detailErr').hidden = false; }
+    } catch (err) { $('detailExtendErr').textContent = err.message; $('detailExtendErr').hidden = false; }
   });
   $('detailExport').addEventListener('click', async function () {
     if (!detailState) return;
@@ -774,8 +885,9 @@
     } catch (err) { $('detailErr').textContent = err.message; $('detailErr').hidden = false; }
   });
 
+  showMode('list');
   bootCreate().then(loadList);
   setInterval(function () {
-    if (!document.hidden && !$('fillPanel').classList.contains('on') && !$('detailPanel').classList.contains('on')) loadList();
+    if (!document.hidden && mode === 'list') loadList();
   }, 60000);
 })();
