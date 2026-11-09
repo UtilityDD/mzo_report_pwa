@@ -11,7 +11,7 @@ Not available on Vercel (needs PocketBase). Local checkouts without `PB_URL` + s
 | `GET /api/collect/users` | Active users under the requester’s scope (for optional people pick) |
 | `vm/pocketbase/pb_migrations/1794300000_app_collect.js` | Collections |
 | `vm/dev/test-collect.js` | Helpers, then every route against an in-memory PocketBase stub (`npm test`); `--pb` repeats the route checks on a local PocketBase (`npm test -- --pb`) |
-| Shell | Top-bar pill + sidebar badge when `pending_count > 0`; Home strip |
+| Shell | Top-bar pill + sidebar badge when `pending_count > 0`; Home strip. `pending_count` counts only assignments the office can still fill (not submitted, not locked past the due/extended time) |
 
 ## Rules
 
@@ -32,13 +32,21 @@ Not available on Vercel (needs PocketBase). Local checkouts without `PB_URL` + s
 - **Picks:** at most 200 offices per create/add, 500 people, 200 ids per withdraw. Regions, divisions and CCCs must exist in `lib/offices.js`.
 - **Ids** in the URL must look like PocketBase ids (15 lowercase letters/digits), else `404`.
 - **Errors:** only Collect's own messages reach the page; a PocketBase failure answers `502`/`503` with a plain message (details in the server log).
-- **Export** is JSON. A future CSV/Excel export must prefix cells starting with `= + - @` (or tab/CR) with `'`.
+- **Export** is JSON from the server; the page's **Download CSV** builds one row per office from it and prefixes cells starting with `= + - @` (or tab/CR) with `'`. Any future server-side CSV/Excel must do the same.
+
+## Page
+
+- **Left panel:** Inbox · My requests · New request; in the wizard, the steps and (on Format) the column tools: data type, add under / new column, remove. On a phone (≤ 860px) the panel sits on top with the main nav only, and the column tools become a bar fixed to the bottom of the screen.
+- **Wizard checks** before moving on: a name; a deadline in the future and within a year; the optional late-entry time after it; at least one and at most 200 offices; at most 150 columns and 4 levels; no blank or duplicate column names at one level. All / All RM / All DM / All SM select a group and tapping again unselects it; a line sums up the selection.
+- **Fill:** plain status words (Not started, Draft saved, Submitted, Returned for correction, Late), a notice when late, locked, submitted or view-only, Save/Submit disabled while saving, and a prompt before leaving with unsaved changes. Saves send `base_revision` (from the load, then each save); on `409` the entries stay and the page offers *Load their version*, *Copy my entries* and *Put my entries back*. The 800 KB, 500-row and text limits are checked before sending; server `400`/`413` messages are shown in plain words.
+- **Requester view:** submitted / returned / late counts, inline Extend deadline, Return and Withdraw ask first, Download CSV and Export JSON; Back from an office's entries returns to the request.
+- Loading, empty and error states (with Try again); where `/api/collect/status` answers `available: false`, nothing else is asked.
 
 ## API
 
 | Route | Purpose |
 |---|---|
-| `GET /api/collect/status` | Shell badge `{ available, pending_count, can_create }` (`available: false` with 200 where Collect is off) |
+| `GET /api/collect/status` | Shell badge `{ available, pending_count, can_create }` (`available: false` with 200 where Collect is off); `pending_count` = open assignments the office can still fill |
 | `GET /api/collect/inbox` | Assignments for this office |
 | `GET/POST /api/collect/requests` | List mine / create |
 | `GET /api/collect/requests/:id` | Hierarchy for requester |
