@@ -67,23 +67,25 @@
 
     .nsc-banner { margin-top: 16px; padding: 10px 16px; background: var(--mzo-surface); border: 1px solid var(--mzo-border); border-radius: 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
-    /* Collapsible Filter Panel on desktop */
-    .ui-layout.side-collapsed { grid-template-columns: minmax(0, 1fr); }
-    #sideToggle { display: inline-flex !important; }
+    /* Toggleable Filter Panel (original in-flow layout) */
+    .ui-layout.side-collapsed { grid-template-columns: minmax(0, 1fr) !important; }
+    .ui-layout.side-collapsed > .ui-side { display: none !important; }
+    #sideToggle {
+      display: inline-flex !important;
+      align-items: center;
+      gap: 6px;
+      font-weight: 500;
+    }
+    #sideToggle.is-active,
+    #sideToggle[aria-expanded="true"] {
+      background: var(--mzo-surface-2);
+      border-color: var(--mzo-border-strong);
+      color: var(--mzo-text);
+    }
     #sideToggle #activeCount:not(:empty) {
-      display: inline-flex; align-items: center; justify-content: center;
-      min-width: 17px; height: 17px; padding: 0 5px; margin-left: 6px;
-      border-radius: 999px; background: var(--mzo-fill); color: var(--mzo-on-fill);
-      font-size: 11px; font-weight: 700; line-height: 1;
+      font-weight: 600;
+      color: var(--mzo-accent);
     }
-    .ui-layout.side-collapsed .ui-side {
-      position: fixed; top: 16px; bottom: 16px; left: 16px; width: 280px; max-height: calc(100vh - 32px);
-      z-index: 950; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18), 0 0 0 1px var(--mzo-border-strong);
-      border-radius: 12px; transform: translateX(-125%); transition: transform 0.22s cubic-bezier(0.2, 0, 0, 1);
-      display: block;
-    }
-    .ui-layout.side-collapsed .ui-side.open { transform: translateX(0); }
-    .ui-side-scrim { position: fixed; inset: 0; background: var(--mzo-scrim); z-index: 940; }
   </style>
 </head>
 <body>
@@ -93,7 +95,7 @@
         <h1>Pending NSC<span class="ui-badge ui-date" id="asOn">…</span></h1>
       </div>
       <div class="ui-actions">
-        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
+        <button type="button" class="ui-btn" id="sideToggle" aria-controls="side" aria-expanded="false" title="Toggle filters panel"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
         <div class="ui-seg" id="viewModeSeg" role="tablist" aria-label="View mode">
           <button type="button" id="btnFocusView" aria-pressed="true">Aging Focus (&gt;30d)</button>
           <button type="button" id="btnDetailView" aria-pressed="false">Detailed Analysis</button>
@@ -110,7 +112,6 @@
     </div>
 
     <div class="ui-layout side-collapsed" id="uiLayout">
-      <div class="ui-side-scrim" id="sideScrim" hidden></div>
       <aside class="ui-side" id="side" aria-label="Filters">
         <div class="ui-side-h">
           <h2>Filters<small id="activeLabel"></small></h2>
@@ -307,7 +308,7 @@
       ['pole', 'Pole'], ['class', 'Class'], ['phase', 'Phase'], ['agency', 'Agency'], ['wo', 'WO'], ['followups', 'Follow-ups']
     ];
     var all = [], f = { q: '', kpi: '', agri: '', pole: '', wo: '', delay: '', delay2: '' }, tab = 'region', renderedTab = '', scope = null, lastTable = null, lastList = null, firstData = true;
-    var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
+    var setActive = UI.sidePanel({ side: 'side', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
     var SELECTS = ['regionFilter', 'divisionFilter', 'cccFilter', 'classFilter', 'agencyFilter'];
     var FACET_NAMES = ['agri', 'pole', 'wo', 'delay', 'delay2'];
     FACETS.delay2 = DELAY2.map(function (d) { DELAY_DOT[d[0]] = delayDot(d[1][0]); return [d[0], d[0], function (r) { return d[1].indexOf(r.delaySerial) !== -1; }]; });
@@ -1002,21 +1003,25 @@
     $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim(); if (f.q) { setViewMode('detail'); if (tab !== 'consumer') tab = 'consumer'; } render(); }, 180));
     $('kpis').addEventListener('click', function (e) { var s = e.target.closest('.ui-stat'); if (!s) return; var k = s.getAttribute('data-k'); f.kpi = f.kpi === k ? '' : k; render(); });
     $('tabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-drill-tab'); if (t) { tab = t.getAttribute('data-t'); render(); } });
-    function closeSideDrawer() {
-      $('side').classList.remove('open');
-      $('sideScrim').hidden = true;
-      $('sideToggle').setAttribute('aria-expanded', 'false');
+    function toggleSidePanel(show) {
+      var layout = $('uiLayout');
+      var side = $('side');
+      var isCollapsed = layout.classList.contains('side-collapsed');
+      var willShow = typeof show === 'boolean' ? show : isCollapsed;
+      layout.classList.toggle('side-collapsed', !willShow);
+      side.classList.toggle('open', willShow);
+      var btn = $('sideToggle');
+      if (btn) {
+        btn.setAttribute('aria-expanded', String(willShow));
+        btn.classList.toggle('is-active', willShow);
+      }
     }
-    $('sideCloseBtn').addEventListener('click', closeSideDrawer);
-    $('sideScrim').addEventListener('click', closeSideDrawer);
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && $('side').classList.contains('open')) closeSideDrawer();
+    $('sideToggle').addEventListener('click', function (e) {
+      e.stopPropagation();
+      toggleSidePanel();
     });
-    $('sideToggle').addEventListener('click', function () {
-      setTimeout(function () {
-        var isOpen = $('side').classList.contains('open');
-        $('sideScrim').hidden = !isOpen;
-      }, 10);
+    $('sideCloseBtn').addEventListener('click', function () {
+      toggleSidePanel(false);
     });
 
     $('focusFiltersBar').addEventListener('click', function (e) {
