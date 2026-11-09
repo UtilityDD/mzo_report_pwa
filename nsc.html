@@ -66,6 +66,18 @@
     .nsc-focus-row-p { font-size: 11.5px; color: var(--mzo-muted); margin-left: 2px; }
 
     .nsc-banner { margin-top: 16px; padding: 10px 16px; background: var(--mzo-surface); border: 1px solid var(--mzo-border); border-radius: 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+    /* Collapsible Filter Panel on desktop */
+    .ui-layout.side-collapsed { grid-template-columns: minmax(0, 1fr); }
+    .ui-layout.side-collapsed .ui-side-toggle { display: inline-flex !important; }
+    .ui-layout.side-collapsed .ui-side {
+      position: fixed; top: 16px; bottom: 16px; left: 16px; width: 280px; max-height: calc(100vh - 32px);
+      z-index: 950; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18), 0 0 0 1px var(--mzo-border-strong);
+      border-radius: 12px; transform: translateX(-125%); transition: transform 0.22s cubic-bezier(0.2, 0, 0, 1);
+      display: block;
+    }
+    .ui-layout.side-collapsed .ui-side.open { transform: translateX(0); }
+    .ui-side-scrim { position: fixed; inset: 0; background: var(--mzo-scrim); z-index: 940; }
   </style>
 </head>
 <body>
@@ -91,11 +103,15 @@
       <div><button type="button" class="ui-btn sm primary" id="noticeLoad">Load latest</button><button type="button" class="ui-btn sm ghost" id="noticeDismiss">Dismiss</button></div>
     </div>
 
-    <div class="ui-layout">
+    <div class="ui-layout side-collapsed" id="uiLayout">
+      <div class="ui-side-scrim" id="sideScrim" hidden></div>
       <aside class="ui-side" id="side" aria-label="Filters">
         <div class="ui-side-h">
           <h2>Filters<small id="activeLabel"></small></h2>
-          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
+          <div style="display:flex;align-items:center;gap:4px">
+            <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
+            <button type="button" class="ui-btn icon ghost sm" id="sideCloseBtn" aria-label="Close filters" title="Close"><svg class="ui-i"><use href="#ui-x"/></svg></button>
+          </div>
         </div>
         <div class="ui-side-sec ui-side-stack">
           <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Search" autocomplete="off" aria-label="Search by application, consumer ID, name or phone" title="Application no., consumer ID, name or phone" /></label>
@@ -121,6 +137,7 @@
       <div class="ui-main">
         <!-- Stage 1: Aging Focus (>30d) View -->
         <div id="focusView">
+          <div class="rh-filters-bar" id="focusFiltersBar" style="margin-bottom:12px" hidden></div>
           <section class="ui-stats cl-kpis" id="focusKpis" aria-label="Aging focus summary">
             <button type="button" class="ui-stat" id="fStatTotal">
               <div class="k">Total pending</div>
@@ -541,15 +558,25 @@
       }
 
       var bar = $('rhFiltersBar');
+      var focusBar = $('focusFiltersBar');
       if (currentActiveFilters.length) {
         var chips = currentActiveFilters.map(function (af, i) {
           return '<span class="rh-chip"><strong>' + UI.esc(af.label) + ':</strong> ' + UI.esc(af.value) +
             '<button type="button" class="rh-chip-x" data-rh-clear="' + i + '" title="Remove ' + UI.esc(af.label) + ' filter" aria-label="Remove filter">&times;</button></span>';
         }).join('');
-        bar.innerHTML = '<div class="rh-filters"><span class="rh-filters-label"><svg class="ui-i sm"><use href="#ui-filter"/></svg>Applied:</span>' +
-          chips + '<button type="button" class="rh-clear-btn" id="rhClearBtn"><svg class="ui-i sm"><use href="#ui-reload"/></svg>Reset all</button></div>';
+        var content = '<div class="rh-filters"><span class="rh-filters-label"><svg class="ui-i sm"><use href="#ui-filter"/></svg>Applied:</span>' +
+          chips + '<button type="button" class="rh-clear-btn" id="rhClearBtn"><svg class="ui-i sm"><use href="#ui-refresh"/></svg>Reset all</button></div>';
+        bar.innerHTML = content;
+        if (focusBar) {
+          focusBar.innerHTML = content;
+          focusBar.hidden = false;
+        }
       } else {
         bar.innerHTML = '';
+        if (focusBar) {
+          focusBar.innerHTML = '';
+          focusBar.hidden = true;
+        }
       }
     }
 
@@ -969,6 +996,38 @@
     $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim(); if (f.q) { setViewMode('detail'); if (tab !== 'consumer') tab = 'consumer'; } render(); }, 180));
     $('kpis').addEventListener('click', function (e) { var s = e.target.closest('.ui-stat'); if (!s) return; var k = s.getAttribute('data-k'); f.kpi = f.kpi === k ? '' : k; render(); });
     $('tabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-drill-tab'); if (t) { tab = t.getAttribute('data-t'); render(); } });
+    function closeSideDrawer() {
+      $('side').classList.remove('open');
+      $('sideScrim').hidden = true;
+      $('sideToggle').setAttribute('aria-expanded', 'false');
+    }
+    $('sideCloseBtn').addEventListener('click', closeSideDrawer);
+    $('sideScrim').addEventListener('click', closeSideDrawer);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && $('side').classList.contains('open')) closeSideDrawer();
+    });
+    $('sideToggle').addEventListener('click', function () {
+      setTimeout(function () {
+        var isOpen = $('side').classList.contains('open');
+        $('sideScrim').hidden = !isOpen;
+      }, 10);
+    });
+
+    $('focusFiltersBar').addEventListener('click', function (e) {
+      var x = e.target.closest('[data-rh-clear]');
+      if (x) {
+        var idx = +x.getAttribute('data-rh-clear');
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) {
+          currentActiveFilters[idx].clear();
+          render();
+        }
+        return;
+      }
+      if (e.target.closest('#rhClearBtn')) {
+        clearAll();
+      }
+    });
+
     $('rhFiltersBar').addEventListener('click', function (e) {
       var x = e.target.closest('[data-rh-clear]');
       if (x) {
