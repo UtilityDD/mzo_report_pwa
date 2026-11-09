@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Pending NSC · DISHA</title>
   <script src="/mzo_theme.js?v=9"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=12" />
+  <link rel="stylesheet" href="/mzo_theme.css?v=13" />
   <!-- auth gate (loads auth.js), app-update check, service worker when opened on its own -->
   <script src="/mzo_presets_hub.js?v=89"></script>
   <script src="/mzo_ui.js?v=10" defer></script>
@@ -38,6 +38,34 @@
     .nsc-fu .err { margin: 6px 0 0; font-size: 12.5px; color: var(--mzo-bad); }
     .nsc-fu .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
     .nsc-fu .row span { font-size: 12px; color: var(--mzo-muted); }
+
+    /* Aging Focus View (Stage 1) */
+    .nsc-focus-ladder { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+    @media (max-width: 760px) { .nsc-focus-ladder { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .nsc-ladder-step { padding: 12px 14px; border-radius: 10px; border: 1px solid var(--mzo-border); background: var(--mzo-surface); text-align: left; cursor: pointer; transition: border-color .15s, background .15s; }
+    .nsc-ladder-step:hover { border-color: var(--mzo-border-strong); background: var(--mzo-surface-2); }
+    .nsc-ladder-h { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--mzo-muted); margin-bottom: 6px; }
+    .nsc-ladder-v { font-size: 20px; font-weight: 750; color: var(--mzo-text); line-height: 1.1; font-variant-numeric: tabular-nums; }
+    .nsc-ladder-s { font-size: 11.5px; color: var(--mzo-muted); margin-top: 4px; }
+
+    .nsc-focus-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+    @media (max-width: 860px) { .nsc-focus-grid { grid-template-columns: 1fr; } }
+
+    .nsc-card { background: var(--mzo-surface); border: 1px solid var(--mzo-border); border-radius: 12px; padding: 16px 18px; }
+    .nsc-card-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid var(--mzo-border); padding-bottom: 8px; }
+    .nsc-card-h h3 { margin: 0; font-size: 13.5px; font-weight: 650; color: var(--mzo-text); }
+    .nsc-card-h span { font-size: 11.5px; color: var(--mzo-muted); }
+
+    .nsc-row-list { display: flex; flex-direction: column; gap: 6px; }
+    .nsc-focus-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--mzo-border); background: var(--mzo-bg); cursor: pointer; text-decoration: none; color: inherit; transition: background .12s, border-color .12s; }
+    .nsc-focus-row:hover { background: var(--mzo-surface-2); border-color: var(--mzo-border-strong); }
+    .nsc-focus-row-t { font-size: 13px; font-weight: 550; color: var(--mzo-text); display: flex; align-items: center; gap: 6px; }
+    .nsc-focus-row-t small { font-size: 11.5px; margin-left: 4px; font-weight: 400; color: var(--mzo-muted); }
+    .nsc-focus-row-val { text-align: right; flex-shrink: 0; font-size: 13px; }
+    .nsc-focus-row-n { font-weight: 700; color: var(--mzo-text); font-variant-numeric: tabular-nums; }
+    .nsc-focus-row-p { font-size: 11.5px; color: var(--mzo-muted); margin-left: 2px; }
+
+    .nsc-banner { margin-top: 16px; padding: 10px 16px; background: var(--mzo-surface); border: 1px solid var(--mzo-border); border-radius: 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   </style>
 </head>
 <body>
@@ -47,6 +75,10 @@
         <h1>Pending NSC<span class="ui-badge ui-date" id="asOn">…</span></h1>
       </div>
       <div class="ui-actions">
+        <div class="ui-seg" id="viewModeSeg" role="tablist" aria-label="View mode">
+          <button type="button" id="btnFocusView" aria-pressed="true">Aging Focus (&gt;30d)</button>
+          <button type="button" id="btnDetailView" aria-pressed="false">Detailed Analysis</button>
+        </div>
         <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
         <a class="ui-btn" id="uploadBtn" href="nsc/upload.html" hidden><svg class="ui-i"><use href="#ui-upload"/></svg>Upload</a>
         <button type="button" class="ui-btn" id="topBtn">Top delayed</button>
@@ -87,36 +119,95 @@
       </aside>
 
       <div class="ui-main">
-        <section class="ui-stats cl-kpis" id="kpis" aria-label="Summary">
-          <button type="button" class="ui-stat" data-k=""><div class="k">Total pending</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-          <button type="button" class="ui-stat" data-k="nonpole"><div class="k">Non-pole</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-          <button type="button" class="ui-stat" data-k="pole"><div class="k">Pole</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-          <button type="button" class="ui-stat" data-k="withheld"><div class="k" title="Rescued from withheld">From withheld</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-          <button type="button" class="ui-stat" data-k="ind"><div class="k">Industrial</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-          <button type="button" class="ui-stat" data-k="procb"><div class="k">Proc-B</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-          <button type="button" class="ui-stat" data-k="com3"><div class="k">Com. 3-phase</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-        </section>
+        <!-- Stage 1: Aging Focus (>30d) View -->
+        <div id="focusView">
+          <section class="ui-stats cl-kpis" id="focusKpis" aria-label="Aging focus summary">
+            <button type="button" class="ui-stat" id="fStatTotal">
+              <div class="k">Total pending</div>
+              <div class="v" id="fValTotal"><span class="ui-skel"></span></div>
+              <div class="s" id="fSubTotal">&nbsp;</div>
+            </button>
+            <button type="button" class="ui-stat" id="fStatCritical" title="Click to inspect all >30 days pending">
+              <div class="k"><span class="ui-dot bad"></span>&gt; 30 days (Critical)</div>
+              <div class="v" id="fValCritical"><span class="ui-skel"></span></div>
+              <div class="s" id="fSubCritical">&nbsp;</div>
+            </button>
+            <button type="button" class="ui-stat" id="fStatSevere" title="Click to inspect all >60 days pending">
+              <div class="k"><span class="ui-dot bad"></span>&gt; 60 days (Severe)</div>
+              <div class="v" id="fValSevere"><span class="ui-skel"></span></div>
+              <div class="s" id="fSubSevere">&nbsp;</div>
+            </button>
+            <button type="button" class="ui-stat" id="fStatNonPole30" title="Click to inspect non-pole >30 days pending">
+              <div class="k"><span class="ui-dot warn"></span>Non-pole &gt; 30d</div>
+              <div class="v" id="fValNonPole30"><span class="ui-skel"></span></div>
+              <div class="s" id="fSubNonPole30">&nbsp;</div>
+            </button>
+          </section>
 
-        <section class="ui-panel">
-          <div class="report-head" id="reportHead">
-            <div class="rh-top">
-              <div class="rh-title-wrap">
-                <h2 class="rh-title"><span id="rhTitle">Pending NSC Analysis</span></h2>
-                <span class="rh-badge" id="rhCount">Loading…</span>
-              </div>
-              <div class="ui-actions">
-                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
-                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
-              </div>
+          <section class="ui-panel" style="margin-top:14px;padding:14px 16px;">
+            <div class="ui-panel-h" style="margin-bottom:6px;">
+              <h2>Aging distribution</h2>
             </div>
-            <div class="rh-filters-bar" id="rhFiltersBar">
-              <!-- Dynamically populated filter chips / all-clear status -->
-            </div>
+            <div class="nsc-focus-ladder" id="agingLadder"></div>
+          </section>
+
+          <div class="nsc-focus-grid">
+            <section class="nsc-card">
+              <div class="nsc-card-h">
+                <h3>Reasons for delay (&gt; 30d)</h3>
+                <span id="whyTotal30"></span>
+              </div>
+              <div class="nsc-row-list" id="why30List"></div>
+            </section>
+
+            <section class="nsc-card">
+              <div class="nsc-card-h">
+                <h3 id="topOfficesTitle">Top delayed offices (&gt; 30d)</h3>
+                <span id="topOfficesSub"></span>
+              </div>
+              <div class="nsc-row-list" id="topOfficesList"></div>
+            </section>
           </div>
-          <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
-          <div class="cl-hint" id="hint"></div>
-          <div id="table"><div class="ui-empty">Loading…</div></div>
-        </section>
+
+          <div class="nsc-banner">
+            <span style="font-size:12.5px;color:var(--mzo-muted)">Detailed breakdown across offices, classes, phases and agencies</span>
+            <button type="button" class="ui-btn primary sm" id="openDetailedBtn">Detailed Analysis &rarr;</button>
+          </div>
+        </div>
+
+        <!-- Stage 2: Detailed Analysis View (12 Drill Tabs & Full Table) -->
+        <div id="detailView" hidden>
+          <section class="ui-stats cl-kpis" id="kpis" aria-label="Summary">
+            <button type="button" class="ui-stat" data-k=""><div class="k">Total pending</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+            <button type="button" class="ui-stat" data-k="nonpole"><div class="k">Non-pole</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+            <button type="button" class="ui-stat" data-k="pole"><div class="k">Pole</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+            <button type="button" class="ui-stat" data-k="withheld"><div class="k" title="Rescued from withheld">From withheld</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+            <button type="button" class="ui-stat" data-k="ind"><div class="k">Industrial</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+            <button type="button" class="ui-stat" data-k="procb"><div class="k">Proc-B</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+            <button type="button" class="ui-stat" data-k="com3"><div class="k">Com. 3-phase</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          </section>
+
+          <section class="ui-panel">
+            <div class="report-head" id="reportHead">
+              <div class="rh-top">
+                <div class="rh-title-wrap">
+                  <h2 class="rh-title"><span id="rhTitle">Pending NSC Analysis</span></h2>
+                  <span class="rh-badge" id="rhCount">Loading…</span>
+                </div>
+                <div class="ui-actions">
+                  <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                  <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+                </div>
+              </div>
+              <div class="rh-filters-bar" id="rhFiltersBar">
+                <!-- Dynamically populated filter chips / all-clear status -->
+              </div>
+            </div>
+            <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
+            <div class="cl-hint" id="hint"></div>
+            <div id="table"><div class="ui-empty">Loading…</div></div>
+          </section>
+        </div>
       </div>
     </div>
   </main>
@@ -246,9 +337,130 @@
       return out;
     }
 
+    var params = new URLSearchParams(location.search);
+    var viewMode = params.get('view') === 'detail' || params.get('tab') ? 'detail' : 'focus';
+
+    function setViewMode(mode) {
+      viewMode = mode;
+      var isFocus = mode === 'focus';
+      $('btnFocusView').setAttribute('aria-pressed', String(isFocus));
+      $('btnDetailView').setAttribute('aria-pressed', String(!isFocus));
+      $('focusView').hidden = !isFocus;
+      $('detailView').hidden = isFocus;
+    }
+
+    function renderFocusView(b) {
+      var total = b.length;
+      var med = function (rows) { var s = rows.map(function (r) { return r.delay || 0; }).sort(function (x, y) { return x - y; }); return s.length ? s[Math.floor(s.length / 2)] : 0; };
+
+      var under30 = b.filter(function (r) { return r.delaySerial <= 4; });
+      var over30 = b.filter(function (r) { return r.delaySerial >= 5; });
+      var over60 = b.filter(function (r) { return r.delaySerial >= 6; });
+      var over180 = b.filter(function (r) { return r.delaySerial >= 7; });
+      var nonPole30 = over30.filter(function (r) { return !r.pole; });
+
+      // 1. Hero KPIs
+      $('fValTotal').textContent = UI.n(total);
+      $('fSubTotal').textContent = total ? 'Median ' + UI.age(med(b)) : 'No cases';
+
+      $('fValCritical').textContent = UI.n(over30.length);
+      $('fSubCritical').textContent = total ? UI.pct(over30.length, total) + ' of total' : '0%';
+
+      $('fValSevere').textContent = UI.n(over60.length);
+      $('fSubSevere').textContent = total ? UI.pct(over60.length, total) + ' of total' : '0%';
+
+      $('fValNonPole30').textContent = UI.n(nonPole30.length);
+      $('fSubNonPole30').textContent = over30.length ? UI.pct(nonPole30.length, over30.length) + ' of >30d' : '0%';
+
+      // 2. Aging Distribution Ladder
+      var b31_60 = b.filter(function (r) { return r.delaySerial === 5; });
+      var b61_180 = b.filter(function (r) { return r.delaySerial === 6; });
+      var brackets = [
+        { label: '0–30 days', count: under30.length, dot: 'ok', key: 'under30' },
+        { label: '31–60 days', count: b31_60.length, dot: 'warn', key: 'b31_60' },
+        { label: '61–180 days', count: b61_180.length, dot: 'bad', key: 'b61_180' },
+        { label: '> 180 days', count: over180.length, dot: 'bad', key: 'over180' }
+      ];
+
+      $('agingLadder').innerHTML = brackets.map(function (bk) {
+        return '<button type="button" class="nsc-ladder-step" data-age-bracket="' + bk.key + '" title="View ' + UI.esc(bk.label) + '">' +
+          '<div class="nsc-ladder-h"><span class="ui-dot ' + bk.dot + '"></span>' + UI.esc(bk.label) + '</div>' +
+          '<div class="nsc-ladder-v">' + UI.n(bk.count) + '</div>' +
+          '<div class="nsc-ladder-s">' + (total ? UI.pct(bk.count, total) : '0%') + ' of total</div>' +
+          '</button>';
+      }).join('');
+
+      // 3. Reasons for delay > 30 days
+      var o30Count = over30.length;
+      $('whyTotal30').textContent = UI.n(o30Count) + ' applications';
+
+      var npCount = nonPole30.length;
+      var poleNoWo = over30.filter(function (r) { return r.pole && !r.wo; }).length;
+      var poleWithWo = over30.filter(function (r) { return r.pole && r.wo; }).length;
+      var withheld30 = over30.filter(function (r) { return r.withheld; }).length;
+      var highVal30 = over30.filter(function (r) { return r.cls === 'I' || (r.cls === 'C' && r.phase === 'III') || r.procB; }).length;
+
+      var reasons = [
+        { title: 'Non-pole cases', count: npCount, action: 'nonpole30', dot: 'bad' },
+        { title: 'Pole: Work order not issued', count: poleNoWo, action: 'polenowo', dot: 'warn' },
+        { title: 'Pole: WO issued to agency', count: poleWithWo, action: 'polewo', dot: 'warn' },
+        { title: 'Withheld cases', count: withheld30, action: 'withheld30', dot: 'bad' },
+        { title: 'Commercial & Industrial', count: highVal30, action: 'highval30', dot: 'c2' }
+      ];
+
+      $('why30List').innerHTML = reasons.map(function (item) {
+        return '<div class="nsc-focus-row" data-reason-action="' + item.action + '" title="' + UI.esc(item.title) + '">' +
+          '<div class="nsc-focus-row-t"><span class="ui-dot ' + item.dot + '"></span>' + UI.esc(item.title) + '</div>' +
+          '<div class="nsc-focus-row-val">' +
+          '<span class="nsc-focus-row-n">' + UI.n(item.count) + '</span>' +
+          ' <span class="nsc-focus-row-p">(' + (o30Count ? UI.pct(item.count, o30Count) : '0%') + ')</span>' +
+          '</div>' +
+          '</div>';
+      }).join('');
+
+      // 4. Top delayed offices (> 30 days)
+      var selCcc = $('cccFilter').value;
+      var selDiv = $('divisionFilter').value;
+      var offCounts = {};
+      over30.forEach(function (r) {
+        var key = selCcc ? (r.clsLabel || 'Unspecified') : (r._supp || 'Unmapped');
+        var sub = selCcc ? (r.phase === 'III' ? '3-phase' : '1-phase') : (r._divn || '');
+        if (!offCounts[key]) offCounts[key] = { name: key, sub: sub, count: 0 };
+        offCounts[key].count++;
+      });
+      var sortedOffices = Object.keys(offCounts).map(function (k) { return offCounts[k]; }).sort(function (a, b) { return b.count - a.count; }).slice(0, 5);
+
+      if (selCcc) {
+        $('topOfficesTitle').textContent = 'Classes with > 30 days delay';
+        $('topOfficesSub').textContent = selCcc;
+      } else if (selDiv) {
+        $('topOfficesTitle').textContent = 'Top CCCs with > 30 days delay';
+        $('topOfficesSub').textContent = selDiv;
+      } else {
+        $('topOfficesTitle').textContent = 'Top delayed CCCs (> 30 days)';
+        $('topOfficesSub').textContent = '';
+      }
+
+      if (!sortedOffices.length) {
+        $('topOfficesList').innerHTML = '<div class="ui-empty" style="padding:16px 0">No applications pending > 30 days!</div>';
+      } else {
+        $('topOfficesList').innerHTML = sortedOffices.map(function (off) {
+          return '<div class="nsc-focus-row" data-office-name="' + UI.esc(off.name) + '" title="' + UI.esc(off.name) + '">' +
+            '<div class="nsc-focus-row-t"><span class="ui-strong">' + UI.esc(off.name) + '</span>' + (off.sub ? ' <small>' + UI.esc(off.sub) + '</small>' : '') + '</div>' +
+            '<div class="nsc-focus-row-val">' +
+            '<span class="nsc-focus-row-n">' + UI.n(off.count) + '</span>' +
+            ' <span class="nsc-focus-row-p">(' + (o30Count ? UI.pct(off.count, o30Count) : '0%') + ')</span>' +
+            '</div>' +
+            '</div>';
+        }).join('');
+      }
+    }
+
     function render() {
       var b = filtered(null);
       renderFacets();
+      renderFocusView(b);
+      setViewMode(viewMode);
       var med = function (rows) { var s = rows.map(function (r) { return r.delay || 0; }).sort(function (x, y) { return x - y; }); return s.length ? s[Math.floor(s.length / 2)] : 0; };
       [].forEach.call(document.querySelectorAll('#kpis .ui-stat'), function (el) {
         var k = el.getAttribute('data-k'), rows = b.filter(KPI[k]);
@@ -666,6 +878,7 @@
       else if (/com/.test(k)) f.kpi = 'com3';
       if (p.get('q')) { f.q = p.get('q').trim(); $('q').value = f.q; tab = 'consumer'; }
       if (p.get('followups') === '1') tab = 'followups';
+      if (p.get('view') === 'detail' || p.get('tab') || p.get('kpi') || p.get('q') || p.get('followups')) viewMode = 'detail';
     }
 
     function setData(t) {
@@ -681,11 +894,79 @@
     }
 
     /* ---------------- events ---------------- */
+    $('btnFocusView').addEventListener('click', function () { setViewMode('focus'); });
+    $('btnDetailView').addEventListener('click', function () { setViewMode('detail'); });
+    $('openDetailedBtn').addEventListener('click', function () { setViewMode('detail'); $('detailView').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+
+    $('fStatTotal').addEventListener('click', function () {
+      f.kpi = ''; f.delay2 = ''; tab = scope && (scope.level === 'division' || scope.level === 'ccc' || scope.level === 'codes') ? 'ccc' : 'region';
+      setViewMode('detail'); render();
+    });
+    $('fStatCritical').addEventListener('click', function () {
+      f.delay2 = 'More than 1 month'; tab = 'consumer';
+      setViewMode('detail'); render();
+    });
+    $('fStatSevere').addEventListener('click', function () {
+      f.delay2 = 'More than 2 months'; tab = 'consumer';
+      setViewMode('detail'); render();
+    });
+    $('fStatNonPole30').addEventListener('click', function () {
+      f.pole = 'nonpole'; f.delay2 = 'More than 1 month'; tab = 'consumer';
+      setViewMode('detail'); render();
+    });
+
+    $('agingLadder').addEventListener('click', function (e) {
+      var step = e.target.closest('[data-age-bracket]');
+      if (!step) return;
+      var k = step.getAttribute('data-age-bracket');
+      if (k === 'under30') {
+        f.delay2 = 'Within 3 days';
+      } else if (k === 'b31_60') {
+        f.delay2 = 'More than 1 month';
+      } else if (k === 'b61_180') {
+        f.delay2 = 'More than 2 months';
+      } else if (k === 'over180') {
+        f.delay2 = 'More than 6 months';
+      }
+      tab = 'consumer';
+      setViewMode('detail');
+      render();
+    });
+
+    $('why30List').addEventListener('click', function (e) {
+      var row = e.target.closest('[data-reason-action]');
+      if (!row) return;
+      var act = row.getAttribute('data-reason-action');
+      f.delay2 = 'More than 1 month';
+      if (act === 'nonpole30') f.pole = 'nonpole';
+      else if (act === 'polenowo') { f.pole = 'pole'; f.wo = 'none'; }
+      else if (act === 'polewo') { f.pole = 'pole'; f.wo = 'issued'; }
+      else if (act === 'withheld30') f.kpi = 'withheld';
+      else if (act === 'highval30') f.kpi = 'ind';
+      tab = 'consumer';
+      setViewMode('detail');
+      render();
+    });
+
+    $('topOfficesList').addEventListener('click', function (e) {
+      var row = e.target.closest('[data-office-name]');
+      if (!row) return;
+      var off = row.getAttribute('data-office-name');
+      if (!$('cccFilter').value) {
+        $('cccFilter').value = off;
+        fillFilters();
+      }
+      f.delay2 = 'More than 1 month';
+      tab = 'consumer';
+      setViewMode('detail');
+      render();
+    });
+
     ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
       $(id).addEventListener('change', function () { if (id === 'regionFilter') $('divisionFilter').value = ''; if (id !== 'cccFilter') $('cccFilter').value = ''; fillFilters(); render(); });
     });
     ['agencyFilter', 'classFilter'].forEach(function (id) { $(id).addEventListener('change', function () { UI.mark(this); render(); }); });
-    $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim(); if (f.q && tab !== 'consumer') tab = 'consumer'; render(); }, 180));
+    $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim(); if (f.q) { setViewMode('detail'); if (tab !== 'consumer') tab = 'consumer'; } render(); }, 180));
     $('kpis').addEventListener('click', function (e) { var s = e.target.closest('.ui-stat'); if (!s) return; var k = s.getAttribute('data-k'); f.kpi = f.kpi === k ? '' : k; render(); });
     $('tabs').addEventListener('click', function (e) { var t = e.target.closest('.ui-drill-tab'); if (t) { tab = t.getAttribute('data-t'); render(); } });
     $('rhFiltersBar').addEventListener('click', function (e) {
@@ -708,7 +989,7 @@
       tab = scope && (scope.level === 'division' || scope.level === 'ccc' || scope.level === 'codes') ? 'ccc' : 'region';
       fillFilters(); render();
     }
-    $('topBtn').addEventListener('click', function () { tab = 'consumer'; f.kpi = ''; renderedTab = ''; render(); $('table').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    $('topBtn').addEventListener('click', function () { setViewMode('detail'); tab = 'consumer'; f.kpi = ''; renderedTab = ''; render(); $('table').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     $('copyBtn').addEventListener('click', function () {
       if (!lastTable) return;
       var lines = ['*Pending NSC — ' + lastTable.title + '*' + ($('asOn').textContent ? ' (as on ' + $('asOn').textContent + ')' : ''), lastTable.cols.join(' | ')].concat(lastTable.rows.slice(0, 60).map(function (r) { return r.map(function (c) { return typeof c === 'number' ? UI.n(c) : c; }).join(' | '); }));
