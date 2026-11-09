@@ -276,6 +276,7 @@ async function routeChecks(run, label) {
   // Submit, return, extend.
   ok((await run('POST', '/api/collect/assignments/' + asgSamsi + '/submit', samsi, { payload: { fields: { count: 9 } } })).body.ok, 'the office submits');
   ok((await run('PUT', '/api/collect/assignments/' + asgSamsi + '/draft', samsi, { payload: { fields: {} } })).status === 400, 'a submitted draft is read-only');
+  ok((await run('GET', '/api/collect/status', samsi)).body.pending_count === 0, 'status no longer counts a submitted assignment');
   ok((await run('POST', '/api/collect/requests/' + reqId + '/extend', maldaRm, { extended_due_at: inDays(-1) })).status === 400, 'an extension in the past is refused');
   ok((await run('POST', '/api/collect/requests/' + reqId + '/extend', maldaRm, { extended_due_at: inDays(500) })).status === 400, 'an extension over a year ahead is refused');
   ok((await run('POST', '/api/collect/requests/' + reqId + '/extend', maldaRm, { extended_due_at: inDays(5) })).status === 200, 'the requester extends');
@@ -313,6 +314,16 @@ async function stubSuite() {
     const run = harness(collect);
     await routeChecks(run, 'stub');
     ok(!stub.calls.some((c) => /\/records\/(\.\.|%2e)/i.test(c)), 'no path traversal reached PocketBase');
+
+    // The status badge leaves out an assignment locked past its due and extended time.
+    ok((await run('GET', '/api/collect/status', USERS.manikchak)).body.pending_count === 1, 'status counts an open assignment');
+    const past = new Date(Date.now() - 86400000).toISOString();
+    for (const [id, a] of stub.coll('app_collect_assignments')) {
+      if (a.ccc_code === '6611101') stub.coll('app_collect_assignments').set(id, Object.assign({}, a, { due_at: past, extended_due_at: past }));
+    }
+    const lockedInbox = await run('GET', '/api/collect/inbox', USERS.manikchak);
+    ok(lockedInbox.body.items.length === 1 && lockedInbox.body.items[0].timing.locked, 'the locked assignment still shows in the inbox');
+    ok((await run('GET', '/api/collect/status', USERS.manikchak)).body.pending_count === 0, 'status does not count an assignment locked past its deadline');
 
     // A signed-out or cut-off user (currentUser returns null) gets 401 everywhere.
     const gated = harness(collectLib.create({ env: { PB_URL: 'http://pb.stub', PB_SUPERUSER_EMAIL: 'x@example.com', PB_SUPERUSER_PASSWORD: 'x' }, currentUser: async () => null }));
