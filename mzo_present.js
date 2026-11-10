@@ -1,7 +1,7 @@
 /**
- * Desktop presentation toolbar & zoom for report pages.
- * - PPT theme toggle (shortcut: P)
- * - Compact horizontal zoom: − / % / + (75–175, localStorage mzo_present_zoom; shortcuts + / - / 0)
+ * Desktop zoom control for report pages.
+ * Compact horizontal zoom: − / % / + (75–175, localStorage mzo_present_zoom; shortcuts + / - / 0).
+ * PPT stays in the top theme control (shortcut P still works via MzoTheme when present).
  * Phones stay at 100%. Maps keep their own zoom (see skipPage).
  */
 (function () {
@@ -147,18 +147,14 @@
 
   function sync() {
     var pct = readPct();
-    var ppt = isPptTheme();
     applyZoom(pct);
     var root = document.getElementById('mzo-present-zoom');
     if (!root) return;
     root.style.display = pptAllowed() ? '' : 'none';
     root.setAttribute('data-zoom', String(pct));
-    root.setAttribute('data-ppt', ppt ? '1' : '0');
-    var pptBtn = root.querySelector('[data-act="ppt"]');
     var inBtn = root.querySelector('[data-act="in"]');
     var outBtn = root.querySelector('[data-act="out"]');
     var resetBtn = root.querySelector('[data-act="reset"]');
-    if (pptBtn) pptBtn.setAttribute('aria-pressed', String(ppt));
     if (resetBtn) {
       resetBtn.textContent = pct + '%';
       resetBtn.setAttribute('title', 'Reset zoom to 100% (currently ' + pct + '%, shortcut: 0)');
@@ -187,7 +183,7 @@
     var root = document.createElement('div');
     root.id = 'mzo-present-zoom';
     root.setAttribute('role', 'group');
-    root.setAttribute('aria-label', 'Presentation controls');
+    root.setAttribute('aria-label', 'Zoom');
     root.innerHTML =
       '<style>' +
       '#mzo-present-zoom{position:fixed;right:16px;bottom:16px;z-index:2147482000;display:flex;flex-direction:row;align-items:center;gap:2px;' +
@@ -198,29 +194,15 @@
       '#mzo-present-zoom:hover,#mzo-present-zoom:focus-within{opacity:1;box-shadow:0 4px 14px rgba(15,23,42,.14)}' +
       '#mzo-present-zoom button{appearance:none;border:0;background:transparent;color:var(--mzo-text,#0f172a);font:inherit;cursor:pointer;' +
       'border-radius:999px;display:inline-flex;align-items:center;justify-content:center;padding:0;transition:background .12s,color .12s;height:30px}' +
-      '#mzo-present-zoom button[data-act="ppt"]{padding:0 10px;font-size:12px;font-weight:650;gap:5px}' +
       '#mzo-present-zoom button[data-act="in"],#mzo-present-zoom button[data-act="out"]{width:30px}' +
       '#mzo-present-zoom button[data-act="reset"]{min-width:44px;padding:0 8px;font-size:12px;font-weight:650;font-variant-numeric:tabular-nums;color:var(--mzo-muted,#64748b)}' +
       '#mzo-present-zoom button[data-act="reset"][aria-pressed="true"]{color:var(--mzo-text,#0f172a);background:var(--mzo-hover,#f1f5f9)}' +
       '#mzo-present-zoom button:not(:disabled):hover{background:var(--mzo-hover,#f1f5f9)}' +
       '#mzo-present-zoom button:disabled{opacity:.35;cursor:not-allowed}' +
-      '#mzo-present-zoom button[data-act="ppt"][aria-pressed="true"]{background:var(--mzo-fill,#18181b);color:var(--mzo-on-fill,#fff)}' +
-      'html[data-mzo-theme="dark"] #mzo-present-zoom button[data-act="ppt"][aria-pressed="true"]{background:var(--mzo-accent,#3b82f6);color:#fff}' +
-      'html[data-mzo-theme="ppt"] #mzo-present-zoom button[data-act="ppt"][aria-pressed="true"]{background:#1d4ed8;color:#fff}' +
       '#mzo-present-zoom button:focus-visible{outline:2px solid var(--mzo-accent,#0f766e);outline-offset:1px}' +
-      '#mzo-present-zoom .mzo-pz-sep{width:1px;height:16px;background:var(--mzo-border,#e2e8f0);margin:0 4px;flex:none}' +
-      '#mzo-present-zoom svg{display:block;flex:none}' +
-      'html.mzo-in-shell[data-mzo-theme="ppt"] #mzo-present-zoom [data-act="ppt"]{display:none !important}' +
-      'html.mzo-in-shell[data-mzo-theme="ppt"] #mzo-present-zoom .mzo-pz-sep[data-ppt-sep]{display:none !important}' +
       '@media (max-width:899px){#mzo-present-zoom{display:none !important}}' +
       '@media print{#mzo-present-zoom{display:none !important}}' +
       '</style>' +
-      '<button type="button" data-act="ppt" aria-pressed="false" title="Presentation theme (shortcut P)">' +
-      '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">' +
-      '<rect x="3" y="4" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"></rect>' +
-      '<path d="M8 20h8M12 16v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>' +
-      '</svg><span>PPT</span></button>' +
-      '<span class="mzo-pz-sep" data-ppt-sep aria-hidden="true"></span>' +
       '<button type="button" data-act="out" aria-label="Zoom out" title="Zoom out (−)">−</button>' +
       '<button type="button" data-act="reset" title="Reset zoom to 100% (shortcut 0)">100%</button>' +
       '<button type="button" data-act="in" aria-label="Zoom in" title="Zoom in (+)">+</button>';
@@ -232,7 +214,6 @@
       if (act === 'in') step(1);
       else if (act === 'out') step(-1);
       else if (act === 'reset') setPct(100);
-      else if (act === 'ppt') togglePptTheme();
     });
 
     (document.body || document.documentElement).appendChild(root);
@@ -266,8 +247,10 @@
       ev.preventDefault();
       setPct(100);
     } else if (key === 'p' || key === 'P') {
-      ev.preventDefault();
-      togglePptTheme();
+      if (window.MzoTheme && typeof window.MzoTheme.togglePpt === 'function') {
+        ev.preventDefault();
+        window.MzoTheme.togglePpt();
+      }
     }
   });
 
