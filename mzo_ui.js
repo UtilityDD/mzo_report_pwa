@@ -429,7 +429,7 @@
   }
   function sidePanel(cfg) {
     var $id = function (x) { return typeof x === 'string' ? document.getElementById(x) : x; };
-    var side = $id(cfg.side), toggle = $id(cfg.toggle), label = $id(cfg.label), count = $id(cfg.count), clear = $id(cfg.clear);
+    var side = $id(cfg.side), toggle = $id(cfg.toggle) || document.getElementById('sideToggle') || document.querySelector('.ui-side-toggle'), label = $id(cfg.label), count = $id(cfg.count), clear = $id(cfg.clear);
     if (!side) return function () {};
     var layout = side.closest ? side.closest('.ui-layout') : side.parentElement;
 
@@ -454,15 +454,41 @@
       sideH.appendChild(closeBtn);
     }
 
-    // Filter panel remains hidden by default on desktop
-    if (!phone() && layout) {
-      layout.classList.add('side-collapsed');
-      side.classList.remove('open');
+    // Consistent Filters position: always first control in .ui-head > .ui-actions (right of the title).
+    if (toggle && document.body) {
+      var head = document.querySelector('.ui-page > .ui-head') || document.querySelector('header.ui-head') || document.querySelector('.ui-head');
+      if (head) {
+        var actions = null;
+        for (var ai = 0; ai < head.children.length; ai++) {
+          if (head.children[ai].classList && head.children[ai].classList.contains('ui-actions')) { actions = head.children[ai]; break; }
+        }
+        if (!actions) {
+          actions = document.createElement('div');
+          actions.className = 'ui-actions';
+          head.appendChild(actions);
+        }
+        if (toggle.parentElement !== actions || actions.firstElementChild !== toggle) {
+          actions.insertBefore(toggle, actions.firstChild);
+        }
+      }
+      toggle.classList.add('ui-side-toggle');
+      if (!toggle.getAttribute('aria-controls') && side.id) toggle.setAttribute('aria-controls', side.id);
+      if (!toggle.getAttribute('title')) toggle.setAttribute('title', 'Show or hide filters (F)');
     }
+
+    // Filter panel starts hidden: desktop collapsed, phone sheet closed.
+    side.classList.remove('open');
+    if (layout && !phone()) layout.classList.add('side-collapsed');
 
     function isShown() {
       if (phone()) return side.classList.contains('open');
       return layout ? !layout.classList.contains('side-collapsed') : side.classList.contains('open');
+    }
+
+    function syncToggle(open) {
+      if (!toggle) return;
+      toggle.setAttribute('aria-expanded', String(!!open));
+      toggle.classList.toggle('is-active', !!open);
     }
 
     function setOpen(open) {
@@ -470,30 +496,19 @@
       if (asSheet) {
         if (open === side.classList.contains('open')) return;
         side.classList.toggle('open', open);
-        if (toggle) {
-          toggle.setAttribute('aria-expanded', String(open));
-          toggle.classList.toggle('is-active', open);
-        }
+        syncToggle(open);
         sheetOn(open ? side : null, function () { setOpen(false); });
         if (open) { side.scrollTop = 0; backOpen(function () { setOpen(false); }); }
         else { backDone(); if (toggle && side.contains(document.activeElement)) try { toggle.focus({ preventScroll: true }); } catch (e) {} }
       } else {
-        // Desktop / widescreen: in-flow toggleable panel
-        if (layout) {
-          layout.classList.toggle('side-collapsed', !open);
-        }
+        if (layout) layout.classList.toggle('side-collapsed', !open);
         side.classList.toggle('open', open);
-        if (toggle) {
-          toggle.setAttribute('aria-expanded', String(open));
-          toggle.classList.toggle('is-active', open);
-        }
+        syncToggle(open);
       }
     }
 
     if (toggle) {
-      var initOpen = isShown();
-      toggle.setAttribute('aria-expanded', String(initOpen));
-      toggle.classList.toggle('is-active', initOpen);
+      syncToggle(false);
       toggle.addEventListener('click', function (e) {
         e.stopPropagation();
         setOpen(!isShown());
