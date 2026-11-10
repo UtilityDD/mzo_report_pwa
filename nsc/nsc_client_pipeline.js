@@ -394,6 +394,78 @@
     return [header, ...lines].join('\n');
   }
 
+  /** Office aggregates for trend snapshots (no PII). Same shape as lib/nsc_pipeline.buildViz. */
+  function buildViz(rows, kind) {
+    const offices = {};
+    let total = 0, over30 = 0, pole = 0, poleOver30 = 0;
+    const byClass = {};
+    const byDelay = {};
+    (rows || []).forEach(function (r) {
+      total += 1;
+      const code = String(r.CCC_CODE || '').replace(/\D/g, '').slice(-7) || 'unknown';
+      const cls = String(r.CONN_CLASS || '').trim().toUpperCase() || '?';
+      const delay = parseFloat(r.DelayInSC);
+      const serial = parseInt(r.DelaySerial, 10) || 0;
+      const poleCase = /^pole case$/i.test(String(r.PoleNonPole || '').trim());
+      if (poleCase) pole += 1;
+      if (isFinite(delay) && delay > 30) {
+        over30 += 1;
+        if (poleCase) poleOver30 += 1;
+      }
+      byClass[cls] = (byClass[cls] || 0) + 1;
+      const bucket = r.DelayRange || (serial ? String(serial) : 'unknown');
+      byDelay[bucket] = (byDelay[bucket] || 0) + 1;
+      if (!offices[code]) {
+        offices[code] = {
+          ccc: code, region: r.REGION || '', division: r.DIVN_NAME || '', supp: r.SUPP_OFF || '',
+          total: 0, over30: 0, pole: 0, poleOver30: 0, byClass: {}
+        };
+      }
+      const o = offices[code];
+      o.total += 1;
+      if (isFinite(delay) && delay > 30) o.over30 += 1;
+      if (poleCase) {
+        o.pole += 1;
+        if (isFinite(delay) && delay > 30) o.poleOver30 += 1;
+      }
+      o.byClass[cls] = (o.byClass[cls] || 0) + 1;
+    });
+    return {
+      kind: kind || 'working',
+      total: total, over30: over30, pole: pole, poleOver30: poleOver30,
+      byClass: byClass, byDelay: byDelay,
+      offices: Object.keys(offices).sort().map(function (k) { return offices[k]; })
+    };
+  }
+
+  function buildWithheldViz(rows) {
+    const viz = buildViz((rows || []).map(function (r) {
+      return Object.assign({}, r, { DelayInSC: '', DelaySerial: '', PoleNonPole: 'Non Pole Case' });
+    }), 'withheld');
+    viz.total = (rows || []).length;
+    viz.over30 = 0;
+    viz.pole = 0;
+    viz.poleOver30 = 0;
+    const byClass = {};
+    const offices = {};
+    (rows || []).forEach(function (r) {
+      const cls = String(r.CONN_CLASS || '').trim().toUpperCase() || '?';
+      byClass[cls] = (byClass[cls] || 0) + 1;
+      const code = String(r.CCC_CODE || '').replace(/\D/g, '').slice(-7) || 'unknown';
+      if (!offices[code]) {
+        offices[code] = {
+          ccc: code, region: r.REGION || '', division: r.DIVN_NAME || '', supp: r.SUPP_OFF || '',
+          total: 0, over30: 0, pole: 0, poleOver30: 0, byClass: {}
+        };
+      }
+      offices[code].total += 1;
+      offices[code].byClass[cls] = (offices[code].byClass[cls] || 0) + 1;
+    });
+    viz.byClass = byClass;
+    viz.offices = Object.keys(offices).sort().map(function (k) { return offices[k]; });
+    return viz;
+  }
+
   /**
    * @param {ArrayBuffer} arrayBuffer
    * @param {string} reportDateInput YYYY-MM-DD
@@ -456,6 +528,8 @@
   global.NSCClientPipeline = {
     processNscArrayBuffer,
     parseManualReportDate,
+    buildViz: buildViz,
+    buildWithheldViz: buildWithheldViz,
     OUTPUT_COLUMNS,
     WITHHELD_COLUMNS,
     SLIM_WORKING_COLUMNS,

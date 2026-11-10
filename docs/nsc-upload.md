@@ -6,7 +6,7 @@ CMO-style upload for the SAP Pending NSC dump. The browser parses the raw `.xlsb
 |---|---|
 | `lib/nsc_pipeline.js` | Transform, slim columns, viz aggregates, review (blocks / warnings) |
 | `lib/nsc_routes.js` | Preview / commit / undo, datasets, snapshots |
-| `nsc/upload.html` | Date + file → process → tick warnings → Replace on DISHA |
+| `nsc/upload.html` | Date + file → process → tick warnings → Replace on DISHA; or **Trend snapshot only** (multi-file old dumps → summary days, skip duplicates, live lists unchanged) |
 | `nsc.html` / `withheld.html` | Read `/api/nsc/dataset` and `/api/withheld/dataset` (VM file first, else Google); **Trend** view uses `nsc/nsc_trend.js` + snapshots |
 | `nsc/nsc_trend.js` | Zone → Region → Division → CCC chart + table from daily snapshots |
 
@@ -60,5 +60,5 @@ Who may upload: admin, `nsc-upload-autho`, or legacy `dm1`.
 
 `GET /api/nsc/snapshots?detail=1` returns recent daily totals (`workingTotal`, `workingOver30`, `withheldTotal`).  
 `GET /api/nsc/snapshots?offices=1&side=working|withheld` adds lean per-day office rows (`ccc`, `region`, `division`, `supp`, `total`, `over30`) for the Trend view on `nsc.html` / `withheld.html` (Zone → Region → Division → CCC via `nsc/nsc_trend.js`).  
-`POST /api/nsc/snapshots/import` (upload autho, VM only) backfills **summary snapshots only** from `{ items:[{ reportDate, working, withheld }], skipExisting:true }` — does not replace live CSVs; skips dates already on disk. Helpers: `vm/dev/build_nsc_trend_snapshots.py` + `vm/dev/build_nsc_trend_viz.js`.  
+`POST /api/nsc/snapshots/import` (upload autho, VM only) backfills **summary snapshots only** from `{ items:[{ reportDate, working, withheld }], skipExisting:true }` — does not replace live CSVs; skips dates already on disk. The upload page **Trend snapshot only** mode posts that body after parsing old `.xlsb` files in the browser.  
 `GET /api/nsc/viz` returns the current aggregates.

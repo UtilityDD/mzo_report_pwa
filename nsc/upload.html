@@ -185,20 +185,30 @@
       <p class="meta" id="metaBox"></p>
 
       <ol class="steps locked" id="uploadBlock">
-        <li>
-          <label for="reportDateInput">Date</label>
-          <input id="reportDateInput" type="date" disabled required />
+        <li id="modeRow" hidden>
+          <label>What to save</label>
+          <div class="ui-seg" id="uploadModeSeg" role="tablist" aria-label="Upload mode" style="margin-top:0.35rem;width:fit-content;max-width:100%">
+            <button type="button" id="modeLive" aria-pressed="true">Replace live lists</button>
+            <button type="button" id="modeSnap" aria-pressed="false">Trend snapshot only</button>
+          </div>
+          <p class="muted" id="modeHint" style="margin:0.4rem 0 0">Replace updates Pending NSC and Withheld on DISHA. Snapshot only adds a trend day from an old dump and never replaces the live lists (skips a date already stored).</p>
         </li>
         <li>
-          <label for="fileInput">Excel file</label>
+          <label for="reportDateInput" id="dateLabel">Date</label>
+          <input id="reportDateInput" type="date" disabled required />
+          <p class="muted" id="dateHint" style="margin:0.35rem 0 0" hidden>For several old files, leave blank when each filename has DATE dd-mm-yyyy.</p>
+        </li>
+        <li>
+          <label for="fileInput" id="fileLabel">Excel file</label>
           <input id="fileInput" type="file" accept=".xlsx,.xlsb,.xls,.csv" disabled />
         </li>
         <li>
-          <label>Publish</label>
+          <label id="publishLabel">Publish</label>
           <div class="row">
             <button class="primary" id="uploadBtn" disabled>Upload</button>
             <a class="link-btn ghost" href="/nsc.html">NSC</a>
             <a class="link-btn ghost" href="/withheld.html">Withheld</a>
+            <a class="link-btn ghost" href="/nsc.html?view=trend">Trend</a>
             <a class="link-btn ghost" href="/app.html">Home</a>
           </div>
         </li>
@@ -255,7 +265,7 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
-  <script src="/nsc/nsc_client_pipeline.js?v=113"></script>
+  <script src="/nsc/nsc_client_pipeline.js?v=114"></script>
   <script src="/mzo_data_hub.js?v=94"></script>
   <script src="/lib/sheet_mirror_client.js?v=110"></script>
   <script>
@@ -267,6 +277,15 @@
     const uploadBlock = document.getElementById('uploadBlock');
     const progressPanel = document.getElementById('progressPanel');
     const barFill = document.getElementById('barFill');
+    const modeRow = document.getElementById('modeRow');
+    const modeLive = document.getElementById('modeLive');
+    const modeSnap = document.getElementById('modeSnap');
+    const dateLabel = document.getElementById('dateLabel');
+    const dateHint = document.getElementById('dateHint');
+    const fileLabel = document.getElementById('fileLabel');
+    const publishLabel = document.getElementById('publishLabel');
+    /** 'live' = replace Working/Withheld; 'snap' = trend summary only */
+    let uploadMode = 'live';
     const progressLabel = document.getElementById('progressLabel');
     const retryBox = document.getElementById('retryBox');
     const manualBox = document.getElementById('manualBox');
@@ -419,6 +438,23 @@
     }
 
     reportDateInput.value = toIsoDate(new Date());
+
+    function setUploadMode(mode) {
+      uploadMode = mode === 'snap' ? 'snap' : 'live';
+      modeLive.setAttribute('aria-pressed', String(uploadMode === 'live'));
+      modeSnap.setAttribute('aria-pressed', String(uploadMode === 'snap'));
+      const snap = uploadMode === 'snap';
+      fileInput.multiple = snap;
+      dateHint.hidden = !snap;
+      dateLabel.textContent = snap ? 'Date (optional if in filename)' : 'Date';
+      fileLabel.textContent = snap ? 'Excel file(s) — old dumps' : 'Excel file';
+      publishLabel.textContent = snap ? 'Add to trend' : 'Publish';
+      uploadBtn.textContent = snap ? 'Add snapshots' : 'Upload';
+      reportDateInput.required = !snap;
+      hideWarnBox();
+    }
+    modeLive.addEventListener('click', function () { setUploadMode('live'); });
+    modeSnap.addEventListener('click', function () { setUploadMode('snap'); });
 
     fileInput.addEventListener('change', () => {
       const file = fileInput.files && fileInput.files[0];
@@ -676,6 +712,13 @@
           fileInput.disabled = false;
           reportDateInput.disabled = false;
           uploadBtn.disabled = false;
+          if (vmUploadEnabled) {
+            modeRow.hidden = false;
+            setUploadMode(uploadMode);
+          } else {
+            modeRow.hidden = true;
+            setUploadMode('live');
+          }
         } else {
           hideAdminDetails();
           showMsg('You are not authorised to upload NSC. Please ask an admin.', false);
@@ -787,19 +830,132 @@
     });
     confirmVmBtn.addEventListener('click', function () { commitVmUpload(); });
 
-    uploadBtn.addEventListener('click', async () => {
-      const file = fileInput.files && fileInput.files[0];
-      if (!file) {
-        showMsg('Choose a file first.', false);
-        return;
+    async function importTrendSnapshots(files) {
+      const fallbackDate = (reportDateInput.value || '').trim();
+      const items = [];
+      const localErrors = [];
+      progressPanel.classList.add('show');
+      setStep('stepProcess', '1. Process old files', false);
+      setStep('stepPending', '2. Save trend days', false);
+      setStep('stepWithheld', '—', false);
+      setStep('stepFinish', '3. Done', false);
+      progressLabel.textContent = 'Reading ' + files.length + ' file(s)…';
+      updateProgressUi();
+
+      for (var i = 0; i < files.length; i++) {
+        var file = files[i];
+        var iso = guessDateFromFileName(file.name) || fallbackDate;
+        if (!iso) {
+          localErrors.push({ file: file.name, message: 'No DATE dd-mm-yyyy in the name and no Date selected.' });
+          continue;
+        }
+        progressLabel.textContent = 'Processing ' + (i + 1) + '/' + files.length + ': ' + file.name;
+        updateProgressUi();
+        try {
+          var buffer = await file.arrayBuffer();
+          var result = NSCClientPipeline.processNscArrayBuffer(buffer, iso, file.name);
+          var working = result.published.length ? NSCClientPipeline.buildViz(result.published, 'working') : null;
+          var withheld = result.withheld.length ? NSCClientPipeline.buildWithheldViz(result.withheld) : null;
+          if (!working && !withheld) {
+            localErrors.push({ file: file.name, message: 'No Working or Withheld rows.' });
+            continue;
+          }
+          items.push({
+            reportDate: iso,
+            originalName: file.name,
+            working: working,
+            withheld: withheld
+          });
+          progressState.pendingTotal += result.published.length;
+          progressState.withheldTotal += result.withheld.length;
+          progressState.pendingSent = progressState.pendingTotal;
+          progressState.withheldSent = progressState.withheldTotal;
+          updateProgressUi();
+        } catch (e) {
+          localErrors.push({ file: file.name, message: (e && e.message) || String(e) });
+        }
       }
-      const reportDate = (reportDateInput.value || '').trim();
-      if (!reportDate) {
-        showMsg('Select the data date.', false);
+      setStep('stepProcess', '1. Process old files', true);
+
+      if (!items.length) {
+        var failMsg = localErrors.length
+          ? localErrors.map(function (e) { return e.file + ': ' + e.message; }).join('\n')
+          : 'Nothing to import.';
+        throw new Error(failMsg);
+      }
+
+      setStep('stepPending', '2. Save trend days', false);
+      progressLabel.textContent = 'Saving ' + items.length + ' snapshot day(s) (skip duplicates)…';
+      updateProgressUi();
+      var done = await postJson('/api/nsc/snapshots/import', { skipExisting: true, items: items });
+      setStep('stepPending', '2. Save trend days', true);
+      setStep('stepFinish', '3. Done', true);
+      progressState.phase = 'done';
+      updateProgressUi();
+
+      var lines = [done.message || 'Import finished.'];
+      if (done.imported && done.imported.length) {
+        lines.push('Added: ' + done.imported.map(function (x) {
+          return x.reportDate + ' (W ' + fmt(x.workingTotal) + (x.withheldTotal ? ' / H ' + fmt(x.withheldTotal) : '') + ')';
+        }).join(', '));
+      }
+      if (done.skipped && done.skipped.length) {
+        lines.push('Skipped (already on DISHA): ' + done.skipped.map(function (x) { return x.reportDate; }).join(', '));
+      }
+      if (done.errors && done.errors.length) {
+        lines.push('Errors: ' + done.errors.map(function (x) { return (x.reportDate || '') + ' ' + (x.message || ''); }).join('; '));
+      }
+      if (localErrors.length) {
+        lines.push('File errors: ' + localErrors.map(function (e) { return e.file + ' — ' + e.message; }).join('; '));
+      }
+      showMsg(lines.join('\n'), !(done.errors && done.errors.length) && !localErrors.length);
+      progressLabel.textContent = done.message || 'Done';
+    }
+
+    uploadBtn.addEventListener('click', async () => {
+      const files = fileInput.files ? Array.prototype.slice.call(fileInput.files) : [];
+      if (!files.length) {
+        showMsg('Choose a file first.', false);
         return;
       }
       if (!window.NSCClientPipeline || typeof NSCClientPipeline.processNscArrayBuffer !== 'function') {
         showMsg('Upload scripts failed to load. Refresh the page and try again.', false);
+        return;
+      }
+
+      /* ---- Trend snapshot only (VM): multi-file, no live replace ---- */
+      if (uploadMode === 'snap') {
+        if (!vmUploadEnabled) {
+          showMsg('Trend snapshots are only saved on the DISHA VM.', false);
+          return;
+        }
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = 'Working…';
+        hideRetryBox();
+        hideManualBox();
+        hideWarnBox();
+        msg.className = 'msg';
+        msg.textContent = '';
+        progressState = {
+          pendingTotal: 0, withheldTotal: 0, pendingSent: 0, withheldSent: 0,
+          phase: 'process', retryNote: ''
+        };
+        try {
+          await importTrendSnapshots(files);
+        } catch (e) {
+          showMsg((e && e.message) || String(e), false);
+          progressLabel.textContent = 'Failed';
+        } finally {
+          uploadBtn.disabled = false;
+          uploadBtn.textContent = 'Add snapshots';
+        }
+        return;
+      }
+
+      const file = files[0];
+      const reportDate = (reportDateInput.value || '').trim();
+      if (!reportDate) {
+        showMsg('Select the data date.', false);
         return;
       }
 
