@@ -3,7 +3,7 @@
  *
  *   Format   UI.n / inr / pct / esc / blank / date / fmtDate / days / age / title
  *   Data     UI.csv(text) → row objects · UI.load(key, render) · UI.refresh(btn, key, onText) · UI.office(code, name) · UI.regionName(s)
- *   Filters  UI.fill(select, values, allLabel) / mark / uniq / offices(rows) / lockScope · UI.facet · UI.sidePanel · UI.drill · UI.scopeTrail · UI.filterOfficeTabs · UI.snapOfficeTab
+ *   Filters  UI.fill(select, values, allLabel) / mark / uniq / offices(rows) / lockScope · UI.facet · UI.sidePanel · UI.drill · UI.scopeTrail · UI.filterOfficeTabs · UI.snapOfficeTab · UI.scopeChrome
  *   Views    UI.table(el, cfg) · UI.bar(v, max, label, tone) · UI.hist(el, rows, { onClick, active, tone }) · UI.line(el, cfg)
  *   Colour   UI.color(tone): 1–6 → categorical --mzo-c1…c6 · 'ok' | 'warn' | 'bad' → status marks · 'accent' · 'muted'
  *   Misc     UI.exportCsv(name, columns, rows) · UI.toast · UI.debounce · UI.copy · UI.drawer · UI.trapFocus(box) · UI.icon
@@ -1082,6 +1082,113 @@
   }
   if (document.body) sprite(); else document.addEventListener('DOMContentLoaded', sprite);
 
+  /* ---------- signed-in office chip + Performance Index rank (no grade) ---------- */
+  var RANK_CACHE_KEY = 'mzo_rating_rank_v1';
+  var LEVEL_MANY = { ccc: 'CCCs', division: 'divisions', region: 'regions' };
+
+  function skipScopeChrome() {
+    var path = (location.pathname || '').replace(/\/+$/, '') || '/';
+    if (/performance_index\.html$/i.test(path)) return true;
+    // Performance Index owns #mzo-scope-banner in its markup.
+    var ban = document.getElementById('mzo-scope-banner');
+    if (ban && ban.getAttribute('class') === 'pi-you') return true;
+    return false;
+  }
+
+  function paintScopeChip() {
+    var S = w.MzoScope;
+    var info = S && S.scopeChip ? S.scopeChip() : null;
+    if (!info) return;
+    var head = document.querySelector('.ui-page > .ui-head, main.ui-page > .ui-head, .ui-head');
+    if (!head || document.getElementById('mzo-scope-chip')) return;
+    var left = head.querySelector(':scope > div') || head;
+    left.classList.add('ui-head-title');
+    var chip = document.createElement('span');
+    chip.id = 'mzo-scope-chip';
+    chip.className = 'ui-scope-chip';
+    chip.textContent = info.kind + ': ' + info.name;
+    chip.title = info.kind + ' · ' + info.name;
+    var h1 = left.querySelector('h1');
+    if (h1) h1.insertAdjacentElement('afterend', chip);
+    else left.appendChild(chip);
+  }
+
+  function findRatedOffice(doc, code, level, name) {
+    if (!doc || !doc.offices) return null;
+    if (code && doc.offices[code]) return doc.offices[code];
+    var want = String(name || '').toLowerCase();
+    if (!want || !level) return null;
+    var keys = Object.keys(doc.offices);
+    for (var i = 0; i < keys.length; i++) {
+      var o = doc.offices[keys[i]];
+      if (o && o.level === level && String(o.name || '').toLowerCase() === want) return o;
+    }
+    return null;
+  }
+
+  function applyScopeRank(el, o, code) {
+    if (!o || !o.rated || o.rank == null || !o.of) { el.hidden = true; return; }
+    var many = LEVEL_MANY[o.level] || 'offices';
+    var href = '/performance_index.html' + (code ? ('?office=' + encodeURIComponent(code)) : '');
+    el.innerHTML = '<a href="' + href + '">#' + esc(String(o.rank)) + ' of ' + esc(String(o.of)) + ' ' + esc(many) + '</a>';
+    el.hidden = false;
+  }
+
+  function fetchRatingDoc() {
+    try {
+      var cached = sessionStorage.getItem(RANK_CACHE_KEY);
+      if (cached) {
+        var parsed = JSON.parse(cached);
+        if (parsed && parsed.offices) return Promise.resolve(parsed);
+      }
+    } catch (e) {}
+    var hub = w.mzoDataHub;
+    var tryApi = function () {
+      return fetch('/api/data/rating', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.status === 200 ? r.json() : null; })
+        .catch(function () { return null; });
+    };
+    var p = (hub && typeof hub.mirrorManifest === 'function')
+      ? Promise.resolve(hub.mirrorManifest(false)).then(function (m) { return m ? tryApi() : null; }).catch(function () { return null; })
+      : tryApi();
+    return p.then(function (doc) {
+      if (doc && doc.offices) {
+        try { sessionStorage.setItem(RANK_CACHE_KEY, JSON.stringify({ offices: doc.offices, generatedAt: doc.generatedAt || '' })); } catch (e) {}
+        return doc;
+      }
+      return null;
+    });
+  }
+
+  function paintScopeRank() {
+    var S = w.MzoScope;
+    var info = S && S.scopeChip ? S.scopeChip() : null;
+    if (!info) return;
+    var head = document.querySelector('.ui-page > .ui-head, main.ui-page > .ui-head, .ui-head');
+    if (!head) return;
+    var el = document.getElementById('mzo-scope-rank');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'mzo-scope-rank';
+      el.className = 'ui-scope-rank';
+      el.setAttribute('role', 'note');
+      el.hidden = true;
+      head.insertAdjacentElement('afterend', el);
+    }
+    var code = S.scopeOfficeCode ? S.scopeOfficeCode() : '';
+    fetchRatingDoc().then(function (doc) {
+      applyScopeRank(el, findRatedOffice(doc, code, info.level, info.name), code);
+    }).catch(function () { el.hidden = true; });
+  }
+
+  function scopeChrome() {
+    if (skipScopeChrome()) return;
+    var S = w.MzoScope;
+    if (!S || S.isUnscoped()) return;
+    paintScopeChip();
+    paintScopeRank();
+  }
+
   // Login gate when a page is opened on its own (inside app.html the shell checks the session).
   (function gate() {
     var inShell = false;
@@ -1092,11 +1199,27 @@
     (document.head || document.documentElement).appendChild(sc);
   })();
 
+  function bootScopeChrome() {
+    if (!document.documentElement.classList.contains('ui')) return;
+    // mzo_scope.js / offices.js may still be loading (defer); retry briefly.
+    var tries = 0;
+    (function tick() {
+      tries++;
+      if (w.MzoScope && typeof w.MzoScope.getScope === 'function') {
+        try { scopeChrome(); } catch (e) {}
+        return;
+      }
+      if (tries < 40) setTimeout(tick, 50);
+    })();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootScopeChrome);
+  else bootScopeChrome();
+
   w.UI = {
     n: n, inr: inr, pct: pct, esc: esc, blank: blank, date: date, fmtDate: fmtDate, days: days, age: age, title: title,
     csv: csv, office: office, regionName: regionName, load: load, refresh: refresh,
     fill: fill, mark: mark, uniq: uniq, offices: offices, lockScope: lockScope,
-    filterOfficeTabs: filterOfficeTabs, snapOfficeTab: snapOfficeTab, scopeTrail: scopeTrail,
+    filterOfficeTabs: filterOfficeTabs, snapOfficeTab: snapOfficeTab, scopeTrail: scopeTrail, scopeChrome: scopeChrome,
     table: table, bar: bar, hist: hist, line: line, color: color, facet: facet, sidePanel: sidePanel, drill: drill,
     exportCsv: exportCsv, toast: toast, debounce: debounce, copy: copy, drawer: drawer, trapFocus: trapFocus, icon: icon
   };

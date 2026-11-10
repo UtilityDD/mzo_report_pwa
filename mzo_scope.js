@@ -706,37 +706,48 @@
     }
   }
 
-  function mountBanner() {
+  /** Legacy no-op. Office chip + rank live in UI.scopeChrome (mzo_ui.js). */
+  function mountBanner() {}
+
+  /** Header chip label for the signed-in office, or null when unscoped / multi-office. */
+  function scopeChip() {
     const scope = getScope();
-    if (!scope || scope.unscoped) return;
-    if (document.getElementById('mzo-scope-banner')) return;
-    const bar = document.createElement('div');
-    bar.id = 'mzo-scope-banner';
-    bar.setAttribute('role', 'note');
-    bar.style.cssText = [
-      'font-size:12.5px',
-      'line-height:1.3',
-      'padding:7px 12px',
-      'margin:0 0 16px',
-      'background:var(--mzo-surface-2,#f5f5f4)',
-      'color:var(--mzo-text-2,#3f3f46)',
-      'border:1px solid var(--mzo-border,#e7e7e5)',
-      'border-radius:8px',
-      'display:flex',
-      'align-items:center',
-      'gap:8px',
-      'font-family:inherit'
-    ].join(';');
-    const dot = document.createElement('span');
-    dot.style.cssText = 'width:6px;height:6px;border-radius:50%;background:var(--mzo-accent,#0f766e);flex:none';
-    bar.appendChild(dot);
-    bar.appendChild(document.createTextNode('Showing ' + scope.label + ' — set by admin'));
-    const header = document.querySelector('.header, .dashboard-header, header, .app-header');
-    if (header && header.parentNode) {
-      header.parentNode.insertBefore(bar, header.nextSibling);
-    } else if (document.body) {
-      document.body.insertBefore(bar, document.body.firstChild);
+    if (!scope || scope.unscoped) return null;
+    if (scope.level === 'ccc' && scope.ccc) return { kind: 'CCC', name: scope.ccc, level: 'ccc' };
+    if (scope.level === 'division' && scope.division) return { kind: 'Division', name: scope.division, level: 'division' };
+    if (scope.level === 'region' && scope.region) return { kind: 'Region', name: scope.region, level: 'region' };
+    if (scope.level === 'codes' && scope.ccc) return { kind: 'CCC', name: scope.ccc, level: 'ccc' };
+    return null;
+  }
+
+  /** 7-digit office code for the signed-in office (for Performance Index deep links), or ''. */
+  function scopeOfficeCode() {
+    const chip = scopeChip();
+    if (!chip) return '';
+    const O = global.MzoOffices;
+    if (!O) return '';
+    if (chip.level === 'ccc' && O.parseCccName) {
+      const c = O.parseCccName(chip.name, (getScope() || {}).division);
+      return (c && c.ccc_code) || '';
     }
+    if (chip.level === 'division' && O.DIVISIONS) {
+      const want = O.key ? O.key(chip.name) : String(chip.name).toLowerCase();
+      for (let i = 0; i < O.DIVISIONS.length; i++) {
+        const d = O.DIVISIONS[i];
+        const k = O.key ? O.key(d.name) : String(d.name).toLowerCase();
+        if (k === want) return d.code || '';
+      }
+    }
+    if (chip.level === 'region' && O.REGIONS) {
+      const canon = O.canonRegion ? O.canonRegion(chip.name) : chip.name;
+      const want = O.key ? O.key(canon || chip.name) : String(canon || chip.name).toLowerCase();
+      for (let i = 0; i < O.REGIONS.length; i++) {
+        const r = O.REGIONS[i];
+        const k = O.key ? O.key(r.name) : String(r.name).toLowerCase();
+        if (k === want || r.name === canon) return r.code || '';
+      }
+    }
+    return '';
   }
 
   /** First office analysis tab this login may show: region | division | ccc. */
@@ -829,6 +840,8 @@
     filterRows: filterRows,
     lockFilters: lockFilters,
     mountBanner: mountBanner,
+    scopeChip: scopeChip,
+    scopeOfficeCode: scopeOfficeCode,
     officeTabFloor: officeTabFloor,
     scopePath: scopePath,
     listRegions: listRegions,
@@ -846,12 +859,5 @@
 
   global.MzoScope = api;
 
-  function boot() {
-    try { mountBanner(); } catch (_) {}
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot);
-  } else {
-    boot();
-  }
+  // Banner removed; UI.scopeChrome paints the header chip and rank.
 })(typeof window !== 'undefined' ? window : this);
