@@ -144,31 +144,31 @@
       return map[k];
     }
 
+    /** Same parser as unbilled.html — VM files may be TSV or CSV. */
     function parseCsv(text) {
-      var lines = String(text || '').split(/\r?\n/).filter(function (l) { return l.trim(); });
-      if (lines.length < 2) return [];
-      function split(line) {
-        var out = [], cur = '', q = false;
-        for (var i = 0; i < line.length; i++) {
-          var ch = line[i];
-          if (ch === '"') {
-            if (q && line[i + 1] === '"') { cur += '"'; i++; }
-            else q = !q;
-          } else if (ch === ',' && !q) { out.push(cur); cur = ''; }
-          else cur += ch;
-        }
-        out.push(cur);
-        return out;
-      }
-      var headers = split(lines[0]).map(function (h) { return h.trim(); });
+      if (!text || !String(text).trim()) return [];
+      var lines = String(text).replace(/^\uFEFF/, '').trim().split(/\r?\n/);
+      if (lines.length <= 1) return [];
+      var sep = lines[0].indexOf('\t') !== -1 ? '\t' : ',';
+      var header = lines[0].split(sep).map(function (s) {
+        return s.replace(/^\uFEFF/, '').replace(/^"|"$/g, '').trim();
+      });
       var rows = [];
-      for (var r = 1; r < lines.length; r++) {
-        var cols = split(lines[r]);
-        var o = {};
-        headers.forEach(function (h, i) { o[h] = (cols[i] || '').trim(); });
-        rows.push(o);
+      for (var i = 1; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if (!line) continue;
+        var parts = line.split(sep).map(function (s) { return s.replace(/^"|"$/g, '').trim(); });
+        var row = {};
+        for (var j = 0; j < header.length; j++) {
+          row[header[j]] = parts[j] !== undefined ? parts[j] : '';
+        }
+        rows.push(row);
       }
       return rows;
+    }
+
+    function unbCcc(r) {
+      return r.CCC_CODE || r.ccc_code || r.CCC || r.ccc || '';
     }
 
     function emptyT() { return { rows: [], first: function () { return ''; } }; }
@@ -205,21 +205,32 @@
       scheduleRebuild();
     }
 
+    function fetchUnbilledText(path) {
+      return fetch(path, { credentials: 'same-origin' }).then(function (r) {
+        if (r.status === 401) { location.replace('/login.html'); throw new Error('Unauthorized'); }
+        if (!r.ok) throw new Error(path + ' ' + r.status);
+        return r.text();
+      });
+    }
+
     function loadUnbilled() {
+      // Same endpoints as Unbilled & exceptions. Prefer summary UNBILLED_COUNT
+      // (current-month unbilled); fall back to outsort + chronic row counts.
       return Promise.all([
-        fetch('/api/unbilled/outsort', { credentials: 'same-origin' }).then(function (r) {
-          if (!r.ok) throw new Error('outsort ' + r.status);
-          return r.text();
-        }),
-        fetch('/api/unbilled/chronic', { credentials: 'same-origin' }).then(function (r) {
-          if (!r.ok) throw new Error('chronic ' + r.status);
-          return r.text();
-        })
-      ]).then(function (pair) {
-        src.unb = { ok: true, outsort: parseCsv(pair[0]), chronic: parseCsv(pair[1]) };
+        fetchUnbilledText('/api/unbilled/summary').catch(function () { return ''; }),
+        fetchUnbilledText('/api/unbilled/outsort').catch(function () { return ''; }),
+        fetchUnbilledText('/api/unbilled/chronic').catch(function () { return ''; })
+      ]).then(function (texts) {
+        var summary = parseCsv(texts[0]);
+        var outsort = parseCsv(texts[1]);
+        var chronic = parseCsv(texts[2]);
+        var ok = !!(summary.length || outsort.length || chronic.length);
+        if (!ok && window.console) console.warn('[profile] unbilled datasets empty');
+        src.unb = { ok: ok, summary: summary, outsort: outsort, chronic: chronic };
         scheduleRebuild();
-      }).catch(function () {
-        src.unb = { ok: false, outsort: [], chronic: [] };
+      }).catch(function (err) {
+        if (window.console) console.warn('[profile] unbilled load failed:', err && err.message);
+        src.unb = { ok: false, summary: [], outsort: [], chronic: [] };
         scheduleRebuild();
       });
     }
@@ -260,15 +271,22 @@
         if (!o) return;
         o.smart += 1;
       });
-      function addUnb(rows) {
-        (rows || []).forEach(function (r) {
-          var o = ensure(map, r.CCC_CODE || r.ccc_code);
-          if (o) o.unbilled += 1;
-        });
-      }
       if (unb && unb.ok) {
-        addUnb(unb.outsort);
-        addUnb(unb.chronic);
+        if (unb.summary && unb.summary.length) {
+          unb.summary.forEach(function (r) {
+            var o = ensure(map, unbCcc(r));
+            if (o) o.unbilled += Number(r.UNBILLED_COUNT || r.unbilled_count) || 0;
+          });
+        } else {
+          function addUnbRows(rows) {
+            (rows || []).forEach(function (r) {
+              var o = ensure(map, unbCcc(r));
+              if (o) o.unbilled += 1;
+            });
+          }
+          addUnbRows(unb.outsort);
+          addUnbRows(unb.chronic);
+        }
       }
       var list = Object.keys(map).map(function (k) { return finishOffice(map[k]); });
       return { offices: MzoScope.filterRows(list), liveAsOn: liveAsOn };

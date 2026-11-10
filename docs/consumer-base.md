@@ -7,7 +7,7 @@ Study page that puts **Live consumers** as the common reference, then shows Defe
 | Choice | Value |
 |--------|--------|
 | Denominator | **Live-only** (`CONN_STAT === 'LIVE'` on Consumers) |
-| Numerators (wave 1) | Defective + Smart (installed) + Unbilled (outsort + 3M chronic rows) |
+| Numerators (wave 1) | Defective + Smart (installed) + Unbilled (current-month summary; outsort+chronic fallback) |
 | Build | **Browser-join prototype** first (no new DB2 job) |
 | Name / URL | **Consumer & meter profile** → `consumer/profile.html` |
 | Nav | Consumers & meters → first item |
@@ -18,7 +18,7 @@ Study page that puts **Live consumers** as the common reference, then shows Defe
 live[ccc]      = Σ consumers.count where conn_stat = LIVE and ccc_code = ccc
 defective[ccc] = Σ defective_summary.total by ccc_code
 smart[ccc]     = count smart_meter_status rows with installed flag, by ccc_final
-unbilled[ccc]  = outsort rows + chronic rows by CCC_CODE  (row counts; may overlap)
+unbilled[ccc]  = Σ summary.UNBILLED_COUNT by CCC_CODE (same as Unbilled page “Current Month”); else outsort+chronic row counts
 
 defective / smart → % of Live
 unbilled → count per 1 lakh Live (`/ 1L`) — rare rates stay readable
@@ -33,7 +33,7 @@ Join key: **CCC code** only (via uniform `_ccc` / `ccc_code` / `MzoScope`), neve
 | Live base | `MzoRows` `consumers` | Pre-aggregated sheet; filter `conn_stat === 'LIVE'` |
 | Defective | `MzoRows` `defective_summary` | Sum `total` |
 | Smart | `MzoRows` `smart_meter_status` | Installed = non-empty `meter_installed_qty_in_field_active_in_hes` |
-| Unbilled | `GET /api/unbilled/outsort` + `/api/unbilled/chronic` | Same as unbilled page; empty if CRM sync not on this host |
+| Unbilled | `GET /api/unbilled/summary` (+ outsort/chronic fallback) | Same CSV parse as unbilled.html (TSV/CSV); empty if CRM sync not on this host |
 
 Each source’s as-of (when known) is shown; do not pretend one snapshot date.
 
