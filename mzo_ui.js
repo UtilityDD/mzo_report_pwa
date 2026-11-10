@@ -3,7 +3,7 @@
  *
  *   Format   UI.n / inr / pct / esc / blank / date / fmtDate / days / age / title
  *   Data     UI.csv(text) → row objects · UI.load(key, render) · UI.refresh(btn, key, onText) · UI.office(code, name) · UI.regionName(s)
- *   Filters  UI.fill(select, values, allLabel) / mark / uniq / offices(rows) / lockScope · UI.facet · UI.sidePanel · UI.drill
+ *   Filters  UI.fill(select, values, allLabel) / mark / uniq / offices(rows) / lockScope · UI.facet · UI.sidePanel · UI.drill · UI.scopeTrail · UI.filterOfficeTabs · UI.snapOfficeTab
  *   Views    UI.table(el, cfg) · UI.bar(v, max, label, tone) · UI.hist(el, rows, { onClick, active, tone }) · UI.line(el, cfg)
  *   Colour   UI.color(tone): 1–6 → categorical --mzo-c1…c6 · 'ok' | 'warn' | 'bad' → status marks · 'accent' · 'muted'
  *   Misc     UI.exportCsv(name, columns, rows) · UI.toast · UI.debounce · UI.copy · UI.drawer · UI.trapFocus(box) · UI.icon
@@ -597,8 +597,54 @@
    *   levels  group levels [{ k, label, field }]; default region/_region, division/_divn, ccc/_supp
    *   lists   row-level tabs after the groups [{ k, label }]; default [{ k: 'list', label: 'Applications' }]
    * The office path is the progressive filter: rows match through api.match(r). A login scope pins the
-   * levels it covers (shown in the trail, not clickable) and the report starts one level below. */
+   * levels it covers (shown in the trail, not clickable; Zone leads when scoped) and the report starts
+   * one level below. Higher office tabs are omitted. */
   var OFFICE_LEVELS = [{ k: 'region', label: 'Region', field: '_region' }, { k: 'division', label: 'Division', field: '_divn' }, { k: 'ccc', label: 'CCC', field: '_supp' }];
+  var OFFICE_TAB_ORDER = { region: 0, district: 0, division: 1, ccc: 2 };
+
+  /** Drop Region/Division tabs above the login floor. Non-office tabs pass through. */
+  function filterOfficeTabs(tabs) {
+    var floor = (w.MzoScope && w.MzoScope.officeTabFloor) ? w.MzoScope.officeTabFloor() : 'region';
+    var fi = OFFICE_TAB_ORDER[floor] != null ? OFFICE_TAB_ORDER[floor] : 0;
+    return (tabs || []).filter(function (t) {
+      var k = Array.isArray(t) ? t[0] : (t && (t.k || t.key)) || t;
+      if (!(k in OFFICE_TAB_ORDER)) return true;
+      return OFFICE_TAB_ORDER[k] >= fi;
+    });
+  }
+
+  /** If `tab` is an office level above the login floor, return the floor (district → division/ccc). */
+  function snapOfficeTab(tab) {
+    var floor = (w.MzoScope && w.MzoScope.officeTabFloor) ? w.MzoScope.officeTabFloor() : 'region';
+    if (!(tab in OFFICE_TAB_ORDER)) return tab;
+    if (OFFICE_TAB_ORDER[tab] < (OFFICE_TAB_ORDER[floor] != null ? OFFICE_TAB_ORDER[floor] : 0)) {
+      return floor === 'region' ? tab : floor;
+    }
+    return tab;
+  }
+
+  /** Quiet locked Zone → … → login office trail for pages that do not use UI.drill. */
+  function scopeTrail(el, hint) {
+    var host = typeof el === 'string' ? document.getElementById(el) : el;
+    if (!host) return;
+    var path = (w.MzoScope && w.MzoScope.scopePath) ? w.MzoScope.scopePath() : [];
+    if (!path.length) {
+      host.innerHTML = '';
+      host.hidden = true;
+      return;
+    }
+    host.hidden = false;
+    var nav = path.map(function (c, i) {
+      var last = i === path.length - 1;
+      var tip = c.k === 'zone' ? 'Zone' : c.k === 'region' ? 'Region' : c.k === 'division' ? 'Division' : c.k === 'ccc' ? 'CCC' : '';
+      return (i ? '<span class="sep" aria-hidden="true">/</span>' : '') +
+        '<span class="c' + (last ? '' : ' lock') + '"' + (tip ? ' title="' + esc(tip + ': ' + c.label) + '"' : '') +
+        (last ? ' aria-current="location"' : '') + '>' + esc(c.label) + '</span>';
+    }).join('');
+    host.innerHTML = '<div class="ui-trail ui-scope-trail"><nav aria-label="Your office">' + nav + '</nav>' +
+      (hint != null && hint !== '' ? '<small>' + esc(hint) + '</small>' : '') + '</div>';
+  }
+
   function drill(cfg) {
     var host = typeof cfg.el === 'string' ? document.getElementById(cfg.el) : cfg.el;
     var levels = cfg.levels || OFFICE_LEVELS, lists = cfg.lists || [{ k: 'list', label: 'Applications' }];
@@ -673,6 +719,7 @@
         }).join('');
         var crumbs = [], root = !Object.keys(pins).length;
         if (root) crumbs.push({ label: cfg.root || 'All offices', up: '', next: start });
+        else crumbs.push({ label: cfg.root || 'Malda Zone', kind: 'Zone', up: null, next: -1 });
         levels.forEach(function (l, i) {
           if (pins[l.k]) crumbs.push({ label: pins[l.k], kind: l.label, up: i === start - 1 ? '' : null, next: i === start - 1 ? start : -1 });
           else if (path[l.k]) crumbs.push({ label: path[l.k], kind: l.label, up: l.k, next: i + 1 });
@@ -1049,6 +1096,7 @@
     n: n, inr: inr, pct: pct, esc: esc, blank: blank, date: date, fmtDate: fmtDate, days: days, age: age, title: title,
     csv: csv, office: office, regionName: regionName, load: load, refresh: refresh,
     fill: fill, mark: mark, uniq: uniq, offices: offices, lockScope: lockScope,
+    filterOfficeTabs: filterOfficeTabs, snapOfficeTab: snapOfficeTab, scopeTrail: scopeTrail,
     table: table, bar: bar, hist: hist, line: line, color: color, facet: facet, sidePanel: sidePanel, drill: drill,
     exportCsv: exportCsv, toast: toast, debounce: debounce, copy: copy, drawer: drawer, trapFocus: trapFocus, icon: icon
   };

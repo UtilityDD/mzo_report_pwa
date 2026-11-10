@@ -739,6 +739,34 @@
     }
   }
 
+  /** First office analysis tab this login may show: region | division | ccc. */
+  function officeTabFloor() {
+    const scope = getScope();
+    if (!scope || scope.unscoped) return 'region';
+    if (scope.level === 'ccc' || scope.level === 'codes') return 'ccc';
+    if (scope.level === 'division') return 'division';
+    if (scope.level === 'region') return 'division';
+    return 'region';
+  }
+
+  /**
+   * Quiet hierarchy for the signed-in office: Zone → Region → Division → CCC
+   * as applicable. Empty when unscoped (zone/admin). Labels are short office names.
+   */
+  function scopePath() {
+    const scope = getScope();
+    if (!scope || scope.unscoped) return [];
+    const one = function (set) { return set && set.size === 1 ? Array.from(set)[0] : ''; };
+    const path = [{ k: 'zone', label: 'Malda Zone' }];
+    const region = scope.region || one(scope.regions);
+    const division = scope.division || one(scope.divisions);
+    const ccc = scope.ccc || (scope.level === 'ccc' ? one(scope.cccs) : '');
+    if (region) path.push({ k: 'region', label: region });
+    if (division) path.push({ k: 'division', label: division });
+    if (ccc) path.push({ k: 'ccc', label: ccc });
+    return path;
+  }
+
   function listRegions() {
     return Object.keys(HIERARCHY);
   }
@@ -801,6 +829,8 @@
     filterRows: filterRows,
     lockFilters: lockFilters,
     mountBanner: mountBanner,
+    officeTabFloor: officeTabFloor,
+    scopePath: scopePath,
     listRegions: listRegions,
     listDivisions: listDivisions,
     listCccs: listCccs,
