@@ -154,15 +154,14 @@
     root.setAttribute('data-zoom', String(pct));
     root.setAttribute('data-ppt', ppt ? '1' : '0');
     var pptBtn = root.querySelector('[data-act="ppt"]');
-    var outBtn = root.querySelector('[data-act="out"]');
-    var inBtn = root.querySelector('[data-act="in"]');
+    var zoomBtn = root.querySelector('[data-act="zoom"]');
     var label = root.querySelector('[data-act="label"]');
     if (pptBtn) pptBtn.setAttribute('aria-pressed', String(ppt));
-    if (outBtn) outBtn.disabled = pct <= STEPS[0];
-    if (inBtn) inBtn.disabled = pct >= STEPS[STEPS.length - 1];
     if (label) label.textContent = pct + '%';
-    var resetBtn = root.querySelector('[data-act="reset"]');
-    if (resetBtn) resetBtn.setAttribute('aria-label', 'Reset zoom, now ' + pct + ' percent');
+    if (zoomBtn) {
+      zoomBtn.setAttribute('aria-label', 'Zoom: ' + pct + '% (click to cycle, shortcut: + / - / 0)');
+      zoomBtn.setAttribute('aria-pressed', pct > 100 ? 'true' : 'false');
+    }
   }
 
   function setPct(pct) {
@@ -179,6 +178,13 @@
     setPct(STEPS[i]);
   }
 
+  function cycleZoom() {
+    var pct = readPct();
+    var idx = STEPS.indexOf(pct);
+    var nextIdx = (idx + 1) % STEPS.length;
+    setPct(STEPS[nextIdx]);
+  }
+
   function mount() {
     if (document.getElementById('mzo-present-zoom')) {
       sync();
@@ -190,61 +196,52 @@
     root.setAttribute('aria-label', 'Presentation controls');
     root.innerHTML =
       '<style>' +
-      '#mzo-present-zoom{position:fixed;right:16px;bottom:16px;z-index:2147482000;display:flex;align-items:center;gap:3px;' +
-      'padding:4px 5px;border-radius:11px;background:var(--mzo-surface,#ffffff);color:var(--mzo-text,#0f172a);' +
-      'border:1px solid var(--mzo-border-strong,#cbd5e1);box-shadow:0 10px 28px -4px rgba(15,23,42,.22),0 2px 6px rgba(15,23,42,.08);' +
-      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:12px;font-weight:600;' +
-      'font-variant-numeric:tabular-nums;user-select:none;transition:opacity .15s,box-shadow .15s,transform .15s}' +
+      '#mzo-present-zoom{position:fixed;right:14px;bottom:14px;z-index:2147482000;display:flex;align-items:center;gap:2px;' +
+      'padding:2px 3px;border-radius:8px;background:var(--mzo-surface,#ffffff);color:var(--mzo-text,#0f172a);' +
+      'border:1px solid var(--mzo-border-strong,#cbd5e1);box-shadow:0 4px 14px rgba(15,23,42,.12);' +
+      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:11px;font-weight:600;' +
+      'font-variant-numeric:tabular-nums;user-select:none;opacity:.72;transition:opacity .15s,box-shadow .15s,transform .15s}' +
       '@media (max-width:899px){' +
-      '#mzo-present-zoom{right:12px;bottom:14px;padding:3px;border-radius:99px}' +
-      '#mzo-present-zoom .mzo-pz-sep,#mzo-present-zoom [data-act="out"],#mzo-present-zoom [data-act="reset"],#mzo-present-zoom [data-act="in"]{display:none !important}' +
-      '#mzo-present-zoom button[data-act="ppt"]{height:30px;padding:0 10px;border-radius:99px;font-size:11.5px}' +
+      '#mzo-present-zoom{right:10px;bottom:12px;padding:2px;border-radius:99px}' +
+      '#mzo-present-zoom .mzo-pz-sep,#mzo-present-zoom [data-act="zoom"]{display:none !important}' +
+      '#mzo-present-zoom button[data-act="ppt"]{height:25px;padding:0 8px;border-radius:99px;font-size:11px}' +
       '}' +
-      '#mzo-present-zoom[data-zoom="100"][data-ppt="0"]{opacity:.85}' +
-      '#mzo-present-zoom:hover,#mzo-present-zoom:focus-within{opacity:1;transform:translateY(-1px)}' +
+      '#mzo-present-zoom:hover,#mzo-present-zoom:focus-within{opacity:1;box-shadow:0 6px 18px rgba(15,23,42,.18);transform:translateY(-1px)}' +
       '#mzo-present-zoom button{appearance:none;border:0;background:transparent;color:var(--mzo-text,#0f172a);font:inherit;cursor:pointer;' +
-      'min-width:30px;height:28px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:0 9px;transition:background .12s,color .12s,box-shadow .12s,transform .12s}' +
-      '#mzo-present-zoom button:disabled{opacity:.35;cursor:default}' +
-      '#mzo-present-zoom button:not(:disabled):not([aria-pressed="true"]):hover{background:var(--mzo-hover,#e2e8f0) !important;color:var(--mzo-text,#0f172a) !important}' +
+      'height:24px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:0 7px;transition:background .12s,color .12s}' +
+      '#mzo-present-zoom button:not(:disabled):not([aria-pressed="true"]):hover{background:var(--mzo-hover,#f1f5f9) !important;color:var(--mzo-text,#0f172a) !important}' +
       '#mzo-present-zoom button[data-act="ppt"]:not([aria-pressed="true"]):hover{background:#dbeafe !important;color:#1d4ed8 !important}' +
       'html[data-mzo-theme="dark"] #mzo-present-zoom button[data-act="ppt"]:not([aria-pressed="true"]):hover{background:#1e3a8a !important;color:#f8fafc !important}' +
-      '#mzo-present-zoom button[aria-pressed="true"],#mzo-present-zoom button[aria-pressed="true"]:hover{background:linear-gradient(135deg,#2563eb 0%,#0d9488 100%) !important;color:#ffffff !important;box-shadow:0 3px 10px rgba(37,99,235,.38) !important}' +
-      '#mzo-present-zoom button[aria-pressed="true"]:hover{background:linear-gradient(135deg,#1d4ed8 0%,#0f766e 100%) !important;color:#ffffff !important}' +
+      '#mzo-present-zoom button[aria-pressed="true"],#mzo-present-zoom button[aria-pressed="true"]:hover{background:linear-gradient(135deg,#2563eb 0%,#0d9488 100%) !important;color:#ffffff !important;box-shadow:0 2px 6px rgba(37,99,235,.32) !important}' +
       '#mzo-present-zoom button[aria-pressed="true"] span,#mzo-present-zoom button[aria-pressed="true"] svg{color:#ffffff !important}' +
       '#mzo-present-zoom button:focus-visible{outline:2px solid var(--mzo-accent,#0f766e);outline-offset:1px}' +
-      '#mzo-present-zoom .mzo-pz-sep{width:1px;height:16px;background:var(--mzo-border-strong,#cbd5e1);margin:0 2px;flex:none}' +
+      '#mzo-present-zoom .mzo-pz-sep{width:1px;height:14px;background:var(--mzo-border-strong,#cbd5e1);margin:0 1px;flex:none}' +
       '#mzo-present-zoom svg{display:block;flex:none}' +
-      // PPT theme: selected buttons use the theme's solid primary, not the old blue-teal gradient.
       'html[data-mzo-theme="ppt"] #mzo-present-zoom button[aria-pressed="true"],html[data-mzo-theme="ppt"] #mzo-present-zoom button[aria-pressed="true"]:hover{background:#1d4ed8 !important;box-shadow:none !important}' +
-      // In PPT inside the shell, the shell's top bar already shows the pressed PPT button: drop this copy
-      // (and the whole bar on narrow frames, where PPT is all it shows).
       'html.mzo-in-shell[data-mzo-theme="ppt"] #mzo-present-zoom [data-act="ppt"]{display:none !important}' +
       '@media (max-width:899px){html.mzo-in-shell[data-mzo-theme="ppt"] #mzo-present-zoom{display:none !important}}' +
       '@media print{#mzo-present-zoom{display:none !important}}' +
       '</style>' +
       '<button type="button" data-act="ppt" aria-pressed="false" title="Presentation theme (PPT slide mode · shortcut P)">' +
-      '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">' +
+      '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">' +
       '<rect x="3" y="4" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"></rect>' +
       '<path d="M8 20h8M12 16v4M7.5 11.5l2.5-2.5 2.5 2 3.5-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>' +
       '</svg>' +
       '<span>PPT</span></button>' +
       '<span class="mzo-pz-sep" aria-hidden="true"></span>' +
-      '<button type="button" data-act="out" aria-label="Smaller" title="Zoom out (−)">−</button>' +
-      '<button type="button" data-act="reset" aria-label="Reset zoom" title="Reset zoom (0)">' +
-      '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">' +
-      '<circle cx="10.5" cy="10.5" r="6.25" fill="none" stroke="currentColor" stroke-width="2"></circle>' +
-      '<path d="M15.2 15.2 L20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>' +
+      '<button type="button" data-act="zoom" aria-label="Zoom level" title="Zoom: click to cycle (100% · 125% · 150% · 175%), shortcut: + / - / 0">' +
+      '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">' +
+      '<circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"></circle>' +
+      '<path d="M14.5 14.5 L19.5 19.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>' +
+      '<path d="M7 10h6M10 7v6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>' +
       '</svg>' +
-      '<span data-act="label">100%</span></button>' +
-      '<button type="button" data-act="in" aria-label="Larger" title="Zoom in (+)">+</button>';
+      '<span data-act="label">100%</span></button>';
 
     root.addEventListener('click', function (ev) {
       var btn = ev.target && ev.target.closest ? ev.target.closest('button') : null;
       if (!btn || !root.contains(btn)) return;
       var act = btn.getAttribute('data-act');
-      if (act === 'in') step(1);
-      else if (act === 'out') step(-1);
-      else if (act === 'reset') setPct(100);
+      if (act === 'zoom') cycleZoom();
       else if (act === 'ppt') togglePptTheme();
     });
 

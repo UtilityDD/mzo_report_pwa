@@ -454,6 +454,12 @@
       sideH.appendChild(closeBtn);
     }
 
+    // Filter panel remains hidden by default on desktop
+    if (!phone() && layout) {
+      layout.classList.add('side-collapsed');
+      side.classList.remove('open');
+    }
+
     function isShown() {
       if (phone()) return side.classList.contains('open');
       return layout ? !layout.classList.contains('side-collapsed') : side.classList.contains('open');
