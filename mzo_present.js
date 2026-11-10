@@ -62,12 +62,6 @@
     } catch (e) {}
   }
 
-  function isPptTheme() {
-    var attr = document.documentElement.getAttribute('data-mzo-theme');
-    if (attr) return attr === 'ppt';
-    try { return localStorage.getItem('mzo_theme') === 'ppt' || localStorage.getItem('theme') === 'ppt'; } catch (e) { return false; }
-  }
-
   function clearMarks() {
     var marked = document.querySelectorAll('[data-mzo-zoom]');
     for (var i = 0; i < marked.length; i++) {
@@ -176,9 +170,11 @@
   }
 
   function mount() {
-    if (document.getElementById('mzo-present-zoom')) {
-      sync();
-      return;
+    var existing = document.getElementById('mzo-present-zoom');
+    // Drop any cached dock that still carries a PPT control (old SW copies).
+    if (existing) {
+      if (existing.querySelector('[data-act="ppt"]')) existing.remove();
+      else { sync(); return; }
     }
     var root = document.createElement('div');
     root.id = 'mzo-present-zoom';
