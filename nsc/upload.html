@@ -682,10 +682,13 @@
         whSheetLink.href = withheldSheetEditUrl;
 
         vmUploadEnabled = false;
+        var vmApiEnabled = false;
         try {
           const um = await fetch('/api/nsc/upload/meta', { credentials: 'same-origin' });
           if (um.ok) {
             const uj = await um.json();
+            vmApiEnabled = !!uj.enabled;
+            // Localhost / VM file upload: enabled on the server and this user may upload.
             vmUploadEnabled = !!(uj.enabled && uj.canUpload);
             if (uj.last && uj.last.reportDate) {
               metaBox.textContent = 'DISHA: ' + uj.last.reportDate +
@@ -712,7 +715,10 @@
           fileInput.disabled = false;
           reportDateInput.disabled = false;
           uploadBtn.disabled = false;
-          if (vmUploadEnabled) {
+          // Show Trend snapshot only when the local/VM upload API is on (not Vercel).
+          // canUpload may come from either /api/nsc/meta or /api/nsc/upload/meta.
+          if (vmApiEnabled && (vmUploadEnabled || data.canUpload)) {
+            vmUploadEnabled = true; // allow snapshot + live replace on this host
             modeRow.hidden = false;
             setUploadMode(uploadMode);
           } else {
