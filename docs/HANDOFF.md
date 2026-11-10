@@ -23,7 +23,7 @@ Read these next, in this order:
 
 | Group | Pages |
 |---|---|
-| New service connection | Pending NSC (`nsc.html`), Historical analysis, NSC KPIs (`nsc/kpi.html`), Weekly deposit vs disposal, Pending master card, Withheld, Pending load extension, Solar, JJM, Meter utilization, WRIDD schemes, Bharat Net, ICDS |
+| New service connection | Pending NSC (`nsc.html`), NSC: Historical Analysis, NSC KPIs (`nsc/kpi.html`), Weekly deposit vs disposal, Pending master card, Withheld, Pending load extension, Solar, JJM, Meter utilization, WRIDD schemes, Bharat Net, ICDS |
 | Revenue | Losses, Performance index, Collection, Disconnection tracker, Theft assessment, REM OSD > ₹5,000, REM defaulters (`rem/defaulters.html`) |
 | DD visit | Upcoming DD (`dd/upcomingDD.html`), DD visit (`dd/dd_visit.html`) |
 | Consumers & meters | Defective meter, Unbilled & exceptions (`consumer/unbilled.html`), Consumers, Docket calls, Docket KPI, Smart meter utilization |
