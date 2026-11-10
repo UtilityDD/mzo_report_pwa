@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en" class="ui">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Consumer &amp; meter profile · DISHA</title>
+  <script src="/mzo_theme.js?v=9"></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=23" />
+  <script src="/mzo_ui.js?v=21" defer></script>
+  <script src="/mzo_data_hub.js?v=94" defer></script>
+  <script src="/lib/offices.js?v=3" defer></script>
+  <script src="/mzo_scope.js?v=20" defer></script>
+  <script src="/mzo_rows.js?v=7" defer></script>
+</head>
+<body>
+  <main class="ui-page">
+    <header class="ui-head">
+      <div>
+        <h1>Consumer &amp; meter profile<span class="ui-badge ui-date" id="asOn">…</span></h1>
+      </div>
+      <div class="ui-actions">
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
+        <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
+      </div>
+    </header>
+
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h">
+          <h2>Filters<small id="activeLabel"></small></h2>
+          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
+        </div>
+        <div class="ui-side-sec ui-side-stack">
+          <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Search office" autocomplete="off" aria-label="Search office" /></label>
+        </div>
+        <div class="ui-side-sec">
+          <div aria-label="Highlight" id="fAbove"></div>
+        </div>
+      </aside>
+
+      <div class="ui-main">
+        <section class="ui-stats" id="stats" aria-label="Rates of Live consumers">
+          <button type="button" class="ui-stat" data-k="live"><div class="k">Live consumers</div><div class="v"><span class="ui-skel"></span></div></button>
+          <button type="button" class="ui-stat" data-k="def"><div class="k">Defective</div><div class="v"><span class="ui-skel"></span></div></button>
+          <button type="button" class="ui-stat" data-k="smt"><div class="k">Smart installed</div><div class="v"><span class="ui-skel"></span></div></button>
+          <button type="button" class="ui-stat" data-k="unb"><div class="k">Unbilled / 1L Live</div><div class="v"><span class="ui-skel"></span></div></button>
+        </section>
+
+        <section class="ui-panel">
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title" id="rhTitle">Detailed analysis</h2>
+                <span class="rh-badge" id="rhCount">0</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+              </div>
+            </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
+          </div>
+          <div id="drill"></div>
+          <div id="table"><div class="ui-empty">Loading…</div></div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', function () {
+    'use strict';
+    var $ = function (id) { return document.getElementById(id); };
+    var all = [], zone = null, shown = '', f = { q: '', above: '' };
+    var lastRows = [], lastCols = [];
+    // Progressive sources: paint as soon as Live (consumers) is ready; fill the rest in place.
+    var src = {
+      cons: null,
+      def: null,
+      sm: null,
+      unb: { ok: false, outsort: [], chronic: [] }
+    };
+    var rebuildTimer = 0;
+    var ranked = false;
+
+    var dr = UI.drill({
+      el: 'drill',
+      root: 'Malda Zone',
+      lists: [{ k: 'rates', label: 'CCCs' }],
+      onChange: render
+    });
+    var setActive = UI.sidePanel({
+      side: 'side',
+      toggle: 'sideToggle',
+      label: 'activeLabel',
+      count: 'activeCount',
+      clear: 'clearBtn',
+      onClear: function () {
+        f.q = '';
+        f.above = '';
+        $('q').value = '';
+        render();
+      }
+    });
+
+    // Start every fetch immediately (do not wait for UI wiring below).
+    prefetchAll();
+
+    function n(v) { return (Number(v) || 0).toLocaleString('en-IN'); }
+    function pct(num, den) {
+      if (!den) return '—';
+      return ((100 * num) / den).toFixed(2) + '%';
+    }
+    function per1L(num, den) {
+      if (!den) return '—';
+      var v = (num * 1e5) / den;
+      return (Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(1)) + ' / 1L';
+    }
+    function rate(num, den) { return den ? num / den : 0; }
+    function per1LVal(num, den) { return den ? (num * 1e5) / den : 0; }
+
+    function normCode(c) {
+      return String(c || '').replace(/\D/g, '').slice(-7);
+    }
+
+    function officeShell(code, region, division, ccc) {
+      var mapped = UI.office(code, ccc);
+      return {
+        CCC_CODE: code,
+        _region: (mapped && mapped.region) || region || 'Unmapped',
+        _divn: (mapped && mapped.division) || division || 'Unmapped',
+        _supp: (mapped && mapped.ccc) || ccc || code,
+        live: 0,
+        defective: 0,
+        smart: 0,
+        unbilled: 0
+      };
+    }
+
+    function ensure(map, code, region, division, ccc) {
+      var k = normCode(code);
+      if (!k) return null;
+      if (!map[k]) map[k] = officeShell(k, region, division, ccc);
+      return map[k];
+    }
+
+    function parseCsv(text) {
+      var lines = String(text || '').split(/\r?\n/).filter(function (l) { return l.trim(); });
+      if (lines.length < 2) return [];
+      function split(line) {
+        var out = [], cur = '', q = false;
+        for (var i = 0; i < line.length; i++) {
+          var ch = line[i];
+          if (ch === '"') {
+            if (q && line[i + 1] === '"') { cur += '"'; i++; }
+            else q = !q;
+          } else if (ch === ',' && !q) { out.push(cur); cur = ''; }
+          else cur += ch;
+        }
+        out.push(cur);
+        return out;
+      }
+      var headers = split(lines[0]).map(function (h) { return h.trim(); });
+      var rows = [];
+      for (var r = 1; r < lines.length; r++) {
+        var cols = split(lines[r]);
+        var o = {};
+        headers.forEach(function (h, i) { o[h] = (cols[i] || '').trim(); });
+        rows.push(o);
+      }
+      return rows;
+    }
+
+    function emptyT() { return { rows: [], first: function () { return ''; } }; }
+
+    function scheduleRebuild() {
+      if (rebuildTimer) return;
+      rebuildTimer = requestAnimationFrame(function () {
+        rebuildTimer = 0;
+        rebuild();
+      });
+    }
+
+    function rebuild() {
+      if (!src.cons) return;
+      var built = buildOffices(src.cons, src.def || emptyT(), src.sm || emptyT(), src.unb);
+      all = built.offices;
+      zone = zoneTotals(all);
+      if (built.liveAsOn) $('asOn').textContent = built.liveAsOn;
+      else if (!$('asOn').textContent || $('asOn').textContent === '…') $('asOn').textContent = 'Live';
+      if (!ranked) {
+        ranked = true;
+        try {
+          if (UI.reportRank) {
+            UI.reportRank({ rows: all, value: function (r) { return r.live; }, label: 'Live consumers' });
+          }
+        } catch (_) { /* ignore */ }
+      }
+      render();
+    }
+
+    function onRows(slot, t) {
+      if (!t || !t.rows) return;
+      src[slot] = t;
+      scheduleRebuild();
+    }
+
+    function loadUnbilled() {
+      return Promise.all([
+        fetch('/api/unbilled/outsort', { credentials: 'same-origin' }).then(function (r) {
+          if (!r.ok) throw new Error('outsort ' + r.status);
+          return r.text();
+        }),
+        fetch('/api/unbilled/chronic', { credentials: 'same-origin' }).then(function (r) {
+          if (!r.ok) throw new Error('chronic ' + r.status);
+          return r.text();
+        })
+      ]).then(function (pair) {
+        src.unb = { ok: true, outsort: parseCsv(pair[0]), chronic: parseCsv(pair[1]) };
+        scheduleRebuild();
+      }).catch(function () {
+        src.unb = { ok: false, outsort: [], chronic: [] };
+        scheduleRebuild();
+      });
+    }
+
+    /** Cache-first via MzoRows.load (paints IndexedDB immediately, then refreshes). */
+    function prefetchAll() {
+      MzoRows.load('consumers', function (t) { onRows('cons', t); });
+      MzoRows.load('defective_summary', function (t) { onRows('def', t); });
+      MzoRows.load('smart_meter_status', function (t) { onRows('sm', t); });
+      loadUnbilled();
+    }
+
+    function finishOffice(o) {
+      o.defPct = rate(o.defective, o.live);
+      o.smtPct = rate(o.smart, o.live);
+      o.unbPerL = per1LVal(o.unbilled, o.live);
+      return o;
+    }
+
+    function buildOffices(consT, defT, smT, unb) {
+      var map = {};
+      var liveAsOn = '';
+      (consT.rows || []).forEach(function (d) {
+        if (String(d.conn_stat || '').toUpperCase() !== 'LIVE') return;
+        var o = ensure(map, d.ccc_code, d._region, d._division, d._ccc);
+        if (!o) return;
+        o.live += Number(d.count) || 0;
+        if (!liveAsOn && d.date) liveAsOn = d.date;
+      });
+      (defT.rows || []).forEach(function (d) {
+        var o = ensure(map, d.ccc_code, d._region, d._division, d._ccc);
+        if (!o) return;
+        o.defective += Number(d.total) || 0;
+      });
+      (smT.rows || []).forEach(function (d) {
+        if (!d.meter_installed_qty_in_field_active_in_hes) return;
+        var o = ensure(map, d.ccc_final || d.ccc_code, d._region, d._division, d._ccc);
+        if (!o) return;
+        o.smart += 1;
+      });
+      function addUnb(rows) {
+        (rows || []).forEach(function (r) {
+          var o = ensure(map, r.CCC_CODE || r.ccc_code);
+          if (o) o.unbilled += 1;
+        });
+      }
+      if (unb && unb.ok) {
+        addUnb(unb.outsort);
+        addUnb(unb.chronic);
+      }
+      var list = Object.keys(map).map(function (k) { return finishOffice(map[k]); });
+      return { offices: MzoScope.filterRows(list), liveAsOn: liveAsOn };
+    }
+
+    function zoneTotals(rows) {
+      var t = { live: 0, defective: 0, smart: 0, unbilled: 0 };
+      rows.forEach(function (o) {
+        t.live += o.live;
+        t.defective += o.defective;
+        t.smart += o.smart;
+        t.unbilled += o.unbilled;
+      });
+      t.defPct = rate(t.defective, t.live);
+      t.smtPct = rate(t.smart, t.live);
+      t.unbPerL = per1LVal(t.unbilled, t.live);
+      return t;
+    }
+
+    function base() {
+      var q = f.q.trim().toLowerCase();
+      var z = zone || zoneTotals(all);
+      return all.filter(function (o) {
+        if (!dr.match(o)) return false;
+        if (q) {
+          var hay = (o._region + ' ' + o._divn + ' ' + o._supp + ' ' + o.CCC_CODE).toLowerCase();
+          if (hay.indexOf(q) === -1) return false;
+        }
+        if (f.above === 'def' && !(o.defPct > z.defPct)) return false;
+        if (f.above === 'smt' && !(o.smtPct > z.smtPct)) return false;
+        if (f.above === 'unb' && !(o.unbPerL > z.unbPerL)) return false;
+        return true;
+      });
+    }
+
+    function metricCols(nameLabel) {
+      return [
+        {
+          key: 'name',
+          label: nameLabel,
+          fmt: function (v, g) {
+            return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.parent ? '<span class="sub">' + UI.esc(g.parent) + '</span>' : '');
+          }
+        },
+        { key: 'live', label: 'Live', num: true, fmt: n },
+        { key: 'defective', label: 'Defective', num: true, fmt: n },
+        { key: 'defPct', label: 'Def %', num: true, fmt: function (_v, r) { return pct(r.defective, r.live); }, sortVal: function (r) { return r.defPct; } },
+        { key: 'smart', label: 'Smart', num: true, fmt: n },
+        { key: 'smtPct', label: 'Smart %', num: true, fmt: function (_v, r) { return pct(r.smart, r.live); }, sortVal: function (r) { return r.smtPct; } },
+        { key: 'unbilled', label: 'Unbilled', num: true, fmt: n },
+        { key: 'unbPerL', label: 'Unb / 1L', num: true, fmt: function (_v, r) { return per1L(r.unbilled, r.live); }, sortVal: function (r) { return r.unbPerL; } }
+      ];
+    }
+
+    function paintStats(rows) {
+      var t = zoneTotals(rows);
+      var map = {
+        live: n(t.live),
+        def: pct(t.defective, t.live),
+        smt: pct(t.smart, t.live),
+        unb: per1L(t.unbilled, t.live)
+      };
+      Array.prototype.forEach.call($('stats').querySelectorAll('.ui-stat'), function (el) {
+        var v = map[el.getAttribute('data-k')];
+        if (v != null) el.querySelector('.v').textContent = v;
+      });
+    }
+
+    function render() {
+      var view = base();
+      var z = zone || zoneTotals(all);
+      paintStats(view);
+
+      UI.facet('fAbove', [
+        { value: 'def', label: 'Defective % above zone', count: all.filter(function (o) { return o.defPct > z.defPct; }).length },
+        { value: 'smt', label: 'Smart % above zone', count: all.filter(function (o) { return o.smtPct > z.smtPct; }).length },
+        { value: 'unb', label: 'Unbilled / 1L above zone', count: all.filter(function (o) { return o.unbPerL > z.unbPerL; }).length }
+      ], f.above, function (v) { f.above = v || ''; render(); });
+
+      setActive((f.q ? 1 : 0) + (f.above ? 1 : 0));
+
+      if (dr.level() !== shown) {
+        $('table').__ui = null;
+        shown = dr.level();
+      }
+
+      var cols;
+      var rows;
+      if (dr.isList()) {
+        rows = view.map(function (o) {
+          return {
+            name: o._supp || o.CCC_CODE,
+            parent: o._divn,
+            row: o,
+            live: o.live,
+            defective: o.defective,
+            smart: o.smart,
+            unbilled: o.unbilled,
+            defPct: o.defPct,
+            smtPct: o.smtPct,
+            unbPerL: o.unbPerL
+          };
+        });
+        cols = metricCols('CCC');
+        UI.table('table', {
+          rows: rows,
+          columns: cols,
+          sort: { key: 'live', dir: 'desc' },
+          count: false,
+          empty: 'No CCCs for these filters.'
+        });
+      } else {
+        var groups = {};
+        view.forEach(function (r) {
+          var k = dr.key(r);
+          var g = groups[k] || (groups[k] = {
+            name: k,
+            parent: dr.parent(r),
+            row: r,
+            live: 0,
+            defective: 0,
+            smart: 0,
+            unbilled: 0
+          });
+          g.live += r.live;
+          g.defective += r.defective;
+          g.smart += r.smart;
+          g.unbilled += r.unbilled;
+        });
+        rows = Object.keys(groups).map(function (k) { return finishOffice(groups[k]); });
+        cols = metricCols(dr.label());
+        UI.table('table', {
+          rows: rows,
+          columns: cols,
+          sort: { key: 'live', dir: 'desc' },
+          count: false,
+          empty: 'No offices for these filters.',
+          onRow: function (g) { dr.open(g.name, g.row); }
+        });
+      }
+
+      lastRows = rows;
+      lastCols = cols;
+      $('rhTitle').textContent = dr.isList() ? 'CCC rates' : (dr.label() + ' wise report');
+      $('rhCount').textContent = String(rows.length);
+      dr.paint({ list: view.length });
+    }
+
+    $('q').addEventListener('input', function () { f.q = $('q').value || ''; render(); });
+    $('copyBtn').addEventListener('click', function () {
+      UI.copy(lastRows.map(function (r) {
+        return [r.name, r.live, r.defective, pct(r.defective, r.live), r.smart, pct(r.smart, r.live), r.unbilled, per1L(r.unbilled, r.live)].join('\t');
+      }).join('\n'));
+    });
+    $('exportBtn').addEventListener('click', function () {
+      UI.exportCsv('consumer_meter_profile.csv', lastCols, lastRows);
+    });
+
+    $('refreshBtn').addEventListener('click', function () {
+      var btn = $('refreshBtn');
+      btn.disabled = true;
+      ranked = false;
+      Promise.all([
+        MzoRows.reload('consumers').catch(function () { return emptyT(); }),
+        MzoRows.reload('defective_summary').catch(function () { return emptyT(); }),
+        MzoRows.reload('smart_meter_status').catch(function () { return emptyT(); })
+      ]).then(function (parts) {
+        if (parts[0]) src.cons = parts[0];
+        if (parts[1]) src.def = parts[1];
+        if (parts[2]) src.sm = parts[2];
+        loadUnbilled();
+        scheduleRebuild();
+      }).finally(function () { btn.disabled = false; });
+    });
+  });
+  </script>
+</body>
+</html>

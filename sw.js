@@ -13,7 +13,7 @@
 //   Same-origin copies are keyed by path plus the ?v= version, so a bumped ?v= is never answered
 //   with the previous version's copy; only an offline fallback takes any version of the path.
 //   - HTML responses get /mzo_present.js (desktop presentation zoom) injected after <head>.
-const CACHE_NAME = 'mzo-reports-cache-v397';
+const CACHE_NAME = 'mzo-reports-cache-v398';
 
 // Precached on install (not the data hub: it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -140,7 +140,7 @@ const NETWORK_FIRST = new Set([
   '/meter_utilization.html', '/jjm.html', '/wridd.html', '/bharatnet.html', '/icds.html', '/pmsgy.html',
   '/solar.html', '/rem/osd.html', '/rem/defaulters.html', '/admin_users.html', '/admin_users_pb.js', '/admin.html',
   '/docket.html', '/docket/kpi.html', '/smart_meter/dashboard.html',
-  '/consumer/defective_meter.html', '/consumer/unbilled.html', '/unbilled.html', '/lib/defective_meter_pipeline.js', '/lib/sheet_mirror_client.js', '/lib/offices.js',
+  '/consumer/profile.html', '/consumer/defective_meter.html', '/consumer/unbilled.html', '/unbilled.html', '/lib/defective_meter_pipeline.js', '/lib/sheet_mirror_client.js', '/lib/offices.js',
   '/stock/upload.html', '/stock/index.html', '/stock/script.js', '/stock/allotment.js',
   '/stock/allotment_view.js', '/stock/style.css', '/capex_all.html', '/advance_onm.html', '/cmo.html', '/accident/accident.html', '/safety_inspection.html', '/dtr/index.html', '/dtr/load.html', '/home.html', '/collect/', '/collect/index.html', '/collect/collect_app.js', '/executive_briefing.html', '/mzo_data_hub.js', '/mzo_theme.js',
   '/mzo_theme.css', '/mzo_ui.js', '/mzo_esc.js', '/mzo_presets_hub.js', '/mzo_scope.js',

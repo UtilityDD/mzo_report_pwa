@@ -26,7 +26,7 @@ Read these next, in this order:
 | New service connection | Pending NSC (`nsc.html`), NSC: Historical Analysis, NSC KPIs (`nsc/kpi.html`), Weekly deposit vs disposal, Pending master card, Withheld, Pending load extension, Solar, JJM, Meter utilization, WRIDD schemes, Bharat Net, ICDS |
 | Revenue | Losses, Performance index, Collection, **OSD summary** (`rem/osd.html`, common DB2 dump), Disconnection tracker, Theft assessment, REM OSD > ₹5,000, REM defaulters (`rem/defaulters.html`) — see [osd-revenue.md](osd-revenue.md) |
 | DD visit | Upcoming DD (`dd/upcomingDD.html`), DD visit (`dd/dd_visit.html`) |
-| Consumers & meters | Defective meter, Unbilled & exceptions (`consumer/unbilled.html`), Consumers, Docket calls, Docket KPI, Smart meter utilization |
+| Consumers & meters | **Consumer & meter profile** (`consumer/profile.html`, Live-base rates), Defective meter, Unbilled & exceptions (`consumer/unbilled.html`), Consumers, Docket calls, Docket KPI, Smart meter utilization — see [consumer-base.md](consumer-base.md) |
 | Vendor advances | Capex summary (`capex_all.html`), O&M summary (`advance_onm.html`) |
 | Substation & network | Power map (`power_map/map.html`), Line–highway crossings, PRT / transformer records (`prt-oil/`), Feeder outage |
 | Important | Performance index, CMO grievance, PM Surya Ghar, Priority SI works (`si-works/si.html`), JJM report, Accident reports, Safety app reports, Manpower report, Substation upkeeping, DTR records, Peak load measurements, Health check-up, Durga Puja 2026, Stock, Important data sheets, Sheet links |

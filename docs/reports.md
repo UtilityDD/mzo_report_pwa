@@ -35,6 +35,10 @@ Page: `feeder_outage.html` (sidebar Substation / Network, DataHub `CACHE_FEEDER_
 
 Page: `loss.html` (DataHub `CACHE_LOSS`). DataHub URL is the published Google CSV for Sheet1 (`pub?output=csv`). The browser fetches it; do not proxy through Vercel. After load: `MzoScope.filterRows`. Cell **J2** (`Update On`, `dd.mm.yyyy`) is the sheet update date. Show it quietly as **As on dd/mm/yyyy** next to the page title. Sheet links **Updated** uses that same J2 value, not the Google Last-Modified stamp. Loss Targets (`CACHE_LOSS_TARGET`) is a different tab and stays off Sheet links.
 
+## Consumer & meter profile
+
+Page: `consumer/profile.html` (sidebar **Consumers & meters**, first item). Browser-join study page: **Live** consumers (`CONN_STAT === 'LIVE'` from `MzoRows` `consumers`) are the denominator; Defective (`defective_summary.total`), Smart installed (`smart_meter_status`), and Unbilled (outsort + chronic row counts) are shown as **% of Live** and per 1,000. Spec: [consumer-base.md](consumer-base.md). No new DB2 job in this prototype. Unbilled missing on a host shows as 0 with a source note. Jump cards open Consumers, Defective, Smart meter, Unbilled.
+
 ## OSD summary (revenue hub)
 
 Page: `rem/osd.html` (sidebar **Revenue → OSD summary**, DataHub `CACHE_OSD_SUMMARY`). One CRM DB2 dump (`ISUDATA.CON_WBSEDCL_OSD_CUR`) feeds this hub plus Disconnection / REM views — see [osd-revenue.md](osd-revenue.md). Pipeline: `node scripts/sync/sync_revenue_osd_from_crm.js` extracts **by division chunk** (`6611`…`6632`, `6610`, 3 min timeout each) then merges; `--prefix=6611` for a single-chunk smoke test; `--fixture --dry-run` without office network. APIs: `GET /api/osd/meta`, `/api/osd/summary`, `/api/osd/dataset`; upload `POST /api/osd/upload` (same `DISCONNECTION_SYNC_SECRET` / disconnection-sync permission). The hub shows total OSD, REM ≥ ₹5,000 amount and **share of total**, plus class / Live·Deemed·Temp supply / high-value / payment-aging / office tabs, with jump cards into Disconnection, REM OSD > ₹5,000 and REM defaulters. Confirm `CON_STATUS` column name and spellings on the office network before the first live extract.
