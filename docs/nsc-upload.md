@@ -46,9 +46,9 @@ Empty after parse, over row caps, missing report date, or **required columns mis
 
 | File | Role |
 |---|---|
-| `nsc_working.csv` | Slim Working/Accepted (drawer + KPIs) |
-| `nsc_withheld.csv` | Slim Withheld |
-| `nsc_meta.json` | as-on, by, counts, sha256, warnings accepted |
+| `nsc_working.csv` | Slim Working/Accepted (drawer + KPIs); also the mirror source once uploaded |
+| `nsc_withheld.csv` | Slim Withheld; also the mirror source once uploaded |
+| `nsc_meta.json` | as-on, by, counts, sha256, warnings accepted; `/api/nsc/meta` prefers this over Google when the CSVs exist |
 | `nsc_viz_working.json` / `nsc_viz_withheld.json` | Current office aggregates |
 | `nsc_snapshots/{yyyy-mm-dd}.json` + `index.json` | Daily summary for pendency trend (no PII) |
 | `nsc_versions/<stamp>.json` | Last 2 packs for undo |

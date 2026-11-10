@@ -23,7 +23,10 @@ async function streamText(stream) {
 // Files the app writes in its data folder (MZO_FILES_DIR on the VM, the git-ignored data/ elsewhere):
 // the edited structures and the uploaded Safety Inspection and CMO grievance reports. Other repo files
 // are always the repo's.
-const DATA_FOLDER_FILES = new Set(['structure.csv', 'safety_inspection.csv', 'cmo_grievances.csv']);
+const DATA_FOLDER_FILES = new Set([
+    'structure.csv', 'safety_inspection.csv', 'cmo_grievances.csv',
+    'nsc_working.csv', 'nsc_withheld.csv'
+]);
 // The published sheet cmo_grievances was copied from until uploads moved to the VM: old cached pages may still fetch it.
 const CMO_LEGACY_SHEET = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS7GVh5HflVhouhVfFOEN2RuA1kCBedmD4Q0CJP02K61DAtWuo3P8XIS8CO7ocZQuJ20uCJBa9qsgZ6/pub?gid=1066071765&single=true&output=csv';
 
@@ -142,6 +145,58 @@ async function sources() {
             },
             async *rows(ctx) {
                 const input = ctx && ctx.input ? ctx.input : fs.createReadStream(resolve('cmo_grievances.csv'));
+                const parser = input.pipe(parse({ bom: true, relax_column_count: true }));
+                for await (const record of parser) yield record;
+            }
+        },
+        {
+            key: 'nsc_pending',
+            label: 'Pending NSC (working dump)',
+            group: 'New service connection',
+            pages: ['nsc.html', 'nsc/kpi.html', 'nsc/upload.html', 'performance_index.html', 'assistant.html', 'sheet_links.html'],
+            sourceType: 'csv_file',
+            sourceRef: { file: 'nsc_working.csv', cacheKey: 'CACHE_NSC_v5' },
+            sourceUrl: '/api/nsc/dataset',
+            schedule: 'hourly',
+            primaryKey: ['APPL_NO'],
+            holdBack: false,
+            notes: 'Uploaded on the VM from the SAP dump (nsc/upload.html; docs/nsc-upload.md). Until the first upload the Google sheet copy stays served.',
+            skip: fs.existsSync(resolve('nsc_working.csv')) ? undefined : 'no NSC working file uploaded yet (nsc/upload.html)',
+            dataHubKeys: ['CACHE_NSC_v5'],
+            urls: ['/api/nsc/dataset'],
+            sensitive: false,
+            version: fileVersion('nsc_working.csv'),
+            async raw() {
+                return { contentType: 'text/csv; charset=utf-8', stream: fs.createReadStream(resolve('nsc_working.csv')) };
+            },
+            async *rows(ctx) {
+                const input = ctx && ctx.input ? ctx.input : fs.createReadStream(resolve('nsc_working.csv'));
+                const parser = input.pipe(parse({ bom: true, relax_column_count: true }));
+                for await (const record of parser) yield record;
+            }
+        },
+        {
+            key: 'withheld',
+            label: 'Withheld NSC',
+            group: 'New service connection',
+            pages: ['withheld.html', 'nsc/upload.html', 'sheet_links.html'],
+            sourceType: 'csv_file',
+            sourceRef: { file: 'nsc_withheld.csv', cacheKey: 'CACHE_WITHHELD_v4' },
+            sourceUrl: '/api/withheld/dataset',
+            schedule: 'hourly',
+            primaryKey: ['APPL_NO'],
+            holdBack: false,
+            notes: 'Uploaded on the VM with Pending NSC (nsc/upload.html; docs/nsc-upload.md). Until the first upload the Google sheet copy stays served.',
+            skip: fs.existsSync(resolve('nsc_withheld.csv')) ? undefined : 'no NSC withheld file uploaded yet (nsc/upload.html)',
+            dataHubKeys: ['CACHE_WITHHELD_v4'],
+            urls: ['/api/withheld/dataset'],
+            sensitive: false,
+            version: fileVersion('nsc_withheld.csv'),
+            async raw() {
+                return { contentType: 'text/csv; charset=utf-8', stream: fs.createReadStream(resolve('nsc_withheld.csv')) };
+            },
+            async *rows(ctx) {
+                const input = ctx && ctx.input ? ctx.input : fs.createReadStream(resolve('nsc_withheld.csv'));
                 const parser = input.pipe(parse({ bom: true, relax_column_count: true }));
                 for await (const record of parser) yield record;
             }

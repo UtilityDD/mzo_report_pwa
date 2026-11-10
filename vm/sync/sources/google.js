@@ -82,7 +82,6 @@ const NET = 'Substation & network';
 const IMP = 'Important';
 
 const NSC_ID = '1QnmPKSAtwmW-m1-gn4qmZBWanx9_Vwbk63XhwyQBiKU';
-const WITHHELD_ID = '12nS8GAQ1weIMWoEIeydcdKTKd-XwHNu9W07DKudGuOg';
 const METER_PUB = '2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW';
 const PMSGY_PUB = '2PACX-1vRcFPRu1ywimetADU-XYIZ_x3McWUhR5ZbPUIIySO6_V8VJTyU9Vhw8DD-1RBEPFj0q2pUFMvutYV30';
 const DTR_PUB = '2PACX-1vRZPPnIF-T7wgii6J35a-3Wz7RC86Zq-eMSQud795CVJV-92Vy9oJjO6TDpjpgiLNAVPcVn6X_keILV';
@@ -102,26 +101,10 @@ const GVIZ_NOTE = ' CSV download is turned off for viewers of this file, so it i
 
 const SHEETS = [
     // ---- New service connection
-    { key: 'nsc_pending', label: 'Pending NSC (working dump)', group: NSC, cache: 'CACHE_NSC_v5',
-        pages: ['nsc.html', 'nsc/kpi.html', 'nsc/upload.html', 'performance_index.html', 'assistant.html', 'sheet_links.html'],
-        src: gviz(NSC_ID, { sheet: 'nsc_working' }), schedule: 'frequent', primaryKey: ['APPL_NO'],
-        peek: gviz(NSC_ID, { sheet: 'nsc_working', range: 'A1:AZ2' }).url, maxSkipHours: 6,
-        peekCount: gviz(NSC_ID, { sheet: 'nsc_working', tq: 'select count(A)' }).url,
-        extraUrls: ['/api/nsc/dataset'],
-        notes: 'The server fallback URL for /api/nsc/dataset (Google Sheet nsc_working, written by nsc/upload.html).' },
+    // nsc_pending + withheld moved to vm/sync/sources/files.js (VM upload; docs/nsc-upload.md).
     { key: 'nsc_followups', label: 'NSC follow-ups', group: NSC,
         pages: ['nsc.html'], src: gviz(NSC_ID, { sheet: 'Followups' }), schedule: 'frequent', primaryKey: ['id'], urls: [],
         notes: 'The Followups tab of the NSC workbook; the app writes it through Apps Script and the mirror reads it through gviz.' },
-    { key: 'withheld', label: 'Withheld NSC', group: NSC, cache: 'CACHE_WITHHELD_v4',
-        pages: ['withheld.html', 'nsc/upload.html', 'sheet_links.html'],
-        src: gviz(WITHHELD_ID, { sheet: 'Sheet1' }), schedule: 'frequent', primaryKey: ['APPL_NO'],
-        peek: gviz(WITHHELD_ID, { sheet: 'Sheet1', range: 'A1:Z2' }).url, maxSkipHours: 6,
-        peekCount: gviz(WITHHELD_ID, { sheet: 'Sheet1', tq: 'select count(A)' }).url,
-        // About 67,000 rows through gviz: a re-upload that shifts every row rewrites them all, which takes
-        // the VM several minutes, so it gets more than a frequent source's 4 min.
-        timeoutMs: 10 * 60000,
-        extraUrls: ['/api/withheld/dataset'],
-        notes: 'The server fallback URL for /api/withheld/dataset.' },
     { key: 'historical_nsc', label: 'Historical NSC analysis', group: NSC, pages: ['historical_nsc.html'],
         src: pub('2PACX-1vT1VYUaMC92oZPb3f452Q2b5WJf3Zhm02JdVq2Hsykt-_ipAcIIYaFdgYm4qZdZ8heGcrDon5eQA7nk', 2021450441), schedule: 'daily' },
     { key: 'weekly_report', label: 'Weekly deposit vs disposal', group: NSC, cache: 'CACHE_WEEKLY', pages: ['weekly.html'],

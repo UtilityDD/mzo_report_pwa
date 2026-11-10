@@ -3926,13 +3926,79 @@ async function requireNscUploader_(req, res) {
     return uploadUser;
 }
 
+/** Non-empty file in the server data folder (VM upload). */
+function dataFileNonEmpty_(name) {
+    try {
+        return fs.statSync(path.join(DATA_DIR, name)).size > 0;
+    } catch (_) {
+        return false;
+    }
+}
+
+/**
+ * VM NSC upload (lib/nsc_routes.js) writes slim CSVs + nsc_meta.json.
+ * When those files exist they are the live source — do not fall back to the Google sheet meta/URL,
+ * or the pages keep showing the old sheet date after a successful Replace on DISHA.
+ */
+function metaFromVmNscUpload_(raw) {
+    const m = raw && typeof raw === 'object' ? raw : {};
+    const reportDate = String(m.reportDate || (m.stats && m.stats.today) || '').trim();
+    const workingRows = m.workingRows != null ? Number(m.workingRows) : Number(m.publishedRows) || 0;
+    const withheldRows = m.withheldRows != null ? Number(m.withheldRows) : 0;
+    return {
+        reportDate,
+        uploadedAt: m.at || m.uploadedAt || null,
+        uploadedBy: m.byName || m.by || m.uploadedBy || '',
+        publishedRows: workingRows,
+        withheldRows,
+        originalName: m.originalName || '',
+        stats: Object.assign({}, m.stats || {}, {
+            today: reportDate || (m.stats && m.stats.today) || '',
+            publishedRows: workingRows,
+            withheldRows
+        }),
+        version: m.version || '',
+        source: 'upload'
+    };
+}
+
 app.get('/api/nsc/meta', async (req, res) => {
     if (!req.user) {
         return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     }
 
     const user = await resolveFreshUser_(req);
-    let meta = readLocalNscMeta_();
+    const canUpload = canUploadNsc_(user);
+    res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
+
+    const hasLocalWorking = dataFileNonEmpty_('nsc_working.csv');
+    const hasLocalWithheld = dataFileNonEmpty_('nsc_withheld.csv');
+    const localRaw = readLocalNscMeta_();
+    if ((hasLocalWorking || hasLocalWithheld) && localRaw) {
+        const meta = metaFromVmNscUpload_(localRaw);
+        const ver = meta.version || snapshotVersion_(meta) || null;
+        return res.json({
+            status: 'success',
+            canUpload,
+            isAdmin: isPortalAdmin_(user),
+            meta,
+            version: ver,
+            withheldVersion: ver ? `${ver}|w${meta.withheldRows || 0}` : (snapshotWithheldVersion_(meta) || null),
+            sheetScriptUrl: canUpload ? NSC_SHEET_SCRIPT_URL : '',
+            withheldSheetScriptUrl: canUpload ? NSC_WITHHELD_SHEET_SCRIPT_URL : '',
+            // Point DataHub at the local datasets (not the Google published CSV / stale mirror).
+            csvUrl: '/api/nsc/dataset',
+            withheldCsvUrl: '/api/withheld/dataset',
+            nscSheetEditUrl: canUpload ? `https://docs.google.com/spreadsheets/d/${NSC_WORKING_SPREADSHEET_ID}/edit` : '',
+            withheldSheetEditUrl: canUpload ? `https://docs.google.com/spreadsheets/d/${NSC_WITHHELD_SPREADSHEET_ID}/edit` : '',
+            nscSheetTab: 'nsc_working',
+            withheldSheetTab: 'Sheet1',
+            source: 'upload',
+            setupHint: null
+        });
+    }
+
+    let meta = localRaw;
     let source = meta ? 'local' : 'google_sheet';
     // Mirror mode: versions and CSV URLs from the manifest (the upload meta itself has no snapshot).
     const [nscMirror, whMirror] = await Promise.all([
@@ -3951,8 +4017,6 @@ app.get('/api/nsc/meta', async (req, res) => {
         source = 'google_sheet';
     }
 
-    res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
-    const canUpload = canUploadNsc_(user);
     return res.json({
         status: 'success',
         canUpload,
