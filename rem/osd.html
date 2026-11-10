@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en" class="ui">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OSD summary · DISHA</title>
+  <script src="/mzo_theme.js?v=9"></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=23" />
+  <script src="/mzo_ui.js?v=21" defer></script>
+  <script src="/mzo_data_hub.js?v=94" defer></script>
+  <script src="/lib/offices.js?v=3" defer></script>
+  <script src="/mzo_scope.js?v=20" defer></script>
+  <style>
+    .osd-jumps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 12px 16px 4px; }
+    .osd-jump { display: block; text-align: left; padding: 12px 14px; border: 1px solid var(--mzo-border); border-radius: 10px; background: var(--mzo-surface); color: inherit; text-decoration: none; }
+    .osd-jump:hover { border-color: var(--mzo-border-strong); }
+    .osd-jump .k { font-size: 12px; color: var(--mzo-muted); margin: 0 0 4px; }
+    .osd-jump .v { font-size: 15px; font-weight: 600; margin: 0; }
+    .osd-jump .s { font-size: 12px; color: var(--mzo-muted); margin: 4px 0 0; }
+    .osd-rem { padding: 12px 16px 16px; border-bottom: 1px solid var(--mzo-border); }
+    .osd-rem-bar { height: 10px; border-radius: 999px; background: var(--mzo-surface-2); overflow: hidden; display: flex; }
+    .osd-rem-bar > span { display: block; height: 100%; background: var(--mzo-c5); }
+    .osd-rem-meta { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; font-size: 12.5px; color: var(--mzo-muted); }
+    @media (max-width: 760px) {
+      .osd-jumps { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="ui-page">
+    <header class="ui-head">
+      <div>
+        <h1>OSD summary<span class="ui-badge ui-date" id="asOn">…</span></h1>
+        <p id="meta" style="display:none"></p>
+      </div>
+      <div class="ui-actions">
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
+        <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
+      </div>
+    </header>
+
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h">
+          <h2>Filters<small id="activeLabel"></small></h2>
+          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
+        </div>
+        <div class="ui-side-sec ui-side-stack">
+          <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Search office" autocomplete="off" aria-label="Search office" /></label>
+        </div>
+        <div class="ui-side-sec"><div aria-label="Class" id="fClass"></div></div>
+        <div class="ui-side-sec"><div aria-label="Supply status" id="fSupply"></div></div>
+        <div class="ui-side-sec"><div aria-label="High-value band" id="fValue"></div></div>
+        <div class="ui-side-sec"><div aria-label="Payment aging" id="fAging"></div></div>
+      </aside>
+
+      <div class="ui-main">
+        <section class="ui-stats" id="stats" aria-label="OSD totals">
+          <button type="button" class="ui-stat" data-k="total"><div class="k">Total OSD</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="rem"><div class="k">REM ≥ ₹5,000</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="share"><div class="k">REM share of total</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="cons"><div class="k">Consumers</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+        </section>
+
+        <div class="osd-jumps" id="jumps" hidden>
+          <a class="osd-jump" href="/disconnection.html" data-open="disconnection.html"><p class="k">Action list</p><p class="v">Disconnection tracker</p><p class="s">Follow-ups and paid / disconnected status</p></a>
+          <a class="osd-jump" href="/remosd5000.html" data-open="remosd5000.html"><p class="k">REM slice</p><p class="v">REM OSD &gt; ₹5,000</p><p class="s" id="jumpRem">—</p></a>
+          <a class="osd-jump" href="/rem/defaulters.html" data-open="rem/defaulters.html"><p class="k">REM lists</p><p class="v">REM defaulters</p><p class="s">Class and aging detail</p></a>
+        </div>
+
+        <div class="osd-rem" id="remShareBox" hidden>
+          <div class="osd-rem-bar" aria-hidden="true"><span id="remBar" style="width:0%"></span></div>
+          <div class="osd-rem-meta">
+            <span id="remShareLabel">REM-watched OSD</span>
+            <span id="remShareRest">Rest of OSD</span>
+          </div>
+        </div>
+
+        <section class="ui-panel">
+          <div class="report-head" id="reportHead">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title" id="tableTitle">Detailed analysis</h2>
+                <span class="rh-badge" id="rhCount">0</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+              </div>
+            </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
+          </div>
+          <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
+          <div id="scopeTrail" class="ui-scope-trail-host"></div>
+          <div id="table"><div class="ui-empty">Loading…</div></div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var $ = function (id) { return document.getElementById(id); };
+    var state = {
+      summary: null,
+      q: '',
+      classKey: '',
+      supplyKey: '',
+      valueKey: '',
+      agingKey: '',
+      view: 'class'
+    };
+    var sideApi = null;
+    var tableApi = null;
+
+    function inr(n) {
+      n = Math.round(Number(n) || 0);
+      if (Math.abs(n) >= 1e7) return '₹' + (n / 1e7).toFixed(2) + ' Cr';
+      if (Math.abs(n) >= 1e5) return '₹' + (n / 1e5).toFixed(2) + ' L';
+      return '₹' + n.toLocaleString('en-IN');
+    }
+
+    function pct(x) {
+      return ((Number(x) || 0) * 100).toFixed(1) + '%';
+    }
+
+    function openReport(url) {
+      if (window.parent && window.parent !== window && typeof window.parent.openPage === 'function') {
+        window.parent.openPage(url);
+        return false;
+      }
+      return true;
+    }
+
+    document.querySelectorAll('.osd-jump[data-open]').forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        if (!openReport(a.getAttribute('data-open'))) e.preventDefault();
+      });
+    });
+
+    function scopedOffices(summary) {
+      var rows = (summary && summary.byOffice) || [];
+      return MzoScope.filterRows(rows.map(function (o) {
+        return {
+          region: o.region,
+          division: o.division,
+          ccc: o.cccCode,
+          CCC_CODE: o.cccCode,
+          _region: o.region,
+          _divn: o.division,
+          _supp: o.cccCode,
+          consumers: o.consumers,
+          osd: o.osd,
+          remOsd: o.remOsd,
+          remConsumers: o.remConsumers,
+          remShare: o.remShare
+        };
+      }));
+    }
+
+    function paintFacets(summary) {
+      var mk = function (list, cur, el, onPick) {
+        UI.facet(el, (list || []).map(function (x) {
+          return { value: x.key, label: x.label, count: x.consumers };
+        }), cur, onPick);
+      };
+      mk(summary.byClass, state.classKey, $('fClass'), function (v) { state.classKey = v || ''; paint(); });
+      mk(summary.bySupply, state.supplyKey, $('fSupply'), function (v) { state.supplyKey = v || ''; paint(); });
+      mk(summary.byHighValue, state.valueKey, $('fValue'), function (v) { state.valueKey = v || ''; paint(); });
+      mk(summary.byAging, state.agingKey, $('fAging'), function (v) { state.agingKey = v || ''; paint(); });
+    }
+
+    function paintStats(summary) {
+      var t = summary.totals || {};
+      var map = {
+        total: { v: inr(t.osd), s: (t.consumers || 0).toLocaleString('en-IN') + ' consumers' },
+        rem: { v: inr(t.remOsd), s: (t.remConsumers || 0).toLocaleString('en-IN') + ' consumers ≥ ₹5,000' },
+        share: { v: pct(t.remShare), s: 'of total OSD watched by REM' },
+        cons: { v: (t.consumers || 0).toLocaleString('en-IN'), s: 'in current dump' }
+      };
+      Array.prototype.forEach.call($('stats').querySelectorAll('.ui-stat'), function (el) {
+        var k = el.getAttribute('data-k');
+        var m = map[k];
+        if (!m) return;
+        el.querySelector('.v').textContent = m.v;
+        el.querySelector('.s').textContent = m.s;
+      });
+      $('jumpRem').textContent = inr(t.remOsd) + ' · ' + pct(t.remShare) + ' of total';
+      $('remBar').style.width = Math.max(0, Math.min(100, (t.remShare || 0) * 100)) + '%';
+      $('remShareLabel').textContent = 'REM ≥ ₹5,000 · ' + inr(t.remOsd);
+      $('remShareRest').textContent = 'Rest · ' + inr((t.osd || 0) - (t.remOsd || 0));
+      $('jumps').hidden = false;
+      $('remShareBox').hidden = false;
+    }
+
+    function activeFilterCount() {
+      var n = 0;
+      if (state.q) n++;
+      if (state.classKey) n++;
+      if (state.supplyKey) n++;
+      if (state.valueKey) n++;
+      if (state.agingKey) n++;
+      return n;
+    }
+
+    function viewRows(summary) {
+      var views = {
+        class: summary.byClass,
+        supply: summary.bySupply,
+        value: summary.byHighValue,
+        aging: summary.byAging
+      };
+      if (state.view === 'office') {
+        var q = state.q.trim().toLowerCase();
+        return scopedOffices(summary).filter(function (o) {
+          if (!q) return true;
+          return (o.region + ' ' + o.division + ' ' + o.ccc).toLowerCase().indexOf(q) !== -1;
+        });
+      }
+      return views[state.view] || summary.byClass;
+    }
+
+    function paintTable(summary) {
+      var rows = viewRows(summary);
+      var cols;
+      if (state.view === 'office') {
+        cols = [
+          { key: 'division', label: 'Division' },
+          { key: 'ccc', label: 'CCC' },
+          { key: 'consumers', label: 'Consumers', fmt: function (v) { return Number(v).toLocaleString('en-IN'); } },
+          { key: 'osd', label: 'OSD', fmt: inr },
+          { key: 'remOsd', label: 'REM OSD', fmt: inr },
+          { key: 'remShare', label: 'REM share', fmt: pct }
+        ];
+      } else {
+        cols = [
+          { key: 'label', label: state.view === 'class' ? 'Class' : state.view === 'supply' ? 'Supply status' : state.view === 'value' ? 'High-value band' : 'Payment aging' },
+          { key: 'consumers', label: 'Consumers', fmt: function (v) { return Number(v).toLocaleString('en-IN'); } },
+          { key: 'osd', label: 'OSD', fmt: inr },
+          { key: 'share', label: 'Share of total', fmt: function (_v, r) {
+            var tot = (summary.totals && summary.totals.osd) || 0;
+            return tot ? pct(r.osd / tot) : '—';
+          } }
+        ];
+      }
+      $('rhCount').textContent = String(rows.length);
+      tableApi = UI.table($('table'), {
+        cols: cols,
+        rows: rows,
+        empty: 'No OSD summary yet. On the office network run: npm run sync:osd:crm'
+      });
+    }
+
+    function paint() {
+      var summary = state.summary;
+      if (!summary || !summary.totals) {
+        $('table').innerHTML = '<div class="ui-empty">No OSD summary on this server yet. Scaffold is ready — extract on the office network (see docs/osd-revenue.md).</div>';
+        return;
+      }
+      if (summary.asOn) $('asOn').textContent = summary.asOn;
+      paintStats(summary);
+      paintFacets(summary);
+      paintTable(summary);
+      if (sideApi) sideApi.setActive(activeFilterCount());
+    }
+
+    function setView(view) {
+      state.view = view;
+      Array.prototype.forEach.call($('tabs').querySelectorAll('[data-view]'), function (btn) {
+        btn.setAttribute('aria-selected', String(btn.getAttribute('data-view') === view));
+      });
+      var titles = { class: 'By class', supply: 'By supply status', value: 'By high-value band', aging: 'Not paid since long', office: 'By office' };
+      $('tableTitle').textContent = titles[view] || 'Detailed analysis';
+      paint();
+    }
+
+    $('tabs').innerHTML = [
+      ['class', 'Class'],
+      ['supply', 'Supply status'],
+      ['value', 'High value'],
+      ['aging', 'Payment aging'],
+      ['office', 'Office']
+    ].map(function (pair, i) {
+      return '<button type="button" role="tab" data-view="' + pair[0] + '" aria-selected="' + (i === 0 ? 'true' : 'false') + '">' + pair[1] + '</button>';
+    }).join('');
+    $('tabs').addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-view]');
+      if (!btn) return;
+      setView(btn.getAttribute('data-view'));
+    });
+
+    sideApi = UI.sidePanel({
+      side: $('side'),
+      toggle: $('sideToggle'),
+      label: $('activeLabel'),
+      count: $('activeCount'),
+      clear: $('clearBtn'),
+      onClear: function () {
+        state.q = ''; state.classKey = ''; state.supplyKey = ''; state.valueKey = ''; state.agingKey = '';
+        $('q').value = '';
+        paint();
+      }
+    });
+    $('q').addEventListener('input', function () {
+      state.q = $('q').value || '';
+      paint();
+    });
+
+    $('copyBtn').addEventListener('click', function () {
+      if (tableApi && tableApi.copy) tableApi.copy();
+      else UI.copy && UI.toast('Nothing to copy');
+    });
+    $('exportBtn').addEventListener('click', function () {
+      if (!state.summary) return;
+      UI.exportCsv('osd_summary_' + state.view + '.csv', viewRows(state.summary));
+    });
+
+    UI.refresh($('refreshBtn'), 'CACHE_OSD_SUMMARY');
+
+    UI.load('CACHE_OSD_SUMMARY', function (data) {
+      state.summary = data && data.totals ? data : (data && data.summary) || data;
+      paint();
+    });
+  });
+  </script>
+</body>
+</html>

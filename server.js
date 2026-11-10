@@ -1021,7 +1021,8 @@ async function getLoginCredentials(options = {}) {
 const SYNC_UPLOAD_ROUTES = {
     '/api/unbilled/upload': { env: 'UNBILLED_SYNC_SECRET', perm: 'unbilled-sync-autho' },
     '/api/disconnection/upload': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
-    '/api/disconnection/payments-upload': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' }
+    '/api/disconnection/payments-upload': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
+    '/api/osd/upload': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' }
 };
 
 function syncKeyMatches_(given, envName) {
@@ -1038,6 +1039,9 @@ const SYNC_READ_ROUTES = {
     '/api/disconnection/dataset': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
     '/api/disconnection/payments': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
     '/api/disconnection/meta': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
+    '/api/osd/dataset': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
+    '/api/osd/summary': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
+    '/api/osd/meta': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
     '/api/unbilled/outsort': { env: 'UNBILLED_SYNC_SECRET', perm: 'unbilled-sync-autho' },
     '/api/unbilled/chronic': { env: 'UNBILLED_SYNC_SECRET', perm: 'unbilled-sync-autho' },
     '/api/unbilled/summary': { env: 'UNBILLED_SYNC_SECRET', perm: 'unbilled-sync-autho' },
@@ -4519,6 +4523,7 @@ const { syncUnbilledFromCrm } = require('./scripts/sync/sync_unbilled_from_crm')
 const { syncDisconnectionToSupabase } = require('./scripts/sync/sync_disconnection_to_supabase');
 const { syncDisconnectionFromCrm } = require('./scripts/sync/sync_disconnection_from_crm');
 const { syncDisconnectionPayments } = require('./scripts/sync/sync_disconnection_payments');
+const { syncRevenueOsdFromCrm } = require('./scripts/sync/sync_revenue_osd_from_crm');
 const { syncPendingMcToSupabase } = require('./scripts/sync/sync_pending_mc_to_supabase');
 const { syncLoadExtToSupabase } = require('./scripts/sync/sync_load_ext_to_supabase');
 
@@ -4575,6 +4580,7 @@ function syncedMeta_(folder, localFile) {
 
 const DEFECTIVE_META = syncedMeta_('defective', 'defective_meta.json');
 const DISCONNECTION_META = syncedMeta_('disconnection', 'disconnection_meta.json');
+const OSD_META = syncedMeta_('osd', 'osd_meta.json');
 const PENDING_MC_META = syncedMeta_('pending_mc', 'pending_mc_meta.json');
 const LOAD_EXT_META = syncedMeta_('load_extension', 'load_ext_meta.json');
 const UNBILLED_META = syncedMeta_('unbilled', 'unbilled_meta.json');
@@ -5270,6 +5276,160 @@ syncRoute_('/api/disconnection/sync', {
     done: (m) => ({
         log: `Synced Disconnection Tracker: ${m.stats.totalConsumers} rows`,
         message: `Successfully synced ${m.stats.totalConsumers} consumers from Google Sheets to Cloud Cache.`
+    })
+});
+
+// Revenue OSD hub (common DB2 dump → summary + master; also refreshes disconnection.csv)
+const canSyncOsd_ = (user) => canSyncDisconnection_(user);
+
+app.get('/api/osd/meta', async (req, res) => {
+    if (!req.user) return UNAUTHORIZED_(res);
+    res.setHeader('Cache-Control', 'private, max-age=15, must-revalidate');
+    const user = await resolveFreshUser_(req);
+    let meta = await OSD_META.read();
+    if ((!meta || !meta.version) && !isVmHost_(req)) {
+        const vmMeta = await vmJson_('/api/osd/meta');
+        if (vmMeta && vmMeta.status === 'success') meta = vmMeta;
+    }
+    const synced = await syncedMetaFields_(meta, '', 'CACHE_OSD_SUMMARY', res);
+    return res.json({
+        status: 'success',
+        canSync: canSyncOsd_(user),
+        canCrmSync: canSyncOsd_(user) && isDbvisAvailable(),
+        ...synced,
+        summaryUrl: '/api/osd/summary',
+        csvUrl: '/api/osd/dataset',
+        datasetUrl: '/api/osd/dataset'
+    });
+});
+
+app.get('/api/osd/summary', async (req, res) => {
+    if (!req.user) return UNAUTHORIZED_(res);
+    res.setHeader('Cache-Control', 'private, max-age=30');
+    if (await sendDataFile_(req, res, path.join(DATA_DIR, 'osd_summary.json'), 'application/json; charset=utf-8')) return;
+    if (await fromVm_(req, res, '/api/osd/summary', 'application/json; charset=utf-8')) return;
+    return res.status(404).json({
+        status: 'error',
+        message: 'OSD summary not available yet. Run npm run sync:osd:crm on the office network (docs/osd-revenue.md).'
+    });
+});
+
+app.get('/api/osd/dataset', async (req, res) => {
+    if (!req.user) return UNAUTHORIZED_(res);
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    if (await sendDataFile_(req, res, path.join(DATA_DIR, 'osd_master.csv'), 'text/csv; charset=utf-8')) return;
+    if (await fromVm_(req, res, '/api/osd/dataset', 'text/csv; charset=utf-8')) return;
+    return res.status(404).type('text/plain').send('OSD master CSV not available yet.');
+});
+
+const osdUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 80 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (/\.(csv|tsv|txt|json)$/i.test(String(file.originalname || ''))) return cb(null, true);
+        cb(new Error('Only CSV or JSON files are allowed.'));
+    }
+});
+
+app.post('/api/osd/upload', (req, res, next) => {
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized to upload OSD datasets.' });
+    osdUpload.fields([
+        { name: 'master', maxCount: 1 },
+        { name: 'summary', maxCount: 1 },
+        { name: 'disconnection', maxCount: 1 },
+        { name: 'file', maxCount: 1 }
+    ])(req, res, async (err) => {
+        if (err) return res.status(400).json({ status: 'error', message: err.message });
+        try {
+            const user = await resolveFreshUser_(req, true);
+            if (!canSyncOsd_(user)) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: 'Not authorized to upload OSD data. Ask an admin to grant disconnection-sync permission.'
+                });
+            }
+            const files = req.files || {};
+            const saved = [];
+            if (files.master && files.master[0]) {
+                writeDataFile_('osd_master.csv', files.master[0].buffer);
+                saved.push('master');
+            }
+            if (files.summary && files.summary[0]) {
+                writeDataFile_('osd_summary.json', files.summary[0].buffer);
+                saved.push('summary');
+            }
+            if (files.disconnection && files.disconnection[0]) {
+                writeDataFile_('disconnection.csv', files.disconnection[0].buffer);
+                saved.push('disconnection');
+            }
+            if (files.file && files.file[0]) {
+                const name = String(files.file[0].originalname || '').toLowerCase();
+                if (name.includes('summary') || name.endsWith('.json')) {
+                    writeDataFile_('osd_summary.json', files.file[0].buffer);
+                    saved.push('summary');
+                } else {
+                    writeDataFile_('osd_master.csv', files.file[0].buffer);
+                    saved.push('master');
+                }
+            }
+            if (!saved.length) {
+                return res.status(400).json({ status: 'error', message: 'No OSD files received.' });
+            }
+
+            let summary = null;
+            try {
+                summary = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'osd_summary.json'), 'utf8'));
+            } catch (_) { /* optional */ }
+            const nowIso = new Date().toISOString();
+            const version = (summary && summary.version) || ('v:' + nowIso.replace(/[-:TZ.]/g, '').slice(0, 14));
+            const metaPayload = {
+                version,
+                updatedAt: nowIso,
+                asOn: (summary && summary.asOn) || nowIso.slice(0, 10),
+                reportDate: (summary && summary.asOn) || nowIso.slice(0, 10),
+                source: (summary && summary.source) || 'CRM DB2 upload',
+                stats: (summary && summary.totals) || {},
+                summaryUrl: '/api/osd/summary',
+                csvUrl: '/api/osd/dataset',
+                datasetUrl: '/api/osd/dataset'
+            };
+            OSD_META.set(metaPayload);
+            writeDataFile_('osd_meta.json', Buffer.from(JSON.stringify(metaPayload, null, 2), 'utf8'));
+            refreshMirror(['osd', 'disconnection'].filter((k) => saved.includes(k) || k === 'osd'), 'OSD VM upload');
+            logActivity({
+                username: user.email || user.username || user.Username,
+                name: user.name || user.Name || user.email,
+                type: 'upload',
+                details: `Uploaded OSD datasets (${saved.join(', ')})`
+            }).catch(() => { });
+            return res.json({
+                status: 'success',
+                message: `OSD upload saved (${saved.join(', ')})`,
+                saved
+            });
+        } catch (uploadErr) {
+            return res.status(500).json({ status: 'error', message: uploadErr.message });
+        }
+    });
+});
+
+syncRoute_('/api/osd/crm-sync', {
+    label: 'CRM Revenue OSD Sync',
+    can: canSyncOsd_,
+    forbidden: 'Not authorized to sync OSD from CRM. Ask an admin to grant disconnection-sync permission.',
+    run: async (req) => {
+        if (!isDbvisAvailable()) {
+            throw new Error('DbVisualizer CLI is not available on this server. Run npm run sync:osd:crm on an office workstation connected to DB2.');
+        }
+        const userToken = req ? (parseCookies(req.headers.cookie).mzo_session || (req.headers.authorization && req.headers.authorization.slice(7).trim())) : null;
+        return await syncRevenueOsdFromCrm({ fresh: true, userToken });
+    },
+    meta: OSD_META,
+    mirrorKeys: ['osd', 'disconnection'],
+    bareError: true,
+    done: (m) => ({
+        log: `CRM Synced OSD hub: ${m.summary && m.summary.totals ? m.summary.totals.consumers : 'complete'} rows`,
+        message: m.message || 'CRM OSD sync complete.'
     })
 });
 
