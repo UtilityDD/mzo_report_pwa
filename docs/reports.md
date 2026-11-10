@@ -8,12 +8,7 @@ Sidebar **Important → Sheet links** opens `sheet_links.html`. The page does no
 
 ## NSC upload
 
-`/nsc/upload.html` turns the raw SAP Excel into clean rows **in the browser** (`nsc/nsc_client_pipeline.js`) and writes them to Google Sheets through Apps Script (see [apps-script.md](apps-script.md)); NSC rows are no longer stored in Supabase.
-
-- Working/Accepted rows go to the `nsc_working` tab, one row per `APPL_NO` (last row wins). A Working/Accepted row stays here even if a withheld date or reason is still filled.
-- Withheld rows go to the `NSCWH` workbook, `Sheet1`. If the file has **no** Withheld rows, the upload does not clear that sheet and keeps the previous Withheld meta.
-- A small version record (who, when, row counts) is kept in Apps Script document properties.
-- Who can upload: admins, the `nsc_upload_autho` flag (Admin → User Management → **NSC Raw Upload**), or the legacy username `dm1`.
+`/nsc/upload.html` turns the raw SAP Excel into clean rows **in the browser** (`nsc/nsc_client_pipeline.js`). On the **VM**, it then follows the CMO-style preview → tick warnings → commit path and stores **slim** Working/Withheld CSVs plus daily **summary snapshots** (see [nsc-upload.md](nsc-upload.md)). One file may contain Working and Withheld together, or either alone (missing side is kept). Google Sheets via Apps Script remain the fallback when VM upload is off (Vercel). Who can upload: admins, `nsc_upload_autho` (**NSC Raw Upload**), or legacy `dm1`.
 
 ## Bharat Net
 
@@ -55,7 +50,7 @@ Shared copy is a **Followups** tab via `apps-script/disconnection_followup.gs` (
 
 Pending NSC (`nsc.html`) uses the same follow-up rule on the trimmed application number (`APPL_NO`), in its own store `mzo_nsc_followups` and outbox `mzo_nsc_followup_outbox`. Paste `apps-script/nsc_mirror_and_followup.gs` over the existing nsc_working Apps Script and deploy a new version of that same web app. `GET /api/nsc/followup-meta` returns `sheetScriptUrl` from `NSC_FOLLOWUP_SCRIPT_URL` (the same nsc_working `/exec` URL; env overrides the default). A new NSC upload keeps a note when the same application number is still in the file.
 
-The page is one detailed analysis table with tabs (Region → Division → CCC → Consumer, delay ranges, pole, class, phase, agency, WO, Follow-ups) under the left filter panel. A Region, Division or CCC row opens the next level. Consumer and Follow-ups sort by delay; a row opens the drawer with the application details and its follow-ups (latest first, author and date in small text, a box to add one). The delete control is shown only when the signed-in role is admin. On those two tabs **Export** downloads every application in view with its details; on the other tabs it exports the table. Deep links: `?region=`, `?division=`, `?ccc=`, `?q=`, `?kpi=delay30|pole|nonpole|withheld|ind|procb|com3` (`delay30` selects the cumulative "More than 1 month" filter), `?followups=1`. The old draft URLs (`nsc_simple.html`, `nsc_pipeline.html`, `nsc_classic.html`) redirect here. A new upload on this device (`mzo_nsc_pending_refresh`) or another tab (`BroadcastChannel('mzo-nsc')`) shows a **Load latest** notice; `mzo_nsc_seen_version` remembers the version already seen.
+The page has three view modes: **Aging Focus (>30d)**, **Detailed Analysis**, and **Trend**. Trend drills Zone → Region → Division → CCC from VM daily snapshots (`/api/nsc/snapshots?offices=1&side=working`, `nsc/nsc_trend.js`); deep link `?view=trend`. Detailed Analysis is one table with tabs (Region → Division → CCC → Consumer, delay ranges, pole, class, phase, agency, WO, Follow-ups) under the left filter panel. A Region, Division or CCC row opens the next level. Consumer and Follow-ups sort by delay; a row opens the drawer with the application details and its follow-ups (latest first, author and date in small text, a box to add one). The delete control is shown only when the signed-in role is admin. On those two tabs **Export** downloads every application in view with its details; on the other tabs it exports the table. Deep links: `?region=`, `?division=`, `?ccc=`, `?q=`, `?kpi=delay30|pole|nonpole|withheld|ind|procb|com3` (`delay30` selects the cumulative "More than 1 month" filter), `?followups=1`, `?view=focus|detail|trend`. The old draft URLs (`nsc_simple.html`, `nsc_pipeline.html`, `nsc_classic.html`) redirect here. A new upload on this device (`mzo_nsc_pending_refresh`) or another tab (`BroadcastChannel('mzo-nsc')`) shows a **Load latest** notice; `mzo_nsc_seen_version` remembers the version already seen.
 
 ## Defective Meter
 

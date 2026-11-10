@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Pending NSC · DISHA</title>
   <script src="/mzo_theme.js?v=9"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=23" />
+  <link rel="stylesheet" href="/mzo_theme.css?v=24" />
   <!-- auth gate (loads auth.js), app-update check, service worker when opened on its own -->
   <script src="/mzo_presets_hub.js?v=89"></script>
   <script src="/mzo_ui.js?v=21" defer></script>
@@ -14,6 +14,7 @@
   <script src="/lib/offices.js?v=3" defer></script>
   <script src="/mzo_scope.js?v=20" defer></script>
   <script src="/mzo_rows.js?v=7" defer></script>
+  <script src="/nsc/nsc_trend.js?v=1" defer></script>
   <style>
     .ui-head {
       align-items: center;
@@ -314,6 +315,7 @@
         <div class="ui-seg" id="viewModeSeg" role="tablist" aria-label="View mode">
           <button type="button" id="btnFocusView" aria-pressed="true">Aging Focus (&gt;30d)</button>
           <button type="button" id="btnDetailView" aria-pressed="false">Detailed Analysis</button>
+          <button type="button" id="btnTrendView" aria-pressed="false">Trend</button>
         </div>
         <a class="ui-btn" id="uploadBtn" href="nsc/upload.html" hidden><svg class="ui-i">
             <use href="#ui-upload" />
@@ -444,6 +446,11 @@
               agencies</span>
             <button type="button" class="ui-btn primary sm" id="openDetailedBtn">Detailed Analysis &rarr;</button>
           </div>
+        </div>
+
+        <!-- Stage 3: Office pendency trend (Zone → CCC) from VM snapshots -->
+        <div id="trendView" hidden>
+          <div id="nscTrendHost"></div>
         </div>
 
         <!-- Stage 2: Detailed Analysis View (12 Drill Tabs & Full Table) -->
@@ -646,15 +653,24 @@
       }
 
       var params = new URLSearchParams(location.search);
-      var viewMode = params.get('view') === 'detail' || params.get('tab') ? 'detail' : 'focus';
+      var viewMode = params.get('view') === 'trend' ? 'trend'
+        : (params.get('view') === 'detail' || params.get('tab') ? 'detail' : 'focus');
+      var trendCtl = null;
 
       function setViewMode(mode) {
-        viewMode = mode;
-        var isFocus = mode === 'focus';
-        $('btnFocusView').setAttribute('aria-pressed', String(isFocus));
-        $('btnDetailView').setAttribute('aria-pressed', String(!isFocus));
-        $('focusView').hidden = !isFocus;
-        $('detailView').hidden = isFocus;
+        var next = mode === 'trend' || mode === 'detail' ? mode : 'focus';
+        var switched = next !== viewMode;
+        viewMode = next;
+        $('btnFocusView').setAttribute('aria-pressed', String(viewMode === 'focus'));
+        $('btnDetailView').setAttribute('aria-pressed', String(viewMode === 'detail'));
+        $('btnTrendView').setAttribute('aria-pressed', String(viewMode === 'trend'));
+        $('focusView').hidden = viewMode !== 'focus';
+        $('detailView').hidden = viewMode !== 'detail';
+        $('trendView').hidden = viewMode !== 'trend';
+        if (viewMode === 'trend' && window.NscTrend) {
+          if (!trendCtl) trendCtl = NscTrend.mount({ root: 'nscTrendHost', side: 'working', title: 'Pending NSC trend' });
+          else if (switched && trendCtl.reload) trendCtl.reload();
+        }
       }
 
       function renderFocusView(b) {
@@ -1199,7 +1215,8 @@
         else if (/com/.test(k)) f.kpi = 'com3';
         if (p.get('q')) { f.q = p.get('q').trim(); $('q').value = f.q; tab = 'consumer'; }
         if (p.get('followups') === '1') tab = 'followups';
-        if (p.get('view') === 'detail' || p.get('tab') || p.get('kpi') || p.get('q') || p.get('followups')) viewMode = 'detail';
+        if (p.get('view') === 'trend') viewMode = 'trend';
+        else if (p.get('view') === 'detail' || p.get('tab') || p.get('kpi') || p.get('q') || p.get('followups')) viewMode = 'detail';
       }
 
       function setData(t) {
@@ -1218,6 +1235,7 @@
       /* ---------------- events ---------------- */
       $('btnFocusView').addEventListener('click', function () { setViewMode('focus'); });
       $('btnDetailView').addEventListener('click', function () { setViewMode('detail'); });
+      $('btnTrendView').addEventListener('click', function () { setViewMode('trend'); });
       $('openDetailedBtn').addEventListener('click', function () { setViewMode('detail'); $('detailView').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
 
       $('fStatTotal').addEventListener('click', function () {

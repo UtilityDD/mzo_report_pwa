@@ -13,7 +13,7 @@
 //   Same-origin copies are keyed by path plus the ?v= version, so a bumped ?v= is never answered
 //   with the previous version's copy; only an offline fallback takes any version of the path.
 //   - HTML responses get /mzo_present.js (desktop presentation zoom) injected after <head>.
-const CACHE_NAME = 'mzo-reports-cache-v399';
+const CACHE_NAME = 'mzo-reports-cache-v402';
 
 // Precached on install (not the data hub: it changes with dataset keys)
 const PRECACHE_ASSETS = [
@@ -173,7 +173,7 @@ function isAppHtmlRequest(request, url) {
   return accept.indexOf('text/html') !== -1;
 }
 
-const PRESENT_SNIPPET = '<script src="/mzo_present.js?v=2" defer></' + 'script>';
+const PRESENT_SNIPPET = '<script src="/mzo_present.js?v=3" defer></' + 'script>';
 
 function injectPresentScript(response) {
   const decoder = new TextDecoder();

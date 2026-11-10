@@ -5,7 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NSC Upload</title>
-  <link rel="stylesheet" href="/mzo_theme.css?v=23" />
+  <link rel="stylesheet" href="/mzo_theme.css?v=24" />
   <script src="/mzo_ui.js?v=21" defer></script>
   <style>
     :root {
@@ -156,6 +156,21 @@
       font-variant-numeric: tabular-nums;
     }
     .step-line.done { color: var(--ok); }
+    .warn-box {
+      display: none;
+      margin-top: 1rem;
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      border: 1px solid var(--mzo-border-strong);
+      background: var(--mzo-warn-soft);
+      color: var(--mzo-warn);
+      font-size: 0.88rem;
+      line-height: 1.45;
+    }
+    .warn-box.show { display: block; }
+    .warn-box label { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.45rem 0; cursor: pointer; color: var(--mzo-text); }
+    .warn-box input { margin-top: 3px; }
+    .warn-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
     @media (max-width: 760px) {
       body { padding: 14px 12px 72px; }
       .card { padding: 14px; }
@@ -205,6 +220,14 @@
       </div>
 
       <div id="msg" class="msg"></div>
+      <div class="warn-box" id="warnBox">
+        <strong style="display:block;margin-bottom:0.35rem;color:var(--mzo-text)">Confirm before replacing</strong>
+        <div id="warnList"></div>
+        <div class="warn-actions">
+          <button type="button" class="primary" id="confirmVmBtn" disabled>Replace on DISHA</button>
+          <button type="button" class="ghost" id="cancelVmBtn">Cancel</button>
+        </div>
+      </div>
 
       <div class="manual-box" id="manualBox">
         <strong>Sheet write failed</strong>
@@ -232,7 +255,7 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
-  <script src="/nsc/nsc_client_pipeline.js?v=111"></script>
+  <script src="/nsc/nsc_client_pipeline.js?v=113"></script>
   <script src="/mzo_data_hub.js?v=94"></script>
   <script src="/lib/sheet_mirror_client.js?v=110"></script>
   <script>
@@ -261,6 +284,8 @@
     let withheldSheetScriptUrl = '';
     let nscSheetEditUrl = FALLBACK_NSC_SHEET;
     let withheldSheetEditUrl = FALLBACK_WH_SHEET;
+    let vmUploadEnabled = false;
+    let vmPreview = null; // { token, warnings, summary }
     let lastJob = null;
     let progressState = {
       pendingTotal: 0,
@@ -270,6 +295,111 @@
       phase: 'idle',
       retryNote: ''
     };
+    const warnBox = document.getElementById('warnBox');
+    const warnList = document.getElementById('warnList');
+    const confirmVmBtn = document.getElementById('confirmVmBtn');
+    const cancelVmBtn = document.getElementById('cancelVmBtn');
+
+    function hideWarnBox() {
+      warnBox.classList.remove('show');
+      warnList.innerHTML = '';
+      confirmVmBtn.disabled = true;
+      vmPreview = null;
+    }
+
+    function showVmWarnings(data) {
+      const warns = data.warnings || [];
+      vmPreview = { token: data.token, warnings: warns.map(function (w) { return w.code; }), summary: data.summary };
+      if (!warns.length) {
+        warnList.innerHTML = '<div class="muted" style="color:var(--mzo-ok)">No warnings — the file looks consistent with the usual dump.</div>';
+        confirmVmBtn.disabled = false;
+      } else {
+        warnList.innerHTML = warns.map(function (w) {
+          return '<label><input type="checkbox" data-code="' + String(w.code).replace(/"/g, '') + '"><span>' +
+            String(w.message || w.code).replace(/</g, '&lt;') + '</span></label>';
+        }).join('');
+        confirmVmBtn.disabled = true;
+        warnList.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+          cb.addEventListener('change', syncVmConfirm);
+        });
+      }
+      var s = data.summary || {};
+      var note = 'Working ' + fmt(s.workingRows) +
+        (s.replaceWorking ? ' (replace)' : ' (keep previous)') +
+        ' · Withheld ' + fmt(s.withheldRows) +
+        (s.replaceWithheld ? ' (replace)' : ' (keep previous)');
+      if (data.notes && data.notes.length) note += '\n' + data.notes.join('\n');
+      showMsg(note, true);
+      warnBox.classList.add('show');
+    }
+
+    function syncVmConfirm() {
+      if (!vmPreview) { confirmVmBtn.disabled = true; return; }
+      var need = vmPreview.warnings || [];
+      if (!need.length) { confirmVmBtn.disabled = false; return; }
+      var ticked = [];
+      warnList.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+        if (cb.checked) ticked.push(cb.getAttribute('data-code'));
+      });
+      confirmVmBtn.disabled = ticked.length < need.length;
+    }
+
+    async function sha256Hex(buffer) {
+      if (!window.crypto || !crypto.subtle) return '';
+      var hash = await crypto.subtle.digest('SHA-256', buffer);
+      return Array.from(new Uint8Array(hash)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+    }
+
+    async function commitVmUpload() {
+      if (!vmPreview || !vmPreview.token) return;
+      var confirmWarnings = [];
+      warnList.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+        if (cb.checked) confirmWarnings.push(cb.getAttribute('data-code'));
+      });
+      confirmVmBtn.disabled = true;
+      uploadBtn.disabled = true;
+      progressState.phase = 'finish';
+      setStep('stepFinish', '3. Save on DISHA', false);
+      updateProgressUi();
+      try {
+        var done = await postJson('/api/nsc/upload/commit', {
+          token: vmPreview.token,
+          confirmWarnings: confirmWarnings
+        });
+        hideWarnBox();
+        progressState.phase = 'done';
+        setStep('stepFinish', '3. Save on DISHA', true);
+        updateProgressUi();
+        var last = done.last || {};
+        showMsg(
+          (done.message || 'Saved.') +
+            (last.reportDate ? '' : ''),
+          true
+        );
+        try {
+          localStorage.removeItem('mzo_nsc_seen_version');
+          localStorage.setItem('mzo_nsc_pending_refresh', '1');
+          localStorage.setItem('mzo_withheld_pending_refresh', '1');
+        } catch (_) {}
+        try {
+          var ch = new BroadcastChannel('mzo-nsc');
+          ch.postMessage({ type: 'nsc-uploaded', reportDate: last.reportDate, at: Date.now() });
+          ch.close();
+        } catch (_) {}
+        try {
+          var ch2 = new BroadcastChannel('mzo-withheld');
+          ch2.postMessage({ type: 'withheld-uploaded', reportDate: last.reportDate, at: Date.now() });
+          ch2.close();
+        } catch (_) {}
+        await loadMeta();
+      } catch (e) {
+        showMsg((e && e.message) || String(e), false);
+        confirmVmBtn.disabled = false;
+      } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = 'Upload';
+      }
+    }
 
     function toIsoDate(d) {
       const yyyy = d.getFullYear();
@@ -514,9 +644,34 @@
         withheldSheetEditUrl = String(data.withheldSheetEditUrl || '').trim() || FALLBACK_WH_SHEET;
         nscSheetLink.href = nscSheetEditUrl;
         whSheetLink.href = withheldSheetEditUrl;
-        await updateMirrorStatus();
-        if (data.canUpload) {
-          renderAdminMeta(data);
+
+        vmUploadEnabled = false;
+        try {
+          const um = await fetch('/api/nsc/upload/meta', { credentials: 'same-origin' });
+          if (um.ok) {
+            const uj = await um.json();
+            vmUploadEnabled = !!(uj.enabled && uj.canUpload);
+            if (uj.last && uj.last.reportDate) {
+              metaBox.textContent = 'DISHA: ' + uj.last.reportDate +
+                ' · Working ' + fmt(uj.last.workingRows) +
+                ' · Withheld ' + fmt(uj.last.withheldRows) +
+                (uj.last.by ? ' · by ' + uj.last.by : '');
+              metaBox.classList.add('show');
+            }
+          }
+        } catch (_) {}
+
+        if (!vmUploadEnabled) await updateMirrorStatus();
+        else {
+          var mb = document.getElementById('mirrorBox');
+          if (mb) {
+            mb.textContent = 'Uploads save slim Working/Withheld on DISHA (like CMO). Google Sheets is optional fallback.';
+            mb.classList.add('show');
+          }
+        }
+
+        if (data.canUpload || vmUploadEnabled) {
+          if (!vmUploadEnabled) renderAdminMeta(data);
           uploadBlock.classList.remove('locked');
           fileInput.disabled = false;
           reportDateInput.disabled = false;
@@ -611,11 +766,26 @@
         body: JSON.stringify(body)
       });
       const data = await readJsonSafe(res);
-      if (!res.ok || data.status !== 'success') {
+      if (res.status === 422 && data.status === 'blocked') {
+        const blocks = (data.blocks || []).map(function (b) { return b.message || b.code; }).join('\n');
+        throw new Error(blocks || data.message || 'Upload blocked');
+      }
+      if (res.status === 409 && data.status === 'confirm') {
+        throw new Error(data.message || 'Tick every warning to continue.');
+      }
+      if (!res.ok || (data.status !== 'success' && data.status !== 'ok')) {
         throw new Error(data.message || ('Request failed (' + res.status + ')'));
       }
       return data;
     }
+
+    cancelVmBtn.addEventListener('click', function () {
+      hideWarnBox();
+      progressLabel.textContent = 'Cancelled';
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = 'Upload';
+    });
+    confirmVmBtn.addEventListener('click', function () { commitVmUpload(); });
 
     uploadBtn.addEventListener('click', async () => {
       const file = fileInput.files && fileInput.files[0];
@@ -638,6 +808,7 @@
       progressPanel.classList.add('show');
       hideRetryBox();
       hideManualBox();
+      hideWarnBox();
       lastJob = null;
       progressState = {
         pendingTotal: 0,
@@ -648,9 +819,9 @@
         retryNote: ''
       };
       setStep('stepProcess', '1. Process', false);
-      setStep('stepPending', '2. NSC sheet', false);
-      setStep('stepWithheld', '3. Withheld sheet', false);
-      setStep('stepFinish', '4. Activate', false);
+      setStep('stepPending', vmUploadEnabled ? '2. Check on DISHA' : '2. NSC sheet', false);
+      setStep('stepWithheld', vmUploadEnabled ? '—' : '3. Withheld sheet', false);
+      setStep('stepFinish', vmUploadEnabled ? '3. Save on DISHA' : '4. Activate', false);
       updateProgressUi();
       msg.className = 'msg';
       msg.textContent = '';
@@ -674,6 +845,32 @@
           keepPreviousWithheld: !(result.withheld && result.withheld.length)
         };
 
+        /* ---- VM path (preferred on DISHA server): slim CSV + CMO-style confirm ---- */
+        if (vmUploadEnabled) {
+          progressState.pendingSent = result.published.length;
+          progressState.withheldSent = result.withheld.length;
+          setStep('stepPending', '2. Check on DISHA', false);
+          updateProgressUi();
+          var fileSha = await sha256Hex(buffer);
+          var preview = await postJson('/api/nsc/upload/preview', {
+            reportDate: reportDate,
+            originalName: file.name,
+            fileSha256: fileSha,
+            workingCsv: result.published.length
+              ? NSCClientPipeline.slimWorkingCsv(result.published)
+              : '',
+            withheldCsv: result.withheld.length
+              ? NSCClientPipeline.slimWithheldCsv(result.withheld)
+              : ''
+          });
+          setStep('stepPending', '2. Check on DISHA', true);
+          progressLabel.textContent = 'Confirm warnings to save';
+          showVmWarnings(preview);
+          uploadBtn.textContent = 'Upload';
+          return;
+        }
+
+        /* ---- Legacy Google Sheets path ---- */
         const begin = await postJson('/api/nsc/publish/begin', {
           reportDate,
           reportDateUsed: result.reportDateUsed || '',
@@ -770,12 +967,14 @@
         showMsg(failMsg, false);
         progressState.retryNote = '';
         progressLabel.textContent = 'Failed';
-        if (lastJob && lastJob.result) {
+        if (!vmUploadEnabled && lastJob && lastJob.result) {
           showManualFallback(lastJob.failedPhase || progressState.phase);
         }
       } finally {
-        uploadBtn.disabled = false;
-        uploadBtn.textContent = 'Upload';
+        if (!warnBox.classList.contains('show')) {
+          uploadBtn.disabled = false;
+          uploadBtn.textContent = 'Upload';
+        }
       }
     });
 

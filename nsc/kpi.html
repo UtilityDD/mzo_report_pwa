@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>NSC KPIs · MZO Reports</title>
   <script src="/mzo_theme.js?v=9"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=23" />
+  <link rel="stylesheet" href="/mzo_theme.css?v=24" />
   <script src="/mzo_ui.js?v=21" defer></script>
   <script src="/mzo_data_hub.js?v=94" defer></script>
   <script src="/lib/offices.js?v=3" defer></script>
@@ -40,6 +40,14 @@
         </div>
       </div>
       <div id="officeTable"><div class="ui-empty">Loading…</div></div>
+    </section>
+
+    <section class="ui-panel" id="trendPanel" hidden>
+      <div class="ui-panel-h"><h2>Pendency trend</h2></div>
+      <div class="ui-panel-b">
+        <p class="ui-muted" id="trendMeta" style="margin:0 0 10px;font-size:13px;color:var(--mzo-muted)">From VM upload snapshots (summary only).</p>
+        <div id="trendTable"><div class="ui-empty">No snapshots yet.</div></div>
+      </div>
     </section>
   </main>
 
@@ -117,11 +125,32 @@
       render();
     });
 
+    function loadTrend() {
+      fetch('/api/nsc/snapshots?detail=1', { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!data || !data.items || !data.items.length) return;
+          $('trendPanel').hidden = false;
+          var rows = data.items.slice().reverse();
+          $('trendMeta').textContent = rows.length + ' snapshot day' + (rows.length === 1 ? '' : 's') + ' (Working total / >30d / Withheld).';
+          UI.table('trendTable', {
+            rows: rows, sort: { key: 'reportDate', dir: 'desc' }, count: false, empty: 'No snapshots yet.',
+            columns: [
+              { key: 'reportDate', label: 'As on' },
+              { key: 'workingTotal', label: 'Working', num: true, fmt: function (v) { return v == null ? '—' : UI.n(v); } },
+              { key: 'workingOver30', label: 'Working >30d', num: true, fmt: function (v) { return v == null ? '—' : UI.n(v); } },
+              { key: 'withheldTotal', label: 'Withheld', num: true, fmt: function (v) { return v == null ? '—' : UI.n(v); } }
+            ]
+          });
+        }).catch(function () { /* trend is optional */ });
+    }
+
     MzoRows.load('nsc_pending', function (t, info) {
       if (!t) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = '<div class="ui-empty">Could not load NSC data.</div>'; } return; }
       prepare(t);
       [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === level)); });
       render();
+      loadTrend();
     }, { scope: false });
   });
   </script>

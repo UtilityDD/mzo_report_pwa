@@ -27,6 +27,7 @@ const OFFLINE = [
     ['VM-only admins', node, ['vm/dev/test-local-admin.js']],
     ['Safety upload and token', node, ['vm/dev/test-safety-upload.js']],
     ['CMO grievance upload', node, ['vm/dev/test-cmo-upload.js']],
+    ['NSC / Withheld upload pipeline', node, ['vm/dev/test-nsc-upload.js']],
     ['DISHA Collect', node, ['vm/dev/test-collect.js']],
     ['Admin sources', node, ['vm/dev/test-sources-info.js']],
     ['data quality', node, ['vm/dev/test-quality.js']],

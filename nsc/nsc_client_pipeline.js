@@ -26,6 +26,16 @@
     'IS_PORTAL_APPL', 'TODAY'
   ];
 
+  /** Slim columns stored on the VM (viz + drawer); full SAP dump is not kept. */
+  const SLIM_WORKING_COLUMNS = [
+    'REGION', 'DIVN_NAME', 'SUPP_OFF', 'CCC_CODE', 'APPL_NO', 'CON_ID',
+    'NAME', 'PHONE_NO', 'ADDRESS', 'APPLICANT_TYPE', 'LOAD_WATTS', 'APPLIED_PHASE',
+    'CONN_CLASS', 'CONN_CAT', 'NO_OF_POLES', 'COLL_DATE', 'WO_ISSUED', 'WON',
+    'WO_CREATION_DATE', 'AGENCY_NAME', 'METER_NUMBER', 'SCN_STATUS',
+    'SCN_WITHELD_DATE', 'SCN_WITHELD_REASON', 'IS_PORTAL_APPL', 'INSPECTION_COMMENT',
+    'TODAY', 'DelayInWO', 'DelayInSC', 'DelayInQtn', 'DelayRange', 'DelaySerial', 'PoleNonPole'
+  ];
+
   const REGION_FROM_REG = {
     'MALDA REGION': 'Malda',
     'UTTAR DINAJPUR REGION': 'Uttar Dinajpur',
@@ -411,9 +421,20 @@
     if (!rows.length) {
       throw new Error('Sheet "' + sheetName + '" has no data rows.');
     }
-    if (!Object.prototype.hasOwnProperty.call(rows[0], 'SCN_STATUS') &&
-        !Object.prototype.hasOwnProperty.call(rows[0], 'APPL_NO')) {
-      throw new Error('Sheet "' + sheetName + '" does not look like an NSC dump (missing APPL_NO / SCN_STATUS).');
+    var first = rows[0] || {};
+    var missing = [];
+    if (!Object.prototype.hasOwnProperty.call(first, 'APPL_NO')) missing.push('APPL_NO');
+    if (!Object.prototype.hasOwnProperty.call(first, 'SCN_STATUS')) missing.push('SCN_STATUS');
+    if (!Object.prototype.hasOwnProperty.call(first, 'CCC_CODE') &&
+        !Object.prototype.hasOwnProperty.call(first, 'SUPP_OFF') &&
+        !Object.prototype.hasOwnProperty.call(first, 'CCC')) {
+      missing.push('CCC_CODE or SUPP_OFF');
+    }
+    if (missing.length) {
+      throw new Error(
+        'Sheet "' + sheetName + '" is missing required column' + (missing.length > 1 ? 's' : '') +
+          ': ' + missing.join(', ') + '. Upload refused.'
+      );
     }
 
     const result = transformRows(rows, reportDate, officeMap);
@@ -437,6 +458,9 @@
     parseManualReportDate,
     OUTPUT_COLUMNS,
     WITHHELD_COLUMNS,
-    toCsv
+    SLIM_WORKING_COLUMNS,
+    toCsv,
+    slimWorkingCsv: function (rows) { return toCsv(rows, SLIM_WORKING_COLUMNS); },
+    slimWithheldCsv: function (rows) { return toCsv(rows, WITHHELD_COLUMNS); }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

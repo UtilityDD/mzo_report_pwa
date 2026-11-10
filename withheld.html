@@ -5,12 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Withheld NSC · DISHA</title>
   <script src="/mzo_theme.js?v=9"></script>
-  <link rel="stylesheet" href="/mzo_theme.css?v=23" />
+  <link rel="stylesheet" href="/mzo_theme.css?v=24" />
   <script src="/mzo_ui.js?v=21" defer></script>
   <script src="/mzo_data_hub.js?v=94" defer></script>
   <script src="/lib/offices.js?v=3" defer></script>
   <script src="/mzo_scope.js?v=20" defer></script>
   <script src="/mzo_rows.js?v=7" defer></script>
+  <script src="/nsc/nsc_trend.js?v=1" defer></script>
   <style>
     /* Reasons are long: let them wrap instead of truncating */
     #fReason .ui-opt { height: auto; min-height: 27px; padding-block: 4px; align-items: flex-start; line-height: 1.35; }
@@ -24,6 +25,10 @@
       <div><h1>Withheld NSC<span class="ui-badge ui-date" id="asOn">…</span></h1></div>
       <div class="ui-actions">
         <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
+        <div class="ui-seg" id="viewModeSeg" role="tablist" aria-label="View mode">
+          <button type="button" id="btnDetailView" aria-pressed="true">Detailed</button>
+          <button type="button" id="btnTrendView" aria-pressed="false">Trend</button>
+        </div>
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
     </header>
@@ -48,32 +53,38 @@
       </aside>
 
       <div class="ui-main">
-        <section class="ui-stats" id="stats" aria-label="Summary">
-          <button type="button" class="ui-stat" data-k=""><div class="k">Withheld</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-          <button type="button" class="ui-stat" data-k="d7"><div class="k">Last 7 days</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-          <button type="button" class="ui-stat" data-k="d30"><div class="k">Last 30 days</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-          <button type="button" class="ui-stat" data-k="d90"><div class="k">Last 90 days</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-          <button type="button" class="ui-stat" data-k="invalid"><div class="k"><span class="ui-dot bad"></span>No valid reason</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-        </section>
+        <div id="detailView">
+          <section class="ui-stats" id="stats" aria-label="Summary">
+            <button type="button" class="ui-stat" data-k=""><div class="k">Withheld</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+            <button type="button" class="ui-stat" data-k="d7"><div class="k">Last 7 days</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+            <button type="button" class="ui-stat" data-k="d30"><div class="k">Last 30 days</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+            <button type="button" class="ui-stat" data-k="d90"><div class="k">Last 90 days</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+            <button type="button" class="ui-stat" data-k="invalid"><div class="k"><span class="ui-dot bad"></span>No valid reason</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          </section>
 
-        <section class="ui-panel">
-          <div class="report-head" id="reportHead">
-            <div class="rh-top">
-              <div class="rh-title-wrap">
-                <h2 class="rh-title">
-                  <span id="rhTitle">Detailed report</span>
-                </h2>
-                <span class="rh-badge" id="rhCount">…</span>
+          <section class="ui-panel">
+            <div class="report-head" id="reportHead">
+              <div class="rh-top">
+                <div class="rh-title-wrap">
+                  <h2 class="rh-title">
+                    <span id="rhTitle">Detailed report</span>
+                  </h2>
+                  <span class="rh-badge" id="rhCount">…</span>
+                </div>
+                <div class="ui-actions">
+                  <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+                </div>
               </div>
-              <div class="ui-actions">
-                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
-              </div>
+              <div class="rh-filters-bar" id="rhFiltersBar"></div>
             </div>
-            <div class="rh-filters-bar" id="rhFiltersBar"></div>
-          </div>
-          <div id="drill"></div>
-          <div id="table"><div class="ui-empty">Loading…</div></div>
-        </section>
+            <div id="drill"></div>
+            <div id="table"><div class="ui-empty">Loading…</div></div>
+          </section>
+        </div>
+
+        <div id="trendView" hidden>
+          <div id="withheldTrendHost"></div>
+        </div>
       </div>
     </div>
   </main>
@@ -89,8 +100,24 @@
       'Location of installation of Transformer need to be identified clearly', 'yes'];
     var NO_REASON = 'No valid reason';
     var all = [], asOn = null, f = { q: '', src: '', stat: '', year: '', cls: '', reason: '' }, shown = '';
+    var viewMode = new URLSearchParams(location.search).get('view') === 'trend' ? 'trend' : 'detail';
+    var trendCtl = null;
     var dr = UI.drill({ el: 'drill', root: 'Malda Zone', onChange: render });
     var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
+
+    function setViewMode(mode) {
+      var next = mode === 'trend' ? 'trend' : 'detail';
+      var switched = next !== viewMode;
+      viewMode = next;
+      $('btnDetailView').setAttribute('aria-pressed', String(viewMode === 'detail'));
+      $('btnTrendView').setAttribute('aria-pressed', String(viewMode === 'trend'));
+      $('detailView').hidden = viewMode !== 'detail';
+      $('trendView').hidden = viewMode !== 'trend';
+      if (viewMode === 'trend' && window.NscTrend) {
+        if (!trendCtl) trendCtl = NscTrend.mount({ root: 'withheldTrendHost', side: 'withheld', title: 'Withheld NSC trend' });
+        else if (switched && trendCtl.reload) trendCtl.reload();
+      }
+    }
 
     // t.rows: uniform rows of schema/withheld.json (snake_case, ISO dates, IS_PORTAL_APPL as true/false,
     // canonical _region/_division/_ccc). Loaded unscoped: the last row per application wins, then the login scope.
@@ -165,6 +192,8 @@
       setActive(on, { fReason: f.reason, fYear: f.year, fClass: f.cls });
     }
     function render() {
+      setViewMode(viewMode);
+      if (viewMode === 'trend') return;
       var b = base();
       facets();
       var view = b.filter(function (r) { return !f.stat || STAT[f.stat](r); });
@@ -272,8 +301,10 @@
       ]);
     }
 
-    $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim().toLowerCase(); render(); }, 180));
-    $('stats').addEventListener('click', function (e) { var s = e.target.closest('.ui-stat'); if (!s) return; var k = s.getAttribute('data-k'); f.stat = f.stat === k ? '' : k; render(); });
+    $('btnDetailView').addEventListener('click', function () { setViewMode('detail'); render(); });
+    $('btnTrendView').addEventListener('click', function () { setViewMode('trend'); });
+    $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim().toLowerCase(); if (viewMode !== 'detail') setViewMode('detail'); render(); }, 180));
+    $('stats').addEventListener('click', function (e) { var s = e.target.closest('.ui-stat'); if (!s) return; var k = s.getAttribute('data-k'); f.stat = f.stat === k ? '' : k; if (viewMode !== 'detail') setViewMode('detail'); render(); });
     function clearAll() {
       f.q = ''; f.stat = ''; f.year = ''; f.src = ''; f.cls = ''; f.reason = ''; $('q').value = '';
       render();

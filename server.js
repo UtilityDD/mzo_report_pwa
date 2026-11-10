@@ -259,8 +259,9 @@ function writeDataFile_(name, data) {
 }
 
 // Body parsers (limits raised for NSC/stock publish payloads)
-app.use(express.json({ limit: '5mb' }));
-app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+// NSC VM upload posts slim Working+Withheld CSV in JSON (~5–15 MB). CMO uses multipart instead.
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // Cross-Origin-Opener-Policy so popups (Google Sign-In) communicate cleanly with opener
 app.use((req, res, next) => {
@@ -270,7 +271,7 @@ app.use((req, res, next) => {
 
 // Server-side files are never served, locally or from the Vercel function. power_map/powermap-v2/ is the map's
 // source (data seed, import script, SQL); only its build in power_map/v2/ is served.
-const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|power_map\/powermap-v2(\/|$)|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|data_quality|static_cache|org_hierarchy|csv|safety_parser|xlsx_lite|collect|cmo_upload|cmo_routes)\.js|lib\/briefing_cccs\.json$|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
+const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|vercel\.json|node_modules\/|scripts\/|apps-script\/|vm\/|\.github\/|power_map\/powermap-v2(\/|$)|lib\/(stock_(pipeline|material_category)|mirror|local_admins|users_store|google_auth|report_modules|sources_info|sources_live|data_quality|static_cache|org_hierarchy|csv|safety_parser|xlsx_lite|collect|cmo_upload|cmo_routes|nsc_pipeline|nsc_routes)\.js|lib\/briefing_cccs\.json$|data\/(?!costcenter\.json$))|\.(md|mdc|gs|sql|py)$|\/\./i;
 const SERVER_LIB_PATH = /^\/lib\/(editor|assistant|quality)(\/|$)/i; // server code: the data editor (docs/data-editor.md), Ask's providers (docs/assistant.md), the audit findings (docs/data-quality.md)
 /** True for a path that must not be served: checked on the decoded, normalised path, as the static server sees it. */
 function isPrivatePath_(rawPath) {
@@ -3976,14 +3977,20 @@ app.get('/api/nsc/meta', async (req, res) => {
     });
 });
 
-// The browser writes NSC / Withheld rows to Google Sheets (nsc/upload.html); the dumps are read from there.
-app.get('/api/nsc/dataset', (req, res) => {
+// Prefer VM-uploaded slim CSVs (lib/nsc_routes.js); else Google published sheets.
+app.get('/api/nsc/dataset', async (req, res) => {
     res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    const local = path.join(DATA_DIR, 'nsc_working.csv');
+    if (await sendDataFile_(req, res, local, 'text/csv; charset=utf-8')) return;
     return res.redirect(302, NSC_SHEET_FALLBACK_URL);
 });
 
-app.get('/api/withheld/dataset', (req, res) => {
+app.get('/api/withheld/dataset', async (req, res) => {
     res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+    if (!req.user) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    const local = path.join(DATA_DIR, 'nsc_withheld.csv');
+    if (await sendDataFile_(req, res, local, 'text/csv; charset=utf-8')) return;
     return res.redirect(302, NSC_WITHHELD_SHEET_FALLBACK_URL);
 });
 
@@ -5628,6 +5635,20 @@ require('./lib/cmo_routes').create({
     sendDataFile: sendDataFile_,
     refreshMirror,
     logActivity
+}).mount(app);
+
+// Pending NSC / Withheld: CMO-style upload on the VM (slim rows + viz + daily summary snapshots).
+// Browser parses the SAP .xlsb; the server stores only visualization columns. Off on Vercel.
+require('./lib/nsc_routes').create({
+    dataDir: DATA_DIR,
+    enabled: !process.env.VERCEL,
+    resolveFreshUser: resolveFreshUser_,
+    isPortalAdmin: isPortalAdmin_,
+    stillAdmin: stillAdmin_,
+    flagYes: flagAuthoYes_,
+    refreshMirror,
+    logActivity,
+    log: console
 }).mount(app);
 
 const NSC_FOLLOWUP_SCRIPT_URL = String(
