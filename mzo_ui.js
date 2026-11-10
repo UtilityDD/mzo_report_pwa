@@ -430,6 +430,9 @@
   function sidePanel(cfg) {
     var $id = function (x) { return typeof x === 'string' ? document.getElementById(x) : x; };
     var side = $id(cfg.side), toggle = $id(cfg.toggle), label = $id(cfg.label), count = $id(cfg.count), clear = $id(cfg.clear);
+    if (!side) return function () {};
+    var layout = side.closest ? side.closest('.ui-layout') : side.parentElement;
+
     // Phones: the panel is a bottom sheet (scrim, drag handle, "Show results", Android Back closes it).
     // Wider screens keep the inline panel; the extra parts are hidden there by CSS.
     side.classList.add('ui-sheet');
@@ -437,20 +440,80 @@
       side.insertAdjacentHTML('afterbegin', '<div class="ui-sheet-grab" aria-hidden="true"><i></i></div>');
       side.insertAdjacentHTML('beforeend', '<div class="ui-sheet-foot"><button type="button" class="ui-btn primary" data-sheet-done>Show results</button></div>');
     }
-    function setOpen(open) {
-      if (open === side.classList.contains('open')) return;
-      side.classList.toggle('open', open);
-      if (toggle) toggle.setAttribute('aria-expanded', String(open));
-      var asSheet = phone();
-      if (open && !asSheet) return;
-      sheetOn(open ? side : null, function () { setOpen(false); });
-      if (open) { side.scrollTop = 0; backOpen(function () { setOpen(false); }); }
-      else { backDone(); if (asSheet && toggle && side.contains(document.activeElement)) try { toggle.focus({ preventScroll: true }); } catch (e) {} }
+
+    // Desktop: ensure a close button exists in the panel header (.ui-side-h)
+    var sideH = side.querySelector(':scope > .ui-side-h');
+    if (sideH && !sideH.querySelector('.ui-side-close, [data-side-close], #sideCloseBtn')) {
+      var closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'ui-btn icon ghost sm ui-side-close';
+      closeBtn.setAttribute('data-side-close', '');
+      closeBtn.setAttribute('aria-label', 'Hide filters');
+      closeBtn.title = 'Hide filter panel';
+      closeBtn.innerHTML = '<svg class="ui-i"><use href="#ui-x"/></svg>';
+      sideH.appendChild(closeBtn);
     }
-    if (toggle) toggle.addEventListener('click', function () { setOpen(!side.classList.contains('open')); });
-    side.addEventListener('click', function (e) { if (e.target.closest('[data-sheet-done]')) setOpen(false); });
+
+    function isShown() {
+      if (phone()) return side.classList.contains('open');
+      return layout ? !layout.classList.contains('side-collapsed') : side.classList.contains('open');
+    }
+
+    function setOpen(open) {
+      var asSheet = phone();
+      if (asSheet) {
+        if (open === side.classList.contains('open')) return;
+        side.classList.toggle('open', open);
+        if (toggle) {
+          toggle.setAttribute('aria-expanded', String(open));
+          toggle.classList.toggle('is-active', open);
+        }
+        sheetOn(open ? side : null, function () { setOpen(false); });
+        if (open) { side.scrollTop = 0; backOpen(function () { setOpen(false); }); }
+        else { backDone(); if (toggle && side.contains(document.activeElement)) try { toggle.focus({ preventScroll: true }); } catch (e) {} }
+      } else {
+        // Desktop / widescreen: in-flow toggleable panel
+        if (layout) {
+          layout.classList.toggle('side-collapsed', !open);
+        }
+        side.classList.toggle('open', open);
+        if (toggle) {
+          toggle.setAttribute('aria-expanded', String(open));
+          toggle.classList.toggle('is-active', open);
+        }
+      }
+    }
+
+    if (toggle) {
+      var initOpen = isShown();
+      toggle.setAttribute('aria-expanded', String(initOpen));
+      toggle.classList.toggle('is-active', initOpen);
+      toggle.addEventListener('click', function (e) {
+        e.stopPropagation();
+        setOpen(!isShown());
+      });
+    }
+
+    side.addEventListener('click', function (e) {
+      if (e.target.closest('[data-sheet-done]')) setOpen(false);
+      if (e.target.closest('.ui-side-close, [data-side-close], #sideCloseBtn')) {
+        e.stopPropagation();
+        setOpen(false);
+      }
+    });
+
     dragToClose(side, side.querySelectorAll(':scope > .ui-sheet-grab, :scope > .ui-side-h'), function () { return phone() && side.classList.contains('open'); }, function () { setOpen(false); });
     if (clear && cfg.onClear) clear.addEventListener('click', cfg.onClear);
+
+    // Keyboard shortcut 'F' on desktop toggles filters unless typing
+    document.addEventListener('keydown', function (e) {
+      if ((e.key === 'f' || e.key === 'F') && !phone() && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
+        var t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        e.preventDefault();
+        setOpen(!isShown());
+      }
+    });
     // Tabbed groups: <div class="ui-seg ui-side-tabs" data-tabs> <button data-pane="id">…
     [].forEach.call(side.querySelectorAll('[data-tabs]'), function (tabs) {
       tabs.addEventListener('click', function (e) {
