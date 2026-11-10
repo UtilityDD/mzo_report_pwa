@@ -60,7 +60,7 @@ Sheet links (sidebar **Important → Sheet links**) has its own rules: see [repo
 - Grain: **CCC > division > region**.
 - `filterRows(rows)` after parse; `lockFilters()` after filling Region/Division/CCC `<select>`s.
 - A row whose usual office fields are empty is first resolved through every office-type column `lib/offices.js` knows (Office Code, Location Code, DISTRICT, CIRCLE NAME, Sub-Division Name, …). A row that still names no office is shown only to zone and admin logins.
-- Header (kit pages): a quiet office chip (`CCC: Aiho` / `Division: …` / `Region: …`) and, when the Performance Index rating is available, a rank line (`#12 of 41 CCCs`) linking to `/performance_index.html` — no grade until grading is optimized. The old “Showing … set by admin” banner is gone (`UI.scopeChrome` in `mzo_ui.js`).
+- Header (kit pages): a quiet office chip (`CCC: Aiho` / `Division: …` / `Region: …`) via `UI.scopeChrome`, and a per-report peer rank (`#12 of 41 CCCs`) via `UI.reportRank` / `UI.reportRankFromTable` on that page’s headline metric among same-level offices in Malda Zone (not the Performance Index — grading is still being finalized). The old “Showing … set by admin” banner is gone.
 - **Do not** add per-page “Office Prefs”. Scope comes from login only.
 
 Canonical names in `mzo_scope.js` `HIERARCHY`:

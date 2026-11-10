@@ -6,7 +6,7 @@
   <title>Weekly deposit vs disposal · DISHA</title>
   <script src="/mzo_theme.js?v=9"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=23" />
-  <script src="/mzo_ui.js?v=20" defer></script>
+  <script src="/mzo_ui.js?v=21" defer></script>
   <script src="/mzo_data_hub.js?v=93" defer></script>
   <script src="/lib/offices.js?v=3" defer></script>
   <script src="/mzo_scope.js?v=20" defer></script>
@@ -165,19 +165,24 @@
     function prepare(t) {
       var seen = {};
       t.all.forEach(function (d) { var dt = UI.date(d.date_of_report_in_current_week); if (dt) seen[dt.getTime()] = dt; }); // the sheet's weeks, before the scope
-      all = t.rows.filter(function (d) { return d.date_of_report_in_current_week; }).map(function (d) {
+      function mapWeek(d) {
+        if (!d.date_of_report_in_current_week) return null;
         var dt = UI.date(d.date_of_report_in_current_week);
         return {
           raw: d, week: dt ? dt.getTime() : 0, weekDate: dt,
           _region: d._region || UI.regionName(d.region), _divn: d._division || UI.title(d.division_2 || d.division),
           _supp: d._ccc || d.ccc || d.ccc1 || UI.title(d.ccc_name), CCC_CODE: d.ccc_code
         };
-      });
+      }
+      all = t.rows.map(mapWeek).filter(Boolean);
       weeks = Object.keys(seen).map(Number).sort(function (a, b) { return b - a; });
       $('asOn').textContent = weeks.length ? UI.fmtDate(new Date(weeks[0])) : '';
       $('asOn').title = weeks.length ? UI.n(weeks.length) + ' weeks reported: ' + UI.fmtDate(new Date(weeks[weeks.length - 1])) + ' to ' + UI.fmtDate(new Date(weeks[0])) : 'No weeks reported';
       UI.fill('weekFilter', weeks.map(function (w) { return { value: String(w), label: 'Week of ' + UI.fmtDate(new Date(w)) }; }), 'All weeks (average)');
       fillOffices();
+      var latest = weeks[0];
+      var zone = (t.all && t.all.length ? t.all : t.rows).map(mapWeek).filter(function (r) { return r && (!latest || r.week === latest); });
+      UI.reportRank({ rows: zone, lowerIsBetter: true, label: 'Weekly backlog rows' });
     }
 
     function fillOffices() {

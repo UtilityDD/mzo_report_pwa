@@ -6,7 +6,7 @@
   <title>Withheld NSC · DISHA</title>
   <script src="/mzo_theme.js?v=9"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=23" />
-  <script src="/mzo_ui.js?v=20" defer></script>
+  <script src="/mzo_ui.js?v=21" defer></script>
   <script src="/mzo_data_hub.js?v=93" defer></script>
   <script src="/lib/offices.js?v=3" defer></script>
   <script src="/mzo_scope.js?v=20" defer></script>
@@ -94,10 +94,9 @@
 
     // t.rows: uniform rows of schema/withheld.json (snake_case, ISO dates, IS_PORTAL_APPL as true/false,
     // canonical _region/_division/_ccc). Loaded unscoped: the last row per application wins, then the login scope.
-    function prepare(t) {
-      var today = null, seen = {};
-      all = [];
-      t.rows.forEach(function (d) {
+    function buildWithheld(list) {
+      var today = null, seen = {}, out = [];
+      (list || []).forEach(function (d) {
         var appl = d.appl_no;
         if (!appl) return;
         var td = UI.date(d.today); if (td && (!today || td > today)) today = td;
@@ -113,13 +112,20 @@
         };
         r.label = CLASS[r.cls] || r.cls || '—';
         r.year = r.withheld ? String(r.withheld.getFullYear()) : '';
-        // Count each application once; the last row wins.
-        if (seen[appl] != null) all[seen[appl]] = r; else { seen[appl] = all.length; all.push(r); }
+        if (seen[appl] != null) out[seen[appl]] = r; else { seen[appl] = out.length; out.push(r); }
       });
+      return { rows: out, today: today };
+    }
+    function prepare(t) {
+      var zone = buildWithheld(t.all && t.all.length ? t.all : t.rows);
+      var scoped = buildWithheld(t.rows);
+      all = scoped.rows;
       if (window.MzoScope) all = window.MzoScope.filterRows(all);
+      var today = scoped.today || zone.today;
       if (today && (!asOn || today > asOn)) asOn = today;
       all.forEach(function (r) { r.ago = r.withheld && asOn ? Math.floor((asOn - r.withheld) / 864e5) : null; });
       paintMeta();
+      UI.reportRank({ rows: zone.rows, lowerIsBetter: true, label: 'Withheld applications' });
     }
     function paintMeta() { $('asOn').textContent = asOn ? 'As on ' + UI.fmtDate(asOn) : UI.n(all.length) + ' applications'; }
 

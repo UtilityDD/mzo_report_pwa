@@ -6,7 +6,7 @@
   <title>Pending load extension · DISHA</title>
   <script src="/mzo_theme.js?v=9"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=23" />
-  <script src="/mzo_ui.js?v=20" defer></script>
+  <script src="/mzo_ui.js?v=21" defer></script>
   <script src="/mzo_data_hub.js?v=93" defer></script>
   <script src="/lib/offices.js?v=3" defer></script>
   <script src="/mzo_scope.js?v=20" defer></script>
@@ -98,24 +98,27 @@
 
     // t.rows: uniform rows of schema/load_extension.json (snake_case, numbers, ISO dates, canonical
     // _region/_division/_ccc), already scoped to the login by MzoRows.
+    function mapLoadExt(d) {
+      if (!(d.appl_no || d.con_id)) return null;
+      var r = {
+        appl: d.appl_no, con: d.con_id, name: UI.blank(d.name) ? '' : UI.title(d.name),
+        address: d.address, code: d.ccc_code,
+        _region: d._region, _divn: d._division, _supp: d._ccc, CCC_CODE: d.ccc_code,
+        cls: d.conn_class.toUpperCase(), phase: d.conn_phase.toUpperCase(),
+        applied: d.load_applied || 0, curr: d.curr_load || 0,
+        age: Math.trunc(d.age_months) || 0, collected: d.collection_date,
+        wo: UI.blank(d.won_assigned) ? '' : d.won_assigned, assignee: UI.blank(d.wo_assignee) ? '' : UI.title(d.wo_assignee),
+        category: d.conn_category === 'U' ? 'Urban' : d.conn_category === 'R' ? 'Rural' : ''
+      };
+      r.loss = loss(r);
+      r.ageKey = AGE.filter(function (b) { return r.age <= b.max; })[0].key;
+      return r;
+    }
     function prepare(t) {
       var asOn = t.first('report_date'); // one value for the whole sheet: read it before the scope
-      all = t.rows.filter(function (d) { return d.appl_no || d.con_id; }).map(function (d) {
-        var r = {
-          appl: d.appl_no, con: d.con_id, name: UI.blank(d.name) ? '' : UI.title(d.name),
-          address: d.address, code: d.ccc_code,
-          _region: d._region, _divn: d._division, _supp: d._ccc, CCC_CODE: d.ccc_code,
-          cls: d.conn_class.toUpperCase(), phase: d.conn_phase.toUpperCase(),
-          applied: d.load_applied || 0, curr: d.curr_load || 0,
-          age: Math.trunc(d.age_months) || 0, collected: d.collection_date,
-          wo: UI.blank(d.won_assigned) ? '' : d.won_assigned, assignee: UI.blank(d.wo_assignee) ? '' : UI.title(d.wo_assignee),
-          category: d.conn_category === 'U' ? 'Urban' : d.conn_category === 'R' ? 'Rural' : ''
-        };
-        r.loss = loss(r);
-        r.ageKey = AGE.filter(function (b) { return r.age <= b.max; })[0].key;
-        return r;
-      });
+      all = t.rows.map(mapLoadExt).filter(Boolean);
       $('asOn').textContent = asOn ? 'As on ' + UI.fmtDate(asOn) : UI.n(all.length) + ' applications';
+      UI.reportRankFromTable(t, mapLoadExt, { lowerIsBetter: true, label: 'Pending load extensions' });
     }
 
     var STAT = {

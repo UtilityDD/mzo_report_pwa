@@ -6,7 +6,7 @@
   <title>REM OSD over ₹5,000 · DISHA</title>
   <script src="/mzo_theme.js?v=9"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=23" />
-  <script src="/mzo_ui.js?v=20" defer></script>
+  <script src="/mzo_ui.js?v=21" defer></script>
   <script src="/mzo_data_hub.js?v=93" defer></script>
   <script src="/lib/offices.js?v=3" defer></script>
   <script src="/mzo_scope.js?v=20" defer></script>
@@ -120,20 +120,22 @@
     function amt(r, c) { if (c === 'Total') { return CLASSES.reduce(function (a, k) { return a + (r.a[k] || 0); }, 0) || (r.a.Total || 0); } return r.a[c] || 0; }
 
     // t.rows: uniform rows of schema/rem_osd.json, already scoped to the login by MzoRows.
+    function mapRemOsd(d) {
+      if (!((d.notice_due_date || d.notice_due_date_raw) && (d.ccc_code || d.ccc_name))) return null;
+      var r = { n: {}, a: {} };
+      ['Total'].concat(CLASSES).forEach(function (k) { var f = k.toLowerCase(); r.n[k] = d[f + '_count']; r.a[k] = d[f + '_amount_in_lakhs']; });
+      r._region = d._region || UI.regionName(d.region_name);
+      r._divn = d._division || UI.title(d.division);
+      r._supp = d._ccc || UI.title(d.ccc_name);
+      r.CCC_CODE = d.ccc_code;
+      r._due = d.notice_due_date || d.notice_due_date_raw;
+      r._dueD = dmy(r._due);
+      r.email = d.report_date_email_date;
+      r.remarks = d.remarks;
+      return r;
+    }
     function prepare(t) {
-      all = t.rows.filter(function (d) { return (d.notice_due_date || d.notice_due_date_raw) && (d.ccc_code || d.ccc_name); }).map(function (d) {
-        var r = { n: {}, a: {} };
-        ['Total'].concat(CLASSES).forEach(function (k) { var f = k.toLowerCase(); r.n[k] = d[f + '_count']; r.a[k] = d[f + '_amount_in_lakhs']; });
-        r._region = d._region || UI.regionName(d.region_name);
-        r._divn = d._division || UI.title(d.division);
-        r._supp = d._ccc || UI.title(d.ccc_name);
-        r.CCC_CODE = d.ccc_code;
-        r._due = d.notice_due_date || d.notice_due_date_raw;
-        r._dueD = dmy(r._due);
-        r.email = d.report_date_email_date;
-        r.remarks = d.remarks;
-        return r;
-      });
+      all = t.rows.map(mapRemOsd).filter(Boolean);
       var seen = {};
       all.forEach(function (r) { if (r._dueD && !seen[r._due]) seen[r._due] = r; });
       dates = Object.keys(seen).sort(function (a, b) { return dmy(b) - dmy(a); });
@@ -141,6 +143,9 @@
       $('dateFilter').innerHTML = dates.map(function (d) { return '<option value="' + UI.esc(d) + '">Notice due ' + UI.fmtDate(dmy(d)) + '</option>'; }).join('');
       if (cur && dates.indexOf(cur) !== -1) $('dateFilter').value = cur;
       fillFilters();
+      var latest = dates[0];
+      var zone = (t.all && t.all.length ? t.all : t.rows).map(mapRemOsd).filter(function (r) { return r && (!latest || r._due === latest); });
+      UI.reportRank({ rows: zone, value: function (r) { return Number(r.a.Total) || 0; }, lowerIsBetter: true, label: 'OSD ₹5,000+ notices' });
     }
 
     function fillFilters() {

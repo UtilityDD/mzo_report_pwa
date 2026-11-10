@@ -6,7 +6,7 @@
   <title>Collection · DISHA</title>
   <script src="/mzo_theme.js?v=9"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=23" />
-  <script src="/mzo_ui.js?v=20" defer></script>
+  <script src="/mzo_ui.js?v=21" defer></script>
   <script src="/mzo_data_hub.js?v=93" defer></script>
   <script src="/lib/offices.js?v=3" defer></script>
   <script src="/mzo_scope.js?v=20" defer></script>
@@ -131,14 +131,14 @@
     }
 
     // t.rows: uniform rows of schema/collection_report.json, already scoped to the login by MzoRows.
-    // PAYMENT_DT stays a yyyymmdd number; codes ending in 0000 are a region's bulk accounts.
-    function prepare(t) {
-      all = [];
-      t.rows.forEach(function (r) {
+    // t.all: every office (for peer rank). PAYMENT_DT stays a yyyymmdd number; codes ending in 0000 are bulk.
+    function mapCollectionRows(list) {
+      var out = [];
+      (list || []).forEach(function (r) {
         var d = ymd(r.payment_dt == null ? '' : String(r.payment_dt)), code = r.ccc_code;
         if (!d || !code) return;
         var isBulk = /0000$/.test(code);
-        all.push({
+        out.push({
           date: d, t: d.getTime(), code: code,
           amount: (r.amount_paid || 0) * 1e5, // sheet is in lakhs
           count: Math.trunc(r.count) || 0,
@@ -146,6 +146,10 @@
           _supp: isBulk ? r._region + ' bulk' : (r._ccc || code), CCC_CODE: code, bulk: isBulk
         });
       });
+      return out;
+    }
+    function prepare(t) {
+      all = mapCollectionRows(t.rows);
       var ts = all.map(function (r) { return r.t; });
       maxDate = ts.length ? new Date(Math.max.apply(null, ts)) : null;
       minDate = ts.length ? new Date(Math.min.apply(null, ts)) : null;
@@ -155,6 +159,8 @@
       upto = maxDate ? maxDate.getDate() : 31;
       $('upto').value = String(upto);
       fillFilters();
+      var zone = mapCollectionRows(t.all && t.all.length ? t.all : t.rows).filter(function (r) { return !r.bulk; });
+      UI.reportRank({ rows: zone, value: function (r) { return r.amount; }, lowerIsBetter: false, label: 'Collection' });
     }
 
     function fillFilters() {

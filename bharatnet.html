@@ -6,7 +6,7 @@
   <title>Bharat Net · DISHA</title>
   <script src="/mzo_theme.js?v=9"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=23" />
-  <script src="/mzo_ui.js?v=20" defer></script>
+  <script src="/mzo_ui.js?v=21" defer></script>
   <script src="/mzo_data_hub.js?v=93" defer></script>
   <script src="/lib/offices.js?v=3" defer></script>
   <script src="/mzo_scope.js?v=20" defer></script>
@@ -111,31 +111,34 @@
 
     // t.rows: uniform rows of schema/bharatnet_connections.json (the sheet's header variants as one
     // field each, canonical _region/_division/_ccc), already scoped to the login by MzoRows.
+    function mapBharat(d) {
+      if (!(d.appl_no || d.cont_account)) return null;
+      var r = {
+        appl: d.appl_no, account: d.cont_account,
+        name: [d.first_name, d.last_name].filter(Boolean).join(' ').replace(/,\s*$/, ''),
+        street: d.street, street3: d.street_3, pin: d.postl_code, phone: d.telephone,
+        meter: d.meter_number, moveIn: UI.date(d.move_in_date), code: d.ccc_code,
+        gp: roman(UI.title(d.street.replace(/^THE\s+PRADHAN\s+/i, '').replace(/\s+VILL.*$/i, ''))) || d.street,
+        _region: d._region || 'Unmapped',
+        _divn: d._division || 'Unmapped',
+        _supp: d._ccc || UI.title((d.ccc_name || '').replace(/\s+CCC$/i, '')) || 'Unmapped',
+        CCC_CODE: d.ccc_code,
+        st: d.meter_number ? 'given' : 'pending'
+      };
+      r.monthKey = r.moveIn ? r.moveIn.getFullYear() * 100 + r.moveIn.getMonth() : null;
+      r.monthLabel = r.moveIn ? MON[r.moveIn.getMonth()] + ' ' + r.moveIn.getFullYear() : '';
+      r.search = [r.gp, r.street, r.appl, r.account, r.name, r.meter, r.phone, r._supp, r._divn, r._region].join(' ').toLowerCase();
+      return r;
+    }
     function prepare(t) {
       var asOn = asOnOf(t);
-      all = t.rows.filter(function (d) { return d.appl_no || d.cont_account; }).map(function (d) {
-        var r = {
-          appl: d.appl_no, account: d.cont_account,
-          name: [d.first_name, d.last_name].filter(Boolean).join(' ').replace(/,\s*$/, ''),
-          street: d.street, street3: d.street_3, pin: d.postl_code, phone: d.telephone,
-          meter: d.meter_number, moveIn: UI.date(d.move_in_date), code: d.ccc_code,
-          gp: roman(UI.title(d.street.replace(/^THE\s+PRADHAN\s+/i, '').replace(/\s+VILL.*$/i, ''))) || d.street,
-          _region: d._region || 'Unmapped',
-          _divn: d._division || 'Unmapped',
-          _supp: d._ccc || UI.title((d.ccc_name || '').replace(/\s+CCC$/i, '')) || 'Unmapped',
-          CCC_CODE: d.ccc_code,
-          st: d.meter_number ? 'given' : 'pending'
-        };
-        r.monthKey = r.moveIn ? r.moveIn.getFullYear() * 100 + r.moveIn.getMonth() : null;
-        r.monthLabel = r.moveIn ? MON[r.moveIn.getMonth()] + ' ' + r.moveIn.getFullYear() : '';
-        r.search = [r.gp, r.street, r.appl, r.account, r.name, r.meter, r.phone, r._supp, r._divn, r._region].join(' ').toLowerCase();
-        return r;
-      });
+      all = t.rows.map(mapBharat).filter(Boolean);
       if (asOn) { try { localStorage.setItem('mzo_bharatnet_as_on', asOn); } catch (e) {} }
       var dateStr = asOn ? UI.fmtDate(asOn.split('/').reverse().join('-')) : '';
       $('asOn').textContent = dateStr || (UI.n(all.length) + ' GPs');
       $('asOn').title = (dateStr ? 'As on ' + dateStr + ' · ' : '') + UI.n(all.length) + ' Gram panchayat applications';
       fillFilters();
+      UI.reportRankFromTable(t, mapBharat, { lowerIsBetter: true, label: 'BharatNet applications' });
     }
 
     function fillFilters() {

@@ -6,7 +6,7 @@
   <title>WRIDD schemes · DISHA</title>
   <script src="/mzo_theme.js?v=9"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=23" />
-  <script src="/mzo_ui.js?v=20" defer></script>
+  <script src="/mzo_ui.js?v=21" defer></script>
   <script src="/mzo_data_hub.js?v=93" defer></script>
   <script src="/lib/offices.js?v=3" defer></script>
   <script src="/mzo_scope.js?v=20" defer></script>
@@ -130,29 +130,30 @@
     // t.rows: uniform rows of schema/wridd_schemes.json, already scoped to the login by MzoRows. The sheet
     // covers the whole state: a scheme is in Malda Zone when its CCC is one of the zone's (canonical _ccc,
     // the sheet's spellings included); the rest have no canonical office and are left out.
+    function mapWridd(d) {
+      if (!d._ccc) return null;
+      var statusText = d.status_of_connection_as_on_date || d.status_of_connection_as_per_previous_report;
+      var r = {
+        name: d.name_of_scheme || 'Unnamed scheme', type: parseType(d),
+        _region: d._region, _divn: d._division, _supp: d._ccc,
+        district: d.district, block: d.block, mouza: d.mouza, jl: d.jl_no, plot: d.location_plot_no,
+        statusText: statusText, st: /effected/i.test(statusText) ? 'done' : 'pending',
+        remarks: d.remarks_project_name, prevRemarks: d.previous_remarks, presentRemarks: d.present_remarks,
+        brief: d.brief_of_subjects_vis_a_vis_linked_projects, local: d.any_local_communication_made_with_the_requiring_authority_wb, toWridd: d.whether_communicated_to_wri_dd,
+        circle: d.name_of_circle_division
+      };
+      r.core = /core sector/i.test(r.remarks + ' ' + r.brief + ' ' + r.local);
+      r.reason = r.st === 'pending' ? parseReason(statusText + ' ' + r.brief) : '';
+      r.search = [r.name, r.block, r.mouza, r.remarks, r.prevRemarks, d.ccc].join(' ').toLowerCase();
+      return r;
+    }
     function prepare(t) {
       var statewide = t.stats ? t.stats.source_rows : t.all.length;
-      all = [];
-      t.rows.forEach(function (d) {
-        if (!d._ccc) return;
-        var statusText = d.status_of_connection_as_on_date || d.status_of_connection_as_per_previous_report;
-        var r = {
-          name: d.name_of_scheme || 'Unnamed scheme', type: parseType(d),
-          _region: d._region, _divn: d._division, _supp: d._ccc,
-          district: d.district, block: d.block, mouza: d.mouza, jl: d.jl_no, plot: d.location_plot_no,
-          statusText: statusText, st: /effected/i.test(statusText) ? 'done' : 'pending',
-          remarks: d.remarks_project_name, prevRemarks: d.previous_remarks, presentRemarks: d.present_remarks,
-          brief: d.brief_of_subjects_vis_a_vis_linked_projects, local: d.any_local_communication_made_with_the_requiring_authority_wb, toWridd: d.whether_communicated_to_wri_dd,
-          circle: d.name_of_circle_division
-        };
-        r.core = /core sector/i.test(r.remarks + ' ' + r.brief + ' ' + r.local);
-        r.reason = r.st === 'pending' ? parseReason(statusText + ' ' + r.brief) : '';
-        r.search = [r.name, r.block, r.mouza, r.remarks, r.prevRemarks, d.ccc].join(' ').toLowerCase();
-        all.push(r);
-      });
+      all = t.rows.map(mapWridd).filter(Boolean);
       $('asOn').textContent = UI.n(all.length) + ' schemes';
       $('asOn').title = UI.n(all.length) + ' schemes in Malda Zone · ' + UI.n(statewide) + ' statewide';
       fillFilters();
+      UI.reportRankFromTable(t, mapWridd, { lowerIsBetter: true, label: 'WRIDD schemes' });
     }
 
     function fillFilters() {

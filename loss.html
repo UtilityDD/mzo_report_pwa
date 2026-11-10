@@ -6,7 +6,7 @@
   <title>Loss analysis · DISHA</title>
   <script src="/mzo_theme.js?v=9"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=23" />
-  <script src="/mzo_ui.js?v=20" defer></script>
+  <script src="/mzo_ui.js?v=21" defer></script>
   <script src="/mzo_data_hub.js?v=93" defer></script>
   <script src="/lib/offices.js?v=3" defer></script>
   <script src="/mzo_scope.js?v=20" defer></script>
@@ -838,7 +838,37 @@
     // Loss sheet is pasted by hand; always revalidate so a same-day paste shows (docs/reports.md).
     // Paint from the cached rows at once, again when newer rows (or the targets) arrive.
     var ROWS = { scope: false, forceCheck: true }, main = null, target = null;
-    function paint() { if (!main) return; prepare(main, target); scopeLock(); render(); }
+    function paintReportRank() {
+      var p = periods[0];
+      if (!p || !window.UI || !UI.reportRank) return;
+      var S = window.MzoScope, info = S && S.scopeChip ? S.scopeChip() : null;
+      if (!info) return;
+      var scores = {};
+      if (info.level === 'ccc') {
+        Object.keys(TREE).forEach(function (r) {
+          Object.keys(TREE[r].divs).forEach(function (d) {
+            TREE[r].divs[d].cccs.forEach(function (c) {
+              var v = at(c, p);
+              if (v && v.atc != null) scores[cccLabel(c)] = v.atc;
+            });
+          });
+        });
+      } else if (info.level === 'division') {
+        Object.keys(TREE).forEach(function (r) {
+          Object.keys(TREE[r].divs).forEach(function (d) {
+            var v = at(TREE[r].divs[d].row, p);
+            if (v && v.atc != null) scores[d] = v.atc;
+          });
+        });
+      } else if (info.level === 'region') {
+        Object.keys(TREE).forEach(function (r) {
+          var v = at(TREE[r].row, p);
+          if (v && v.atc != null) scores[r] = v.atc;
+        });
+      }
+      UI.reportRank({ scores: scores, lowerIsBetter: true, label: 'AT&C loss' });
+    }
+    function paint() { if (!main) return; prepare(main, target); scopeLock(); paintReportRank(); render(); }
     function load() {
       MzoRows.load('loss_report', function (t, info) {
         if (t) { main = t; paint(); }

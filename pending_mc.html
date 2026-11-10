@@ -6,7 +6,7 @@
   <title>Pending master card · DISHA</title>
   <script src="/mzo_theme.js?v=9"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=23" />
-  <script src="/mzo_ui.js?v=20" defer></script>
+  <script src="/mzo_ui.js?v=21" defer></script>
   <script src="/mzo_data_hub.js?v=93" defer></script>
   <script src="/lib/offices.js?v=3" defer></script>
   <script src="/mzo_scope.js?v=20" defer></script>
@@ -103,30 +103,33 @@
 
     // t.rows: uniform rows of schema/pending_mc.json (snake_case, numbers, ISO dates, canonical
     // _region/_division/_ccc), already scoped to the login by MzoRows.
+    function mapMc(d) {
+      if (!keep(d)) return null;
+      var rep = UI.date(d.report_date), inst = UI.date(d.meter_installation_date);
+      var r = {
+        appl: d.appl_no, con: d.con_id,
+        name: [d.fname, d.lname].filter(function (x) { return !UI.blank(x); }).map(UI.title).join(' '),
+        address: [d.addr1, d.addr2].filter(function (x) { return !UI.blank(x); }).join(', '),
+        _region: d._region || UI.regionName(d.region), _divn: d._division || UI.title(d.division), _supp: d._ccc || d.ccc, CCC_CODE: d.substr_a_supp_off_7_7,
+        cls: d.class.toUpperCase(), desc: UI.blank(d.desc) ? '' : UI.title(d.desc),
+        phase: d.phase.toUpperCase(), load: d.load || 0,
+        tariff: UI.blank(d.tariff_class) ? '' : d.tariff_class, type: UI.blank(d.prob_type) ? '' : d.prob_type,
+        agency: UI.blank(d.wo_assignee_type) ? 'Individual' : UI.title(d.wo_assignee_type),
+        wo: UI.blank(d.wo_no) ? '' : d.wo_no, woStatus: d.wo_status === 'C' ? 'Completed' : '',
+        collected: d.coll_date, installed: inst, report: rep,
+        area: d.catg === 'U' ? 'Urban' : d.catg === 'R' ? 'Rural' : ''
+      };
+      r.days = rep && inst ? Math.round((rep - inst) / 864e5) : null;
+      r.ageKey = r.days == null ? '' : AGE.filter(function (b) { return r.days <= b.max; })[0].key;
+      r.label = CLASS[r.cls] || r.desc || r.cls || '—';
+      return r;
+    }
     function prepare(t) {
       var latest = null;
       t.all.forEach(function (d) { var rep = keep(d) && UI.date(d.report_date); if (rep && (!latest || rep > latest)) latest = rep; }); // the sheet's date, not the scope's
-      all = t.rows.filter(keep).map(function (d) {
-        var rep = UI.date(d.report_date), inst = UI.date(d.meter_installation_date);
-        var r = {
-          appl: d.appl_no, con: d.con_id,
-          name: [d.fname, d.lname].filter(function (x) { return !UI.blank(x); }).map(UI.title).join(' '),
-          address: [d.addr1, d.addr2].filter(function (x) { return !UI.blank(x); }).join(', '),
-          _region: d._region || UI.regionName(d.region), _divn: d._division || UI.title(d.division), _supp: d._ccc || d.ccc, CCC_CODE: d.substr_a_supp_off_7_7,
-          cls: d.class.toUpperCase(), desc: UI.blank(d.desc) ? '' : UI.title(d.desc),
-          phase: d.phase.toUpperCase(), load: d.load || 0,
-          tariff: UI.blank(d.tariff_class) ? '' : d.tariff_class, type: UI.blank(d.prob_type) ? '' : d.prob_type,
-          agency: UI.blank(d.wo_assignee_type) ? 'Individual' : UI.title(d.wo_assignee_type),
-          wo: UI.blank(d.wo_no) ? '' : d.wo_no, woStatus: d.wo_status === 'C' ? 'Completed' : '',
-          collected: d.coll_date, installed: inst, report: rep,
-          area: d.catg === 'U' ? 'Urban' : d.catg === 'R' ? 'Rural' : ''
-        };
-        r.days = rep && inst ? Math.round((rep - inst) / 864e5) : null;
-        r.ageKey = r.days == null ? '' : AGE.filter(function (b) { return r.days <= b.max; })[0].key;
-        r.label = CLASS[r.cls] || r.desc || r.cls || '—';
-        return r;
-      });
+      all = t.rows.map(mapMc).filter(Boolean);
       $('asOn').textContent = latest ? 'As on ' + UI.fmtDate(latest) : UI.n(all.length) + ' pending';
+      UI.reportRankFromTable(t, mapMc, { lowerIsBetter: true, label: 'Pending meter changes' });
     }
 
     // Every panel filter; `skip` leaves one facet out so it can count its own options.

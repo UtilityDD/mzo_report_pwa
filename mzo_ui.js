@@ -3,7 +3,7 @@
  *
  *   Format   UI.n / inr / pct / esc / blank / date / fmtDate / days / age / title
  *   Data     UI.csv(text) → row objects · UI.load(key, render) · UI.refresh(btn, key, onText) · UI.office(code, name) · UI.regionName(s)
- *   Filters  UI.fill(select, values, allLabel) / mark / uniq / offices(rows) / lockScope · UI.facet · UI.sidePanel · UI.drill · UI.scopeTrail · UI.filterOfficeTabs · UI.snapOfficeTab · UI.scopeChrome
+ *   Filters  UI.fill / mark / uniq / offices / lockScope · UI.facet · UI.sidePanel · UI.drill · UI.scopeTrail · UI.filterOfficeTabs · UI.snapOfficeTab · UI.scopeChrome · UI.reportRank
  *   Views    UI.table(el, cfg) · UI.bar(v, max, label, tone) · UI.hist(el, rows, { onClick, active, tone }) · UI.line(el, cfg)
  *   Colour   UI.color(tone): 1–6 → categorical --mzo-c1…c6 · 'ok' | 'warn' | 'bad' → status marks · 'accent' · 'muted'
  *   Misc     UI.exportCsv(name, columns, rows) · UI.toast · UI.debounce · UI.copy · UI.drawer · UI.trapFocus(box) · UI.icon
@@ -1082,14 +1082,13 @@
   }
   if (document.body) sprite(); else document.addEventListener('DOMContentLoaded', sprite);
 
-  /* ---------- signed-in office chip + Performance Index rank (no grade) ---------- */
-  var RANK_CACHE_KEY = 'mzo_rating_rank_v1';
+  /* ---------- signed-in office chip + per-report peer rank ---------- */
   var LEVEL_MANY = { ccc: 'CCCs', division: 'divisions', region: 'regions' };
+  var LEVEL_FIELD = { ccc: '_supp', division: '_divn', region: '_region' };
 
   function skipScopeChrome() {
     var path = (location.pathname || '').replace(/\/+$/, '') || '/';
     if (/performance_index\.html$/i.test(path)) return true;
-    // Performance Index owns #mzo-scope-banner in its markup.
     var ban = document.getElementById('mzo-scope-banner');
     if (ban && ban.getAttribute('class') === 'pi-you') return true;
     return false;
@@ -1113,72 +1112,102 @@
     else left.appendChild(chip);
   }
 
-  function findRatedOffice(doc, code, level, name) {
-    if (!doc || !doc.offices) return null;
-    if (code && doc.offices[code]) return doc.offices[code];
-    var want = String(name || '').toLowerCase();
-    if (!want || !level) return null;
-    var keys = Object.keys(doc.offices);
-    for (var i = 0; i < keys.length; i++) {
-      var o = doc.offices[keys[i]];
-      if (o && o.level === level && String(o.name || '').toLowerCase() === want) return o;
-    }
-    return null;
-  }
-
-  function applyScopeRank(el, o, code) {
-    if (!o || !o.rated || o.rank == null || !o.of) { el.hidden = true; return; }
-    var many = LEVEL_MANY[o.level] || 'offices';
-    var href = '/performance_index.html' + (code ? ('?office=' + encodeURIComponent(code)) : '');
-    el.innerHTML = '<a href="' + href + '">#' + esc(String(o.rank)) + ' of ' + esc(String(o.of)) + ' ' + esc(many) + '</a>';
-    el.hidden = false;
-  }
-
-  function fetchRatingDoc() {
-    try {
-      var cached = sessionStorage.getItem(RANK_CACHE_KEY);
-      if (cached) {
-        var parsed = JSON.parse(cached);
-        if (parsed && parsed.offices) return Promise.resolve(parsed);
-      }
-    } catch (e) {}
-    var hub = w.mzoDataHub;
-    var tryApi = function () {
-      return fetch('/api/data/rating', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-        .then(function (r) { return r.status === 200 ? r.json() : null; })
-        .catch(function () { return null; });
-    };
-    var p = (hub && typeof hub.mirrorManifest === 'function')
-      ? Promise.resolve(hub.mirrorManifest(false)).then(function (m) { return m ? tryApi() : null; }).catch(function () { return null; })
-      : tryApi();
-    return p.then(function (doc) {
-      if (doc && doc.offices) {
-        try { sessionStorage.setItem(RANK_CACHE_KEY, JSON.stringify({ offices: doc.offices, generatedAt: doc.generatedAt || '' })); } catch (e) {}
-        return doc;
-      }
-      return null;
-    });
-  }
-
-  function paintScopeRank() {
-    var S = w.MzoScope;
-    var info = S && S.scopeChip ? S.scopeChip() : null;
-    if (!info) return;
-    var head = document.querySelector('.ui-page > .ui-head, main.ui-page > .ui-head, .ui-head');
-    if (!head) return;
+  function ensureScopeRankEl() {
     var el = document.getElementById('mzo-scope-rank');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'mzo-scope-rank';
-      el.className = 'ui-scope-rank';
-      el.setAttribute('role', 'note');
-      el.hidden = true;
-      head.insertAdjacentElement('afterend', el);
+    if (el) return el;
+    var head = document.querySelector('.ui-page > .ui-head, main.ui-page > .ui-head, .ui-head');
+    if (!head) return null;
+    el = document.createElement('div');
+    el.id = 'mzo-scope-rank';
+    el.className = 'ui-scope-rank';
+    el.setAttribute('role', 'note');
+    el.hidden = true;
+    head.insertAdjacentElement('afterend', el);
+    return el;
+  }
+
+  function hideScopeRank() {
+    var el = document.getElementById('mzo-scope-rank');
+    if (el) { el.hidden = true; el.textContent = ''; el.removeAttribute('title'); }
+  }
+
+  /**
+   * Rank the signed-in office on this report’s headline metric among same-level peers in the zone.
+   * cfg.rows: full-zone rows (pre-filterRows) with _region/_divn/_supp
+   * cfg.scores: optional { officeName: number } instead of aggregating rows
+   * cfg.value(row): number to sum per office (default: count rows)
+   * cfg.lowerIsBetter: true for pending/loss; false for collection
+   * cfg.label: short metric name for the title tooltip
+   * cfg.field: override group field
+   */
+  function reportRank(cfg) {
+    cfg = cfg || {};
+    var S = w.MzoScope;
+    if (skipScopeChrome() || !S || S.isUnscoped()) { hideScopeRank(); return null; }
+    var info = S.scopeChip ? S.scopeChip() : null;
+    if (!info) { hideScopeRank(); return null; }
+    paintScopeChip();
+    var el = ensureScopeRankEl();
+    if (!el) return null;
+
+    var field = cfg.field || LEVEL_FIELD[info.level] || '_supp';
+    var totals = {};
+    if (cfg.scores) {
+      Object.keys(cfg.scores).forEach(function (k) {
+        var v = cfg.scores[k];
+        if (v == null || !isFinite(Number(v))) return;
+        totals[k] = Number(v);
+      });
+    } else {
+      var rows = cfg.rows || [];
+      var valueFn = typeof cfg.value === 'function' ? cfg.value : null;
+      rows.forEach(function (r) {
+        var name = r[field];
+        if (!name || name === 'Unmapped') return;
+        var add = valueFn ? Number(valueFn(r)) : 1;
+        if (!isFinite(add)) add = 0;
+        totals[name] = (totals[name] || 0) + add;
+      });
     }
-    var code = S.scopeOfficeCode ? S.scopeOfficeCode() : '';
-    fetchRatingDoc().then(function (doc) {
-      applyScopeRank(el, findRatedOffice(doc, code, info.level, info.name), code);
-    }).catch(function () { el.hidden = true; });
+
+    var mine = info.name;
+    var mineKey = null;
+    Object.keys(totals).forEach(function (k) {
+      if (k === mine || String(k).toLowerCase() === String(mine).toLowerCase()) mineKey = k;
+    });
+    if (!mineKey || totals[mineKey] == null) { hideScopeRank(); return null; }
+
+    var lower = !!cfg.lowerIsBetter;
+    var list = Object.keys(totals).map(function (k) { return { name: k, v: totals[k] }; });
+    if (list.length < 2) { hideScopeRank(); return null; }
+    list.sort(function (a, b) {
+      if (a.v !== b.v) return lower ? a.v - b.v : b.v - a.v;
+      return String(a.name).localeCompare(String(b.name));
+    });
+    var rank = 0, prev = null, myRank = null;
+    for (var i = 0; i < list.length; i++) {
+      if (prev == null || list[i].v !== prev) rank = i + 1;
+      prev = list[i].v;
+      if (list[i].name === mineKey) myRank = rank;
+    }
+    if (myRank == null) { hideScopeRank(); return null; }
+
+    var many = LEVEL_MANY[info.level] || 'offices';
+    el.textContent = '#' + myRank + ' of ' + list.length + ' ' + many;
+    el.title = (cfg.label ? cfg.label + ' · ' : '') + info.kind + ' ' + mine + ' among ' + list.length + ' ' + many + ' in Malda Zone';
+    el.hidden = false;
+    return { rank: myRank, of: list.length, value: totals[mineKey], level: info.level };
+  }
+
+  /** Rank from a MzoRows table: prefers t.all (zone) over t.rows (scoped). mapRow(d) → {_region,_divn,_supp,…} or null. */
+  function reportRankFromTable(t, mapRow, cfg) {
+    var src = (t && t.all && t.all.length) ? t.all : ((t && t.rows) || []);
+    var rows = [];
+    for (var i = 0; i < src.length; i++) {
+      var r = mapRow(src[i]);
+      if (r) rows.push(r);
+    }
+    return reportRank(Object.assign({}, cfg || {}, { rows: rows }));
   }
 
   function scopeChrome() {
@@ -1186,7 +1215,7 @@
     var S = w.MzoScope;
     if (!S || S.isUnscoped()) return;
     paintScopeChip();
-    paintScopeRank();
+    // Rank is filled later by UI.reportRank when the page has zone data.
   }
 
   // Login gate when a page is opened on its own (inside app.html the shell checks the session).
@@ -1220,6 +1249,7 @@
     csv: csv, office: office, regionName: regionName, load: load, refresh: refresh,
     fill: fill, mark: mark, uniq: uniq, offices: offices, lockScope: lockScope,
     filterOfficeTabs: filterOfficeTabs, snapOfficeTab: snapOfficeTab, scopeTrail: scopeTrail, scopeChrome: scopeChrome,
+    reportRank: reportRank, reportRankFromTable: reportRankFromTable,
     table: table, bar: bar, hist: hist, line: line, color: color, facet: facet, sidePanel: sidePanel, drill: drill,
     exportCsv: exportCsv, toast: toast, debounce: debounce, copy: copy, drawer: drawer, trapFocus: trapFocus, icon: icon
   };

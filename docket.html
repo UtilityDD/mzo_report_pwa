@@ -6,7 +6,7 @@
   <title>Consumer dockets · DISHA</title>
   <script src="/mzo_theme.js?v=9"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=23" />
-  <script src="/mzo_ui.js?v=20" defer></script>
+  <script src="/mzo_ui.js?v=21" defer></script>
   <script src="/mzo_data_hub.js?v=93" defer></script>
   <script src="/lib/offices.js?v=3" defer></script>
   <script src="/mzo_scope.js?v=20" defer></script>
@@ -164,7 +164,8 @@
     function prepare(t) {
       var now = Date.now(); latest = null; repeat = {};
       t.all.forEach(function (d) { var c = d.doc_no ? when(d.doc_crn_dt) : null; if (c && (!latest || c > latest)) latest = c; });
-      all = t.rows.filter(function (d) { return d.doc_no; }).map(function (d) {
+      function mapDocket(d) {
+        if (!d.doc_no) return null;
         var c = when(d.doc_crn_dt), prob = d.prob_type;
         return {
           doc: d.doc_no, con: d.con_id, name: UI.blank(d.party_name) ? '' : UI.title(d.party_name), mobile: UI.blank(d.mob_no) ? '' : d.mob_no,
@@ -172,7 +173,8 @@
           hours: c ? (now - c.getTime()) / 36e5 : null, tech: TECH.indexOf(prob) !== -1,
           _region: d._region, _divn: d._division, _supp: d._ccc || UI.title((d.ccc_name || d.ccc_code).replace(/\s*CCC.*$/i, '')), CCC_CODE: d.ccc_code
         };
-      });
+      }
+      all = t.rows.map(mapDocket).filter(Boolean);
       all.forEach(function (r) {
         var match = AGE.filter(function (a) { return r.hours != null && r.hours < a.max; })[0];
         r.ageKey = match ? match.key : 'h4';
@@ -181,6 +183,7 @@
       if (latest && $('asOn')) $('asOn').textContent = 'Up to ' + UI.fmtDate(latest) + ', ' + latest.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
       $('meta').textContent = (latest ? 'Up to ' + UI.fmtDate(latest) + ', ' + latest.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) + ' · ' : '') + UI.n(all.length) + ' open dockets';
       fillOffices();
+      UI.reportRankFromTable(t, mapDocket, { lowerIsBetter: true, label: 'Open dockets' });
     }
 
     function fillOffices() {

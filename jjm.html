@@ -6,7 +6,7 @@
   <title>JJM connections · DISHA</title>
   <script src="/mzo_theme.js?v=9"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=23" />
-  <script src="/mzo_ui.js?v=20" defer></script>
+  <script src="/mzo_ui.js?v=21" defer></script>
   <script src="/mzo_data_hub.js?v=93" defer></script>
   <script src="/lib/offices.js?v=3" defer></script>
   <script src="/mzo_scope.js?v=20" defer></script>
@@ -109,20 +109,23 @@
     // t.rows: uniform rows (one per CCC; canonical _region/_division/_ccc from the CCC name, the
     // sheet's spellings included), already scoped to the login by MzoRows. Unmapped rows (BULK)
     // keep the sheet's names.
+    function mapJjm(d) {
+      if (!d.ccc_name) return null;
+      var r = {
+        _region: d._region || UI.regionName(d.region_name) || 'Unmapped',
+        _divn: d._division || 'Unmapped',
+        _supp: d._ccc || UI.title(d.ccc_name) || 'Unmapped'
+      };
+      M.forEach(function (m) { r[m.k] = d[m.f] || 0; });
+      r.blocked = r.phe + r.row;
+      return r;
+    }
     function prepare(t) {
-      all = t.rows.filter(function (d) { return d.ccc_name; }).map(function (d) {
-        var r = {
-          _region: d._region || UI.regionName(d.region_name) || 'Unmapped',
-          _divn: d._division || 'Unmapped',
-          _supp: d._ccc || UI.title(d.ccc_name) || 'Unmapped'
-        };
-        M.forEach(function (m) { r[m.k] = d[m.f] || 0; });
-        r.blocked = r.phe + r.row;
-        return r;
-      });
+      all = t.rows.map(mapJjm).filter(Boolean);
       $('asOn').textContent = UI.n(all.length) + ' CCCs';
       $('asOn').title = 'As updated by RMs · ' + UI.n(all.length) + ' CCCs reported';
       fillFilters();
+      UI.reportRankFromTable(t, mapJjm, { value: function (r) { return r.total; }, lowerIsBetter: false, label: 'JJM deposited' });
     }
 
     function fillFilters() {
