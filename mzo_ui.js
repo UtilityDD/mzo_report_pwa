@@ -454,26 +454,35 @@
       sideH.appendChild(closeBtn);
     }
 
-    // Consistent Filters position: always first control in .ui-head > .ui-actions (right of the title).
-    if (toggle && document.body) {
-      var head = document.querySelector('.ui-page > .ui-head') || document.querySelector('header.ui-head') || document.querySelector('.ui-head');
-      if (head) {
-        var actions = null;
-        for (var ai = 0; ai < head.children.length; ai++) {
-          if (head.children[ai].classList && head.children[ai].classList.contains('ui-actions')) { actions = head.children[ai]; break; }
-        }
-        if (!actions) {
-          actions = document.createElement('div');
-          actions.className = 'ui-actions';
-          head.appendChild(actions);
-        }
-        if (toggle.parentElement !== actions || actions.firstElementChild !== toggle) {
-          actions.insertBefore(toggle, actions.firstChild);
-        }
+    // Header Filters button is unused — the edge triangle is the only control.
+    if (toggle) {
+      toggle.hidden = true;
+      toggle.setAttribute('aria-hidden', 'true');
+      toggle.tabIndex = -1;
+    }
+
+    // Flat triangle on the left edge of the report / main column.
+    var main = layout && (layout.querySelector(':scope > .ui-main') || layout.querySelector('.ui-main'));
+    var rail = main && main.querySelector(':scope > .ui-side-rail');
+    if (main && !rail) {
+      rail = document.createElement('button');
+      rail.type = 'button';
+      rail.className = 'ui-side-rail';
+      rail.setAttribute('aria-controls', side.id || 'side');
+      rail.innerHTML = '<span class="ui-side-rail-chev" aria-hidden="true"></span>';
+      main.insertBefore(rail, main.firstChild);
+    } else if (layout && !rail) {
+      // Fallback if the page has no .ui-main
+      rail = layout.querySelector(':scope > .ui-side-rail');
+      if (!rail) {
+        rail = document.createElement('button');
+        rail.type = 'button';
+        rail.className = 'ui-side-rail';
+        rail.setAttribute('aria-controls', side.id || 'side');
+        rail.innerHTML = '<span class="ui-side-rail-chev" aria-hidden="true"></span>';
+        if (side.nextSibling) layout.insertBefore(rail, side.nextSibling);
+        else layout.appendChild(rail);
       }
-      toggle.classList.add('ui-side-toggle');
-      if (!toggle.getAttribute('aria-controls') && side.id) toggle.setAttribute('aria-controls', side.id);
-      if (!toggle.getAttribute('title')) toggle.setAttribute('title', 'Show or hide filters (F)');
     }
 
     // Filter panel starts hidden: desktop collapsed, phone sheet closed.
@@ -486,9 +495,11 @@
     }
 
     function syncToggle(open) {
-      if (!toggle) return;
-      toggle.setAttribute('aria-expanded', String(!!open));
-      toggle.classList.toggle('is-active', !!open);
+      if (rail) {
+        rail.setAttribute('aria-expanded', String(!!open));
+        rail.setAttribute('aria-label', open ? 'Hide filters' : 'Show filters');
+        rail.title = open ? 'Hide filters (F)' : 'Show filters (F)';
+      }
     }
 
     function setOpen(open) {
@@ -499,7 +510,7 @@
         syncToggle(open);
         sheetOn(open ? side : null, function () { setOpen(false); });
         if (open) { side.scrollTop = 0; backOpen(function () { setOpen(false); }); }
-        else { backDone(); if (toggle && side.contains(document.activeElement)) try { toggle.focus({ preventScroll: true }); } catch (e) {} }
+        else { backDone(); if (rail && side.contains(document.activeElement)) try { rail.focus({ preventScroll: true }); } catch (e) {} }
       } else {
         if (layout) layout.classList.toggle('side-collapsed', !open);
         side.classList.toggle('open', open);
@@ -507,9 +518,9 @@
       }
     }
 
-    if (toggle) {
+    if (rail) {
       syncToggle(false);
-      toggle.addEventListener('click', function (e) {
+      rail.addEventListener('click', function (e) {
         e.stopPropagation();
         setOpen(!isShown());
       });
@@ -546,6 +557,7 @@
       if (label) label.textContent = nOn ? nOn + ' on' : '';
       if (count) count.textContent = nOn ? ' · ' + nOn : '';
       if (clear) clear.disabled = !nOn;
+      if (rail) rail.classList.toggle('has-filters', !!nOn);
       if (tabsState) Object.keys(tabsState).forEach(function (pane) { var b = side.querySelector('button[data-pane="' + pane + '"]'); if (b) b.classList.toggle('has', !!tabsState[pane]); });
     };
   }
