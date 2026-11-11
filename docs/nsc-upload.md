@@ -30,7 +30,9 @@ Caps (live Withheld is ~67k): Working ≤ 30 000, Withheld ≤ 150 000, comb
 
 ### Warnings (must tick)
 
-`same_report_date`, `title_date`, `row_drop`, `row_drop_withheld`, `working_only`, `withheld_only`, `status_unknown`, `div_unmapped`
+`same_report_date`, `title_date`, `row_drop`, `row_drop_withheld`, `working_only`, `withheld_only`, `status_unknown`, `div_unmapped`, `div_zero`
+
+`div_zero` fires when any of the seven Malda Zone divisions (Malda, Chanchal, Gazole, Raiganj, Islampur, Balurghat, Buniadpur) has **no** Working/Withheld rows in the dump — usually a bad/partial export. The same check applies to **Trend snapshot only** imports (tick before adding those days).
 
 ### Blocks
 
@@ -59,6 +61,7 @@ Who may upload: admin, `nsc-upload-autho`, or legacy `dm1`.
 ## Trend
 
 `GET /api/nsc/snapshots?detail=1` returns recent daily totals (`workingTotal`, `workingOver30`, `withheldTotal`).  
-`GET /api/nsc/snapshots?offices=1&side=working|withheld` adds lean per-day office rows (`ccc`, `region`, `division`, `supp`, `total`, `over30`) for the Trend view on `nsc.html` / `withheld.html` (Zone → Region → Division → CCC via `nsc/nsc_trend.js`).  
-`POST /api/nsc/snapshots/import` (upload autho, VM only) backfills **summary snapshots only** from `{ items:[{ reportDate, working, withheld }], skipExisting:true }` — does not replace live CSVs; skips dates already on disk. The upload page **Trend snapshot only** mode posts that body after parsing old `.xlsb` files in the browser.  
+`GET /api/nsc/snapshots?offices=1&side=working|withheld` adds lean per-day office rows (`ccc`, `region`, `division`, `supp`, `total`, `over30`) for the Trend view on `nsc.html` / `withheld.html` (Zone → Region → Division → CCC via `nsc/nsc_trend.js`). Response includes `canDelete` when the signed-in user is an admin on the VM. The Trend client resolves blank `region` from CCC via `MzoOffices` so older snapshots that stored division only still drill correctly; new uploads fill `REGION` from CCC/division when the SAP `REG` column is empty.  
+`POST /api/nsc/snapshots/import` (upload autho, VM only) backfills **summary snapshots only** from `{ items:[{ reportDate, working, withheld }], skipExisting:true, confirmWarnings? }` — does not replace live CSVs; skips dates already on disk; returns **409 confirm** with `div_zero` if any day has a zero division and that code was not ticked. The upload page **Trend snapshot only** mode posts that body after parsing old `.xlsb` files in the browser.  
+`POST /api/nsc/snapshots/delete` (admin, VM only) `{ dates:['yyyy-mm-dd',…] }` removes those day files from the trend (live Working/Withheld CSVs unchanged). The Trend view shows a **Manage snapshot days** strip for admins (flags days that still have a zero division).  
 `GET /api/nsc/viz` returns the current aggregates.

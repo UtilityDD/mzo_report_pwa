@@ -1,6 +1,7 @@
 /**
  * Office pendency / withheld trend from VM daily snapshots (Zone → Region → Division → CCC).
  * Usage: NscTrend.mount({ root, side: 'working'|'withheld', title? })
+ * Admins get a Manage days strip to remove bad snapshot dates from the chart.
  */
 (function (w) {
   'use strict';
@@ -12,12 +13,41 @@
     return parseInt(m[3], 10) + ' ' + mon[parseInt(m[2], 10) - 1];
   }
 
+  /** Snapshot offices often have blank region; resolve from CCC so Zone → Region drill matches. */
   function mapOffice(o) {
+    var code = String(o.ccc || '').replace(/\D/g, '').slice(-7);
+    var region = String(o.region || '').trim();
+    var division = String(o.division || '').trim();
+    var supp = String(o.supp || '').trim();
+    var MO = w.MzoOffices;
+    if (MO && typeof MO.resolve === 'function' && (code || supp || division || region)) {
+      var got = MO.resolve({
+        codes: code ? [code] : [],
+        cccs: supp ? [supp] : [],
+        divisions: division ? [division] : [],
+        regions: region ? [region] : []
+      });
+      var office = got && got.office;
+      if (office && office.region && office.level !== 'outside' && office.level !== 'unknown') {
+        region = office.region || region;
+        division = office.division || division;
+        supp = office.ccc || supp;
+        if (office.ccc_code) code = office.ccc_code;
+      }
+    }
+    if (!region && division) {
+      var divToReg = {
+        Malda: 'Malda', Chanchal: 'Malda', Gazole: 'Malda',
+        Raiganj: 'Uttar Dinajpur', Islampur: 'Uttar Dinajpur',
+        Balurghat: 'Dakshin Dinajpur', Buniadpur: 'Dakshin Dinajpur'
+      };
+      region = divToReg[division] || '';
+    }
     return {
-      CCC_CODE: String(o.ccc || '').replace(/\D/g, '').slice(-7),
-      _region: o.region || 'Unmapped',
-      _divn: o.division || 'Unmapped',
-      _supp: o.supp || o.ccc || 'Unmapped',
+      CCC_CODE: code,
+      _region: region || 'Unmapped',
+      _divn: division || 'Unmapped',
+      _supp: supp || code || 'Unmapped',
       total: o.total || 0,
       over30: o.over30 || 0
     };
@@ -45,6 +75,8 @@
     var days = [];
     var ready = false;
     var err = '';
+    var canDelete = false;
+    var deleting = false;
     var uid = 'nt' + String(Math.random()).slice(2, 8);
     function id(s) { return uid + '-' + s; }
     function el(s) { return document.getElementById(id(s)); }
@@ -60,6 +92,7 @@
           '</div>' +
           '<p class="ui-muted" id="' + id('meta') + '" style="margin:0 0 8px;font-size:13px;color:var(--mzo-muted)">From VM upload snapshots (office totals, no consumer detail).</p>' +
         '</div>' +
+        '<div id="' + id('manage') + '" hidden style="margin:0 0 12px;padding:10px 12px;border:1px solid var(--mzo-border);border-radius:8px;background:var(--mzo-panel-2,transparent)"></div>' +
         '<div id="' + id('drill') + '"></div>' +
         '<section class="ui-stats" style="--n:' + (showOver30 ? '3' : '2') + ';margin:12px 0" aria-label="Trend summary">' +
           '<div class="ui-stat"><div class="k">Latest</div><div class="v" id="' + id('latest') + '">—</div><div class="s" id="' + id('latestSub') + '">&nbsp;</div></div>' +
@@ -88,11 +121,108 @@
       });
     }
 
+    function zeroDivHint(day) {
+      var counts = {};
+      var expected = ['Malda', 'Chanchal', 'Gazole', 'Raiganj', 'Islampur', 'Balurghat', 'Buniadpur'];
+      expected.forEach(function (d) { counts[d] = 0; });
+      (day.offices || []).forEach(function (o) {
+        var d = String(o.division || '').trim();
+        if (d && Object.prototype.hasOwnProperty.call(counts, d)) counts[d] += Number(o.total) || 0;
+      });
+      return expected.filter(function (d) { return !counts[d]; });
+    }
+
+    function paintManage(series) {
+      var box = el('manage');
+      if (!box) return;
+      if (!canDelete || !ready || !days.length) {
+        box.hidden = true;
+        box.innerHTML = '';
+        return;
+      }
+      box.hidden = false;
+      var rows = (series || seriesFor()).slice().reverse();
+      box.innerHTML =
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+          '<div style="font-size:13px"><strong>Manage snapshot days</strong> · Admin only — remove bad days (e.g. a division at zero) from this trend. Live Working/Withheld lists are not changed.</div>' +
+          '<button type="button" class="ui-btn sm primary" id="' + id('delBtn') + '" disabled>Delete selected</button>' +
+        '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:8px 14px;max-height:140px;overflow:auto;font-size:13px" id="' + id('dayList') + '">' +
+          rows.map(function (s) {
+            var zeros = zeroDivHint(days.find(function (d) { return d.reportDate === s.reportDate; }) || s);
+            var hint = zeros.length
+              ? ' <span style="color:var(--mzo-bad,#c62828)">(0: ' + UI.esc(zeros.join(', ')) + ')</span>'
+              : '';
+            return '<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">' +
+              '<input type="checkbox" data-date="' + UI.esc(s.reportDate) + '">' +
+              '<span>' + UI.esc(shortDate(s.reportDate)) + ' · ' + UI.n(s.total) + hint + '</span></label>';
+          }).join('') +
+        '</div>' +
+        '<p class="ui-muted" id="' + id('delMsg') + '" style="margin:8px 0 0;font-size:12px;min-height:1.2em"></p>';
+
+      var list = el('dayList');
+      var btn = el('delBtn');
+      function syncBtn() {
+        var n = 0;
+        if (list) list.querySelectorAll('input[type="checkbox"]').forEach(function (cb) { if (cb.checked) n += 1; });
+        if (btn) {
+          btn.disabled = deleting || n < 1;
+          btn.textContent = n ? ('Delete ' + n + ' day' + (n === 1 ? '' : 's')) : 'Delete selected';
+        }
+      }
+      if (list) {
+        list.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+          cb.addEventListener('change', syncBtn);
+        });
+      }
+      if (btn) {
+        btn.onclick = function () {
+          var picked = [];
+          if (list) {
+            list.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+              if (cb.checked) picked.push(cb.getAttribute('data-date'));
+            });
+          }
+          if (!picked.length || deleting) return;
+          var label = picked.map(shortDate).join(', ');
+          if (!w.confirm('Remove these snapshot day(s) from the trend?\n\n' + label + '\n\nThis cannot be undone (re-upload the file to restore).')) return;
+          deleting = true;
+          syncBtn();
+          var msg = el('delMsg');
+          if (msg) msg.textContent = 'Deleting…';
+          fetch('/api/nsc/snapshots/delete', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dates: picked })
+          })
+            .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, status: r.status, data: data }; }); })
+            .then(function (res) {
+              deleting = false;
+              if (!res.ok || (res.data && res.data.status !== 'success')) {
+                if (msg) msg.textContent = (res.data && res.data.message) || 'Delete failed.';
+                syncBtn();
+                return;
+              }
+              if (msg) msg.textContent = res.data.message || 'Deleted.';
+              load();
+            })
+            .catch(function (e) {
+              deleting = false;
+              if (msg) msg.textContent = (e && e.message) || 'Delete failed.';
+              syncBtn();
+            });
+        };
+      }
+      syncBtn();
+    }
+
     function render() {
       if (!ready) {
         el('badge').textContent = err ? 'Unavailable' : 'Loading…';
         el('table').innerHTML = '<div class="ui-empty">' + UI.esc(err || 'Loading snapshots…') + '</div>';
         el('chart').innerHTML = '';
+        paintManage([]);
         return;
       }
       if (!days.length) {
@@ -100,6 +230,7 @@
         el('meta').textContent = 'Trend needs VM uploads. After the first Replace on DISHA, daily office totals appear here.';
         el('table').innerHTML = '<div class="ui-empty">No snapshots yet.</div>';
         el('chart').innerHTML = '';
+        paintManage([]);
         dr.paint({ trend: 0 }, '');
         return;
       }
@@ -138,6 +269,8 @@
         height: 220,
         fmt: UI.n
       });
+
+      paintManage(series);
 
       if (dr.isList()) {
         UI.table(el('table'), {
@@ -227,6 +360,7 @@
         })
         .then(function (data) {
           var key = side === 'withheld' ? 'withheldOffices' : 'workingOffices';
+          canDelete = !!(data && data.canDelete);
           days = (data && data.items || []).map(function (it) {
             return { reportDate: it.reportDate, offices: it[key] || [] };
           }).filter(function (d) { return d.reportDate; });
@@ -237,6 +371,7 @@
           err = (e && e.message) || 'Could not load snapshots.';
           ready = false;
           days = [];
+          canDelete = false;
           render();
         });
     }

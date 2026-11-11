@@ -42,6 +42,29 @@
     'DAKSHIN DINAJPUR REGION': 'Dakshin Dinajpur'
   };
 
+  /** Canonical Malda Zone divisions — warn when a dump has none for a division. */
+  const EXPECTED_DIVISIONS = [
+    'Malda', 'Chanchal', 'Gazole', 'Raiganj', 'Islampur', 'Balurghat', 'Buniadpur'
+  ];
+
+  const DIVN_TO_REGION = {
+    Malda: 'Malda', Chanchal: 'Malda', Gazole: 'Malda',
+    Raiganj: 'Uttar Dinajpur', Islampur: 'Uttar Dinajpur',
+    Balurghat: 'Dakshin Dinajpur', Buniadpur: 'Dakshin Dinajpur'
+  };
+
+  function regionFromDivisionOrCode(region, division, cccCode) {
+    var r = String(region || '').trim();
+    if (r) return r;
+    var d = String(division || '').trim();
+    if (d && DIVN_TO_REGION[d]) return DIVN_TO_REGION[d];
+    var code = String(cccCode || '').replace(/\D/g, '');
+    if (code.indexOf('661') === 0) return 'Malda';
+    if (code.indexOf('662') === 0) return 'Uttar Dinajpur';
+    if (code.indexOf('663') === 0) return 'Dakshin Dinajpur';
+    return '';
+  }
+
   const DIVN_ALIASES = {
     'MALDA DIVISIOIN': 'Malda',
     'MALDA DIVISION': 'Malda',
@@ -283,7 +306,10 @@
       statusCounts[status || '(blank)'] = (statusCounts[status || '(blank)'] || 0) + 1;
 
       const reg = cellStr(raw.REG);
-      const region = normalizeRegion(reg);
+      const divn = resolveDivnName(raw, workbookOfficeMap);
+      const supp = normalizeSuppOff(raw.SUPP_OFF);
+      const ccc = cellStr(raw.CCC_CODE);
+      const region = regionFromDivisionOrCode(normalizeRegion(reg) || normalizeRegion(raw.REGION), divn, ccc);
       regionCounts[region || '(blank)'] = (regionCounts[region || '(blank)'] || 0) + 1;
 
       const coll = excelSerialToDate(raw.COLL_DATE);
@@ -306,9 +332,9 @@
 
       const row = {
         REG: reg,
-        DIVN_NAME: resolveDivnName(raw, workbookOfficeMap),
-        SUPP_OFF: normalizeSuppOff(raw.SUPP_OFF),
-        CCC_CODE: cellStr(raw.CCC_CODE),
+        DIVN_NAME: divn,
+        SUPP_OFF: supp,
+        CCC_CODE: ccc,
         APPL_NO: cellStr(raw.APPL_NO),
         CREATION_DATE: formatDateDMY(created) || cellStr(raw.CREATION_DATE),
         CON_ID: cellStr(raw.CON_ID),
@@ -417,9 +443,14 @@
       byDelay[bucket] = (byDelay[bucket] || 0) + 1;
       if (!offices[code]) {
         offices[code] = {
-          ccc: code, region: r.REGION || '', division: r.DIVN_NAME || '', supp: r.SUPP_OFF || '',
+          ccc: code,
+          region: regionFromDivisionOrCode(r.REGION, r.DIVN_NAME, code),
+          division: r.DIVN_NAME || '',
+          supp: r.SUPP_OFF || '',
           total: 0, over30: 0, pole: 0, poleOver30: 0, byClass: {}
         };
+      } else if (!offices[code].region) {
+        offices[code].region = regionFromDivisionOrCode(r.REGION, r.DIVN_NAME || offices[code].division, code);
       }
       const o = offices[code];
       o.total += 1;
@@ -438,6 +469,28 @@
     };
   }
 
+  function zeroDivisionsFromRows(rows) {
+    const counts = {};
+    EXPECTED_DIVISIONS.forEach(function (d) { counts[d] = 0; });
+    (rows || []).forEach(function (r) {
+      const d = String((r && (r.DIVN_NAME || r.division)) || '').trim();
+      if (d && Object.prototype.hasOwnProperty.call(counts, d)) counts[d] += 1;
+    });
+    return EXPECTED_DIVISIONS.filter(function (d) { return !counts[d]; });
+  }
+
+  function zeroDivisionsFromViz(viz) {
+    const counts = {};
+    EXPECTED_DIVISIONS.forEach(function (d) { counts[d] = 0; });
+    ((viz && viz.offices) || []).forEach(function (o) {
+      const d = String((o && o.division) || '').trim();
+      if (d && Object.prototype.hasOwnProperty.call(counts, d)) {
+        counts[d] += Number(o.total) || 0;
+      }
+    });
+    return EXPECTED_DIVISIONS.filter(function (d) { return !counts[d]; });
+  }
+
   function buildWithheldViz(rows) {
     const viz = buildViz((rows || []).map(function (r) {
       return Object.assign({}, r, { DelayInSC: '', DelaySerial: '', PoleNonPole: 'Non Pole Case' });
@@ -454,9 +507,14 @@
       const code = String(r.CCC_CODE || '').replace(/\D/g, '').slice(-7) || 'unknown';
       if (!offices[code]) {
         offices[code] = {
-          ccc: code, region: r.REGION || '', division: r.DIVN_NAME || '', supp: r.SUPP_OFF || '',
+          ccc: code,
+          region: regionFromDivisionOrCode(r.REGION, r.DIVN_NAME, code),
+          division: r.DIVN_NAME || '',
+          supp: r.SUPP_OFF || '',
           total: 0, over30: 0, pole: 0, poleOver30: 0, byClass: {}
         };
+      } else if (!offices[code].region) {
+        offices[code].region = regionFromDivisionOrCode(r.REGION, r.DIVN_NAME || offices[code].division, code);
       }
       offices[code].total += 1;
       offices[code].byClass[cls] = (offices[code].byClass[cls] || 0) + 1;
@@ -530,6 +588,9 @@
     parseManualReportDate,
     buildViz: buildViz,
     buildWithheldViz: buildWithheldViz,
+    EXPECTED_DIVISIONS: EXPECTED_DIVISIONS,
+    zeroDivisionsFromRows: zeroDivisionsFromRows,
+    zeroDivisionsFromViz: zeroDivisionsFromViz,
     OUTPUT_COLUMNS,
     WITHHELD_COLUMNS,
     SLIM_WORKING_COLUMNS,

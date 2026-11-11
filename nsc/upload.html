@@ -231,7 +231,7 @@
 
       <div id="msg" class="msg"></div>
       <div class="warn-box" id="warnBox">
-        <strong style="display:block;margin-bottom:0.35rem;color:var(--mzo-text)">Confirm before replacing</strong>
+        <strong id="warnTitle" style="display:block;margin-bottom:0.35rem;color:var(--mzo-text)">Confirm before replacing</strong>
         <div id="warnList"></div>
         <div class="warn-actions">
           <button type="button" class="primary" id="confirmVmBtn" disabled>Replace on DISHA</button>
@@ -265,7 +265,7 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
-  <script src="/nsc/nsc_client_pipeline.js?v=114"></script>
+  <script src="/nsc/nsc_client_pipeline.js?v=116"></script>
   <script src="/mzo_data_hub.js?v=94"></script>
   <script src="/lib/sheet_mirror_client.js?v=110"></script>
   <script>
@@ -305,6 +305,7 @@
     let withheldSheetEditUrl = FALLBACK_WH_SHEET;
     let vmUploadEnabled = false;
     let vmPreview = null; // { token, warnings, summary }
+    let snapPending = null; // { items, warnings } — trend snapshot confirm
     let lastJob = null;
     let progressState = {
       pendingTotal: 0,
@@ -316,6 +317,7 @@
     };
     const warnBox = document.getElementById('warnBox');
     const warnList = document.getElementById('warnList');
+    const warnTitle = document.getElementById('warnTitle');
     const confirmVmBtn = document.getElementById('confirmVmBtn');
     const cancelVmBtn = document.getElementById('cancelVmBtn');
 
@@ -323,12 +325,18 @@
       warnBox.classList.remove('show');
       warnList.innerHTML = '';
       confirmVmBtn.disabled = true;
+      confirmVmBtn.textContent = 'Replace on DISHA';
+      if (warnTitle) warnTitle.textContent = 'Confirm before replacing';
       vmPreview = null;
+      snapPending = null;
     }
 
     function showVmWarnings(data) {
       const warns = data.warnings || [];
+      snapPending = null;
       vmPreview = { token: data.token, warnings: warns.map(function (w) { return w.code; }), summary: data.summary };
+      if (warnTitle) warnTitle.textContent = 'Confirm before replacing';
+      confirmVmBtn.textContent = 'Replace on DISHA';
       if (!warns.length) {
         warnList.innerHTML = '<div class="muted" style="color:var(--mzo-ok)">No warnings — the file looks consistent with the usual dump.</div>';
         confirmVmBtn.disabled = false;
@@ -353,14 +361,85 @@
     }
 
     function syncVmConfirm() {
-      if (!vmPreview) { confirmVmBtn.disabled = true; return; }
-      var need = vmPreview.warnings || [];
+      var need = (snapPending && snapPending.warnings) || (vmPreview && vmPreview.warnings) || [];
+      if (!vmPreview && !snapPending) { confirmVmBtn.disabled = true; return; }
       if (!need.length) { confirmVmBtn.disabled = false; return; }
       var ticked = [];
       warnList.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
         if (cb.checked) ticked.push(cb.getAttribute('data-code'));
       });
       confirmVmBtn.disabled = ticked.length < need.length;
+    }
+
+    function showSnapWarnings(items, warns) {
+      vmPreview = null;
+      snapPending = { items: items, warnings: warns.map(function (w) { return w.code; }) };
+      if (warnTitle) warnTitle.textContent = 'Confirm before adding to trend';
+      confirmVmBtn.textContent = 'Add snapshots anyway';
+      warnList.innerHTML = warns.map(function (w) {
+        return '<label><input type="checkbox" data-code="' + String(w.code).replace(/"/g, '') + '"><span>' +
+          String(w.message || w.code).replace(/</g, '&lt;') + '</span></label>';
+      }).join('');
+      confirmVmBtn.disabled = true;
+      warnList.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+        cb.addEventListener('change', syncVmConfirm);
+      });
+      warnBox.classList.add('show');
+      showMsg('Tick the warning(s) to add these day(s) to trend, or Cancel and fix the export.', false);
+    }
+
+    async function postSnapImport(items, confirmWarnings) {
+      return postJson('/api/nsc/snapshots/import', {
+        skipExisting: true,
+        items: items,
+        confirmWarnings: confirmWarnings || []
+      });
+    }
+
+    async function finishSnapImport(done, localErrors) {
+      setStep('stepPending', '2. Save trend days', true);
+      setStep('stepFinish', '3. Done', true);
+      progressState.phase = 'done';
+      updateProgressUi();
+
+      var lines = [done.message || 'Import finished.'];
+      if (done.imported && done.imported.length) {
+        lines.push('Added: ' + done.imported.map(function (x) {
+          return x.reportDate + ' (W ' + fmt(x.workingTotal) + (x.withheldTotal ? ' / H ' + fmt(x.withheldTotal) : '') + ')';
+        }).join(', '));
+      }
+      if (done.skipped && done.skipped.length) {
+        lines.push('Skipped (already on DISHA): ' + done.skipped.map(function (x) { return x.reportDate; }).join(', '));
+      }
+      if (done.errors && done.errors.length) {
+        lines.push('Errors: ' + done.errors.map(function (x) { return (x.reportDate || '') + ' ' + (x.message || ''); }).join('; '));
+      }
+      if (localErrors && localErrors.length) {
+        lines.push('File errors: ' + localErrors.map(function (e) { return e.file + ' — ' + e.message; }).join('; '));
+      }
+      showMsg(lines.join('\n'), !(done.errors && done.errors.length) && !(localErrors && localErrors.length));
+      progressLabel.textContent = done.message || 'Done';
+    }
+
+    async function commitSnapImport() {
+      if (!snapPending || !snapPending.items || !snapPending.items.length) return;
+      var confirmWarnings = [];
+      warnList.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+        if (cb.checked) confirmWarnings.push(cb.getAttribute('data-code'));
+      });
+      confirmVmBtn.disabled = true;
+      uploadBtn.disabled = true;
+      try {
+        var done = await postSnapImport(snapPending.items, confirmWarnings);
+        hideWarnBox();
+        await finishSnapImport(done, []);
+      } catch (e) {
+        showMsg((e && e.message) || String(e), false);
+        confirmVmBtn.disabled = false;
+      } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = 'Add snapshots';
+      }
     }
 
     async function sha256Hex(buffer) {
@@ -834,12 +913,16 @@
       uploadBtn.disabled = false;
       uploadBtn.textContent = 'Upload';
     });
-    confirmVmBtn.addEventListener('click', function () { commitVmUpload(); });
+    confirmVmBtn.addEventListener('click', function () {
+      if (snapPending) commitSnapImport();
+      else commitVmUpload();
+    });
 
     async function importTrendSnapshots(files) {
       const fallbackDate = (reportDateInput.value || '').trim();
       const items = [];
       const localErrors = [];
+      const zeroDays = [];
       progressPanel.classList.add('show');
       setStep('stepProcess', '1. Process old files', false);
       setStep('stepPending', '2. Save trend days', false);
@@ -866,6 +949,10 @@
             localErrors.push({ file: file.name, message: 'No Working or Withheld rows.' });
             continue;
           }
+          var zeroDivs = NSCClientPipeline.zeroDivisionsFromViz(working || withheld);
+          if (zeroDivs.length) {
+            zeroDays.push({ reportDate: iso, divisions: zeroDivs, file: file.name });
+          }
           items.push({
             reportDate: iso,
             originalName: file.name,
@@ -890,32 +977,24 @@
         throw new Error(failMsg);
       }
 
+      if (zeroDays.length) {
+        var parts = zeroDays.map(function (z) {
+          return z.reportDate + ' — ' + z.divisions.join(', ') + (z.file ? ' [' + z.file + ']' : '');
+        });
+        progressLabel.textContent = 'Confirm zero-division day(s)';
+        showSnapWarnings(items, [{
+          code: 'div_zero',
+          message: 'Zero applications for one or more divisions on: ' + parts.join('; ') +
+            '. Tick to add these days to trend anyway, or Cancel and fix the export.'
+        }]);
+        return;
+      }
+
       setStep('stepPending', '2. Save trend days', false);
       progressLabel.textContent = 'Saving ' + items.length + ' snapshot day(s) (skip duplicates)…';
       updateProgressUi();
-      var done = await postJson('/api/nsc/snapshots/import', { skipExisting: true, items: items });
-      setStep('stepPending', '2. Save trend days', true);
-      setStep('stepFinish', '3. Done', true);
-      progressState.phase = 'done';
-      updateProgressUi();
-
-      var lines = [done.message || 'Import finished.'];
-      if (done.imported && done.imported.length) {
-        lines.push('Added: ' + done.imported.map(function (x) {
-          return x.reportDate + ' (W ' + fmt(x.workingTotal) + (x.withheldTotal ? ' / H ' + fmt(x.withheldTotal) : '') + ')';
-        }).join(', '));
-      }
-      if (done.skipped && done.skipped.length) {
-        lines.push('Skipped (already on DISHA): ' + done.skipped.map(function (x) { return x.reportDate; }).join(', '));
-      }
-      if (done.errors && done.errors.length) {
-        lines.push('Errors: ' + done.errors.map(function (x) { return (x.reportDate || '') + ' ' + (x.message || ''); }).join('; '));
-      }
-      if (localErrors.length) {
-        lines.push('File errors: ' + localErrors.map(function (e) { return e.file + ' — ' + e.message; }).join('; '));
-      }
-      showMsg(lines.join('\n'), !(done.errors && done.errors.length) && !localErrors.length);
-      progressLabel.textContent = done.message || 'Done';
+      var done = await postSnapImport(items, []);
+      await finishSnapImport(done, localErrors);
     }
 
     uploadBtn.addEventListener('click', async () => {
