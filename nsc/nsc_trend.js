@@ -77,6 +77,7 @@
     var err = '';
     var canDelete = false;
     var deleting = false;
+    var manageOpen = false;
     var visKey = 'mzo_nsc_trend_vis_' + side;
     var seriesVis = { total: true, avg: true, over30: false, avg30: false };
     try {
@@ -162,23 +163,34 @@
       box.hidden = false;
       var rows = (series || seriesFor()).slice().reverse();
       box.innerHTML =
-        '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:8px">' +
-          '<div style="font-size:13px"><strong>Manage snapshot days</strong> · Admin only — remove bad days (e.g. a division at zero) from this trend. Live Working/Withheld lists are not changed.</div>' +
-          '<button type="button" class="ui-btn sm primary" id="' + id('delBtn') + '" disabled>Delete selected</button>' +
-        '</div>' +
-        '<div style="display:flex;flex-wrap:wrap;gap:8px 14px;max-height:140px;overflow:auto;font-size:13px" id="' + id('dayList') + '">' +
-          rows.map(function (s) {
-            var zeros = zeroDivHint(days.find(function (d) { return d.reportDate === s.reportDate; }) || s);
-            var hint = zeros.length
-              ? ' <span style="color:var(--mzo-bad,#c62828)">(0: ' + UI.esc(zeros.join(', ')) + ')</span>'
-              : '';
-            return '<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">' +
-              '<input type="checkbox" data-date="' + UI.esc(s.reportDate) + '">' +
-              '<span>' + UI.esc(shortDate(s.reportDate)) + ' · ' + UI.n(s.total) + hint + '</span></label>';
-          }).join('') +
-        '</div>' +
-        '<p class="ui-muted" id="' + id('delMsg') + '" style="margin:8px 0 0;font-size:12px;min-height:1.2em"></p>';
+        '<details id="' + id('manageDetails') + '"' + (manageOpen ? ' open' : '') + ' style="font-size:13px">' +
+          '<summary style="cursor:pointer;list-style:revert;font-weight:600">' +
+            'Manage snapshot days <span style="font-weight:400;color:var(--mzo-muted)">· Admin only</span>' +
+          '</summary>' +
+          '<p class="ui-muted" style="margin:8px 0 10px;font-size:12px;line-height:1.4">' +
+            'Remove bad days (e.g. a division at zero) from this trend. Live Working/Withheld lists are not changed.' +
+          '</p>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:8px">' +
+            '<button type="button" class="ui-btn sm primary" id="' + id('delBtn') + '" disabled>Delete selected</button>' +
+          '</div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:8px 14px;max-height:140px;overflow:auto;font-size:13px" id="' + id('dayList') + '">' +
+            rows.map(function (s) {
+              var zeros = zeroDivHint(days.find(function (d) { return d.reportDate === s.reportDate; }) || s);
+              var hint = zeros.length
+                ? ' <span style="color:var(--mzo-bad,#c62828)">(0: ' + UI.esc(zeros.join(', ')) + ')</span>'
+                : '';
+              return '<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">' +
+                '<input type="checkbox" data-date="' + UI.esc(s.reportDate) + '">' +
+                '<span>' + UI.esc(shortDate(s.reportDate)) + ' · ' + UI.n(s.total) + hint + '</span></label>';
+            }).join('') +
+          '</div>' +
+          '<p class="ui-muted" id="' + id('delMsg') + '" style="margin:8px 0 0;font-size:12px;min-height:1.2em"></p>' +
+        '</details>';
 
+      var details = el('manageDetails');
+      if (details) {
+        details.addEventListener('toggle', function () { manageOpen = details.open; });
+      }
       var list = el('dayList');
       var btn = el('delBtn');
       function syncBtn() {
