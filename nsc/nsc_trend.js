@@ -78,21 +78,24 @@
     var canDelete = false;
     var deleting = false;
     var visKey = 'mzo_nsc_trend_vis_' + side;
-    var seriesVis = { total: true, avg: true, over30: false };
+    var seriesVis = { total: true, avg: true, over30: false, avg30: false };
     try {
       var saved = JSON.parse(localStorage.getItem(visKey) || '{}');
       if (saved && typeof saved === 'object') {
         if (typeof saved.total === 'boolean') seriesVis.total = saved.total;
         if (typeof saved.avg === 'boolean') seriesVis.avg = saved.avg;
         if (typeof saved.over30 === 'boolean') seriesVis.over30 = saved.over30;
+        if (typeof saved.avg30 === 'boolean') seriesVis.avg30 = saved.avg30;
       }
     } catch (_) { /* keep defaults */ }
-    if (!seriesVis.total && !seriesVis.avg && !(showOver30 && seriesVis.over30)) seriesVis.total = true;
+    if (!seriesVis.total && !seriesVis.avg && !(showOver30 && (seriesVis.over30 || seriesVis.avg30))) {
+      seriesVis.total = true;
+    }
 
     var uid = 'nt' + String(Math.random()).slice(2, 8);
     function id(s) { return uid + '-' + s; }
     function el(s) { return document.getElementById(id(s)); }
-    var statN = showOver30 ? 4 : 3;
+    var statN = showOver30 ? 6 : 5;
 
     root.innerHTML =
       '<section class="ui-panel">' +
@@ -109,11 +112,13 @@
         '<div id="' + id('drill') + '"></div>' +
         '<section class="ui-stats" style="--n:' + statN + ';margin:12px 0" aria-label="Trend summary">' +
           '<div class="ui-stat"><div class="k">Current</div><div class="v" id="' + id('latest') + '">—</div><div class="s" id="' + id('latestSub') + '">&nbsp;</div></div>' +
-          '<div class="ui-stat"><div class="k">Average</div><div class="v" id="' + id('avg') + '">—</div><div class="s" id="' + id('avgSub') + '">&nbsp;</div></div>' +
-          '<div class="ui-stat"><div class="k">vs average</div><div class="v" id="' + id('vsAvg') + '">—</div><div class="s" id="' + id('vsAvgSub') + '">&nbsp;</div></div>' +
+          '<div class="ui-stat"><div class="k">Avg total</div><div class="v" id="' + id('avg') + '">—</div><div class="s" id="' + id('avgSub') + '">&nbsp;</div></div>' +
           (showOver30
-            ? '<div class="ui-stat"><div class="k">&gt; 30 days</div><div class="v" id="' + id('over30') + '">—</div><div class="s" id="' + id('over30Sub') + '">&nbsp;</div></div>'
+            ? '<div class="ui-stat"><div class="k">Avg &gt; 30d</div><div class="v" id="' + id('avg30') + '">—</div><div class="s" id="' + id('avg30Sub') + '">&nbsp;</div></div>'
             : '') +
+          '<div class="ui-stat"><div class="k">vs avg total</div><div class="v" id="' + id('vsAvg') + '">—</div><div class="s" id="' + id('vsAvgSub') + '">&nbsp;</div></div>' +
+          '<div class="ui-stat"><div class="k">Max</div><div class="v" id="' + id('max') + '">—</div><div class="s" id="' + id('maxSub') + '">&nbsp;</div></div>' +
+          '<div class="ui-stat"><div class="k">Min</div><div class="v" id="' + id('min') + '">—</div><div class="s" id="' + id('minSub') + '">&nbsp;</div></div>' +
         '</section>' +
         '<div id="' + id('chart') + '" style="margin:8px 0 14px"></div>' +
         '<div id="' + id('table') + '"><div class="ui-empty">Loading snapshots…</div></div>' +
@@ -258,39 +263,63 @@
       var prev = series.length > 1 ? series[series.length - 2] : null;
       var where = dr.where() || 'Malda Zone';
       var sum = 0;
+      var sum30 = 0;
       totals.forEach(function (v) { sum += v; });
+      over30s.forEach(function (v) { sum30 += v; });
       var avg = series.length ? sum / series.length : 0;
+      var avg30 = series.length ? sum30 / series.length : 0;
       var avgRounded = Math.round(avg);
+      var avg30Rounded = Math.round(avg30);
       var vsAvg = last.total - avg;
       var vsPct = avg ? (vsAvg / avg) * 100 : 0;
       var avgLine = totals.map(function () { return avgRounded; });
+      var avg30Line = over30s.map(function () { return avg30Rounded; });
+
+      var maxPt = null;
+      var minPt = null;
+      series.forEach(function (s) {
+        if (!maxPt || s.total > maxPt.total || (s.total === maxPt.total && s.reportDate > maxPt.reportDate)) {
+          maxPt = s;
+        }
+        if (!minPt || s.total < minPt.total || (s.total === minPt.total && s.reportDate > minPt.reportDate)) {
+          minPt = s;
+        }
+      });
 
       el('badge').textContent = series.length + ' day' + (series.length === 1 ? '' : 's');
       el('meta').textContent = series.length + ' snapshot day' + (series.length === 1 ? '' : 's') +
-        ' · ' + where + ' · Current vs period average (legend toggles lines)';
+        ' · ' + where + ' · Current vs averages · max/min (legend toggles lines)';
 
       el('latest').textContent = UI.n(last.total);
       el('latestSub').textContent = last.reportDate ? 'As on ' + shortDate(last.reportDate) : '';
       el('avg').textContent = UI.n(avgRounded);
-      el('avgSub').textContent = series.length + ' day' + (series.length === 1 ? '' : 's') + ' mean';
+      el('avgSub').textContent = series.length + ' day' + (series.length === 1 ? '' : 's') + ' mean (total)';
       el('vsAvg').textContent = (vsAvg > 0 ? '+' : '') + UI.n(Math.round(vsAvg));
       el('vsAvgSub').textContent = avg
-        ? ((vsPct > 0 ? '+' : '') + (Math.round(vsPct * 10) / 10) + '% of average')
+        ? ((vsPct > 0 ? '+' : '') + (Math.round(vsPct * 10) / 10) + '% of avg total')
         : 'Need snapshot days';
       el('vsAvg').style.color = !series.length ? ''
         : (vsAvg < 0 ? 'var(--mzo-ok, #1a7f37)' : vsAvg > 0 ? 'var(--mzo-bad, #c62828)' : '');
       if (showOver30) {
-        el('over30').textContent = UI.n(last.over30);
-        el('over30Sub').textContent = last.total ? UI.pct(last.over30, last.total) + ' of current' : '0%';
+        el('avg30').textContent = UI.n(avg30Rounded);
+        el('avg30Sub').textContent = 'Current ' + UI.n(last.over30) +
+          (last.total ? ' · ' + UI.pct(last.over30, last.total) + ' of total' : '');
       }
+      el('max').textContent = maxPt ? UI.n(maxPt.total) : '—';
+      el('maxSub').textContent = maxPt ? shortDate(maxPt.reportDate) : '';
+      el('min').textContent = minPt ? UI.n(minPt.total) : '—';
+      el('minSub').textContent = minPt ? shortDate(minPt.reportDate) : '';
 
       var mainLabel = side === 'withheld' ? 'Withheld' : 'Pending';
       var chartSeries = [
         { id: 'total', label: mainLabel, values: totals, strong: true, color: 1, hidden: !seriesVis.total },
-        { id: 'avg', label: 'Average', values: avgLine, color: 'muted', dash: true, hidden: !seriesVis.avg }
+        { id: 'avg', label: 'Avg total', values: avgLine, color: 'muted', dash: true, hidden: !seriesVis.avg }
       ];
       if (showOver30) {
-        chartSeries.push({ id: 'over30', label: '> 30 days', values: over30s, color: 'bad', hidden: !seriesVis.over30 });
+        chartSeries.push(
+          { id: 'over30', label: '> 30 days', values: over30s, color: 'bad', hidden: !seriesVis.over30 },
+          { id: 'avg30', label: 'Avg >30d', values: avg30Line, color: 'warn', dash: true, hidden: !seriesVis.avg30 }
+        );
       }
       UI.line(el('chart'), {
         title: title,
@@ -304,6 +333,7 @@
             if (se.id === 'total') seriesVis.total = !se.hidden;
             if (se.id === 'avg') seriesVis.avg = !se.hidden;
             if (se.id === 'over30') seriesVis.over30 = !se.hidden;
+            if (se.id === 'avg30') seriesVis.avg30 = !se.hidden;
           });
           try { localStorage.setItem(visKey, JSON.stringify(seriesVis)); } catch (_) { /* */ }
         }
