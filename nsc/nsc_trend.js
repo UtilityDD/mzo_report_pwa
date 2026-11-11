@@ -13,6 +13,17 @@
     return parseInt(m[3], 10) + ' ' + mon[parseInt(m[2], 10) - 1];
   }
 
+  /** Sort key for snapshot days (ISO yyyy-mm-dd, or dd/mm/yyyy). Avoids "23 May" before "5 May" string order. */
+  function dateSortVal(iso) {
+    var s = String(iso || '').trim();
+    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3]);
+    var dmy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (dmy) return Date.UTC(+dmy[3], +dmy[2] - 1, +dmy[1]);
+    var t = Date.parse(s);
+    return isFinite(t) ? t : 0;
+  }
+
   /** Snapshot offices often have blank region; resolve from CCC so Zone → Region drill matches. */
   function mapOffice(o) {
     var code = String(o.ccc || '').replace(/\D/g, '').slice(-7);
@@ -355,12 +366,16 @@
 
       if (dr.isList()) {
         UI.table(el('table'), {
-          rows: series.slice().reverse(),
-          sort: { key: 'reportDate', dir: 'desc' },
+          rows: series.slice(),
+          sort: { key: 'reportDate', dir: 'asc' },
           count: false,
           empty: 'No snapshot days for this office.',
           columns: [
-            { key: 'reportDate', label: 'As on', fmt: function (v) { return UI.esc(shortDate(v)); } },
+            {
+              key: 'reportDate', label: 'As on',
+              sortVal: function (r) { return dateSortVal(r.reportDate); },
+              fmt: function (v) { return UI.esc(shortDate(v)); }
+            },
             { key: 'total', label: side === 'withheld' ? 'Withheld' : 'Pending', num: true, fmt: UI.n },
             showOver30 ? { key: 'over30', label: '> 30d', num: true, fmt: UI.n } : null,
             {
@@ -445,6 +460,8 @@
           days = (data && data.items || []).map(function (it) {
             return { reportDate: it.reportDate, offices: it[key] || [] };
           }).filter(function (d) { return d.reportDate; });
+          // Chronological (oldest → newest) so the chart and day table match calendar order.
+          days.sort(function (a, b) { return dateSortVal(a.reportDate) - dateSortVal(b.reportDate); });
           ready = true;
           render();
         })

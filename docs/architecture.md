@@ -61,6 +61,7 @@ Sheet links (sidebar **Important → Sheet links**) has its own rules: see [repo
 - `filterRows(rows)` after parse; `lockFilters()` after filling Region/Division/CCC `<select>`s.
 - A row whose usual office fields are empty is first resolved through every office-type column `lib/offices.js` knows (Office Code, Location Code, DISTRICT, CIRCLE NAME, Sub-Division Name, …). A row that still names no office is shown only to zone and admin logins.
 - Header (kit pages): a quiet office chip (`CCC: Aiho` / `Division: …` / `Region: …`) via `UI.scopeChrome`, and a per-report peer rank (`#12 of 41 CCCs`) via `UI.reportRank` / `UI.reportRankFromTable` on that page’s headline metric among same-level offices in Malda Zone (not the Performance Index — grading is still being finalized). The old “Showing … set by admin” banner is gone.
+- Zone and admin logins (unscoped): a focused **MZO** chip sits beside the DISHA logo in the shell sidebar and on Home (`Malda Zone Office`). Region / division / CCC logins keep their office chip on report titles instead.
 - **Do not** add per-page “Office Prefs”. Scope comes from login only.
 
 Canonical names in `mzo_scope.js` `HIERARCHY`:

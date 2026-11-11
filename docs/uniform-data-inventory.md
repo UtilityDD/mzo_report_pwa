@@ -221,31 +221,24 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 - **Shared with:** none (copy of block (a))
 
 ### nsc/kpi.html  (NAV key: nsc_kpi)
-- **Status (2026-11-01):** converted in `552486b` (batch A).
-- **Kind:** kit (129 lines) · **Loads:** none (kit only)
-- **Datasets:** `nsc_pending` via UI.load CACHE_NSC_v5
-- **Parser:** UI.csv
-- **Raw columns read:** `APPL_NO`, `TODAY`, `CCC_CODE`, `SUPP_OFF`, `REGION`, `DIVN_NAME`, `CONN_CLASS`, `DelayInQtn`, `DelayInWO`, `DelayInSC`
-- **Numbers:** `DelayInQtn`, `DelayInWO` and `DelayInSC` via parseInt(,10)||0. A blank delay counts as 0 and pulls averages down.
-- **Dates:** `TODAY` via UI.date. Shows the **max** over rows as "Updated …".
-- **Offices:**
-  - `o = UI.office(d.CCC_CODE, d.SUPP_OFF)`.
-  - `region = o.region || UI.regionName(d.REGION)`.
-  - `division = o.division || UI.title(DIVN_NAME minus /\s*div(ision)?\.?$/i)`.
-  - `ccc = o.ccc || UI.title(d.SUPP_OFF || d.CCC_CODE)`.
-  - Field names have **no underscore**. The raw `REGION`, `DIVN_NAME`, `SUPP_OFF` and `CCC_CODE` are copied onto the row, and `MzoScope.filterRows(all)` matches on those raw fields first.
-  - No office selects. Level tabs are hidden for scoped users.
-- **Row filters / dedupe / positional:** dedupe by `APPL_NO` trimmed **and lowercased**, last wins. This differs from nsc.html, which is case-sensitive.
+- **Status (2026-11-11):** rebuilt to full kit (side panel + drill + trend), matching Withheld / Pending NSC.
+- **Kind:** kit · **Loads:** `nsc/nsc_trend.js` (Trend view)
+- **Datasets:** `nsc_pending` via `MzoRows.load` (`CACHE_NSC_v5`)
+- **Parser:** MzoRows / uniform schema
+- **Fields used:** `appl_no`, `name`, `phone_no`, `today`, `ccc_code`, `supp_off`, `region`, `divn_name`, `conn_class`, `applied_phase`, `coll_date`, `is_portal_appl`, `agency_name`, `polenonpole`, `delayinqtn`, `delayinwo`, `delayinsc`, `_region`, `_division`, `_ccc`
+- **Numbers:** delays via `Math.trunc(…) || 0`. A blank delay counts as 0 and pulls averages down.
+- **Dates:** `today` via UI.date. Header badge = **max** over rows (“As on …”).
+- **Offices:** canonical `_region` / `_division` / `_ccc` with sheet fallbacks; `UI.drill` Region → Division → CCC → applications. `MzoScope.filterRows` after dedupe.
+- **Row filters / dedupe:** dedupe by `appl_no` trimmed **and lowercased**, last wins (same as before; differs from case-sensitive `nsc.html`).
 - **Aggregations:**
-  - Stat cards: average quotation/WO/connection delay; a card sets the sort metric.
-  - Office table by region/division/ccc: count, average of each delay, rank.
-  - Class filter on `CONN_CLASS`.
-- **Deep links:** none
+  - Stats: applications count, average quotation / WO / connection delay (card sets sort metric), Over 30 days (filters).
+  - Side facets: connection-delay buckets (status dots), class, phase; search on appl/name/phone.
+  - Office table: count, average of each delay with rank, over-30d count; list view shows applications + drawer.
+  - Trend tab: `NscTrend.mount({ side: 'working' })` (same as Pending NSC).
+- **Deep links:** `?region=` `?division=` `?ccc=` `?q=` `?class=` `?phase=` `?age=` `?metric=qtn|wo|conn` `?kpi=over30` `?view=trend`
 - **Writes:** none
-- **Quirks:** dedupe case-folding differs from nsc.html. Delays are integers (parseInt) here but parseFloat in nsc.html.
-- **Complexity:** S: one dataset, straight mapping; the office fallbacks disappear with uniform fields.
-- **Uniform fields it would use:** appl_no, today, ccc_code, supp_off, region, divn_name, conn_class, delayinqtn, delayinwo, delayinsc, _region, _division, _ccc_code, _ccc
-- **Shared with:** no helper file. Same dataset/dedupe as nsc.html; the two should move to `nsc_pending` uniform rows together.
+- **Quirks:** dedupe case-folding differs from nsc.html. Delays are integers here.
+- **Shared with:** `nsc_pending` (+ `nsc.html`); trend helper shared with Pending NSC / Withheld.
 
 ### weekly.html  (NAV key: weekly)
 - **Status (2026-11-01):** converted in `74ffd8b` (batch A).
@@ -1277,18 +1270,18 @@ Per page: what it loads, the raw columns it reads, number/date/office handling, 
 ## Media
 
 ### media_news.html  (NAV key: media_news)
-- **Status (2026-11-01):** not converted: no sheet data (server RSS JSON).
-- **Kind:** kit (173 lines) · **Loads:** none besides kit
-- **Datasets:** none from the registry. It reads `GET /api/news` (`?force=1` on refresh). The server fetches 4 Google News RSS queries (`english`, `bangla`, `districts`, `national`) and caches them for 15 min. This source is not in the mirror lists. Offline fallback: `localStorage` `mzo_merged_news_v2`, or the legacy key `mzo_merged_news`.
+- **Status (2026-11-10):** not converted: no sheet data (server RSS JSON).
+- **Kind:** kit · **Loads:** none besides kit
+- **Datasets:** none from the registry. It reads `GET /api/news` (`?force=1` on refresh). The server fetches 9 Google News RSS queries (`english`, `bangla`, `districts`, `national`, `social`, `social_bn`, `social_news`, `grievances`, `accidents`) and caches them for 15 min. `social` / `social_bn` → category `facebook` (Bangla FB only). `social_news` → category `social_news` (Districts tab, non-Facebook). BD ads and English FB how-tos are dropped. Grievances / accidents are statewide WB (`when:30d`). Age is not re-checked from `<pubDate>`. Duplicate links merge flags. No Graph API. Offline fallback: `localStorage` `mzo_merged_news_v4`, then `v3` / `v2` / `mzo_merged_news`.
 - **Parser:** server JSON (`{status:'ok', items:[…]}`).
-- **Raw columns read:** item fields `title`, `source`, `link`, `pubDate`, `description`, `category`, `isAccident` (all display or classification).
+- **Raw columns read:** item fields `title`, `source`, `link`, `pubDate`, `description`, `category`, `isAccident`, `isGrievance`, `isFacebook`, `isBangla`, `platform` (all display or classification).
 - **Numbers:** none.
 - **Dates:** `pubDate` (RSS RFC-822 string) via `new Date()`. Shows relative time (m/h ago), groups by "Today", "Yesterday" or `UI.fmtDate`, and sorts by newest first.
 - **Offices:** none. The keyword tag `/malda|raiganj|balurghat|dinajpur/i` → "Malda Zone" applies to headlines only.
 - **Row filters / dedupe / positional:** dedupe by `(link + '::' + title).toLowerCase()`. A ` - Source` suffix is split off the title when there is no source. The description is dropped if it contains `<a ` or `&lt;a`, or equals the title. A link that is not http(s) becomes `'#'`.
-- **Aggregations:** section counts (`category`, with `'english'`→`'state'`), the safety count (`isAccident` or keyword list, English and Bengali), and topic tags (first 2 regex matches).
+- **Aggregations:** section counts (`category`, with `'english'`→`'state'`), cross-tabs for Social (`isFacebook` / category `social`), Grievances (`isGrievance`), Safety (`isAccident` or keyword list, English and Bengali), and topic tags (first 2 regex matches).
 - **Deep links:** none.
-- **Writes:** `localStorage` `mzo_merged_news_v2` only.
+- **Writes:** `localStorage` `mzo_merged_news_v3` only.
 - **Quirks:** Bengali keyword matching. `category` falls back to `'general'`.
 - **Complexity:** S. It reads one server JSON feed and no tabular data.
 - **Uniform fields it would use:** not applicable.

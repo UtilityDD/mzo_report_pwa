@@ -134,7 +134,7 @@ NSC follow-ups list and posting, disconnection follow-ups, DD visit history and 
 
 ### Other
 
-- **Power news hub**: Google News RSS, fetched by the server (`/api/news`).
+- **Power news hub**: Google News RSS, fetched by the server (`/api/news`). Feeds cover state/Bangla/district/national plus last-30-day **Facebook** (Bangla FB power posts), **Districts** (statewide district power news, separate from FB), **Grievances**, and **Safety**. Facebook has no public API; local FB coverage is thin outside a few pages.
 - **Ask**: the server holds the key and calls the model: Gödel Machines (DeepSeek V4.1 Flash, OpenAI-compatible, `GOEDEL_API_KEY`) or the Anthropic Messages API (Claude Haiku, `ANTHROPIC_API_KEY`), chosen by `ASSISTANT_PROVIDER` (`lib/assistant/`); tools run in the browser on already-scoped data. See [assistant.md](assistant.md).
 - **Substation upkeeping**: a link to a separate app (`mzowbsedcl-dev.github.io/Upkeeping`).
 - **Health check-up**: placeholder, no data yet.

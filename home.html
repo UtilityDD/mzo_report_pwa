@@ -33,7 +33,9 @@
     .home-name {
       margin: 0; font-size: 28px; font-weight: 750; letter-spacing: -0.03em;
       line-height: 1.15; color: var(--mzo-text);
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     }
+    .home-name .ui-scope-chip { vertical-align: middle; }
     .home-expand {
       margin: 4px 0 0; font-size: 13.5px; line-height: 1.4; color: var(--mzo-muted);
       max-width: 42ch;
@@ -90,6 +92,7 @@
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 10px;
+      perspective: 1100px;
     }
     .home-tile {
       position: relative;
@@ -97,18 +100,26 @@
       gap: 18px; min-height: 96px; padding: 14px 14px 12px;
       border-radius: 14px; border: 1px solid var(--mzo-border);
       background: var(--mzo-surface); color: inherit; text-align: left; cursor: pointer;
-      transition: border-color .15s, background .15s;
+      transition: border-color .15s, background .15s, box-shadow .2s;
       -webkit-tap-highlight-color: transparent;
       transform-origin: 50% 50%;
-      will-change: transform, opacity;
+      transform-style: preserve-3d;
+      will-change: transform, opacity, box-shadow;
+      backface-visibility: hidden;
     }
     .home-tile::before {
       content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px;
       border-radius: 0 3px 3px 0; background: var(--tile, var(--mzo-accent));
     }
+    .home-tile::after {
+      content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+      box-shadow: inset 0 0 0 0 transparent;
+      transition: box-shadow .25s;
+    }
     .home-tile:hover {
       border-color: var(--mzo-border-strong);
       background: var(--mzo-surface-2);
+      box-shadow: 0 8px 22px -16px color-mix(in srgb, var(--tile, var(--mzo-accent)) 55%, transparent);
     }
     .home-tile:active:not(.swap-out):not(.swap-in) { transform: scale(.985); }
     .home-tile .t { font-size: 14px; font-weight: 650; line-height: 1.25; padding-left: 8px; }
@@ -119,19 +130,23 @@
     }
     .home-tile:hover .go { color: var(--mzo-muted); }
     .home-tile.swap-out {
-      animation: tileSwapOut .32s cubic-bezier(.4, 0, .7, .2) forwards;
+      animation: tileFlipOut .38s cubic-bezier(.55, .05, .7, .2) forwards;
       pointer-events: none;
+      z-index: 1;
     }
     .home-tile.swap-in {
-      animation: tileSwapIn .42s cubic-bezier(.2, .8, .2, 1) forwards;
+      animation: tileFlipIn .52s cubic-bezier(.2, .85, .25, 1) forwards;
+      z-index: 2;
     }
-    @keyframes tileSwapOut {
-      0% { opacity: 1; transform: translateY(0) scale(1); }
-      100% { opacity: 0; transform: translateY(10px) scale(.94); }
+    @keyframes tileFlipOut {
+      0% { opacity: 1; transform: rotateY(0deg) scale(1); filter: brightness(1); }
+      55% { opacity: .55; filter: brightness(1.06); }
+      100% { opacity: 0; transform: rotateY(-88deg) scale(.96); filter: brightness(1.1); }
     }
-    @keyframes tileSwapIn {
-      0% { opacity: 0; transform: translateY(-12px) scale(.94); }
-      100% { opacity: 1; transform: translateY(0) scale(1); }
+    @keyframes tileFlipIn {
+      0% { opacity: 0; transform: rotateY(88deg) scale(.96); filter: brightness(1.08); }
+      55% { opacity: 1; filter: brightness(1.04); }
+      100% { opacity: 1; transform: rotateY(0deg) scale(1); filter: brightness(1); }
     }
 
     .home-list {
@@ -203,7 +218,7 @@
         <img src="/icons/disha-app-mark.png?v=309" alt="" width="128" height="128" />
       </div>
       <div class="home-brand">
-        <h1 class="home-name">DISHA</h1>
+        <h1 class="home-name">DISHA <span class="ui-scope-chip" id="homeMzo" hidden title="Malda Zone Office">MZO</span></h1>
         <p class="home-expand">Distribution Insights for Swift &amp; Holistic Action</p>
         <p class="home-scope" id="homeScope" hidden></p>
       </div>
@@ -286,9 +301,10 @@
         { k: 'media_news', n: 'Power news hub', g: 'Media', hue: 'c3' }
       ];
       var VISIBLE = 9;
-      var ROTATE_MS = 7000;
-      var SWAP_STAGGER_MS = 90;
-      var SWAP_OUT_MS = 320;
+      var ROTATE_MS = 3200;       // how often one card flips
+      var SWAP_OUT_MS = 380;      // match tileFlipOut duration
+      var SWAP_IN_MS = 520;       // match tileFlipIn duration
+      var TOUCH_HOLD_MS = 2800;   // shorter pause after tap so cards keep turning
 
       var NAMES = {
         nsc: 'Pending NSC', historical_nsc: 'NSC: Historical Analysis', nsc_kpi: 'NSC KPIs', weekly: 'Weekly deposit vs disposal',
@@ -376,9 +392,17 @@
 
       function paintScope() {
         var el = document.getElementById('homeScope');
-        if (!el || !window.MzoScope) return;
+        var mzo = document.getElementById('homeMzo');
+        if (!window.MzoScope) {
+          if (el) el.hidden = true;
+          if (mzo) mzo.hidden = true;
+          return;
+        }
         try {
-          if (MzoScope.isUnscoped && MzoScope.isUnscoped()) { el.hidden = true; return; }
+          var unscoped = MzoScope.isUnscoped && MzoScope.isUnscoped();
+          if (mzo) mzo.hidden = !unscoped;
+          if (!el) return;
+          if (unscoped) { el.hidden = true; return; }
           var sc = MzoScope.getScope && MzoScope.getScope();
           if (!sc) { el.hidden = true; return; }
           var bits = [];
@@ -389,7 +413,10 @@
           if (!bits.length) { el.hidden = true; return; }
           el.textContent = bits.join(' · ');
           el.hidden = false;
-        } catch (e) { el.hidden = true; }
+        } catch (e) {
+          if (el) el.hidden = true;
+          if (mzo) mzo.hidden = true;
+        }
       }
 
       function tileInner(t) {
@@ -473,12 +500,12 @@
           setTimeout(function () {
             el.classList.remove('swap-in');
             if (done) done();
-          }, 420);
+          }, SWAP_IN_MS);
         }, SWAP_OUT_MS);
       }
 
-      // Hold the tiles still while someone is using them: hover, keyboard focus on a tile, or a tap /
-      // swipe in the last few seconds (a tile must not change under a finger or a focused button).
+      // Hold the tiles still while someone is using them: hover, keyboard focus on a tile, or a recent tap
+      // (a tile must not change under a finger or a focused button).
       var lastTouch = 0;
       function rotateOnce() {
         if (document.hidden) return;
@@ -486,23 +513,13 @@
         if (!grid || grid.matches(':hover')) return;
         if (!grid.offsetParent) return; // the shell keeps Home loaded but hidden behind another report
         if (grid.contains(document.activeElement)) return;
-        if (Date.now() - lastTouch < 5000) return;
+        if (Date.now() - lastTouch < TOUCH_HOLD_MS) return;
         var spare = waitingKeys();
         if (!spare.length || shown.length < 2) return;
         spare = shuffle(spare);
         var slots = shuffle(shown.map(function (_, i) { return i; }));
-        var n = Math.min(3, spare.length, Math.max(1, Math.floor(shown.length / 3)));
-        var i = 0;
-        function step() {
-          if (i >= n) return;
-          var slot = slots[i];
-          var next = spare[i];
-          i += 1;
-          swapOne(slot, next, function () {
-            setTimeout(step, SWAP_STAGGER_MS);
-          });
-        }
-        step();
+        // One card per tick — clear, readable flip.
+        swapOne(slots[0], spare[0]);
       }
 
       function startRotate() {

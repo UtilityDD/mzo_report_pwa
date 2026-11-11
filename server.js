@@ -5847,8 +5847,47 @@ const NEWS_FEEDS_CONFIG = {
         query: '(electricity OR "power sector" OR "national grid" OR "power reforms" OR "green energy transition") AND (India OR "Ministry of Power" OR "NTPC" OR "Power Grid Corporation" OR "PGCIL" OR "CEA") -Roy -BJP -TMC -Bangladesh -BD -Dhaka -Rangpur',
         lang: 'en-IN',
         ceid: 'IN:en'
+    },
+    // Bangla / district power (30d). Facebook alone is sparse — also pull Bangla+district news into Social.
+    social: {
+        query: 'বিদ্যুৎ (পশ্চিমবঙ্গ OR উত্তরবঙ্গ OR WBSEDCL OR "বিদ্যুৎ দফতর" OR মালদা OR রায়গঞ্জ OR বালুরঘাট OR শিলিগুড়ি OR দুর্গাপুর OR মুর্শিদাবাদ OR হাওড়া) (site:facebook.com OR source:Facebook) when:30d -বাংলাদেশ -ঢাকা -রংপুর -BD -meesho -UPS -flashlight -powerbank',
+        lang: 'en-IN',
+        ceid: 'IN:en'
+    },
+    social_bn: {
+        query: '(লোডশেডিং OR বিদ্যুৎস্পৃষ্ট OR "বিদ্যুৎ দুর্ঘটনা" OR "কারেন্ট নেই" OR "বিদ্যুৎ বিভ্রাট" OR PowerCut OR "power cut") (পশ্চিমবঙ্গ OR WBSEDCL OR মালদা OR রায়গঞ্জ OR বালুরঘাট OR শিলিগুড়ি OR জলপাইগুড়ি OR মুর্শিদাবাদ OR নদিয়া OR দুর্গাপুর OR আসানসোল OR হাওড়া OR হুগলি OR মেদিনীপুর OR কোচবিহার OR আলিপুরদুয়ার OR কলকাতা OR Siliguri OR Durgapur OR Howrah OR Murshidabad OR Malda OR Raiganj) (site:facebook.com OR source:Facebook) when:30d -বাংলাদেশ -ঢাকা -রংপুর -BD -meesho',
+        lang: 'en-IN',
+        ceid: 'IN:en'
+    },
+    // Bangla-script / district power news (not FB-only) so other districts still appear in the Social tab.
+    social_news: {
+        query: '(বিদ্যুৎ OR লোডশেডিং OR বিদ্যুৎস্পৃষ্ট OR WBSEDCL OR "power cut" OR electrocution OR electricity) (পশ্চিমবঙ্গ OR "West Bengal" OR মালদা OR Malda OR রায়গঞ্জ OR Raiganj OR বালুরঘাট OR Balurghat OR শিলিগুড়ি OR Siliguri OR জলপাইগুড়ি OR Jalpaiguri OR মুর্শিদাবাদ OR Murshidabad OR নদিয়া OR Nadia OR দুর্গাপুর OR Durgapur OR আসানসোল OR Asansol OR হাওড়া OR Howrah OR হুগলি OR Hooghly OR মেদিনীপুর OR Midnapore OR কোচবিহার OR "Cooch Behar" OR আলিপুরদুয়ার OR Alipurduar OR বীরভূম OR Birbhum OR বাঁকুড়া OR Bankura OR পুরুলিয়া OR Purulia OR কলকাতা OR Kolkata OR বর্ধমান OR Bardhaman) when:30d -বাংলাদেশ -ঢাকা -BD -Haryana -Rajasthan',
+        lang: 'en-IN',
+        ceid: 'IN:en'
+    },
+    grievances: {
+        query: '(WBSEDCL OR "বিদ্যুৎ দফতর" OR "electricity office" OR "bijali bibhag") (grievance OR complaint OR protest OR bribe OR অভিযোগ OR বিক্ষোভ OR ঘেরাও OR দুর্নীতি) AND ("West Bengal" OR পশ্চিমবঙ্গ OR Malda OR মালদা OR Siliguri OR Durgapur OR Howrah OR Murshidabad OR Kolkata OR Raiganj OR Balurghat OR "New Barrackpore") when:30d -Haryana -Rajasthan -Gujarat -Assam -Roy -BJP -TMC -Bangladesh -BD -Dhaka -Rangpur',
+        lang: 'en-IN',
+        ceid: 'IN:en'
+    },
+    accidents: {
+        query: '(electrocution OR electrocuted OR "electric shock" OR "transformer blast" OR "live wire" OR বিদ্যুৎস্পৃষ্ট OR "বিদ্যুৎ দুর্ঘটনা" OR "শর্ট সার্কিট") AND (WBSEDCL OR "West Bengal" OR পশ্চিমবঙ্গ OR Malda OR Siliguri OR Jalpaiguri OR Murshidabad OR Durgapur OR Howrah OR Kolkata OR Raiganj OR Balurghat OR "North Bengal") when:30d -Haryana -Rajasthan -Assam -Bengaluru -Karnataka -Gujarat -Roy -BJP -TMC -Bangladesh -BD -Dhaka -Rangpur',
+        lang: 'en-IN',
+        ceid: 'IN:en'
     }
 };
+const NEWS_SOCIAL_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const NEWS_RECENT_CATEGORIES = new Set(['social', 'social_bn', 'social_news', 'facebook', 'grievances', 'accidents']);
+/** Bangla script (Bengali Unicode block). */
+const NEWS_BANGLA_RE = /[\u0980-\u09FF]/;
+/** Bangla / district power: wording + any major WB district (not Malda Zone only). */
+const NEWS_BN_POWER_RE = /বিদ্যুৎ|লোডশেডিং|বিদ্যুৎস্পৃষ্ট|শর্ট\s*সার্কিট|কারেন্ট|ট্রান্সফর্মার|wbsedcl|wb\s*bijali|power\s*cut|powercut|electrocut|electricity/i;
+const NEWS_BN_GEO_RE = /পশ্চিমবঙ্গ|উত্তরবঙ্গ|দক্ষিণবঙ্গ|মালদা|রায়গঞ্জ|বালুরঘাট|দিনাজপুর|শিলিগুড়ি|জলপাইগুড়ি|কোচবিহার|আলিপুরদুয়ার|মুর্শিদাবাদ|বহরমপুর|নদিয়া|কৃষ্ণনগর|বর্ধমান|দুর্গাপুর|আসানসোল|বীরভূম|বাঁকুড়া|পুরুলিয়া|মেদিনীপুর|তমলুক|হাওড়া|হুগলি|বারাসাত|বিধাননগর|কলকাতা|তারকেশ্বর|গাজোল|malda|raiganj|balurghat|dinajpur|siliguri|jalpaiguri|cooch|alipurduar|murshidabad|nadia|bardhaman|burdwan|durgapur|asansol|birbhum|bankura|purulia|midnapore|tamluk|howrah|hooghly|barasat|kolkata|wbsedcl|west\s*bengal|wb\s*bijali|north\s*bengal|বিদ্যুৎ\s*(দফতর|পর্ষদ)/i;
+/** Named place (not only “West Bengal”) — used to keep local district stories over policy fluff. */
+const NEWS_NAMED_DISTRICT_RE = /মালদা|রায়গঞ্জ|বালুরঘাট|দিনাজপুর|শিলিগুড়ি|জলপাইগুড়ি|কোচবিহার|আলিপুরদুয়ার|মুর্শিদাবাদ|বহরমপুর|নদিয়া|কৃষ্ণনগর|বর্ধমান|দুর্গাপুর|আসানসোল|বীরভূম|বাঁকুড়া|পুরুলিয়া|মেদিনীপুর|তমলুক|হাওড়া|হুগলি|বারাসাত|বিধাননগর|কলকাতা|তারকেশ্বর|গাজোল|malda|raiganj|balurghat|dinajpur|siliguri|jalpaiguri|cooch|alipurduar|murshidabad|nadia|bardhaman|burdwan|durgapur|asansol|birbhum|bankura|purulia|midnapore|tamluk|howrah|hooghly|barasat|kolkata|north\s*bengal/i;
+const NEWS_BN_NOISE_RE = /বাংলাদেশ|\bBD\b|ঢাকা|রংপুর|চট্টগ্রাম|সিলেট|খুলনা|গুরুগ্রাম|ক্যালিফোর্নিয়া|Channel\s*S|totalsolutionplus|deepto|flashlight|powerbank|mini\s*ups|meesho|goodwe|comment for link|#viral|গ্যাস সংকট|\.com\.bd\b|One Nation|LiveLaw|GST|AAR says|Blocking.*Free Electricity|retail tariff revisions/i;
+/** Grievance / accident rows: West Bengal power context. */
+const NEWS_POWER_RE = /wbsedcl|wb\s*bijali|bijali\s*bibhag|west\s*bengal|পশ্চিমবঙ্গ|মালদা|malda|raiganj|balurghat|dinajpur|siliguri|durgapur|howrah|বিদ্যুৎ|electrocut|transformer|live\s*wire|load\s*shed|smart\s*meter|power\s+(cut|outage|line)|grievance|complaint|protest|bribe|অভিযোগ|বিক্ষোভ|দুর্ঘটনা|শর্ট\s*সার্কিট/i;
 
 let cachedNewsItems_ = [];
 let lastNewsFetchTime_ = 0;
@@ -5941,40 +5980,124 @@ function parseGoogleRssXml_(xml, category = 'national') {
             cleanDesc = '';
         }
 
-        const isAccident = isAccidentNews_(rawTitle, cleanDesc);
+        const isAccident = isAccidentNews_(rawTitle, cleanDesc) || category === 'accidents';
+        const source = sourceName || 'News';
+        const link = linkMatch ? linkMatch[1].trim() : '';
+        const isFacebook = /facebook/i.test(source) || /facebook\.com/i.test(link);
+        const isGrievance = category === 'grievances' || isGrievanceNews_(rawTitle, cleanDesc);
+        const textForLang = `${rawTitle} ${cleanDesc}`;
+        const isBangla = NEWS_BANGLA_RE.test(textForLang);
+        // Facebook feeds → facebook tab; district power news stays on its own tab.
+        let outCategory = category;
+        if (category === 'social' || category === 'social_bn') outCategory = 'facebook';
+        else if (category === 'social_news') outCategory = 'social_news';
+        if (isFacebook && (outCategory === 'social_news' || outCategory === 'general')) outCategory = 'facebook';
 
         items.push({
             title: rawTitle,
-            link: linkMatch ? linkMatch[1].trim() : '',
+            link: link,
             pubDate: pubDateMatch ? pubDateMatch[1].trim() : '',
             description: cleanDesc,
-            source: sourceName || 'News',
-            category: category,
-            isAccident: isAccident
+            source: source,
+            category: outCategory,
+            isAccident: isAccident,
+            isGrievance: isGrievance,
+            isFacebook: isFacebook,
+            isBangla: isBangla,
+            platform: isFacebook ? 'facebook' : (/twitter|x\.com/i.test(source + ' ' + link) ? 'x' : '')
         });
     }
     return items;
 }
 
+function isGrievanceNews_(title, desc) {
+    const text = ((title || '') + ' ' + (desc || '')).toLowerCase();
+    const keywords = [
+        'grievance', 'complaint', 'protest', 'gherao', 'bribe', 'corruption',
+        'consumer complaint', 'power cut protest', 'electric office',
+        'অভিযোগ', 'বিক্ষোভ', 'ঘেরাও', 'দুর্নীতি', 'ঘুষ'
+    ];
+    return keywords.some(k => text.includes(k));
+}
+
+function newsItemFreshEnough_(item) {
+    // Recent feeds already use Google `when:30d`. Do not drop by <pubDate>: Google often
+    // keeps the article's original date (older than 30d) even when the item is in the
+    // last-30-days search results. Core feeds are left unfiltered by age.
+    void item;
+    return true;
+}
+
+function newsItemOnTopic_(item) {
+    const text = `${item.title || ''} ${item.description || ''} ${item.source || ''}`;
+    // Facebook tab = Bangla Facebook power posts only.
+    if (item.category === 'facebook' || (item.isFacebook && item.isBangla)) {
+        if (!item.isFacebook || !item.isBangla) return false;
+        if (NEWS_BN_NOISE_RE.test(text)) return false;
+        if (!NEWS_BN_POWER_RE.test(text)) return false;
+        return NEWS_BN_GEO_RE.test(text);
+    }
+    // District power news tab (non-Facebook).
+    if (item.category === 'social_news') {
+        if (item.isFacebook) return false;
+        if (NEWS_BN_NOISE_RE.test(text)) return false;
+        if (!NEWS_BN_POWER_RE.test(text)) return false;
+        if (!NEWS_BN_GEO_RE.test(text)) return false;
+        return NEWS_NAMED_DISTRICT_RE.test(text) || !!item.isBangla || !!item.isAccident ||
+            /power\s*cut|load\s*shed|লোডশেডিং|বিভ্রাট|restore|war footing|tribal.*electric/i.test(text);
+    }
+    if (item.isFacebook) return false; // English FB how-tos stay out
+    if (item.category === 'grievances' || item.category === 'accidents') return NEWS_POWER_RE.test(text);
+    return true;
+}
+
+async function fetchNewsFeed_(categoryKey, feed) {
+    const url = `https://news.google.com/rss/search?q=${encodeURIComponent(feed.query)}&hl=${feed.lang}&gl=IN&ceid=${feed.ceid}`;
+    let xml = await fetchRssXml_(url);
+    // One retry when Google returns an empty body (rate limit / soft fail under parallel load).
+    if (!xml || !/<item>/i.test(xml)) {
+        await new Promise((r) => setTimeout(r, 400));
+        xml = await fetchRssXml_(url);
+    }
+    return parseGoogleRssXml_(xml, categoryKey);
+}
+
 async function fetchAllNewsFeeds_() {
     const feedEntries = Object.entries(NEWS_FEEDS_CONFIG);
-    const results = await Promise.all(feedEntries.map(([categoryKey, feed]) => {
-        const url = `https://news.google.com/rss/search?q=${encodeURIComponent(feed.query)}&hl=${feed.lang}&gl=IN&ceid=${feed.ceid}`;
-        return fetchRssXml_(url).then(xml => parseGoogleRssXml_(xml, categoryKey));
-    }));
+    // Fetch core feeds in parallel, then the 30-day slices — fewer empty Google RSS responses.
+    const core = feedEntries.filter(([k]) => !NEWS_RECENT_CATEGORIES.has(k));
+    const recent = feedEntries.filter(([k]) => NEWS_RECENT_CATEGORIES.has(k));
+    const coreResults = await Promise.all(core.map(([k, feed]) => fetchNewsFeed_(k, feed)));
+    const recentResults = [];
+    for (const [k, feed] of recent) {
+        recentResults.push(await fetchNewsFeed_(k, feed));
+    }
+    const results = [...coreResults, ...recentResults];
 
-    const merged = [].concat(...results);
-    const seen = new Set();
-    const unique = [];
+    const filtered = [].concat(...results).filter(newsItemFreshEnough_).filter(newsItemOnTopic_);
+    const byKey = new Map();
+    const CATEGORY_RANK = { facebook: 6, social: 6, social_bn: 6, social_news: 5, grievances: 4, accidents: 4, districts: 3, bangla: 3, english: 2, national: 1 };
 
-    merged.forEach(item => {
+    filtered.forEach(item => {
         const key = (item.link || item.title || '').trim();
-        if (key && !seen.has(key)) {
-            seen.add(key);
-            unique.push(item);
+        if (!key) return;
+        const prev = byKey.get(key);
+        if (!prev) {
+            byKey.set(key, item);
+            return;
         }
+        // Same article from two feeds: keep flags and prefer the more specific category.
+        prev.isAccident = !!(prev.isAccident || item.isAccident);
+        prev.isGrievance = !!(prev.isGrievance || item.isGrievance);
+        prev.isFacebook = !!(prev.isFacebook || item.isFacebook);
+        prev.isBangla = !!(prev.isBangla || item.isBangla);
+        if (item.platform && !prev.platform) prev.platform = item.platform;
+        const prevRank = CATEGORY_RANK[prev.category] || 0;
+        const nextRank = CATEGORY_RANK[item.category] || 0;
+        if (nextRank > prevRank) prev.category = item.category;
     });
 
+    const unique = Array.from(byKey.values());
     unique.sort((a, b) => {
         const dateA = new Date(a.pubDate || 0);
         const dateB = new Date(b.pubDate || 0);

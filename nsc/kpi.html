@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>NSC KPIs · MZO Reports</title>
+  <title>NSC KPIs · DISHA</title>
   <script src="/mzo_theme.js?v=9"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=25" />
   <script src="/mzo_ui.js?v=22" defer></script>
@@ -11,147 +11,416 @@
   <script src="/lib/offices.js?v=3" defer></script>
   <script src="/mzo_scope.js?v=20" defer></script>
   <script src="/mzo_rows.js?v=7" defer></script>
-  <style>.rk { margin-left: 6px; font-size: 11.5px; color: var(--mzo-muted); }</style>
+  <script src="/nsc/nsc_trend.js?v=7" defer></script>
+  <style>
+    .rk { margin-left: 6px; font-size: 11.5px; color: var(--mzo-muted); }
+    .ui-stat .s { font-size: 11px; color: var(--mzo-muted); }
+  </style>
 </head>
 <body>
   <main class="ui-page">
     <header class="ui-head">
-      <div>
-        <h1>NSC KPIs</h1>
-        <p id="meta">Loading…</p>
-      </div>
+      <div><h1>NSC KPIs<span class="ui-badge ui-date" id="asOn">…</span></h1></div>
       <div class="ui-actions">
-        <span class="ui-select"><select id="classFilter" aria-label="Class"><option value="">All classes</option></select></span>
+        <a class="ui-btn sm" href="/nsc.html">Pending NSC</a>
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
+        <div class="ui-seg" id="viewModeSeg" role="tablist" aria-label="View mode">
+          <button type="button" id="btnDetailView" aria-pressed="true">Detailed</button>
+          <button type="button" id="btnTrendView" aria-pressed="false">Trend</button>
+        </div>
+        <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
     </header>
 
-    <section class="ui-stats" style="--n:3" id="stats" aria-label="Average delays">
-      <button type="button" class="ui-stat" data-k="qtn"><div class="k">Quotation delay</div><div class="v"><span class="ui-skel"></span></div><div class="s">Average days</div></button>
-      <button type="button" class="ui-stat" data-k="wo"><div class="k">Work order delay</div><div class="v"><span class="ui-skel"></span></div><div class="s">Average days</div></button>
-      <button type="button" class="ui-stat" data-k="conn"><div class="k">Connection delay</div><div class="v"><span class="ui-skel"></span></div><div class="s">Average days</div></button>
-    </section>
+    <div class="ui-layout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h"><h2>Filters<small id="activeLabel"></small></h2><button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button></div>
+        <div class="ui-side-sec ui-side-stack">
+          <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Search" title="Application, name or phone" aria-label="Search by application, name or phone" autocomplete="off" /></label>
+        </div>
+        <div class="ui-side-sec">
+          <div class="ui-seg ui-side-tabs" data-tabs role="tablist" aria-label="Group">
+            <button type="button" role="tab" data-pane="fAge" aria-pressed="true" aria-selected="true">Connection delay</button>
+            <button type="button" role="tab" data-pane="fClass" aria-pressed="false" aria-selected="false">Class</button>
+            <button type="button" role="tab" data-pane="fPhase" aria-pressed="false" aria-selected="false">Phase</button>
+          </div>
+          <div id="fAge" aria-label="Connection delay"></div>
+          <div id="fClass" aria-label="Class" hidden></div>
+          <div id="fPhase" aria-label="Phase" hidden></div>
+        </div>
+      </aside>
 
-    <section class="ui-panel">
-      <div class="ui-panel-h">
-        <div class="ui-tabs" role="tablist" id="levelTabs">
-          <button type="button" class="ui-tab" role="tab" data-l="region" aria-selected="true">Region</button>
-          <button type="button" class="ui-tab" role="tab" data-l="division">Division</button>
-          <button type="button" class="ui-tab" role="tab" data-l="ccc">CCC</button>
+      <div class="ui-main">
+        <div id="detailView">
+          <section class="ui-stats" id="stats" aria-label="Average delays">
+            <button type="button" class="ui-stat" data-k=""><div class="k">Applications</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+            <button type="button" class="ui-stat" data-k="qtn"><div class="k">Quotation delay</div><div class="v"><span class="ui-skel"></span></div><div class="s">Average days</div></button>
+            <button type="button" class="ui-stat" data-k="wo"><div class="k">Work order delay</div><div class="v"><span class="ui-skel"></span></div><div class="s">Average days</div></button>
+            <button type="button" class="ui-stat" data-k="conn"><div class="k">Connection delay</div><div class="v"><span class="ui-skel"></span></div><div class="s">Average days</div></button>
+            <button type="button" class="ui-stat" data-k="over30"><div class="k"><span class="ui-dot bad"></span>Over 30 days</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          </section>
+
+          <section class="ui-panel">
+            <div class="report-head" id="reportHead">
+              <div class="rh-top">
+                <div class="rh-title-wrap">
+                  <h2 class="rh-title"><span id="rhTitle">Detailed report</span></h2>
+                  <span class="rh-badge" id="rhCount">…</span>
+                </div>
+                <div class="ui-actions">
+                  <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export CSV</button>
+                </div>
+              </div>
+              <div class="rh-filters-bar" id="rhFiltersBar"></div>
+            </div>
+            <div id="drill"></div>
+            <div id="table"><div class="ui-empty">Loading…</div></div>
+          </section>
+        </div>
+
+        <div id="trendView" hidden>
+          <div id="kpiTrendHost"></div>
         </div>
       </div>
-      <div id="officeTable"><div class="ui-empty">Loading…</div></div>
-    </section>
-
-    <section class="ui-panel" id="trendPanel" hidden>
-      <div class="ui-panel-h"><h2>Pendency trend</h2></div>
-      <div class="ui-panel-b">
-        <p class="ui-muted" id="trendMeta" style="margin:0 0 10px;font-size:13px;color:var(--mzo-muted)">From VM upload snapshots (summary only).</p>
-        <div id="trendTable"><div class="ui-empty">No snapshots yet.</div></div>
-      </div>
-    </section>
+    </div>
   </main>
 
   <script>
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var all = [], metric = 'conn', level = 'region';
+    var ROWS = 'nsc_pending';
+    var CLASS = { D: 'Domestic', C: 'Commercial', A: 'Agriculture', I: 'Industrial', S: 'Street light', J: 'Public', P: 'Public', W: 'Water works', T: 'Temporary' };
     var LABEL = { qtn: 'Quotation', wo: 'Work order', conn: 'Connection' };
+    var AGE = [
+      { key: 'a0', label: 'Up to 7 days', max: 7, dot: 'ok' },
+      { key: 'a1', label: '8–30 days', max: 30, dot: 'ok' },
+      { key: 'a2', label: '31–60 days', max: 60, dot: 'warn' },
+      { key: 'a3', label: '61–90 days', max: 90, dot: 'warn' },
+      { key: 'a4', label: 'Over 90 days', max: Infinity, dot: 'bad' }
+    ];
+    var all = [], metric = 'conn', f = { q: '', cls: '', phase: '', age: '', over30: false }, shown = '';
+    var viewMode = new URLSearchParams(location.search).get('view') === 'trend' ? 'trend' : 'detail';
+    var trendCtl = null;
+    var currentActiveFilters = [];
+    var dr = UI.drill({ el: 'drill', root: 'Malda Zone', onChange: render });
+    var setActive = UI.sidePanel({ side: 'side', toggle: 'sideToggle', label: 'activeLabel', count: 'activeCount', clear: 'clearBtn', onClear: clearAll });
 
-    // t.rows: uniform rows of schema/nsc_pending.json (snake_case, numbers, ISO dates, canonical
-    // _region/_division/_ccc). Loaded unscoped: the last row per application wins, then the login scope.
-    function prepare(t) {
-      var map = new Map(), latest = 0;
-      t.rows.forEach(function (d) { var a = d.appl_no.toLowerCase(); if (a) map.set(a, d); }); // one row per application (last wins)
-      var rows = Array.from(map.values());
-      rows.forEach(function (d) { var dt = UI.date(d.today); if (dt && dt.getTime() > latest) latest = dt.getTime(); });
-      all = MzoRows.scope(rows).map(function (d) {
-        return {
-          region: d._region || UI.regionName(d.region), division: d._division || UI.title(d.divn_name.replace(/\s*div(ision)?\.?$/i, '')), ccc: d._ccc || UI.title(d.supp_off || d.ccc_code),
-          cls: d.conn_class,
-          qtn: Math.trunc(d.delayinqtn) || 0, wo: Math.trunc(d.delayinwo) || 0, conn: Math.trunc(d.delayinsc) || 0
-        };
-      });
-      $('meta').textContent = (latest ? 'Updated ' + UI.fmtDate(new Date(latest)) + ' · ' : '') + UI.n(all.length) + ' applications';
-      var cls = {}; all.forEach(function (r) { if (r.cls) cls[r.cls] = 1; });
-      UI.fill('classFilter', Object.keys(cls).sort(), 'All classes');
-      var sc = window.MzoScope && window.MzoScope.getScope();
-      if (sc && !sc.unscoped) {
-        level = sc.level === 'region' ? 'division' : 'ccc';
-        [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) {
-          var l = t.getAttribute('data-l');
-          t.hidden = (l === 'region' && sc.level !== 'region') || (l === 'division' && (sc.level === 'ccc' || sc.level === 'codes'));
-        });
+    (function applyParams() {
+      var p = new URLSearchParams(location.search);
+      if (p.get('q')) { f.q = p.get('q'); $('q').value = f.q; }
+      if (p.get('class')) f.cls = p.get('class').toUpperCase();
+      if (p.get('phase')) f.phase = p.get('phase').toUpperCase();
+      if (p.get('age')) f.age = p.get('age');
+      if (p.get('metric') && LABEL[p.get('metric')]) metric = p.get('metric');
+      if (p.get('kpi') === 'over30') f.over30 = true;
+    })();
+
+    function setViewMode(mode) {
+      var next = mode === 'trend' ? 'trend' : 'detail';
+      var switched = next !== viewMode;
+      viewMode = next;
+      $('btnDetailView').setAttribute('aria-pressed', String(viewMode === 'detail'));
+      $('btnTrendView').setAttribute('aria-pressed', String(viewMode === 'trend'));
+      $('detailView').hidden = viewMode !== 'detail';
+      $('trendView').hidden = viewMode !== 'trend';
+      if (viewMode === 'trend' && window.NscTrend) {
+        if (!trendCtl) trendCtl = NscTrend.mount({ root: 'kpiTrendHost', side: 'working', title: 'Pending NSC trend' });
+        else if (switched && trendCtl.reload) trendCtl.reload();
       }
     }
 
-    function avg(rows, k) { return rows.length ? rows.reduce(function (a, r) { return a + r[k]; }, 0) / rows.length : 0; }
+    function ageKey(days) {
+      if (days == null || !isFinite(days)) return '';
+      for (var i = 0; i < AGE.length; i++) if (days <= AGE[i].max) return AGE[i].key;
+      return AGE[AGE.length - 1].key;
+    }
+
+    // Uniform nsc_pending rows: last application wins, then login scope.
+    function build(list) {
+      var map = new Map(), latest = null, out = [];
+      (list || []).forEach(function (d) {
+        var a = String(d.appl_no || '').trim().toLowerCase();
+        if (!a) return;
+        var td = UI.date(d.today); if (td && (!latest || td > latest)) latest = td;
+        map.set(a, d);
+      });
+      map.forEach(function (d) {
+        var conn = Math.trunc(d.delayinsc) || 0;
+        var r = {
+          appl: d.appl_no, name: UI.blank(d.name) ? '' : UI.title(d.name), phone: UI.blank(d.phone_no) ? '' : d.phone_no,
+          _region: d._region || UI.regionName(d.region),
+          _divn: d._division || UI.title(String(d.divn_name || '').replace(/\s*div(ision)?\.?$/i, '')),
+          _supp: d._ccc || UI.title(d.supp_off || d.ccc_code),
+          CCC_CODE: d.ccc_code,
+          cls: String(d.conn_class || '').toUpperCase(),
+          phase: String(d.applied_phase || '').toUpperCase(),
+          qtn: Math.trunc(d.delayinqtn) || 0,
+          wo: Math.trunc(d.delayinwo) || 0,
+          conn: conn,
+          paid: UI.date(d.coll_date),
+          portal: d.is_portal_appl === true ? 'Y' : 'N',
+          poles: d.polenonpole || '',
+          agency: UI.blank(d.agency_name) ? '' : UI.title(d.agency_name)
+        };
+        r.label = CLASS[r.cls] || r.cls || '—';
+        r.ageKey = ageKey(r.conn);
+        out.push(r);
+      });
+      return { rows: out, latest: latest };
+    }
+
+    function prepare(t) {
+      var zone = build(t.all && t.all.length ? t.all : t.rows);
+      var scoped = build(t.rows);
+      all = scoped.rows;
+      if (window.MzoScope) all = window.MzoScope.filterRows(all);
+      $('asOn').textContent = scoped.latest ? 'As on ' + UI.fmtDate(scoped.latest) : UI.n(all.length) + ' applications';
+      var chip = window.MzoScope && window.MzoScope.scopeChip && window.MzoScope.scopeChip();
+      var field = { region: '_region', division: '_divn', ccc: '_supp', codes: '_supp' }[(chip && chip.level) || ''] || '_supp';
+      var scores = {}, counts = {};
+      zone.rows.forEach(function (r) {
+        var k = r[field]; if (!k || k === 'Unmapped') return;
+        scores[k] = (scores[k] || 0) + r.conn;
+        counts[k] = (counts[k] || 0) + 1;
+      });
+      Object.keys(scores).forEach(function (k) { scores[k] = counts[k] ? scores[k] / counts[k] : 0; });
+      UI.reportRank({ scores: scores, lowerIsBetter: true, label: 'Average connection delay' });
+    }
+
+    function avg(rows, k) {
+      return rows.length ? rows.reduce(function (a, r) { return a + r[k]; }, 0) / rows.length : 0;
+    }
+
+    function base(skip) {
+      var q = f.q.toLowerCase();
+      return all.filter(function (r) {
+        return dr.match(r) &&
+          (skip === 'cls' || !f.cls || r.cls === f.cls) &&
+          (skip === 'phase' || !f.phase || r.phase === f.phase) &&
+          (skip === 'age' || !f.age || r.ageKey === f.age) &&
+          (!f.over30 || r.conn > 30) &&
+          (!q || r.appl.toLowerCase().indexOf(q) !== -1 || r.name.toLowerCase().indexOf(q) !== -1 || r.phone.indexOf(q) !== -1);
+      });
+    }
+
+    function tally(rows, k) {
+      var c = {}; rows.forEach(function (r) { if (r[k]) c[r[k]] = (c[r[k]] || 0) + 1; }); return c;
+    }
+    function byCount(c, keep) {
+      var keys = Object.keys(c); if (keep && keys.indexOf(keep) === -1) keys.push(keep);
+      return keys.sort(function (a, b) { return (c[b] || 0) - (c[a] || 0); });
+    }
+
+    function facets() {
+      var ag = base('age');
+      UI.facet('fAge', AGE.map(function (a) {
+        return { value: a.key, label: a.label, dot: a.dot, count: ag.filter(function (r) { return r.ageKey === a.key; }).length };
+      }), f.age, function (v) { f.age = v; render(); });
+      var cl = tally(base('cls'), 'cls');
+      UI.facet('fClass', byCount(cl, f.cls).map(function (c) {
+        return { value: c, label: CLASS[c] || c, count: cl[c] || 0 };
+      }), f.cls, function (v) { f.cls = v; render(); });
+      var ph = tally(base('phase'), 'phase');
+      UI.facet('fPhase', [
+        { value: 'I', label: 'Single phase', count: ph.I || 0 },
+        { value: 'III', label: 'Three phase', count: ph.III || 0 }
+      ].filter(function (o) { return o.count || o.value === f.phase; }), f.phase, function (v) { f.phase = v; render(); });
+      var on = (f.q ? 1 : 0) + (f.over30 ? 1 : 0) + ['cls', 'phase', 'age'].filter(function (k) { return f[k]; }).length;
+      setActive(on, { fAge: f.age, fClass: f.cls, fPhase: f.phase });
+    }
+
+    function avgFmt(rankFn) {
+      return function (v, r) {
+        if (v == null || !isFinite(v)) return '—';
+        var s = Number(v).toFixed(1);
+        if (r && r.name != null && rankFn) s += '<span class="rk">#' + rankFn(v) + '</span>';
+        return s;
+      };
+    }
 
     function render() {
-      var cls = $('classFilter').value;
-      var view = all.filter(function (r) { return !cls || r.cls === cls; });
+      setViewMode(viewMode);
+      if (viewMode === 'trend') return;
+      var view = base();
+      facets();
+
       [].forEach.call(document.querySelectorAll('#stats .ui-stat'), function (el) {
         var k = el.getAttribute('data-k');
-        el.querySelector('.v').textContent = view.length ? avg(view, k).toFixed(1) : '—';
-        el.setAttribute('aria-pressed', String(k === metric));
+        if (!k) {
+          el.querySelector('.v').textContent = UI.n(view.length);
+          el.querySelector('.s').textContent = 'Across ' + UI.uniq(view, '_supp').length + ' CCCs';
+          el.setAttribute('aria-pressed', 'false');
+        } else if (k === 'over30') {
+          var n = view.filter(function (r) { return r.conn > 30; }).length;
+          el.querySelector('.v').textContent = UI.n(n);
+          el.querySelector('.s').textContent = UI.pct(n, view.length) + ' of applications';
+          el.setAttribute('aria-pressed', String(!!f.over30));
+        } else {
+          el.querySelector('.v').textContent = view.length ? avg(view, k).toFixed(1) : '—';
+          el.querySelector('.s').textContent = 'Average days';
+          el.setAttribute('aria-pressed', String(metric === k && !f.over30));
+        }
       });
-      var key = level, groups = {};
-      view.forEach(function (r) { var n = r[key] || 'Unmapped'; (groups[n] || (groups[n] = [])).push(r); });
-      var rows = Object.keys(groups).map(function (n) {
-        var g = groups[n];
-        return { name: n, n: g.length, qtn: avg(g, 'qtn'), wo: avg(g, 'wo'), conn: avg(g, 'conn'), parent: level === 'ccc' ? g[0].division : level === 'division' ? g[0].region : '' };
-      });
-      var rank = {};
-      ['qtn', 'wo', 'conn'].forEach(function (k) { var s = rows.map(function (r) { return r[k]; }).sort(function (a, b) { return a - b; }); rank[k] = function (v) { return s.indexOf(v) + 1; }; });
-      var cell = function (k) { return function (v) { return v.toFixed(1) + '<span class="rk">#' + rank[k](v) + '</span>'; }; };
-      UI.table('officeTable', {
-        rows: rows, sort: { key: metric, dir: 'asc' }, count: false, empty: 'No applications for this class.',
-        columns: [
-          { key: 'name', label: level === 'ccc' ? 'CCC' : level === 'division' ? 'Division' : 'Region', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (r.parent ? '<span class="sub">' + UI.esc(r.parent) + '</span>' : ''); } },
-          { key: 'n', label: 'Applications', num: true, fmt: UI.n },
-          { key: 'qtn', label: 'Quotation (days)', num: true, fmt: cell('qtn') },
-          { key: 'wo', label: 'Work order (days)', num: true, fmt: cell('wo') },
-          { key: 'conn', label: 'Connection (days)', num: true, fmt: cell('conn') }
-        ]
-      });
+
+      if (dr.level() !== shown) { $('table').__ui = null; shown = dr.level(); }
+      if (dr.isList()) {
+        UI.table('table', {
+          rows: view, sort: { key: metric, dir: 'asc' }, limit: 50, resetPage: true,
+          empty: 'No applications match these filters.', columns: APP_COLS, onRow: detail
+        });
+      } else {
+        var groups = {};
+        view.forEach(function (r) {
+          var k = dr.key(r), g = groups[k] || (groups[k] = { name: k, parent: dr.parent(r), row: r, n: 0, qtn: 0, wo: 0, conn: 0, over30: 0 });
+          g.n++; g.qtn += r.qtn; g.wo += r.wo; g.conn += r.conn; if (r.conn > 30) g.over30++;
+        });
+        var list = Object.keys(groups).map(function (k) {
+          var g = groups[k];
+          return {
+            name: g.name, parent: g.parent, row: g.row, n: g.n, over30: g.over30,
+            qtn: g.n ? g.qtn / g.n : 0, wo: g.n ? g.wo / g.n : 0, conn: g.n ? g.conn / g.n : 0
+          };
+        });
+        var rank = {};
+        ['qtn', 'wo', 'conn'].forEach(function (k) {
+          var s = list.map(function (r) { return r[k]; }).slice().sort(function (a, b) { return a - b; });
+          rank[k] = function (v) { return s.indexOf(v) + 1; };
+        });
+        UI.table('table', {
+          rows: list, sort: { key: metric, dir: 'asc' }, count: false,
+          empty: 'No applications for these filters.',
+          columns: [
+            { key: 'name', label: dr.label(), fmt: function (v, g) { return '<span class="ui-strong">' + UI.esc(v) + '</span>' + (g.parent ? '<span class="sub">' + UI.esc(g.parent) + '</span>' : ''); } },
+            { key: 'n', label: 'Applications', num: true, fmt: UI.n },
+            { key: 'qtn', label: 'Quotation (days)', num: true, fmt: avgFmt(rank.qtn) },
+            { key: 'wo', label: 'Work order (days)', num: true, fmt: avgFmt(rank.wo) },
+            { key: 'conn', label: 'Connection (days)', num: true, fmt: avgFmt(rank.conn) },
+            { key: 'over30', label: 'Over 30d', num: true, fmt: UI.n, hideSm: true }
+          ],
+          foot: list.length > 1 ? {
+            n: view.length,
+            qtn: avg(view, 'qtn'),
+            wo: avg(view, 'wo'),
+            conn: avg(view, 'conn'),
+            over30: view.filter(function (r) { return r.conn > 30; }).length
+          } : null,
+          onRow: function (g) { dr.open(g.name, g.row); }
+        });
+      }
+      dr.paint({ list: view.length });
+      renderReportHead(view);
+      window.__view = view;
     }
 
-    $('classFilter').addEventListener('change', function () { UI.mark(this); render(); });
-    $('stats').addEventListener('click', function (e) { var s = e.target.closest('.ui-stat'); if (!s) return; metric = s.getAttribute('data-k'); var el = $('officeTable'); if (el.__ui) el.__ui.sort = { key: metric, dir: 'asc' }; render(); });
-    $('levelTabs').addEventListener('click', function (e) {
-      var t = e.target.closest('.ui-tab'); if (!t) return;
-      level = t.getAttribute('data-l');
-      [].forEach.call(this.querySelectorAll('.ui-tab'), function (x) { x.setAttribute('aria-selected', String(x === t)); });
+    function renderReportHead(view) {
+      var label = dr.isList() ? 'Applications' : dr.label() + ' wise report';
+      var metricLabel = LABEL[metric] ? LABEL[metric] + ' delay' : '';
+      $('rhTitle').textContent = label + (metricLabel ? ' · ' + metricLabel : '');
+      if (view.length === all.length) {
+        $('rhCount').innerHTML = 'Showing all <b>' + UI.n(all.length) + '</b> applications';
+      } else {
+        $('rhCount').innerHTML = 'Showing <b>' + UI.n(view.length) + '</b> <span style="opacity:0.75;font-weight:400">(' + UI.pct(view.length, all.length) + ')</span> of ' + UI.n(all.length) + ' applications';
+      }
+      currentActiveFilters = [];
+      if (f.q) currentActiveFilters.push({ label: 'Search', value: '"' + f.q + '"', clear: function () { f.q = ''; $('q').value = ''; } });
+      if (f.over30) currentActiveFilters.push({ label: 'KPI', value: 'Over 30 days', clear: function () { f.over30 = false; } });
+      if (f.age) {
+        var age = AGE.filter(function (a) { return a.key === f.age; })[0];
+        currentActiveFilters.push({ label: 'Connection delay', value: age ? age.label : f.age, clear: function () { f.age = ''; } });
+      }
+      if (f.cls) currentActiveFilters.push({ label: 'Class', value: CLASS[f.cls] || f.cls, clear: function () { f.cls = ''; } });
+      if (f.phase) currentActiveFilters.push({ label: 'Phase', value: f.phase === 'III' ? 'Three phase' : 'Single phase', clear: function () { f.phase = ''; } });
+      var bar = $('rhFiltersBar');
+      if (currentActiveFilters.length) {
+        var chips = currentActiveFilters.map(function (af, i) {
+          return '<span class="rh-chip"><strong>' + UI.esc(af.label) + ':</strong> ' + UI.esc(af.value) +
+            '<button type="button" class="rh-chip-x" data-rh-clear="' + i + '" title="Remove ' + UI.esc(af.label) + ' filter" aria-label="Remove filter">&times;</button></span>';
+        }).join('');
+        bar.innerHTML = '<div class="rh-filters"><span class="rh-filters-label"><svg class="ui-i sm"><use href="#ui-filter"/></svg>Applied:</span>' +
+          chips + '<button type="button" class="rh-clear-btn" id="rhClearBtn"><svg class="ui-i sm"><use href="#ui-reload"/></svg>Reset all</button></div>';
+      } else {
+        bar.innerHTML = '';
+      }
+    }
+
+    var APP_COLS = [
+      { key: 'appl', label: 'Application', fmt: function (v, r) { return '<span class="ui-strong">' + UI.esc(v) + '</span><span class="sub">' + (r.portal === 'Y' ? 'Portal' : 'Offline') + '</span>'; } },
+      { key: 'name', label: 'Name', cls: 'wrap', hideSm: true },
+      { key: '_supp', label: 'CCC', fmt: function (v, r) { return UI.esc(v || '—') + '<span class="sub">' + UI.esc(r._divn) + '</span>'; } },
+      { key: 'label', label: 'Class', hideSm: true, fmt: function (v, r) { return UI.esc(v) + '<span class="sub">' + (r.phase === 'III' ? 'Three phase' : r.phase === 'I' ? 'Single phase' : '') + '</span>'; } },
+      { key: 'qtn', label: 'Quotation', num: true, fmt: function (v) { return UI.n(v); } },
+      { key: 'wo', label: 'Work order', num: true, fmt: function (v) { return UI.n(v); } },
+      { key: 'conn', label: 'Connection', num: true, fmt: function (v) { return UI.n(v); } }
+    ];
+
+    var EXPORT_COLS = [
+      { key: 'appl', label: 'Application' }, { key: 'name', label: 'Name' },
+      { key: '_region', label: 'Region' }, { key: '_divn', label: 'Division' }, { key: '_supp', label: 'CCC' },
+      { key: 'label', label: 'Class' }, { key: 'qtn', label: 'Quotation days' }, { key: 'wo', label: 'Work order days' }, { key: 'conn', label: 'Connection days' }
+    ];
+
+    function detail(r) {
+      UI.drawer('Application ' + r.appl, [r._supp, r._divn, r._region].filter(Boolean).join(' · '), [
+        ['Name', r.name], ['Phone', r.phone],
+        ['Class', r.label + (r.cls && r.label !== r.cls ? ' (' + r.cls + ')' : '')],
+        ['Phase', r.phase === 'III' ? 'Three phase' : r.phase === 'I' ? 'Single phase' : r.phase || '—'],
+        ['Source', r.portal === 'Y' ? 'Portal' : 'Offline'],
+        ['Paid on', r.paid ? UI.fmtDate(r.paid) : ''],
+        ['Quotation delay', r.qtn + ' days'],
+        ['Work order delay', r.wo + ' days'],
+        ['Connection delay', r.conn + ' days'],
+        ['Agency', r.agency], ['Poles', r.poles], ['CCC code', r.CCC_CODE]
+      ]);
+    }
+
+    function clearAll() {
+      f.q = ''; f.cls = ''; f.phase = ''; f.age = ''; f.over30 = false; $('q').value = '';
+      metric = 'conn';
+      render();
+    }
+
+    $('btnDetailView').addEventListener('click', function () { setViewMode('detail'); render(); });
+    $('btnTrendView').addEventListener('click', function () { setViewMode('trend'); });
+    $('q').addEventListener('input', UI.debounce(function () { f.q = this.value.trim(); if (viewMode !== 'detail') setViewMode('detail'); render(); }, 180));
+    $('stats').addEventListener('click', function (e) {
+      var s = e.target.closest('.ui-stat'); if (!s) return;
+      var k = s.getAttribute('data-k');
+      if (viewMode !== 'detail') setViewMode('detail');
+      if (!k) { f.over30 = false; }
+      else if (k === 'over30') { f.over30 = !f.over30; }
+      else {
+        metric = k; f.over30 = false;
+        var el = $('table'); if (el.__ui) el.__ui.sort = { key: metric, dir: 'asc' };
+      }
       render();
     });
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-rh-clear]');
+      if (btn) {
+        var idx = parseInt(btn.getAttribute('data-rh-clear'), 10);
+        if (currentActiveFilters[idx] && currentActiveFilters[idx].clear) { currentActiveFilters[idx].clear(); render(); }
+        return;
+      }
+      if (e.target.closest('#rhClearBtn')) clearAll();
+    });
+    $('exportBtn').addEventListener('click', function () {
+      var rows = window.__view || [];
+      if (!rows.length) { UI.toast('Nothing to export'); return; }
+      UI.exportCsv('nsc-kpi.csv', rows, EXPORT_COLS);
+    });
 
-    function loadTrend() {
-      fetch('/api/nsc/snapshots?detail=1', { credentials: 'same-origin' })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (data) {
-          if (!data || !data.items || !data.items.length) return;
-          $('trendPanel').hidden = false;
-          var rows = data.items.slice().reverse();
-          $('trendMeta').textContent = rows.length + ' snapshot day' + (rows.length === 1 ? '' : 's') + ' (Working total / >30d / Withheld).';
-          UI.table('trendTable', {
-            rows: rows, sort: { key: 'reportDate', dir: 'desc' }, count: false, empty: 'No snapshots yet.',
-            columns: [
-              { key: 'reportDate', label: 'As on' },
-              { key: 'workingTotal', label: 'Working', num: true, fmt: function (v) { return v == null ? '—' : UI.n(v); } },
-              { key: 'workingOver30', label: 'Working >30d', num: true, fmt: function (v) { return v == null ? '—' : UI.n(v); } },
-              { key: 'withheldTotal', label: 'Withheld', num: true, fmt: function (v) { return v == null ? '—' : UI.n(v); } }
-            ]
-          });
-        }).catch(function () { /* trend is optional */ });
-    }
-
-    MzoRows.load('nsc_pending', function (t, info) {
-      if (!t) { if (info && info.error) { $('meta').textContent = 'Could not load data'; $('officeTable').innerHTML = '<div class="ui-empty">Could not load NSC data.</div>'; } return; }
+    MzoRows.load(ROWS, function (t, info) {
+      if (!t) {
+        $('asOn').textContent = 'Could not load';
+        $('table').innerHTML = '<div class="ui-empty">Could not load NSC data.</div>';
+        return;
+      }
       prepare(t);
-      [].forEach.call(document.querySelectorAll('#levelTabs .ui-tab'), function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-l') === level)); });
+      dr.fromParams(new URLSearchParams(location.search), all);
       render();
-      loadTrend();
     }, { scope: false });
+    MzoRows.refresh('refreshBtn', ROWS, function (t) { prepare(t); render(); }, { scope: false });
   });
   </script>
 </body>

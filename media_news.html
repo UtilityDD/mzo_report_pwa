@@ -51,17 +51,26 @@
   document.addEventListener('DOMContentLoaded', function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var CACHE = 'mzo_merged_news_v2';
-    var SECTIONS = [['all', 'All'], ['state', 'State & Malda'], ['districts', 'District media'], ['bangla', 'Bangla'], ['national', 'National grid'], ['accidents', 'Safety']];
-    var LABEL = { state: 'State & Malda', districts: 'District media', bangla: 'Bangla', national: 'National grid', general: 'Power sector' };
+    var CACHE = 'mzo_merged_news_v4';
+    var SECTIONS = [
+      ['all', 'All'], ['facebook', 'Facebook'], ['social_news', 'Districts'], ['grievances', 'Grievances'], ['accidents', 'Safety'],
+      ['state', 'State & Malda'], ['districts', 'District media'], ['bangla', 'Bangla press'], ['national', 'National grid']
+    ];
+    var LABEL = {
+      state: 'State & Malda', districts: 'District media', bangla: 'Bangla press', national: 'National grid',
+      facebook: 'Facebook', social_news: 'District power', social: 'Facebook', grievances: 'Grievances', accidents: 'Safety', general: 'Power sector'
+    };
+    var BANGLA_RE = /[\u0980-\u09FF]/;
     var TOPICS = [
-      [/wbsedcl|wbsetcl/i, 'WBSEDCL'], [/solar|photovoltaic/i, 'Solar'], [/tariff|power cost|electricity bill|billing/i, 'Tariff'],
+      [/wbsedcl|wbsetcl|wb bijali/i, 'WBSEDCL'], [/solar|photovoltaic/i, 'Solar'], [/tariff|power cost|electricity bill|billing/i, 'Tariff'],
       [/substation|transformer/i, 'Substation'], [/smart meter|prepaid meter/i, 'Smart meter'], [/outage|load shedding|blackout|tripping|power cut/i, 'Outage'],
       [/renewable|wind energy|clean energy|green energy/i, 'Renewables'], [/ntpc|coal|thermal power/i, 'Thermal'], [/transmission|national grid|pgcil/i, 'Transmission'],
-      [/malda|raiganj|balurghat|dinajpur/i, 'Malda Zone']
+      [/malda|raiganj|balurghat|dinajpur/i, 'Malda Zone'], [/grievance|complaint|protest|অভিযোগ|বিক্ষোভ|ঘেরাও/i, 'Grievance']
     ];
     var ACCIDENT = ['electrocution', 'electrocuted', 'electrical accident', 'short circuit', 'electric shock', 'transformer blast', 'electric fire', 'power line death', 'high voltage death', 'live wire death',
       'বিদ্যুৎস্পৃষ্ট', 'শর্ট সার্কিট', 'বিদ্যুৎ দুর্ঘটনা', 'বিদ্যুৎস্পর্শ', 'বিদ্যুৎস্পৃষ্টে মৃত্যু'];
+    var GRIEVANCE = ['grievance', 'complaint', 'protest', 'gherao', 'bribe', 'corruption', 'consumer complaint',
+      'অভিযোগ', 'বিক্ষোভ', 'ঘেরাও', 'দুর্নীতি', 'ঘুষ'];
     var all = [], section = 'all';
 
     function clean(item) {
@@ -71,10 +80,20 @@
       var desc = String(item.description || '').trim();
       if (desc.indexOf('<a ') !== -1 || desc.indexOf('&lt;a') !== -1 || desc.toLowerCase() === title.toLowerCase()) desc = '';
       var text = (title + ' ' + desc).toLowerCase();
-      var cat = item.category === 'english' ? 'state' : (item.category || 'general');
+      var rawCat = item.category || 'general';
+      var cat = rawCat === 'english' ? 'state' : rawCat;
+      var isFacebook = !!item.isFacebook || /facebook/i.test(source) || /facebook\.com/i.test(item.link || '') || item.platform === 'facebook';
+      var isBangla = !!item.isBangla || BANGLA_RE.test(title + ' ' + desc);
+      var isGrievance = !!item.isGrievance || cat === 'grievances' || GRIEVANCE.some(function (k) { return text.indexOf(k) !== -1; });
+      if (cat === 'social') cat = isFacebook ? 'facebook' : 'social_news';
+      if (isFacebook && (cat === 'general' || cat === 'state' || cat === 'english' || cat === 'bangla' || cat === 'social_news')) cat = 'facebook';
       return {
         title: title || 'Power sector update', source: source || 'News source', link: /^https?:\/\//i.test(item.link || '') ? item.link : '#', pubDate: item.pubDate || '', description: desc,
-        category: cat, isAccident: !!item.isAccident || ACCIDENT.some(function (k) { return text.indexOf(k) !== -1; }),
+        category: cat,
+        isAccident: !!item.isAccident || cat === 'accidents' || ACCIDENT.some(function (k) { return text.indexOf(k) !== -1; }),
+        isGrievance: isGrievance,
+        isFacebook: isFacebook,
+        isBangla: isBangla,
         tags: TOPICS.filter(function (t) { return t[0].test(title); }).slice(0, 2).map(function (t) { return t[1]; })
       };
     }
@@ -105,27 +124,49 @@
 
     function render() {
       var q = $('q').value.trim().toLowerCase();
-      var counts = { all: all.length, accidents: 0 };
-      all.forEach(function (a) { counts[a.category] = (counts[a.category] || 0) + 1; if (a.isAccident) counts.accidents++; });
-      $('seg').innerHTML = SECTIONS.filter(function (s) { return s[0] === 'all' || s[0] === 'accidents' || counts[s[0]]; }).map(function (s) {
+      var counts = { all: all.length, accidents: 0, grievances: 0, facebook: 0, social_news: 0 };
+      all.forEach(function (a) { counts[a.category] = (counts[a.category] || 0) + 1; });
+      counts.accidents = all.filter(function (a) { return a.isAccident; }).length;
+      counts.grievances = all.filter(function (a) { return a.isGrievance || a.category === 'grievances'; }).length;
+      counts.facebook = all.filter(function (a) { return a.category === 'facebook' || a.isFacebook; }).length;
+      counts.social_news = all.filter(function (a) { return a.category === 'social_news' && !a.isFacebook; }).length;
+      $('seg').innerHTML = SECTIONS.filter(function (s) {
+        return s[0] === 'all' || s[0] === 'accidents' || s[0] === 'grievances' || s[0] === 'facebook' || s[0] === 'social_news' || counts[s[0]];
+      }).map(function (s) {
         return '<button type="button" data-s="' + s[0] + '" aria-pressed="' + (section === s[0]) + '">' + s[1] + '<span>' + (counts[s[0]] || 0) + '</span></button>';
       }).join('');
       var list = all.filter(function (a) {
-        if (section === 'accidents' ? !a.isAccident : (section !== 'all' && a.category !== section)) return false;
+        if (section === 'accidents') { if (!a.isAccident) return false; }
+        else if (section === 'grievances') { if (!(a.isGrievance || a.category === 'grievances')) return false; }
+        else if (section === 'facebook') { if (!(a.category === 'facebook' || a.isFacebook)) return false; }
+        else if (section === 'social_news') { if (a.category !== 'social_news' || a.isFacebook) return false; }
+        else if (section !== 'all' && a.category !== section) return false;
         return !q || (a.title + ' ' + a.source + ' ' + (a.tags || []).join(' ')).toLowerCase().indexOf(q) !== -1;
       });
       if (!list.length) {
-        $('list').innerHTML = '<div class="ui-empty">' + (q ? 'No headlines match “' + UI.esc($('q').value.trim()) + '”.' : section === 'accidents' ? 'No electrical accidents in the current feeds.' : 'Nothing in this section yet.') + '</div>';
+        var empty = q ? 'No headlines match “' + UI.esc($('q').value.trim()) + '”.'
+          : section === 'accidents' ? 'No electrical accidents in the last 30 days of feeds.'
+          : section === 'grievances' ? 'No grievance or protest stories in the last 30 days of feeds.'
+          : section === 'facebook' ? 'No Bangla Facebook power posts indexed in the last 30 days yet.'
+          : section === 'social_news' ? 'No district power stories in the last 30 days yet.'
+          : 'Nothing in this section yet.';
+        $('list').innerHTML = '<div class="ui-empty">' + empty + '</div>';
         return;
       }
       var h = '', last = '';
       list.forEach(function (a) {
         var d = dayLabel(a.pubDate);
         if (d !== last) { h += '<div class="day">' + UI.esc(d) + '</div>'; last = d; }
+        var badges = '';
+        if (a.isFacebook) badges += '<span class="ui-badge">Facebook</span>';
+        else if (a.category === 'social_news') badges += '<span class="ui-badge">District</span>';
+        if (a.isBangla && !a.isFacebook) badges += '<span class="ui-badge">বাংলা</span>';
+        if (a.isAccident) badges += '<span class="ui-badge bad">Safety</span>';
+        else if (a.isGrievance || a.category === 'grievances') badges += '<span class="ui-badge warn">Grievance</span>';
         var meta = ['<span>' + UI.esc(a.source) + '</span>', a.pubDate ? '<span class="sep"></span><span>' + UI.esc(rel(a.pubDate)) + '</span>' : '', '<span class="sep"></span><span>' + UI.esc(LABEL[a.category] || 'Power sector') + '</span>']
           .concat((a.tags || []).map(function (t) { return '<span class="sep"></span><span>' + UI.esc(t) + '</span>'; })).join('');
         h += '<article class="art"><div><a class="t" href="' + UI.esc(a.link) + '" target="_blank" rel="noopener noreferrer">' + UI.esc(a.title) + '</a>' +
-          '<div class="m">' + (a.isAccident ? '<span class="ui-badge bad">Safety</span>' : '') + meta + '</div>' +
+          '<div class="m">' + badges + meta + '</div>' +
           (a.description ? '<p>' + UI.esc(a.description) + '</p>' : '') + '</div>' +
           '<div class="acts"><button type="button" class="ui-btn icon sm ghost" data-copy="' + UI.esc(a.link) + '" title="Copy link" aria-label="Copy link"><svg class="ui-i"><use href="#ui-copy"/></svg></button></div></article>';
       });
@@ -140,7 +181,9 @@
           if (d && d.status === 'ok' && Array.isArray(d.items)) {
             ingest(d.items, true);
             var t = new Date();
-            $('meta').textContent = UI.n(all.length) + ' stories · Updated ' + t.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+            var fbN = all.filter(function (a) { return a.category === 'facebook' || a.isFacebook; }).length;
+            var distN = all.filter(function (a) { return a.category === 'social_news' && !a.isFacebook; }).length;
+            $('meta').textContent = UI.n(all.length) + ' stories · ' + UI.n(fbN) + ' Facebook · ' + UI.n(distN) + ' districts · Updated ' + t.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
             if (force) UI.toast('Feeds refreshed');
             return;
           }
@@ -148,7 +191,7 @@
         })
         .catch(function () {
           var cached = null;
-          try { cached = JSON.parse(localStorage.getItem(CACHE) || localStorage.getItem('mzo_merged_news') || 'null'); } catch (e) {}
+          try { cached = JSON.parse(localStorage.getItem(CACHE) || localStorage.getItem('mzo_merged_news_v2') || localStorage.getItem('mzo_merged_news') || 'null'); } catch (e) {}
           if (Array.isArray(cached) && cached.length) { ingest(cached, false); $('meta').textContent = UI.n(all.length) + ' stories · Offline copy'; }
           else if (!all.length) { $('meta').textContent = 'Could not reach the news feeds'; $('list').innerHTML = '<div class="ui-empty">Could not reach the news feeds. <button type="button" class="ui-btn sm" id="retry">Retry</button></div>'; }
         })
@@ -165,7 +208,10 @@
     $('syncBtn').addEventListener('click', function () { load(true); });
 
     // Paint the last copy first, then refresh.
-    try { var c = JSON.parse(localStorage.getItem(CACHE) || 'null'); if (Array.isArray(c) && c.length) { all = c; render(); $('meta').textContent = UI.n(all.length) + ' stories'; } } catch (e) {}
+    try {
+      var c = JSON.parse(localStorage.getItem(CACHE) || localStorage.getItem('mzo_merged_news_v3') || localStorage.getItem('mzo_merged_news_v2') || 'null');
+      if (Array.isArray(c) && c.length) { all = c.map(clean); render(); $('meta').textContent = UI.n(all.length) + ' stories'; }
+    } catch (e) {}
     load(false);
   });
   </script>

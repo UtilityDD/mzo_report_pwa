@@ -513,7 +513,10 @@
     }
 
     function fmt(n) {
-      return Number(n || 0).toLocaleString('en-IN');
+      if (n == null || n === '') return '—';
+      const x = Number(n);
+      if (!Number.isFinite(x)) return '—';
+      return x.toLocaleString('en-IN');
     }
 
     reportDateInput.value = toIsoDate(new Date());
@@ -693,9 +696,9 @@
         return;
       }
       const s = m.stats || {};
-      const nsc = m.publishedRows ?? s.publishedRows ?? '-';
-      const wh = m.withheldRows ?? s.withheldRows ?? '-';
-      const when = m.reportDate || s.today || m.uploadedAt || '-';
+      const nsc = m.publishedRows ?? s.publishedRows;
+      const wh = m.withheldRows ?? s.withheldRows;
+      const when = m.reportDate || s.today || m.uploadedAt || '—';
       metaBox.textContent = 'Last: ' + when + ' · NSC ' + fmt(nsc) + ' · Withheld ' + fmt(wh);
       metaBox.classList.add('show');
     }
@@ -762,6 +765,7 @@
 
         vmUploadEnabled = false;
         var vmApiEnabled = false;
+        var vmLast = null;
         try {
           const um = await fetch('/api/nsc/upload/meta', { credentials: 'same-origin' });
           if (um.ok) {
@@ -769,23 +773,34 @@
             vmApiEnabled = !!uj.enabled;
             // Localhost / VM file upload: enabled on the server and this user may upload.
             vmUploadEnabled = !!(uj.enabled && uj.canUpload);
-            if (uj.last && uj.last.reportDate) {
-              metaBox.textContent = 'DISHA: ' + uj.last.reportDate +
-                ' · Working ' + fmt(uj.last.workingRows) +
-                ' · Withheld ' + fmt(uj.last.withheldRows) +
-                (uj.last.by ? ' · by ' + uj.last.by : '');
-              metaBox.classList.add('show');
-            }
+            if (uj.last && uj.last.reportDate) vmLast = uj.last;
           }
         } catch (_) {}
 
-        if (!vmUploadEnabled) await updateMirrorStatus();
-        else {
+        if (vmApiEnabled && (vmUploadEnabled || data.canUpload)) {
+          // Local/VM DISHA upload path (not Vercel): show live vs trend modes + DISHA meta.
+          vmUploadEnabled = true;
+          modeRow.hidden = false;
+          setUploadMode(uploadMode);
+          if (vmLast) {
+            metaBox.textContent = 'DISHA: ' + vmLast.reportDate +
+              ' · Working ' + fmt(vmLast.workingRows) +
+              ' · Withheld ' + fmt(vmLast.withheldRows) +
+              (vmLast.by ? ' · by ' + vmLast.by : '');
+            metaBox.classList.add('show');
+          } else {
+            metaBox.textContent = 'DISHA upload ready · no file saved on this host yet';
+            metaBox.classList.add('show');
+          }
           var mb = document.getElementById('mirrorBox');
           if (mb) {
             mb.textContent = 'Uploads save slim Working/Withheld on DISHA (like CMO). Google Sheets is optional fallback.';
             mb.classList.add('show');
           }
+        } else {
+          modeRow.hidden = true;
+          setUploadMode('live');
+          await updateMirrorStatus();
         }
 
         if (data.canUpload || vmUploadEnabled) {
@@ -794,16 +809,6 @@
           fileInput.disabled = false;
           reportDateInput.disabled = false;
           uploadBtn.disabled = false;
-          // Show Trend snapshot only when the local/VM upload API is on (not Vercel).
-          // canUpload may come from either /api/nsc/meta or /api/nsc/upload/meta.
-          if (vmApiEnabled && (vmUploadEnabled || data.canUpload)) {
-            vmUploadEnabled = true; // allow snapshot + live replace on this host
-            modeRow.hidden = false;
-            setUploadMode(uploadMode);
-          } else {
-            modeRow.hidden = true;
-            setUploadMode('live');
-          }
         } else {
           hideAdminDetails();
           showMsg('You are not authorised to upload NSC. Please ask an admin.', false);
