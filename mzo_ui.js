@@ -744,12 +744,14 @@
   }
 
   /* ---------- line chart (inline SVG, no library) ----------
-   * series: [{ label, values: [number|null], strong: bool, color }]  labels: x labels
+   * series: [{ label, values: [number|null], strong, color, hidden, dash, id }]  labels: x labels
    * fmt(v) formats tooltip/axis values.
    * Colour follows the series, not its rank: se.color (slot 1–6, 'ok' | 'warn' | 'bad', or a CSS colour) wins;
    * otherwise the strong series takes slot 1 and the others take 2, 3… counted back from the end (so the
    * current year is always slot 1 and last year slot 2). With more than six series, or cfg.emphasis, only
-   * the strong series is coloured and the rest are muted grey. */
+   * the strong series is coloured and the rest are muted grey.
+   * Legend toggles (default on when 2+ series): click a legend item to hide/show that series. At least one
+   * series stays on. cfg.toggleable:false disables. cfg.onToggle(series) fires after a click (for persist). */
   function lineColors(series, emphasis) {
     var strong = series.some(function (se) { return se.strong; }), next = strong ? 2 : 1, out = new Array(series.length);
     for (var k = 0; k < series.length; k++) {
@@ -770,9 +772,15 @@
       el.__lineRO.observe(el);
     }
     var W = Math.max(300, el.clientWidth || 640), H = cfg.height || 240, P = { t: 12, r: 12, b: 26, l: 44 };
-    var labels = cfg.labels, series = cfg.series, fmt = cfg.fmt || n;
+    var labels = cfg.labels, allSeries = cfg.series || [], fmt = cfg.fmt || n;
+    var toggleable = cfg.toggleable !== false && allSeries.length > 1;
+    var series = allSeries.filter(function (se) { return !se.hidden; });
+    if (!series.length && allSeries.length) {
+      allSeries[0].hidden = false;
+      series = [allSeries[0]];
+    }
     var vals = [];
-    series.forEach(function (s) { s.values.forEach(function (v) { if (v != null && isFinite(v)) vals.push(v); }); });
+    series.forEach(function (s) { (s.values || []).forEach(function (v) { if (v != null && isFinite(v)) vals.push(v); }); });
     if (!vals.length) { el.innerHTML = '<div class="ui-empty">No data for this selection.</div>'; return; }
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
     if (cfg.zero !== false && lo > 0 && lo / (hi || 1) < 0.35) lo = 0;
@@ -784,6 +792,7 @@
     for (var gg = lo; gg <= hi + step / 2; gg += step) widest = Math.max(widest, String(cfg.axis ? cfg.axis(gg) : fmt(gg)).length);
     P.l = Math.max(36, Math.ceil(widest * 6.4) + 14);
     var emphasis = !!cfg.emphasis || series.length > SLOTS, cols = lineColors(series, emphasis);
+    var allCols = lineColors(allSeries, !!cfg.emphasis || allSeries.length > SLOTS);
     var x = function (i) { return P.l + (labels.length < 2 ? 0 : i * (W - P.l - P.r) / (labels.length - 1)); };
     var y = function (v) { return P.t + (1 - (v - lo) / (hi - lo)) * (H - P.t - P.b); };
     var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" class="ui-chart" role="img" aria-label="' + esc(cfg.title || 'Trend') + '">';
@@ -798,14 +807,31 @@
       var d = '', pen = false;
       se.values.forEach(function (v, i) { if (v == null || !isFinite(v)) { pen = false; return; } d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); pen = true; });
       var c = cols[si], op = se.strong || c ? 1 : Math.max(0.28, 0.75 - (series.length - 1 - si) * 0.18);
-      s += '<path d="' + d + '" class="ln' + (se.strong ? ' strong' : '') + '" style="opacity:' + op + (c ? ';stroke:' + c : '') + '"/>';
+      var dash = se.dash ? ';stroke-dasharray:5 4' : '';
+      s += '<path d="' + d + '" class="ln' + (se.strong ? ' strong' : '') + (se.dash ? ' dash' : '') + '" style="opacity:' + op + (c ? ';stroke:' + c : '') + dash + '"/>';
       if (se.strong) se.values.forEach(function (v, i) { if (v != null && isFinite(v)) s += '<circle cx="' + x(i) + '" cy="' + y(v) + '" r="2.6" class="pt"' + (c ? ' style="stroke:' + c + '"' : '') + '/>'; });
     });
     s += '<line class="guide" visibility="hidden" y1="' + P.t + '" y2="' + (H - P.b) + '" x1="0" x2="0"/>';
     labels.forEach(function (_, i) { var half = (W - P.l - P.r) / Math.max(1, labels.length - 1) / 2; s += '<rect class="hit" data-i="' + i + '" x="' + (x(i) - half) + '" y="0" width="' + half * 2 + '" height="' + H + '"/>'; });
     s += '</svg>';
-    var key = function (si) { var c = cols[si], op = series[si].strong || c ? 1 : Math.max(0.28, 0.75 - (series.length - 1 - si) * 0.18); return 'opacity:' + op + (c ? ';background:' + c : ''); };
-    var legend = '<div class="ui-legend">' + series.map(function (se, si) { return '<span><i style="' + key(si) + '" class="' + (se.strong ? 'strong' : '') + '"></i>' + esc(se.label) + '</span>'; }).join('') + '</div>';
+    var keyAll = function (si) {
+      var c = allCols[si], se = allSeries[si];
+      var op = se.hidden ? 0.25 : (se.strong || c ? 1 : Math.max(0.28, 0.75 - (allSeries.length - 1 - si) * 0.18));
+      return 'opacity:' + op + (c ? ';background:' + c : '');
+    };
+    var tipKey = function (si) {
+      var c = cols[si], se = series[si];
+      var op = se.strong || c ? 1 : Math.max(0.28, 0.75 - (series.length - 1 - si) * 0.18);
+      return 'opacity:' + op + (c ? ';background:' + c : '');
+    };
+    var legend = '<div class="ui-legend' + (toggleable ? ' toggleable' : '') + '" role="group" aria-label="Chart series">' +
+      allSeries.map(function (se, si) {
+        var on = !se.hidden;
+        var label = esc(se.label);
+        var inner = '<i style="' + keyAll(si) + '" class="' + (se.strong ? 'strong' : '') + (se.dash ? ' dash' : '') + '"></i>' + label;
+        if (!toggleable) return '<span>' + inner + '</span>';
+        return '<button type="button" class="ui-legend-item' + (on ? '' : ' off') + '" data-si="' + si + '" aria-pressed="' + on + '" title="' + (on ? 'Hide' : 'Show') + ' ' + label + '">' + inner + '</button>';
+      }).join('') + '</div>';
     el.innerHTML = '<div class="ui-chart-wrap">' + s + '<div class="ui-tip" hidden></div></div>' + legend;
     var svg = el.querySelector('svg'), tip = el.querySelector('.ui-tip'), guide = el.querySelector('.guide');
     svg.addEventListener('pointermove', function (e) {
@@ -813,12 +839,29 @@
       if (!r) return;
       var i = +r.getAttribute('data-i');
       guide.setAttribute('x1', x(i)); guide.setAttribute('x2', x(i)); guide.setAttribute('visibility', 'visible');
-      tip.innerHTML = '<b>' + esc(cfg.tipLabels ? cfg.tipLabels[i] : labels[i]) + '</b>' + series.map(function (se, si) { var v = se.values[i]; return '<div><span>' + (series.length > 1 ? '<i style="' + key(si) + '"></i>' : '') + esc(se.label) + '</span><span>' + (v == null ? '—' : esc(fmt(v))) + '</span></div>'; }).reverse().join('');
+      tip.innerHTML = '<b>' + esc(cfg.tipLabels ? cfg.tipLabels[i] : labels[i]) + '</b>' + series.map(function (se, si) {
+        var v = se.values[i];
+        return '<div><span>' + (series.length > 1 ? '<i style="' + tipKey(si) + '"></i>' : '') + esc(se.label) + '</span><span>' + (v == null ? '—' : esc(fmt(v))) + '</span></div>';
+      }).reverse().join('');
       tip.hidden = false;
       var box = svg.getBoundingClientRect(), px = (x(i) / W) * box.width;
       tip.style.left = Math.min(box.width - tip.offsetWidth - 4, Math.max(4, px + 12)) + 'px';
     });
     svg.addEventListener('pointerleave', function () { tip.hidden = true; guide.setAttribute('visibility', 'hidden'); });
+    if (toggleable) {
+      el.querySelectorAll('.ui-legend-item').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var si = +btn.getAttribute('data-si');
+          var se = allSeries[si];
+          if (!se) return;
+          var visibleN = allSeries.filter(function (x) { return !x.hidden; }).length;
+          if (!se.hidden && visibleN <= 1) return;
+          se.hidden = !se.hidden;
+          if (typeof cfg.onToggle === 'function') cfg.onToggle(allSeries, se);
+          line(el, cfg);
+        });
+      });
+    }
   }
 
   /* ---------- misc ---------- */
