@@ -2,7 +2,7 @@
 
 **Purpose:** Pull this branch on an office PC (DB2 reachable), finish the live extract, and wire the Revenue OSD hub. Scaffold was built off-network; this file is the day-of runbook.
 
-**Related:** product/architecture detail in [osd-revenue.md](osd-revenue.md). Repo rules in [AGENTS.md](../AGENTS.md) — do not write to production while casually testing; use `--dry-run` until counts match.
+**Related:** product/architecture detail in [osd-revenue.md](osd-revenue.md). On 13 Nov follow [office-13-pipeline.md](office-13-pipeline.md) first (phase order, stop rules, day note). Repo rules in [AGENTS.md](../AGENTS.md) — do not write to production while casually testing; use `--dry-run` until counts match.
 
 ---
 

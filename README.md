@@ -49,6 +49,7 @@ Optional `.env` (git-ignored, loaded by `npm run dev`): `GOEDEL_API_KEY` or `ANT
 | [docs/reports.md](docs/reports.md) | Per-report rules (data sources, date cells, sync, follow-ups) |
 | [docs/osd-revenue.md](docs/osd-revenue.md) | Common DB2 OSD dump → summary hub, Disconnection, REM views |
 | [docs/OSD_OFFICE_SPEC.md](docs/OSD_OFFICE_SPEC.md) | Office-network day runbook: pull, confirm columns, chunked sync, verify hub |
+| [docs/office-13-pipeline.md](docs/office-13-pipeline.md) | 13 Nov agent order: OSD extract, then read-only application discovery, then unbilled |
 | [docs/consumer-base.md](docs/consumer-base.md) | Consumer & meter profile: Live base rates for defective / smart / unbilled |
 | [docs/database.md](docs/database.md) | Supabase schemas, SQL files, imports, login rules |
 | [docs/users.md](docs/users.md) | Users on the VM: the PocketBase user store (`app_users`, activity, audit), sign-in, built-in admins, modules |
