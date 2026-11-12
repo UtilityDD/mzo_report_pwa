@@ -23,14 +23,15 @@ Read these next, in this order:
 
 | Group | Pages |
 |---|---|
-| New service connection | Pending NSC (`nsc.html`), NSC: Historical Analysis, NSC KPIs (`nsc/kpi.html`), Weekly deposit vs disposal, Pending master card, Withheld, Pending load extension, Solar, JJM, Meter utilization, WRIDD schemes, Bharat Net, ICDS |
-| Revenue | Losses, Performance index, Collection, **OSD summary** (`rem/osd.html`, common DB2 dump), Disconnection tracker, Theft assessment, REM OSD > ₹5,000, REM defaulters (`rem/defaulters.html`) — see [osd-revenue.md](osd-revenue.md) |
-| DD visit | Upcoming DD (`dd/upcomingDD.html`), DD visit (`dd/dd_visit.html`) |
-| Consumers & meters | **Consumer & meter profile** (`consumer/profile.html`, Live-base rates), Defective meter, Unbilled & exceptions (`consumer/unbilled.html`), Consumers, Docket calls, Docket KPI, Smart meter utilization — see [consumer-base.md](consumer-base.md) |
+| Connections | Pending NSC (`nsc.html`), NSC: Historical Analysis, NSC KPIs (`nsc/kpi.html`), Weekly deposit vs disposal, Withheld, Pending master card, Pending load extension |
+| Schemes | JJM (`jjm.html`), Solar, PM Surya Ghar, WRIDD schemes, Bharat Net, ICDS |
+| Revenue & recovery | Performance index, Losses, Collection, **OSD summary** (`rem/osd.html`), REM OSD > ₹5,000, REM defaulters, Disconnection tracker, Upcoming DD, DD visit, Theft assessment — see [osd-revenue.md](osd-revenue.md) |
+| Consumers | **Consumer & meter profile** (`consumer/profile.html`), Consumers, Unbilled & exceptions, Docket calls, Docket KPI, CMO grievance — see [consumer-base.md](consumer-base.md) |
+| Meters & stores | Meter utilization, Defective meter, Smart meter utilization, Stock |
+| Network & safety | Power map (`power_map/v2/`), Feeder outage, DTR records, Peak load, DTR Health Check-Up (`health_checkup.html`), PRT / transformer records, Line–highway crossings, Substation upkeeping, Accident reports, Safety app reports, Priority SI works, Durga Puja 2026 |
 | Vendor advances | Capex summary (`capex_all.html`), O&M summary (`advance_onm.html`) |
-| Substation & network | Power map (`power_map/map.html`), Line–highway crossings, PRT / transformer records (`prt-oil/`), Feeder outage |
-| Important | Performance index, CMO grievance, PM Surya Ghar, Priority SI works (`si-works/si.html`), JJM report, Accident reports, Safety app reports, Manpower report, Substation upkeeping, DTR records, Peak load measurements, Health check-up, Durga Puja 2026, Stock, Important data sheets, Sheet links |
-| Media | Power news hub |
+| Establishment | Manpower report |
+| Reference | Power news hub, Important data sheets, Sheet links, DISHA Collect |
 | Administration (admins only) | Users, Sources, Data quality, Activity, Visitors, Ask usage, Power map edits, Corrections (all `admin_users.html?tab=…`), Structure (`admin.html`) |
 
 URLs are bookmarked and shared: never rename or move a served page; leave a redirect if one must move.
@@ -137,7 +138,7 @@ NSC follow-ups list and posting, disconnection follow-ups, DD visit history and 
 - **Power news hub**: Google News RSS, fetched by the server (`/api/news`). Feeds cover state/Bangla/district/national plus last-30-day **Facebook** (Bangla FB power posts), **Districts** (statewide district power news, separate from FB), **Grievances**, and **Safety**. Facebook has no public API; local FB coverage is thin outside a few pages.
 - **Ask**: the server holds the key and calls the model: Gödel Machines (DeepSeek V4.1 Flash, OpenAI-compatible, `GOEDEL_API_KEY`) or the Anthropic Messages API (Claude Haiku, `ANTHROPIC_API_KEY`), chosen by `ASSISTANT_PROVIDER` (`lib/assistant/`); tools run in the browser on already-scoped data. See [assistant.md](assistant.md).
 - **Substation upkeeping**: a link to a separate app (`mzowbsedcl-dev.github.io/Upkeeping`).
-- **Health check-up**: placeholder, no data yet.
+- **DTR Health Check-Up** (`health_checkup.html`, sidebar Network & safety): placeholder, no data yet.
 
 ## 4. Hosting
 
@@ -317,7 +318,7 @@ New pages also go into `isNetworkFirstPath` in `sw.js`; a new folder needs a sta
 - **Ask does not work on the VM** until a key is in `/etc/mzo/app.env`: `GOEDEL_API_KEY` (DeepSeek V4.1 Flash on Gödel Machines) or `ANTHROPIC_API_KEY`. Without one it answers "not configured". A free Gödel key keeps prompts (aggregate numbers and questions) and may train on them; a paid key keeps nothing.
 - **Production is far behind `develop`** (2.66.1 vs 3.2x) and still serves pages `develop` removed; plan redirects before the next promotion (section 4).
 - **Stale numbers in the docs:** [architecture.md](architecture.md) says Important data sheets have no mirror copy; the page now reads whole-tab copies on the VM. The repository rules say there are no automated tests; the tests in section 7 exist. [deploy.md](deploy.md) describes an older remote layout.
-- **Health check-up** is a placeholder and **Substation upkeeping** only links to a separate app.
+- **DTR Health Check-Up** is a placeholder and **Substation upkeeping** only links to a separate app.
 - The Power Map `powermap` schema (a second data model) is mirrored but no page reads it.
 - The DD visit and Durga Puja sheets, and Priority SI, bypass the mirror by design; their freshness on the VM is the source's.
 - Data quality findings for the source sheets (owner action list): [data-quality.md](data-quality.md) and the portal's Data quality page.

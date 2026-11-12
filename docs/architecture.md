@@ -52,7 +52,7 @@ Stock storage and the insight cutover: [stock.md](stock.md).
 
 **Client profile:** `localStorage.mzo_user_profile` (PIN stripped). Scope fields: `role`, `zone_code`, `region_code`, `division_code`, `ccc_code`, plus module flags (`nsc-autho`, `nsc-upload-autho`, `defective-upload-autho`, `stock-upload-autho`, `si-autho`, `sheets-autho`, …). The shell's sidebar and account menu read this profile. After an admin changes a flag, the user must sign in again so the stored profile refreshes.
 
-Sheet links (sidebar **Important → Sheet links**) has its own rules: see [reports.md](reports.md#sheet-links).
+Sheet links (sidebar **Reference → Sheet links**) has its own rules: see [reports.md](reports.md#sheet-links).
 
 **`window.MzoScope`** (client-only; do not slice large CSVs on Vercel):
 
