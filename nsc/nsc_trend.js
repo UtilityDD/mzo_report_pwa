@@ -137,6 +137,45 @@
     return '<span class="ui-delta ' + (d < 0 ? 'ok' : 'bad') + '">' + (d > 0 ? '+' : '') + UI.n(d) + '</span>';
   }
 
+  var chromeReady = false;
+  var sideWasCollapsed = null;
+  /** Trend does not use the page filter panel (search, class, delay, and so on). */
+  function useFilters(on) {
+    if (!chromeReady) {
+      chromeReady = true;
+      var css = document.createElement('style');
+      css.textContent = 'body.nsc-trend-on .ui-side-toggle,body.nsc-trend-on #sideToggle,body.nsc-trend-on .ui-side-rail{display:none!important}' +
+        'body.nsc-trend-on .ui-layout{grid-template-columns:minmax(0,1fr)!important}' +
+        'body.nsc-trend-on .ui-layout>.ui-side{display:none!important}';
+      document.head.appendChild(css);
+      document.addEventListener('keydown', function (e) {
+        if (!document.body.classList.contains('nsc-trend-on')) return;
+        if ((e.key !== 'f' && e.key !== 'F') || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+        var t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        e.preventDefault();
+        e.stopPropagation();
+      }, true);
+    }
+    var side = document.getElementById('side');
+    var layout = side && side.closest && side.closest('.ui-layout');
+    if (!on) {
+      if (!document.body.classList.contains('nsc-trend-on') && layout) {
+        sideWasCollapsed = layout.classList.contains('side-collapsed');
+      }
+      document.body.classList.add('nsc-trend-on');
+      if (layout) layout.classList.add('side-collapsed');
+      if (side) side.classList.remove('open');
+      document.documentElement.classList.remove('ui-sheet-on');
+      var scrim = document.querySelector('.ui-scrim');
+      if (scrim) scrim.classList.remove('on');
+      return;
+    }
+    document.body.classList.remove('nsc-trend-on');
+    if (layout && sideWasCollapsed === false) layout.classList.remove('side-collapsed');
+    sideWasCollapsed = null;
+  }
+
   function mount(cfg) {
     var root = typeof cfg.root === 'string' ? document.getElementById(cfg.root) : cfg.root;
     if (!root) return null;
@@ -539,5 +578,5 @@
     return { reload: load, render: render, drill: dr };
   }
 
-  w.NscTrend = { mount: mount };
+  w.NscTrend = { mount: mount, useFilters: useFilters };
 })(window);
