@@ -19,7 +19,7 @@ Read these next, in this order:
 
 ### The main pages (the sidebar, `NAV` in `app.html`)
 
-`app.html` is the shell: sidebar (a drawer on phones), Ctrl/⌘K search, favourites, and report pages in keep-alive iframes. The home item is **Home** (`home.html`: DISHA mark, full name, clickable report tiles); **Briefing** (`executive_briefing.html`) is the detailed scorecard; **DISHA Collect** (`collect/`, [collect.md](collect.md)) is the VM-only office report request flow (format builder, fill/submit, hierarchy, shell + Home badges); **Ask** (`assistant.html`) answers questions in plain language and opens filtered reports.
+`app.html` is the shell: sidebar (a drawer on phones), Ctrl/⌘K search, favourites, and report pages in keep-alive iframes. The home item is **Home** (`home.html`: DISHA mark, full name, clickable report tiles, then Recent). **Briefing** (`executive_briefing.html`) is the detailed scorecard and opens from Home’s button, not from the sidebar. **DISHA Collect** (`collect/`, [collect.md](collect.md)) is the VM-only office report request flow (format builder, fill/submit, hierarchy, shell + Home badges); **Ask** (`assistant.html`) answers questions in plain language and opens filtered reports.
 
 | Group | Pages |
 |---|---|
