@@ -71,7 +71,7 @@
     }
     try {
       var meta = document.querySelector('meta[name="theme-color"]');
-      var tc = theme === 'dark' ? '#09090a' : (theme === 'ppt' ? '#e8edf6' : '#f1f1f0');
+      var tc = theme === 'dark' ? '#09090a' : (theme === 'ppt' ? '#ffffff' : '#f1f1f0');
       if (!meta && !inShell && document.head) {
         meta = document.createElement('meta');
         meta.name = 'theme-color';
