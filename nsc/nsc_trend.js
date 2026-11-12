@@ -6,22 +6,82 @@
 (function (w) {
   'use strict';
 
-  function shortDate(iso) {
-    var m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (!m) return iso || '—';
-    var mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return parseInt(m[3], 10) + ' ' + mon[parseInt(m[2], 10) - 1];
+  var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var MON_IX = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+  // Used only when the stored text has a day and month but no year ("25 May", "5th May").
+  var fallbackYear = new Date().getFullYear();
+  // True while the loaded days span more than one calendar year, so "25 May" is not drawn before "5 May" with the year hidden.
+  var showYear = false;
+
+  /** { y, m, d } — y is 0 when the text has no year. Day-first for dd/mm/yyyy. */
+  function parseDay(raw) {
+    var s = String(raw || '').trim();
+    if (!s) return null;
+    var iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (iso) return { y: +iso[1], m: +iso[2], d: +iso[3] };
+    var dmy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if (dmy) {
+      var y = +dmy[3];
+      if (y < 100) y += 2000;
+      return { y: y, m: +dmy[2], d: +dmy[1] };
+    }
+    var named = s.match(/^(\d{1,2})(?:st|nd|rd|th)?[\s\-]+([A-Za-z]{3,9})(?:[\s,\-]+(\d{2,4}))?/i);
+    if (named) {
+      var mi = MON_IX[named[2].slice(0, 3).toLowerCase()];
+      if (mi == null) return null;
+      var yy = named[3] ? +named[3] : 0;
+      if (yy && yy < 100) yy += 2000;
+      return { y: yy, m: mi + 1, d: +named[1] };
+    }
+    return null;
   }
 
-  /** Sort key for snapshot days (ISO yyyy-mm-dd, or dd/mm/yyyy). Avoids "23 May" before "5 May" string order. */
-  function dateSortVal(iso) {
-    var s = String(iso || '').trim();
-    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-    if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3]);
-    var dmy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
-    if (dmy) return Date.UTC(+dmy[3], +dmy[2] - 1, +dmy[1]);
-    var t = Date.parse(s);
-    return isFinite(t) ? t : 0;
+  function dayParts(raw) {
+    var p = parseDay(raw);
+    if (!p || p.m < 1 || p.m > 12 || p.d < 1 || p.d > 31) return null;
+    return { y: p.y || fallbackYear, m: p.m, d: p.d };
+  }
+
+  /** Midnight UTC. Numeric so "5 May" sorts before "25 May" (string order does the opposite). */
+  function dateSortVal(raw) {
+    var p = dayParts(raw);
+    return p ? Date.UTC(p.y, p.m - 1, p.d) : 0;
+  }
+
+  function shortDate(raw, withYear) {
+    var p = dayParts(raw);
+    if (!p) return String(raw || '—');
+    var s = p.d + ' ' + MON[p.m - 1];
+    if (withYear == null ? showYear : withYear) s += ' ' + p.y;
+    return s;
+  }
+
+  function setFallbackYear(raws) {
+    var years = [];
+    (raws || []).forEach(function (raw) {
+      var p = parseDay(raw);
+      if (p && p.y >= 1990 && p.y <= 2100) years.push(p.y);
+    });
+    if (!years.length) { fallbackYear = new Date().getFullYear(); return; }
+    years.sort(function (a, b) { return a - b; });
+    fallbackYear = years[Math.floor(years.length / 2)];
+  }
+
+  function sortDays(list) {
+    setFallbackYear((list || []).map(function (d) { return d.reportDate; }));
+    list.sort(function (a, b) {
+      var d = dateSortVal(a.reportDate) - dateSortVal(b.reportDate);
+      return d || String(a.reportDate).localeCompare(String(b.reportDate));
+    });
+    var years = {};
+    var n = 0;
+    list.forEach(function (d) {
+      var p = dayParts(d.reportDate);
+      if (!p || years[p.y]) return;
+      years[p.y] = true;
+      n += 1;
+    });
+    showYear = n > 1;
   }
 
   /** Snapshot offices often have blank region; resolve from CCC so Zone → Region drill matches. */
@@ -179,7 +239,7 @@
             'Manage snapshot days <span style="font-weight:400;color:var(--mzo-muted)">· Admin only</span>' +
           '</summary>' +
           '<p class="ui-muted" style="margin:8px 0 10px;font-size:12px;line-height:1.4">' +
-            'Remove bad days (e.g. a division at zero) from this trend. Live Working/Withheld lists are not changed.' +
+            'Newest first. Remove bad days (e.g. a division at zero) from this trend. Live Working/Withheld lists are not changed.' +
           '</p>' +
           '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:8px">' +
             '<button type="button" class="ui-btn sm primary" id="' + id('delBtn') + '" disabled>Delete selected</button>' +
@@ -277,9 +337,10 @@
         return;
       }
 
+      sortDays(days);
       var series = seriesFor();
       var labels = series.map(function (s) { return shortDate(s.reportDate); });
-      var tipLabels = series.map(function (s) { return s.reportDate; });
+      var tipLabels = series.map(function (s) { return shortDate(s.reportDate, true); });
       var totals = series.map(function (s) { return s.total; });
       var over30s = series.map(function (s) { return s.over30; });
       var last = series[series.length - 1] || { total: 0, over30: 0, reportDate: '', offices: [] };
@@ -301,10 +362,10 @@
       var maxPt = null;
       var minPt = null;
       series.forEach(function (s) {
-        if (!maxPt || s.total > maxPt.total || (s.total === maxPt.total && s.reportDate > maxPt.reportDate)) {
+        if (!maxPt || s.total > maxPt.total || (s.total === maxPt.total && dateSortVal(s.reportDate) > dateSortVal(maxPt.reportDate))) {
           maxPt = s;
         }
-        if (!minPt || s.total < minPt.total || (s.total === minPt.total && s.reportDate > minPt.reportDate)) {
+        if (!minPt || s.total < minPt.total || (s.total === minPt.total && dateSortVal(s.reportDate) > dateSortVal(minPt.reportDate))) {
           minPt = s;
         }
       });
@@ -349,7 +410,7 @@
         labels: labels,
         tipLabels: tipLabels,
         series: chartSeries,
-        height: 220,
+        height: 380,
         fmt: UI.n,
         onToggle: function (list) {
           list.forEach(function (se) {
@@ -460,8 +521,8 @@
           days = (data && data.items || []).map(function (it) {
             return { reportDate: it.reportDate, offices: it[key] || [] };
           }).filter(function (d) { return d.reportDate; });
-          // Chronological (oldest → newest) so the chart and day table match calendar order.
-          days.sort(function (a, b) { return dateSortVal(a.reportDate) - dateSortVal(b.reportDate); });
+          // Oldest → newest. String order puts "25 May" before "5 May".
+          sortDays(days);
           ready = true;
           render();
         })

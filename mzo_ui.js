@@ -799,9 +799,14 @@
     for (var g = lo; g <= hi + step / 2; g += step) {
       s += '<line x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + y(g) + '" y2="' + y(g) + '" class="gl"/><text x="' + (P.l - 8) + '" y="' + (y(g) + 4) + '" text-anchor="end">' + esc(cfg.axis ? cfg.axis(g) : fmt(g)) + '</text>';
     }
-    // Thin crowded x labels: keep roughly one per 56px, counted back from the last so it is always shown
-    // and the spacing stays even (counting from the first could leave the last two labels overlapping).
-    var every = Math.max(1, Math.ceil(labels.length / Math.max(2, Math.floor((W - P.l - P.r) / 56))));
+    // Thin crowded x labels. Slot is at least 56px, wider when a label is long ("25 May 2025"),
+    // so a later date cannot paint over the one to its left. Count back from the last label so it
+    // is always shown and the spacing stays even.
+    var labelSlot = 56;
+    for (var li = 0; li < labels.length; li++) {
+      labelSlot = Math.max(labelSlot, String(labels[li] == null ? '' : labels[li]).length * 6.6 + 14);
+    }
+    var every = Math.max(1, Math.ceil(labels.length / Math.max(2, Math.floor((W - P.l - P.r) / labelSlot))));
     labels.forEach(function (l, i) { if ((labels.length - 1 - i) % every === 0) s += '<text x="' + x(i) + '" y="' + (H - 6) + '" text-anchor="middle">' + esc(l) + '</text>'; });
     series.forEach(function (se, si) {
       var d = '', pen = false;
