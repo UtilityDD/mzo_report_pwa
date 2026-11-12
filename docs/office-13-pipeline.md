@@ -61,9 +61,28 @@ Reprocess the last extract without hitting DB2 again:
 node scripts/sync/sync_revenue_osd_from_crm.js --skip-db --dry-run
 ```
 
-## Phase 2 — application sources (only if Phase 1 passed)
+## Phase 2 — NSC flow (only if Phase 1 passed)
 
-Read-only. In DbVisualizer, run these one at a time. Save **column names and row counts** in the day note. Do not export consumer names into the repo.
+Read-only. The purpose is one application history that can explain four numbers a day, per office. Do not export consumer names. Do not replace Pending NSC, Withheld, the KPI page, or the trend on this day.
+
+Today’s pages cannot answer this. Pending NSC and its chart are the **stock** still waiting (paid, not yet connected). Withheld is the **stock** still held, with a reason. The KPI averages are computed only on those open rows, so a connection that has already been given has left the file and is invisible. Historical NSC counts connections given, but not on the same axis as payment or withheld. A person connected today usually paid on an earlier day, so the four numbers are events on their own dates, not one cohort.
+
+| Series | Kind | Meaning | Date to find |
+|---|---|---|---|
+| Paid | flow | Quotation paid that day. This is the eligible applicant. | payment / collection date (`COLL_DATE` on the SAP dump) |
+| Connected | flow | Connection given that day, including people who paid earlier | `DATE_OF_EFFECT` or meter-install date |
+| Withheld | flow | Newly withheld that day, with the reason | withheld date + reason |
+| Released | flow | Left withheld that day (connected, or returned to pending) | status change; record the column if one exists |
+| Pending | stock | Paid, not connected, not currently withheld, at the end of the day | derived, not summed |
+| Withheld outstanding | stock | Still withheld at the end of the day | derived |
+
+Do not add up daily pending to make a “cumulative pending”. Pending is a balance. The cumulative figures are the flows (paid, connected, withheld, released) over the month or year, plus the closing stock. The check that must hold before any page is rebuilt:
+
+`closing pending ≈ opening pending + paid that day − connected that day − newly withheld + released`
+
+A connection is not a subset of that day’s payments.
+
+In DbVisualizer, run these one at a time. Save **column names and row counts** in the day note.
 
 ```sql
 SELECT COUNT(*) AS n FROM ISUDATA.REP_BIZ_MASTER_DETAIL;
@@ -73,16 +92,27 @@ SELECT COUNT(*) AS n FROM ISUDATA.CRM_APPL_LIST;
 
 If a table errors with authorization, record `no access` and continue. Do not ask for a new DB2 user on this day.
 
-If `REP_BIZ_MASTER_DETAIL` is readable, sample five rows (no full dump):
+`REP_BIZ_MASTER_DETAIL` is the known source for connections given (`DATE_OF_EFFECT`, `BASE_CLASS`). Payment and withheld dates usually leave the pending dump once the connection is given, so they have to be found on `ZNCN_CRM_DETAILS` or `CRM_APPL_LIST` (remote `DP1_DB`; either may be `no access`).
 
-```sql
-SELECT * FROM ISUDATA.REP_BIZ_MASTER_DETAIL FETCH FIRST 5 ROWS ONLY;
-```
+For each table that is readable, list the columns (a catalog query, or five rows if that is all the user can run). In the note, record only whether these exist, and the real column name:
 
-Write down whether these columns exist: `DATE_OF_EFFECT`, `BASE_CLASS`, a CCC or office code, an application or consumer id.
+- application id (`APPL_NO` or equivalent)
+- payment / quotation-paid date
+- connection date (`DATE_OF_EFFECT` or meter install)
+- withheld date, withheld reason, and a status that separates pending, withheld, and connected
+- CCC or office code, and class (`BASE_CLASS` / `CONN_CLASS`)
 
-**Pass:** a short note listing each table as `ok` or `no access`, plus the column names found.  
-**Stop:** do not build `fact_application`, do not change NSC upload, do not schedule a new job.
+Do not copy name, address, or phone into the note. Do not `SELECT *` a full table.
+
+If a table is readable, also record three **counts** (Malda zone only, no row export):
+
+1. Paid, not connected, not withheld — compare with today’s Pending NSC consumer count.
+2. Currently withheld — compare with today’s Withheld count.
+3. Connections on one recent day (`DATE_OF_EFFECT`) — compare with Historical NSC for that day.
+
+**Pass:** each table marked `ok` or `no access`, the column names above, and the three counts (or “could not count” with the reason).  
+**Fallback, still a pass:** only `REP_BIZ_MASTER_DETAIL` is readable. Daily connections can be a flow. Payment and withheld stay stocks from the existing dumps. Do not describe that as the four-line chart.  
+**Stop:** do not build a fact table, do not change the NSC upload, do not rewire the trend or the KPI page, do not schedule a job. The KPI replacement (flows plus closing stock, and delay measured on connections already given) waits until these counts sit near the live pages.
 
 ## Phase 3 — unbilled (only if Phase 1 passed and time remains)
 
@@ -120,7 +150,7 @@ Leave this in the chat, not in git:
 
 1. Phase 1: dry-run consumer count, total OSD, REM share; live upload yes/no; hub matches yes/no.
 2. Supply column name and the Live / Deemed / Temp spellings.
-3. Phase 2: access per table, and whether `DATE_OF_EFFECT` and `BASE_CLASS` exist.
+3. Phase 2: access per table; the real names of payment date, connection date, withheld date, reason, status, office, and class; the three counts against Pending NSC, Withheld, and Historical NSC. Note if only the connection-date fallback is possible.
 4. Phase 3: skipped, dry-run counts, or live upload.
 5. Any chunk that timed out.
 
@@ -128,5 +158,6 @@ Leave this in the chat, not in git:
 
 - New Postgres or Supabase fact tables.
 - Second zone, or office-master changes.
-- Collection, loss, meters, network, NSC trend rewiring.
+- Collection, loss, meters, network.
+- Rewiring the NSC trend or replacing the pending-only KPI. Phase 2 only records the columns and counts that rewiring needs.
 - Committing data files or secrets.

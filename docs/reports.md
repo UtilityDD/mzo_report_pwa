@@ -96,16 +96,16 @@ Page: `performance_index.html` (NAV key `performance_index`; the retired duplica
 
 Page: `historical_nsc.html`. Currently tracks daily connection counts per CCC by class (`d, c, i, a, o`) loaded via DataHub `historical_nsc` from a published Google Sheet CSV.
 
-**Future Upgrade Goals:**
-1. **Pace / Throughput:** Connection counts per week, month, quarter, and FY, broken down by CCC and Class, segmented by **Pole Case vs Non-Pole Case**.
-2. **Turnaround Delay Benchmarks (Overall per FY):**
-   - **Quotation Delay ($D_{\text{qtn}}$):** Application Date $\to$ Quotation Date (average days)
-   - **Work Order Delay ($D_{\text{wo}}$):** Payment Date $\to$ WO Creation Date (average days)
-   - **Connection Delay ($D_{\text{conn}}$):** Payment Date $\to$ Meter Installation Date (average days)
-   - **Overall Delay ($D_{\text{overall}}$):** Application Date $\to$ Meter Installation Date (average days)
-3. **Data Source & Privacy Architecture:**
-   - **Zero Consumer PII:** Client app only receives pre-aggregated summary counts and averages per unit/FY.
-   - **DB2 Status:** Local DB2 table `ISUDATA.REP_BIZ_MASTER_DETAIL` is queryable by user `report` for connection pace (`DATE_OF_EFFECT`, `BASE_CLASS`). Turnaround delay tables (`ISUDATA.ZNCN_CRM_DETAILS`, `ISUDATA.CRM_APPL_LIST`) require DB2 user mapping on remote server `DP1_DB` or an offline aggregate sync from the CRM export dump (`.xlsb`/`.csv`).
+Pending NSC, its trend, and NSC KPIs are a **stock of people still waiting** after quotation payment (`COLL_DATE`). Withheld is the stock still held. A connection already given has left those files, so the chart cannot show daily payment, daily connection, and daily withheld together. The office-day check for the columns that would make that chart is Phase 2 in [office-13-pipeline.md](office-13-pipeline.md).
+
+**Target, after that column check matches the live counts:**
+
+1. **Daily flows, not a summed pending:** paid (eligible), connected (including payments from earlier days), newly withheld, and released. Closing pending and closing withheld are stocks. Cumulative KPI cards sum the flows over the month or year and show the closing stock beside them. They do not add each day’s pending.
+2. **Same office drill** as the present trend (Zone → Region → Division → CCC), plus class, and pole vs non-pole where the pending file still has `NO_OF_POLES`.
+3. **Delay on work already finished,** not only on the open queue: payment → connection, and the existing quotation and work-order gaps. Pending aging stays on `nsc.html`.
+4. **No consumer names on the chart.** Counts and averages per office. Names stay on the existing Pending and Withheld lists.
+
+`ISUDATA.REP_BIZ_MASTER_DETAIL` is readable by user `report` for connections given (`DATE_OF_EFFECT`, `BASE_CLASS`). Payment and withheld dates after the connection is given depend on `ISUDATA.ZNCN_CRM_DETAILS` and `ISUDATA.CRM_APPL_LIST`, which may be `no access` on remote server `DP1_DB`. If only the first table is readable, daily connections can still be a flow, and payment and withheld stay stocks from the current dumps. That fallback is not the four-line chart.
 
 ## Unbilled Consumers & Billing Exceptions
 
