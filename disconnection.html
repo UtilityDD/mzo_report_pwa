@@ -231,6 +231,80 @@
         max-width: 220px;
       }
     }
+    .dc-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 960;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: var(--mzo-scrim);
+    }
+    .dc-modal[hidden] { display: none; }
+    .dc-modal > section {
+      width: min(440px, 100%);
+      background: var(--mzo-surface);
+      border: 1px solid var(--mzo-border);
+      border-radius: 16px;
+      box-shadow: var(--mzo-shadow-pop);
+      animation: dc-modal-in .16s ease;
+    }
+    @keyframes dc-modal-in { from { transform: translateY(8px); opacity: 0; } }
+    .dc-modal header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 12px 0 20px;
+    }
+    .dc-modal h3 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 4px 0 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .dc-modal .mark {
+      width: 8px;
+      height: 8px;
+      border-radius: 99px;
+      flex: none;
+      background: var(--mzo-border-strong);
+    }
+    .dc-modal.ok .mark { background: var(--mzo-ok-mark); }
+    .dc-modal.bad .mark { background: var(--mzo-bad-mark); }
+    .dc-modal-b {
+      margin: 0;
+      padding: 12px 20px 0;
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .dc-modal-bn {
+      margin: 10px 20px 0;
+      font-size: 12.5px;
+      line-height: 1.45;
+      color: var(--mzo-muted);
+    }
+    .dc-modal-f {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 16px 20px 18px;
+    }
+    @media (max-width: 760px) {
+      .dc-modal { align-items: flex-end; padding: 0; }
+      .dc-modal > section {
+        border-radius: 20px 20px 0 0;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .dc-modal > section { animation: none; }
+    }
     .dc-status { margin: 8px 16px 0; display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
     .dc-prog { width: 140px; height: 6px; background: var(--mzo-border); border-radius: 99px; overflow: hidden; }
     .dc-prog b { display: block; height: 100%; width: 0; background: var(--mzo-brand); transition: width .3s ease; }
@@ -369,6 +443,21 @@
           </svg></button>
       </header>
       <div id="dBody"></div>
+    </section>
+  </div>
+
+  <div class="dc-modal" id="syncDlg" hidden>
+    <section role="dialog" aria-modal="true" aria-labelledby="syncDlgTitleText" aria-describedby="syncDlgBody">
+      <header>
+        <h3 id="syncDlgTitle"><span class="mark" id="syncDlgMark" hidden></span><span id="syncDlgTitleText"></span></h3>
+        <button type="button" class="ui-btn icon ghost" id="syncDlgX" aria-label="Close"><svg class="ui-i"><use href="#ui-x" /></svg></button>
+      </header>
+      <p class="dc-modal-b" id="syncDlgBody"></p>
+      <p class="dc-modal-bn" id="syncDlgBn" hidden></p>
+      <div class="dc-modal-f">
+        <button type="button" class="ui-btn" id="syncDlgCancel">Cancel</button>
+        <button type="button" class="ui-btn primary" id="syncDlgOk">Continue</button>
+      </div>
     </section>
   </div>
 
@@ -1213,47 +1302,100 @@
         if ($('crmPaySyncBtn')) $('crmPaySyncBtn').hidden = !(m.canCrmSync || m.canSync);
       });
 
+      var syncDlgDone = null, syncDlgBack = null, syncDlgTrap = null;
+      function closeSyncDlg(ok) {
+        var box = $('syncDlg');
+        if (!box || box.hidden) return;
+        box.hidden = true;
+        document.removeEventListener('keydown', onSyncDlgKey);
+        var back = syncDlgBack;
+        syncDlgBack = null;
+        if (back && back.focus) back.focus();
+        var done = syncDlgDone;
+        syncDlgDone = null;
+        if (done) done(!!ok);
+      }
+      function onSyncDlgKey(e) {
+        if (e.key === 'Escape') { e.preventDefault(); closeSyncDlg(false); return; }
+        if (syncDlgTrap) syncDlgTrap(e);
+      }
+      function openSyncDlg(opts) {
+        return new Promise(function (resolve) {
+          if (syncDlgDone) closeSyncDlg(false);
+          syncDlgDone = resolve;
+          syncDlgBack = document.activeElement;
+          var box = $('syncDlg');
+          box.classList.toggle('ok', opts.tone === 'ok');
+          box.classList.toggle('bad', opts.tone === 'bad');
+          $('syncDlgMark').hidden = opts.tone !== 'ok' && opts.tone !== 'bad';
+          $('syncDlgTitleText').textContent = opts.title || '';
+          $('syncDlgBody').textContent = opts.body || '';
+          var bn = $('syncDlgBn');
+          if (opts.bn) { bn.hidden = false; bn.textContent = opts.bn; }
+          else bn.hidden = true;
+          var cancel = $('syncDlgCancel'), ok = $('syncDlgOk');
+          if (opts.cancel) { cancel.hidden = false; cancel.textContent = opts.cancel; }
+          else cancel.hidden = true;
+          ok.textContent = opts.ok || 'Close';
+          ok.className = 'ui-btn' + (opts.cancel ? ' primary' : '');
+          box.hidden = false;
+          var section = box.querySelector('section');
+          syncDlgTrap = UI.trapFocus(section);
+          document.addEventListener('keydown', onSyncDlgKey);
+          ok.focus();
+        });
+      }
+      $('syncDlgOk').addEventListener('click', function () { closeSyncDlg(true); });
+      $('syncDlgCancel').addEventListener('click', function () { closeSyncDlg(false); });
+      $('syncDlgX').addEventListener('click', function () { closeSyncDlg(false); });
+      $('syncDlg').addEventListener('click', function (e) { if (e.target === this) closeSyncDlg(false); });
+
+      function finishSync(btn, st, title, body, tone) {
+        btn.disabled = false;
+        btn.classList.remove('spin');
+        if (st) st.hidden = true;
+        openSyncDlg({ title: title, body: body, ok: 'Close', tone: tone });
+      }
+
       // Direct CRM Extraction & Sync from IBM DB2
       if ($('crmSyncBtn')) {
         $('crmSyncBtn').addEventListener('click', function () {
-          if (!confirm('Directly extract the latest Disconnection Tracker list from IBM DB2 and update cloud VM cache?\n\nThis queries DB2 and publishes the updated baseline directly to the Oracle Cloud VM.\n(সরাসরি IBM DB2 থেকে ডিসকানেকশন ট্র্যাকার ডেটা এক্সট্র্যাক্ট করে ক্লাউড ক্যাশে আপডেট করবেন?)')) return;
-          var b = this; b.disabled = true; b.classList.add('spin');
-          var st = $('status'), stText = $('statusText'), stBar = $('statusBar');
-          if (st) {
-            st.hidden = false;
-            stText.textContent = 'Extracting disconnection records from IBM DB2 and uploading to VM...';
-            stBar.style.width = '35%';
-          }
-
-          fetch('/api/disconnection/crm-sync', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
-          })
-            .then(function (r) {
-              return r.text().then(function (t) {
-                var d; try { d = JSON.parse(t); } catch (e) { throw new Error(r.status === 401 ? 'Session expired. Please sign in again.' : 'Server returned HTTP ' + r.status); }
-                if (!r.ok || d.status !== 'success') throw new Error(d.message || 'HTTP ' + r.status);
-                return d;
-              });
+          var b = this;
+          openSyncDlg({
+            title: 'Sync from DB2',
+            body: 'Extract the latest disconnection list from IBM DB2 and update the live page.',
+            bn: 'সরাসরি IBM DB2 থেকে ডিসকানেকশন ট্র্যাকার ডেটা এক্সট্র্যাক্ট করে ক্লাউড ক্যাশে আপডেট করবেন?',
+            ok: 'Sync from DB2',
+            cancel: 'Cancel'
+          }).then(function (yes) {
+            if (!yes) return;
+            b.disabled = true; b.classList.add('spin');
+            var st = $('status'), stText = $('statusText'), stBar = $('statusBar');
+            if (st) {
+              st.hidden = false;
+              stText.textContent = 'Extracting disconnection records from IBM DB2 and uploading to the live page...';
+              stBar.style.width = '35%';
+            }
+            fetch('/api/disconnection/crm-sync', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
             })
-            .then(function (res) {
-              b.disabled = false; b.classList.remove('spin');
-              if (st) {
-                stBar.style.width = '100%';
-                stText.textContent = res.message || 'DB2 Sync complete!';
-              }
-              UI.toast(res.message || 'Disconnection data extracted from DB2 and updated!');
-              setTimeout(function () {
-                if (st) st.hidden = true;
+              .then(function (r) {
+                return r.text().then(function (t) {
+                  var d; try { d = JSON.parse(t); } catch (e) { throw new Error(r.status === 401 ? 'Session expired. Please sign in again.' : 'Server returned HTTP ' + r.status); }
+                  if (!r.ok || d.status !== 'success') throw new Error(d.message || 'HTTP ' + r.status);
+                  return d;
+                });
+              })
+              .then(function (res) {
                 MzoRows.reload(ROWS).then(reparse);
-              }, 1200);
-            })
-            .catch(function (err) {
-              b.disabled = false; b.classList.remove('spin');
-              if (st) st.hidden = true;
-              alert('DB2 Sync failed: ' + (err.message || err));
-            });
+                finishSync(b, st, 'DB2 sync complete', res.message || 'Disconnection data extracted from DB2 and updated.', 'ok');
+              })
+              .catch(function (err) {
+                finishSync(b, st, 'DB2 sync failed', err.message || String(err), 'bad');
+              });
+          });
         });
       }
 
@@ -1324,47 +1466,42 @@
       // Direct Payment Collection Sync from IBM DB2 (ISUDATA.WBSEDCL_DAILY_COLLECTIONS)
       if ($('crmPaySyncBtn')) {
         $('crmPaySyncBtn').addEventListener('click', function () {
+          var b = this;
           var onOfficePc = !serverCanCrm;
-          var ask = onOfficePc
-            ? 'Collect the latest daily payments from IBM DB2 on this office PC and update the live page?\n\nLeave npm run office:db2 running in the MZO Reports folder. This PC must be on the office network with DbVisualizer.\n(সরাসরি IBM DB2 থেকে দৈনিক কালেকশন ডেটা নিয়ে VM-এ পেমেন্ট স্ট্যাটাস আপডেট করবেন?)'
-            : 'Directly collect the latest daily payments from IBM DB2 and update payment status on the Oracle Cloud VM?\n\nThis queries DB2 daily collections across divisions and updates OSD balances directly on the VM.\n(সরাসরি IBM DB2 থেকে দৈনিক কালেকশন ডেটা নিয়ে VM-এ পেমেন্ট স্ট্যাটাস আপডেট করবেন?)';
-          if (!confirm(ask)) return;
-          var b = this; b.disabled = true; b.classList.add('spin');
-          var st = $('status'), stText = $('statusText'), stBar = $('statusBar');
-          if (st) {
-            st.hidden = false;
-            stText.textContent = onOfficePc
-              ? 'Collecting daily payments from DB2 on this PC...'
-              : 'Querying daily collections from IBM DB2 across divisions and updating VM...';
-            stBar.style.width = '35%';
-          }
-
-          var job = onOfficePc
-            ? syncPaymentsOnThisPc(stText, stBar)
-            : fetch('/api/disconnection/payment-sync', {
-              method: 'POST',
-              credentials: 'same-origin',
-              headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
-            }).then(readSyncJson);
-          job
-            .then(function (res) {
-              b.disabled = false; b.classList.remove('spin');
-              if (st) {
-                stBar.style.width = '100%';
-                stText.textContent = res.message || 'Payment sync complete!';
-              }
-              UI.toast(res.message || 'Payments collected from DB2 and updated on VM!');
-              setTimeout(function () {
-                if (st) st.hidden = true;
-                loadPayments();
-                MzoRows.reload(ROWS).then(reparse);
-              }, 1200);
-            })
-            .catch(function (err) {
-              b.disabled = false; b.classList.remove('spin');
-              if (st) st.hidden = true;
-              alert('Payment Sync failed: ' + (err.message || err));
+          openSyncDlg({
+            title: 'Sync payments',
+            body: onOfficePc
+              ? 'Collect the latest daily payments from IBM DB2 on this PC and update the live page. Leave npm run office:db2 running. This PC must be on the office network with DbVisualizer.'
+              : 'Query daily collections from IBM DB2 and update payment status on the live page.',
+            bn: 'সরাসরি IBM DB2 থেকে দৈনিক কালেকশন ডেটা নিয়ে VM-এ পেমেন্ট স্ট্যাটাস আপডেট করবেন?',
+            ok: 'Sync payments',
+            cancel: 'Cancel'
+          }).then(function (yes) {
+            if (!yes) return;
+            b.disabled = true; b.classList.add('spin');
+            var st = $('status'), stText = $('statusText'), stBar = $('statusBar');
+            if (st) {
+              st.hidden = false;
+              stText.textContent = onOfficePc
+                ? 'Collecting daily payments from DB2 on this PC...'
+                : 'Querying daily collections from IBM DB2 across divisions and updating the live page...';
+              stBar.style.width = '35%';
+            }
+            var job = onOfficePc
+              ? syncPaymentsOnThisPc(stText, stBar)
+              : fetch('/api/disconnection/payment-sync', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
+              }).then(readSyncJson);
+            job.then(function (res) {
+              loadPayments();
+              MzoRows.reload(ROWS).then(reparse);
+              finishSync(b, st, 'Payments updated', res.message || 'Payment sync complete.', 'ok');
+            }).catch(function (err) {
+              finishSync(b, st, 'Payment sync failed', err.message || String(err), 'bad');
             });
+          });
         });
       }
 
