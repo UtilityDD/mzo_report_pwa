@@ -26,17 +26,43 @@ const ALLOWED_ORIGINS = new Set([
   'http://127.0.0.1:3000'
 ]);
 
+function wantsStream(req) {
+  return /application\/x-ndjson/i.test(String(req.headers.accept || ''));
+}
+
+function corsHeaders(res, origin) {
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+}
+
+/** One JSON object per line. A flush tick lets the browser paint before a blocking DB2 call. */
+function writeEvent(res, obj) {
+  res.write(JSON.stringify(obj) + '\n');
+  if (res.socket) {
+    res.socket.uncork();
+    if (typeof res.socket.setNoDelay === 'function') res.socket.setNoDelay(true);
+  }
+}
+
+function beginStream(res, origin) {
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Accel-Buffering', 'no');
+  corsHeaders(res, origin);
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+}
+
 function sendJson(res, status, body, origin) {
   const payload = JSON.stringify(body);
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Content-Length', Buffer.byteLength(payload));
   res.setHeader('Cache-Control', 'no-store');
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Vary', 'Origin');
-  }
-  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  corsHeaders(res, origin);
   res.end(payload);
 }
 
@@ -117,9 +143,27 @@ function createServer(opts) {
         if (csv.length < 20 || !/CON_ID/i.test(header)) {
           return sendJson(res, 400, { status: 'error', message: 'The disconnection list is missing a CON_ID column.' }, origin);
         }
+        if (wantsStream(req)) {
+          beginStream(res, origin);
+          try {
+            const result = await runPayments(csv, async (ev) => {
+              writeEvent(res, Object.assign({ type: 'progress' }, ev));
+              await new Promise((resolve) => setImmediate(resolve));
+            });
+            writeEvent(res, Object.assign({ type: 'result' }, result));
+          } catch (err) {
+            writeEvent(res, { type: 'result', status: 'error', message: err.message || 'Payment extract failed.' });
+          }
+          res.end();
+          return;
+        }
         const result = await runPayments(csv);
         return sendJson(res, 200, result, origin);
       } catch (err) {
+        if (res.headersSent) {
+          try { res.end(); } catch (_) { /* closed */ }
+          return;
+        }
         return sendJson(res, 500, { status: 'error', message: err.message || 'Payment extract failed.' }, origin);
       } finally {
         busy = false;
@@ -138,12 +182,12 @@ function listen(server, port, host) {
   });
 }
 
-async function runPaymentsFromCsv(csvText) {
+async function runPaymentsFromCsv(csvText, onProgress) {
   const { syncDisconnectionPayments } = require('./sync_disconnection_payments');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mzo-pay-'));
   const baseline = path.join(dir, 'baseline.csv');
   fs.writeFileSync(baseline, csvText, 'utf8');
-  const result = await syncDisconnectionPayments({ fresh: true, skipUpload: true, baselineCsv: baseline });
+  const result = await syncDisconnectionPayments({ fresh: true, skipUpload: true, baselineCsv: baseline, onProgress });
   return {
     status: 'success',
     message: result.message,

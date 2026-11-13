@@ -10,12 +10,13 @@ const { createServer, listen } = require('../../scripts/sync/office_helper');
 
 const ORIGIN = 'https://130.210.43.11.sslip.io';
 
-function call(port, method, path, { origin, body } = {}) {
+function call(port, method, path, { origin, body, accept } = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request({
       host: '127.0.0.1', port, method, path,
       headers: Object.assign(
         origin ? { Origin: origin } : {},
+        accept ? { Accept: accept } : {},
         body != null ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } : {}
       )
     }, (res) => {
@@ -37,9 +38,13 @@ async function main() {
   let ran = 0;
   const server = createServer({
     dbvisAvailable: () => true,
-    runPayments: async (csv) => {
+    runPayments: async (csv, onProgress) => {
       ran += 1;
       assert.match(csv, /CON_ID/);
+      if (onProgress) {
+        await onProgress({ phase: 'division', index: 1, total: 2, name: 'Malda Division', state: 'start' });
+        await onProgress({ phase: 'division', index: 1, total: 2, name: 'Malda Division', state: 'done' });
+      }
       return { status: 'success', message: 'ok', matchedCount: 1, csv: csv + '\n', payments: { consumers: {} }, meta: { stats: {} } };
     }
   });
@@ -70,9 +75,20 @@ async function main() {
     assert.equal(ran, 1);
     assert.equal(ok.headers['access-control-allow-origin'], ORIGIN);
 
+    const streamed = await call(port, 'POST', '/payment-sync', {
+      origin: ORIGIN, accept: 'application/x-ndjson', body: JSON.stringify({ csv })
+    });
+    assert.equal(streamed.status, 200);
+    const events = streamed.text.trim().split('\n').map((line) => JSON.parse(line));
+    assert.equal(events[0].type, 'progress');
+    assert.equal(events[0].name, 'Malda Division');
+    assert.equal(events[events.length - 1].type, 'result');
+    assert.equal(events[events.length - 1].status, 'success');
+    assert.equal(ran, 2);
+
     const stranger = await call(port, 'POST', '/payment-sync', { origin: 'https://evil.example', body: JSON.stringify({ csv }) });
     assert.equal(stranger.status, 403);
-    assert.equal(ran, 1);
+    assert.equal(ran, 2);
 
     console.log('office helper ok');
   } finally {

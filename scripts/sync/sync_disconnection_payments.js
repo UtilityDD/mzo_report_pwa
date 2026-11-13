@@ -250,9 +250,14 @@ async function syncDisconnectionPayments(options = {}) {
     console.log(`[${LABEL}] Ingesting payments directly from file: ${options.file}`);
     filesToProcess.push(options.file);
   } else {
+    const report = async (ev) => {
+      if (typeof options.onProgress === 'function') await options.onProgress(ev);
+    };
     for (let d = 0; d < DIVISIONS.length; d++) {
       const div = DIVISIONS[d];
-      console.log(`[${LABEL}] [${d + 1}/${DIVISIONS.length}] Extracting payments for ${div.name} (${div.prefix}%)...`);
+      const step = { phase: 'division', index: d + 1, total: DIVISIONS.length, name: div.name, prefix: div.prefix };
+      console.log(`[${LABEL}] [${step.index}/${step.total}] Extracting payments for ${div.name} (${div.prefix}%)...`);
+      await report(Object.assign({ state: 'start' }, step));
       const chunkFile = path.join(TEMP_DIR, `chunk_${div.prefix}.csv`);
 
       if (fresh || !skipDb || !fs.existsSync(chunkFile)) {
@@ -261,6 +266,7 @@ async function syncDisconnectionPayments(options = {}) {
         console.log(`[${LABEL}] Using cached chunk ${chunkFile}`);
       }
       if (fs.existsSync(chunkFile)) filesToProcess.push(chunkFile);
+      await report(Object.assign({ state: 'done' }, step));
     }
   }
 

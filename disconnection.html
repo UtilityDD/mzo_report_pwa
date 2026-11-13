@@ -305,9 +305,15 @@
     @media (prefers-reduced-motion: reduce) {
       .dc-modal > section { animation: none; }
     }
-    .dc-status { margin: 8px 16px 0; display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
-    .dc-prog { width: 140px; height: 6px; background: var(--mzo-border); border-radius: 99px; overflow: hidden; }
+    .dc-status { margin: 8px 16px 0; display: flex; align-items: center; gap: 12px; font-size: 13px; }
+    .dc-status #statusText { flex: 1; min-width: 0; }
+    .dc-prog { flex: 1; width: auto; min-width: 120px; max-width: 320px; height: 6px; background: var(--mzo-border); border-radius: 99px; overflow: hidden; }
     .dc-prog b { display: block; height: 100%; width: 0; background: var(--mzo-brand); transition: width .3s ease; }
+    .dc-status.busy .dc-prog b { animation: dc-prog-pulse 1.1s ease-in-out infinite; }
+    @keyframes dc-prog-pulse { 50% { opacity: .45; } }
+    @media (prefers-reduced-motion: reduce) {
+      .dc-status.busy .dc-prog b { animation: none; }
+    }
     #table tbody tr { cursor: pointer; transition: background 0.15s; }
     #table tbody tr:hover { background: var(--mzo-surface-sunken, rgba(0, 0, 0, 0.03)); }
   </style>
@@ -1407,6 +1413,35 @@
         });
       }
 
+      function readPayProgress(r, onStep) {
+        if (!r.ok || !r.body || !r.body.getReader) return readSyncJson(r);
+        var reader = r.body.getReader();
+        var dec = new TextDecoder();
+        var buf = '';
+        var result = null;
+        function take(line) {
+          if (!line || !line.trim()) return;
+          var ev = JSON.parse(line);
+          if (ev.type === 'progress') { if (onStep) onStep(ev); return; }
+          if (ev.type === 'result' || ev.status) result = ev;
+        }
+        function pump() {
+          return reader.read().then(function (step) {
+            if (step.value) buf += dec.decode(step.value, { stream: !step.done });
+            var lines = buf.split('\n');
+            buf = lines.pop();
+            lines.forEach(take);
+            if (!step.done) return pump();
+            if (buf.trim()) take(buf);
+            if (!result || (result.status !== 'success' && result.status !== 'ok')) {
+              throw new Error((result && result.message) || 'Payment extract failed.');
+            }
+            return result;
+          });
+        }
+        return pump();
+      }
+
       function officeDownMessage() {
         return 'This PC could not reach the office helper at ' + OFFICE_HELPER + '. In the MZO Reports folder, leave this running: npm run office:db2 — then click Sync Payments again. The live server cannot reach DB2; this computer does the extract.';
       }
@@ -1431,20 +1466,31 @@
             if (/^\s*</.test(csv) || !/CON_ID/i.test(String(csv).split(/\r?\n/).slice(0, 5).join('\n'))) {
               throw new Error('The current disconnection list could not be read. Sign in again, then retry.');
             }
-            if (stText) stText.textContent = 'Collecting daily payments from DB2 on this PC. This can take several minutes...';
-            if (stBar) stBar.style.width = '40%';
+            if (stText) stText.textContent = 'Starting the payment extract...';
+            if (stBar) stBar.style.width = '8%';
             return fetch(OFFICE_HELPER + '/payment-sync', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+              headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
               body: JSON.stringify({ csv: csv })
-            }).then(readSyncJson).catch(function (err) {
+            }).then(function (r) {
+              return readPayProgress(r, function (ev) {
+                var n = ev.total || 1;
+                var step = ev.state === 'done' ? ev.index : Math.max(0, (ev.index || 1) - 1);
+                var pct = Math.round(8 + (step / n) * 64);
+                if (st) st.classList.toggle('busy', ev.state !== 'done');
+                if (stText) stText.textContent = (ev.name || 'Division') + ' · ' + (ev.index || 1) + ' of ' + n;
+                if (stBar) stBar.style.width = pct + '%';
+              });
+            }).catch(function (err) {
+              if (st) st.classList.remove('busy');
               if (err && err.name === 'TypeError') throw new Error(officeDownMessage());
               throw err;
             });
           })
           .then(function (extracted) {
+            if (st) st.classList.remove('busy');
             if (stText) stText.textContent = 'Uploading payment history to the live page...';
-            if (stBar) stBar.style.width = '75%';
+            if (stBar) stBar.style.width = '80%';
             function upload(url, parts) {
               var fd = new FormData();
               parts.forEach(function (p) { fd.append(p.field, new Blob([p.text], { type: p.type }), p.name); });
