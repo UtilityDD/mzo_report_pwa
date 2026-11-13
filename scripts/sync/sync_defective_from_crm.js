@@ -49,12 +49,18 @@ const DIVISIONS = [
   { prefix: '6632', name: 'Buniadpur Division' }
 ];
 
-function runDbvisBatchExtraction(chunksDir, resume = true) {
+async function runDbvisBatchExtraction(chunksDir, resume = true, onProgress) {
   if (!fs.existsSync(DBVIS_CMD_PATH)) {
     throw new Error(`DbVisualizer CLI not found at ${DBVIS_CMD_PATH}`);
   }
 
   console.log(`[${LABEL}] Extracting defective meters division-by-division using DbVisualizer ("${DBVIS_CONNECTION}")...`);
+
+  const report = async (div, index, state) => {
+    if (typeof onProgress === 'function') {
+      await onProgress({ phase: 'division', index, total: DIVISIONS.length, name: div.name, prefix: div.prefix, state });
+    }
+  };
 
   for (let i = 0; i < DIVISIONS.length; i++) {
     const div = DIVISIONS[i];
@@ -64,6 +70,7 @@ function runDbvisBatchExtraction(chunksDir, resume = true) {
     if (resume && fs.existsSync(chunkFile) && fs.statSync(chunkFile).size > 1000) {
       const stats = fs.statSync(chunkFile);
       console.log(`\n  [${i + 1}/${DIVISIONS.length}] ${div.name} (Prefix: ${div.prefix}%): Already downloaded (${(stats.size / 1024 / 1024).toFixed(2)} MB), skipping extraction.`);
+      await report(div, i + 1, 'done');
       continue;
     }
 
@@ -90,6 +97,7 @@ function runDbvisBatchExtraction(chunksDir, resume = true) {
         spawnSync('powershell', ['-Command', 'Start-Sleep -Seconds 10']);
       }
 
+      if (attempt === 1) await report(div, i + 1, 'start');
       console.log(`\n  [${i + 1}/${DIVISIONS.length}] Querying ${div.name} (Prefix: ${div.prefix}%, attempt ${attempt}/${maxAttempts})...`);
       const tStart = Date.now();
 
@@ -116,6 +124,7 @@ function runDbvisBatchExtraction(chunksDir, resume = true) {
     }
 
     try { fs.unlinkSync(tempSqlFile); } catch (_) { }
+    await report(div, i + 1, 'done');
 
     if (!divisionSuccess) {
       throw new Error(`Failed to extract division ${div.prefix} (${div.name}) after ${maxAttempts} attempts.`);
@@ -192,7 +201,7 @@ async function run(options = {}) {
     // Automated 1-command extraction via DbVisualizer CLI
     if (!skipDb) {
       try {
-        runDbvisBatchExtraction(chunksDir, !fresh);
+        await runDbvisBatchExtraction(chunksDir, !fresh, options.onProgress);
       } catch (err) {
         console.warn(`\n[${LABEL}] Automated database query notice: ${err.message}`);
         console.log(`[${LABEL}] Checking if existing division chunks can be ingested...`);

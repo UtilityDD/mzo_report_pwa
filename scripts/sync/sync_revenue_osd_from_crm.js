@@ -162,7 +162,7 @@ function mergeChunkFiles(chunkFiles, outPath) {
  * Extract OSD by division chunks, then merge.
  * Optional --prefix=6611 to pull one division only (debug / resume).
  */
-function runDbvisExtraction(options = {}) {
+async function runDbvisExtraction(options = {}) {
   const onlyPrefix = options.prefix ? String(options.prefix).trim() : '';
   const divs = onlyPrefix
     ? DIVISIONS.filter((d) => d.prefix === onlyPrefix)
@@ -181,8 +181,15 @@ function runDbvisExtraction(options = {}) {
   console.log(`[${LABEL}] Extracting OSD master from DB2 in ${divs.length} division chunk(s)…`);
   const t0 = Date.now();
   const chunkFiles = [];
-  for (const div of divs) {
+  for (let i = 0; i < divs.length; i++) {
+    const div = divs[i];
+    if (typeof options.onProgress === 'function') {
+      await options.onProgress({ phase: 'division', index: i + 1, total: divs.length, name: div.name, prefix: div.prefix, state: 'start' });
+    }
     chunkFiles.push(runDivisionChunk(div));
+    if (typeof options.onProgress === 'function') {
+      await options.onProgress({ phase: 'division', index: i + 1, total: divs.length, name: div.name, prefix: div.prefix, state: 'done' });
+    }
   }
   const outPath = path.join(TEMP_DIR, 'osd_raw.csv');
   const rows = mergeChunkFiles(chunkFiles, outPath);
@@ -402,7 +409,8 @@ async function syncRevenueOsdFromCrm(options = {}) {
     ? !!options.alsoDisconnection
     : !useFixture;
 
-  if (!dryRun) vmUploadHeaders(SYNC_KEY_ENV, userToken);
+  const skipUpload = !!options.skipUpload;
+  if (!dryRun && !skipUpload) vmUploadHeaders(SYNC_KEY_ENV, userToken);
 
   fs.mkdirSync(TEMP_DIR, { recursive: true });
   const tempRaw = path.join(TEMP_DIR, 'osd_raw.csv');
@@ -412,7 +420,7 @@ async function syncRevenueOsdFromCrm(options = {}) {
     console.log(`[${LABEL}] Using fixture ${FIXTURE_FILE}`);
   } else {
     const needsDb = fresh || !skipDb || !fs.existsSync(tempRaw);
-    if (needsDb) runDbvisExtraction({ prefix: options.prefix || '' });
+    if (needsDb) await runDbvisExtraction({ prefix: options.prefix || '', onProgress: options.onProgress });
     else console.log(`[${LABEL}] Skipping DB2; using ${tempRaw}`);
   }
 
@@ -489,7 +497,7 @@ async function syncRevenueOsdFromCrm(options = {}) {
     }, LABEL);
   }
 
-  if (!dryRun) {
+  if (!dryRun && !skipUpload) {
     try {
       await uploadToVm({
         master: masterPath,
@@ -519,7 +527,10 @@ async function syncRevenueOsdFromCrm(options = {}) {
     status: 'success',
     message: `OSD master ${summary.totals.consumers} consumers, ₹${cr} Cr (REM share ${sharePct}%)`,
     summary,
-    meta
+    meta,
+    masterPath: skipUpload ? masterPath : undefined,
+    summaryPath: skipUpload ? summaryPath : undefined,
+    disconPath: skipUpload && alsoDisconnection ? disconPath : undefined
   };
 }
 

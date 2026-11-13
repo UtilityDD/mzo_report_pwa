@@ -3379,6 +3379,41 @@
     .sync-card-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
     .sync-modal-alert { background: rgba(2, 132, 199, 0.08); border: 1px solid rgba(2, 132, 199, 0.25); border-radius: 8px; padding: 10px 12px; font-size: 12px; display: flex; gap: 10px; color: var(--text-main); }
     .sync-modal-alert i { color: #0284c7; margin-top: 2px; }
+    .sync-card.running { border-color: var(--primary); }
+    .sync-dlg {
+      position: fixed; inset: 0; z-index: 1100;
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px; background: var(--mzo-scrim);
+    }
+    .sync-dlg[hidden] { display: none; }
+    .sync-dlg > section {
+      width: min(440px, 100%);
+      background: var(--mzo-surface);
+      border: 1px solid var(--mzo-border);
+      border-radius: 16px;
+      box-shadow: var(--mzo-shadow-pop);
+    }
+    .sync-dlg header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 12px 0 20px; }
+    .sync-dlg h3 { display: flex; align-items: center; gap: 8px; margin: 4px 0 0; font-size: 16px; font-weight: 600; }
+    .sync-dlg .mark { width: 8px; height: 8px; border-radius: 99px; flex: none; background: var(--mzo-border-strong); }
+    .sync-dlg.ok .mark { background: var(--mzo-ok-mark); }
+    .sync-dlg.bad .mark { background: var(--mzo-bad-mark); }
+    .sync-dlg-b { margin: 0; padding: 12px 20px 0; font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .sync-dlg-bn { margin: 10px 20px 0; font-size: 12.5px; line-height: 1.45; color: var(--mzo-muted); }
+    .sync-dlg-f { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 20px 18px; }
+    .sync-run { margin: 14px 20px 0; display: flex; align-items: center; gap: 12px; font-size: 13px; }
+    .sync-run span { flex: 1; min-width: 0; }
+    .sync-run .bar { flex: 1; min-width: 120px; max-width: 220px; height: 6px; background: var(--mzo-border); border-radius: 99px; overflow: hidden; }
+    .sync-run .bar b { display: block; height: 100%; width: 0; background: var(--mzo-brand); transition: width .3s ease; }
+    .sync-run.busy .bar b { animation: sync-run-pulse 1.1s ease-in-out infinite; }
+    @keyframes sync-run-pulse { 50% { opacity: .45; } }
+    @media (max-width: 760px) {
+      .sync-dlg { align-items: flex-end; padding: 0; }
+      .sync-dlg > section { border-radius: 20px 20px 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .sync-run.busy .bar b { animation: none; }
+    }
     @media (max-width: 880px) {
       .sync-card { grid-template-columns: 1fr; gap: 12px; }
       .sync-card-actions { justify-content: flex-start; }
@@ -3603,7 +3638,7 @@
       <div id="syncTab" class="tab-content">
         <div class="adm-head-row">
           <div>
-            <p class="adm-meta" id="syncMeta">Direct extraction from IBM DB2 database across ISUDATA tables. Trigger on-demand sync or configure automated daily schedules.</p>
+            <p class="adm-meta" id="syncMeta">Each Sync Now button extracts on this office PC (leave <code>npm run office:db2</code> running) and publishes with your sign-in. A saved schedule is a reminder only; it does not start a job.</p>
           </div>
           <div class="adm-actions">
             <span class="db2-badge" title="IBM DB2 Intranet Node"><i class="fas fa-server"></i> DB2 Node: 10.251.64.65:60000</span>
@@ -3614,7 +3649,7 @@
         <section class="ui-stats sync-stats" id="syncStats" aria-label="Sync statistics" style="margin-bottom: 20px;">
           <div class="ui-stat">
             <span class="k">Active Pipelines</span>
-            <span class="v" id="syncStatPipelines">4 <small style="font-size:12px;font-weight:normal;opacity:0.8;">DB2 Sources</small></span>
+            <span class="v" id="syncStatPipelines">5 <small style="font-size:12px;font-weight:normal;opacity:0.8;">DB2 Sources</small></span>
           </div>
           <div class="ui-stat">
             <span class="k">Auto-Sync</span>
@@ -3634,7 +3669,7 @@
         <div class="sync-section-title">
           <i class="fas fa-bolt-lightning"></i>
           <span>Active DB2 Extraction Pipelines</span>
-          <span class="sync-count-tag" id="syncActiveCount">4 Pipelines</span>
+          <span class="sync-count-tag" id="syncActiveCount">5 Pipelines</span>
         </div>
 
         <div class="sync-grid" id="syncGrid">
@@ -4392,6 +4427,25 @@
     </div>
   </div>
 
+  <div class="sync-dlg" id="syncRunDlg" hidden>
+    <section role="dialog" aria-modal="true" aria-labelledby="syncRunTitle">
+      <header>
+        <h3><span class="mark" id="syncRunMark" hidden></span><span id="syncRunTitle"></span></h3>
+        <button type="button" class="ui-btn icon sm" id="syncRunX" aria-label="Close">&times;</button>
+      </header>
+      <p class="sync-dlg-b" id="syncRunBody"></p>
+      <p class="sync-dlg-bn" id="syncRunNote" hidden></p>
+      <div class="sync-run" id="syncRunStatus" hidden>
+        <span id="syncRunStep">Starting…</span>
+        <div class="bar" aria-hidden="true"><b id="syncRunBar"></b></div>
+      </div>
+      <div class="sync-dlg-f">
+        <button type="button" class="ui-btn secondary" id="syncRunCancel">Cancel</button>
+        <button type="button" class="ui-btn primary" id="syncRunOk">Sync now</button>
+      </div>
+    </section>
+  </div>
+
   <!-- Auto-Sync Configuration Modal -->
   <div id="autoSyncModal" class="modal-overlay" onclick="closeModalOnOverlay(event)">
     <div class="modal-card" style="max-width: 500px;">
@@ -4413,15 +4467,15 @@
           <div class="sync-modal-alert">
             <i class="fas fa-circle-info"></i>
             <div>
-              <strong>Intranet DB2 Connection:</strong>
-              <span>Automated background runs require connectivity to <code>10.251.64.65:60000</code> via the internal office VM or sync agent.</span>
+              <strong>Saved on this page only.</strong>
+              <span>A schedule does not start DB2 by itself. Sync Now runs the extract on this PC while <code>npm run office:db2</code> is running.</span>
             </div>
           </div>
 
           <div style="display:flex;align-items:center;justify-content:space-between;background:var(--card-bg-elevated);padding:12px 14px;border-radius:10px;border:1px solid var(--card-border);">
             <div>
               <div style="font-weight:600;font-size:13.5px;color:var(--text-main);">Enable Automatic Sync</div>
-              <div style="font-size:11.5px;color:var(--text-muted);">Run unattended periodic extraction from IBM DB2</div>
+              <div style="font-size:11.5px;color:var(--text-muted);">Remember the time you want. Sync Now still starts the extract.</div>
             </div>
             <label style="position:relative;display:inline-flex;align-items:center;cursor:pointer;">
               <input type="checkbox" id="autoSyncEnabled" class="perm-switch-checkbox" onchange="updateAutoSyncModalFields()" />
@@ -5942,7 +5996,7 @@
         tables: ['ISUDATA.CRM_METER_DEFECTIVE', 'ISUDATA.REP_DEV_MET_STATUS'],
         endpoint: '/api/defective/crm-sync',
         metaEndpoint: '/api/defective/meta',
-        durationText: '~1-2 mins (7 divisions)',
+        durationText: 'One division at a time',
         defaultSchedule: { enabled: false, frequency: 'daily', time: '02:30', day: 'Mon', interval: '6' },
         confirmText: 'Run direct 1-click defective meter extraction from IBM DB2 across all 7 divisions?\n\nThis will extract ~255k+ meters and update Supabase Storage & DISHA in ~1-2 minutes.',
         extractMeta: (m) => {
@@ -5965,7 +6019,7 @@
         tables: ['ISUDATA.CRM_BILL_EXCP_M', 'ISUDATA.CHRONIC_UNBILLED', 'ISUDATA.MRU_CONSUMER_STATUS'],
         endpoint: '/api/unbilled/crm-sync',
         metaEndpoint: '/api/unbilled/meta',
-        durationText: '~40 secs',
+        durationText: 'One extract',
         defaultSchedule: { enabled: false, frequency: 'weekly', day: 'Mon', time: '04:00', interval: '12' },
         confirmText: 'Run direct 1-click unbilled & exceptions extraction from IBM DB2 across all 7 divisions?\n\nThis will extract billing outsorts, chronic unbilled (>=3m), and current month unbilled counts by MRU (~40 seconds).',
         extractMeta: (m) => {
@@ -5989,7 +6043,7 @@
         tables: ['ISUDATA.CRM_DISCONN_LIST'],
         endpoint: '/api/disconnection/crm-sync',
         metaEndpoint: '/api/disconnection/meta',
-        durationText: '~45 secs',
+        durationText: 'One extract',
         defaultSchedule: { enabled: false, frequency: 'weekly', day: 'Tue', time: '05:00', interval: '24' },
         confirmText: 'Directly extract the latest Disconnection Tracker list from IBM DB2 across all 7 divisions?\n\nThis queries DB2 and publishes the updated baseline directly to the Oracle Cloud VM cache.',
         extractMeta: (m) => {
@@ -6012,7 +6066,8 @@
         tables: ['ISUDATA.WBSEDCL_DAILY_COLLECTIONS'],
         endpoint: '/api/disconnection/payment-sync',
         metaEndpoint: '/api/disconnection/meta',
-        durationText: '~20 secs',
+        durationText: 'One division at a time',
+        needsList: true,
         defaultSchedule: { enabled: false, frequency: 'daily', time: '19:30', day: 'Mon', interval: '6' },
         confirmText: 'Directly collect the latest daily payments from IBM DB2 and update payment status on the Oracle Cloud VM?\n\nThis queries DB2 daily collections across divisions and updates OSD balances directly on the VM.',
         extractMeta: (m) => {
@@ -6021,6 +6076,29 @@
             updatedAt: t || null,
             countText: m && m.cutoffDateFormatted ? 'Cutoff: ' + m.cutoffDateFormatted : 'Daily collections',
             sourceText: 'ISUDATA.WBSEDCL_DAILY_COLLECTIONS'
+          };
+        }
+      },
+      {
+        key: 'osd',
+        title: 'Revenue OSD',
+        page: '/rem/osd.html',
+        icon: 'fa-scale-balanced',
+        iconColor: 'red',
+        desc: 'Extract the OSD master from DB2, one division at a time, and publish the live OSD and disconnection files.',
+        tables: ['ISUDATA.CON_WBSEDCL_OSD_CUR'],
+        endpoint: '/api/osd/crm-sync',
+        metaEndpoint: '/api/osd/meta',
+        durationText: 'One division at a time',
+        defaultSchedule: { enabled: false, frequency: 'weekly', day: 'Mon', time: '03:00', interval: '24' },
+        confirmText: 'Extract the OSD master from IBM DB2 for every division and publish it to the live page?\n\nThis also refreshes the disconnection list that the OSD extract produces.',
+        extractMeta: (m) => {
+          const stats = m && m.stats;
+          const count = stats && (stats.consumers || stats.totalConsumers);
+          return {
+            updatedAt: (m && (m.updatedAt || m.asOn || m.reportDate)) || null,
+            countText: count ? syncN(count) + ' consumers' : 'All divisions',
+            sourceText: (m && m.source) || 'CRM DB2 (ISUDATA)'
           };
         }
       }
@@ -6263,6 +6341,13 @@
         }
       }
 
+      const statPipes = document.getElementById('syncStatPipelines');
+      if (statPipes) {
+        statPipes.innerHTML = SYNC_PIPELINES.length + ' <small style="font-size:12px;font-weight:normal;opacity:0.8;">DB2 Sources</small>';
+      }
+      const activeCount = document.getElementById('syncActiveCount');
+      if (activeCount) activeCount.textContent = SYNC_PIPELINES.length + ' Pipelines';
+
       const statLast = document.getElementById('syncStatLastRun');
       if (statLast) {
         if (latestActivityTime) {
@@ -6274,45 +6359,258 @@
       }
     }
 
-    // Trigger instant 1-click sync for any pipeline
+    // One dialog for every Sync Now button: confirm, division progress, then success or failure.
+    const OFFICE_HELPER = 'http://127.0.0.1:3921';
+    let syncRunDone = null;
+    let syncRunBack = null;
+    let syncRunTrap = null;
+    let syncRunBusy = false;
+    let syncRunMode = 'ask';
+
+    function syncRunEl(id) { return document.getElementById(id); }
+
+    function closeSyncRun(ok) {
+      if (syncRunBusy) return;
+      const box = syncRunEl('syncRunDlg');
+      if (!box || box.hidden) return;
+      box.hidden = true;
+      document.removeEventListener('keydown', onSyncRunKey);
+      const back = syncRunBack;
+      syncRunBack = null;
+      if (back && back.focus) back.focus();
+      const done = syncRunDone;
+      syncRunDone = null;
+      if (done) done(!!ok);
+    }
+
+    function onSyncRunKey(e) {
+      if (syncRunBusy) { if (e.key === 'Escape') e.preventDefault(); return; }
+      if (e.key === 'Escape') { e.preventDefault(); closeSyncRun(false); return; }
+      if (syncRunTrap) syncRunTrap(e);
+    }
+
+    function openSyncRun(opts) {
+      return new Promise((resolve) => {
+        if (syncRunDone) closeSyncRun(false);
+        syncRunDone = resolve;
+        syncRunMode = 'ask';
+        syncRunBack = document.activeElement;
+        const box = syncRunEl('syncRunDlg');
+        box.classList.remove('ok', 'bad');
+        syncRunEl('syncRunMark').hidden = true;
+        syncRunEl('syncRunTitle').textContent = opts.title || '';
+        syncRunEl('syncRunBody').textContent = opts.body || '';
+        const note = syncRunEl('syncRunNote');
+        note.hidden = false;
+        note.textContent = 'Leave npm run office:db2 running on this PC. The live server cannot reach DB2.';
+        syncRunEl('syncRunStatus').hidden = true;
+        syncRunEl('syncRunCancel').hidden = false;
+        const ok = syncRunEl('syncRunOk');
+        ok.hidden = false;
+        ok.textContent = 'Sync now';
+        ok.className = 'ui-btn primary';
+        syncRunEl('syncRunX').hidden = false;
+        box.hidden = false;
+        const section = box.querySelector('section');
+        syncRunTrap = window.UI && typeof window.UI.trapFocus === 'function' ? window.UI.trapFocus(section) : null;
+        document.addEventListener('keydown', onSyncRunKey);
+        ok.focus();
+      });
+    }
+
+    function paintSyncStep(text, pct, busy) {
+      const st = syncRunEl('syncRunStatus');
+      st.hidden = false;
+      st.classList.toggle('busy', busy !== false);
+      syncRunEl('syncRunStep').textContent = text;
+      syncRunEl('syncRunBar').style.width = pct + '%';
+    }
+
+    function showSyncRunning(title) {
+      syncRunMode = 'run';
+      const box = syncRunEl('syncRunDlg');
+      box.classList.remove('ok', 'bad');
+      syncRunEl('syncRunMark').hidden = true;
+      syncRunEl('syncRunTitle').textContent = title;
+      syncRunEl('syncRunBody').textContent = 'Collecting from IBM DB2 on this PC.';
+      syncRunEl('syncRunNote').hidden = true;
+      syncRunEl('syncRunCancel').hidden = true;
+      syncRunEl('syncRunOk').hidden = true;
+      syncRunEl('syncRunX').hidden = true;
+      paintSyncStep('Starting…', 8, true);
+    }
+
+    function showSyncDone(tone, message) {
+      syncRunMode = 'done';
+      syncRunBusy = false;
+      const box = syncRunEl('syncRunDlg');
+      box.classList.toggle('ok', tone === 'ok');
+      box.classList.toggle('bad', tone === 'bad');
+      syncRunEl('syncRunMark').hidden = false;
+      syncRunEl('syncRunTitle').textContent = tone === 'ok' ? 'Sync finished' : 'Sync failed';
+      syncRunEl('syncRunBody').textContent = message || '';
+      syncRunEl('syncRunNote').hidden = true;
+      syncRunEl('syncRunStatus').hidden = true;
+      syncRunEl('syncRunCancel').hidden = true;
+      const ok = syncRunEl('syncRunOk');
+      ok.hidden = false;
+      ok.textContent = 'Close';
+      ok.className = 'ui-btn';
+      syncRunEl('syncRunX').hidden = false;
+      ok.focus();
+    }
+
+    function readSyncStream(res, onStep) {
+      if (!res.ok || !res.body || !res.body.getReader) {
+        return res.json().then((d) => {
+          if (!res.ok || (d.status !== 'success' && d.status !== 'ok')) throw new Error(d.message || 'DB2 extract failed.');
+          return d;
+        });
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      let result = null;
+      function take(line) {
+        if (!line || !line.trim()) return;
+        const ev = JSON.parse(line);
+        if (ev.type === 'progress') { if (onStep) onStep(ev); return; }
+        if (ev.type === 'result' || ev.status) result = ev;
+      }
+      function pump() {
+        return reader.read().then((step) => {
+          if (step.value) buf += dec.decode(step.value, { stream: !step.done });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          lines.forEach(take);
+          if (!step.done) return pump();
+          if (buf.trim()) take(buf);
+          if (!result || (result.status !== 'success' && result.status !== 'ok')) {
+            throw new Error((result && result.message) || 'DB2 extract failed.');
+          }
+          return result;
+        });
+      }
+      return pump();
+    }
+
+    function officeDownMessage() {
+      return 'This PC could not reach the office helper at ' + OFFICE_HELPER + '. In the MZO Reports folder, leave this running: npm run office:db2 — then click Sync Now again.';
+    }
+
+    async function uploadSyncFiles(url, files) {
+      const fd = new FormData();
+      (files || []).forEach((part) => {
+        fd.append(part.field, new Blob([part.text], { type: part.type || 'text/plain' }), part.name);
+      });
+      const res = await fetch(url, { method: 'POST', credentials: 'same-origin', body: fd });
+      let data = {};
+      try { data = await res.json(); } catch (_) { data = {}; }
+      if (!res.ok || data.status !== 'success') throw new Error(data.message || 'The live page rejected the upload.');
+      return data;
+    }
+
+    async function runOfficeJob(p) {
+      let csv;
+      if (p.needsList) {
+        paintSyncStep('Downloading the current list…', 4, true);
+        const list = await fetch('/api/disconnection/dataset', { credentials: 'same-origin' });
+        if (!list.ok) throw new Error('Could not download the current disconnection list.');
+        csv = await list.text();
+      }
+      paintSyncStep('Starting…', 8, true);
+      let res;
+      try {
+        res = await fetch(OFFICE_HELPER + '/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
+          body: JSON.stringify(csv ? { job: p.key, csv } : { job: p.key })
+        });
+      } catch (err) {
+        if (err && err.name === 'TypeError') throw new Error(officeDownMessage());
+        throw err;
+      }
+      const extracted = await readSyncStream(res, (ev) => {
+        const n = ev.total || 1;
+        const step = ev.state === 'done' ? ev.index : Math.max(0, (ev.index || 1) - 1);
+        const pct = Math.round(8 + (step / n) * 64);
+        paintSyncStep((ev.name || 'Working') + ' · ' + (ev.index || 1) + ' of ' + n, pct, ev.state !== 'done');
+      });
+      const uploads = extracted.uploads || [];
+      for (let i = 0; i < uploads.length; i++) {
+        paintSyncStep('Uploading to the live page…', 80 + Math.round((i / Math.max(uploads.length, 1)) * 16), true);
+        await uploadSyncFiles(uploads[i].url, uploads[i].files);
+      }
+      if (uploads.length) paintSyncStep('Published', 100, false);
+      return extracted;
+    }
+
+    async function runServerJob(p) {
+      paintSyncStep('Running on the server…', 40, true);
+      const res = await fetch(p.endpoint, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
+      });
+      let data = {};
+      try { data = await res.json(); } catch (_) { data = {}; }
+      if (!res.ok || data.status !== 'success') throw new Error(data.message || 'DB2 extraction failed.');
+      return data;
+    }
+
     async function triggerSyncPipeline(key, btn) {
       const p = SYNC_PIPELINES.find((x) => x.key === key);
-      if (!p) return;
+      if (!p || syncRunBusy) return;
 
-      if (!confirm(p.confirmText || `Trigger direct IBM DB2 sync for ${p.title}?`)) return;
+      const go = await openSyncRun({
+        title: p.title,
+        body: p.confirmText || ('Extract ' + p.title + ' from IBM DB2 and publish it to the live page?')
+      });
+      if (!go) return;
 
       const orig = btn ? btn.innerHTML : '';
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing…';
-      }
-
-      showToast(`Extracting ${p.title} from IBM DB2 database...`, 'info');
+      const card = document.getElementById('syncCard_' + key);
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing…'; }
+      if (card) card.classList.add('running');
+      syncRunBusy = true;
+      showSyncRunning(p.title);
 
       try {
-        const res = await fetch(p.endpoint, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
-        });
-        const d = await res.json();
-        if (!res.ok || d.status !== 'success') {
-          throw new Error(d.message || `DB2 extraction failed (HTTP ${res.status})`);
-        }
-        showToast(d.message || `${p.title} DB2 sync completed successfully!`, 'success');
-        // Reload metadata to update the graceful timestamp
-        setTimeout(() => {
-          loadSyncStatus();
-        }, 1000);
+        let health = null;
+        try {
+          const hr = await fetch(OFFICE_HELPER + '/health', { headers: { Accept: 'application/json' } });
+          health = hr.ok ? await hr.json() : null;
+        } catch (_) { health = null; }
+        const meta = SYNC_STATE.meta[p.key];
+        let result;
+        if (health && health.dbvis) result = await runOfficeJob(p);
+        else if (meta && meta.canCrmSync) result = await runServerJob(p);
+        else if (health && !health.dbvis) throw new Error('DbVisualizer CLI was not found on this PC.');
+        else throw new Error(officeDownMessage());
+        showSyncDone('ok', (result && result.message) || (p.title + ' is updated on the live page.'));
+        setTimeout(() => { loadSyncStatus(); }, 800);
       } catch (err) {
-        showToast(err.message || 'DB2 Extraction failed', 'error');
+        showSyncDone('bad', err.message || 'DB2 extract failed.');
       } finally {
-        if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = orig;
-        }
+        syncRunBusy = false;
+        if (card) card.classList.remove('running');
+        if (btn) { btn.disabled = false; btn.innerHTML = orig; }
       }
     }
+
+    document.getElementById('syncRunOk').addEventListener('click', () => {
+      if (syncRunMode === 'ask') {
+        syncRunMode = 'run';
+        const done = syncRunDone;
+        syncRunDone = null;
+        if (done) done(true);
+        return;
+      }
+      closeSyncRun(true);
+    });
+    document.getElementById('syncRunCancel').addEventListener('click', () => closeSyncRun(false));
+    document.getElementById('syncRunX').addEventListener('click', () => closeSyncRun(false));
+    document.getElementById('syncRunDlg').addEventListener('click', (e) => { if (e.target.id === 'syncRunDlg') closeSyncRun(false); });
 
     // Compatibility wrappers for existing code
     async function triggerUnbilledCrmSync(btn) {

@@ -2,8 +2,8 @@
  * office_helper.js
  *
  * Listens on 127.0.0.1 only. The live Disconnection page (the Oracle VM) cannot reach DB2.
- * Sync Payments on that page sends the current consumer list here; this process runs
- * DbVisualizer against IBM DB2 and returns the updated list and payment history.
+ * Sync Payments, and every Sync Now button on Admin → Data Sync, send the job here.
+ * This process runs DbVisualizer against IBM DB2 and returns the files to publish.
  * The page then uploads those files with the signed-in session. No VM sync key is required.
  *
  *   npm run office:db2
@@ -25,6 +25,7 @@ const ALLOWED_ORIGINS = new Set([
   'http://localhost:3000',
   'http://127.0.0.1:3000'
 ]);
+const OFFICE_JOBS = new Set(['defective', 'unbilled', 'disconnection', 'disconnection_payments', 'osd']);
 
 function wantsStream(req) {
   return /application\/x-ndjson/i.test(String(req.headers.accept || ''));
@@ -170,6 +171,61 @@ function createServer(opts) {
       }
     }
 
+    if (req.method === 'POST' && url === '/run') {
+      if (!ALLOWED_ORIGINS.has(origin)) {
+        return sendJson(res, 403, { status: 'error', message: 'This helper only answers the DISHA app.' }, origin);
+      }
+      if (busy) {
+        return sendJson(res, 409, { status: 'error', message: 'A DB2 extract is already running on this PC.' }, origin);
+      }
+      if (!dbvisAvailable()) {
+        return sendJson(res, 500, {
+          status: 'error',
+          message: 'DbVisualizer CLI was not found at C:\\Program Files\\DbVisualizer\\dbviscmd.bat.'
+        }, origin);
+      }
+      busy = true;
+      try {
+        let body;
+        try {
+          body = JSON.parse(await readBody(req) || '{}');
+        } catch (err) {
+          const status = err.status || 400;
+          return sendJson(res, status, { status: 'error', message: err.status ? err.message : 'The request was not valid JSON.' }, origin);
+        }
+        const job = body && typeof body.job === 'string' ? body.job : '';
+        if (!OFFICE_JOBS.has(job)) {
+          return sendJson(res, 400, { status: 'error', message: 'That report is not a DB2 extract yet.' }, origin);
+        }
+        const runner = opts.runJob || defaultRunJob;
+        const run = (onProgress) => runner(job, body, onProgress);
+        if (wantsStream(req)) {
+          beginStream(res, origin);
+          try {
+            const result = await run(async (ev) => {
+              writeEvent(res, Object.assign({ type: 'progress' }, ev));
+              await new Promise((resolve) => setImmediate(resolve));
+            });
+            writeEvent(res, Object.assign({ type: 'result' }, result));
+          } catch (err) {
+            writeEvent(res, { type: 'result', status: 'error', message: err.message || 'DB2 extract failed.' });
+          }
+          res.end();
+          return;
+        }
+        const result = await run();
+        return sendJson(res, 200, result, origin);
+      } catch (err) {
+        if (res.headersSent) {
+          try { res.end(); } catch (_) { /* closed */ }
+          return;
+        }
+        return sendJson(res, err.status || 500, { status: 'error', message: err.message || 'DB2 extract failed.' }, origin);
+      } finally {
+        busy = false;
+      }
+    }
+
     return sendJson(res, 404, { status: 'error', message: 'Not found' }, origin);
   });
 }
@@ -199,14 +255,114 @@ async function runPaymentsFromCsv(csvText, onProgress) {
   };
 }
 
-module.exports = { createServer, listen, ALLOWED_ORIGINS, PORT, HOST };
+function loadDotEnv(file) {
+  let text;
+  try { text = fs.readFileSync(file, 'utf8'); } catch (_) { return; }
+  for (const line of text.split(/\r?\n/)) {
+    const s = line.trim();
+    if (!s || s.startsWith('#')) continue;
+    const i = s.indexOf('=');
+    if (i < 1) continue;
+    const key = s.slice(0, i).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || process.env[key]) continue;
+    let val = s.slice(i + 1).trim();
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) val = val.slice(1, -1);
+    process.env[key] = val;
+  }
+}
+
+let envReady = false;
+function ensureOfficeEnv() {
+  if (envReady) return;
+  envReady = true;
+  loadDotEnv(path.resolve(__dirname, '../../.env'));
+  loadDotEnv(path.resolve(__dirname, '../../.env.secrets'));
+}
+
+function filePart(field, name, type, filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return null;
+  return { field, name, type, text: fs.readFileSync(filePath, 'utf8') };
+}
+
+async function defaultRunJob(job, body, onProgress) {
+  ensureOfficeEnv();
+  if (job === 'disconnection_payments') {
+    const csv = body && typeof body.csv === 'string' ? body.csv : '';
+    const header = csv.split(/\r?\n/).slice(0, 5).join('\n');
+    if (csv.length < 20 || !/CON_ID/i.test(header)) {
+      throw new Error('The disconnection list is missing a CON_ID column.');
+    }
+    const extracted = await runPaymentsFromCsv(csv, onProgress);
+    return {
+      status: 'success',
+      message: extracted.message,
+      uploads: [
+        {
+          url: '/api/disconnection/payments-upload',
+          files: [
+            { field: 'file', name: 'disconnection_payments.json', type: 'application/json', text: JSON.stringify(extracted.payments) },
+            { field: 'meta', name: 'disconnection_meta.json', type: 'application/json', text: JSON.stringify(extracted.meta) }
+          ]
+        },
+        {
+          url: '/api/disconnection/upload',
+          files: [{ field: 'file', name: 'disconnection.csv', type: 'text/csv', text: extracted.csv }]
+        }
+      ]
+    };
+  }
+  if (job === 'disconnection') {
+    const { syncDisconnectionFromCrm } = require('./sync_disconnection_from_crm');
+    const result = await syncDisconnectionFromCrm({ fresh: true, skipUpload: true, isCli: false, onProgress });
+    const file = filePart('file', 'disconnection.csv', 'text/csv', result.csvPath);
+    if (!file) throw new Error('The disconnection extract did not write a file.');
+    return { status: 'success', message: result.message, uploads: [{ url: '/api/disconnection/upload', files: [file] }] };
+  }
+  if (job === 'unbilled') {
+    const { syncUnbilledFromCrm } = require('./sync_unbilled_from_crm');
+    const result = await syncUnbilledFromCrm({ fresh: true, skipUpload: true, isCli: false, onProgress });
+    const files = [
+      filePart('outsort', 'unbilled_outsort.csv', 'text/csv', result.files && result.files.outsort),
+      filePart('chronic', 'unbilled_chronic.csv', 'text/csv', result.files && result.files.chronic),
+      filePart('summary', 'unbilled_summary.csv', 'text/csv', result.files && result.files.summary)
+    ].filter(Boolean);
+    if (!files.length) throw new Error('The unbilled extract did not write a file.');
+    return { status: 'success', message: result.message, uploads: [{ url: '/api/unbilled/upload', files }] };
+  }
+  if (job === 'defective') {
+    const { syncDefectiveFromCrm } = require('./sync_defective_from_crm');
+    const meta = await syncDefectiveFromCrm({ fresh: true, dryRun: false, skipDb: false, onProgress });
+    const n = meta && meta.stats && meta.stats.totalDefective;
+    return {
+      status: 'success',
+      message: n != null
+        ? `Defective meters published. ${Number(n).toLocaleString('en-IN')} defective.`
+        : 'Defective meters published.',
+      uploads: []
+    };
+  }
+  if (job === 'osd') {
+    const { syncRevenueOsdFromCrm } = require('./sync_revenue_osd_from_crm');
+    const result = await syncRevenueOsdFromCrm({ fresh: true, skipUpload: true, isCli: false, onProgress });
+    const files = [
+      filePart('master', 'osd_master.csv', 'text/csv', result.masterPath),
+      filePart('summary', 'osd_summary.json', 'application/json', result.summaryPath),
+      filePart('disconnection', 'disconnection.csv', 'text/csv', result.disconPath)
+    ].filter(Boolean);
+    if (!files.length) throw new Error('The OSD extract did not write a file.');
+    return { status: 'success', message: result.message, uploads: [{ url: '/api/osd/upload', files }] };
+  }
+  throw new Error('That report is not a DB2 extract yet.');
+}
+
+module.exports = { createServer, listen, ALLOWED_ORIGINS, OFFICE_JOBS, PORT, HOST };
 
 if (require.main === module) {
   const { isDbvisAvailable } = require('./sync_disconnection_payments');
   const server = createServer({ runPayments: runPaymentsFromCsv, dbvisAvailable: isDbvisAvailable });
   listen(server, PORT, HOST).then(() => {
     console.log(`[Office helper] Listening on http://${HOST}:${PORT}`);
-    console.log('[Office helper] Leave this running, then click Sync Payments on the live Disconnection page.');
+    console.log('[Office helper] Leave this running, then use Sync Now on Admin → Data Sync, or Sync Payments on Disconnection.');
     if (!isDbvisAvailable()) {
       console.error('[Office helper] DbVisualizer CLI was not found at C:\\Program Files\\DbVisualizer\\dbviscmd.bat');
     }

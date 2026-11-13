@@ -263,7 +263,7 @@ Signed-in pages cannot be checked with an anonymous `curl`; use a real account, 
 | `node --test scripts/qa/uniform.test.js`, `node --test scripts/qa/rating.test.js`, `node scripts/qa/rating-metrics-test.js` | uniform rows, rating engine and metrics | none (`UNIFORM_SNAP` adds snapshot checks) |
 | `cd vm/sync && npm ci && npm run check` | sync syntax | none |
 | `node vm/dev/test-sync-lock.js` | the sync lock is exclusive: 2 and 6 processes at once, on a free and on a stale lock | none |
-| `node vm/dev/test-office-helper.js` | the office DB2 helper: loopback only, DISHA origin, private-network header, refuses another origin, and returns the extract stub | none |
+| `node vm/dev/test-office-helper.js` | the office DB2 helper: loopback only, DISHA origin, private-network header, refuses another origin, payment progress, and a Data Sync job stream | none |
 | `bash vm/dev/test-deploy.sh` | `vm/deploy/deploy.sh` with systemd, curl and the download stubbed: deploy order (PocketBase before the app), health checks, rollback of the app and of a failing migration, the pb_data restore, the `MZO_DEPLOY_TEST_FAIL` drill, `--rollback`, npm retries | none |
 | `node vm/dev/test-users-store.js`, `test-sync-types.js`, `test-editor.js` | the VM user store, the sync's types and resumable migrations, the data editor; each starts a throwaway PocketBase (`vm/dev/lib/local-pb.js`) | PocketBase binary |
 | `scripts/qa/parity.js`, `diff.js`, `timing.js`, `uniform-pages.js`, `rating-page.js` | browser parity of original vs mirror mode, page by page (Chrome and `playwright-core`) | GET only, against `serve-local.sh` instances |

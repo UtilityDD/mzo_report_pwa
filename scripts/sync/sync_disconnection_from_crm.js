@@ -116,16 +116,25 @@ async function syncDisconnectionFromCrm(options = {}) {
   const skipDb = options.skipDb ?? false;
   const fresh = options.fresh ?? true;
   const userToken = options.userToken || '';
+  const skipUpload = !!options.skipUpload;
 
   // Check the upload credentials before the extraction, so a missing key fails at once.
-  if (!dryRun) vmUploadHeaders(SYNC_KEY_ENV, userToken);
+  // skipUpload: the office page uploads with the signed-in session instead.
+  if (!dryRun && !skipUpload) vmUploadHeaders(SYNC_KEY_ENV, userToken);
 
   const tempFile = path.join(TEMP_DIR, 'discon_raw.csv');
 
   // 1. Run extraction if requested
   const needsDb = fresh || !skipDb || !fs.existsSync(tempFile);
+  const report = async (state) => {
+    if (typeof options.onProgress === 'function') {
+      await options.onProgress({ phase: 'division', index: 1, total: 1, name: 'Disconnection list', state });
+    }
+  };
   if (needsDb) {
+    await report('start');
     runDbvisExtraction();
+    await report('done');
   } else {
     console.log(`[${LABEL}] Using existing temp file in ${tempFile}`);
   }
@@ -284,7 +293,7 @@ async function syncDisconnectionFromCrm(options = {}) {
   await publishMeta('disconnection', 'disconnection_meta.json', meta, LABEL);
 
   // Upload to VM if running on workstation
-  if (!dryRun) {
+  if (!dryRun && !skipUpload) {
     try {
       await uploadToVm(finalCsvFile, userToken);
     } catch (err) {
@@ -296,7 +305,9 @@ async function syncDisconnectionFromCrm(options = {}) {
   return {
     status: 'success',
     message: `Extracted ${totalConsumers.toLocaleString()} consumers with ₹${(totalOSD / 10000000).toFixed(2)} Cr OSD from IBM DB2!`,
-    stats
+    stats,
+    csvPath: skipUpload ? finalCsvFile : undefined,
+    meta: skipUpload ? meta : undefined
   };
 }
 

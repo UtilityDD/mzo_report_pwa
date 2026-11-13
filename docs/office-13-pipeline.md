@@ -32,7 +32,7 @@ If the profile cannot connect, stop. Do not edit SQL.
 npm run office:db2
 ```
 
-Then open Disconnection tracker on https://130.210.43.11.sslip.io and click **Sync Payments**. The page sends the current list to `127.0.0.1:3921`, this PC queries DB2, and the page uploads the result. A click writes the live payment file. Do not click it until you mean to update the live page.
+Then open Disconnection tracker on https://130.210.43.11.sslip.io and click **Sync Payments**, or open Admin → Data Sync and click **Sync Now** on a report. The page sends the job to `127.0.0.1:3921`, this PC queries DB2, and the page uploads the result. A click writes the live file. Do not click it until you mean to update the live page.
 
 ## Phase 1 — one OSD dump (required)
 

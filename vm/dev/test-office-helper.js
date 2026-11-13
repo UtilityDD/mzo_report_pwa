@@ -36,8 +36,18 @@ function call(port, method, path, { origin, body, accept } = {}) {
 
 async function main() {
   let ran = 0;
+  let ranJob = 0;
   const server = createServer({
     dbvisAvailable: () => true,
+    runJob: async (job, body, onProgress) => {
+      ranJob += 1;
+      assert.equal(job, 'unbilled');
+      if (onProgress) {
+        await onProgress({ phase: 'division', index: 1, total: 1, name: 'Unbilled and exceptions', state: 'start' });
+        await onProgress({ phase: 'division', index: 1, total: 1, name: 'Unbilled and exceptions', state: 'done' });
+      }
+      return { status: 'success', message: 'unbilled ok', uploads: [] };
+    },
     runPayments: async (csv, onProgress) => {
       ran += 1;
       assert.match(csv, /CON_ID/);
@@ -85,6 +95,21 @@ async function main() {
     assert.equal(events[events.length - 1].type, 'result');
     assert.equal(events[events.length - 1].status, 'success');
     assert.equal(ran, 2);
+
+    const job = await call(port, 'POST', '/run', {
+      origin: ORIGIN, accept: 'application/x-ndjson', body: JSON.stringify({ job: 'unbilled' })
+    });
+    assert.equal(job.status, 200);
+    const jobEvents = job.text.trim().split('\n').map((line) => JSON.parse(line));
+    assert.equal(jobEvents[0].type, 'progress');
+    assert.equal(jobEvents[0].name, 'Unbilled and exceptions');
+    assert.equal(jobEvents[jobEvents.length - 1].type, 'result');
+    assert.equal(jobEvents[jobEvents.length - 1].message, 'unbilled ok');
+    assert.equal(ranJob, 1);
+
+    const unknown = await call(port, 'POST', '/run', { origin: ORIGIN, body: JSON.stringify({ job: 'nsc' }) });
+    assert.equal(unknown.status, 400);
+    assert.equal(ranJob, 1);
 
     const stranger = await call(port, 'POST', '/payment-sync', { origin: 'https://evil.example', body: JSON.stringify({ csv }) });
     assert.equal(stranger.status, 403);

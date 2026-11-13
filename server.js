@@ -2894,7 +2894,7 @@ app.post('/api/admin/reject-correction', requireAdmin, async (req, res) => {
 // on the server runs them (the CRM extractions need the office network and a DB2 client, which the VM does
 // not have), so "enabled" is off by default and only records what the admin chose.
 const SYNC_SCHEDULES_FILE = 'sync_schedules.json';
-const SYNC_SCHEDULE_KEYS = new Set(['defective', 'unbilled', 'disconnection', 'disconnection_payments']);
+const SYNC_SCHEDULE_KEYS = new Set(['defective', 'unbilled', 'disconnection', 'disconnection_payments', 'osd']);
 const SYNC_SCHEDULE_DAYS = new Set(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
 const SYNC_SCHEDULE_FREQ = new Set(['daily', 'weekly', 'interval']);
 
@@ -5071,7 +5071,7 @@ app.get('/api/unbilled/meta', async (req, res) => {
     return res.json({
         status: 'success',
         canSync,
-        canCrmSync: canSync,
+        canCrmSync: canSync && isDbvisAvailable(),
         isAdmin: user ? isPortalAdmin_(user) : false,
         asOn: (meta && meta.asOn) || null,
         baselineDate: (meta && meta.baselineDate) || null,

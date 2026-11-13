@@ -181,8 +181,15 @@ async function syncUnbilledFromCrm(options = {}) {
 
   // 1. Run extraction if requested or if files are missing
   const needsDb = fresh || !skipDb || !fs.existsSync(tempOutsort) || !fs.existsSync(tempChronic) || !fs.existsSync(tempSummary);
+  const report = async (state) => {
+    if (typeof options.onProgress === 'function') {
+      await options.onProgress({ phase: 'division', index: 1, total: 1, name: 'Unbilled and exceptions', state });
+    }
+  };
   if (needsDb) {
+    await report('start');
     runDbvisExtraction();
+    await report('done');
   } else {
     console.log(`[${LABEL}] Skipping DB2 extraction, using existing temp files in ${TEMP_DIR}`);
   }
@@ -234,8 +241,9 @@ async function syncUnbilledFromCrm(options = {}) {
 
   console.log(`[${LABEL}] Saved local files in ${DATA_DIR}`);
 
-  // 4. Automatically upload processed unbilled datasets to Oracle Cloud VM
-  if (!dryRun) {
+  // 4. Automatically upload processed unbilled datasets to Oracle Cloud VM.
+  // skipUpload: the office page uploads with the signed-in session instead.
+  if (!dryRun && !options.skipUpload) {
     try {
       const token = options.userToken || '';
       const vmRes = await uploadToVm({
@@ -250,6 +258,8 @@ async function syncUnbilledFromCrm(options = {}) {
       console.warn(`[${LABEL}] Warning: Failed to upload to VM: ${vmErr.message}. Local data is saved.`);
       metaPayload.vmError = vmErr.message;
     }
+  } else if (options.skipUpload) {
+    console.log(`[${LABEL}] Skipping VM upload; the office page will publish the files.`);
   } else {
     console.log(`[${LABEL}] Dry run enabled. Skipped VM upload.`);
   }
@@ -268,6 +278,11 @@ async function syncUnbilledFromCrm(options = {}) {
     console.log(`[${LABEL}] Supabase Storage not configured. Data is available locally.`);
   }
 
+  if (options.skipUpload) {
+    metaPayload.files = { outsort: localOutsort, chronic: localChronic, summary: localSummary };
+  }
+  metaPayload.status = 'success';
+  metaPayload.message = `Unbilled extract: ${outsortInfo.count} outsorts, ${chronicInfo.count} chronic, ${summaryInfo.totalConsumers} current month.`;
   return metaPayload;
 }
 
