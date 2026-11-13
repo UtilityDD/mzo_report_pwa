@@ -26,6 +26,14 @@ Design background: [osd-revenue.md](osd-revenue.md). OSD command detail: [OSD_OF
 
 If the profile cannot connect, stop. Do not edit SQL.
 
+**Live Sync Payments.** The cloud VM cannot run DbVisualizer. On this PC, from the repo root, leave this process running:
+
+```bash
+npm run office:db2
+```
+
+Then open Disconnection tracker on https://130.210.43.11.sslip.io and click **Sync Payments**. The page sends the current list to `127.0.0.1:3921`, this PC queries DB2, and the page uploads the result. A click writes the live payment file. Do not click it until you mean to update the live page.
+
 ## Phase 1 — one OSD dump (required)
 
 Goal: Malda-zone outstanding dues from `ISUDATA.CON_WBSEDCL_OSD_CUR` become one master file. OSD summary, Disconnection, and REM read that file. Steps A–E in [OSD_OFFICE_SPEC.md](OSD_OFFICE_SPEC.md).

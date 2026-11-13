@@ -1203,9 +1203,12 @@
 
       MzoRows.refresh('refreshBtn', ROWS, reparse);
 
-      // Sync buttons authorization
+      // The live VM has no DbVisualizer. Sync Payments then runs on this PC (npm run office:db2).
+      var OFFICE_HELPER = 'http://127.0.0.1:3921';
+      var serverCanCrm = false;
       metaP.then(function (m) {
         if (!m) return;
+        serverCanCrm = !!m.canCrmSync;
         if ($('crmSyncBtn')) $('crmSyncBtn').hidden = !(m.canCrmSync || m.canSync);
         if ($('crmPaySyncBtn')) $('crmPaySyncBtn').hidden = !(m.canCrmSync || m.canSync);
       });
@@ -1254,30 +1257,96 @@
         });
       }
 
+      function readSyncJson(r) {
+        return r.text().then(function (t) {
+          var d; try { d = JSON.parse(t); } catch (e) { throw new Error(r.status === 401 ? 'Session expired. Please sign in again.' : 'Server returned HTTP ' + r.status); }
+          if (!r.ok || (d.status !== 'success' && d.status !== 'ok')) throw new Error(d.message || ('HTTP ' + r.status));
+          return d;
+        });
+      }
+
+      function officeDownMessage() {
+        return 'This PC could not reach the office helper at ' + OFFICE_HELPER + '. In the MZO Reports folder, leave this running: npm run office:db2 — then click Sync Payments again. The live server cannot reach DB2; this computer does the extract.';
+      }
+
+      // The live page downloads the current list, this PC queries DB2, then the page uploads the result.
+      function syncPaymentsOnThisPc(stText, stBar) {
+        if (stText) stText.textContent = 'Checking the office helper on this PC...';
+        return fetch(OFFICE_HELPER + '/health', { method: 'GET', headers: { Accept: 'application/json' } })
+          .then(readSyncJson)
+          .catch(function () { throw new Error(officeDownMessage()); })
+          .then(function (health) {
+            if (!health.dbvis) throw new Error('DbVisualizer CLI was not found at C:\\Program Files\\DbVisualizer\\dbviscmd.bat on this PC.');
+            if (stText) stText.textContent = 'Reading the current disconnection list...';
+            if (stBar) stBar.style.width = '15%';
+            return fetch('/api/disconnection/dataset', { credentials: 'same-origin', headers: { Accept: 'text/csv' } });
+          })
+          .then(function (r) {
+            if (!r.ok) throw new Error(r.status === 401 ? 'Session expired. Please sign in again.' : 'Could not read the current disconnection list (HTTP ' + r.status + ')');
+            return r.text();
+          })
+          .then(function (csv) {
+            if (/^\s*</.test(csv) || !/CON_ID/i.test(String(csv).split(/\r?\n/).slice(0, 5).join('\n'))) {
+              throw new Error('The current disconnection list could not be read. Sign in again, then retry.');
+            }
+            if (stText) stText.textContent = 'Collecting daily payments from DB2 on this PC. This can take several minutes...';
+            if (stBar) stBar.style.width = '40%';
+            return fetch(OFFICE_HELPER + '/payment-sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+              body: JSON.stringify({ csv: csv })
+            }).then(readSyncJson).catch(function (err) {
+              if (err && err.name === 'TypeError') throw new Error(officeDownMessage());
+              throw err;
+            });
+          })
+          .then(function (extracted) {
+            if (stText) stText.textContent = 'Uploading payment history to the live page...';
+            if (stBar) stBar.style.width = '75%';
+            function upload(url, parts) {
+              var fd = new FormData();
+              parts.forEach(function (p) { fd.append(p.field, new Blob([p.text], { type: p.type }), p.name); });
+              return fetch(url, { method: 'POST', credentials: 'same-origin', body: fd }).then(readSyncJson);
+            }
+            return upload('/api/disconnection/payments-upload', [
+              { field: 'file', name: 'disconnection_payments.json', type: 'application/json', text: JSON.stringify(extracted.payments) },
+              { field: 'meta', name: 'disconnection_meta.json', type: 'application/json', text: JSON.stringify(extracted.meta) }
+            ]).then(function () {
+              if (stText) stText.textContent = 'Uploading the updated consumer list...';
+              if (stBar) stBar.style.width = '90%';
+              return upload('/api/disconnection/upload', [
+                { field: 'file', name: 'disconnection.csv', type: 'text/csv', text: extracted.csv }
+              ]);
+            }).then(function () { return extracted; });
+          });
+      }
+
       // Direct Payment Collection Sync from IBM DB2 (ISUDATA.WBSEDCL_DAILY_COLLECTIONS)
       if ($('crmPaySyncBtn')) {
         $('crmPaySyncBtn').addEventListener('click', function () {
-          if (!confirm('Directly collect the latest daily payments from IBM DB2 and update payment status on the Oracle Cloud VM?\n\nThis queries DB2 daily collections across divisions and updates OSD balances directly on the VM.\n(সরাসরি IBM DB2 থেকে দৈনিক কালেকশন ডেটা নিয়ে VM-এ পেমেন্ট স্ট্যাটাস আপডেট করবেন?)')) return;
+          var onOfficePc = !serverCanCrm;
+          var ask = onOfficePc
+            ? 'Collect the latest daily payments from IBM DB2 on this office PC and update the live page?\n\nLeave npm run office:db2 running in the MZO Reports folder. This PC must be on the office network with DbVisualizer.\n(সরাসরি IBM DB2 থেকে দৈনিক কালেকশন ডেটা নিয়ে VM-এ পেমেন্ট স্ট্যাটাস আপডেট করবেন?)'
+            : 'Directly collect the latest daily payments from IBM DB2 and update payment status on the Oracle Cloud VM?\n\nThis queries DB2 daily collections across divisions and updates OSD balances directly on the VM.\n(সরাসরি IBM DB2 থেকে দৈনিক কালেকশন ডেটা নিয়ে VM-এ পেমেন্ট স্ট্যাটাস আপডেট করবেন?)';
+          if (!confirm(ask)) return;
           var b = this; b.disabled = true; b.classList.add('spin');
           var st = $('status'), stText = $('statusText'), stBar = $('statusBar');
           if (st) {
             st.hidden = false;
-            stText.textContent = 'Querying daily collections from IBM DB2 across divisions and updating VM...';
+            stText.textContent = onOfficePc
+              ? 'Collecting daily payments from DB2 on this PC...'
+              : 'Querying daily collections from IBM DB2 across divisions and updating VM...';
             stBar.style.width = '35%';
           }
 
-          fetch('/api/disconnection/payment-sync', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
-          })
-            .then(function (r) {
-              return r.text().then(function (t) {
-                var d; try { d = JSON.parse(t); } catch (e) { throw new Error(r.status === 401 ? 'Session expired. Please sign in again.' : 'Server returned HTTP ' + r.status); }
-                if (!r.ok || d.status !== 'success') throw new Error(d.message || 'HTTP ' + r.status);
-                return d;
-              });
-            })
+          var job = onOfficePc
+            ? syncPaymentsOnThisPc(stText, stBar)
+            : fetch('/api/disconnection/payment-sync', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
+            }).then(readSyncJson);
+          job
             .then(function (res) {
               b.disabled = false; b.classList.remove('spin');
               if (st) {

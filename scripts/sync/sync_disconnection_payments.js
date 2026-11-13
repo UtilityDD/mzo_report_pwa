@@ -170,12 +170,19 @@ async function uploadDirectToVm(csvFilePath, paymentsJsonPath, metaPath, token) 
 
 /** Main Payment Sync Pipeline */
 async function syncDisconnectionPayments(options = {}) {
-  const { fresh = true, skipDb = false, userToken = null, overrideCutoff = '' } = options;
+  const { fresh = true, skipDb = false, userToken = null, overrideCutoff = '', skipUpload = false, baselineCsv = '' } = options;
   const t0 = Date.now();
   console.log(`[${LABEL}] Starting Disconnection Payment Sync from DB2 (ISUDATA.WBSEDCL_DAILY_COLLECTIONS)...`);
 
-  // 1. Locate active disconnection dataset
-  let localCsv = path.join(DATA_DIR, 'disconnection.csv');
+  // 1. Locate active disconnection dataset. baselineCsv is the list the live page just downloaded
+  // (the office helper has no VM sync key). Otherwise use data/disconnection.csv, then the VM.
+  let localCsv;
+  if (baselineCsv) {
+    localCsv = path.resolve(baselineCsv);
+    if (!fs.existsSync(localCsv)) throw new Error('Baseline disconnection list was not found.');
+  } else {
+    localCsv = path.join(DATA_DIR, 'disconnection.csv');
+  }
   if (!fs.existsSync(localCsv)) {
     console.log(`[${LABEL}] Local data/disconnection.csv missing, fetching current baseline from VM...`);
     const r = await fetch(`${VM_BASE_URL}/api/disconnection/dataset`, { headers: vmUploadHeaders(SYNC_KEY_ENV, userToken) });
@@ -459,12 +466,15 @@ async function syncDisconnectionPayments(options = {}) {
   fs.writeFileSync(metaPath, JSON.stringify(metaObj, null, 2), 'utf8');
   console.log(`[${LABEL}] Updated metadata saved to ${metaPath}.`);
 
-  // 7. Direct VM Upload if run remotely
+  // 7. Direct VM Upload if run remotely. The office helper skips this and lets the signed-in
+  // page upload, because this PC does not keep the VM sync key.
   let uploadResult = null;
-  try {
-    uploadResult = await uploadDirectToVm(localCsv, paymentsJsonPath, metaPath, userToken);
-  } catch (err) {
-    console.warn(`[${LABEL}] VM Direct Upload warning: ${err.message}`);
+  if (!skipUpload) {
+    try {
+      uploadResult = await uploadDirectToVm(localCsv, paymentsJsonPath, metaPath, userToken);
+    } catch (err) {
+      console.warn(`[${LABEL}] VM Direct Upload warning: ${err.message}`);
+    }
   }
 
   const durationSec = ((Date.now() - t0) / 1000).toFixed(1);
@@ -480,7 +490,10 @@ async function syncDisconnectionPayments(options = {}) {
     partiallyPaidCount,
     durationSec,
     stats: metaObj.stats,
-    uploadResult
+    uploadResult,
+    csvPath: localCsv,
+    paymentsPath: paymentsJsonPath,
+    metaPath
   };
 }
 

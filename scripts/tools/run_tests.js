@@ -36,6 +36,7 @@ const OFFLINE = [
     ['Ask providers', node, ['vm/dev/test-assistant-provider.js']],
     ['Ask usage', node, ['vm/dev/test-assistant-usage.js']],
     ['sync lock', node, ['vm/dev/test-sync-lock.js']],
+    ['office DB2 helper', node, ['vm/dev/test-office-helper.js']],
     ['deploy and rollback', 'bash', ['vm/dev/test-deploy.sh']]
 ];
 const POCKETBASE = [
