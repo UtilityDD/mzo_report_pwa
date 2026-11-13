@@ -7,9 +7,10 @@
   <script src="/mzo_theme.js?v=10"></script>
   <link rel="stylesheet" href="/mzo_theme.css?v=26" />
   <script src="/mzo_ui.js?v=23" defer></script>
-  <script src="/mzo_data_hub.js?v=94" defer></script>
+  <script src="/mzo_data_hub.js?v=95" defer></script>
   <script src="/lib/offices.js?v=3" defer></script>
   <script src="/mzo_scope.js?v=20" defer></script>
+  <script src="/osd_sync.js?v=1" defer></script>
   <style>
     .osd-jumps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 12px 16px 4px; }
     .osd-jump { display: block; text-align: left; padding: 12px 14px; border: 1px solid var(--mzo-border); border-radius: 10px; background: var(--mzo-surface); color: inherit; text-decoration: none; }
@@ -21,6 +22,9 @@
     .osd-rem-bar { height: 10px; border-radius: 999px; background: var(--mzo-surface-2); overflow: hidden; display: flex; }
     .osd-rem-bar > span { display: block; height: 100%; background: var(--mzo-c5); }
     .osd-rem-meta { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; font-size: 12.5px; color: var(--mzo-muted); }
+    .ui-head { align-items: center; }
+    .osd-filter-note { margin: 0; padding: 8px 16px 0; font-size: 12.5px; color: var(--mzo-muted); }
+    .osd-def { margin: -8px 16px 12px; font-size: 12.5px; color: var(--mzo-muted); }
     @media (max-width: 760px) {
       .osd-jumps { grid-template-columns: 1fr; }
     }
@@ -34,22 +38,30 @@
         <p id="meta" style="display:none"></p>
       </div>
       <div class="ui-actions">
-        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false"><svg class="ui-i"><use href="#ui-filter"/></svg>Filters<span id="activeCount"></span></button>
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false" title="Toggle filters"><svg class="ui-i"><use href="#ui-filter"/></svg><span>Filters</span><span id="activeCount"></span></button>
+        <button type="button" class="ui-btn" id="syncBtn" hidden title="Publish the OSD summary and selected list to the live page"><svg class="ui-i"><use href="#ui-sync"/></svg>Sync to VM</button>
+        <a class="ui-btn" id="openSelected" href="/rem/osd_selected.html">Selected consumers</a>
         <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
       </div>
     </header>
 
-    <div class="ui-layout">
+    <div class="ui-layout side-collapsed" id="uiLayout">
       <aside class="ui-side" id="side" aria-label="Filters">
         <div class="ui-side-h">
           <h2>Filters<small id="activeLabel"></small></h2>
-          <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
+          <div style="display:flex;align-items:center;gap:4px">
+            <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
+            <button type="button" class="ui-btn icon ghost sm" id="sideCloseBtn" aria-label="Close filters" title="Close"><svg class="ui-i"><use href="#ui-x"/></svg></button>
+          </div>
         </div>
         <div class="ui-side-sec ui-side-stack">
-          <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Search office" autocomplete="off" aria-label="Search office" /></label>
+          <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Search" autocomplete="off" aria-label="Search" /></label>
+          <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
+          <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
+          <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
         </div>
         <div class="ui-side-sec"><div aria-label="Class" id="fClass"></div></div>
-        <div class="ui-side-sec"><div aria-label="Supply status" id="fSupply"></div></div>
+        <div class="ui-side-sec" id="fSupplyWrap"><div aria-label="Supply status" id="fSupply"></div></div>
         <div class="ui-side-sec"><div aria-label="High-value band" id="fValue"></div></div>
         <div class="ui-side-sec"><div aria-label="Payment aging" id="fAging"></div></div>
       </aside>
@@ -57,10 +69,11 @@
       <div class="ui-main">
         <section class="ui-stats" id="stats" aria-label="OSD totals">
           <button type="button" class="ui-stat" data-k="total"><div class="k">Total OSD</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-          <button type="button" class="ui-stat" data-k="rem"><div class="k">REM ≥ ₹5,000</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="rem"><div class="k">REM</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
+          <button type="button" class="ui-stat" data-k="remOsd"><div class="k">REM OSD</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
           <button type="button" class="ui-stat" data-k="share"><div class="k">REM share of total</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
-          <button type="button" class="ui-stat" data-k="cons"><div class="k">Consumers</div><div class="v"><span class="ui-skel"></span></div><div class="s">&nbsp;</div></button>
         </section>
+        <p class="osd-def">REM is outstanding above ₹5,000, except Government and Agriculture.</p>
 
         <div class="osd-jumps" id="jumps" hidden>
           <a class="osd-jump" href="/disconnection.html" data-open="disconnection.html"><p class="k">Action list</p><p class="v">Disconnection tracker</p><p class="s">Follow-ups and paid / disconnected status</p></a>
@@ -80,8 +93,8 @@
           <div class="report-head" id="reportHead">
             <div class="rh-top">
               <div class="rh-title-wrap">
-                <h2 class="rh-title" id="tableTitle">Detailed analysis</h2>
-                <span class="rh-badge" id="rhCount">0</span>
+                <h2 class="rh-title"><span id="tableTitle">Region</span></h2>
+                <span class="rh-badge" id="rhCount">Loading…</span>
               </div>
               <div class="ui-actions">
                 <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
@@ -92,6 +105,8 @@
           </div>
           <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
           <div id="scopeTrail" class="ui-scope-trail-host"></div>
+          <p class="osd-filter-note" id="filterNote" hidden></p>
+          <div id="trend" hidden style="padding: 8px 8px 12px;"></div>
           <div id="table"><div class="ui-empty">Loading…</div></div>
         </section>
       </div>
@@ -103,12 +118,16 @@
     var $ = function (id) { return document.getElementById(id); };
     var state = {
       summary: null,
+      history: null,
       q: '',
       classKey: '',
       supplyKey: '',
       valueKey: '',
       agingKey: '',
-      view: 'class'
+      view: 'region',
+      region: '',
+      division: '',
+      ccc: ''
     };
     var sideApi = null;
     var tableApi = null;
@@ -141,14 +160,17 @@
     function scopedOffices(summary) {
       var rows = (summary && summary.byOffice) || [];
       return MzoScope.filterRows(rows.map(function (o) {
+        var hit = UI.office(o.cccCode, o.division);
+        var region = (hit && hit.region) || UI.regionName(o.region) || o.region || '';
+        var division = (hit && hit.division) || o.division || '';
         return {
-          region: o.region,
-          division: o.division,
-          ccc: o.cccCode,
+          region: region,
+          division: division,
+          ccc: '',
           CCC_CODE: o.cccCode,
-          _region: o.region,
-          _divn: o.division,
-          _supp: o.cccCode,
+          _region: region,
+          _divn: division,
+          _supp: '',
           consumers: o.consumers,
           osd: o.osd,
           remOsd: o.remOsd,
@@ -158,26 +180,128 @@
       }));
     }
 
+    function supplyReady(summary) {
+      return !!(summary && summary.fieldNotes && summary.fieldNotes.supplyReady);
+    }
+
+    function listsReady(summary) {
+      return !!(summary && summary.fieldNotes && summary.fieldNotes.listsReady);
+    }
+
+    function findRow(list, key) {
+      if (!key) return null;
+      for (var i = 0; i < (list || []).length; i++) if (list[i].key === key) return list[i];
+      return null;
+    }
+
+    function activeSlice(summary) {
+      return findRow(summary.byClass, state.classKey)
+        || findRow(summary.bySupply, state.supplyKey)
+        || findRow(summary.byHighValue, state.valueKey)
+        || findRow(summary.byAging, state.agingKey);
+    }
+
+    function sliceKind(summary) {
+      if (findRow(summary.byClass, state.classKey)) return 'class';
+      if (findRow(summary.bySupply, state.supplyKey)) return 'supply';
+      if (findRow(summary.byHighValue, state.valueKey)) return 'value';
+      if (findRow(summary.byAging, state.agingKey)) return 'aging';
+      return '';
+    }
+
+    function pickSlice(dim, view, value) {
+      state.classKey = '';
+      state.supplyKey = '';
+      state.valueKey = '';
+      state.agingKey = '';
+      state[dim] = value || '';
+      if (value && state.view !== view) {
+        $('table').__ui = null;
+        state.view = view;
+      }
+      paint();
+    }
+
     function paintFacets(summary) {
-      var mk = function (list, cur, el, onPick) {
+      var mk = function (list, cur, el, dim, view) {
         UI.facet(el, (list || []).map(function (x) {
           return { value: x.key, label: x.label, count: x.consumers };
-        }), cur, onPick);
+        }), cur, function (v) { pickSlice(dim, view, v); });
       };
-      mk(summary.byClass, state.classKey, $('fClass'), function (v) { state.classKey = v || ''; paint(); });
-      mk(summary.bySupply, state.supplyKey, $('fSupply'), function (v) { state.supplyKey = v || ''; paint(); });
-      mk(summary.byHighValue, state.valueKey, $('fValue'), function (v) { state.valueKey = v || ''; paint(); });
-      mk(summary.byAging, state.agingKey, $('fAging'), function (v) { state.agingKey = v || ''; paint(); });
+      mk(summary.byClass, state.classKey, $('fClass'), 'classKey', 'class');
+      $('fSupplyWrap').hidden = !supplyReady(summary);
+      if (supplyReady(summary)) mk(summary.bySupply, state.supplyKey, $('fSupply'), 'supplyKey', 'supply');
+      mk(summary.byHighValue, state.valueKey, $('fValue'), 'valueKey', 'value');
+      mk(summary.byAging, state.agingKey, $('fAging'), 'agingKey', 'aging');
+    }
+
+    function sumRows(rows) {
+      var out = { osd: 0, consumers: 0, remOsd: 0, remConsumers: 0 };
+      (rows || []).forEach(function (row) {
+        out.osd += Number(row.osd) || 0;
+        out.consumers += Number(row.consumers) || 0;
+        out.remOsd += Number(row.remOsd) || 0;
+        out.remConsumers += Number(row.remConsumers) || 0;
+      });
+      return out;
+    }
+
+    var REM_NOTE = 'Above ₹5,000, except Government and Agriculture';
+
+    function remCards(count, osd, note) {
+      var n = Number(count) || 0;
+      return {
+        rem: { v: n.toLocaleString('en-IN'), s: note },
+        remOsd: { v: inr(osd), s: n.toLocaleString('en-IN') + ' consumers' }
+      };
+    }
+
+    function applyOfficeStats(map, rows) {
+      var s = sumRows(rows);
+      var rem = remCards(s.remConsumers, s.remOsd, 'In this filter');
+      map.total = { v: inr(s.osd), s: s.consumers.toLocaleString('en-IN') + ' consumers in this filter' };
+      map.rem = rem.rem;
+      map.remOsd = rem.remOsd;
+      map.share = { v: pct(s.osd ? s.remOsd / s.osd : 0), s: 'of the filtered OSD' };
+      map._remOsd = s.remOsd;
+      map._baseOsd = s.osd;
+    }
+
+    function applyGroupStats(map, totals, rows) {
+      var s = sumRows(rows);
+      var rem = remCards(totals.remConsumers, totals.remOsd, 'Whole zone — search does not split REM');
+      map.total = { v: inr(s.osd), s: s.consumers.toLocaleString('en-IN') + ' consumers in this filter' };
+      map.share = { v: pct(totals.osd ? totals.remOsd / totals.osd : 0), s: 'of zone OSD' };
+      map.rem = rem.rem;
+      map.remOsd = rem.remOsd;
     }
 
     function paintStats(summary) {
       var t = summary.totals || {};
+      var slice = activeSlice(summary);
+      var zoneConsumers = (t.consumers || 0).toLocaleString('en-IN');
+      var rem = remCards(t.remConsumers, t.remOsd, REM_NOTE);
       var map = {
-        total: { v: inr(t.osd), s: (t.consumers || 0).toLocaleString('en-IN') + ' consumers' },
-        rem: { v: inr(t.remOsd), s: (t.remConsumers || 0).toLocaleString('en-IN') + ' consumers ≥ ₹5,000' },
-        share: { v: pct(t.remShare), s: 'of total OSD watched by REM' },
-        cons: { v: (t.consumers || 0).toLocaleString('en-IN'), s: 'in current dump' }
+        total: { v: inr(t.osd), s: zoneConsumers + ' consumers' },
+        rem: rem.rem,
+        remOsd: rem.remOsd,
+        share: { v: pct(t.osd ? t.remOsd / t.osd : 0), s: 'of total OSD' },
+        _remOsd: Number(t.remOsd) || 0,
+        _baseOsd: Number(t.osd) || 0
       };
+      if (slice) {
+        map.total = { v: inr(slice.osd), s: slice.label };
+        var held = remCards(t.remConsumers, t.remOsd, 'Whole zone — not split by ' + slice.label);
+        map.rem = held.rem;
+        map.remOsd = held.remOsd;
+      } else if (state.region || state.division || state.ccc || state.q) {
+        var src = (summary.byCcc && summary.byCcc.length) ? cccRows(summary) : officeRows(summary);
+        if (state.view === 'class' || state.view === 'supply' || state.view === 'value' || state.view === 'aging') {
+          if (state.q) applyGroupStats(map, t, viewRows(summary));
+        } else if (state.view !== 'trend') {
+          applyOfficeStats(map, src);
+        }
+      }
       Array.prototype.forEach.call($('stats').querySelectorAll('.ui-stat'), function (el) {
         var k = el.getAttribute('data-k');
         var m = map[k];
@@ -185,17 +309,23 @@
         el.querySelector('.v').textContent = m.v;
         el.querySelector('.s').textContent = m.s;
       });
-      $('jumpRem').textContent = inr(t.remOsd) + ' · ' + pct(t.remShare) + ' of total';
-      $('remBar').style.width = Math.max(0, Math.min(100, (t.remShare || 0) * 100)) + '%';
-      $('remShareLabel').textContent = 'REM ≥ ₹5,000 · ' + inr(t.remOsd);
-      $('remShareRest').textContent = 'Rest · ' + inr((t.osd || 0) - (t.remOsd || 0));
-      $('jumps').hidden = false;
+      var barOsd = Number(map._remOsd) || 0;
+      var barBase = Number(map._baseOsd) || 0;
+      var barShare = barBase ? barOsd / barBase : 0;
+      $('jumpRem').textContent = inr(barOsd) + ' · ' + pct(barShare) + ' of total';
+      $('remBar').style.width = Math.max(0, Math.min(100, barShare * 100)) + '%';
+      $('remShareLabel').textContent = 'REM · ' + inr(barOsd);
+      $('remShareRest').textContent = 'Rest · ' + inr(barBase - barOsd);
+      $('jumps').hidden = !listsReady(summary);
       $('remShareBox').hidden = false;
     }
 
     function activeFilterCount() {
       var n = 0;
       if (state.q) n++;
+      if (state.region) n++;
+      if (state.division) n++;
+      if (state.ccc) n++;
       if (state.classKey) n++;
       if (state.supplyKey) n++;
       if (state.valueKey) n++;
@@ -203,90 +333,496 @@
       return n;
     }
 
-    function viewRows(summary) {
+    function queryText() {
+      return state.q.trim().toLowerCase();
+    }
+
+    function matchesQuery(text) {
+      var q = queryText();
+      if (!q) return true;
+      return String(text || '').toLowerCase().indexOf(q) !== -1;
+    }
+
+    function officeRows(summary) {
+      return scopedOffices(summary).filter(function (o) {
+        if (state.region && o._region !== state.region) return false;
+        if (state.division && o._divn !== state.division) return false;
+        return matchesQuery(o._region + ' ' + o._divn);
+      });
+    }
+
+    function mappedCccs(summary) {
+      var list = (summary && summary.byCcc) || [];
+      return MzoScope.filterRows(list.map(function (o) {
+        var hit = UI.office(o.cccCode, o.ccc);
+        var region = (hit && hit.region) || UI.regionName(o.region) || o.region || '';
+        var division = (hit && hit.division) || o.division || '';
+        var ccc = (hit && hit.ccc) || o.ccc || o.cccCode || '';
+        return {
+          region: region,
+          division: division,
+          ccc: ccc,
+          CCC_CODE: o.cccCode,
+          _region: region,
+          _divn: division,
+          _supp: ccc,
+          consumers: o.consumers,
+          osd: o.osd,
+          remOsd: o.remOsd,
+          remConsumers: o.remConsumers
+        };
+      }));
+    }
+
+    function cccRows(summary) {
+      return mappedCccs(summary).filter(function (o) {
+        if (state.region && o._region !== state.region) return false;
+        if (state.division && o._divn !== state.division) return false;
+        if (state.ccc && o._supp !== state.ccc) return false;
+        return matchesQuery(o._region + ' ' + o._divn + ' ' + o._supp + ' ' + o.CCC_CODE);
+      });
+    }
+
+    function rollup(rows, key) {
+      var groups = {};
+      rows.forEach(function (row) {
+        var name = row[key] || 'Other';
+        if (!groups[name]) groups[name] = { name: name, parent: key === '_divn' ? row._region : '', consumers: 0, osd: 0, remOsd: 0, remConsumers: 0 };
+        var g = groups[name];
+        g.consumers += Number(row.consumers) || 0;
+        g.osd += Number(row.osd) || 0;
+        g.remOsd += Number(row.remOsd) || 0;
+        g.remConsumers += Number(row.remConsumers) || 0;
+      });
+      return Object.keys(groups).map(function (name) {
+        var g = groups[name];
+        g.remShare = g.osd ? g.remOsd / g.osd : 0;
+        return g;
+      }).sort(function (a, b) { return b.osd - a.osd; });
+    }
+
+    function viewRows(summary, view) {
+      view = view || state.view;
       var views = {
         class: summary.byClass,
         supply: summary.bySupply,
         value: summary.byHighValue,
         aging: summary.byAging
       };
-      if (state.view === 'office') {
-        var q = state.q.trim().toLowerCase();
-        return scopedOffices(summary).filter(function (o) {
-          if (!q) return true;
-          return (o.region + ' ' + o.division + ' ' + o.ccc).toLowerCase().indexOf(q) !== -1;
+      var keys = { class: state.classKey, supply: state.supplyKey, value: state.valueKey, aging: state.agingKey };
+      if (view === 'region') return rollup(officeRows(summary), '_region');
+      if (view === 'division') {
+        return officeRows(summary).map(function (o) {
+          return { name: o._divn, parent: o._region, consumers: o.consumers, osd: o.osd, remOsd: o.remOsd, remConsumers: o.remConsumers, remShare: o.remShare };
         });
       }
-      return views[state.view] || summary.byClass;
+      if (view === 'ccc') {
+        return cccRows(summary).map(function (o) {
+          return { name: o._supp, parent: o._divn, region: o._region, code: o.CCC_CODE, consumers: o.consumers, osd: o.osd, remOsd: o.remOsd, remConsumers: o.remConsumers };
+        });
+      }
+      return (views[view] || []).filter(function (row) {
+        if (keys[view] && row.key !== keys[view]) return false;
+        return matchesQuery(row.label);
+      });
+    }
+
+    function withPct(text, part, whole, ofName) {
+      whole = Number(whole) || 0;
+      if (!whole) return text;
+      var p = (Number(part) || 0) / whole * 100;
+      var tip = ofName ? ' title="of ' + UI.esc(ofName) + '"' : '';
+      return text + '<span class="sub"' + tip + '>' + p.toFixed(1) + '%</span>';
+    }
+
+    function parentOf(summary) {
+      var zone = {
+        n: Number(summary.totals && summary.totals.consumers) || 0,
+        osd: Number(summary.totals && summary.totals.osd) || 0,
+        remN: Number(summary.totals && summary.totals.remConsumers) || 0,
+        remOsd: Number(summary.totals && summary.totals.remOsd) || 0,
+        label: 'the zone'
+      };
+      if (state.view === 'division') {
+        var regions = {};
+        scopedOffices(summary).forEach(function (o) {
+          var k = o._region || '';
+          if (!regions[k]) regions[k] = { n: 0, osd: 0, remN: 0, remOsd: 0, label: k || 'the zone' };
+          regions[k].n += Number(o.consumers) || 0;
+          regions[k].osd += Number(o.osd) || 0;
+          regions[k].remN += Number(o.remConsumers) || 0;
+          regions[k].remOsd += Number(o.remOsd) || 0;
+        });
+        return function (r) { return regions[r.parent || ''] || zone; };
+      }
+      if (state.view === 'ccc') {
+        var divs = {};
+        mappedCccs(summary).forEach(function (o) {
+          var k = o._divn || '';
+          if (!divs[k]) divs[k] = { n: 0, osd: 0, remN: 0, remOsd: 0, label: k || 'the zone' };
+          divs[k].n += Number(o.consumers) || 0;
+          divs[k].osd += Number(o.osd) || 0;
+          divs[k].remN += Number(o.remConsumers) || 0;
+          divs[k].remOsd += Number(o.remOsd) || 0;
+        });
+        return function (r) { return divs[r.parent || ''] || zone; };
+      }
+      return function () { return zone; };
+    }
+
+    function countCol(of, num) {
+      return { key: 'consumers', label: 'Consumers', num: true, fmt: function (v, r) {
+        var p = of(r);
+        return withPct(num(v), v, p.n, p.label);
+      } };
+    }
+
+    function osdCol(of) {
+      return { key: 'osd', label: 'OSD', num: true, fmt: function (v, r) {
+        var p = of(r);
+        return withPct(inr(v), v, p.osd, p.label);
+      } };
+    }
+
+    function remCountCol(of, num) {
+      return { key: 'remConsumers', label: 'REM', num: true, fmt: function (v, r) {
+        var p = of(r);
+        return withPct(num(v), v, p.remN, 'REM in ' + p.label);
+      } };
+    }
+
+    function remOsdCol(of) {
+      return { key: 'remOsd', label: 'REM OSD', num: true, fmt: function (v, r) {
+        var p = of(r);
+        return withPct(inr(v), v, p.remOsd, 'REM in ' + p.label);
+      } };
+    }
+
+    function tabLabel(view) {
+      var titles = {
+        trend: 'Trend', region: 'Region', division: 'Division', ccc: 'CCC',
+        class: 'Class', supply: 'Supply status', value: 'Slab', aging: 'Payment aging'
+      };
+      return titles[view] || 'OSD summary';
+    }
+
+    function paintCount(summary) {
+      if (state.view === 'trend') {
+        var snaps = ((state.history && state.history.snapshots) || []).length;
+        $('rhCount').innerHTML = 'Showing all <b>' + UI.n(snaps) + '</b> snapshots';
+        return;
+      }
+      var total = Number(summary.totals && summary.totals.consumers) || 0;
+      var n = 0;
+      viewRows(summary).forEach(function (row) { n += Number(row.consumers) || 0; });
+      if (!total || n === total) $('rhCount').innerHTML = 'Showing all <b>' + UI.n(total) + '</b> consumers';
+      else $('rhCount').innerHTML = 'Showing <b>' + UI.n(n) + '</b> of ' + UI.n(total) + ' consumers <span style="opacity:0.75;font-weight:400">(' + UI.pct(n, total) + ')</span>';
     }
 
     function paintTable(summary) {
-      var rows = viewRows(summary);
-      var cols;
-      if (state.view === 'office') {
-        cols = [
-          { key: 'division', label: 'Division' },
-          { key: 'ccc', label: 'CCC' },
-          { key: 'consumers', label: 'Consumers', fmt: function (v) { return Number(v).toLocaleString('en-IN'); } },
-          { key: 'osd', label: 'OSD', fmt: inr },
-          { key: 'remOsd', label: 'REM OSD', fmt: inr },
-          { key: 'remShare', label: 'REM share', fmt: pct }
-        ];
-      } else {
-        cols = [
-          { key: 'label', label: state.view === 'class' ? 'Class' : state.view === 'supply' ? 'Supply status' : state.view === 'value' ? 'High-value band' : 'Payment aging' },
-          { key: 'consumers', label: 'Consumers', fmt: function (v) { return Number(v).toLocaleString('en-IN'); } },
-          { key: 'osd', label: 'OSD', fmt: inr },
-          { key: 'share', label: 'Share of total', fmt: function (_v, r) {
-            var tot = (summary.totals && summary.totals.osd) || 0;
-            return tot ? pct(r.osd / tot) : '—';
-          } }
-        ];
+      $('trend').hidden = state.view !== 'trend';
+      $('table').hidden = state.view === 'trend';
+      $('tableTitle').textContent = tabLabel(state.view);
+      paintCount(summary);
+      if (state.view === 'trend') {
+        paintTrend();
+        return;
       }
-      $('rhCount').textContent = String(rows.length);
+      var rows = viewRows(summary);
+      var num = function (v) { return Number(v).toLocaleString('en-IN'); };
+      var of = parentOf(summary);
+      var nameCol = function (label) {
+        return { key: 'name', label: label, fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } };
+      };
+      if (state.view === 'ccc') {
+        tableApi = UI.table($('table'), {
+          columns: [
+            nameCol('CCC'),
+            countCol(of, num),
+            osdCol(of),
+            remCountCol(of, num),
+            remOsdCol(of)
+          ],
+          rows: rows,
+          onRow: function (row) {
+            if (row.region) state.region = row.region;
+            if (row.parent) state.division = row.parent;
+            state.ccc = row.name;
+            paint();
+          },
+          empty: 'No CCC rows in this summary.'
+        });
+        return;
+      }
+      if (state.view === 'region' || state.view === 'division') {
+        tableApi = UI.table($('table'), {
+          columns: [
+            nameCol(state.view === 'region' ? 'Region' : 'Division'),
+            countCol(of, num),
+            osdCol(of),
+            remCountCol(of, num),
+            remOsdCol(of)
+          ],
+          rows: rows,
+          onRow: state.view === 'region'
+            ? function (row) { state.region = row.name; state.division = ''; state.ccc = ''; state.view = 'division'; $('table').__ui = null; paint(); }
+            : function (row) { state.region = row.parent || state.region; state.division = row.name; state.ccc = ''; state.view = 'ccc'; $('table').__ui = null; paint(); },
+          empty: 'No office rows in this summary.'
+        });
+        return;
+      }
       tableApi = UI.table($('table'), {
-        columns: cols,
+        columns: [
+          { key: 'label', label: tabLabel(state.view), fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
+          countCol(of, num),
+          osdCol(of)
+        ],
         rows: rows,
-        empty: 'No OSD summary yet. On the office network run: npm run sync:osd:crm'
+        empty: 'No OSD summary yet.'
+      });
+    }
+
+    function snapSlice(snap) {
+      if (state.classKey) return { list: snap.byClass, key: state.classKey };
+      if (state.supplyKey) return { list: snap.bySupply, key: state.supplyKey };
+      if (state.valueKey) return { list: snap.byHighValue, key: state.valueKey };
+      if (state.agingKey) return { list: snap.byAging, key: state.agingKey };
+      return null;
+    }
+
+    function moneyOf(row, field) {
+      if (!row || row[field] == null || row[field] === '') return null;
+      var n = Number(row[field]);
+      return isFinite(n) ? n : null;
+    }
+    function snapAmount(snap, field) {
+      var slice = snapSlice(snap);
+      if (slice) {
+        var hit = null;
+        (slice.list || []).forEach(function (row) { if (row.key === slice.key) hit = row; });
+        if (!hit) return null;
+        return moneyOf(hit, field);
+      }
+      if (state.region || state.division || state.ccc) {
+        var rows = (snap.byCcc && snap.byCcc.length) ? snap.byCcc : (snap.byOffice || []);
+        if (state.ccc && !(snap.byCcc && snap.byCcc.length)) return null;
+        if (!rows.length) return null;
+        var sum = 0;
+        var any = false;
+        var seen = false;
+        rows.forEach(function (row) {
+          if (state.region && row.region !== state.region) return;
+          if (state.division && row.division !== state.division) return;
+          if (state.ccc && row.ccc !== state.ccc) return;
+          seen = true;
+          var n = moneyOf(row, field);
+          if (n == null) return;
+          any = true;
+          sum += n;
+        });
+        return seen && any ? sum : null;
+      }
+      return moneyOf(snap.totals || {}, field);
+    }
+
+    function paintTrend() {
+      var snaps = (state.history && state.history.snapshots) || [];
+      if (!snaps.length) {
+        $('trend').innerHTML = '<div class="ui-empty">A trend appears after the next snapshot is saved.</div>';
+        return;
+      }
+      var labels = [];
+      var total = [];
+      var rem = [];
+      snaps.forEach(function (snap) {
+        var osd = snapAmount(snap, 'osd');
+        var remOsd = snapAmount(snap, 'remOsd');
+        if (osd == null && remOsd == null) return;
+        labels.push(snap.asOn || '');
+        total.push(osd == null ? null : osd / 1e7);
+        rem.push(remOsd == null ? null : remOsd / 1e7);
+      });
+      if (!labels.length) {
+        $('trend').innerHTML = '<div class="ui-empty">Saved snapshots do not split this filter yet.</div>';
+        return;
+      }
+      var where = [];
+      if (state.region) where.push(state.region);
+      if (state.division) where.push(state.division);
+      if (state.ccc) where.push(state.ccc);
+      var slice = activeSlice(state.summary || {});
+      if (slice && slice.label) where.push(slice.label);
+      UI.line($('trend'), {
+        title: 'OSD across saved snapshots' + (where.length ? ' · ' + where.join(' · ') : ''),
+        labels: labels,
+        height: 220,
+        series: [
+          { label: 'Total OSD', strong: true, color: 1, values: total },
+          { label: 'REM OSD', strong: true, color: 5, values: rem }
+        ],
+        axis: function (v) { return Number(v).toFixed(0); },
+        fmt: function (v) { return '₹' + Number(v).toFixed(2) + ' Cr'; }
       });
     }
 
     function paint() {
       var summary = state.summary;
       if (!summary || !summary.totals) {
+        renderTabs({ byClass: [], byHighValue: [], byAging: [], byOffice: [] });
+        $('table').hidden = false;
+        $('trend').hidden = true;
         $('table').innerHTML = '<div class="ui-empty">No OSD summary on this server yet. Scaffold is ready — extract on the office network (see docs/osd-revenue.md).</div>';
         return;
       }
       if (summary.asOn) $('asOn').textContent = summary.asOn;
+      renderTabs(summary);
+      fillOfficeFilters(summary);
       paintStats(summary);
       paintFacets(summary);
       paintTable(summary);
+      paintChips(summary);
+      paintFilterNote(summary);
       if (sideApi) sideApi.setActive(activeFilterCount());
     }
 
-    function setView(view) {
-      state.view = view;
-      Array.prototype.forEach.call($('tabs').querySelectorAll('[data-view]'), function (btn) {
-        btn.setAttribute('aria-selected', String(btn.getAttribute('data-view') === view));
-      });
-      var titles = { class: 'By class', supply: 'By supply status', value: 'By high-value band', aging: 'Not paid since long', office: 'By office' };
-      $('tableTitle').textContent = titles[view] || 'Detailed analysis';
+    function paintFilterNote(summary) {
+      var note = $('filterNote');
+      var kind = sliceKind(summary);
+      var officeView = state.view === 'region' || state.view === 'division' || state.view === 'ccc' || state.view === 'trend';
+      var analysis = state.view === 'class' || state.view === 'supply' || state.view === 'value' || state.view === 'aging';
+      var officeOn = state.region || state.division || state.ccc;
+      if (kind && officeView) {
+        var where = { class: 'Class', supply: 'Supply status', value: 'Slab', aging: 'Payment aging' }[kind];
+        note.hidden = false;
+        note.textContent = 'This filter is applied on ' + where + '. Region, Division and CCC stay the full snapshot.';
+        return;
+      }
+      if (officeOn && analysis) {
+        note.hidden = false;
+        note.textContent = 'Region, division and CCC filters apply on those tabs. This tab is the zone snapshot.';
+        return;
+      }
+      if (state.view === 'trend' && (state.supplyKey || state.valueKey || state.agingKey)) {
+        note.hidden = false;
+        note.textContent = 'The trend uses this filter. REM OSD is included when the saved snapshot splits it.';
+        return;
+      }
+      if (state.view === 'trend') {
+        var snaps = (state.history && state.history.snapshots) || [];
+        if (snaps.some(function (s) { return s.totals && s.totals.osd == null && s.totals.remOsd != null; })) {
+          note.hidden = false;
+          note.textContent = 'Earlier points are REM from the notice sheet. Total OSD is drawn where the office extract saved it.';
+          return;
+        }
+      }
+      note.hidden = true;
+      note.textContent = '';
+    }
+
+    function paintChips(summary) {
+      var bar = $('rhFiltersBar');
+      var filters = [];
+      if (state.q) filters.push({ key: 'q', label: 'Search', value: '"' + state.q + '"' });
+      if (state.region) filters.push({ key: 'region', label: 'Region', value: state.region });
+      if (state.division) filters.push({ key: 'division', label: 'Division', value: state.division });
+      if (state.ccc) filters.push({ key: 'ccc', label: 'CCC', value: state.ccc });
+      var slice = activeSlice(summary);
+      var kind = sliceKind(summary);
+      if (slice && kind) {
+        var prefix = { class: 'Class', supply: 'Supply', value: 'Slab', aging: 'Payment aging' }[kind];
+        filters.push({ key: kind, label: prefix, value: slice.label });
+      }
+      if (!filters.length) {
+        bar.innerHTML = '';
+        return;
+      }
+      var chips = filters.map(function (af) {
+        return '<span class="rh-chip"><strong>' + UI.esc(af.label) + ':</strong> ' + UI.esc(af.value) +
+          '<button type="button" class="rh-chip-x" data-rh-clear="' + af.key + '" title="Remove ' + UI.esc(af.label) + ' filter" aria-label="Remove filter">&times;</button></span>';
+      }).join('');
+      bar.innerHTML = '<div class="rh-filters"><span class="rh-filters-label"><svg class="ui-i sm"><use href="#ui-filter"/></svg>Applied:</span>' +
+        chips + '<button type="button" class="rh-clear-btn" id="rhClearBtn"><svg class="ui-i sm"><use href="#ui-refresh"/></svg>Reset all</button></div>';
+    }
+
+    function clearFilter(key) {
+      if (key === 'q') { state.q = ''; $('q').value = ''; }
+      if (key === 'class') state.classKey = '';
+      if (key === 'supply') state.supplyKey = '';
+      if (key === 'value') state.valueKey = '';
+      if (key === 'aging') state.agingKey = '';
+      if (key === 'region') { state.region = ''; state.division = ''; state.ccc = ''; }
+      if (key === 'division') { state.division = ''; state.ccc = ''; }
+      if (key === 'ccc') state.ccc = '';
+      if (key === 'all') {
+        state.q = '';
+        $('q').value = '';
+        state.classKey = '';
+        state.supplyKey = '';
+        state.valueKey = '';
+        state.agingKey = '';
+        state.region = '';
+        state.division = '';
+        state.ccc = '';
+      }
       paint();
     }
 
-    $('tabs').innerHTML = [
-      ['class', 'Class'],
-      ['supply', 'Supply status'],
-      ['value', 'High value'],
-      ['aging', 'Payment aging'],
-      ['office', 'Office']
-    ].map(function (pair, i) {
-      return '<button type="button" role="tab" data-view="' + pair[0] + '" aria-selected="' + (i === 0 ? 'true' : 'false') + '">' + pair[1] + '</button>';
-    }).join('');
+    function setView(view) {
+      if (view === state.view) return;
+      state.view = view;
+      $('table').__ui = null;
+      paint();
+    }
+
+    function fillOfficeFilters(summary) {
+      var rows = mappedCccs(summary);
+      if (!rows.length) rows = scopedOffices(summary);
+      var rf = $('regionFilter');
+      var df = $('divisionFilter');
+      var cf = $('cccFilter');
+      UI.offices(rows, 'All regions');
+      if (rf && !rf.disabled) rf.value = state.region || '';
+      if (df && !df.disabled) df.value = state.division || '';
+      if (cf && !cf.disabled) cf.value = state.ccc || '';
+      UI.offices(rows, 'All regions');
+      if (UI.lockScope) UI.lockScope();
+      if (rf && rf.disabled) state.region = rf.value || '';
+      if (df && df.disabled) state.division = df.value || '';
+      if (cf && cf.disabled) state.ccc = cf.value || '';
+      UI.mark(rf);
+      UI.mark(df);
+      UI.mark(cf);
+    }
+
+    function renderTabs(summary) {
+      var tabs = [
+        ['trend', 'Trend'],
+        ['region', 'Region'],
+        ['division', 'Division'],
+        ['ccc', 'CCC'],
+        ['class', 'Class'],
+        ['value', 'Slab'],
+        ['aging', 'Payment aging']
+      ];
+      if (supplyReady(summary)) tabs.splice(5, 0, ['supply', 'Supply status']);
+      tabs = UI.filterOfficeTabs(tabs);
+      state.view = UI.snapOfficeTab(state.view);
+      if (!tabs.some(function (t) { return t[0] === state.view; })) state.view = tabs[0] ? tabs[0][0] : 'class';
+      $('tabs').innerHTML = tabs.map(function (pair) {
+        var on = pair[0] === state.view;
+        return '<button type="button" class="ui-drill-tab" role="tab" data-t="' + pair[0] + '" aria-selected="' + (on ? 'true' : 'false') + '">' + pair[1] + '</button>';
+      }).join('');
+      UI.scopeTrail('scopeTrail');
+    }
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-rh-clear]');
+      if (btn) { clearFilter(btn.getAttribute('data-rh-clear')); return; }
+      if (e.target.closest('#rhClearBtn')) clearFilter('all');
+    });
     $('tabs').addEventListener('click', function (e) {
-      var btn = e.target.closest('[data-view]');
+      var btn = e.target.closest('[data-t]');
       if (!btn) return;
-      setView(btn.getAttribute('data-view'));
+      setView(btn.getAttribute('data-t'));
     });
 
     sideApi = UI.sidePanel({
@@ -295,15 +831,21 @@
       label: $('activeLabel'),
       count: $('activeCount'),
       clear: $('clearBtn'),
-      onClear: function () {
-        state.q = ''; state.classKey = ''; state.supplyKey = ''; state.valueKey = ''; state.agingKey = '';
-        $('q').value = '';
-        paint();
-      }
+      onClear: function () { clearFilter('all'); }
     });
     $('q').addEventListener('input', function () {
       state.q = $('q').value || '';
       paint();
+    });
+    ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
+      $(id).addEventListener('change', function () {
+        if (id === 'regionFilter') { state.division = ''; state.ccc = ''; }
+        if (id === 'divisionFilter') state.ccc = '';
+        state.region = $('regionFilter').value || '';
+        state.division = id === 'regionFilter' ? '' : ($('divisionFilter').value || '');
+        state.ccc = (id === 'regionFilter' || id === 'divisionFilter') ? '' : ($('cccFilter').value || '');
+        paint();
+      });
     });
 
     $('copyBtn').addEventListener('click', function () {
@@ -312,19 +854,99 @@
     });
     $('exportBtn').addEventListener('click', function () {
       if (!state.summary) return;
+      if (state.view === 'trend') return;
       var rows = viewRows(state.summary);
-      var cols = state.view === 'office'
-        ? [{ key: 'division', label: 'Division' }, { key: 'ccc', label: 'CCC' }, { key: 'consumers', label: 'Consumers' }, { key: 'osd', label: 'OSD' }, { key: 'remOsd', label: 'REM OSD' }, { key: 'remShare', label: 'REM share' }]
-        : [{ key: 'label', label: 'Group' }, { key: 'consumers', label: 'Consumers' }, { key: 'osd', label: 'OSD' }];
+      var cols;
+      if (state.view === 'region') {
+        cols = [{ key: 'name', label: 'Region' }, { key: 'consumers', label: 'Consumers' }, { key: 'osd', label: 'OSD' }, { key: 'remConsumers', label: 'REM' }, { key: 'remOsd', label: 'REM OSD' }];
+      } else if (state.view === 'division') {
+        cols = [{ key: 'name', label: 'Division' }, { key: 'parent', label: 'Region' }, { key: 'consumers', label: 'Consumers' }, { key: 'osd', label: 'OSD' }, { key: 'remConsumers', label: 'REM' }, { key: 'remOsd', label: 'REM OSD' }];
+      } else if (state.view === 'ccc') {
+        cols = [{ key: 'name', label: 'CCC' }, { key: 'parent', label: 'Division' }, { key: 'code', label: 'Code' }, { key: 'consumers', label: 'Consumers' }, { key: 'osd', label: 'OSD' }, { key: 'remConsumers', label: 'REM' }, { key: 'remOsd', label: 'REM OSD' }];
+      } else {
+        cols = [{ key: 'label', label: 'Group' }, { key: 'consumers', label: 'Consumers' }, { key: 'osd', label: 'OSD' }];
+      }
       UI.exportCsv('osd_summary_' + state.view + '.csv', cols, rows);
     });
 
-    UI.refresh($('refreshBtn'), 'CACHE_OSD_SUMMARY');
-
-    UI.load('CACHE_OSD_SUMMARY', function (data) {
-      state.summary = data && data.totals ? data : (data && data.summary) || data;
-      paint();
+    $('openSelected').addEventListener('click', function (e) {
+      if (window.parent && window.parent !== window && window.parent.openPage) {
+        e.preventDefault();
+        window.parent.openPage('rem/osd_selected.html', 'OSD selected');
+      }
     });
+
+    function summaryOf(data) {
+      return data && data.totals ? data : (data && data.summary) || data;
+    }
+    function remDefined(summary) {
+      return !!(summary && summary.fieldNotes && summary.fieldNotes.remDefinition);
+    }
+    function reloadSet(key) {
+      var hub = window.mzoDataHub;
+      if (!hub || !hub.refresh) return Promise.resolve(null);
+      return hub.refresh(key).then(function () { return hub._peek(key); });
+    }
+    $('refreshBtn').addEventListener('click', function () {
+      var btn = $('refreshBtn');
+      btn.classList.add('spin');
+      reloadSet('CACHE_OSD_SUMMARY').then(function (data) {
+        takeSummary(data, { cached: false });
+        return reloadSet('CACHE_OSD_HISTORY');
+      }).then(function (data) {
+        state.history = data && data.snapshots ? data : state.history;
+        paintTrend();
+      }).catch(function () {}).then(function () { btn.classList.remove('spin'); });
+    });
+
+    function takeSummary(data, info) {
+      var summary = summaryOf(data);
+      if (!remDefined(summary)) {
+        if (!(info && info.cached) || state._remReload) return;
+        state._remReload = true;
+        reloadSet('CACHE_OSD_SUMMARY').then(function (fresh) {
+          takeSummary(fresh, { cached: false });
+        }).catch(function () {});
+        return;
+      }
+      state.summary = summary;
+      if (state.summary.totals && !(state.summary.byCcc && state.summary.byCcc.length) && !state._cccReload) {
+        state._cccReload = true;
+        var hub = window.mzoDataHub;
+        if (hub && hub.waitForDataset) {
+          hub.waitForDataset('CACHE_OSD_SUMMARY', { force: true, forceCheck: true }).then(function () {
+            return hub._peek('CACHE_OSD_SUMMARY');
+          }).then(function (fresh) {
+            if (fresh && fresh.totals) state.summary = fresh;
+            paint();
+          }).catch(function () { paint(); });
+          return;
+        }
+      }
+      paint();
+    }
+    function classRemReady(data) {
+      var rows = data && data.snapshots && data.snapshots[0] && data.snapshots[0].byClass;
+      return !!(rows && rows.some(function (row) { return row.remOsd != null; }));
+    }
+    function takeHistory(data, info) {
+      if (info && info.cached && data && data.snapshots && data.snapshots.length && !classRemReady(data) && !state._classRemReload) {
+        state._classRemReload = true;
+        reloadSet('CACHE_OSD_HISTORY').then(function (fresh) { takeHistory(fresh, { cached: false }); }).catch(function () {});
+        return;
+      }
+      var old = data && data.snapshots && data.snapshots[0] && Number(data.snapshots[0].totals && data.snapshots[0].totals.remOsd);
+      if (info && info.cached && old > 2500000000 && !state._histReload) {
+        state._histReload = true;
+        reloadSet('CACHE_OSD_HISTORY').then(function (fresh) { takeHistory(fresh, { cached: false }); }).catch(function () {});
+        return;
+      }
+      state.history = data && data.snapshots ? data : null;
+      paintTrend();
+    }
+    UI.load('CACHE_OSD_SUMMARY', takeSummary, { force: true });
+    UI.load('CACHE_OSD_HISTORY', takeHistory, { force: true });
+    if (window.OsdSync) OsdSync.mount({ button: $('syncBtn'), onDone: function () { UI.load('CACHE_OSD_SUMMARY', takeSummary, { force: true }); UI.load('CACHE_OSD_HISTORY', takeHistory, { force: true }); } });
   });
   </script>
 </body>

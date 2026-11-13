@@ -54,7 +54,9 @@ const DATASETS = [
     { key: 'CACHE_METER_CRM', label: 'Meter CRM Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=1638328510&single=true&output=csv', type: 'csv', lazySync: true },
     { key: 'CACHE_METER_ISU', label: 'Meter ISU Data', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmzya-jypjfu9nN5QWuRJ6sbIgrqQ7Wa1eAx6Wfoepft2UpNwBC4a_rd4uJ6VpLhNu7FnjDBa8mJxW/pub?gid=329630218&single=true&output=csv', type: 'csv', lazySync: true },
     { key: 'CACHE_DISCONNECTION', label: 'Disconnection Tracker', url: '/api/disconnection/dataset', type: 'csv', originHeavy: true, versionUrl: '/api/disconnection/meta', csvUrlField: 'csvUrl', versionField: 'version', lazySync: true },
-    { key: 'CACHE_OSD_SUMMARY', label: 'OSD Summary', url: '/api/osd/summary', type: 'json', versionUrl: '/api/osd/meta', versionField: 'version', lazySync: true }
+    { key: 'CACHE_OSD_SUMMARY', label: 'OSD Summary', url: '/api/osd/summary', type: 'json', versionUrl: '/api/osd/meta', csvUrlField: 'summaryUrl', versionField: 'version', lazySync: true },
+    { key: 'CACHE_OSD_HISTORY', label: 'OSD summary trend', url: '/api/osd/history', type: 'json', versionUrl: '/api/osd/meta', csvUrlField: 'historyUrl', versionField: 'historyVersion', lazySync: true },
+    { key: 'CACHE_OSD_SELECTED', label: 'OSD selected consumers', url: '/api/osd/selected', type: 'csv', originHeavy: true, versionUrl: '/api/osd/meta', csvUrlField: 'selectedUrl', versionField: 'selectedVersion', lazySync: true }
     // CACHE_DD_VISIT removed: the DD visit sheet holds PAN numbers and is read with no-store by dd_visit.html (MzoRows.build); nothing caches it.
 ];
 

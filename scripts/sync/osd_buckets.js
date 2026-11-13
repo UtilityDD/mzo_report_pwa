@@ -33,7 +33,7 @@ const LABELS = {
   }
 };
 
-/** REM-watched band: same threshold as remosd5000.html. */
+/** REM floor. The report also leaves out Government and Agriculture (OSD above this amount). */
 const REM_OSD_MIN = 5000;
 
 /**
@@ -157,6 +157,7 @@ module.exports = {
   REM_OSD_MIN,
   SUPPLY_MAP,
   parseAmount,
+  DIV_BY_PREFIX,
   classBucket,
   supplyBucket,
   valueBand,

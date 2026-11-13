@@ -1,6 +1,8 @@
 # OSD revenue: one dump, many views
 
-Clean target for outstanding dues (OSD) across Disconnection, REM OSD, REM defaulters, and a new **OSD summary** hub. DB2 is only reachable on the office network; this PC scaffolds the pipeline; live extract is for **13 Nov** (or later) on that network.
+**Current path (13 Nov 2026).** The readable table is `ISUDATA.NOTICE_OSD`, not `CON_WBSEDCL_OSD_CUR` (that table is empty and has only `CCC_CODE, BASE_CLASS, CON_ID, AMT`). The zone summary is grouped on the office PC and uploaded as `osd_summary.json`. Each as-on date is also kept in `osd_summary_history.json` so the summary page can show a trend. `node scripts/sync/osd_sheet_history.js` folds the REM OSD notice sheet into that file: one REM snapshot per notice date, split by class, division and CCC. Those points have no total OSD. A date that already has an office-extract total is left as it is. Names are a separate current file, `osd_selected.csv`, for REM (outstanding above ₹5,000, except Government and Agriculture), all Industrial, Commercial above ₹1,000, and Domestic above ₹50,000 (`rem/osd_selected.html`). A new upload replaces that file. Payment follow-up stays on the Disconnection tracker. The full consumer master below is not what Sync Now publishes.
+
+Clean target for outstanding dues (OSD) across Disconnection, REM OSD, REM defaulters, and the **OSD summary** hub. DB2 is only reachable on the office network.
 
 **Office day runbook:** [OSD_OFFICE_SPEC.md](OSD_OFFICE_SPEC.md) — pull `develop` on the office PC and follow that checklist.
 
@@ -30,7 +32,7 @@ IBM DB2  ISUDATA.CON_WBSEDCL_OSD_CUR  (+ supply-status column, confirm on 13th)
 | Block | Meaning |
 |--------|---------|
 | **Total OSD** | Sum of `NOTOSD` in scope |
-| **REM-considered** | OSD in the REM ≥ ₹5,000 band (amount + consumers + **share of total**) |
+| **REM** | Outstanding above ₹5,000, except Government and Agriculture (amount + consumers + **share of total**) |
 | **By class** | DOM / COM / IND / Others |
 | **By supply status** | Live · Deemed disconnection · Temporary disconnection · Other |
 | **By high-value band** | &lt;₹5k · ₹5–10k · ₹10–25k · ₹25–50k · ₹50k–1L · ≥₹1L |
@@ -73,7 +75,7 @@ Defined in `scripts/sync/osd_buckets.js` (and mirrored in the hub for labels):
 - **Supply:** `live` · `deemed` · `temp` · `other` (from `CON_STATUS` text; map tuned on 13th).
 - **High value:** `lt5k` · `5k_10k` · `10k_25k` · `25k_50k` · `50k_1l` · `1l_plus`.
 - **Aging:** `d0_90` · `d90_180` · `d180_365` · `y1_plus` · `never` (from last paid date).
-- **REM band:** `NOTOSD >= 5000` (same threshold as REM OSD &gt; ₹5,000).
+- **REM band:** outstanding above ₹5,000 (`NOTOSD > 5000`), except Government and Agriculture.
 
 ## Pipeline commands
 

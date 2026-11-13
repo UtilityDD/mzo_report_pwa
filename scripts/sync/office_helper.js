@@ -112,6 +112,23 @@ function createServer(opts) {
       return res.end();
     }
 
+    if (req.method === 'GET' && url === '/osd-selected') {
+      const selectedPath = path.resolve(__dirname, '../../data/osd_selected.csv');
+      if (!ALLOWED_ORIGINS.has(origin)) {
+        res.statusCode = 403;
+        return res.end();
+      }
+      if (!fs.existsSync(selectedPath)) {
+        return sendJson(res, 404, { status: 'error', message: 'No selected list on this PC yet.' }, origin);
+      }
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      corsHeaders(res, origin);
+      fs.createReadStream(selectedPath).pipe(res);
+      return;
+    }
+
     if (req.method === 'GET' && url === '/health') {
       const dbvis = !!dbvisAvailable();
       return sendJson(res, 200, { status: 'ok', dbvis }, origin);
@@ -342,15 +359,60 @@ async function defaultRunJob(job, body, onProgress) {
     };
   }
   if (job === 'osd') {
-    const { syncRevenueOsdFromCrm } = require('./sync_revenue_osd_from_crm');
-    const result = await syncRevenueOsdFromCrm({ fresh: true, skipUpload: true, isCli: false, onProgress });
-    const files = [
-      filePart('master', 'osd_master.csv', 'text/csv', result.masterPath),
-      filePart('summary', 'osd_summary.json', 'application/json', result.summaryPath),
-      filePart('disconnection', 'disconnection.csv', 'text/csv', result.disconPath)
-    ].filter(Boolean);
-    if (!files.length) throw new Error('The OSD extract did not write a file.');
-    return { status: 'success', message: result.message, uploads: [{ url: '/api/osd/upload', files }] };
+    const { buildFromDir, writeSummary } = require('./osd_notice_summary');
+    const { appendSnapshot } = require('./osd_history');
+    const { spawnSync } = require('child_process');
+    const dir = path.resolve(__dirname, '../../data/temp/osd');
+    const summaryPath = path.resolve(__dirname, '../../data/osd_summary.json');
+    const historyPath = path.resolve(__dirname, '../../data/osd_summary_history.json');
+    const selectedPath = path.resolve(__dirname, '../../data/osd_selected.csv');
+    const dbvis = 'C:\\Program Files\\DbVisualizer\\dbviscmd.bat';
+    let summary = null;
+    let fromDb = false;
+    if (onProgress) await onProgress({ phase: 'division', index: 1, total: 2, name: 'OSD summary', state: 'run' });
+    if (fs.existsSync(dbvis)) {
+      const sqlFiles = ['summary_agg.sql', 'agg_ccc.sql'].map((name) => path.join(dir, name)).filter((file) => fs.existsSync(file));
+      let sqlOk = sqlFiles.length > 0;
+      for (const sqlFile of sqlFiles) {
+        const res = spawnSync('cmd.exe', ['/c', 'dbviscmd.bat', '-connection', 'ibm db2', '-sqlfile', sqlFile, '-stoponerror'], {
+          encoding: 'utf8',
+          cwd: path.dirname(dbvis),
+          timeout: 180000
+        });
+        const failed = res.error || res.status !== 0 || (res.stdout && res.stdout.includes('ERROR:'));
+        if (failed) { sqlOk = false; break; }
+      }
+      if (sqlOk) {
+        try {
+          summary = buildFromDir(dir);
+          writeSummary(summary, summaryPath);
+          appendSnapshot(summary, historyPath);
+          fromDb = true;
+        } catch (_) { summary = null; }
+      }
+    }
+    if (!summary && fs.existsSync(summaryPath)) {
+      summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+    }
+    if (!summary || !summary.totals) throw new Error('No OSD summary on this PC. Run the office extract first.');
+    if (onProgress) await onProgress({ phase: 'division', index: 1, total: 2, name: 'OSD summary', state: 'done' });
+    const selectedReady = fs.existsSync(selectedPath);
+    if (onProgress) {
+      await onProgress({ phase: 'division', index: 2, total: 2, name: selectedReady ? 'Selected consumers' : 'Selected list not on this PC', state: 'done' });
+    }
+    const cr = (Number(summary.totals.osd) / 1e7).toFixed(2);
+    const rem = summary.totals.remConsumers ? ` REM ${Number(summary.totals.remConsumers).toLocaleString('en-IN')}.` : '';
+    return {
+      status: 'success',
+      message: `OSD summary ${Number(summary.totals.consumers).toLocaleString('en-IN')} consumers, ₹${cr} Cr, as on ${summary.asOn}.${rem}`
+        + (fromDb ? ' Refreshed from NOTICE_OSD.' : ' Published the saved snapshot.')
+        + (selectedReady ? ' The selected-consumer list uploads with it.' : ' The selected-consumer list is not on this PC yet.'),
+      selectedFetch: selectedReady ? `http://${HOST}:${PORT}/osd-selected` : '',
+      uploads: [{
+        url: '/api/osd/upload',
+        files: [{ field: 'summary', name: 'osd_summary.json', type: 'application/json', text: JSON.stringify(summary) }]
+      }]
+    };
   }
   throw new Error('That report is not a DB2 extract yet.');
 }

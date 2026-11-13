@@ -4540,7 +4540,7 @@
 
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="mzo_data_hub.js?v=94"></script>
+  <script src="mzo_data_hub.js?v=95"></script>
   <script>
     let usersData = [];
     let logsData = [];
@@ -6085,20 +6085,21 @@
         page: '/rem/osd.html',
         icon: 'fa-scale-balanced',
         iconColor: 'red',
-        desc: 'Extract the OSD master from DB2, one division at a time, and publish the live OSD and disconnection files.',
-        tables: ['ISUDATA.CON_WBSEDCL_OSD_CUR'],
+        desc: 'Refresh the OSD summary from NOTICE_OSD and publish it with the selected-consumer list. REM is outstanding above ₹5,000, except Government and Agriculture.',
+        tables: ['ISUDATA.NOTICE_OSD'],
         endpoint: '/api/osd/crm-sync',
         metaEndpoint: '/api/osd/meta',
-        durationText: 'One division at a time',
+        durationText: 'Summary, then the selected list',
         defaultSchedule: { enabled: false, frequency: 'weekly', day: 'Mon', time: '03:00', interval: '24' },
-        confirmText: 'Extract the OSD master from IBM DB2 for every division and publish it to the live page?\n\nThis also refreshes the disconnection list that the OSD extract produces.',
+        confirmText: 'Refresh the OSD summary from IBM DB2 and publish it, with the selected-consumer list, to the live page?\n\nLeave npm run office:db2 running on this PC. This does not replace the disconnection list.',
         extractMeta: (m) => {
           const stats = m && m.stats;
           const count = stats && (stats.consumers || stats.totalConsumers);
+          const rem = stats && stats.remConsumers;
           return {
             updatedAt: (m && (m.updatedAt || m.asOn || m.reportDate)) || null,
-            countText: count ? syncN(count) + ' consumers' : 'All divisions',
-            sourceText: (m && m.source) || 'CRM DB2 (ISUDATA)'
+            countText: count ? syncN(count) + ' consumers' + (rem ? ' · REM ' + syncN(rem) : '') : 'Summary and selected list',
+            sourceText: (m && m.source) || 'CRM DB2 (ISUDATA.NOTICE_OSD)'
           };
         }
       }
@@ -6538,10 +6539,22 @@
       });
       const uploads = extracted.uploads || [];
       for (let i = 0; i < uploads.length; i++) {
-        paintSyncStep('Uploading to the live page…', 80 + Math.round((i / Math.max(uploads.length, 1)) * 16), true);
+        paintSyncStep('Uploading to the live page…', 80 + Math.round((i / Math.max(uploads.length, 1)) * 12), true);
         await uploadSyncFiles(uploads[i].url, uploads[i].files);
       }
-      if (uploads.length) paintSyncStep('Published', 100, false);
+      if (extracted.selectedFetch) {
+        paintSyncStep('Uploading the selected list…', 94, true);
+        const listRes = await fetch(extracted.selectedFetch);
+        if (!listRes.ok) throw new Error('The selected-consumer list could not be read from this PC.');
+        const blob = await listRes.blob();
+        const fd = new FormData();
+        fd.append('selected', blob, 'osd_selected.csv');
+        const up = await fetch('/api/osd/upload', { method: 'POST', credentials: 'same-origin', body: fd });
+        let upData = {};
+        try { upData = await up.json(); } catch (_) { upData = {}; }
+        if (!up.ok || upData.status !== 'success') throw new Error(upData.message || 'The selected list was not accepted.');
+      }
+      if (uploads.length || extracted.selectedFetch) paintSyncStep('Published', 100, false);
       return extracted;
     }
 

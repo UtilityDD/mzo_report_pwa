@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en" class="ui">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OSD selected · DISHA</title>
+  <script src="/mzo_theme.js?v=10"></script>
+  <link rel="stylesheet" href="/mzo_theme.css?v=26" />
+  <script src="/mzo_ui.js?v=23" defer></script>
+  <script src="/mzo_data_hub.js?v=95" defer></script>
+  <script src="/lib/offices.js?v=3" defer></script>
+  <script src="/mzo_scope.js?v=20" defer></script>
+  <script src="/osd_sync.js?v=1" defer></script>
+  <style>
+    .ui-head { align-items: center; }
+    .osd-def { margin: -8px 0 14px; font-size: 12.5px; color: var(--mzo-muted); }
+    .osd-picks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0 0 16px; }
+    .osd-pick { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 3px; min-width: 0; min-height: 72px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--mzo-border-strong); background: var(--mzo-surface); color: var(--mzo-text); font: 500 13px/1.35 var(--mzo-font); text-align: left; cursor: pointer; }
+    .osd-pick:hover { background: var(--mzo-hover); }
+    .osd-pick[aria-pressed="true"] { background: var(--mzo-fill); border-color: var(--mzo-fill); color: var(--mzo-on-fill); }
+    .osd-pick .k { font-weight: 650; }
+    .osd-pick .d, .osd-pick .n { font-size: 12px; font-weight: 400; color: var(--mzo-muted); }
+    .osd-pick[aria-pressed="true"] .d, .osd-pick[aria-pressed="true"] .n { color: inherit; opacity: 0.88; }
+    @media (max-width: 900px) { .osd-picks { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="ui-page">
+    <header class="ui-head">
+      <div>
+        <h1>OSD selected<span class="ui-badge ui-date" id="asOn">Current list</span></h1>
+      </div>
+      <div class="ui-actions">
+        <button type="button" class="ui-btn ui-side-toggle" id="sideToggle" aria-controls="side" aria-expanded="false" title="Toggle filters"><svg class="ui-i"><use href="#ui-filter"/></svg><span>Filters</span><span id="activeCount"></span></button>
+        <button type="button" class="ui-btn" id="syncBtn" hidden title="Publish the OSD summary and selected list to the live page"><svg class="ui-i"><use href="#ui-sync"/></svg>Sync to VM</button>
+        <a class="ui-btn" id="openSummary" href="/rem/osd.html">Summary</a>
+        <button type="button" class="ui-btn icon" id="refreshBtn" aria-label="Refresh" title="Refresh"><svg class="ui-i"><use href="#ui-refresh"/></svg></button>
+      </div>
+    </header>
+    <div class="osd-picks" id="groups" role="group" aria-label="Report">
+      <button type="button" class="osd-pick" data-g="rem" aria-pressed="true"><span class="k">REM</span><span class="d">Above ₹5,000, except Government and Agriculture</span><span class="n">—</span></button>
+      <button type="button" class="osd-pick" data-g="ind" aria-pressed="false"><span class="k">Industrial</span><span class="d">Every industrial consumer</span><span class="n">—</span></button>
+      <button type="button" class="osd-pick" data-g="com" aria-pressed="false"><span class="k">Commercial</span><span class="d">Outstanding above ₹1,000</span><span class="n">—</span></button>
+      <button type="button" class="osd-pick" data-g="dom" aria-pressed="false"><span class="k">Domestic</span><span class="d">Outstanding above ₹50,000</span><span class="n">—</span></button>
+    </div>
+    <div class="ui-layout side-collapsed" id="uiLayout">
+      <aside class="ui-side" id="side" aria-label="Filters">
+        <div class="ui-side-h">
+          <h2>Filters<small id="activeLabel"></small></h2>
+          <div style="display:flex;align-items:center;gap:4px">
+            <button type="button" class="ui-btn ghost sm" id="clearBtn">Clear</button>
+            <button type="button" class="ui-btn icon ghost sm" id="sideCloseBtn" aria-label="Close filters" title="Close"><svg class="ui-i"><use href="#ui-x"/></svg></button>
+          </div>
+        </div>
+        <div class="ui-side-sec ui-side-stack">
+          <label class="ui-search"><svg class="ui-i"><use href="#ui-search"/></svg><input class="ui-input" id="q" type="search" placeholder="Name or consumer id" autocomplete="off" aria-label="Search" /></label>
+          <span class="ui-select"><select id="regionFilter" aria-label="Region"><option value="">All regions</option></select></span>
+          <span class="ui-select"><select id="divisionFilter" aria-label="Division"><option value="">All divisions</option></select></span>
+          <span class="ui-select"><select id="cccFilter" aria-label="CCC"><option value="">All CCCs</option></select></span>
+        </div>
+      </aside>
+      <div class="ui-main">
+        <section class="ui-stats" id="stats" aria-label="Selected cut">
+          <div class="ui-stat"><div class="k" id="statNLabel">REM</div><div class="v" id="statN"><span class="ui-skel"></span></div><div class="s" id="statCut">Above ₹5,000, except Government and Agriculture</div></div>
+          <div class="ui-stat"><div class="k" id="statOsdLabel">REM OSD</div><div class="v" id="statOsd"><span class="ui-skel"></span></div><div class="s" id="statNote">—</div></div>
+        </section>
+        <p class="osd-def" id="remDef">REM is outstanding above ₹5,000, except Government and Agriculture.</p>
+        <section class="ui-panel">
+          <div class="report-head">
+            <div class="rh-top">
+              <div class="rh-title-wrap">
+                <h2 class="rh-title"><span id="tableTitle">Region</span></h2>
+                <span class="rh-badge" id="rhCount">Loading…</span>
+              </div>
+              <div class="ui-actions">
+                <button type="button" class="ui-btn sm" id="copyBtn"><svg class="ui-i"><use href="#ui-copy"/></svg>Copy</button>
+                <button type="button" class="ui-btn sm" id="exportBtn"><svg class="ui-i"><use href="#ui-download"/></svg>Export</button>
+              </div>
+            </div>
+            <div class="rh-filters-bar" id="rhFiltersBar"></div>
+          </div>
+          <div class="ui-drill-tabs" role="tablist" id="tabs"></div>
+          <div id="scopeTrail" class="ui-scope-trail-host"></div>
+          <div id="trend" hidden style="padding: 8px 8px 12px;"></div>
+          <div id="table"><div class="ui-empty">Loading…</div></div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var $ = function (id) { return document.getElementById(id); };
+    var GROUPS = {
+      rem: { label: 'REM', note: 'Above ₹5,000, except Government and Agriculture' },
+      ind: { label: 'Industrial', note: 'Every industrial consumer' },
+      com: { label: 'Commercial', note: 'Outstanding above ₹1,000' },
+      dom: { label: 'Domestic', note: 'Outstanding above ₹50,000' }
+    };
+    var state = { rows: [], history: null, group: 'rem', klass: '', q: '', tab: 'trend', region: '', division: '', ccc: '' };
+    var tableApi = null;
+    var renderedTab = '';
+
+    function inr(n) {
+      n = Math.round(Number(n) || 0);
+      if (Math.abs(n) >= 1e7) return '₹' + (n / 1e7).toFixed(2) + ' Cr';
+      if (Math.abs(n) >= 1e5) return '₹' + (n / 1e5).toFixed(2) + ' L';
+      return '₹' + n.toLocaleString('en-IN');
+    }
+    function cls(row) { return String(row.CLASS_DESC || '').trim().toUpperCase(); }
+    function amount(row) { return Number(String(row.NOTOSD || '').replace(/,/g, '')) || 0; }
+    function govOrAgri(name) { return name.indexOf('GOV') === 0 || name.indexOf('AGR') === 0; }
+    function inCut(row, cut) {
+      if (cut === 'ind') return row._ind;
+      if (cut === 'com') return row._com;
+      if (cut === 'dom') return row._dom;
+      return row._rem;
+    }
+    function parseList(text) {
+      text = String(text || '').replace(/^\uFEFF/, '');
+      if (!text) return [];
+      var nl = text.indexOf('\n');
+      var first = (nl === -1 ? text : text.slice(0, nl)).replace(/\r$/, '');
+      if (first.indexOf('\t') === -1) return UI.csv(text);
+      var lines = text.split(/\r?\n/);
+      var head = first.split('\t').map(function (h) { return h.trim(); });
+      var out = [];
+      for (var i = 1; i < lines.length; i++) {
+        var line = lines[i];
+        if (!line) continue;
+        var cells = line.split('\t');
+        var row = {};
+        for (var k = 0; k < head.length; k++) row[head[k]] = cells[k] != null ? cells[k] : '';
+        out.push(row);
+      }
+      return out;
+    }
+    function prepare(text) {
+      var rows = parseList(text);
+      if (!rows.length || rows[0].CCC_CODE == null && rows[0].CON_ID == null) return [];
+      if (window.MzoScope && MzoScope.filterRows) rows = MzoScope.filterRows(rows);
+      rows.forEach(function (row) {
+        ['CCC_CODE', 'CON_ID', 'NAME', 'CLASS_DESC', 'NOTOSD', 'LAST_PDT', 'METER_NO'].forEach(function (key) {
+          if (row[key] != null) row[key] = String(row[key]).trim();
+        });
+        var off = UI.office ? UI.office(row.CCC_CODE, '') : null;
+        row._region = off && off.region ? off.region : 'Unmapped';
+        row._divn = off && off.division ? off.division : '';
+        row._supp = off && off.ccc ? off.ccc : (row.CCC_CODE || 'Unmapped');
+        row._osd = amount(row);
+        var name = cls(row);
+        row._ind = name.indexOf('IND') === 0;
+        row._com = name.indexOf('COM') === 0 && row._osd > 1000;
+        row._dom = name.indexOf('DOM') === 0 && row._osd > 50000;
+        row._rem = row._osd > 5000 && !govOrAgri(name);
+        row._class = name.indexOf('DOM') === 0 ? 'Domestic' : name.indexOf('COM') === 0 ? 'Commercial' : name.indexOf('IND') === 0 ? 'Industrial' : 'Others';
+      });
+      return rows;
+    }
+    function isList(tab) { return (tab || state.tab) === 'list'; }
+    function isRem() { return state.group === 'rem'; }
+    function activeCut() { return GROUPS[state.group] ? state.group : 'rem'; }
+    function groupMeta() { return GROUPS[activeCut()]; }
+    function tabLabel(tab) {
+      var labels = { trend: 'Trend', region: 'Region', division: 'Division', ccc: 'CCC', class: 'Class', list: 'Consumers' };
+      return labels[tab] || 'Consumers';
+    }
+    function officeMatch(row) {
+      if (state.region && row._region !== state.region) return false;
+      if (state.division && row._divn !== state.division) return false;
+      if (state.ccc && row._supp !== state.ccc) return false;
+      return true;
+    }
+    function searched(rows) {
+      var q = state.q.trim().toLowerCase();
+      if (!q) return rows;
+      return rows.filter(function (row) {
+        return String(row.NAME || '').toLowerCase().indexOf(q) !== -1
+          || String(row.CON_ID || '').toLowerCase().indexOf(q) !== -1;
+      });
+    }
+    function officeSearched() {
+      return searched(state.rows.filter(officeMatch));
+    }
+    function population(ignoreClass) {
+      var rows = officeSearched().filter(function (row) { return inCut(row, activeCut()); });
+      if (!ignoreClass && isRem() && state.klass) rows = rows.filter(function (row) { return row._class === state.klass; });
+      return rows;
+    }
+    function paintPicks() {
+      Array.prototype.forEach.call($('groups').querySelectorAll('[data-g]'), function (btn) {
+        var g = btn.getAttribute('data-g');
+        btn.setAttribute('aria-pressed', g === state.group ? 'true' : 'false');
+        var nEl = btn.querySelector('.n');
+        if (!nEl) return;
+        if (!state.rows.length) { nEl.textContent = '—'; return; }
+        var n = 0;
+        state.rows.forEach(function (row) { if (inCut(row, g)) n++; });
+        nEl.textContent = n.toLocaleString('en-IN') + ' consumers';
+      });
+    }
+    function withPct(text, part, whole, ofName) {
+      whole = Number(whole) || 0;
+      if (!whole) return text;
+      var p = (Number(part) || 0) / whole * 100;
+      var tip = ofName ? ' title="of ' + UI.esc(ofName) + '"' : '';
+      return text + '<span class="sub"' + tip + '>' + p.toFixed(1) + '%</span>';
+    }
+    function paintCount(shown) {
+      var total = 0;
+      state.rows.forEach(function (row) { if (inCut(row, activeCut())) total++; });
+      var word = isRem() ? ' REM' : '';
+      if (!total || shown === total) $('rhCount').innerHTML = 'Showing all <b>' + UI.n(shown) + '</b>' + word + ' consumers';
+      else $('rhCount').innerHTML = 'Showing <b>' + UI.n(shown) + '</b> of ' + UI.n(total) + word + ' consumers <span style="opacity:0.75;font-weight:400">(' + UI.pct(shown, total) + ')</span>';
+    }
+    function groupOf(rows) {
+      var field = state.tab === 'class' ? '_class' : state.tab === 'division' ? '_divn' : (state.tab === 'ccc' ? '_supp' : '_region');
+      var parentField = state.tab === 'division' ? '_region' : (state.tab === 'ccc' ? '_divn' : '');
+      var groups = {};
+      rows.forEach(function (row) {
+        var key = row[field] || 'Unmapped';
+        if (!groups[key]) groups[key] = { name: key, parent: parentField ? (row[parentField] || '') : '', region: row._region || '', n: 0, osd: 0 };
+        groups[key].n += 1;
+        groups[key].osd += row._osd;
+      });
+      return Object.keys(groups).map(function (key) { return groups[key]; }).sort(function (a, b) { return b.osd - a.osd; });
+    }
+    function openGroup(row) {
+      if (state.tab === 'region') {
+        state.region = row.name;
+        state.division = '';
+        state.ccc = '';
+        state.tab = 'division';
+      } else if (state.tab === 'division') {
+        if (row.parent) state.region = row.parent;
+        state.division = row.name;
+        state.ccc = '';
+        state.tab = 'ccc';
+      } else if (state.tab === 'ccc') {
+        if (row.region) state.region = row.region;
+        if (row.parent) state.division = row.parent;
+        state.ccc = row.name;
+        state.tab = 'list';
+      } else if (state.tab === 'class') {
+        state.klass = row.name;
+        state.tab = 'list';
+      }
+      paint();
+    }
+    function classKeyOf(label) {
+      return { Domestic: 'DOMESTIC', Commercial: 'COMMERCIAL', Industrial: 'INDUSTRIAL', Others: 'OTHERS' }[label] || '';
+    }
+    function snapRem(snap) {
+      if (state.klass) {
+        var key = classKeyOf(state.klass);
+        var hit = null;
+        (snap.byClass || []).forEach(function (row) { if (row.key === key) hit = row; });
+        if (!hit || hit.remOsd == null) return null;
+        return Number(hit.remOsd) || 0;
+      }
+      if (state.region || state.division || state.ccc) {
+        var rows = snap.byCcc || [];
+        if (state.ccc && !rows.length) return null;
+        if (!rows.length) return null;
+        var sum = 0;
+        var any = false;
+        rows.forEach(function (row) {
+          if (state.region && row.region !== state.region) return;
+          if (state.division && row.division !== state.division) return;
+          if (state.ccc && row.ccc !== state.ccc) return;
+          any = true;
+          sum += Number(row.remOsd) || 0;
+        });
+        return any ? sum : null;
+      }
+      return Number(snap.totals && snap.totals.remOsd) || 0;
+    }
+    function paintTrend() {
+      var snaps = (state.history && state.history.snapshots) || [];
+      $('tableTitle').textContent = 'Trend';
+      $('trend').hidden = false;
+      $('table').hidden = true;
+      tableApi = null;
+      var labels = [];
+      var rem = [];
+      snaps.forEach(function (snap) {
+        var amount = snapRem(snap);
+        if (amount == null) return;
+        labels.push(snap.asOn || '');
+        rem.push(amount / 1e7);
+      });
+      $('rhCount').innerHTML = 'Showing all <b>' + UI.n(labels.length) + '</b> snapshots';
+      if (!labels.length) {
+        $('trend').innerHTML = '<div class="ui-empty">' + (snaps.length ? 'Saved snapshots do not split this filter yet.' : 'A trend appears after the next REM snapshot is saved.') + '</div>';
+        return;
+      }
+      var where = [];
+      if (state.region) where.push(state.region);
+      if (state.division) where.push(state.division);
+      if (state.ccc) where.push(state.ccc);
+      if (state.klass) where.push(state.klass);
+      UI.line($('trend'), {
+        title: 'REM across saved snapshots' + (where.length ? ' · ' + where.join(' · ') : ''),
+        labels: labels,
+        height: 220,
+        series: [
+          { label: 'REM OSD', strong: true, color: 5, values: rem }
+        ],
+        axis: function (v) { return Number(v).toFixed(0); },
+        fmt: function (v) { return '₹' + Number(v).toFixed(2) + ' Cr'; }
+      });
+    }
+    function paintTable(rows) {
+      if (state.tab === 'trend') { paintTrend(); return; }
+      $('trend').hidden = true;
+      $('table').hidden = false;
+      $('tableTitle').textContent = tabLabel(state.tab);
+      paintCount(rows.length);
+      if (renderedTab !== state.tab) {
+        $('table').__ui = null;
+        renderedTab = state.tab;
+      }
+      if (!isList()) {
+        var groupRows = groupOf(rows);
+        var bag = {};
+        var cutN = 0;
+        var cutOsd = 0;
+        groupRows.forEach(function (g) {
+          var k = g.parent || '';
+          if (!bag[k]) bag[k] = { n: 0, osd: 0 };
+          bag[k].n += g.n;
+          bag[k].osd += g.osd;
+          cutN += g.n;
+          cutOsd += g.osd;
+        });
+        tableApi = UI.table($('table'), {
+          columns: [
+            { key: 'name', label: tabLabel(state.tab), fmt: function (v) { return '<span class="ui-strong">' + UI.esc(v) + '</span>'; } },
+            { key: 'n', label: isRem() ? 'REM' : 'Consumers', num: true, fmt: function (v, r) {
+              var p = r.parent ? bag[r.parent] : null;
+              return withPct(Number(v).toLocaleString('en-IN'), v, p ? p.n : cutN, p ? r.parent : (isRem() ? 'REM' : 'this list'));
+            } },
+            { key: 'osd', label: isRem() ? 'REM OSD' : 'OSD', num: true, fmt: function (v, r) {
+              var p = r.parent ? bag[r.parent] : null;
+              return withPct(inr(v), v, p ? p.osd : cutOsd, p ? r.parent : (isRem() ? 'REM' : 'this list'));
+            } }
+          ],
+          rows: groupRows,
+          onRow: openGroup,
+          empty: 'Nothing in this cut.'
+        });
+        return;
+      }
+      tableApi = UI.table($('table'), {
+        columns: [
+          { key: 'CON_ID', label: 'Consumer' },
+          { key: 'NAME', label: 'Name' },
+          { key: 'CLASS_DESC', label: 'Class' },
+          { key: '_supp', label: 'CCC' },
+          { key: '_osd', label: 'OSD', num: true, fmt: inr },
+          { key: 'LAST_PDT', label: 'Last paid' },
+          { key: 'METER_NO', label: 'Meter' }
+        ],
+        rows: rows,
+        limit: 80,
+        sort: { key: '_osd', dir: 'desc' },
+        empty: 'Nothing in this cut.'
+      });
+    }
+    function fillOfficeFilters() {
+      var rf = $('regionFilter');
+      var df = $('divisionFilter');
+      var cf = $('cccFilter');
+      UI.offices(state.rows, 'All regions');
+      if (rf && !rf.disabled) rf.value = state.region || '';
+      if (df && !df.disabled) df.value = state.division || '';
+      if (cf && !cf.disabled) cf.value = state.ccc || '';
+      UI.offices(state.rows, 'All regions');
+      if (UI.lockScope) UI.lockScope();
+      if (rf && rf.disabled) state.region = rf.value || '';
+      if (df && df.disabled) state.division = df.value || '';
+      if (cf && cf.disabled) state.ccc = cf.value || '';
+      UI.mark(rf);
+      UI.mark(df);
+      UI.mark(cf);
+    }
+    function renderTabs() {
+      if (!isRem() && (state.tab === 'class' || state.tab === 'trend')) state.tab = 'region';
+      var tabs = UI.filterOfficeTabs([['region', 'Region'], ['division', 'Division'], ['ccc', 'CCC']]);
+      if (isRem()) tabs.unshift(['trend', 'Trend']);
+      if (isRem()) tabs.push(['class', 'Class']);
+      tabs.push(['list', 'Consumers']);
+      state.tab = UI.snapOfficeTab(state.tab);
+      if (!tabs.some(function (t) { return t[0] === state.tab; })) state.tab = tabs[0] ? tabs[0][0] : 'region';
+      var listN = population().length;
+      $('tabs').innerHTML = tabs.map(function (pair) {
+        var count = pair[0] === 'list' ? '<small>' + UI.n(listN) + '</small>' : '';
+        return '<button type="button" class="ui-drill-tab" role="tab" data-t="' + pair[0] + '" aria-selected="' + (pair[0] === state.tab ? 'true' : 'false') + '">' + pair[1] + count + '</button>';
+      }).join('');
+      paintPicks();
+      UI.scopeTrail('scopeTrail');
+    }
+    function paintChips() {
+      var filters = [];
+      if (state.q) filters.push({ key: 'q', label: 'Search', value: '"' + state.q + '"' });
+      if (state.region) filters.push({ key: 'region', label: 'Region', value: state.region });
+      if (state.division) filters.push({ key: 'division', label: 'Division', value: state.division });
+      if (state.ccc) filters.push({ key: 'ccc', label: 'CCC', value: state.ccc });
+      if (isRem() && state.klass) filters.push({ key: 'class', label: 'Class', value: state.klass });
+      var bar = $('rhFiltersBar');
+      if (!filters.length) { bar.innerHTML = ''; return; }
+      var chips = filters.map(function (af) {
+        return '<span class="rh-chip"><strong>' + UI.esc(af.label) + ':</strong> ' + UI.esc(af.value) +
+          '<button type="button" class="rh-chip-x" data-rh-clear="' + af.key + '" title="Remove ' + UI.esc(af.label) + ' filter" aria-label="Remove filter">&times;</button></span>';
+      }).join('');
+      bar.innerHTML = '<div class="rh-filters"><span class="rh-filters-label"><svg class="ui-i sm"><use href="#ui-filter"/></svg>Applied:</span>' +
+        chips + '<button type="button" class="rh-clear-btn" id="rhClearBtn"><svg class="ui-i sm"><use href="#ui-refresh"/></svg>Reset all</button></div>';
+    }
+    function activeCount() {
+      var n = 0;
+      if (state.q) n++;
+      if (state.region) n++;
+      if (state.division) n++;
+      if (state.ccc) n++;
+      if (state.klass) n++;
+      return n;
+    }
+    function clearFilter(key) {
+      if (key === 'q' || key === 'all') { state.q = ''; $('q').value = ''; }
+      if (key === 'region' || key === 'all') { state.region = ''; state.division = ''; state.ccc = ''; }
+      if (key === 'division') { state.division = ''; state.ccc = ''; }
+      if (key === 'ccc') state.ccc = '';
+      if (key === 'class' || key === 'all') state.klass = '';
+      if (key === 'all') { state.group = 'rem'; state.tab = 'trend'; }
+      paint();
+    }
+    function paint() {
+      fillOfficeFilters();
+      renderTabs();
+      if (!state.rows.length) {
+        $('statN').textContent = '—';
+        $('statOsd').textContent = '—';
+        $('tableTitle').textContent = tabLabel(state.tab);
+        if (state.tab === 'trend') paintTrend();
+        else {
+          $('trend').hidden = true;
+          $('table').hidden = false;
+          $('table').innerHTML = '<div class="ui-empty">No selected list on this server yet. On the office PC run npm run sync:osd:selected, then Sync Now on Revenue OSD.</div>';
+          $('rhCount').innerHTML = 'Showing all <b>0</b> consumers';
+        }
+        paintPicks();
+        paintChips();
+        if (setActive) setActive(activeCount());
+        return;
+      }
+      var rows = population(state.tab === 'class');
+      var osd = 0;
+      rows.forEach(function (row) { osd += row._osd; });
+      var remCut = isRem();
+      if ($('statNLabel')) $('statNLabel').textContent = remCut ? 'REM' : 'Consumers';
+      if ($('statOsdLabel')) $('statOsdLabel').textContent = remCut ? 'REM OSD' : 'OSD';
+      $('statCut').textContent = groupMeta().note;
+      if ($('statNote')) $('statNote').textContent = rows.length.toLocaleString('en-IN') + ' consumers';
+      if ($('remDef')) $('remDef').hidden = !remCut;
+      $('statN').textContent = rows.length.toLocaleString('en-IN');
+      $('statOsd').textContent = inr(osd);
+      paintPicks();
+      paintChips();
+      paintTable(rows);
+      if (setActive) setActive(activeCount());
+    }
+    $('q').addEventListener('input', function () {
+      state.q = $('q').value || '';
+      paint();
+    });
+    ['regionFilter', 'divisionFilter', 'cccFilter'].forEach(function (id) {
+      $(id).addEventListener('change', function () {
+        if (id === 'regionFilter') { state.division = ''; state.ccc = ''; }
+        if (id === 'divisionFilter') state.ccc = '';
+        state.region = $('regionFilter').value || '';
+        state.division = id === 'regionFilter' ? '' : ($('divisionFilter').value || '');
+        state.ccc = (id === 'regionFilter' || id === 'divisionFilter') ? '' : ($('cccFilter').value || '');
+        paint();
+      });
+    });
+    $('groups').addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-g]');
+      if (!btn) return;
+      var next = btn.getAttribute('data-g');
+      if (!GROUPS[next] || next === state.group) return;
+      state.group = next;
+      state.klass = '';
+      state.tab = next === 'rem' ? 'trend' : 'region';
+      paint();
+    });
+    $('tabs').addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-t]');
+      if (!btn) return;
+      state.tab = btn.getAttribute('data-t');
+      paint();
+    });
+    $('rhFiltersBar').addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-rh-clear]');
+      if (btn) { clearFilter(btn.getAttribute('data-rh-clear')); return; }
+      if (e.target.closest('#rhClearBtn')) clearFilter('all');
+    });
+    $('openSummary').addEventListener('click', function (e) {
+      if (window.parent && window.parent !== window && window.parent.openPage) {
+        e.preventDefault();
+        window.parent.openPage('rem/osd.html', 'OSD summary');
+      }
+    });
+    var setActive = UI.sidePanel({
+      side: $('side'),
+      toggle: $('sideToggle'),
+      label: $('activeLabel'),
+      count: $('activeCount'),
+      clear: $('clearBtn'),
+      onClear: function () { clearFilter('all'); }
+    });
+    $('copyBtn').addEventListener('click', function () {
+      if (tableApi && tableApi.copy) tableApi.copy();
+    });
+    $('exportBtn').addEventListener('click', function () {
+      var rows = population(state.tab === 'class');
+      UI.exportCsv('osd_selected.csv', [
+        { key: 'CON_ID', label: 'Consumer' },
+        { key: 'NAME', label: 'Name' },
+        { key: 'CLASS_DESC', label: 'Class' },
+        { key: 'CCC_CODE', label: 'CCC code' },
+        { key: '_supp', label: 'CCC' },
+        { key: '_osd', label: 'OSD' },
+        { key: 'LAST_PDT', label: 'Last paid' },
+        { key: 'METER_NO', label: 'Meter' }
+      ], rows);
+    });
+    function takeList(text) {
+      if (!text) { state.rows = []; paint(); return; }
+      $('table').innerHTML = '<div class="ui-empty">Reading the selected list…</div>';
+      $('rhCount').textContent = 'Reading…';
+      setTimeout(function () {
+        try { state.rows = prepare(text); }
+        catch (e) { state.rows = []; }
+        renderedTab = '';
+        $('table').__ui = null;
+        paint();
+      }, 30);
+    }
+    function classRemReady(data) {
+      var rows = data && data.snapshots && data.snapshots[0] && data.snapshots[0].byClass;
+      return !!(rows && rows.some(function (row) { return row.remOsd != null; }));
+    }
+    function takeHistory(data, info) {
+      if (info && info.cached && data && data.snapshots && data.snapshots.length && !classRemReady(data) && !state._classRemReload) {
+        state._classRemReload = true;
+        var hub = window.mzoDataHub;
+        if (hub && hub.refresh) {
+          hub.refresh('CACHE_OSD_HISTORY').then(function () { return hub._peek('CACHE_OSD_HISTORY'); }).then(function (fresh) {
+            takeHistory(fresh, { cached: false });
+          }).catch(function () {});
+          return;
+        }
+      }
+      state.history = data && data.snapshots ? data : null;
+      if (state.tab === 'trend') paintTrend();
+    }
+    UI.refresh($('refreshBtn'), 'CACHE_OSD_SELECTED', takeList);
+    UI.load('CACHE_OSD_SELECTED', takeList);
+    UI.load('CACHE_OSD_HISTORY', takeHistory, { force: true });
+    if (window.OsdSync) OsdSync.mount({ button: $('syncBtn'), onDone: function () {
+      UI.load('CACHE_OSD_SELECTED', takeList);
+      UI.load('CACHE_OSD_HISTORY', takeHistory, { force: true });
+    } });
+  });
+  </script>
+</body>
+</html>

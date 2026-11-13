@@ -1042,6 +1042,8 @@ const SYNC_READ_ROUTES = {
     '/api/disconnection/meta': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
     '/api/osd/dataset': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
     '/api/osd/summary': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
+    '/api/osd/history': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
+    '/api/osd/selected': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
     '/api/osd/meta': { env: 'DISCONNECTION_SYNC_SECRET', perm: 'disconnection-sync-autho' },
     '/api/unbilled/outsort': { env: 'UNBILLED_SYNC_SECRET', perm: 'unbilled-sync-autho' },
     '/api/unbilled/chronic': { env: 'UNBILLED_SYNC_SECRET', perm: 'unbilled-sync-autho' },
@@ -4595,6 +4597,7 @@ const { syncDisconnectionToSupabase } = require('./scripts/sync/sync_disconnecti
 const { syncDisconnectionFromCrm } = require('./scripts/sync/sync_disconnection_from_crm');
 const { syncDisconnectionPayments } = require('./scripts/sync/sync_disconnection_payments');
 const { syncRevenueOsdFromCrm } = require('./scripts/sync/sync_revenue_osd_from_crm');
+const { appendSnapshot } = require('./scripts/sync/osd_history');
 const { syncPendingMcToSupabase } = require('./scripts/sync/sync_pending_mc_to_supabase');
 const { syncLoadExtToSupabase } = require('./scripts/sync/sync_load_ext_to_supabase');
 
@@ -5350,8 +5353,36 @@ syncRoute_('/api/disconnection/sync', {
     })
 });
 
-// Revenue OSD hub (common DB2 dump → summary + master; also refreshes disconnection.csv)
+// Revenue OSD hub. The summary is a snapshot series. Selected names are a separate current file.
 const canSyncOsd_ = (user) => canSyncDisconnection_(user);
+
+function osdDataPath_(name) {
+    const primary = path.join(DATA_DIR, name);
+    if (fs.existsSync(primary)) return primary;
+    const local = path.join(__dirname, 'data', name);
+    if (path.resolve(local) !== path.resolve(primary) && fs.existsSync(local)) return local;
+    return null;
+}
+
+function osdFileVersion_(name) {
+    const file = osdDataPath_(name);
+    if (!file) return null;
+    const st = fs.statSync(file);
+    return `${Math.round(st.mtimeMs)}:${st.size}`;
+}
+
+function storeOsdSummary_(buffer) {
+    writeDataFile_('osd_summary.json', buffer);
+    try {
+        const summary = JSON.parse(Buffer.isBuffer(buffer) ? buffer.toString('utf8') : String(buffer));
+        if (summary && summary.totals) {
+            appendSnapshot(summary, path.join(DATA_DIR, 'osd_summary_history.json'));
+        }
+        return summary;
+    } catch (_) {
+        return null;
+    }
+}
 
 app.get('/api/osd/meta', async (req, res) => {
     if (!req.user) return UNAUTHORIZED_(res);
@@ -5363,12 +5394,26 @@ app.get('/api/osd/meta', async (req, res) => {
         if (vmMeta && vmMeta.status === 'success') meta = vmMeta;
     }
     const synced = await syncedMetaFields_(meta, '', 'CACHE_OSD_SUMMARY', res);
+    let summary = null;
+    const summaryFile = osdDataPath_('osd_summary.json');
+    if (summaryFile) {
+        try { summary = JSON.parse(fs.readFileSync(summaryFile, 'utf8')); } catch (_) { summary = null; }
+    }
     return res.json({
         status: 'success',
         canSync: canSyncOsd_(user),
         canCrmSync: canSyncOsd_(user) && isDbvisAvailable(),
         ...synced,
+        asOn: (summary && summary.asOn) || (meta && meta.asOn) || null,
+        updatedAt: (meta && meta.updatedAt) || (summary && summary.asOn) || null,
+        source: (summary && summary.source) || (meta && meta.source) || 'CRM DB2 (ISUDATA.NOTICE_OSD)',
+        stats: (summary && summary.totals) || (meta && meta.stats) || null,
+        version: osdFileVersion_('osd_summary.json') || (synced && synced.version) || null,
         summaryUrl: '/api/osd/summary',
+        historyUrl: '/api/osd/history',
+        selectedUrl: '/api/osd/selected',
+        historyVersion: osdFileVersion_('osd_summary_history.json'),
+        selectedVersion: osdFileVersion_('osd_selected.csv'),
         csvUrl: '/api/osd/dataset',
         datasetUrl: '/api/osd/dataset'
     });
@@ -5377,12 +5422,49 @@ app.get('/api/osd/meta', async (req, res) => {
 app.get('/api/osd/summary', async (req, res) => {
     if (!req.user) return UNAUTHORIZED_(res);
     res.setHeader('Cache-Control', 'private, max-age=30');
-    if (await sendDataFile_(req, res, path.join(DATA_DIR, 'osd_summary.json'), 'application/json; charset=utf-8')) return;
+    const file = osdDataPath_('osd_summary.json');
+    if (file) {
+        res.type('json').send(fs.readFileSync(file));
+        return;
+    }
     if (await fromVm_(req, res, '/api/osd/summary', 'application/json; charset=utf-8')) return;
     return res.status(404).json({
         status: 'error',
-        message: 'OSD summary not available yet. Run npm run sync:osd:crm on the office network (docs/osd-revenue.md).'
+        message: 'OSD summary not available yet. Run the office extract, then Sync Now on Revenue OSD.'
     });
+});
+
+app.get('/api/osd/history', async (req, res) => {
+    if (!req.user) return UNAUTHORIZED_(res);
+    res.setHeader('Cache-Control', 'private, max-age=30');
+    let file = osdDataPath_('osd_summary_history.json');
+    if (!file) {
+        const summaryFile = osdDataPath_('osd_summary.json');
+        if (summaryFile) {
+            try {
+                const summary = JSON.parse(fs.readFileSync(summaryFile, 'utf8'));
+                if (summary && summary.totals) {
+                    appendSnapshot(summary, path.join(DATA_DIR, 'osd_summary_history.json'));
+                    file = osdDataPath_('osd_summary_history.json');
+                }
+            } catch (_) { /* the summary file is not usable as a snapshot */ }
+        }
+    }
+    if (file) {
+        res.type('json').send(fs.readFileSync(file));
+        return;
+    }
+    if (await fromVm_(req, res, '/api/osd/history', 'application/json; charset=utf-8')) return;
+    return res.status(404).json({ status: 'error', message: 'No OSD snapshots yet.' });
+});
+
+app.get('/api/osd/selected', async (req, res) => {
+    if (!req.user) return UNAUTHORIZED_(res);
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    const file = osdDataPath_('osd_selected.csv');
+    if (file && await sendDataFile_(req, res, file, 'text/csv; charset=utf-8')) return;
+    if (await fromVm_(req, res, '/api/osd/selected', 'text/csv; charset=utf-8')) return;
+    return res.status(404).type('text/plain').send('OSD selected list is not on this server yet.');
 });
 
 app.get('/api/osd/dataset', async (req, res) => {
@@ -5395,7 +5477,7 @@ app.get('/api/osd/dataset', async (req, res) => {
 
 const osdUpload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 80 * 1024 * 1024 },
+    limits: { fileSize: 120 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         if (/\.(csv|tsv|txt|json)$/i.test(String(file.originalname || ''))) return cb(null, true);
         cb(new Error('Only CSV or JSON files are allowed.'));
@@ -5407,6 +5489,7 @@ app.post('/api/osd/upload', (req, res, next) => {
     osdUpload.fields([
         { name: 'master', maxCount: 1 },
         { name: 'summary', maxCount: 1 },
+        { name: 'selected', maxCount: 1 },
         { name: 'disconnection', maxCount: 1 },
         { name: 'file', maxCount: 1 }
     ])(req, res, async (err) => {
@@ -5426,8 +5509,12 @@ app.post('/api/osd/upload', (req, res, next) => {
                 saved.push('master');
             }
             if (files.summary && files.summary[0]) {
-                writeDataFile_('osd_summary.json', files.summary[0].buffer);
+                storeOsdSummary_(files.summary[0].buffer);
                 saved.push('summary');
+            }
+            if (files.selected && files.selected[0]) {
+                writeDataFile_('osd_selected.csv', files.selected[0].buffer);
+                saved.push('selected');
             }
             if (files.disconnection && files.disconnection[0]) {
                 writeDataFile_('disconnection.csv', files.disconnection[0].buffer);
@@ -5435,8 +5522,11 @@ app.post('/api/osd/upload', (req, res, next) => {
             }
             if (files.file && files.file[0]) {
                 const name = String(files.file[0].originalname || '').toLowerCase();
-                if (name.includes('summary') || name.endsWith('.json')) {
-                    writeDataFile_('osd_summary.json', files.file[0].buffer);
+                if (name.includes('selected')) {
+                    writeDataFile_('osd_selected.csv', files.file[0].buffer);
+                    saved.push('selected');
+                } else if (name.includes('summary') || name.endsWith('.json')) {
+                    storeOsdSummary_(files.file[0].buffer);
                     saved.push('summary');
                 } else {
                     writeDataFile_('osd_master.csv', files.file[0].buffer);
@@ -5488,12 +5578,8 @@ syncRoute_('/api/osd/crm-sync', {
     label: 'CRM Revenue OSD Sync',
     can: canSyncOsd_,
     forbidden: 'Not authorized to sync OSD from CRM. Ask an admin to grant disconnection-sync permission.',
-    run: async (req) => {
-        if (!isDbvisAvailable()) {
-            throw new Error('DbVisualizer CLI is not available on this server. Run npm run sync:osd:crm on an office workstation connected to DB2.');
-        }
-        const userToken = req ? (parseCookies(req.headers.cookie).mzo_session || (req.headers.authorization && req.headers.authorization.slice(7).trim())) : null;
-        return await syncRevenueOsdFromCrm({ fresh: true, userToken });
+    run: async () => {
+        throw new Error('Revenue OSD runs on this office PC. Leave npm run office:db2 running, then use Sync Now. The live server cannot reach DB2.');
     },
     meta: OSD_META,
     mirrorKeys: ['osd', 'disconnection'],
